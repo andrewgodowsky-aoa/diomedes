@@ -1,5 +1,6 @@
 import { AWS_LUNA_MODEL } from '../../server/engines/aws-bedrock';
 import { scripted } from './scripted-conversation';
+import { responsesEvents, sseResponse } from './model-api-streams.js';
 
 // AWS Bedrock (Luna) answering by the same script the Claude fixture speaks, at the real
 // provider boundary: the HTTPS call the model-API runtime makes. Everything above it is real:
@@ -94,8 +95,5 @@ export const awsTransport = (async (input: RequestInfo | URL, init?: RequestInit
       });
     });
   }
-  return new Response(JSON.stringify(envelope(output)), {
-    status: 200,
-    headers: { 'content-type': 'application/json', 'x-amzn-requestid': `req-${seen.length}` },
-  });
+  return sseResponse(responsesEvents(envelope(output)), { 'x-amzn-requestid': `req-${seen.length}` });
 }) as typeof globalThis.fetch;

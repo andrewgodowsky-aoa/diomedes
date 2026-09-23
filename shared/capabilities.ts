@@ -432,7 +432,7 @@ export const ROUTE_CAPABILITIES: Record<string, RouteCapabilities> = {
     network: fact(
       'yes',
       'diomedes-enforced',
-      'One POST per call to the approved runtime origin and path, redirects refused, the credential attached only there (guardedResponsesFetch in server/engines/aws-bedrock.ts, tests/aws-bedrock-transport.test.ts). No provider-hosted tools are offered.',
+      'One streamed POST per call to the approved runtime origin and path, redirects refused, the credential attached only there (guardedResponsesFetch in server/engines/aws-bedrock.ts on guardedStreamFetch in server/engines/model-api-core.ts, tests/aws-bedrock-transport.test.ts). No provider-hosted tools are offered.',
     ),
     receivesSecrets: fact(
       'no',
@@ -442,7 +442,7 @@ export const ROUTE_CAPABILITIES: Record<string, RouteCapabilities> = {
     preExecutionInterception: fact(
       'yes',
       'diomedes-enforced',
-      'Each tool call is validated by the registry and run as a RunService step before the next exchange; batches, program-driven calls and provider-hosted tools are refused before any effect (classifyEnvelope in server/engines/aws-bedrock.ts). Writes happen only through exact Store review.',
+      'Each tool call is validated by the registry and run as a RunService step before the next exchange; batches, program-driven calls and provider-hosted tools are refused before any effect (classifyEnvelope in server/engines/model-api-core.ts, used by server/engines/aws-bedrock.ts). Writes happen only through exact Store review.',
     ),
     revocationStopsFutureEffects: fact(
       'unknown',
