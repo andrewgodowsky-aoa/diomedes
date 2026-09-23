@@ -305,7 +305,8 @@ export function splitVisuals(text: string, options: { streaming?: boolean } = {}
   return segments;
 }
 
-function readBlock(body: string, ordinal: number): ReplySegment {
+/** One closed `visual` block's body, read with every limit `splitVisuals` applies. */
+export function readBlock(body: string, ordinal: number): ReplySegment {
   if (ordinal > VISUAL_MAX_PER_REPLY)
     return { type: 'invalid', reason: `a reply shows at most ${VISUAL_MAX_PER_REPLY} visuals` };
   if (new TextEncoder().encode(body).length > VISUAL_MAX_JSON_BYTES)

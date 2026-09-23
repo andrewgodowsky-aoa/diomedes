@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import type {
   DocumentInfo,
   MailboxMessage,
@@ -36,7 +37,13 @@ export type TeamProps = { project: Project; state: ProjectState; members: TeamMe
 export type FilesPaneProps = { projectId: string; documents: DocumentInfo[]; loading: boolean; failure: string | null; openPath: string | null; width: number;
   onOpen(path: string | null): void; onWidth(width: number): void; onClose(): void;
   /** Write in a file, on the main stage. The pane itself stays a reader (decision 13). */
-  onEdit?(path: string): void; };
+  onEdit?(path: string): void;
+  /** Kept mounted behind the artifact panel, so the tree and the open file survive the switch. */
+  hidden?: boolean;
+  /** The Files | Artifact switch, while both views share the column. */
+  switcher?: ReactNode;
+  /** Opens a Markdown or HTML file's artifacts in the artifact panel. */
+  onOpenInPanel?(path: string, text: string): void; };
 export type PalettePoint = '' | 'live' | 'attn' | 'fail' | 'done';
 export type PaletteAction = { label: string; run(): void | Promise<void>; light?: boolean; stay?: boolean };
 export type PaletteEntry = { group: 'Recent' | 'Tasks' | 'Files' | 'Skills' | 'Workers' | 'Models' | 'Projects' | 'Views'; id: string; name: string; sub: string; point: PalettePoint; actions: PaletteAction[];

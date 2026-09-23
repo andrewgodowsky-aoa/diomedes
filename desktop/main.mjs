@@ -238,6 +238,14 @@ async function createMainWindow() {
       openSetupReference(destination);
     }
   });
+  // Model artifacts are shown in srcdoc frames (client/console/artifact-frames.tsx).
+  // A frame may load its own document and nothing else: a design cannot leave it
+  // (an in-page anchor is the same document, so it stays allowed).
+  win.webContents.on('will-frame-navigate', (details) => {
+    if (details.isMainFrame || details.isSameDocument) return;
+    if (details.url === 'about:srcdoc' || details.url === 'about:blank') return;
+    details.preventDefault();
+  });
   win.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) =>
     callback(false),
   );

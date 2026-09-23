@@ -1,13 +1,17 @@
-import { useState } from 'react';
+import { useState, type CSSProperties } from 'react';
 import type { Project, Route, Turn } from '../../shared/types';
 import { routeDisplayName } from '../../shared/engines';
 import { WORK_STYLES, WORK_STYLE_DESCRIPTIONS, WORK_STYLE_LABELS, isWorkStyle, type WorkStyle } from '../../shared/work-style';
 import type { EverythingItem } from './Everything';
 import { Rail } from './Rail';
-import { ReplyBody } from './ReplyBody';
 import { useWorkingWord, workingLine } from './working-words';
 import { toolRunning, type ToolLine } from './engine-activity';
 import { ToolActivityList } from './ToolActivity';
+import { TurnBody } from './TurnBody';
+import { ArtifactPane } from './ArtifactPane';
+import { useArtifactSelection, useArtifactWidth } from './artifact-panel';
+import type { SaveOutcome } from './artifact-save';
+import { turnKeyOf, type ArtifactRecord } from './artifacts';
 import {
   ALL_PROJECTS,
   RESTRICTIONS,
@@ -24,6 +28,7 @@ import {
   type Restriction,
 } from './diomedes-view';
 import './console.css';
+import './artifacts.css';
 import './everything.css';
 import './diomedes.css';
 
@@ -89,7 +94,15 @@ export interface DiomedesPageProps {
   onDestination(id: string): void;
   onTogglePin(id: string): void;
   onNewProject(): void;
+  /** The conversation's thread, which names its artifacts. Null until the thread exists. */
+  artifactScope?: string | null;
+  /** Saves an artifact into the scoped project's Files. Absent on All projects, which has no folder. */
+  onSaveArtifact?(record: ArtifactRecord): Promise<SaveOutcome>;
 }
+
+/** Why Save is not offered on the All projects conversation. */
+export const SAVE_NEEDS_PROJECT =
+  'This conversation is about all projects, so it has no folder to save into. Copy the source, or save from a project conversation.';
 
 /** What the chosen restriction promises, in the composer's own caption line
  *  (the pattern `client/console/Composer.tsx`'s CAPS already uses). Never
@@ -179,6 +192,8 @@ export function Diomedes({
   onDestination,
   onTogglePin,
   onNewProject,
+  artifactScope = null,
+  onSaveArtifact,
 }: DiomedesPageProps) {
   const [text, setText] = useState('');
   // Only a message in flight streams, and what streamed is shown under it. The waiting line
@@ -186,6 +201,9 @@ export function Diomedes({
   const streamed = pending ? live : null;
   const waiting = pending && !streamed?.text && !toolRunning(streamed?.activity);
   const pendingWord = useWorkingWord('thinking it over', waiting);
+  // The artifact panel: this page has no third column, so it opens over the page.
+  const artifacts = useArtifactSelection(scopeId, artifactScope, turns);
+  const [artifactWidth, setArtifactWidth] = useArtifactWidth();
   // One unconfirmed message at a time: it is resolved before anything new is sent.
   const blocked = unconfirmed !== null ? 'An earlier message is waiting.' : unavailable;
   const ready = canSend(text, pending, blocked);
@@ -208,7 +226,10 @@ export function Diomedes({
 
   return (
     <div className="console diomedes">
-      <div className="stage">
+      <div
+        className={`stage${artifacts.record ? ' art-open' : ''}`}
+        style={artifacts.record ? ({ '--art-w': `${artifactWidth}px` } as CSSProperties) : undefined}
+      >
         <Rail
           title="Talking about"
           navLabel="Projects and destinations"
@@ -238,7 +259,7 @@ export function Diomedes({
 
             <div className="transcript">
               <div className="col">
-                {turns.map((turn) => (
+                {turns.map((turn, index) => (
                   <div className={`turn ${turn.role === 'you' ? 'you' : 'dio'}`} key={turn.id}>
                     <div className="who">
                       <b>{turn.role === 'you' ? 'You' : 'Diomedes'}</b>
@@ -247,7 +268,12 @@ export function Diomedes({
                       {turn.role === 'you' ? (
                         paragraphs(turn.text).map((p, i) => <p key={i}>{p}</p>)
                       ) : (
-                        <ReplyBody text={turn.text} />
+                        <TurnBody
+                          text={turn.text}
+                          artifactAt={(block) => artifacts.index.forBlock(turnKeyOf(turn, index), block)}
+                          onOpenArtifact={artifacts.open}
+                          openKey={artifacts.openKey}
+                        />
                       )}
                     </div>
                   </div>
@@ -280,7 +306,7 @@ export function Diomedes({
                     <ToolActivityList lines={streamed.activity} technical={technical} />
                     {streamed.text && (
                       <div className="body">
-                        <ReplyBody text={streamed.text} streaming />
+                        <TurnBody text={streamed.text} preview />
                       </div>
                     )}
                   </div>
@@ -469,6 +495,21 @@ export function Diomedes({
             )}
           </aside>
         </section>
+        {artifacts.record && (
+          <ArtifactPane
+            overlay
+            record={artifacts.record}
+            index={artifacts.source}
+            arrived={artifacts.arrived}
+            focusToken={artifacts.focusToken}
+            width={artifactWidth}
+            onWidth={setArtifactWidth}
+            onSelect={artifacts.select}
+            onClose={artifacts.close}
+            onSave={onSaveArtifact}
+            saveUnavailable={SAVE_NEEDS_PROJECT}
+          />
+        )}
       </div>
     </div>
   );

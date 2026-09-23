@@ -4,6 +4,7 @@ import { readDocument } from '../api';
 import { date, time } from '../components';
 import type { FilesPaneProps } from './types';
 import { ImportFiles } from './ImportFiles';
+import { fileHasArtifacts } from './artifacts';
 import {
   fileTreeKey,
   visibleFileNodes,
@@ -271,12 +272,15 @@ function Viewer({
   document: info,
   onBack,
   onEdit,
+  onOpenInPanel,
 }: {
   projectId: string;
   document: DocumentInfo;
   onBack(): void;
   /** Write in this file. Offered only for the kinds the editor can open. */
   onEdit?(path: string): void;
+  /** Open this file's artifacts in the artifact panel. Offered only when it holds some. */
+  onOpenInPanel?(path: string, text: string): void;
 }) {
   const [content, setContent] = useState<DocumentContent | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
@@ -350,6 +354,15 @@ function Viewer({
             Write in this file
           </button>
         )}
+        {onOpenInPanel && content && fileHasArtifacts(info.path, content.text) && (
+          <button
+            type="button"
+            className="files-edit"
+            onClick={() => onOpenInPanel(info.path, content.text)}
+          >
+            Open in panel
+          </button>
+        )}
       </div>
       {marks(info).length > 0 && <p className="caption">{marks(info).join(' · ')}</p>}
       {/* The head and the bar already carry the path, kind, size and changed
@@ -416,6 +429,9 @@ function ProjectFilesPane({
   onWidth,
   onClose,
   onEdit,
+  hidden = false,
+  switcher,
+  onOpenInPanel,
 }: FilesPaneProps) {
   const [importing, setImporting] = useState(false);
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set<string>());
@@ -464,7 +480,7 @@ function ProjectFilesPane({
   };
 
   return (
-    <aside className="files" aria-label="Files" style={{ width }}>
+    <aside className="files" aria-label="Files" style={{ width }} hidden={hidden}>
       <div
         className="files-grip"
         role="separator"
@@ -482,6 +498,7 @@ function ProjectFilesPane({
       />
       <div className="files-head">
         <h2>Files</h2>
+        {switcher}
         <button type="button" className="files-close" onClick={onClose}>
           Hide
         </button>
@@ -509,6 +526,7 @@ function ProjectFilesPane({
               onOpen(null);
             }}
             onEdit={onEdit}
+            onOpenInPanel={onOpenInPanel}
           />
         ) : (
           documents.length > 0 && (
