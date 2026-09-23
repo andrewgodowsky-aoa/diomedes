@@ -146,6 +146,10 @@ describe('a tool that only exists inside WSL or a desktop application', () => {
     expect(value.compatibility).not.toBe('supported');
     expect(value.repair).toBe('no-reviewed-candidate');
     expect(value.detail).not.toMatch(/Found a compatible installation/);
+    // The card says what Repair does, and that it leaves the person's own copy alone.
+    expect(value.detail).toContain(
+      `Nectovia was checked with ${TESTED_VERSIONS.opencode}. Repair installs a separate copy of that version for Nectovia and leaves your own installation as it is.`,
+    );
     // Checking it refuses before anything is launched, and says which stage.
     await expect(h.service.check('opencode')).rejects.toMatchObject({
       code: 'UNSUPPORTED_VERSION',

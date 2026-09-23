@@ -298,7 +298,7 @@ function repairDetail(
   installation: 'missing' | 'corrupt' | 'found',
 ): string {
   if (reason === 'record-unreadable')
-    return 'Diomedes cannot read which installation you chose for this service. Choose one again to continue; the record it could not read is kept.';
+    return 'Nectovia cannot read which installation you chose for this service. Choose one again to continue; the record it could not read is kept.';
   if (reason === 'selected-missing')
     return 'The installation you chose is no longer on this computer. Choose another or install a compatible copy.';
   if (reason === 'selected-changed')
@@ -306,9 +306,12 @@ function repairDetail(
   if (reason === 'selected-unverified')
     return 'The installation you chose could not be verified. It was not run.';
   if (installation === 'corrupt')
-    return 'The private copy Diomedes installed no longer matches its reviewed release. It was not run. Repair it to continue.';
+    return 'The private copy Nectovia installed no longer matches its reviewed release. It was not run. Repair it to continue.';
   if (installation === 'missing') return 'Install this tool to connect it.';
-  return `This adapter was checked with ${TESTED_VERSIONS[engine]}. Install a compatible copy for Diomedes, or choose another installation.`;
+  // A newer self-updating installation lands here on day one. Say what Repair
+  // does and that it leaves the person's own copy alone, so the fix is not
+  // mistaken for replacing their tool or reinstalling Nectovia.
+  return `Nectovia was checked with ${TESTED_VERSIONS[engine]}. Repair installs a separate copy of that version for Nectovia and leaves your own installation as it is. You can also choose another installation.`;
 }
 
 /**
