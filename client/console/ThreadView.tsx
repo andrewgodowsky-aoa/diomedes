@@ -30,6 +30,7 @@ import { FollowUpQueue } from './FollowUpQueue';
 import { StopMenu, StopReceiptLine } from './StopMenu';
 import { NeedBlock } from './Need';
 import { ChangeReview } from './ChangeReview';
+import { useWorkingWord, workingLine } from './working-words';
 
 function fmtDur(ms: number): string {
   const s = ms / 1000;
@@ -184,6 +185,12 @@ export function ThreadView({
     else current.push(turn);
   }
 
+  // While an answer is on its way and nothing has streamed yet, the agent
+  // says what it is up to. Display only; nothing here is recorded.
+  const streamWord = useWorkingWord(
+    mode === 'plan' ? 'drafting the plan' : 'replying',
+    Boolean(streaming && !streaming.text),
+  );
   const body = useRef<HTMLDivElement>(null);
   useEffect(() => {
     body.current?.scrollTo({ top: body.current.scrollHeight });
@@ -460,7 +467,7 @@ export function ThreadView({
                   {streaming.text ? (
                     paragraphs(streaming.text).map((p, j) => <p key={j}>{p}</p>)
                   ) : (
-                    <p className="caption">Preparing…</p>
+                    <p className="caption">{workingLine(streamWord)}</p>
                   )}
                 </div>
                 {onCancelText && (
@@ -493,7 +500,12 @@ export function ThreadView({
         prepareSources={(text, doc) => prepareSources(mode, text, doc)}
         onSend={submit}
       />
-      {projectId && task && (
+      {/* A follow-up waits behind a run. With nothing running and nothing queued,
+          the composer above sends at once, so a second box would only ask the
+          person which of two boxes to type in. */}
+      {projectId &&
+        task &&
+        (live || followUps.some((f) => f.taskId === task.id && f.state === 'queued')) && (
         <FollowUpQueue
           projectId={projectId}
           task={task}
@@ -519,6 +531,7 @@ function RunRecord({
   receipt?: ReactNode;
 }) {
   const live = ['queued', 'working', 'waiting'].includes(session.state);
+  const word = useWorkingWord('on it', live && session.state !== 'waiting');
   const [open, setOpen] = useState(live);
   const [details, setDetails] = useState(false);
   useEffect(() => {
@@ -547,6 +560,11 @@ function RunRecord({
           <b>{clockOf(l.time)}</b> <span>{l.sentence}</span>
         </div>
       ))}
+      {live && session.state !== 'waiting' && (
+        <div className="caption" aria-hidden="true">
+          {workingLine(word)}
+        </div>
+      )}
       {live && (
         <div>
           {stop ?? (

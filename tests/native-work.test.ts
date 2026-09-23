@@ -530,6 +530,36 @@ afterEach(async () => {
 });
 
 describe('guarded native file proposals', () => {
+  test('a run in flight is attributed to the model it was sent to, as a request, and named for its account', async () => {
+    await request('/settings', 'PUT', { services: { codex: true, codexModel: 'saved-model' } });
+    const gate = deferred();
+    invoke = () => gate.promise;
+    expect((await start()).status).toBe(200);
+    const running = (await state()).sessions[0];
+    expect(running.origin?.model).toEqual({ requested: 'saved-model', reported: null, source: 'not-recorded' });
+    expect(running.engine.name).toBe('ChatGPT, guarded file proposals');
+    expect(running.log.map((line) => line.sentence).join('\n')).toContain('Preparing a proposal with ChatGPT');
+    expect(running.log.map((line) => line.sentence).join('\n')).not.toContain('with codex');
+    gate.resolve(proposal([update]));
+    const ready = await waiting();
+    // The runtime's report replaces nothing it did not report: the request stays recorded beside it.
+    expect(ready.sessions[0].origin?.model).toEqual({ requested: 'saved-model', reported: 'test-model', source: 'runtime' });
+  });
+  test('a proposal run says once when the engine starts writing, before the answer lands', async () => {
+    const gate = deferred();
+    invoke = async (input) => {
+      input.onDelta?.('{"summ');
+      input.onDelta?.('ary":');
+      return gate.promise;
+    };
+    expect((await start()).status).toBe(200);
+    const writing = await until((result) =>
+      result.sessions[0]?.log.some((line) => line.sentence === 'Nectovia is writing the proposal.'),
+    );
+    expect(writing.sessions[0].log.filter((line) => line.sentence.includes('is writing')).length).toBe(1);
+    gate.resolve(proposal([update]));
+    await waiting();
+  });
   test('returns before generation finishes and sends only explicit sources', async () => {
     const gate = deferred();
     invoke = () => gate.promise;

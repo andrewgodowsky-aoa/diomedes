@@ -540,7 +540,7 @@ test('Console keeps the Codex sending preference and sample route separate from 
     await composer.press('Enter');
     const confirmation = page.getByRole('dialog', { name: 'Send this message?' });
     if (scenario.confirm) {
-      await expect(confirmation).toContainText('Codex');
+      await expect(confirmation).toContainText('ChatGPT');
       expect(sent).toHaveLength(count);
       await confirmation.getByRole('button', { name: 'Send message', exact: true }).click();
     }
@@ -1572,7 +1572,7 @@ test('Console drops a late source listing when the person changes threads', asyn
   const count = calls.length;
   try {
     const composer = page.getByRole('textbox', { name: 'Message this thread', exact: true });
-    await composer.fill('Do not send this from the second thread.');
+    await composer.fill('Do not send notes.md from the second thread.');
     await composer.press('Enter');
     await expect.poll(() => requested).toBe(true);
     await rail.getByRole('button', { name: /Second composer/ }).click();

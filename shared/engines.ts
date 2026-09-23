@@ -48,6 +48,27 @@ export const ENGINE_NAMES: Record<ExternalEngine, string> = {
   devin: 'Devin',
 };
 /**
+ * The one place a route is named for a person. The Codex route runs on the
+ * person's own ChatGPT account, and it is named for that account everywhere,
+ * the same name the model picker and Settings show, so a run card can never
+ * call it something the header does not.
+ */
+export const ROUTE_NAMES: Record<Route, string> = {
+  ...ENGINE_NAMES,
+  codex: 'ChatGPT',
+  sample: 'Sample',
+  'aws-bedrock': 'AWS Bedrock',
+};
+/**
+ * A route or engine id as a person reads it. An id outside the registry is
+ * shown as itself rather than renamed, because a name this app invented would
+ * be a claim nobody recorded.
+ */
+export function routeDisplayName(id: string | null | undefined): string {
+  if (!id) return '';
+  return (ROUTE_NAMES as Record<string, string>)[id] ?? id;
+}
+/**
  * Where an installation lives. A WSL copy or a desktop application is named as
  * what it is, never presented as a native Windows command-line account.
  */

@@ -5,6 +5,7 @@ import type { ScopeGrantView } from '../../shared/permissions';
 import { isRoute, isExternalEngine } from '../../shared/engines';
 import type { EngineConnection } from '../../shared/engines';
 import {
+  mayNameDocument,
   selectTaskSources,
   taskDocumentProblem,
   TASK_SOURCE_LIMITS,
@@ -1060,12 +1061,14 @@ export function Shell({
         : []),
     ])];
     if (mode !== 'ask') return sources;
-    const listed = (await listDocuments(projectId)).documents;
     const task = taskOf(thread);
-    const named = selectTaskSources({
-      name: text,
-      description: task ? `${task.name}\n${task.description ?? ''}` : '',
-    }, listed);
+    const description = task ? `${task.name}\n${task.description ?? ''}` : '';
+    // Listing the project walks its whole folder, which can take seconds. A
+    // message and task that name no document by its file ending cannot select
+    // one, so they skip the walk and send at once.
+    if (!mayNameDocument(`${text}\n${description}`)) return sources;
+    const listed = (await listDocuments(projectId)).documents;
+    const named = selectTaskSources({ name: text, description }, listed);
     // Attachments are also included by the server. Reserve their room before
     // adding named documents so the preview and submitted list stay identical.
     let bytes = sources.reduce(

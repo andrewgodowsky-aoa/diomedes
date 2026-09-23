@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { selectTaskSources, taskDocumentProblem } from '../shared/task-sources.js';
+import { mayNameDocument, selectTaskSources, taskDocumentProblem } from '../shared/task-sources.js';
 import type { DocumentInfo } from '../shared/types.js';
 
 const doc = (path: string, size = 100, kind: DocumentInfo['kind'] = 'markdown'): DocumentInfo => ({
@@ -90,5 +90,23 @@ describe('documents a Board-started task carries', () => {
       'big.md',
       'small.md',
     ]);
+  });
+});
+
+describe('mayNameDocument', () => {
+  test('text with no document file ending names nothing, so the listing is skipped', () => {
+    expect(mayNameDocument('please report mod count from mod ledger and necessary updates to do')).toBe(false);
+    expect(mayNameDocument('what is next? v1.2 is out.')).toBe(false);
+  });
+  test('any name selectTaskSources could pick passes', () => {
+    expect(mayNameDocument('read docs/Mod Ledger.MD please')).toBe(true);
+    expect(mayNameDocument('check config.yaml')).toBe(true);
+    expect(mayNameDocument('see notes.txt')).toBe(true);
+  });
+  test('is never stricter than selectTaskSources', () => {
+    const documents = [doc('brief.md'), doc('data/rows.csv', 10, 'text'), doc('run.ps1', 10, 'text')];
+    for (const name of ['brief.md', 'data/rows.csv', 'run.ps1', 'use rows.csv and brief.md']) {
+      if (selectTaskSources({ name }, documents).length) expect(mayNameDocument(name)).toBe(true);
+    }
   });
 });

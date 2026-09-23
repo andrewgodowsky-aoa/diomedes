@@ -105,7 +105,7 @@ describe('shared attribution presentation', () => {
       }),
     );
     expect(html).toContain('<b>s-model</b>');
-    expect(html).toContain('via Codex');
+    expect(html).toContain('via ChatGPT');
   });
 
   it('renders externally supplied model names as text', () => {

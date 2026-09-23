@@ -16,7 +16,7 @@ describe('the route caption', () => {
   });
 
   it('names every other route as itself rather than hiding it', () => {
-    expect(routeName('codex')).toBe('Codex');
+    expect(routeName('codex')).toBe('ChatGPT');
     expect(routeName('sample')).toBe('Sample');
     expect(routeName('opencode')).toBe('OpenCode');
   });

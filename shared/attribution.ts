@@ -1,4 +1,5 @@
 import type { Need, Session, Turn } from './types.js';
+import { routeDisplayName } from './engines.js';
 
 /** Captured from host/runtime metadata, never from generated prose or a current picker. */
 export interface OriginSnapshot {
@@ -27,14 +28,6 @@ export interface OriginSnapshot {
   readonly executorId?: string;
   readonly accountRoute?: string | null;
 }
-const names: Record<string, string> = {
-  codex: 'Codex',
-  'claude-code': 'Claude Code',
-  opencode: 'OpenCode',
-  'oh-my-pi': 'oh-my-pi',
-  hermes: 'Hermes',
-  sample: 'Sample',
-};
 /** React escapes markup at render time. Strip terminal/bidi controls and cap machine names here. */
 export function displayName(value: string | null | undefined): string {
   return (value ?? '')
@@ -124,12 +117,16 @@ export function formatOrigin(
           })
         : undefined);
   const engineId = displayName(snapshot?.engine?.id);
-  const engine = names[engineId] ?? engineId;
+  const engine = routeDisplayName(engineId);
   const reported = snapshot?.model.source === 'runtime' ? displayName(snapshot.model.reported) : '';
+  // What was asked for, shown only while nothing was reported, and always said
+  // to be a request: a run in flight names the model it was sent to without
+  // claiming that model is what answered.
+  const requested = reported ? '' : displayName(snapshot?.model.requested);
   const primary =
     snapshot?.mode === 'application' || snapshot?.mode === 'supervisor'
       ? 'Diomedes'
-      : reported || engine || 'Assistant';
+      : reported || requested || engine || 'Assistant';
   const secondary =
     snapshot?.mode === 'application'
       ? 'application action'
@@ -139,7 +136,9 @@ export function formatOrigin(
           : 'native supervisor'
         : reported && engine
           ? `via ${engine}`
-          : 'model not recorded';
+          : requested
+            ? `requested${engine ? ` via ${engine}` : ''}`
+            : 'model not recorded';
   const detail =
     snapshot?.mode === 'application'
       ? 'Diomedes application action; no model authorship implied.'
@@ -147,7 +146,9 @@ export function formatOrigin(
         ? 'Diomedes native supervisor operation.'
         : reported
           ? 'Model identity reported by the runtime.'
-          : 'The model identity was not recorded by the runtime.';
+          : requested
+            ? 'The model this was sent to. The runtime has not reported which model answered.'
+            : 'The model identity was not recorded by the runtime.';
   const agentName = displayName(snapshot?.agent?.name);
   return {
     primary,

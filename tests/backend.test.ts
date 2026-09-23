@@ -29,14 +29,20 @@ vi.mock('../server/integrations.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../server/integrations.js')>();
   return {
     ...actual,
-    askCodex: async () => ({
+    askCodex: async (input: { onDelta?: (text: string) => void; signal?: AbortSignal }) => {
+      input.onDelta?.('A mocked ');
+      input.onDelta?.('answer.');
+      askCodexSignals.push(input.signal);
+      return {
       text: '{"summary":"A mocked proposal.","changes":[]}',
       model: 'gpt-6-astra',
       version: '0.153.4',
       threadId: 'mock-thread',
-    }),
+      };
+    },
   };
 });
+const askCodexSignals: (AbortSignal | undefined)[] = [];
 
 let server: Server, app: Awaited<ReturnType<typeof createApp>>, temp: string, url: string;
 const jsonHeaders = { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' };
@@ -986,6 +992,32 @@ describe('verified helper is stored with every turn and session', () => {
     });
     expect(answer.data.conversation.helper).toEqual({ engine: 'codex', model: 'gpt-6-astra' });
   });
+  test('a ChatGPT Ask streams its answer as preview frames and can be stopped', async () => {
+    await request('/settings', 'PUT', { services: { codex: true } });
+    const id = await sample();
+    const frames: Record<string, unknown>[] = [];
+    const listener = (frame: unknown) => frames.push(frame as Record<string, unknown>);
+    app.locals.store.on('engine-text', listener);
+    try {
+      const answer = await request(`/projects/${id}/ask`, 'POST', {
+        mode: 'ask',
+        text: 'What is on the menu?',
+        route: 'codex',
+        consent: true,
+      });
+      expect(answer.status).toBe(200);
+    } finally {
+      app.locals.store.off('engine-text', listener);
+    }
+    expect(frames.map((frame) => frame.kind)).toEqual(['started', 'delta', 'delta', 'ended']);
+    expect(frames.filter((f) => f.kind === 'delta').map((f) => [f.seq, f.text])).toEqual([
+      [1, 'A mocked '],
+      [2, 'answer.'],
+    ]);
+    expect(new Set(frames.map((f) => f.runId)).size).toBe(1);
+    // The request's own signal reaches the adapter, so Stop can end the turn.
+    expect(askCodexSignals.at(-1)).toBeInstanceOf(AbortSignal);
+  });
   test('a Codex Plan names the verified helper in its History sentence', async () => {
     await request('/settings', 'PUT', { services: { codex: true } });
     const id = await sample();
@@ -1005,7 +1037,7 @@ describe('verified helper is stored with every turn and session', () => {
     const entry = current.history.find(
       (item) => item.kind === 'edited' && item.sentence.includes(plan.data.document),
     );
-    expect(entry?.sentence).toContain('Diomedes, with Codex gpt-6-astra');
+    expect(entry?.sentence).toContain('Diomedes, with ChatGPT gpt-6-astra');
   });
   test("sample work carries engine 'sample' with verified true on the turn and session", async () => {
     const id = await sample();

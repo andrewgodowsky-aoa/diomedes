@@ -63,7 +63,7 @@ describe('Board controls reflect execution evidence', () => {
     const markup = board({ tasks: [{ ...task, state: 'done' }], sessions: [sessionFixture({ state: 'done',
       origin: directOrigin({ engine: 'codex', requestedModel: 'new-choice', reportedModel: '<old-runtime>' }) })] });
     expect(markup).toContain('&lt;old-runtime&gt;');
-    expect(markup).toContain('via Codex');
+    expect(markup).toContain('via ChatGPT');
     expect(markup).not.toContain('new-choice');
     expect(markup).not.toContain('<old-runtime>');
   });
