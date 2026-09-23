@@ -54,10 +54,9 @@ try {
   const project = await api('/projects/sample', 'POST', {});
   const base = `/projects/${project.id}`;
   await api('/settings', 'PUT', {
-    detail: 'technical', surface: 'workbook', openProjects: [project.id],
+    detail: 'technical', openProjects: [project.id],
     onboarding: { work: 'business', detail: 'technical', familiarity: 'some',
       resumeAt: 'done', completedAt: new Date().toISOString() },
-    lastPage: { [project.id]: 'work' },
   });
   const session = await api(`${base}/work/start`, 'POST', {
     capabilityId: 'format-report', taskId: null, instruction: 'Format the shipped synthetic fixture.',
@@ -88,29 +87,25 @@ try {
     expect(proof.session.state).toBe('waiting');
     proof.checks.push('Packaged fixture reached exact approval');
     const need = state.needs.find(n => n.sessionId === session.id && n.state === 'open');
-    await page.locator('.rail-link').filter({ hasText: 'Work' }).click();
-    await expect(page.getByText('no provider calls', { exact: true })).toBeVisible();
-    await page.getByRole('button', { name: 'Show me first', exact: true }).first().click();
-    await expect(page.getByRole('dialog')).toBeVisible();
-    await expect(page.getByRole('dialog').locator('pre')).toHaveText(need.harness.intent.input.text);
-    // textContent comparison preserves whitespace, unlike normalized text matchers.
-    expect(await page.getByRole('dialog').locator('pre').textContent()).toBe(need.harness.intent.input.text);
-    await page.screenshot({ path: path.join(root, 'workbook-exact-proposal.png') });
-    proof.checks.push('Exact harness proposal text is inspectable in Workbook');
-    await page.getByRole('button', { name: 'Close dialog', exact: true }).click();
-    await page.locator('.rail-link').filter({ hasText: 'Review' }).click();
+    // `page` changes with each launch, so the rail is found on the current one.
+    const rail = () => page.getByRole('navigation', { name: 'Threads and views' });
+    const board = page.locator('.board[aria-label="Board"]');
+    await rail().getByRole('button', { name: /^Board/ }).click();
+    await board.locator('.column[aria-label="Review"] .crow').filter({ hasText: 'Format a fixture report' })
+      .getByRole('button', { name: 'Review', exact: true }).click();
     await expect(page.getByRole('region', { name: 'Needs your OK' })).toBeVisible();
     await page.getByRole('button', { name: 'Show me first', exact: true }).click();
     expect(await page.getByRole('dialog').locator('pre').textContent()).toBe(need.harness.intent.input.text);
     await page.getByRole('button', { name: 'Close dialog', exact: true }).click();
-    proof.checks.push('Review presents the pending harness Need');
+    proof.checks.push('Board Review presents the pending harness Need');
 
-    await api('/settings', 'PUT', { ...(await api('/settings')), surface: 'console' });
-    await page.reload();
-    const rail = page.getByRole('navigation', { name: 'Threads and views' });
-    await rail.getByRole('button', { name: /^Board/ }).click();
+    await rail().getByRole('button', { name: /^Board/ }).click();
     await page.locator('.crow .t').filter({ hasText: 'Format a fixture report' }).click();
+    await expect(page.getByRole('region', { name: 'Needs your OK' })).toBeVisible();
     await page.getByRole('button', { name: 'Show me first', exact: true }).click();
+    await expect(page.getByRole('dialog')).toBeVisible();
+    await expect(page.getByRole('dialog').locator('pre')).toHaveText(need.harness.intent.input.text);
+    // textContent comparison preserves whitespace, unlike normalized text matchers.
     expect(await page.getByRole('dialog').locator('pre').textContent()).toBe(need.harness.intent.input.text);
     await page.screenshot({ path: path.join(root, 'console-exact-proposal.png') });
     await page.getByRole('button', { name: 'Close dialog', exact: true }).click();
@@ -176,13 +171,14 @@ try {
     expect((await api(`${base}/state`)).history.filter(h => h.files.some(f => f.path === 'Harness report.md'))).toHaveLength(1);
     proof.checks.push('Visible decline and Stop prevent additional file writes');
 
-    await api('/settings', 'PUT', { ...(await api('/settings')), surface: 'workbook', lastPage: { [project.id]: 'history' } });
-    await page.reload();
-    const historyRow = page.locator('.history-entry').filter({ hasText: 'Harness report.md' });
+    // The Console's History lists each entry as a row (client/console/HistoryView.tsx).
+    await rail().getByRole('button', { name: /^History\b/ }).click();
+    const historyRow = page.locator('.hist .hrow').filter({ hasText: 'Harness report.md' });
     await expect(historyRow).toHaveCount(1);
     await page.screenshot({ path: path.join(root, 'history.png') });
-    await historyRow.getByRole('button', { name: 'Restore', exact: true }).click();
-    await page.getByRole('dialog').getByRole('button', { name: 'Restore 1 files', exact: true }).click();
+    await historyRow.getByRole('button', { name: 'Put the files back', exact: true }).click();
+    await page.getByRole('dialog', { name: 'Put 1 file back?' })
+      .getByRole('button', { name: 'Put 1 file back', exact: true }).click();
     await expect.poll(async () => fs.access(reportPath).then(() => true, e => { if (e.code === 'ENOENT') return false; throw e; })).toBe(false);
     const restored = await api(`${base}/state`);
     expect(restored.history.filter(h => h.restoreOf === writeHistory[0].id)).toHaveLength(1);
@@ -198,13 +194,10 @@ try {
     expect(proof.renderer).toEqual({ nodeIntegration: false, contextIsolation: true, sandbox: true });
     // Prove the built client cannot roll back a concurrent engine setting merely by navigating.
     await api('/settings', 'PUT', { services: { codex: false } });
-    // A launch opens every stored surface on the Console (server/store.ts). This
-    // legacy smoke drives the Workbook's navigation, which the settings API still
-    // accepts for one more release, so it opts in again for this window.
-    await api('/settings', 'PUT', { surface: 'workbook' });
+    // The page now holds settings with the engine off. The Console's navigation
+    // writes settings when a project is entered (client/App.tsx), and a launch
+    // opens on the agent's home, so entering the project from there is the write.
     await page.reload();
-    await enterLastOpenProject(page);
-    await expect(page.getByRole('navigation', { name: 'Project pages', exact: true })).toBeVisible();
     let releaseRefresh;
     const refreshReleased = new Promise(resolve => { releaseRefresh = resolve; });
     await page.route('**/api/settings', async route => {
@@ -217,8 +210,7 @@ try {
       await api('/settings', 'PUT', { services: { codex: true } });
       const navigationSaved = page.waitForResponse(response =>
         new URL(response.url()).pathname === '/api/settings' && response.request().method() === 'PUT');
-      await page.getByRole('navigation', { name: 'Project pages', exact: true })
-        .getByRole('button', { name: /^Ask/ }).click();
+      await enterLastOpenProject(page);
       expect((await navigationSaved).ok()).toBe(true);
       expect((await api('/settings')).services.codex).toBe(true);
     } finally {

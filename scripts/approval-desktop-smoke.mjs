@@ -1,6 +1,6 @@
 // One synthetic native proposal through the packaged desktop and durable approval path.
 // Verifies one real gpt-5.6-luna low generation through the packaged desktop,
-// exact preview, lost approval-response recovery, Workbook + Console approval UI,
+// exact preview, lost approval-response recovery, the Console thread's approval UI,
 // restart receipt durability, and restore. Never touches evidence/desktop-proof.json.
 import { _electron as electron, expect } from '@playwright/test';
 import { createHash } from 'node:crypto';
@@ -160,31 +160,27 @@ try {
   proof.sessionId = started.id;
   proof.approvalIdentity = need.approval;
 
-  // Show the preview through the existing Needs your OK region in the Workbook.
+  // Show the preview through the Needs your OK block in the work's own Console thread.
   const settings = await api('/settings');
-  await api('/settings', 'PUT', {
-    ...settings,
-    surface: 'workbook',
-    openProjects: [project.id],
-    lastPage: { ...settings.lastPage, [project.id]: 'work' },
-  });
+  await api('/settings', 'PUT', { ...settings, openProjects: [project.id] });
   await page.reload();
   // A launch opens on the agent's home and a reload keeps that place, so the
   // project is entered through the Open projects bar (smoke-window.mjs).
   await enterLastOpenProject(page);
-  // Entering lands on the project's Home page; the Work page is where the
-  // Workbook shows the session's Approval record once it is decided.
-  await page.locator('.rail-link').filter({ hasText: 'Work' }).click();
-  const needsRegion = page.getByRole('region', { name: 'Needs your OK' });
+  const rail = page.getByRole('navigation', { name: 'Threads and views' });
+  const pane = page.locator('#scrThread');
+  await rail.getByRole('button', { name: /Approval desktop thread/ }).click();
+  const needsRegion = pane.getByRole('region', { name: 'Needs your OK' });
   await expect(needsRegion).toBeVisible();
   await needsRegion.getByRole('button', { name: 'Show me first', exact: true }).click();
-  const preview = page.getByRole('dialog', { name: 'Proposed changes', exact: true });
+  // The preview is titled with who proposes what (client/console/Shell.tsx).
+  const preview = page.getByRole('dialog', { name: /proposes to / });
   await expect(preview).toBeVisible();
   await expect(preview.getByText(/This OK covers only this proposal. Expires /)).toBeVisible();
   await expect(preview.locator('.change-card')).toContainText('Native work verified.');
   await expect(preview.getByRole('button', { name: 'Go ahead for this whole task', exact: true })).toHaveCount(0);
   await page.screenshot({
-    path: path.resolve('evidence/screenshots/approval-desktop-workbook.png'),
+    path: path.resolve('evidence/screenshots/approval-desktop-preview.png'),
     animations: 'disabled',
   });
 
@@ -262,16 +258,15 @@ try {
   if (completed.engine?.model !== 'gpt-5.6-luna' || completed.engine.verified !== true)
     throw new Error('The runtime must verify the requested gpt-5.6-luna model.');
 
-  // Show the Approval record status, then inspect the durable record in the Console.
-  await expect(page.getByLabel('Approval record').first()).toBeVisible();
-  const consoleSettings = await api('/settings');
-  await api('/settings', 'PUT', { ...consoleSettings, surface: 'console' });
+  // Show the Approval record status, then inspect the durable record after a reload.
+  await expect(pane.getByLabel('Approval record').first()).toBeVisible();
   await page.reload();
-  await expect(page.locator('html[data-surface="console"]')).toHaveCount(1);
-  await expect(page.getByLabel('Approval record').first()).toBeVisible();
-  const decisionSummary = page.getByText('Decision record', { exact: true }).first();
-  await decisionSummary.click();
-  await expect(page.getByText(firstApproval.commandId).first()).toBeVisible();
+  // A reload keeps the project but not the thread, so open the thread again.
+  await rail.getByRole('button', { name: /Approval desktop thread/ }).click();
+  const record = pane.getByLabel('Approval record').first();
+  await expect(record).toContainText('Approved changes applied');
+  await record.getByText('Decision record', { exact: true }).click();
+  await expect(record).toContainText(firstApproval.commandId);
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
   if (overflow) throw new Error('The Console must not overflow horizontally.');
   await page.screenshot({
@@ -342,7 +337,7 @@ try {
 
   if (errors.length) throw new Error(`Page errors: ${errors.join('; ').slice(0, 400)}`);
   proof.passed = true;
-  console.log('PASS: packaged desktop exact approval, lost approval-response recovery, Workbook and Console records, restart receipt durability, and restore.');
+  console.log('PASS: packaged desktop exact approval, lost approval-response recovery, Console preview and record, restart receipt durability, and restore.');
 } catch (error) {
   proof.error = error instanceof Error ? error.message : String(error);
   const message = error instanceof Error ? error.message.split(/\r?\n/, 1)[0] : String(error);

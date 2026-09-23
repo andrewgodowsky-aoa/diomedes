@@ -42,7 +42,7 @@ try {
   await launch(); proof.version = (await api('/health')).version;
   expect(proof.version).toBe(appVersion);
   project = await api('/projects/sample', 'POST', {});
-  await api('/settings', 'PUT', { detail: 'technical', surface: 'console', openProjects: [project.id],
+  await api('/settings', 'PUT', { detail: 'technical', openProjects: [project.id],
     onboarding: { work: 'business', detail: 'technical', familiarity: 'some', resumeAt: 'done', completedAt: new Date().toISOString() } });
   const base = `/projects/${project.id}/connections`;
   // The retired Connections screen's own calls, driven at the same API it used
@@ -141,7 +141,9 @@ try {
   // opens a screen. On a fresh process the window lands on the agent's home; the project
   // is entered through the Open projects bar the way tests/fixtures/landing.ts
   // does, and the row is read where a person actually finds it.
-  await expect(page.locator('html[data-surface="console"]')).toHaveCount(1);
+  // The Console is the only surface; the retired Workbook's keys are never stored.
+  for (const key of ['surface', 'lastPage', 'tasksView'])
+    expect(Object.keys(await api('/settings'))).not.toContain(key);
   await expect(page.getByRole('main', { name: AGENT_NAME, exact: true })).toBeVisible();
   await enterLastOpenProject(page);
   await page.getByRole('button', { name: 'Everything', exact: true }).click();

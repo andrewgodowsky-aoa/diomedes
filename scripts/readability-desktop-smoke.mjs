@@ -73,11 +73,9 @@ try {
   await page.waitForURL('http://127.0.0.1:*/');
   const project = await api('/projects/sample', 'POST', {});
   await api('/settings', 'PUT', {
-    surface: 'console',
     detail: 'technical',
     onboarding: { work: 'personal', detail: 'technical', familiarity: 'some', resumeAt: 'done' },
     openProjects: [project.id],
-    lastPage: { [project.id]: 'home' },
     appearance: { package: 'graphite', motion: 'reduced', interfaceScale: 1 },
   });
   // Synthetic local data only. No provider consent, model calls, credentials or tools.
@@ -147,7 +145,7 @@ try {
   const nav = page.getByRole('navigation', { name: 'Threads and views' });
   // Connections left the rail's views for Everything, under Not ready yet
   // (client/console/Shell.tsx), so it has no view of its own to record.
-  for (const name of ['Board', 'Team', 'Thread']) {
+  for (const name of ['Board', 'Team', 'History', 'Thread']) {
     await nav
       .locator('.foot')
       .getByRole('button', { name: new RegExp(`^${name}\\b`) })
@@ -174,22 +172,12 @@ try {
     await page.locator('.settings-layout .rail').getByRole('button', { name, exact: true }).click();
     await record(page, `maximized-settings-${name.toLowerCase()}`);
   }
-  await api('/settings', 'PUT', { surface: 'workbook' });
-  await page.reload();
-  const rail = page.getByRole('navigation', { name: 'Project pages', exact: true });
-  for (const name of ['Home', 'Ask', 'Plan', 'Work', 'Review', 'Tasks', 'Documents', 'History']) {
-    await rail.getByRole('button', { name: new RegExp(`^${name}\\b`) }).click();
-    await record(page, `maximized-workbook-${name.toLowerCase()}`);
-  }
-  await api('/settings', 'PUT', { surface: 'console' });
-  await page.reload();
-  await expect(page.locator('.console')).toBeVisible();
   await fs.writeFile(
     path.join(root, 'report.json'),
     JSON.stringify({ executablePath, records }, null, 2),
   );
   console.log(
-    `PASS: native maximize, stable typography, persistent interface scale, shortcuts, menu and principal surfaces.\nEvidence: ${root}`,
+    `PASS: native maximize, stable typography, persistent interface scale, shortcuts, menu and principal Console views.\nEvidence: ${root}`,
   );
   if (process.argv.includes('--hold')) {
     console.log('Holding the isolated desktop for visual inspection; press Enter to close it.');

@@ -109,7 +109,10 @@ try {
   // Simulate an actual older persisted profile, not a new-profile defaults test.
   const older = {
     ...settings,
+    // The Workbook's keys, as a build from before its removal stored them.
     surface: 'workbook',
+    lastPage: { [project.id]: 'work' },
+    tasksView: 'list',
     detail: 'guided',
     permissions: { ...settings.permissions, changingFiles: false },
     services: { codex: true, codexModel: 'gpt-5.5', defaultEngine: 'codex' },
@@ -120,11 +123,11 @@ try {
   delete older.onboarding.aiSkipped;
   await fs.writeFile(path.join(root, 'data', 'settings.json'), JSON.stringify(older));
   await launch();
-  // The one stored preference an upgrade does not keep: every stored surface opens
-  // on the Console at launch, since the Workbook left a person's reach
-  // (migrateSettings in server/store.ts).
-  await expect(page.locator('html')).toHaveAttribute('data-surface', 'console');
   const upgraded = await api('/settings');
+  // The only stored preferences an upgrade does not keep are the retired Workbook's
+  // keys: this build drops them on load and keeps the rest (server/store.ts).
+  for (const key of ['surface', 'lastPage', 'tasksView'])
+    expect(Object.keys(upgraded)).not.toContain(key);
   expect(upgraded.permissions).toEqual(older.permissions);
   expect(upgraded.detail).toBe('guided');
   expect(upgraded.services).toEqual(older.services);
@@ -136,7 +139,6 @@ try {
     true,
   );
   await screenshot('desktop-upgrade.png');
-  await api('/settings', 'PUT', { surface: 'console' });
   await page.reload();
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   await page

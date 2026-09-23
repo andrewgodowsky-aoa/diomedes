@@ -172,7 +172,6 @@ try {
   });
   checks.push({ name: 'compiled portable shell facts; no automatic release check', ok: true });
   const settings = {
-    surface: 'console',
     detail: 'technical',
     onboarding: {
       work: 'software',

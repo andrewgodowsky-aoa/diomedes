@@ -213,7 +213,6 @@ try {
       engine: 'codex',
     });
     await fixtureApi('/settings', 'PUT', {
-      surface: 'console',
       detail: 'technical',
       services: { codex: true, defaultEngine: 'codex' },
       onboarding: {
@@ -227,7 +226,9 @@ try {
     });
 
     await page.goto(fixtureUrl);
-    await expect(page.locator('html')).toHaveAttribute('data-surface', 'console');
+    // The Console is the only surface; the retired Workbook's keys are never stored.
+    const stored = Object.keys(await fixtureApi('/settings'));
+    for (const key of ['surface', 'lastPage', 'tasksView']) expect(stored).not.toContain(key);
     // The window opens on the agent's home even with openProjects saved, so the
     // project is entered through the Open projects bar (smoke-window.mjs).
     await enterLastOpenProject(page);
