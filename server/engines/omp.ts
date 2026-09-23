@@ -22,10 +22,9 @@ import {
   type ProcessFactory,
 } from './process.js';
 import {
-  displayPath,
   emitActivity,
-  insideRoot,
   isWebUrl,
+  readAccessOf,
   readDetail,
   readScopeNote,
   readSummary,
@@ -52,8 +51,14 @@ export const OMP_READ_TOOLS = ['read', 'grep', 'glob'] as const;
 export const OMP_WEB_TOOLS = ['web_search'] as const;
 /** A hidden built-in that only records the model's reasoning; it reads and writes nothing. */
 const OMP_SILENT_TOOLS = ['think'];
+/**
+ * The tools a read turn gets: web search only (security pass 2026-09-23). oh-my-pi's file
+ * tools run without asking Diomedes first, so the documents the person chose travel inline
+ * instead, and a whole-project turn is refused on this route. `read` also opens URLs; it
+ * goes too, because the same tool reads local files.
+ */
 export function ompReadTools(scope: ReadScope): string[] {
-  return [...OMP_READ_TOOLS, ...(scope.web ? OMP_WEB_TOOLS : [])];
+  return [...(scope.web ? OMP_WEB_TOOLS : [])];
 }
 /**
  * Without a scope, every built-in tool is off. With one, `--tools` names the
@@ -64,7 +69,9 @@ export function ompArguments(overlayPath: string, scope?: ReadScope): string[] {
   return [
     '--mode',
     'rpc',
-    ...(scope ? [`--tools=${ompReadTools(scope).join(',')}`] : ['--no-tools']),
+    ...(scope && ompReadTools(scope).length
+      ? [`--tools=${ompReadTools(scope).join(',')}`]
+      : ['--no-tools']),
     '--no-extensions',
     '--no-skills',
     '--no-rules',
@@ -123,18 +130,10 @@ function containsTool(message: Record<string, unknown>): boolean {
   );
 }
 
-/** A path argument without its inline line selector (`file.md:10-20`). */
-const withoutSelector = (value: string) => value.replace(/:\d+(?:-\d+)?$/, '');
-/** The fixed folder a glob or path list entry starts from, before any wildcard. */
-const globBase = (value: string) => {
-  const wild = value.search(/[*?[{]/);
-  return wild < 0 ? value : value.slice(0, wild) || '.';
-};
 /**
  * One oh-my-pi tool execution against a read scope: the activity to show, or a
- * refusal. `read` of a URL needs web access; an internal URI (memory://,
- * skill://) or a path outside the project folder is refused, and so is any
- * tool beyond the allow-list.
+ * refusal. Web search needs web access; `read`, `grep`, `glob` and any other
+ * tool were never loaded, so one reported anyway stops the request.
  */
 export function ompToolCall(
   scope: ReadScope,
@@ -150,40 +149,7 @@ export function ompToolCall(
       'stream',
     );
   const detail = readDetail(args);
-  const list = (value: unknown) =>
-    typeof value === 'string' && value.trim()
-      ? value.split(';').map((entry) => entry.trim()).filter(Boolean)
-      : [];
-  const local = (entry: string) => !/^[a-z][a-z0-9+.-]*:\/\//i.test(entry) && insideRoot(scope.root, entry);
   switch (name) {
-    case 'read': {
-      const target = typeof args.path === 'string' ? args.path.trim() : '';
-      if (isWebUrl(target)) {
-        if (!scope.web) throw refuse();
-        return { kind: 'web-fetch', summary: readSummary('web-fetch', { url: target }), detail };
-      }
-      const file = withoutSelector(target);
-      if (!file || !local(file)) throw refuse();
-      return { kind: 'read', summary: readSummary('read', { path: displayPath(scope.root, file) }), detail };
-    }
-    case 'grep': {
-      const paths = list(args.path).map(withoutSelector);
-      if (!paths.every((entry) => local(globBase(entry)))) throw refuse();
-      return {
-        kind: 'search',
-        summary: readSummary('search', { query: typeof args.pattern === 'string' ? args.pattern : undefined }),
-        detail,
-      };
-    }
-    case 'glob': {
-      const paths = list(args.path);
-      if (!paths.every((entry) => local(globBase(entry)))) throw refuse();
-      return {
-        kind: 'list',
-        summary: paths.length ? `Finding files matching ${paths.join('; ')}` : readSummary('list', {}),
-        detail,
-      };
-    }
     case 'web_search':
       if (!scope.web) throw refuse();
       return {
@@ -254,8 +220,8 @@ export class OmpAdapter implements TextEngineAdapter {
     return this.launch({
       file: this.file,
       args: ompArguments(this.overlayPath(), scope),
-      // A read turn starts in the project folder; the profile stays the engine's.
-      cwd: scope ? scope.root : this.cwd,
+      // Every turn starts in the engine's own folder: no turn has a file tool.
+      cwd: this.cwd,
       env: this.environment(),
       signal,
       timeoutMs,
@@ -612,6 +578,13 @@ export class OmpAdapter implements TextEngineAdapter {
         'provider-auth',
       );
     const scope = input.readScope;
+    if (scope && readAccessOf(scope) === 'project')
+      throw new EngineError(
+        'POLICY_MISMATCH',
+        'oh-my-pi cannot read the whole project folder, because its reads cannot be checked before they run. Choose the documents to include instead.',
+        false,
+        'dispatch',
+      );
     const started = new Set<string>();
     /** Tool executions on a read turn: judged, then narrated. */
     const reads = scope

@@ -20,10 +20,9 @@ import {
 import { commandGate, type RawToolActivity } from '../shared/adapter-contract.js';
 import {
   approvedMcpTool,
-  displayPath,
   emitActivity,
-  insideRoot,
   isWebUrl,
+  readAccessOf,
   readDetail,
   readScopeDigest,
   readScopeNote,
@@ -92,7 +91,7 @@ export interface NativeTeamOptions {
 export const nativeWorkDisclosure = (team?: NativeTeamOptions): string =>
   team
     ? 'This run can talk to the Diomedes team service and no other MCP service. The tool host is on for that service only; native filesystem, shell, and browser tools remain disabled. Diomedes applies file proposals only after your approval.'
-    : 'Ask and Plan may read the project folder, search the web and call approved connectors\' read tools inside a read-only sandbox; they change nothing. Online Work proposes file changes that Diomedes applies only after your approval.';
+    : 'Ask and Plan send the documents you choose, and may search the web and call approved connectors\' read tools; they read no other project file and change nothing. Online Work proposes file changes that Diomedes applies only after your approval.';
 
 const object = (value: unknown): JsonObject =>
   value !== null && typeof value === 'object' && !Array.isArray(value) ? (value as JsonObject) : {};
@@ -211,15 +210,18 @@ function toml(value: unknown): string {
 // build log; this is not a proof that the host exposes nothing else.
 const TEAM_CONFIG: JsonObject = { 'features.code_mode_host': true };
 /**
- * An Ask or Plan turn with a read scope: the shell tool is on so the model can
- * read and search files, but the sandbox stays read-only with no network, so a
- * command can neither write nor reach a service. Web search is the provider's
- * own hosted search, not a sandboxed command. MCP needs the tool host, and only
- * the owner's approved servers are enabled, each limited to its read tools.
+ * An Ask or Plan turn with a read scope (security pass 2026-09-23): web search
+ * and the owner's approved MCP read tools, and no shell. The shell tool was how
+ * this route read files, and nothing checked a command before it ran: the
+ * read-only sandbox stops writes and network, not reads anywhere the OS user can
+ * read, and the runtime reports what a command touched only once it has started.
+ * So the shell stays off and the documents the person chose travel inline, which
+ * is exactly what the send dialog lists. Web search is the provider's own hosted
+ * search, not a sandboxed command. MCP needs the tool host, and only the owner's
+ * approved servers are enabled, each limited to its read tools.
  */
 function readConfig(scope: ReadScope): JsonObject {
   return {
-    'features.shell_tool': true,
     web_search: scope.web ? 'live' : 'disabled',
     ...(scope.mcp?.length ? { 'features.code_mode_host': true } : {}),
   };
@@ -241,53 +243,17 @@ function readMcpServers(scope: ReadScope): JsonObject {
     ]),
   );
 }
-/** Command actions the native runtime parses that only read. `unknown` is never one. */
-const READ_COMMAND_ACTIONS = ['read', 'listFiles', 'search'];
 /**
- * One tool item against a read scope: the activity to show, or a refusal. A
- * command is accepted only when the runtime parsed every part of it as a read,
- * a listing or a search inside the project folder; a web item only with web
- * access; an MCP call only to an approved read tool. Anything else stops.
+ * One tool item against a read scope: the activity to show, or a refusal. A web
+ * item is accepted only with web access and an MCP call only to an approved read
+ * tool. A command is never accepted: the shell is off for read turns, so a
+ * command item means the runtime went beyond its configuration, and it stops.
  */
 function readItem(
   scope: ReadScope,
   item: JsonObject,
 ): { tool: string; summary: string; detail?: string } | undefined {
   const type = String(item.type);
-  if (type === 'commandExecution') {
-    const cwd = typeof item.cwd === 'string' && item.cwd ? item.cwd : scope.root;
-    const actions = Array.isArray(item.commandActions) ? item.commandActions.map(object) : [];
-    if (
-      !insideRoot(scope.root, cwd) ||
-      !actions.length ||
-      actions.some(
-        (action) =>
-          !READ_COMMAND_ACTIONS.includes(String(action.type)) ||
-          (typeof action.path === 'string' &&
-            action.path &&
-            !insideRoot(scope.root, action.path, cwd)),
-      )
-    )
-      return undefined;
-    const first = actions[0];
-    const where =
-      typeof first.path === 'string' && first.path
-        ? displayPath(scope.root, path.resolve(cwd, first.path))
-        : undefined;
-    const summary =
-      first.type === 'read'
-        ? readSummary('read', { path: where ?? (typeof first.name === 'string' ? first.name : undefined) })
-        : first.type === 'listFiles'
-          ? readSummary('list', { path: where })
-          : readSummary('search', {
-              query: typeof first.query === 'string' ? first.query : undefined,
-            });
-    return {
-      tool: 'command',
-      summary: actions.length > 1 ? `${summary} and ${actions.length - 1} more` : summary,
-      detail: readDetail(item.command),
-    };
-  }
   if (type === 'webSearch') {
     if (!scope.web) return undefined;
     const action = object(item.action);
@@ -1002,6 +968,11 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
         'CONTEXT_UNBOUND',
         'Read tools are for a person\'s own Ask and Plan turns, not team or guarded work.',
       );
+    if (scope && readAccessOf(scope) === 'project')
+      throw new IntegrationError(
+        'CONTEXT_UNBOUND',
+        'Codex cannot read the whole project folder, because its reads cannot be checked before they run. Choose the documents to include instead.',
+      );
     if (activeRequests >= 2)
       throw new IntegrationError(
         'NATIVE_BUSY',
@@ -1196,8 +1167,9 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
         });
       };
       await checkDispatch();
-      // A read turn works in the project folder; the sandbox stays read-only.
-      const workingDirectory = scope ? scope.root : CODEX_WORKSPACE;
+      // No turn works in the project folder: a read turn has no file tool and its
+      // documents arrive inline. The sandbox stays read-only either way.
+      const workingDirectory = CODEX_WORKSPACE;
       const started = object(
         await ownedClient.request('thread/start', {
           cwd: workingDirectory,

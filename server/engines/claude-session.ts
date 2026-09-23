@@ -4,7 +4,13 @@ import { z } from 'zod';
 import type { NativeSessionRef } from '../../shared/contract-revision.js';
 import { contextMessage, type TextRequest, type TextResponse } from './contract.js';
 import { EngineError, record, stopped, type EngineProcess } from './process.js';
-import { claudeInitAllowed, claudeObserveTools, claudeWebHelperModel } from './claude.js';
+import {
+  claudeControlResponse,
+  claudeInitAllowed,
+  claudeObserveTools,
+  claudePermission,
+  claudeWebHelperModel,
+} from './claude.js';
 import { readScopeDigest } from './read-scope.js';
 
 const digest = (value: string) => createHash('sha256').update(value).digest('hex');
@@ -301,6 +307,19 @@ export class ClaudeNativeSession {
       for (;;) {
         const frame = await this.process.child.next();
         if (frame.type === 'control_request') {
+          const request = record(frame.request);
+          if (request.subtype === 'can_use_tool' && typeof frame.request_id === 'string') {
+            // This turn's own scope and grant answer it, before the tool runs.
+            const answer = await claudePermission(input.readScope, request, this.saved.cwd);
+            this.process.child.send(claudeControlResponse(frame.request_id, answer));
+            if (answer.behavior === 'deny')
+              throw new EngineError(
+                'POLICY_MISMATCH',
+                `Claude Code ${answer.message}; the read-only request was stopped.`,
+                true,
+              );
+            continue;
+          }
           if (typeof frame.request_id === 'string')
             this.process.child.send({
               type: 'control_response',

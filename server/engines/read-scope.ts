@@ -1,8 +1,13 @@
 /**
  * The read-only tool boundary for Ask and Plan (owner decision 2026-09-23).
  *
- * A request that carries a `ReadScope` may search the web, read the project's
- * files and call the read tools of MCP servers the owner has approved. Nothing
+ * A request that carries a `ReadScope` may search the web and call the read
+ * tools of MCP servers the owner has approved. Which project files it may read is
+ * the turn's own choice (security pass 2026-09-23): `selected`, the default, is
+ * exactly the documents sent inline and gives the engine no file tool at all;
+ * `project` is the person's explicit per-turn choice to allow the whole folder,
+ * offered only where the host answers each read before it runs
+ * (`server/engines/turn-scope.ts`). Nothing
  * here can write: file changes stay on the guarded proposal and exact-approval
  * path (Build/Fix), and shell commands, edits and arbitrary network posts stay
  * refused. The host sets the scope from its own project record for an Ask or
@@ -12,13 +17,16 @@
  * Each adapter maps the scope onto its tool's own vocabulary and keeps a second,
  * adapter-side check: a tool it did not allow, or a path outside `root`, stops
  * the request. That check observes what the tool reports, so it cannot stop the
- * one call it sees; the tool's own allow-list is what prevents the call.
+ * one call it sees. It is narration and a tripwire, never the boundary: the
+ * boundary is a tool the engine was never given, or a host answer given before
+ * the call runs.
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import type { RawToolActivity } from '../../shared/adapter-contract.js';
+import type { ReadAccess } from '../../shared/read-access.js';
 
 /** One MCP server the owner approved, with the only tools a read turn may call. */
 export interface ApprovedMcpServer {
@@ -43,7 +51,34 @@ export interface ReadScope {
   readonly web: boolean;
   /** Approved MCP servers and their read tools. Empty or absent means none. */
   readonly mcp?: readonly ApprovedMcpServer[];
+  /**
+   * The turn's own read choice. Absent reads as `selected`: a scope that does not
+   * say otherwise never reaches past the documents sent with the message.
+   */
+  readonly access?: ReadAccess;
+  /**
+   * The allowed source set of a `selected` turn: the chosen documents' resolved
+   * absolute paths. Host-run tools check it through `readAllowed`.
+   */
+  readonly files?: readonly string[];
+  /**
+   * The project documents Cloud sharing lets this route receive, as project-relative
+   * names, when the turn was built. A whole-project turn may read only these; the
+   * grant is revoked when the sharing policy changes.
+   */
+  readonly shared?: readonly string[];
+  /**
+   * The host grant this turn's reads are answered under (`openReadGrant`). A
+   * whole-project read needs a live one; revoking it ends the turn's reads.
+   */
+  readonly grant?: string;
 }
+
+export type { ReadAccess };
+
+/** The access a scope actually carries: anything but an explicit `project` is `selected`. */
+export const readAccessOf = (scope: ReadScope | undefined): ReadAccess =>
+  scope?.access === 'project' ? 'project' : 'selected';
 
 const NAME = /^[a-z][a-z0-9_-]{0,31}$/;
 const TOOL = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/;
@@ -119,7 +154,13 @@ export function serverEnvironment(
   );
 }
 
-/** A stable identity for a scope: the process a scope was started with serves only it. */
+/**
+ * A stable identity for a scope: the process a scope was started with serves only it.
+ * The access choice is part of it, so a process or native session opened for selected
+ * documents never serves a whole-project turn, nor the reverse. The per-turn file set
+ * and grant are not: a selected-only process has no file tool for them to change, and a
+ * whole-project process asks the host about every read under the current turn's grant.
+ */
 export function readScopeDigest(scope: ReadScope | undefined): string {
   if (!scope) return 'text-only';
   return createHash('sha256')
@@ -127,6 +168,7 @@ export function readScopeDigest(scope: ReadScope | undefined): string {
       JSON.stringify({
         root: path.resolve(scope.root),
         web: scope.web,
+        access: readAccessOf(scope),
         mcp: (scope.mcp ?? []).map((server) => [
           server.name,
           server.command,
@@ -236,10 +278,15 @@ export function approvedMcpTool(
   return found && found.readTools.includes(tool) ? found : undefined;
 }
 
-/** Instructions appended for a read turn, so the model knows where the project is. */
+/**
+ * Instructions appended for a read turn. It does not vary with the chosen files, so a
+ * native session's fixed system prompt stays true for every turn it serves.
+ */
 export function readScopeNote(scope: ReadScope): string {
   const parts = [
-    `You may read files inside the project folder ${scope.root} using read-only tools.`,
+    readAccessOf(scope) === 'project'
+      ? `For this message you may read any file inside the project folder ${scope.root} using read-only tools. Use absolute paths inside that folder; each read is checked before it runs.`
+      : 'You have no file tools: the documents the person chose are included in the message, and no other project file can be read. If the answer needs another file, say which one so the person can include it.',
     scope.web ? 'You may search the web and open web pages.' : 'Web access is unavailable.',
     scope.mcp?.length
       ? `You may use the read tools of these approved connectors: ${scope.mcp.map((server) => server.name).join(', ')}.`
