@@ -142,6 +142,8 @@ import { claudeSessionRunId } from './harness/claude-session-run.js';
 import { modelSessionRunId } from './harness/model-session-run.js';
 import { FileModelTranscripts } from './harness/model-transcripts.js';
 import { AWS_BEDROCK_ROUTE, AwsConnections } from './engines/aws-bedrock.js';
+import { AZURE_OPENAI_ROUTE, AzureConnections } from './engines/azure-openai.js';
+import { OPENROUTER_ROUTE, OpenRouterConnections } from './engines/openrouter.js';
 import { mountModelApiRoutes } from './engines/model-api-routes.js';
 import { ConnectionSecrets, type SecretBox } from './connection-secrets.js';
 import { SpendExposure } from './spend-exposure.js';
@@ -741,6 +743,22 @@ export async function createApp(options: AppOptions) {
     exposure,
     transcripts: new FileModelTranscripts(path.join(store.dataDir, 'model-transcripts'), AWS_BEDROCK_ROUTE),
     transport: options.modelApiTransport,
+    // Each route keeps its own connection record and private transcripts: funds, data terms
+    // and provider continuation state are never shared between payers.
+    azure: {
+      connections: new AzureConnections(store.dataDir),
+      transcripts: new FileModelTranscripts(
+        path.join(store.dataDir, 'model-transcripts-azure-openai'),
+        AZURE_OPENAI_ROUTE,
+      ),
+    },
+    openrouter: {
+      connections: new OpenRouterConnections(store.dataDir),
+      transcripts: new FileModelTranscripts(
+        path.join(store.dataDir, 'model-transcripts-openrouter'),
+        OPENROUTER_ROUTE,
+      ),
+    },
   };
   await harness.init();
   const connections = new DesktopConnections(store, harness);
@@ -2924,7 +2942,13 @@ export async function createApp(options: AppOptions) {
               thread.mode === 'auto' || thread.mode === 'plan' ? thread.mode : 'ask',
             ),
             runId: located.runId,
-            route: located.runId.startsWith('model-') ? AWS_BEDROCK_ROUTE : ('claude-code' as const),
+            // A model-API run answers on the route the thread recorded; AWS is only the
+            // historical default for a thread that predates the other routes.
+            route: located.runId.startsWith('model-')
+              ? isModelApiRoute(thread.engine)
+                ? thread.engine
+                : AWS_BEDROCK_ROUTE
+              : ('claude-code' as const),
             action: 'follow-up' as const,
             replay: true,
             text: command.text,
