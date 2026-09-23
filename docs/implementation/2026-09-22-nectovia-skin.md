@@ -16,6 +16,11 @@ by `@fontsource` package names. So `licenses/THIRD_PARTY_NOTICES.md` and its "Bu
 not name it yet. The fix needs two things: a `licenses/instrument-serif.txt`, and a vendored-font
 entry in the collector. Then regenerate the notices.
 
+**Update 2026-09-23: half done.** PR #43 (`8424710`) added the vendored-font entry to
+`scripts/collect-package-notices.mjs`. The collector has not been run since, so on main
+`licenses/instrument-serif.txt` does not exist yet and `licenses/THIRD_PARTY_NOTICES.md` still omits
+Instrument Serif. The blocker stands until the collector runs and its output is committed.
+
 ## What shipped
 
 Every look below is drawn only under the Nectovia scheme. Every rule is in

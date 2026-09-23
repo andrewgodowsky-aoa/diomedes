@@ -90,7 +90,7 @@ export function setupStates(c: EngineConnection): SetupState[] {
             : c.installation === 'not-checked'
               ? 'Not checked'
               : c.compatibility === 'unsupported'
-                ? 'Found, unsupported version'
+                ? 'Found, did not answer its check'
                 : c.repair
                   ? 'Found, needs repair'
                   : 'Found',
@@ -346,8 +346,24 @@ export function contextText(context: InstallationContext): string {
 
 export function compatibilityText(value: EngineCandidate['compatibility']): string {
   if (value === 'supported') return 'Supported version';
-  if (value === 'unsupported') return 'Unsupported version';
+  if (value === 'unsupported') return 'Did not answer its check';
   return 'Version not confirmed';
+}
+
+export const NO_ENGINES_FOUND = 'No available engines found. Install a compatible one below.';
+
+/**
+ * What a finished check says when it found nothing Nectovia can run, so an
+ * empty result is never silent. Null before any check, or while any route has
+ * a usable installation.
+ */
+export function discoveryOutcome(connections: readonly EngineConnection[]): string | null {
+  if (connections.every((c) => c.installation === 'not-checked')) return null;
+  return connections.some(
+    (c) => c.installation === 'found' && !c.repair && c.compatibility !== 'unsupported',
+  )
+    ? null
+    : NO_ENGINES_FOUND;
 }
 
 /**
