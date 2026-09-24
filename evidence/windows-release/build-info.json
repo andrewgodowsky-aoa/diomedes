@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "version": "0.1.10",
-  "baseCommit": "46891e4dacbc38ef319d7f91c2b6363a161aa3fb",
+  "version": "0.1.11",
+  "baseCommit": "a492c42a5513f1156262c457fbb43597d6d177cb",
   "sourceStatus": "committed",
-  "sourceDigest": "6986c9fb5008d668220cad513caa962b40bd1f78927e0b0c2fdbccfefb11d45a",
+  "sourceDigest": "fe1d4dbfee473c78458a28e0b39c516d521852ebae528e55904e3a3488a31249",
   "source": [
     {
       "path": "client/ai-setup-state.ts",
@@ -1255,11 +1255,11 @@
     },
     {
       "path": "package-lock.json",
-      "sha256": "e6b4656817023ad7586f7d826ba1a8e57ed5c6e659cb9a8c72e6a040ebe77718"
+      "sha256": "51417fca946407698e6567a4cbda93fc265bf375dc7cb4a1999d8b73141e4bdb"
     },
     {
       "path": "package.json",
-      "sha256": "d52de12a0886ec06fbdb22f39706014b1155688eca6e9c4d73dabab32e6c827a"
+      "sha256": "abdae9b644c91201d48bbcb68bf6beab113934a6e36f68c18cbb914d661f869a"
     },
     {
       "path": "resources/industry-variants/carpentry/fixtures.json",
@@ -1327,11 +1327,11 @@
     },
     {
       "path": "resources/product-knowledge/core.json",
-      "sha256": "74b6ec21347ec55a9f1d744b0c42afeababe57288d2049a98c16242012a7c160"
+      "sha256": "6205978045776e39f437729c7534f9e27ece5e5cc5aeb047de8cf2bfdc36d45a"
     },
     {
       "path": "resources/product-knowledge/index.json",
-      "sha256": "a59eb2f825a4157a6e96969a6e863a1319a02635fc1f4367710b077ba4012e52"
+      "sha256": "73ee573fb3a9f27e82bba535085deed3b2b37d4be10c38caa99b21b58f053848"
     },
     {
       "path": "scripts/build-desktop-auth.mjs",
@@ -1355,7 +1355,7 @@
     },
     {
       "path": "server/app.ts",
-      "sha256": "4031963ce8d20d4133d64f0c73ef79f474658b3aaa107a78c399b17730c7fd0a"
+      "sha256": "646d14fab99e84ea88013a1cc403a4d4c1a9a84b1fdb806068f6edbd5ef0a60f"
     },
     {
       "path": "server/approval-admission.ts",
@@ -1867,7 +1867,7 @@
     },
     {
       "path": "server/lineage-continuity.ts",
-      "sha256": "3de199d0e84159bfd259c0ed6959c8bbb095df1438e54d0d0d1831479c14b4f8"
+      "sha256": "4b8111a7c0647d3c17b6304cc6d64eab224be615c8fe70f93891ec77530f995c"
     },
     {
       "path": "server/local/hardware.ts",
@@ -1963,7 +1963,7 @@
     },
     {
       "path": "server/store.ts",
-      "sha256": "64869d69cad2a596a7ca30c361455e992b7322d6aff055d6c16fdae858a44c8d"
+      "sha256": "c1733cf962b0c22d629be40a046eddd7f598dbc188723959bca04a48aaf27d2f"
     },
     {
       "path": "server/support-bundle.ts",
@@ -2424,5 +2424,5 @@
     }
   },
   "signing": "unsigned-experimental",
-  "builtAt": "2026-09-24T01:28:40.932Z"
+  "builtAt": "2026-09-24T02:49:42.759Z"
 }
