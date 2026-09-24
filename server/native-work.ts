@@ -50,6 +50,8 @@ import {
 import { secretScrubber } from './secrets.js';
 import { reviewerBoundary, type ReviewerService } from './trust/reviewer.js';
 import type { AgentRegistry } from './agents.js';
+import type { AgentProfileService } from './agent-profiles.js';
+import { fallbackSentence } from '../shared/agent-profiles.js';
 import type { AgentResolution } from '../shared/agents.js';
 import type { InstructionDelivery } from '../shared/capability-packs.js';
 import {
@@ -317,6 +319,8 @@ export class NativeWorkService {
     private changeReview?: {
       runStarted(projectId: string, sessionId: string, taskId: string | null): Promise<void>;
     },
+    /** Exact-model Agent profiles (H09). Absent leaves route and model to the caller. */
+    private profiles?: AgentProfileService,
   ) {}
   running(projectId: string) {
     return this.runs.has(projectId);
@@ -405,6 +409,33 @@ export class NativeWorkService {
       commit?: <T>(step: () => Promise<T>) => Promise<T>;
     },
   ) {
+    // A profile, where one decides this run, names the route, the exact model and
+    // the Agent, and is pinned below exactly as resolved. Fallback off is a refusal
+    // by name; nothing moves to another route or payer unless the person said so.
+    const routing = this.profiles
+      ? await this.profiles.resolve({
+          projectId,
+          taskId,
+          thread: input.threadId
+            ? this.store.state(projectId).conversations.find((item) => item.id === input.threadId)
+            : null,
+          projectFolder: this.store.state(projectId).project.folder,
+        })
+      : ({ outcome: 'none' } as const);
+    if (routing.outcome === 'refused')
+      throw new ApiError(409, routing.reason, { code: 'profile_unavailable', tried: routing.tried });
+    const profile = routing.outcome === 'resolved' ? routing.pick : undefined;
+    if (profile)
+      input = {
+        ...input,
+        engine: profile.engine as Exclude<Route, 'sample'>,
+        requested: {
+          model: profile.model,
+          ...(profile.effort ? { effort: profile.effort } : {}),
+          selection: profile.source === 'thread' ? 'manual' : 'automatic',
+        },
+        agentId: profile.agentId,
+      };
     const engine = input.engine ?? 'codex';
     if (this.store.settings.services?.[engine] !== true)
       throw new ApiError(409, `Turn ${engine} on in Settings before using it.`);
@@ -448,6 +479,7 @@ export class NativeWorkService {
             input.requested?.selection ?? (input.requested?.model ? 'manual' : 'runtime-default'),
           state,
           taskId,
+          ...(profile ? { profile } : {}),
         })
       : undefined;
     if (resolved && !resolved.compatible)
@@ -583,6 +615,9 @@ export class NativeWorkService {
           ? `Preparing a proposal with ${routeDisplayName(engine)} from ${sources.length} ${sources.length === 1 ? 'document' : 'documents'}.`
           : `Preparing a proposal with ${routeDisplayName(engine)}.`,
       );
+      // A fallback is never silent: the run says which profile it skipped and why.
+      const fellBack = profile ? fallbackSentence(profile) : null;
+      if (fellBack) this.log(session, fellBack);
       if (input.team) this.log(session, teamWorkDisclosure(engine as TeamRoute), 'technical');
       else
         this.log(
@@ -641,7 +676,20 @@ export class NativeWorkService {
         ...(input.team ? { team: { ...input.team } } : {}),
         ...(input.requested ? { requested: { ...input.requested } } : {}),
         ...(resolved ? { agent: resolved } : {}),
-        ...(instructions.section ? { instructionSection: instructions.section } : {}),
+        ...(instructions.section || profile?.rules.length
+          ? {
+              instructionSection: [
+                ...(instructions.section ? [instructions.section] : []),
+                // The person's own profile rules, as they saved them; shown in the run's record.
+                ...(profile?.rules.length
+                  ? [
+                      `Rules from the person's Agent profile "${profile.name}" (revision ${profile.revision}):`,
+                      ...profile.rules.map((rule) => `- ${rule}`),
+                    ]
+                  : []),
+              ].join('\n'),
+            }
+          : {}),
         instructionPaths: instructions.delivery?.files
           .filter((file) => file.state === 'sent')
           .map((file) => file.path) ?? [],

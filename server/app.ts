@@ -86,6 +86,7 @@ import { VerificationService } from './verification/service.js';
 import { mountVerificationRoutes } from './verification/routes.js';
 import { codexVerificationReviewer, type VerificationReviewerAdapter } from './verification/reviewer.js';
 import { AgentRegistry } from './agents.js';
+import { AgentProfileService, AgentProfileStore, mountAgentProfileRoutes } from './agent-profiles.js';
 import { AUTO_AGENT, agentCompatibility } from '../shared/agents.js';
 import { effortFor } from '../shared/effort.js';
 import {
@@ -342,6 +343,15 @@ function parseRequested(value: unknown, engine: Route = 'codex'): Conversation['
       throw new ApiError(400, 'That is not an Agent.');
     agent = v.agent.trim();
   }
+  let profile: string | null = null;
+  if (v.profile !== null && v.profile !== undefined) {
+    if (typeof v.profile !== 'string' || !/^pr-[a-z0-9-]{1,60}$/.test(v.profile))
+      throw new ApiError(400, 'That is not an Agent profile.');
+    profile = v.profile;
+  }
+  // A profile is an exact engine, model and Agent chosen as one (H09), so it stands
+  // alone: it carries no second model or Agent that could disagree with it.
+  if (profile !== null) return { model: null, effort: null, profile };
   // Agent and model are independent axes: an Agent with no model chosen keeps
   // the runtime default, and clearing the model does not clear the Agent.
   if (model === null) return agent === null ? null : { model: null, effort: null, agent };
@@ -638,6 +648,10 @@ export async function createApp(options: AppOptions) {
   const reviewerAdapter =
     options.reviewerAdapter === undefined ? codexReviewerAdapter() : options.reviewerAdapter;
   const agents = new AgentRegistry(store.dataDir);
+  // Exact-model Agent profiles and routing preferences (H09).
+  const agentProfileStore = new AgentProfileStore(store.dataDir);
+  await agentProfileStore.load();
+  const agentProfiles = new AgentProfileService(agentProfileStore, store, agents);
   // Organizations, membership and the Business intake. Identity for them comes
   // from server/trust/, whose production backend is not installed, so what this
   // creates is a labelled local fixture rather than a hosted organization.
@@ -840,6 +854,7 @@ export async function createApp(options: AppOptions) {
     reviewer,
     agents,
     changeReview,
+    agentProfiles,
   );
   const harness = createHarnessHost({
     store,
@@ -1075,6 +1090,7 @@ export async function createApp(options: AppOptions) {
       skipped,
     });
   });
+  mountAgentProfileRoutes(app, store, agentProfiles);
   mountPermissionRoutes(app, store, nativeWork, harness.bridge);
   const verification = new VerificationService(
     store,
@@ -2266,12 +2282,19 @@ export async function createApp(options: AppOptions) {
           command?.request.agentId ??
           state.conversations.find((c) => c.id === threadId)?.requested?.agent ??
           null,
-        requested: nativeChoice(
-          selectedRoute,
+        // A profile that decides this run supplies its own exact model (H09).
+        requested: agentProfiles.applies(
           projectId,
+          taskId,
           state.conversations.find((c) => c.id === threadId),
-          { mode: 'build', text: typeof b.instruction === 'string' ? b.instruction : null },
-        ),
+        )
+          ? undefined
+          : nativeChoice(
+              selectedRoute,
+              projectId,
+              state.conversations.find((c) => c.id === threadId),
+              { mode: 'build', text: typeof b.instruction === 'string' ? b.instruction : null },
+            ),
         instruction:
           b.instruction === undefined
             ? undefined
@@ -4467,7 +4490,10 @@ export async function createApp(options: AppOptions) {
       // The turn id is fixed before the run so the native worker can mark the
       // turn verified once the runtime reports its engine.
       const turnId = identifier('U');
-      const resolvedChoice = nativeChoice(engine, projectId, conversation, { mode: runMode, text });
+      // A profile that decides this run supplies its own exact model (H09).
+      const resolvedChoice: RunChoice = agentProfiles.applies(projectId, task.id, conversation)
+        ? {}
+        : nativeChoice(engine, projectId, conversation, { mode: runMode, text });
       // A member whose model Nectovia chose runs it as an automatic selection, so the run's
       // record says who chose it; a person's own pick stays theirs.
       const teamMember = team
@@ -4500,14 +4526,15 @@ export async function createApp(options: AppOptions) {
         text: wake ? 'Picked up a message from the team.' : 'Preparing a proposal.',
         at: now(),
         sources,
-        route: engine,
+        // The route the run was admitted on: a profile may have named another (H09).
+        route: storedSession.route ?? engine,
         ...(attempt ? { attempt } : {}),
         // The run's own attribution from admission, so the holding line names the
         // model it was sent to, as a request, until the runtime reports one.
         ...(storedSession.origin ? { origin: structuredClone(storedSession.origin) } : {}),
         helper: {
-          engine,
-          model: choice.model ?? null,
+          engine: storedSession.route ?? engine,
+          model: storedSession.agent?.requestedModel ?? choice.model ?? null,
           version: null,
           verified: false,
         },
