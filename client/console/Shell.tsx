@@ -101,6 +101,7 @@ import { DocumentEditor, UNSAVED_WARNING } from './DocumentEditor';
 import type { EverythingItem } from './Everything';
 import { DiscoveryPage } from './DiscoveryPage';
 import { ReadinessPage } from './ReadinessPage';
+import { AutomationsPage } from './AutomationsPage';
 import { Palette } from './Palette';
 import { WorkspaceMark, WorkspacePanel, useWorkspace } from './Workspaces';
 import { applyQuery, buildEntries, type PaletteContext } from './paletteEntries';
@@ -158,6 +159,13 @@ interface ShellProps {
    * day.
    */
   onFirstTaskTaken?: () => void;
+  /**
+   * A screen to open, asked for from outside the Console (the Diomedes home's
+   * Automations row). `n` identifies one request, which is taken once and then
+   * said to be taken, so it never reopens the screen on a later visit.
+   */
+  viewRequest?: { view: ShellView; n: number } | null;
+  onViewRequestTaken?: () => void;
 }
 
 const emptyTeam: TeamState = { members: [], messages: [], runs: [] };
@@ -195,6 +203,8 @@ export function Shell({
   onPaletteKey,
   firstTask,
   onFirstTaskTaken,
+  viewRequest,
+  onViewRequestTaken,
 }: ShellProps) {
   const [state, setState] = useState<ProjectState | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -439,6 +449,14 @@ export function Shell({
     setDocumentsFailure(null);
     void load().catch(report);
   }, [load, report]);
+  // After the reset above, so a request made on the way in is what shows.
+  const takenView = useRef<number | null>(null);
+  useEffect(() => {
+    if (!viewRequest || viewRequest.n === takenView.current) return;
+    takenView.current = viewRequest.n;
+    setView(viewRequest.view);
+    onViewRequestTaken?.();
+  }, [viewRequest, onViewRequestTaken]);
   useEffect(() => {
     const es = new EventSource('/api/events');
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -1506,16 +1524,13 @@ export function Shell({
    * flyout have to agree about what exists and only one of them should be
    * holding the list.
    *
-   * Two rows carry `unavailableReason` and open nothing. They are here rather
+   * One row carries `unavailableReason` and opens nothing. It is here rather
    * than hidden because a person asking "can it do X" deserves the answer
    * "not yet, and here is why" instead of silence:
    *
-   * - Automations has no built item behind it. The button exists, the work it
-   *   would run does not, and wiring the button to nothing would be worse than
-   *   saying so (owner decision, 2026-09-19). It is `reserved`: the owner wants
-   *   its place in the sidebar held now, so that switching it on later needs no
-   *   redesign (owner decision, 2026-09-20). It may be pinned and still opens
-   *   nothing.
+   * - Automations held a reserved place here until Milestone A built the
+   *   screen behind it (owner decisions 2026-09-19, 2026-09-20 and D4 of
+   *   2026-09-24). It now opens, and sits with the workspace's own rows.
    * - Connections runs against three hardcoded example locations, which its own
    *   heading calls synthetic data. It is real code and a real demo; it is not
    *   a connection to anything this person owns, and presenting it as one would
@@ -1560,10 +1575,7 @@ export function Shell({
     {
       id: 'automations',
       label: 'Automations',
-      hint: 'Work that runs on its own, on a schedule or when something happens.',
-      unavailableReason:
-        'Nothing is built behind this yet. It opens once there is real work for it to run.',
-      reserved: true,
+      hint: 'What runs for this business, what it last did, and what needs you.',
     },
     {
       id: 'connections',
@@ -1590,8 +1602,8 @@ export function Shell({
   ];
   const destinationGroups = [
     { heading: 'In this project', ids: ['thread', 'board', 'team', 'files'] },
-    { heading: 'Nectovia', ids: ['engines', 'settings', 'projects'] },
-    { heading: 'Not ready yet', ids: ['automations', 'connections'] },
+    { heading: 'Nectovia', ids: ['automations', 'engines', 'settings', 'projects'] },
+    { heading: 'Not ready yet', ids: ['connections'] },
   ];
   // Which destination the rail and the flyout mark as the one showing. The
   // Files pane is a toggle rather than a screen, so it counts as current while
@@ -1602,7 +1614,9 @@ export function Shell({
       ? 'board'
       : view === 'Team'
         ? 'team'
-        : 'thread';
+        : view === 'Automations'
+          ? 'automations'
+          : 'thread';
 
   function goTo(id: string) {
     // The editor is the one screen holding writing that only exists here. It
@@ -1618,6 +1632,7 @@ export function Shell({
     else if (id === 'team') setView('Team');
     else if (id === 'discovery') setView('Discovery');
     else if (id === 'readiness') setView('Readiness');
+    else if (id === 'automations') setView('Automations');
     else if (id === 'files') artifactHost.toggleFiles();
     else if (id === 'engines') openEngineSettings();
     else if (id === 'settings') onOpenSettings();
@@ -1946,6 +1961,28 @@ export function Shell({
             <ReadinessPage projectId={projectId} />
           </section>
         )}
+        {!editing && view === 'Automations' && (
+          <section className="screen on" aria-label="Automations">
+            <AutomationsPage
+              projectId={projectId}
+              onOpenTask={(taskId) => {
+                const task = state.tasks.find((item) => item.id === taskId);
+                if (task) openTaskThread(task);
+              }}
+              onOpenBoard={(taskId) => {
+                const thread = state.conversations.find((item) => item.taskId === taskId);
+                if (thread) setSelectedId(thread.id);
+                setView('Board');
+              }}
+              onOpenDocument={openDocument}
+              onOpenProject={(id) => {
+                const target = projects.find((item) => item.id === id);
+                if (target) onOpenProject(target);
+                else say('Open that project from Projects to see this run.');
+              }}
+            />
+          </section>
+        )}
         {!editing && view === 'Thread' && selected && (
           <section className="screen on" id="scrThread">
             <ThreadView
@@ -2250,6 +2287,10 @@ export function Shell({
           onClose={() => setWorkspacesOpen(false)}
           onChanged={setWorkspace}
           report={report}
+          onOpenAutomations={() => {
+            setWorkspacesOpen(false);
+            setView('Automations');
+          }}
         />
       )}
       {capPrompt && (

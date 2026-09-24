@@ -24,6 +24,8 @@ import { Shell } from './console/Shell';
 import { Home, type HomeDestination } from './console/Home';
 import { DiomedesHome } from './console/DiomedesHome';
 import type { EverythingItem } from './console/Everything';
+import type { ShellView } from './console/types';
+import type { WorkspaceView } from '../shared/workspaces';
 import { TopStrip } from './console/TopStrip';
 import { DesignCenter } from './console/DesignCenter';
 import { Setup } from './Setup';
@@ -83,6 +85,10 @@ export function App() {
   } | null>(null);
   const [search, setSearch] = useState(false);
   const [sectionRequest, setSectionRequest] = useState<{ section: string; n: number } | null>(null);
+  // A Console screen asked for from the Diomedes home, taken once by Shell (D4).
+  const [viewRequest, setViewRequest] = useState<{ view: ShellView; n: number } | null>(null);
+  // Why a home row opened nothing, said where the person pressed it.
+  const [homeNotice, setHomeNotice] = useState('');
   /**
    * The route and model a connection test just verified, on its way to the
    * Console. It is a choice for one thread and never a send, and it waits here
@@ -573,10 +579,7 @@ export function App() {
     {
       id: 'automations',
       label: 'Automations',
-      hint: 'Work that runs on its own, on a schedule or when something happens.',
-      unavailableReason:
-        'Nothing is built behind this yet. It opens once there is real work for it to run.',
-      reserved: true,
+      hint: 'What runs for your business, what it last did, and what needs you.',
     },
     { id: 'engines', label: 'AI engines', hint: 'Which engines are installed, signed in, and switched on.' },
     { id: 'appearance', label: 'Appearance', hint: 'Colour scheme, text size and motion.' },
@@ -594,10 +597,55 @@ export function App() {
     { heading: 'Projects', ids: ['projects', 'new-project', 'open-folder', 'find'] },
     {
       heading: 'Nectovia',
-      ids: ['engines', 'appearance', 'design-center', 'permissions', 'detail', 'updates', 'about'],
+      ids: [
+        'automations',
+        'engines',
+        'appearance',
+        'design-center',
+        'permissions',
+        'detail',
+        'updates',
+        'about',
+      ],
     },
-    { heading: 'Not ready yet', ids: ['automations'] },
   ];
+
+  /**
+   * Automations belong to the business, so the home row opens the active
+   * organization's output project on its Automations screen (D4). Without one
+   * it says why, and opens nothing.
+   */
+  const openAutomations = async () => {
+    setHomeNotice('');
+    try {
+      const workspace = await api<WorkspaceView>('/workspace');
+      if (workspace.active.kind !== 'business') {
+        setHomeNotice(
+          'Automations are set up per business workspace, and Personal has none. Open a project and switch under Change workspace.',
+        );
+        return;
+      }
+      const organizationId = workspace.active.organizationId;
+      const entry = workspace.organizations.find(
+        (item) => item.organization.id === organizationId,
+      );
+      const name = entry?.organization.name ?? 'This business';
+      const output = entry?.output ?? null;
+      const target = output ? projects.find((item) => item.id === output.projectId) : undefined;
+      if (!output || !target) {
+        setHomeNotice(
+          output
+            ? `${name} writes into “${output.projectName}”, which is not here any more. Choose where it writes under Change workspace.`
+            : `${name} has not chosen the project it writes into, so there is nowhere to open Automations. Choose one under Change workspace.`,
+        );
+        return;
+      }
+      setViewRequest((last) => ({ view: 'Automations', n: (last?.n ?? 0) + 1 }));
+      openProject(target);
+    } catch (e) {
+      report(e);
+    }
+  };
 
   const loaded = settings !== null && initialLoaded;
   const reduced =
@@ -765,6 +813,8 @@ export function App() {
                   }}
                   firstTask={startTask}
                   onFirstTaskTaken={() => setStartTask(null)}
+                  viewRequest={viewRequest}
+                  onViewRequestTaken={() => setViewRequest(null)}
                 />
               ) : landing === 'diomedes' ? (
                 <DiomedesHome
@@ -788,7 +838,8 @@ export function App() {
                   }}
                   onDestination={(id) => {
                     if (id === 'projects') setLanding('projects');
-                    else if (id !== 'automations') goFromHome(id as HomeDestination);
+                    else if (id === 'automations') void openAutomations();
+                    else goFromHome(id as HomeDestination);
                   }}
                   onNewProject={() => goFromHome('new-project')}
                   onOpenWork={(projectId) => {
@@ -839,6 +890,15 @@ export function App() {
       {/* A theme that could not be applied is a fact about the appearance, not a
           failed request: the app is running and readable, and this says which
           appearance it is running in and why. */}
+      {homeNotice && (
+        <div className="error-bar appearance-notice" role="status">
+          <Mark state="waiting" />
+          <span>{homeNotice}</span>
+          <Button tone="quiet" onClick={() => setHomeNotice('')}>
+            Dismiss
+          </Button>
+        </div>
+      )}
       {appearanceNotice && (
         <div className="error-bar appearance-notice" role="status">
           <Mark state="waiting" />
