@@ -82,6 +82,8 @@ interface ThreadViewProps {
    * on, which is what keeps the indication from appearing where nothing loaded.
    */
   instructionFiles?: readonly InstructionFileRecord[];
+  /** Opens a project file in the Files pane; the instruction inspector's "Open in Files". */
+  onOpenInFiles?(path: string): void;
   /** The project's follow-up queue. The rows for this task are shown and driven here. */
   followUps?: FollowUpCommand[];
   permissionControl?: ReactNode;
@@ -167,6 +169,7 @@ export function ThreadView({
   allNeeds,
   changes = [],
   instructionFiles = [],
+  onOpenInFiles,
   followUps = [],
   permissionControl,
   onScope,
@@ -466,7 +469,14 @@ export function ThreadView({
           </div>
         )}
         {projectId && instructionFiles.length > 0 && (
-          <ProjectInstructions projectId={projectId} files={instructionFiles} />
+          <ProjectInstructions
+            projectId={projectId}
+            files={instructionFiles}
+            delivery={
+              [...ordered].reverse().find((session) => session.instructions)?.instructions ?? null
+            }
+            onOpenInFiles={onOpenInFiles}
+          />
         )}
         {menu}
       </div>

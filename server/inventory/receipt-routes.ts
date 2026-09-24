@@ -3,17 +3,24 @@ import { inventoryReceiptSchema } from '../../shared/inventory.js';
 import { inventoryReceiveSchema } from '../../shared/inventory-workflow.js';
 import { ApiError } from '../paths.js';
 import type { InventoryStockService } from './stock-service.js';
+import { inventoryIngressRefusal, type InventoryRouteNeed } from './local-access.js';
 
-/** Mount only on a host with verified ingress. A header/body is never an Authority. */
+/**
+ * Mount only on a host with verified ingress. A header/body is never an Authority.
+ * `claim` resolves the acting principal for exactly the action about to run and
+ * may refuse by throwing an ApiError; production composes it from
+ * createLocalInventoryAccess. Every request is first refused unless it arrived
+ * over loopback, whatever the listener is bound to, until MI01 ships.
+ */
 export function inventoryReceiptRoutes<Claim>(options: {
   service: InventoryStockService<Claim>;
   projectId: string;
-  claim: (request: Request) => Claim;
+  claim: (request: Request, need: InventoryRouteNeed) => Claim | Promise<Claim>;
 }) {
   const router = Router();
-  router.use((_request, response, next) => {
+  router.use((request, response, next) => {
     response.set('Cache-Control', 'no-store');
-    next();
+    next(inventoryIngressRefusal(request) ?? undefined);
   });
   router.use(json({ limit: '8kb' }));
   router.get('/view', async (request, response) => {
@@ -26,7 +33,7 @@ export function inventoryReceiptRoutes<Claim>(options: {
     response.json(
       await options.service.view(
         options.projectId,
-        options.claim(request),
+        await options.claim(request, { projectId: options.projectId, action: 'read' }),
         cursor as string | undefined,
       ),
     );
@@ -35,7 +42,7 @@ export function inventoryReceiptRoutes<Claim>(options: {
     const result = await options.service.status(
       options.projectId,
       request.params.operationId,
-      options.claim(request),
+      await options.claim(request, { projectId: options.projectId, action: 'read' }),
     );
     response
       .status(result.status === 'denied' ? 403 : result.status === 'invalid' ? 422 : 200)
@@ -51,7 +58,11 @@ export function inventoryReceiptRoutes<Claim>(options: {
     const result = await options.service.execute(
       options.projectId,
       parsed.data,
-      options.claim(request),
+      await options.claim(request, {
+        projectId: options.projectId,
+        action: 'command',
+        command: parsed.data,
+      }),
     );
     response
       .status(
@@ -69,7 +80,11 @@ export function inventoryReceiptRoutes<Claim>(options: {
     response.status(404).json({ error: 'Inventory route unavailable.' });
   });
   const errors: ErrorRequestHandler = (error: unknown, _request, response, _next) => {
-    if (error instanceof ApiError) response.status(error.status).json({ error: error.message });
+    if (error instanceof ApiError)
+      response.status(error.status).json({
+        error: error.message,
+        ...(typeof error.details.code === 'string' ? { code: error.details.code } : {}),
+      });
     else if (error instanceof SyntaxError)
       response.status(422).json({ error: 'Provide valid JSON.' });
     else

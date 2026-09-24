@@ -46,7 +46,13 @@ export function readPending(
 ): InventoryCommand | null {
   const raw = storage.getItem(key);
   if (raw === null) return null;
-  const parsed = inventoryReceiveSchema.safeParse(JSON.parse(raw));
+  let value: unknown;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    value = undefined;
+  }
+  const parsed = inventoryReceiveSchema.safeParse(value);
   if (!parsed.success)
     throw new Error(
       'Saved receipt intent is unreadable. Preserve it and reconcile before receiving more stock.',
@@ -78,7 +84,8 @@ export class InventoryReceiptClient {
       ...(command ? { body: JSON.stringify(command) } : {}),
       signal: AbortSignal.timeout(15_000),
     });
-    const value: unknown = await response.json();
+    // A proxy or crashed host can answer with HTML; that is a failed request, not a parser error.
+    const value: unknown = await response.json().catch(() => undefined);
     if (!response.ok && (!value || typeof value !== 'object' || !('status' in value))) {
       const message =
         value && typeof value === 'object' && 'error' in value && typeof value.error === 'string'
