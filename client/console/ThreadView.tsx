@@ -468,7 +468,7 @@ export function ThreadView({
             </button>
           </div>
         )}
-        {projectId && instructionFiles.length > 0 && (
+        {projectId && (
           <ProjectInstructions
             projectId={projectId}
             files={instructionFiles}

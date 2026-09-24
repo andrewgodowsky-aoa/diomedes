@@ -256,3 +256,40 @@ test('H11-UI-03: long paths truncate inside the panel instead of widening the pa
   );
   expect(overflow).toBeLessThanOrEqual(0);
 });
+
+test('H11-UI-04: turning the pack off keeps what the last run was sent inspectable', async ({
+  page,
+  request,
+}) => {
+  // Review (2026-09-24): the thread line rendered only while a loaded file
+  // was on record for an active pack, so turning the pack off after a run
+  // hid the run's delivery record too — instructions that were applied,
+  // left where the person could no longer inspect them (decision 14).
+  const off = await request.post(
+    `/api/projects/${projectId}/packs/diomedes.software-engineering/deactivate`,
+    { headers: HEADERS },
+  );
+  expect(off.ok()).toBe(true);
+  try {
+    await withRecordedRun(page);
+    await openThread(page);
+    const line = page.locator('.instructions-line');
+    await expect(line).toBeVisible();
+    // Nothing is loaded now, so the line does not say it is.
+    await expect(line).not.toContainText('loaded');
+    await expect(line).toContainText('Project instructions last sent ·');
+    await line.click();
+    const run = page.getByRole('region', { name: 'Last run' });
+    await expect(run.locator('.instructions-file')).toHaveCount(5);
+    const first = run.locator('[data-path="pkg/api/AGENTS.md"]');
+    await expect(first.locator('.instructions-meta')).toContainText('sent · pkg/api');
+    await first.getByRole('button', { name: 'pkg/api/AGENTS.md', exact: true }).click();
+    await expect(first.locator('.instructions-body')).toContainText('API-RULES-BODY');
+  } finally {
+    const on = await request.post(
+      `/api/projects/${projectId}/packs/diomedes.software-engineering/activate`,
+      { headers: HEADERS },
+    );
+    expect(on.ok()).toBe(true);
+  }
+});
