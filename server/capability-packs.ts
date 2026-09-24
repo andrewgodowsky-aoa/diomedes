@@ -55,6 +55,8 @@ import {
 } from '../shared/rule-authority.js';
 import { ApiError, absent, projectFile, readTextOrNull } from './paths.js';
 import { hash, now, SKIPPED_FOLDERS, type Store } from './store.js';
+import type { RegisteredPackIndex } from '../shared/pack-contributions.js';
+import { builtinIndex, registerIndex, unloadPack } from './pack-contributions.js';
 
 /**
  * Where an instruction file's content sits in the admissibility vocabulary.
@@ -378,6 +380,12 @@ export async function recordPackActivation(
   subject: ActivationSubject,
   next: PackActivation['state'],
   at: string,
+  /**
+   * P04: the contribution index to register when turning on. It rides on the
+   * same History entry and the same write, so a pack is never on without its
+   * index; turning off unloads it in that same write too.
+   */
+  index?: RegisteredPackIndex,
 ): Promise<boolean> {
   const state = store.state(projectId);
   const already = isPackActive(state.project.packs, subject.id);
@@ -390,13 +398,16 @@ export async function recordPackActivation(
     ...(state.project.packs ?? []),
     { packId: subject.id, packVersion: subject.version, state: next, at, by: 'you' },
   ];
-  store.addEntry(state, {
+  const entry = store.addEntry(state, {
     kind: 'pack',
     sentence:
       next === 'active'
         ? `You turned on ${subject.name} for this project. It adds no permission.`
         : `You turned off ${subject.name} for this project. What it already found stays recorded.`,
   });
+  if (next === 'active' && index)
+    registerIndex(store, state, index, 'Registered when the pack was turned on. No body was loaded.', entry);
+  if (next === 'inactive') unloadPack(store, state, subject.id, at, entry);
   await store.persist(state);
   return true;
 }
@@ -410,7 +421,7 @@ async function setActivation(
 ): Promise<ProjectState> {
   const manifest = manifestFor(packId);
   assertLoadable(manifest);
-  const changed = await recordPackActivation(store, projectId, manifest, next, at);
+  const changed = await recordPackActivation(store, projectId, manifest, next, at, builtinIndex(manifest, at));
   if (!changed) return store.state(projectId);
   if (next === 'active') await discoverInstructionFiles(store, projectId, at);
   return store.state(projectId);
