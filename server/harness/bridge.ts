@@ -5,8 +5,9 @@ import type {
   HarnessPrincipal,
   HarnessRun,
   Json,
+  RunPresentation,
 } from '../../shared/harness.js';
-import type { Need, Session } from '../../shared/types.js';
+import type { Need, Route, Session } from '../../shared/types.js';
 import { assertApprovalMatches, type ApprovalAdmission } from '../approval-admission.js';
 import { ApiError } from '../paths.js';
 import { identifier, now, Store } from '../store.js';
@@ -51,6 +52,18 @@ export interface HarnessProcedure {
   readonly origin: OriginSnapshot;
   readonly budget: HarnessBudget;
   run(runId: string, owner: string, principal: HarnessPrincipal): Promise<void>;
+  /** A budget read from the admission-pinned input, when it depends on it (H13 loop). */
+  budgetFor?(input: Json): HarnessBudget;
+  /** The route a Session names, from the pinned input. */
+  routeFor?(input: Json): Route | undefined;
+  /** The Session's origin once the run has steps; absent keeps `sessionOriginFromRun`. */
+  sessionOrigin?(run: HarnessRun): OriginSnapshot | undefined;
+  /** Adjust how a run is shown in the Session and Task words; never grants anything. */
+  present?(run: HarnessRun, view: RunPresentation): RunPresentation;
+  /** After a person's Stop cancelled the run: stop what it started (a delegate child). */
+  stopped?(run: HarnessRun): Promise<void>;
+  /** After a mirrored run settled, outside the Store lock. Must be idempotent. */
+  settled?(run: HarnessRun): Promise<void>;
 }
 
 export class HarnessBridge {
@@ -179,7 +192,9 @@ export class HarnessBridge {
         : state.tasks.find((item) => item.id === taskId && !item.deletedAt);
     if (!task) throw new ApiError(404, 'This task was not found.');
     const thread = state.conversations.find((item) => item.taskId === task.id);
+    const route = procedure && pinned ? procedure.routeFor?.(pinned.input) : undefined;
     const session: Session = {
+      ...(route ? { route } : {}),
       id: identifier('S'),
       taskId: task.id,
       sample: false,
@@ -234,7 +249,9 @@ export class HarnessBridge {
         tools: this.tools,
         budget: codex
           ? { units: 1, modelCalls: 1, toolCalls: 1, wallMs: null }
-          : (procedure?.budget ?? { units: 6, modelCalls: 6, toolCalls: 6, wallMs: null }),
+          : procedure && pinned && procedure.budgetFor
+            ? procedure.budgetFor(pinned.input)
+            : (procedure?.budget ?? { units: 6, modelCalls: 6, toolCalls: 6, wallMs: null }),
       });
       createdRunId = run.id;
       await this.runs.claim(run.id, this.owner, codex ? 5 * 60_000 : 60_000);
@@ -279,7 +296,8 @@ export class HarnessBridge {
     const task = state.tasks.find((item) => item.id === run.taskId);
     if (!session || !task) return;
     if (run.lastSeq <= session.engine.events) return;
-    const view = presentRun(run);
+    const procedure = this.procedures.get(run.capabilityId);
+    const view = procedure?.present ? procedure.present(run, presentRun(run)) : presentRun(run);
     const currentTask = task.sessionIds.at(-1) === session.id;
     for (const event of run.events.filter((item) => item.seq > session.engine.events)) {
       session.log.push({ time: event.at, level: 'plain', sentence: this.redact(view.sentence) });
@@ -290,7 +308,7 @@ export class HarnessBridge {
       });
     }
     session.engine.events = run.lastSeq;
-    const origin = sessionOriginFromRun(run);
+    const origin = procedure?.sessionOrigin ? procedure.sessionOrigin(run) : sessionOriginFromRun(run);
     if (origin) session.origin = structuredClone(origin);
     if (run.capabilityId === CODEX_REPORT.id && run.transcripts.codex) {
       session.engine.model = run.transcripts.codex.modelId;
@@ -379,6 +397,7 @@ export class HarnessBridge {
           conflicts: [],
         };
     await this.store.persist(state);
+    if (procedure?.settled && ['completed', 'failed', 'cancelled'].includes(run.state)) this.settle(procedure, run);
     if (covered) {
       const need = covered;
       // Queued behind this mirror on the Store lock, exactly as a person's
@@ -387,6 +406,15 @@ export class HarnessBridge {
         console.error('A remembered approval could not be applied:', this.redact(String(error)));
       });
     }
+  }
+
+  /** Queued behind the current Store lock holder, never awaited inside it. */
+  private settle(procedure: HarnessProcedure, run: HarnessRun) {
+    void Promise.resolve()
+      .then(() => procedure.settled!(run))
+      .catch((error: unknown) => {
+        console.error('A settled harness run could not be finished:', this.redact(String(error)));
+      });
   }
 
   /**
@@ -653,6 +681,7 @@ export class HarnessBridge {
       this.codex!.revoke(run.id);
     }
     await this.runs.cancel(run.id, this.redact(reason), principal);
+    await this.procedures.get(run.capabilityId)?.stopped?.(await this.runs.get(run.id));
     await this.mirror(await this.runs.get(run.id));
     return structuredClone(
       this.store.state(projectId).sessions.find((item) => item.id === sessionId)!,
@@ -751,6 +780,9 @@ export class HarnessBridge {
       run = await this.runs.get(run.id);
       this.enqueue(run);
       await this.flush();
+      // A run that settled before the restart may not have finished what follows it.
+      if (procedure?.settled && ['completed', 'failed', 'cancelled'].includes(run.state))
+        this.settle(procedure, run);
       if (run.state === 'waiting') {
         const need = this.store
           .state(projectId)
