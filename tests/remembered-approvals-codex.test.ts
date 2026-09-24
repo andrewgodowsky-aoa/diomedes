@@ -549,6 +549,9 @@ describe('the version 2 Codex task scope and remembered approvals side by side',
     expect(issued.status).toBe(200);
     const before = JSON.stringify(state().scopeGrants);
     const digest = scopeGrantDigest(state().scopeGrants![0]);
+    // The recorded account sits beside the grant, never inside what its digest binds.
+    expect(state().scopeGrants![0].confirmedAccountRoute).toBe(ACCOUNT_A);
+    expect(JSON.stringify(state().scopeGrants![0].grant)).not.toContain(ACCOUNT_A);
     menuProposal();
     const scoped = await propose();
     expect(scoped.authorization?.kind).toBe('scope-grant');
@@ -557,5 +560,84 @@ describe('the version 2 Codex task scope and remembered approvals side by side',
     expect(JSON.stringify(state().scopeGrants)).toBe(before);
     expect(scopeGrantDigest(state().scopeGrants![0])).toBe(digest);
     expect(() => validateScopeGrants(state())).not.toThrow();
+  });
+});
+
+describe('the ChatGPT account a Codex task scope was confirmed for', () => {
+  test('a scope confirmed on a waiting proposal binds its account, and another account asks again', async () => {
+    menuProposal();
+    const waiting = await propose();
+    expect(waiting.state).toBe('open');
+    const issued = await project<ScopeGrantRecord>('/permissions/grants', 'POST', scopeBody());
+    expect(issued.status).toBe(200);
+    expect(issued.data.confirmedAccountRoute).toBe(ACCOUNT_A);
+    // The v2 grant itself still pins only the literal route; its digest is unchanged in kind.
+    expect(issued.data.grant.accountRoute).toBe('codex:chatgpt');
+    expect(scopeGrantDigest(issued.data)).toBe(
+      scopeGrantDigest({ ...issued.data, confirmedAccountRoute: undefined }),
+    );
+    // Confirming it applied the waiting proposal, prepared on that account.
+    expect(current(waiting).authorization?.kind).toBe('scope-grant');
+    menuProposal();
+    expect((await propose()).authorization?.kind).toBe('scope-grant');
+
+    account = ACCOUNT_B;
+    menuProposal();
+    const switched = await propose();
+    expect(switched.state).toBe('open');
+    expect(switched.authorization).toBeUndefined();
+    expect(switched.authorizationBoundary).toBe(
+      'This proposal was prepared under a different ChatGPT account from the one Codex was using when you confirmed this task scope, so it needs your OK.',
+    );
+    // Confirming the scope again, now, binds the account in use.
+    const again = await project<ScopeGrantRecord>('/permissions/grants', 'POST', scopeBody());
+    expect(again.data.confirmedAccountRoute).toBe(ACCOUNT_B);
+    expect(current(switched).authorization?.kind).toBe('scope-grant');
+    expect(() => validateScopeGrants(state())).not.toThrow();
+    expect(() => validateApprovalReceipts(state())).not.toThrow();
+  });
+
+  test('a scope with no recorded account always asks again, and says why', async () => {
+    const issued = await project<ScopeGrantRecord>('/permissions/grants', 'POST', scopeBody());
+    expect(issued.status).toBe(200);
+    // A record saved before the account was recorded: the same grant, the same digest.
+    const record = state().scopeGrants![0];
+    const digest = scopeGrantDigest(record);
+    delete record.confirmedAccountRoute;
+    expect(scopeGrantDigest(record)).toBe(digest);
+    expect(() => validateScopeGrants(state())).not.toThrow();
+    menuProposal();
+    const asked = await propose();
+    expect(asked.state).toBe('open');
+    expect(asked.authorization).toBeUndefined();
+    expect(asked.authorizationBoundary).toBe(
+      'This task scope was confirmed before Diomedes recorded which ChatGPT account it was for, so this proposal needs your OK. Confirm the scope again to let it continue.',
+    );
+    // Even when the runtime reports no account at all, an old scope never covers.
+    await decide(asked, 'declined');
+    account = null;
+    menuProposal();
+    expect((await propose()).authorization).toBeUndefined();
+  });
+
+  test('a scope confirmed before any account was seen asks on the first proposal, then binds it', async () => {
+    const issued = await project<ScopeGrantRecord>('/permissions/grants', 'POST', scopeBody());
+    expect(issued.data.confirmedAccountRoute).toBe('codex:chatgpt');
+    menuProposal();
+    const asked = await propose();
+    expect(asked.state).toBe('open');
+    expect(asked.authorizationBoundary).toBe(
+      'Diomedes had not seen which ChatGPT account Codex uses when you confirmed this task scope, so this proposal needs your OK. Confirm the scope again to let it continue under this account.',
+    );
+    const again = await project<ScopeGrantRecord>('/permissions/grants', 'POST', scopeBody());
+    expect(again.data.confirmedAccountRoute).toBe(ACCOUNT_A);
+    expect(current(asked).authorization?.kind).toBe('scope-grant');
+  });
+
+  test('an account route in an unknown shape is refused at load', async () => {
+    await project('/permissions/grants', 'POST', scopeBody());
+    const forged = structuredClone(state());
+    forged.scopeGrants![0].confirmedAccountRoute = 'someone-else';
+    expect(() => validateScopeGrants(forged)).toThrow(/incompatible/);
   });
 });
