@@ -178,8 +178,12 @@ async function machineStringsBounded(page: Page, where: string, needle: string) 
       const own = [...el.childNodes].some((n) => n.nodeType === Node.TEXT_NODE && n.textContent?.includes(text.slice(0, 24)));
       if (!own) continue;
       const s = getComputedStyle(el);
-      const r = el.getBoundingClientRect();
-      if (r.right > innerWidth + 1) out.push(`${el.tagName.toLowerCase()}.${el.className} runs past the viewport`);
+      // A child of a box that clips with an ellipsis is that box's to bound.
+      let clipper: Element | null = el.parentElement;
+      while (clipper && getComputedStyle(clipper).textOverflow !== 'ellipsis') clipper = clipper.parentElement;
+      const bound = (clipper ?? el).getBoundingClientRect();
+      if (bound.right > innerWidth + 1) out.push(`${el.tagName.toLowerCase()}.${el.className} runs past the viewport`);
+      if (clipper) continue;
       if (el.scrollWidth > el.clientWidth + 1 && s.textOverflow !== 'ellipsis' && s.overflowWrap !== 'anywhere' && s.wordBreak !== 'break-all')
         out.push(`${el.tagName.toLowerCase()}.${el.className} neither truncates nor wraps`);
     }
@@ -218,10 +222,13 @@ async function tabWalk(page: Page, where: string, stops = 80) {
       const ring =
         ringOf(el) ||
         (box !== null && box.matches(':focus-within') && parseFloat(getComputedStyle(box).borderTopWidth) > 0);
-      return { name, inView, ring, tag: el.tagName.toLowerCase() };
+      // A stop inside the thread's work inspector is recorded as such too.
+      const inspector = el.closest('#scrThread .ledger') !== null;
+      return { name, inView, ring, inspector, tag: el.tagName.toLowerCase() };
     });
     if (!stop) continue;
     names.push(stop.name);
+    if (stop.inspector) names.push('[the work inspector]');
     if (!stop.inView) problems.push(`${stop.tag} "${stop.name.slice(0, 40)}" focused outside the viewport`);
     if (!stop.ring) problems.push(`${stop.tag} "${stop.name.slice(0, 40)}" focused with no visible ring`);
   }
@@ -275,7 +282,7 @@ for (const [label, width, height] of [
       await page.locator('#scrThread .ledger .focus').scrollIntoViewIfNeeded();
       await expect(page.locator('#scrThread .ledger .focus')).toBeInViewport();
       const names = await tabWalk(page, 'thread and inspector', 60);
-      requireReached(names, 'thread and inspector', ['Message this thread', 'Send', 'Board', 'This project']);
+      requireReached(names, 'thread and inspector', ['Message this thread', 'Send', '[the work inspector]']);
     });
 
     test('Settings > Engines and the Board', async ({ page }) => {
@@ -329,12 +336,15 @@ async function driveTheConsole(page: Page, check: (where: string) => Promise<voi
   await page.goto('/');
   await reopenLastProject(page);
   await expect(page.locator('#scrThread')).toBeVisible();
+  await rail(page).getByRole('button', { name: /^Review the supplier documents/ }).click();
+  await expect(page.getByRole('radio', { name: 'plan', exact: true })).toBeVisible();
   await check('thread');
-  await page.getByRole('button', { name: 'plan', exact: true }).click();
+  await page.getByRole('radio', { name: 'plan', exact: true }).click();
   await check('composer mode change');
-  await page.getByRole('button', { name: 'ask', exact: true }).click();
+  await page.getByRole('radio', { name: 'ask', exact: true }).click();
   for (const view of ['Board', 'Team', 'Thread']) {
-    await rail(page).getByRole('button', { name: new RegExp(`^${view}\\b`) }).click();
+    // A thread's row can start with "Thread for"; the view is the other one.
+    await rail(page).getByRole('button', { name: new RegExp(`^${view}\\b(?! for)`) }).click();
     await check(`${view} view`);
   }
   await page.locator('.style-picker > button').click();
@@ -401,6 +411,8 @@ async function unnamedControls(page: Page) {
  * the art, are not a text ground and are not counted).
  */
 async function lowContrast(page: Page) {
+  // An entrance fades the screen in; measure the page at rest.
+  await rest(page);
   return page.evaluate(() => {
     const canvas = document.createElement('canvas');
     canvas.width = canvas.height = 1;
