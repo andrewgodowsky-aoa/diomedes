@@ -607,7 +607,7 @@ export class ScopeGrants {
   async assertCurrent(projectId: string, need: Need, writes: readonly WriteInput[]) {
     // One write-time funnel for every delegated decision the Store honours.
     if (need.authorization?.kind === 'remembered-approval')
-      return this.remembered.assertCurrent(projectId, need);
+      return this.remembered.assertCurrent(projectId, need, writes);
     validateScopedAuthorization(this.store.state(projectId), need);
     const evidence = need.authorization as ScopedAuthorization;
     const record = this.store

@@ -273,6 +273,41 @@ describe('Run once', () => {
     expect((await list()).summary.needsAttention).toBe(1);
   });
 
+  // Review batch1-a, finding AUT-1: the label reads from the latest *run*; a press refused for
+  // a busy project wrote nothing and ran nothing, so it cannot hide what the last run left.
+  test('a refused press does not hide the last run’s Waiting for data', async () => {
+    await fs.rm(path.join(folder(), selection[0]!));
+    expect((await press('press-missing-first')).status).toBe(200);
+    await until('waiting-for-data');
+    await store.locked(async () => {
+      const state = store.state(projectId);
+      const task = store.createTask(state, { name: 'Other work', description: '', owner: 'you' });
+      state.sessions.push({
+        id: 'S-busy-2',
+        taskId: task.id,
+        sample: true,
+        state: 'working',
+        startedAt: new Date().toISOString(),
+        endedAt: null,
+        log: [],
+        entryIds: [],
+        needId: null,
+        engine: { name: 'sample', model: null, worker: 1, branch: null, context: null, events: 0, version: null, verified: false },
+      } as never);
+      await store.persist(state);
+    });
+    const refused = await press('press-while-busy');
+    expect(refused.data.occurrence.admission).toMatchObject({ state: 'refused', code: 'project_busy' });
+    const shown = (await list()).automations[0]!;
+    expect(shown.status.label).toBe('waiting-for-data');
+    expect(shown.status.reason).toContain(selection[0]);
+    expect((await list()).summary.needsAttention).toBe(1);
+    // The refused press itself is still listed, newest first, with its own result.
+    const detail = (await request<AutomationDetail>(automationPath())).data;
+    expect(detail.occurrences[0]!.occurrence.admission.state).toBe('refused');
+    expect(detail.occurrences[0]!.resultText).toBe('Not written');
+  });
+
   test('the legacy brief route converges on the same admission and keeps its words', async () => {
     await fs.rm(path.join(folder(), selection[0]!));
     const legacy = await request(`${base()}/brief`, 'POST', {});
