@@ -131,12 +131,13 @@ test('an open escalation holds the issue for the whole task, on any run', () => 
     nextStep(finding('critical', 'scope-drift', 'scope:Plans'), context(escalated, { needs: open }))
       .rung,
   ).toBeNull();
+  // Another run of the task never raises it again; it is noted there (see below).
   expect(
     nextStep(
       finding('critical', 'scope-drift', 'scope:Plans'),
       context(escalated, { needs: open, sessionId: 'S2' }),
     ).rung,
-  ).toBeNull();
+  ).not.toBe('escalate');
   // A different issue is a different escalation.
   expect(
     nextStep(finding('critical', 'scope-drift', 'scope:Other'), context(escalated, { needs: open }))
@@ -155,13 +156,62 @@ test('after you chose to continue, the same issue is noted once and never raised
     }),
   ];
   const answered = [{ id: 'N1', state: 'go-ahead' as const }];
-  const onNext = context(trail, { needs: answered, sessionId: 'S2' });
+  // S2 is the run your Continue resumed S1 as.
+  const onNext = context(trail, { needs: answered, sessionId: 'S2', continues: ['S1'] });
   const step = nextStep(finding('critical', 'scope-drift', 'scope:Plans'), onNext);
   expect(step).toMatchObject({ rung: 'note', settled: 'Acknowledged by your earlier answer.' });
   trail.push(
     record(finding('critical', 'scope-drift', 'scope:Plans'), 'note', { sessionId: 'S2' }),
   );
   expect(nextStep(finding('critical', 'scope-drift', 'scope:Plans'), onNext).rung).toBeNull();
+});
+
+test('a continue acknowledges the issue only for the run it resumed, never for a later run of the task', () => {
+  const found = finding('critical', 'scope-drift', 'scope:Plans');
+  const trail = [
+    record(found, 'escalate', { needId: 'N1' }),
+    record(found, 'answer', {
+      needId: 'N1',
+      answer: 'continue',
+      control: { commandId: 'c1', control: 'resume', outcome: 'applied', detail: '' },
+    }),
+  ];
+  const answered = [{ id: 'N1', state: 'go-ahead' as const }];
+  const step = nextStep(
+    finding('critical', 'scope-drift', 'scope:Plans'),
+    context(trail, { needs: answered, sessionId: 'S9' }),
+  );
+  expect(step.rung).toBe('escalate');
+});
+
+test('a continue whose Resume outcome is uncertain is not an acknowledgment', () => {
+  const found = finding('critical', 'scope-drift', 'scope:Plans');
+  const trail = [
+    record(found, 'escalate', { needId: 'N1' }),
+    record(found, 'answer', {
+      needId: 'N1',
+      answer: 'continue',
+      control: { commandId: 'c1', control: 'resume', outcome: 'uncertain', detail: '' },
+    }),
+  ];
+  const step = nextStep(
+    finding('critical', 'scope-drift', 'scope:Plans'),
+    context(trail, { needs: [{ id: 'N1', state: 'go-ahead' }], sessionId: 'S2', continues: ['S1'] }),
+  );
+  expect(step.rung).toBe('escalate');
+});
+
+test('while an escalation is open, the same issue on another run of the task is noted there, never dropped', () => {
+  const found = finding('critical', 'scope-drift', 'scope:Plans');
+  const trail = [record(found, 'escalate', { needId: 'N1' })];
+  const open = [{ id: 'N1', state: 'open' as const }];
+  const other = context(trail, { needs: open, sessionId: 'S2' });
+  expect(nextStep(finding('critical', 'scope-drift', 'scope:Plans'), other)).toMatchObject({
+    rung: 'note',
+    settled: 'An escalation about this is already waiting for you.',
+  });
+  trail.push(record(finding('critical', 'scope-drift', 'scope:Plans'), 'note', { sessionId: 'S2' }));
+  expect(nextStep(finding('critical', 'scope-drift', 'scope:Plans'), other).rung).toBeNull();
 });
 
 test('a continue that Resume refused is not an acknowledgment', () => {

@@ -293,6 +293,8 @@ test('continuing goes through H08 Resume and its revalidation, and never with wi
   expect(
     (later.supervision ?? []).filter((rec) => rec.sessionId === next).map((rec) => rec.action),
   ).toEqual(['note']);
+  // Noted because you continued, traced from the resumed run back to the run you answered for.
+  expect((later.supervision ?? []).find((rec) => rec.sessionId === next)?.reason).toMatch(/You chose to continue/);
 });
 
 test('redirect queues your words as the next run through ordinary admission', async () => {
