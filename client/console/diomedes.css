@@ -276,3 +276,79 @@
     display: none;
   }
 }
+
+/* H03: what the thread's open native session offers, above the composer. A caption, not a
+   panel: the state, who answers, and the queue while an answer runs. */
+.console.diomedes .dio-session {
+  margin: 0 0 8px;
+  min-width: 0;
+  color: var(--t3);
+  font-size: var(--dm-type-caption);
+  line-height: var(--dm-line-body);
+}
+.console.diomedes .dio-session-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  min-width: 0;
+  margin: 0;
+}
+.console.diomedes .dio-session-line.warn .dio-session-state {
+  color: var(--light);
+}
+.console.diomedes .dio-session-by {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.console.diomedes .dio-session-detail {
+  margin: 2px 0 0;
+  overflow-wrap: anywhere;
+}
+.console.diomedes .dio-session-queue {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.console.diomedes .dio-session-queue li {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+.console.diomedes .dio-session-queue .dio-quote {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.console.diomedes .dio-session-note {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.console.diomedes .dio-session .send {
+  padding: 0;
+  color: var(--light);
+  font-size: var(--dm-type-caption);
+  font-weight: 500;
+}
+.console.diomedes .dio-session-steer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+  min-width: 0;
+}
+.console.diomedes .dio-session-steer input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 4px 8px;
+  border: 1px solid var(--hair-2);
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}

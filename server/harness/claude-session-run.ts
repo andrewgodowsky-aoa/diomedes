@@ -302,6 +302,8 @@ export class ClaudeSessionRuns<C extends SessionCheckpointFacts = ClaudeSessionC
       request: ClaudeSessionTurn<C>;
       /** Set when a person's Stop reached this turn (H03), so its result says it was stopped. */
       stopRequested?: boolean;
+      /** The one stop in progress for this turn: a Stop press and a dropped caller share it. */
+      stopping?: Promise<'interrupted' | 'killed' | undefined>;
     }
   >();
   /** Messages held while a turn runs, per run, in the order they were sent (`profile.steering`). */
@@ -492,28 +494,29 @@ export class ClaudeSessionRuns<C extends SessionCheckpointFacts = ClaudeSessionC
       this.forkLocks.add(request.sourceRunId);
     }
     const controller = new AbortController();
-    const admitted = {
-      ...request,
-      input: {
-        ...request.input,
-        signal: AbortSignal.any([
-          controller.signal,
-          ...(request.input.signal ? [request.input.signal] : []),
-        ]),
-      },
-    };
+    // H03: the caller going away (a Console Stop ends its own request first) is a Stop, not a
+    // shutdown: it goes through the same graceful interrupt and bounded escalation as the Stop
+    // route. Only this driver's own controller (shutdown, or a transport that cannot stop
+    // gracefully) aborts the turn outright.
+    const admitted = { ...request, input: { ...request.input, signal: controller.signal } };
+    const caller = request.input.signal;
     const promise = this.drive(admitted).finally(() => {
+      caller?.removeEventListener('abort', gone);
       controller.abort();
       this.active.delete(request.runId);
       if (request.sourceRunId) this.forkLocks.delete(request.sourceRunId);
     });
-    this.active.set(request.runId, {
+    const entry = {
       commandId: request.input.requestId,
       intent,
       controller,
       promise,
       request,
-    });
+    };
+    this.active.set(request.runId, entry);
+    const gone = () => void this.stopActive(request.runId, entry).catch(() => undefined);
+    if (caller?.aborted) controller.abort();
+    else caller?.addEventListener('abort', gone, { once: true });
     return promise;
   }
   /** The person's text and the first phase, from a committed answer. Pure; nothing is written here. */
@@ -1198,19 +1201,37 @@ export class ClaudeSessionRuns<C extends SessionCheckpointFacts = ClaudeSessionC
     const active = this.active.get(runId);
     if (!active) return { state: 'idle' };
     if (active.commandId !== commandId) return { state: 'superseded' };
-    active.stopRequested = true;
-    // H03: a transport that can stop gracefully is asked to, within the grace; it ends the
-    // process itself when that does not work, and says which happened.
-    const session = this.connections.get(runId)?.session;
-    let stop: 'interrupted' | 'killed' | undefined;
-    if (session?.stop)
-      stop = await session.stop(this.stopGraceMs).catch((error: unknown) => {
-        if (error instanceof EngineError && error.code === 'SESSION_IDLE') return undefined;
-        throw error;
-      });
-    if (!stop) active.controller.abort();
-    await active.promise.catch(() => undefined);
+    const stop = await this.stopActive(runId, active);
     return { state: 'requested', ...(stop ? { stop } : {}) };
+  }
+  /**
+   * H03: stops one active turn once, however many ways it is asked. A transport that can stop
+   * gracefully is asked to within the grace, and ends its process itself when that does not
+   * work, saying which happened. Any other transport, or a turn not dispatched yet, is aborted.
+   */
+  private stopActive(
+    runId: string,
+    active: {
+      controller: AbortController;
+      promise: Promise<ClaudeSessionTurnResult>;
+      stopRequested?: boolean;
+      stopping?: Promise<'interrupted' | 'killed' | undefined>;
+    },
+  ): Promise<'interrupted' | 'killed' | undefined> {
+    active.stopRequested = true;
+    active.stopping ??= (async () => {
+      const session = this.connections.get(runId)?.session;
+      let stop: 'interrupted' | 'killed' | undefined;
+      if (session?.stop)
+        stop = await session.stop(this.stopGraceMs).catch((error: unknown) => {
+          if (error instanceof EngineError && error.code === 'SESSION_IDLE') return undefined;
+          throw error;
+        });
+      if (!stop) active.controller.abort();
+      await active.promise.catch(() => undefined);
+      return stop;
+    })();
+    return active.stopping;
   }
   async control(
     projectId: string,

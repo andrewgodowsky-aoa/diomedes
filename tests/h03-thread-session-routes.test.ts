@@ -270,7 +270,8 @@ describe('H03: a Console thread on Claude Code', () => {
   test('Stop interrupts the running answer gracefully and says so; the session stays live', async () => {
     await send('m-one', 'Good morning');
     const running = send('m-two', 'Think hard [hang]');
-    await until(async () => (await view()).busy);
+    // Stop names a command the record holds, so it waits until the turn reached Claude Code.
+    await until(async () => (await turns().catch(() => [])).some((line) => line.turn === 'Think hard [hang]'));
     const ack = await api<InterruptResponse>(`${messages()}/m-two/interrupt`, 'POST', {});
     expect(ack).toMatchObject({ commandId: 'm-two', state: 'requested', stop: 'interrupted' });
     expect(await running).toMatchObject({ interrupted: true, answerText: null });

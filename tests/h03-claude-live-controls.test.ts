@@ -235,6 +235,23 @@ describe('H03 Claude Code live controls over a fixture stream-json process', () 
     expect(w.launches).toHaveLength(1);
   });
 
+  it('a caller that goes away stops its turn the same graceful way, not by killing the process', async () => {
+    const w = await world();
+    const driver = await w.boot();
+    await driver.request(w.turn('start', 'one', 'first'));
+    const caller = new AbortController();
+    const base = w.turn('follow-up', 'two', 'wait [hang]');
+    const running = driver.request({ ...base, input: { ...base.input, signal: caller.signal } });
+    await tick();
+    caller.abort();
+    expect(await running).toMatchObject({ interrupted: true, stop: 'interrupted' });
+    // A Stop pressed after the caller left joins the same stop and asks for nothing more.
+    expect(await driver.interruptCommand('p', 'claude-run', 'two')).toEqual({ state: 'idle' });
+    expect((await driver.status('p', 'claude-run')).continuity.state).toBe('live');
+    expect((await driver.request(w.turn('follow-up', 'three', 'again'))).response?.text).toBe('Answer to again');
+    expect(w.launches).toHaveLength(1);
+  });
+
   it('a Stop the turn ignores ends the process after the grace, records why, and never resumes it', async () => {
     const w = await world();
     const driver = await w.boot();
