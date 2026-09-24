@@ -379,9 +379,9 @@ describe('forks and tools must not invent history', () => {
   test('register must not accept an uppercase name, a negative cost or a missing execute', () => {
     const tools = new ToolRegistry();
     const base = {
-      version: '1', description: 'd', effect: 'pure' as const, permission: null,
+      version: '1', description: 'd', effect: 'pure' as const, effectClass: 'pure' as const, permission: null,
       approval: false, destination: 'local' as const, trustedInputRequired: false,
-      cost: 1, schema: z.object({}).strict(), execute: () => ({}),
+      cost: 1, schema: z.object({}).strict(), outputSchema: z.object({}), execute: () => ({}),
     };
     expect(() => tools.register({ ...base, name: 'Sum' })).toThrow(/lowercase/);
     expect(() => tools.register({ ...base, name: 'ok', cost: -1 })).toThrow(/integer/);
@@ -391,9 +391,9 @@ describe('forks and tools must not invent history', () => {
   test('validate must not accept an extra key on a strict schema', () => {
     const tools = new ToolRegistry();
     tools.register({
-      version: '1', description: 'd', effect: 'pure' as const, permission: null,
+      version: '1', description: 'd', effect: 'pure' as const, effectClass: 'pure' as const, permission: null,
       approval: false, destination: 'local' as const, trustedInputRequired: false,
-      cost: 1, name: 'sum', schema: z.object({ a: z.number() }).strict(), execute: () => ({}),
+      cost: 1, name: 'sum', schema: z.object({ a: z.number() }).strict(), outputSchema: z.object({}), execute: () => ({}),
     });
     expect(() => tools.validate('sum', { a: 1, extra: 2 })).toThrow(/schema rejected/);
   });

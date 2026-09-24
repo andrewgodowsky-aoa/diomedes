@@ -350,29 +350,17 @@ export class NativeAgent {
             'tool_not_in_context',
             `Unknown tool for this final model context: ${response.name}.`,
           );
-        const tool = this.tools.get(response.name);
         const input = this.tools.validate(response.name, response.input) as Json;
-        const output = await this.runtime.step<Json>(
+        // H12: the one mediated path: targets contained, effect intent recorded before the handler.
+        const output = await this.tools.dispatch<Json>(this.runtime, {
           runId,
           owner,
-          {
-            id: `tool:${i}`,
-            version: tool.version,
-            kind: 'tool',
-            effect: tool.effect,
-            name: tool.name,
-            cost: tool.cost,
-            permission: tool.permission,
-            approval: tool.approval,
-            destination: tool.destination,
-            trustedInputRequired: tool.trustedInputRequired,
-            label: tool.label ?? null,
-            origin: applicationOrigin(),
-            input,
-          },
-          (context) => tool.execute({ ...context, input: context.input }),
           principal,
-        );
+          stepId: `tool:${i}`,
+          name: response.name,
+          input,
+          origin: applicationOrigin(),
+        });
         messages.push({ role: 'assistant', tool: response.name, input });
         messages.push({ role: 'tool', name: response.name, output });
       }

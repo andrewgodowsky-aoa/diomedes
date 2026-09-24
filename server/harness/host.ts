@@ -62,6 +62,33 @@ const stepOrigin = z
     accountRoute: z.string().nullable().optional(),
   })
   .optional();
+/** H12 recorded effects, read fail-closed like every other part of a saved run. */
+const effectRecord = z.strictObject({
+  v: z.literal(1),
+  tool: z.string(),
+  effectClass: z.enum(['pure', 'read', 'idempotent-write', 'non-idempotent-effect', 'external-send']),
+  attempt: integer.positive(),
+  inputsDigest: sha,
+  targets: z.array(z.string()),
+  idempotencyKey: sha,
+  principalId: z.string(),
+  identityGeneration: integer,
+  authorization: z.string(),
+  status: z.enum([
+    'intended',
+    'applied',
+    'failed',
+    'uncertain',
+    'abandoned',
+    'reconciled-applied',
+    'reconciled-not-applied',
+  ]),
+  intendedAt: stamp,
+  outcomeAt: stamp.nullable(),
+  outputHash: sha.nullable(),
+  error: z.string().nullable(),
+  reconciliation: z.strictObject({ by: z.string(), evidence: z.string(), at: stamp }).nullable(),
+});
 const readableRun = z.object({
   v: z.literal(1),
   id: z.string(),
@@ -157,6 +184,7 @@ const readableRun = z.object({
       nativeCheckpoint: z
         .strictObject({ v: z.literal(1), providerId: z.string().min(1).max(80), payload: z.json() })
         .optional(),
+      effects: z.array(effectRecord).optional(),
       leaseFence: integer,
       startedAt: stamp.nullable(),
       endedAt: stamp.nullable(),

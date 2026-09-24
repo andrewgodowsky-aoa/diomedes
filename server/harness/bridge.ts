@@ -15,7 +15,7 @@ import { FORMAT_REPORT } from './capabilities/format-report.js';
 import { NativeAgent, type ModelAdapter } from './native-agent.js';
 import { digest, HarnessError, validatePrincipal } from './policy.js';
 import { needFromWaitingStep, presentRun, sessionOriginFromRun } from './present.js';
-import { RunService, Suspended, type HarnessHook } from './run-service.js';
+import { RunService, Suspended, uncertainEffectsOf, type HarnessHook } from './run-service.js';
 import type { ToolRegistry } from './tools.js';
 import {
   CODEX_ENGINE,
@@ -673,6 +673,16 @@ export class HarnessBridge {
     return structuredClone(session);
   }
   private readonly sessionRuns = new Map<string, string>();
+  /**
+   * H12 → H08: the recorded effects of this Session's harness run whose outcome is
+   * uncertain. Retry and Resume refuse while any remain.
+   */
+  async uncertainEffects(projectId: string, sessionId: string): Promise<string[]> {
+    const id = this.sessionRuns.get(sessionId);
+    if (!id) return [];
+    const run = await this.runs.get(id).catch(() => null);
+    return run && run.projectId === projectId ? uncertainEffectsOf(run) : [];
+  }
   private readonly resumes = new Map<string, string>();
   private async runForSession(projectId: string, sessionId: string) {
     const id = this.sessionRuns.get(sessionId);
@@ -748,6 +758,12 @@ export class HarnessBridge {
         continue;
       }
       await this.runs.recover(run.id, current);
+      run = await this.runs.get(run.id);
+      // H12: an effect the crash left uncertain is settled only by its sink's own
+      // record (the tool's reconciler); anything else waits for a person.
+      for (const step of run.steps)
+        if (step.state === 'reconcile_required' && step.effects?.at(-1)?.status === 'uncertain' && this.tools.has(step.effects.at(-1)!.tool))
+          await this.tools.reconcile(this.runs, run.id, step.intent.stepId, current);
       run = await this.runs.get(run.id);
       this.enqueue(run);
       await this.flush();

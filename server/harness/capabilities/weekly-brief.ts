@@ -45,6 +45,7 @@ import {
 import { digest } from '../policy.js';
 import type { RunService } from '../run-service.js';
 import type { ToolRegistry } from '../tools.js';
+import { reconcileRecorded, recordedWrite } from './format-report.js';
 
 export const WEEKLY_BRIEF = {
   id: 'weekly-brief',
@@ -206,7 +207,9 @@ export function registerWeeklyBrief(
     name: 'read_brief_sources',
     description: 'Read the pinned sources and the previous brief, each with its SHA-256.',
     effect: 'pure',
+    effectClass: 'pure',
     schema: readInput,
+    outputSchema: readOutput,
     execute: async ({ input }): Promise<ReadOutput> => {
       // `store.current` is the side-effect-free read: a brief leaves one recorded
       // write behind it, not a trail of first-seen observations.
@@ -273,7 +276,9 @@ export function registerWeeklyBrief(
     name: 'compose_brief',
     description: 'Compose the source-linked draft from what the read step recorded.',
     effect: 'pure',
+    effectClass: 'pure',
     schema: composeInput,
+    outputSchema: composeOutput,
     execute: async ({ input }) => {
       const run = await runs.get(input.runId);
       const step = run.steps.find((item) => item.intent.stepId === READ_STEP);
@@ -314,10 +319,20 @@ export function registerWeeklyBrief(
     name: 'save_brief_draft',
     description: 'Save the draft to the pinned destination for review. Nothing is sent.',
     effect: 'idempotent',
+    effectClass: 'idempotent-write',
     permission: 'write-project-file',
     // D2: today's authority. The draft waits as a Change to keep or undo.
     approval: false,
     schema: saveInput,
+    outputSchema: recordedWrite,
+    targets: (input) => [input.destination],
+    reconcile: async ({ input, record }) => {
+      const found = await reconcileRecorded(store, input.projectId, record.idempotencyKey, {
+        path: input.destination,
+        after: hash(input.text)!,
+      });
+      return found;
+    },
     execute: (context) =>
       store.locked(async () => {
         context.signal.throwIfAborted();
@@ -410,28 +425,8 @@ export function registerWeeklyBrief(
     name: string,
     input: Json,
   ) => {
-    const tool = tools.get(name);
-    return runs.step<T>(
-      runId,
-      owner,
-      {
-        id,
-        version: tool.version,
-        kind: 'tool',
-        effect: tool.effect,
-        name: tool.name,
-        cost: tool.cost,
-        permission: tool.permission,
-        approval: tool.approval,
-        destination: tool.destination,
-        trustedInputRequired: tool.trustedInputRequired,
-        label: tool.label ?? null,
-        origin: WEEKLY_BRIEF_ORIGIN,
-        input: tools.validate(name, input) as Json,
-      },
-      (context) => tool.execute({ ...context, input: context.input }) as T | Promise<T>,
-      principal,
-    );
+    // H12: validated, contained and effect-recorded through the one mediated path.
+    return tools.dispatch<T>(runs, { runId, owner, principal, stepId: id, name, input, origin: WEEKLY_BRIEF_ORIGIN });
   };
 
   return {
