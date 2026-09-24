@@ -866,7 +866,7 @@ test('D12: a free profile keeps the built-in schemes and is shown no premium con
   await center.getByRole('button', { name: 'Close', exact: true }).click();
   await page.getByRole('button', { name: 'Settings', exact: true }).first().click();
   await page.getByRole('button', { name: 'Appearance', exact: true }).click();
-  await expect(page.locator('.radio-list input[type="radio"]').first()).toBeVisible();
+  await expect(page.locator('.radio-list input[name="appearance"]').first()).toBeVisible();
 
   // And the service refuses the same save whatever the screen shows.
   const refused = await page.request.put(`/api/themes/${THEME_ID}`, {
@@ -1003,15 +1003,17 @@ test('D16: a theme applied in another workspace reads as the built-in package', 
 
   await page.getByRole('button', { name: 'Appearance', exact: true }).click();
   await expect(page.getByText('A theme from the Design Center is applied.')).toHaveCount(0);
+  // Appearance also holds the Console's View choice, so every check here is
+  // scoped to the package radios (name="appearance").
   // Exactly one scheme is selected, and it is the package that is painting.
-  await expect(page.locator('.radio-list input[type="radio"]:checked')).toHaveCount(1);
+  await expect(page.locator('.radio-list input[name="appearance"]:checked')).toHaveCount(1);
   const painting = await page.evaluate(() => document.documentElement.dataset.package);
-  await expect(page.locator('.radio-list .radio-row.selected')).toHaveCount(1);
+  await expect(page.locator('.radio-list .radio-row.selected:has(input[name="appearance"])')).toHaveCount(1);
 
   // Picking a scheme here must not reach into the workspace the theme belongs
   // to. The client does not send the reset, and the service would refuse to act
   // on it if it did.
-  const other = page.locator('.radio-list .radio-row:not(.selected) input[type="radio"]').first();
+  const other = page.locator('.radio-list .radio-row:not(.selected) input[name="appearance"]').first();
   await other.click();
   await expect
     .poll(async () => page.evaluate(() => document.documentElement.dataset.package))
@@ -1035,7 +1037,7 @@ test('D16: a theme applied in another workspace reads as the built-in package', 
   await page.getByRole('button', { name: 'Settings', exact: true }).first().click();
   await page.getByRole('button', { name: 'Appearance', exact: true }).click();
   await expect(page.getByText('A theme from the Design Center is applied.')).toBeVisible();
-  await expect(page.locator('.radio-list input[type="radio"]:checked')).toHaveCount(0);
+  await expect(page.locator('.radio-list input[name="appearance"]:checked')).toHaveCount(0);
 });
 
 /**

@@ -1,5 +1,6 @@
 import type {
   Change,
+  ConsoleView,
   Conversation,
   DocumentInfo,
   EngineCatalog,
@@ -43,6 +44,8 @@ export interface PaletteHandlers {
   wakeMember(member: TeamMember): void | Promise<void>;
   selectThread(threadId: string): void;
   setView(view: ShellView): void;
+  /** Switch between the Conversation and Architect views (shared/types.ts ConsoleView). */
+  setConsoleView?(view: ConsoleView): void;
   openProject(project: Project): void;
   /** Open a project document in the Files pane, opening the pane if it is shut. */
   openDocument(path: string): void;
@@ -81,6 +84,8 @@ export interface PaletteContext {
   currentThread: Conversation | null;
   policy: 'first' | 'go';
   view: ShellView;
+  /** The Console view showing; absent where the palette has no view to switch. */
+  consoleView?: ConsoleView;
   focusTaskId?: string;
   focusTaskName?: string;
   /** Palette UI state owned by the Shell so entries and the input stay in sync. */
@@ -403,7 +408,9 @@ function projectEntries(ctx: PaletteContext): PaletteEntry[] {
 
 function viewEntries(ctx: PaletteContext): PaletteEntry[] {
   const focus = ctx.focusTaskName ?? 'no open task';
-  return (['Thread', 'Board', 'Team', 'Discovery', 'Readiness'] as ShellView[]).map((v) => ({
+  const views: PaletteEntry[] = (
+    ['Thread', 'Board', 'Team', 'Discovery', 'Readiness'] as ShellView[]
+  ).map((v) => ({
     group: 'Views',
     id: `view:${v}`,
     name: v,
@@ -411,6 +418,26 @@ function viewEntries(ctx: PaletteContext): PaletteEntry[] {
     point: '',
     actions: [{ label: 'Open', run: () => ctx.handlers.setView(v) }],
   }));
+  const switchTo = ctx.handlers.setConsoleView;
+  if (!switchTo || !ctx.consoleView) return views;
+  // The other of the two Console views, offered as a switch. Only the one not
+  // showing is listed, so the row always does something.
+  const other = ctx.consoleView === 'conversation' ? 'architect' : 'conversation';
+  return [
+    ...views,
+    {
+      group: 'Views',
+      id: `console-view:${other}`,
+      name: other === 'conversation' ? 'Conversation view' : 'Architect view',
+      sub:
+        other === 'conversation'
+          ? 'The prompt box and your threads'
+          : 'The full Console, with Board, Team, History and Files',
+      search: 'simple advanced mode layout',
+      point: '',
+      actions: [{ label: 'Switch', run: () => switchTo(other) }],
+    },
+  ];
 }
 
 export function buildEntries(ctx: PaletteContext): PaletteEntry[] {

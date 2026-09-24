@@ -177,6 +177,9 @@ export function migrateSettings(settings: Settings): void {
   delete retired.surface;
   delete retired.lastPage;
   delete retired.tasksView;
+  // A profile from before the two views keeps the Console it knows. A chosen
+  // view is kept across launches: both views have a way out.
+  if (settings.view !== 'conversation' && settings.view !== 'architect') settings.view = 'architect';
   // The home binding points at two records, and this runs before either of them
   // is loaded, so only its shape can be judged here: anything that is not the
   // one shape the server writes becomes no binding at all. Whether the records
@@ -214,6 +217,9 @@ export const emptyTeamMeta = (): TeamMeta => ({ idempotency: {}, blockedBy: {} }
 export const defaults = (): Settings => ({
   version: 1,
   detail: 'guided',
+  // A new person is moved to Conversation when they finish setup
+  // (shared/onboarding.ts). Every other profile keeps the full Console.
+  view: 'architect',
   onboarding: {
     setupVersion: 2,
     discoveryConsentAt: null,
