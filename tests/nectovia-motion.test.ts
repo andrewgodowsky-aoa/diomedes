@@ -1,4 +1,5 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   NV_EASE,
@@ -159,6 +160,50 @@ describe('the scheme’s motion in nectovia.css', () => {
       const uses = [...css.matchAll(new RegExp(`animation: ${name} ([^;]+);`, 'g'))].map((m) => m[1]);
       expect(uses.length, name).toBeGreaterThan(0);
       for (const use of uses) expect(use, name).not.toMatch(/\b(forwards|both)\b/);
+    }
+  });
+});
+
+// C49 (CD-05): reduced motion across the whole Console, not only the scheme.
+// The browser spec (tests/cd05-zoom-motion.spec.ts) reads computed styles on a
+// running page; these hold the source to the two rules that make that true.
+describe('reduced motion reaches everything the Console moves', () => {
+  const strip = (text: string) => text.replace(/\/\*[\s\S]*?\*\//g, '');
+  const walk = (dir: string): string[] =>
+    readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
+      entry.isDirectory() ? walk(join(dir, entry.name)) : [join(dir, entry.name)],
+    );
+  const files = walk('client');
+  const styles = strip(readFileSync('client/styles.css', 'utf8'));
+
+  it('stops every animation and transition under the OS query and under the app’s own Reduced setting', () => {
+    const everything = /\*,\s*\*::before,\s*\*::after\s*\{\s*animation: none !important;\s*transition: none !important;/;
+    const query = styles.slice(styles.indexOf('@media (prefers-reduced-motion: reduce)'));
+    expect(query).toMatch(everything);
+    expect(styles).toMatch(
+      /html\[data-motion='reduced'\] \*,\s*html\[data-motion='reduced'\] \*::before,\s*html\[data-motion='reduced'\] \*::after\s*\{\s*animation: none !important;\s*transition: none !important;/,
+    );
+  });
+
+  it('lets no other rule outrank that with an !important animation or transition', () => {
+    const offenders = files
+      .filter((file) => file.endsWith('.css') && !file.endsWith(join('client', 'styles.css')))
+      .flatMap((file) =>
+        [...strip(readFileSync(file, 'utf8')).matchAll(/\b(animation|transition)[a-z-]*\s*:[^;{}]*!important/g)].map(
+          (m) => `${file}: ${m[0]}`,
+        ),
+      );
+    expect(offenders).toEqual([]);
+  });
+
+  it('guards every Web Animation, which no stylesheet can reach, with a stillness check', () => {
+    const scripted = files.filter(
+      (file) => /\.(ts|tsx)$/.test(file) && /\.animate\(/.test(readFileSync(file, 'utf8')),
+    );
+    expect(scripted.length).toBeGreaterThanOrEqual(4);
+    for (const file of scripted) {
+      const source = readFileSync(file, 'utf8');
+      expect(source, file).toMatch(/\b(reducedMotion|motionReduced|motionAllowed)\(/);
     }
   });
 });
