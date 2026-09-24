@@ -183,9 +183,7 @@ async function failedCodexRun(): Promise<Session> {
 }
 
 test('RC-H08-6: stop(task) with nothing running but a queued follow-up does not say a stop was sent', async () => {
-  receiptOf(
-    await control({ control: 'queue', text: 'Later.', waitsFor: 'task', route: 'codex' }),
-  );
+  receiptOf(await control({ control: 'queue', text: 'Later.', waitsFor: 'task', route: 'codex' }));
   const stop = receiptOf(await control({ control: 'stop', scope: 'task' }));
   expect(stop.result.stop?.acknowledged).toBe(false);
   expect(stop.outcome).toBe('applied');
@@ -196,7 +194,10 @@ test('RC-H08-5: stop naming a settled run of the task while another run of it is
   const settled = await failedCodexRun();
   invoke = hang;
   const live = (await codexStart()).data as Session;
-  await until((r) => r.sessions.find((s) => s.id === live.id)?.state === 'working', 'a working run');
+  await until(
+    (r) => r.sessions.find((s) => s.id === live.id)?.state === 'working',
+    'a working run',
+  );
   const stop = receiptOf(await control({ control: 'stop', scope: 'task', sessionId: settled.id }));
   // The live run was never touched...
   expect((await state()).sessions.find((s) => s.id === live.id)!.state).toBe('working');
@@ -208,7 +209,10 @@ test('RC-H08-5: stop naming a settled run of the task while another run of it is
 test('RC-H08-1: a generation stop on a route whose interrupt is host is not attributed to the engine', async () => {
   invoke = hang;
   const live = (await codexStart()).data as Session;
-  await until((r) => r.sessions.find((s) => s.id === live.id)?.state === 'working', 'a working run');
+  await until(
+    (r) => r.sessions.find((s) => s.id === live.id)?.state === 'working',
+    'a working run',
+  );
   const store = app.locals.store as Store;
   expect(AWS_MODEL_CONTRACT.commands.interrupt.support).toBe('host');
   const controls = new DurableControls({
@@ -235,9 +239,8 @@ test('RC-H08-1: a generation stop on a route whose interrupt is host is not attr
 test('RC-H08-4: a Work start under "<id>:work" makes a later control <id> claim a retry it never performed', async () => {
   await fixture(true);
   const stopped = await stoppedSampleRun();
-  const other = (
-    await request(`/projects/${projectId}/tasks`, 'POST', { name: 'Unrelated task' })
-  ).data.id as string;
+  const other = (await request(`/projects/${projectId}/tasks`, 'POST', { name: 'Unrelated task' }))
+    .data.id as string;
   const commandId = crypto.randomUUID();
   const unrelated = await request(`/projects/${projectId}/work/start`, 'POST', {
     protocolVersion: 1,
@@ -360,7 +363,7 @@ test('RC-H08 guard: two concurrent identical retries perform once', async () => 
   expect((await state()).controlReceipts!.filter((r) => r.commandId === commandId)).toHaveLength(1);
 });
 
-test('RC-H08 guard: a control naming another task\'s run is 404 and leaves no receipt', async () => {
+test("RC-H08 guard: a control naming another task's run is 404 and leaves no receipt", async () => {
   const other = (await request(`/projects/${projectId}/tasks`, 'POST', { name: 'Other' })).data
     .id as string;
   const live = (
@@ -376,7 +379,7 @@ test('RC-H08 guard: a control naming another task\'s run is 404 and leaves no re
   expect((await state()).sessions.find((s) => s.id === live.id)!.state).not.toBe('stopped');
 });
 
-test('RC-H08-8: legacy /stop with a taskId and another task\'s sessionId', async () => {
+test("RC-H08-8: legacy /stop with a taskId and another task's sessionId", async () => {
   const other = (await request(`/projects/${projectId}/tasks`, 'POST', { name: 'Other' })).data
     .id as string;
   const live = (
@@ -392,6 +395,6 @@ test('RC-H08-8: legacy /stop with a taskId and another task\'s sessionId', async
     taskId,
     sessionId: live.id,
   });
-  console.log('K', res.status, JSON.stringify(res.data));
+  expect(res.status).toBe(404);
   expect((await state()).sessions.find((s) => s.id === live.id)!.state).not.toBe('stopped');
 });

@@ -14,14 +14,20 @@ const turn = (key: string, prompt: string, answer: string | null) => ({
 const run = (id: string, steps: unknown[]) => ({ id, steps }) as unknown as HarnessRun;
 
 /** Every message the record calls included is whole in the text; every other one is named as omitted. */
-function expectTruthfulSelection(selected: ReturnType<typeof selectHistory>, prompts: Map<number, string>) {
+function expectTruthfulSelection(
+  selected: ReturnType<typeof selectHistory>,
+  prompts: Map<number, string>,
+) {
   const selection = selected.selection!;
   const omitted = new Set(selection.omitted.map((item) => item.index));
   for (const item of selection.included) {
     expect(omitted.has(item.index)).toBe(false);
     const prompt = prompts.get(item.index)!;
     if (item.truncated) expect(selection.cutChars).toBeGreaterThan(0);
-    else expect(selected.text, `message ${item.index} is recorded as included`).toContain(`Person: ${prompt}`);
+    else
+      expect(selected.text, `message ${item.index} is recorded as included`).toContain(
+        `Person: ${prompt}`,
+      );
   }
   for (const index of prompts.keys())
     expect(
@@ -30,7 +36,8 @@ function expectTruthfulSelection(selected: ReturnType<typeof selectHistory>, pro
     ).toBe(true);
   // A lineage's own omitted message is in the summary record.
   const summarised = new Set((selected.compaction?.turns ?? []).map((item) => item.index));
-  for (const item of selection.omitted) if (!item.carried) expect(summarised.has(item.index)).toBe(true);
+  for (const item of selection.omitted)
+    if (!item.carried) expect(summarised.has(item.index)).toBe(true);
 }
 
 describe('H18 review C', () => {
@@ -76,7 +83,9 @@ describe('H18 review C', () => {
 
   test('RC-H18-2: a summary excerpt never splits a surrogate pair', () => {
     const prompt = `${'a'.repeat(158)}\u{1F600} and more text with no full stop`;
-    const record = compactTurns([{ runId: 'r', stepId: 'turn:x', index: 1, prompt, answer: 'fine.' }]);
+    const record = compactTurns([
+      { runId: 'r', stepId: 'turn:x', index: 1, prompt, answer: 'fine.' },
+    ]);
     expect(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/.test(record.text)).toBe(false);
     expect(/(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(record.text)).toBe(false);
   });

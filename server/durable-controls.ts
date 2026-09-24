@@ -144,6 +144,11 @@ export interface WorkControlDriver {
   fork?(ctx: ContinueContext): Promise<StartAnswer>;
   /** Effects the route knows may have happened for this run and are not confirmed. */
   uncertainEffects?(projectId: string, session: Session): readonly string[];
+  /**
+   * What a run a Resume already started records about who continued it, for the receipt written
+   * after a restart; without it the receipt cannot know and credits the route's declaration.
+   */
+  recorded?(session: Session): Pick<StartAnswer, 'performedBy' | 'support' | 'nativeThreadId'>;
 }
 
 export interface DurableControlsDeps {
@@ -796,7 +801,13 @@ export class DurableControls {
       throw new ApiError(409, 'This command already names a different request.', {
         code: 'control_command_conflict',
       });
-    if (already) return started(already.id, `${verb}; the run it started was already recorded.`);
+    if (already)
+      return started(
+        already.id,
+        `${verb}; the run it started was already recorded.`,
+        [],
+        control === 'resume' ? (driver?.recorded?.(already) ?? {}) : {},
+      );
     const inputs = session.inputs;
     if (!inputs)
       return refused(
