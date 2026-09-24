@@ -197,6 +197,14 @@ asking"); nothing here claims website copy.
 
 ## BUILD STATUS
 
-See the final report for the counts from this lane's own final run (Linux sprint container; CI runs
-Windows and macOS). Nothing here is published, packaged or released; the branch is pushed for the
-integrator.
+From this lane's own final run on the branch after merging `origin/main` `ccc5fa2` (Linux sprint
+container; CI runs Windows and macOS):
+
+- `npx tsc --noEmit`: clean.
+- vitest (full suite, `--maxWorkers=2`, under the shared lock): 363 files passed, 1 skipped; 6454
+  tests passed, 16 skipped, 0 failed.
+- `npx vite build`: built.
+- Playwright `ui.spec.ts` + `native-ui.spec.ts` + `field.spec.ts` + `remembered-approvals-ui.spec.ts`:
+  40 passed, 0 failed, 0 skipped (36 gate tests + 4).
+
+Nothing here is published, packaged or released; the branch is pushed for the integrator.
