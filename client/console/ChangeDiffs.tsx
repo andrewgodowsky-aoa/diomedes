@@ -74,6 +74,10 @@ function ChangeDiffCard({
   useEffect(() => {
     setKept(new Set(all));
   }, [all, record?.after]);
+  // A newer project state carries the file as it is now; the one "Review again" read is spent.
+  useEffect(() => {
+    setLatest(undefined);
+  }, [change.current]);
 
   const decisions = useMemo(
     () =>
