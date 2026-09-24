@@ -1,15 +1,15 @@
 # Automations Milestone A: work order
 
-Version 2026-09-24.0 (proposed), written 2026-09-24 at Andrew's request ("write the Milestone A work
-order").
+Version 2026-09-24.1, written 2026-09-24 at Andrew's request ("write the Milestone A work order").
+Version .1 records Andrew's answers to D1–D4 and his direction on remembered approvals (section 3).
 
 - **Base:** `main` `a49f027` ("Merge pull request #66 … retired-settings-removal").
 - **Canonical documents read:** Core Pillars 2026-09-22.1, Live Roadmap 2026-09-23.1, Project Memory
   2026-09-23.1, Automations specification 2026-09-19.1, delivery mapping
   `docs/implementation/2026-09-19-automations-work-items.md` 2026-09-19.1.
-- **State:** planning only. No product code is written or changed by this order. It authorizes
-  nothing on its own: each slice still needs Andrew's approval to commit and publish, and the
-  decisions in section 3 are his.
+- **State:** planning only. No product code is written or changed by this order. D1–D4 are decided
+  (section 3). The order authorizes no publication on its own: each slice still needs Andrew's
+  approval to commit and publish.
 - **Traceability:** BUS-10 foundation (roadmap section 2, Milestone A; specification section 12).
 
 ## 1. What Milestone A delivers
@@ -99,20 +99,21 @@ These findings are from `a49f027`. File references are exact at that commit.
 - `needFromWaitingStep` promises undo for every non-idempotent action (`server/harness/present.ts:139-140`).
 - The specification (section 5.3) asks for this to be fixed during implementation.
 
-## 3. Decisions for Andrew
+## 3. Decisions
 
-Each decision below changes code in this order, and each is his to make under `AGENTS.md`: two touch
-permission meaning and all four touch product behaviour. The recommendation is the option this order
-is written against. If a different option is chosen, the affected slices are named.
+These decisions were Andrew's to make under `AGENTS.md`: two touch permission meaning and all four
+touch product behaviour. **Andrew took all four recommendations on 2026-09-24** ("go with your
+recommendations on D1 through D4"). The alternatives are kept below so the reasoning stays
+inspectable; they are not open.
 
 ### D1. How Run once executes
 
-- **Recommended: a deterministic `weekly-brief` harness capability run by `RunService`.**
+- **Decided: a deterministic `weekly-brief` harness capability run by `RunService`.**
   - It follows the `format-report` pattern: read sources, compose, save the draft.
   - No model is called, and attribution names a Diomedes procedure started by the person (decision 8).
   - This is the path Milestone B's scheduler will feed, so B adds a trigger and not a second execution
     path.
-- Alternative: wrap the existing direct write in a command receipt and a mirror Task.
+- Not taken: wrap the existing direct write in a command receipt and a mirror Task.
   - This is smaller now.
   - It leaves the brief outside `RunService`, which the roadmap names as the durable execution spine,
     and B would have to move it anyway.
@@ -120,26 +121,26 @@ is written against. If a different option is chosen, the affected slices are nam
 
 ### D2. Whether saving the draft needs an approval each time
 
-- **Recommended: keep today's authority.**
+- **Decided: keep today's authority.**
   - The save tool declares `approval: false` and needs `write-project-file`.
   - It may write only to the destination named by the admitted configuration revision.
   - The draft is saved with `review: true`, so it appears as a waiting Change the person keeps or
     undoes, exactly as now.
   - This neither widens nor narrows who may do what today.
-- Alternative: `approval: true`. Each run then stops at an exact write approval, like `format-report`.
-  - This is safe.
-  - It adds a click to every manual run, and it becomes approval spam once B schedules the brief
-    (decision 7).
-- **Affects:** A3, and the "Needs approval" label in A1.
+- Not taken: `approval: true`. Each run would stop at an exact write approval, like `format-report`.
+  That is a click on every manual run, and approval spam once B schedules the brief (decision 7).
+- **Affects:** A3. In A the "Needs approval" label has no brief fact behind it. It stays in the A1
+  label set for any later step that declares approval.
+- Andrew's direction on approvals generally, given with this answer, is recorded in D5.
 
 ### D3. What a missing configured source does
 
-- **Recommended: stop before writing.**
+- **Decided: stop before writing.**
   - The run ends as **Waiting for data** and names each missing file.
   - Nothing is written.
   - This satisfies specification sections 4.3 and A16/A17: missing coverage must not produce a
     reassuring result.
-- Alternative: keep writing a draft, but label the result **Partial — N sources missing** and never
+- Not taken: keep writing a draft, but label the result **Partial — N sources missing** and never
   **Draft saved**.
 - This changes behaviour only on the new admission path. `composeBrief`, and the rehearsal service's
   direct call (`server/rehearsal/service.ts:147`, `:205`), keep their current, tested behaviour.
@@ -147,16 +148,50 @@ is written against. If a different option is chosen, the affected slices are nam
 
 ### D4. Where the destination lives and what the Diomedes home row does
 
-- **Recommended placement:** automations belong to the workspace, not the open project, so the Console
+- **Decided placement:** automations belong to the workspace, not the open project, so the Console
   row moves from "Not ready yet" into the **Nectovia** group beside AI engines, Settings and Projects.
-- **Recommended home row:** it becomes available.
+- **Decided home row:** it becomes available.
   - It opens the active organization's output project on the Automations screen.
   - It uses a new `viewRequest` prop on `Shell`, mirroring the existing `sectionRequest` pattern
     (`App.tsx:85`, `561`, `707`).
   - Without an output project it states why and opens nothing.
-- Alternative: the Console row becomes live and the home row stays held. Its reason text must then
-  change, because "Nothing is built behind this yet" would become false.
+- Not taken: the Console row becomes live and the home row stays held, with new reason text.
 - **Affects:** A5.
+
+### D5. Remembered approvals: one click per project (Andrew's direction, 2026-09-24)
+
+Andrew, answering D2: "We want to reduce unnecessary clicking for approvals, usually one click per
+project is enough for an item to be remembered as safe."
+
+- **What it means here.** When a step does need a person's approval, the person approves it once in a
+  project. The same item in the same project is then remembered as safe and does not ask again.
+- **How it fits the standing decisions:**
+  - It is decision 7 made concrete ("a user-approved task or project grant may cover routine work
+    inside an explicit scope").
+  - The remembered approval is a scoped grant. It is recorded with who gave it, when, and for what,
+    and it can be revoked.
+  - Like every grant, it never widens itself.
+  - A configuration change, rollback, pack activation or restart never creates one or revives a
+    revoked one (*Configuration cannot revive spent or revoked authority*).
+  - Losing membership or the item's authority ends it.
+  - Exact approvals stay available, and consequential actions keep their exact approval.
+- **Effect on Milestone A: none to build.** Under D2 the brief asks for no approval at all, which is
+  fewer clicks than one per project. No A slice adds an approval prompt.
+- **Where it applies:** to the first automation step that declares an approval. That is expected in
+  Milestone B or C, for example a delivery step.
+- **What is built today.** Remembered project grants exist only for Codex writes
+  (`server/trust/scope-grants.ts`, which pins `engine: 'codex'`). A general harness form is future
+  work, with its own Trust owner.
+- **Still to confirm when that step is built:** what counts as "the same item". The proposed default
+  is the same automation, the same action and the same destination, in the same project. A different
+  destination, a wider action, or a new automation asks again.
+- **Canonical documents.** This is a permission default, so it belongs in the canonical documents, not
+  only in this order. Proposed Project Memory addition, pending cloud synchronisation and A8:
+
+  > **Remembered approval.** By default one approval per project is enough: when a person approves an
+  > item in a project, that same item in that project is remembered as a scoped, revocable grant and
+  > does not ask again. It never widens, never survives revocation or loss of authority, and is never
+  > created or revived by configuration. Consequential actions keep their exact approval.
 
 Not a decision, but recorded here so nobody makes one by accident: **who may press Run once** stays
 the current rule.
@@ -227,7 +262,7 @@ Each slice is independently reviewable. The order is the dependency order.
 
 | Slice | Result | Files (new unless marked) | Proposed owner |
 |---|---|---|---|
-| **A0** | Andrew answers D1–D4. Field names frozen. `QUESTIONS.md` records the answers. | this file, `QUESTIONS.md` | Andrew; integrator records |
+| **A0** | D1–D4 answered 2026-09-24 and recorded here (section 3). Remaining: freeze the field names. The answers go into `QUESTIONS.md` with A8, once code carries them, because that file records only what the code settles. | this file | Integrator |
 | **A1** | Types and pure projection: `TriggerOccurrence`, `AutomationView`, `automationLabel(facts)`, summary counts. No I/O. | `shared/automations.ts`, `tests/automations-projection.test.ts` | Opus (bounded worker) |
 | **A2** | Occurrence store: load, validate, refuse unknown `v`, replay by command identity, restart. | `server/automations.ts`, `tests/automation-occurrences.test.ts` | Opus |
 | **A3** | `weekly-brief` capability and bridge generalisation | see below | Fable (hot); Opus drafts the capability file |
@@ -244,8 +279,8 @@ Each slice is independently reviewable. The order is the dependency order.
   - **Manual — not scheduled:** the trigger is manual and nothing is running or waiting. This is the
     resting label in A.
   - **Running:** the latest admitted run is `queued` or `running`.
-  - **Needs approval:** the run is `waiting` on an approval. It occurs only if D2 takes the
-    alternative, or if a future tool declares approval.
+  - **Needs approval:** the run is `waiting` on an approval. Under D2 the brief never produces this;
+    it is kept for a later step that declares approval (D5).
   - **Waiting for data:** the latest run stopped at source gathering with missing sources (D3). The
     detail names the files.
   - **Setup incomplete:** there is no active configuration, the configuration is not ready, there is
@@ -286,7 +321,7 @@ Each slice is independently reviewable. The order is the dependency order.
       write.
   - `compose_brief` (pure): wraps the existing `composeBrief` unchanged.
   - `save_brief_draft`
-    - Declared `effect: 'idempotent'`, `permission: 'write-project-file'`, and `approval` per D2.
+    - Declared `effect: 'idempotent'`, `permission: 'write-project-file'`, and `approval: false` (D2).
     - Before writing it rechecks, under `store.locked()`:
       - live membership, output binding and project ownership through `resolveBriefTarget`
         (A14, A15)
@@ -385,7 +420,7 @@ Each slice is independently reviewable. The order is the dependency order.
   - drop `unavailableReason` and `reserved` from the row
   - the D4 group
   - a palette view entry (`client/console/paletteEntries.ts:409-420`)
-  - D4's `viewRequest` prop, if chosen, in `ShellProps` and `App.tsx`
+  - D4's `viewRequest` prop in `ShellProps` and `App.tsx`
 - **Standing UI decisions:**
   - Every name, path and project title cell gets `min-width: 0` and truncation (decision 5).
   - The page column follows the one `.col` rule (decision 6).
@@ -416,7 +451,7 @@ Each slice is independently reviewable. The order is the dependency order.
   - The reserved behaviour itself still needs a test, because the `reserved` flag stays in
     `Everything.tsx`.
 - **Update:** `tests/diomedes-home.spec.ts:156-158` asserts the home Automations button is
-  `aria-disabled`. Under D4 as recommended, assert instead that it opens the Automations screen, or
+  `aria-disabled`. Under D4, assert instead that it opens the Automations screen, or
   states why when there is no output project.
 - **Update:** `tests/file-imports-ui.spec.ts:128-227` keeps its two-briefs History count. The two
   presses carry different `commandId`s, so it still expects two entries. It additionally expects two
@@ -498,7 +533,8 @@ must say that plainly, not mark them passed.
 ## 8. What this order does not claim
 
 - Nothing in it is implemented.
-- Milestone A is not started until A0 is answered and the first slice is claimed.
+- Milestone A is not started. D1–D4 are answered; implementation starts when the field names are
+  frozen and the first slice is claimed.
 - No site copy, release note or roadmap status may call Automations available until A7 and A8 exist
   with proof.
 - A manual brief with a Run once button is not an automation that runs on its own. The screen, the
@@ -513,7 +549,8 @@ PILLAR IMPACT:
   missing data (D3).
 - No pillar conflict found.
 
-ROADMAP IMPACT: none yet. On landing, A8 moves roadmap section 2 Milestone A from "approved plan,
+ROADMAP IMPACT: none yet. D5's proposed Project Memory wording waits for the canonical-document update
+and cloud synchronisation. On landing, A8 moves roadmap section 2 Milestone A from "approved plan,
 implementation pending" to the status its evidence supports.
 
 BUILD / PUBLICATION / DEPLOYMENT STATUS: documentation only. No build, test run, commit to `main`,
