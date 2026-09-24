@@ -1393,7 +1393,15 @@ export class Store extends EventEmitter {
         last.actor === 'you' &&
         last.files.length === 1 &&
         last.files[0].path === checked[0].path &&
-        Date.now() - Date.parse(last.time) < 600000
+        Date.now() - Date.parse(last.time) < 600000 &&
+        // A version a message carried stays a version History can open (P05 identity).
+        !state.conversations.some((thread) =>
+          thread.turns.some((turn) =>
+            turn.sourceVersions?.some(
+              (item) => item.path === last.files[0].path && item.sha === last.files[0].after,
+            ),
+          ),
+        )
       )
         entry = last;
     }
@@ -1675,6 +1683,8 @@ export class Store extends EventEmitter {
             op: !unreadable && (file.binary ? actualBytes : actual) === null ? 'deleted' : 'modified',
             recorded: !unreadable,
             reason: unreadable,
+            // Bytes preserved as bytes are described, never decoded or restored as text.
+            ...(file.binary ? { binary: true as const } : {}),
           });
           if (approval) {
             const change = journal.state.changes.find((item) => item.entryId === approval.execution?.eventId && item.path === file.path);
