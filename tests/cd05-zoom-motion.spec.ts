@@ -298,6 +298,30 @@ for (const [label, width, height] of [
       const names = await tabWalk(page, 'Settings > Engines', 40);
       requireReached(names, 'Settings > Engines', ['Engines', 'Appearance']);
     });
+
+    test('the screens landed alongside: Automations, Settings > Permissions and Rules', async ({ page }) => {
+      await settle(page);
+      await page.goto('/');
+      await reopenLastProject(page);
+      await page.getByRole('button', { name: 'Everything', exact: true }).click();
+      await page.getByRole('menuitem', { name: /^Automations\b/ }).click();
+      await expect(
+        page.getByRole('region', { name: 'Automations' }).getByRole('heading', { name: 'Automations', level: 1 }),
+      ).toBeVisible();
+      await holdsAt200(page, 'Automations');
+      await tabWalk(page, 'Automations', 40);
+
+      await page.getByRole('button', { name: 'Settings', exact: true }).first().click();
+      for (const section of ['Permissions', 'Rules']) {
+        await page
+          .getByRole('navigation', { name: 'Settings', exact: true })
+          .getByRole('button', { name: section, exact: true })
+          .click();
+        await expect(page.getByRole('heading', { name: section, exact: true, level: 1 })).toBeVisible();
+        await holdsAt200(page, `Settings > ${section}`);
+        await tabWalk(page, `Settings > ${section}`, 40);
+      }
+    });
   });
 }
 
