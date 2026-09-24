@@ -138,7 +138,11 @@ import {
   type EngineConnection,
 } from '../shared/engines.js';
 import { EngineService, HOST_TEST_PROJECT } from './engines/service.js';
-import { mountClaudeSessionRoutes } from './engines/claude-session-routes.js';
+import {
+  mountClaudeSessionRoutes,
+  mountOpenCodeSessionRoutes,
+  type ClaudeSessionRouteDependencies,
+} from './engines/claude-session-routes.js';
 import { mountJevAdvisorRoutes } from './jev-advisor-routes.js';
 import type { JevAdvisor } from './harness/jev-advisor.js';
 import { loadApprovedReadServers, readScopeDigest, type ReadScope } from './engines/read-scope.js';
@@ -182,6 +186,7 @@ import {
 } from './interaction-turn.js';
 import { assertReplay, findCommand } from './command-admission.js';
 import { claudeSessionRunId } from './harness/claude-session-run.js';
+import { opencodeSessionRunId } from './harness/opencode-session-run.js';
 import { modelSessionRunId } from './harness/model-session-run.js';
 import { FileModelTranscripts } from './harness/model-transcripts.js';
 import { AWS_BEDROCK_ROUTE, AwsConnections } from './engines/aws-bedrock.js';
@@ -839,6 +844,7 @@ export async function createApp(options: AppOptions) {
     return harness.textRoute.request(request);
   };
   engines.nativeSessions = harness.claudeSessions;
+  engines.opencodeSessions = harness.opencodeSessions;
   engines.modelSessions = harness.modelSessions;
   const exposure = new SpendExposure(store.dataDir);
   await exposure.init();
@@ -3079,7 +3085,11 @@ export async function createApp(options: AppOptions) {
         };
       }),
     );
-  mountClaudeSessionRoutes(app, engines, {
+  // The explicit native conversation routes. Claude Code's (H03) and OpenCode's kept session
+  // (H04) take the same admission and the same thread projection, each under its own engine.
+  const nativeSessionDependencies = (
+    engine: 'claude-code' | 'opencode',
+  ): ClaudeSessionRouteDependencies => ({
     authorize: async (req) => {
       store.state(String(req.params.id));
     },
@@ -3089,23 +3099,24 @@ export async function createApp(options: AppOptions) {
         const state = store.state(projectId);
         const thread = state.conversations.find((item) => item.id === command.threadId);
         if (!thread) throw new ApiError(404, 'This thread was not found.');
-        if (selectedEngine(store.settings, state.project, thread) !== 'claude-code')
+        const name = engine === 'claude-code' ? 'Claude Code' : 'OpenCode';
+        if (selectedEngine(store.settings, state.project, thread) !== engine)
           throw new ApiError(
             409,
-            'Select Claude Code for this thread before opening its native conversation.',
+            `Select ${name} for this thread before opening its native conversation.`,
           );
-        if (store.settings.services?.['claude-code'] !== true)
-          throw new ApiError(409, 'Turn Claude Code on in Settings before sending.');
-        const accountRoute = store.settings.services?.['claude-codeAccountRoute'];
-        const selection = nativeChoice('claude-code', projectId, thread, {
+        if (store.settings.services?.[engine] !== true)
+          throw new ApiError(409, `Turn ${name} on in Settings before sending.`);
+        const accountRoute = store.settings.services?.[`${engine}AccountRoute`];
+        const selection = nativeChoice(engine, projectId, thread, {
           mode: command.mode,
           text: command.text,
         });
         if (!selection.model || typeof accountRoute !== 'string')
-          throw new ApiError(409, 'Select the Claude account and model in Settings first.');
+          throw new ApiError(409, `Select the ${name} account and model in Settings first.`);
         requireCloudSharing(
           state,
-          'claude-code',
+          engine,
           command.sources.map((source) => source.path),
           !!req.params.runId,
         );
@@ -3136,7 +3147,7 @@ export async function createApp(options: AppOptions) {
           model: selection.model,
           accountRoute,
           ...(await readScopeFor(projectId, command.mode, {
-            route: 'claude-code',
+            route: engine,
             access: command.readAccess,
             documents,
           })),
@@ -3145,7 +3156,10 @@ export async function createApp(options: AppOptions) {
       const runId =
         req.params.runId && !req.path.endsWith('/fork')
           ? String(req.params.runId)
-          : claudeSessionRunId(projectId, command.commandId);
+          : (engine === 'claude-code' ? claudeSessionRunId : opencodeSessionRunId)(
+              projectId,
+              command.commandId,
+            );
       const progress = (kind: 'started' | 'delta' | 'ended', frame?: TransientPreview) =>
         store.emit('engine-text', {
           projectId,
@@ -3209,7 +3223,7 @@ export async function createApp(options: AppOptions) {
         const at = now();
         const sources = input.documents.map((document) => document.path);
         const helper = {
-          engine: 'claude-code',
+          engine,
           model: response.model,
           version: response.version,
           verified: true,
@@ -3222,7 +3236,7 @@ export async function createApp(options: AppOptions) {
             text: input.prompt,
             at,
             sources,
-            route: 'claude-code',
+            route: engine,
           },
           {
             id: assistantId,
@@ -3231,25 +3245,27 @@ export async function createApp(options: AppOptions) {
             text: response.text,
             at,
             sources,
-            route: 'claude-code',
+            route: engine,
             helper,
             origin: directOrigin({
-              engine: 'claude-code',
+              engine,
               requestedModel: input.model,
               reportedModel: response.model,
               version: response.version,
               accountRoute: input.accountRoute,
-              executorId: 'claude-code',
+              executorId: engine,
             }),
           },
         );
-        thread.helper = { engine: 'claude-code', model: response.model };
+        thread.helper = { engine, model: response.model };
         thread.mode = command.mode;
         touchThread(thread, at, state.tasks);
         await store.persist(state);
       });
     },
   });
+  mountClaudeSessionRoutes(app, engines, nativeSessionDependencies('claude-code'));
+  mountOpenCodeSessionRoutes(app, engines, nativeSessionDependencies('opencode'));
   /**
    * The digest the task route would give this message's own task command. A message too long
    * for a task description has no valid command at all, so it has no receipt to trust either
