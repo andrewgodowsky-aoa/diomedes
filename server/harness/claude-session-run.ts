@@ -132,7 +132,10 @@ type SteerEntry = {
   intent?: string;
   promise?: Promise<ClaudeSessionTurnResult>;
   settle?: { resolve(result: ClaudeSessionTurnResult): void; reject(error: unknown): void };
-  /** Set once the drain has handed this entry's turn to `request`, which must not join it. */
+  /**
+   * Set once the drain has handed this entry to `request`. It is the running turn from then on:
+   * Stop stops it, a retry of a whole turn does not join it, and nothing withdraws or cancels it.
+   */
   sending?: boolean;
   /** Shows a sent message and its answer where the person reads the conversation. */
   onDelivered?: SteerOptions['onDelivered'];
@@ -1535,8 +1538,9 @@ export class ClaudeSessionRuns<C extends SessionCheckpointFacts = ClaudeSessionC
     if (queue) this.steers.set(runId, queue.slice(-STEER_HISTORY - STEER_QUEUE_LIMIT));
   }
   private cancelSteers(runId: string, detail: string) {
+    // A message already handed to the engine is not "not sent": its own turn settles it.
     for (const entry of this.steers.get(runId) ?? [])
-      if (entry.ack.state === 'pending') this.settleSteer(runId, entry, 'cancelled', detail);
+      if (entry.ack.state === 'pending' && !entry.sending) this.settleSteer(runId, entry, 'cancelled', detail);
   }
   /** Sends the held messages one at a time, each as its own follow-up turn with no documents. */
   private async sendSteers(runId: string, base: ClaudeSessionTurn<C>) {
@@ -1576,6 +1580,8 @@ export class ClaudeSessionRuns<C extends SessionCheckpointFacts = ClaudeSessionC
         this.draining.delete(runId);
         break;
       }
+      // From here it is the running turn: a Stop stops it, and nothing withdraws it.
+      entry.sending = true;
       try {
         const input: TextRequest = {
           ...base.input,

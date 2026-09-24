@@ -25,8 +25,11 @@ import {
 import { textDispatchAuthorizer } from '../server/harness/text-route.js';
 
 const roots: string[] = [];
+/** How long the fixture's account check takes, so a Stop can land before anything is sent. */
+const accountDelay = { ms: 0 };
 const drivers: ClaudeSessionRuns[] = [];
 afterEach(async () => {
+  accountDelay.ms = 0;
   for (const driver of drivers.splice(0)) await driver.closeAll().catch(() => undefined);
   for (const root of roots.splice(0)) await fs.rm(root, { recursive: true, force: true });
 });
@@ -34,8 +37,8 @@ afterEach(async () => {
 /**
  * One scripted Claude Code. The person's words decide the turn: `[hang]` waits until an
  * interrupt and then closes the turn; `[stuck]` acknowledges an interrupt and never closes the
- * turn; `[slow]` answers after a pause. Every other message is answered at once. A `--resume`
- * of a session this fixture never created exits before the handshake, as a refused resume.
+ * turn; `[deaf]` never acknowledges an interrupt at all; `[slow]` answers after a pause.
+ * Every other message is answered at once. A `--resume` of a session this fixture never created exits before the handshake, as a refused resume.
  */
 const SCRIPT = `import readline from 'node:readline';
 import fs from 'node:fs';
@@ -50,6 +53,7 @@ const result = (text) => emit({ type: 'result', uuid: session + '-' + process.pi
 readline.createInterface({ input: process.stdin }).on('line', (line) => {
   const m = JSON.parse(line);
   if (m.type === 'control_request') {
+    if (open === 'deaf') return;
     emit({ type: 'control_response', response: { subtype: 'success', request_id: m.request_id, response: {} } });
     if (m.request.subtype === 'interrupt' && open === 'hang') { open = null; setTimeout(() => emit({ type: 'result', uuid: session + '-' + process.pid + '-stop-' + count, subtype: 'error_during_execution', is_error: true, session_id: session, errors: ['Request was aborted'] }), 20); }
     return;
@@ -62,6 +66,7 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
   emit({ type: 'stream_event', session_id: session, event: { delta: { type: 'text_delta', text: 'Answer' } } });
   if (words.includes('[hang]')) { open = 'hang'; return; }
   if (words.includes('[stuck]')) { open = 'stuck'; return; }
+  if (words.includes('[deaf]')) { open = 'deaf'; return; }
   if (words.includes('[slow]')) return setTimeout(() => result('Answer to ' + words), 300);
   result('Answer to ' + words);
 });`;
@@ -77,7 +82,7 @@ const base: TextRequest = {
   accountRoute: 'claude-code:claude.ai',
 };
 
-async function world() {
+async function world(stopGraceMs = 400) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'h03-claude-'));
   roots.push(root);
   const script = path.join(root, 'claude.mjs');
@@ -100,7 +105,10 @@ async function world() {
   };
   const adapter = new ClaudeAdapter('claude.exe', root, {
     launch,
-    account: async () => ({ loggedIn: true, authMethod: 'claude.ai', email: 'owner@example.com' }),
+    account: async () => {
+      if (accountDelay.ms) await new Promise((resolve) => setTimeout(resolve, accountDelay.ms));
+      return { loggedIn: true, authMethod: 'claude.ai', email: 'owner@example.com' };
+    },
   });
   const store = path.join(root, 'runs');
   /** A Diomedes process: its own RunService and driver over the one durable run store. */
@@ -112,7 +120,7 @@ async function world() {
       authorizeEgress: async (runId, intent, _principal, phase) =>
         authorize(await runs.get(runId), intent, phase),
     });
-    const driver = new ClaudeSessionRuns(runs, { stopGraceMs: 400 });
+    const driver = new ClaudeSessionRuns(runs, { stopGraceMs });
     driver.setSharingPolicy(() => {});
     drivers.push(driver);
     // Exclusive host startup, as `host.ts` runs it for every saved native conversation.
@@ -363,4 +371,84 @@ describe('H03 Claude Code live controls over a fixture stream-json process', () 
     const attempts = (await w.lines()).filter((line) => line.turn === 'next');
     expect(attempts).toEqual([]);
   });
+});
+
+/**
+ * Review F (2026-09-24): an independent review of H03 found these. Each was red on main at
+ * 4395331 and is green with its fix; the record is docs/implementation/2026-09-24-review-f.md.
+ */
+describe('H03 review F: Stop tells the truth about what it stopped', () => {
+  it('Stop on a steered message Claude Code is already answering stops that turn; it is not "withdrawn"', async () => {
+    const w = await world();
+    const driver = await w.boot();
+    await driver.request(w.turn('start', 'one', 'first'));
+    const running = driver.request(w.turn('follow-up', 'two', 'long [slow]'));
+    await tick(50);
+    const projected: string[] = [];
+    await driver.steer('p', 'claude-run', 'four', 'steered [hang]', {
+      onDelivered: async (result) => {
+        projected.push(String(result.response?.text));
+      },
+    });
+    await running;
+    for (let i = 0; i < 40 && !(await w.lines()).some((line) => line.turn === 'steered [hang]'); i += 1) await tick(50);
+    // It was sent and is being answered, so a Stop interrupts it rather than withdrawing it.
+    expect(await driver.interruptCommand('p', 'claude-run', 'four')).toEqual({ state: 'requested', stop: 'interrupted' });
+    const status = await driver.status('p', 'claude-run');
+    expect(status.busy).toBe(false);
+    expect(status.continuity.state).toBe('live');
+    expect(status.steering).toEqual([
+      expect.objectContaining({ commandId: 'four', state: 'cancelled', detail: 'This message was stopped before it was answered.' }),
+    ]);
+    expect(projected).toEqual([]);
+  });
+
+  it('Diomedes closing while a queued message is being answered never says it was not sent', async () => {
+    const w = await world();
+    const driver = await w.boot();
+    await driver.request(w.turn('start', 'one', 'first'));
+    const running = driver.request(w.turn('follow-up', 'two', 'long [slow]'));
+    await tick(50);
+    const queued = settle(driver.request(w.turn('follow-up', 'three', 'queued [hang]', { queued: true })));
+    await running;
+    for (let i = 0; i < 40 && !(await w.lines()).some((line) => line.turn === 'queued [hang]'); i += 1) await tick(50);
+    await driver.closeAll().catch(() => undefined);
+    const outcome = await queued;
+    expect(outcome.error).toBeDefined();
+    expect((outcome.error as Error).message).not.toMatch(/before this message was sent/);
+  });
+
+  it('a Stop before anything reaches Claude Code keeps the live session: nothing was sent, so nothing is uncertain', async () => {
+    const w = await world();
+    const driver = await w.boot();
+    await driver.request(w.turn('start', 'one', 'first'));
+    accountDelay.ms = 500;
+    const running = settle(driver.request(w.turn('follow-up', 'two', 'never sent')));
+    await tick(100);
+    const stop = await driver.interruptCommand('p', 'claude-run', 'two');
+    expect(stop.state).toBe('requested');
+    expect(stop.stop).not.toBe('killed');
+    expect((await running).value).toMatchObject({ interrupted: true, response: null });
+    accountDelay.ms = 0;
+    const status = await driver.status('p', 'claude-run');
+    expect(status.state).not.toBe('reconcile_required');
+    expect(status.continuity.state).toBe('live');
+    expect((await driver.request(w.turn('follow-up', 'three', 'again'))).response?.text).toBe('Answer to again');
+    expect(w.launches).toHaveLength(1);
+    const turns = (await w.lines()).filter((line) => line.turn).map((line) => line.turn);
+    expect(turns).toEqual(['first', 'again']);
+  });
+
+  it('a Stop Claude Code never acknowledges is recorded as forced, whatever the grace', async () => {
+    // The interrupt's own acknowledgement timeout (5 s) ends the process too; it must say so.
+    const w = await world(5500);
+    const driver = await w.boot();
+    await driver.request(w.turn('start', 'one', 'first'));
+    const running = settle(driver.request(w.turn('follow-up', 'two', 'wait [deaf]')));
+    await tick();
+    expect(await driver.interruptCommand('p', 'claude-run', 'two')).toEqual({ state: 'requested', stop: 'killed' });
+    expect((await running).error).toMatchObject({ code: 'STOP_FORCED' });
+    const status = await driver.status('p', 'claude-run');
+    expect(status.continuity.detail).toMatch(/^Couldn't resume\. Claude Code did not stop when asked, so its process was ended\./);
+  }, 20_000);
 });
