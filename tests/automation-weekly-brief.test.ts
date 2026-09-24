@@ -176,7 +176,8 @@ describe('the weekly brief capability', () => {
   test('saves a source-linked draft for review through RunService, with no model call', async () => {
     const session = await start('R-brief-ok', input());
     const run = await settled('R-brief-ok');
-    expect(run.state).toBe('completed');
+    // The failure travels with the state, so a red run says why it failed.
+    expect({ state: run.state, failure: run.failure }).toEqual({ state: 'completed', failure: null });
     expect(run.used.modelCalls).toBe(0);
     expect(run.budget.modelCalls).toBe(0);
     expect(run.steps.map((step) => step.intent.kind)).toEqual(['tool', 'tool', 'tool']);
