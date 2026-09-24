@@ -1010,9 +1010,12 @@ export class RunService {
             intent.kind === 'wait' &&
             intent.effect === 'pure' &&
             intent.destination === 'local';
-          // A write that timed out may still be finishing: its outcome is not known.
+          // A write that timed out may still be finishing, and one whose sink says
+          // it may have landed did land somewhere: either outcome is not known.
           const timedOut =
-            changesWorld(lastEffect(s)) && error instanceof HarnessError && error.code === 'tool_timeout';
+            changesWorld(lastEffect(s)) &&
+            error instanceof HarnessError &&
+            (error.code === 'tool_timeout' || error.outcomeUnknown);
           const state = waiting
             ? 'waiting_event'
             : needsReconciliation(intent) || timedOut
