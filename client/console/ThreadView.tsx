@@ -36,6 +36,8 @@ import { RememberOfferBlock } from './RememberedApprovals';
 import { classifyIntent } from '../../shared/remembered-approvals';
 import type { RememberOffer } from '../../shared/permissions';
 import { ChangeReview } from './ChangeReview';
+import { ChangeDiffs } from './ChangeDiffs';
+import type { ReviewComment } from '../../shared/review-comments';
 import { useWorkingWord, workingLine } from './working-words';
 import { toolRunning, type ToolLine } from './engine-activity';
 import { ToolActivityList } from './ToolActivity';
@@ -157,6 +159,8 @@ interface ThreadViewProps {
   onAnswerOffer?(offer: RememberOffer, accept: boolean): void;
   /** Go ahead on this exact approval and remember it in this project (D5, route 1). */
   onRemember?(need: Need): void;
+  /** P06 review comments, for the task's change review. */
+  reviewComments?: ReviewComment[];
 }
 
 /**
@@ -217,6 +221,7 @@ export function ThreadView({
   rememberOffers = [],
   onAnswerOffer,
   onRemember,
+  reviewComments = [],
 }: ThreadViewProps) {
   const technical = settings.detail === 'technical';
   const permission: ThreadPermission = thread.permission ?? 'show-first';
@@ -608,6 +613,17 @@ export function ThreadView({
           )}
           {projectId && !task && (
             <ChangeReview projectId={projectId} taskId={null} refreshKey="" />
+          )}
+          {projectId && task && (
+            <ChangeDiffs
+              projectId={projectId}
+              task={task}
+              changes={changes}
+              history={history}
+              comments={reviewComments}
+              route={route}
+              onError={onError}
+            />
           )}
           {needs.map((n) => (
             <div id={`need-${n.id}`} key={n.id}>

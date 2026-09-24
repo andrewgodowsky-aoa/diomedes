@@ -2051,6 +2051,7 @@ export function Shell({
               instructionFiles={activeInstructionFiles(state.project.packs, state.instructionFiles)}
               onOpenInFiles={openDocument}
               followUps={state.followUps ?? []}
+              reviewComments={state.reviewComments ?? []}
               onError={report}
               grantActive={!!activeGrant}
               onScope={() => setPermissionsOpen(true)}
