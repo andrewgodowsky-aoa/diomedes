@@ -301,6 +301,27 @@ describe('a run is scoped: the nearest folder governs, and every file not sent s
     expect(section).toContain('only for files inside the folder it governs');
   });
 
+  test('two files whose rule ids collide are both accounted for, never one silently dropped', async () => {
+    // Review (2026-09-24): a nested rule id is a 41-character slug plus a
+    // 32-bit FNV digest of the path, so a repository can hold two paths that
+    // share one id (these two were found in under a second). The run kept
+    // whichever came second and the other vanished from the delivery record:
+    // neither sent nor excluded.
+    const prefix = 'a'.repeat(41);
+    const first = `${prefix}/10kb0/AGENTS.md`;
+    const second = `${prefix}/k6yj/AGENTS.md`;
+    expect(instructionRuleId(first)).toBe(instructionRuleId(second));
+    const { store, id } = await project({ [first]: 'FIRST-BODY', [second]: 'SECOND-BODY' });
+    await activatePack(store, id, PACK);
+    const { delivery } = await assemble(store, id, [`${prefix}/10kb0/x.md`, `${prefix}/k6yj/x.md`]);
+    const accounted = [
+      ...delivery!.files.map((file) => file.path),
+      ...(delivery!.excluded ?? []).map((file) => file.path),
+    ];
+    expect(accounted).toEqual(expect.arrayContaining([first, second]));
+    expect(delivery!.files.filter((file) => file.state === 'sent')).toHaveLength(1);
+  });
+
   test('a folder whose name only starts like a scoped folder does not inherit its rules', async () => {
     const { store, id } = await project(MONOREPO);
     await activatePack(store, id, PACK);

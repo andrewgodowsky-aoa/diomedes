@@ -297,6 +297,15 @@ export async function assembleInstructions(input: {
             : 'names no file there'
         }.`,
       );
+    else if (records.has(record.ruleId))
+      // A nested rule id carries a 32-bit digest of the path, so two paths can
+      // share one. The stronger file keeps the rule; this one is said, never
+      // dropped from the record without a word.
+      exclude(
+        record,
+        'not-loaded',
+        `Not sent. It has the same rule id as ${records.get(record.ruleId)!.path}, which took precedence; renaming either folder separates them.`,
+      );
     else records.set(record.ruleId, record);
   }
   // A project whose shared, loaded files all sit outside this work still gets
@@ -321,7 +330,12 @@ export async function assembleInstructions(input: {
       : null,
     governing: [],
   });
-  const rules = instructionRules(input.state).filter(({ rule }) => records.has(rule.id));
+  // One rule per kept file: the rule made from a colliding file shares the
+  // kept one's id, and is told apart by the file it names.
+  const rules = instructionRules(input.state).filter(({ rule }) => {
+    const record = records.get(rule.id);
+    return record !== undefined && rule.provenance.source === `${record.path}@${record.sha}`;
+  });
   if (!rules.length) return combine(unscoped());
   const context = assembleContext({
     rules,
