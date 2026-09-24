@@ -44,6 +44,7 @@ import {
 } from '../shared/business-setup.js';
 import {
   AUTHORIZATION_RESOURCE_TYPES,
+  authorizeBusinessAccess,
   BUSINESS_ACCESS_CONTRACT_VERSION,
   BUSINESS_PERMISSIONS,
   isBusinessPermission,
@@ -54,6 +55,7 @@ import {
   systemOwnerAssignmentId,
   systemOwnerProfileId,
   type AccessAssignment,
+  type AccessDecision,
   type AccessProfile,
   type AuthorizationResource,
   type AuthorizationResourceType,
@@ -942,6 +944,47 @@ export class WorkspaceService {
    */
   assertMine(organizationId: string): void {
     this.mine(organizationId);
+  }
+
+  /**
+   * The organization that owns a project, read from its active project access
+   * resource (recorded when the project is bound as that organization's work
+   * target). Null when no organization, or more than one, claims it: an
+   * ambiguous owner is never resolved by picking one.
+   */
+  projectOwner(projectId: string): { organizationId: string; resourceId: string } | null {
+    const owners = this.registry.access.resources.filter(
+      (resource) =>
+        resource.type === 'project' &&
+        resource.externalId === projectId &&
+        resource.state === 'active',
+    );
+    if (owners.length !== 1) return null;
+    return { organizationId: owners[0].organizationId, resourceId: owners[0].id };
+  }
+
+  /**
+   * One access-profile decision for the current person, from current registry
+   * state and generations. A non-member is refused exactly as mine() refuses a
+   * missing organization, so a decision never confirms another company exists.
+   */
+  accessDecision(organizationId: string, permission: string, resourceId: string): AccessDecision {
+    const { organization, membership } = this.mine(organizationId);
+    const personId = this.currentPerson().id;
+    const access = this.registry.access;
+    return authorizeBusinessAccess({
+      organizationId,
+      tenantId: organization.tenantId,
+      personId,
+      membershipActive: isActiveMember(membership),
+      permission,
+      resourceId,
+      resources: access.resources,
+      profiles: access.profiles,
+      assignments: access.assignments,
+      organizationGeneration: this.organizationGeneration(organizationId),
+      principalGeneration: this.principalGeneration(organizationId, personId),
+    });
   }
 
   /** What this installation may truthfully say about this company's plan. */
