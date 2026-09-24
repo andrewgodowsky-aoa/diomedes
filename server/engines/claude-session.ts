@@ -178,6 +178,8 @@ export class ClaudeNativeSession {
     timer: ReturnType<typeof setTimeout>;
   };
   private interrupted = false;
+  /** Set when a Stop ran out of grace and ended the process: the turn's outcome is unknown. */
+  private forced = false;
   private closing?: Promise<void>;
   private closed = false;
   private initialized = false;
@@ -426,8 +428,6 @@ export class ClaudeNativeSession {
             'Claude did not identify the completed conversation.',
             true,
           );
-        if (frame.is_error === true || frame.subtype !== 'success')
-          throw claudeFailure(frame.errors ?? frame);
         if (
           Object.keys(record(frame.modelUsage)).some(
             (model) =>
@@ -440,6 +440,18 @@ export class ClaudeNativeSession {
             'Claude reported an unexpected model call.',
             true,
           );
+        // After an interrupt Claude Code closes the turn with a result of its own choosing;
+        // whatever its subtype, it is this turn's boundary. The session is idle again and stays
+        // resumable, and nothing in the result is kept as an answer.
+        if (this.interrupted) {
+          this.saved.results.push({ id: frame.uuid, digest: resultDigest });
+          this.saved.state = 'idle';
+          this.dispatched = false;
+          await this.save();
+          throw stopped();
+        }
+        if (frame.is_error === true || frame.subtype !== 'success')
+          throw claudeFailure(frame.errors ?? frame);
         if (typeof frame.result !== 'string' || (!this.interrupted && !frame.result.trim()))
           throw new EngineError(
             'PROTOCOL_ERROR',
@@ -472,6 +484,12 @@ export class ClaudeNativeSession {
           saveError = failure;
         }
         await this.close(error);
+        if (this.forced)
+          throw new EngineError(
+            'STOP_FORCED',
+            'Claude Code did not stop when asked, so its process was ended. What the turn did before that is unknown, and this session is not resumed.',
+            true,
+          );
         if (saveError)
           throw new EngineError(
             'CHECKPOINT_FAILED',
@@ -484,6 +502,38 @@ export class ClaudeNativeSession {
       this.dispatched = false;
       input.signal?.removeEventListener('abort', abort);
     }
+  }
+  /**
+   * A person's Stop (H03). Claude Code is asked to interrupt the running turn, and the turn is
+   * given `graceMs` to reach its own result boundary: then the session is idle, the process is
+   * still live and the next message goes to it. When the boundary does not come in time, or the
+   * interrupt cannot be sent, the process tree is ended instead; that turn's outcome is unknown
+   * and the session is not resumed. The answer says which of the two happened.
+   */
+  async stop(graceMs = 5000): Promise<'interrupted' | 'killed'> {
+    const running = this.active;
+    if (!running || this.closed || this.saved.state !== 'busy')
+      throw new EngineError('SESSION_IDLE', 'No native turn is running.');
+    const ended = running.then(
+      () => true,
+      () => true,
+    );
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const expired = new Promise<false>((resolve) => {
+      timer = setTimeout(() => resolve(false), graceMs);
+    });
+    try {
+      // An interrupt already awaiting its acknowledgment is the same request; it is not sent twice.
+      if (this.dispatched && !this.interruptPending) void this.interrupt().catch(() => undefined);
+      const finished = this.dispatched || this.interruptPending ? await Promise.race([ended, expired]) : false;
+      if (finished && !this.forced && this.saved.state === 'idle') return 'interrupted';
+    } finally {
+      clearTimeout(timer);
+    }
+    this.forced = true;
+    this.controller.abort();
+    await ended;
+    return 'killed';
   }
   async interrupt(): Promise<void> {
     if (!this.active || !this.dispatched || this.closed || this.saved.state !== 'busy')
