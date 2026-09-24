@@ -161,11 +161,12 @@ interface Draft {
   history?: { sentence: string; sessionId?: string; taskId: string };
 }
 
-const refused = (
-  code: ControlRefusalCode,
-  reason: string,
-  extra: Partial<Draft> = {},
-): Draft => ({ outcome: 'refused', detail: reason, refusal: { code, reason }, ...extra });
+const refused = (code: ControlRefusalCode, reason: string, extra: Partial<Draft> = {}): Draft => ({
+  outcome: 'refused',
+  detail: reason,
+  refusal: { code, reason },
+  ...extra,
+});
 
 const WIDER: Record<ThreadPermission, number> = { 'show-first': 0, task: 1 };
 
@@ -288,7 +289,11 @@ export class DurableControls {
       control: request.control,
       requestedBy: { actor: 'you', via: 'local-client' },
       requestedAt,
-      target: { taskId: task.id, sessionId: session?.id ?? draft.result?.stop?.sessionId ?? null, threadId },
+      target: {
+        taskId: task.id,
+        sessionId: session?.id ?? draft.result?.stop?.sessionId ?? null,
+        threadId,
+      },
       route: {
         workRoute,
         contractRouteId: profile?.contractRouteId ?? null,
@@ -357,15 +362,7 @@ export class DurableControls {
         return this.steer(projectId, request, task, run, driver!, performer);
       case 'resume':
       case 'retry':
-        return this.continueRun(
-          projectId,
-          request,
-          task,
-          run,
-          offered.support,
-          driver,
-          performer,
-        );
+        return this.continueRun(projectId, request, task, run, offered.support, driver, performer);
       case 'fork':
         return this.fork(projectId, request, task, run, offered.support, driver, performer);
     }
@@ -608,7 +605,9 @@ export class DurableControls {
       } catch (error) {
         return refused(
           'model-changed',
-          error instanceof Error ? error.message : 'The model for this thread could not be resolved.',
+          error instanceof Error
+            ? error.message
+            : 'The model for this thread could not be resolved.',
         );
       }
       if (model !== recordedModel)
@@ -790,7 +789,8 @@ export class DurableControls {
     // records are read, never written; nothing is copied from its history, and
     // no run starts until the person starts one.
     const state = this.store.state(projectId);
-    const origin = this.thread(projectId, session) ??
+    const origin =
+      this.thread(projectId, session) ??
       state.conversations.find((conversation) => conversation.taskId === task.id);
     const forked = this.store.createTask(state, {
       name: `Fork of ${task.name}`.slice(0, 200),

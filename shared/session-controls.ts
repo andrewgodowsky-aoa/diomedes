@@ -81,7 +81,7 @@ export function workControlProfile(
   const queue: ControlAvailability = {
     control: 'queue',
     support: 'host',
-    note: 'Held by Diomedes and sent through ordinary Work admission after this turn or the task.',
+    note: 'Held, then sent through ordinary Work admission after this turn or the task.',
   };
   const stop: ControlAvailability = {
     control: 'stop',
@@ -152,10 +152,7 @@ export function workControlProfile(
  * route offers it. Steer needs a live run; Resume a stopped one; Retry a failed
  * or stopped one; Fork one that has settled. Null means it applies.
  */
-export function controlNotApplicable(
-  control: ControlCommand,
-  sessionState: string,
-): string | null {
+export function controlNotApplicable(control: ControlCommand, sessionState: string): string | null {
   const live = ['queued', 'working', 'waiting'].includes(sessionState);
   switch (control) {
     case 'steer':

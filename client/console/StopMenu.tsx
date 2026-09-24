@@ -91,6 +91,7 @@ export function StopMenu({
           </button>
         </>
       )}
+      {open && ' '}
       {open && (
         <span className="stop-options" role="menu" ref={menu} onKeyDown={onMenuKey}>
           {offerRequest && (

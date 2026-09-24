@@ -294,6 +294,7 @@ export function ThreadView({
     streaming?.requestId,
     streaming?.text.length,
     streaming?.activity?.length,
+    controlReceipts.length,
   ]);
 
   const items: { at: string; seq: number; node: ReactNode }[] = [];

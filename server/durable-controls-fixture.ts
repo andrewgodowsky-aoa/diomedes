@@ -27,11 +27,15 @@ export const CONTROL_FIXTURE_CONTRACT: AdapterRouteContract = Object.freeze({
   commands: {
     start: native('The scripted sample worker starts a run.'),
     'follow-up': host('A follow-up is a new run for the same task.'),
-    steer: native('The fixture hands the message to the scripted run, which reads it at its next step.'),
+    steer: native(
+      'The fixture hands the message to the scripted run, which reads it at its next step.',
+    ),
     interrupt: unsupported('Stop is the only interruption.'),
-    resume: native('The fixture starts a run that continues the stopped one through ordinary admission.'),
-    retry: host('Diomedes starts a new attempt with the recorded inputs.'),
-    fork: host('Diomedes starts a new task and thread that refer to the origin run.'),
+    resume: native(
+      'The fixture starts a run that continues the stopped one through ordinary admission.',
+    ),
+    retry: host('A new attempt with the recorded inputs, through ordinary admission.'),
+    fork: host('A new task and thread that refer to the origin run.'),
     status: native('The host tracks the worker run directly.'),
     reconcile: unsupported('Nothing external can outlive the worker.'),
     close: native('Stopping the worker ends it.'),

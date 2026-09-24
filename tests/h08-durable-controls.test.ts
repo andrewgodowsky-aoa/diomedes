@@ -89,9 +89,10 @@ const fixture = (enabled: boolean) =>
   request(`/projects/${projectId}/controls/fixture`, 'PUT', { enabled });
 const settledRun = (sessionId: string) =>
   until(
-    (r) => !['queued', 'working', 'waiting'].includes(
-      r.sessions.find((s) => s.id === sessionId)?.state ?? 'queued',
-    ),
+    (r) =>
+      !['queued', 'working', 'waiting'].includes(
+        r.sessions.find((s) => s.id === sessionId)?.state ?? 'queued',
+      ),
     `run ${sessionId} to settle`,
   );
 async function taskThread(): Promise<string> {
@@ -257,7 +258,9 @@ test('a route without live steering refuses Steer with its own reason and points
   });
   expect(refusal.route).toEqual({ workRoute: 'sample', contractRouteId: 'sample', support: null });
   const after = await state();
-  expect(after.sessions.find((s) => s.id === live.id)!.log.some((l) => l.sentence.includes('Faster'))).toBe(false);
+  expect(
+    after.sessions.find((s) => s.id === live.id)!.log.some((l) => l.sentence.includes('Faster')),
+  ).toBe(false);
   // Refused, yet recorded: what was asked for and not done is part of the task.
   expect(after.controlReceipts?.map((r) => r.outcome)).toEqual(['refused']);
 });
@@ -305,7 +308,12 @@ test('stop keeps its three scopes, embeds what the stop did, and refuses a scope
   );
   expect(replay).toEqual(task);
   expect((await state()).tasks.find((t) => t.id === taskId)!.stopReceipts).toHaveLength(1);
-  const conflict = await control({ commandId, control: 'stop', scope: 'queued', sessionId: live.id });
+  const conflict = await control({
+    commandId,
+    control: 'stop',
+    scope: 'queued',
+    sessionId: live.id,
+  });
   expect(conflict.status).toBe(409);
   const nothing = receiptOf(await control({ control: 'stop', scope: 'task' }));
   expect(nothing.outcome).toBe('refused');
@@ -429,7 +437,9 @@ test('resume refuses when a source changed since the stop, and when the route is
       signal?.addEventListener('abort', () => reject(new Error('Stopped.'))),
     );
   const original = (await codexStart()).data as Session;
-  const stopped = receiptOf(await control({ control: 'stop', scope: 'task', sessionId: original.id }));
+  const stopped = receiptOf(
+    await control({ control: 'stop', scope: 'task', sessionId: original.id }),
+  );
   expect(stopped.outcome).toBe('applied');
   const store = app.locals.store as Store;
   const base = defaultWorkContract('codex')!;
@@ -465,7 +475,8 @@ test('resume refuses when a source changed since the stop, and when the route is
   const changed = await perform({ control: 'resume', sessionId: original.id });
   expect(changed.refusal).toEqual({
     code: 'inputs-changed',
-    reason: 'Fall menu.md changed since this run stopped. Retry to run again on the current version.',
+    reason:
+      'Fall menu.md changed since this run stopped. Retry to run again on the current version.',
   });
   expect(admitted).toHaveLength(0);
   const gone = new DurableControls({
@@ -522,7 +533,9 @@ test('fork makes a new lineage that refers to the origin and leaves every origin
   const forkThread = after.conversations.find((c) => c.id === fork.result.threadId)!;
   expect(forkThread).toMatchObject({ taskId: forked.id, turns: [], permission: 'show-first' });
   // Replay makes no second fork.
-  expect(receiptOf(await control({ commandId, control: 'fork', sessionId: stopped.id }))).toEqual(fork);
+  expect(receiptOf(await control({ commandId, control: 'fork', sessionId: stopped.id }))).toEqual(
+    fork,
+  );
   expect((await state()).tasks.filter((t) => t.name === forked.name)).toHaveLength(1);
   // A route that declares no fork refuses it by its contract's own words.
   await fixture(false);
@@ -567,7 +580,8 @@ test('receipts survive a restart, and a replay after it performs nothing', async
   expect(before.map((r) => r.control)).toEqual(['stop', 'retry']);
   await shutdown();
   await boot();
-  const after = (await request(`/projects/${projectId}/controls`)).data.receipts as ControlReceipt[];
+  const after = (await request(`/projects/${projectId}/controls`)).data
+    .receipts as ControlReceipt[];
   expect(after).toEqual(before);
   const byId = await request(`/projects/${projectId}/controls/${encodeURIComponent(commandId)}`);
   expect(byId.data).toEqual(retry);
