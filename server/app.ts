@@ -15,6 +15,13 @@ import { mountDiscoveryRoutes } from './discovery/routes.js';
 import { WeeklyBriefService } from './weekly-brief.js';
 import { planTitle, taskNameFromText } from '../shared/display-names.js';
 import { browseImports, inspectImport, importExports } from './file-imports.js';
+import {
+  documentFacts,
+  documentVersion,
+  droppedFiles,
+  dropFiles,
+  pictureBytes,
+} from './file-drops.js';
 import { isActiveMember } from '../shared/workspaces.js';
 import { AllowanceLedger } from './managed-usage.js';
 import { ManagedGateway } from './managed-gateway.js';
@@ -1719,6 +1726,39 @@ export async function createApp(options: AppOptions) {
   app.post(
     '/api/projects/:id/imports',
     route(async (req) => importExports(store, id(req), body(req).files)),
+  );
+  // Drop and paste into Files: the same recorded write as Import files, with
+  // the bytes in a raw body so a picture arrives exact (server/file-drops.ts).
+  app.post(
+    '/api/projects/:id/documents/drop',
+    express.raw({ type: 'application/octet-stream', limit: '25mb' }),
+    route(async (req) =>
+      dropFiles(
+        store,
+        id(req),
+        droppedFiles(req.query.files, req.body),
+        req.query.how === 'paste' ? 'paste' : 'drop',
+      ),
+    ),
+  );
+  app.get(
+    '/api/projects/:id/documents/facts',
+    route(async (req) => documentFacts(store, id(req), req.query.path, req.query.sha)),
+  );
+  app.get(
+    '/api/projects/:id/documents/version',
+    route(async (req) => documentVersion(store, id(req), req.query.path, req.query.sha)),
+  );
+  app.get(
+    '/api/projects/:id/documents/picture',
+    route(async (req, res) => {
+      const picture = await pictureBytes(store, id(req), req.query.path, req.query.sha);
+      res.setHeader('Content-Type', picture.mime);
+      res.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
+      res.setHeader('Cache-Control', 'no-store');
+      res.setHeader('X-Diomedes-Sha256', picture.sha);
+      res.send(picture.bytes);
+    }),
   );
   app.get(
     '/api/projects/:id/documents/read',

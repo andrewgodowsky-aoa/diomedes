@@ -366,6 +366,8 @@ export interface FileRecord {
   after: string | null;
   recorded: boolean;
   reason: string | null;
+  /** The recorded images are exact bytes (a picture, PDF or workbook), not UTF-8 text. */
+  binary?: true;
 }
 export interface HistoryEntry {
   origin?: OriginSnapshot;
