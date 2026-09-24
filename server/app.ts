@@ -1973,7 +1973,7 @@ export async function createApp(options: AppOptions) {
    * Capability packs: per-project activation and the installation-wide
    * lifecycle (`server/pack-routes.ts`). Activation is not authorization.
    */
-  mountPackRoutes(app, { store, route, body });
+  const packLifecycle = mountPackRoutes(app, { store, route, body });
   /**
    * Read one discovered instruction file, as Diomedes read it.
    *
@@ -4903,6 +4903,18 @@ export async function createApp(options: AppOptions) {
       const prepared = await store.locked(async () => {
         const state = store.state(projectId);
         requireCloudSharing(state, serviceRoute, sources);
+        // P04: the playbook's body loads for this request only, through its own pin, checked
+        // against the digest this project registered when it turned the pack on, and recorded
+        // against the turn. First, so a refusal leaves nothing else of this send behind.
+        const youTurnId = identifier('U');
+        const playbook =
+          skillId === undefined
+            ? undefined
+            : await packLifecycle.contributions.load(
+                await packLifecycle.contributions.admit(state, youTurnId),
+                { packId: 'diomedes.small-business', kind: 'workflow', id: skillId },
+                { reason: 'chosen', state },
+              );
         let conversation =
           threadId !== undefined
             ? state.conversations.find((c) => c.id === threadId)!
@@ -4963,9 +4975,10 @@ export async function createApp(options: AppOptions) {
                 skillId,
                 mode,
                 budgetBytes: instructionSectionBudget(documentBytes),
+                loaded: playbook,
               });
         const youTurn: Turn = {
-          id: identifier('U'),
+          id: youTurnId,
           role: 'you',
           mode,
           text,

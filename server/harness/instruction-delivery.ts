@@ -495,6 +495,12 @@ export function assembleSkillSection(input: {
   skillId: unknown;
   mode: string;
   budgetBytes: number;
+  /**
+   * P04: the playbook body as the contribution loader returned it, checked
+   * against the digest this project registered. When present it is the text
+   * sent, and its digest is recorded on the turn.
+   */
+  loaded?: { readonly body: string; readonly digest: string; readonly packVersion: string };
 }): AssembledSkill {
   const manifest = CAPABILITY_PACKS[input.packId];
   const skill = findSkill(input.packId, input.skillId);
@@ -507,10 +513,8 @@ export function assembleSkillSection(input: {
       `Turn on ${manifest.name} for this project before using ${skill.name}. It adds no permission.`,
       { code: 'pack_inactive' },
     );
-  const section = `${SKILL_PREAMBLE}\n--- BEGIN PLAYBOOK ${skill.id} ---\n${renderSkillPlaybook(
-    skill,
-    manifest.version,
-  )}\n--- END PLAYBOOK ${skill.id} ---`;
+  const playbook = input.loaded?.body ?? renderSkillPlaybook(skill, manifest.version);
+  const section = `${SKILL_PREAMBLE}\n--- BEGIN PLAYBOOK ${skill.id} ---\n${playbook}\n--- END PLAYBOOK ${skill.id} ---`;
   const bytes = Buffer.byteLength(section);
   if (bytes > input.budgetBytes)
     throw new ApiError(
@@ -523,10 +527,11 @@ export function assembleSkillSection(input: {
     section,
     use: {
       packId: manifest.id,
-      packVersion: manifest.version,
+      packVersion: input.loaded?.packVersion ?? manifest.version,
       skillId: skill.id,
       name: skill.name,
       bytes,
+      ...(input.loaded ? { digest: input.loaded.digest } : {}),
     },
   };
 }
