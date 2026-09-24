@@ -29,6 +29,7 @@ import type {
   HypothesisOutcome,
   PersonalizationLevel,
   ProspectDiscoveryRecord,
+  StaleObservedEvidence,
 } from '../shared/discovery';
 
 export async function api<T>(
@@ -55,7 +56,11 @@ export async function api<T>(
   return payload as T;
 }
 
-type DiscoveryResponse = { record: ProspectDiscoveryRecord | null };
+type DiscoveryResponse = {
+  record: ProspectDiscoveryRecord | null;
+  /** Observed facts whose approved file has changed since (DIO-84). */
+  staleEvidence?: readonly StaleObservedEvidence[];
+};
 const discoveryPath = (prospectId: string) => `/discovery/${encodeURIComponent(prospectId)}`;
 
 export const discoveryApi = {

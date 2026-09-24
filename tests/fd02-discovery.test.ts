@@ -350,6 +350,71 @@ describe('facilitated discovery records', () => {
     expect(updated.facts.at(-1)?.provenance).toEqual({ class: 'observed', evidence });
   });
 
+  test('stale evidence keeps a stored fact readable but never backs a new observation (DIO-84)', async () => {
+    await locked(() => service.createAndSelect('consultant-a', conversation));
+    const evidence = {
+      kind: 'approved-file' as const,
+      projectId: 'project-1',
+      path: 'Imports/weekly.csv',
+      sha: 'a'.repeat(64),
+      historyEntryId: 'history-1',
+    };
+    let reading: 'verified' | 'stale' | 'invalid' = 'verified';
+    const checked = new DiscoveryService(store, {
+      now: () => clock,
+      id: (prefix) => `${prefix}${++id}`,
+      checkObservedEvidence: async () =>
+        reading === 'stale'
+          ? { status: 'stale', currentSha: 'b'.repeat(64) }
+          : { status: reading },
+    });
+    const observe = () =>
+      locked(() =>
+        checked.addFact('consultant-a', {
+          field: 'currentProcess.evidence',
+          label: 'Approved-file observation',
+          value: 'The approved export has twelve rows.',
+          provenance: { class: 'observed', evidence },
+        }),
+      );
+    const recorded = await observe();
+    const fact = recorded.facts.at(-1)!;
+    expect(await checked.staleEvidence('consultant-a', recorded)).toEqual([]);
+
+    reading = 'stale';
+    const active = (await locked(() => checked.active('consultant-a')))!;
+    expect(active).toEqual(recorded);
+    expect(await checked.staleEvidence('consultant-a', active)).toEqual([
+      {
+        factId: fact.id,
+        projectId: 'project-1',
+        path: 'Imports/weekly.csv',
+        recordedSha: 'a'.repeat(64),
+        currentSha: 'b'.repeat(64),
+      },
+    ]);
+    await expect(observe()).rejects.toMatchObject({
+      status: 403,
+      details: { code: 'unverified_observed_evidence' },
+    });
+    const retired = await locked(() =>
+      checked.correctFact('consultant-a', {
+        factId: fact.id,
+        value: null,
+        provenance: { class: 'unknown', reason: 'Retired after the export changed.' },
+      }),
+    );
+    expect(retired.facts.find((item) => item.id === fact.id)).toEqual(fact);
+    expect(retired.facts.at(-1)).toMatchObject({ replacesFactId: fact.id, value: null });
+
+    // Evidence that does not check out at all still refuses the record.
+    reading = 'invalid';
+    await expect(locked(() => checked.active('consultant-a'))).rejects.toMatchObject({
+      status: 409,
+      details: { code: 'invalid_observed_evidence' },
+    });
+  });
+
   test('hypothesis outcomes are append-only and a not-a-weak-point outcome remains exportable', async () => {
     const created = await locked(() => service.createAndSelect('consultant-a', conversation));
     clock = LATER;

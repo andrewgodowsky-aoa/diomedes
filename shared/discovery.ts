@@ -44,6 +44,31 @@ export type ObservedEvidence =
       readonly historyEntryId: string;
     };
 
+/**
+ * What the evidence behind an observed fact says today. `verified` is the only
+ * reading a new observation is accepted on. `stale` is possible only for an
+ * approved file: its recorded write still stands in History, but the file now
+ * holds other bytes (or none). `invalid` means the evidence never checked out.
+ */
+export type ObservedEvidenceCheck =
+  | { readonly status: 'verified' }
+  | { readonly status: 'stale'; readonly currentSha: string | null }
+  | { readonly status: 'invalid' };
+
+/**
+ * An observed fact whose approved file has changed since it was observed. It is
+ * a reading taken when the record is served, never written into the record: the
+ * fact and its evidence stay exactly as recorded (standing decision 10).
+ */
+export interface StaleObservedEvidence {
+  readonly factId: string;
+  readonly projectId: string;
+  readonly path: string;
+  readonly recordedSha: string;
+  /** Null when the file is no longer there. */
+  readonly currentSha: string | null;
+}
+
 export type FactProvenance =
   | { readonly class: 'observed'; readonly evidence: ObservedEvidence }
   | { readonly class: 'reported'; readonly reportedBy: 'owner' | 'consultant' }
