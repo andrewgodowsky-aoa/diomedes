@@ -130,8 +130,11 @@ export class ReadyScheduler {
     return selectedEngine(this.store.settings, state.project, thread);
   }
 
-  /** The planner's input, read from the records alone. */
-  private inputs(): ReadyPlanInput {
+  /**
+   * The planner's input, read from the records alone. Ready lines are read for the projects
+   * whose queue is on and for `viewed`; every other project contributes only what it runs.
+   */
+  private inputs(viewed?: string): ReadyPlanInput {
     const projects: ReadyProjectInput[] = [];
     for (const id of this.projectIds()) {
       const state = this.store.state(id);
@@ -140,7 +143,7 @@ export class ReadyScheduler {
       const pending = claims.filter((claim) => claim.state === 'claimed');
       const active = state.sessions.filter(isActiveSession);
       const ready: ReadyProjectInput['ready'][number][] = [];
-      for (const task of state.tasks) {
+      for (const task of queue.autoStart || id === viewed ? state.tasks : []) {
         const moment = readyAt(task, state.sessions, state.needs, state.changes);
         if (moment === null || pending.some((claim) => claim.taskId === task.id)) continue;
         const refused = claims.find(
@@ -194,7 +197,7 @@ export class ReadyScheduler {
     const state = this.store.state(projectId);
     const queue = state.readyQueue ?? emptyReadyQueue();
     const home = this.store.isHomeProject(projectId);
-    const plan = home ? null : planReadyQueue(this.inputs());
+    const plan = home ? null : planReadyQueue(this.inputs(projectId));
     return {
       contractVersion: READY_QUEUE_CONTRACT_VERSION,
       projectId,
@@ -216,10 +219,16 @@ export class ReadyScheduler {
     }
     let due: boolean;
     try {
+      // The common case, every queue off and nothing pending, costs one look per project.
+      const queues = this.projectIds().map((id) => this.store.state(id).readyQueue);
+      const pending = queues.some((queue) =>
+        (queue?.claims ?? []).some((claim) => claim.state === 'claimed'),
+      );
       due =
-        this.projectIds().some((id) =>
-          (this.store.state(id).readyQueue?.claims ?? []).some((claim) => claim.state === 'claimed'),
-        ) || planReadyQueue(this.inputs()).claims.length > 0;
+        pending ||
+        (!this.allPaused &&
+          queues.some((queue) => queue?.autoStart && !queue.paused) &&
+          planReadyQueue(this.inputs()).claims.length > 0);
     } catch {
       return;
     }
