@@ -393,3 +393,144 @@ test('DIO-87: writing already in the box is never stranded by a later kind', asy
   await expect.poll(() => fs.readFile(path.join(project.folder, ALPHA), 'utf8')).toBe(draft);
   await page.unrouteAll({ behavior: 'ignoreErrors' });
 });
+
+test('DIO-85: a second exit while the question is open puts the keyboard back on it, and the Files pane is not an exit', async ({
+  page,
+}) => {
+  await enter(page);
+  const box = await writeIn(page, ALPHA);
+  await breakDraftBackup(page);
+  const draft = `${ALPHA_TEXT}\nAsked twice.\n`;
+  await box.fill(draft);
+  await expect(editorState(page)).toHaveText('Not saved yet');
+
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await expect(asking(page)).toBeFocused();
+  // Another exit while the question is up: the click took the keyboard to the
+  // rail, and the question has to take it back, or Escape and Tab go nowhere.
+  await rail(page).getByRole('button', { name: new RegExp(THREAD) }).click();
+  await expectAskedAndKept(page, ALPHA, draft);
+
+  // The rail's Files item shows or hides the pane beside the editor. That
+  // leaves nothing, so it neither asks nor closes the editor.
+  const files = rail(page).getByRole('button', { name: 'Files', exact: true });
+  const shown = await filesPane(page).isVisible();
+  await files.click();
+  await expect(filesPane(page)).toBeVisible({ visible: !shown });
+  await expect(asking(page)).toHaveCount(0);
+  await expect(page.locator('.docedit .de-path')).toHaveText(ALPHA);
+  await expect(textBox(page)).toHaveValue(draft);
+  await files.click();
+  await expect(filesPane(page)).toBeVisible({ visible: shown });
+  await expect(asking(page)).toHaveCount(0);
+  await expect(textBox(page)).toHaveValue(draft);
+  await expect(editorState(page)).toHaveText('Not saved yet');
+});
+
+/** Make the open file conflict, so the editor offers the rescue copy. */
+async function conflictOn(page: Page, mine: string): Promise<Locator> {
+  await enter(page);
+  const box = await writeIn(page, ALPHA);
+  await box.fill(mine);
+  await fs.writeFile(path.join(project.folder, ALPHA), `${ALPHA_TEXT}\nTheirs, again.\n`, 'utf8');
+  await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+  const conflict = page.getByRole('alert', {
+    name: 'Someone else changed this file while you were writing',
+    exact: true,
+  });
+  await expect(conflict).toBeVisible();
+  return conflict;
+}
+
+/** The rescue copies of Alpha on disk, by content. */
+async function copiesOfAlpha(): Promise<string[]> {
+  const names = (await fs.readdir(project.folder)).filter((name) =>
+    name.startsWith('Alpha notes (my copy'),
+  );
+  return Promise.all(names.map((name) => fs.readFile(path.join(project.folder, name), 'utf8')));
+}
+
+test('DIO-85: words typed while the rescue copy is being written are not lost', async ({
+  page,
+}) => {
+  const mine = `${ALPHA_TEXT}\nWritten before the copy was asked for.\n`;
+  const conflict = await conflictOn(page, mine);
+  let letGo: () => void = () => undefined;
+  const held = new Promise<void>((resolve) => (letGo = resolve));
+  let asked: () => void = () => undefined;
+  const creating = new Promise<void>((resolve) => (asked = resolve));
+  await page.route(/\/documents\/create$/, async (route) => {
+    asked();
+    await held;
+    await route.continue();
+  });
+  await conflict
+    .getByRole('button', { name: 'Save my writing as a separate file', exact: true })
+    .click();
+  await creating;
+  const more = `${mine}And more, typed while the copy was on its way.\n`;
+  await textBox(page).fill(more);
+  letGo();
+
+  // The copy holds what was asked for, and the editor stays on the words that
+  // are not in it yet rather than moving on without them.
+  await expect.poll(async () => (await copiesOfAlpha()).includes(mine)).toBe(true);
+  await expect(page.locator('.docedit [role="status"]')).toContainText(
+    'You wrote more while that was saving',
+  );
+  await expect(page.locator('.docedit .de-path')).toHaveText(ALPHA);
+  await expect(textBox(page)).toHaveValue(more);
+  await expect(conflict).toBeVisible();
+  await page.unrouteAll({ behavior: 'ignoreErrors' });
+});
+
+test('DIO-87: a file the listing does not have says so and can be looked for again', async ({
+  page,
+}) => {
+  const mine = `${ALPHA_TEXT}\nLooked for again.\n`;
+  const conflict = await conflictOn(page, mine);
+  // First the listing cannot be read at all, then it answers without the copy.
+  let listing: 'fail' | 'without copies' | 'real' = 'fail';
+  await page.route(/\/api\/projects\/[^/]+\/documents(\?.*)?$/, async (route) => {
+    if (route.request().method() !== 'GET' || listing === 'real') return route.continue();
+    if (listing === 'fail')
+      return route.fulfill({
+        status: 500,
+        contentType: 'application/json',
+        json: { error: "This project's folder could not be read." },
+      });
+    try {
+      const response = await route.fetch();
+      const body = (await response.json()) as { documents: DocumentInfo[] };
+      await route.fulfill({
+        response,
+        json: { documents: body.documents.filter((file) => !file.path.includes('(my copy')) },
+      });
+    } catch (error) {
+      if (!String(error).includes('already handled')) throw error;
+    }
+  });
+  await conflict
+    .getByRole('button', { name: 'Save my writing as a separate file', exact: true })
+    .click();
+  await expect(page.locator('.docedit .de-path')).toContainText('Alpha notes (my copy');
+  const again = page.locator('.docedit').getByRole('button', { name: 'Try again', exact: true });
+
+  await expect(editorState(page)).toHaveText('Not open');
+  await expect(again).toBeVisible();
+  await expect(textBox(page)).toHaveCount(0);
+
+  listing = 'without copies';
+  await again.click();
+  await expect(page.locator('.docedit')).toContainText("is not in this project's list of files");
+  await expect(editorState(page)).toHaveText('Not open');
+  await expect(textBox(page)).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Save changes', exact: true })).toBeDisabled();
+
+  listing = 'real';
+  await again.click();
+  await expect(textBox(page)).toHaveValue(mine);
+  await expect(textBox(page)).toBeEditable();
+  await expect(editorState(page)).toHaveText('All saved');
+  await page.unrouteAll({ behavior: 'ignoreErrors' });
+});
