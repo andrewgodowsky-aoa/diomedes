@@ -238,5 +238,13 @@ you keep giving and offers to stop asking". Nothing in this record claims the we
 
 ## BUILD STATUS
 
-See the lane's final report for the gate counts from the final run (tsc, vitest, vite build,
-Playwright). Nothing here is published, packaged or released; the branch is pushed for the integrator.
+Final run on this branch after merging `origin/main` (Linux, 2026-09-24):
+
+- `npx tsc --noEmit`: clean.
+- `vitest run` (full suite, `--maxWorkers=2`): 348 files passed, 1 skipped; 6160 tests passed,
+  16 skipped, 0 failed.
+- `npx vite build`: succeeded.
+- `npx playwright test tests/ui.spec.ts tests/native-ui.spec.ts tests/field.spec.ts
+  tests/remembered-approvals-ui.spec.ts`: 39 passed, 0 failed, 0 skipped.
+
+Nothing here is published, packaged or released; the branch is pushed for the integrator.
