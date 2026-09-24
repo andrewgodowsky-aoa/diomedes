@@ -586,6 +586,7 @@ export function createLoopProcedure(deps: { store: Store; runs: RunService; tool
         request.signal.addEventListener('abort', stopChild, { once: true });
         const controller = new AbortController();
         let beat = () => {};
+        let driven = false;
         try {
           await runs.claim(child.id, owner, 60_000, { refuseSettled: true });
           beat = heartbeat(child.id, owner);
@@ -603,11 +604,15 @@ export function createLoopProcedure(deps: { store: Store; runs: RunService; tool
             AbortSignal.any([controller.signal, request.signal]),
             () => delegateFixtureAdapter(input.task),
           );
+          driven = true;
           await new NativeAgent(runs, adapter, registry).run(child.id, owner, input.task, principal, {
             maxTurns: input.maxTurns,
           });
-        } catch {
-          // The child's own record says how it ended; the parent observes that record.
+        } catch (error) {
+          // The child's own record says how it ended; the parent observes that record. A child
+          // claimed but never driven (its route could not open) is failed here with the reason,
+          // so it is not left running with nobody to drive it.
+          if (!driven && !request.signal.aborted) await runs.fail(child.id, owner, error).catch(() => undefined);
         } finally {
           beat();
           controller.abort();

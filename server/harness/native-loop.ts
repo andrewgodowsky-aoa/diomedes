@@ -645,6 +645,14 @@ export class NativeLoop {
     const run = await this.runtime.get(runId);
     const recorded = run.steps.find((step) => step.intent.stepId === `tool:${turn}`);
     const bound = recorded ? recorded.intent.input : await binding.bind(parsed.data, run);
+    // An input the registry's own contract refuses (its schema, its size limit) is an observation too.
+    try {
+      this.tools.validate(binding.name, bound);
+    } catch (error) {
+      if (error instanceof HarnessError && (error.code === 'tool_input_rejected' || error.code === 'tool_input_too_large'))
+        return refuse(error.message);
+      throw error;
+    }
     // H12's one mediated path: the effect intent, its targets and its authority
     // are recorded before the handler runs, and an interrupted write stays uncertain.
     const output = await this.tools.dispatch<Json>(this.runtime, {

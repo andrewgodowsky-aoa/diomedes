@@ -234,6 +234,30 @@ describe('plan, act, observe, finish', () => {
     expect((await runs.get('loop-2')).steps.some((step) => step.intent.kind === 'tool')).toBe(false);
   });
 
+  test('an input the registry refuses (too large for the tool) is observed as refused, and the run goes on', async () => {
+    const { runs } = await setup();
+    const writes: string[] = [];
+    const tools = registry(writes);
+    await start(runs, 'loop-2b', BUDGET, tools);
+    const adapter = scripted([
+      () => ({ type: 'tool', name: 'write_note', input: { text: 'x'.repeat(70_000) } }),
+      () => ({ type: 'final', text: 'The report was too long.' }),
+    ]);
+    await new NativeLoop(runs, adapter, tools, { maxTurns: 5, instructions: '', bindings, route: 'native-fixture', model: null }).run(
+      'loop-2b',
+      'host',
+      'Try.',
+      principal,
+    );
+    const run = await runs.get('loop-2b');
+    expect(run.state).toBe('completed');
+    const view = loopView(run);
+    expect(view.turns.map((turn) => turn.decision)).toEqual(['refused', 'finish']);
+    expect(view.turns[0].observation?.detail).toMatch(/limit is 65536/);
+    expect(run.steps.some((step) => step.intent.kind === 'tool')).toBe(false);
+    expect(writes).toEqual([]);
+  });
+
   test('the plan is bounded: at most eight short items', () => {
     const plan = parsePlan(Array.from({ length: 12 }, (_, i) => `${i + 1}. Step ${i + 1} ${'x'.repeat(i === 0 ? 300 : 3)}`).join('\n'));
     expect(plan.items).toHaveLength(8);
