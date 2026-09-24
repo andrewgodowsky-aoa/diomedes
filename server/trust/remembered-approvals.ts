@@ -40,6 +40,7 @@ import {
   rememberedAttribution,
 } from '../../shared/remembered-approvals.js';
 import type { StepIntent } from '../../shared/harness.js';
+import { AGENT_NAME } from '../../shared/agent-name.js';
 import { digestSchema, payloadDigest } from '../command-admission.js';
 import { ApiError } from '../paths.js';
 import type { Store } from '../store.js';
@@ -173,7 +174,7 @@ export class RememberedApprovals {
   }
   private inactiveReason(record: PatternGrantRecord) {
     return record.revokedAt || record.generation !== 0
-      ? 'You revoked this remembered approval. Diomedes asks each time.'
+      ? `You revoked this remembered approval. ${AGENT_NAME} asks each time.`
       : null;
   }
 
@@ -403,7 +404,7 @@ export class RememberedApprovals {
       sessionId: input.sessionId,
       sentence:
         input.route === 'approve-and-remember'
-          ? `You approved and remembered “${input.what}” in this project. Diomedes will not ask again for exactly this until you revoke it.`
+          ? `You approved and remembered “${input.what}” in this project. ${AGENT_NAME} will not ask again for exactly this until you revoke it.`
           : `You accepted the offer to stop asking: “${input.what}” is remembered in this project until you revoke it.`,
     });
     const pattern = canonicalPattern(input.pattern);
@@ -553,7 +554,7 @@ export class RememberedApprovals {
       const event = this.store.addEntry(state, {
         kind: 'remembered-approval-revoked',
         actor: 'you',
-        sentence: `You revoked the remembered approval for “${record.grant.what}”. Diomedes asks each time from now on.`,
+        sentence: `You revoked the remembered approval for “${record.grant.what}”. ${AGENT_NAME} asks each time from now on.`,
       });
       record.revokedAt = event.time;
       record.generation += 1;

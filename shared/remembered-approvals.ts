@@ -14,6 +14,7 @@
  * it records a grant and again before a grant covers anything.
  */
 import type { Destination, Effect, StepIntent } from './harness.js';
+import { AGENT_NAME } from './agent-name.js';
 
 /**
  * Identical exact approvals in one project before Diomedes offers to stop
@@ -31,7 +32,7 @@ export const ALWAYS_ASK_REASON: Record<AlwaysAskCategory, string> = {
   'moves-money': 'Payments and moving money always ask.',
   'destroys-data': 'Deleting or destroying data always asks.',
   'changes-access': 'Changing credentials, members or permissions always asks.',
-  unrecognised: 'Diomedes cannot tell this action is safe to remember, so it always asks.',
+  unrecognised: `${AGENT_NAME} cannot tell this action is safe to remember, so it always asks.`,
 };
 
 /**

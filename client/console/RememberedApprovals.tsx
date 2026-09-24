@@ -6,6 +6,7 @@ import type {
   RememberedApprovalsView,
 } from '../../shared/permissions';
 import { offerQuestion } from '../../shared/remembered-approvals';
+import { AGENT_NAME } from '../../shared/agent-name';
 import './remembered-approvals.css';
 
 /**
@@ -24,7 +25,7 @@ export function RememberOfferBlock({
   return (
     <section className="need remember-offer" aria-label="Offer to stop asking">
       <div className="who">
-        <b>Diomedes</b>
+        <b>{AGENT_NAME}</b>
         <span>asks once</span>
       </div>
       <p className="ask">{offerQuestion(offer.what, offer.approvals)}</p>

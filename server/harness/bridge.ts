@@ -19,7 +19,7 @@ import {
 } from './codex-engine.js';
 import type { WorkAdmission } from '../work-admission.js';
 import { patternForStep, type ApprovalCandidate } from '../trust/remembered-approvals.js';
-import { rememberedAttribution } from '../../shared/remembered-approvals.js';
+import { ALWAYS_ASK_REASON, rememberedAttribution } from '../../shared/remembered-approvals.js';
 
 export const localHarnessPrincipal = (projectId: string): HarnessPrincipal => ({
   id: 'local-client',
@@ -388,7 +388,7 @@ export class HarnessBridge {
     if (!candidate)
       throw new ApiError(
         409,
-        'Diomedes cannot tell this action is safe to remember, so it always asks.',
+        ALWAYS_ASK_REASON.unrecognised,
         { code: 'always_asks' },
       );
     const record = this.store.scopeGrants.remembered.rememberFromNeed(projectId, need, candidate);
