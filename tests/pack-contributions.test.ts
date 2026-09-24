@@ -364,6 +364,35 @@ describe('deactivation unloads; a run already admitted keeps its pin', () => {
   });
 });
 
+describe('the index and the records are durable', () => {
+  test('a restart reads back the registered index and every record, and loads resume against them', async () => {
+    const { store, packs, one } = await setup();
+    await packs.activate(one, SB);
+    const pin = await packs.contributions.admit(store.state(one), 'before-restart');
+    await packs.contributions.load(pin, { packId: SB, kind: 'workflow', id: 'invoice-chase' }, { reason: 'chosen' });
+    const before = structuredClone(store.state(one));
+
+    const reopened = new Store(path.join(temp, 'data'), path.join(temp, 'projects'));
+    await reopened.init();
+    const state = reopened.state(one);
+    expect(state.packIndex).toEqual(before.packIndex);
+    expect(state.contributionRecords).toEqual(before.contributionRecords);
+    expect(state.history.find((e) => e.contribution?.outcome === 'loaded')?.contribution).toEqual(
+      before.contributionRecords!.at(-1),
+    );
+    const again = new PackLifecycle({
+      store: reopened,
+      root: path.join(reopened.dataDir, 'packs'),
+      catalogue: () => bundledCatalogue(),
+    });
+    const next = await again.contributions.admit(reopened.state(one), 'after-restart');
+    expect(next.unregistered).toEqual([]);
+    await expect(
+      again.contributions.load(next, { packId: SB, kind: 'workflow', id: 'invoice-chase' }, { reason: 'chosen' }),
+    ).resolves.toMatchObject({ digest: before.packIndex![SB].entries.find((e) => e.id === 'invoice-chase')!.digest });
+  });
+});
+
 describe('a pack turned on before indexes existed', () => {
   test('registers its index at first use, and says so once', async () => {
     const { store, packs, one } = await setup();

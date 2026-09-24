@@ -436,7 +436,7 @@ export class PackContributions {
       if (actual !== entry.digest)
         return refuse(
           'digest_mismatch',
-          `Its content changed since ${index.packName} ${index.packVersion} was registered here: it hashes to ${actual.slice(7, 19)}, not ${entry.digest.slice(7, 19)}. It was not used.`,
+          `Its content changed since ${index.packName} ${index.packVersion} was registered here: it hashes to ${actual.slice(7, 19)}, not ${entry.digest.slice(7, 19)}. It was not used. Turning the pack off and on again registers what it is now.`,
           { actualDigest: actual },
         );
       const bytes = Buffer.byteLength(body.body);
