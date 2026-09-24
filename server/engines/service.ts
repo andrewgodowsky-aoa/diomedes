@@ -50,6 +50,7 @@ import { contextMessage } from './contract.js';
 import type { ToolRegistry } from '../harness/tools.js';
 import { TEAM_CARRIAGE, teamRouteRefusal } from '../../shared/team-routes.js';
 import type { OpenCodeSessionCheckpoint } from './opencode-session.js';
+import type { AcpSessionCheckpoint, AcpSessionEngine } from './acp-session.js';
 import {
   ClaudeSessionRuns,
   type ClaudeSessionTurn,
@@ -412,6 +413,9 @@ export class EngineService {
   nativeSessions?: ClaudeSessionRuns;
   /** The kept OpenCode session route (H04); attaching it does not change generate() either. */
   opencodeSessions?: ClaudeSessionRuns<OpenCodeSessionCheckpoint>;
+  /** The kept ACP conversations (H05); attaching them does not change generate() either. */
+  cursorSessions?: ClaudeSessionRuns<AcpSessionCheckpoint>;
+  devinSessions?: ClaudeSessionRuns<AcpSessionCheckpoint>;
   /** The model-API conversation driver (CD-01 Decision 5's second driver). The app attaches it. */
   modelSessions?: ModelSessionRuns;
   /** Connection record, protected credential, spend ledger and private transcripts for model-API routes. */
@@ -1717,6 +1721,8 @@ export class EngineService {
     runId: string,
     input: TextRequest,
     sourceRunId?: string,
+    /** H03: wait behind a running turn (the route's steer queue) instead of being refused. */
+    options: { queued?: boolean } = {},
   ) {
     return this.nativeTurn(
       { engine: 'claude-code', routeId: 'claude-code-session', driver: this.nativeSessions, name: 'Claude' },
@@ -1724,6 +1730,7 @@ export class EngineService {
       runId,
       input,
       sourceRunId,
+      options,
     );
   }
   /**
@@ -1745,9 +1752,33 @@ export class EngineService {
       sourceRunId,
     );
   }
+  /**
+   * A kept ACP conversation (H05): the same admission, contract gate, fenced
+   * preview queue and driver lifecycle, under the agent's own session contract.
+   */
+  async acpSession(
+    engine: AcpSessionEngine,
+    mode: ClaudeSessionTurn['mode'],
+    runId: string,
+    input: TextRequest,
+    sourceRunId?: string,
+  ) {
+    return this.nativeTurn(
+      {
+        engine,
+        routeId: `${engine}-session`,
+        driver: engine === 'cursor' ? this.cursorSessions : this.devinSessions,
+        name: engine === 'cursor' ? 'Cursor' : 'Devin',
+      },
+      mode,
+      runId,
+      input,
+      sourceRunId,
+    );
+  }
   private async nativeTurn<C extends SessionCheckpointFacts>(
     route: {
-      engine: 'claude-code' | 'opencode';
+      engine: 'claude-code' | 'opencode' | AcpSessionEngine;
       routeId: string;
       driver: ClaudeSessionRuns<C> | undefined;
       name: string;
@@ -1756,6 +1787,7 @@ export class EngineService {
     runId: string,
     input: TextRequest,
     sourceRunId?: string,
+    options: { queued?: boolean } = {},
   ) {
     const driver = route.driver;
     if (!driver)
@@ -1793,6 +1825,7 @@ export class EngineService {
         runId,
         sourceRunId,
         input,
+        ...(options.queued ? { queued: true } : {}),
         admit: async (signal) => {
           await this.discover(true);
           await this.check(route.engine, signal);

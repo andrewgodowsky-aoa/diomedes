@@ -652,6 +652,58 @@ export class RunService {
     });
   }
 
+  /**
+   * Reconcile, from the durable record alone, a run whose only unknown outcome is a
+   * restart-interrupted conversation turn that touched nothing but the provider's
+   * own record (H05): an external model step with a `read` effect. Each such step
+   * is recorded `cancelled` — not completed and never resent — with the event
+   * cursor the decision was taken at, and the run returns to `queued` for its
+   * driver. Any other parked step refuses the whole reconciliation, unchanged.
+   * Startup-only, like `recover`.
+   */
+  async reconcileInterrupted(
+    runId: string,
+    principal: HarnessPrincipal,
+    why: string,
+  ): Promise<{ afterSeq: number; steps: string[] }> {
+    return this.serialize(runId, async () => {
+      const run = await this.load(runId);
+      this.scope(run, principal);
+      if (run.state !== 'reconcile_required')
+        throw new HarnessError('not_reconcilable', 'Only a run parked for reconciliation can be reconciled.');
+      const parked = run.steps.filter((step) => step.state === 'reconcile_required');
+      if (
+        !parked.length ||
+        parked.some(
+          (step) =>
+            step.intent.kind !== 'model' ||
+            step.intent.destination !== 'external' ||
+            step.intent.effect !== 'read',
+        )
+      )
+        throw new HarnessError(
+          'not_reconcilable',
+          'Only an interrupted read-only provider turn can be reconciled from the record.',
+        );
+      const afterSeq = run.lastSeq;
+      for (const step of parked) {
+        step.state = 'cancelled';
+        step.endedAt = this.now();
+        this.note(
+          run,
+          'step.cancelled',
+          { why: this.redact(why), afterSeq, resent: false },
+          step.intent.stepId,
+          step.attempt,
+        );
+      }
+      run.state = 'queued';
+      this.note(run, 'run.recovered', { fence: run.fence, reconciled: parked.length });
+      await this.commit(run);
+      return { afterSeq, steps: parked.map((step) => step.intent.stepId) };
+    });
+  }
+
   /** Take or renew the run's lease. A live lease held by someone else is refused. */
   /**
    * `refuseSettled` makes the claim conditional on the run still being live, decided inside

@@ -94,7 +94,28 @@ export interface TextRequest {
    * every other adapter refuses a request that carries it. Never with a read scope.
    */
   team?: TeamCarriageOptions & { onToolCall?: (tool: string) => void };
+  /**
+   * Where an engine's mid-turn question goes to be answered by a person (H05).
+   * Set only by the host for a kept ACP conversation, never from a client or a
+   * model; absent means every such question is declined, as on the text route.
+   */
+  approvals?: (ask: EngineAsk, signal: AbortSignal) => Promise<EngineAskAnswer>;
 }
+/**
+ * A question an engine asked mid-turn that only a person may answer (H05): an
+ * ACP permission ask or a plan presented for approval. The host turns it into a
+ * Need; the answer goes back to the engine. Never answered automatically.
+ */
+export interface EngineAsk {
+  kind: 'permission' | 'plan';
+  engine: ExternalEngine;
+  /** What the engine wants to do, bounded and in its own words. */
+  title: string;
+  /** The ACP tool kind of a permission ask (`fetch`, `think`); absent for a plan. */
+  toolKind?: string;
+}
+/** `expired`: nobody answered in time. `cancelled`: the turn ended before an answer. */
+export type EngineAskAnswer = 'go-ahead' | 'declined' | 'expired' | 'cancelled';
 export interface TextResponse {
   text: string;
   model: string;
