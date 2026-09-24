@@ -4722,6 +4722,8 @@ export async function createApp(options: AppOptions) {
             attempt: 1,
             fence: 1,
           },
+          // The same floor every other engine's preview gets from `redactFor`.
+          redact: baselineRedact,
           onPreview: (frame) => progress('delta', frame),
           // An over-long frame ends the preview; the answer itself still arrives.
           onInvalid: () => {},

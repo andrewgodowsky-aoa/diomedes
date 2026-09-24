@@ -616,6 +616,9 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
     | { client: NativeRpc; version: string; timer: NodeJS.Timeout; scope: string }
     | undefined;
   let sandboxProvenAt: number | undefined;
+  // Bumped by closeWarm. A request that began before a shutdown closes its own
+  // process when it finishes instead of parking it where nothing will close it.
+  let warmGeneration = 0;
   /**
    * The kept process, when it was started for the same scope (`readScopeDigest`).
    * One started for another project, web setting or connector set is closed
@@ -646,12 +649,17 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
     warm = { client, version, timer, scope };
   }
   async function closeWarm() {
+    warmGeneration++;
     const held = await takeWarm();
     if (held) await held.client.close().catch(() => {});
   }
   async function proveSandbox() {
     const ttl = dependencies.sandboxProofTtlMs;
     if (ttl > 0 && sandboxProvenAt !== undefined && Date.now() - sandboxProvenAt < ttl) return;
+    await runSandboxProof();
+  }
+  /** Every proof, cached or not, updates the one remembered result: a failure withdraws a pass. */
+  async function runSandboxProof() {
     sandboxProvenAt = undefined;
     await dependencies.verifySandbox();
     sandboxProvenAt = Date.now();
@@ -711,7 +719,7 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
       await requireChatGpt(client);
       status.signIn = 'signed-in';
       status.status = 'Checking read-only boundary';
-      await dependencies.verifySandbox();
+      await runSandboxProof();
       status.available = true;
       status.status = 'Ready';
       status.detail =
@@ -972,6 +980,7 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
     let succeeded = false;
     let version = '';
     const scopeKey = readScopeDigest(input.readScope);
+    const generation = warmGeneration;
     // Stop closes whichever process is serving the request, which ends its turn.
     const watchAbort = (serving: NativeRpc) => {
       if (onAbort) input.signal?.removeEventListener('abort', onAbort);
@@ -1457,7 +1466,13 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
       // Only a process that finished a person's request cleanly is kept. A
       // failure, a Stop or a team run always closes it.
       if (client) {
-        if (succeeded && !input.team && !input.signal?.aborted && dependencies.keepWarmMs > 0)
+        if (
+          succeeded &&
+          !input.team &&
+          !input.signal?.aborted &&
+          dependencies.keepWarmMs > 0 &&
+          generation === warmGeneration
+        )
           park(client, version, scopeKey);
         else await client.close();
       }

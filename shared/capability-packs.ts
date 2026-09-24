@@ -424,7 +424,100 @@ export function instructionRuleId(name: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
-  return `instructions-${slug || 'file'}`.slice(0, 64);
+  // A file at the project root keeps the id it always had. A nested one also
+  // carries a short digest of its exact path: `pkg/api/AGENTS.md` and
+  // `pkg-api/AGENTS.md` slug alike, and a long path would otherwise be cut to
+  // the same 64 characters as its neighbour, and two files must never share
+  // one rule.
+  if (!name.includes('/')) return `instructions-${slug || 'file'}`.slice(0, 64);
+  return `instructions-${slug.slice(0, 41).replace(/-+$/, '')}-${pathDigest(name)}`;
+}
+
+/** FNV-1a over UTF-16 code units, as 8 hex digits. An identifier, not a security digest. */
+function pathDigest(value: string): string {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < value.length; index++) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
+}
+
+// --- nested instruction files: scope and precedence -------------------------
+
+/**
+ * How far below the project folder discovery looks, and how much it will look
+ * at. A monorepo's `packages/api/AGENTS.md` is two folders down; nothing
+ * legitimate needs seven. The folder ceiling bounds the walk itself, so a
+ * project folder that turns out to hold a whole drive costs a bounded,
+ * predictable amount of work rather than a scan of everything under it.
+ */
+export const NESTED_INSTRUCTION_MAX_DEPTH = 6;
+export const NESTED_INSTRUCTION_MAX_FOLDERS = 2000;
+/** Nested records past this many are not discovered at all. */
+export const NESTED_INSTRUCTION_MAX_FILES = 32;
+
+/** The folder an instruction file governs, relative to the project; `''` is the project root. */
+export function instructionScope(path: string): string {
+  const cut = path.lastIndexOf('/');
+  return cut < 0 ? '' : path.slice(0, cut);
+}
+
+/** How many folders below the project root an instruction file sits. */
+export function instructionDepth(path: string): number {
+  const scope = instructionScope(path);
+  return scope ? scope.split('/').length : 0;
+}
+
+/**
+ * Whether one instruction file governs work on these paths.
+ *
+ * A root file governs everything in the project. A nested one governs work on
+ * a path inside its own folder, compared a whole folder name at a time, so
+ * `pkg/api/AGENTS.md` governs `pkg/api/src/x.ts` and never `pkg/apiary/x.ts`.
+ * Work that names no path is scoped to the project root, and only root files
+ * govern it.
+ */
+export function instructionAppliesTo(path: string, workPaths: readonly string[]): boolean {
+  const scope = instructionScope(path);
+  if (!scope) return true;
+  return workPaths.some((work) => work.startsWith(`${scope}/`));
+}
+
+/**
+ * The order instruction files take precedence in, strongest first. This list
+ * is the documented contract; `compareInstructionPrecedence` is its one
+ * implementation, and the tests read both.
+ *
+ * Authority comes before any of it and is not decided here: every instruction
+ * file enters the rule path at project authority (`server/capability-packs.ts`),
+ * so `resolveRules` already puts an organization rule above all of them and a
+ * task or personal rule below, and an organization restriction can never be
+ * loosened by a file. Activating a pack adds no authority of its own; a pack's
+ * rules are these project rules. Files outside the project folder, a person's
+ * home-folder `CLAUDE.md` included, are never read.
+ */
+export const INSTRUCTION_PRECEDENCE: readonly string[] = Object.freeze([
+  'A file in a nearer folder governs over a file in a folder that contains it.',
+  "In the same folder, the pack's file order decides: AGENTS.md, then CLAUDE.md.",
+  'Otherwise, the path in plain character order.',
+]);
+
+/** Negative when `a` takes precedence over `b`. */
+export function compareInstructionPrecedence(
+  a: string,
+  b: string,
+  kinds: readonly string[] = SOFTWARE_ENGINEERING_PACK.instructionFiles,
+): number {
+  const kind = (path: string) => {
+    const index = kinds.indexOf(path.slice(path.lastIndexOf('/') + 1));
+    return index < 0 ? kinds.length : index;
+  };
+  return (
+    instructionDepth(b) - instructionDepth(a) ||
+    (instructionScope(a) === instructionScope(b) ? kind(a) - kind(b) : 0) ||
+    (a < b ? -1 : a > b ? 1 : 0)
+  );
 }
 
 /**
@@ -465,6 +558,43 @@ export interface DeliveredInstructionFile {
   /** `omitted` is never a partial send. A body goes whole or it does not go. */
   readonly state: 'sent' | 'omitted';
   readonly detail: string;
+  /** The folder this file governs; `''` is the project root. Absent on records before H11. */
+  readonly scope?: string;
+  /** 1 is the strongest. Files are recorded, read and rendered in this order. */
+  readonly precedence?: number;
+  /** Why an `omitted` file did not go. Absent when it was sent. */
+  readonly exclusion?: InstructionExclusion;
+}
+
+/**
+ * Why an instruction file was not sent, as a code the Console can print and a
+ * test can assert. `over-file-limit` and `no-room` are the byte budget: the
+ * file was left out whole rather than cut (`truncated` on the delivery).
+ */
+export type InstructionExclusion =
+  | 'over-file-limit'
+  | 'no-room'
+  | 'refused'
+  | 'missing'
+  | 'out-of-scope'
+  | 'not-shared'
+  | 'not-loaded';
+
+/**
+ * A discovered instruction file that did not take part in this run, and why.
+ * It never reached the rule path for this request, so it has no body read,
+ * no rule applied and no precedence; the record exists so a person can see
+ * that it was considered and what kept it out.
+ */
+export interface ExcludedInstructionFile {
+  readonly path: string;
+  readonly scope: string;
+  /** The sha discovery recorded, when it read the file. */
+  readonly sha: string | null;
+  readonly bytes: number | null;
+  readonly packId: CapabilityPackId;
+  readonly exclusion: Extract<InstructionExclusion, 'out-of-scope' | 'not-shared' | 'not-loaded'>;
+  readonly detail: string;
 }
 
 /** What one run delivered, for the session record and History. Never the bodies. */
@@ -478,6 +608,10 @@ export interface InstructionDelivery {
   readonly truncated: boolean;
   /** Instruction bytes actually placed in the prompt. */
   readonly bytes: number;
+  /** The paths this work was scoped to; nested files govern only work inside their folder. */
+  readonly workPaths?: readonly string[];
+  /** Discovered files that did not take part, with the reason. Absent on records before H11. */
+  readonly excluded?: readonly ExcludedInstructionFile[];
 }
 
 /**
