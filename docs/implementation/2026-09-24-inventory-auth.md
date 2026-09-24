@@ -215,4 +215,11 @@ No pillar text changes. `QUESTIONS.md`: none answered.
 
 - Branch `bugfix/inventory-command-authorization`, pushed. Not merged, not packaged, not
   published.
-- Gate results are in the final report for the pushed commit.
+- Gates, run on Linux on this branch after merging `origin/main` (already up to date at `559a1ab`):
+  - `npx tsc --noEmit`: clean.
+  - vitest: 346 files passed and 1 skipped; 6092 tests passed and 16 skipped, 0 failed. The main
+    baseline is 6082/16/0; the 10 new tests account for the difference.
+  - `npx vite build`: succeeded.
+  - Playwright `ui`, `native-ui` and `field` specs: 36 passed.
+  - `playwright.inventory.config.ts` (the receipt demo through the guarded router): 30 passed.
+- The new LAN-socket test ran here; it skips only on a host with no non-internal IPv4.
