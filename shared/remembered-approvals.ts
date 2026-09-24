@@ -101,6 +101,21 @@ const MONEY = new Set([
   'bank',
   'withdraw',
   'deposit',
+  // Inflections the word split would otherwise miss (review batch1-a, D5-1).
+  'paid',
+  'pays',
+  'paying',
+  'charged',
+  'charging',
+  'billed',
+  'invoiced',
+  'purchased',
+  'bought',
+  'ordered',
+  'spent',
+  'donate',
+  'donation',
+  'donations',
 ]);
 const DESTROY = new Set([
   'delete',
@@ -125,6 +140,15 @@ const DESTROY = new Set([
   'revoke',
   'cancel',
   'uninstall',
+  'wiped',
+  'wipes',
+  'dropped',
+  'drops',
+  'cleared',
+  'clears',
+  'clearing',
+  'resets',
+  'kill',
 ]);
 const ACCESS = new Set([
   'credential',
@@ -167,7 +191,153 @@ const ACCESS = new Set([
   'seats',
   'policy',
   'policies',
+  'passwd',
+  'pwd',
+  'ssh',
+  'gpg',
+  'pgp',
+  'mfa',
+  'otp',
+  'totp',
+  '2fa',
+  'sso',
+  'saml',
+  'iam',
+  'acl',
+  'acls',
+  'sudo',
+  'chmod',
+  'chown',
+  'cert',
+  'certs',
 ]);
+
+/**
+ * Stems matched anywhere inside a word and inside the name run together, so an
+ * inflected form (`deleted`, `removing`), a run-together name (`deletefile`,
+ * `sendpayment`, `rotate_accesstoken`) or an acronym (`SSHKeyUpload`) cannot
+ * slip past the exact lists above. Each is long or distinctive enough not to
+ * appear inside an ordinary word; a false match only means the action asks.
+ */
+const MONEY_STEMS = [
+  'payment',
+  'payout',
+  'payroll',
+  'refund',
+  'invoice',
+  'billing',
+  'purchas',
+  'checkout',
+  'withdraw',
+  'deposit',
+  'transfer',
+  'salary',
+  'salaries',
+  'reimburs',
+  'remittanc',
+];
+const DESTROY_STEMS = [
+  'delet',
+  'remov',
+  'destroy',
+  'destruct',
+  'erase',
+  'erasing',
+  'erasure',
+  'purg',
+  'truncat',
+  'wipe',
+  'wiping',
+  'trash',
+  'unlink',
+  'overwrit',
+  'shred',
+  'revok',
+  'cancel',
+  'uninstal',
+  'prune',
+  'pruning',
+  'discard',
+  'obliterat',
+];
+const ACCESS_STEMS = [
+  'credential',
+  'password',
+  'passwd',
+  'passphrase',
+  'passcode',
+  'secret',
+  'token',
+  'apikey',
+  'privatekey',
+  'sshkey',
+  'gpgkey',
+  'oauth',
+  'permission',
+  'privilege',
+  'membership',
+  'invit',
+  'login',
+  'logon',
+  'signin',
+  'signon',
+  'magiclink',
+  'authoriz',
+  'authenticat',
+  'impersonat',
+  'certificat',
+  'keychain',
+];
+
+/**
+ * A local write whose file is itself access: a credential, key or secret
+ * store, a member or permission list, or a tool's own configuration. Checked
+ * on the destination, because the tool name of a recorded write says nothing
+ * about which file it writes.
+ */
+const FILE_ACCESS = new Set([
+  'credential',
+  'credentials',
+  'secret',
+  'secrets',
+  'password',
+  'passwords',
+  'passwd',
+  'htpasswd',
+  'shadow',
+  'sudoers',
+  'token',
+  'tokens',
+  'key',
+  'keys',
+  'apikey',
+  'member',
+  'members',
+  'membership',
+  'permission',
+  'permissions',
+  'roles',
+  'users',
+  'acl',
+  'acls',
+]);
+const SENSITIVE_SEGMENT =
+  /^(\.env(\..*)?|\.ssh|\.git|\.aws|\.azure|\.gnupg|\.kube|\.docker|\.npmrc|\.yarnrc(\.yml)?|\.netrc|\.pypirc|\.pgpass|id_(rsa|dsa|ecdsa|ed25519)(\.pub)?|authorized_keys|known_hosts)$/i;
+const SENSITIVE_EXTENSION = /\.(pem|key|p12|pfx|jks|keystore|kdbx|ppk|crt|cer|der|asc|gpg)$/i;
+
+/** Whether a `file:` destination names something that grants or holds access. */
+function fileTouchesAccess(target: string): boolean {
+  if (!target.startsWith('file:')) return false;
+  const file = target.slice('file:'.length);
+  const segments = file.split(/[\\/]+/).filter(Boolean);
+  if (segments.some((segment) => SENSITIVE_SEGMENT.test(segment))) return true;
+  if (SENSITIVE_EXTENSION.test(file)) return true;
+  const named = words(file);
+  return (
+    named.some((word) => FILE_ACCESS.has(word)) ||
+    ACCESS_STEMS.some((stem) => named.some((word) => word.includes(stem)) || named.join('').includes(stem))
+  );
+}
 
 /**
  * Permissions an action may be remembered under at all, and on which
@@ -217,12 +387,20 @@ export function classifyApproval(input: {
     ...words(input.tool),
     ...words(input.permission),
   ]);
-  const has = (list: Set<string>) => [...vocabulary].some((word) => list.has(word));
-  if (has(MONEY)) return always('moves-money');
-  if (input.deletes || has(DESTROY)) return always('destroys-data');
+  // Each name is also read run together, so `deletefile` or `send_magic_link` is
+  // judged as a whole as well as word by word.
+  const joined = [input.procedure, input.tool, input.permission].map((name) =>
+    words(name).join(''),
+  );
+  const has = (list: Set<string>, stems: readonly string[]) =>
+    [...vocabulary].some((word) => list.has(word) || stems.some((stem) => word.includes(stem))) ||
+    joined.some((name) => stems.some((stem) => name.includes(stem)));
+  if (has(MONEY, MONEY_STEMS)) return always('moves-money');
+  if (input.deletes || has(DESTROY, DESTROY_STEMS)) return always('destroys-data');
   // The permission name itself is checked against the allowlist below, so a
   // plain `write-project-file` does not trip the access words on its own.
-  if (has(ACCESS)) return always('changes-access');
+  if (has(ACCESS, ACCESS_STEMS)) return always('changes-access');
+  if (input.targets.some(fileTouchesAccess)) return always('changes-access');
   if (!input.tool || !input.permission) return always('unrecognised');
   const allowed = REMEMBERABLE[input.permission];
   if (
@@ -236,6 +414,41 @@ export function classifyApproval(input: {
 }
 
 const RECIPIENT_FIELDS = ['to', 'cc', 'bcc', 'recipients', 'url', 'channel'] as const;
+/** Input keys (lower-cased, letters and digits only) that name a destination the pattern cannot bind. */
+const UNBOUND_DESTINATION = new Set([
+  'recipient',
+  'email',
+  'emails',
+  'address',
+  'addresses',
+  'webhook',
+  'webhooks',
+  'endpoint',
+  'endpoints',
+  'uri',
+  'urls',
+  'link',
+  'host',
+  'hostname',
+  'server',
+  'bucket',
+  'phone',
+  'phones',
+  'number',
+  'numbers',
+  'channels',
+  'path',
+  'paths',
+  'file',
+  'target',
+  'targets',
+  'destination',
+  'destinations',
+  'forward',
+  'forwardto',
+  'redirect',
+  'redirectto',
+]);
 
 const strings = (value: unknown): string[] | null => {
   if (typeof value === 'string') return [value];
@@ -262,12 +475,22 @@ export function intentTargets(intent: Pick<StepIntent, 'input' | 'destination'>)
     if (!files) return null;
     targets.push(...files.map((file) => `file:${file}`));
   }
+  // A field that could name a destination but that the pattern does not bind
+  // makes the step unreadable: a grant must never cover a destination it does
+  // not name (review batch1-a, D5-1).
+  if (Object.keys(record).some((key) => UNBOUND_DESTINATION.has(key.toLowerCase().replace(/[^a-z0-9]/g, ''))))
+    return null;
   for (const field of RECIPIENT_FIELDS) {
     if (record[field] === undefined) continue;
     const values = strings(record[field]);
     if (!values) return null;
     const label = field === 'recipients' ? 'to' : field;
-    targets.push(...values.map((value) => `${label}:${value.trim().toLowerCase()}`));
+    // A mailbox is case-insensitive; a URL's path and a channel id are not, so
+    // folding their case would let one grant cover two destinations.
+    const mailbox = field === 'to' || field === 'cc' || field === 'bcc' || field === 'recipients';
+    targets.push(
+      ...values.map((value) => `${label}:${mailbox ? value.trim().toLowerCase() : value.trim()}`),
+    );
   }
   const deletes =
     record.delete === true ||
