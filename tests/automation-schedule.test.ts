@@ -241,3 +241,37 @@ describe('words and validation', () => {
     [null, false],
   ])('%j is %s', (input, ok) => expect(checkSchedule(input).ok).toBe(ok));
 });
+
+describe('independent review (review-e): calendar edges', () => {
+  test('a skipped calendar day never makes two slots at one instant (Pacific/Apia, 30 Dec 2011)', () => {
+    const apia = daily('00:00', 'Pacific/Apia');
+    const slots = slotsBetween(apia, ms('2011-12-28T12:00:00Z'), ms('2012-01-02T12:00:00Z'));
+    expect(new Set(slots.map((slot) => slot.at)).size).toBe(slots.length);
+    // The day that exists runs; the one that never existed adds nothing.
+    expect(slots.find((slot) => slot.at === '2011-12-30T10:00:00.000Z')).toMatchObject({ local: '2011-12-31 00:00', shifted: null });
+    const preview = nextSlots(apia, ms('2011-12-29T11:00:00Z'), 3);
+    expect(new Set(preview.map((slot) => slot.at)).size).toBe(3);
+    // On time at the jump, the slot runs; it is not recorded as missed as well.
+    const plan = planDue({ schedule: apia, afterMs: ms('2011-12-29T11:00:00Z'), nowMs: ms('2011-12-30T10:00:30Z'), covered: new Set(), catchUpMinutes: 120 });
+    expect(plan.missed).toEqual([]);
+    expect(plan.due?.at).toBe('2011-12-30T10:00:00.000Z');
+  });
+
+  test('the on-time and catch-up windows include their last millisecond and no more', () => {
+    const schedule = daily('08:00');
+    const slot = ms('2026-09-28T12:00:00Z');
+    const plan = (nowMs: number, catchUpMinutes: number) =>
+      planDue({ schedule, afterMs: slot - 60_000, nowMs, covered: new Set(), catchUpMinutes });
+    expect(plan(slot + 120_000, 0)).toMatchObject({ late: false, due: { ms: slot } });
+    expect(plan(slot + 120_001, 0)).toMatchObject({ due: null, missed: [{ ms: slot }] });
+    expect(plan(slot + 120_001, 60)).toMatchObject({ late: true, due: { ms: slot } });
+    expect(plan(slot + 3_600_000, 60)).toMatchObject({ late: true, due: { ms: slot } });
+    expect(plan(slot + 3_600_001, 60)).toMatchObject({ due: null, missed: [{ ms: slot }] });
+  });
+
+  test('a slot exactly at the moment a schedule was turned on or edited is not its own', () => {
+    const schedule = daily('08:00');
+    const slot = ms('2026-09-28T12:00:00Z');
+    expect(slotsBetween(schedule, slot, slot + 60_000)).toEqual([]);
+  });
+});

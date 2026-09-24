@@ -790,3 +790,64 @@ describe('editing a schedule around its slot (A13, A35)', () => {
     await settle((await scheduled())[0]!);
   });
 });
+
+describe('independent review (review-e): every slot is accounted for, with the truth about this computer', () => {
+  test('a slot that fell due just before an edit is still admitted, not lost to the edit', async () => {
+    await turnOn(DAILY_8_NY);
+    clock = Date.parse('2026-09-28T11:59:50Z');
+    await scheduler.tick();
+    clock = Date.parse('2026-09-28T12:00:05Z');
+    expect((await change('edit', { schedule: DAILY_8_NY, catchUpMinutes: 240 })).status).toBe(200);
+    clock = Date.parse('2026-09-28T12:00:20Z');
+    await scheduler.tick();
+    const after = await scheduled();
+    expect(after.map((item) => [slotOf(item), item.admission.state])).toEqual([
+      ['2026-09-28T12:00:00.000Z', 'admitted'],
+    ]);
+    await settle(after[0]!);
+  });
+
+  test('a slot that fell due just before a pause is recorded, never silently dropped', async () => {
+    await turnOn(DAILY_8_NY);
+    clock = Date.parse('2026-09-28T11:59:50Z');
+    await scheduler.tick();
+    clock = Date.parse('2026-09-28T12:00:05Z');
+    expect((await change('pause', { reason: 'Stocktake' })).status).toBe(200);
+    clock = Date.parse('2026-09-28T12:00:20Z');
+    await scheduler.tick();
+    const after = await scheduled();
+    // The pass that lands first admits the slot and the pause names the run it did not stop (A10).
+    expect(after.map(slotOf)).toEqual(['2026-09-28T12:00:00.000Z']);
+    if (after[0]!.admission.state === 'admitted') await settle(after[0]!);
+  });
+
+  test('moving the time earlier the same day never runs the new, already-passed time as a catch-up', async () => {
+    // Turned on at 7:50 a.m. for 10:00; at 9:00 the person moves it to 8:00.
+    await turnOn({ ...DAILY_8_NY, time: '10:00' });
+    clock = Date.parse('2026-09-28T13:00:00Z');
+    await scheduler.tick();
+    expect((await change('edit', { schedule: DAILY_8_NY, catchUpMinutes: 240 })).status).toBe(200);
+    clock += 30_000;
+    await scheduler.tick();
+    // 8:00 today passed before the schedule said 8:00, so it is not this schedule's to run.
+    expect(await scheduled()).toEqual([]);
+    expect(await tasks()).toBe(0);
+  });
+
+  test('a slot missed while the running computer slept names when it was last seen, not when Diomedes started', async () => {
+    await turnOn(DAILY_8_NY);
+    clock = Date.parse('2026-09-28T12:00:10Z');
+    await scheduler.tick();
+    await settle((await scheduled())[0]!);
+    // Passes continue into the evening, then the laptop sleeps with Diomedes still running.
+    clock = Date.parse('2026-09-29T01:30:00Z');
+    await scheduler.tick();
+    clock = Date.parse('2026-09-30T14:30:00Z');
+    await scheduler.tick();
+    const missed = (await detail()).occurrences.filter((item) => item.note === 'Missed — computer was off');
+    expect(missed.length).toBeGreaterThan(0);
+    const reason = (missed[0]!.occurrence.admission as { reason: string }).reason;
+    expect(reason).toMatch(/last seen Mon 28 Sep 2026, 9:30 p\.m\.$/);
+    expect(reason).not.toMatch(/\.\.$/);
+  });
+});

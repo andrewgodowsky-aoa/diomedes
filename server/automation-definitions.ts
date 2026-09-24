@@ -148,9 +148,9 @@ export class AutomationDefinitions {
 
 /**
  * This computer, as the scheduler knows it: a stable id minted once per data
- * folder, a name, and the last heartbeat. `previousSeenAt` is what the file
- * said when this process started, so a missed slot can say when the computer
- * was last seen before it.
+ * folder, a name, and the last heartbeat. `previousSeenAt` is the heartbeat
+ * before the latest one: after a restart or a sleep, when the computer was last
+ * seen before the slots it missed.
  */
 export class AutomationHost {
   private record: HostRecord | null = null;
@@ -180,7 +180,9 @@ export class AutomationHost {
           firstSeenAt: at,
           lastSeenAt: at,
         };
-    await this.beat(at);
+    // The saved heartbeat stays until the first pass beats, so that pass can say
+    // when the computer was last seen before it started.
+    await jsonWrite(this.file, this.record);
     return this.record;
   }
 
@@ -195,6 +197,7 @@ export class AutomationHost {
 
   async beat(at: string) {
     if (!this.record) return;
+    this.previousSeenAt = this.record.lastSeenAt;
     this.record = { ...this.record, lastSeenAt: at };
     await jsonWrite(this.file, this.record);
   }
