@@ -215,7 +215,7 @@ async function packagingFixture() {
   const root = await temporaryRoot();
   for (const folder of ['client', 'server', 'shared', 'desktop', 'fixtures/harness', 'licenses', 'resources', 'dist', 'scripts', 'node_modules/electron', '.data/native-runtime', 'cache'])
     await fs.mkdir(path.join(root, folder), { recursive: true });
-  for (const file of ['desktop/main.mjs', 'desktop/app-updates.mjs', 'desktop/update-helper.mjs', 'desktop/diomedes.ico', 'desktop/service.ts', 'fixtures/harness/report-lines.txt', 'LICENSE', 'package-lock.json', 'scripts/package-desktop.mjs', 'scripts/build-desktop-auth.mjs', 'dist/index.html'])
+  for (const file of ['desktop/main.mjs', 'desktop/app-updates.mjs', 'desktop/update-helper.mjs', 'desktop/fresh-start.mjs', 'desktop/diomedes.ico', 'desktop/service.ts', 'fixtures/harness/report-lines.txt', 'LICENSE', 'package-lock.json', 'scripts/package-desktop.mjs', 'scripts/build-desktop-auth.mjs', 'dist/index.html'])
     await fs.writeFile(path.join(root, file), `independent fixture ${file}`);
   for (const file of ['desktop/native-auth.ts', 'desktop/native-auth-preload.ts'])
     await fs.writeFile(path.join(root, file), 'export const fixture = true;');

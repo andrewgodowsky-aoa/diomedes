@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, Menu, safeStorage, shell } from 'electron';
+import { app, BrowserWindow, dialog, Menu, safeStorage, session, shell } from 'electron';
 import { createServer } from 'node:http';
 import { createHash, randomBytes } from 'node:crypto';
 import fs from 'node:fs/promises';
@@ -17,6 +17,7 @@ import {
   titleBarWindowOptions,
   updateShellConfig,
 } from './app-updates.mjs';
+import { freshStartOnce } from './fresh-start.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 /**
@@ -43,6 +44,13 @@ function openSetupReference(destination) {
     .catch((error) => dialog.showErrorBox('The reference could not open', error.message));
 }
 app.setName('Diomedes');
+// A profile or data folder chosen through the environment belongs to a test,
+// a smoke driver or an installer proof, and is never reset.
+const chosenLocation = Boolean(
+  process.env.DIOMEDES_DESKTOP_PROFILE ||
+    process.env.DIOMEDES_DATA_DIR ||
+    process.env.DIOMEDES_PROJECTS_DIR,
+);
 if (process.env.DIOMEDES_DESKTOP_PROFILE)
   app.setPath('userData', process.env.DIOMEDES_DESKTOP_PROFILE);
 const dataDir = process.env.DIOMEDES_DATA_DIR ?? path.join(app.getPath('userData'), 'data');
@@ -346,6 +354,15 @@ if (!app.requestSingleInstanceLock()) {
   void app
     .whenReady()
     .then(async () => {
+      if (app.isPackaged && !chosenLocation) {
+        const fresh = await freshStartOnce({
+          userData: app.getPath('userData'),
+          dataDir,
+          projectsDir: path.join(app.getPath('documents'), 'Diomedes'),
+        });
+        // Browser-side storage (drafts, remembered views) starts over with the data.
+        if (fresh.reset) await session.defaultSession.clearStorageData();
+      }
       await fs.mkdir(dataDir, { recursive: true });
       const { claimDataFolder, createApp, serveClient } = await import('./server/app.mjs');
       // Bind an available loopback port before configuring the origin checks.
