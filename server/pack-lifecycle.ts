@@ -47,6 +47,8 @@ import {
 } from './pack-catalogue.js';
 import { absent, ApiError, isContained, safeAbsolute } from './paths.js';
 import { durableWrite, identifier, jsonWrite, now, type Store } from './store.js';
+import { MigrationRefusal, migrateRecord } from './migrations/framework.js';
+import { PACK_STORE } from './migrations/registry.js';
 
 export const PACK_STORE_SCHEMA_VERSION = 1 as const;
 /** The file a local pack folder carries its manifest in. */
@@ -226,13 +228,19 @@ export class PackLifecycle {
           code: 'unreadable-store',
         });
       }
-      const version = isPlainObject(raw) ? raw.schemaVersion : undefined;
-      if (isPlainObject(raw) && 'schemaVersion' in raw && version !== PACK_STORE_SCHEMA_VERSION)
-        refuse(
-          409,
-          `The pack store was written with schema ${String(version)}, which this Diomedes does not read. Nothing in it was changed.`,
-          { code: 'unknown-store-version' },
-        );
+      // Through the migration framework (H21). A store without a version is not
+      // one this Diomedes wrote, and falls to the shape check below.
+      if (isPlainObject(raw) && 'schemaVersion' in raw)
+        try {
+          migrateRecord(PACK_STORE, raw);
+        } catch (error) {
+          if (!(error instanceof MigrationRefusal)) throw error;
+          refuse(
+            409,
+            `The pack store was written with schema ${String(raw.schemaVersion)}, which this Diomedes does not read. Nothing in it was changed.`,
+            { code: 'unknown-store-version' },
+          );
+        }
       if (!isPackStoreFile(raw))
         refuse(
           409,

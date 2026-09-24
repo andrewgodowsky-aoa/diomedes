@@ -105,8 +105,10 @@ import type { HarnessHost } from './harness/host.js';
 import { HarnessError } from './harness/policy.js';
 import { presentRun } from './harness/present.js';
 import { absent, ApiError, relativeName } from './paths.js';
-import { hash, jsonWrite, now, readJson, type Store } from './store.js';
+import { hash, jsonWrite, now, type Store } from './store.js';
 import { approvedScope, outputFor } from './weekly-brief.js';
+import { openVersionedFile } from './migrations/files.js';
+import { AUTOMATION_OCCURRENCES } from './migrations/registry.js';
 import type { WorkspaceService } from './workspaces.js';
 
 const ORGANIZATION_FILE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,159}$/;
@@ -166,15 +168,18 @@ export class AutomationOccurrences {
     }
     for (const name of names.filter((item) => item.endsWith('.json')).sort()) {
       const organizationId = name.slice(0, -'.json'.length);
+      // Through the migration framework (H21): a Milestone A file is backed up
+      // beside itself and carried to version 2; a newer one is left alone.
       let stored: StoredOccurrences | null;
       try {
-        stored = await readJson<StoredOccurrences | null>(path.join(this.root, name), () => null);
+        stored = ((await openVersionedFile(AUTOMATION_OCCURRENCES, path.join(this.root, name)))?.record ??
+          null) as StoredOccurrences | null;
       } catch {
         stored = null;
       }
       if (
         !stored ||
-        (stored.v !== AUTOMATIONS_CONTRACT_VERSION && stored.v !== OCCURRENCES_FILE_VERSION) ||
+        stored.v !== OCCURRENCES_FILE_VERSION ||
         stored.organizationId !== organizationId ||
         !Array.isArray(stored.occurrences)
       ) {

@@ -14,7 +14,9 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
-import { HARNESS_CONTRACT_VERSION, type HarnessRun } from '../../shared/harness.js';
+import type { HarnessRun } from '../../shared/harness.js';
+import { MigrationRefusal, migrateRecord } from '../migrations/framework.js';
+import { HARNESS_RUN } from '../migrations/registry.js';
 import { HarnessError } from './policy.js';
 
 export interface RunStore {
@@ -84,11 +86,15 @@ export class FileRunStore implements RunStore {
     const parsed = JSON.parse(text) as Partial<HarnessRun>;
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
       throw new HarnessError('invalid_run_record', 'This saved run is not a run record.');
-    if (parsed.v !== HARNESS_CONTRACT_VERSION)
-      throw new HarnessError(
-        'unsupported_run_version',
-        `Run ${runId} was written by contract version ${String(parsed.v)}; this build reads version ${HARNESS_CONTRACT_VERSION}.`,
-      );
+    // Read through the migration framework (H21). The run contract has one
+    // version, so there is nothing to carry forward yet; a newer or unversioned
+    // run is refused with the file untouched and keeps its existing code.
+    try {
+      migrateRecord(HARNESS_RUN, parsed);
+    } catch (error) {
+      if (!(error instanceof MigrationRefusal)) throw error;
+      throw new HarnessError('unsupported_run_version', `Run ${runId}: ${error.message}`);
+    }
     return parsed as HarnessRun;
   }
   async write(run: HarnessRun) {

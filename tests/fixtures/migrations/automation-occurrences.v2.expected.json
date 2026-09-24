@@ -1,0 +1,36 @@
+{
+  "v": 2,
+  "organizationId": "org_old",
+  "occurrences": [
+    {
+      "v": 1,
+      "id": "O-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "automationId": "brief:org_old",
+      "organizationId": "org_old",
+      "tenantId": "tenant_org_old",
+      "trigger": {
+        "kind": "manual",
+        "commandId": "a1",
+        "payloadDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "requestedBy": "person_a"
+      },
+      "configuration": {
+        "revision": 1,
+        "digest": "sha256:x"
+      },
+      "target": {
+        "projectId": "P1",
+        "projectName": "Books"
+      },
+      "sources": null,
+      "observedAt": "2026-09-24T09:00:00.000Z",
+      "admission": {
+        "state": "admitted",
+        "runId": "R-brief-000000000000000000000001",
+        "taskId": "T1",
+        "sessionId": "S1",
+        "at": "2026-09-24T09:00:01.000Z"
+      }
+    }
+  ]
+}
