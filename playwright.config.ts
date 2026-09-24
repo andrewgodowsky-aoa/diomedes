@@ -111,6 +111,7 @@ export default defineConfig({
     'nectovia-skin.spec.ts',
     'drawings-ui.spec.ts',
     'console-view-ui.spec.ts',
+    'pack-lifecycle-ui.spec.ts',
   ],
   fullyParallel: false,
   workers: 1,
