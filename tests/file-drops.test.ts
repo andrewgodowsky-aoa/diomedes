@@ -170,7 +170,7 @@ describe('drop and paste import through the one recorded write path', () => {
   test('a model or an approval cannot write bytes through the recorded writer', async () => {
     await expect(
       store.writeRecorded(projectId, [{ path: 'x.png', text: null, bytes: PNG_1X1, expected: null }], {
-        actor: 'assistant',
+        actor: 'diomedes',
       }),
     ).rejects.toMatchObject({ status: 400 });
   });

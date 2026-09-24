@@ -300,3 +300,21 @@ export async function documentVersion(store: Store, projectId: string, input: un
     text: binary ? null : plainText(found.bytes),
   };
 }
+
+/**
+ * The exact version each source of a new turn names, for `Turn.sourceVersions`.
+ * A source that cannot be read as text now is left out rather than guessed;
+ * the run that reads it refuses it in its own words.
+ */
+export async function turnSourceVersions(store: Store, projectId: string, sources: readonly string[]) {
+  const versions: { path: string; sha: string }[] = [];
+  for (const path of sources) {
+    try {
+      const bytes = await store.currentBytes(projectId, path);
+      if (bytes !== null) versions.push({ path, sha: bytesHash(bytes)! });
+    } catch {
+      // Unreadable now: the run's own read reports it.
+    }
+  }
+  return versions.length ? { sourceVersions: versions } : {};
+}

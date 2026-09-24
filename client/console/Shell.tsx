@@ -284,6 +284,10 @@ export function Shell({
   const [editing, setEditing] = useState<string | null>(null);
   const [unsaved, setUnsaved] = useState(false);
   const [openPath, setOpenPath] = useState<string | null>(null);
+  // One exact version open in Files by identity (a Thread reference or a file's version list).
+  const [openVersion, setOpenVersion] = useState<{ path: string; sha: string } | null>(null);
+  // Files attached to one thread's next message. They go with that thread only.
+  const [attached, setAttached] = useState<{ threadId: string; files: DocumentInfo[] } | null>(null);
   const [documents, setDocuments] = useState<DocumentInfo[]>([]);
   const [documentsLoading, setDocumentsLoading] = useState(false);
   const [documentsFailure, setDocumentsFailure] = useState<string | null>(null);
@@ -435,6 +439,8 @@ export function Shell({
     setSelectedId(null);
     setView('Thread');
     setOpenPath(null);
+    setOpenVersion(null);
+    setAttached(null);
     setDocuments([]);
     setDocumentsFailure(null);
     void load().catch(report);
@@ -1459,7 +1465,16 @@ export function Shell({
   }
   /** Opening a document opens the pane; it never changes the selected thread. */
   function openDocument(path: string) {
+    setOpenVersion(null);
     setOpenPath(path);
+    setFilesOpen(true);
+    artifactHost.showFiles();
+  }
+  /** A sent message's file, at the version it named; the current file when none is recorded. */
+  function openReference(reference: { path: string; sha: string | null }) {
+    if (!reference.sha) return openDocument(reference.path);
+    setOpenPath(null);
+    setOpenVersion({ path: reference.path, sha: reference.sha });
     setFilesOpen(true);
     artifactHost.showFiles();
   }
@@ -2030,6 +2045,11 @@ export function Shell({
                   : null
               }
               onClearSkill={() => setSkillDraft(null)}
+              attachments={attached?.threadId === selected.id ? attached.files : []}
+              onAttachments={(files) => setAttached({ threadId: selected.id, files })}
+              attachable={async () => (await listDocuments(projectId)).documents}
+              onOpenFile={openDocument}
+              onOpenReference={openReference}
               onSend={(m, text, r, failing, sources, readAccess) =>
                 void send(
                   selected,
@@ -2225,6 +2245,20 @@ export function Shell({
             hidden={artifactHost.shown !== 'files'}
             switcher={artifactHost.switcher}
             onOpenInPanel={artifactHost.openFile}
+            history={state.history}
+            openVersion={openVersion}
+            onOpenVersion={setOpenVersion}
+            onAttach={
+              selected && view === 'Thread'
+                ? (path) => {
+                    const file = documents.find((item) => item.path === path);
+                    if (!file) return;
+                    const current = attached?.threadId === selected.id ? attached.files : [];
+                    if (!current.some((item) => item.path === path))
+                      setAttached({ threadId: selected.id, files: [...current, file] });
+                  }
+                : undefined
+            }
           />
         )}
         {artifactHost.pane}

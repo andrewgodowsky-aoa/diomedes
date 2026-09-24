@@ -354,3 +354,137 @@
     transition: none;
   }
 }
+
+/* Drop and paste, previews and versions (P05). Same tokens as above. */
+.console .files.files-dropping .files-body {
+  outline: 1px dashed var(--hair-2);
+  outline-offset: -4px;
+}
+.console .files-drop-hint {
+  margin: 6px 8px 0;
+  padding: 6px 8px;
+  border: 1px dashed var(--hair);
+  border-radius: var(--rb);
+  color: var(--t3);
+  font-size: var(--dm-type-caption);
+}
+.console .files-drop-hint:focus-visible {
+  outline: 1px solid var(--hair-2);
+}
+.console .files.files-dropping .files-drop-hint {
+  color: var(--t1);
+  border-color: var(--hair-2);
+}
+.console .files-drop-note {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.console .files-preview {
+  min-width: 0;
+  padding: 0 8px;
+}
+.console .files-identity {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--t3);
+}
+.console .files-picture {
+  margin: 8px 0 0;
+}
+.console .files-picture img {
+  display: block;
+  max-width: 100%;
+  max-height: 60vh;
+  border: 1px solid var(--hair);
+  background: var(--chrome);
+}
+.console .files-facts {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 12px;
+  margin: 8px 0;
+  font-size: var(--dm-type-caption);
+}
+.console .files-facts dt {
+  color: var(--t3);
+}
+.console .files-facts dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.console .files-table-wrap {
+  min-width: 0;
+  padding: 0 8px;
+}
+.console .files-table-scroll {
+  overflow: auto;
+  max-height: 60vh;
+  border: 1px solid var(--hair);
+}
+.console .files-table {
+  border-collapse: collapse;
+  font-size: var(--dm-type-caption);
+}
+.console .files-table th,
+.console .files-table td {
+  padding: 3px 8px;
+  border-bottom: 1px solid var(--hair);
+  text-align: left;
+  vertical-align: top;
+  white-space: pre-wrap;
+  max-width: 24ch;
+  overflow-wrap: anywhere;
+}
+.console .files-table th {
+  color: var(--t3);
+  font-weight: 500;
+}
+.console .files-pager {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+  font-size: var(--dm-type-caption);
+}
+.console .files-pager button {
+  padding: 3px 8px;
+  border: 1px solid var(--hair-2);
+  border-radius: var(--rb);
+  color: var(--t1);
+}
+.console .files-pager button:disabled {
+  color: var(--t3);
+}
+.console .files-versions {
+  margin: 10px 8px 0;
+  font-size: var(--dm-type-caption);
+}
+.console .files-versions summary {
+  color: var(--t3);
+  cursor: pointer;
+}
+.console .files-versions ul {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+}
+.console .files-version {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  padding: 3px 0;
+  color: var(--t1);
+  text-align: left;
+}
+.console .files-version:disabled {
+  color: var(--t3);
+}
+.console .files-version-when {
+  color: var(--t3);
+  white-space: nowrap;
+}

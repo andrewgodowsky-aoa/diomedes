@@ -10,7 +10,7 @@ import {
   uniqueImportPath,
 } from '../shared/file-drops.js';
 import { delimiterFor, parseDelimited } from '../shared/delimited.js';
-import { identityLabel, identityOf, versionAt, versionsOf } from '../shared/file-identity.js';
+import { identityLabel, identityOf, turnReference, versionAt, versionsOf } from '../shared/file-identity.js';
 import type { HistoryEntry } from '../shared/types.js';
 import { GIF_1X1, JPEG_1X1, PDF_SMALL, PNG_1X1, SAFE_SVG, WEBP_1X1, XLSX_HEAD } from './fixtures/file-drop-samples.js';
 
@@ -157,5 +157,39 @@ describe('durable identity is a projection of History', () => {
   test('the label is the version and a short hash', () => {
     expect(identityLabel({ sha: A, versionId: 'v0001' })).toBe('v0001 · aaaaaaaa');
     expect(identityLabel({ sha: A, versionId: null })).toBe('aaaaaaaa');
+  });
+});
+
+describe('a sent message names the exact version of each file it carried', () => {
+  const at = (time: string, sha: string, n: number): HistoryEntry => ({
+    id: `E${n}`,
+    time,
+    actor: 'you',
+    kind: 'observed',
+    sentence: '',
+    sessionId: null,
+    taskId: null,
+    sample: false,
+    files: [{ path: 'brief.md', op: 'modified', before: sha, after: sha, recorded: true, reason: null }],
+    label: null,
+    restoreOf: null,
+    replaced: null,
+    versionId: `v000${n}`,
+    commit: null,
+  });
+  const A = 'a'.repeat(64);
+  const B = 'b'.repeat(64);
+  const history = [at('2026-09-24T10:00:00.000Z', A, 1), at('2026-09-24T10:00:00.050Z', B, 2)];
+
+  test('the recorded sha wins over the time, and the time is the fallback', () => {
+    const turn = { at: '2026-09-24T10:00:00.010Z' };
+    expect(turnReference(turn, 'brief.md', history)?.versionId).toBe('v0001');
+    expect(turnReference({ ...turn, sourceVersions: [{ path: 'brief.md', sha: B }] }, 'brief.md', history)).toEqual({
+      path: 'brief.md',
+      sha: B,
+      versionId: 'v0002',
+      entryId: 'E2',
+    });
+    expect(turnReference({ at: '2026-09-24T09:00:00.000Z' }, 'brief.md', history)).toBeNull();
   });
 });

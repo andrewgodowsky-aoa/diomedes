@@ -100,3 +100,16 @@ export function identityLabel(identity: Pick<FileIdentity, 'sha' | 'versionId'>)
 
 export const isSha256 = (value: unknown): value is string =>
   typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
+
+/**
+ * The exact version a sent message's source named: the sha the turn recorded
+ * when it has one, else the version History recorded at or before the turn.
+ */
+export function turnReference(
+  turn: { at: string; sourceVersions?: readonly { path: string; sha: string }[] },
+  path: string,
+  history: readonly HistoryEntry[],
+): FileIdentity | null {
+  const exact = turn.sourceVersions?.find((item) => item.path === path);
+  return exact ? identityOf(history, path, exact.sha) : versionAt(history, path, turn.at);
+}

@@ -422,6 +422,13 @@ export interface Turn {
   text: string;
   at: string;
   sources: string[];
+  /**
+   * The exact bytes each source named when this turn was written, as
+   * `{ path, sha }` (shared/file-identity.ts). Set by the direct request path;
+   * absent on older turns and conversation turns, whose version History's
+   * record of the read at or before `at` still names.
+   */
+  sourceVersions?: { path: string; sha: string }[];
   route?: Route;
   /** Fix attempts only: which try this turn belongs to. */
   attempt?: { n: number; of: number };

@@ -162,9 +162,11 @@ test('imports exports through Files, removes a source, runs and revises the acti
   await page.screenshot({ path: 'test-results/fil02-import-selection.png' });
   await dialog.getByRole('button', { name: 'Import selected files' }).click();
   await expect(dialog).toHaveCount(0);
-  await expect(page.getByRole('complementary', { name: 'Files', exact: true })).toContainText(
-    'Tables,7',
-  );
+  // A CSV opens as a table (P05); Raw still shows the exact imported text.
+  const files = page.getByRole('complementary', { name: 'Files', exact: true });
+  await expect(files.getByRole('cell', { name: 'Tables', exact: true })).toBeVisible();
+  await files.getByRole('button', { name: 'Raw', exact: true }).click();
+  await expect(files).toContainText('Tables,7');
   const imported = await api<ProjectState>(`/projects/${project.id}/state`);
   expect(imported.project.packs ?? []).toEqual([]);
   expect(imported.history.filter((entry) => entry.label === 'Imported exports')).toHaveLength(1);

@@ -21,6 +21,7 @@ import {
   droppedFiles,
   dropFiles,
   pictureBytes,
+  turnSourceVersions,
 } from './file-drops.js';
 import { isActiveMember } from '../shared/workspaces.js';
 import { AllowanceLedger } from './managed-usage.js';
@@ -4327,6 +4328,7 @@ export async function createApp(options: AppOptions) {
           text,
           at: now(),
           sources,
+          ...(await turnSourceVersions(store, projectId, sources)),
           route: engine,
           ...(attempt ? { attempt } : {}),
         };
@@ -4611,6 +4613,9 @@ export async function createApp(options: AppOptions) {
           text,
           at: now(),
           sources,
+          ...(documents.length
+            ? { sourceVersions: documents.map((d) => ({ path: d.path, sha: hash(d.text)! })) }
+            : {}),
           route: serviceRoute,
           ...(attempt ? { attempt } : {}),
           ...(skill

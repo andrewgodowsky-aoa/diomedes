@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type {
   Change,
   Conversation,
+  DocumentInfo,
   HistoryEntry,
   MailboxMessage,
   Mode,
@@ -40,6 +41,7 @@ import { WORK_STYLE_LABELS } from '../../shared/work-style';
 import { TurnBody } from './TurnBody';
 import { sizeLabel } from './FilesPane';
 import { turnKeyOf, type ArtifactIndex, type ArtifactRecord } from './artifacts';
+import { identityLabel, turnReference } from '../../shared/file-identity';
 
 function fmtDur(ms: number): string {
   const s = ms / 1000;
@@ -137,6 +139,13 @@ interface ThreadViewProps {
   openArtifactKey?: string | null;
   /** The conversation's "···" menu (ThreadMenu.tsx), at the end of the head. */
   menu?: ReactNode;
+  /** Files attached to the next message, passed through to the composer. */
+  attachments?: readonly DocumentInfo[];
+  onAttachments?(files: DocumentInfo[]): void;
+  attachable?(): Promise<DocumentInfo[]>;
+  onOpenFile?(path: string): void;
+  /** Opens a sent message's file in Files at the exact version it named. */
+  onOpenReference?(reference: { path: string; sha: string | null }): void;
 }
 
 /**
@@ -188,6 +197,11 @@ export function ThreadView({
   onOpenArtifact,
   openArtifactKey = null,
   menu = null,
+  attachments,
+  onAttachments,
+  attachable,
+  onOpenFile,
+  onOpenReference,
 }: ThreadViewProps) {
   const technical = settings.detail === 'technical';
   const permission: ThreadPermission = thread.permission ?? 'show-first';
@@ -310,7 +324,31 @@ export function ThreadView({
               </div>
               <div className="body">
                 {t.role === 'you' ? (
-                  paragraphs(t.text).map((p, j) => <p key={j}>{p}</p>)
+                  <>
+                    {paragraphs(t.text).map((p, j) => <p key={j}>{p}</p>)}
+                    {/* What this message carried, each at the exact version it named. */}
+                    {onOpenReference && t.sources.length > 0 && (
+                      <div className="turn-refs" aria-label="Files sent with this message">
+                        {t.sources.map((path) => {
+                          const identity = turnReference(t, path, history ?? []);
+                          return (
+                            <button
+                              type="button"
+                              className="ref-chip"
+                              key={path}
+                              title={identity ? `${path} · ${identity.sha}` : path}
+                              onClick={() => onOpenReference({ path, sha: identity?.sha ?? null })}
+                            >
+                              <span className="ref-name">{path.slice(path.lastIndexOf('/') + 1)}</span>
+                              <span className="mono">
+                                {identity ? identityLabel(identity) : 'version not recorded'}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </>
                 ) : (
                   <TurnBody
                     text={t.text}
@@ -634,6 +672,10 @@ export function ThreadView({
         onSend={submit}
         skill={skill}
         onClearSkill={onClearSkill}
+        attachments={attachments}
+        onAttachments={onAttachments}
+        attachable={attachable}
+        onOpenFile={onOpenFile}
       />
       {/* A follow-up waits behind a run. With nothing running and nothing queued,
           the composer above sends at once, so a second box would only ask the
