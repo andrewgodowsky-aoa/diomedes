@@ -49,6 +49,7 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
   fs.appendFileSync(log, JSON.stringify({ pid: process.pid, turn: words, resumed }) + '\\n');
   emit({ type: 'system', subtype: 'init', session_id: session, model: 'claude-sonnet-4-6', tools: [], mcp_servers: [] });
   if (words.includes('[hang]')) { open = 'hang'; return; }
+  if (words.includes('[stuck]')) { open = 'stuck'; return; }
   if (words.includes('[slow]')) return setTimeout(() => result('Answer to ' + words), 400);
   result('Answer to ' + words);
 });`;
@@ -279,6 +280,44 @@ describe('H03: a Console thread on Claude Code', () => {
     expect((await send('m-three', 'Carry on')).answerText).toBe('Answer to Carry on');
     expect(launches).toHaveLength(1);
   });
+
+  test('Stop on a queued message withdraws it before anything is sent; an unknown command is still not found', async () => {
+    await send('m-one', 'Good morning');
+    const running = send('m-two', 'Think hard [hang]');
+    await until(async () => (await turns().catch(() => [])).some((line) => line.turn === 'Think hard [hang]'));
+    const queued = request(messages(), 'POST', message('m-three', 'Never mind', { queued: true }));
+    await until(async () => (await view()).queued.some((item) => item.commandId === 'm-three'));
+    const ack = await api<InterruptResponse>(`${messages()}/m-three/interrupt`, 'POST', {});
+    expect(ack).toMatchObject({ commandId: 'm-three', state: 'requested', stop: 'withdrawn' });
+    const refused = await queued;
+    expect(refused.status).toBe(409);
+    expect(await refused.json()).toMatchObject({ code: 'STEER_CANCELLED', error: 'Withdrawn by Stop before it was sent.' });
+    expect((await request(`${messages()}/m-unknown/interrupt`, 'POST', {})).status).toBe(404);
+    await api<InterruptResponse>(`${messages()}/m-two/interrupt`, 'POST', {});
+    await running;
+    expect((await turns()).map((line) => line.turn)).not.toContain('Never mind');
+  });
+
+  test('a Stop from a page that has already let go of its request still reaches the turn and says it was forced', async () => {
+    await send('m-one', 'Good morning');
+    const page = new AbortController();
+    const running = fetch(`${base}/api${messages()}`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(message('m-two', 'Stuck [stuck]')),
+      signal: page.signal,
+    }).catch(() => null);
+    await until(async () => (await turns().catch(() => [])).some((line) => line.turn === 'Stuck [stuck]'));
+    // The page ends its own request first, then asks for the Stop, as DiomedesHome does.
+    page.abort();
+    await running;
+    const ack = await api<InterruptResponse>(`${messages()}/m-two/interrupt`, 'POST', {});
+    expect(ack).toMatchObject({ commandId: 'm-two', state: 'requested', stop: 'killed' });
+    const read = await view();
+    expect(read.busy).toBe(false);
+    expect(read.continuity).toMatchObject({ state: 'start-again' });
+    expect(read.continuity?.detail).toContain('Claude Code did not stop when asked');
+  }, 20_000);
 
   test('after a Diomedes restart the thread says it will resume, and the next message resumes by session id', async () => {
     await send('m-one', 'Good morning');

@@ -1189,20 +1189,29 @@ export class ClaudeSessionRuns<C extends SessionCheckpointFacts = ClaudeSessionC
     runId: string,
     commandId: string,
   ): Promise<{ state: 'requested' | 'idle' | 'superseded'; stop?: 'interrupted' | 'killed' | 'withdrawn' }> {
-    await this.get(projectId, runId);
     // H03: a message still waiting behind a running turn is withdrawn; nothing was sent.
-    const held = (this.steers.get(runId) ?? []).find(
-      (entry) => entry.commandId === commandId && entry.ack.state === 'pending' && !entry.sending,
-    );
-    if (held) {
-      this.settleSteer(runId, held, 'cancelled', 'Withdrawn by Stop before it was sent.');
-      return { state: 'requested', stop: 'withdrawn' };
-    }
+    if (await this.withdraw(projectId, runId, commandId)) return { state: 'requested', stop: 'withdrawn' };
     const active = this.active.get(runId);
     if (!active) return { state: 'idle' };
     if (active.commandId !== commandId) return { state: 'superseded' };
     const stop = await this.stopActive(runId, active);
     return { state: 'requested', ...(stop ? { stop } : {}) };
+  }
+  /** H03: withdraws a message still waiting behind a running turn, and nothing else. */
+  async withdraw(projectId: string, runId: string, commandId: string): Promise<boolean> {
+    try {
+      await this.get(projectId, runId);
+    } catch (error) {
+      // A lineage whose run was never started holds nothing.
+      if (error instanceof HarnessError && error.code === 'unknown_run') return false;
+      throw error;
+    }
+    const held = (this.steers.get(runId) ?? []).find(
+      (entry) => entry.commandId === commandId && entry.ack.state === 'pending' && !entry.sending,
+    );
+    if (!held) return false;
+    this.settleSteer(runId, held, 'cancelled', 'Withdrawn by Stop before it was sent.');
+    return true;
   }
   /**
    * H03: stops one active turn once, however many ways it is asked. A transport that can stop

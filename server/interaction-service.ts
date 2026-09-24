@@ -173,6 +173,11 @@ export interface ConversationDriver {
     runId: string,
     commandId: string,
   ): Promise<{ state: 'requested' | 'idle' | 'superseded'; stop?: 'interrupted' | 'killed' | 'withdrawn' }>;
+  /**
+   * H03: withdraws a message still waiting behind a running answer on this run, and touches
+   * nothing else: true when one was waiting and is now withdrawn. A driver with no queue omits it.
+   */
+  withdraw?(projectId: string, runId: string, commandId: string): Promise<boolean>;
 }
 
 /** What the host supplies. Every method that touches the Store takes and releases its own lock. */
@@ -208,6 +213,8 @@ export interface InteractionHost {
    */
   answerFormatPreview(projectId: string, threadId: string): Promise<ConversationUpdatePreview>;
   locate(projectId: string, threadId: string, commandId: string): Promise<LocatedMessage | null>;
+  /** H03: the runs of the thread's open lineages, newest last. A read. */
+  openRuns?(projectId: string, threadId: string): Promise<string[]>;
   /** Idempotent transcript projection of a committed answer. */
   project(
     resolved: ResolvedMessage,
@@ -591,7 +598,16 @@ export class InteractionTurns {
     commandId: string,
   ): Promise<InterruptResponse> {
     const located = await this.host.locate(projectId, threadId, commandId);
-    if (!located) throw new ApiError(404, 'This message was not found.');
+    if (!located) {
+      // H03: a message queued behind a running answer has no recorded turn yet. Stop withdraws
+      // it where it waits; any other unrecorded command is still not found.
+      for (const runId of (await this.host.openRuns?.(projectId, threadId)) ?? []) {
+        const driver = this.driver(runId);
+        if (await driver.withdraw?.(projectId, runId, commandId))
+          return { commandId, runId, state: 'requested', stop: 'withdrawn' };
+      }
+      throw new ApiError(404, 'This message was not found.');
+    }
     const driver = this.driver(located.runId);
     const turn = await driver.turnResult(projectId, located.runId, commandId);
     if (turn) return { commandId, runId: located.runId, state: 'settled' };

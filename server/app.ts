@@ -3977,6 +3977,11 @@ export async function createApp(options: AppOptions) {
         const { retiring, route, carried, reason } = await updateDecision(projectId, state, thread);
         return { retiring: retiring.length, carried, route, ...(reason ? { reason } : {}) };
       }),
+    // H03: the thread's open lineages, where a message queued behind a running answer waits.
+    openRuns: async (projectId, threadId) =>
+      (store.state(projectId).conversations.find((item) => item.id === threadId)?.lineages ?? [])
+        .filter((lineage) => !lineage.retired)
+        .map((lineage) => lineage.runId),
     locate: (projectId, threadId, commandId) =>
       store.locked(async () => {
         const driver = engines.nativeSessions;
