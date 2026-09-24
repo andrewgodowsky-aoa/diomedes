@@ -29,6 +29,8 @@ import {
 } from '../shared/automations.js';
 import { absent, ApiError } from './paths.js';
 import { jsonWrite, readJson } from './store.js';
+import { migrateRecord } from './migrations/framework.js';
+import { AUTOMATION_DEFINITIONS } from './migrations/registry.js';
 
 const ORGANIZATION_FILE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,159}$/;
 
@@ -70,6 +72,13 @@ export class AutomationDefinitions {
       let stored: StoredDefinitions | null;
       try {
         stored = await readJson<StoredDefinitions | null>(path.join(this.root, name), () => null);
+      } catch {
+        stored = null;
+      }
+      // Through the migration framework (H21): one version so far, so this is
+      // the refusal of a newer file, which is left untouched.
+      try {
+        if (stored) migrateRecord(AUTOMATION_DEFINITIONS, stored);
       } catch {
         stored = null;
       }

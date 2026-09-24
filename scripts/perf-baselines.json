@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "recordedAt": "2026-09-24T09:46:58.594Z",
+  "machine": {
+    "platform": "linux",
+    "arch": "x64",
+    "cpus": 4,
+    "node": "v22.22.2"
+  },
+  "synthetic": {
+    "historyEntries": 10000,
+    "files": 2000,
+    "tasks": 500
+  },
+  "metrics": {
+    "coldStart": {
+      "medianMs": 1699.5
+    },
+    "projectStateLoad": {
+      "medianMs": 118.8
+    },
+    "filesList": {
+      "medianMs": 117.7
+    },
+    "historyPage": {
+      "medianMs": 120.2
+    },
+    "boardProjection": {
+      "medianMs": 187.7
+    },
+    "sseFanout": {
+      "medianMs": 4486.1
+    }
+  }
+}
