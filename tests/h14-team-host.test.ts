@@ -350,7 +350,8 @@ describe('budgets, fan-out and authority on a stub model-API route', () => {
               const named = request.messages[0]?.text?.match(/Read (\S+)/)?.[1] ?? 'order.md';
               return { response: { type: 'tool', name: 'read_project_file', input: { path: named } } };
             }
-            await pause(250, signal);
+            // Long enough that three calls started together overlap even on a slow runner.
+            await pause(1_000, signal);
             return { response: { type: 'final', text: 'read' } };
           },
         },
@@ -367,7 +368,7 @@ describe('budgets, fan-out and authority on a stub model-API route', () => {
     });
     expect(data.team!.workers.map((worker) => worker.outcome)).toEqual(['completed', 'completed', 'completed']);
     // The three finishing calls overlapped: they ran at once, not one after another.
-    const finals = log.calls.filter((entry) => entry.purpose === 'worker' && entry.done !== null && entry.done - entry.at >= 200);
+    const finals = log.calls.filter((entry) => entry.purpose === 'worker' && entry.done !== null && entry.done - entry.at >= 900);
     expect(finals).toHaveLength(3);
     const overlap = Math.min(...finals.map((entry) => entry.done!)) - Math.max(...finals.map((entry) => entry.at));
     expect(overlap).toBeGreaterThan(0);
