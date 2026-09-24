@@ -114,7 +114,8 @@ export function contractChecks(contract: AdapterRouteContract): ConformanceCheck
       .every(command => contract.commands[command].support === 'native') &&
     contract.commands.retry.support === 'host' &&
     contract.commands.status.support === 'host' &&
-    contract.commands.steer.support === 'unsupported' &&
+    // H03: its steering is the host's queue, never a claimed native channel.
+    contract.commands.steer.support === 'host' &&
     contract.commands.reconcile.support === 'unsupported';
   if (contract.routeId === 'claude-code-session')
     checks.push(check(
