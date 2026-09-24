@@ -2,6 +2,7 @@ import { _electron as electron, expect } from '@playwright/test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
+import { enterLastOpenProject, windowFetch } from './smoke-window.mjs';
 
 // What this test is really about is the upgrade, not two particular numbers.
 // Naming 0.1.0 and 0.1.1 as literals meant a version bump either broke it or,
@@ -33,11 +34,11 @@ delete env.ELECTRON_RUN_AS_NODE;
 await fs.mkdir(env.CODEX_HOME);
 const proof = { startedAt: new Date().toISOString(), prior, current, root, checks: [], errors: [], origins: [], passed: false };
 let desktop, page, origin;
+// The packaged service answers only the app window's own requests (smoke-window.mjs).
 async function api(route, method = 'GET', body) {
-  const response = await fetch(origin + '/api' + route, { method,
-    headers: { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' },
+  const response = await windowFetch(page, '/api' + route, { method,
     ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
-  expect(response.ok, await response.clone().text()).toBe(true); return response.json();
+  expect(response.ok, response.text).toBe(true); return JSON.parse(response.text);
 }
 async function open(executablePath) {
   desktop = await electron.launch({ executablePath, env, cwd: root });
@@ -75,6 +76,14 @@ try {
   expect(await fs.readFile(sentinel, 'utf8')).toBe('User project data survives the application upgrade.');
   proof.checks.push(`Actual ${priorVersion} profile upgraded to ${appVersion} with project, preferences, History and exact pending Need preserved`);
   await page.reload();
+  // A launch opens on the agent's home and a reload keeps that place, so the
+  // project is entered through the Open projects bar (smoke-window.mjs).
+  await enterLastOpenProject(page);
+  // The work was started without a thread; the Console's Board opens its owning
+  // thread, where the Need is shown (as harness-desktop-smoke.mjs does).
+  await page.getByRole('navigation', { name: 'Threads and views' })
+    .getByRole('button', { name: /^Board/ }).click();
+  await page.locator('.crow .t').filter({ hasText: 'Format a fixture report' }).click();
   await expect(page.getByRole('region', { name: 'Needs your OK' })).toBeVisible();
   await page.getByRole('button', { name: 'Show me first', exact: true }).click();
   expect(await page.getByRole('dialog').locator('pre').textContent()).toBe(need.harness.intent.input.text);
