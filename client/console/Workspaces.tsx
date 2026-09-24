@@ -60,9 +60,18 @@ interface PanelProps {
   onClose(): void;
   onChanged(next: WorkspaceView): void;
   report(error: unknown): void;
+  /** Opens the Automations screen, where each brief's run, Task and draft are linked. */
+  onOpenAutomations?(): void;
 }
 
-export function WorkspacePanel({ view, busy, onClose, onChanged, report }: PanelProps) {
+export function WorkspacePanel({
+  view,
+  busy,
+  onClose,
+  onChanged,
+  report,
+  onOpenAutomations,
+}: PanelProps) {
   const [name, setName] = useState('');
   const [industry, setIndustry] = useState('');
   const [code, setCode] = useState('');
@@ -341,7 +350,19 @@ export function WorkspacePanel({ view, busy, onClose, onChanged, report }: Panel
                     report={report}
                   />
                 )}
-                {brief && <p className="caption ws-brief">{brief}</p>}
+                {brief && (
+                  <p className="caption ws-brief">
+                    {brief}
+                    {onOpenAutomations && (
+                      <>
+                        {' '}
+                        <button type="button" className="ws-link" onClick={onOpenAutomations}>
+                          See its run in Automations
+                        </button>
+                      </>
+                    )}
+                  </p>
+                )}
               </>
             ) : (
               !activeOrganization.output && (

@@ -402,7 +402,6 @@ export class EngineService {
     ExternalEngine,
     { inventory: EngineCandidate[]; observed?: { location?: string; version?: string } }
   >();
-  private digests = new Map<string, FileIdentity>();
   /**
    * The host's runtime seam. External turns do not call an adapter here;
    * they run through the harness RunService under a durable run, its lease
@@ -555,22 +554,18 @@ export class EngineService {
     });
     return this.present(value.engine);
   }
-  /** One file's identity, re-read only when its size or modification time moved. */
+  /**
+   * One file's identity, digested from its bytes on every look (DIO-86). The
+   * digest is what a binding, its revision key and a run's evidence name, and
+   * size and modification time do not prove the bytes: a same-length
+   * replacement can put the modification time back. The read is bounded by
+   * `DIGEST_LIMIT_BYTES`, and a scan already launches each candidate for its
+   * version, which costs more than reading it.
+   */
   private async identify(file: string): Promise<FileIdentity | null> {
-    const cached = this.digests.get(path.resolve(file));
     const identity = await this.deps.identify!(file);
     if (!identity) return null;
-    if (
-      cached &&
-      cached.path === identity.path &&
-      cached.size === identity.size &&
-      cached.mtimeMs === identity.mtimeMs &&
-      cached.sha256
-    )
-      return cached;
-    const complete = identity.sha256 ? identity : { ...identity, sha256: await digestFile(identity.path) };
-    this.digests.set(path.resolve(file), complete);
-    return complete;
+    return identity.sha256 ? identity : { ...identity, sha256: await digestFile(identity.path) };
   }
 
   /**

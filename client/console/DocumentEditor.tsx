@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import type { DocumentContent, DocumentInfo } from '../../shared/types';
+import type { DocumentContent } from '../../shared/types';
 import { ApiError, api, readDocument } from '../api';
+import type { EditorDocument, EditorExit } from './editor-guard';
 import './document-editor.css';
 
 /**
@@ -40,8 +41,12 @@ export interface SavedDocument {
 export interface DocumentEditorProps {
   /** The Project the file belongs to. */
   projectId: string;
-  /** The file to open, from the listing the caller already holds. */
-  document: DocumentInfo;
+  /**
+   * The file to open, from the listing the caller already holds. Before the
+   * listing has it, the caller passes the path with no kind, and the editor
+   * reads nothing and takes no typing until a kind arrives (DIO-87).
+   */
+  document: EditorDocument;
   /**
    * Why this file can be read but not changed, in words a person can act on.
    * Given, the text box opens read only and Save is not offered.
@@ -49,6 +54,12 @@ export interface DocumentEditorProps {
   readOnlyReason?: string;
   /** Leave the editor. Never called while there is unsaved writing without the person saying so. */
   onClose(): void;
+  /**
+   * Where the editor puts its answer to "may the person leave now?", for the
+   * caller's exit gate (`editor-guard.ts`). The function it holds lets the
+   * exit through when nothing would be lost, and otherwise asks first.
+   */
+  exits?: { current: EditorExit | null };
   /**
    * There is, or is no longer, writing that has not been saved. Fired on every
    * change and once with `false` when the editor goes away, so a caller that
@@ -153,6 +164,7 @@ function OneDocument({
   document: file,
   readOnlyReason,
   onClose,
+  exits,
   onUnsavedChange,
   onSaved,
   onOpen,
@@ -160,8 +172,18 @@ function OneDocument({
   const path = file.path;
   const slash = path.lastIndexOf('/');
   const name = slash < 0 ? path : path.slice(slash + 1);
+  /**
+   * The kind, settled once. A file waits with no kind until the caller's
+   * listing has one, and nothing is read or typed until then. After that it
+   * never changes under this editor, so writing already in the box is never
+   * turned read only by a later listing (DIO-87).
+   */
+  const [kind, setKind] = useState(file.kind);
+  if (kind === undefined && file.kind !== undefined) setKind(file.kind);
+  const resolved = kind !== undefined;
+  const problem = !resolved && 'problem' in file ? file.problem : undefined;
   /** `unsupported` is what the read route refuses; it answers as if the file were gone. */
-  const supported = file.kind !== 'unsupported';
+  const supported = resolved && kind !== 'unsupported';
 
   /** The version this writing started from. Advances on every save it lands. */
   const [base, setBase] = useState<{ text: string; sha: string } | null>(null);
@@ -176,6 +198,8 @@ function OneDocument({
   const [conflict, setConflict] = useState(false);
   const [theirs, setTheirs] = useState<{ text: string; sha: string } | null>(null);
   const [leaving, setLeaving] = useState(false);
+  /** Where the person was going when they were asked. Null means the editor's own Close. */
+  const going = useRef<(() => void) | null>(null);
   const [said, setSaid] = useState<{ text: string; seq: number }>({ text: '', seq: 0 });
 
   const area = useRef<HTMLTextAreaElement>(null);
@@ -191,8 +215,8 @@ function OneDocument({
   const latest = useRef(buffer);
   latest.current = buffer;
 
-  const loading = supported && !base && !failure;
-  const readOnly = !supported || !!readOnlyReason;
+  const loading = (!resolved && !problem) || (supported && !base && !failure);
+  const readOnly = (resolved && !supported) || !!readOnlyReason;
   const dirty = !!base && buffer !== base.text;
   const areaId = useId();
   const conflictId = useId();
@@ -318,11 +342,52 @@ function OneDocument({
   }, [dirty]);
   useEffect(() => () => unsaved.current?.(false), []);
 
-  // Closing the window with writing in the box asks first, the way the Workbook
-  // did.
+  /**
+   * The exit gate (DIO-85). Writing that is not saved survives leaving only if
+   * the backup holds it, so the backup is written now, on the way out, rather
+   * than trusted from the last keystroke. If it holds, the person goes, and the
+   * writing is offered back when the file opens again. If it will not, nobody
+   * leaves without saying so: the same question the Close button asks.
+   */
+  function requestLeave(then: () => void) {
+    if (kept()) then();
+    else ask(then);
+  }
+  /** True when leaving loses nothing: no unsaved writing, or the backup holds it now. */
+  function kept(): boolean {
+    if (!dirty || !base) return true;
+    try {
+      localStorage.setItem(
+        draftKey(projectId, path),
+        JSON.stringify({ path, text: base.text, sha: base.sha, draft: buffer }),
+      );
+      return true;
+    } catch {
+      setBackupWarning(
+        'This computer would not keep a spare copy of your unsaved writing. Save before you close Nectovia.',
+      );
+      return false;
+    }
+  }
+  const leaveNow = useRef({ requestLeave, kept });
+  leaveNow.current = { requestLeave, kept };
+  useEffect(() => {
+    if (!exits) return;
+    const exit: EditorExit = (then) => leaveNow.current.requestLeave(then);
+    exits.current = exit;
+    return () => {
+      if (exits.current === exit) exits.current = null;
+    };
+  }, [exits]);
+
+  // Closing the window is an exit too. Writing the backup holds comes back when
+  // the file opens again; writing it will not hold makes the browser ask first,
+  // the way the Workbook did (and the desktop shell, desktop/main.mjs).
   useEffect(() => {
     if (!dirty) return;
-    const ask = (event: BeforeUnloadEvent) => event.preventDefault();
+    const ask = (event: BeforeUnloadEvent) => {
+      if (!leaveNow.current.kept()) event.preventDefault();
+    };
     window.addEventListener('beforeunload', ask);
     return () => window.removeEventListener('beforeunload', ask);
   }, [dirty]);
@@ -376,6 +441,7 @@ function OneDocument({
   }
 
   function save() {
+    if (!resolved) return;
     if (!supported) {
       announce('This kind of file cannot be changed here.');
       return;
@@ -490,10 +556,27 @@ function OneDocument({
   }
 
   function keepWriting() {
+    going.current = null;
     setConflict(false);
     setTheirs(null);
     setLeaving(false);
     area.current?.focus();
+  }
+
+  /** Put the question, remembering where the person was going. */
+  function ask(then: (() => void) | null) {
+    going.current = then;
+    setLeaving(true);
+    announce(UNSAVED_WARNING);
+  }
+
+  /** Go where the person was going: the exit they asked for, or out through Close. */
+  function leave() {
+    const then = going.current;
+    going.current = null;
+    setLeaving(false);
+    if (then) then();
+    else onClose();
   }
 
   function close() {
@@ -501,8 +584,7 @@ function OneDocument({
       onClose();
       return;
     }
-    setLeaving(true);
-    announce(UNSAVED_WARNING);
+    ask(null);
   }
 
   async function saveAndClose() {
@@ -510,16 +592,18 @@ function OneDocument({
     const sent = buffer;
     if (!(await write(base.sha))) {
       // Whatever stopped the save is on screen now, and it is not something to
-      // close over.
+      // close over, or to go anywhere else over.
+      going.current = null;
       setLeaving(false);
       return;
     }
     // Words typed while the save was in flight are not in what was saved, so
     // closing on them would be the loss this panel exists to prevent.
     if (latest.current === sent) {
-      onClose();
+      leave();
       return;
     }
+    going.current = null;
     setLeaving(false);
     area.current?.focus();
     announce('Saved. You wrote more while that was saving, and those words are not saved yet.');
@@ -528,8 +612,7 @@ function OneDocument({
   function throwAway() {
     if (base) setBuffer(base.text);
     forgetBackup();
-    setLeaving(false);
-    onClose();
+    leave();
   }
 
   /**
@@ -552,7 +635,11 @@ function OneDocument({
     save();
   }
 
-  const state = !supported
+  const state = !resolved
+    ? problem
+      ? 'Not open'
+      : 'Opening'
+    : !supported
     ? 'Cannot be changed'
     : failure
       ? 'Not open'
@@ -596,7 +683,7 @@ function OneDocument({
         )}
       </div>
 
-      {!supported && (
+      {resolved && !supported && (
         <p className="de-note">
           This kind of file cannot be opened here. Open it in the program that made it.
         </p>
@@ -609,6 +696,11 @@ function OneDocument({
       )}
       {backupWarning && <p className="de-note de-warn">{backupWarning}</p>}
       {loading && <p className="de-note">Opening this file...</p>}
+      {problem && (
+        <p className="de-trouble" role="alert">
+          {problem}
+        </p>
+      )}
 
       {failure && (
         <div className="de-trouble" role="alert">

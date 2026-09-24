@@ -12,6 +12,7 @@ import { HarnessBridge, localHarnessPrincipal } from './bridge.js';
 import { ScriptedModelAdapter } from './fixture-adapter.js';
 import { REPORT_PATH } from './approval.js';
 import { registerFormatReport } from './capabilities/format-report.js';
+import { registerWeeklyBrief, type WeeklyBriefHost } from './capabilities/weekly-brief.js';
 import { CODEX_REPORT, CodexEngineAdapter, type ResolveHarnessAuthority } from './codex-engine.js';
 import { askCodex } from '../integrations.js';
 import { HOST_TEST_PROJECT } from '../engines/service.js';
@@ -352,6 +353,7 @@ export function createHarnessHost({
   codexGenerator,
   codexAccountRoute,
   textLeaseMs,
+  weeklyBrief,
 }: {
   store: Store;
   dataDir: string;
@@ -360,6 +362,8 @@ export function createHarnessHost({
   codexAccountRoute?: () => Promise<string>;
   /** Lease TTL for text-route runs; the default covers a slow provider turn. */
   textLeaseMs?: number;
+  /** The pinned configuration and live target the weekly brief procedure needs. */
+  weeklyBrief?: WeeklyBriefHost;
 }) {
   if (path.resolve(dataDir) !== store.dataDir)
     throw new Error('The harness must use the Store data folder.');
@@ -408,6 +412,9 @@ export function createHarnessHost({
     };
   });
   registerFormatReport(tools, store, runs);
+  const weeklyBriefProcedure = weeklyBrief
+    ? registerWeeklyBrief(tools, store, runs, weeklyBrief)
+    : null;
   codex = new CodexEngineAdapter(
     store,
     runs,
@@ -468,6 +475,7 @@ export function createHarnessHost({
     (projectId, route) => sharesHistory(cloudSharing(store.state(projectId)), route),
   );
   const bridge = new HarnessBridge(store, runs, tools, adapter, redact, HOST_TEST_PROJECT, codex);
+  if (weeklyBriefProcedure) bridge.registerProcedure(weeklyBriefProcedure);
   const observers = new Set<{ runId: string; changed: () => void; closed: () => void }>();
   let closed = false;
   files.saved = (run) => {

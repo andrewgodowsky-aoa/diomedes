@@ -12,11 +12,17 @@ import { listIsolatedEnvironments, NO_ENVIRONMENT_REASON } from './trust/environ
 import { REVIEWER_INDEPENDENCE_STATEMENT } from './trust/codex-reviewer.js';
 import { engineCatalog } from './models.js';
 import { AGENT_CATALOG } from '../shared/agents.js';
+import type { HarnessBridge } from './harness/bridge.js';
 /** The default reviewer identity. A grant may name another review-only Agent. */
 const REVIEWER_AGENT = AGENT_CATALOG.find((item) => item.id === 'diomedes.reviewer')!;
 
 /** Uses the existing loopback + client-header boundary; does not claim owner authentication. */
-export function mountPermissionRoutes(app: Express, store: Store, nativeWork: NativeWorkService) {
+export function mountPermissionRoutes(
+  app: Express,
+  store: Store,
+  nativeWork: NativeWorkService,
+  bridge?: HarnessBridge,
+) {
   const base = '/api/projects/:id/permissions/grants';
   app.get(base, (req, res) => res.json({ grants: store.scopeGrants.view(String(req.params.id)) }));
   /**
@@ -109,5 +115,73 @@ export function mountPermissionRoutes(app: Express, store: Store, nativeWork: Na
       detail:
         'Future scoped writes are blocked. Owned work was asked to stop; already-dispatched effects may finish.',
     });
+  });
+
+  /*
+   * Remembered approvals (D5). Every route here is the person's explicit act
+   * on the local client: remembering the approval just given, answering a
+   * learned offer, or revoking. Nothing here is reachable from a slot, a
+   * bearer credential, a setting or a configuration change.
+   */
+  const remembered = '/api/projects/:id/permissions/remembered';
+  const localOnly = (req: { headers: Record<string, unknown> }, what: string) => {
+    if (req.headers.authorization || req.headers['x-slot-id'])
+      throw new ApiError(403, `Only the local client can ${what}.`);
+  };
+  const emptyBody = (value: unknown) => {
+    if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).length)
+      throw new ApiError(400, 'This takes an empty object.');
+  };
+  app.get(remembered, (req, res) =>
+    res.json(store.scopeGrants.remembered.view(String(req.params.id))),
+  );
+  app.post(remembered, async (req, res) => {
+    localOnly(req, 'remember an approval');
+    const input = req.body as unknown;
+    if (
+      !input ||
+      typeof input !== 'object' ||
+      Array.isArray(input) ||
+      Object.keys(input).join() !== 'needId' ||
+      typeof (input as { needId: unknown }).needId !== 'string'
+    )
+      throw new ApiError(400, 'Name the approval you just gave to remember it.');
+    if (!bridge) throw new ApiError(503, 'Remembered approvals are not available on this host.');
+    const projectId = String(req.params.id);
+    const needId = (input as { needId: string }).needId;
+    res.json(await store.locked(() => bridge.remember(projectId, needId)));
+  });
+  app.post(`${remembered}/offers/:offerId/accept`, async (req, res) => {
+    localOnly(req, 'accept an offer to stop asking');
+    emptyBody(req.body);
+    const projectId = String(req.params.id);
+    const record = await store.locked(async () => {
+      const accepted = store.scopeGrants.remembered.acceptOffer(projectId, String(req.params.offerId));
+      await store.persist(store.state(projectId));
+      return accepted;
+    });
+    res.json(record);
+  });
+  app.post(`${remembered}/offers/:offerId/decline`, async (req, res) => {
+    localOnly(req, 'answer an offer');
+    emptyBody(req.body);
+    const projectId = String(req.params.id);
+    const offer = await store.locked(async () => {
+      const declined = store.scopeGrants.remembered.declineOffer(projectId, String(req.params.offerId));
+      await store.persist(store.state(projectId));
+      return declined;
+    });
+    res.json(offer);
+  });
+  app.post(`${remembered}/:grantId/revoke`, async (req, res) => {
+    localOnly(req, 'revoke a remembered approval');
+    emptyBody(req.body);
+    const projectId = String(req.params.id);
+    const record = await store.locked(async () => {
+      const revoked = store.scopeGrants.remembered.revoke(projectId, String(req.params.grantId));
+      await store.persist(store.state(projectId));
+      return revoked;
+    });
+    res.json(record);
   });
 }

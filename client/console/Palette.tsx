@@ -69,6 +69,10 @@ export function Palette({ open, entries, onClose, query: controlled, onQuery }: 
 
   function focusComposer() {
     window.setTimeout(() => {
+      // An action that put the keyboard somewhere on purpose keeps it there: the
+      // editor asking before it lets a navigation through is one (DIO-85).
+      const now = document.activeElement;
+      if (now && now !== document.body && !now.closest('.palette')) return;
       const box =
         document.querySelector<HTMLTextAreaElement>('.console .composer textarea') ??
         document.querySelector<HTMLTextAreaElement>('.console textarea');

@@ -1,0 +1,457 @@
+/* Automations (Milestone A). Flat rows on thin rules, the way Settings >
+   Engines draws its services: no raised cards, restrained accent, compact
+   controls. The page column is `.col`'s alone (decision 6); nothing here sets
+   its inline margin. Every name, path and project cell can carry a machine
+   string, so each gets min-width: 0 and a wrap or truncation (decision 5).
+   A state is always a word beside its mark, never a colour alone. */
+.console .automations-page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+  padding-block: 8px 48px;
+}
+.console .auto-page-head,
+.console .auto-row-head,
+.console .auto-actions,
+.console .auto-occurrence-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.console .auto-page-head > div,
+.console .auto-row-name {
+  min-width: 0;
+  flex: 1 1 320px;
+}
+.console .auto-page-head h1,
+.console .auto-row-head h2,
+.console .auto-empty h2,
+.console .auto-detail h3 {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.console .auto-row-head h2 {
+  font-size: var(--dm-type-section);
+  font-weight: 600;
+  line-height: 1.3;
+}
+.console .auto-detail h3 {
+  margin-bottom: 8px;
+  color: var(--t2);
+  font: 500 var(--dm-type-caption) / 1.4 var(--ui);
+  letter-spacing: 0.02em;
+}
+.console .auto-page-head p,
+.console .auto-row-name p,
+.console .auto-empty p {
+  margin: 4px 0 0;
+  color: var(--t3);
+  overflow-wrap: anywhere;
+}
+
+/* Controls: compact, bordered, the Readiness refresh's shape. */
+.console .auto-refresh,
+.console .auto-toggle,
+.console .auto-links button,
+.console .auto-pages button,
+.console .auto-error button {
+  flex: 0 0 auto;
+  min-height: 32px;
+  padding: 5px 11px;
+  border: 1px solid var(--hair-2);
+  border-radius: var(--rb);
+  color: var(--t1);
+  background: transparent;
+}
+.console :is(.auto-refresh, .auto-toggle, .auto-links button, .auto-pages button):hover:not(
+    [aria-disabled='true'],
+    :disabled
+  ) {
+  background: var(--raised);
+}
+.console :is(.auto-refresh, .auto-actions .button)[aria-disabled='true'],
+.console .auto-pages button:disabled {
+  cursor: default;
+  color: var(--t3);
+}
+.console .auto-actions .button.primary[aria-disabled='true'] {
+  opacity: 0.55;
+}
+.console :is(.auto-refresh, .auto-toggle, .auto-links button, .auto-pages button, .auto-actions .button):focus-visible {
+  outline: 2px solid var(--light);
+  outline-offset: 2px;
+}
+
+/* The four counts, each with its definition beside it. */
+.console .auto-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0;
+  border-block: 1px solid var(--hair);
+  min-width: 0;
+}
+.console .auto-summary > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 12px 14px;
+}
+.console .auto-summary > div + div {
+  border-left: 1px solid var(--hair);
+}
+.console .auto-summary dt {
+  color: var(--t2);
+  font: 500 var(--dm-type-caption) / 1.4 var(--ui);
+}
+.console .auto-summary dd {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  min-width: 0;
+}
+.console .auto-summary strong {
+  color: var(--t1);
+  font: 500 1.35rem / 1.2 var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+.console .auto-summary span {
+  color: var(--t3);
+  font-size: var(--dm-type-caption);
+  overflow-wrap: anywhere;
+}
+.console .auto-meta-line,
+.console .auto-quiet,
+.console .auto-announce:empty {
+  margin: 0;
+  color: var(--t3);
+  font-size: var(--dm-type-caption);
+}
+.console .auto-announce {
+  margin: 0;
+  color: var(--t2);
+  overflow-wrap: anywhere;
+}
+.console .auto-stale,
+.console .auto-error p {
+  margin: 0;
+  color: var(--attn);
+  overflow-wrap: anywhere;
+}
+.console .auto-error {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* The list: one row per automation on thin rules. */
+.console .auto-list,
+.console .auto-occurrences,
+.console .auto-manual,
+.console .auto-stages {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+}
+.console .auto-row {
+  min-width: 0;
+  padding: 18px 0 20px;
+  border-top: 1px solid var(--hair);
+}
+.console .auto-row:last-child {
+  border-bottom: 1px solid var(--hair);
+}
+.console .auto-row > article {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.console .auto-reason {
+  margin: 0;
+  color: var(--t2);
+  overflow-wrap: anywhere;
+}
+
+/* A label is a state: the mark and the word together. */
+.console .auto-state {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 8px;
+  border: 1px solid var(--hair-2);
+  border-radius: 999px;
+  color: var(--t2);
+  font: 500 var(--dm-type-caption) / 1.3 var(--ui);
+  white-space: nowrap;
+}
+.console .auto-state .mark {
+  flex: none;
+}
+.console .auto-state:is(.needs-approval, .waiting-for-data, .setup-incomplete) {
+  color: var(--attn);
+}
+.console .auto-state.needs-investigation {
+  color: var(--attn);
+  border-color: currentColor;
+}
+.console .auto-state.running {
+  color: var(--light);
+}
+
+/* Label-value facts, the setting-row rhythm. */
+.console .auto-meta,
+.console .auto-facts,
+.console .auto-evidence dl {
+  display: grid;
+  margin: 0;
+  min-width: 0;
+}
+.console .auto-meta {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+  gap: 10px 20px;
+}
+.console .auto-meta > div,
+.console .auto-facts > div,
+.console .auto-evidence dl > div {
+  min-width: 0;
+}
+.console .auto-meta dt,
+.console .auto-facts dt,
+.console .auto-evidence dt {
+  color: var(--t3);
+  font-size: var(--dm-type-caption);
+}
+.console .auto-meta dd,
+.console .auto-facts dd,
+.console .auto-evidence dd {
+  margin: 2px 0 0;
+  min-width: 0;
+  color: var(--t1);
+  overflow-wrap: anywhere;
+}
+.console .auto-cut {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.console .auto-actions {
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+}
+.console .auto-blocked {
+  min-width: 0;
+  flex: 1 1 220px;
+  color: var(--t3);
+  font-size: var(--dm-type-caption);
+  overflow-wrap: anywhere;
+}
+
+/* The detail: four short sections on hairlines. */
+.console .auto-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+  margin-top: 4px;
+  padding-top: 16px;
+  border-top: 1px solid var(--hair);
+}
+.console .auto-facts > div {
+  display: grid;
+  grid-template-columns: minmax(96px, 0.22fr) minmax(0, 1fr);
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--hair);
+}
+.console .auto-facts > div:first-child {
+  border-top: 1px solid var(--hair);
+}
+.console .auto-facts dt,
+.console .auto-facts dd {
+  margin: 0;
+}
+.console .auto-facts ul,
+.console .auto-evidence ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+.console .auto-fixture {
+  color: var(--t3);
+}
+.console .auto-manual li {
+  position: relative;
+  padding: 3px 0 3px 16px;
+  color: var(--t2);
+  overflow-wrap: anywhere;
+}
+.console .auto-manual li::before {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 0.75em;
+  width: 6px;
+  height: 1px;
+  background: var(--t3);
+}
+
+/* Runs, newest first. */
+.console .auto-occurrences {
+  display: flex;
+  flex-direction: column;
+}
+.console .auto-occurrence {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 12px 0;
+  border-top: 1px solid var(--hair);
+}
+.console .auto-occurrence-head {
+  align-items: baseline;
+  justify-content: flex-start;
+  gap: 12px;
+}
+.console .auto-occurrence-time {
+  flex: none;
+  color: var(--t3);
+  font: 400 var(--dm-type-caption) / 1.4 var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+.console .auto-occurrence-outcome {
+  min-width: 0;
+  flex: 1 1 200px;
+  color: var(--t1);
+  overflow-wrap: anywhere;
+}
+.console .auto-refusal,
+.console .auto-missing {
+  margin: 0;
+  color: var(--t2);
+  overflow-wrap: anywhere;
+}
+.console .auto-missing .mono,
+.console .auto-detail .mono {
+  font-family: var(--mono);
+  font-size: var(--dm-type-caption);
+  overflow-wrap: anywhere;
+}
+.console .auto-stages {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr));
+  gap: 1px;
+  border: 1px solid var(--hair);
+  background: var(--hair);
+}
+.console .auto-stages li {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  padding: 8px 10px;
+  background: var(--chrome);
+}
+.console .auto-stage-name {
+  color: var(--t3);
+  font-size: var(--dm-type-caption);
+}
+.console .auto-stages li.done .auto-stage-name {
+  color: var(--t2);
+}
+.console .auto-stages li.done .auto-stage-name::before {
+  content: '✓ ';
+  color: var(--light);
+}
+.console .auto-stage-detail {
+  min-width: 0;
+  color: var(--t1);
+  overflow-wrap: anywhere;
+}
+.console .auto-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+.console .auto-links button {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.console .auto-evidence summary {
+  cursor: pointer;
+  width: fit-content;
+  color: var(--t3);
+  font-size: var(--dm-type-caption);
+}
+.console .auto-evidence dl {
+  gap: 6px;
+  margin-top: 8px;
+}
+.console .auto-sha {
+  color: var(--t3);
+}
+.console .auto-pages {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+  color: var(--t3);
+}
+.console .auto-empty {
+  padding: 18px 0;
+  border-block: 1px solid var(--hair);
+}
+.console .auto-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@media (max-width: 860px) {
+  .console .auto-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .console .auto-summary > div:nth-child(3) {
+    border-left: 0;
+  }
+  .console .auto-summary > div:nth-child(n + 3) {
+    border-top: 1px solid var(--hair);
+  }
+  .console .auto-facts > div {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+}
+
+/* Nectovia: a state reads as the Readiness result does, a glyph and a mono
+   label in the state's colour, not a pill. */
+:is(html, .dc-stage)[data-package='nectovia'] .console .auto-state {
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  font: 500 var(--dm-type-meta) / 1.4 var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console :is(.auto-summary dt, .auto-detail h3, .auto-stage-name) {
+  font: 500 var(--dm-type-meta) / 1.6 var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}

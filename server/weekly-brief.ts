@@ -71,7 +71,7 @@ export interface BriefDraft {
 }
 
 /** A path slug, so a reference reads like the file it came from. */
-function slugFor(selected: string): string {
+export function slugFor(selected: string): string {
   const base = selected.split('/').pop() ?? selected;
   const stem = base.includes('.') ? base.slice(0, base.lastIndexOf('.')) : base;
   const folder = selected.includes('/') ? selected.slice(0, selected.lastIndexOf('/')) : '';
@@ -83,7 +83,7 @@ function slugFor(selected: string): string {
 }
 
 /** A short display name derived from the path, never from file contents. */
-function prettyFor(selected: string): string {
+export function prettyFor(selected: string): string {
   const base = selected.split('/').pop() ?? selected;
   const stem = base.includes('.') ? base.slice(0, base.lastIndexOf('.')) : base;
   const words = stem.replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim();
@@ -146,10 +146,10 @@ function addedLines(reported: string, text: string): string[] {
   return added;
 }
 
-const approvedScope = (manifest: ConfigurationManifest) =>
+export const approvedScope = (manifest: ConfigurationManifest) =>
   manifest.proposal.contextScopes.find((scope) => scope.kind === 'approved-files') ?? null;
 
-const outputFor = (manifest: ConfigurationManifest) => manifest.proposal.expectedOutputs[0] ?? null;
+export const outputFor = (manifest: ConfigurationManifest) => manifest.proposal.expectedOutputs[0] ?? null;
 
 export function composeBrief(input: {
   manifest: ConfigurationManifest;
