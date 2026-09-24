@@ -56,6 +56,7 @@ import type {
 import type { ConversationUpdateNotCarried } from '../shared/conversation.js';
 import { ApiError, absent, relativeName, safeAbsolute } from './paths.js';
 import { mountPackRoutes } from './pack-routes.js';
+import { playbookAccess } from './harness/capabilities/pack-playbooks.js';
 import {
   defaults,
   findTasks,
@@ -4259,6 +4260,10 @@ export async function createApp(options: AppOptions) {
             ...(carrying ? { carriedFrom: carrying } : {}),
             accountRoute,
             ...readScope,
+            // P04: on a model-API route, the pack playbooks this message may load, index only.
+            ...(modelRoute
+              ? await playbookAccess(packLifecycle.contributions, state, command.commandId, command.mode)
+              : {}),
             signal: options.signal,
             onPreview: (frame: TransientPreview) =>
               progress('delta', { ...frame, text: gate(frame.text) }),
