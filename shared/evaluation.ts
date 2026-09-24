@@ -487,7 +487,10 @@ export function validateEvaluationResult(
   if (!given) refuse('invalid_result', 'An evaluation result must be an object.');
   const body = given as Record<string, unknown>;
 
-  if (canonical(body).length > MAX_EVALUATION_RESPONSE_BYTES)
+  // The cap is in bytes, so it is measured in the UTF-8 bytes of the serialized
+  // result. A string's length counts UTF-16 units, and would let 30,000 CJK
+  // characters (about 90 KB) past a 64 KB cap.
+  if (new TextEncoder().encode(canonical(body)).byteLength > MAX_EVALUATION_RESPONSE_BYTES)
     refuse(
       'response_too_large',
       `An evaluation result may not exceed ${MAX_EVALUATION_RESPONSE_BYTES} bytes.`,
