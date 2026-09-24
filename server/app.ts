@@ -114,6 +114,12 @@ import { MODEL_TURN_CAPABILITY, TEAM_WORK_CAPABILITY } from './harness/model-ses
 import { parseWorkCommand, validateWorkCommandId } from './work-admission.js';
 import { parseTaskCommand } from './task-admission.js';
 import { WorkControl } from './work-control.js';
+import { DurableControls, defaultWorkContract } from './durable-controls.js';
+import {
+  CONTROL_FIXTURE_CONTRACT,
+  CONTROL_FIXTURE_ROUTE,
+  controlFixtureDriver,
+} from './durable-controls-fixture.js';
 import { ReadyScheduler } from './ready-scheduler.js';
 import { DesktopConnections } from './connections/desktop.js';
 import { toastConnector } from './connections/fixture.js';
@@ -2229,6 +2235,34 @@ export async function createApp(options: AppOptions) {
     },
   });
   /**
+   * H08: Steer, Queue, Stop, Resume, Retry and Fork, each with a command identity and a
+   * receipt. Queue and Stop are `workControl` itself; Resume and Retry start work only
+   * through `admitWork`, so they can never take a route or authority a person's Start
+   * would not. The control fixture answers for the sample route only in test mode, only
+   * for a project that asked for it.
+   */
+  const controlFixtureProjects = new Set<string>();
+  const durableControls = new DurableControls({
+    store,
+    workControl,
+    admit: (projectId, command) => admitWork(projectId, command, listeningPort),
+    modelFor: (projectId, threadId, engine) => {
+      if (engine === 'sample') return null;
+      return (
+        nativeChoice(
+          engine,
+          projectId,
+          store.state(projectId).conversations.find((c) => c.id === threadId),
+        ).model ?? null
+      );
+    },
+    contractFor: (projectId, workRoute) =>
+      workRoute === 'sample' && controlFixtureProjects.has(projectId)
+        ? CONTROL_FIXTURE_CONTRACT
+        : defaultWorkContract(workRoute),
+  });
+  durableControls.registerDriver(CONTROL_FIXTURE_ROUTE, controlFixtureDriver(work));
+  /**
    * The one trigger. A session reaching a terminal state and a task becoming
    * done both end in a durable write, and `persist` announces that write, so
    * this listens for it rather than polling or duplicating the half-dozen
@@ -2351,6 +2385,34 @@ export async function createApp(options: AppOptions) {
     '/api/projects/:id/stop',
     route(async (req) => workControl.stop(id(req), body(req))),
   );
+  app.get(
+    '/api/projects/:id/controls',
+    route(async (req) => ({
+      receipts: durableControls.list(id(req)),
+      ...(typeof req.query.taskId === 'string'
+        ? { profiles: durableControls.profiles(id(req), req.query.taskId) }
+        : {}),
+    })),
+  );
+  app.post(
+    '/api/projects/:id/controls',
+    route(async (req) => ({ receipt: await durableControls.perform(id(req), body(req)) })),
+  );
+  app.get(
+    '/api/projects/:id/controls/:commandId',
+    route(async (req) => durableControls.receipt(id(req), String(req.params.commandId))),
+  );
+  if (process.env.DIOMEDES_TEST_MODE === '1')
+    app.put(
+      '/api/projects/:id/controls/fixture',
+      route(async (req) => {
+        store.state(id(req));
+        const enabled = body(req).enabled === true;
+        if (enabled) controlFixtureProjects.add(id(req));
+        else controlFixtureProjects.delete(id(req));
+        return { enabled };
+      }),
+    );
   app.get(
     '/api/projects/:id/follow-ups',
     route(async (req) => ({ followUps: workControl.list(id(req)) })),
@@ -5123,6 +5185,7 @@ export async function createApp(options: AppOptions) {
   app.locals.harness = harness;
   app.locals.connections = connections;
   app.locals.workControl = workControl;
+  app.locals.durableControls = durableControls;
   app.locals.readyScheduler = readyScheduler;
   app.locals.close = async () => {
     // A window closed on the way out must not start a check against services

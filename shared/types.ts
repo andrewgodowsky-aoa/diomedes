@@ -333,6 +333,8 @@ export interface Session {
   slotId?: Slot;
   permission?: ThreadPermission;
   receipt?: WorkReceipt;
+  /** What this run was asked to do, kept so Resume and Retry ask for the same thing (H08). */
+  inputs?: import('./work-control.js').WorkInputs;
   state: 'queued' | 'working' | 'waiting' | 'done' | 'stopped' | 'failed';
   startedAt: string;
   endedAt: string | null;
@@ -583,6 +585,8 @@ export interface ProjectState {
   conversations: Conversation[];
   /** Absent in projects written before the follow-up queue existed. */
   followUps?: FollowUpCommand[];
+  /** Receipts for Steer, Queue, Stop, Resume, Retry and Fork (H08). Append-only; absent before 2026-09-24. */
+  controlReceipts?: import('./work-control.js').ControlReceipt[];
   team?: TeamState;
   /**
    * What pack discovery found in the project folder. Derived, not authored:
