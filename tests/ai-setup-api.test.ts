@@ -265,8 +265,16 @@ describe('first-run AI setup and the existing Work pipeline', () => {
         consent: true,
       });
       expect(start.status).toBe(200);
+      // Wait for the Work to leave its in-flight states rather than for a fixed
+      // number of polls a loaded runner can outlast: it either opens its Need or
+      // ends, and the assertions below read whichever it did. The deadline only
+      // guards a hang and stays inside the test's own budget.
+      const inFlight = (value: ProjectState) =>
+        !value.needs.some((need) => need.state === 'open') &&
+        (!value.sessions.length ||
+          value.sessions.some((session) => session.state === 'queued' || session.state === 'working'));
       let state: ProjectState = (await api(`${target}/state`)).data;
-      for (let n = 0; n < 100 && !state.needs.some((need) => need.state === 'open'); n++) {
+      for (const deadline = Date.now() + 20_000; inFlight(state) && Date.now() < deadline; ) {
         await new Promise((resolve) => setTimeout(resolve, 10));
         state = (await api(`${target}/state`)).data;
       }

@@ -66,6 +66,12 @@ interface Script {
   prompt?: () => Response;
   /** Written into the event stream as soon as it is opened. */
   events?: string;
+  /**
+   * Called when the prompt is dispatched, before its acceptance is answered, so
+   * a test can abort at the one moment "after dispatch" names rather than at a
+   * wall-clock guess that a slow runner reaches before dispatch.
+   */
+  onDispatch?: () => void;
 }
 
 async function adapterFor(script: Script, requestTimeoutMs = 30_000) {
@@ -105,8 +111,10 @@ async function adapterFor(script: Script, requestTimeoutMs = 30_000) {
     }
     if (url.endsWith('/session'))
       return script.session ? script.session() : new Response(JSON.stringify({ id: 'session-1' }));
-    if (url.endsWith('/prompt_async'))
+    if (url.endsWith('/prompt_async')) {
+      script.onDispatch?.();
       return script.prompt ? script.prompt() : new Response(null, { status: 204 });
+    }
     return new Response('true', { status: 200 });
   }) as unknown as typeof globalThis.fetch;
   return new OpenCodeAdapter('opencode', root, {
@@ -133,9 +141,15 @@ describe('a timeout the host imposed is not the person stopping the request', ()
    * can run out of time tells that person they cancelled it.
    */
   it('reports a caller-imposed timeout after dispatch as a timeout, not a cancellation', async () => {
-    const adapter = await adapterFor({});
-    const failure = await failureOf(adapter.generate(request(AbortSignal.timeout(120))));
+    // The reason a real `AbortSignal.timeout()` aborts with, delivered at
+    // dispatch: the deadline lands after the prompt is out however slow the runner.
+    const expired = AbortSignal.timeout(0);
+    await new Promise((resolve) => expired.addEventListener('abort', resolve, { once: true }));
+    const controller = new AbortController();
+    const adapter = await adapterFor({ onDispatch: () => controller.abort(expired.reason) });
+    const failure = await failureOf(adapter.generate(request(controller.signal)));
     expect(failure?.code).toBe('TIMEOUT');
+    expect(failure?.stage).toBe('stream');
     expect(failure?.message).not.toMatch(/was stopped/i);
   });
   it('control: the adapter names its own request budget a timeout', async () => {
@@ -148,24 +162,22 @@ describe('a timeout the host imposed is not the person stopping the request', ()
     // reason. This route used to answer that with "The request was stopped.",
     // the sentence for a person pressing stop, while the other four did not.
     const controller = new AbortController();
-    const adapter = await adapterFor({});
-    const pending = failureOf(adapter.generate(request(controller.signal)));
-    setTimeout(
-      () => controller.abort(Object.assign(new Error('stale_lease'), { name: 'HarnessError' })),
-      120,
-    );
-    const failure = await pending;
+    const adapter = await adapterFor({
+      onDispatch: () =>
+        controller.abort(Object.assign(new Error('stale_lease'), { name: 'HarnessError' })),
+    });
+    const failure = await failureOf(adapter.generate(request(controller.signal)));
     expect(failure?.code).toBe('DISPATCH_UNCERTAIN');
+    expect(failure?.stage).toBe('stream');
     expect(failure?.message).not.toMatch(/was stopped/i);
     expect(failure?.ambiguous).toBe(true);
   });
   it('still reports a person pressing stop as the request being stopped', async () => {
     const controller = new AbortController();
-    const adapter = await adapterFor({});
-    const pending = failureOf(adapter.generate(request(controller.signal)));
-    setTimeout(() => controller.abort(), 120);
-    const failure = await pending;
+    const adapter = await adapterFor({ onDispatch: () => controller.abort() });
+    const failure = await failureOf(adapter.generate(request(controller.signal)));
     expect(failure?.code).toBe('CANCELLED');
+    expect(failure?.stage).toBe('stream');
   });
 });
 
