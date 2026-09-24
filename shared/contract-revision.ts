@@ -1,6 +1,10 @@
 /**
- * Contract revision 2026-09-13.1 — the frozen additive amendment proposed by
- * C00 of the unified execution program.
+ * Contract revision 2026-09-13.1 — the frozen additive amendment produced by
+ * C00 of the unified execution program. C00.R rejected its first candidates
+ * (ledger: docs/implementation/2026-09-13-rebaseline.md) and then accepted it in
+ * a new dated verdict for the local rollout, which `acceptedBy` names. That
+ * record is the authority for `status`; tests/contract-revision.test.ts holds
+ * the two to each other.
  *
  * Nothing here changes an existing contract version: `HARNESS_CONTRACT_VERSION`
  * stays 1, `WORK_CONTROL_CONTRACT_VERSION` stays 1, `CAPABILITY_PACK_CONTRACT_VERSION`
@@ -36,7 +40,8 @@ import type { OriginSnapshot } from './attribution.js';
 export const CONTRACT_REVISION = Object.freeze({
   revision: '2026-09-13.1',
   amends: Object.freeze({ harness: 1, workControl: 1, capabilityPacks: 1, agents: 1 }),
-  status: 'proposed',
+  status: 'accepted',
+  acceptedBy: 'evidence/unified-20260913/C00.R-rollout-20260917.json',
 } as const);
 export type ContractRevisionId = typeof CONTRACT_REVISION.revision;
 /** What a v:1 record written before this file existed is reported as. */

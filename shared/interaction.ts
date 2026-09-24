@@ -16,8 +16,8 @@
  * Nothing here changes an existing contract version. `HARNESS_CONTRACT_VERSION`
  * stays 1, `WORK_CONTROL_CONTRACT_VERSION` stays 1 and
  * `WORKSPACE_CONTRACT_VERSION` stays 1. This file does not amend contract
- * revision `2026-09-13.1`, which is still `proposed` (shared/contract-revision.ts
- * `CONTRACT_REVISION.status`); it stands beside it and consumes none of it.
+ * revision `2026-09-13.1` (shared/contract-revision.ts, accepted by C00.R's
+ * rollout record); it stands beside it and consumes none of it.
  *
  * Field naming: the CD-1 package fixture
  * (`contracts/interaction-decision.schema.json`) is snake_case. This module is
