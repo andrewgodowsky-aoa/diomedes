@@ -368,7 +368,7 @@ export function validateManifest(manifest: CapabilityPackManifest): string[] {
 }
 
 /** Capabilities that would act outward. No pack may even declare one. */
-const OUTWARD =
+export const OUTWARD =
   /^(send|post|pay|transfer|trade|publish|message|reply|submit|sign|delete|write-external)/;
 
 /**
