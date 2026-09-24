@@ -117,8 +117,10 @@ export interface EntitlementView {
   reason: string;
 }
 
+// People see this under Workspaces, so it names no product: the control plane's own sentence
+// (services/control-plane/contract/contract.ts, NO_ENTITLEMENT_SNAPSHOT).
 export const NO_ENTITLEMENT_REASON =
-  'This installation has no entitlement service. Managed Diomedes Agent access, included usage and billing are not available here, and no local record can grant them.';
+  'This installation has no entitlement service. Managed access, included usage and billing are not available here, and no local record can grant them.';
 
 export function entitlementFor(_organizationId: string): EntitlementView {
   return { plan: 'none', managedInference: false, reason: NO_ENTITLEMENT_REASON };

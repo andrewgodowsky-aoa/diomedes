@@ -13,6 +13,7 @@ import { routeContractFor } from '../server/harness/route-contract';
 import { hash, identifier, now, type Store } from '../server/store';
 import type { MessageResult } from '../server/interaction-service';
 import type { Conversation, Project, Settings, TaskCandidate } from '../shared/types';
+import { shareHistory, stopSharingHistory, type HomeSharing } from '../client/console/home-history';
 
 // The reserved workspace home Project and its one conversation, through the real app over
 // HTTP: the real Store, the real settings file, the real task and Work admission, with only
@@ -719,4 +720,57 @@ test('a Claude Code Home answers with no grant, and a follow-up needs the histor
     shareConversationHistory: true, shareReviewPackets: false,
   });
   expect((await send(home, 'm-follow-up-2', 'and then?')).outcome).toEqual({ status: 'answered' });
+});
+
+// The 0.1.8 fix: the same follow-up through the Nectovia page's own grant and revoke
+// (client/console/home-history.ts). Revoking takes the grant away for Claude Code, so the next
+// follow-up is refused again, before anything is dispatched.
+test("a Claude Code Home follow-up is answered after the page's grant and refused after its revoke", async () => {
+  const home = await provision();
+  const sharingPath = `/projects/${home.projectId}/cloud-sharing`;
+  const read = () => api<HomeSharing>(sharingPath);
+  expect((await send(home, 'm-first', 'hello')).outcome).toEqual({ status: 'answered' });
+
+  const granted = await api<HomeSharing>(
+    sharingPath,
+    'PUT',
+    shareHistory(await read(), 'claude-code'),
+  );
+  // The grant never touches documents or review packets.
+  expect(granted).toEqual({
+    version: 1,
+    routes: ['claude-code'],
+    documents: [],
+    shareConversationHistory: true,
+    shareReviewPackets: false,
+  });
+  expect((await send(home, 'm-granted', 'and then?')).outcome).toEqual({ status: 'answered' });
+
+  const revoked = await api<HomeSharing>(
+    sharingPath,
+    'PUT',
+    stopSharingHistory(await read(), 'claude-code'),
+  );
+  expect(revoked).toEqual({
+    version: 2,
+    routes: [],
+    documents: [],
+    shareConversationHistory: false,
+    shareReviewPackets: false,
+  });
+  const before = dispatches.length;
+  const refused = await request(
+    `/projects/${home.projectId}/threads/${home.threadId}/messages`,
+    'POST',
+    {
+      commandId: 'm-revoked',
+      text: 'and after that?',
+      mode: 'auto',
+      sources: [],
+      consent: true,
+    },
+  );
+  expect(refused.status).toBe(403);
+  expect(((await refused.json()) as { code?: string }).code).toBe('cloud_sharing_denied');
+  expect(dispatches.length).toBe(before);
 });

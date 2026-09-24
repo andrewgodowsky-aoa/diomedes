@@ -66,6 +66,9 @@ export function App() {
   const [integrations, setIntegrations] = useState<IntegrationStatus[]>([]);
   const [usage, setUsage] = useState<UsageSnapshot[]>([]);
   const [helpersRequest, setHelpersRequest] = useState(0);
+  // Opens the All projects conversation's Cloud sharing. DiomedesHome hands it over while that
+  // conversation is showing and exists, and takes it back otherwise.
+  const [homeSharing, setHomeSharing] = useState<(() => void) | null>(null);
   const [error, setError] = useState('');
   const [online, setOnline] = useState(true);
   const [initialLoaded, setInitialLoaded] = useState(false);
@@ -664,6 +667,11 @@ export function App() {
                   onOpenProject={openProject}
                   onToggleSettings={() => setShowSettings(!showSettings)}
                   onFind={() => setSearch(true)}
+                  onCloudSharing={
+                    landing === 'diomedes' && !selected && !showSettings
+                      ? (homeSharing ?? undefined)
+                      : undefined
+                  }
                   status={stripStatus}
                   chip={
                     chipVisible && activeIntegration && activeUsage ? (
@@ -787,6 +795,8 @@ export function App() {
                     if (target) openProject(target);
                   }}
                   scheme={paintedScheme}
+                  services={settings?.services}
+                  onSharingControl={(open) => setHomeSharing(() => open)}
                 />
               ) : (
                 <Home

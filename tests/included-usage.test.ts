@@ -24,6 +24,7 @@ import {
   dollars,
   formatMoney,
 } from '../shared/managed-usage.js';
+import { NO_ENTITLEMENT_REASON } from '../shared/workspaces.js';
 
 describe('the candidate plan', () => {
   test('publishes its included usage as a count of requests', () => {
@@ -82,6 +83,17 @@ describe('what a customer is told managed access is', () => {
 
   test('does not promise unlimited use', () => {
     expect(ALLOWANCE_MEANING).not.toMatch(/unlimited/i);
+  });
+
+  // The 0.1.8 release review read "includes a set number of requests each period, and we pay for
+  // them" under Workspaces as a claim about this build, where every route runs on an account
+  // connected on this computer. The sentence describes a plan; the host's reason that none is
+  // available here is shown before it (client/console/Allowance.tsx).
+  test('describes a managed plan rather than this build, in the product name people see', () => {
+    expect(ALLOWANCE_MEANING).toMatch(/^On a managed plan, /);
+    expect(ALLOWANCE_MEANING).not.toMatch(/Diomedes/);
+    expect(NO_ENTITLEMENT_REASON).toMatch(/not available here/);
+    expect(NO_ENTITLEMENT_REASON).not.toMatch(/Diomedes/);
   });
 });
 

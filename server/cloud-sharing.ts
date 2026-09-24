@@ -41,6 +41,15 @@ export function cloudSharing(state: ProjectState): CloudSharingPolicy {
   };
 }
 
+/**
+ * Whether a conversation's earlier messages may go to this route now: history is shared and the
+ * route is granted. The one predicate each send checks, message by message, and the one "Update
+ * this conversation" decides its promise by, so what the note says and what is sent can't differ.
+ */
+export function sharesHistory(policy: CloudSharingPolicy, route: string): boolean {
+  return policy.shareConversationHistory && (policy.routes as string[]).includes(route);
+}
+
 /** The upgrade's provenance record, or nothing when it is damaged. It never grants anything. */
 function upgradeRecord(value: unknown): CloudSharingUpgrade | undefined {
   const record = value as Partial<CloudSharingUpgrade> | null | undefined;

@@ -1,0 +1,146 @@
+WHAT IS NEW
+  The app calls itself Nectovia. Its screens, its home page and its answers use
+  the new name. The installer, the Start menu entry, the window title, the
+  Documents\Diomedes projects folder and these release files keep the Diomedes
+  name, so this build upgrades an earlier experimental install in place and
+  finds your projects where they were.
+
+  A new install opens on the Nectovia look: ink and cyan, a home page that
+  opens with the date, a greeting and a row for each of your projects, and
+  status markers cut as plates. An update keeps the look you already had. To
+  switch, choose Nectovia under Settings > Appearance.
+
+  Answers appear as they are written, on the Nectovia page and in project
+  threads, and a line under the answer names each tool call while it runs,
+  such as a web search. Not every route reports its tool calls.
+
+  Work styles choose where work runs. Pick Efficient, Focused or Thorough from
+  the style control in a thread or on the Nectovia page, and the tier map in
+  Settings > Engines > Tiers decides the route and the model. As shipped,
+  Efficient runs GPT-5.6 Luna on AWS Bedrock and Focused runs Gemini 3.8 Flash
+  on Google Vertex AI, each on your own account. Thorough has no model until
+  you choose one there, and is refused until then. A tier whose route is not
+  connected is refused by name, and its work never moves to another provider.
+  With Default, a thread keeps the route it already uses.
+
+  Each job on AWS Bedrock, Google Vertex AI, Azure OpenAI or OpenRouter has a
+  cap: 20 credits for Efficient, 50 for Focused and 100 for Thorough. A job
+  stops before the step that would pass its cap, and nothing more is spent. On
+  the Nectovia page the app asks before sending a message that is likely to
+  pass its cap, and offers to go over once, for that job only, or to use the
+  next tier up.
+
+  Google Vertex AI is a new route. In Settings > Engines, enter your Google
+  Cloud project id and, if you like, an API key from that project; leave the
+  key empty to use this computer's gcloud sign-in. Confirm that the project is
+  billed, press Connect, then set a spend limit. It runs Gemini 3.8 Flash on
+  Google's global endpoint. Azure OpenAI and OpenRouter can be connected there
+  too, with your own keys and the prices you declare, and run when a tier is
+  pointed at them. AWS Bedrock is set up as before (Connect AWS, Save limit,
+  Turn on) and now streams its answers.
+
+  The OpenCode route reads your OpenCode model list as it is now, gives each
+  readiness check at most five seconds, and shows the answer without the
+  model's reasoning. MiMo V2.6 Flash and Pro, which an OpenCode Go account
+  lists, can be chosen as OpenCode's model. No work style picks them.
+
+  Answers can carry artifacts. A diagram (Mermaid), an image (SVG), a design
+  (HTML) or a document (Markdown) opens in a side panel from a chip under the
+  answer, and a table is drawn in the answer itself. Ask and Plan answers can
+  also draw charts, figures and progress bars in place. The panel shows the
+  rendered view or the source, copies the source and, in a project, saves to
+  Files under Saved artifacts. A design is static: no script runs in it, its
+  links do nothing, and it fetches nothing from the network.
+
+  Each project has a Cloud sharing button in its top bar. A new project shares
+  nothing: every route except the sample is refused until you tick it there,
+  and a refused send says "Cloud sharing for this route, document, or
+  conversation history is off in this project." The same dialog chooses each
+  document a route may read and whether earlier messages may be sent. A
+  project from an earlier version is given, once, the routes it had already
+  used; open its Cloud sharing to see what was kept. The dialog also warns
+  that helpers installed on this computer may read outside the documents you
+  choose.
+
+  The All projects conversation on the Nectovia page sends its earlier
+  messages only to the routes you choose. Once it has begun, a Cloud sharing
+  button in the top bar turns them on one route at a time, and every route
+  starts off. While the next message's route does not receive them, a line
+  above the message box says so and offers to share them.
+
+  Ask and Plan can look things up. Helper routes can search and read the web,
+  and Claude Code can look through the project folder for one message when you
+  tick that box before sending. The provider routes read the documents you
+  choose and can fetch a web page. Web access is on for every Ask and Plan
+  turn; there is no separate switch for it.
+
+  The local service answers only this app's own window. Another program on
+  this computer, or a web page in your browser, is refused.
+
+  A conversation on the Nectovia page, or a project thread on a provider route,
+  keeps the instructions it started with across this update. When one has to
+  start fresh, because its instructions, tier, route, model or settings
+  changed or it reached its length limit, a note in the conversation says so:
+  your earlier messages stay, and Nectovia will not remember them.
+
+  A Small Business pack of twelve playbooks can be turned on for a project from
+  Ctrl K. Using a playbook fills the composer with a prepared Ask or Plan
+  request.
+
+UPDATES
+  Settings > App updates offers stable releases only, and this is one: an
+  installed 0.1.7 can find it when you press Check for updates. Nothing is
+  downloaded, verified or installed until you confirm it, and a download is
+  accepted only when its SHA-256 matches the digest the release publishes.
+  An update keeps your look, your routes and their saved keys, your projects
+  and your conversations.
+
+LIMITS
+  Unsigned, experimental, tested on one machine.
+  The installer was built but not installed on the build machine, so its
+  install, repair and uninstall and the installed runtime are listed above as
+  not verified, and no upgrade from 0.1.7 has been run end to end.
+  No route was exercised live on this build. Every route in its tests was
+  scripted or fake, so no answer, spend or saved key was exercised against a
+  real installed tool or against AWS Bedrock, Google Vertex AI, Azure OpenAI or
+  OpenRouter.
+
+  The All projects conversation remembers earlier messages only on a route you
+  have shared them with in its Cloud sharing. On another provider route each
+  message is answered on its own, and on Claude Code a follow-up is refused
+  until you share them. A project's own conversation shares them from that
+  project's Cloud sharing, with "Share conversation history".
+  On a new install the Nectovia page runs on AWS Bedrock, and it asks you to
+  turn AWS Bedrock on in Settings before anything is sent. After that first
+  message its Style control appears, and a style whose route you have
+  connected moves it there.
+
+  This app is not signed in to a Nectovia account. No credit balance or usage
+  is shown, and every route runs on, and is billed to, your own account.
+  A job with no style chosen is held to the Efficient cap. The warning before
+  a job passes its cap is priced on the route the conversation is recorded on,
+  so when a style sends it elsewhere the warning can be missing or priced for
+  another route; the cap still stops the job. Threads in a project show a cap
+  stop as an error, not as a question.
+  AWS Bedrock runs only GPT-5.6 Luna in us-east-1, and Google Vertex AI only
+  Gemini 3.8 Flash. No GPT-6 model is offered.
+  There is no sign-in. The Tiers card is marked Owner, but anyone using the app
+  on this computer can change it.
+
+  Only Ask and Plan tell a model how to draw a chart, and the Nectovia page
+  starts in Automatic, so choose Answer only or Plan only there to get one. A
+  conversation started before this update keeps its earlier instructions,
+  which do not mention charts. Nothing tells a model to write a diagram,
+  design or document, so those appear only when a model writes one unprompted,
+  and no real model has been seen doing so in testing.
+  Artifacts are rebuilt from the saved answer: there is no list of them and no
+  export beyond Save to Files, which works only in a project. Designs cannot
+  load pictures or fonts from the internet, and diagrams do not draw math.
+  Playbooks do not run in provider-route conversations yet.
+
+  The two names meet in places: History sentences, the window title, the
+  first conversation in each project and some messages still say Diomedes.
+  Connections is unavailable. It runs on example data rather than your own
+  software, and there is no live connection to a business system.
+  The release is Windows x64 only. The local service listens on 127.0.0.1
+  only.
