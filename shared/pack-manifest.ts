@@ -39,7 +39,9 @@ export const PACK_HOST_CONTRACT_REVISION = `${CAPABILITY_PACK_CONTRACT_VERSION}.
 export const PACK_ID_PATTERN = /^[a-z][a-z0-9-]{0,39}(?:\.[a-z0-9][a-z0-9-]{0,39}){1,3}$/;
 const CONTRIBUTION_ID = /^[a-z][a-z0-9-]{0,63}$/;
 const CAPABILITY = /^[a-z][a-z0-9-]{1,47}$/;
-const FILE_PATH = /^(?:[A-Za-z0-9_-][A-Za-z0-9._-]{0,63}\/){0,3}[A-Za-z0-9_-][A-Za-z0-9._-]{0,63}$/;
+/** Contained relative paths. Braces are allowed after the first character: fixture templates use them. */
+const FILE_PATH =
+  /^(?:[A-Za-z0-9_-][A-Za-z0-9._{}-]{0,63}\/){0,3}[A-Za-z0-9_-][A-Za-z0-9._{}-]{0,63}$/;
 export const PACK_DIGEST_PATTERN = /^sha256:[a-f0-9]{64}$/;
 
 const text = (max: number) => z.string().trim().min(1).max(max);

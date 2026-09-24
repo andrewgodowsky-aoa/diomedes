@@ -149,7 +149,11 @@ export interface CapabilityPackManifest {
  * when a run happened.
  */
 export interface PackActivation {
-  readonly packId: CapabilityPackId;
+  /**
+   * A built-in `CapabilityPackId`, or the id of an installed pack
+   * (`shared/pack-manifest.ts`). Either way the same record, appended the same way.
+   */
+  readonly packId: string;
   readonly packVersion: string;
   readonly state: 'active' | 'inactive';
   readonly at: string;
@@ -322,7 +326,7 @@ export function renderSkillPlaybook(skill: PackSkill, packVersion: string): stri
 /** The latest activation record for a pack, or null when it was never touched. */
 export function latestActivation(
   activations: readonly PackActivation[] | undefined,
-  packId: CapabilityPackId,
+  packId: string,
 ): PackActivation | null {
   const own = (activations ?? []).filter((item) => item.packId === packId);
   return own.length ? own.reduce((a, b) => (b.at >= a.at ? b : a)) : null;
@@ -330,7 +334,7 @@ export function latestActivation(
 
 export function isPackActive(
   activations: readonly PackActivation[] | undefined,
-  packId: CapabilityPackId,
+  packId: string,
 ): boolean {
   return latestActivation(activations, packId)?.state === 'active';
 }
