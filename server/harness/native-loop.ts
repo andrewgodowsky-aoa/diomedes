@@ -124,6 +124,17 @@ export interface NativeLoopOptions {
   readonly route: string;
   readonly model: string | null;
   readonly sources?: readonly string[];
+  /**
+   * H16: stream-time rules. Each model step attempt opens a watch the adapter's
+   * streamed text is handed to; the step does not return until every firing is
+   * recorded and handed on, so none is missed by the tool the answer proposes.
+   */
+  readonly stream?: {
+    watch(runId: string, stepId: string, attempt: number): Promise<{
+      onDelta(text: string): void;
+      end(finalText: string | null): Promise<void>;
+    } | null>;
+  } | null;
 }
 
 export type LoopResult =
@@ -270,9 +281,25 @@ export class NativeLoop {
           ? z.json().parse({ provider: this.adapter.id, request: effective })
           : z.json().parse({ provider: this.adapter.id, messages, tools }),
       },
-      async ({ signal, reportOrigin }) => {
+      async ({ signal, reportOrigin, attempt }) => {
         await this.adapter.validatePrepared?.(copy(effective));
-        const result = await this.adapter.complete(copy(effective), signal);
+        const watch = (await this.options.stream?.watch(runId, `model:${key}`, attempt)) ?? null;
+        let result: Awaited<ReturnType<ModelAdapter['complete']>>;
+        try {
+          result = await this.adapter.complete(
+            copy(effective),
+            signal,
+            watch ? { onDelta: (text) => watch.onDelta(text) } : undefined,
+          );
+        } catch (error) {
+          await watch?.end(null).catch(() => undefined);
+          throw error;
+        }
+        if (watch) {
+          await watch.end(result?.response?.type === 'final' ? result.response.text : null);
+          // A rule may have stopped the run while it streamed; nothing it said is then acted on.
+          signal.throwIfAborted();
+        }
         if (!result || !validResponse(result.response))
           throw new HarnessError('invalid_model_response', 'Invalid model response schema.');
         if (reportOrigin)

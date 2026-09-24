@@ -40,6 +40,7 @@ import { MODEL_SESSION_CAPABILITIES, ModelSessionRuns, modelApiDispatchAuthorize
 import { AWS_BEDROCK_ROUTE } from '../engines/aws-bedrock.js';
 import { isModelApiRoute } from '../../shared/model-api.js';
 import { cloudSharing, requireCloudSharing, sharesHistory } from '../cloud-sharing.js';
+import { StreamRuleService } from '../stream-rules/service.js';
 
 export const HARNESS_POLICY_VERSION = 'diomedes-host-policy-v1';
 
@@ -441,7 +442,9 @@ export function createHarnessHost({
   });
   registerFormatReport(tools, store, runs);
   registerLoopTools(tools, store, runs);
-  const loop = createLoopProcedure({ store, runs, tools });
+  // H16: stream-time rules watch each loop model step and judge each tool intent at admission.
+  const streamRules = new StreamRuleService({ store, runs, tools, redact });
+  const loop = createLoopProcedure({ store, runs, tools, stream: streamRules });
   const weeklyBriefProcedure = weeklyBrief
     ? registerWeeklyBrief(tools, store, runs, weeklyBrief)
     : null;
@@ -504,6 +507,7 @@ export function createHarnessHost({
   };
   runs.afterStep = () => bridge.flush();
   runs.use((context) => bridge.beforeStep(context));
+  runs.use(streamRules.hook);
   const refreshSecrets = async () => {
     for (const project of await store.projects()) {
       // A team token file this account cannot open holds nothing this process can know, and so
@@ -570,6 +574,8 @@ export function createHarnessHost({
     codex,
     /** H13: the Diomedes work loop procedure (routes and the finish gate are attached by the app). */
     loop,
+    /** H16: stream-time trigger rules (supervision is attached by the app). */
+    streamRules,
     textRoute,
     claudeSessions,
     modelSessions,

@@ -466,12 +466,24 @@ export function triggerViews(
         record.action !== 'answer' && record.evidence.some((item) => item.kind === 'rule' && item.ref === firing.id),
     );
     if (!handled) return { firing, state: 'pending', outcome: 'Handed to supervision.' };
-    if (handled.control)
+    if (handled.control) {
+      const control = handled.control.control;
+      const word =
+        control === 'steer'
+          ? 'Steered'
+          : control === 'queue'
+            ? 'Correction queued'
+            : control === 'stop'
+              ? firing.intervention === 'hold'
+                ? 'Paused for you before it ran'
+                : 'Stopped'
+              : 'Resumed';
       return {
         firing,
         state: handled.control.outcome === 'refused' ? 'refused' : 'acted',
-        outcome: `${handled.control.control === 'steer' ? 'Steered' : handled.control.control === 'queue' ? 'Correction queued' : handled.control.control === 'stop' ? 'Stopped' : 'Resumed'}: ${handled.control.detail}`,
+        outcome: `${word}: ${handled.control.detail}`,
       };
+    }
     return { firing, state: 'acted', outcome: handled.settled ?? handled.reason };
   });
 }
@@ -490,5 +502,7 @@ export function firingSummary(firing: StreamTriggerFiring): string {
     firing.match.kind === 'tool'
       ? `the proposed ${firing.match.tool} call`
       : `the streamed text “${firing.match.excerpt}”`;
-  return `a ${firing.rule.authority} rule (${firing.rule.id}) matched ${what}: ${firing.rule.text.replace(/[.!]+$/, '')}`;
+  const verb = firing.intervention === 'hold' ? 'held' : 'matched';
+  const article = firing.rule.authority === 'organization' ? 'an' : 'a';
+  return `${article} ${firing.rule.authority} rule (${firing.rule.id}) ${verb} ${what}: ${firing.rule.text.replace(/[.!]+$/, '')}`;
 }

@@ -142,6 +142,7 @@ import {
   controlFixtureDriver,
 } from './durable-controls-fixture.js';
 import { SupervisionService } from './supervision/service.js';
+import { triggerViews } from '../shared/stream-rules.js';
 import { keepPartially } from './change-review/partial-keep.js';
 import { documentDiff, ReviewComments } from './review-comments.js';
 import { ReadyScheduler } from './ready-scheduler.js';
@@ -2460,6 +2461,10 @@ export async function createApp(options: AppOptions) {
   });
   const superviseOnChange = (projectId: string) => supervision.schedule(projectId);
   store.on('change', superviseOnChange);
+  // H16: a stream-time rule's steer or stop is answered by supervision on its ladder, at once.
+  harness.streamRules.attachSupervision({
+    evaluate: (projectId, sessionId) => store.locked(() => supervision.evaluate(projectId, sessionId)),
+  });
   /**
    * The one trigger. A session reaching a terminal state and a task becoming
    * done both end in a durable write, and `persist` announces that write, so
@@ -2613,12 +2618,39 @@ export async function createApp(options: AppOptions) {
     );
   app.get(
     '/api/projects/:id/supervision',
-    route(async (req) => ({
-      records: supervision.list(
-        id(req),
-        typeof req.query.sessionId === 'string' ? req.query.sessionId : undefined,
-      ),
-    })),
+    route(async (req) => {
+      const sessionId = typeof req.query.sessionId === 'string' ? req.query.sessionId : undefined;
+      const records = supervision.list(id(req), sessionId);
+      return {
+        records,
+        // H16: the run's stream-time rule firings and what became of each.
+        triggers: triggerViews(
+          harness.streamRules.firings(id(req), sessionId),
+          records,
+          store.state(id(req)).needs,
+        ),
+      };
+    }),
+  );
+  /**
+   * H16 stream-time trigger rules: the installation's (organization authority) and a
+   * project's. Written by the local person; a project rule that would loosen one written
+   * for everybody, or two rules of one authority that contradict, are refused.
+   */
+  app.get('/api/stream-rules', route(async () => harness.streamRules.list(null)));
+  app.put(
+    '/api/stream-rules',
+    route(async (req) => harness.streamRules.setRules('organization', null, body(req))),
+  );
+  app.get(
+    '/api/projects/:id/stream-rules',
+    route(async (req) =>
+      harness.streamRules.list(id(req), typeof req.query.taskId === 'string' ? req.query.taskId : null),
+    ),
+  );
+  app.put(
+    '/api/projects/:id/stream-rules',
+    route(async (req) => harness.streamRules.setRules('project', id(req), body(req))),
   );
   app.post(
     '/api/projects/:id/supervision/evaluate',

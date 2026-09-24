@@ -46,8 +46,15 @@ import { cloudSharing, requireCloudSharing } from '../../cloud-sharing.js';
 import { ADAPTER_CAPABILITIES } from '../adapters.js';
 import { REPORT_PATH } from '../approval.js';
 import type { HarnessProcedure } from '../bridge.js';
-import { NativeAgent, type ModelAdapter } from '../native-agent.js';
-import { LOOP_INSTRUCTIONS, NativeLoop, delegateBudget, type LoopDelegationPort, type LoopToolBinding } from '../native-loop.js';
+import { NativeAgent, type ModelAdapter, type ModelStreamSink } from '../native-agent.js';
+import {
+  LOOP_INSTRUCTIONS,
+  NativeLoop,
+  delegateBudget,
+  type LoopDelegationPort,
+  type LoopToolBinding,
+  type NativeLoopOptions,
+} from '../native-loop.js';
 import { HarnessError, digest } from '../policy.js';
 import { routeContractFor } from '../route-contract.js';
 import type { RunService } from '../run-service.js';
@@ -298,6 +305,18 @@ const text = (value: Json | undefined, key: string): string | null => {
 };
 
 /**
+ * The scripted route streams like a provider does: its text in small chunks,
+ * so a phrase can fall across two of them (H16).
+ */
+const FIXTURE_CHUNK = 5;
+function streamed(stream: ModelStreamSink | undefined, result: ModelResult): ModelResult {
+  if (stream && result.response.type === 'final')
+    for (let at = 0; at < result.response.text.length; at += FIXTURE_CHUNK)
+      stream.onDelta(result.response.text.slice(at, at + FIXTURE_CHUNK));
+  return result;
+}
+
+/**
  * The loop's fixed local script, for the fixture route: plan, read the first
  * selected file, hand the second to a delegate when delegation is offered,
  * propose the report, then claim it is done. Not a model: every step it drives
@@ -311,15 +330,15 @@ export function loopFixtureAdapter(sources: readonly string[]): ModelAdapter {
     version: 'loop-fixture-v1',
     contract: routeContractFor(LOOP_FIXTURE_ROUTE),
     capabilities: () => ADAPTER_CAPABILITIES['native-fixture'],
-    async complete(request, signal): Promise<ModelResult> {
+    async complete(request, signal, stream): Promise<ModelResult> {
       signal.throwIfAborted();
       if (!request.tools.length)
-        return {
+        return streamed(stream, {
           response: {
             type: 'final',
             text: `1. Read ${first}.\n2. ${second !== first ? `Ask a helper to check ${second}.` : 'Check what it says.'}\n3. Propose ${REPORT_PATH}.\n4. Summarise what was done.`,
           },
-        };
+        });
       const offered = new Set(request.tools.map((tool) => tool.name));
       const outputs = toolOutputs(request);
       const plan: { name: string; input: Json }[] = [{ name: 'read_project_file', input: { path: first } }];
@@ -333,12 +352,12 @@ export function loopFixtureAdapter(sources: readonly string[]): ModelAdapter {
         if (plan.length > 1) lines.push(`## ${second}`, '', text(outputs[1].output, 'answer') ?? 'No answer came back.', '');
         return { response: { type: 'tool', name: 'propose_write', input: { text: lines.join('\n') } } };
       }
-      return {
+      return streamed(stream, {
         response: {
           type: 'final',
           text: `Proposed ${REPORT_PATH} from ${plan.length > 1 ? `${first} and a helper's reading of ${second}` : first}.`,
         },
-      };
+      });
     },
   };
 }
@@ -422,7 +441,13 @@ const DELEGATE_PARTY = {
 const ACTIVE = ['queued', 'running', 'waiting'];
 const PARENT_STOPPED = 'the loop that handed it this sub-task was stopped';
 
-export function createLoopProcedure(deps: { store: Store; runs: RunService; tools: ToolRegistry }) {
+export function createLoopProcedure(deps: {
+  store: Store;
+  runs: RunService;
+  tools: ToolRegistry;
+  /** H16: the stream-time rules each model step is watched by. */
+  stream?: NativeLoopOptions['stream'];
+}) {
   const { store, runs, tools } = deps;
   let modelRoutes: LoopModelRoutes | null = null;
   let verification: LoopVerification | null = null;
@@ -671,6 +696,7 @@ export function createLoopProcedure(deps: { store: Store; runs: RunService; tool
           route: input.route,
           model: input.model,
           sources: input.sources,
+          stream: deps.stream ?? null,
         }).run(runId, owner, input.goal, principal);
       } finally {
         beat();

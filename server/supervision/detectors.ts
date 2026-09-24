@@ -20,6 +20,7 @@ import {
   type DriftTouch,
 } from '../../shared/supervision.js';
 import { verificationOf } from '../../shared/verification.js';
+import { firingSummary } from '../../shared/stream-rules.js';
 
 const RANK: Record<DriftSeverity, number> = { info: 0, warning: 1, critical: 2 };
 const worst = (a: DriftSeverity, b: DriftSeverity) => (RANK[a] >= RANK[b] ? a : b);
@@ -494,5 +495,47 @@ export function detectDrift(
     ...detectBudgetBurn(input, thresholds),
     ...detectInstructionDrift(input),
     ...detectVerificationRegression(input),
+    ...detectRuleTriggers(input),
   ];
+}
+
+/**
+ * H16: a stream-time rule that asked for a steer or a stop. The firing is the
+ * evidence — which rule (and the digest of the exact declaration), what it
+ * matched, when — and the rule's intervention is the severity: a steer is a
+ * warning the ladder corrects; a stop, or a hold on an intent the approval
+ * gate cannot carry, is critical and pauses the run for you.
+ * One issue per rule per task, so a rule that keeps firing climbs the ladder
+ * instead of starting over.
+ */
+export function detectRuleTriggers(input: DriftInput): DriftFinding[] {
+  const handed = (input.triggers ?? []).filter((firing) => firing.handling === 'handed-to-supervision');
+  const byRule = new Map<string, typeof handed>();
+  for (const firing of handed) {
+    const key = `${firing.rule.authority}:${firing.rule.id}`;
+    byRule.set(key, [...(byRule.get(key) ?? []), firing]);
+  }
+  return [...byRule.entries()].map(([key, firings]) => {
+    const latest = firings.at(-1)!;
+    // A hold the approval gate could not carry pauses the run for you, as a stop does.
+    const stop = firings.some((firing) => firing.intervention !== 'steer');
+    return finding({
+      code: 'rule-trigger',
+      issueKey: `trigger:${key}`,
+      severity: stop ? 'critical' : 'warning',
+      summary: firingSummary(latest),
+      ask: stop ? 'Stop and wait for the person.' : (latest.rule.message ?? latest.rule.text),
+      evidence: firings.map((firing) => ({
+        kind: 'rule' as const,
+        ref: firing.id,
+        detail: `${firing.rule.id} v${firing.rule.version} (${firing.rule.authority}, ${firing.rule.digest.slice(0, 12)}) ${
+          firing.match.kind === 'tool'
+            ? `matched the proposed ${firing.match.tool} call${firing.match.targets.length ? ` on ${firing.match.targets.join(', ')}` : ''}.`
+            : `matched “${firing.match.excerpt}” at ${firing.match.start}–${firing.match.end} of ${firing.stepId}.`
+        }`,
+        at: firing.at,
+        ...(firing.match.kind === 'tool' && firing.match.targets[0] ? { path: firing.match.targets[0] } : {}),
+      })),
+    });
+  });
 }
