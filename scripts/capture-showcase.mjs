@@ -27,7 +27,7 @@ try {
   await api('/settings', 'PUT', {
     detail: 'standard', appearance: { package: 'deep-field', motion: 'reduced', interfaceScale: 1.12 },
     onboarding: { work: 'business', detail: 'standard', familiarity: 'some', resumeAt: 'done', completedAt: new Date().toISOString() },
-    openProjects: [project.id], lastPage: { [project.id]: 'home' },
+    openProjects: [project.id],
   });
   await page.reload();
   const nav = async (name) => {
