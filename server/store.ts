@@ -794,6 +794,10 @@ export class Store extends EventEmitter {
       tasksTotal: state.tasks.length,
     };
   }
+  /** Every registered project's id, in registry order. Reads no folder. */
+  projectIds(): string[] {
+    return this.registry.map((project) => project.id);
+  }
   async projects() {
     const projects = [];
     for (const item of this.registry) {
