@@ -301,4 +301,47 @@ describe('kept OpenCode session over the native conversation driver', () => {
     const fork = await runs.get(forkRun);
     expect(fork.steps.some((step) => step.intent.kind === 'model' && step.state === 'succeeded')).toBe(false);
   });
+
+  it('a refused fork leaves nothing to reconcile, and the same fork command goes through once the cause is fixed', async () => {
+    const f = await fixture();
+    const { driver, runs } = f.driverFor();
+    await driver.request(f.turn('start', runId, input('first')));
+    await driver.control('p1', runId, 'close-1', 'close');
+    f.state.mode = 'no-fork';
+    const forkRun = opencodeSessionRunId('p1', 'fork-1');
+    await expect(driver.request(f.turn('fork', forkRun, input('branch'), runId))).rejects.toMatchObject({
+      code: 'COMMAND_UNSUPPORTED',
+    });
+    // Known not sent: no turn was attempted, so nothing is left for reconciliation.
+    const refused = await runs.get(forkRun);
+    expect(refused.state).not.toBe('reconcile_required');
+    expect(refused.steps.filter((step) => step.intent.kind === 'model')).toEqual([]);
+    expect(await driver.busy(forkRun)).toBe(false);
+    f.state.mode = 'ok';
+    const fork = await driver.request(f.turn('fork', forkRun, input('branch'), runId));
+    expect(fork.response?.text).toBe(`answer:branch (turn 2 of ${fork.nativeSession!.opaqueRef})`);
+    expect((await runs.get(forkRun)).parentRunId).toBe(runId);
+  });
+
+  it('a session deleted in OpenCode while connected is refused as not sent, and a resume starts fresh and says so', async () => {
+    const f = await fixture();
+    const { driver, runs } = f.driverFor();
+    const first = await driver.request(f.turn('start', runId, input('first')));
+    // The person deletes it from their own OpenCode history, which is where it lives.
+    await fs.rm(path.join(f.root, 'data', 'opencode-fixture'), { recursive: true, force: true });
+    await expect(driver.request(f.turn('follow-up', runId, input('second')))).rejects.toMatchObject({
+      code: 'SESSION_INVALID',
+    });
+    expect((await f.log()).filter((line) => line.endsWith('/prompt_async'))).toHaveLength(1);
+    const run = await runs.get(runId);
+    expect(run.state).not.toBe('reconcile_required');
+    expect(run.steps.filter((step) => step.intent.kind === 'model').at(-1)?.nativeCheckpoint?.payload).toMatchObject({
+      state: 'idle',
+      nativeSessionId: first.nativeSession!.opaqueRef,
+    });
+    const resumed = await driver.request(f.turn('resume', runId, input('second')));
+    expect(resumed.continuity).toEqual({ origin: 'restarted-fresh', detail: RESTARTED_FRESH_DETAIL });
+    expect(resumed.nativeSession?.opaqueRef).not.toBe(first.nativeSession?.opaqueRef);
+    expect(resumed.response?.text).toBe(`answer:second (turn 1 of ${resumed.nativeSession!.opaqueRef})`);
+  });
 });

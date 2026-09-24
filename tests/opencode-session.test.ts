@@ -171,6 +171,19 @@ describe('kept OpenCode session transport', () => {
     });
   }, 15_000);
 
+  it('a prompt OpenCode refuses because the session is gone was not sent: the session stays idle, never uncertain', async () => {
+    const f = await fixture();
+    const session = await f.openSession(request('first'));
+    await session.turn(request('first'));
+    const id = session.checkpoint.nativeSessionId!;
+    await fs.rm(path.join(f.root, 'data', 'opencode-fixture'), { recursive: true, force: true });
+    await expect(session.turn(request('second'))).rejects.toMatchObject({ code: 'SESSION_INVALID' });
+    expect(session.checkpoint.state).toBe('idle');
+    expect(f.saved.at(-1)).toMatchObject({ state: 'idle', nativeSessionId: id, turns: 1 });
+    // Nothing is running there to abort.
+    expect(await f.log()).not.toContain(`POST /session/${id}/abort`);
+  });
+
   it('after a restart a new server resumes the saved session id from OpenCode’s own store', async () => {
     const f = await fixture();
     const first = await f.openSession(request('first'));

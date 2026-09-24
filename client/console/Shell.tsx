@@ -1693,6 +1693,9 @@ export function Shell({
   function goTo(id: string) {
     // The editor is the one screen holding writing that may exist only here, so
     // the rail leaves it through its gate and comes back here once it may.
+    // Files only shows or hides the pane beside the editor, like the palette's
+    // Open file, so it leaves nothing and passes no gate.
+    if (id === 'files') return artifactHost.toggleFiles();
     if (editingNow.current !== null) return leaveEditor(() => goTo(id));
     if (id === 'thread') setView('Thread');
     else if (id === 'board') setView('Board');
@@ -1700,7 +1703,6 @@ export function Shell({
     else if (id === 'discovery') setView('Discovery');
     else if (id === 'readiness') setView('Readiness');
     else if (id === 'automations') setView('Automations');
-    else if (id === 'files') artifactHost.toggleFiles();
     else if (id === 'engines') openEngineSettings();
     else if (id === 'settings') onOpenSettings();
     else if (id === 'projects') onShowProjects();
@@ -1996,6 +1998,9 @@ export function Shell({
               // in the copy, so these two leave without the gate.
               onClose={() => setEditing(null)}
               exits={editorExit}
+              // A file the listing cannot be read for, or does not have, can
+              // be looked for again: `load()` makes a new state, which lists again.
+              listing={{ loading: documentsLoading, refresh: () => void load().catch(report) }}
               onOpen={(path) => setEditing(path)}
               // `load()` refreshes the listing too: the documents effect runs
               // again on every new state object, so a saved file's new size and
