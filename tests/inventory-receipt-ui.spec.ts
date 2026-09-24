@@ -32,7 +32,7 @@ test('receive and inspect the actual linked History, with a readable device layo
   demo,
 }, info) => {
   await page.goto(demo.url);
-  await expect(page.getByText(/Diomedes 0.1.10 development demonstration/)).toBeVisible();
+  await expect(page.getByText(/Diomedes 0.1.11 development demonstration/)).toBeVisible();
   await expect(page.getByText('No stock receipts recorded.')).toBeVisible();
   await review(page);
   await noOverflow(page);
@@ -275,7 +275,7 @@ test('the fixture exposes no desktop or purchasing API and refuses cross-origin 
   ).toBe(403);
   const build = await (await request.get(`${demo.url}/api/demo/build`, { headers })).json();
   expect(build).toMatchObject({
-    version: '0.1.10',
+    version: '0.1.11',
     authentication: 'simulated-test-authorizer',
     purchasing: 'unavailable',
   });

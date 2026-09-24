@@ -18,7 +18,7 @@ work run without it, without signing in and without network access
 conversation needs connectivity. What a task sends leaves through the route it uses:
 the AI tool you signed in to, or your own AWS account.
 
-Diomedes Systems (LLC formation pending). This source tree is Diomedes 0.1.10;
+Diomedes Systems (LLC formation pending). This source tree is Diomedes 0.1.11;
 `package.json` holds that number and `tests/engine-routes.test.ts` fails if this file
 disagrees with it.
 

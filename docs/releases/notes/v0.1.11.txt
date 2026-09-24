@@ -1,0 +1,60 @@
+WHAT IS NEW
+  The Files list no longer stalls the app on a large project. Listing a
+  3,000-file folder used to take about 40 seconds, most of it spent re-checking
+  the same folders from the drive root for every file. It now takes well under
+  a second, and a link, junction or private name is still refused exactly as
+  before.
+
+  A conversation keeps answering when one of its earlier runs cannot be read,
+  for example after a damaged file or a downgrade. Before, every new message on
+  that thread was refused. Now the thread says once that it won't remember the
+  part it couldn't read, and carries on; the unreadable file is left as it is.
+
+  Settings no longer accept the keys the retired Workbook used. Nothing in the
+  app sends them; a settings file from an older build still loses them when it
+  loads.
+
+  Everything else is 0.1.10.
+
+UPDATES
+  Settings > App updates offers stable releases only, and this is one: an
+  installed 0.1.7, 0.1.8, 0.1.9 or 0.1.10 can find it when you press Check for
+  updates. Nothing is downloaded, verified or installed until you confirm it,
+  and a download is accepted only when its SHA-256 matches the digest the
+  release publishes.
+  An update from 0.1.9 or 0.1.10 keeps your settings, routes, saved keys,
+  projects and conversations. An update from 0.1.7 or 0.1.8 still gets the
+  one-time fresh start 0.1.9 introduced: the earlier version's data and the
+  Documents\Diomedes folder are set aside, renamed with "(before 0.1.9" and the
+  date, and nothing is deleted.
+
+LIMITS
+  Unsigned, experimental, tested on one machine.
+  The installer was built but not installed on the build machine, so its
+  install, repair and uninstall and the installed runtime are listed above as
+  not verified, and the update from 0.1.10 has not been run end to end on an
+  installed copy.
+  No route was exercised live on this build. Every route in its tests was
+  scripted or fake, so no answer, spend or saved key was exercised against a
+  real installed tool or against AWS Bedrock, Google Vertex AI, Azure OpenAI or
+  OpenRouter.
+
+  Accepting any version means a new version of an installed tool is used
+  without being tried first. If a tool changes how it answers, a request can
+  fail. Nectovia cannot tell an update of your own installation from a
+  different file put in its place at the same path. Nectovia's private copy of
+  a tool is still checked against its release before it runs.
+
+  The Console has no History screen, no Keep or Undo for a waiting change, and
+  no "Make tasks from this plan".
+  This app is not signed in to a Nectovia account. No credit balance or usage
+  is shown, and every route runs on, and is billed to, your own account.
+  There is no sign-in. The Tiers card is marked Owner, but anyone using the app
+  on this computer can change it.
+
+  The two names meet in places: the window title, the first conversation in
+  each project and some messages still say Diomedes.
+  Connections is unavailable. It runs on example data rather than your own
+  software, and there is no live connection to a business system.
+  The release is Windows x64 only. The local service listens on 127.0.0.1
+  only.
