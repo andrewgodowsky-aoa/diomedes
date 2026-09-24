@@ -275,7 +275,11 @@ export async function assembleInstructions(input: {
         record,
         'out-of-scope',
         `Not sent. It governs work in ${instructionScope(record.path)}, and this work ${
-          workPaths.length ? `is on ${workPaths.join(', ')}` : 'names no file there'
+          workPaths.length
+            ? `is on ${workPaths.slice(0, 3).join(', ')}${
+                workPaths.length > 3 ? ` and ${workPaths.length - 3} more` : ''
+              }`
+            : 'names no file there'
         }.`,
       );
     else records.set(record.ruleId, record);
