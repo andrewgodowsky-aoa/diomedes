@@ -135,7 +135,7 @@ export async function packageDesktop(options = {}, dependencies = {}) {
     );
     await fs.copyFile(path.join(root, 'desktop/main.mjs'), path.join(stage, 'main.mjs'));
     await buildDesktopAuth(root, stage);
-    for (const helper of ['app-updates.mjs', 'update-helper.mjs'])
+    for (const helper of ['app-updates.mjs', 'update-helper.mjs', 'fresh-start.mjs'])
       await fs.copyFile(path.join(root, 'desktop', helper), path.join(stage, helper));
     await fs.cp(path.join(root, 'dist'), path.join(stage, 'dist'), { recursive: true });
     await fs.cp(path.join(root, 'licenses'), path.join(stage, 'licenses'), { recursive: true });
