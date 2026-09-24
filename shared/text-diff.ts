@@ -24,7 +24,7 @@ import { diffLines, diffWordsWithSpace, type Change as DiffPart } from 'diff';
 
 export const DIFF_LIMITS = {
   /** Before plus after, in UTF-8 bytes. Larger pairs are described, not compared. */
-  maxBytes: 1_000_000,
+  maxBytes: 1024 * 1024,
   /** The most line edits a comparison may need before it gives up. */
   maxEditLines: 5_000,
   /** Unchanged lines shown on each side of a change before the rest fold away. */
@@ -114,7 +114,7 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
 export function sizeWords(size: number): string {
   if (size < 1024) return plural(size, 'byte', 'bytes');
   if (size < 1024 * 1024) return `${Math.round(size / 1024)} KB`;
-  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(size / (1024 * 1024)).toFixed(1).replace(/\.0$/, '')} MB`;
 }
 
 /** Split text into lines without their endings; a final line ending adds no empty line. */

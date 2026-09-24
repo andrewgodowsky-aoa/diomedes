@@ -234,7 +234,7 @@ describe('P06 text diff: bounds and truthful states', () => {
     const big = 'x'.repeat(600_000);
     const diff = buildDiff({ path: 'export.csv', before: big, after: `${big}y` });
     expect(diff.state).toBe('too-large');
-    expect(diff.reason).toBe('export.csv is too large to compare here: 1.1 MB across both versions, over the 977 KB limit.');
+    expect(diff.reason).toBe('export.csv is too large to compare here: 1.1 MB across both versions, over the 1 MB limit.');
   });
 
   test('past the edit bound the comparison gives up and says why', () => {
