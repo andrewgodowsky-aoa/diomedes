@@ -226,7 +226,7 @@ export function releaseReadme({
       : null,
   ].filter(Boolean);
 
-  return `Diomedes ${version} - Windows x64 experimental build (${tag})
+  return `Nectovia ${version} - Windows x64 experimental build (${tag})
 Release ID: ${record.releaseId}
 Built from commit ${record.build.baseCommit} on ${record.build.builtAt}.
 ${testedLine}
@@ -251,7 +251,7 @@ ANTIVIRUS AND SMARTSCREEN
 ${antivirus}
 
 FIRST RUN
-  Open Diomedes from the Start menu (installer) or from the extracted folder.
+  Open Nectovia from the Start menu (installer) or from the extracted folder.
   On first run it offers to look for AI tools already on this computer and looks
   only if you say yes. An installed-tool route uses the sign-in a tool you
   installed already has. Set up each route in Settings, following this

@@ -19,13 +19,14 @@ import { AGENT_NAME } from '../shared/agent-name';
 import { routeDisplayName } from '../shared/engines';
 
 // The name contract (contract §1, A2, A3). The product a person reads about is
-// Nectovia; the company is still Diomedes Systems; the desktop shell, the app
-// icon's source and every machine identifier still say Diomedes in this pass.
+// Nectovia; the company is still Diomedes Systems; every machine identifier
+// still says Diomedes. Since 2026-09-24 the desktop shell's window, dialogs and
+// icon say Nectovia too (contract A3 moved).
 //
-// The scan reads every string a client source file can put on screen (JSX
-// text, attribute values, string and template literals) with the TypeScript
-// parser, so comments, imports, identifiers and class names never count. Each
-// place still allowed to say Diomedes is named below with its reason.
+// The scan reads every string a client or desktop source file can put on
+// screen (JSX text, attribute values, string and template literals) with the
+// TypeScript parser, so comments, imports, identifiers and class names never
+// count. Each place still allowed to say Diomedes is named below with its reason.
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const read = (file: string) => fs.readFileSync(path.join(root, file), 'utf8');
@@ -50,7 +51,35 @@ const ALLOWED: Allowed[] = [
   {
     file: 'client/console/Mark.tsx',
     text: 'Diomedes',
-    why: 'the app icon source keeps its wordmark (contract A3); the UI draws NectoviaMark',
+    why: 'the old mark keeps its wordmark, and nothing draws it: the UI and the app icon draw the Nectovia mark',
+  },
+];
+/** The desktop shell's strings that still say Diomedes: identifiers, and text nobody sees. */
+const SHELL_ALLOWED: Allowed[] = [
+  {
+    file: 'desktop/main.mjs',
+    text: 'Diomedes',
+    why: "app.setName keeps the profile at %APPDATA%\\Diomedes, and the projects folder is Documents/Diomedes",
+  },
+  {
+    file: 'desktop/app-updates.mjs',
+    text: 'Diomedes.Experimental.8c27d61a-1919-4b12-9df7-20260909e001',
+    why: "the installer's ownership marker, which an update checks",
+  },
+  {
+    file: 'desktop/app-updates.mjs',
+    text: 'Diomedes.exe',
+    why: 'the installed executable, INSTALLDIR/app/Diomedes.exe',
+  },
+  {
+    file: 'desktop/app-updates.mjs',
+    text: 'Diomedes',
+    why: "the macOS application menu, which macOS titles with the bundle's name whatever the label says",
+  },
+  {
+    file: 'desktop/update-helper.mjs',
+    text: 'Diomedes update helper failed:',
+    why: 'the error stream of a detached helper whose output is discarded',
   },
 ];
 /** Header names are machine identifiers (contract §1 never-change list). */
@@ -281,15 +310,14 @@ describe('attribution under the new name', () => {
   });
 });
 
-describe('what keeps the old name in this pass (contract A3)', () => {
-  it('leaves the desktop shell, the window title and the icon source as Diomedes', () => {
+describe('the desktop shell (contract A3)', () => {
+  it('says Nectovia in its window title, its dialogs and its messages', () => {
     const shell = read('desktop/main.mjs');
-    expect(shell).toContain("app.setName('Diomedes');");
-    expect(shell).toContain("title: 'Diomedes',");
-    // Native dialogs keep the name the window has (a recorded remaining decision).
-    expect(shell).toContain("dialog.showErrorBox('Diomedes could not start'");
-    // No string the shell can show says the new name: the scheme's id and a
-    // comment may mention it, a window title or a dialog may not.
+    expect(shell).toContain("title: 'Nectovia',");
+    expect(shell).toContain("dialog.showErrorBox('Nectovia could not start'");
+    // Electron retitles the window from the page it loads, so the page's title is the window's.
+    expect(read('index.html')).toContain('<title>Nectovia</title>');
+    // Every other string the shell can show: only the named identifiers keep the old name.
     const desktop = fs
       .readdirSync(path.join(root, 'desktop'))
       .filter((name) => /\.(mjs|js|ts)$/.test(name))
@@ -299,9 +327,30 @@ describe('what keeps the old name in this pass (contract A3)', () => {
       shownStrings(file, read(file), file.endsWith('.ts') ? ts.ScriptKind.TS : ts.ScriptKind.JS),
     );
     expect(said.length).toBeGreaterThan(50);
-    expect(said.filter((hit) => /nectovia/i.test(hit.text))).toEqual([]);
-    expect(read('index.html')).toContain('<title>Diomedes</title>');
-    expect(read('client/console/Mark.tsx')).toContain('<span className="dm-mark-word">Diomedes</span>');
+    const named = said.filter(
+      (hit) => NAME.test(hit.text.replace(COMPANY, '')) && !HEADER.test(hit.text),
+    );
+    const allowedInShell = (hit: Hit) =>
+      SHELL_ALLOWED.some((entry) => entry.file === hit.file && entry.text === hit.text);
+    const stray = named.filter((hit) => !allowedInShell(hit));
+    expect(stray.map((hit) => `${hit.file}:${hit.line} ${hit.text}`)).toEqual([]);
+    // Every exception is still needed: an allowance that matches nothing is stale.
+    for (const entry of SHELL_ALLOWED)
+      expect(
+        named.some((hit) => hit.file === entry.file && hit.text === entry.text),
+        `${entry.file}: ${entry.text} (${entry.why})`,
+      ).toBe(true);
+  });
+
+  it('keeps the names the app finds its data by, and the executable, as Diomedes', () => {
+    expect(read('desktop/main.mjs')).toContain("app.setName('Diomedes');");
+    // The packaged app's name decides the profile folder and the executable's file name;
+    // only the version resource Windows shows for the running app says Nectovia.
+    const packaging = read('scripts/package-desktop.mjs');
+    expect(packaging).toContain("productName: 'Diomedes',");
+    expect(packaging).toContain("name: 'Diomedes',");
+    expect(packaging).toContain("ProductName: 'Nectovia',");
+    expect(packaging).toContain("FileDescription: 'Nectovia desktop',");
   });
 
   it('keeps the machine identifiers the scan allows', () => {
