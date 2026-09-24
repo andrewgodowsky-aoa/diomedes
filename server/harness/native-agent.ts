@@ -61,7 +61,7 @@ const inspectionSchema = z.strictObject({
     .max(30),
 });
 
-function validatePrepared(before: ModelRequest, after: ModelRequest): ModelRequest {
+export function validatePrepared(before: ModelRequest, after: ModelRequest): ModelRequest {
   const json = z.json().parse(after);
   if (
     JSON.stringify(json).length > 262144 ||
@@ -79,7 +79,7 @@ function validatePrepared(before: ModelRequest, after: ModelRequest): ModelReque
   return copy(after);
 }
 
-function validResponse(value: unknown): value is ModelResponse {
+export function validResponse(value: unknown): value is ModelResponse {
   const r = value as Partial<ModelResponse> | null;
   if (!r || typeof r !== 'object') return false;
   if (r.type === 'final') return typeof (r as { text?: unknown }).text === 'string';
@@ -93,7 +93,7 @@ function validResponse(value: unknown): value is ModelResponse {
  * fixed scripts; every other adapter id is treated as a direct engine whose
  * reported model comes only from its transcript reference.
  */
-function isScriptedAdapter(id: string): boolean {
+export function isScriptedAdapter(id: string): boolean {
   return id === 'native-fixture' || id === 'fixture';
 }
 

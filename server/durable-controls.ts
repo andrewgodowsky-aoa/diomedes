@@ -49,6 +49,7 @@ import {
 import { findCommand, payloadDigest } from './command-admission.js';
 import { ROUTE_CONTRACTS } from './harness/route-contract.js';
 import { CODEX_ENGINE, FIXTURE_ENGINE } from './harness/approval.js';
+import { NATIVE_LOOP_ENGINE } from '../shared/native-loop.js';
 import { AWS_MODEL_CONTRACT } from './harness/aws-model-adapter.js';
 import { AZURE_MODEL_CONTRACT } from './harness/azure-model-adapter.js';
 import { OPENROUTER_MODEL_CONTRACT } from './harness/openrouter-model-adapter.js';
@@ -71,7 +72,7 @@ const MODEL_API_CONTRACTS: Record<string, AdapterRouteContract> = Object.fromEnt
 export function workRouteOf(session: Session): string {
   if (session.route) return session.route;
   if (session.sample) return 'sample';
-  if (session.engine.name === FIXTURE_ENGINE) return 'native-fixture';
+  if (session.engine.name === FIXTURE_ENGINE || session.engine.name === NATIVE_LOOP_ENGINE) return 'native-fixture';
   if (session.engine.name === CODEX_ENGINE) return 'codex-report';
   return 'codex';
 }
