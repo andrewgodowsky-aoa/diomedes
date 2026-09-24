@@ -171,14 +171,10 @@ try {
     expect((await api(`${base}/state`)).history.filter(h => h.files.some(f => f.path === 'Harness report.md'))).toHaveLength(1);
     proof.checks.push('Visible decline and Stop prevent additional file writes');
 
-    // The Console's History lists each entry as a row (client/console/HistoryView.tsx).
-    await rail().getByRole('button', { name: /^History\b/ }).click();
-    const historyRow = page.locator('.hist .hrow').filter({ hasText: 'Harness report.md' });
-    await expect(historyRow).toHaveCount(1);
-    await page.screenshot({ path: path.join(root, 'history.png') });
-    await historyRow.getByRole('button', { name: 'Put the files back', exact: true }).click();
-    await page.getByRole('dialog', { name: 'Put 1 file back?' })
-      .getByRole('button', { name: 'Put 1 file back', exact: true }).click();
+    // The Console has no History screen any more (removed 2026-09-23), so the
+    // restore goes through the route that screen called.
+    await expect(rail().getByRole('button', { name: /^History\b/ })).toHaveCount(0);
+    await api(`${base}/history/${writeHistory[0].id}/restore`, 'POST', {});
     await expect.poll(async () => fs.access(reportPath).then(() => true, e => { if (e.code === 'ENOENT') return false; throw e; })).toBe(false);
     const restored = await api(`${base}/state`);
     expect(restored.history.filter(h => h.restoreOf === writeHistory[0].id)).toHaveLength(1);
