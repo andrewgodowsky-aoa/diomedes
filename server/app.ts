@@ -592,6 +592,10 @@ function validateSettings(current: Settings, body: unknown): Settings {
   return result;
 }
 
+/** H18: the context account a model-API turn recorded, or undefined for any other driver. */
+const recordedContext = (recorded: object | null): Turn['context'] =>
+  (recorded as { context?: Turn['context'] | null } | null)?.context ?? undefined;
+
 export async function createApp(options: AppOptions) {
   if (options.loopbackToken !== undefined && !/^[0-9a-f]{64}$/.test(options.loopbackToken))
     throw new Error('The desktop local-service token is invalid.');
@@ -4192,6 +4196,8 @@ export async function createApp(options: AppOptions) {
               version: result.version,
               verified: modelAnswer ? recorded?.origin?.model.source === 'runtime' : true,
             },
+            // H18: what went into this answer's context, as the turn recorded it.
+            ...(recordedContext(recorded) ? { context: recordedContext(recorded)! } : {}),
             origin: recorded
               ? (recorded.origin ??
                 // Nothing was recorded, so nothing is claimed: the model the runtime reported

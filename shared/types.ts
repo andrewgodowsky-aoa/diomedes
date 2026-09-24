@@ -1,3 +1,4 @@
+import type { ContextAccount } from './context-accounting.js';
 import type { StepIntent } from './harness.js';
 import type {
   RememberedApprovals,
@@ -456,6 +457,11 @@ export interface Turn {
     version?: string | null;
     verified: boolean;
   };
+  /**
+   * H18: what went into the model context for this answer, on a route where Diomedes assembled
+   * it (a model-API route). Absent for an external engine, which manages its own context.
+   */
+  context?: ContextAccount;
 }
 /** A thread: a named conversation that belongs to a project and, optionally, to a task. */
 /**

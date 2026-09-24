@@ -115,6 +115,7 @@ export default defineConfig({
     'files-attachments-ui.spec.ts',
     'instructions-inspector.spec.ts',
     'verification-ui.spec.ts',
+    'context-used.spec.ts',
     'ready-queue-ui.spec.ts',
     'pack-lifecycle-ui.spec.ts',
     'remembered-approvals-ui.spec.ts',
