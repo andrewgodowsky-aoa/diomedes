@@ -119,6 +119,35 @@ describe('presenting a harness run in the existing vocabulary', () => {
     expect(need.intentHash).toBe('abc123');
     expect(need.why).not.toMatch(/model|token|harness/i);
   });
+
+  // Automations Milestone A, A6: recording an effect does not make it
+  // reversible, so undo is promised only for a recorded write to project files.
+  test('only a recorded change to project files is promised an undo', () => {
+    const local = (input: Record<string, string | string[]>) =>
+      step({
+        intent: { ...step().intent, destination: 'local', effect: 'non-idempotent', input },
+      });
+    const files = needFromWaitingStep(run(), local({ files: ['notes.md'] }));
+    expect(files.consequence).toMatch(/undo it in Review/);
+    const other = needFromWaitingStep(run(), local({ order: 'A-17' }));
+    expect(other.consequence).not.toMatch(/so you can undo/i);
+    expect(other.consequence).toMatch(/cannot promise/);
+    const external = needFromWaitingStep(run(), step());
+    expect(external.consequence).not.toMatch(/undo/i);
+  });
+
+  test('a run stopped for missing data says so rather than something went wrong', () => {
+    const shown = presentRun(
+      run({
+        state: 'failed',
+        failure: { name: 'waiting_for_data', message: 'Waiting for data: a.csv' },
+      }),
+    );
+    expect(shown.sessionState).toBe('failed');
+    expect(shown.sentence).toMatch(/^Waiting for data/);
+    expect(shown.sentence).not.toContain('a.csv');
+    expect(presentRun(run({ state: 'failed' })).sentence).toMatch(/something went wrong/);
+  });
 });
 
 describe('adapter capability matrix', () => {

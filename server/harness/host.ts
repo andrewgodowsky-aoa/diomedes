@@ -12,6 +12,7 @@ import { HarnessBridge, localHarnessPrincipal } from './bridge.js';
 import { ScriptedModelAdapter } from './fixture-adapter.js';
 import { REPORT_PATH } from './approval.js';
 import { registerFormatReport } from './capabilities/format-report.js';
+import { registerWeeklyBrief, type WeeklyBriefHost } from './capabilities/weekly-brief.js';
 import { CODEX_REPORT, CodexEngineAdapter, type ResolveHarnessAuthority } from './codex-engine.js';
 import { askCodex } from '../integrations.js';
 import { HOST_TEST_PROJECT } from '../engines/service.js';
@@ -21,9 +22,13 @@ import { currentAuthority as resolveTrustAuthority } from '../trust/index.js';
 import {
   CLAUDE_SESSION_CAPABILITY,
   ClaudeSessionRuns,
-  validateClaudeNativeCheckpoint,
 } from './claude-session-run.js';
 import { ENGINE_TEXT_TURN, TextRouteRuntime, textDispatchAuthorizer } from './text-route.js';
+import {
+  OPENCODE_SESSION_CAPABILITY,
+  OPENCODE_SESSION_PROFILE,
+  validateNativeCheckpoint,
+} from './opencode-session-run.js';
 import { MODEL_SESSION_CAPABILITIES, ModelSessionRuns, modelApiDispatchAuthorizer } from './model-session-run.js';
 import { AWS_BEDROCK_ROUTE } from '../engines/aws-bedrock.js';
 import { isModelApiRoute } from '../../shared/model-api.js';
@@ -343,6 +348,7 @@ export function createHarnessHost({
   codexGenerator,
   codexAccountRoute,
   textLeaseMs,
+  weeklyBrief,
 }: {
   store: Store;
   dataDir: string;
@@ -351,6 +357,8 @@ export function createHarnessHost({
   codexAccountRoute?: () => Promise<string>;
   /** Lease TTL for text-route runs; the default covers a slow provider turn. */
   textLeaseMs?: number;
+  /** The pinned configuration and live target the weekly brief procedure needs. */
+  weeklyBrief?: WeeklyBriefHost;
 }) {
   if (path.resolve(dataDir) !== store.dataDir)
     throw new Error('The harness must use the Store data folder.');
@@ -361,7 +369,7 @@ export function createHarnessHost({
   let textRoute: TextRouteRuntime;
   const textAuthorize = textDispatchAuthorizer(
     () => store.settings.services,
-    [ENGINE_TEXT_TURN.id, CLAUDE_SESSION_CAPABILITY.id],
+    [ENGINE_TEXT_TURN.id, CLAUDE_SESSION_CAPABILITY.id, OPENCODE_SESSION_CAPABILITY.id],
   );
   // Model-API conversation runs: the route must be on and the run's account route still selected.
   const modelAuthorize = modelApiDispatchAuthorizer(() => store.settings.services);
@@ -371,12 +379,13 @@ export function createHarnessHost({
     clock: Date.now,
     policyVersion: HARNESS_POLICY_VERSION,
     redact,
-    validateNativeCheckpoint: validateClaudeNativeCheckpoint,
+    validateNativeCheckpoint,
     authorizeEgress: async (runId, intent, principal, phase) => {
       const run = await runs.get(runId);
       if (
         run.capabilityId === ENGINE_TEXT_TURN.id ||
-        run.capabilityId === CLAUDE_SESSION_CAPABILITY.id
+        run.capabilityId === CLAUDE_SESSION_CAPABILITY.id ||
+        run.capabilityId === OPENCODE_SESSION_CAPABILITY.id
       )
         return textAuthorize(run, intent, phase);
       if (modelRun(run.capabilityId)) return modelAuthorize(run, intent, phase);
@@ -392,6 +401,9 @@ export function createHarnessHost({
     };
   });
   registerFormatReport(tools, store, runs);
+  const weeklyBriefProcedure = weeklyBrief
+    ? registerWeeklyBrief(tools, store, runs, weeklyBrief)
+    : null;
   codex = new CodexEngineAdapter(
     store,
     runs,
@@ -408,6 +420,15 @@ export function createHarnessHost({
   });
   const claudeSessions = new ClaudeSessionRuns(runs);
   const modelSessions = new ModelSessionRuns(runs, AWS_BEDROCK_ROUTE);
+  // The kept OpenCode session (H04): the same driver, under OpenCode's own profile and grant.
+  const opencodeSessions = new ClaudeSessionRuns(runs, { profile: OPENCODE_SESSION_PROFILE });
+  opencodeSessions.setSharingPolicy(
+    (projectId, documents, prior) =>
+      requireCloudSharing(store.state(projectId), 'opencode', documents, prior, {
+        home: store.isHomeProject(projectId),
+      }),
+    (projectId) => sharesHistory(cloudSharing(store.state(projectId)), 'opencode'),
+  );
   claudeSessions.setSharingPolicy(
     (projectId, documents, prior) =>
       requireCloudSharing(store.state(projectId), 'claude-code', documents, prior, {
@@ -429,6 +450,7 @@ export function createHarnessHost({
     (projectId, route) => sharesHistory(cloudSharing(store.state(projectId)), route),
   );
   const bridge = new HarnessBridge(store, runs, tools, adapter, redact, HOST_TEST_PROJECT, codex);
+  if (weeklyBriefProcedure) bridge.registerProcedure(weeklyBriefProcedure);
   const observers = new Set<{ runId: string; changed: () => void; closed: () => void }>();
   let closed = false;
   files.saved = (run) => {
@@ -507,6 +529,7 @@ export function createHarnessHost({
     textRoute,
     claudeSessions,
     modelSessions,
+    opencodeSessions,
     /** Host-only until authenticated client admission is supplied by Trust.
      * Reuses the same command parser, collision check, receipt and Store lock. */
     startCodexReport(
@@ -587,13 +610,17 @@ export function createHarnessHost({
         await bridge.recover(
           project.id,
           saved.filter(
-            (run) => run.capabilityId !== CLAUDE_SESSION_CAPABILITY.id && !modelRun(run.capabilityId),
+            (run) =>
+              run.capabilityId !== CLAUDE_SESSION_CAPABILITY.id &&
+              run.capabilityId !== OPENCODE_SESSION_CAPABILITY.id &&
+              !modelRun(run.capabilityId),
           ),
         );
         // Text-route runs are not the bridge's sessions; the runtime's own
         // recovery invalidates dead leases and parks in-flight dispatches.
         for (const run of saved) await textRoute.recover(run.id, run);
         for (const run of saved) await claudeSessions.recover(run);
+        for (const run of saved) await opencodeSessions.recover(run);
         for (const run of saved) await modelSessions.recover(run);
       }
       // A host run has no Session and no Task, so the bridge has nothing to
@@ -607,6 +634,7 @@ export function createHarnessHost({
       for (const observer of observers) observer.closed();
       observers.clear();
       await claudeSessions.closeAll();
+      await opencodeSessions.closeAll();
       await modelSessions.closeAll();
       await bridge.close();
     },

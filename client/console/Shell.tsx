@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { selectedEngine } from '../../shared/ai-selection';
 import { formatOrigin, originForNeed, originForSession } from '../attribution-display';
-import type { ScopeGrantView } from '../../shared/permissions';
+import type { RememberOffer, ScopeGrantView } from '../../shared/permissions';
 import { isRoute, isExternalEngine, routeDisplayName } from '../../shared/engines';
 import type { EngineConnection } from '../../shared/engines';
 import {
@@ -97,10 +97,12 @@ import { previewLine } from '../../shared/thread-preview';
 import { ActivityOverview } from './ActivityOverview';
 import { projectActivity, type ActivityRow } from './activity';
 import { TeamView } from './TeamView';
-import { DocumentEditor, UNSAVED_WARNING } from './DocumentEditor';
+import { DocumentEditor } from './DocumentEditor';
+import { editorDocument, guardEditorExits, leaveEditor, type EditorExit } from './editor-guard';
 import type { EverythingItem } from './Everything';
 import { DiscoveryPage } from './DiscoveryPage';
 import { ReadinessPage } from './ReadinessPage';
+import { AutomationsPage } from './AutomationsPage';
 import { Palette } from './Palette';
 import { WorkspaceMark, WorkspacePanel, useWorkspace } from './Workspaces';
 import { applyQuery, buildEntries, type PaletteContext } from './paletteEntries';
@@ -158,6 +160,13 @@ interface ShellProps {
    * day.
    */
   onFirstTaskTaken?: () => void;
+  /**
+   * A screen to open, asked for from outside the Console (the Diomedes home's
+   * Automations row). `n` identifies one request, which is taken once and then
+   * said to be taken, so it never reopens the screen on a later visit.
+   */
+  viewRequest?: { view: ShellView; n: number } | null;
+  onViewRequestTaken?: () => void;
 }
 
 const emptyTeam: TeamState = { members: [], messages: [], runs: [] };
@@ -195,6 +204,8 @@ export function Shell({
   onPaletteKey,
   firstTask,
   onFirstTaskTaken,
+  viewRequest,
+  onViewRequestTaken,
 }: ShellProps) {
   const [state, setState] = useState<ProjectState | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -278,11 +289,34 @@ export function Shell({
       return DEFAULT_PINS;
     }
   });
-  // The file being written in, on the main stage, and whether it holds writing
-  // that has not been saved. The Console owns the warning because the Console
-  // owns the navigation the warning is about.
+  // The file being written in, on the main stage. Every way off it goes
+  // through one gate (editor-guard.ts): the editor lets the person go when no
+  // writing would be lost and asks when some would (DIO-85). `editingNow` is
+  // read by exits that run again once the gate has let them through, before
+  // this component has rendered the editor away.
   const [editing, setEditing] = useState<string | null>(null);
-  const [unsaved, setUnsaved] = useState(false);
+  const editorExit = useRef<EditorExit | null>(null);
+  const editingNow = useRef(editing);
+  editingNow.current = editing;
+  useEffect(
+    () =>
+      guardEditorExits((then) => {
+        if (editingNow.current === null) return then();
+        const leave = () => {
+          editingNow.current = null;
+          setEditing(null);
+          then();
+        };
+        if (editorExit.current) editorExit.current(leave);
+        else leave();
+      }),
+    [],
+  );
+  // Navigation handed out below (the palette's, the header's) leaves the editor first.
+  const leavingEditor =
+    <A extends unknown[]>(run: (...args: A) => void) =>
+    (...args: A) =>
+      leaveEditor(() => run(...args));
   const [openPath, setOpenPath] = useState<string | null>(null);
   // One exact version open in Files by identity (a Thread reference or a file's version list).
   const [openVersion, setOpenVersion] = useState<{ path: string; sha: string } | null>(null);
@@ -445,6 +479,14 @@ export function Shell({
     setDocumentsFailure(null);
     void load().catch(report);
   }, [load, report]);
+  // After the reset above, so a request made on the way in is what shows.
+  const takenView = useRef<number | null>(null);
+  useEffect(() => {
+    if (!viewRequest || viewRequest.n === takenView.current) return;
+    takenView.current = viewRequest.n;
+    setView(viewRequest.view);
+    onViewRequestTaken?.();
+  }, [viewRequest, onViewRequestTaken]);
   useEffect(() => {
     const es = new EventSource('/api/events');
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -795,6 +837,13 @@ export function Shell({
             (n) => (n.approvalReceipt || n.authorization) && threadOwnsNeed(selected, n, state),
           )
           .slice(-1)
+      : [];
+  const selectedOffers =
+    selected && state
+      ? (state.rememberedApprovals?.offers ?? []).filter((offer) => {
+          const need = state.needs.find((n) => n.id === offer.needId);
+          return offer.state === 'open' && !!need && threadOwnsNeed(selected, need, state);
+        })
       : [];
   // Live text shows only for the exact selected thread: cross-thread events
   // never render elsewhere.
@@ -1175,6 +1224,25 @@ export function Shell({
       await load();
     });
   }
+  // Remembered approvals (D5): the exact approval is given first and stays
+  // the evidence; remembering its pattern is a second, explicit request.
+  async function rememberNeed(need: Need) {
+    await perform(async () => {
+      await decideApproval(projectId, need, 'go-ahead');
+      await api(`${base}/permissions/remembered`, 'POST', { needId: need.id });
+      await load();
+    });
+  }
+  async function answerOffer(offer: RememberOffer, accept: boolean) {
+    await perform(async () => {
+      await api(
+        `${base}/permissions/remembered/offers/${encodeURIComponent(offer.id)}/${accept ? 'accept' : 'decline'}`,
+        'POST',
+        {},
+      );
+      await load();
+    });
+  }
   async function stopSession(id: string) {
     await perform(async () => {
       await api(`${base}/work/${id}/stop`, 'POST', {});
@@ -1521,16 +1589,13 @@ export function Shell({
    * flyout have to agree about what exists and only one of them should be
    * holding the list.
    *
-   * Two rows carry `unavailableReason` and open nothing. They are here rather
+   * One row carries `unavailableReason` and opens nothing. It is here rather
    * than hidden because a person asking "can it do X" deserves the answer
    * "not yet, and here is why" instead of silence:
    *
-   * - Automations has no built item behind it. The button exists, the work it
-   *   would run does not, and wiring the button to nothing would be worse than
-   *   saying so (owner decision, 2026-09-19). It is `reserved`: the owner wants
-   *   its place in the sidebar held now, so that switching it on later needs no
-   *   redesign (owner decision, 2026-09-20). It may be pinned and still opens
-   *   nothing.
+   * - Automations held a reserved place here until Milestone A built the
+   *   screen behind it (owner decisions 2026-09-19, 2026-09-20 and D4 of
+   *   2026-09-24). It now opens, and sits with the workspace's own rows.
    * - Connections runs against three hardcoded example locations, which its own
    *   heading calls synthetic data. It is real code and a real demo; it is not
    *   a connection to anything this person owns, and presenting it as one would
@@ -1575,10 +1640,7 @@ export function Shell({
     {
       id: 'automations',
       label: 'Automations',
-      hint: 'Work that runs on its own, on a schedule or when something happens.',
-      unavailableReason:
-        'Nothing is built behind this yet. It opens once there is real work for it to run.',
-      reserved: true,
+      hint: 'What runs for this business, what it last did, and what needs you.',
     },
     {
       id: 'connections',
@@ -1605,8 +1667,8 @@ export function Shell({
   ];
   const destinationGroups = [
     { heading: 'In this project', ids: ['thread', 'board', 'team', 'files'] },
-    { heading: 'Nectovia', ids: ['engines', 'settings', 'projects'] },
-    { heading: 'Not ready yet', ids: ['automations', 'connections'] },
+    { heading: 'Nectovia', ids: ['automations', 'engines', 'settings', 'projects'] },
+    { heading: 'Not ready yet', ids: ['connections'] },
   ];
   // Which destination the rail and the flyout mark as the one showing. The
   // Files pane is a toggle rather than a screen, so it counts as current while
@@ -1617,22 +1679,20 @@ export function Shell({
       ? 'board'
       : view === 'Team'
         ? 'team'
-        : 'thread';
+        : view === 'Automations'
+          ? 'automations'
+          : 'thread';
 
   function goTo(id: string) {
-    // The editor is the one screen holding writing that only exists here. It
-    // confirms its own close, so the rail does not close it out from under a
-    // person; it says why it did nothing and leaves them where they are.
-    if (editing && unsaved) {
-      say(UNSAVED_WARNING);
-      return;
-    }
-    if (editing) setEditing(null);
+    // The editor is the one screen holding writing that may exist only here, so
+    // the rail leaves it through its gate and comes back here once it may.
+    if (editingNow.current !== null) return leaveEditor(() => goTo(id));
     if (id === 'thread') setView('Thread');
     else if (id === 'board') setView('Board');
     else if (id === 'team') setView('Team');
     else if (id === 'discovery') setView('Discovery');
     else if (id === 'readiness') setView('Readiness');
+    else if (id === 'automations') setView('Automations');
     else if (id === 'files') artifactHost.toggleFiles();
     else if (id === 'engines') openEngineSettings();
     else if (id === 'settings') onOpenSettings();
@@ -1695,37 +1755,37 @@ export function Shell({
         const running = liveByTask(task.id);
         if (running) void stopSession(running.id);
       },
-      reviewTask: (task) => {
+      reviewTask: leavingEditor((task: Task) => {
         openTaskThread(task);
         const need =
           task.needId != null
             ? (waiting.find((n) => n.id === task.needId) ?? null)
             : (waiting.find((n) => n.taskId === task.id) ?? null);
         if (need) scrollToNeed(need);
-      },
+      }),
       routeTask: (task, to) =>
         void perform(async () => {
           await api(`${base}/tasks/${task.id}`, 'PUT', { assignedTo: to });
           await load();
         }),
       reopenTask: (task) => void moveTask(task, 'todo'),
-      openBoard: () => setView('Board'),
-      openTeam: () => setView('Team'),
+      openBoard: leavingEditor(() => setView('Board')),
+      openTeam: leavingEditor(() => setView('Team')),
       setRequested: (requested) => {
         if (selected) void setRequested(selected, requested);
       },
-      messageMember: focusTeamComposer,
+      messageMember: leavingEditor(focusTeamComposer),
       stopMember: (m) => void stopMember(m),
       wakeMember: (m) => void wakeMember(m),
-      selectThread: (id) => {
+      selectThread: leavingEditor((id: string) => {
         setSelectedId(id);
         setView('Thread');
-      },
-      setView: (v) => setView(v),
+      }),
+      setView: leavingEditor((v: ShellView) => setView(v)),
       setConsoleView: (v) => void saveSettings({ ...settings, view: v }),
       openProject: (p) => onOpenProject(p),
       openDocument,
-      launchSkill: (skill) => void launchSkill(skill),
+      launchSkill: leavingEditor((skill: PackSkill) => void launchSkill(skill)),
       turnOnSkills: () => void turnOnSkills(),
     },
   };
@@ -1768,7 +1828,7 @@ export function Shell({
         </nav>
         <div className="top-right">
           {elsewhere.length > 0 && (
-            <button type="button" className="needs-elsewhere" onClick={() => reviewElsewhere(elsewhere[0])}>
+            <button type="button" className="needs-elsewhere" onClick={() => leaveEditor(() => reviewElsewhere(elsewhere[0]))}>
               {elsewhere.length === 1 ? 'Something needs your OK' : `${elsewhere.length} things need your OK`}
             </button>
           )}
@@ -1901,16 +1961,13 @@ export function Shell({
           top={<WorkspaceMark view={workspace} onOpen={() => setWorkspacesOpen(true)} />}
           items={railItems}
           selectedId={selectedId}
-          onSelect={(id) => {
-            if (editing && unsaved) {
-              say(UNSAVED_WARNING);
-              return;
-            }
-            setEditing(null);
-            setSelectedId(id);
-            setView('Thread');
-          }}
-          onNew={() => void newThread()}
+          onSelect={(id) =>
+            leaveEditor(() => {
+              setSelectedId(id);
+              setView('Thread');
+            })
+          }
+          onNew={() => leaveEditor(() => void newThread())}
           destinations={destinations}
           groups={destinationGroups}
           pinned={conversation ? [] : pins}
@@ -1925,21 +1982,13 @@ export function Shell({
             <DocumentEditor
               key={`${projectId}:${editing}`}
               projectId={projectId}
-              document={
-                documents.find((file) => file.path === editing) ?? {
-                  path: editing,
-                  kind: 'markdown',
-                  size: 0,
-                  changedAt: new Date().toISOString(),
-                  hasChangesWaiting: false,
-                  recorded: false,
-                }
-              }
-              onClose={() => {
-                setUnsaved(false);
-                setEditing(null);
-              }}
-              onUnsavedChange={setUnsaved}
+              // No guessed kind: until the listing says what this file is, the
+              // editor reads nothing and takes no typing (DIO-87).
+              document={editorDocument(documents, editing, documentsFailure)}
+              // Close has already asked, and a rescue copy's writing is on disk
+              // in the copy, so these two leave without the gate.
+              onClose={() => setEditing(null)}
+              exits={editorExit}
               onOpen={(path) => setEditing(path)}
               // `load()` refreshes the listing too: the documents effect runs
               // again on every new state object, so a saved file's new size and
@@ -1959,6 +2008,28 @@ export function Shell({
         {!editing && view === 'Readiness' && (
           <section className="screen on" aria-label="Readiness">
             <ReadinessPage projectId={projectId} />
+          </section>
+        )}
+        {!editing && view === 'Automations' && (
+          <section className="screen on" aria-label="Automations">
+            <AutomationsPage
+              projectId={projectId}
+              onOpenTask={(taskId) => {
+                const task = state.tasks.find((item) => item.id === taskId);
+                if (task) openTaskThread(task);
+              }}
+              onOpenBoard={(taskId) => {
+                const thread = state.conversations.find((item) => item.taskId === taskId);
+                if (thread) setSelectedId(thread.id);
+                setView('Board');
+              }}
+              onOpenDocument={openDocument}
+              onOpenProject={(id) => {
+                const target = projects.find((item) => item.id === id);
+                if (target) onOpenProject(target);
+                else say('Open that project from Projects to see this run.');
+              }}
+            />
           </section>
         )}
         {!editing && view === 'Thread' && selected && (
@@ -2066,6 +2137,9 @@ export function Shell({
                 )
               }
               onResolve={(n, res, allow) => void resolveNeed(n, res, allow)}
+              onRemember={(n) => void rememberNeed(n)}
+              rememberOffers={selectedOffers}
+              onAnswerOffer={(offer, accept) => void answerOffer(offer, accept)}
               onPreview={setPreviewNeed}
               onStopSession={(id) => void stopSession(id)}
               onOpenBoard={() => setView('Board')}
@@ -2242,7 +2316,7 @@ export function Shell({
             onOpen={setOpenPath}
             onWidth={setFilesWidth}
             onClose={() => setFilesOpen(false)}
-            onEdit={(path) => setEditing(path)}
+            onEdit={(path) => path !== editing && leaveEditor(() => setEditing(path))}
             hidden={artifactHost.shown !== 'files'}
             switcher={artifactHost.switcher}
             onOpenInPanel={artifactHost.openFile}
@@ -2285,6 +2359,10 @@ export function Shell({
           onClose={() => setWorkspacesOpen(false)}
           onChanged={setWorkspace}
           report={report}
+          onOpenAutomations={() => {
+            setWorkspacesOpen(false);
+            setView('Automations');
+          }}
         />
       )}
       {capPrompt && (

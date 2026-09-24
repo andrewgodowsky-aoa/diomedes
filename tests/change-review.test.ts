@@ -876,6 +876,39 @@ describe('change-review service over HTTP', () => {
     expect(await ledgerTail(runs[2])).toBe('rebuilt-undone');
   });
 
+  test('a state rebuild that lands after a keep records the keep, not a state rebuild', async () => {
+    // A rebuild is labelled when it is queued and built from the state current
+    // when it runs. Hold a run's state rebuilds until a keep has landed, as a
+    // slow machine does when the person keeps a change the moment a run ends:
+    // the held rebuild already carries the keep, and the keep's own rebuild
+    // then finds nothing new. The ledger must still say the change was kept.
+    const review = app.locals.changeReview;
+    const build = review.build.bind(review);
+    let held: Promise<void> | null = null;
+    let release = () => {};
+    review.build = async (projectId: string, sessionId: string, event?: ChangeReviewLedgerEvent) => {
+      if (held && event === 'rebuilt-state') await held;
+      return build(projectId, sessionId, event);
+    };
+    const id = (await request('/projects/sample', 'POST', {})).data.id as string;
+    const task = (await request(`/projects/${id}/tasks`, 'POST', { name: 'Update the menu' })).data;
+    const first = await runAgain(id, task.id);
+    await settledRecord(id, first);
+    const plan = (await state(id)).changes.find((c) => c.sessionId === first && c.op === 'modified')!;
+    held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    try {
+      const last = await runAgain(id, task.id);
+      expect((await request(`/projects/${id}/review/${plan.id}`, 'POST', { action: 'keep' })).status).toBe(200);
+      release();
+      const ledger = JSON.parse((await settledRecord(id, last)).toString('utf8')).ledger as { event: string }[];
+      expect(ledger.at(-1)!.event).toBe('rebuilt-kept');
+    } finally {
+      release();
+    }
+  });
+
   test('runs under one task cost builds per run, never a rebuild of every earlier run', async () => {
     const review = app.locals.changeReview;
     const builds: string[] = [];

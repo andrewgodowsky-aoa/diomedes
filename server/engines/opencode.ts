@@ -9,10 +9,17 @@ import { routeContractFor } from '../harness/route-contract.js';
 import {
   contextMessage,
   type AdapterInspection,
-  type TextEngineAdapter,
+  type PersistentTextAdapter,
   type TextRequest,
   type TextResponse,
 } from './contract.js';
+import {
+  openOpenCodeSession,
+  type OpenCodeNativeSession,
+  type OpenCodeSessionCheckpoint,
+  type OpenCodeSessionOptions,
+  type OpenCodeTransport,
+} from './opencode-session.js';
 import {
   abortedByDeadline,
   abortFailure,
@@ -66,6 +73,15 @@ const MAX_CATALOGUE_BYTES = 32 * 1024 * 1024;
 
 type Json = Record<string, unknown>;
 type Fetcher = typeof globalThis.fetch;
+/** The server a kept session runs on: the handle `start` returns. */
+type OpenCodeServerHandle = {
+  child: ChildProcessWithoutNullStreams;
+  base: string;
+  auth: string;
+  env: NodeJS.ProcessEnv;
+  root: string;
+  directory: string;
+};
 type SpawnOptions = Parameters<typeof spawn>[2];
 export interface OpenCodeAdapterDeps {
   fetch?: Fetcher;
@@ -549,7 +565,7 @@ function catalogue(body: Json): {
   return { connected: true, others, reported, models };
 }
 
-function parseSelection(value: string): { providerID: string; modelID: string } {
+export function parseSelection(value: string): { providerID: string; modelID: string } {
   const slash = value.indexOf('/');
   if (slash <= 0 || slash === value.length - 1)
     throw new EngineError(
@@ -570,13 +586,54 @@ function parseSelection(value: string): { providerID: string; modelID: string } 
   return { providerID, modelID };
 }
 
+/** The session every turn runs in: deny everything, then allow only the reads its scope names. */
+export function sessionBody(
+  input: TextRequest,
+  selection: { providerID: string; modelID: string },
+  scope?: ReadScope,
+): Json {
+  return {
+    title: `Diomedes ${input.requestId}`.slice(0, 120),
+    agent: 'diomedes',
+    model: { providerID: selection.providerID, id: selection.modelID },
+    // Last matching rule wins: deny everything, then allow only the reads.
+    permission: [
+      { permission: '*', pattern: '*', action: 'deny' },
+      ...(scope
+        ? opencodeAllowedTools(scope).map((tool) => ({
+            permission: tool,
+            pattern: '*',
+            action: 'allow',
+          }))
+        : []),
+      ...(scope ? [{ permission: 'external_directory', pattern: '*', action: 'deny' }] : []),
+    ],
+  };
+}
+/** One message into a session, with its instructions and read scope stated each time. */
+export function promptBody(
+  input: TextRequest,
+  selection: { providerID: string; modelID: string },
+  scope: ReadScope | undefined,
+  prompt: string,
+): Json {
+  return {
+    agent: 'diomedes',
+    model: { providerID: selection.providerID, modelID: selection.modelID },
+    system: scope ? `${input.instructions}\n\n${readScopeNote(scope)}` : input.instructions,
+    parts: [{ type: 'text', text: prompt }],
+  };
+}
+
 export function opencodeArguments(port: number): string[] {
   return ['serve', '--hostname', '127.0.0.1', '--port', String(port), '--pure'];
 }
 
-export class OpenCodeAdapter implements TextEngineAdapter {
+export class OpenCodeAdapter implements PersistentTextAdapter<OpenCodeSessionCheckpoint> {
   readonly id = 'opencode' as const;
   readonly contract = routeContractFor('opencode');
+  /** The kept-session transport, admitted separately from the single-turn route (H04). */
+  readonly sessionContract = routeContractFor('opencode-session');
   private readonly fetcher: Fetcher;
   private readonly spawnProcess: NonNullable<OpenCodeAdapterDeps['spawn']>;
   private readonly reserve: NonNullable<OpenCodeAdapterDeps['reservePort']>;
@@ -755,6 +812,8 @@ export class OpenCodeAdapter implements TextEngineAdapter {
     init: RequestInit,
     signal: AbortSignal,
     stage: SetupStage,
+    /** Read a 404 as `NOT_FOUND` rather than a provider failure: a session lookup's clear answer. */
+    notFound = false,
   ): Promise<Response> {
     let response: Response;
     try {
@@ -769,6 +828,8 @@ export class OpenCodeAdapter implements TextEngineAdapter {
     }
     if (!response.ok) {
       const body = (await cappedText(response, 4096, stage)).slice(0, 4096);
+      if (notFound && response.status === 404)
+        throw new EngineError('NOT_FOUND', 'OpenCode has no such session.', true, stage);
       throw errorForResponse(response.status, body, stage);
     }
     return response;
@@ -800,6 +861,302 @@ export class OpenCodeAdapter implements TextEngineAdapter {
     } finally {
       clearTimeout(timer);
     }
+  }
+
+  /**
+   * The same three answers a single turn and a kept session both need before
+   * anything is dispatched: no Go account, a different account, or a Go account
+   * that does not offer this model.
+   */
+  private async admitModel(
+    server: { base: string; auth: string; directory?: string },
+    signal: AbortSignal,
+    model: string,
+  ): Promise<void> {
+    const provider = catalogue(
+      await this.json(await this.request(server, '/provider', {}, signal, 'model-list'), 'model-list'),
+    );
+    if (!provider.connected && provider.others.length)
+      throw new EngineError(
+        'ACCOUNT_CHANGED',
+        `OpenCode reported connected providers other than ${OPENCODE_ACCOUNT_ROUTE}. This route uses that account only and substitutes nothing for it.`,
+        true,
+        'provider-auth',
+      );
+    if (!provider.connected)
+      throw new EngineError('AUTH_REQUIRED', NO_GO_ACCOUNT_DETAIL, true, 'provider-auth');
+    if (!provider.models.some((item) => item.slug === model))
+      throw new EngineError(
+        'MODEL_UNAVAILABLE',
+        'The selected OpenCode Go model is unavailable. Recheck before sending.',
+        true,
+        'model-list',
+      );
+  }
+  /**
+   * Reads one turn's events for one session until OpenCode reports it idle with
+   * a complete answer from the requested model. Shared by the single-turn route
+   * and a kept session, so both hold the same read boundary, the same retry and
+   * permission refusals and the same model check. `earlier` names assistant
+   * messages a kept session's previous turns already answered with.
+   */
+  private async readTurn(
+    eventResponse: Response,
+    turn: {
+      sessionId: string;
+      selection: { providerID: string; modelID: string };
+      input: TextRequest;
+      scope?: ReadScope;
+      earlier?: ReadonlySet<string>;
+    },
+  ): Promise<{ text: string; assistantMessageId: string; reportedModel: string }> {
+    const { sessionId, selection, input, scope, earlier } = turn;
+    const calls = new Map<string, { tool: string; started: boolean }>();
+    if (!eventResponse.body)
+      throw new EngineError(
+        'PROTOCOL_ERROR',
+        'OpenCode did not provide an event stream.',
+        true,
+        'stream',
+      );
+    const reader = eventResponse.body.getReader();
+    // Framing follows the specification, so LF, CRLF and CR streams, joined
+    // data fields and comments all read the same. Nothing below relaxes:
+    // an event that never reached its blank line is never dispatched.
+    const parser = new SseParser({ maxBufferBytes: MAX_SSE_EVENT_BYTES });
+    let answer = '';
+    let bytes = 0;
+    let assistantMessageId: string | undefined;
+    let assistantInfo = false;
+    let assistantTerminal = false;
+    // The answer is built from text parts only. OpenCode 1.18.4 streams a
+    // reasoning part's deltas with the same `field: "text"`, so a delta is
+    // accepted only for a part it has already announced as text. A text
+    // delta that arrives before its announcement is recovered from the
+    // part's full text when that part is next updated.
+    const textParts = new Map<string, string>();
+    try {
+      for (;;) {
+        const part = await reader.read();
+        if (part.done) break;
+        bytes += part.value.byteLength;
+        if (bytes > MAX_EVENT_BYTES)
+          throw new EngineError('OUTPUT_LIMIT', 'OpenCode exceeded the response limit.', true);
+        let frames: SseEvent[];
+        try {
+          frames = parser.push(part.value);
+        } catch (error) {
+          if (!(error instanceof SseLimitError)) throw error;
+          throw new EngineError('OUTPUT_LIMIT', 'OpenCode exceeded the response limit.', true);
+        }
+        for (const frame of frames) {
+          let event: Json;
+          try {
+            event = object(JSON.parse(frame.data));
+          } catch {
+            throw new EngineError(
+              'PROTOCOL_ERROR',
+              'OpenCode returned malformed event data.',
+              true,
+            );
+          }
+          const kind = text(event.type);
+          const props = object(event.properties);
+          const eventSession =
+            text(props.sessionID) ||
+            text(object(props.info).sessionID) ||
+            text(object(props.part).sessionID);
+          if (eventSession !== sessionId) continue;
+          const partValue = object(props.part);
+          const partType = text(partValue.type);
+          const status = object(props.status);
+          const statusType = text(status.type);
+          if (/retry/i.test(kind) || /retry/i.test(partType) || statusType === 'retry')
+            throw new EngineError(
+              'PROVIDER_ERROR',
+              'OpenCode started a retry. Diomedes stopped without redispatching.',
+              true,
+            );
+          if (scope && kind === 'message.part.updated' && partType === 'tool') {
+            const tool = text(partValue.tool);
+            const callId = text(partValue.callID) || text(partValue.id) || `call-${calls.size + 1}`;
+            const state = object(partValue.state);
+            const status = text(state.status);
+            if (!opencodeAllowedTools(scope).includes(tool))
+              throw new EngineError(
+                'POLICY_MISMATCH',
+                'OpenCode went beyond the read-only boundary; the request was stopped.',
+                true,
+              );
+            // A pending part is still streaming its arguments; judge it once they are set.
+            if (status === 'pending') continue;
+            const call = calls.get(callId) ?? { tool, started: false };
+            calls.set(callId, call);
+            const checked = opencodeToolCall(scope, tool, state.input);
+            if (!call.started) {
+              call.started = true;
+              emitActivity(input.onToolActivity, {
+                callId,
+                phase: 'started',
+                tool,
+                summary: checked.summary,
+                ...(checked.detail ? { detail: checked.detail } : {}),
+              });
+            }
+            if (status === 'completed' || status === 'error') {
+              calls.delete(callId);
+              const detail = readDetail(status === 'error' ? state.error : state.output, 300);
+              emitActivity(input.onToolActivity, {
+                callId,
+                phase: status === 'error' ? 'failed' : 'finished',
+                tool,
+                summary: status === 'error' ? `${tool} did not complete` : `${tool} finished`,
+                ...(detail ? { detail } : {}),
+              });
+            }
+            continue;
+          }
+          if (/permission/i.test(kind) || /tool/i.test(partType))
+            throw new EngineError(
+              'POLICY_MISMATCH',
+              'OpenCode requested a tool or permission on the text-only route.',
+              true,
+            );
+          if (kind === 'message.updated') {
+            const info = object(props.info);
+            if (text(info.role) !== 'assistant') continue;
+            // An answer an earlier turn of a kept session already gave is not this turn's.
+            if (earlier?.has(text(info.id))) continue;
+            assistantMessageId = text(info.id);
+            const reportedProvider = text(info.providerID);
+            const reportedModel = text(info.modelID);
+            if (
+              !assistantMessageId ||
+              reportedProvider !== selection.providerID ||
+              reportedModel !== selection.modelID
+            )
+              throw new EngineError(
+                'POLICY_MISMATCH',
+                'OpenCode reported a different provider or model.',
+                true,
+              );
+            assistantInfo = true;
+            const time = object(info.time);
+            assistantTerminal = Number.isFinite(time.completed) && text(info.finish).length > 0;
+            if (info.error)
+              throw streamFailure(info.error, 'OpenCode reported an assistant error.');
+          }
+          if (kind === 'session.error')
+            throw streamFailure(props.error, 'OpenCode reported a session error.');
+          if (
+            kind === 'message.part.updated' &&
+            assistantMessageId &&
+            text(partValue.messageID) === assistantMessageId
+          ) {
+            if (partType !== 'text') continue;
+            const partId = text(partValue.id);
+            if (partId && !textParts.has(partId)) textParts.set(partId, '');
+            const delta = text(props.delta);
+            if (delta) {
+              answer += delta;
+              if (partId) textParts.set(partId, (textParts.get(partId) ?? '') + delta);
+              input.onDelta?.(delta);
+            } else {
+              // Recover what this part has that the answer does not, per part,
+              // so a later part's early deltas are not lost either.
+              const full = text(partValue.text);
+              const prior = partId ? (textParts.get(partId) ?? '') : answer;
+              if (full && full.startsWith(prior)) {
+                const next = full.slice(prior.length);
+                answer += next;
+                if (partId) textParts.set(partId, full);
+                if (next) input.onDelta?.(next);
+              }
+            }
+          }
+          if (
+            kind === 'message.part.delta' &&
+            assistantMessageId &&
+            text(props.messageID) === assistantMessageId &&
+            text(props.field) === 'text' &&
+            textParts.has(text(props.partID))
+          ) {
+            const delta = text(props.delta);
+            if (delta) {
+              answer += delta;
+              textParts.set(text(props.partID), (textParts.get(text(props.partID)) ?? '') + delta);
+              input.onDelta?.(delta);
+            }
+          }
+          if (
+            kind === 'session.status' &&
+            statusType === 'idle' &&
+            assistantInfo &&
+            assistantTerminal &&
+            answer.trim()
+          )
+            return {
+              text: answer,
+              assistantMessageId: assistantMessageId!,
+              reportedModel: `${selection.providerID}/${selection.modelID}`,
+            };
+        }
+      }
+    } finally {
+      await reader.cancel().catch(() => {
+        /* The body is already bounded and no longer needed. */
+      });
+    }
+    throw new EngineError(
+      'PROTOCOL_ERROR',
+      'OpenCode ended without a complete text response.',
+      true,
+      'stream',
+    );
+  }
+
+  /**
+   * Opens a kept OpenCode session for a conversation: one server process for
+   * its turns and one OpenCode session whose id the host saves. See
+   * `server/engines/opencode-session.ts` for resume, fork and abort.
+   */
+  openSession(input: TextRequest, options: OpenCodeSessionOptions): Promise<OpenCodeNativeSession<OpenCodeServerHandle>> {
+    return openOpenCodeSession(this.transport(), input, options);
+  }
+  private transport(): OpenCodeTransport<OpenCodeServerHandle> {
+    return {
+      accountRoute: OPENCODE_ACCOUNT_ROUTE,
+      start: (scope) => this.start(undefined, scope),
+      stop: async (server, primary) => {
+        try {
+          await this.closeChild(server.child, primary);
+        } finally {
+          await fs.rm(server.root, { recursive: true, force: true, maxRetries: 8, retryDelay: 200 });
+        }
+      },
+      request: (server, route, init, signal, stage) =>
+        this.request(server, route, init, signal, stage, route.startsWith('/session/')),
+      json: (response, stage) => this.json(response, stage),
+      admitModel: (server, signal, model) => this.admitModel(server, signal, model),
+      sessionBody,
+      promptBody,
+      readTurn: (eventResponse, turn) => this.readTurn(eventResponse, turn),
+      parseSelection,
+      bounded: async (signal, stage, work) => {
+        const control = deadline(signal, this.requestTimeout);
+        try {
+          return await work(control.signal);
+        } catch (error) {
+          if (!(error instanceof EngineError) && control.signal.aborted)
+            error = abortError(control.signal, this.requestTimeout, 'request', stage());
+          throw error instanceof EngineError
+            ? atStage(error, stage())
+            : new EngineError('PROVIDER_ERROR', 'OpenCode could not complete this request.', true, stage());
+        } finally {
+          control.dispose();
+        }
+      },
+    };
   }
 
   async inspect(signal?: AbortSignal): Promise<AdapterInspection> {
@@ -873,7 +1230,6 @@ export class OpenCodeAdapter implements TextEngineAdapter {
       );
     const server = await this.start(input.signal, scope);
     const control = deadline(input.signal, this.requestTimeout);
-    const calls = new Map<string, { tool: string; started: boolean }>();
     let sessionId: string | undefined;
     let eventResponse: Response | undefined;
     let completed = false;
@@ -881,31 +1237,7 @@ export class OpenCodeAdapter implements TextEngineAdapter {
     /** Where the attempt has reached, for anything that arrives without a stage of its own. */
     let stage: SetupStage = 'model-list';
     try {
-      const provider = catalogue(
-        await this.json(
-          await this.request(server, '/provider', {}, control.signal, 'model-list'),
-          'model-list',
-        ),
-      );
-      // Three different situations that a single "model unavailable" used to
-      // flatten: no account connected, a different account connected, and a
-      // connected Go account that does not offer this model.
-      if (!provider.connected && provider.others.length)
-        throw new EngineError(
-          'ACCOUNT_CHANGED',
-          `OpenCode reported connected providers other than ${OPENCODE_ACCOUNT_ROUTE}. This route uses that account only and substitutes nothing for it.`,
-          true,
-          'provider-auth',
-        );
-      if (!provider.connected)
-        throw new EngineError('AUTH_REQUIRED', NO_GO_ACCOUNT_DETAIL, true, 'provider-auth');
-      if (!provider.models.some((model) => model.slug === input.model))
-        throw new EngineError(
-          'MODEL_UNAVAILABLE',
-          'The selected OpenCode Go model is unavailable. Recheck before sending.',
-          true,
-          'model-list',
-        );
+      await this.admitModel(server, control.signal, input.model);
       stage = 'dispatch';
       const created = await this.json(
         await this.request(
@@ -914,23 +1246,7 @@ export class OpenCodeAdapter implements TextEngineAdapter {
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              title: `Diomedes ${input.requestId}`.slice(0, 120),
-              agent: 'diomedes',
-              model: { providerID: selection.providerID, id: selection.modelID },
-              // Last matching rule wins: deny everything, then allow only the reads.
-              permission: [
-                { permission: '*', pattern: '*', action: 'deny' },
-                ...(scope
-                  ? opencodeAllowedTools(scope).map((tool) => ({
-                      permission: tool,
-                      pattern: '*',
-                      action: 'allow',
-                    }))
-                  : []),
-                ...(scope ? [{ permission: 'external_directory', pattern: '*', action: 'deny' }] : []),
-              ],
-            }),
+            body: JSON.stringify(sessionBody(input, selection, scope)),
           },
           control.signal,
           'dispatch',
@@ -958,12 +1274,7 @@ export class OpenCodeAdapter implements TextEngineAdapter {
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            agent: 'diomedes',
-            model: { providerID: selection.providerID, modelID: selection.modelID },
-            system: scope ? `${input.instructions}\n\n${readScopeNote(scope)}` : input.instructions,
-            parts: [{ type: 'text', text: prompt }],
-          }),
+          body: JSON.stringify(promptBody(input, selection, scope, prompt)),
         },
         control.signal,
         'dispatch',
@@ -971,210 +1282,16 @@ export class OpenCodeAdapter implements TextEngineAdapter {
       // The prompt is accepted from here on, so every later failure is a
       // stream failure over work the account may already have been charged for.
       stage = 'stream';
-      if (!eventResponse.body)
-        throw new EngineError(
-          'PROTOCOL_ERROR',
-          'OpenCode did not provide an event stream.',
-          true,
-          'stream',
-        );
-      const reader = eventResponse.body.getReader();
-      // Framing follows the specification, so LF, CRLF and CR streams, joined
-      // data fields and comments all read the same. Nothing below relaxes:
-      // an event that never reached its blank line is never dispatched.
-      const parser = new SseParser({ maxBufferBytes: MAX_SSE_EVENT_BYTES });
-      let answer = '';
-      let bytes = 0;
-      let assistantMessageId: string | undefined;
-      let assistantInfo = false;
-      let assistantTerminal = false;
-      // The answer is built from text parts only. OpenCode 1.18.4 streams a
-      // reasoning part's deltas with the same `field: "text"`, so a delta is
-      // accepted only for a part it has already announced as text. A text
-      // delta that arrives before its announcement is recovered from the
-      // part's full text when that part is next updated.
-      const textParts = new Map<string, string>();
-      try {
-        for (;;) {
-          const part = await reader.read();
-          if (part.done) break;
-          bytes += part.value.byteLength;
-          if (bytes > MAX_EVENT_BYTES)
-            throw new EngineError('OUTPUT_LIMIT', 'OpenCode exceeded the response limit.', true);
-          let frames: SseEvent[];
-          try {
-            frames = parser.push(part.value);
-          } catch (error) {
-            if (!(error instanceof SseLimitError)) throw error;
-            throw new EngineError('OUTPUT_LIMIT', 'OpenCode exceeded the response limit.', true);
-          }
-          for (const frame of frames) {
-            let event: Json;
-            try {
-              event = object(JSON.parse(frame.data));
-            } catch {
-              throw new EngineError(
-                'PROTOCOL_ERROR',
-                'OpenCode returned malformed event data.',
-                true,
-              );
-            }
-            const kind = text(event.type);
-            const props = object(event.properties);
-            const eventSession =
-              text(props.sessionID) ||
-              text(object(props.info).sessionID) ||
-              text(object(props.part).sessionID);
-            if (eventSession !== sessionId) continue;
-            const partValue = object(props.part);
-            const partType = text(partValue.type);
-            const status = object(props.status);
-            const statusType = text(status.type);
-            if (/retry/i.test(kind) || /retry/i.test(partType) || statusType === 'retry')
-              throw new EngineError(
-                'PROVIDER_ERROR',
-                'OpenCode started a retry. Diomedes stopped without redispatching.',
-                true,
-              );
-            if (scope && kind === 'message.part.updated' && partType === 'tool') {
-              const tool = text(partValue.tool);
-              const callId = text(partValue.callID) || text(partValue.id) || `call-${calls.size + 1}`;
-              const state = object(partValue.state);
-              const status = text(state.status);
-              if (!opencodeAllowedTools(scope).includes(tool))
-                throw new EngineError(
-                  'POLICY_MISMATCH',
-                  'OpenCode went beyond the read-only boundary; the request was stopped.',
-                  true,
-                );
-              // A pending part is still streaming its arguments; judge it once they are set.
-              if (status === 'pending') continue;
-              const call = calls.get(callId) ?? { tool, started: false };
-              calls.set(callId, call);
-              const checked = opencodeToolCall(scope, tool, state.input);
-              if (!call.started) {
-                call.started = true;
-                emitActivity(input.onToolActivity, {
-                  callId,
-                  phase: 'started',
-                  tool,
-                  summary: checked.summary,
-                  ...(checked.detail ? { detail: checked.detail } : {}),
-                });
-              }
-              if (status === 'completed' || status === 'error') {
-                calls.delete(callId);
-                const detail = readDetail(status === 'error' ? state.error : state.output, 300);
-                emitActivity(input.onToolActivity, {
-                  callId,
-                  phase: status === 'error' ? 'failed' : 'finished',
-                  tool,
-                  summary: status === 'error' ? `${tool} did not complete` : `${tool} finished`,
-                  ...(detail ? { detail } : {}),
-                });
-              }
-              continue;
-            }
-            if (/permission/i.test(kind) || /tool/i.test(partType))
-              throw new EngineError(
-                'POLICY_MISMATCH',
-                'OpenCode requested a tool or permission on the text-only route.',
-                true,
-              );
-            if (kind === 'message.updated') {
-              const info = object(props.info);
-              if (text(info.role) !== 'assistant') continue;
-              assistantMessageId = text(info.id);
-              const reportedProvider = text(info.providerID);
-              const reportedModel = text(info.modelID);
-              if (
-                !assistantMessageId ||
-                reportedProvider !== selection.providerID ||
-                reportedModel !== selection.modelID
-              )
-                throw new EngineError(
-                  'POLICY_MISMATCH',
-                  'OpenCode reported a different provider or model.',
-                  true,
-                );
-              assistantInfo = true;
-              const time = object(info.time);
-              assistantTerminal = Number.isFinite(time.completed) && text(info.finish).length > 0;
-              if (info.error)
-                throw streamFailure(info.error, 'OpenCode reported an assistant error.');
-            }
-            if (kind === 'session.error')
-              throw streamFailure(props.error, 'OpenCode reported a session error.');
-            if (
-              kind === 'message.part.updated' &&
-              assistantMessageId &&
-              text(partValue.messageID) === assistantMessageId
-            ) {
-              if (partType !== 'text') continue;
-              const partId = text(partValue.id);
-              if (partId && !textParts.has(partId)) textParts.set(partId, '');
-              const delta = text(props.delta);
-              if (delta) {
-                answer += delta;
-                if (partId) textParts.set(partId, (textParts.get(partId) ?? '') + delta);
-                input.onDelta?.(delta);
-              } else {
-                // Recover what this part has that the answer does not, per part,
-                // so a later part's early deltas are not lost either.
-                const full = text(partValue.text);
-                const prior = partId ? (textParts.get(partId) ?? '') : answer;
-                if (full && full.startsWith(prior)) {
-                  const next = full.slice(prior.length);
-                  answer += next;
-                  if (partId) textParts.set(partId, full);
-                  if (next) input.onDelta?.(next);
-                }
-              }
-            }
-            if (
-              kind === 'message.part.delta' &&
-              assistantMessageId &&
-              text(props.messageID) === assistantMessageId &&
-              text(props.field) === 'text' &&
-              textParts.has(text(props.partID))
-            ) {
-              const delta = text(props.delta);
-              if (delta) {
-                answer += delta;
-                textParts.set(text(props.partID), (textParts.get(text(props.partID)) ?? '') + delta);
-                input.onDelta?.(delta);
-              }
-            }
-            if (
-              kind === 'session.status' &&
-              statusType === 'idle' &&
-              assistantInfo &&
-              assistantTerminal &&
-              answer.trim()
-            ) {
-              completed = true;
-              return {
-                text: answer,
-                model: input.model,
-                version: OPENCODE_VERSION,
-                projectId: input.projectId,
-                threadId: input.threadId,
-                requestId: input.requestId,
-              };
-            }
-          }
-        }
-      } finally {
-        await reader.cancel().catch(() => {
-          /* The body is already bounded and no longer needed. */
-        });
-      }
-      throw new EngineError(
-        'PROTOCOL_ERROR',
-        'OpenCode ended without a complete text response.',
-        true,
-        'stream',
-      );
+      const turn = await this.readTurn(eventResponse, { sessionId, selection, input, scope });
+      completed = true;
+      return {
+        text: turn.text,
+        model: input.model,
+        version: OPENCODE_VERSION,
+        projectId: input.projectId,
+        threadId: input.threadId,
+        requestId: input.requestId,
+      };
     } catch (error) {
       if (!(error instanceof EngineError) && control.signal.aborted)
         error = abortError(control.signal, this.requestTimeout, 'request', stage);

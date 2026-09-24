@@ -29,6 +29,7 @@ import type {
   HypothesisOutcome,
   PersonalizationLevel,
   ProspectDiscoveryRecord,
+  StaleObservedEvidence,
 } from '../shared/discovery';
 
 export async function api<T>(
@@ -55,7 +56,11 @@ export async function api<T>(
   return payload as T;
 }
 
-type DiscoveryResponse = { record: ProspectDiscoveryRecord | null };
+type DiscoveryResponse = {
+  record: ProspectDiscoveryRecord | null;
+  /** Observed facts whose approved file has changed since (DIO-84). */
+  staleEvidence?: readonly StaleObservedEvidence[];
+};
 const discoveryPath = (prospectId: string) => `/discovery/${encodeURIComponent(prospectId)}`;
 
 export const discoveryApi = {
@@ -329,4 +334,52 @@ export async function selectEngineModel(
   const tag = response.headers.get('ETag');
   if (tag) settingsTag = tag;
   return payload as unknown as Settings;
+}
+
+// Automations (Milestone A). Organization-scoped, like the workspace routes.
+const automationsPath = (organizationId: string) =>
+  `/workspace/organizations/${encodeURIComponent(organizationId)}/automations`;
+
+export const listAutomations = (organizationId: string, signal?: AbortSignal) =>
+  api<import('../shared/automations').AutomationList>(
+    automationsPath(organizationId),
+    'GET',
+    undefined,
+    signal,
+  );
+
+export const automationDetail = (
+  organizationId: string,
+  automationId: string,
+  page = 1,
+  signal?: AbortSignal,
+) =>
+  api<import('../shared/automations').AutomationDetail>(
+    `${automationsPath(organizationId)}/${encodeURIComponent(automationId)}?page=${page}`,
+    'GET',
+    undefined,
+    signal,
+  );
+
+/**
+ * One press of Run once. The command id is made here, once per press, and a
+ * retry after a lost connection or a server fault sends the same id, so the
+ * host answers it with the occurrence it already admitted instead of a second
+ * run. A refusal the host recorded comes back as an ordinary result.
+ */
+export async function runAutomation(organizationId: string, automationId: string) {
+  const commandId = `run-${crypto.randomUUID()}`;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await api<import('../shared/automations').RunOnceResult>(
+        `${automationsPath(organizationId)}/${encodeURIComponent(automationId)}/run`,
+        'POST',
+        { commandId },
+      );
+    } catch (error) {
+      const retryable = !(error instanceof ApiError) || error.status >= 500;
+      if (!retryable || attempt >= 3) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 250 * attempt));
+    }
+  }
 }

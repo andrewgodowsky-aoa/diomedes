@@ -116,6 +116,31 @@ export function manifestDigest(manifest: Omit<ChangeReviewManifest, 'id' | 'dige
   return `sha256:${hash.digest('hex')}`;
 }
 
+/**
+ * The review decision a rebuild's content shows, compared with the manifest it
+ * replaces. A rebuild is labelled when it is queued but reads the state current
+ * when it runs, so a state rebuild queued as a run ended can run after the
+ * person kept or undid a change and already carry that decision; the decision's
+ * own rebuild then finds the digest unchanged and records nothing. Reading the
+ * decision from the content keeps the ledger from calling a keep or an undo a
+ * state rebuild. A change id seen for the first time is a new write, not a decision.
+ */
+function decisionShown(
+  prior: ChangeReviewManifest | null,
+  next: ChangeReviewManifest,
+): 'rebuilt-undone' | 'rebuilt-kept' | null {
+  if (!prior) return null;
+  const before = new Map<string, ChangeEntry['settled']>();
+  for (const entry of prior.changes) for (const id of entry.changeIds) before.set(id, entry.settled);
+  const moved = (to: 'kept' | 'undone') =>
+    next.changes.some(
+      (entry) =>
+        entry.settled === to &&
+        entry.changeIds.some((id) => before.has(id) && before.get(id) !== to),
+    );
+  return moved('undone') ? 'rebuilt-undone' : moved('kept') ? 'rebuilt-kept' : null;
+}
+
 export class ChangeReviewService {
   private readonly records = new Map<string, Map<string, ChangeReviewRecord>>();
   private readonly seen = new Map<string, ProjectSeen>();
@@ -806,10 +831,12 @@ export class ChangeReviewService {
     };
 
     if (record.manifest?.digest !== digest || record.baseline === null) {
+      const shown =
+        event === 'rebuilt-state' ? (decisionShown(record.manifest, manifest) ?? event) : event;
       record.manifest = manifest;
       this.pushLedger(
         record,
-        event,
+        shown,
         `${entries.length} ${entries.length === 1 ? 'change' : 'changes'}, outcome ${outcome}`,
         digest,
       );

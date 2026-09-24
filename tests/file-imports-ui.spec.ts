@@ -189,7 +189,7 @@ test('imports exports through Files, removes a source, runs and revises the acti
   await select('Imports/room-export.csv');
   await select('Imports/kitchen-export.md');
   await sourceGroup.getByLabel('Imports/kitchen-export.md').uncheck();
-  await page.getByRole('button', { name: 'Prepare the weekly brief' }).click();
+  await page.getByRole('button', { name: 'Prepare the weekly brief', exact: true }).click();
   await expect(page.getByText(/Drafted into FIL-02 operations/)).toBeVisible();
   const configuration = await api<ConfigurationView>(
     `/workspace/organizations/${organizationId}/configuration`,
@@ -203,13 +203,13 @@ test('imports exports through Files, removes a source, runs and revises the acti
 
   // A project copy changed after selection must be reselected, not silently read.
   await fs.writeFile(path.join(project.folder, 'Imports/room-export.csv'), 'item,count\nTables,9');
-  await page.getByRole('button', { name: 'Prepare the weekly brief' }).click();
+  await page.getByRole('button', { name: 'Prepare the weekly brief', exact: true }).click();
   await expect(page.getByRole('dialog').getByRole('alert')).toContainText('changed or disappeared');
   expect(await readBrief()).toContain('Tables,7');
   await sourceGroup.getByLabel('Imports/room-export.csv').uncheck();
   await select('Imports/room-export.csv');
   await select('Imports/kitchen-export.md');
-  await page.getByRole('button', { name: 'Prepare the weekly brief' }).click();
+  await page.getByRole('button', { name: 'Prepare the weekly brief', exact: true }).click();
   await expect(page.getByText(/Drafted into FIL-02 operations/)).toBeVisible();
   const final = await readBrief();
   expect(final).toContain('Tables,9');
@@ -227,6 +227,9 @@ test('imports exports through Files, removes a source, runs and revises the acti
   await expect(page.locator('.console')).toBeVisible();
   const reopened = await api<ProjectState>(`/projects/${project.id}/state`);
   expect(reopened.history.filter((entry) => entry.kind === 'weekly-brief')).toHaveLength(2);
+  // Automations Milestone A: each press is its own command, so two briefs are
+  // two admitted runs with a Task each, and the refused press made none.
+  expect(reopened.tasks.filter((task) => task.name === 'Prepare the weekly brief')).toHaveLength(2);
   expect(await readBrief()).toBe(final);
   expect(externalRequests).toEqual([]);
   await page.screenshot({ path: 'test-results/fil02-restarted.png' });

@@ -153,9 +153,15 @@ test('the app opens to Diomedes, and looking at it creates nothing', async ({ pa
   expect(await home()).toBeNull();
   expect((await listed()).map((item) => item.name)).toEqual(['Linen service']);
 
-  // Automations holds its place in the sidebar and does nothing yet.
-  const held = page.getByRole('button', { name: /Automations/ }).first();
-  await expect(held).toHaveAttribute('aria-disabled', 'true');
+  // Automations opens the business's output project on its screen (D4). This
+  // install is Personal, so it says why and opens nothing, and creates nothing.
+  const automations = page.getByRole('button', { name: /Automations/ }).first();
+  await expect(automations).not.toHaveAttribute('aria-disabled', 'true');
+  await automations.click();
+  await expect(page.getByRole('status').filter({ hasText: 'set up per business workspace' })).toBeVisible();
+  await expect(composer(page)).toBeVisible();
+  expect(await home()).toBeNull();
+  await page.getByRole('button', { name: 'Dismiss', exact: true }).click();
   // Everything opens by pointing at it, and the rest of the app is still one step away.
   await page.getByRole('button', { name: 'Everything', exact: true }).hover();
   await expect(page.getByRole('menu', { name: 'Everything' })).toBeVisible();
