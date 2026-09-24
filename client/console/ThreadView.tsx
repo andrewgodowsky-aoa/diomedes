@@ -22,6 +22,7 @@ import { isExternalEngine, isRoute } from '../../shared/engines';
 import { isModelApiRoute } from '../../shared/model-api';
 import type { InstructionFileRecord } from '../../shared/capability-packs';
 import { formatOrigin, originForSession, originForTurn } from '../attribution-display';
+import { ContextUsed } from './ContextUsed';
 import { ApprovalStatus, time } from '../components';
 import { RunInspector } from '../workbench/RunInspector';
 import { taskEvidence } from '../workbench/task-evidence';
@@ -327,6 +328,7 @@ export function ThreadView({
                   />
                 )}
               </div>
+              {t.role !== 'you' && t.context && <ContextUsed account={t.context} />}
             </div>
           ))}
         </div>

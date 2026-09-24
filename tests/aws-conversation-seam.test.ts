@@ -462,6 +462,25 @@ describe('AWS Luna in the actual Diomedes conversation', () => {
     await api('/settings', 'PUT', { services });
   });
 
+  test('H18: the answered turn carries what went into its context, reconciled with what AWS reported', async () => {
+    await connected();
+    await send('m-context', 'How many napkins were short on Friday?', [DOCS.delivery.path]);
+    const [turn] = assistantTurns();
+    const context = turn.context!;
+    expect(context).toMatchObject({ v: 1, route: 'aws-bedrock', model: AWS_LUNA_MODEL, estimator: 'utf8-bytes/4' });
+    expect(context.window).toEqual({ tokens: null, source: 'not declared' });
+    // Two calls, each reported by AWS: the first is reconciled against the estimate.
+    expect(context.provider).toMatchObject({ calls: 2, reportedCalls: 2, inputTokens: 2_800, cacheReadTokens: 0, outputTokens: 440, firstCallInputTokens: 1_400 });
+    expect(context.reconciliation).toEqual({ estimated: context.estimatedTokens, reported: 1_400, difference: 1_400 - context.estimatedTokens });
+    const files = context.sections.find((section) => section.id === 'project-files')!;
+    expect(files.detail).toBe('1 attached, read through tools');
+    expect(context.sections.find((section) => section.id === 'tool-results')!.detail).toBe('1 tool call, sent back on later calls');
+    expect(context.cache.support).toBe('automatic-prefix');
+    // Names and numbers only: no file body and no secret rides in the record.
+    expect(JSON.stringify(context)).not.toContain('napkins short');
+    expect(JSON.stringify(context)).not.toContain(SECRET);
+  });
+
   test('request a draft checklist: deny one exact proposal and nothing changes; approve a new one and it is written', async () => {
     await connected();
     const folder = store().state(project.id).project.folder;

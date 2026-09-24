@@ -105,7 +105,7 @@ export function compactTurns(turns: readonly Compactable[]): CompactionRecord {
   for (const turn of turns) {
     const asked = turn.prompt === null ? 'nothing recorded' : `“${firstSentence(turn.prompt)}”`;
     const answered = turn.answer === null ? 'no answer was recorded' : `Diomedes answered “${firstSentence(turn.answer)}”`;
-    const line = `- Message ${turn.index}: the person asked ${asked}; ${answered}.`;
+    const line = `- Message ${turn.index}: the person asked ${asked}; ${answered}`;
     // Room for this line, and for the closing line should any turn after it not fit.
     const rest = turns.length - listed - 1;
     const closing = rest > 0 ? 64 : 0;
