@@ -36,7 +36,9 @@ import { z } from 'zod';
 import type { Json } from '../../../shared/harness.js';
 import { displayPath, readAccessOf, readScopeDigest, readSummary, type ReadScope } from '../../engines/read-scope.js';
 import { readAllowed } from '../../engines/turn-scope.js';
-import { ApiError, isContained, projectFile, rejectForbidden, relativeName, safeAbsolute } from '../../paths.js';
+import { ApiError, isContained, rejectForbidden, relativeName, safeAbsolute } from '../../paths.js';
+import { containedPath } from '../containment.js';
+import { HarnessError } from '../policy.js';
 import type { ToolDefinition } from '../tools.js';
 import { McpReadClients, type McpTransportFactory } from './mcp-read-client.js';
 import { fetchPage, type PageRequest, type PageResolve } from './page-fetch.js';
@@ -127,17 +129,25 @@ const tidy = (value: string | undefined) =>
 
 const OUTSIDE = 'That path is outside the project folder, or it names a private or linked file, so it was not read.';
 
-/** The absolute path a relative project path names, through the path trust funnel, or a refusal. */
-async function inside(root: string, value: string | undefined): Promise<{ absolute: string; relative: string } | { refused: string }> {
+/**
+ * The absolute path a relative project path names, through the H12 containment funnel
+ * (`containedPath`: `projectFile`/`safeAbsolute` plus absolute, climbing, compatibility-folded
+ * private names and resolved-location checks), or a refusal with its code.
+ */
+async function inside(
+  root: string,
+  value: string | undefined,
+): Promise<{ absolute: string; relative: string } | { refused: string; code?: string }> {
   const spelled = tidy(value);
   try {
     if (!spelled || spelled === '.') return { absolute: await safeAbsolute(root), relative: '' };
-    const found = await projectFile(root, spelled);
+    const found = await containedPath(root, spelled, { write: false });
     // The funnel refuses linked components; the resolved location is checked once more.
     const [realRoot, real] = await Promise.all([fs.realpath(root), fs.realpath(found.absolute).catch(() => found.absolute)]);
-    if (!isContained(realRoot, real)) return { refused: OUTSIDE };
+    if (!isContained(realRoot, real)) return { refused: OUTSIDE, code: 'path_outside_root' };
     return found;
   } catch (error) {
+    if (error instanceof HarnessError && error.code.startsWith('path_')) return { refused: OUTSIDE, code: error.code };
     if (error instanceof ApiError) return { refused: OUTSIDE };
     throw error;
   }
@@ -235,7 +245,7 @@ export function readScopeTools(scope: ReadScope, options: { stop: AbortSignal; d
         const spent = allowance();
         if (spent) return spent;
         const found = await inside(root, input.path);
-        if ('refused' in found) return refused(found.refused);
+        if ('refused' in found) return refused(found.refused, found.code);
         const stat = await fs.stat(found.absolute).catch(() => null);
         if (!stat?.isDirectory()) return refused('No folder has that path in the project.');
         const allowed = await readAllowed(scope, 'list', found.absolute);
@@ -279,7 +289,7 @@ export function readScopeTools(scope: ReadScope, options: { stop: AbortSignal; d
         const spent = allowance();
         if (spent) return spent;
         const found = await inside(root, input.path);
-        if ('refused' in found) return refused(found.refused);
+        if ('refused' in found) return refused(found.refused, found.code);
         const stat = await fs.stat(found.absolute).catch(() => null);
         if (!stat?.isFile()) return refused('No file has that path in the project.');
         const allowed = await readAllowed(scope, 'read', found.absolute);
@@ -314,7 +324,7 @@ export function readScopeTools(scope: ReadScope, options: { stop: AbortSignal; d
         const spent = allowance();
         if (spent) return spent;
         const found = await inside(root, input.path);
-        if ('refused' in found) return refused(found.refused);
+        if ('refused' in found) return refused(found.refused, found.code);
         const stat = await fs.stat(found.absolute).catch(() => null);
         if (!stat?.isDirectory()) return refused('No folder has that path in the project.');
         const allowed = await readAllowed(scope, 'list', found.absolute);
