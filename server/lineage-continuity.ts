@@ -73,7 +73,8 @@ export type RetirementCause =
   | 'settings'
   | 'terminated'
   | 'budget'
-  | 'format-change';
+  | 'format-change'
+  | 'unreadable';
 
 /** What a note may name. `carried` is read only for `format-change`: whether history came along. */
 export interface RetirementDetail {
@@ -103,6 +104,8 @@ function because(cause: RetirementCause, detail: RetirementDetail): string {
       return 'the earlier conversation stopped and could not be picked up again';
     case 'budget':
       return 'the earlier conversation reached its length limit';
+    case 'unreadable':
+      return 'an earlier part of it could not be read';
   }
 }
 
@@ -111,6 +114,10 @@ function because(cause: RetirementCause, detail: RetirementDetail): string {
  * the earlier messages over, and only where history sharing is on; it says which happened.
  */
 export function retirementNote(cause: RetirementCause, detail: RetirementDetail = {}): string {
+  // A run this build cannot read may belong to a lineage that retired long ago, so nothing
+  // necessarily starts fresh; the note says only what is lost.
+  if (cause === 'unreadable')
+    return `${AGENT_NAME} couldn't read an earlier part of this conversation, so it won't remember that part. Your earlier messages are still here.`;
   const memory =
     cause === 'format-change' && detail.carried
       ? 'and it carried over the most recent ones'
@@ -121,6 +128,14 @@ export function retirementNote(cause: RetirementCause, detail: RetirementDetail 
 /** Names the note for one retirement and the message that caused it, so a retry finds it. */
 export function lineageNoteId(retiredRunId: string, commandId: string): string {
   return `Nlineage-${createHash('sha256').update(JSON.stringify([retiredRunId, commandId]), 'utf8').digest('hex').slice(0, 32)}`;
+}
+
+/**
+ * Names the one note for a run this build cannot read. The run stays unreadable, and every later
+ * message meets it again, so the note is named for the run alone: the thread says it once.
+ */
+export function unreadableNoteId(runId: string): string {
+  return `Nunreadable-${createHash('sha256').update(JSON.stringify([runId]), 'utf8').digest('hex').slice(0, 32)}`;
 }
 
 /**
@@ -138,7 +153,10 @@ export function lineageNoteTurn(input: {
   at: string;
 }): Turn {
   return {
-    id: lineageNoteId(input.retiredRunId, input.commandId),
+    id:
+      input.cause === 'unreadable'
+        ? unreadableNoteId(input.retiredRunId)
+        : lineageNoteId(input.retiredRunId, input.commandId),
     role: 'diomedes',
     mode: input.mode,
     text: retirementNote(input.cause, input.detail),
