@@ -186,6 +186,11 @@ external send refused by policy before any intent.
   mediated: they execute inside the engine. H12 covers the host-executed harness tools only
   (roadmap §5: observed capabilities become enforced only after native bypass/containment is
   proved).
+- **The platform's own floor of variables still reaches a child.** On Windows, libuv copies its
+  fixed required set (`HOMEDRIVE`, `HOMEPATH`, `LOGONSERVER`, `SYSTEMDRIVE`, `USERDOMAIN`,
+  `USERNAME`, `USERPROFILE` and the system folders) from the parent whatever environment is
+  passed; macOS adds `__CF_USER_TEXT_ENCODING`. None is a secret; closing it would need a spawn
+  below libuv. The test pins that nothing else arrives.
 - **No production tool spawns a process yet**; `containedSpawn` is the sanctioned path and is pinned
   by tests, and the MCP connector keeps the SDK's minimal environment.
 - **8.3 aliases** are refused by shape at the funnel on every platform; a real expanded alias is

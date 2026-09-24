@@ -325,9 +325,14 @@ describe('containedSpawn: minimal environment, bounded output, process-tree clea
       expect(result.stdout).not.toContain('canary-7f3e');
       expect(Object.keys(env)).not.toContain('H12_CANARY_SECRET_TOKEN');
       expect(Object.keys(env)).not.toContain('ANTHROPIC_API_KEY');
-      // What the child sees adds only what the operating system itself injects
-      // into every process (macOS: __CF_USER_TEXT_ENCODING), never an inherited name.
-      const injected = /^__CF_USER_TEXT_ENCODING$/;
+      // What the child sees adds only what the platform itself injects into every
+      // process, never another inherited name: macOS adds __CF_USER_TEXT_ENCODING,
+      // and on Windows libuv copies its fixed set of required variables from the
+      // parent (identity and system folders, none of them a secret).
+      const injected =
+        process.platform === 'win32'
+          ? /^(HOMEDRIVE|HOMEPATH|LOGONSERVER|PATH|SYSTEMDRIVE|SYSTEMROOT|TEMP|USERDOMAIN|USERNAME|USERPROFILE|WINDIR)$/i
+          : /^__CF_USER_TEXT_ENCODING$/;
       expect(Object.keys(env).filter((key) => !allowed.test(key) && !injected.test(key))).toEqual([]);
     } finally {
       delete process.env.H12_CANARY_SECRET_TOKEN;
