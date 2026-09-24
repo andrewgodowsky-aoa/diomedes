@@ -2390,6 +2390,8 @@ export async function createApp(options: AppOptions) {
         : workRoute === 'codex'
           ? codexControls.contract(session)
           : defaultWorkContract(workRoute),
+    // H12: a harness run's uncertain tool effects block Retry and Resume too.
+    harnessEffects: (projectId, session) => harness.bridge.uncertainEffects(projectId, session.id),
   });
   durableControls.registerDriver(CONTROL_FIXTURE_ROUTE, controlFixtureDriver(work));
   // H02: the Codex route's steer, resume and fork, offered only where the Codex that

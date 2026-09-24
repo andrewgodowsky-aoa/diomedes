@@ -158,6 +158,11 @@ export interface DurableControlsDeps {
   /** The model this thread and route would resolve to now. */
   modelFor?(projectId: string, threadId: string | null, route: Route): string | null;
   routeAvailable?(route: string): boolean;
+  /**
+   * H12: recorded tool effects of this run's harness run whose outcome is uncertain
+   * (a crash, takeover or cancel between the effect's intent and its outcome).
+   */
+  harnessEffects?(projectId: string, session: Session): Promise<readonly string[]>;
 }
 
 interface Draft {
@@ -518,7 +523,7 @@ export class DurableControls {
    * Provider work that may still be charged is not one of them: it changes
    * nothing in the world a retry would change again.
    */
-  uncertainEffects(projectId: string, session: Session): string[] {
+  async uncertainEffects(projectId: string, session: Session): Promise<string[]> {
     const state = this.store.state(projectId);
     const effects: string[] = [];
     for (const need of state.needs.filter((item) => item.sessionId === session.id)) {
@@ -539,6 +544,8 @@ export class DurableControls {
     const contract = this.contract(projectId, workRouteOf(session), session);
     const driver = contract ? this.drivers.get(contract.routeId) : undefined;
     for (const effect of driver?.uncertainEffects?.(projectId, session) ?? [])
+      if (!effects.includes(effect)) effects.push(effect);
+    for (const effect of (await this.deps.harnessEffects?.(projectId, session)) ?? [])
       if (!effects.includes(effect)) effects.push(effect);
     return effects;
   }
@@ -719,7 +726,7 @@ export class DurableControls {
         'inputs-unrecorded',
         `This run was recorded before its inputs were kept, so it cannot be ${control === 'resume' ? 'resumed' : 'retried'} with the same ones. Start the task again instead.`,
       );
-    const effects = this.uncertainEffects(projectId, session);
+    const effects = await this.uncertainEffects(projectId, session);
     if (effects.length)
       return refused(
         'uncertain-effects',

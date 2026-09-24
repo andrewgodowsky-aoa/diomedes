@@ -288,6 +288,8 @@ describe('the weekly brief capability', () => {
     saved.lastSeq = saved.events.length;
     const save = saved.steps.find((step) => step.intent.stepId === SAVE_STEP)!;
     Object.assign(save, { state: 'running', output: null, outputHash: null, endedAt: null });
+    // H12: the attempt's effect intent was durable before the write; its outcome was not.
+    Object.assign(save.effects!.at(-1)!, { status: 'intended', outcomeAt: null, outputHash: null });
     Object.assign(saved, { state: 'running', result: null });
     await fs.writeFile(file, JSON.stringify(saved, null, 2));
 
@@ -296,5 +298,9 @@ describe('the weekly brief capability', () => {
     expect(recovered.state).toBe('completed');
     expect((recovered.result as { entryId: string }).entryId).toBe(entryId);
     expect(briefEntries()).toHaveLength(1);
+    // Settled from the writer's own record under the idempotency key, never by writing again.
+    const reconciled = recovered.steps.find((step) => step.intent.stepId === SAVE_STEP)!.effects!;
+    expect(reconciled.map((effect) => effect.status)).toEqual(['reconciled-applied']);
+    expect(reconciled[0].reconciliation?.by).toBe('tool:save_brief_draft');
   });
 });
