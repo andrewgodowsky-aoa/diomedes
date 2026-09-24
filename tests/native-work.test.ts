@@ -6,6 +6,7 @@ import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { ProjectState, TeamMember } from '../shared/types.js';
 import { createApp } from '../server/app.js';
+import { Store } from '../server/store.js';
 import { extractJsonObject, parseProposal, type NativeGenerator } from '../server/native-work.js';
 import {
   assembleInstructions,
@@ -1369,6 +1370,51 @@ ${'A rule with an exception that must not be lost. '.repeat(600)}`;
     expect(instructionSectionBudget(0)).toBe(32 * 1024);
     expect(instructionSectionBudget(128_000)).toBe(12_000);
     expect(instructionSectionBudget(160_000)).toBe(0);
+  });
+
+  test('a nested file governs work in its folder, is recorded with its scope and survives a restart', async () => {
+    await writeInstructions(body);
+    await fs.mkdir(path.join(await folder(), 'kitchen'), { recursive: true });
+    await writeInstructions('# Kitchen\n\nName the station for every prep change.\n', 'kitchen/AGENTS.md');
+    await fs.writeFile(path.join(await folder(), 'kitchen', 'Prep.md'), '# Prep\n\nOnions.\n', 'utf8');
+    await documentsOf();
+    await allowInstructionFile();
+    await allowInstructionFile('kitchen/AGENTS.md');
+    await allowInstructionFile('kitchen/Prep.md');
+    expect((await activate()).status).toBe(200);
+
+    // Work at the root: the kitchen's rules do not reach it, and the record says why.
+    expect((await start()).status).toBe(200);
+    expect(sentPrompt()).not.toContain('Name the station');
+    const first = await until((result) => result.sessions.length === 1 && result.sessions[0].state !== 'working');
+    const rootRun = first.sessions[0].instructions!;
+    expect(rootRun.files.map((file) => file.path)).toEqual(['AGENTS.md']);
+    expect(rootRun.workPaths).toEqual(['Fall menu.md']);
+    expect(rootRun.excluded).toEqual([
+      expect.objectContaining({ path: 'kitchen/AGENTS.md', scope: 'kitchen', exclusion: 'out-of-scope' }),
+    ]);
+    const need = first.needs.find((item) => item.state === 'open');
+    if (need) expect((await decision(need.id, 'declined')).status).toBe(200);
+    await until((result) => !result.sessions.some((session) => ['working', 'waiting', 'queued'].includes(session.state)));
+
+    // Work in the kitchen: its file comes first, then the root one.
+    generator.mockClear();
+    expect((await start(['kitchen/Prep.md'])).status).toBe(200);
+    const prompt = sentPrompt();
+    expect(prompt).toContain('Name the station for every prep change.');
+    expect(prompt.indexOf('Name the station')).toBeLessThan(prompt.indexOf('Always write the reason'));
+    expect(prompt).toContain('Project instructions from kitchen/AGENTS.md apply to work in kitchen.');
+    const current = await state();
+    const run = current.sessions.at(-1)!.instructions!;
+    expect(run.files.map((file) => [file.path, file.scope, file.precedence, file.state])).toEqual([
+      ['kitchen/AGENTS.md', 'kitchen', 1, 'sent'],
+      ['AGENTS.md', '', 2, 'sent'],
+    ]);
+
+    // The record is the session's own, on disk: a fresh store reads it back unchanged.
+    const reopened = new Store(app.locals.store.dataDir, app.locals.store.projectRoot);
+    await reopened.init();
+    expect(reopened.state(projectId).sessions.at(-1)!.instructions).toEqual(run);
   });
 
   test('a file that changed since discovery is sent at its current sha and said to have changed', async () => {

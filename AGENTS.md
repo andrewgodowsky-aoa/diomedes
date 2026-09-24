@@ -250,8 +250,9 @@ Take these to Andrew rather than choosing:
   candidates and owns independent tests; Opus is a bounded worker under a written work order.
 - The heavy-test / Playwright / packaging / live-call slot is one, shared by this repository and
   the site. Take it through the tool before running those; release it after.
-- Contract revision `2026-09-13.1` (`shared/contract-revision.ts`) is the proposed additive
-  amendment later items consume once C00.R accepts it, and not before. Ledger:
+- Contract revision `2026-09-13.1` (`shared/contract-revision.ts`) is the additive amendment
+  C00.R accepted for the local rollout on 2026-09-17
+  (`evidence/unified-20260913/C00.R-rollout-20260917.json`). Ledger:
   `docs/implementation/2026-09-13-rebaseline.md`.
 
 ---
