@@ -6,10 +6,24 @@ import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const buildScriptId = 'scripts/build-windows-installer.mjs';
+// Identifiers. An upgrade finds the earlier install, and the app its data, by these, so they
+// keep the name Diomedes that the product had until 2026-09-22. So do the install folder,
+// Diomedes.exe and the uninstaller's file name in the script below, and the asset name.
 const productId = 'Diomedes.Experimental.8c27d61a-1919-4b12-9df7-20260909e001';
 const productRegistryKey = `Software\\Diomedes\\Experimental\\${productId}`;
 const uninstallRegistryKey = `Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${productId}`;
 const markerName = '.diomedes-experimental-20260909';
+// What a person reads: the wizard, Installed apps and the Start Menu say Nectovia.
+const productName = 'Nectovia Experimental 2026-09-09';
+const startMenu = { folder: 'Nectovia Experimental 20260909', shortcut: 'Nectovia Experimental' };
+// Where an install made before the rename put its Start Menu entry. Installing removes it, so
+// an upgrade leaves a single entry, and the uninstaller removes it too.
+const legacyStartMenu = {
+  folder: 'Diomedes Experimental 20260909',
+  shortcut: 'Diomedes Experimental',
+};
+// The installer and its uninstaller carry the app's icon (scripts/app-icon.mjs).
+const appIcon = path.join(root, 'desktop', 'diomedes.ico');
 const tool = {
   name: 'NSIS',
   version: '3.12',
@@ -24,7 +38,7 @@ const defaults = {
 };
 
 function usage() {
-  return `Build the unsigned, per-user Diomedes experimental Windows installer.
+  return `Build the unsigned, per-user Nectovia experimental Windows installer.
 
 Usage:
   node scripts/build-windows-installer.mjs [options]
@@ -238,7 +252,7 @@ function numericFileVersion(version) {
   return `${parts[0]}.${parts[1]}.${parts[2]}.0`;
 }
 
-function generateNsis({ outputPath, version, payload, signed = false }) {
+export function generateNsis({ outputPath, version, payload, signed = false }) {
   let previousInstallDirectory;
   const installFiles = payload.files
     .map(({ absolutePath, relativePath }) => {
@@ -266,11 +280,15 @@ RequestExecutionLevel user
 !include \"MUI2.nsh\"
 
 !define PRODUCT_ID \"${productId}\"
-!define PRODUCT_NAME \"Diomedes Experimental 2026-09-09${signed ? '' : ' (Unsigned)'}\"
+!define PRODUCT_NAME \"${productName}${signed ? '' : ' (Unsigned)'}\"
 !define APP_VERSION \"${nsis(version)}\"
 !define MARKER \"${markerName}\"
 !define PRODUCT_KEY \"${productRegistryKey}\"
 !define UNINSTALL_KEY \"${uninstallRegistryKey}\"
+!define SHORTCUT_DIR \"$SMPROGRAMS\\${startMenu.folder}\"
+!define SHORTCUT \"$SMPROGRAMS\\${startMenu.folder}\\${startMenu.shortcut}.lnk\"
+!define LEGACY_SHORTCUT_DIR \"$SMPROGRAMS\\${legacyStartMenu.folder}\"
+!define LEGACY_SHORTCUT \"$SMPROGRAMS\\${legacyStartMenu.folder}\\${legacyStartMenu.shortcut}.lnk\"
 
 Name \"${'${PRODUCT_NAME}'}\"
 OutFile \"${nsis(outputPath)}\"
@@ -290,6 +308,8 @@ VIAddVersionKey /LANG=1033 \"LegalCopyright\" \"Copyright (C) 2026 Diomedes cont
 
 !define MUI_ABORTWARNING
 !define MUI_FINISHPAGE_NOAUTOCLOSE
+!define MUI_ICON \"${nsis(appIcon)}\"
+!define MUI_UNICON \"${nsis(appIcon)}\"
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
@@ -308,13 +328,13 @@ marker_present:
   FileClose $0
   StrCmp $1 \"${'${PRODUCT_ID}'}\" safe unsafe
 unsafe:
-  MessageBox MB_OK|MB_ICONSTOP \"This folder is not an empty Diomedes experimental install owned by ${'${PRODUCT_ID}'}. Choose an empty folder.\" /SD IDOK
+  MessageBox MB_OK|MB_ICONSTOP \"This folder is not an empty Nectovia experimental install owned by ${'${PRODUCT_ID}'}. Choose an empty folder.\" /SD IDOK
   SetErrorLevel 2
   Quit
 safe:
 FunctionEnd
 
-Section \"Install Diomedes experimental app\" SectionInstall
+Section \"Install Nectovia experimental app\" SectionInstall
   SetShellVarContext current
   Call EnsureSafeInstallDir
 ${installFiles}
@@ -324,8 +344,12 @@ ${installFiles}
   FileClose $0
   WriteUninstaller \"$INSTDIR\\Uninstall Diomedes Experimental.exe\"
 
-  CreateDirectory \"$SMPROGRAMS\\Diomedes Experimental 20260909\"
-  CreateShortcut \"$SMPROGRAMS\\Diomedes Experimental 20260909\\Diomedes Experimental.lnk\" \"$INSTDIR\\app\\Diomedes.exe\"
+  ; An install from before the rename made its entry under the old name. RMDir is not
+  ; recursive, so a folder that holds anything else stays.
+  Delete \"${'${LEGACY_SHORTCUT}'}\"
+  RMDir \"${'${LEGACY_SHORTCUT_DIR}'}\"
+  CreateDirectory \"${'${SHORTCUT_DIR}'}\"
+  CreateShortcut \"${'${SHORTCUT}'}\" \"$INSTDIR\\app\\Diomedes.exe\"
 
   WriteRegStr HKCU \"${'${PRODUCT_KEY}'}\" \"InstallDir\" \"$INSTDIR\"
   WriteRegStr HKCU \"${'${PRODUCT_KEY}'}\" \"ProductId\" \"${'${PRODUCT_ID}'}\"
@@ -357,8 +381,10 @@ FunctionEnd
 Section \"Uninstall\"
   SetShellVarContext current
   Call un.VerifyOwnership
-  Delete \"$SMPROGRAMS\\Diomedes Experimental 20260909\\Diomedes Experimental.lnk\"
-  RMDir \"$SMPROGRAMS\\Diomedes Experimental 20260909\"
+  Delete \"${'${SHORTCUT}'}\"
+  RMDir \"${'${SHORTCUT_DIR}'}\"
+  Delete \"${'${LEGACY_SHORTCUT}'}\"
+  RMDir \"${'${LEGACY_SHORTCUT_DIR}'}\"
 
 ${deleteFiles}
 ${removeDirectories}
@@ -462,124 +488,130 @@ ${text}`);
   }
 }
 
-const args = parseArgs(process.argv.slice(2));
-if (args.help) {
-  console.log(usage());
-  process.exit(0);
-}
-if (process.platform !== 'win32') throw new Error('This installer builder requires Windows.');
+// The build runs only when this file is the entry point; tests import generateNsis.
+async function main() {
+  const args = parseArgs(process.argv.slice(2));
+  if (args.help) {
+    console.log(usage());
+    process.exit(0);
+  }
+  if (process.platform !== 'win32') throw new Error('This installer builder requires Windows.');
 
-const appDir = args.appDir ?? defaults.appDir;
-const outDir = args.outDir ?? defaults.outDir;
-const toolCache = args.toolCache ?? defaults.toolCache;
-const manifest = JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8'));
-const signed = args.signed === true;
-const outputName =
-  args.outputName ??
-  `Diomedes-Experimental-${manifest.version}-${signed ? 'setup' : 'unsigned-setup'}.exe`;
-if (path.basename(outputName) !== outputName || !outputName.toLowerCase().endsWith('.exe')) {
-  throw new Error('--output-name must be a file base name ending in .exe.');
-}
-const appStat = await fs.stat(appDir).catch(() => null);
-if (!appStat?.isDirectory()) throw new Error(`Packaged app directory is missing: ${appDir}`);
-if (!(await exists(path.join(appDir, 'Diomedes.exe')))) {
-  throw new Error(`Packaged app does not contain Diomedes.exe: ${appDir}`);
-}
-const outputPath = path.join(outDir, outputName);
-const manifestPath = `${outputPath}.json`;
-if (isWithin(outDir, appDir)) {
-  throw new Error(`Installer output must be outside the packaged app directory: ${outDir}`);
-}
-if (isWithin(toolCache, appDir)) {
-  throw new Error(`NSIS tool cache must be outside the packaged app directory: ${toolCache}`);
-}
+  const appDir = args.appDir ?? defaults.appDir;
+  const outDir = args.outDir ?? defaults.outDir;
+  const toolCache = args.toolCache ?? defaults.toolCache;
+  const manifest = JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8'));
+  const signed = args.signed === true;
+  const outputName =
+    args.outputName ??
+    `Diomedes-Experimental-${manifest.version}-${signed ? 'setup' : 'unsigned-setup'}.exe`;
+  if (path.basename(outputName) !== outputName || !outputName.toLowerCase().endsWith('.exe')) {
+    throw new Error('--output-name must be a file base name ending in .exe.');
+  }
+  const appStat = await fs.stat(appDir).catch(() => null);
+  if (!appStat?.isDirectory()) throw new Error(`Packaged app directory is missing: ${appDir}`);
+  if (!(await exists(path.join(appDir, 'Diomedes.exe')))) {
+    throw new Error(`Packaged app does not contain Diomedes.exe: ${appDir}`);
+  }
+  const outputPath = path.join(outDir, outputName);
+  const manifestPath = `${outputPath}.json`;
+  if (isWithin(outDir, appDir)) {
+    throw new Error(`Installer output must be outside the packaged app directory: ${outDir}`);
+  }
+  if (isWithin(toolCache, appDir)) {
+    throw new Error(`NSIS tool cache must be outside the packaged app directory: ${toolCache}`);
+  }
 
-if (signed) await signFiles([path.join(appDir, 'Diomedes.exe')]);
-const payload = await collectPayload(appDir);
-if (payload.files.length === 0) throw new Error(`Packaged app is empty: ${appDir}`);
-const appTreeSha256 = payloadTreeSha256(payload);
-const nsisTool = await acquireNsis(toolCache, args.download);
-await fs.mkdir(outDir, { recursive: true });
-await assertScriptOwnedOutput(outputPath, manifestPath);
+  if (signed) await signFiles([path.join(appDir, 'Diomedes.exe')]);
+  const payload = await collectPayload(appDir);
+  if (payload.files.length === 0) throw new Error(`Packaged app is empty: ${appDir}`);
+  const appTreeSha256 = payloadTreeSha256(payload);
+  const nsisTool = await acquireNsis(toolCache, args.download);
+  await fs.mkdir(outDir, { recursive: true });
+  await assertScriptOwnedOutput(outputPath, manifestPath);
 
-const generatedDir = path.join(toolCache, 'generated');
-await fs.mkdir(generatedDir, { recursive: true });
-const generatedScript = path.join(generatedDir, `${path.parse(outputName).name}.nsi`);
-await fs.writeFile(
-  generatedScript,
-  generateNsis({ outputPath, version: manifest.version, payload, signed }),
-  'utf8',
-);
-
-await fs.writeFile(
-  manifestPath,
-  `${JSON.stringify(
-    {
-      schemaVersion: 1,
-      ownedBy: buildScriptId,
-      outputFile: outputPath,
-      state: 'building',
-      generatedScript,
-    },
-    null,
-    2,
-  )}\n`,
-  'utf8',
-);
-
-const compile = await run(nsisTool.compilerPath, ['/V4', '/WX', generatedScript], {
-  cwd: path.dirname(nsisTool.compilerPath),
-});
-if (!(await exists(outputPath)))
-  throw new Error(`NSIS reported success but did not create ${outputPath}.`);
-const postCompilePayload = await collectPayload(appDir);
-if (payloadTreeSha256(postCompilePayload) !== appTreeSha256) {
-  throw new Error(
-    'Packaged app changed while NSIS was compiling. Preserve the output for inspection and rebuild from a stable app directory.',
+  const generatedDir = path.join(toolCache, 'generated');
+  await fs.mkdir(generatedDir, { recursive: true });
+  const generatedScript = path.join(generatedDir, `${path.parse(outputName).name}.nsi`);
+  await fs.writeFile(
+    generatedScript,
+    generateNsis({ outputPath, version: manifest.version, payload, signed }),
+    'utf8',
   );
-}
-if (signed) await signFiles([outputPath]);
-const authenticodeStatus = await getAuthenticodeStatus(outputPath);
-if (!signed && authenticodeStatus !== 'NotSigned') {
-  throw new Error(`Expected an unsigned installer; Authenticode status is ${authenticodeStatus}.`);
-}
-if (signed && authenticodeStatus !== 'Signed') {
-  throw new Error(`--signed was requested but the installer carries no signature (${authenticodeStatus}).`);
+
+  await fs.writeFile(
+    manifestPath,
+    `${JSON.stringify(
+      {
+        schemaVersion: 1,
+        ownedBy: buildScriptId,
+        outputFile: outputPath,
+        state: 'building',
+        generatedScript,
+      },
+      null,
+      2,
+    )}\n`,
+    'utf8',
+  );
+
+  const compile = await run(nsisTool.compilerPath, ['/V4', '/WX', generatedScript], {
+    cwd: path.dirname(nsisTool.compilerPath),
+  });
+  if (!(await exists(outputPath)))
+    throw new Error(`NSIS reported success but did not create ${outputPath}.`);
+  const postCompilePayload = await collectPayload(appDir);
+  if (payloadTreeSha256(postCompilePayload) !== appTreeSha256) {
+    throw new Error(
+      'Packaged app changed while NSIS was compiling. Preserve the output for inspection and rebuild from a stable app directory.',
+    );
+  }
+  if (signed) await signFiles([outputPath]);
+  const authenticodeStatus = await getAuthenticodeStatus(outputPath);
+  if (!signed && authenticodeStatus !== 'NotSigned') {
+    throw new Error(`Expected an unsigned installer; Authenticode status is ${authenticodeStatus}.`);
+  }
+  if (signed && authenticodeStatus !== 'Signed') {
+    throw new Error(`--signed was requested but the installer carries no signature (${authenticodeStatus}).`);
+  }
+
+  const installerStat = await fs.stat(outputPath);
+  const buildManifest = {
+    schemaVersion: 1,
+    ownedBy: buildScriptId,
+    productId,
+    experimental: true,
+    unsigned: !signed,
+    signing: signed ? 'azure-artifact-signing' : 'unsigned-experimental',
+    authenticodeStatus,
+    outputFile: outputPath,
+    outputBytes: installerStat.size,
+    outputSha256: await sha256File(outputPath),
+    appDir,
+    appVersion: manifest.version,
+    appFileCount: payload.files.length,
+    appBytes: payload.files.reduce((total, file) => total + file.size, 0),
+    appTreeSha256,
+    compiler: {
+      name: tool.name,
+      version: tool.version,
+      reportedVersion: nsisTool.compilerVersion,
+      sourceUrl: tool.url,
+      archivePath: nsisTool.zipPath,
+      archiveSha256: nsisTool.zipHash,
+    },
+    generatedScript,
+    builtAt: new Date().toISOString(),
+  };
+  await fs.writeFile(manifestPath, `${JSON.stringify(buildManifest, null, 2)}\n`, 'utf8');
+
+  process.stdout.write(compile.stdout);
+  process.stderr.write(compile.stderr);
+  console.log(`Installer: ${outputPath}`);
+  console.log(`Manifest: ${manifestPath}`);
+  console.log(`SHA-256: ${buildManifest.outputSha256}`);
+  console.log(`Authenticode: ${authenticodeStatus} (${signed ? 'signed' : 'unsigned'} experimental build)`);
 }
 
-const installerStat = await fs.stat(outputPath);
-const buildManifest = {
-  schemaVersion: 1,
-  ownedBy: buildScriptId,
-  productId,
-  experimental: true,
-  unsigned: !signed,
-  signing: signed ? 'azure-artifact-signing' : 'unsigned-experimental',
-  authenticodeStatus,
-  outputFile: outputPath,
-  outputBytes: installerStat.size,
-  outputSha256: await sha256File(outputPath),
-  appDir,
-  appVersion: manifest.version,
-  appFileCount: payload.files.length,
-  appBytes: payload.files.reduce((total, file) => total + file.size, 0),
-  appTreeSha256,
-  compiler: {
-    name: tool.name,
-    version: tool.version,
-    reportedVersion: nsisTool.compilerVersion,
-    sourceUrl: tool.url,
-    archivePath: nsisTool.zipPath,
-    archiveSha256: nsisTool.zipHash,
-  },
-  generatedScript,
-  builtAt: new Date().toISOString(),
-};
-await fs.writeFile(manifestPath, `${JSON.stringify(buildManifest, null, 2)}\n`, 'utf8');
-
-process.stdout.write(compile.stdout);
-process.stderr.write(compile.stderr);
-console.log(`Installer: ${outputPath}`);
-console.log(`Manifest: ${manifestPath}`);
-console.log(`SHA-256: ${buildManifest.outputSha256}`);
-console.log(`Authenticode: ${authenticodeStatus} (${signed ? 'signed' : 'unsigned'} experimental build)`);
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url))
+  await main();

@@ -14,6 +14,12 @@ if (-not $Snapshot) {
 $Snapshot = [IO.Path]::GetFullPath($Snapshot)
 $directory = Split-Path -Parent $Snapshot
 $result = Restore-RegistrationSnapshot (Read-RegistrationSnapshot $Snapshot) $directory
+# A proof of an installer from after the rename to Nectovia also recorded the Start Menu folder
+# that installs from before it made, because that installer removes it.
+$legacy = Join-Path $directory 'legacy-start-menu'
+$legacySnapshot = Join-Path $legacy 'snapshot.json'
+$legacyResult = if (Test-Path -LiteralPath $legacySnapshot) { Restore-RegistrationSnapshot (Read-RegistrationSnapshot $legacySnapshot) $legacy } else { $null }
 Clear-PendingRestore $Snapshot
 if ($directory.StartsWith((Get-ProofStateDirectory) + '\', [StringComparison]::OrdinalIgnoreCase)) { Remove-Item -LiteralPath $directory -Recurse -Force }
 "Registration $result from $Snapshot"
+if ($legacyResult) { "Start Menu folder from before the rename $legacyResult from $legacySnapshot" }
