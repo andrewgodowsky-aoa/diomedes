@@ -11,6 +11,7 @@ import type {
   UsageWindow,
 } from '../shared/types';
 import { formatOrigin, originForNeed, originForSession } from './attribution-display';
+import { rememberedAttribution } from '../shared/remembered-approvals';
 import './attribution.css';
 
 export const detailDescriptions = {
@@ -322,6 +323,46 @@ function ApprovalRecord({ need }: { need: Need }) {
         ? 'todo'
         : 'done';
   if (!receipt) {
+    if (grant?.kind === 'remembered-approval') {
+      // Nobody clicked this time. The record says whose earlier click it ran
+      // under and since when, and never reads as a fresh decision.
+      const outcomes = {
+        pending: 'Execution has not been confirmed.',
+        applied: 'Applied. The versions are in History.',
+        conflicted: 'Outside edits preserved. Some changes may have applied; check History.',
+        'not-applied': 'No write was confirmed. Start new work for a new proposal.',
+        declined: 'No changes were applied.',
+      };
+      return (
+        <div className={`approval-status is-${state}`} aria-label="Approval record">
+          <p className="approval-outcome">
+            <Mark state={mark} />
+            <span>
+              {rememberedAttribution(grant)} {outcomes[state]}
+            </span>
+          </p>
+          <details className="approval-record">
+            <summary className="approval-summary">Decision record</summary>
+            <dl className="facts approval-facts">
+              <dt>Authorization</dt>
+              <dd>{grant.id}</dd>
+              <dt>Remembered approval</dt>
+              <dd className="attribution-wrap">{grant.grantId}</dd>
+              <dt>Remembered</dt>
+              <dd>
+                {grant.route === 'learned-offer' ? 'Accepted an offer to stop asking' : 'Go ahead and remember'}
+              </dd>
+              <dt>Proposal</dt>
+              <dd>{grant.proposalDigest}</dd>
+              <dt>Action</dt>
+              <dd>{grant.actionDigest}</dd>
+              <dt>Authorized</dt>
+              <dd>{new Date(grant.authorizedAt).toLocaleString()}</dd>
+            </dl>
+          </details>
+        </div>
+      );
+    }
     if (grant) {
       const outcomes = {
         pending: 'Scope matched. Execution has not been confirmed.',

@@ -127,4 +127,40 @@ describe('owner-facing Discovery view', () => {
     expect(empty).toContain('Select a prospect to open their discovery record.');
     expect(empty).not.toContain('Juniper Coffee');
   });
+
+  test('labels an observed fact whose file changed as stale, and only that fact (DIO-84)', () => {
+    const evidence = {
+      kind: 'approved-file' as const,
+      projectId: 'project-1',
+      path: 'Imports/weekly.csv',
+      sha: 'a'.repeat(64),
+      historyEntryId: 'history-1',
+    };
+    const observed: ProspectDiscoveryRecord = {
+      ...record,
+      facts: record.facts.map((fact) =>
+        fact.id === 'fact-goal' ? { ...fact, provenance: { class: 'observed', evidence } } : fact,
+      ),
+    };
+    const fresh = renderToStaticMarkup(createElement(Discovery, { record: observed }));
+    expect(fresh).toContain('Observed from approved file Imports/weekly.csv');
+    expect(fresh).not.toContain('Stale');
+    const stale = renderToStaticMarkup(
+      createElement(Discovery, {
+        record: observed,
+        staleEvidence: [
+          {
+            factId: 'fact-goal',
+            projectId: 'project-1',
+            path: 'Imports/weekly.csv',
+            recordedSha: 'a'.repeat(64),
+            currentSha: 'b'.repeat(64),
+          },
+        ],
+      }),
+    );
+    // The recorded evidence is still shown as recorded; the label is added beside it.
+    expect(stale).toContain(`Observed from approved file Imports/weekly.csv (${'a'.repeat(64)})`);
+    expect(stale.match(/Stale: the file has changed since/g)).toHaveLength(1);
+  });
 });

@@ -4,6 +4,7 @@
  */
 import { describe, expect, test } from 'vitest';
 import {
+  MAX_RAW_USAGE_BYTES,
   MAX_TOKENS_PER_FIELD,
   USAGE_CONTRACT_ID,
   USAGE_COUNT_FIELDS,
@@ -175,6 +176,24 @@ describe('missing is unknown, wrong is refused, nothing is clamped', () => {
     expect(normalizeUsage(counts(), [1, 2]).state).toBe('refused');
     expect(normalizeUsage(counts(), { at: new Date() }).state).toBe('refused');
     expect(normalizeUsage(counts(), { big: 'x'.repeat(20_000) }).state).toBe('refused');
+  });
+
+  test('the raw evidence ceiling is measured in UTF-8 bytes, not UTF-16 units (DIO-88 class)', () => {
+    // 6,000 CJK characters: about 6 KB of UTF-16 units, about 18 KB of UTF-8 bytes.
+    const wide = { note: '警'.repeat(6_000) };
+    expect(JSON.stringify(wide).length).toBeLessThan(MAX_RAW_USAGE_BYTES);
+    expect(Buffer.byteLength(JSON.stringify(wide), 'utf8')).toBeGreaterThan(MAX_RAW_USAGE_BYTES);
+    expect(normalizeUsage(counts(), wide).state).toBe('refused');
+    // Exactly the ceiling is kept; one byte more is not.
+    const at = (target: number) => {
+      const room = target - Buffer.byteLength(JSON.stringify({ note: '' }), 'utf8');
+      return { note: '警'.repeat(Math.floor(room / 3)) + 'x'.repeat(room % 3) };
+    };
+    expect(Buffer.byteLength(JSON.stringify(at(MAX_RAW_USAGE_BYTES)), 'utf8')).toBe(
+      MAX_RAW_USAGE_BYTES,
+    );
+    expect(normalizeUsage(counts(), at(MAX_RAW_USAGE_BYTES)).state).toBe('known');
+    expect(normalizeUsage(counts(), at(MAX_RAW_USAGE_BYTES + 1)).state).toBe('refused');
   });
 
   test('validateProviderUsage is the contract, and says whether a report was missing or wrong', () => {

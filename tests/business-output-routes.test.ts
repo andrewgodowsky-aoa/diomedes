@@ -381,6 +381,35 @@ describe('a business gets a brief it can read', () => {
     // what proves the draft came from the file rather than from a template.
     expect(draft).toContain('cabinets fitted');
 
+    // Automations Milestone A: the legacy route converged onto Run once's
+    // admission, so the draft now has an occurrence, a Task, a Session and a
+    // harness run behind it, and its History entry names that Task.
+    const legacy = ran.data as typeof ran.data & {
+      occurrenceId: string;
+      runId: string;
+      taskId: string;
+    };
+    expect(legacy.occurrenceId).toMatch(/^O-/);
+    expect(legacy.runId).toMatch(/^R-brief-/);
+    const state = await request<{
+      tasks: { id: string; state: string }[];
+      sessions: { taskId: string; state: string; engine: { name: string; model: string | null } }[];
+      history: { id: string; kind: string; taskId: string | null }[];
+    }>(`/projects/${projectId}/state`);
+    expect(state.data.tasks.find((task) => task.id === legacy.taskId)?.state).toBe('done');
+    const session = state.data.sessions.find((item) => item.taskId === legacy.taskId);
+    expect(session?.state).toBe('done');
+    // A Diomedes procedure, never a model.
+    expect(session?.engine).toMatchObject({ name: 'diomedes-procedure', model: null });
+    const entry = state.data.history.find((item) => item.id === ran.data.entryId);
+    expect(entry).toMatchObject({ kind: 'weekly-brief', taskId: legacy.taskId });
+    const listed = await request<{
+      automations: { status: { text: string }; latest: { occurrence: { id: string } } }[];
+    }>(`/workspace/organizations/${organizationId}/automations`);
+    expect(listed.status).toBe(200);
+    expect(listed.data.automations[0]?.status.text).toBe('Manual — not scheduled');
+    expect(listed.data.automations[0]?.latest.occurrence.id).toBe(legacy.occurrenceId);
+
     // The new route uses real imports, with arbitrary export names rather than
     // the pack's historical fixture paths. A stale bound project is refused.
     const exportPath = path.join(root, 'chosen-export.csv');

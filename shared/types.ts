@@ -1,5 +1,11 @@
 import type { StepIntent } from './harness.js';
-import type { ReviewerDecision, ScopeGrantRecord, ScopedAuthorization } from './permissions.js';
+import type {
+  RememberedApprovals,
+  RememberedAuthorization,
+  ReviewerDecision,
+  ScopeGrantRecord,
+  ScopedAuthorization,
+} from './permissions.js';
 import type { AgentResolution } from './agents.js';
 import type { OriginSnapshot } from './attribution.js';
 import type { WorkspaceRef } from './workspaces.js';
@@ -206,7 +212,7 @@ export interface TaskCreationReceipt {
 export interface Need {
   origin?: OriginSnapshot;
   /** Versioned delegated decision; mutually exclusive with exact approvalReceipt. */
-  authorization?: ScopedAuthorization;
+  authorization?: ScopedAuthorization | RememberedAuthorization;
   /** Host policy explanation when an existing task scope did not cover this proposal. */
   authorizationBoundary?: string;
   id: string;
@@ -371,7 +377,7 @@ export interface FileRecord {
 }
 export interface HistoryEntry {
   origin?: OriginSnapshot;
-  authorization?: ScopedAuthorization;
+  authorization?: ScopedAuthorization | RememberedAuthorization;
   /** Mirrors the reviewer decision this event records, for audit without the Need. */
   review?: ReviewerDecision;
   id: string;
@@ -569,6 +575,8 @@ export interface ProjectState {
   cloudSharing?: CloudSharingPolicy;
   /** Absent in v1 projects. Persisted grants alone never restore active authority. */
   scopeGrants?: ScopeGrantRecord[];
+  /** Remembered approvals (D5). Absent until the first exact approval that could be remembered. */
+  rememberedApprovals?: RememberedApprovals;
   project: Project;
   documents: DocumentInfo[];
   tasks: Task[];
@@ -585,6 +593,11 @@ export interface ProjectState {
    * refreshed on activation and re-read from disk, never edited by hand.
    */
   instructionFiles?: InstructionFileRecord[];
+  /**
+   * The project's Ready queue: automatic start, its pause and the claims it made (H07,
+   * shared/ready-queue.ts). Absent on every project written before it existed, which means off.
+   */
+  readyQueue?: import('./ready-queue.js').ReadyQueueRecord;
 }
 /** How Diomedes knows whether an engine is signed in. 'first-use' means the first run reports it. */
 export type SignInState = 'signed-in' | 'not-signed-in' | 'unknown' | 'first-use' | 'not-needed';

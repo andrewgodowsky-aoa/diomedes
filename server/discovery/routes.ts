@@ -7,6 +7,7 @@ import {
   createProspectDiscoverySchema,
   type DiscoveryArtifact,
   type DiscoveryExportReference,
+  type ProspectDiscoveryRecord,
 } from '../../shared/discovery.js';
 import { ApiError } from '../paths.js';
 import type { DiscoveryService } from './service.js';
@@ -154,27 +155,33 @@ export function mountDiscoveryRoutes(
   const requestedProspect = (req: Request) => String(req.params.prospectId ?? '');
   const activeForPath = async (req: Request) =>
     service.assertActive(operator(req), requestedProspect(req));
+  // Every record goes out with the evidence in it that has gone stale, so the
+  // record stays readable when an approved file changes after it was observed.
+  const reply = async (req: Request, record: ProspectDiscoveryRecord | null) => ({
+    record,
+    staleEvidence: record ? await service.staleEvidence(operator(req), record) : [],
+  });
 
   // There is deliberately no route that lists every prospect. The owner-facing
   // pane reads only the active record selected under the trusted operator id.
   app.get(
     '/api/discovery',
-    route(async (req) => ({ record: await service.active(operator(req)) }), false),
+    route(async (req) => reply(req, await service.active(operator(req))), false),
   );
   app.post(
     '/api/discovery',
-    route(async (req) => ({
-      record: await service.createAndSelect(
-        operator(req),
-        parse(createProspectDiscoverySchema, req),
+    route(async (req) =>
+      reply(
+        req,
+        await service.createAndSelect(operator(req), parse(createProspectDiscoverySchema, req)),
       ),
-    })),
+    ),
   );
   app.post(
     '/api/discovery/:prospectId/select',
     route(async (req) => {
       parse(emptySchema, req);
-      return { record: await service.select(operator(req), requestedProspect(req)) };
+      return reply(req, await service.select(operator(req), requestedProspect(req)));
     }),
   );
   app.post(
@@ -187,50 +194,54 @@ export function mountDiscoveryRoutes(
       const input = parse(importSchema, req);
       await activeForPath(req);
       const document = await dependencies.importDocument(req, input);
-      return {
-        record: await service.importBrief(operator(req), document.filename, document.content),
-      };
+      return reply(
+        req,
+        await service.importBrief(operator(req), document.filename, document.content),
+      );
     }),
   );
   app.post(
     '/api/discovery/:prospectId/facts',
     route(async (req) => {
       await activeForPath(req);
-      return { record: await service.addFact(operator(req), parse(factSchema, req)) };
+      return reply(req, await service.addFact(operator(req), parse(factSchema, req)));
     }),
   );
   app.post(
     '/api/discovery/:prospectId/facts/correct',
     route(async (req) => {
       await activeForPath(req);
-      return { record: await service.correctFact(operator(req), parse(correctionSchema, req)) };
+      return reply(req, await service.correctFact(operator(req), parse(correctionSchema, req)));
     }),
   );
   app.post(
     '/api/discovery/:prospectId/facts/public-transition',
     route(async (req) => {
       await activeForPath(req);
-      return {
-        record: await service.transitionPublicFact(operator(req), parse(transitionSchema, req)),
-      };
+      return reply(
+        req,
+        await service.transitionPublicFact(operator(req), parse(transitionSchema, req)),
+      );
     }),
   );
   app.post(
     '/api/discovery/:prospectId/hypothesis/outcome',
     route(async (req) => {
       await activeForPath(req);
-      return {
-        record: await service.setHypothesisOutcome(operator(req), parse(outcomeSchema, req)),
-      };
+      return reply(
+        req,
+        await service.setHypothesisOutcome(operator(req), parse(outcomeSchema, req)),
+      );
     }),
   );
   app.post(
     '/api/discovery/:prospectId/classification',
     route(async (req) => {
       await activeForPath(req);
-      return {
-        record: await service.setClassification(operator(req), parse(classificationSchema, req)),
-      };
+      return reply(
+        req,
+        await service.setClassification(operator(req), parse(classificationSchema, req)),
+      );
     }),
   );
   app.post(
@@ -245,7 +256,7 @@ export function mountDiscoveryRoutes(
       const operatorId = operator(req);
       const artifact = await service.exportActive(operatorId);
       const receipt = await dependencies.exportToProject(req, artifact, projectId);
-      return { record: await service.recordExport(operatorId, receipt) };
+      return reply(req, await service.recordExport(operatorId, receipt));
     }),
   );
 }

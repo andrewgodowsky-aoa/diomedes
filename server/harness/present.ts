@@ -84,13 +84,18 @@ export function presentRun(run: HarnessRun): RunPresentation {
       };
     case 'failed':
       // The error text stays on the run record for the Console's technical
-      // lines; a person-facing sentence never carries a raw message.
+      // lines; a person-facing sentence never carries a raw message. A run that
+      // stopped before writing because a source was missing says so, since
+      // "something went wrong" would hide the one thing a person can fix.
       return {
         ...base,
         taskState: 'waiting',
         reason: 'went-wrong',
         sessionState: 'failed',
-        sentence: 'Stopped because something went wrong. Nothing will be repeated on its own.',
+        sentence:
+          run.failure?.name === 'waiting_for_data'
+            ? 'Waiting for data: a file it reads is missing, so nothing was written.'
+            : 'Stopped because something went wrong. Nothing will be repeated on its own.',
       };
     case 'cancelled':
       return uncertainStep
@@ -133,11 +138,16 @@ export function needFromWaitingStep(
     input && typeof input === 'object' && !Array.isArray(input) && Array.isArray(input.files)
       ? input.files.filter((f): f is string => typeof f === 'string')
       : [];
+  // Undo is promised only where it exists: a recorded write to this project's
+  // own files, which Review can put back. Recording any other effect does not
+  // make it reversible, so nothing else is told it can be undone.
   const consequence =
     step.intent.destination === 'external'
       ? 'This sends information outside this computer. Diomedes cannot take it back afterwards.'
       : step.intent.effect === 'non-idempotent'
-        ? 'This changes something. Diomedes records the before and after so you can undo it.'
+        ? files.length > 0
+          ? 'This changes files in this project. Diomedes records the before and after, so you can undo it in Review.'
+          : 'This changes something. Diomedes records what it did, but it cannot promise this can be undone.'
         : step.intent.effect === 'idempotent'
           ? 'This makes a change that is safe to repeat. Diomedes records it.'
           : 'This only reads. Nothing changes.';

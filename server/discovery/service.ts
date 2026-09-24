@@ -23,8 +23,10 @@ import {
   type FactProvenance,
   type HypothesisOutcome,
   type ObservedEvidence,
+  type ObservedEvidenceCheck,
   type PersonalizationLevel,
   type ProspectDiscoveryRecord,
+  type StaleObservedEvidence,
 } from '../../shared/discovery.js';
 import { ApiError } from '../paths.js';
 import { jsonWrite, readJson, type Store } from '../store.js';
@@ -91,29 +93,50 @@ function hasPublicLineage(record: ProspectDiscoveryRecord, factId: string): bool
   return false;
 }
 
+interface EvidenceInput {
+  readonly operatorId: string;
+  readonly prospectId: string;
+  readonly evidence: ObservedEvidence;
+}
+
+const unverifiedObservation = () =>
+  new ApiError(403, 'That observed fact is not backed by approved file or execution evidence.', {
+    code: 'unverified_observed_evidence',
+  });
+
 export class DiscoveryService {
   private readonly deps: DiscoveryFactoryDependencies;
-  private readonly verifyObservedEvidence: (input: {
-    readonly operatorId: string;
-    readonly prospectId: string;
-    readonly evidence: ObservedEvidence;
-  }) => Promise<boolean>;
+  private readonly checkObservedEvidence: (input: EvidenceInput) => Promise<ObservedEvidenceCheck>;
 
   constructor(
     private readonly store: Store,
     dependencies: Partial<DiscoveryFactoryDependencies> & {
-      readonly verifyObservedEvidence?: (input: {
-        readonly operatorId: string;
-        readonly prospectId: string;
-        readonly evidence: ObservedEvidence;
-      }) => Promise<boolean>;
+      /**
+       * The full reading, which can tell a stale approved file from evidence
+       * that never checked out. The host supplies this one.
+       */
+      readonly checkObservedEvidence?: (input: EvidenceInput) => Promise<ObservedEvidenceCheck>;
+      /** A yes/no verifier, read as verified or invalid; it can never say stale. */
+      readonly verifyObservedEvidence?: (input: EvidenceInput) => Promise<boolean>;
     } = {},
   ) {
     this.deps = {
       now: dependencies.now ?? (() => new Date().toISOString()),
       id: dependencies.id ?? ((prefix) => `${prefix}${randomUUID()}`),
     };
-    this.verifyObservedEvidence = dependencies.verifyObservedEvidence ?? (async () => false);
+    const verify = dependencies.verifyObservedEvidence ?? (async () => false);
+    this.checkObservedEvidence =
+      dependencies.checkObservedEvidence ??
+      (async (input) => ((await verify(input)) ? { status: 'verified' } : { status: 'invalid' }));
+  }
+
+  /**
+   * A new observation is accepted only on evidence that verifies now. Stale
+   * evidence is history, not a source for a new fact (DIO-84 keeps this strict).
+   */
+  private async requireVerifiedObservation(input: EvidenceInput): Promise<void> {
+    if ((await this.checkObservedEvidence(input)).status !== 'verified')
+      throw unverifiedObservation();
   }
 
   /** Routes share the Store's one mutation queue; the service creates no second writer. */
@@ -144,20 +167,49 @@ export class DiscoveryService {
     return record;
   }
 
-  private async verifyStoredEvidence(record: ProspectDiscoveryRecord): Promise<void> {
+  /**
+   * Check every stored observed fact, superseded ones included. Evidence that
+   * never checked out still refuses the record. An approved file that changed
+   * since it was observed does not: the fact stays inspectable, correctable
+   * and retirable, and is reported as stale (DIO-84). Nothing is rewritten.
+   */
+  private async verifyStoredEvidence(
+    record: ProspectDiscoveryRecord,
+  ): Promise<StaleObservedEvidence[]> {
+    const stale: StaleObservedEvidence[] = [];
     for (const fact of record.facts) {
       if (fact.provenance.class !== 'observed') continue;
-      if (
-        !(await this.verifyObservedEvidence({
-          operatorId: record.operatorId,
-          prospectId: record.prospectId,
-          evidence: fact.provenance.evidence,
-        }))
-      )
-        throw new ApiError(409, 'A stored observed fact no longer has valid source evidence.', {
-          code: 'invalid_observed_evidence',
+      const evidence = fact.provenance.evidence;
+      const check = await this.checkObservedEvidence({
+        operatorId: record.operatorId,
+        prospectId: record.prospectId,
+        evidence,
+      });
+      if (check.status === 'verified') continue;
+      if (check.status === 'stale' && evidence.kind === 'approved-file') {
+        stale.push({
+          factId: fact.id,
+          projectId: evidence.projectId,
+          path: evidence.path,
+          recordedSha: evidence.sha,
+          currentSha: check.currentSha,
         });
+        continue;
+      }
+      throw new ApiError(409, 'A stored observed fact no longer has valid source evidence.', {
+        code: 'invalid_observed_evidence',
+      });
     }
+    return stale;
+  }
+
+  /** The stale evidence in a record this operator may read, for the response beside it. */
+  async staleEvidence(
+    operatorId: string,
+    record: ProspectDiscoveryRecord,
+  ): Promise<StaleObservedEvidence[]> {
+    if (record.operatorId !== operatorId) throw notFound();
+    return this.verifyStoredEvidence(record);
   }
 
   private async owned(operatorId: string, prospectId: string): Promise<ProspectDiscoveryRecord> {
@@ -299,21 +351,12 @@ export class DiscoveryService {
         'Public evidence must remain public or reported in its lineage; add observed or hypothesized evidence as a new fact.',
         { code: 'invalid_public_transition' },
       );
-    if (
-      provenance.class === 'observed' &&
-      !(await this.verifyObservedEvidence({
+    if (provenance.class === 'observed')
+      await this.requireVerifiedObservation({
         operatorId,
         prospectId: current.prospectId,
         evidence: provenance.evidence,
-      }))
-    )
-      throw new ApiError(
-        403,
-        'That observed fact is not backed by approved file or execution evidence.',
-        {
-          code: 'unverified_observed_evidence',
-        },
-      );
+      });
     let next: ProspectDiscoveryRecord;
     try {
       next = appendFactCorrection(
@@ -354,21 +397,12 @@ export class DiscoveryService {
       throw new ApiError(400, 'Public facts enter through a Prospect Research Brief import.');
     const current = await this.requireActive(operatorId);
     validateHypothesisSources(current, provenance);
-    if (
-      provenance.class === 'observed' &&
-      !(await this.verifyObservedEvidence({
+    if (provenance.class === 'observed')
+      await this.requireVerifiedObservation({
         operatorId,
         prospectId: current.prospectId,
         evidence: provenance.evidence,
-      }))
-    )
-      throw new ApiError(
-        403,
-        'That observed fact is not backed by approved file or execution evidence.',
-        {
-          code: 'unverified_observed_evidence',
-        },
-      );
+      });
     let next: ProspectDiscoveryRecord;
     try {
       next = appendDiscoveryFact(current, { ...input, provenance }, operatorId, this.deps);

@@ -15,6 +15,13 @@ import { SegmentBar } from './SegmentBar';
 import { planGroups } from './progress-bars';
 import { VerificationBadge, verificationFor } from './Verification';
 import { taskDocumentProblem } from '../../shared/task-sources';
+import type { ReadyItem, ReadyQueueView } from '../../shared/ready-queue';
+import {
+  configureReadyQueue,
+  pauseAllReadyQueues,
+  queueStatus,
+  readReadyQueue,
+} from '../ready-queue';
 
 const ORDER: Column[] = ['Ready', 'Queued', 'Working', 'Review', 'Blocked', 'Done'];
 const WHY: Record<Column, string> = {
@@ -132,6 +139,59 @@ export function BoardView({
   // can arrive before the first render. The ref refuses it in the same tick.
   const sending = useRef(false);
   const [confirmId, setConfirmId] = useState<string | null>(null);
+  // The Ready queue as the local service derives it from the records (H07). Read again whenever
+  // the project's records change, and after each queue control.
+  const [queue, setQueue] = useState<ReadyQueueView | null>(null);
+  const [queueIssue, setQueueIssue] = useState('');
+  const [pausing, setPausing] = useState<'project' | 'all' | null>(null);
+  const [pauseReason, setPauseReason] = useState('');
+  const [queueBusy, setQueueBusy] = useState(false);
+  const queueRead = useRef(0);
+  async function refreshQueue(signal?: AbortSignal) {
+    const read = ++queueRead.current;
+    try {
+      const next = await readReadyQueue(project.id, signal);
+      if (read === queueRead.current && next.projectId === project.id) setQueue(next);
+    } catch (error) {
+      if (signal?.aborted) return;
+      if (read === queueRead.current)
+        setQueueIssue(error instanceof Error ? error.message : 'The Ready queue could not be read.');
+    }
+  }
+  useEffect(() => {
+    const control = new AbortController();
+    void refreshQueue(control.signal);
+    return () => control.abort();
+  }, [project.id, state]);
+  useEffect(() => {
+    setQueue(null);
+    setPausing(null);
+    setPauseReason('');
+    setQueueIssue('');
+  }, [project.id]);
+  async function changeQueue(action: () => Promise<unknown>) {
+    if (queueBusy) return;
+    setQueueBusy(true);
+    setQueueIssue('');
+    try {
+      await action();
+      setPausing(null);
+      setPauseReason('');
+    } catch (error) {
+      setQueueIssue(error instanceof Error ? error.message : 'The Ready queue could not be changed.');
+    } finally {
+      setQueueBusy(false);
+      await refreshQueue();
+    }
+  }
+  const queueItems = new Map<string, ReadyItem>(
+    queue?.autoStart ? queue.items.map((item) => [item.taskId, item]) : [],
+  );
+  const readyWhy = !queue?.autoStart
+    ? WHY.Ready
+    : queue.allPaused || queue.paused
+      ? 'Queue paused · Start runs one by hand'
+      : 'Starts automatically, oldest first';
   const [routeId, setRouteId] = useState<string | null>(null);
   const [arrived, setArrived] = useState<ReadonlySet<string>>(new Set());
   const prevCol = useRef(new Map<string, Column>());
@@ -327,6 +387,106 @@ export function BoardView({
             {effective === 'first' ? 'Confirm each start' : 'Start on click'}
           </span>
         )}
+        {queue && (
+          <div className="queue" aria-label="Ready queue">
+            <label className="auto">
+              <input
+                type="checkbox"
+                role="switch"
+                checked={queue.autoStart}
+                disabled={queueBusy}
+                onChange={(event) => {
+                  const autoStart = event.target.checked;
+                  void changeQueue(() => configureReadyQueue(project.id, { autoStart }));
+                }}
+              />
+              Start ready work automatically
+            </label>
+            <span
+              className={`ctx state${queue.paused || queue.allPaused ? ' attn' : ''}`}
+              data-queue-state={
+                queue.allPaused ? 'all-paused' : queue.paused ? 'paused' : queue.autoStart ? 'on' : 'off'
+              }
+            >
+              {queueStatus(queue)}
+            </span>
+            {queue.paused ? (
+              <button
+                type="button"
+                className="verb"
+                disabled={queueBusy}
+                onClick={() => void changeQueue(() => configureReadyQueue(project.id, { paused: false }))}
+              >
+                Resume queue
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="verb"
+                disabled={queueBusy}
+                aria-expanded={pausing === 'project'}
+                onClick={() => setPausing(pausing === 'project' ? null : 'project')}
+              >
+                Pause queue
+              </button>
+            )}
+            {queue.allPaused ? (
+              <button
+                type="button"
+                className="verb"
+                disabled={queueBusy}
+                onClick={() => void changeQueue(() => pauseAllReadyQueues(false))}
+              >
+                Resume all
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="verb quiet"
+                disabled={queueBusy}
+                aria-expanded={pausing === 'all'}
+                onClick={() => setPausing(pausing === 'all' ? null : 'all')}
+              >
+                Pause all
+              </button>
+            )}
+            {pausing && (
+              <form
+                className="pause"
+                aria-label={pausing === 'all' ? 'Pause every queue' : 'Pause this queue'}
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  const reason = pauseReason.trim() || undefined;
+                  void changeQueue(() =>
+                    pausing === 'all'
+                      ? pauseAllReadyQueues(true, reason)
+                      : configureReadyQueue(project.id, { paused: true, ...(reason ? { reason } : {}) }),
+                  );
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape') setPausing(null);
+                }}
+              >
+                <input
+                  aria-label="Reason"
+                  placeholder="Reason (optional)"
+                  maxLength={200}
+                  value={pauseReason}
+                  onChange={(event) => setPauseReason(event.target.value)}
+                />
+                <button type="submit" className="go" disabled={queueBusy}>
+                  {pausing === 'all' ? 'Pause all queues' : 'Pause'}
+                </button>
+                <span className="mono">Running work keeps running; Stop ends it.</span>
+              </form>
+            )}
+          </div>
+        )}
+        {queueIssue && (
+          <p className="creation-issue" role="alert">
+            {queueIssue}
+          </p>
+        )}
         {creationIssue && (
           <p className="creation-issue" role="alert">
             {creationIssue}
@@ -400,7 +560,13 @@ export function BoardView({
       </div>
       <div className={`columns${compact ? ' compact' : ''}`}>
         {ORDER.map((column) => {
-          const rows = tasks.filter((t) => columnOf(t) === column);
+          const listed = tasks.filter((t) => columnOf(t) === column);
+          // With automatic start on, Ready reads in the queue's own order; held tasks last.
+          const place = (task: Task) => queueItems.get(task.id)?.position ?? Number.MAX_SAFE_INTEGER;
+          const rows =
+            column === 'Ready' && queueItems.size
+              ? [...listed].sort((a, b) => place(a) - place(b))
+              : listed;
           const count = column === 'Working' ? `${rows.length} of 1 slot` : String(rows.length);
           const amber = (column === 'Review' || column === 'Blocked') && rows.length > 0;
           return (
@@ -409,7 +575,7 @@ export function BoardView({
                 {column}
                 <span className={`mono${amber ? ' attn' : ''}`}>{count}</span>
               </h3>
-              <div className="why">{WHY[column]}</div>
+              <div className="why">{column === 'Ready' ? readyWhy : WHY[column]}</div>
               <ul>
                 {rows.length === 0 && <li className="empty">{EMPTY[column]}</li>}
                 {rows.map((task) => (
@@ -419,6 +585,7 @@ export function BoardView({
                     column={column}
                     evidence={evidenceOf(task)}
                     history={state.history}
+                    queued={column === 'Ready' ? (queueItems.get(task.id) ?? null) : null}
                     worker={workerOf(task)}
                     workerTitle={workerTitleOf(task)}
                     age={ageOf(task)}
@@ -479,6 +646,7 @@ function TaskRow({
   column,
   evidence,
   history,
+  queued,
   worker,
   workerTitle,
   age,
@@ -507,6 +675,8 @@ function TaskRow({
   evidence: ReturnType<typeof taskEvidence>;
   /** H17: the project's History, from which a finished run's result is projected. */
   history: readonly HistoryEntry[];
+  /** Where this Ready task stands in the queue, when automatic start is on. */
+  queued: ReadyItem | null;
   worker: string;
   workerTitle: string | undefined;
   age: string;
@@ -532,8 +702,10 @@ function TaskRow({
 }) {
   // Working owns the column for its running bar, and Ready repeats the
   // column caption unless the row has a distinct reason (a stopped run).
-  const evidenceLine =
-    column === 'Working' || (column === 'Ready' && evidence.detail === WHY.Ready)
+  // With automatic start on, a Ready row says its place and the one reason it is not starting.
+  const evidenceLine = queued
+    ? queued.detail
+    : column === 'Working' || (column === 'Ready' && evidence.detail === WHY.Ready)
       ? null
       : evidence.detail;
   // The fault sentence says "Start again to request a new proposal", so the row
@@ -553,7 +725,11 @@ function TaskRow({
   }
 
   return (
-    <li className={`crow${arrived ? ' arrived' : ''}`} onKeyDown={onKeyClose}>
+    <li
+      className={`crow${arrived ? ' arrived' : ''}`}
+      onKeyDown={onKeyClose}
+      {...(queued ? { 'data-queue-why': queued.why } : {})}
+    >
       <span
         className={`pt ${pointClass(column)}`}
         data-task-point={task.id}
@@ -563,6 +739,13 @@ function TaskRow({
         {task.name}
       </button>
       <div className="m">
+        {/* The queue's place, short enough for a compact row; the reason is its title and,
+            outside compact, the row's own line below. */}
+        {queued && (
+          <span className={`mono q${queued.why === 'held' ? ' attn' : ''}`} title={queued.detail}>
+            {queued.position === null ? 'held' : `#${queued.position}`}
+          </span>
+        )}
         <span className="mono" title={workerTitle}>
           {worker}
         </span>

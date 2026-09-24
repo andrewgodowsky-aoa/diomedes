@@ -227,6 +227,11 @@
   color: var(--attn);
 }
 
+.console .disc-stale {
+  display: block;
+  color: var(--attn);
+}
+
 .console .disc-hypothesis {
   padding: 14px;
   border-left: 2px solid var(--hair-2);

@@ -276,6 +276,23 @@ async function createMainWindow() {
     if (details.url === 'about:srcdoc' || details.url === 'about:blank') return;
     details.preventDefault();
   });
+  // The document editor asks the page to stay when it holds writing that is not
+  // saved (client/console/DocumentEditor.tsx). A browser asks the person; Electron
+  // would silently keep the window open, so the question is put here instead.
+  win.webContents.on('will-prevent-unload', (event) => {
+    const choice = dialog.showMessageBoxSync(win, {
+      type: 'warning',
+      title: 'Writing not saved',
+      message: 'You have writing that is not saved',
+      detail: 'Closing now would lose it. Keep writing to go back and save it.',
+      buttons: ['Keep writing', 'Close and lose it'],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+    });
+    // Preventing this event is what lets the window close after all.
+    if (choice === 1) event.preventDefault();
+  });
   win.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) =>
     callback(false),
   );
