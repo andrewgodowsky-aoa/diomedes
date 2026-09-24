@@ -49,8 +49,12 @@ import type {
 import { contextMessage } from './contract.js';
 import type { ToolRegistry } from '../harness/tools.js';
 import { TEAM_CARRIAGE, teamRouteRefusal } from '../../shared/team-routes.js';
-import type { ClaudeSessionCheckpoint } from './claude-session.js';
-import { ClaudeSessionRuns, type ClaudeSessionTurn } from '../harness/claude-session-run.js';
+import type { OpenCodeSessionCheckpoint } from './opencode-session.js';
+import {
+  ClaudeSessionRuns,
+  type ClaudeSessionTurn,
+  type SessionCheckpointFacts,
+} from '../harness/claude-session-run.js';
 import { HarnessError } from '../harness/policy.js';
 import { TEXT_DISPATCH_STEP, textRunId, type TextDispatch } from '../harness/text-route.js';
 import { digest } from '../harness/policy.js';
@@ -407,6 +411,8 @@ export class EngineService {
   dispatch?: TextDispatch;
   /** Explicit native-session route; attaching this does not change generate(). */
   nativeSessions?: ClaudeSessionRuns;
+  /** The kept OpenCode session route (H04); attaching it does not change generate() either. */
+  opencodeSessions?: ClaudeSessionRuns<OpenCodeSessionCheckpoint>;
   /** The model-API conversation driver (CD-01 Decision 5's second driver). The app attaches it. */
   modelSessions?: ModelSessionRuns;
   /** Connection record, protected credential, spend ledger and private transcripts for model-API routes. */
@@ -1717,16 +1723,52 @@ export class EngineService {
     input: TextRequest,
     sourceRunId?: string,
   ) {
-    if (!this.nativeSessions)
+    return this.nativeTurn(
+      { engine: 'claude-code', routeId: 'claude-code-session', driver: this.nativeSessions, name: 'Claude' },
+      mode,
+      runId,
+      input,
+      sourceRunId,
+    );
+  }
+  /**
+   * The kept OpenCode session (H04): the same admission, contract gate, fenced
+   * preview queue and driver lifecycle as the Claude session, under OpenCode's
+   * own route contract and tested version.
+   */
+  async opencodeSession(
+    mode: ClaudeSessionTurn['mode'],
+    runId: string,
+    input: TextRequest,
+    sourceRunId?: string,
+  ) {
+    return this.nativeTurn(
+      { engine: 'opencode', routeId: 'opencode-session', driver: this.opencodeSessions, name: 'OpenCode' },
+      mode,
+      runId,
+      input,
+      sourceRunId,
+    );
+  }
+  private async nativeTurn<C extends SessionCheckpointFacts>(
+    route: {
+      engine: 'claude-code' | 'opencode';
+      routeId: string;
+      driver: ClaudeSessionRuns<C> | undefined;
+      name: string;
+    },
+    mode: ClaudeSessionTurn['mode'],
+    runId: string,
+    input: TextRequest,
+    sourceRunId?: string,
+  ) {
+    const driver = route.driver;
+    if (!driver)
       throw new EngineError('RUNTIME_UNAVAILABLE', 'The native session runtime is not attached.');
     if (input.onDelta || input.onToolActivity)
       throw new EngineError('PREVIEW_CONTRACT', 'Use the bounded onPreview and onActivity channels.');
     const adapterAt = (location: string) => {
-      const adapter = this.deps.adapter(
-        'claude-code',
-        location,
-        path.join(this.root, 'claude-code'),
-      );
+      const adapter = this.deps.adapter(route.engine, location, path.join(this.root, route.engine));
       if (
         !('openSession' in adapter) ||
         typeof adapter.openSession !== 'function' ||
@@ -1736,12 +1778,12 @@ export class EngineService {
           'COMMAND_UNSUPPORTED',
           'This adapter has no native session transport.',
         );
-      const persistent = adapter as PersistentTextAdapter<ClaudeSessionCheckpoint>;
+      const persistent = adapter as PersistentTextAdapter<C>;
       const gate = commandGate(persistent.sessionContract, mode);
       if (
-        adapter.id !== 'claude-code' ||
-        persistent.sessionContract.routeId !== 'claude-code-session' ||
-        persistent.sessionContract.engine.version !== TESTED_VERSIONS['claude-code'] ||
+        adapter.id !== route.engine ||
+        persistent.sessionContract.routeId !== route.routeId ||
+        persistent.sessionContract.engine.version !== TESTED_VERSIONS[route.engine] ||
         !gate.admitted
       )
         throw new EngineError(
@@ -1751,21 +1793,21 @@ export class EngineService {
       return persistent;
     };
     try {
-      return await this.nativeSessions.request({
+      return await driver.request({
         mode,
         runId,
         sourceRunId,
         input,
         admit: async (signal) => {
           await this.discover(true);
-          await this.check('claude-code', signal);
-          const selected = this.selection('claude-code', input.model);
+          await this.check(route.engine, signal);
+          const selected = this.selection(route.engine, input.model);
           if (selected.accountRoute !== input.accountRoute)
             throw new EngineError(
               'ACCOUNT_CHANGED',
-              'The Claude account route changed. Select it again.',
+              `The ${route.name} account route changed. Select it again.`,
             );
-          const value = this.connections.get('claude-code')!;
+          const value = this.connections.get(route.engine)!;
           adapterAt(value.location!);
           return {
             location: value.location!,
@@ -1807,7 +1849,7 @@ export class EngineService {
           const onDelta = previewSink({
             identity,
             signal,
-            redact: this.deps.redactFor?.('claude-code'),
+            redact: this.deps.redactFor?.(route.engine),
             onInvalid: (invalid) => {
               failure = { error: new EngineError('OUTPUT_LIMIT', invalid.reason, true) };
             },
@@ -1816,7 +1858,7 @@ export class EngineService {
           const onToolActivity = activitySink({
             identity,
             signal,
-            redact: this.deps.redactFor?.('claude-code'),
+            redact: this.deps.redactFor?.(route.engine),
             onActivity: (frame) => publish(() => input.onActivity?.(frame)),
           });
           return {
