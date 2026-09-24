@@ -581,6 +581,11 @@ export interface ProjectState {
    * refreshed on activation and re-read from disk, never edited by hand.
    */
   instructionFiles?: InstructionFileRecord[];
+  /**
+   * The project's Ready queue: automatic start, its pause and the claims it made (H07,
+   * shared/ready-queue.ts). Absent on every project written before it existed, which means off.
+   */
+  readyQueue?: import('./ready-queue.js').ReadyQueueRecord;
 }
 /** How Diomedes knows whether an engine is signed in. 'first-use' means the first run reports it. */
 export type SignInState = 'signed-in' | 'not-signed-in' | 'unknown' | 'first-use' | 'not-needed';

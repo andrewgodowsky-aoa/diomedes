@@ -118,6 +118,7 @@ import { MODEL_TURN_CAPABILITY, TEAM_WORK_CAPABILITY } from './harness/model-ses
 import { parseWorkCommand, validateWorkCommandId } from './work-admission.js';
 import { parseTaskCommand } from './task-admission.js';
 import { WorkControl } from './work-control.js';
+import { ReadyScheduler } from './ready-scheduler.js';
 import { DesktopConnections } from './connections/desktop.js';
 import { toastConnector } from './connections/fixture.js';
 import { compiledConnectionDemoConnectors } from './connections/compiler-demo.js';
@@ -2301,6 +2302,26 @@ export async function createApp(options: AppOptions) {
     deliveries.add(job);
   };
   store.on('change', deliverFor);
+  /**
+   * The Ready queue (H07). It starts Ready work only by calling `admitWork`, the Work start
+   * route's own path, with its claim's own command identity, so automatic start has no
+   * authority a person's Start would not. Started at the end of `createApp`.
+   */
+  const readyScheduler = new ReadyScheduler({
+    store,
+    admit: (projectId, command) => admitWork(projectId, command, listeningPort),
+    running: (projectId) => work.running(projectId) || nativeWork.running(projectId),
+  });
+  app.get(
+    '/api/projects/:id/ready-queue',
+    route(async (req) => readyScheduler.view(id(req))),
+  );
+  app.put(
+    '/api/projects/:id/ready-queue',
+    route(async (req) => readyScheduler.configure(id(req), body(req))),
+  );
+  app.get('/api/ready-queue', route(async () => ({ allPaused: readyScheduler.globalPause })));
+  app.put('/api/ready-queue', route(async (req) => readyScheduler.configureAll(body(req))));
   app.post(
     '/api/projects/:id/work/start',
     route(async (req) => admitWork(id(req), body(req), req.socket.localPort)),
@@ -5101,6 +5122,7 @@ export async function createApp(options: AppOptions) {
   app.locals.harness = harness;
   app.locals.connections = connections;
   app.locals.workControl = workControl;
+  app.locals.readyScheduler = readyScheduler;
   app.locals.close = async () => {
     // A window closed on the way out must not start a check against services
     // that are already shutting down.
@@ -5110,6 +5132,7 @@ export async function createApp(options: AppOptions) {
     deliveryClosed = true;
     store.off('change', deliverFor);
     await Promise.allSettled([...deliveries]);
+    await readyScheduler.close();
     // Change-review writes into the data dir; drain its queued builds before
     // the remaining services' close persists can settle, or a late record
     // write can race removal of the data dir.
@@ -5123,5 +5146,8 @@ export async function createApp(options: AppOptions) {
     // The ChatGPT app-server kept between requests goes with the service.
     await closeWarmCodex();
   };
+  // Last, once every route and service exists: a claim a restart interrupted is settled or
+  // replayed through `admitWork` here, before the first request is served.
+  await readyScheduler.init();
   return app;
 }
