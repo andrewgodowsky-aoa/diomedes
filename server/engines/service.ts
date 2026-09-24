@@ -2246,6 +2246,34 @@ export class EngineService {
       this.running.delete(key);
     }
   }
+  /**
+   * H13: a model-API route as the adapter a Diomedes work loop (or its delegate) drives.
+   * Admission is the route's own, read fresh; the credential opens here and the adapter is
+   * bound to this run's job ledger, exactly as for a conversation turn. Nothing falls back to
+   * another route, connection or payer.
+   */
+  async loopAdapter(
+    route: ModelApiRoute,
+    request: { projectId: string; runId: string; model: string; accountRoute: string; instructions: string },
+    stop: AbortSignal,
+  ): Promise<ModelAdapter> {
+    const api = this.modelApi;
+    if (!api) throw new EngineError('RUNTIME_UNAVAILABLE', 'The model-API runtime is not attached to this service.', true);
+    const admission = await this.admitModelApi(route, request);
+    const { handle, secret } = await this.openModelApi(admission);
+    const adapter = handle.adapter({
+      model: admission.model,
+      secret,
+      exposure: handle.exposure(
+        await this.jobLedger(api, { projectId: request.projectId, requestId: request.runId, threadId: `loop-${request.runId}` }),
+        request.runId,
+      ),
+      instructions: request.instructions,
+      effort: 'medium',
+      transport: api.transport,
+    });
+    return { ...adapter, complete: (call, signal) => adapter.complete(call, AbortSignal.any([signal, stop])) };
+  }
   close() {
     for (const controller of this.running.values()) controller.abort();
   }

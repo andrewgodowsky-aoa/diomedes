@@ -11,6 +11,7 @@ import {
   harnessWrites,
   identifyHarnessApproval,
 } from './harness/approval.js';
+import { NATIVE_LOOP_ENGINE } from '../shared/native-loop.js';
 
 import {
   commandIdSchema as commandId,
@@ -231,8 +232,8 @@ export function validateApprovalReceipts(state: ProjectState) {
       if (need.harness) {
         const engine = sessions.get(need.sessionId)?.engine.name;
         if (
-          ![FIXTURE_ENGINE, CODEX_ENGINE].includes(engine ?? '') ||
-          (engine === FIXTURE_ENGINE && need.approval.sources.length)
+          ![FIXTURE_ENGINE, CODEX_ENGINE, NATIVE_LOOP_ENGINE].includes(engine ?? '') ||
+          ([FIXTURE_ENGINE, NATIVE_LOOP_ENGINE].includes(engine ?? '') && need.approval.sources.length)
         )
           throw incompatible();
         harnessWrites(state.project.id, need);

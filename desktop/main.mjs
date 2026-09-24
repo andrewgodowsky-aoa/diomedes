@@ -349,7 +349,15 @@ if (!app.requestSingleInstanceLock()) {
       dialog.showErrorBox('Nectovia could not reopen its window', error.message),
     );
   });
-  app.on('before-quit', (event) => {
+  // The local service shuts down once every window has closed, not before.
+  // Electron's quit (menu Quit, Cmd+Q, the update restart) closes the windows
+  // first, and a window holding writing the page could not keep asks through
+  // will-prevent-unload above. "Keep writing" cancels the quit there, so
+  // will-quit never comes and the service is still running for the Save the
+  // person went back to make. Shut down any earlier and that Save could never
+  // land (DIO-85). Once the service is closed the second quit goes straight
+  // through.
+  app.on('will-quit', (event) => {
     if (shuttingDown || !service) return;
     event.preventDefault();
     shuttingDown = true;

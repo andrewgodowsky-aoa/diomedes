@@ -16,6 +16,7 @@ import type {
   CapabilityManifest,
   Destination,
   Effect,
+  EffectRecord,
   HarnessApproval,
   HarnessBudget,
   HarnessEvent,
@@ -28,6 +29,7 @@ import type {
   StepIntent,
   StepKind,
   StepRecord,
+  ToolEffectClass,
 } from '../../shared/harness.js';
 import { HARNESS_CONTRACT_VERSION } from '../../shared/harness.js';
 import {
@@ -73,6 +75,19 @@ export interface StepDefinition {
    * When given it is stored once and never overwritten by later calls.
    */
   origin?: OriginSnapshot;
+  /**
+   * H12: a typed tool's effect declaration. For every class but `pure`, an
+   * effect intent is written in the same durable commit that starts the
+   * attempt, before the handler runs, and its outcome is recorded against it.
+   * Never part of the intent hash; `ToolRegistry.dispatch` supplies it.
+   */
+  effectRecord?: {
+    tool: string;
+    effectClass: ToolEffectClass;
+    targets: string[];
+    /** A host grant reference, recorded as `host:<ref>`. */
+    authorization?: string;
+  };
 }
 export interface StepContext {
   input: Json;
@@ -175,10 +190,42 @@ const needsReconciliation = (intent: StepIntent): boolean =>
   intent.effect === 'non-idempotent' ||
   (intent.kind === 'model' && intent.destination === 'external');
 
+const CLASS_EFFECT: Record<ToolEffectClass, { effect: Effect; destinations: Destination[] }> = {
+  pure: { effect: 'pure', destinations: ['local', 'external'] },
+  read: { effect: 'read', destinations: ['local', 'external'] },
+  'idempotent-write': { effect: 'idempotent', destinations: ['local'] },
+  'non-idempotent-effect': { effect: 'non-idempotent', destinations: ['local'] },
+  'external-send': { effect: 'non-idempotent', destinations: ['external'] },
+};
+const lastEffect = (step: StepRecord): EffectRecord | undefined => step.effects?.at(-1);
+/** A recorded effect that changes the world: its interruption is uncertain whatever the effect. */
+const changesWorld = (record: EffectRecord | undefined) =>
+  record !== undefined && record.effectClass !== 'pure' && record.effectClass !== 'read';
+/**
+ * Whether an attempt that ended without an outcome (crash, takeover, cancel)
+ * may have changed the world. H12: a recorded write, idempotent or not, is
+ * never re-executed on a guess; the sink's reconciler or a person decides.
+ */
+const interruptedIsUncertain = (step: StepRecord): boolean =>
+  needsReconciliation(step.intent) || changesWorld(lastEffect(step));
+
+/**
+ * What H08's Retry and Resume must not repeat: every recorded effect whose
+ * outcome is uncertain, in a sentence a person can check against History.
+ */
+export function uncertainEffectsOf(run: HarnessRun): string[] {
+  return run.steps.flatMap((step) => {
+    const record = lastEffect(step);
+    if (record?.status !== 'uncertain') return [];
+    const where = record.targets.length ? record.targets.join(', ') : 'its destination';
+    return [`The ${record.tool} effect on ${where} may have happened; its outcome was never recorded.`];
+  });
+}
+
 type StartOutcome =
   | { cached: Json | null }
   | { suspended: 'approval' }
-  | { blocked: string }
+  | { blocked: string; code?: string }
   | { fence: number; attempt: number; key: string; signal: AbortSignal };
 
 export class RunService {
@@ -301,6 +348,19 @@ export class RunService {
     });
   }
 
+  /**
+   * Settle the open effect intent of an attempt that ended without an outcome:
+   * `uncertain` when its step now waits for reconciliation, `abandoned` for a
+   * read (which changed nothing) that will simply run again.
+   */
+  private settleInterrupted(run: HarnessRun, step: StepRecord, why: string) {
+    const record = lastEffect(step);
+    if (record?.status !== 'intended') return;
+    record.status = step.state === 'reconcile_required' ? 'uncertain' : 'abandoned';
+    record.outcomeAt = this.now();
+    this.note(run, `effect.${record.status}`, { why, tool: record.tool }, step.intent.stepId, record.attempt);
+  }
+
   private async commit(run: HarnessRun) {
     run.updatedAt = this.now();
     await this.store.write(run);
@@ -360,6 +420,22 @@ export class RunService {
     if (units(d.maxAttempts, 'Attempt limit') === 0)
       throw new HarnessError('invalid_step', 'A positive attempt limit is required.');
     if (d.label != null) validateLabel(d.label);
+    if (definition.effectRecord !== undefined) {
+      const declared = definition.effectRecord;
+      const allowed = CLASS_EFFECT[declared?.effectClass as ToolEffectClass];
+      if (
+        !allowed ||
+        allowed.effect !== d.effect ||
+        !allowed.destinations.includes(d.destination) ||
+        d.kind !== 'tool' ||
+        typeof declared.tool !== 'string' ||
+        !declared.tool ||
+        !Array.isArray(declared.targets) ||
+        !declared.targets.every((target) => typeof target === 'string' && target) ||
+        (declared.authorization !== undefined && (typeof declared.authorization !== 'string' || !declared.authorization))
+      )
+        throw new HarnessError('invalid_step', 'The effect declaration does not match the step.');
+    }
     const intent: StepIntent = {
       stepId: d.id,
       stepVersion: d.version,
@@ -554,7 +630,7 @@ export class RunService {
       run.fence += 1;
       for (const step of run.steps) {
         if (step.state !== 'running') continue;
-        step.state = needsReconciliation(step.intent) ? 'reconcile_required' : 'retry_wait';
+        step.state = interruptedIsUncertain(step) ? 'reconcile_required' : 'retry_wait';
         this.note(
           run,
           `step.${step.state}`,
@@ -562,6 +638,7 @@ export class RunService {
           step.intent.stepId,
           step.attempt,
         );
+        this.settleInterrupted(run, step, 'exclusive host startup');
       }
       run.state = run.steps.some((step) => step.state === 'reconcile_required')
         ? 'reconcile_required'
@@ -718,11 +795,18 @@ export class RunService {
       if (s.state === 'succeeded') return finish({ cached: s.output });
       if (s.state === 'cancelled')
         throw new HarnessError('step_cancelled', 'This step was cancelled.');
-      if (s.state === 'reconcile_required') return finish({ blocked: 'reconciliation required' });
+      const uncertain = (): StartOutcome =>
+        lastEffect(s)?.status === 'uncertain'
+          ? {
+              blocked: `reconciliation required: the ${lastEffect(s)!.tool} effect may already have happened`,
+              code: 'effect_uncertain',
+            }
+          : { blocked: 'reconciliation required' };
+      if (s.state === 'reconcile_required') return finish(uncertain());
       if (s.state === 'running' && s.leaseFence === run.fence)
         return finish({ blocked: 'step already in flight' });
       changed = true;
-      if (s.state === 'running' && needsReconciliation(intent)) {
+      if (s.state === 'running' && interruptedIsUncertain(s)) {
         s.state = 'reconcile_required';
         run.state = 'reconcile_required';
         this.note(
@@ -732,12 +816,20 @@ export class RunService {
           s.intent.stepId,
           s.attempt,
         );
-        return finish({ blocked: 'reconciliation required' });
+        this.settleInterrupted(run, s, 'ownership changed while running');
+        return finish(uncertain());
       }
+      if (s.state === 'running') this.settleInterrupted(run, s, 'ownership changed while running');
       if (s.attempt >= intent.maxAttempts) {
         changed = false;
         return finish({ blocked: 'attempt limit reached' });
       }
+      const declared = definition.effectRecord;
+      let authorizedBy = declared?.authorization
+        ? `host:${declared.authorization}`
+        : intent.permission
+          ? `permission:${intent.permission}`
+          : 'none';
       if (intent.approval) {
         const now = this.clock();
         const approval = run.approvals.find(
@@ -761,6 +853,7 @@ export class RunService {
           return finish({ suspended: 'approval' });
         }
         approval.consumedAt ??= this.now();
+        authorizedBy = `approval:${approval.intentHash}`;
       }
       const blockedBy =
         intent.cost > run.budget.units - run.used.units
@@ -791,17 +884,47 @@ export class RunService {
         s.intent.stepId,
         s.attempt,
       );
+      const key = digest({ runId, stepId: intent.stepId, intentHash: s.intentHash });
+      if (declared && declared.effectClass !== 'pure') {
+        // The effect intent, durable in this same commit, before the handler can run.
+        const record: EffectRecord = {
+          v: 1,
+          tool: declared.tool,
+          effectClass: declared.effectClass,
+          attempt: s.attempt,
+          inputsDigest: digest(intent.input),
+          targets: [...declared.targets],
+          idempotencyKey: key,
+          principalId: principal.id,
+          identityGeneration: principal.identityGeneration,
+          authorization: authorizedBy,
+          status: 'intended',
+          intendedAt: this.now(),
+          outcomeAt: null,
+          outputHash: null,
+          error: null,
+          reconciliation: null,
+        };
+        (s.effects ??= []).push(record);
+        this.note(
+          run,
+          'effect.intended',
+          { tool: record.tool, effectClass: record.effectClass, inputsDigest: record.inputsDigest, targets: record.targets, authorization: record.authorization },
+          s.intent.stepId,
+          s.attempt,
+        );
+      }
       return finish({
         fence: run.fence,
         attempt: s.attempt,
-        key: digest({ runId, stepId: intent.stepId, intentHash: s.intentHash }),
+        key,
         signal: this.controller(runId).signal,
       });
     });
 
     if ('cached' in start) return start.cached as T;
     if ('suspended' in start) throw new Suspended('approval', 'approval required');
-    if ('blocked' in start) throw new HarnessError('blocked', start.blocked);
+    if ('blocked' in start) throw new HarnessError(start.code ?? 'blocked', start.blocked);
 
     const signal = start.signal;
     let closed = false;
@@ -905,6 +1028,13 @@ export class RunService {
         }
         s.endedAt = this.now();
         this.note(run, 'step.succeeded', { outputHash: s.outputHash }, s.intent.stepId, s.attempt);
+        const record = lastEffect(s);
+        if (record?.status === 'intended' && record.attempt === s.attempt) {
+          record.status = 'applied';
+          record.outcomeAt = s.endedAt;
+          record.outputHash = s.outputHash;
+          this.note(run, 'effect.applied', { tool: record.tool, outputHash: record.outputHash }, s.intent.stepId, s.attempt);
+        }
         await this.commit(run);
       });
       return JSON.parse(encoded) as T;
@@ -932,14 +1062,24 @@ export class RunService {
             intent.kind === 'wait' &&
             intent.effect === 'pure' &&
             intent.destination === 'local';
+          // A write that timed out may still be finishing: its outcome is not known.
+          const timedOut =
+            changesWorld(lastEffect(s)) && error instanceof HarnessError && error.code === 'tool_timeout';
           const state = waiting
             ? 'waiting_event'
-            : needsReconciliation(intent)
+            : needsReconciliation(intent) || timedOut
               ? 'reconcile_required'
               : 'retry_wait';
           s.state = state;
           s.endedAt = this.now();
           s.error = this.describeError(error);
+          const record = lastEffect(s);
+          if (record?.status === 'intended' && record.attempt === s.attempt) {
+            record.status = state === 'reconcile_required' ? 'uncertain' : 'failed';
+            record.outcomeAt = s.endedAt;
+            record.error = s.error.message;
+            this.note(run, `effect.${record.status}`, { tool: record.tool, errorType: s.error.name }, s.intent.stepId, s.attempt);
+          }
           // A failed attempt keeps dispatch-time provenance when the step has
           // none yet; runtime-reported details wait for a successful attempt.
           if (s.origin === undefined && definition.origin !== undefined) {
@@ -1046,7 +1186,7 @@ export class RunService {
       run.state = 'cancelled';
       run.cancelReason = reason;
       for (const s of run.steps) {
-        if (s.state === 'running' && needsReconciliation(s.intent)) {
+        if (s.state === 'running' && interruptedIsUncertain(s)) {
           s.state = 'reconcile_required';
           s.endedAt = this.now();
           this.note(
@@ -1056,13 +1196,16 @@ export class RunService {
             s.intent.stepId,
             s.attempt,
           );
+          this.settleInterrupted(run, s, 'cancelled while running');
         } else if (
           ['running', 'pending', 'waiting_approval', 'waiting_event', 'retry_wait'].includes(
             s.state,
           )
         ) {
+          const wasRunning = s.state === 'running';
           s.state = 'cancelled';
           s.endedAt = this.now();
+          if (wasRunning) this.settleInterrupted(run, s, 'cancelled while running');
         }
       }
       this.note(run, 'run.cancelled', { reason });
@@ -1070,6 +1213,60 @@ export class RunService {
     });
     this.controllers.get(runId)?.abort();
     this.controllers.delete(runId);
+  }
+
+  /**
+   * H12: settle an uncertain effect on evidence. `applied` settles the step as
+   * done (its handler never runs again); `not-applied` lets it run once more
+   * under the same idempotency key, as a new attempt with a new intent record.
+   * The uncertain record keeps who reconciled it and on what evidence; nothing
+   * is rewritten. A run parked only for this step becomes queued again, unless
+   * it was cancelled.
+   */
+  async reconcileEffect(
+    runId: string,
+    stepId: string,
+    answer: { resolution: 'applied' | 'not-applied'; by: string; evidence: string; output?: Json },
+    principal: HarnessPrincipal,
+  ): Promise<EffectRecord> {
+    if (answer.resolution !== 'applied' && answer.resolution !== 'not-applied')
+      throw new HarnessError('invalid_reconciliation', 'A reconciliation is applied or not-applied.');
+    for (const key of ['by', 'evidence'] as const)
+      if (typeof answer[key] !== 'string' || !answer[key].trim() || answer[key].length > 2000)
+        throw new HarnessError('invalid_reconciliation', `Say ${key === 'by' ? 'who reconciled' : 'on what evidence'}.`);
+    return this.serialize(runId, async () => {
+      const run = await this.load(runId);
+      this.scope(run, principal);
+      const s = run.steps.find((item) => item.intent.stepId === stepId);
+      const record = s ? lastEffect(s) : undefined;
+      if (!s || !record || record.status !== 'uncertain' || s.state !== 'reconcile_required')
+        throw new HarnessError('not_uncertain', 'This step has no uncertain effect to reconcile.');
+      const at = this.now();
+      record.status = answer.resolution === 'applied' ? 'reconciled-applied' : 'reconciled-not-applied';
+      record.reconciliation = { by: this.redact(answer.by), evidence: this.redact(answer.evidence), at };
+      if (answer.resolution === 'applied') {
+        s.state = 'succeeded';
+        s.output = copy(answer.output ?? { reconciled: 'applied', evidence: record.reconciliation.evidence });
+        s.outputHash = digest(s.output);
+        s.error = null;
+      } else {
+        s.state = 'retry_wait';
+      }
+      s.endedAt = at;
+      this.note(
+        run,
+        'effect.reconciled',
+        { tool: record.tool, resolution: answer.resolution, by: record.reconciliation.by },
+        stepId,
+        record.attempt,
+      );
+      if (run.state === 'reconcile_required' && !run.steps.some((item) => item.state === 'reconcile_required')) {
+        run.state = 'queued';
+        this.note(run, 'run.reconciled', { stepId });
+      }
+      await this.commit(run);
+      return copy(record);
+    });
   }
 
   /** Record the run's result and its completion event in one write. Idempotent once completed. */

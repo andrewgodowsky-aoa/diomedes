@@ -24,6 +24,8 @@ export interface ActivityRow {
   taskId?: string;
   threadId?: string;
   sessionId?: string;
+  /** A row that opens a Console screen rather than a thread or the Board. */
+  view?: 'Automations';
   /** ISO time the row is dated by, or '' when no record carries one. */
   at: string;
 }
@@ -126,9 +128,15 @@ function taskRow(
 /**
  * Group the project's current work under the four human headings. `now` is a
  * parameter so the window is testable and never depends on the clock at the
- * moment a component happens to render.
+ * moment a component happens to render. `attention` carries the open
+ * automation attention items for this project (Automations Milestone B), read
+ * from the host's record; each is one row under Needs you, never a copy.
  */
-export function projectActivity(state: ProjectState, now: number = Date.now()): ProjectActivity {
+export function projectActivity(
+  state: ProjectState,
+  now: number = Date.now(),
+  attention: readonly ActivityRow[] = [],
+): ProjectActivity {
   const working: ActivityRow[] = [];
   const needsYou: ActivityRow[] = [];
   const readyForReview: ActivityRow[] = [];
@@ -140,6 +148,7 @@ export function projectActivity(state: ProjectState, now: number = Date.now()): 
   for (const need of open) {
     needsYou.push(needRow(need, state, state.sessions.find((item) => item.id === need.sessionId)));
   }
+  needsYou.push(...attention);
 
   for (const task of state.tasks) {
     if (task.deletedAt) continue;

@@ -27,6 +27,8 @@ const CONFIGS = [
   // guard failing on the very thing it was written to catch.
   'playwright.acceptance.config.ts',
   'playwright.inventory.config.ts',
+  // H21: the completion journey owns and restarts its own service, so it has its own config.
+  'playwright.journey.config.ts',
 ] as const;
 
 /**

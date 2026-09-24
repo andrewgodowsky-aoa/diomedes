@@ -1,0 +1,80 @@
+{
+  "project": {
+    "id": "3c7f6a676ba2",
+    "name": "Golden",
+    "folder": "<folder>",
+    "createdAt": "2026-09-24T09:42:58.730Z",
+    "lastOpenedAt": "2026-09-24T09:42:58.730Z",
+    "plans": [],
+    "references": [],
+    "repository": {
+      "present": false
+    },
+    "counts": {
+      "running": 0,
+      "changesWaiting": 0,
+      "waitingForYou": 0,
+      "historyToday": 1
+    },
+    "status": {
+      "needsYou": 0,
+      "working": 0,
+      "tasksDone": 0,
+      "tasksTotal": 0
+    }
+  },
+  "documents": [],
+  "tasks": [],
+  "needs": [],
+  "sessions": [],
+  "history": [
+    {
+      "origin": {
+        "protocolVersion": 1,
+        "mode": "application",
+        "engine": null,
+        "model": {
+          "requested": null,
+          "reported": null,
+          "source": "not-recorded"
+        },
+        "executorId": "diomedes:recorded-writer"
+      },
+      "id": "E7badb9227057",
+      "time": "2026-09-24T09:42:58.746Z",
+      "actor": "you",
+      "kind": "edited",
+      "sentence": "You edited Brief.md",
+      "sessionId": null,
+      "taskId": null,
+      "sample": false,
+      "files": [
+        {
+          "path": "Brief.md",
+          "before": null,
+          "after": "1a2036951819553b36c38faad3aa3eb4aa9421072cb9ea61ea67ab7ada105f10",
+          "op": "created",
+          "recorded": true,
+          "reason": null
+        }
+      ],
+      "label": null,
+      "restoreOf": null,
+      "replaced": null,
+      "versionId": "v0001",
+      "commit": null
+    }
+  ],
+  "changes": [],
+  "conversations": [],
+  "autoUpdate": false,
+  "team": {
+    "members": [],
+    "messages": [],
+    "runs": []
+  },
+  "teamMeta": {
+    "idempotency": {},
+    "blockedBy": {}
+  }
+}

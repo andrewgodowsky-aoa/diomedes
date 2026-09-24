@@ -263,12 +263,17 @@ export function teamToolRegistry(
       version: '1',
       description: definition.description,
       effect: definition.effect,
+      effectClass: definition.effect === 'read' ? 'read' : 'non-idempotent-effect',
+      // Team membership (TeamService) is the gate; no project permission is needed.
       permission: null,
       approval: false,
       destination: 'local',
       trustedInputRequired: false,
       cost: 1,
       schema: z.object(definition.shape) as unknown as z.ZodType<Record<string, unknown>>,
+      outputSchema: z.record(z.string(), z.json()) as unknown as z.ZodType<Json>,
+      // A team call changes this project's team state and nothing else.
+      ...(definition.effect === 'read' ? {} : { targets: () => [`team:${context.projectId}`] }),
       execute: async ({ input }) => {
         try {
           onCall?.(definition.name);

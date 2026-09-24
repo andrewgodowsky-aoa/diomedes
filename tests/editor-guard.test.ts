@@ -99,6 +99,13 @@ describe('every way out of the editor goes through the gate', () => {
     );
     expect(shell).toContain('onEdit={(path) => path !== editing && leaveEditor(() => setEditing(path))}');
     expect(shell).toContain('if (editingNow.current !== null) return leaveEditor(() => goTo(id));');
+    // The rail's Files item only shows or hides the pane beside the editor, the
+    // way the palette's Open file does, so it is not an exit and asks nothing.
+    const goTo = shell.slice(shell.indexOf('function goTo(id: string)'));
+    expect(goTo.indexOf("if (id === 'files')")).toBeGreaterThan(-1);
+    expect(goTo.indexOf("if (id === 'files')")).toBeLessThan(
+      goTo.indexOf('if (editingNow.current !== null) return leaveEditor(() => goTo(id));'),
+    );
     // No file is ever given a made-up kind.
     expect(shell).not.toMatch(/kind:\s*'markdown'/);
   });
@@ -123,5 +130,37 @@ describe('every way out of the editor goes through the gate', () => {
     const main = read('desktop/main.mjs');
     expect(main).toContain("win.webContents.on('will-prevent-unload'");
     expect(main).toContain("buttons: ['Keep writing', 'Close and lose it']");
+  });
+
+  test('quitting asks about unsaved writing before the local service shuts down', () => {
+    // Electron quits in this order: before-quit, then every window is closed
+    // (each runs beforeunload, so will-prevent-unload can ask), then will-quit
+    // once they have all closed. "Keep writing" cancels the quit between the
+    // second and the third. So the service may only be shut down in will-quit:
+    // shut down in before-quit, it was already gone when the person chose to
+    // keep writing, and Save could never land.
+    const main = read('desktop/main.mjs');
+    const handler = (name: string) => {
+      const blocks: string[] = [];
+      let at = main.indexOf(`app.on('${name}'`);
+      while (at >= 0) {
+        // The handler runs to the matching `});` at the same indentation.
+        const indent = main.slice(main.lastIndexOf('\n', at) + 1, at);
+        const end = main.indexOf(`\n${indent}});`, at);
+        blocks.push(main.slice(at, end < 0 ? undefined : end));
+        at = main.indexOf(`app.on('${name}'`, at + 1);
+      }
+      return blocks.join('\n');
+    };
+    expect(handler('before-quit')).not.toContain('service.locals');
+    expect(handler('before-quit')).not.toContain('releaseLock');
+    const willQuit = handler('will-quit');
+    expect(willQuit).toContain('service.locals');
+    expect(willQuit).toContain('event.preventDefault()');
+    expect(willQuit).toContain('releaseLock');
+    // Once shut down, the second quit goes straight through rather than looping.
+    expect(willQuit).toMatch(/if \(shuttingDown[^)]*\) return;/);
+    // The update restart still quits the same graceful way.
+    expect(main).toContain('createInstallAccepted(() => app.quit()');
   });
 });

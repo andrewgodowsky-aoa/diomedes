@@ -36,6 +36,7 @@ import {
 import {
   classifyApproval,
   classifyIntent,
+  intentTargets,
   REMEMBER_OFFER_THRESHOLD,
   rememberedAttribution,
 } from '../shared/remembered-approvals.js';
@@ -239,6 +240,92 @@ describe('the always-asks classifier', () => {
       category,
     });
   });
+  // Review batch1-a, finding D5-1: inflected, run-together and acronym names, and a local write
+  // whose file is itself a credential, still always ask.
+  test.each([
+    ['moves-money', { tool: 'paid_invoice_notice' }],
+    ['moves-money', { tool: 'charged_card_receipt' }],
+    ['moves-money', { procedure: 'refunded-orders' }],
+    ['moves-money', { tool: 'sendpayment' }],
+    ['moves-money', { tool: 'run_payroll' }],
+    ['destroys-data', { tool: 'deletefile' }],
+    ['destroys-data', { tool: 'deleted_rows_report' }],
+    ['destroys-data', { tool: 'removing_old_drafts' }],
+    ['destroys-data', { procedure: 'wiped-cache' }],
+    ['destroys-data', { tool: 'prune_history' }],
+    ['changes-access', { tool: 'send_invitation' }],
+    ['changes-access', { tool: 'set_passwd' }],
+    ['changes-access', { tool: 'rotate_accesstoken' }],
+    ['changes-access', { tool: 'SSHKeyUpload' }],
+    ['changes-access', { tool: 'send_magic_link' }],
+    ['changes-access', { tool: 'grant_privileges' }],
+  ])('%s: tricky name %o always asks', (category, change) => {
+    expect(classifyApproval({ ...base, ...change })).toMatchObject({
+      rememberable: false,
+      category,
+    });
+  });
+  const write = {
+    ...base,
+    procedure: 'format-report',
+    tool: 'propose_write',
+    permission: 'write-project-file',
+    effect: 'idempotent' as const,
+    destination: 'local' as const,
+  };
+  test.each([
+    'file:.env',
+    'file:config/.env.production',
+    'file:credentials.json',
+    'file:.ssh/authorized_keys',
+    'file:deploy/id_rsa',
+    'file:certs/server.pem',
+    'file:.npmrc',
+    'file:.git/config',
+    'file:Team members.md',
+  ])('changes-access: a local write to %s always asks', (target) => {
+    expect(classifyApproval({ ...write, targets: [target] })).toMatchObject({
+      rememberable: false,
+      category: 'changes-access',
+    });
+  });
+  test('ordinary names stay rememberable, and a recipient never trips a word list', () => {
+    expect(classifyApproval({ ...write, targets: ['file:Harness report.md'] })).toEqual({
+      rememberable: true,
+    });
+    expect(classifyApproval({ ...write, targets: ['file:Weekly brief.md'] })).toEqual({
+      rememberable: true,
+    });
+    expect(classifyApproval({ ...base, targets: ['to:accounts@yourco.com'] })).toEqual({
+      rememberable: true,
+    });
+  });
+  test('a destination field the pattern cannot bind is never guessed at', () => {
+    const send = {
+      name: 'send_brief',
+      permission: 'send-email',
+      effect: 'non-idempotent',
+      destination: 'external',
+      kind: 'tool',
+    } as const;
+    for (const input of [
+      { to: ['ops@yourco.com'], forwardTo: 'someone@else.com' },
+      { to: ['ops@yourco.com'], webhook: 'https://hooks.example.com/x' },
+      { to: ['ops@yourco.com'], recipient: 'someone@else.com' },
+      { files: ['Harness report.md'], path: 'Other.md' },
+    ])
+      expect(classifyIntent('weekly-brief', { ...send, input } as unknown as StepIntent)).toMatchObject({
+        category: 'unrecognised',
+      });
+    // A URL's path is case-sensitive: two webhooks differing only in case are two destinations.
+    const upper = intentTargets({ destination: 'external', input: { url: 'https://hooks.example.com/T/AbC' } });
+    const lower = intentTargets({ destination: 'external', input: { url: 'https://hooks.example.com/T/abc' } });
+    expect(upper!.targets).not.toEqual(lower!.targets);
+    // An address's case is not: the same mailbox stays the same recipient.
+    expect(intentTargets({ destination: 'external', input: { to: 'Ops@YourCo.com ' } })!.targets).toEqual([
+      'to:ops@yourco.com',
+    ]);
+  });
   test('money outranks everything, and an unreadable destination is never guessed at', () => {
     expect(classifyApproval({ ...base, tool: 'delete_payment_key' })).toMatchObject({
       category: 'moves-money',
@@ -428,6 +515,33 @@ describe('both routes through the real host', () => {
     await coveredOnce();
     expect((await view()).offers).toHaveLength(0);
     expect(state().rememberedApprovals!.grants).toHaveLength(1);
+  });
+
+  // Review batch1-a, finding D5-2: the Store's write-time funnel re-checks the destination a
+  // remembered approval names, as it does for a task scope, not only that the grant is live.
+  test('the write-time check refuses a write outside the remembered destination', async () => {
+    const need = await approveOnce();
+    expect(
+      (await request('/permissions/remembered', 'POST', { needId: need.id })).status,
+    ).toBe(200);
+    const { need: covered } = await coveredOnce();
+    expect(covered.authorization?.kind).toBe('remembered-approval');
+    const live = state().needs.find((item) => item.id === covered.id)!;
+    await expect(
+      store().scopeGrants.assertCurrent(projectId, live, [
+        { path: REPORT_PATH, expected: null, text: 'same file' },
+      ]),
+    ).resolves.toBeUndefined();
+    await expect(
+      store().scopeGrants.assertCurrent(projectId, live, [
+        { path: 'Somewhere else.md', expected: null, text: 'another file' },
+      ]),
+    ).rejects.toMatchObject({ status: 403 });
+    await expect(
+      store().scopeGrants.assertCurrent(projectId, live, [
+        { path: REPORT_PATH, expected: null, text: null },
+      ]),
+    ).rejects.toMatchObject({ status: 403 });
   });
 
   test('only the local client, and only an approval just given, can be remembered', async () => {
@@ -629,6 +743,29 @@ describe('out of pattern asks again', () => {
     const asked = await nextNeed();
     expect(asked.state).toBe('open');
     expect(asked.authorizationBoundary).toMatch(/connection it acts through changed/);
+  });
+
+  // Review batch1-a, finding D5-3: a Codex step's connection is the ChatGPT account its run
+  // actually used (the run's pinned grant), not a settings key production never writes, so a
+  // different account is a different pattern and asks again.
+  test('a Codex step is bound to the account its run used, so another account asks again', async () => {
+    const need = await approveOnce();
+    const bridge = host().bridge as unknown as {
+      candidate: (run: HarnessRun, need: Need) => Promise<ApprovalCandidate | null>;
+      codex: { authorityForRun: (...args: unknown[]) => Promise<unknown> };
+    };
+    vi.spyOn(bridge.codex, 'authorityForRun').mockResolvedValue({
+      principal: localHarnessPrincipal(projectId),
+    });
+    const run = await host().get(projectId, need.harness!.runId);
+    const asCodex = (input: unknown) =>
+      ({ ...run, capabilityId: 'codex-report', input }) as unknown as HarnessRun;
+    const first = await bridge.candidate(asCodex({ grant: { accountRoute: 'openai:chatgpt:aaa' } }), need);
+    const other = await bridge.candidate(asCodex({ grant: { accountRoute: 'openai:chatgpt:bbb' } }), need);
+    expect(first!.pattern.connection.accountRoute).toBe('openai:chatgpt:aaa');
+    expect(patternDigest(first!.pattern)).not.toBe(patternDigest(other!.pattern));
+    // A run whose account cannot be read is never guessed at: it always asks.
+    expect(await bridge.candidate(asCodex({}), need)).toBeNull();
   });
 
   test('always-asks steps are never offered, remembered or covered', async () => {

@@ -1436,6 +1436,28 @@ html[data-surface='console'] body {
   }
 }
 
+/* A narrow window is also a zoomed one: at 200 percent a 1440 x 900 window is
+   720 x 450 CSS pixels (C47). Stacked, the rail alone can be taller than the
+   stage, which used to leave the screen a sliver and the composer below the
+   fold of a box that never scrolled. Now the stage scrolls: the rail keeps its
+   height, and a screen's work column is never shorter than the stage's own
+   visible height (up to 24rem) or than its heading, instruments and composer
+   need. */
+@media (max-width: 860px) {
+  .console .stage {
+    container: stage / size;
+    grid-template-rows: max-content minmax(min(100%, 24rem), 1fr);
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+  .console .stage > .screen.on > .work {
+    min-height: min(100cqh, 24rem);
+  }
+  .console.diomedes .stage > .dio-screen {
+    grid-template-rows: minmax(min-content, 1fr) auto;
+  }
+}
+
 /* the spine slide and the indicator move stand still under reduced motion */
 html[data-motion='reduced'] .console .spine .gp,
 html[data-motion='reduced'] .console .modes .ind,
@@ -1597,6 +1619,52 @@ html[data-motion='reduced'] .console .modes .ind b {
     grid-column: 2;
     grid-row: auto;
     flex-wrap: wrap;
+  }
+}
+/* C47, continued: the app container's own narrow rules above come later than
+   the window rule, so the stage keeps its scroll and the screen its working
+   height here too, and the strip's controls wrap instead of running off the
+   right edge. From 1100 px down the thread's inspector stands under the
+   conversation, as the Diomedes page's ledger does, rather than going away. */
+@container app (max-width: 700px) {
+  .console .stage {
+    grid-template-rows: max-content minmax(min(100%, 24rem), 1fr);
+  }
+  /* styles.css pins the Workbook-era `.top-right` to 40 px under 600 px; the
+     strip's own row grows with the controls that wrap into it. */
+  .console .top-right {
+    flex-wrap: wrap;
+    height: auto;
+    min-height: 40px;
+  }
+  /* The rail runs sideways here, and a focused button half past its edge is
+     not scrolled in, so the foot's ways out wrap onto a row of their own. */
+  .console .rail {
+    flex-wrap: wrap;
+    max-height: none;
+  }
+  .console .rail .spine {
+    flex: 1 1 200px;
+    max-height: 140px;
+  }
+  .console .rail .foot {
+    flex: 1 1 100%;
+    flex-direction: row;
+    flex-wrap: wrap;
+    border-left: 0;
+    border-top: 1px solid var(--hair);
+  }
+}
+@container app (max-width: 1100px) {
+  .console #scrThread {
+    grid-template-rows: minmax(min-content, 1fr) auto;
+  }
+  .console #scrThread > .ledger {
+    display: block;
+    max-height: 176px;
+    padding: 12px 16px;
+    border-left: 0;
+    border-top: 1px solid var(--hair);
   }
 }
 /* Shared task authority controls follow the Settings typography and theme. */
@@ -1908,6 +1976,55 @@ html[data-motion='reduced'] .console .modes .ind b {
   overflow-wrap: anywhere;
 }
 
+/* H08: a run's controls and each control's receipt. The controls sit in the run
+   record, whose mono text keeps its line breaks, so they reset white-space at
+   their own edge. A receipt reads like a run record — a thin rule on the left, a
+   short head, the route's own sentence under it — and every line wraps where it
+   is written, since it can carry run ids and route names (decision 5). */
+.console .run-controls,
+.console .run-control-bar,
+.console .run-control-confirm {
+  display: inline;
+  min-width: 0;
+  white-space: normal;
+}
+.console .run-control-bar button + button,
+.console .run-control-confirm {
+  margin-left: 8px;
+}
+.console .control-receipt {
+  margin: 4px 0 8px;
+  padding: 2px 0 2px 10px;
+  border-left: 1px solid var(--hair-2);
+  font: 400 var(--dm-type-ui) / 1.5 var(--dm-font-ui);
+  color: var(--t3);
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.console .control-receipt-head,
+.console .control-receipt-detail {
+  display: block;
+  min-width: 0;
+}
+.console .control-receipt-head b {
+  color: var(--t2);
+  font-weight: 500;
+}
+.console .control-receipt button {
+  color: var(--t3);
+  font: inherit;
+  border-bottom: 1px solid var(--hair-2);
+  cursor: pointer;
+}
+.console .control-receipt button:hover {
+  color: var(--t1);
+}
+.console .follow-up-steer-note {
+  margin: 4px 0 0;
+  color: var(--t3);
+}
+
 /* ---- the strip outside a project (TopStrip.tsx) ----
    The Projects page and Settings wear the same strip the Shell draws. This root
    holds the strip and nothing else, so it takes the strip's height rather than
@@ -2096,4 +2213,123 @@ html[data-motion='reduced'] .console .modes .ind b {
   overflow: hidden;
   white-space: nowrap;
   clip-path: inset(50%);
+}
+/* H18: "Context used" under an answer on a model-API route. The same mono
+   metadata line and graphite panel as the instructions inspector; numbers are
+   tabular, and the model name and prefix sha truncate where they are written
+   (decision 5). */
+.console .context-used {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  margin-top: 4px;
+}
+.console .context-line,
+.console .context-summary-toggle {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  min-width: 0;
+  text-align: left;
+  font: 400 var(--dm-type-meta) / 1.5 var(--mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--t3);
+}
+.console .context-line:hover,
+.console .context-summary-toggle:hover {
+  color: var(--t2);
+}
+.console .context-line > span:not(.context-lead) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-transform: none;
+  letter-spacing: 0.01em;
+}
+.console .context-lead {
+  flex: none;
+}
+.console .context-panel {
+  display: grid;
+  gap: 12px;
+  padding: 12px 0 2px;
+  border-top: 1px solid var(--hair);
+  min-width: 0;
+  white-space: normal;
+  font: 400 var(--dm-type-meta) / 1.55 var(--mono);
+  color: var(--t3);
+}
+.console .context-sections {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+}
+.console .context-section {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 2px 16px;
+  align-items: baseline;
+  min-width: 0;
+}
+.console .context-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--t2);
+}
+.console .context-num,
+.console .context-bytes {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+.console .context-num {
+  color: var(--t1);
+}
+.console .context-detail {
+  grid-column: 1 / -1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.console .context-facts {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 16px;
+  margin: 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--hair);
+  min-width: 0;
+}
+.console .context-facts dt {
+  color: var(--t2);
+}
+.console .context-facts dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.console .context-compaction {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.console .context-summary {
+  margin: 0;
+  padding: 10px 12px;
+  max-height: 320px;
+  overflow: auto;
+  min-width: 0;
+  background: var(--chrome);
+  border: 1px solid var(--hair);
+  border-radius: var(--r);
+  font: 400 var(--dm-type-code) / 1.55 var(--mono);
+  color: var(--t2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }

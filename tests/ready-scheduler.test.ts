@@ -217,6 +217,63 @@ describe('Trust: automatic start has no authority a manual Start would not', () 
     ]);
   });
 
+  // Review batch1-a, finding H07-1: a person's earlier confirmation names the documents it sends,
+  // not only the engine. The queue re-sends only exactly the request the person confirmed.
+  test('a confirmed start re-sends only the documents the person confirmed', async () => {
+    const projectId = (await request<{ id: string }>('/projects', 'POST', { name: 'Consent fixture' }))
+      .data.id;
+    expect(
+      (await request(`/projects/${projectId}/documents/create`, 'POST', { path: 'Brief.md', text: 'Private brief.\n' }))
+        .status,
+    ).toBe(200);
+    expect(
+      (
+        await request(`/projects/${projectId}/cloud-sharing`, 'PUT', {
+          expectedVersion: 0,
+          routes: ['codex'],
+          documents: ['Brief.md'],
+          shareConversationHistory: false,
+          shareReviewPackets: false,
+        })
+      ).status,
+    ).toBe(200);
+    await request('/settings', 'PUT', { services: { codex: true, defaultEngine: 'codex' } });
+    const make = async (name: string) =>
+      (await request<Task>(`/projects/${projectId}/tasks`, 'POST', { name, sourceDocument: 'Brief.md' }))
+        .data;
+    const withheld = await make('Sent without the brief');
+    const confirmed = await make('Sent with the brief');
+    const startAndReopen = async (task: Task, sources: string[]) => {
+      const started = await request<Session>(`/projects/${projectId}/work/start`, 'POST', {
+        protocolVersion: 1,
+        commandId: `manual-${task.id}`,
+        taskId: task.id,
+        route: 'codex',
+        sources,
+        consent: true,
+      });
+      expect(started.status).toBe(200);
+      await until(projectId, (s) => !s.sessions.some((session) => ['queued', 'working', 'waiting'].includes(session.state)));
+      expect((await request(`/projects/${projectId}/tasks/${task.id}`, 'PUT', { state: 'todo' })).status).toBe(200);
+    };
+    // The person unticked the brief in the send dialog: nothing but the instruction left.
+    await startAndReopen(withheld, []);
+    await startAndReopen(confirmed, ['Brief.md']);
+    generate.mockClear();
+    await configure(projectId, { autoStart: true });
+    await until(projectId, (s) => s.sessions.length === 3);
+    await until(projectId, (s) => !s.sessions.some((session) => ['queued', 'working', 'waiting'].includes(session.state)));
+    await quiet();
+    // Only the task whose confirmed request matches what the queue would send starts again.
+    expect(sessionsOf(projectId, withheld.id)).toHaveLength(1);
+    expect(sessionsOf(projectId, confirmed.id)).toHaveLength(2);
+    expect(generate).toHaveBeenCalledTimes(1);
+    expect((await view(projectId)).items.find((item) => item.taskId === withheld.id)).toMatchObject({
+      why: 'held',
+      detail: `Start it yourself: sending to ${routeDisplayName('codex')} needs your confirmation`,
+    });
+  });
+
   test('a service turned off in Settings holds the task', async () => {
     const projectId = await sampleProject();
     await clearTasks(projectId);

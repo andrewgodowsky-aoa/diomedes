@@ -92,3 +92,12 @@
     margin-bottom: 6px;
   }
 }
+/* H08: the six controls this run's route offers, one per line with the route's own note. */
+.console .run-inspector ul.run-inspector-controls {
+  list-style: none;
+  padding-left: 0;
+  margin: 0;
+}
+.console .run-inspector-controls li:first-child {
+  margin-top: 0;
+}

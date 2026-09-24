@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import type { ScopeGrantRecord } from '../shared/permissions.js';
 import type { Need, ProjectState, Session, Task } from '../shared/types.js';
+import type { ControlReceipt } from '../shared/work-control.js';
 import { ApiError } from './paths.js';
 
 // Shared command identity. The adapters still own payload schemas,
@@ -29,7 +30,8 @@ type CommandRecord =
   | { type: 'task.create'; subject: Task; digest: string }
   | { type: 'work.start'; subject: Session; digest: string }
   | { type: 'approval.decide'; subject: Need; digest: string }
-  | { type: 'scope.issue'; subject: ScopeGrantRecord; digest: string };
+  | { type: 'scope.issue'; subject: ScopeGrantRecord; digest: string }
+  | { type: 'control'; subject: ControlReceipt; digest: string };
 
 /** One project-scoped namespace: a key cannot be reused by another operation family. */
 export function findCommand(state: ProjectState, commandId: string): CommandRecord | undefined {
@@ -44,6 +46,9 @@ export function findCommand(state: ProjectState, commandId: string): CommandReco
     return { type: 'approval.decide', subject: need, digest: need.approvalReceipt.payloadDigest };
   const grant = state.scopeGrants?.find((item) => item.grant.commandId === commandId);
   if (grant) return { type: 'scope.issue', subject: grant, digest: grant.grant.payloadDigest };
+  // H08: Steer, Queue, Stop, Resume, Retry and Fork share the one namespace.
+  const control = state.controlReceipts?.find((item) => item.commandId === commandId);
+  if (control) return { type: 'control', subject: control, digest: control.payloadDigest };
 }
 export function assertReplay(
   record: CommandRecord | undefined,
@@ -59,6 +64,8 @@ export function assertReplay(
             ? 'work_command_conflict'
             : type === 'approval.decide'
               ? 'approval_command_conflict'
-              : 'scope_command_conflict',
+              : type === 'control'
+                ? 'control_command_conflict'
+                : 'scope_command_conflict',
     });
 }

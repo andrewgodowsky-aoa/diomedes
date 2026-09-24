@@ -452,3 +452,198 @@ describe('crash safety: half-installed never activates', () => {
     });
   });
 });
+
+describe('dependencies stay on, and stay protected, through every version change', () => {
+  test('an update that needs a dependency which is off where the pack is on is refused, naming both', async () => {
+    const { store, packs, one } = await setup();
+    const base = await localPack('base', { id: 'acme.ledger', name: 'Ledger' });
+    await packs.install({ kind: 'directory', path: base.folder });
+    const v1 = await localPack('v1');
+    await packs.install({ kind: 'directory', path: v1.folder });
+    await packs.activate(one, 'acme.bookkeeping');
+    const v2 = await localPack('v2', {
+      version: '2.0.0',
+      dependencies: [{ id: 'acme.ledger', range: '^1.0.0' }],
+    });
+    await expect(packs.update('acme.bookkeeping', { kind: 'directory', path: v2.folder })).rejects.toMatchObject({
+      status: 409,
+      details: {
+        code: 'dependency-off',
+        projects: [{ id: one, name: 'Kitchen', dependencies: [{ id: 'acme.ledger' }] }],
+      },
+      message: expect.stringMatching(/Kitchen.*Ledger/),
+    });
+    expect((await packs.installed()).find((p) => p.id === 'acme.bookkeeping')!.current).toBe('1.0.0');
+    // With the dependency on there, the same update goes through.
+    await packs.activate(one, 'acme.ledger');
+    await packs.update('acme.bookkeeping', { kind: 'directory', path: v2.folder });
+    expect(isPackActive(store.state(one).project.packs, 'acme.ledger')).toBe(true);
+  });
+
+  test('a rollback to a version whose dependency is off where the pack is on is refused, naming both', async () => {
+    const { packs, one } = await setup();
+    const base = await localPack('base', { id: 'acme.ledger', name: 'Ledger' });
+    await packs.install({ kind: 'directory', path: base.folder });
+    const v1 = await localPack('v1', { dependencies: [{ id: 'acme.ledger', range: '^1.0.0' }] });
+    await packs.install({ kind: 'directory', path: v1.folder });
+    const v2 = await localPack('v2', { version: '2.0.0' });
+    await packs.update('acme.bookkeeping', { kind: 'directory', path: v2.folder });
+    await packs.activate(one, 'acme.bookkeeping');
+    await expect(packs.rollback('acme.bookkeeping')).rejects.toMatchObject({
+      details: { code: 'dependency-off', projects: [{ name: 'Kitchen', dependencies: [{ id: 'acme.ledger' }] }] },
+    });
+    expect((await packs.installed()).find((p) => p.id === 'acme.bookkeeping')!.current).toBe('2.0.0');
+  });
+
+  test('a damaged pack still protects what it depends on, from the dependencies recorded at install', async () => {
+    const { store, packs, one } = await setup();
+    const base = await localPack('base', { id: 'acme.ledger', name: 'Ledger' });
+    await packs.install({ kind: 'directory', path: base.folder });
+    const app = await localPack('app', { dependencies: [{ id: 'acme.ledger', range: '^1.0.0' }] });
+    await packs.install({ kind: 'directory', path: app.folder });
+    await packs.activate(one, 'acme.bookkeeping', { includeDependencies: true });
+    const root = path.join(store.dataDir, 'packs', 'objects', 'acme.bookkeeping');
+    const [object] = await fs.readdir(root);
+    await fs.writeFile(path.join(root, object, 'manifest.json'), '{}');
+
+    const reopened = lifecycle(store);
+    await expect(reopened.deactivate(one, 'acme.ledger')).rejects.toMatchObject({
+      details: { code: 'in-use', dependents: [{ id: 'acme.bookkeeping' }] },
+    });
+    await reopened.deactivate(one, 'acme.bookkeeping');
+    await reopened.deactivate(one, 'acme.ledger');
+    await expect(reopened.uninstall('acme.ledger')).rejects.toMatchObject({
+      details: { code: 'in-use', dependents: [{ id: 'acme.bookkeeping' }] },
+    });
+    expect(await reopened.isInstalled('acme.ledger')).toBe(true);
+  });
+
+  test('a damaged pack with no recorded dependencies blocks turning off what it may need, and uninstalling anything, by name', async () => {
+    const { store, packs, one } = await setup();
+    const base = await localPack('base', { id: 'acme.ledger', name: 'Ledger' });
+    await packs.install({ kind: 'directory', path: base.folder });
+    const app = await localPack('app', { dependencies: [{ id: 'acme.ledger', range: '^1.0.0' }] });
+    await packs.install({ kind: 'directory', path: app.folder });
+    await packs.activate(one, 'acme.bookkeeping', { includeDependencies: true });
+    const storeFile = path.join(store.dataDir, 'packs', 'store.json');
+    const raw = JSON.parse(await fs.readFile(storeFile, 'utf8'));
+    for (const version of raw.packs['acme.bookkeeping'].versions) delete version.dependencies;
+    await fs.writeFile(storeFile, JSON.stringify(raw));
+    const root = path.join(store.dataDir, 'packs', 'objects', 'acme.bookkeeping');
+    const [object] = await fs.readdir(root);
+    await fs.writeFile(path.join(root, object, 'manifest.json'), '{}');
+
+    const reopened = lifecycle(store);
+    await expect(reopened.deactivate(one, 'acme.ledger')).rejects.toMatchObject({
+      details: { code: 'damaged-dependent', damaged: ['acme.bookkeeping'] },
+      message: expect.stringContaining('acme.bookkeeping'),
+    });
+    expect(isPackActive(store.state(one).project.packs, 'acme.ledger')).toBe(true);
+    // Off here, the damaged pack no longer needs anything on here; uninstall still refuses.
+    await reopened.deactivate(one, 'acme.bookkeeping');
+    await reopened.deactivate(one, 'acme.ledger');
+    await expect(reopened.uninstall('acme.ledger')).rejects.toMatchObject({
+      details: { code: 'damaged-dependent', damaged: ['acme.bookkeeping'] },
+    });
+    expect(await reopened.isInstalled('acme.ledger')).toBe(true);
+  });
+});
+
+describe('re-verification on read: a later change on disk is always caught', () => {
+  test('a manifest altered after it was first read is reported damaged and will not turn on', async () => {
+    const { store, packs, one } = await setup();
+    const { folder } = await localPack('book');
+    await packs.install({ kind: 'directory', path: folder });
+    expect((await packs.installed()).find((p) => p.id === 'acme.bookkeeping')!.damaged).toBeNull();
+    const root = path.join(store.dataDir, 'packs', 'objects', 'acme.bookkeeping');
+    const [object] = await fs.readdir(root);
+    const file = path.join(root, object, 'manifest.json');
+    const manifest = JSON.parse(await fs.readFile(file, 'utf8')) as PackManifest;
+    await fs.writeFile(file, JSON.stringify({ ...manifest, description: 'Quietly changed.' }));
+    expect((await packs.installed()).find((p) => p.id === 'acme.bookkeeping')!.damaged).toMatch(
+      /no longer match the digest/,
+    );
+    await expect(packs.activate(one, 'acme.bookkeeping')).rejects.toMatchObject({ details: { code: 'damaged' } });
+  });
+
+  test('a payload file swapped after install is reported damaged, in this process and the next, and will not turn on', async () => {
+    const { store, packs, one } = await setup();
+    const { folder } = await localPack('book');
+    await packs.install({ kind: 'directory', path: folder });
+    await packs.activate(one, 'acme.bookkeeping');
+    await packs.deactivate(one, 'acme.bookkeeping');
+    const root = path.join(store.dataDir, 'packs', 'objects', 'acme.bookkeeping');
+    const [object] = await fs.readdir(root);
+    await fs.writeFile(path.join(root, object, 'files', 'playbooks', 'close.md'), '# Something else\n');
+    for (const reader of [packs, lifecycle(store)]) {
+      const view = (await reader.installed()).find((p) => p.id === 'acme.bookkeeping')!;
+      expect(view.damaged).toMatch(/playbooks\/close\.md/);
+      await expect(reader.activate(one, 'acme.bookkeeping')).rejects.toMatchObject({
+        details: { code: 'damaged' },
+      });
+    }
+    await fs.rm(path.join(root, object, 'files', 'playbooks', 'close.md'));
+    expect((await lifecycle(store).installed()).find((p) => p.id === 'acme.bookkeeping')!.damaged).toMatch(
+      /playbooks\/close\.md/,
+    );
+  });
+});
+
+describe('the store and the attribution it keeps are never replaced or borrowed', () => {
+  test('a crash while the wired packs install on first open does not lose them', async () => {
+    const { store } = await setup();
+    let armed = true;
+    const crashing = lifecycle(store, (step) => {
+      if (step === 'staged' && armed) {
+        armed = false;
+        throw new Error('stopped');
+      }
+    });
+    await expect(crashing.installed()).rejects.toThrow('stopped');
+    const restarted = lifecycle(store);
+    expect((await restarted.installed()).map((p) => p.id)).toEqual([
+      'diomedes.small-business',
+      'diomedes.software-engineering',
+    ]);
+    const completed = (await restarted.operations()).filter((op) => op.phase === 'completed');
+    expect(completed.every((op) => op.by === 'diomedes')).toBe(true);
+  });
+
+  test('a wired pack you uninstalled stays uninstalled on the next open', async () => {
+    const { store, packs } = await setup();
+    await packs.uninstall('diomedes.small-business');
+    expect(await lifecycle(store).isInstalled('diomedes.small-business')).toBe(false);
+  });
+
+  test.each([
+    ['null', 'null'],
+    ['a list', '[]'],
+    ['no packs or operations', '{"schemaVersion":1}'],
+    ['packs as a list', '{"schemaVersion":1,"packs":[],"operations":[]}'],
+    ['a pack record with no versions', '{"schemaVersion":1,"packs":{"acme.x":{"id":"acme.x","current":"1.0.0"}},"operations":[]}'],
+    ['text that is not JSON', '{"schemaVersion":1,'],
+  ])('a store holding %s is refused and left exactly as it was', async (_label, text) => {
+    const { store } = await setup();
+    const file = path.join(store.dataDir, 'packs', 'store.json');
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, text);
+    const packs = lifecycle(store);
+    await expect(packs.installed()).rejects.toMatchObject({ status: 409, details: { code: 'unreadable-store' } });
+    await expect(packs.install({ kind: 'bundled', packId: 'diomedes.weekly-brief' })).rejects.toMatchObject({
+      details: { code: 'unreadable-store' },
+    });
+    expect(await fs.readFile(file, 'utf8')).toBe(text);
+  });
+
+  test.each(['Diomedes', 'DIOMEDES', 'diomedes'])(
+    'a local folder cannot borrow the publisher name %s',
+    async (name) => {
+      const { packs } = await setup();
+      const { folder } = await localPack('borrowed', { publisher: { id: 'acme', name } });
+      await expect(packs.install({ kind: 'directory', path: folder })).rejects.toMatchObject({
+        details: { code: 'reserved-id' },
+      });
+      expect(await packs.isInstalled('acme.bookkeeping')).toBe(false);
+    },
+  );
+});

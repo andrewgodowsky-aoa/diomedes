@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type {
   Change,
   Conversation,
+  DocumentInfo,
   HistoryEntry,
   MailboxMessage,
   Mode,
@@ -15,34 +16,46 @@ import type {
   ThreadPermission,
   Turn,
 } from '../../shared/types';
-import type { FollowUpCommand } from '../../shared/work-control';
+import {
+  controlReceiptsFor,
+  type ControlReceipt,
+  type FollowUpCommand,
+  type RouteControlProfile,
+} from '../../shared/work-control';
 import { AGENT_NAME } from '../../shared/agent-name';
 import { effortFor } from '../../shared/effort';
 import { isExternalEngine, isRoute } from '../../shared/engines';
 import { isModelApiRoute } from '../../shared/model-api';
 import type { InstructionFileRecord } from '../../shared/capability-packs';
 import { formatOrigin, originForSession, originForTurn } from '../attribution-display';
+import { ContextUsed } from './ContextUsed';
 import { ApprovalStatus, time } from '../components';
 import { RunInspector } from '../workbench/RunInspector';
 import { taskEvidence } from '../workbench/task-evidence';
-import { stopWork } from '../api';
+import { controlProfiles } from '../api';
+import { routeDisplayName } from '../../shared/engines';
 import { Composer } from './Composer';
 import { ProjectInstructions } from './ProjectInstructions';
 import { FollowUpQueue } from './FollowUpQueue';
-import { StopMenu, StopReceiptLine } from './StopMenu';
+import { ControlReceiptLine, RunControls, StopReceiptLine } from './StopMenu';
 import { NeedBlock } from './Need';
+import { EscalationBlock } from './Supervision';
 import { RememberOfferBlock } from './RememberedApprovals';
-import { classifyIntent } from '../../shared/remembered-approvals';
+import { classifyIntent, classifyProposal } from '../../shared/remembered-approvals';
 import type { RememberOffer } from '../../shared/permissions';
 import { ChangeReview } from './ChangeReview';
+import { ChangeDiffs } from './ChangeDiffs';
+import type { ReviewComment } from '../../shared/review-comments';
 import { useWorkingWord, workingLine } from './working-words';
 import { toolRunning, type ToolLine } from './engine-activity';
 import { ToolActivityList } from './ToolActivity';
 import { resolvedDetail, threadStyle, useWorkStyleView } from './WorkStylePicker';
 import { WORK_STYLE_LABELS } from '../../shared/work-style';
 import { TurnBody } from './TurnBody';
+import { VerificationBadge, VerificationPanel, verificationFor } from './Verification';
 import { sizeLabel } from './FilesPane';
 import { turnKeyOf, type ArtifactIndex, type ArtifactRecord } from './artifacts';
+import { identityLabel, turnReference } from '../../shared/file-identity';
 
 function fmtDur(ms: number): string {
   const s = ms / 1000;
@@ -86,6 +99,10 @@ interface ThreadViewProps {
   onOpenInFiles?(path: string): void;
   /** The project's follow-up queue. The rows for this task are shown and driven here. */
   followUps?: FollowUpCommand[];
+  /** The project's control receipts (H08). This task's are woven into the timeline. */
+  controlReceipts?: ControlReceipt[];
+  /** Opens another task's thread: the other side of a fork. */
+  onOpenTask?(taskId: string): void;
   permissionControl?: ReactNode;
   onScope?(): void;
   grantActive?: boolean;
@@ -142,11 +159,20 @@ interface ThreadViewProps {
   openArtifactKey?: string | null;
   /** The conversation's "···" menu (ThreadMenu.tsx), at the end of the head. */
   menu?: ReactNode;
+  /** Files attached to the next message, passed through to the composer. */
+  attachments?: readonly DocumentInfo[];
+  onAttachments?(files: DocumentInfo[]): void;
+  attachable?(): Promise<DocumentInfo[]>;
+  onOpenFile?(path: string): void;
+  /** Opens a sent message's file in Files at the exact version it named. */
+  onOpenReference?(reference: { path: string; sha: string | null }): void;
   /** Open learned offers (D5) whose approval this thread owns, asked once each. */
   rememberOffers?: RememberOffer[];
   onAnswerOffer?(offer: RememberOffer, accept: boolean): void;
   /** Go ahead on this exact approval and remember it in this project (D5, route 1). */
   onRemember?(need: Need): void;
+  /** P06 review comments, for the task's change review. */
+  reviewComments?: ReviewComment[];
 }
 
 /**
@@ -171,6 +197,8 @@ export function ThreadView({
   instructionFiles = [],
   onOpenInFiles,
   followUps = [],
+  controlReceipts = [],
+  onOpenTask,
   permissionControl,
   onScope,
   grantActive = false,
@@ -199,15 +227,29 @@ export function ThreadView({
   onOpenArtifact,
   openArtifactKey = null,
   menu = null,
+  attachments,
+  onAttachments,
+  attachable,
+  onOpenFile,
+  onOpenReference,
   rememberOffers = [],
   onAnswerOffer,
   onRemember,
+  reviewComments = [],
 }: ThreadViewProps) {
   const technical = settings.detail === 'technical';
   const permission: ThreadPermission = thread.permission ?? 'show-first';
   const live = sessions.find((s) => ['queued', 'working', 'waiting'].includes(s.state)) ?? null;
   const ordered = [...sessions].sort((a, b) => a.startedAt.localeCompare(b.startedAt));
   const last = ordered.at(-1) ?? null;
+  const profiles = useControlProfiles(
+    projectId,
+    task?.id,
+    // A Codex run's thread record changes what its route offers (H02), so it is part of the key.
+    ordered
+      .map((session) => `${session.id}:${session.state}:${session.nativeThread?.id ?? ''}`)
+      .join(','),
+  );
 
   const savedModel =
     typeof settings.services?.[`${route}Model`] === 'string'
@@ -277,6 +319,7 @@ export function ThreadView({
     streaming?.requestId,
     streaming?.text.length,
     streaming?.activity?.length,
+    controlReceipts.length,
   ]);
 
   const items: { at: string; seq: number; node: ReactNode }[] = [];
@@ -324,7 +367,31 @@ export function ThreadView({
               </div>
               <div className="body">
                 {t.role === 'you' ? (
-                  paragraphs(t.text).map((p, j) => <p key={j}>{p}</p>)
+                  <>
+                    {paragraphs(t.text).map((p, j) => <p key={j}>{p}</p>)}
+                    {/* What this message carried, each at the exact version it named. */}
+                    {onOpenReference && t.sources.length > 0 && (
+                      <div className="turn-refs" aria-label="Files sent with this message">
+                        {t.sources.map((path) => {
+                          const identity = turnReference(t, path, history ?? []);
+                          return (
+                            <button
+                              type="button"
+                              className="ref-chip"
+                              key={path}
+                              title={identity ? `${path} · ${identity.sha}` : path}
+                              onClick={() => onOpenReference({ path, sha: identity?.sha ?? null })}
+                            >
+                              <span className="ref-name">{path.slice(path.lastIndexOf('/') + 1)}</span>
+                              <span className="mono">
+                                {identity ? identityLabel(identity) : 'version not recorded'}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </>
                 ) : (
                   <TurnBody
                     text={t.text}
@@ -338,6 +405,7 @@ export function ThreadView({
                   />
                 )}
               </div>
+              {t.role !== 'you' && t.context && <ContextUsed account={t.context} />}
             </div>
           ))}
         </div>
@@ -371,16 +439,28 @@ export function ThreadView({
       ),
     });
   });
-  // Three Stops, and what the last one actually did. The plain Stop keeps its
-  // word and today's meaning; the other two are offered only where they would
-  // do something. The receipt sits under the run it was pressed on.
+  // The run's controls sit in its own record (RunControls): the three Stops while
+  // it runs, and Resume, Retry and Fork once it has settled, each only where its
+  // route offers it. Every control leaves a receipt, woven into the timeline by
+  // time. A Stop's own receipt line stays under its run only when no control
+  // receipt already says it (a Stop pressed through another route).
   const queuedForTask = task
     ? followUps.filter((item) => item.taskId === task.id && item.state === 'queued')
     : [];
+  const receipts = task ? controlReceiptsFor(controlReceipts, task.id) : [];
   const lastReceipt = task?.stopReceipts?.at(-1) ?? null;
+  const saidByControl =
+    lastReceipt !== null &&
+    receipts.some(
+      (receipt) =>
+        receipt.result.stop?.at === lastReceipt.at &&
+        receipt.result.stop?.scope === lastReceipt.scope,
+    );
   const receiptOn =
     lastReceipt?.sessionId ?? (lastReceipt ? (ordered.at(-1)?.id ?? null) : null);
   ordered.forEach((s) => {
+    // H17: every finished run shows its four-state result, "Not verified" included.
+    const verification = task ? verificationFor(s, task, history) : null;
     items.push({
       at: s.startedAt,
       seq: 2000,
@@ -391,25 +471,47 @@ export function ThreadView({
           activity={runActivity?.[s.id]}
           technical={technical}
           onStop={() => onStopSession(s.id)}
+          latest={s.id === last?.id}
           stop={
             projectId && task ? (
-              <StopMenu
-                live={['queued', 'working'].includes(s.state)}
+              <RunControls
+                projectId={projectId}
+                task={task}
+                session={s}
+                profile={profiles?.[s.id] ?? null}
                 queuedCount={queuedForTask.length}
+                latest={s.id === last?.id}
                 busy={busy}
                 onStopTask={() => onStopSession(s.id)}
-                onStopScope={(scope) =>
-                  void stopWork(projectId, { scope, taskId: task.id, sessionId: s.id }).catch(
-                    (error: unknown) =>
-                      onError?.(error instanceof Error ? error : new Error(String(error))),
-                  )
-                }
+                onError={onError}
               />
             ) : undefined
           }
           receipt={
-            lastReceipt && receiptOn === s.id ? <StopReceiptLine receipt={lastReceipt} /> : undefined
+            lastReceipt && receiptOn === s.id && !saidByControl ? (
+              <StopReceiptLine receipt={lastReceipt} />
+            ) : undefined
           }
+          verification={
+            verification ? (
+              <VerificationPanel view={verification} task={task} projectId={projectId} onError={onError} />
+            ) : undefined
+          }
+          verificationBadge={verification ? <VerificationBadge view={verification} /> : undefined}
+        />
+      ),
+    });
+  });
+  receipts.forEach((receipt) => {
+    items.push({
+      at: receipt.requestedAt,
+      seq: 3000,
+      node: (
+        <ControlReceiptLine
+          key={receipt.id}
+          receipt={receipt}
+          taskId={task!.id}
+          onOpenTask={onOpenTask}
         />
       ),
     });
@@ -468,7 +570,7 @@ export function ThreadView({
             </button>
           </div>
         )}
-        {projectId && instructionFiles.length > 0 && (
+        {projectId && (
           <ProjectInstructions
             projectId={projectId}
             files={instructionFiles}
@@ -550,6 +652,8 @@ export function ThreadView({
               session={live ?? last}
               needs={allNeeds ?? needs}
               history={history}
+              controls={(live ?? last) ? (profiles?.[(live ?? last)!.id] ?? null) : null}
+              receipts={controlReceipts}
             />
           )}
           {projectId && task && (
@@ -562,29 +666,45 @@ export function ThreadView({
           {projectId && !task && (
             <ChangeReview projectId={projectId} taskId={null} refreshKey="" />
           )}
+          {projectId && task && (
+            <ChangeDiffs
+              projectId={projectId}
+              task={task}
+              changes={changes}
+              history={history}
+              comments={reviewComments}
+              route={last?.receipt?.route ?? last?.route ?? route}
+              onError={onError}
+            />
+          )}
           {needs.map((n) => (
             <div id={`need-${n.id}`} key={n.id}>
-              <NeedBlock
-                need={n}
-                session={sessions.find((session) => session.id === n.sessionId)}
-                onScope={onScope}
-                onRemember={
-                  onRemember &&
-                  n.harness &&
-                  n.approval &&
-                  classifyIntent('', n.harness.intent).rememberable
-                    ? () => onRemember(n)
-                    : undefined
-                }
-                decide={(r, a) =>
-                  onResolve(
-                    n,
-                    r,
-                    n.approval ? false : (a ?? (r === 'go-ahead' && permission === 'task')),
-                  )
-                }
-                show={() => onPreview(n)}
-              />
+              {n.supervision && projectId ? (
+                <EscalationBlock projectId={projectId} need={n} />
+              ) : (
+                <NeedBlock
+                  need={n}
+                  session={sessions.find((session) => session.id === n.sessionId)}
+                  onScope={onScope}
+                  onRemember={
+                    onRemember &&
+                    n.approval &&
+                    (n.harness
+                      ? classifyIntent('', n.harness.intent).rememberable
+                      : classifyProposal(n).rememberable)
+                      ? () => onRemember(n)
+                      : undefined
+                  }
+                  decide={(r, a) =>
+                    onResolve(
+                      n,
+                      r,
+                      n.approval ? false : (a ?? (r === 'go-ahead' && permission === 'task')),
+                    )
+                  }
+                  show={() => onPreview(n)}
+                />
+              )}
             </div>
           ))}
           {onAnswerOffer &&
@@ -671,6 +791,10 @@ export function ThreadView({
         onSend={submit}
         skill={skill}
         onClearSkill={onClearSkill}
+        attachments={attachments}
+        onAttachments={onAttachments}
+        attachable={attachable}
+        onOpenFile={onOpenFile}
       />
       {/* A follow-up waits behind a run. With nothing running and nothing queued,
           the composer above sends at once, so a second box would only ask the
@@ -684,6 +808,15 @@ export function ThreadView({
           route={route}
           followUps={followUps}
           busy={busy}
+          live={
+            live
+              ? {
+                  sessionId: live.id,
+                  steer: profiles?.[live.id]?.controls.steer ?? null,
+                  routeName: routeDisplayName(profiles?.[live.id]?.workRoute ?? live.route ?? route),
+                }
+              : null
+          }
         />
       )}
     </main>
@@ -697,15 +830,27 @@ function RunRecord({
   onStop,
   stop,
   receipt,
+  verification,
+  verificationBadge,
+  latest = false,
 }: {
   session: Session;
   /** Tool calls streamed for this run while it is live. Never saved; the log is the record. */
   activity?: ToolLine[];
   technical: boolean;
   onStop(): void;
-  /** The scoped Stop cluster. Falls back to today's single button when absent. */
+  /**
+   * The run's controls (H08): the scoped Stop cluster while it runs, Resume,
+   * Retry and Fork once it has settled. Falls back to today's single Stop.
+   */
   stop?: ReactNode;
   receipt?: ReactNode;
+  /** H17: the finished run's four-state result, with its evidence. */
+  verification?: ReactNode;
+  /** The same result's state word, for the folded record. */
+  verificationBadge?: ReactNode;
+  /** The task's latest run keeps its controls in view while its record is folded. */
+  latest?: boolean;
 }) {
   const live = ['queued', 'working', 'waiting'].includes(session.state);
   const waiting = live && session.state !== 'waiting' && !toolRunning(activity);
@@ -725,7 +870,9 @@ function RunRecord({
         <b>{session.log.length} events</b> {dur}{' '}
         <button type="button" onClick={() => setOpen(true)}>
           show run
-        </button>
+        </button>{' '}
+        {verificationBadge}
+        {latest && stop && <> {stop}</>}
         {receipt}
       </div>
     );
@@ -758,6 +905,7 @@ function RunRecord({
       )}
       {!live && (
         <div>
+          {stop && <>{stop} </>}
           <button type="button" onClick={() => setOpen(false)}>
             hide run
           </button>{' '}
@@ -766,7 +914,36 @@ function RunRecord({
           </button>
         </div>
       )}
+      {!live && verification}
       {receipt}
     </div>
   );
+}
+
+/**
+ * The controls each of a task's runs offers, read from the server that enforces
+ * them (`GET …/controls?taskId=`). Re-read when a run starts or changes state,
+ * since a new run can be on another route. Null until the first answer.
+ */
+function useControlProfiles(
+  projectId: string | undefined,
+  taskId: string | undefined,
+  key: string,
+): Record<string, RouteControlProfile> | null {
+  const [profiles, setProfiles] = useState<Record<string, RouteControlProfile> | null>(null);
+  useEffect(() => {
+    if (!projectId || !taskId) {
+      setProfiles(null);
+      return;
+    }
+    const controller = new AbortController();
+    void controlProfiles(projectId, taskId, controller.signal).then(
+      (next) => {
+        if (!controller.signal.aborted) setProfiles(next);
+      },
+      () => undefined,
+    );
+    return () => controller.abort();
+  }, [projectId, taskId, key]);
+  return profiles;
 }

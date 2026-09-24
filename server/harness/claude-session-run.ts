@@ -89,6 +89,13 @@ export interface NativeSessionProfile<C extends SessionCheckpointFacts> {
     checkpoint: C,
     interruptedRequestId: string | null,
   ): { resume: C } | { refuse: string };
+  /**
+   * Open a missing connection before the turn is recorded, and confirm a live one still has its
+   * native session. A refusal found there (a fork the engine cannot make, a session it no longer
+   * has) was never sent, so it fails the command without a turn step to reconcile. Absent: the
+   * connection is opened inside the turn, as the Claude session always has.
+   */
+  openBeforeTurn?: boolean;
 }
 export const CLAUDE_SESSION_PROFILE: NativeSessionProfile<ClaudeSessionCheckpoint> = {
   engine: 'claude-code',
@@ -108,7 +115,20 @@ export type ClaudeConversation = Pick<
   'turn' | 'interrupt' | 'close' | 'checkpoint' | 'nativeSession'
 >;
 /** One held steering message and what has happened to it so far. */
-type SteerEntry = { commandId: string; text: string; ack: SteeringAck };
+type SteerEntry = {
+  commandId: string;
+  text: string;
+  ack: SteeringAck;
+  /** Shows a sent message and its answer where the person reads the conversation. */
+  onDelivered?: SteerOptions['onDelivered'];
+};
+export interface SteerOptions {
+  /**
+   * Called once the held message was answered as its own turn, before it reads `delivered`,
+   * with that turn's result and the request it was sent as. Idempotent projection only.
+   */
+  onDelivered?(result: ClaudeSessionTurnResult, input: TextRequest): Promise<void>;
+}
 /** How many messages may wait behind one running turn, and how many answered ones are kept to read. */
 const STEER_QUEUE_LIMIT = 8;
 const STEER_HISTORY = 16;
@@ -123,6 +143,8 @@ export interface NativeConversation<C extends SessionCheckpointFacts> {
   readonly continuity?: { origin: string; detail: string | null };
   /** True where every turn may reach its session differently, so each turn reports it (H05). */
   readonly continuityPerTurn?: boolean;
+  /** Set by a transport that can confirm, sending nothing, that its native session still exists. */
+  verify?(): Promise<void>;
 }
 type Connection = {
   session: NativeConversation<SessionCheckpointFacts>;
@@ -931,6 +953,67 @@ export class ClaudeSessionRuns<C extends SessionCheckpointFacts = ClaudeSessionC
     if (request.mode === 'resume' && this.connections.has(runId)) {
       await this.dispose(runId, this.connections.get(runId)!);
     }
+    const holder: { owned?: Connection } = {};
+    const openNative = () =>
+      request.open(
+        admission,
+        {
+          ...wire,
+          signal: undefined,
+          onDelta: undefined,
+          onPreview: undefined,
+          onActivity: undefined,
+          onToolActivity: undefined,
+        },
+        {
+          observedVersion: admission.version,
+          restore,
+          fork: request.mode === 'fork',
+          onCheckpoint: async (checkpoint, signal) => {
+            const writer = holder.owned?.writer;
+            if (!writer || this.connections.get(runId) !== holder.owned || signal.aborted)
+              throw new HarnessError(
+                'stale_attempt',
+                'No running attempt owns this checkpoint callback.',
+              );
+            return writer(
+              { v: 1, providerId: this.profile.engine, payload: checkpoint as unknown as Json },
+              signal,
+            );
+          },
+        },
+      );
+    let preopened: NativeConversation<C> | undefined;
+    if (this.profile.openBeforeTurn) {
+      // Nothing here reaches a model: a refusal is known not sent, so the command fails with no
+      // turn step to reconcile, and the same command can be sent again once the cause is fixed.
+      const notSent = async (error: unknown): Promise<never> => {
+        await this.park(runId, input.projectId, `${input.requestId}:not-sent:${randomUUID()}`).catch(
+          () => undefined,
+        );
+        throw error;
+      };
+      const live = this.connections.get(runId);
+      if (live?.session.verify) {
+        try {
+          await live.session.verify();
+        } catch (error) {
+          await this.dispose(runId, live, error).catch(() => undefined);
+          await notSent(error);
+        }
+      } else if (!live) {
+        try {
+          this.sharingPolicy(input.projectId, input.documents.map((doc) => doc.path), request.mode !== 'start');
+          preopened = await openNative();
+        } catch (error) {
+          await notSent(error);
+        }
+        if (this.closed || input.signal?.aborted) {
+          await preopened!.close();
+          throw new EngineError('CANCELLED', 'The native process was stopped before dispatch.');
+        }
+      }
+    }
     let response: ClaudeSessionTurnResult;
     try {
       response = await this.runs.step<ClaudeSessionTurnResult>(
@@ -952,44 +1035,18 @@ export class ClaudeSessionRuns<C extends SessionCheckpointFacts = ClaudeSessionC
           let connection = this.connections.get(runId);
           const opened = !connection;
           if (!connection) {
-            let owned: Connection | undefined;
-            const session = await request.open(
-              admission,
-              {
-                ...wire,
-                signal: undefined,
-                onDelta: undefined,
-                onPreview: undefined,
-                onActivity: undefined,
-                onToolActivity: undefined,
-              },
-              {
-                observedVersion: admission.version,
-                restore,
-                fork: request.mode === 'fork',
-                onCheckpoint: async (checkpoint, signal) => {
-                  const writer = owned?.writer;
-                  if (!writer || this.connections.get(runId) !== owned || signal.aborted)
-                    throw new HarnessError(
-                      'stale_attempt',
-                      'No running attempt owns this checkpoint callback.',
-                    );
-                  return writer(
-                    { v: 1, providerId: this.profile.engine, payload: checkpoint as unknown as Json },
-                    signal,
-                  );
-                },
-              },
-            );
+            const session = preopened ?? (await openNative());
+            preopened = undefined;
             if (this.closed || context.signal.aborted || input.signal?.aborted) {
               await session.close();
               throw new EngineError('CANCELLED', 'The native process was stopped before dispatch.');
             }
             connection = { session };
-            owned = connection;
+            const owned = connection;
+            holder.owned = owned;
             this.connections.set(runId, connection);
             const endOwned = () => {
-              void this.dispose(runId, owned!, context.signal.reason);
+              void this.dispose(runId, owned, context.signal.reason);
             };
             context.signal.addEventListener('abort', endOwned, { once: true });
             connection.detach = () => context.signal.removeEventListener('abort', endOwned);
@@ -1084,6 +1141,9 @@ export class ClaudeSessionRuns<C extends SessionCheckpointFacts = ClaudeSessionC
       const connection = this.connections.get(runId);
       if (connection) await this.dispose(runId, connection, error);
       throw error;
+    } finally {
+      // Opened ahead of a turn that never took it (refused before its handler ran).
+      if (preopened) await preopened.close().catch(() => undefined);
     }
     // The first phase is written here, in the tail a replayed command also reaches, and before
     // the run parks: a crash between the answer and this line is repaired by the next request
@@ -1195,7 +1255,13 @@ export class ClaudeSessionRuns<C extends SessionCheckpointFacts = ClaudeSessionC
    * The queue is not durable: a restart cancels what was waiting, and each sent message is a
    * durable turn of its own, found again by its command id.
    */
-  async steer(projectId: string, runId: string, commandId: string, text: string): Promise<SteeringAck> {
+  async steer(
+    projectId: string,
+    runId: string,
+    commandId: string,
+    text: string,
+    options: SteerOptions = {},
+  ): Promise<SteeringAck> {
     if (this.closed) throw new EngineError('SESSION_CLOSED', 'The native runtime is shutting down.');
     await this.get(projectId, runId);
     if (this.profile.steering !== 'queue')
@@ -1223,6 +1289,7 @@ export class ClaudeSessionRuns<C extends SessionCheckpointFacts = ClaudeSessionC
     const entry: SteerEntry = {
       commandId,
       text,
+      onDelivered: options.onDelivered,
       ack: ack('pending', 'Waiting for the current answer to finish; it will be sent next, as its own message.'),
     };
     queue.push(entry);
@@ -1276,34 +1343,36 @@ export class ClaudeSessionRuns<C extends SessionCheckpointFacts = ClaudeSessionC
         break;
       }
       try {
+        const input: TextRequest = {
+          ...base.input,
+          requestId: entry.commandId,
+          prompt: entry.text,
+          documents: [],
+          binding: undefined,
+          interaction: undefined,
+          carriedFrom: undefined,
+          signal: undefined,
+          onPreview: undefined,
+          onActivity: undefined,
+        };
         const result = await this.request({
           ...base,
           mode: 'follow-up',
           // Live previews stay with the message a caller is watching; this turn's answer is
           // read from its durable record like any other.
           preview: undefined,
-          input: {
-            ...base.input,
-            requestId: entry.commandId,
-            prompt: entry.text,
-            documents: [],
-            binding: undefined,
-            interaction: undefined,
-            carriedFrom: undefined,
-            signal: undefined,
-            onPreview: undefined,
-            onActivity: undefined,
-          },
+          input,
         });
-        if (result.response && !result.interrupted)
-          this.settleSteer(
-            runId,
-            entry,
-            'delivered',
-            'Sent as the next message once the answer it waited for finished.',
-            result.nativeSession,
-          );
-        else {
+        if (result.response && !result.interrupted) {
+          let detail = 'Sent as the next message once the answer it waited for finished.';
+          // Shown in the conversation before it reads delivered, so the thread holds what the
+          // native session holds. It was sent either way; a failed projection is said, not hidden.
+          if (entry.onDelivered)
+            await entry.onDelivered(result, input).catch(() => {
+              detail = `${detail} It could not be added to the conversation view.`;
+            });
+          this.settleSteer(runId, entry, 'delivered', detail, result.nativeSession);
+        } else {
           this.settleSteer(runId, entry, 'cancelled', 'This message was stopped before it was answered.');
           this.cancelSteers(runId, 'The message before this one was stopped, so this message was not sent.');
           this.draining.delete(runId);

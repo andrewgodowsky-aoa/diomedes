@@ -30,6 +30,7 @@
 import type { Mode } from './types.js';
 import { ROUTE_CAPABILITIES, type RouteCapabilities } from './capabilities.js';
 import type { PermissionChoiceId } from './permissions.js';
+import type { ProfileResolution } from './agent-profiles.js';
 
 export const AGENT_PROTOCOL_VERSION = 1;
 export const AGENT_MAX_ROLE = 1200;
@@ -367,5 +368,10 @@ export interface AgentResolution {
     readonly grantId: string | null;
     readonly grantsAuthority: false;
   };
+  /**
+   * The Agent profile revision this run resolved, pinned at admission (H09).
+   * Absent when no profile decided the run. Never recomputed afterwards.
+   */
+  readonly profile?: ProfileResolution;
   readonly resolvedAt: string;
 }

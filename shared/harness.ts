@@ -116,6 +116,12 @@ export interface StepRecord {
   origin?: OriginSnapshot;
   /** Provider-owned recovery metadata, never portable context or permission authority. */
   nativeCheckpoint?: NativeCheckpoint;
+  /**
+   * H12 recorded effects, one per attempt of a typed tool with an effect on the world, oldest
+   * first. The intent is written in the same durable commit that starts the attempt, before its
+   * handler runs; the outcome is recorded against it. Never rewritten or pruned (decision 10).
+   */
+  effects?: EffectRecord[];
   /** The run's lease fence when the current attempt started. */
   leaseFence: number;
   startedAt: string | null;
@@ -277,7 +283,8 @@ export type ModelResponse =
 export interface ModelResult {
   response: ModelResponse;
   transcript?: ProviderTranscriptRef | null;
-  usage?: { inputTokens?: number; outputTokens?: number } | null;
+  /** Cache counts are parts of `inputTokens` (`nectovia-usage/1`), kept apart when reported. */
+  usage?: { inputTokens?: number; outputTokens?: number; cacheReadTokens?: number; cacheWriteTokens?: number } | null;
 }
 
 /** A harness run in the words the Workbook and Console already use. */
@@ -290,4 +297,61 @@ export interface RunPresentation {
   uncertain: { stepId: string; intentHash: string; attempt: number } | null;
   evidence: { steps: number; events: number; lastSeq: number };
   lineage: { parentRunId: string; forkPoint: string | null } | null;
+}
+
+/**
+ * H12 typed tool effect classes. Each maps onto one `Effect` and destination:
+ * `pure` and `read` on either destination, `idempotent-write` onto a local
+ * `idempotent` effect, `non-idempotent-effect` onto a local `non-idempotent`
+ * one, and `external-send` onto an external `non-idempotent` one.
+ */
+export type ToolEffectClass =
+  | 'pure'
+  | 'read'
+  | 'idempotent-write'
+  | 'non-idempotent-effect'
+  | 'external-send';
+
+/**
+ * `intended`: written before the handler ran. `applied` / `failed`: the handler
+ * reported. `uncertain`: the process, lease or run ended between intent and
+ * outcome, so the effect may or may not have happened; nothing re-executes it
+ * until it is reconciled. `abandoned`: a read interrupted the same way, which
+ * changed nothing. `reconciled-applied` / `reconciled-not-applied`: someone or
+ * the tool's own reconciler established which.
+ */
+export type EffectStatus =
+  | 'intended'
+  | 'applied'
+  | 'failed'
+  | 'uncertain'
+  | 'abandoned'
+  | 'reconciled-applied'
+  | 'reconciled-not-applied';
+
+export interface EffectRecord {
+  v: 1;
+  tool: string;
+  effectClass: ToolEffectClass;
+  attempt: number;
+  /** sha-256 of the canonical, schema-validated input the handler receives. */
+  inputsDigest: string;
+  /** Project-relative paths or named destinations the tool declared it may change. */
+  targets: string[];
+  idempotencyKey: string;
+  principalId: string;
+  identityGeneration: number;
+  /**
+   * What authorised it: `approval:<intentHash>` for a consumed exact approval,
+   * `permission:<name>` for a held capability, `host:<ref>` for a host grant
+   * reference, `none` for a tool that needs no permission.
+   */
+  authorization: string;
+  status: EffectStatus;
+  intendedAt: string;
+  outcomeAt: string | null;
+  outputHash: string | null;
+  error: string | null;
+  /** Who reconciled an uncertain effect, and on what evidence. */
+  reconciliation: { by: string; evidence: string; at: string } | null;
 }

@@ -2,6 +2,19 @@ import { useEffect, useRef, useState } from 'react';
 import type { Conversation, Mode, Route } from '../../shared/types';
 import { AUTO_AGENT, AUTO_BY_MODE } from '../../shared/agents';
 import { api } from '../api';
+import { routeDisplayName } from '../../shared/engines';
+
+/** What `GET /projects/:id/agent-profiles` returns for one profile (H09). */
+interface ProfileOption {
+  profileId: string;
+  revision: number;
+  name: string;
+  engine: string;
+  model: string;
+  effort: string | null;
+  available: boolean;
+  reason: string | null;
+}
 
 /** What `GET /projects/:id/agents` returns for one Agent. */
 interface AgentOption {
@@ -28,6 +41,8 @@ interface AgentPickerProps {
   live: boolean;
   busy: boolean;
   onPick(agentId: string | null): void;
+  /** Picks an exact-model profile for the thread. Absent hides the profile group. */
+  onPickProfile?(profileId: string): void;
 }
 
 /**
@@ -47,9 +62,27 @@ export function AgentPicker({
   live,
   busy,
   onPick,
+  onPickProfile,
 }: AgentPickerProps) {
   const [open, setOpen] = useState(false);
   const [listing, setListing] = useState<AgentListing | null>(null);
+  const [profiles, setProfiles] = useState<ProfileOption[]>([]);
+  const taskQuery = thread.taskId ? `?taskId=${encodeURIComponent(thread.taskId)}` : '';
+  // Read again each time the menu opens: availability follows Settings.
+  useEffect(() => {
+    if (!onPickProfile) return;
+    let alive = true;
+    api<{ profiles: ProfileOption[] }>(`/projects/${projectId}/agent-profiles${taskQuery}`)
+      .then((data) => {
+        if (alive) setProfiles(data.profiles);
+      })
+      .catch(() => {
+        if (alive) setProfiles([]);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [projectId, taskQuery, open, onPickProfile]);
   const root = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -82,7 +115,9 @@ export function AgentPicker({
   }, [open]);
 
   const agents = listing?.agents ?? [];
-  const chosenId = thread.requested?.agent ?? null;
+  const profileId = thread.requested?.profile ?? null;
+  const profile = profileId ? profiles.find((item) => item.profileId === profileId) : undefined;
+  const chosenId = profileId ? null : (thread.requested?.agent ?? null);
   const chosen = chosenId ? agents.find((item) => item.id === chosenId) : undefined;
   // What Auto resolves to for the current mode, shown so the person can see it
   // before starting rather than only in the record afterwards. Automatic is a
@@ -131,9 +166,11 @@ export function AgentPicker({
         title="Which worker does this. It does not change what the worker may do."
         onClick={() => setOpen(!open)}
       >
-        <span className="eng">Agent</span>
-        <span className="mdl">{chosen?.name ?? 'Auto'}</span>
-        {!chosen && autoName && <span className="eff">{autoName}</span>}
+        <span className="eng">{profileId ? 'Profile' : 'Agent'}</span>
+        <span className="mdl">
+          {profileId ? (profile?.name ?? 'Unavailable profile') : (chosen?.name ?? 'Auto')}
+        </span>
+        {!profileId && !chosen && autoName && <span className="eff">{autoName}</span>}
       </button>
       {open && (
         <div className="pmenu open" role="menu">
@@ -143,9 +180,9 @@ export function AgentPicker({
             <>
               <button
                 type="button"
-                className={`m ${!chosenId ? 'on' : ''}`}
+                className={`m ${!chosenId && !profileId ? 'on' : ''}`}
                 role="menuitemradio"
-                aria-checked={!chosenId}
+                aria-checked={!chosenId && !profileId}
                 onClick={() => choose(null)}
               >
                 <span>Auto</span>
@@ -156,6 +193,37 @@ export function AgentPicker({
                     : 'Nectovia picks the worker for the mode.'}
                 </small>
               </button>
+              {onPickProfile && profiles.length > 0 && (
+                <div>
+                  <h4>
+                    Profiles
+                    <span>Build and Fix runs</span>
+                  </h4>
+                  {profiles.map((item) => (
+                    <button
+                      key={item.profileId}
+                      type="button"
+                      className={`m ${item.profileId === profileId ? 'on' : ''}`}
+                      role="menuitemradio"
+                      aria-checked={item.profileId === profileId}
+                      disabled={!item.available}
+                      onClick={() => {
+                        if (live || busy) return;
+                        onPickProfile(item.profileId);
+                        setOpen(false);
+                      }}
+                    >
+                      <span>{item.name}</span>
+                      <span className="id">r{item.revision}</span>
+                      <small>
+                        {item.available
+                          ? `${routeDisplayName(item.engine)} · ${item.model}${item.effort ? ` · ${item.effort}` : ''}`
+                          : `Unavailable: ${item.reason}`}
+                      </small>
+                    </button>
+                  ))}
+                </div>
+              )}
               {fits.length > 0 && (
                 <div>
                   <h4>

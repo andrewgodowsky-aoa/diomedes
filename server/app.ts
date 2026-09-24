@@ -5,6 +5,8 @@ import { WorkspaceService } from './workspaces.js';
 import { mountWorkspaceRoutes } from './workspace-routes.js';
 import { mountAutomationRoutes } from './automation-routes.js';
 import { AutomationOccurrences, AutomationService } from './automations.js';
+import { AutomationDefinitions } from './automation-definitions.js';
+import { AutomationScheduler } from './automation-scheduler.js';
 import { ThemeService, THEME_PACK_ID_PATTERN, THEME_SCOPE_PATTERN } from './themes.js';
 import { mountThemeRoutes } from './theme-routes.js';
 import { CustomizationGate } from './customization-gate.js';
@@ -16,6 +18,15 @@ import { DiscoveryService } from './discovery/service.js';
 import { mountDiscoveryRoutes } from './discovery/routes.js';
 import { planTitle, taskNameFromText } from '../shared/display-names.js';
 import { browseImports, inspectImport, importExports } from './file-imports.js';
+import {
+  documentFacts,
+  documentVersion,
+  droppedFiles,
+  dropFiles,
+  pictureBytes,
+  turnSourceVersions,
+  workbookSheet,
+} from './file-drops.js';
 import { isActiveMember } from '../shared/workspaces.js';
 import { AllowanceLedger } from './managed-usage.js';
 import { ManagedGateway } from './managed-gateway.js';
@@ -63,15 +74,25 @@ import { ChangeReviewService } from './change-review/service.js';
 import {
   askCodex,
   closeWarmCodex,
+  forkCodexThread,
   getIntegrationStatuses,
+  steerCodex,
+  type CodexIntegration,
   type NativeTeamOptions,
 } from './integrations.js';
+import { CodexControls } from './codex-controls.js';
 import { MODES, modeOf } from './modes.js';
 import { fakeCodexSnapshot, usageService } from './usage.js';
 import { engineCatalog, isKnownChoice } from './models.js';
 import { ReviewerService, type ReviewerAdapter } from './trust/reviewer.js';
 import { codexReviewerAdapter } from './trust/codex-reviewer.js';
+import { VerificationService } from './verification/service.js';
+import { mountNativeLoopRoutes } from './native-loop-routes.js';
+import { NATIVE_LOOP_ENGINE } from '../shared/native-loop.js';
+import { mountVerificationRoutes } from './verification/routes.js';
+import { codexVerificationReviewer, type VerificationReviewerAdapter } from './verification/reviewer.js';
 import { AgentRegistry } from './agents.js';
+import { AgentProfileService, AgentProfileStore, mountAgentProfileRoutes } from './agent-profiles.js';
 import { AUTO_AGENT, agentCompatibility } from '../shared/agents.js';
 import { effortFor } from '../shared/effort.js';
 import {
@@ -114,6 +135,15 @@ import { MODEL_TURN_CAPABILITY, TEAM_WORK_CAPABILITY } from './harness/model-ses
 import { parseWorkCommand, validateWorkCommandId } from './work-admission.js';
 import { parseTaskCommand } from './task-admission.js';
 import { WorkControl } from './work-control.js';
+import { DurableControls, defaultWorkContract } from './durable-controls.js';
+import {
+  CONTROL_FIXTURE_CONTRACT,
+  CONTROL_FIXTURE_ROUTE,
+  controlFixtureDriver,
+} from './durable-controls-fixture.js';
+import { SupervisionService } from './supervision/service.js';
+import { keepPartially } from './change-review/partial-keep.js';
+import { documentDiff, ReviewComments } from './review-comments.js';
 import { ReadyScheduler } from './ready-scheduler.js';
 import { DesktopConnections } from './connections/desktop.js';
 import { toastConnector } from './connections/fixture.js';
@@ -225,11 +255,23 @@ interface AppOptions {
   clientPort?: number;
   nativeGenerator?: NativeGenerator;
   /**
+   * The Codex entry points Work runs and their controls use (H02). Omitted means
+   * the app's own adapter; tests pass one over a fixture app-server.
+   */
+  codexIntegration?: CodexIntegration;
+  /**
    * Reviewer route for `Approve for me`. Omitted means no reviewer exists and
    * the option cannot be confirmed. Tests and packaged smokes inject a
    * synthetic reviewer to prove authority without a provider call.
    */
   reviewerAdapter?: ReviewerAdapter | null;
+  /**
+   * H17 reviewer pass for verification. Omitted follows `reviewerAdapter`: a
+   * host with no reviewer has no verification reviewer either. Tests inject one.
+   */
+  verificationReviewer?: VerificationReviewerAdapter | null;
+  /** H17 reviewer timeout; tests shorten it to prove a timeout reads uncertain. */
+  verificationReviewTimeoutMs?: number;
   /**
    * The Jev preflight (NC-2026-09-22.1, Phase F). Off unless given: omitted or
    * null mounts no preflight route and no provider is ever asked. Tests inject
@@ -256,6 +298,11 @@ interface AppOptions {
     onInstallAccepted?: () => void;
     transport?: Partial<UpdateTransport>;
   };
+  /** H13: tests replace the Diomedes loop's model-API routes here. Production uses the engine service. */
+  loopModelRoutes?: import('./harness/capabilities/native-loop.js').LoopModelRoutes;
+  /** The automation scheduler's clock and pass interval. Tests inject both; null runs no timer. */
+  automationClock?: () => number;
+  automationTickMs?: number | null;
 }
 const owners: Owner[] = ['you', 'diomedes', 'diomedes-with-ok'];
 const states: TaskState[] = ['todo', 'working', 'waiting', 'done'];
@@ -316,6 +363,15 @@ function parseRequested(value: unknown, engine: Route = 'codex'): Conversation['
       throw new ApiError(400, 'That is not an Agent.');
     agent = v.agent.trim();
   }
+  let profile: string | null = null;
+  if (v.profile !== null && v.profile !== undefined) {
+    if (typeof v.profile !== 'string' || !/^pr-[a-z0-9-]{1,60}$/.test(v.profile))
+      throw new ApiError(400, 'That is not an Agent profile.');
+    profile = v.profile;
+  }
+  // A profile is an exact engine, model and Agent chosen as one (H09), so it stands
+  // alone: it carries no second model or Agent that could disagree with it.
+  if (profile !== null) return { model: null, effort: null, profile };
   // Agent and model are independent axes: an Agent with no model chosen keeps
   // the runtime default, and clearing the model does not clear the Agent.
   if (model === null) return agent === null ? null : { model: null, effort: null, agent };
@@ -566,6 +622,10 @@ function validateSettings(current: Settings, body: unknown): Settings {
   return result;
 }
 
+/** H18: the context account a model-API turn recorded, or undefined for any other driver. */
+const recordedContext = (recorded: object | null): Turn['context'] =>
+  (recorded as { context?: Turn['context'] | null } | null)?.context ?? undefined;
+
 export async function createApp(options: AppOptions) {
   if (options.loopbackToken !== undefined && !/^[0-9a-f]{64}$/.test(options.loopbackToken))
     throw new Error('The desktop local-service token is invalid.');
@@ -608,6 +668,10 @@ export async function createApp(options: AppOptions) {
   const reviewerAdapter =
     options.reviewerAdapter === undefined ? codexReviewerAdapter() : options.reviewerAdapter;
   const agents = new AgentRegistry(store.dataDir);
+  // Exact-model Agent profiles and routing preferences (H09).
+  const agentProfileStore = new AgentProfileStore(store.dataDir);
+  await agentProfileStore.load();
+  const agentProfiles = new AgentProfileService(agentProfileStore, store, agents);
   // Organizations, membership and the Business intake. Identity for them comes
   // from server/trust/, whose production backend is not installed, so what this
   // creates is a labelled local fixture rather than a hosted organization.
@@ -731,6 +795,16 @@ export async function createApp(options: AppOptions) {
         }
       : null;
   };
+  // H02: Codex Work runs keep, resume and fork their app-server thread through this.
+  const codexControls = new CodexControls(
+    store,
+    options.codexIntegration ?? {
+      askCodex,
+      steerCodex,
+      forkCodexThread,
+      closeWarm: closeWarmCodex,
+    },
+  );
   const nativeWork = new NativeWorkService(
     store,
     options.nativeGenerator ??
@@ -787,7 +861,7 @@ export async function createApp(options: AppOptions) {
           });
         }
         if (!isExternalEngine(input.engine))
-          return askCodex({ ...input, ...(team ? { team, onTeamToolCall } : {}) });
+          return codexControls.ask({ ...input, ...(team ? { team, onTeamToolCall } : {}) });
         if (!input.projectId || !input.threadId || !input.requestId || !input.model)
           throw new ApiError(409, 'Select a model and thread before requesting work.');
         const accountRoute = input.accountRoute;
@@ -810,6 +884,7 @@ export async function createApp(options: AppOptions) {
     reviewer,
     agents,
     changeReview,
+    agentProfiles,
   );
   const harness = createHarnessHost({
     store,
@@ -887,6 +962,32 @@ export async function createApp(options: AppOptions) {
       ),
     },
   };
+  // H13: a model-API route drives a Diomedes work loop through the engine service's own
+  // admission. A loop resumed at startup waits until every route and the verifier exist.
+  harness.loop.hold();
+  harness.loop.setModelRoutes(options.loopModelRoutes ?? {
+    admit: async (route, input) => {
+      if (!isModelApiRoute(route) || !input.model || !input.accountRoute)
+        throw new ApiError(409, 'Connect this route and choose its model in AI setup first.');
+      const admission = await engines.admitModelApi(route, { model: input.model, accountRoute: input.accountRoute });
+      return { model: admission.model, accountRoute: admission.accountRoute };
+    },
+    adapter: (route, request, stop) => {
+      if (!isModelApiRoute(route) || !request.model || !request.accountRoute)
+        throw new ApiError(409, 'This loop has no admitted model-API connection.');
+      return engines.loopAdapter(
+        route,
+        {
+          projectId: request.projectId,
+          runId: request.runId,
+          model: request.model,
+          accountRoute: request.accountRoute,
+          instructions: request.instructions,
+        },
+        stop,
+      );
+    },
+  });
   await harness.init();
   await engineAsks.expireOpen();
   // Run once admits the brief through the harness above, so its occurrences
@@ -897,8 +998,12 @@ export async function createApp(options: AppOptions) {
     configuration,
     harness,
     new AutomationOccurrences(store.dataDir),
+    new AutomationDefinitions(store.dataDir),
+    { clock: options.automationClock },
   );
   await automations.init();
+  // The one clock for automation slots. It admits only through `automations`.
+  const automationScheduler = new AutomationScheduler(store, automations, options.automationTickMs);
   const connections = new DesktopConnections(store, harness);
   const app = express();
   // The port this service listens on, learned from the first request's socket (listen(0)
@@ -939,7 +1044,7 @@ export async function createApp(options: AppOptions) {
   const serviceFor = (projectId: string, sessionId: string) => {
     const session = store.state(projectId).sessions.find((item) => item.id === sessionId);
     if (!session) throw new ApiError(404, 'This work session was not found.');
-    return [FIXTURE_ENGINE, CODEX_ENGINE].includes(session.engine.name)
+    return [FIXTURE_ENGINE, CODEX_ENGINE, NATIVE_LOOP_ENGINE].includes(session.engine.name)
       ? harness.bridge
       : session.sample
         ? work
@@ -1046,7 +1151,21 @@ export async function createApp(options: AppOptions) {
       skipped,
     });
   });
+  mountAgentProfileRoutes(app, store, agentProfiles);
   mountPermissionRoutes(app, store, nativeWork, harness.bridge);
+  const verification = new VerificationService(
+    store,
+    options.verificationReviewer !== undefined
+      ? options.verificationReviewer
+      : reviewerAdapter
+        ? codexVerificationReviewer()
+        : null,
+    { reviewTimeoutMs: options.verificationReviewTimeoutMs },
+  );
+  mountVerificationRoutes(app, store, verification);
+  // H13: the Diomedes work loop's finish gate runs the task's declared checks through H17's verifier.
+  harness.loop.attachVerification(verification);
+  mountNativeLoopRoutes(app, store, harness, verification);
   mountWorkspaceRoutes(app, store, workspaces, configuration, automations);
   mountAutomationRoutes(app, store, automations);
   mountThemeRoutes(app, store, themes, customization);
@@ -1664,7 +1783,12 @@ export async function createApp(options: AppOptions) {
   );
   app.get(
     '/api/projects/:id/state',
-    route(async (req) => store.projectState(id(req))),
+    route(async (req) => {
+      // H17: record outside changes to verified files first, so a result the
+      // projection reads from History turns uncertain without anyone opening them.
+      await verification.sync(id(req));
+      return store.projectState(id(req));
+    }),
   );
   app.get(
     '/api/projects/:id/cloud-sharing',
@@ -1755,6 +1879,52 @@ export async function createApp(options: AppOptions) {
   app.post(
     '/api/projects/:id/imports',
     route(async (req) => importExports(store, id(req), body(req).files)),
+  );
+  // Drop and paste into Files: the same recorded write as Import files, with
+  // the bytes in a raw body so a picture arrives exact (server/file-drops.ts).
+  app.post(
+    '/api/projects/:id/documents/drop',
+    express.raw({ type: 'application/octet-stream', limit: '25mb' }),
+    route(async (req) =>
+      dropFiles(
+        store,
+        id(req),
+        droppedFiles(req.query.files, req.body),
+        req.query.how === 'paste' ? 'paste' : 'drop',
+      ),
+    ),
+  );
+  app.get(
+    '/api/projects/:id/documents/facts',
+    route(async (req) => documentFacts(store, id(req), req.query.path, req.query.sha)),
+  );
+  app.get(
+    '/api/projects/:id/documents/sheet',
+    route(async (req) =>
+      workbookSheet(store, id(req), req.query.path, req.query.sha, req.query.offset),
+    ),
+  );
+  app.get(
+    '/api/projects/:id/documents/version',
+    route(async (req) => documentVersion(store, id(req), req.query.path, req.query.sha)),
+  );
+  // P06: the readable difference between two recorded versions of one file.
+  app.get(
+    '/api/projects/:id/documents/diff',
+    route(async (req) =>
+      documentDiff(store, id(req), req.query.path, req.query.from, req.query.to),
+    ),
+  );
+  app.get(
+    '/api/projects/:id/documents/picture',
+    route(async (req, res) => {
+      const picture = await pictureBytes(store, id(req), req.query.path, req.query.sha);
+      res.setHeader('Content-Type', picture.mime);
+      res.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
+      res.setHeader('Cache-Control', 'no-store');
+      res.setHeader('X-Diomedes-Sha256', picture.sha);
+      res.send(picture.bytes);
+    }),
   );
   app.get(
     '/api/projects/:id/documents/read',
@@ -2183,12 +2353,19 @@ export async function createApp(options: AppOptions) {
           command?.request.agentId ??
           state.conversations.find((c) => c.id === threadId)?.requested?.agent ??
           null,
-        requested: nativeChoice(
-          selectedRoute,
+        // A profile that decides this run supplies its own exact model (H09).
+        requested: agentProfiles.applies(
           projectId,
+          taskId,
           state.conversations.find((c) => c.id === threadId),
-          { mode: 'build', text: typeof b.instruction === 'string' ? b.instruction : null },
-        ),
+        )
+          ? undefined
+          : nativeChoice(
+              selectedRoute,
+              projectId,
+              state.conversations.find((c) => c.id === threadId),
+              { mode: 'build', text: typeof b.instruction === 'string' ? b.instruction : null },
+            ),
         instruction:
           b.instruction === undefined
             ? undefined
@@ -2219,8 +2396,13 @@ export async function createApp(options: AppOptions) {
     store,
     native: nativeWork,
     admit: (projectId, command) => admitWork(projectId, command, listeningPort),
-    stopSession: (projectId, sessionId) =>
-      serviceFor(projectId, sessionId).stop(projectId, sessionId),
+    stopSession: (projectId, sessionId, by) => {
+      const service = serviceFor(projectId, sessionId);
+      if (service === nativeWork) return nativeWork.stop(projectId, sessionId, by);
+      if (service === harness.bridge && by === 'supervision')
+        return harness.bridge.stop(projectId, sessionId, 'Paused by Diomedes supervision.');
+      return service.stop(projectId, sessionId);
+    },
     modelFor: (projectId, threadId, engine) => {
       if (engine === 'sample') return null;
       // A name for a queued follow-up. A style that would ask is answered when it is sent.
@@ -2237,6 +2419,56 @@ export async function createApp(options: AppOptions) {
       }
     },
   });
+  /**
+   * H08: Steer, Queue, Stop, Resume, Retry and Fork, each with a command identity and a
+   * receipt. Queue and Stop are `workControl` itself; Resume and Retry start work only
+   * through `admitWork`, so they can never take a route or authority a person's Start
+   * would not. The control fixture answers for the sample route only in test mode, only
+   * for a project that asked for it.
+   */
+  const controlFixtureProjects = new Set<string>();
+  const durableControls = new DurableControls({
+    store,
+    workControl,
+    admit: (projectId, command) => admitWork(projectId, command, listeningPort),
+    modelFor: (projectId, threadId, engine) => {
+      if (engine === 'sample') return null;
+      return (
+        nativeChoice(
+          engine,
+          projectId,
+          store.state(projectId).conversations.find((c) => c.id === threadId),
+        ).model ?? null
+      );
+    },
+    contractFor: (projectId, workRoute, session) =>
+      workRoute === 'sample' && controlFixtureProjects.has(projectId)
+        ? CONTROL_FIXTURE_CONTRACT
+        : workRoute === 'codex'
+          ? codexControls.contract(session)
+          : defaultWorkContract(workRoute),
+    // H12: a harness run's uncertain tool effects block Retry and Resume too.
+    harnessEffects: (projectId, session) => harness.bridge.uncertainEffects(projectId, session.id),
+  });
+  durableControls.registerDriver(CONTROL_FIXTURE_ROUTE, controlFixtureDriver(work));
+  // H02: the Codex route's steer, resume and fork, offered only where the Codex that
+  // served a run advertised them (`codexControls.contract`).
+  durableControls.registerDriver('codex', codexControls.driver());
+  /**
+   * H15 supervision: drift detection over each live run's durable records, answered on a
+   * bounded ladder through the controls above and an ordinary Need. It listens to the same
+   * `change` announcement the follow-up queue does and grants nothing.
+   */
+  const supervision = new SupervisionService({
+    store,
+    controls: durableControls,
+    harnessRun: async (projectId, session) =>
+      [FIXTURE_ENGINE, CODEX_ENGINE].includes(session.engine.name)
+        ? ((await harness.list(projectId)).find((run) => run.sessionId === session.id) ?? null)
+        : null,
+  });
+  const superviseOnChange = (projectId: string) => supervision.schedule(projectId);
+  store.on('change', superviseOnChange);
   /**
    * The one trigger. A session reaching a terminal state and a task becoming
    * done both end in a durable write, and `persist` announces that write, so
@@ -2361,6 +2593,54 @@ export async function createApp(options: AppOptions) {
     route(async (req) => workControl.stop(id(req), body(req))),
   );
   app.get(
+    '/api/projects/:id/controls',
+    route(async (req) => ({
+      receipts: durableControls.list(id(req)),
+      ...(typeof req.query.taskId === 'string'
+        ? { profiles: durableControls.profiles(id(req), req.query.taskId) }
+        : {}),
+    })),
+  );
+  app.post(
+    '/api/projects/:id/controls',
+    route(async (req) => ({ receipt: await durableControls.perform(id(req), body(req)) })),
+  );
+  app.get(
+    '/api/projects/:id/controls/:commandId',
+    route(async (req) => durableControls.receipt(id(req), String(req.params.commandId))),
+  );
+  if (process.env.DIOMEDES_TEST_MODE === '1')
+    app.put(
+      '/api/projects/:id/controls/fixture',
+      route(async (req) => {
+        store.state(id(req));
+        const enabled = body(req).enabled === true;
+        if (enabled) controlFixtureProjects.add(id(req));
+        else controlFixtureProjects.delete(id(req));
+        return { enabled };
+      }),
+    );
+  app.get(
+    '/api/projects/:id/supervision',
+    route(async (req) => ({
+      records: supervision.list(
+        id(req),
+        typeof req.query.sessionId === 'string' ? req.query.sessionId : undefined,
+      ),
+    })),
+  );
+  app.post(
+    '/api/projects/:id/supervision/evaluate',
+    route(async (req) => {
+      const sessionId = asString(body(req).sessionId, 'a run', 100);
+      return { records: await supervision.evaluate(id(req), sessionId) };
+    }),
+  );
+  app.post(
+    '/api/projects/:id/supervision/escalations/:needId/answer',
+    route(async (req) => supervision.answer(id(req), String(req.params.needId), body(req))),
+  );
+  app.get(
     '/api/projects/:id/follow-ups',
     route(async (req) => ({ followUps: workControl.list(id(req)) })),
   );
@@ -2382,6 +2662,29 @@ export async function createApp(options: AppOptions) {
     '/api/projects/:id/follow-ups/:fid',
     route(async (req) => ({
       followUp: await workControl.remove(id(req), String(req.params.fid), 'you'),
+    })),
+  );
+  // P06: review comments on changes and file versions, and "Revise with these comments",
+  // which is an ordinary follow-up through the queue above.
+  const reviewComments = new ReviewComments(store, (projectId, request) =>
+    workControl.queue(projectId, request),
+  );
+  app.get(
+    '/api/projects/:id/review-comments',
+    route(async (req) => ({ comments: reviewComments.list(id(req)) })),
+  );
+  app.post(
+    '/api/projects/:id/review-comments',
+    route(async (req) => ({ comment: await reviewComments.add(id(req), body(req)) })),
+  );
+  app.post(
+    '/api/projects/:id/review-comments/revise',
+    route(async (req) => reviewComments.revise(id(req), body(req))),
+  );
+  app.post(
+    '/api/projects/:id/review-comments/:cid/resolve',
+    route(async (req) => ({
+      comment: await reviewComments.resolve(id(req), String(req.params.cid), body(req)),
     })),
   );
   app.post(
@@ -2421,6 +2724,16 @@ export async function createApp(options: AppOptions) {
           choice(b.resolution, ['go-ahead', 'declined'], 'decision'),
           b.allowForTask === true,
         );
+      // A supervision escalation is answered only by a person, never for the whole task.
+      if (need.supervision) {
+        if (b.allowForTask === true)
+          throw new ApiError(400, 'A supervision escalation is answered for this run only.');
+        return supervision.answer(id(req), need.id, {
+          protocolVersion: 1,
+          commandId: typeof b.commandId === 'string' ? b.commandId : `answer.${identifier()}`,
+          answer: choice(b.resolution, ['go-ahead', 'declined'], 'decision') === 'go-ahead' ? 'continue' : 'stop',
+        });
+      }
       const admission = parseApprovalCommand(id(req), need.id, b);
       if (need.harness)
         return harness.bridge.resolve(
@@ -2486,6 +2799,11 @@ export async function createApp(options: AppOptions) {
       for (const change of changes) results.push(await review(id(req), change.id, action));
       return { changes: results.map((r) => r.change) };
     }),
+  );
+  // P06: keep some of a change's hunks and undo the rest, as one recorded write.
+  app.post(
+    '/api/projects/:id/review/:changeId/partial',
+    route(async (req) => keepPartially(store, id(req), String(req.params.changeId), body(req))),
   );
   app.post(
     '/api/projects/:id/review/:changeId',
@@ -4078,6 +4396,8 @@ export async function createApp(options: AppOptions) {
               version: result.version,
               verified: modelAnswer ? recorded?.origin?.model.source === 'runtime' : true,
             },
+            // H18: what went into this answer's context, as the turn recorded it.
+            ...(recordedContext(recorded) ? { context: recordedContext(recorded)! } : {}),
             origin: recorded
               ? (recorded.origin ??
                 // Nothing was recorded, so nothing is claimed: the model the runtime reported
@@ -4337,6 +4657,7 @@ export async function createApp(options: AppOptions) {
           text,
           at: now(),
           sources,
+          ...(await turnSourceVersions(store, projectId, sources)),
           route: engine,
           ...(attempt ? { attempt } : {}),
         };
@@ -4346,7 +4667,10 @@ export async function createApp(options: AppOptions) {
       // The turn id is fixed before the run so the native worker can mark the
       // turn verified once the runtime reports its engine.
       const turnId = identifier('U');
-      const resolvedChoice = nativeChoice(engine, projectId, conversation, { mode: runMode, text });
+      // A profile that decides this run supplies its own exact model (H09).
+      const resolvedChoice: RunChoice = agentProfiles.applies(projectId, task.id, conversation)
+        ? {}
+        : nativeChoice(engine, projectId, conversation, { mode: runMode, text });
       // A member whose model Nectovia chose runs it as an automatic selection, so the run's
       // record says who chose it; a person's own pick stays theirs.
       const teamMember = team
@@ -4379,14 +4703,15 @@ export async function createApp(options: AppOptions) {
         text: wake ? 'Picked up a message from the team.' : 'Preparing a proposal.',
         at: now(),
         sources,
-        route: engine,
+        // The route the run was admitted on: a profile may have named another (H09).
+        route: storedSession.route ?? engine,
         ...(attempt ? { attempt } : {}),
         // The run's own attribution from admission, so the holding line names the
         // model it was sent to, as a request, until the runtime reports one.
         ...(storedSession.origin ? { origin: structuredClone(storedSession.origin) } : {}),
         helper: {
-          engine,
-          model: choice.model ?? null,
+          engine: storedSession.route ?? engine,
+          model: storedSession.agent?.requestedModel ?? choice.model ?? null,
           version: null,
           verified: false,
         },
@@ -4621,6 +4946,9 @@ export async function createApp(options: AppOptions) {
           text,
           at: now(),
           sources,
+          ...(documents.length
+            ? { sourceVersions: documents.map((d) => ({ path: d.path, sha: hash(d.text)! })) }
+            : {}),
           route: serviceRoute,
           ...(attempt ? { attempt } : {}),
           ...(skill
@@ -5153,7 +5481,10 @@ export async function createApp(options: AppOptions) {
   app.locals.harness = harness;
   app.locals.connections = connections;
   app.locals.workControl = workControl;
+  app.locals.durableControls = durableControls;
   app.locals.readyScheduler = readyScheduler;
+  app.locals.automationScheduler = automationScheduler;
+  app.locals.automations = automations;
   app.locals.close = async () => {
     // A window closed on the way out must not start a check against services
     // that are already shutting down.
@@ -5162,8 +5493,11 @@ export async function createApp(options: AppOptions) {
     // announce a settled session and schedule a delivery on the way out.
     deliveryClosed = true;
     store.off('change', deliverFor);
+    store.off('change', superviseOnChange);
+    await supervision.close();
     await Promise.allSettled([...deliveries]);
     await readyScheduler.close();
+    await automationScheduler.close();
     // Change-review writes into the data dir; drain its queued builds before
     // the remaining services' close persists can settle, or a late record
     // write can race removal of the data dir.
@@ -5176,9 +5510,13 @@ export async function createApp(options: AppOptions) {
     await nativeWork.close();
     // The ChatGPT app-server kept between requests goes with the service.
     await closeWarmCodex();
+    if (options.codexIntegration) await options.codexIntegration.closeWarm();
   };
+  // Every route and the verifier exist now: a Diomedes loop resumed at startup may continue.
+  harness.loop.open();
   // Last, once every route and service exists: a claim a restart interrupted is settled or
   // replayed through `admitWork` here, before the first request is served.
   await readyScheduler.init();
+  await automationScheduler.init();
   return app;
 }

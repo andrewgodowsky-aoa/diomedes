@@ -129,11 +129,34 @@ const grantSchema = z.strictObject({
   expiresAt: timeSchema,
   eventId: z.string().min(1).max(100),
 });
+/** The literal route a v2 grant pins; as a confirmed account it means "no account was seen". */
+const UNSEEN_ACCOUNT = 'codex:chatgpt';
 const grantRecordSchema = z.strictObject({
   grant: grantSchema,
   generation: z.number().int().min(0).max(1_000_000),
   revokedAt: timeSchema.nullable(),
+  // Outside `grant`, so recording it never changes `scopeGrantDigest`.
+  confirmedAccountRoute: z
+    .string()
+    .regex(/^(codex:chatgpt|openai:chatgpt:[a-f0-9]{64})$/)
+    .optional(),
 });
+
+/**
+ * The ChatGPT account a scope confirmed now is for: the one this task's latest
+ * Codex proposal was prepared under, else the project's latest, else none seen.
+ * Read from what the runtime reported, never from the request.
+ */
+function accountRouteSeen(state: ProjectState, taskId: string): string {
+  const prepared = state.needs.filter(
+    (need) => need.connection?.engine === 'codex' && !need.harness,
+  );
+  return (
+    prepared.filter((need) => need.taskId === taskId).at(-1)?.connection?.accountRoute ??
+    prepared.at(-1)?.connection?.accountRoute ??
+    UNSEEN_ACCOUNT
+  );
+}
 const scopedAuthorizationSchema = z.strictObject({
   protocolVersion: z.literal(2),
   kind: z.literal('scope-grant'),
@@ -309,6 +332,7 @@ export class ScopeGrants {
     const record: ScopeGrantRecord = {
       generation: 0,
       revokedAt: null,
+      confirmedAccountRoute: accountRouteSeen(state, task.id),
       grant: {
         protocolVersion: 2,
         id: `G${randomUUID()}`,
@@ -446,6 +470,23 @@ export class ScopeGrants {
       (session.route && session.route !== engine)
     )
       throw failure('The engine or account route changed.');
+    // The v2 grant pins only the literal ChatGPT route, so the account a
+    // proposal was actually prepared under is compared with the one recorded
+    // when the person confirmed the scope. Another account asks again.
+    const confirmed = record.confirmedAccountRoute;
+    const prepared = need.connection?.engine === 'codex' ? need.connection.accountRoute : null;
+    if (confirmed === undefined)
+      throw failure(
+        'This task scope was confirmed before Diomedes recorded which ChatGPT account it was for, so this proposal needs your OK. Confirm the scope again to let it continue.',
+      );
+    if ((prepared ?? UNSEEN_ACCOUNT) !== confirmed)
+      throw failure(
+        prepared === null
+          ? 'Diomedes could not read which ChatGPT account prepared this proposal, so it needs your OK.'
+          : confirmed === UNSEEN_ACCOUNT
+            ? 'Diomedes had not seen which ChatGPT account Codex uses when you confirmed this task scope, so this proposal needs your OK. Confirm the scope again to let it continue under this account.'
+            : 'This proposal was prepared under a different ChatGPT account from the one Codex was using when you confirmed this task scope, so it needs your OK.',
+      );
     if (
       (this.store.settings.services?.codexAccountRoute ?? 'codex:chatgpt') !== accountRoute ||
       !this.store.settings.services?.codex
@@ -607,7 +648,7 @@ export class ScopeGrants {
   async assertCurrent(projectId: string, need: Need, writes: readonly WriteInput[]) {
     // One write-time funnel for every delegated decision the Store honours.
     if (need.authorization?.kind === 'remembered-approval')
-      return this.remembered.assertCurrent(projectId, need);
+      return this.remembered.assertCurrent(projectId, need, writes);
     validateScopedAuthorization(this.store.state(projectId), need);
     const evidence = need.authorization as ScopedAuthorization;
     const record = this.store

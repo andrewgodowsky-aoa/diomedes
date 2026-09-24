@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import type {
   DocumentInfo,
+  HistoryEntry,
   MailboxMessage,
   Project,
   ProjectState,
@@ -47,7 +48,14 @@ export type FilesPaneProps = { projectId: string; documents: DocumentInfo[]; loa
   /** The Files | Artifact switch, while both views share the column. */
   switcher?: ReactNode;
   /** Opens a Markdown or HTML file's artifacts in the artifact panel. */
-  onOpenInPanel?(path: string, text: string): void; };
+  onOpenInPanel?(path: string, text: string): void;
+  /** The project's History, for a file's versions (shared/file-identity.ts). */
+  history?: readonly HistoryEntry[];
+  /** One exact version open by identity, from a Thread reference or the version list. */
+  openVersion?: { path: string; sha: string } | null;
+  onOpenVersion?(identity: { path: string; sha: string } | null): void;
+  /** Attach a file to the open Thread's next message. Offered only while a Thread is open. */
+  onAttach?(path: string): void; };
 export type PalettePoint = '' | 'live' | 'attn' | 'fail' | 'done';
 export type PaletteAction = { label: string; run(): void | Promise<void>; light?: boolean; stay?: boolean };
 export type PaletteEntry = { group: 'Recent' | 'Tasks' | 'Files' | 'Skills' | 'Workers' | 'Models' | 'Projects' | 'Views'; id: string; name: string; sub: string; point: PalettePoint; actions: PaletteAction[];

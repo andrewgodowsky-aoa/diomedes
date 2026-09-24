@@ -473,32 +473,26 @@ export class CodexEngineAdapter {
     }) as Json;
     await this.authorityForRun(run, 'egress.reconcile');
     const current = (await this.authorityForRun(run, 'write.apply')).principal;
-    const result = await this.runs.step(
-      run.id,
+    // H12: the one mediated path. The intent (and this grant's authority hash) is
+    // recorded before the write; the current authority is re-checked inside it.
+    const result = await this.tools.dispatch(this.runs, {
+      runId: run.id,
       owner,
-      {
-        id: 'codex:write',
-        version: tool.version,
-        name: tool.name,
-        kind: 'tool',
-        effect: tool.effect,
-        permission: tool.permission,
-        approval: tool.approval,
-        destination: tool.destination,
-        origin: applicationOrigin(),
-        input: writeInput,
-      },
-      async (context) => {
+      principal: current,
+      stepId: 'codex:write',
+      name: tool.name,
+      input: writeInput,
+      origin: applicationOrigin(),
+      authorization: `authority:${input.grant.authorityHash}`,
+      before: async () => {
         const latest = await this.authorityForRun(run, 'write.apply');
         if (digest(latest) !== input.grant.authorityHash)
           throw new HarnessError(
             'authority_denied',
             'Current authority changed before the approved write.',
           );
-        return tool.execute({ ...context, input: context.input });
       },
-      current,
-    );
+    });
     await this.runs.complete(run.id, owner, result);
     this.revoke(run.id);
   }

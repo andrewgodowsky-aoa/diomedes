@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import type { DocumentContent } from '../../shared/types';
 import { ApiError, api, readDocument } from '../api';
+import { AGENT_NAME } from '../../shared/agent-name';
 import type { EditorDocument, EditorExit } from './editor-guard';
 import './document-editor.css';
 
@@ -60,6 +61,13 @@ export interface DocumentEditorProps {
    * exit through when nothing would be lost, and otherwise asks first.
    */
   exits?: { current: EditorExit | null };
+  /**
+   * The caller's file listing, for a file whose kind it has not settled yet:
+   * whether a listing is being read now, and a way to read it again. With it,
+   * a file the listing cannot be read for, or does not have, offers
+   * "Try again" instead of waiting with no way on but Close (DIO-87).
+   */
+  listing?: { loading: boolean; refresh(): void };
   /**
    * There is, or is no longer, writing that has not been saved. Fired on every
    * change and once with `false` when the editor goes away, so a caller that
@@ -165,6 +173,7 @@ function OneDocument({
   readOnlyReason,
   onClose,
   exits,
+  listing,
   onUnsavedChange,
   onSaved,
   onOpen,
@@ -182,6 +191,22 @@ function OneDocument({
   if (kind === undefined && file.kind !== undefined) setKind(file.kind);
   const resolved = kind !== undefined;
   const problem = !resolved && 'problem' in file ? file.problem : undefined;
+  /**
+   * A listing read since this editor opened came back without the file, so it
+   * is not waiting any more: it says so and offers to look again, rather than
+   * reading "Opening" for ever. Still no kind, so still nothing to type in.
+   */
+  const [missing, setMissing] = useState(false);
+  const wasListing = useRef(listing?.loading ?? false);
+  useEffect(() => {
+    const now = listing?.loading ?? false;
+    if (wasListing.current && !now && kind === undefined) setMissing(true);
+    wasListing.current = now;
+  }, [listing?.loading, kind]);
+  const lookAgain = () => {
+    setMissing(false);
+    listing?.refresh();
+  };
   /** `unsupported` is what the read route refuses; it answers as if the file were gone. */
   const supported = resolved && kind !== 'unsupported';
 
@@ -215,7 +240,7 @@ function OneDocument({
   const latest = useRef(buffer);
   latest.current = buffer;
 
-  const loading = (!resolved && !problem) || (supported && !base && !failure);
+  const loading = (!resolved && !problem && !missing) || (supported && !base && !failure);
   const readOnly = (resolved && !supported) || !!readOnlyReason;
   const dirty = !!base && buffer !== base.text;
   const areaId = useId();
@@ -518,6 +543,15 @@ function OneDocument({
         return;
       }
       onSaved?.({ path: written.path, sha: null, entryId: written.entryId });
+      if (latest.current !== mine) {
+        // Words typed while the copy was being written are not in it. Moving
+        // on to the copy would lose them, so the person stays here with every
+        // word, the backup still holding them and the choices still on screen.
+        announce(
+          `Your writing is saved as ${written.path}. You wrote more while that was saving, and those words are not saved yet.`,
+        );
+        return;
+      }
       forgetBackup();
       setConflict(false);
       setTheirs(null);
@@ -566,6 +600,10 @@ function OneDocument({
   /** Put the question, remembering where the person was going. */
   function ask(then: (() => void) | null) {
     going.current = then;
+    // Already asking: the effect below will not run again, and the exit that
+    // got here (a rail or header click) took the keyboard with it. The
+    // question takes it back, or Escape and Keep writing are out of reach.
+    if (leaving) leavingBox.current?.focus();
     setLeaving(true);
     announce(UNSAVED_WARNING);
   }
@@ -636,7 +674,7 @@ function OneDocument({
   }
 
   const state = !resolved
-    ? problem
+    ? problem || missing
       ? 'Not open'
       : 'Opening'
     : !supported
@@ -696,10 +734,18 @@ function OneDocument({
       )}
       {backupWarning && <p className="de-note de-warn">{backupWarning}</p>}
       {loading && <p className="de-note">Opening this file...</p>}
-      {problem && (
-        <p className="de-trouble" role="alert">
-          {problem}
-        </p>
+      {!resolved && (problem || missing) && (
+        <div className="de-trouble" role="alert">
+          <p>
+            {problem ??
+              `${name} is not in this project's list of files, so ${AGENT_NAME} cannot tell yet what kind of file it is. It may have been moved or deleted.`}
+          </p>
+          {listing && (
+            <button type="button" className="de-act" onClick={lookAgain}>
+              Try again
+            </button>
+          )}
+        </div>
       )}
 
       {failure && (

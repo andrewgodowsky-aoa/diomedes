@@ -49,25 +49,57 @@ const isLowSurrogate = (code: number) => code >= 0xdc00 && code <= 0xdfff;
  * cut never splits a character: a surrogate pair it would halve is left out whole.
  */
 export function boundedHistory(runs: readonly HarnessRun[], exclude?: string): BoundedHistory {
-  const turns = runs.flatMap((run) =>
-    run.steps
-      .filter((step) => step.intent.stepId.startsWith('turn:') && step.intent.stepId !== exclude && step.state === 'succeeded')
-      .map((step) => ({ runId: run.id, step })),
-  );
-  // One block per message, joined as the lines always were: each line, then a blank line.
-  const blocks: { runId: string; text: string }[] = [];
-  for (const { runId, step } of turns.slice(-MAX_HISTORY_TURNS)) {
-    const lines: string[] = [];
-    const prompt = (step.intent.input as { prompt?: unknown } | null)?.prompt;
-    const response = (step.output as { response?: { text?: unknown } | null } | null)?.response;
-    if (typeof prompt === 'string') lines.push(`Person: ${prompt}`);
-    if (typeof response?.text === 'string') lines.push(`Diomedes: ${spoken(response.text)}`);
-    if (lines.length) blocks.push({ runId, text: lines.join('\n\n') });
-  }
+  return cutHistory(answeredTurns(runs, exclude).slice(-MAX_HISTORY_TURNS), MAX_HISTORY_CHARS);
+}
+
+/** One answered message of a conversation, as history gives it. */
+export interface AnsweredTurn {
+  runId: string;
+  stepId: string;
+  /** 1-based among the answered messages read, oldest first. */
+  index: number;
+  prompt: string | null;
+  /** The spoken answer, without its decision block. */
+  answer: string | null;
+  /** The block history carries for it: `Person:` and `Diomedes:` lines. */
+  text: string;
+}
+
+/** Every answered message in these runs, oldest run first, except `exclude`. */
+export function answeredTurns(runs: readonly HarnessRun[], exclude?: string): AnsweredTurn[] {
+  const turns: AnsweredTurn[] = [];
+  for (const run of runs)
+    for (const step of run.steps) {
+      if (!step.intent.stepId.startsWith('turn:') || step.intent.stepId === exclude || step.state !== 'succeeded') continue;
+      const lines: string[] = [];
+      const prompt = (step.intent.input as { prompt?: unknown } | null)?.prompt;
+      const response = (step.output as { response?: { text?: unknown } | null } | null)?.response;
+      const answer = typeof response?.text === 'string' ? spoken(response.text) : null;
+      if (typeof prompt === 'string') lines.push(`Person: ${prompt}`);
+      if (answer !== null) lines.push(`Diomedes: ${answer}`);
+      // One block per message, joined as the lines always were: each line, then a blank line.
+      if (lines.length)
+        turns.push({
+          runId: run.id,
+          stepId: step.intent.stepId,
+          index: turns.length + 1,
+          prompt: typeof prompt === 'string' ? prompt : null,
+          answer,
+          text: lines.join('\n\n'),
+        });
+    }
+  return turns;
+}
+
+/**
+ * These blocks joined, then cut to their last `chars` characters, marked `…` where cut, never
+ * splitting a character. `cut` is how many characters the cut removed.
+ */
+export function cutHistory(blocks: readonly { runId: string; text: string }[], chars: number): BoundedHistory & { cut: number } {
   let text = blocks.map((block) => block.text).join('\n\n');
   let kept = 0;
-  if (text.length > MAX_HISTORY_CHARS) {
-    kept = text.length - MAX_HISTORY_CHARS;
+  if (text.length > chars) {
+    kept = text.length - chars;
     if (isLowSurrogate(text.charCodeAt(kept))) kept += 1;
     text = `…${text.slice(kept)}`;
   }
@@ -78,7 +110,7 @@ export function boundedHistory(runs: readonly HarnessRun[], exclude?: string): B
     if (end > kept) messages.set(block.runId, (messages.get(block.runId) ?? 0) + 1);
     at = end + 2;
   }
-  return { text, messages };
+  return { text, messages, cut: kept };
 }
 
 /** The bounded transcript alone (`boundedHistory`). */

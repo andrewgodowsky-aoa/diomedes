@@ -20,6 +20,7 @@ import type { Project, Conversation } from '../shared/types';
 import type { ClaudeSessionTurnResult } from '../server/harness/claude-session-run';
 import type { SessionControls } from '../shared/session-controls';
 import type { SteeringAck } from '../shared/contract-revision';
+import { opencodeSessionRunId } from '../server/harness/opencode-session-run';
 
 const FIXTURE = fileURLToPath(new URL('./fixtures/opencode-session-server.mjs', import.meta.url));
 const headers = { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' };
@@ -183,6 +184,50 @@ test('a kept OpenCode session answers follow-ups on one session and projects eac
   expect((await request(`/projects/${project.id}/claude-sessions/${first.runId}/steer`, 'POST', { commandId: 's', text: 't' })).status).toBe(404);
   const foreign = await api<Project>('/projects', 'POST', { name: 'Other project' });
   expect((await request(`/projects/${foreign.id}/opencode-sessions/${first.runId}`)).status).toBe(404);
+});
+
+test('a message sent while OpenCode answers is shown in the thread once it is sent, attributed like any other turn', async () => {
+  fixtureMode = 'delayed';
+  const pending = api<ClaudeSessionTurnResult>(endpoint(), 'POST', command('first'));
+  const runId = opencodeSessionRunId(project.id, 'first');
+  await vi.waitFor(
+    async () =>
+      expect(
+        await api<SteeringAck>(`${endpoint()}/${runId}/steer`, 'POST', { commandId: 'steer-1', text: 'also this' }),
+      ).toMatchObject({ state: 'pending' }),
+    { timeout: 5_000, interval: 20 },
+  );
+  const first = await pending;
+  const id = first.nativeSession!.opaqueRef;
+  await vi.waitFor(
+    async () =>
+      expect((await api<{ steering: SteeringAck[] }>(`${endpoint()}/${runId}`)).steering[0]).toMatchObject({
+        state: 'delivered',
+      }),
+    { timeout: 5_000 },
+  );
+  const turns = () =>
+    (app.locals.store as Store).state(project.id).conversations.find((item) => item.id === thread.id)!.turns;
+  // The thread holds what the OpenCode session holds, in the same order.
+  expect(turns().map((turn) => turn.text)).toEqual([
+    'first',
+    `answer:first (turn 1 of ${id})`,
+    'also this',
+    `answer:also this (turn 2 of ${id})`,
+  ]);
+  expect(turns()[3]).toMatchObject({
+    role: 'assistant',
+    route: 'opencode',
+    mode: 'ask',
+    origin: {
+      engine: { id: 'opencode', version: TESTED_VERSIONS.opencode },
+      model: { requested: model, reported: model, source: 'runtime' },
+      accountRoute: OPENCODE_ACCOUNT_ROUTE,
+    },
+  });
+  const next = await api<ClaudeSessionTurnResult>(`${endpoint()}/${runId}/turn`, 'POST', command('next'));
+  expect(next.response?.text).toBe(`answer:next (turn 3 of ${id})`);
+  expect(turns()).toHaveLength(6);
 });
 
 test('closed and restarted hosts resume the same OpenCode session only through explicit resume, and fork from it', async () => {
