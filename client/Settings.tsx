@@ -578,6 +578,33 @@ export function SettingsPage({
             )}
             {section === 'Appearance' && (
               <>
+                {/* What the Console shows, never what Nectovia can do. The
+                    Console's ··· menu and Ctrl K change the same setting. */}
+                <h2>View</h2>
+                <div className="radio-list">
+                  {(
+                    [
+                      ['conversation', 'Conversation', 'The prompt box and your threads, and nothing else.'],
+                      ['architect', 'Architect', 'The full Console: Board, Team, History, Files and the project panel.'],
+                    ] as const
+                  ).map(([id, label, description]) => (
+                    <label
+                      key={id}
+                      className={`radio-row ${(settings.view ?? 'architect') === id ? 'selected' : ''}`}
+                    >
+                      <input
+                        type="radio"
+                        name="settings-view"
+                        checked={(settings.view ?? 'architect') === id}
+                        onChange={() => void save({ ...settings, view: id })}
+                      />
+                      <span>
+                        <strong>{label}</strong>
+                        <span className="caption">{description}</span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
                 <h2>Appearance package</h2>
                 {appliedTheme && (
                   <p className="caption">

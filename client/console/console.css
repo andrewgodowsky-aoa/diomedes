@@ -402,6 +402,16 @@ html[data-surface='console'] body {
 .console #scrThread {
   grid-template-columns: minmax(0, 1fr) 296px;
 }
+/* The Conversation view shows no Ledger, so a thread takes the whole stage.
+   Its id outranks the narrow-window rule below. */
+.console.conversation #scrThread,
+.console.conversation .screen.on {
+  grid-template-columns: minmax(0, 1fr);
+}
+/* A Need waiting outside the open thread, which the Ledger would have listed. */
+.console .top-right .needs-elsewhere {
+  color: var(--attn);
+}
 .console .work {
   background: var(--surface);
   display: grid;
