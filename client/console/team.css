@@ -134,31 +134,7 @@
   color: var(--t3);
 }
 .console .lane .ctx {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 10px;
-  align-items: center;
   padding: 2px 0 8px;
-}
-.console .lane .ctx .bar {
-  height: 1px;
-  background: var(--hair);
-  position: relative;
-  display: block;
-  padding: 0;
-  border: 0;
-}
-.console .lane .ctx .bar i {
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: calc(var(--f) * 100%);
-  background: var(--t3);
-  transition: width 600ms var(--ease);
-}
-.console .lane.working .ctx .bar i {
-  background: var(--t2);
 }
 .console .lane .ctx .mono {
   text-transform: none;
@@ -460,7 +436,6 @@
   }
 }
 
-html[data-motion='reduced'] .console .lane .ctx .bar i,
 html[data-motion='reduced'] .console .lane header .pt.landed {
   transition: none;
   animation: none;
@@ -472,7 +447,6 @@ html[data-motion='reduced'] .console .lane header .pt.landed {
   .console .lane header .pt.landed {
     animation: none;
   }
-  .console .lane .ctx .bar i,
   .console .lane .ctl {
     transition: none;
   }

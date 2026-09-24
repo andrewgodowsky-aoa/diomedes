@@ -239,6 +239,23 @@ describe('inline spans', () => {
     ]);
     expect(plainText('**Delivery** check')).toBe('Delivery check');
   });
+
+  it('reads single-marker italic, and leaves arithmetic, globs and snake_case alone', () => {
+    expect(inlineSpans('margin *dropped* from ~$1,301 and _held_ at **$3.13**')).toEqual([
+      { type: 'text', text: 'margin ' },
+      { type: 'em', text: 'dropped' },
+      { type: 'text', text: ' from ~$1,301 and ' },
+      { type: 'em', text: 'held' },
+      { type: 'text', text: ' at ' },
+      { type: 'strong', text: '$3.13' },
+    ]);
+    expect(inlineSpans('*These are drafts. Nothing was sent.*')).toEqual([
+      { type: 'em', text: 'These are drafts. Nothing was sent.' },
+    ]);
+    for (const literal of ['2*3*4 = 24', 'every *.md and *.txt file', 'weekly_sales_2026 and pos_summary', 'a * b * c'])
+      expect(inlineSpans(literal)).toEqual([{ type: 'text', text: literal }]);
+    expect(plainText('it *actually* fell')).toBe('it actually fell');
+  });
 });
 
 describe('the preview gate', () => {

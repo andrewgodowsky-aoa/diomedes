@@ -2,6 +2,8 @@ import './zod-config';
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import '@fontsource/schibsted-grotesk/400';
+// A real italic for emphasis in replies and files; font-synthesis stays off everywhere.
+import '@fontsource/schibsted-grotesk/400-italic';
 import '@fontsource/schibsted-grotesk/500';
 import '@fontsource/schibsted-grotesk/600';
 import '@fontsource/ibm-plex-mono/400';

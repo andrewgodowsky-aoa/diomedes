@@ -2,6 +2,16 @@
 export const INTERFACE_SCALES = [0.9, 1, 1.1, 1.25] as const;
 export type ScaleCommand = 'increase' | 'decrease' | 'reset';
 
+/**
+ * The size of conversation text: a person's messages and the replies to them. It is the
+ * `readingScale` preference applied to `--dm-type-conversation`, so it never resizes the
+ * rest of the interface. 1 is the default, 15px before any interface size.
+ */
+export const CONVERSATION_TEXT_BASE_PX = 15;
+export const CONVERSATION_TEXT_SCALES = [0.9, 1, 1.1, 1.25] as const;
+export const conversationTextLabel = (scale: number) =>
+  `${Math.round(scale * 100)}%${scale === 1 ? ' (Default)' : ''}`;
+
 export function nextInterfaceScale(current: number, command: ScaleCommand): number {
   if (command === 'reset') return 1;
   if (command === 'increase')

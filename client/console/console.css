@@ -57,6 +57,43 @@ html[data-surface='console'] body {
   text-transform: none;
   letter-spacing: 0.01em;
 }
+/* Cloud sharing: one choice per line, routes in columns, paths as they are written. */
+.console .cloud-sharing section {
+  margin-top: 14px;
+}
+.console .cloud-sharing h3 {
+  margin: 0 0 6px;
+}
+.console .cloud-sharing label.check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 5px 0;
+  line-height: 1.4;
+}
+.console .cloud-sharing label.check input {
+  flex: none;
+  margin: 2px 0 0;
+}
+.console .cloud-sharing .cloud-routes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  column-gap: 16px;
+}
+.console .cloud-sharing .cloud-routes h3 {
+  grid-column: 1 / -1;
+}
+.console .cloud-sharing label.field {
+  display: grid;
+  gap: 4px;
+  margin: 12px 0 6px;
+}
+.console .cloud-sharing .actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
 .console .mono {
   font-family: var(--mono);
   font-size: var(--dm-type-meta);
@@ -641,7 +678,7 @@ html[data-surface='console'] body {
   opacity: 1;
 }
 .console .body {
-  font-size: var(--dm-type-body);
+  font-size: calc(var(--dm-type-conversation) * var(--dm-read-scale));
   line-height: var(--dm-line-body);
 }
 .console .turn.you .body {

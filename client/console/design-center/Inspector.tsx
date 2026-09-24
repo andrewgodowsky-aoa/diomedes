@@ -225,7 +225,7 @@ export function Inspector({
         {(
           [
             ['interfaceScale', 'Interface size', '--dm-ui-scale'],
-            ['readingScale', 'Reading size', '--dm-read-scale'],
+            ['readingScale', 'Conversation text size', '--dm-read-scale'],
             ['codeScale', 'Code size', '--dm-code-scale'],
           ] as const
         ).map(([key, label, variable]) => (

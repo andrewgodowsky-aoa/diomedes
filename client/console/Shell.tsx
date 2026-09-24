@@ -121,6 +121,7 @@ import {
 } from '../../shared/capability-packs';
 import type { ReadConnectorsView } from '../../shared/read-connectors';
 import { skillConnectorNote } from './skill-connectors';
+import { TextSizeMenuItems } from './TextSizeMenu';
 
 interface ShellProps {
   projectId: string;
@@ -1861,6 +1862,16 @@ export function Shell({
                     {titleCase(d)}
                   </button>
                 ))}
+                <TextSizeMenuItems
+                  settings={settings}
+                  choose={(scale) => {
+                    setMenuOpen(false);
+                    void saveSettings({
+                      ...settings,
+                      appearance: { ...settings.appearance, readingScale: scale },
+                    });
+                  }}
+                />
               </div>
             )}
           </div>

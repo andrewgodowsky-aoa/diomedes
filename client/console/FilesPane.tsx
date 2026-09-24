@@ -6,6 +6,7 @@ import type { FilesPaneProps } from './types';
 import { ImportFiles } from './ImportFiles';
 import { fileHasArtifacts, indexFile } from './artifacts';
 import { ArtifactFrame } from './artifact-frames';
+import { spans } from './TurnBody';
 import {
   fileTreeKey,
   visibleFileNodes,
@@ -120,8 +121,9 @@ function DrawingPreview({ path, text }: { path: string; text: string }) {
 
 /**
  * Markdown, at the grammar the app already reads: fenced code, three heading
- * levels, list lines and bold spans. No new dependency, and nothing is
- * interpreted that the raw view would not show.
+ * levels, list lines, and the inline code, bold and italic a reply shows, from
+ * the same reader. No new dependency, and nothing is interpreted that the raw
+ * view would not show.
  */
 function Markdown({ text }: { text: string }) {
   const lines = text.split('\n');
@@ -139,26 +141,18 @@ function Markdown({ text }: { text: string }) {
               {line || ' '}
             </pre>
           );
-        if (/^### /.test(line)) return <h4 key={i}>{line.slice(4)}</h4>;
-        if (/^## /.test(line)) return <h3 key={i}>{line.slice(3)}</h3>;
-        if (/^# /.test(line)) return <h3 key={i}>{line.slice(2)}</h3>;
+        if (/^### /.test(line)) return <h4 key={i}>{spans(line.slice(4))}</h4>;
+        if (/^## /.test(line)) return <h3 key={i}>{spans(line.slice(3))}</h3>;
+        if (/^# /.test(line)) return <h3 key={i}>{spans(line.slice(2))}</h3>;
         if (/^\s*([-*]|\d+\.) /.test(line))
           return (
             <div className="files-li" key={i}>
               <span>{line.match(/^\s*([-*]|\d+\.)/)?.[1]}</span>
-              <span>{line.replace(/^\s*([-*]|\d+\.) /, '').replace(/\[ \] /, '')}</span>
+              <span>{spans(line.replace(/^\s*([-*]|\d+\.) /, '').replace(/\[ \] /, ''))}</span>
             </div>
           );
         if (!line.trim()) return <div className="files-gap" key={i} />;
-        return (
-          <p key={i}>
-            {line
-              .split(/(\*\*.*?\*\*)/g)
-              .map((part, j) =>
-                part.startsWith('**') ? <strong key={j}>{part.slice(2, -2)}</strong> : part,
-              )}
-          </p>
-        );
+        return <p key={i}>{spans(line)}</p>;
       })}
     </div>
   );

@@ -139,7 +139,7 @@ function BlockView({ block, children }: { block: TurnBlock; children?: ReactNode
   }
 }
 
-/** Inline code and bold, as elements holding text. Everything else is the text itself. */
+/** Inline code, bold and italic, as elements holding text. Everything else is the text itself. */
 export function spans(text: string): ReactNode[] {
   return inlineSpans(text).map((span, index) =>
     span.type === 'code' ? (
@@ -148,6 +148,8 @@ export function spans(text: string): ReactNode[] {
       </code>
     ) : span.type === 'strong' ? (
       <strong key={index}>{span.text}</strong>
+    ) : span.type === 'em' ? (
+      <em key={index}>{span.text}</em>
     ) : (
       span.text
     ),

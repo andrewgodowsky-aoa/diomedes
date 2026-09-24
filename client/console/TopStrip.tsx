@@ -3,6 +3,7 @@ import type { Project, Settings } from '../../shared/types';
 import { titleCase } from '../components';
 import { NectoviaMark } from './NectoviaMark';
 import { Mark as StateMark } from '../components';
+import { TextSizeMenuItems } from './TextSizeMenu';
 import './console.css';
 import './nectovia.css';
 
@@ -161,6 +162,16 @@ export function TopStrip({
                     {titleCase(d)}
                   </button>
                 ))}
+                <TextSizeMenuItems
+                  settings={settings}
+                  choose={(scale) => {
+                    setMenuOpen(false);
+                    void saveSettings({
+                      ...settings,
+                      appearance: { ...settings.appearance, readingScale: scale },
+                    });
+                  }}
+                />
               </div>
             )}
           </div>

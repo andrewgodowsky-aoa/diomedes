@@ -9,7 +9,11 @@ import type {
 } from '../shared/types';
 import type { ThemePackV1 } from '../shared/theme-pack/types';
 import { api } from './api';
-import { INTERFACE_SCALES } from '../shared/interface-scale';
+import {
+  CONVERSATION_TEXT_SCALES,
+  INTERFACE_SCALES,
+  conversationTextLabel,
+} from '../shared/interface-scale';
 import { AppUpdates, useInstalledVersion } from './AppUpdates';
 import { freshnessLine, planLine, shouldShowEmptyDetail } from './usage-presentation';
 import { AIConnections } from './AISetup';
@@ -662,7 +666,7 @@ export function SettingsPage({
                   return (['interfaceScale', 'readingScale', 'codeScale'] as const).map(
                     (key, i) => (
                       <label key={key} className="setting-row">
-                        <span>{['Interface size', 'Reading size', 'Code size'][i]}</span>
+                        <span>{['Interface size', 'Conversation text size', 'Code size'][i]}</span>
                         <select
                           value={
                             key === 'interfaceScale'
@@ -686,6 +690,22 @@ export function SettingsPage({
                                 </option>
                               )}
                             </>
+                          ) : key === 'readingScale' ? (
+                            <>
+                              {CONVERSATION_TEXT_SCALES.map((scale) => (
+                                <option key={scale} value={scale}>
+                                  {conversationTextLabel(scale)}
+                                </option>
+                              ))}
+                              {!(CONVERSATION_TEXT_SCALES as readonly number[]).includes(
+                                settings.appearance.readingScale ?? 1,
+                              ) && (
+                                <option value={settings.appearance.readingScale}>
+                                  {Math.round((settings.appearance.readingScale ?? 1) * 100)}%
+                                  (Custom)
+                                </option>
+                              )}
+                            </>
                           ) : (
                             <>
                               <option value={1}>Default</option>
@@ -700,6 +720,8 @@ export function SettingsPage({
                 })()}
                 <p className="caption">
                   Ctrl+Plus and Ctrl+Minus change interface size. Ctrl+0 resets it to 100%.
+                  Conversation text size changes only messages and replies; the ··· menu has it
+                  too.
                 </p>
               </>
             )}

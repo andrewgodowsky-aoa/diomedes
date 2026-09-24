@@ -413,23 +413,40 @@ export function parseBlocks(input: string): TurnBlock[] {
 export type Span =
   | { type: 'text'; text: string }
   | { type: 'code'; text: string }
-  | { type: 'strong'; text: string };
+  | { type: 'strong'; text: string }
+  | { type: 'em'; text: string };
 
 const STRONG = /\*\*(?=\S)([\s\S]*?\S)\*\*/g;
+/**
+ * A single `*` or `_` run with a letter, digit or marker on neither outer side, so
+ * `2*3*4`, `*.md` globs and snake_case names stay the characters that were written.
+ */
+const EMPHASIS = /(^|[^\p{L}\p{N}*_])([*_])(?=\S)([^*_\n]*?\S)\2(?=$|[^\p{L}\p{N}*_])/gu;
+
+function emphasisSpans(text: string, out: Span[]) {
+  let last = 0;
+  for (const match of text.matchAll(EMPHASIS)) {
+    const at = (match.index ?? 0) + match[1].length;
+    if (at > last) out.push({ type: 'text', text: text.slice(last, at) });
+    out.push({ type: 'em', text: match[3] });
+    last = at + match[3].length + 2;
+  }
+  if (last < text.length) out.push({ type: 'text', text: text.slice(last) });
+}
 
 function strongSpans(text: string, out: Span[]) {
   let last = 0;
   for (const match of text.matchAll(STRONG)) {
     const at = match.index ?? 0;
-    if (at > last) out.push({ type: 'text', text: text.slice(last, at) });
+    if (at > last) emphasisSpans(text.slice(last, at), out);
     out.push({ type: 'strong', text: match[1] });
     last = at + match[0].length;
   }
-  if (last < text.length) out.push({ type: 'text', text: text.slice(last) });
+  if (last < text.length) emphasisSpans(text.slice(last), out);
 }
 
 /**
- * Inline code spans and bold runs, as text. Nothing else is interpreted: a
+ * Inline code spans, bold runs and italic runs, as text. Nothing else is interpreted: a
  * link, an image or a tag stays the characters that were written.
  */
 export function inlineSpans(text: string): Span[] {

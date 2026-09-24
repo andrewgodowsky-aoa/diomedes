@@ -350,6 +350,7 @@ export interface Session {
     model: string | null;
     worker: number;
     branch: string | null;
+    /** Bytes of project documents sent with the request; null when none were recorded. */
     context: number | null;
     events: number;
     /** Runtime-reported protocol version (Codex) or null. Never parsed from answer text. */

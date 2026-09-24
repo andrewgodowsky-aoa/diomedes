@@ -26,6 +26,7 @@ import { ApiError, relativeName } from './paths.js';
 import { hash, type Store } from './store.js';
 import { checkExport, fileReferences } from './file-imports.js';
 import { IMPORT_MAX_TOTAL_BYTES } from '../shared/file-imports.js';
+import { outputName } from '../shared/packs.js';
 
 export interface BriefSource {
   readonly id: string;
@@ -183,7 +184,7 @@ export function composeBrief(input: {
     tenantId: manifest.tenantId,
     configurationRevision: manifest.revision,
     variantId: manifest.proposal.template.variantId,
-    title: output ? output.label : 'Weekly brief',
+    title: output ? outputName(output.label) : 'Weekly brief',
     sections,
     sources: input.sources.map((source) => ({
       id: source.id,
@@ -373,12 +374,12 @@ export class WeeklyBriefService {
         sample: input.recording?.sample ?? false,
         review: true,
         // The recorded sentence names the scope that was actually read.
-        sentence: `Diomedes drafted ${output.label} via ${
+        sentence: `Diomedes drafted ${outputName(output.label)} via ${
           input.recording?.route ?? 'weekly-brief'
         } from ${
           input.sources === undefined ? 'the approved exports' : 'the files you chose'
         } for your review.`,
-        label: output.label,
+        label: outputName(output.label),
       },
     );
     return { draft, entryId: entry.id, destination };
