@@ -126,6 +126,8 @@ import { MODEL_TURN_CAPABILITY, TEAM_WORK_CAPABILITY } from './harness/model-ses
 import { parseWorkCommand, validateWorkCommandId } from './work-admission.js';
 import { parseTaskCommand } from './task-admission.js';
 import { WorkControl } from './work-control.js';
+import { keepPartially } from './change-review/partial-keep.js';
+import { documentDiff, ReviewComments } from './review-comments.js';
 import { ReadyScheduler } from './ready-scheduler.js';
 import { DesktopConnections } from './connections/desktop.js';
 import { toastConnector } from './connections/fixture.js';
@@ -1809,6 +1811,13 @@ export async function createApp(options: AppOptions) {
     '/api/projects/:id/documents/version',
     route(async (req) => documentVersion(store, id(req), req.query.path, req.query.sha)),
   );
+  // P06: the readable difference between two recorded versions of one file.
+  app.get(
+    '/api/projects/:id/documents/diff',
+    route(async (req) =>
+      documentDiff(store, id(req), req.query.path, req.query.from, req.query.to),
+    ),
+  );
   app.get(
     '/api/projects/:id/documents/picture',
     route(async (req, res) => {
@@ -2448,6 +2457,29 @@ export async function createApp(options: AppOptions) {
       followUp: await workControl.remove(id(req), String(req.params.fid), 'you'),
     })),
   );
+  // P06: review comments on changes and file versions, and "Revise with these comments",
+  // which is an ordinary follow-up through the queue above.
+  const reviewComments = new ReviewComments(store, (projectId, request) =>
+    workControl.queue(projectId, request),
+  );
+  app.get(
+    '/api/projects/:id/review-comments',
+    route(async (req) => ({ comments: reviewComments.list(id(req)) })),
+  );
+  app.post(
+    '/api/projects/:id/review-comments',
+    route(async (req) => ({ comment: await reviewComments.add(id(req), body(req)) })),
+  );
+  app.post(
+    '/api/projects/:id/review-comments/revise',
+    route(async (req) => reviewComments.revise(id(req), body(req))),
+  );
+  app.post(
+    '/api/projects/:id/review-comments/:cid/resolve',
+    route(async (req) => ({
+      comment: await reviewComments.resolve(id(req), String(req.params.cid), body(req)),
+    })),
+  );
   app.post(
     '/api/projects/:id/work/:sessionId/note',
     route(async (req) =>
@@ -2543,6 +2575,11 @@ export async function createApp(options: AppOptions) {
       for (const change of changes) results.push(await review(id(req), change.id, action));
       return { changes: results.map((r) => r.change) };
     }),
+  );
+  // P06: keep some of a change's hunks and undo the rest, as one recorded write.
+  app.post(
+    '/api/projects/:id/review/:changeId/partial',
+    route(async (req) => keepPartially(store, id(req), String(req.params.changeId), body(req))),
   );
   app.post(
     '/api/projects/:id/review/:changeId',
