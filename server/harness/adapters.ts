@@ -87,6 +87,7 @@ export const ADAPTER_CAPABILITIES = {
       'The runtime echoes networkAccess=false in the policy check; no outbound probe has been run.',
       'There is no checkpoint inside a Codex turn. The host-only codex-report capability persists a completed outer-turn observation; unknown dispatch stays parked for reconciliation and is never automatically resent.',
       'Stopping sends an abort and ends the process; the engine reports the interruption.',
+      'A Work run records its app-server thread before its turn is sent (Session.nativeThread) and keeps it only when the installed app-server answers thread/resume or thread/fork. Resume continues that thread in a new run, or starts a new one and says so; Steer uses turn/steer only where the app-server answers it; Fork uses thread/fork. That is thread continuity between turns, not a checkpoint inside one. Fixture-verified only; no live Codex resume, steer or fork is claimed (server/codex-controls.ts).',
     ],
   },
   'codex-team': {

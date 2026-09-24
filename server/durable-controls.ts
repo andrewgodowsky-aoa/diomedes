@@ -87,6 +87,8 @@ export function defaultWorkContract(workRoute: string): AdapterRouteContract | n
 export interface SteerAnswer {
   state: 'delivered' | 'rejected' | 'uncertain';
   detail: string;
+  /** Who did it, when the driver knows better than the profile (e.g. the engine's reported model). */
+  performedBy?: ControlPerformer;
 }
 /** What a resume, retry or native fork started. */
 export interface StartAnswer {
@@ -94,6 +96,17 @@ export interface StartAnswer {
   taskId?: string;
   threadId?: string;
   detail?: string;
+  /**
+   * Who actually did it, when that differs from what the route's profile
+   * promised: a native resume the engine could not honour was a fresh start
+   * Diomedes composed, and the receipt says so (decision 8).
+   */
+  performedBy?: ControlPerformer;
+  support?: ControlSupport;
+  /** The engine's own thread the resume continued or the fork made. */
+  nativeThreadId?: string;
+  /** The route declined; nothing was started or made. */
+  refused?: { code: ControlRefusalCode; reason: string };
 }
 export interface ContinueContext {
   projectId: string;
@@ -398,7 +411,7 @@ export class DurableControls {
     return {
       outcome: answer.state === 'delivered' ? 'applied' : 'uncertain',
       detail: answer.detail,
-      performedBy: performer,
+      performedBy: answer.performedBy ?? performer,
       history: {
         sentence: `You steered ${task.name} while it ran.`,
         sessionId: session.id,
@@ -664,7 +677,12 @@ export class DurableControls {
       ...(control === 'retry' ? { attempt: this.attemptOf(projectId, session.id) + 1 } : {}),
     };
     const verb = control === 'resume' ? 'Resumed' : 'Retried';
-    const started = (sessionId: string | undefined, detail?: string, revalidated: string[] = []) =>
+    const started = (
+      sessionId: string | undefined,
+      detail?: string,
+      revalidated: string[] = [],
+      answer: StartAnswer = {},
+    ) =>
       ({
         outcome: 'applied',
         detail:
@@ -672,8 +690,12 @@ export class DurableControls {
           (control === 'resume'
             ? `Resumed as a new run${sessionId ? ` (${sessionId})` : ''} that continues ${session.id}.`
             : `Retried as attempt ${lineage.attempt}${sessionId ? ` (${sessionId})` : ''}, with the same inputs as ${session.id}.`),
-        performedBy: performer,
-        result: sessionId ? { sessionId } : {},
+        performedBy: answer.performedBy ?? performer,
+        ...(answer.support ? { support: answer.support } : {}),
+        result: {
+          ...(sessionId ? { sessionId } : {}),
+          ...(answer.nativeThreadId ? { nativeThreadId: answer.nativeThreadId } : {}),
+        },
         lineage,
         revalidated,
         history: {
@@ -745,7 +767,9 @@ export class DurableControls {
         return refused('admission-refused', error.message, { revalidated: checks });
       throw error;
     }
-    return started(answer.sessionId, answer.detail, checks);
+    if (answer.refused)
+      return refused(answer.refused.code, answer.refused.reason, { revalidated: checks });
+    return started(answer.sessionId, answer.detail, checks, answer);
   }
 
   private async fork(
@@ -765,29 +789,60 @@ export class DurableControls {
     if (support === 'native') {
       if (!driver?.fork || !session.inputs)
         return refused('unsupported', 'This route has no fork wired to Work runs.');
-      const answer = await driver.fork({
-        projectId,
-        task,
-        session,
-        inputs: session.inputs,
-        workCommandId: derivedWorkCommandId(request.commandId),
-        start: () => Promise.reject(new ApiError(409, 'A native fork starts its own run.')),
-      });
+      let answer: StartAnswer;
+      try {
+        answer = await driver.fork({
+          projectId,
+          task,
+          session,
+          inputs: session.inputs,
+          workCommandId: derivedWorkCommandId(request.commandId),
+          start: () => Promise.reject(new ApiError(409, 'A native fork starts its own run.')),
+        });
+      } catch (error) {
+        if (error instanceof ApiError && error.status < 500)
+          return refused('route-refused', error.message);
+        throw error;
+      }
+      if (answer.refused) return refused(answer.refused.code, answer.refused.reason);
+      if (!answer.taskId && answer.nativeThreadId) {
+        // The engine branched its own thread; the new task and thread that carry
+        // the branch are made here, exactly as a host fork makes them.
+        const made = this.forkTask(projectId, task, session);
+        return {
+          ...made,
+          detail: `${answer.detail ?? `Forked from ${session.id}.`} ${made.detail}`,
+          performedBy: answer.performedBy ?? performer,
+          result: { ...made.result, nativeThreadId: answer.nativeThreadId },
+          lineage,
+        };
+      }
       return {
         outcome: 'applied',
         detail: answer.detail ?? `Forked from ${session.id}.`,
-        performedBy: performer,
+        performedBy: answer.performedBy ?? performer,
         result: {
           ...(answer.sessionId ? { sessionId: answer.sessionId } : {}),
           ...(answer.taskId ? { taskId: answer.taskId } : {}),
           ...(answer.threadId ? { threadId: answer.threadId } : {}),
+          ...(answer.nativeThreadId ? { nativeThreadId: answer.nativeThreadId } : {}),
         },
         lineage,
       };
     }
-    // Host fork: a new task and thread that refer to the origin. The origin's
-    // records are read, never written; nothing is copied from its history, and
-    // no run starts until the person starts one.
+    return { ...this.forkTask(projectId, task, session), performedBy: performer, lineage };
+  }
+
+  /**
+   * A new task and thread that refer to the origin run. The origin's records are
+   * read, never written; nothing is copied from its history, and no run starts
+   * until the person starts one.
+   */
+  private forkTask(
+    projectId: string,
+    task: Task,
+    session: Session,
+  ): Draft & { result: { taskId: string; threadId: string } } {
     const state = this.store.state(projectId);
     const origin =
       this.thread(projectId, session) ??
@@ -822,9 +877,7 @@ export class DurableControls {
     return {
       outcome: 'applied',
       detail: `Forked into ${forked.name}, from ${session.id}. Nothing runs until you start it.`,
-      performedBy: performer,
       result: { taskId: forked.id, threadId: thread.id },
-      lineage,
       history: {
         sentence: `You forked ${task.name} into ${forked.name}.`,
         taskId: forked.id,
