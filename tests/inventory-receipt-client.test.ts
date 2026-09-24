@@ -1,5 +1,6 @@
 import { describe, expect, test, vi } from 'vitest';
 import {
+  InventoryAccessError,
   InventoryReceiptClient,
   readPending,
   receiptPendingKey,
@@ -110,6 +111,26 @@ describe('receipt intent and transport', () => {
     expect(await new InventoryReceiptClient(fetcher).receive(command)).toEqual({
       status: 'denied',
       reason: 'Revoked',
+    });
+  });
+  test('unreadable saved intent says to preserve and reconcile, whatever made it unreadable', () => {
+    const key = receiptPendingKey({ organizationId: 'one', tenantId: 'tenant', projectId: 'project' });
+    for (const raw of ['{broken', JSON.stringify({ kind: 'receive' })])
+      expect(() => readPending({ getItem: () => raw }, key)).toThrow(
+        'Saved receipt intent is unreadable. Preserve it and reconcile before receiving more stock.',
+      );
+  });
+  test('a reply that is not JSON reports its HTTP failure, not a parser error', async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(new Response('<html>Bad gateway</html>', { status: 502 }));
+    const failure = await new InventoryReceiptClient(fetcher).view().catch((error) => error);
+    expect(failure).toBeInstanceOf(InventoryAccessError);
+    expect(failure).toMatchObject({ status: 502, message: 'Inventory request failed.' });
+    // A receipt whose reply is unreadable stays uncertain, exactly as before.
+    expect(await new InventoryReceiptClient(fetcher).receive(command)).toMatchObject({
+      status: 'uncertain',
+      operationId: command.operationId,
     });
   });
 });

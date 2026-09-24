@@ -1709,6 +1709,61 @@ html[data-motion='reduced'] .console .modes .ind b {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+/* H11: the inspector's run record. The same graphite rows as discovery; the
+   rank and the metadata are mono, and every machine string truncates where it
+   is written (decision 5). */
+.console .instructions-run {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.console .instructions-run + .instructions-run {
+  padding-top: 12px;
+  border-top: 1px solid var(--hair);
+}
+.console .instructions-run-head {
+  font: 400 var(--dm-type-meta) / 1.5 var(--mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--t3);
+}
+.console .instructions-list {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+}
+.console .instructions-line > .instructions-lead {
+  flex: none;
+  overflow: visible;
+  text-transform: inherit;
+  letter-spacing: inherit;
+}
+.console .instructions-rank {
+  flex: none;
+  width: 1.5em;
+  color: var(--t3);
+}
+/* Detail and body sit under the name, not under the rank. */
+.console .instructions-run .instructions-file > :not(.instructions-file-head) {
+  margin-left: calc(1.5em + 12px);
+}
+.console .instructions-meta {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.console .instructions-open {
+  margin-left: auto;
+  color: var(--t3);
+  white-space: nowrap;
+}
+.console .instructions-open:hover {
+  color: var(--t1);
+}
 /* The Capabilities section inside the task-permissions dialog. It inherits the
    panel's typography; only its own separator and list are set here. */
 .pack-settings {
