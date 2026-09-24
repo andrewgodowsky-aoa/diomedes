@@ -426,6 +426,8 @@ export interface HistoryEntry {
   parseError?: string;
   /** H17: a verification's evidence. The four-state result is projected from it, never stored. */
   verification?: import('./verification.js').VerificationRecord;
+  /** P06: which hunks of a change a person kept and which they undid (shared/review-comments.ts). */
+  hunkReview?: import('./review-comments.js').HunkReviewRecord;
 }
 export interface Change {
   id: string;
@@ -441,6 +443,8 @@ export interface Change {
   changedSince: { actor: string; at: string } | null;
   hunks: { value: string; added?: boolean; removed?: boolean; count?: number }[];
   state: 'waiting' | 'kept' | 'undone';
+  /** P06: kept in part. The History entry that wrote the result, and the hunks on each side. */
+  partial?: { entryId: string; kept: number[]; undone: number[] };
 }
 export interface Turn {
   origin?: OriginSnapshot;
@@ -640,6 +644,8 @@ export interface ProjectState {
   readyQueue?: import('./ready-queue.js').ReadyQueueRecord;
   /** H15 supervision: detections, corrections, escalations and answers. Append-only; absent before 2026-09-24. */
   supervision?: import('./supervision.js').SupervisionRecord[];
+  /** P06 review comments on changes and file versions. Absent until the first one. */
+  reviewComments?: import('./review-comments.js').ReviewComment[];
 }
 /** How Diomedes knows whether an engine is signed in. 'first-use' means the first run reports it. */
 export type SignInState = 'signed-in' | 'not-signed-in' | 'unknown' | 'first-use' | 'not-needed';

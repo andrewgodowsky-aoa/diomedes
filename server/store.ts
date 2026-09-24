@@ -424,6 +424,8 @@ export interface WriteOptions {
   label?: string;
   merge?: boolean;
   review?: boolean;
+  /** P06: a partial keep's evidence, written on the same entry as the write it describes. */
+  hunkReview?: HistoryEntry['hunkReview'];
 }
 
 export class Store extends EventEmitter {
@@ -1304,6 +1306,7 @@ export class Store extends EventEmitter {
       versionId: `v${String(state.history.length + 1).padStart(4, '0')}`,
       commit: null,
       ...(options.approvalId ? { approvalId: options.approvalId } : {}),
+      ...(options.hunkReview ? { hunkReview: structuredClone(options.hunkReview) } : {}),
     };
     state.history.push(entry);
     return entry;

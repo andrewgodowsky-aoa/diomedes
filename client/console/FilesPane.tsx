@@ -709,6 +709,7 @@ function ProjectFilesPane({
             projectId={projectId}
             path={openVersion.path}
             sha={openVersion.sha}
+            history={history}
             onBack={() => onOpenVersion?.(null)}
             onOpenCurrent={
               documents.some((d) => d.path === openVersion.path)

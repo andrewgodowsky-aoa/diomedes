@@ -2074,6 +2074,7 @@ export function Shell({
                 const target = state.tasks.find((item) => item.id === taskId);
                 if (target) openTaskThread(target);
               }}
+              reviewComments={state.reviewComments ?? []}
               onError={report}
               grantActive={!!activeGrant}
               onScope={() => setPermissionsOpen(true)}

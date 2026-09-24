@@ -1,10 +1,13 @@
-import { Fragment, useEffect, useId, useRef, useState } from 'react';
+import { Fragment, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import type {
   ChangeEntry,
   ChangeReviewManifest,
   ReviewCheck,
 } from '../../shared/change-manifest';
 import { api, ApiError } from '../api';
+import type { TextDiff } from '../../shared/text-diff';
+import { DiffView } from './DiffView';
+import { versionDiff } from './review-api';
 import './change-review.css';
 
 /**
@@ -71,7 +74,32 @@ const TEXT_EVIDENCE_REASON: Record<string, string> = {
   unreadable: 'Content could not be shown — unreadable or larger than the evidence bound.',
 };
 
-function ChangeRow({ entry }: { entry: ChangeEntry }) {
+/**
+ * P06: a recorded write read as a diff between the two versions History holds.
+ * Until it arrives, or when History cannot serve both versions (an example
+ * review, a pruned object), the bounded patch text stays in its place.
+ */
+function RecordedDiff({
+  projectId,
+  entry,
+  fallback,
+}: {
+  projectId: string;
+  entry: ChangeEntry;
+  fallback: ReactNode;
+}) {
+  const [diff, setDiff] = useState<TextDiff | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    versionDiff(projectId, entry.path, entry.beforeSha, entry.afterSha, controller.signal)
+      .then((result) => setDiff(result.diff))
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [projectId, entry.path, entry.beforeSha, entry.afterSha]);
+  return diff && diff.state !== 'unavailable' ? <DiffView diff={diff} /> : <>{fallback}</>;
+}
+
+function ChangeRow({ entry, projectId }: { entry: ChangeEntry; projectId: string }) {
   const [open, setOpen] = useState(false);
   const stat =
     entry.addedLines !== null || entry.removedLines !== null
@@ -127,7 +155,15 @@ function ChangeRow({ entry }: { entry: ChangeEntry }) {
           {evidence.kind !== 'none' && evidence.text !== null && (
             <>
               {evidenceCaption && <p className="crev-note">{evidenceCaption}</p>}
-              <pre className="crev-patch">{evidence.text}</pre>
+              {entry.source === 'recorded' && evidence.kind === 'diff' && entry.afterSha ? (
+                <RecordedDiff
+                  projectId={projectId}
+                  entry={entry}
+                  fallback={<pre className="crev-patch">{evidence.text}</pre>}
+                />
+              ) : (
+                <pre className="crev-patch">{evidence.text}</pre>
+              )}
             </>
           )}
           {evidence.truncated && (
@@ -387,7 +423,7 @@ export function ChangeReview({
               <h3>Changes</h3>
               <ul>
                 {shown.changes.map((entry) => (
-                  <ChangeRow key={entry.id} entry={entry} />
+                  <ChangeRow key={entry.id} entry={entry} projectId={projectId} />
                 ))}
               </ul>
             </div>

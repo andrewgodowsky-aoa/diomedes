@@ -125,6 +125,7 @@ export default defineConfig({
     'h02-codex-controls.spec.ts',
     'native-loop-ui.spec.ts',
     'h15-supervision.spec.ts',
+    'review-diffs-ui.spec.ts',
   ],
   fullyParallel: false,
   workers: 1,
