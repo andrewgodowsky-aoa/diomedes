@@ -119,6 +119,7 @@ export default defineConfig({
     'pack-lifecycle-ui.spec.ts',
     'remembered-approvals-ui.spec.ts',
     'editor-guard-ui.spec.ts',
+    'review-diffs-ui.spec.ts',
   ],
   fullyParallel: false,
   workers: 1,

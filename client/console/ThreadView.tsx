@@ -621,7 +621,7 @@ export function ThreadView({
               changes={changes}
               history={history}
               comments={reviewComments}
-              route={route}
+              route={last?.receipt?.route ?? last?.route ?? route}
               onError={onError}
             />
           )}

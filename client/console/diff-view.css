@@ -177,8 +177,12 @@
   gap: 6px;
   color: var(--t1);
 }
-.console .dv-undoing {
+.console .dv-undoing,
+.console .dv-decision.undone {
   color: var(--attn);
+}
+.console .dv-decision.kept {
+  color: var(--t2);
 }
 
 /* comments hang under the line they are about, in the reading type */

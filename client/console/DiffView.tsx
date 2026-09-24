@@ -72,6 +72,7 @@ export function DiffView({
   commentable,
   onComment,
   onResolve,
+  decisions,
 }: {
   diff: TextDiff;
   /** Per-change keep choices, offered only while the change can be kept in part. */
@@ -81,6 +82,8 @@ export function DiffView({
   commentable?: 'both' | 'new';
   onComment?(anchor: CommentAnchorPick, text: string): Promise<void>;
   onResolve?(comment: ReviewComment, resolved: boolean): Promise<void>;
+  /** What a partial keep decided for each change, shown on a settled change. */
+  decisions?: ReadonlyMap<number, 'kept' | 'undone'>;
 }) {
   const [layout, setLayout] = useState<DiffLayout>(savedLayout);
   const [open, setOpen] = useState<ReadonlySet<number>>(new Set());
@@ -342,6 +345,9 @@ export function DiffView({
         )}
         <span className="dv-place">{hunkPlace(hunk)}</span>
         {selection && !selection.kept.has(hunk.index) && <span className="dv-undoing">will be undone</span>}
+        {!selection && decisions?.get(hunk.index) && (
+          <span className={`dv-decision ${decisions.get(hunk.index)}`}>{decisions.get(hunk.index)}</span>
+        )}
       </div>,
     );
     if (layout === 'split')

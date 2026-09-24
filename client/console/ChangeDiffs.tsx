@@ -10,6 +10,7 @@ import {
 } from '../../shared/review-comments';
 import { ApiError, readDocument } from '../api';
 import { mintCommandId } from '../work-start';
+import { routeDisplayName } from '../../shared/engines';
 import { DiffView } from './DiffView';
 import { addComment, keepPart, resolveComment, reviewWhole, reviseWithComments } from './review-api';
 import './diff-view.css';
@@ -74,6 +75,16 @@ function ChangeDiffCard({
     setKept(new Set(all));
   }, [all, record?.after]);
 
+  const decisions = useMemo(
+    () =>
+      change.partial
+        ? new Map<number, 'kept' | 'undone'>([
+            ...change.partial.kept.map((index) => [index, 'kept'] as const),
+            ...change.partial.undone.map((index) => [index, 'undone'] as const),
+          ])
+        : undefined,
+    [change.partial],
+  );
   const selectable = waiting && diff.selectable && !change.changedSince && Boolean(record?.after);
   const n = diff.hunks.length;
   const k = kept.size;
@@ -155,6 +166,7 @@ function ChangeDiffCard({
                 : undefined
             }
             comments={mine}
+            decisions={decisions}
             commentable={diff.state === 'changed' ? 'both' : undefined}
             onComment={async (anchor, text) => {
               await addComment(projectId, {
@@ -238,6 +250,7 @@ function RevisePanel({
 }: {
   projectId: string;
   task: Task;
+  /** The route of the run that made the changes: a revision goes back to it. */
   route: Route;
   comments: readonly ReviewComment[];
   onError?(error: Error): void;
@@ -298,7 +311,9 @@ function RevisePanel({
         aria-label="Note for the revision"
         onChange={(event) => setNote(event.target.value)}
       />
-      <p className="cdiff-note">This message is queued as a follow-up for {task.name}:</p>
+      <p className="cdiff-note">
+        This message is queued as a follow-up for {task.name}, on {routeDisplayName(route)}:
+      </p>
       <pre className="cdiff-message">{message}</pre>
       {!fits && <p className="cdiff-conflict">This is too long for one request. Send fewer comments at a time.</p>}
       <div className="cdiff-actions">
