@@ -34,9 +34,13 @@ import {
   CAPABILITY_PACK_IDS,
   CAPABILITY_PACKS,
   instructionRuleId,
+  instructionScope,
   INSTRUCTION_FILE_MAX_BYTES,
   INSTRUCTION_FILE_VIEW_BUDGET_BYTES,
   isPackActive,
+  NESTED_INSTRUCTION_MAX_DEPTH,
+  NESTED_INSTRUCTION_MAX_FILES,
+  NESTED_INSTRUCTION_MAX_FOLDERS,
   validateManifest,
   type CapabilityPackId,
   type CapabilityPackManifest,
@@ -50,7 +54,7 @@ import {
   type RuleAuthority,
 } from '../shared/rule-authority.js';
 import { ApiError, absent, projectFile, readTextOrNull } from './paths.js';
-import { hash, now, type Store } from './store.js';
+import { hash, now, SKIPPED_FOLDERS, type Store } from './store.js';
 
 /**
  * Where an instruction file's content sits in the admissibility vocabulary.
@@ -101,7 +105,9 @@ export function instructionRule(record: InstructionFileRecord, projectId: string
       trust: 'host-reviewed',
     },
     type: 'standing',
-    text: `Project instructions from ${record.path} apply to work in this project.`,
+    text: instructionScope(record.path)
+      ? `Project instructions from ${record.path} apply to work in ${instructionScope(record.path)}.`
+      : `Project instructions from ${record.path} apply to work in this project.`,
     predicate: null,
     action: 'context',
   });
@@ -215,7 +221,11 @@ export async function recordInstructionFile(input: {
       size: stat.size,
       state: 'loaded',
       ruleId: instructionRuleId(relative),
-      detail: `Recorded as standing guidance. Work started in this project sends it to the engine whole when it fits, under this rule and named by its sha.${screened(
+      detail: `Recorded as standing guidance${
+        instructionScope(relative) ? ` for work in ${instructionScope(relative)}` : ''
+      }. Work started ${
+        instructionScope(relative) ? 'there' : 'in this project'
+      } sends it to the engine whole when it fits, under this rule and named by its sha.${screened(
         attempts,
       )}`,
     };
@@ -230,6 +240,67 @@ export async function recordInstructionFile(input: {
       detail: error instanceof Error ? error.message : 'This file could not be read.',
     };
   }
+}
+
+/**
+ * The instruction files in folders below the project root, as relative paths.
+ *
+ * Bounded three ways (`shared/capability-packs.ts`): how deep, how many
+ * folders and how many files. It never follows a link: a linked folder is not
+ * a directory to `readdir`, so it is never entered, and a file of the right
+ * name that is itself a link is returned so the guard can refuse it on the
+ * record rather than it vanishing. A folder the guard refuses (a private name,
+ * an 8.3 alias of a guarded place) is not listed at all, because listing it is
+ * already reading it. Hidden folders and the folders the documents walk skips
+ * (`node_modules`, `dist` and the rest) hold nobody's project rules.
+ *
+ * The root itself is not listed here; the manifest's names are checked there
+ * directly, as they always were.
+ */
+export async function findNestedInstructionFiles(
+  root: string,
+  names: readonly string[],
+): Promise<string[]> {
+  const found: string[] = [];
+  let queue: string[] = [''];
+  let folders = 0;
+  for (let depth = 0; depth <= NESTED_INSTRUCTION_MAX_DEPTH && queue.length; depth++) {
+    const next: string[] = [];
+    for (const folder of queue.sort()) {
+      if (folders >= NESTED_INSTRUCTION_MAX_FOLDERS) break;
+      folders++;
+      let absolute = root;
+      if (folder) {
+        try {
+          ({ absolute } = await projectFile(root, folder));
+        } catch {
+          continue;
+        }
+      }
+      let entries;
+      try {
+        entries = await fs.readdir(absolute, { withFileTypes: true });
+      } catch {
+        continue;
+      }
+      for (const entry of entries) {
+        const relative = folder ? `${folder}/${entry.name}` : entry.name;
+        if (entry.isDirectory()) {
+          if (
+            depth < NESTED_INSTRUCTION_MAX_DEPTH &&
+            !entry.name.startsWith('.') &&
+            !SKIPPED_FOLDERS.has(entry.name.toLowerCase())
+          )
+            next.push(relative);
+        } else if (folder && names.includes(entry.name) && (entry.isFile() || entry.isSymbolicLink()))
+          found.push(relative);
+      }
+    }
+    queue = next;
+  }
+  return found
+    .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+    .slice(0, NESTED_INSTRUCTION_MAX_FILES);
 }
 
 /** Two records describe the same finding when everything but the clock agrees. */
@@ -263,7 +334,10 @@ export async function discoverInstructionFiles(
   for (const packId of active) {
     const manifest = manifestFor(packId);
     assertLoadable(manifest);
-    for (const name of manifest.instructionFiles) {
+    const nested = manifest.instructionFiles.length
+      ? await findNestedInstructionFiles(state.project.folder, manifest.instructionFiles)
+      : [];
+    for (const name of [...manifest.instructionFiles, ...nested]) {
       const record = await recordInstructionFile({
         root: state.project.folder,
         name,
