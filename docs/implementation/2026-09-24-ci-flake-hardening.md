@@ -1,7 +1,7 @@
 # CI timing-flake hardening on main (2026-09-24)
 
-Status: **implemented on `bugfix/ci-timing-flakes`, tests only; not merged.** No product code
-changed. Every failure below was root-caused and reproduced on Linux by injecting a delay at the
+Status: **implemented on `bugfix/ci-timing-flakes`; not merged.** One product fix (change-review
+ledger labelling, item I); every other fix is test-only. Every failure below was root-caused and reproduced on Linux by injecting a delay at the
 point a slow runner is slow. Each failed on the original test and passed after the fix.
 
 ## What was red
@@ -20,8 +20,11 @@ PR run named in the work order. Every failing job and test:
 | G | 35935928956 / Windows (cc91455) | none: all 5988 tests passed; Vitest reported `[vitest-worker]: Timeout calling "onTaskUpdate"` | runner starvation, not a test |
 | H | 35939869804 attempt 1 / Windows (3fe0f40) | `harness-host` › abrupt exit at after-write recovers the Store first and commits the harness observation once | wall-clock poll in the child fixture |
 
-None of the failing tests exposed a product bug. In every case the test waited on the wrong event,
-or on a fixed polling budget that a loaded Windows or macOS runner outlasts.
+| I | 35970393023 / Windows (this branch at 7a92d6d, dispatched to check the fixes) | `change-review` › keep and undo on an earlier run still reach the task review after every run ended | **product race (fixed)** |
+
+A through H exposed no product bug. In each, the test waited on the wrong event or on a fixed
+polling budget that a loaded Windows or macOS runner outlasts. I is a real, if small, product race
+in evidence labelling.
 
 ## Root causes and fixes
 
@@ -80,6 +83,28 @@ before saying the phase was not reached. A 20 s hang guard applies to each wait.
 delay on the child's `store.persist` produced CI's exact `The fixture produced no Need.` / exit 1
 instead of 17, and the fixed child passes.
 
+**I — change-review ledger records a keep as a state rebuild (product).**
+`ChangeReviewService.observe()` (`server/change-review/service.ts`) labels a rebuild when it
+enqueues it, but `build()` reads the state current when it runs, and a ledger row is pushed only
+when the digest moves. When a person keeps a change as a run is ending, that run's end build is
+queued as `rebuilt-state`, and it may run after the keep, so it already includes the keep. The
+keep's own `rebuilt-kept` build then finds the digest unchanged and records nothing. The ledger
+names the keep a state rebuild and never records the keep, which weakens History as evidence
+(decision 10). The test pressed Keep as soon as `/state` showed the run `done`, and the state is
+visible before the persist that triggers the end build. **Fix (product, ~25 lines):** a
+`rebuilt-state` build records `rebuilt-undone` or `rebuilt-kept` when a change id already present
+in the manifest it replaces moved to that settle state (`decisionShown`). Explicit
+`rebuilt-kept`, `rebuilt-undone` and `rebuilt-restored` labels are unchanged. A change id seen for
+the first time is still a new write, not a decision. **Regression test:** "a state rebuild that
+lands after a keep records the keep, not a state rebuild" holds the run's state rebuilds behind a
+gate until the keep has landed. It fails without the fix (`expected 'rebuilt-state' to be
+'rebuilt-kept'`) and passed 10 of 10 times with it. The original test, unchanged, also failed on a
+400 ms delay of state builds before the fix and passes after it. *Known limit:* a session whose
+every rebuild lags behind a keep, so that the manifest it replaces predates the change's own
+write, still records `rebuilt-state`. Reading a first-seen id as a decision would mislabel task
+changes kept before a later run began. This needed a 1.5 s delay on every state build to produce
+and was not seen in CI.
+
 **G — not fixed here.** `Timeout calling "onTaskUpdate"` is Vitest's worker-to-main RPC timing
 out. All tests passed in that run, and the log does not name a test, so there is nothing to fix at
 a test's own level. It is consistent with a starved Windows runner (`--maxWorkers=2`, ~9 minute
@@ -106,22 +131,26 @@ past the failures in evidence.
 
 ## Scope and coordination
 
-- Files: `tests/hostile-adapters-defects.test.ts`, `tests/aws-conversation-seam.test.ts`,
+- Test files: `tests/hostile-adapters-defects.test.ts`, `tests/aws-conversation-seam.test.ts`,
   `tests/conversation-interrupt.test.ts`, `tests/connection-test-wiring.test.ts`,
   `tests/ai-setup-api.test.ts`, `tests/harness-host-child.ts`, and this record.
-- No product file changed. `server/native-work.ts` and the Codex warm-process code were not touched.
+- Also `server/change-review/service.ts` (product fix I) and `tests/change-review.test.ts`
+  (one new regression test; existing tests unchanged).
+- `server/native-work.ts` and the Codex warm-process code were not touched.
 - No assertion was loosened, removed or skipped. No timeout was raised. No retry was added.
 
 ## Proposed canonical-doc patch
 
-None needed. No product definition, status or decision changed. If the roadmap tracks CI health,
+None needed. No product definition, status or decision changed (item I makes the existing ledger
+labels truthful rather than defining new ones). If the roadmap tracks CI health,
 add one line: "2026-09-24: main's recurring Windows/macOS unit failures (OpenCode abort tests,
 AWS Work Stop hold, interrupt/wiring/ai-setup/harness-host polls) were timing-dependent tests,
 made deterministic on `bugfix/ci-timing-flakes`. No product race was found."
 
 ## PILLAR IMPACT
 
-None material. The fixes keep every truth the tests check: Stop is not a timeout, a withdrawn run
+History is evidence (decision 10): item I stops the change-review ledger from dropping a person's
+keep or undo and naming it a state rebuild. Otherwise none. The fixes keep every truth the tests check: Stop is not a timeout, a withdrawn run
 is not a person's stop, an uncertain hold is never released, and nothing is written after Stop.
 
 ## ROADMAP IMPACT
@@ -130,14 +159,15 @@ No status change. This only makes CI able to judge tonight's merges.
 
 ## BUILD STATUS
 
-Gates run on this branch after merging `origin/main` at `de86916` (which includes PR #74), in this
-Linux container:
+Gates run on this branch at the product fix (item I), with `origin/main` at `de86916` (which
+includes PR #74) merged in, in this Linux container:
 
 - `npx tsc --noEmit`: clean.
-- `node node_modules/vitest/vitest.mjs run --maxWorkers=2`: 347 files passed, 1 skipped; 6124 tests
+- `node node_modules/vitest/vitest.mjs run --maxWorkers=2`: 347 files passed, 1 skipped; 6125 tests
   passed, 16 skipped, 0 failed.
 - `npx vite build`: built.
 - `npx playwright test tests/ui.spec.ts tests/native-ui.spec.ts tests/field.spec.ts`: 36 passed.
 
-Not merged, not released. Windows and macOS CI has not run on this branch yet (the workflow runs on
-pull requests and on `main`).
+Not merged, not released. CI on Windows and macOS: a `workflow_dispatch` run of this branch before
+item I (35970393023, at 7a92d6d) passed macOS and failed Windows only on item I. That run is how I
+was found. A second dispatch after the fix is named in the final report.
