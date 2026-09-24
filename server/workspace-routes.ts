@@ -10,12 +10,14 @@
  * questions have no route into.
  */
 import type { Express, Request, Response } from 'express';
+import { randomUUID } from 'node:crypto';
+import { briefAutomationId } from '../shared/automations.js';
 import { BUSINESS_QUESTIONS, REVIEW_STEP } from '../shared/business-setup.js';
 import { MEMBER_ROLES, type MemberRole } from '../shared/workspaces.js';
 import { ApiError } from './paths.js';
+import { refusalStatus, type AutomationService } from './automations.js';
 import type { ConfigurationService } from './configuration.js';
 import type { Store } from './store.js';
-import type { WeeklyBriefService } from './weekly-brief.js';
 import type { WorkspaceService } from './workspaces.js';
 
 const body = (req: Request): Record<string, unknown> =>
@@ -29,8 +31,8 @@ export function mountWorkspaceRoutes(
   app: Express,
   store: Store,
   workspaces: WorkspaceService,
-  configuration: ConfigurationService,
-  briefs: WeeklyBriefService,
+  _configuration: ConfigurationService,
+  automations: AutomationService,
 ) {
   const route =
     (action: (req: Request, res: Response) => Promise<unknown>, locked = true) =>
@@ -278,48 +280,60 @@ export function mountWorkspaceRoutes(
   /**
    * Run the weekly brief for this organization.
    *
-   * The target is resolved once, here, and handed to the service whole. The
-   * service already refuses a setup that is not active or not ready, so this
-   * route decides where and never whether — which is why a bound project on an
-   * unconfigured business still gets a refusal rather than an empty draft.
+   * The same admission Run once uses on the Automations screen: one path to a
+   * brief draft, not two. This route keeps its old shape for the workspace
+   * panel — it waits for the draft and answers with where it went — and a
+   * request without a command id is given a fresh one, so each press of the
+   * panel's button is its own occurrence. A refusal is still an error here,
+   * in the words and status it always had, and it is also recorded.
    */
   app.post(
     '/api/workspace/organizations/:organizationId/brief',
     route(async (req) => {
       const id = organizationId(req);
-      const target = await workspaces.briefTarget(id);
-      if (!target.ready)
-        throw new ApiError(409, target.message, { code: target.code.replace(/-/g, '_') });
-      // Replacing the configured read scope is an owner/admin choice, using
-      // the same authority check as editing that configuration. A member may
-      // still run the legacy configured sources, but cannot widen them here.
-      if (body(req).sources !== undefined) configuration.assertMayConfigure(id);
-      if (body(req).sources !== undefined && body(req).projectId !== target.projectId)
-        throw new ApiError(
-          409,
-          'The output project changed. Reopen the workspace and choose its files again.',
-        );
-      const manifest = configuration.active(id);
-      if (!manifest)
-        throw new ApiError(
-          409,
-          'This business has no setup running, so there is nothing to prepare a brief from. Turn a setup on first.',
-          { code: 'no_active_configuration' },
-        );
-      const result = await briefs.run({
-        projectId: target.projectId,
-        manifest,
-        at: new Date().toISOString(),
-        sources: body(req).sources,
-      });
-      return {
-        organizationId: target.organizationId,
-        projectId: target.projectId,
-        projectName: target.projectName,
-        destination: result.destination,
-        entryId: result.entryId,
-        sections: result.draft.sections.length,
+      const value = body(req);
+      const admitted = await store.locked(() =>
+        automations.admit(id, briefAutomationId(id), {
+          ...value,
+          commandId: typeof value.commandId === 'string' ? value.commandId : `brief-${randomUUID()}`,
+        }),
+      );
+      const occurrence = admitted.occurrence;
+      if (occurrence.admission.state === 'refused')
+        throw new ApiError(refusalStatus(occurrence.admission.code), occurrence.admission.reason, {
+          code: occurrence.admission.code,
+          occurrenceId: occurrence.id,
+        });
+      const run = await automations.settled(occurrence);
+      const links = {
+        occurrenceId: occurrence.id,
+        runId: run?.id ?? null,
+        taskId: occurrence.admission.state === 'admitted' ? occurrence.admission.taskId : null,
       };
-    }),
+      if (run?.state === 'completed') {
+        const result = (run.result ?? {}) as { entryId?: string; path?: string; sections?: number };
+        return {
+          organizationId: id,
+          projectId: occurrence.target!.projectId,
+          projectName: occurrence.target!.projectName,
+          destination: result.path,
+          entryId: result.entryId,
+          sections: result.sections ?? 0,
+          ...links,
+        };
+      }
+      if (run?.state === 'failed' && run.failure?.name === 'waiting_for_data')
+        throw new ApiError(409, run.failure.message, { code: 'waiting_for_data', ...links });
+      if (run && ['queued', 'running'].includes(run.state))
+        throw new ApiError(409, 'The brief is still being prepared. Follow it in Automations.', {
+          code: 'brief_still_running',
+          ...links,
+        });
+      throw new ApiError(
+        409,
+        'The brief stopped before it was saved. Open Automations to see why.',
+        { code: 'brief_failed', ...links },
+      );
+    }, false),
   );
 }

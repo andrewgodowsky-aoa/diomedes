@@ -3,6 +3,8 @@ import { taskDocumentProblem } from '../shared/task-sources.js';
 import { mountPermissionRoutes } from './permission-routes.js';
 import { WorkspaceService } from './workspaces.js';
 import { mountWorkspaceRoutes } from './workspace-routes.js';
+import { mountAutomationRoutes } from './automation-routes.js';
+import { AutomationOccurrences, AutomationService } from './automations.js';
 import { ThemeService, THEME_PACK_ID_PATTERN, THEME_SCOPE_PATTERN } from './themes.js';
 import { mountThemeRoutes } from './theme-routes.js';
 import { CustomizationGate } from './customization-gate.js';
@@ -12,7 +14,6 @@ import { ConfigurationService } from './configuration.js';
 import { mountConfigurationRoutes } from './configuration-routes.js';
 import { DiscoveryService } from './discovery/service.js';
 import { mountDiscoveryRoutes } from './discovery/routes.js';
-import { WeeklyBriefService } from './weekly-brief.js';
 import { planTitle, taskNameFromText } from '../shared/display-names.js';
 import { browseImports, inspectImport, importExports } from './file-imports.js';
 import { isActiveMember } from '../shared/workspaces.js';
@@ -43,12 +44,7 @@ import type {
 } from '../shared/types.js';
 import type { ConversationUpdateNotCarried } from '../shared/conversation.js';
 import { ApiError, absent, relativeName, safeAbsolute } from './paths.js';
-import { activatePack, deactivatePack, discoverInstructionFiles } from './capability-packs.js';
-import {
-  CAPABILITY_PACK_IDS,
-  CAPABILITY_PACKS,
-  isCapabilityPackId,
-} from '../shared/capability-packs.js';
+import { mountPackRoutes } from './pack-routes.js';
 import {
   defaults,
   findTasks,
@@ -118,6 +114,7 @@ import { MODEL_TURN_CAPABILITY, TEAM_WORK_CAPABILITY } from './harness/model-ses
 import { parseWorkCommand, validateWorkCommandId } from './work-admission.js';
 import { parseTaskCommand } from './task-admission.js';
 import { WorkControl } from './work-control.js';
+import { ReadyScheduler } from './ready-scheduler.js';
 import { DesktopConnections } from './connections/desktop.js';
 import { toastConnector } from './connections/fixture.js';
 import { compiledConnectionDemoConnectors } from './connections/compiler-demo.js';
@@ -137,7 +134,11 @@ import {
   type EngineConnection,
 } from '../shared/engines.js';
 import { EngineService, HOST_TEST_PROJECT } from './engines/service.js';
-import { mountClaudeSessionRoutes } from './engines/claude-session-routes.js';
+import {
+  mountClaudeSessionRoutes,
+  mountOpenCodeSessionRoutes,
+  type ClaudeSessionRouteDependencies,
+} from './engines/claude-session-routes.js';
 import { mountJevAdvisorRoutes } from './jev-advisor-routes.js';
 import type { JevAdvisor } from './harness/jev-advisor.js';
 import { loadApprovedReadServers, readScopeDigest, type ReadScope } from './engines/read-scope.js';
@@ -181,6 +182,7 @@ import {
 } from './interaction-turn.js';
 import { assertReplay, findCommand } from './command-admission.js';
 import { claudeSessionRunId } from './harness/claude-session-run.js';
+import { opencodeSessionRunId } from './harness/opencode-session-run.js';
 import { modelSessionRunId } from './harness/model-session-run.js';
 import { FileModelTranscripts } from './harness/model-transcripts.js';
 import { AWS_BEDROCK_ROUTE, AwsConnections } from './engines/aws-bedrock.js';
@@ -608,33 +610,47 @@ export async function createApp(options: AppOptions) {
   const workspaces = new WorkspaceService(store);
   await workspaces.init();
   const discovery = new DiscoveryService(store, {
-    verifyObservedEvidence: async ({ operatorId, evidence }) => {
-      if (operatorId !== workspaces.currentPerson().id) return false;
+    // A new observation needs `verified`. A stored one whose approved file has
+    // changed since reads `stale` and stays inspectable (DIO-84); `stale` is
+    // never enough to record a new observed fact.
+    checkObservedEvidence: async ({ operatorId, evidence }) => {
+      const invalid = { status: 'invalid' } as const;
+      if (operatorId !== workspaces.currentPerson().id) return invalid;
       let state: ReturnType<Store['state']>;
       try {
         state = store.state(evidence.projectId);
       } catch (error) {
-        if (error instanceof ApiError && error.status === 404) return false;
+        if (error instanceof ApiError && error.status === 404) return invalid;
         throw error;
       }
       const entry = state.history.find((item) => item.id === evidence.historyEntryId);
-      if (!entry) return false;
+      if (!entry) return invalid;
       if (evidence.kind === 'approved-file') {
         const name = relativeName(evidence.path);
-        return (
-          (entry.actor === 'you' || !!entry.approvalId || !!entry.authorization) &&
-          entry.files.some(
-            (file) => file.path === name && file.recorded && file.after === evidence.sha,
-          ) &&
-          hash(await store.current(evidence.projectId, name)) === evidence.sha
+        const written = entry.files.find((file) => file.path === name && file.recorded);
+        if (!(entry.actor === 'you' || !!entry.approvalId || !!entry.authorization) || !written)
+          return invalid;
+        const currentSha = hash(await store.current(evidence.projectId, name));
+        if (written.after === evidence.sha)
+          return currentSha === evidence.sha
+            ? ({ status: 'verified' } as const)
+            : ({ status: 'stale', currentSha } as const);
+        // A quick second edit folds into the same History entry and moves its
+        // `after` on (Store.writeRecorded). The recorded bytes are still in
+        // this project's History objects, which is what makes this history
+        // rather than an invented citation.
+        const recorded = await store.object(evidence.projectId, evidence.sha).then(
+          (text) => text !== null,
+          () => false,
         );
+        return recorded ? ({ status: 'stale', currentSha } as const) : invalid;
       }
-      return (
-        entry.sessionId === evidence.executionId &&
+      return entry.sessionId === evidence.executionId &&
         state.sessions.some(
           (session) => session.id === evidence.executionId && session.state === 'done',
         )
-      );
+        ? ({ status: 'verified' } as const)
+        : invalid;
     },
   });
   // Design Studio storage. It reads the *live* workspace rather than the stored
@@ -662,10 +678,6 @@ export async function createApp(options: AppOptions) {
   // live on every check, so a staged configuration cannot ride on an old reading.
   const configuration = new ConfigurationService(store, workspaces, agents);
   await configuration.init();
-  // The one job an activated setup can actually run. It composes from approved
-  // files and writes through the recorded writer; the workspace decides which
-  // project it writes into, and refuses rather than guessing when nobody has.
-  const briefs = new WeeklyBriefService(store);
   // Managed usage. The ledger is durable and per-organization; the gateway
   // reads membership, tenant, entitlement and processing policy from the host's
   // own services, so no request field can stand in for any of them.
@@ -800,6 +812,9 @@ export async function createApp(options: AppOptions) {
     dataDir: store.dataDir,
     currentAuthority: options.harnessAuthority,
     textLeaseMs: options.harnessTextLeaseMs,
+    // The one job an activated setup can run, as a harness procedure: the
+    // workspace decides where it writes and refuses rather than guessing.
+    weeklyBrief: AutomationService.host(workspaces, configuration),
   });
   // External text turns run through the host's RunService: the adapter is only
   // the provider transport inside the fenced dispatch step.
@@ -824,6 +839,7 @@ export async function createApp(options: AppOptions) {
     return harness.textRoute.request(request);
   };
   engines.nativeSessions = harness.claudeSessions;
+  engines.opencodeSessions = harness.opencodeSessions;
   engines.modelSessions = harness.modelSessions;
   const exposure = new SpendExposure(store.dataDir);
   await exposure.init();
@@ -864,6 +880,16 @@ export async function createApp(options: AppOptions) {
     },
   };
   await harness.init();
+  // Run once admits the brief through the harness above, so its occurrences
+  // are settled only after the harness has recovered its runs.
+  const automations = new AutomationService(
+    store,
+    workspaces,
+    configuration,
+    harness,
+    new AutomationOccurrences(store.dataDir),
+  );
+  await automations.init();
   const connections = new DesktopConnections(store, harness);
   const app = express();
   // The port this service listens on, learned from the first request's socket (listen(0)
@@ -1011,8 +1037,9 @@ export async function createApp(options: AppOptions) {
       skipped,
     });
   });
-  mountPermissionRoutes(app, store, nativeWork);
-  mountWorkspaceRoutes(app, store, workspaces, configuration, briefs);
+  mountPermissionRoutes(app, store, nativeWork, harness.bridge);
+  mountWorkspaceRoutes(app, store, workspaces, configuration, automations);
+  mountAutomationRoutes(app, store, automations);
   mountThemeRoutes(app, store, themes, customization);
   mountCustomizationBenefitRoutes(app, store, workspaces, customization, customizationBenefit);
   mountManagedUsageRoutes(app, store, ledger, gateway, billing, workspaces);
@@ -1763,47 +1790,10 @@ export async function createApp(options: AppOptions) {
     }),
   );
   /**
-   * Capability packs for one Project.
-   *
-   * Activation is a Project-level record and nothing more: no grant, no Need,
-   * no permission changes here (`AGENTS.md` decision 14). The listing carries
-   * the manifests so the person reads what a pack would use before deciding,
-   * and the instruction records so what discovery found is inspectable rather
-   * than a hidden behaviour change.
+   * Capability packs: per-project activation and the installation-wide
+   * lifecycle (`server/pack-routes.ts`). Activation is not authorization.
    */
-  const packId = (req: Request) => {
-    const value = String(req.params.packId);
-    if (!isCapabilityPackId(value)) throw new ApiError(404, 'This capability pack does not exist.');
-    return value;
-  };
-  app.get(
-    '/api/projects/:id/packs',
-    route(async (req) => ({
-      packs: CAPABILITY_PACK_IDS.map((id) => CAPABILITY_PACKS[id]),
-      activations: store.state(id(req)).project.packs ?? [],
-      instructionFiles: await discoverInstructionFiles(store, id(req)),
-    })),
-  );
-  app.post(
-    '/api/projects/:id/packs/:packId/activate',
-    route(async (req) => {
-      const state = await activatePack(store, id(req), packId(req));
-      return {
-        activations: state.project.packs ?? [],
-        instructionFiles: state.instructionFiles ?? [],
-      };
-    }),
-  );
-  app.post(
-    '/api/projects/:id/packs/:packId/deactivate',
-    route(async (req) => {
-      const state = await deactivatePack(store, id(req), packId(req));
-      return {
-        activations: state.project.packs ?? [],
-        instructionFiles: state.instructionFiles ?? [],
-      };
-    }),
-  );
+  mountPackRoutes(app, { store, route, body });
   /**
    * Read one discovered instruction file, as Diomedes read it.
    *
@@ -2301,6 +2291,26 @@ export async function createApp(options: AppOptions) {
     deliveries.add(job);
   };
   store.on('change', deliverFor);
+  /**
+   * The Ready queue (H07). It starts Ready work only by calling `admitWork`, the Work start
+   * route's own path, with its claim's own command identity, so automatic start has no
+   * authority a person's Start would not. Started at the end of `createApp`.
+   */
+  const readyScheduler = new ReadyScheduler({
+    store,
+    admit: (projectId, command) => admitWork(projectId, command, listeningPort),
+    running: (projectId) => work.running(projectId) || nativeWork.running(projectId),
+  });
+  app.get(
+    '/api/projects/:id/ready-queue',
+    route(async (req) => readyScheduler.view(id(req))),
+  );
+  app.put(
+    '/api/projects/:id/ready-queue',
+    route(async (req) => readyScheduler.configure(id(req), body(req))),
+  );
+  app.get('/api/ready-queue', route(async () => ({ allPaused: readyScheduler.globalPause })));
+  app.put('/api/ready-queue', route(async (req) => readyScheduler.configureAll(body(req))));
   app.post(
     '/api/projects/:id/work/start',
     route(async (req) => admitWork(id(req), body(req), req.socket.localPort)),
@@ -3044,7 +3054,11 @@ export async function createApp(options: AppOptions) {
         };
       }),
     );
-  mountClaudeSessionRoutes(app, engines, {
+  // The explicit native conversation routes. Claude Code's (H03) and OpenCode's kept session
+  // (H04) take the same admission and the same thread projection, each under its own engine.
+  const nativeSessionDependencies = (
+    engine: 'claude-code' | 'opencode',
+  ): ClaudeSessionRouteDependencies => ({
     authorize: async (req) => {
       store.state(String(req.params.id));
     },
@@ -3054,23 +3068,24 @@ export async function createApp(options: AppOptions) {
         const state = store.state(projectId);
         const thread = state.conversations.find((item) => item.id === command.threadId);
         if (!thread) throw new ApiError(404, 'This thread was not found.');
-        if (selectedEngine(store.settings, state.project, thread) !== 'claude-code')
+        const name = engine === 'claude-code' ? 'Claude Code' : 'OpenCode';
+        if (selectedEngine(store.settings, state.project, thread) !== engine)
           throw new ApiError(
             409,
-            'Select Claude Code for this thread before opening its native conversation.',
+            `Select ${name} for this thread before opening its native conversation.`,
           );
-        if (store.settings.services?.['claude-code'] !== true)
-          throw new ApiError(409, 'Turn Claude Code on in Settings before sending.');
-        const accountRoute = store.settings.services?.['claude-codeAccountRoute'];
-        const selection = nativeChoice('claude-code', projectId, thread, {
+        if (store.settings.services?.[engine] !== true)
+          throw new ApiError(409, `Turn ${name} on in Settings before sending.`);
+        const accountRoute = store.settings.services?.[`${engine}AccountRoute`];
+        const selection = nativeChoice(engine, projectId, thread, {
           mode: command.mode,
           text: command.text,
         });
         if (!selection.model || typeof accountRoute !== 'string')
-          throw new ApiError(409, 'Select the Claude account and model in Settings first.');
+          throw new ApiError(409, `Select the ${name} account and model in Settings first.`);
         requireCloudSharing(
           state,
-          'claude-code',
+          engine,
           command.sources.map((source) => source.path),
           !!req.params.runId,
         );
@@ -3101,7 +3116,7 @@ export async function createApp(options: AppOptions) {
           model: selection.model,
           accountRoute,
           ...(await readScopeFor(projectId, command.mode, {
-            route: 'claude-code',
+            route: engine,
             access: command.readAccess,
             documents,
           })),
@@ -3110,7 +3125,10 @@ export async function createApp(options: AppOptions) {
       const runId =
         req.params.runId && !req.path.endsWith('/fork')
           ? String(req.params.runId)
-          : claudeSessionRunId(projectId, command.commandId);
+          : (engine === 'claude-code' ? claudeSessionRunId : opencodeSessionRunId)(
+              projectId,
+              command.commandId,
+            );
       const progress = (kind: 'started' | 'delta' | 'ended', frame?: TransientPreview) =>
         store.emit('engine-text', {
           projectId,
@@ -3174,7 +3192,7 @@ export async function createApp(options: AppOptions) {
         const at = now();
         const sources = input.documents.map((document) => document.path);
         const helper = {
-          engine: 'claude-code',
+          engine,
           model: response.model,
           version: response.version,
           verified: true,
@@ -3187,7 +3205,7 @@ export async function createApp(options: AppOptions) {
             text: input.prompt,
             at,
             sources,
-            route: 'claude-code',
+            route: engine,
           },
           {
             id: assistantId,
@@ -3196,25 +3214,27 @@ export async function createApp(options: AppOptions) {
             text: response.text,
             at,
             sources,
-            route: 'claude-code',
+            route: engine,
             helper,
             origin: directOrigin({
-              engine: 'claude-code',
+              engine,
               requestedModel: input.model,
               reportedModel: response.model,
               version: response.version,
               accountRoute: input.accountRoute,
-              executorId: 'claude-code',
+              executorId: engine,
             }),
           },
         );
-        thread.helper = { engine: 'claude-code', model: response.model };
+        thread.helper = { engine, model: response.model };
         thread.mode = command.mode;
         touchThread(thread, at, state.tasks);
         await store.persist(state);
       });
     },
   });
+  mountClaudeSessionRoutes(app, engines, nativeSessionDependencies('claude-code'));
+  mountOpenCodeSessionRoutes(app, engines, nativeSessionDependencies('opencode'));
   /**
    * The digest the task route would give this message's own task command. A message too long
    * for a task description has no valid command at all, so it has no receipt to trust either
@@ -5103,6 +5123,7 @@ export async function createApp(options: AppOptions) {
   app.locals.harness = harness;
   app.locals.connections = connections;
   app.locals.workControl = workControl;
+  app.locals.readyScheduler = readyScheduler;
   app.locals.close = async () => {
     // A window closed on the way out must not start a check against services
     // that are already shutting down.
@@ -5112,6 +5133,7 @@ export async function createApp(options: AppOptions) {
     deliveryClosed = true;
     store.off('change', deliverFor);
     await Promise.allSettled([...deliveries]);
+    await readyScheduler.close();
     // Change-review writes into the data dir; drain its queued builds before
     // the remaining services' close persists can settle, or a late record
     // write can race removal of the data dir.
@@ -5125,5 +5147,8 @@ export async function createApp(options: AppOptions) {
     // The ChatGPT app-server kept between requests goes with the service.
     await closeWarmCodex();
   };
+  // Last, once every route and service exists: a claim a restart interrupted is settled or
+  // replayed through `admitWork` here, before the first request is served.
+  await readyScheduler.init();
   return app;
 }

@@ -101,7 +101,10 @@ export function registerFormatReport(tools: ToolRegistry, store: Store, runs: Ru
             (item) =>
               item.harness?.runId === run.id &&
               item.approval?.actionDigest === step.intentHash &&
-              item.approvalReceipt?.decision === 'go-ahead',
+              (item.approvalReceipt?.decision === 'go-ahead' ||
+                // A remembered approval (D5) decided it; the Store re-checks the
+                // grant is still live before the write reaches the disk.
+                (item.state === 'go-ahead' && item.authorization?.kind === 'remembered-approval')),
           );
         if (!need) throw new ApiError(409, 'The report needs its exact approval receipt.');
         const writes = harnessWrites(input.projectId, need);

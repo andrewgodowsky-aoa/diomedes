@@ -8,6 +8,7 @@ import {
   originForSession,
 } from '../attribution-display';
 import { evidenceRows } from '../../shared/evidence-rows';
+import { rememberedAttribution } from '../../shared/remembered-approvals';
 import { loadHarnessEvidence, sessionEvidence, sessionEvidenceView } from './run-evidence';
 import './workbench.css';
 
@@ -142,7 +143,22 @@ function SessionInspector({
             {evidence.needs.length === 0 && authorizations.length === 0 && (
               <p>No effect authorization record yet.</p>
             )}
-            {authorizations.map((authorization) => (
+            {authorizations.map((authorization) =>
+              authorization.kind === 'remembered-approval' ? (
+                <div className="run-inspector-record" key={authorization.id}>
+                  <p>{rememberedAttribution(authorization)}</p>
+                  <dl>
+                    <dt>Remembered approval</dt>
+                    <dd className="run-inspector-code">{authorization.grantId}</dd>
+                    <dt>Authorized at</dt>
+                    <dd>{authorization.authorizedAt}</dd>
+                    <dt>Action digest</dt>
+                    <dd className="run-inspector-code">{authorization.actionDigest}</dd>
+                    <dt>History event</dt>
+                    <dd className="run-inspector-code">{authorization.eventId}</dd>
+                  </dl>
+                </div>
+              ) : (
               <div className="run-inspector-record" key={authorization.id}>
                 <p>Allowed by a task scope grant</p>
                 <dl>
@@ -166,7 +182,8 @@ function SessionInspector({
                   effect.
                 </p>
               </div>
-            ))}
+              ),
+            )}
             {evidence.needs.map((need) => (
               <div className="run-inspector-record" key={need.id}>
                 <p>{need.what}</p>
@@ -174,10 +191,18 @@ function SessionInspector({
                   <dt>Proposer</dt>
                   <dd>{formatOrigin(originForNeed(need, session)).label}</dd>
                   <dt>Request</dt>
-                  <dd>{need.authorization ? 'Resolved by task scope' : need.state}</dd>
+                  <dd>
+                    {need.authorization?.kind === 'remembered-approval'
+                      ? 'Resolved by a remembered approval'
+                      : need.authorization
+                        ? 'Resolved by task scope'
+                        : need.state}
+                  </dd>
                   <dt>Authorization</dt>
                   <dd>
-                    {need.authorization
+                    {need.authorization?.kind === 'remembered-approval'
+                      ? 'Remembered approval (recorded above)'
+                      : need.authorization
                       ? 'Task scope grant (recorded above)'
                       : need.approvalReceipt
                         ? `Exact decision: ${need.approvalReceipt.decision}`
