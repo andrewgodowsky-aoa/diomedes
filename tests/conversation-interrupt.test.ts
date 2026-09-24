@@ -44,6 +44,10 @@ let dispatches: TextRequest[];
 let heldClaude: string[];
 /** When set, the fake Claude session open parks on it: a held preparation. */
 let heldOpen: Promise<void> | null;
+/** Lets a held preparation go; teardown calls it so a failed test never strands the open. */
+let releaseHeld: () => void;
+/** Called by the fake session open the moment it is entered. */
+let onOpen: (() => void) | null;
 let opens: number;
 let closes: number;
 /** Set when the server sees the response to a message POST close. */
@@ -219,6 +223,7 @@ function claudeAdapter(): PersistentTextAdapter<ClaudeSessionCheckpoint> {
     },
     openSession: async (input, options) => {
       opens += 1;
+      onOpen?.();
       if (heldOpen) await heldOpen;
       let checkpoint: ClaudeSessionCheckpoint = options.restore
         ? structuredClone(options.restore)
@@ -309,6 +314,8 @@ beforeEach(async () => {
   dispatches = [];
   heldClaude = [];
   heldOpen = null;
+  releaseHeld = () => {};
+  onOpen = null;
   opens = 0;
   closes = 0;
   responseClosed = false;
@@ -361,6 +368,7 @@ beforeEach(async () => {
   thread = await api<Conversation>(`/projects/${project.id}/threads`, 'POST', {});
 });
 afterEach(async () => {
+  releaseHeld();
   await close();
   await fs.rm(root, { recursive: true, force: true });
 });
@@ -545,23 +553,28 @@ test('a connection dropped while preparation is held aborts the admitted input a
   // The controlled public boundary is the provider session open: the request is
   // admitted, the turn step is running, and the driver is preparing the native
   // session. Hold it there, drop the client, and let the server observe it.
-  let release = () => {};
   heldOpen = new Promise<void>((resolve) => {
-    release = () => resolve();
+    releaseHeld = () => resolve();
+  });
+  const reached = new Promise<'held'>((resolve) => {
+    onOpen = () => resolve('held');
   });
   const client = new AbortController();
   const dropped = request(messages(), 'POST', message('m-prep', 'Good morning'), client.signal).then(
     () => 'answered',
     () => 'aborted',
   );
-  await until(() => opens, (value) => value >= 1, 'the session open to reach the held boundary');
+  // Wait for the open itself, not for a polling budget: on a loaded runner the
+  // admission and turn preparation before it can outlast one. A request that
+  // settles first never reached the boundary, and says so.
+  expect(await Promise.race([reached, dropped])).toBe('held');
   client.abort();
   await until(
     () => responseClosed,
     (closed) => closed,
     'the server to observe the closed connection',
   );
-  release();
+  releaseHeld();
   expect(await dropped).toBe('aborted');
   // The open returned normally; the only branch that closes a fresh session
   // without dispatching is the admitted input's own signal having fired.
