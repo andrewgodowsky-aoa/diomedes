@@ -63,6 +63,13 @@ import {
 } from './readiness/instructions.js';
 import type { Route } from '../shared/types.js';
 import { cloudSharing, requireCloudSharing } from './cloud-sharing.js';
+import { patternForProposal, type ApprovalCandidate } from './trust/remembered-approvals.js';
+import {
+  ALWAYS_ASK_REASON,
+  CHATGPT_ACCOUNT_ROUTE,
+  classifyProposal,
+  rememberedAttribution,
+} from '../shared/remembered-approvals.js';
 
 export type NativeGenerator = (input: {
   engine?: Exclude<Route, 'sample'>;
@@ -85,6 +92,8 @@ export type NativeGenerator = (input: {
   instructions?: string;
   /** The reasoning level for this run, already resolved from the mode and the thread's choice. */
   effort?: string;
+  /** Codex only: told the ChatGPT account route the turn is prepared under, by the runtime. */
+  onAccountRoute?: (accountRoute: string) => void;
 }) => Promise<{ text: string; model?: string; version?: string; threadId?: string }>;
 interface Source {
   path: string;
@@ -103,6 +112,8 @@ interface Proposal {
 interface NativeRun {
   engine: Exclude<Route, 'sample'>;
   accountRoute?: string;
+  /** The ChatGPT account route the Codex runtime reported this run was prepared under. */
+  preparedAccountRoute?: string;
   threadId: string;
   projectId: string;
   taskId: string;
@@ -796,6 +807,13 @@ export class NativeWorkService {
         documents: run.sources.map(({ path, text }) => ({ path, text })),
         sharingPaths: run.instructionPaths,
         signal: run.controller.signal,
+        ...(run.engine === 'codex'
+          ? {
+              onAccountRoute: (route: string) => {
+                run.preparedAccountRoute = route;
+              },
+            }
+          : {}),
         // Only the ChatGPT adapter takes a raw sink. The engine service refuses
         // one from a caller and hands previews through its own contract.
         ...(run.engine === 'codex' ? { onDelta } : {}),
@@ -988,6 +1006,12 @@ export class NativeWorkService {
           allowForTask: false,
           preview: previews,
           ...(checks.length ? { checks } : {}),
+          // The account the runtime said this was prepared under; unread, it stays absent.
+          ...(run.engine === 'codex' &&
+          run.preparedAccountRoute &&
+          CHATGPT_ACCOUNT_ROUTE.test(run.preparedAccountRoute)
+            ? { connection: { engine: 'codex', accountRoute: run.preparedAccountRoute } }
+            : {}),
         };
         need.approval = identifyApproval(run.projectId, need, run.sources);
         state.needs.push(need);
@@ -1050,7 +1074,8 @@ export class NativeWorkService {
       run.engine,
       this.accountRouteFor(run),
     );
-    if (!match) return false;
+    // No task scope covers this: a remembered approval (D5) still may.
+    if (!match) return this.applyRemembered(projectId, run, need.id);
     if (match.grant.review === 'model-reviewer') {
       // Deferred on purpose: an inference call must never hold the Store lock.
       const job = this.reviewThenApply(projectId, run, need.id).finally(() =>
@@ -1060,6 +1085,93 @@ export class NativeWorkService {
       return false;
     }
     return this.authorizeAndWrite(projectId, run, need.id);
+  }
+  /**
+   * What the host knows about a waiting Codex proposal now, for remembered
+   * approvals (D5): its exact pattern (the files it writes and the ChatGPT
+   * account the runtime prepared it under) and whether the Codex connection it
+   * rests on is still on. Null for anything that is not a person's own direct
+   * Codex proposal, or whose account route was never reported.
+   */
+  private rememberedCandidate(projectId: string, need: Need): ApprovalCandidate | null {
+    if (need.harness || !need.approval) return null;
+    const session = this.store.state(projectId).sessions.find((item) => item.id === need.sessionId);
+    if (!session || session.route !== 'codex' || session.slotId || session.sample) return null;
+    if (need.preview?.some((change) => textKind(change.path) === 'unsupported')) return null;
+    const found = patternForProposal({ projectId, need });
+    if (!found) return null;
+    // The live authority: the person deciding on the local client, while the
+    // Codex connection is on. Turning it off asks again.
+    const authority =
+      this.store.settings.services?.codex === true
+        ? { principalId: 'local-client', identityGeneration: 1, capabilities: ['write-project-file'] }
+        : null;
+    return { ...found, authority };
+  }
+  /** A remembered approval covers this exact proposal, or nothing happens. Caller owns the lock. */
+  private async applyRemembered(projectId: string, run: NativeRun, needId: string) {
+    const state = this.store.state(projectId);
+    const need = state.needs.find((item) => item.id === needId);
+    if (!need || need.state !== 'open' || need.reviews?.length || !run.writes) return false;
+    const candidate = this.rememberedCandidate(projectId, need);
+    if (!candidate) return false;
+    const boundary = need.authorizationBoundary;
+    const record = this.store.scopeGrants.remembered.cover(projectId, need, candidate);
+    if (!record) {
+      if (need.authorizationBoundary !== boundary) await this.store.persist(state);
+      return false;
+    }
+    // Nobody clicked this time; the session says whose earlier click it ran under.
+    this.log(
+      this.session(run),
+      `${rememberedAttribution({ acceptedBy: record.grant.acceptedBy, acceptedAt: record.grant.createdAt })} ${record.grant.what}.`,
+    );
+    // The decision and its evidence are durable before any writer runs.
+    await this.store.persist(state);
+    try {
+      await this.store.writeRecorded(projectId, run.writes, {
+        actor: 'diomedes-with-ok',
+        kind: 'changed',
+        sentence: run.proposal?.summary,
+        sessionId: run.sessionId,
+        taskId: run.taskId,
+        sample: false,
+        review: true,
+        merge: false,
+        approvalId: need.id,
+      });
+      return true;
+    } finally {
+      this.runs.delete(projectId);
+      run.releaseToken?.();
+    }
+  }
+  /**
+   * "Go ahead and remember in this project" (D5, route 1) on a Codex direct
+   * proposal. The exact approval was given first through `resolve` and stays
+   * the evidence; this remembers its pattern. Caller owns Store.locked.
+   */
+  async remember(projectId: string, needId: string) {
+    const need = this.store.state(projectId).needs.find((item) => item.id === needId);
+    if (!need || need.harness) throw new ApiError(404, 'This approval was not found.');
+    const candidate = this.rememberedCandidate(projectId, need);
+    if (!candidate) {
+      const classification = classifyProposal(need);
+      throw new ApiError(
+        409,
+        classification.rememberable ? ALWAYS_ASK_REASON.unrecognised : classification.reason,
+        { code: 'always_asks' },
+      );
+    }
+    const record = this.store.scopeGrants.remembered.rememberFromNeed(projectId, need, candidate);
+    await this.store.persist(this.store.state(projectId));
+    return record;
+  }
+  /** Count one exact decision toward a learned offer (D5). Counting never grants anything. */
+  private noteRemembered(projectId: string, need: Need, resolution: 'go-ahead' | 'declined') {
+    const candidate = this.rememberedCandidate(projectId, need);
+    if (candidate)
+      this.store.scopeGrants.remembered.noteDecision(projectId, candidate, resolution, need);
   }
   /** Runs unlocked, then re-enters the lock to mint authority and write. */
   private async reviewThenApply(projectId: string, run: NativeRun, needId: string) {
@@ -1187,6 +1299,7 @@ export class NativeWorkService {
       task = state.tasks.find((item) => item.id === run.taskId)!;
     if (resolution === 'declined') {
       this.store.recordApprovalDecision(projectId, need, admission);
+      this.noteRemembered(projectId, need, resolution);
       session.state = 'stopped';
       session.endedAt = now();
       session.needId = null;
@@ -1237,6 +1350,7 @@ export class NativeWorkService {
       throw error;
     }
     this.store.recordApprovalDecision(projectId, need, admission);
+    this.noteRemembered(projectId, need, resolution);
     session.state = 'working';
     session.needId = null;
     task.needId = null;

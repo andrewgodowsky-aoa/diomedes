@@ -245,6 +245,13 @@ export interface Need {
    * bind, so it is not part of the approval identity.
    */
   checks?: NeedCheck[];
+  /**
+   * The engine and account route the runtime reported a direct proposal was
+   * prepared under (never taken from the model or a request). Remembered
+   * approvals and task scopes compare it, so another ChatGPT account asks
+   * again. Outside every approval digest.
+   */
+  connection?: { engine: string; accountRoute: string };
 }
 /**
  * One proposed file's content check. An `.svg`, or an `.xml` that is SVG,

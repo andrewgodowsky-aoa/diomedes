@@ -32,7 +32,7 @@ import { FollowUpQueue } from './FollowUpQueue';
 import { StopMenu, StopReceiptLine } from './StopMenu';
 import { NeedBlock } from './Need';
 import { RememberOfferBlock } from './RememberedApprovals';
-import { classifyIntent } from '../../shared/remembered-approvals';
+import { classifyIntent, classifyProposal } from '../../shared/remembered-approvals';
 import type { RememberOffer } from '../../shared/permissions';
 import { ChangeReview } from './ChangeReview';
 import { useWorkingWord, workingLine } from './working-words';
@@ -570,9 +570,10 @@ export function ThreadView({
                 onScope={onScope}
                 onRemember={
                   onRemember &&
-                  n.harness &&
                   n.approval &&
-                  classifyIntent('', n.harness.intent).rememberable
+                  (n.harness
+                    ? classifyIntent('', n.harness.intent).rememberable
+                    : classifyProposal(n).rememberable)
                     ? () => onRemember(n)
                     : undefined
                 }
