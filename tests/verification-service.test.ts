@@ -152,6 +152,8 @@ describe('H17 verification service', () => {
     await expect(
       store.locked(() => verification.declare(id, 'T1', { checks: [{ id: 'x', kind: 'shell', run: 'rm -rf /' }] })),
     ).rejects.toMatchObject({ status: 400 });
+    // The verifier's own check id is reserved.
+    await expect(declare(verification, [{ id: 'outputs-intact', kind: 'file-exists', path: 'menu.md' }])).rejects.toMatchObject({ status: 400 });
     expect(store.state(id).history.length).toBe(before);
     expect(store.state(id).tasks[0].acceptance).toBeUndefined();
   });

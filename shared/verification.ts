@@ -23,7 +23,10 @@ export const VERIFICATION_PROTOCOL_VERSION = 1 as const;
 /** A declaration names at most this many checks. A record binds every file its checks judged. */
 export const VERIFICATION_MAX_CHECKS = 16;
 
-const checkId = z.string().regex(/^[a-z0-9][a-z0-9-]{0,39}$/, 'A check id is lowercase letters, digits and dashes.');
+const checkId = z
+  .string()
+  .regex(/^[a-z0-9][a-z0-9-]{0,39}$/, 'A check id is lowercase letters, digits and dashes.')
+  .refine((id) => id !== 'outputs-intact', 'outputs-intact is the verifier’s own check.');
 // Spelled as History records paths (forward slashes), so a bound digest is looked up under the same name.
 const filePath = z
   .string()
