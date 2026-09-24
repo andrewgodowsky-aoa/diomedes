@@ -110,6 +110,7 @@ export default defineConfig({
     'artifacts-ui.spec.ts',
     'nectovia-skin.spec.ts',
     'drawings-ui.spec.ts',
+    'console-view-ui.spec.ts',
   ],
   fullyParallel: false,
   workers: 1,

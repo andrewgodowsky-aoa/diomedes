@@ -111,13 +111,18 @@ export function advanceSetup(settings: Settings, skip = false, at?: string): Set
   if (current === 'ai') onboarding.aiSkipped = skip;
 
   onboarding.resumeAt = next;
+  // A new person starts in the Conversation view. Only the first finish does
+  // this; the Console's view menu and Settings change it afterwards.
+  let view = settings.view;
   if (next === 'done' && !onboarding.completedAt) {
     onboarding.completedAt = at ?? new Date().toISOString();
+    view = 'conversation';
   }
 
   return {
     ...settings,
     detail,
+    ...(view === settings.view ? {} : { view }),
     onboarding,
     permissions: { ...settings.permissions },
     services: settings.services ? { ...settings.services } : settings.services,

@@ -282,19 +282,29 @@ test('F01-F02: first run preserves detail and approvals, supports AI skip, and r
   await page.getByRole('button', { name: /^Try the sample project/ }).click();
   await expect(page.locator('html')).toHaveAttribute('data-surface', 'console');
   await expect(page.locator('html')).toHaveAttribute('data-detail', 'technical');
-  await expect(railOf(page)).toBeVisible();
+  // A new person starts in the Conversation view (shared/onboarding.ts): the
+  // project is open, and its panel, which carries the project heading, is not.
+  await expect(page.locator('html')).toHaveAttribute('data-view', 'conversation');
   await expect(
-    openProjects(page).getByRole('button', { name: 'Harbor Street restaurants', exact: true }),
-  ).toHaveClass(/(?:^|\s)on(?:\s|$)/);
+    page.getByRole('navigation', { name: 'Open projects', exact: true }).locator('b'),
+  ).toHaveText('Harbor Street restaurants');
+  await expect(page.getByRole('complementary', { name: 'This project' })).toHaveCount(0);
   const comfortableSettings = await readSettings(page);
+  expect(comfortableSettings.view).toBe('conversation');
   expectNoRetiredKeys(comfortableSettings);
   expect(comfortableSettings.detail).toBe('technical');
   expect(comfortableSettings.permissions.changingFiles).toBe(true);
 
-  // The menu offers detail levels and nothing that leaves the Console.
+  // The menu offers the Console's two views and the detail levels, and nothing that leaves the Console.
   await page.getByRole('button', { name: 'Interface detail menu' }).click();
   const menu = page.getByRole('menu');
-  await expect(menu.getByRole('menuitemradio')).toHaveText(['Guided', 'Standard', 'Technical']);
+  await expect(menu.getByRole('menuitemradio')).toHaveText([
+    'Conversation',
+    'Architect',
+    'Guided',
+    'Standard',
+    'Technical',
+  ]);
   await expect(page.getByText('The Workbook', { exact: true })).toHaveCount(0);
   await page.keyboard.press('Escape');
   // A settings file from an earlier build can still ask for the Workbook. The
@@ -325,10 +335,11 @@ test('F01-F02: first run preserves detail and approvals, supports AI skip, and r
 test('F04, F06: sample project opens and a plan edit survives reload with History', async ({
   page,
 }, testInfo) => {
-  // The remaining scenarios use explicit guided preferences.
+  // The remaining scenarios use explicit guided preferences, in the full Console
+  // (Architect): F01 left the new person in the Conversation view.
   const guided = await page.request.put('/api/settings', {
     headers: HEADERS,
-    data: { detail: 'guided', permissions: { changingFiles: true } },
+    data: { detail: 'guided', view: 'architect', permissions: { changingFiles: true } },
   });
   expect(guided.ok()).toBe(true);
   await page.goto('/');

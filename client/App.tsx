@@ -340,6 +340,7 @@ export function App() {
     // setting unreachable for anybody working there; with one surface left that
     // would have retired Detail altogether.
     root.dataset.detail = settings.detail;
+    root.dataset.view = settings.view ?? 'architect';
     // One owner for the appearance. With no custom theme this is the code that
     // has always run, unchanged, so the ten built-in schemes behave exactly as
     // before; with one, the resolver decides and the runtime writes, and the

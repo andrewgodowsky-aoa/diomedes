@@ -11,6 +11,12 @@ import type {
 import type { FollowUpCommand, StopReceipt } from './work-control.js';
 
 export type Detail = 'guided' | 'standard' | 'technical';
+/**
+ * The Console's two views. Conversation shows the prompt box and the threads;
+ * Architect is the full Console. A view changes what is shown, never what
+ * Nectovia can do.
+ */
+export type ConsoleView = 'conversation' | 'architect';
 export type Mode = 'ask' | 'plan' | 'auto' | 'build' | 'fix';
 export type TaskState = 'todo' | 'working' | 'waiting' | 'done';
 export type Owner = 'you' | 'diomedes' | 'diomedes-with-ok';
@@ -20,6 +26,8 @@ export type Route = 'sample' | 'codex' | ExternalEngine | import('./model-api.js
 export interface Settings {
   version: 1;
   detail: Detail;
+  /** Missing on settings written before 2026-09-23; the server fills it with 'architect'. */
+  view?: ConsoleView;
   onboarding: {
     setupVersion?: 2;
     discoveryConsentAt?: string | null;
