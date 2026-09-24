@@ -368,6 +368,14 @@ export function verificationOf(input: VerificationInput): VerificationView {
       'check-failed',
       `${plural(failed.length, 'check')} failed: ${failed[0].sentence}`,
     );
+  // Verified needs a result for every declared check, never a pass on the others alone.
+  const missing = declaration.checks.filter((declared) => !checks.some((check) => check.id === declared.id));
+  if (missing.length)
+    return view(
+      'uncertain',
+      'check-incomplete',
+      `${plural(missing.length, 'check')} could not complete: ${missing[0].id} has no result on record.`,
+    );
   const incomplete = checks.filter((check) => check.outcome === 'incomplete');
   if (incomplete.length)
     return view(
