@@ -225,9 +225,12 @@ export async function packageDesktop(options = {}, dependencies = {}) {
       overwrite: true,
       ...(platform === 'win32'
         ? {
+            // What Windows shows for the running app (Task Manager, the file's details).
+            // The executable's name and the app's name above stay Diomedes: an upgrade and
+            // the app's data are found by them.
             win32metadata: {
-              ProductName: 'Diomedes',
-              FileDescription: 'Diomedes desktop',
+              ProductName: 'Nectovia',
+              FileDescription: 'Nectovia desktop',
               CompanyName: 'Diomedes',
             },
           }
