@@ -201,6 +201,16 @@ either side drifts.
 **Verdict, DIO-72: the marker now matches the record.** CD-01's other open acceptance items are
 unchanged.
 
+## CI repair made on this branch
+
+Windows `local-gates` on this PR's first push timed out on
+`tests/hostile-adapters-defects.test.ts` "still reports a person pressing stop as the request being
+stopped". The cause is the test's fake `fetch`, not this diff or the adapter. The fake ignores an
+already-aborted signal, which a real `fetch` rejects. If Stop landed before the event stream opened,
+the stream's abort listener never fired and the read hung until the adapter's own 30 s budget, the
+same 30 s as the test timeout. Moving the Stop to 1 ms reproduced it on Linux. The fake now calls
+`signal.throwIfAborted()` first, and the assertion is unchanged.
+
 ## Findings not fixed
 
 | ID | Severity | Why not |
