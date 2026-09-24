@@ -174,7 +174,7 @@ function checkManifest(manifest: ManifestShape, ctx: z.RefinementCtx) {
         'requested',
       ]);
   for (const kind of ['tools', 'agents', 'rules', 'context', 'workflows', 'ui'] as const)
-    if (!unique(manifest.contributions[kind]))
+    if (!unique(manifest.contributions[kind] as readonly { id: string }[]))
       issue(`Two ${kind} contributions share an id.`, ['contributions', kind]);
   for (const kind of ['tools', 'context'] as const)
     manifest.contributions[kind].forEach((item, index) => {
