@@ -225,6 +225,58 @@ describe('H17 verification service', () => {
     expect(store.state(id).history.length).toBe(length);
   });
 
+  test('every file the checks judged stays bound, however many the run wrote', async () => {
+    await seedRun();
+    // The run also wrote 64 files that sort ahead of menu.md.
+    await store.locked(() =>
+      store.writeRecorded(
+        id,
+        Array.from({ length: 64 }, (_, i) => ({ path: `a${String(i).padStart(2, '0')}.md`, text: `x${i}\n`, expected: null })),
+        { actor: 'diomedes', kind: 'changed', sessionId: 'S1', taskId: 'T1', origin: WORKER },
+      ),
+    );
+    const verification = new VerificationService(store, null);
+    await declare(verification, [{ id: 'has-soup', kind: 'text-contains', path: 'menu.md', text: 'Soup of the day' }]);
+    const view = await verification.verify(id, 'S1');
+    expect(view.state).toBe('verified');
+    expect(view.record!.bound.map((file) => file.path)).toContain('menu.md');
+    // A later write removes the soup: the result can no longer describe these bytes.
+    await store.locked(() => store.writeRecorded(id, [{ path: 'menu.md', text: '# Menu\n', expected: hash(MENU) }]));
+    expect(project()).toMatchObject({ state: 'uncertain', rule: 'outputs-changed' });
+  });
+
+  test('a saved version taken for the run is not its output, and an outside edit to what it wrote is still seen', async () => {
+    for (let i = 0; i < 64; i++) await fs.writeFile(path.join(folder, `a${String(i).padStart(2, '0')}.md`), `x${i}\n`);
+    await seedRun();
+    // The sample worker snapshots the folder under the run's session (server/work.ts).
+    await store.locked(() => store.snapshot(id, null, 'S1'));
+    const verification = new VerificationService(store, null);
+    await declare(verification, [{ id: 'has-soup', kind: 'text-contains', path: 'menu.md', text: 'Soup of the day' }]);
+    const view = await verification.verify(id, 'S1');
+    expect(view.state).toBe('verified');
+    expect(view.record!.outputs).toEqual([{ path: 'menu.md', sha: hash(MENU) }]);
+    await fs.writeFile(path.join(folder, 'menu.md'), '# Menu\n');
+    await store.locked(() => verification.sync(id));
+    expect(project()).toMatchObject({ state: 'uncertain', rule: 'outputs-changed' });
+  });
+
+  test('a declared path spelled with backslashes judges the same file History records', async () => {
+    await seedRun();
+    await fs.mkdir(path.join(folder, 'docs'));
+    await store.locked(() =>
+      store.writeRecorded(id, [{ path: 'docs/notes.md', text: 'notes\n', expected: null }], {
+        actor: 'diomedes',
+        kind: 'changed',
+        sessionId: 'S1',
+        taskId: 'T1',
+        origin: WORKER,
+      }),
+    );
+    const verification = new VerificationService(store, null);
+    await declare(verification, [{ id: 'has-notes', kind: 'file-exists', path: 'docs\\notes.md' }]);
+    expect(await verification.verify(id, 'S1')).toMatchObject({ state: 'verified', rule: 'all-passed' });
+  });
+
   test('an output that moved before verification is judged uncertain, not verified', async () => {
     await seedRun();
     const verification = new VerificationService(store, null);
