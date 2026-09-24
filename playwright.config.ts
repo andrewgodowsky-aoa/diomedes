@@ -112,6 +112,7 @@ export default defineConfig({
     'drawings-ui.spec.ts',
     'console-view-ui.spec.ts',
     'instructions-inspector.spec.ts',
+    'verification-ui.spec.ts',
   ],
   fullyParallel: false,
   workers: 1,

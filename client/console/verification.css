@@ -1,0 +1,177 @@
+/* H17 four-state result (Verification.tsx), in the Settings > Engines language: caption type,
+   one hairline, a small state dot, restrained colour. Verified takes the accent, a failure the
+   fail colour, uncertain the attention colour; "Not verified" is plain text in the same place,
+   never hidden and never dressed up as a success. */
+.console .verif-badge {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  flex: none;
+  font-size: var(--dm-type-caption);
+  color: var(--t2);
+  white-space: nowrap;
+}
+.console .verif-badge::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  align-self: center;
+  background: var(--t3);
+}
+.console .verif-badge.verified::before {
+  background: var(--light);
+}
+.console .verif-badge.failed {
+  color: var(--fail);
+}
+.console .verif-badge.failed::before {
+  background: var(--fail);
+}
+.console .verif-badge.uncertain {
+  color: var(--attn);
+}
+.console .verif-badge.uncertain::before {
+  background: var(--attn);
+}
+.console .verif-badge.not-verified::before {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--t3);
+}
+
+.console .verif {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--hair);
+  font-size: var(--dm-type-caption);
+  color: var(--t3);
+  white-space: normal;
+}
+.console .verif-head {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  min-width: 0;
+}
+.console .verif-sentence {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.console .verif-changed,
+.console .verif-checks,
+.console .verif-declared {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+.console .verif-changed li {
+  color: var(--attn);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.console .verif-acts {
+  display: flex;
+  gap: 12px;
+  margin-top: 4px;
+}
+.console .verif-acts button {
+  color: var(--t2);
+  border-bottom: 1px solid var(--hair-2);
+}
+.console .verif-acts button:hover:not(:disabled) {
+  color: var(--t1);
+}
+.console .verif-evidence {
+  margin-top: 6px;
+}
+.console .verif-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+}
+.console .verif-check {
+  display: grid;
+  grid-template-columns: 5.5rem minmax(0, 1fr);
+  gap: 0 10px;
+  align-items: baseline;
+  padding-block: 3px;
+}
+.console .verif-check-state {
+  color: var(--t3);
+}
+.console .verif-check.passed .verif-check-state {
+  color: var(--t2);
+}
+.console .verif-check.failed .verif-check-state {
+  color: var(--fail);
+}
+.console .verif-check.incomplete .verif-check-state {
+  color: var(--attn);
+}
+.console .verif-check-text {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+.console .verif-check-label {
+  color: var(--t1);
+  overflow-wrap: anywhere;
+}
+.console .verif-check-sentence {
+  color: var(--t2);
+  overflow-wrap: anywhere;
+}
+.console .verif-check-meta,
+.console .verif-bytes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  min-width: 0;
+}
+.console .verif-sha {
+  font-family: var(--mono);
+  text-transform: none;
+  letter-spacing: normal;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.console .verif-declare {
+  margin-top: 6px;
+}
+.console .verif-declared li {
+  color: var(--t2);
+  overflow-wrap: anywhere;
+}
+.console .verif-declare-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  align-items: center;
+  margin-top: 6px;
+}
+.console .verif-declare-row input,
+.console .verif-declare-row select {
+  min-width: 0;
+  flex: 1 1 10rem;
+  padding: 3px 6px;
+  border: 1px solid var(--hair-2);
+  border-radius: var(--rb);
+  background: var(--chrome);
+  color: var(--t1);
+  font: inherit;
+}
+.console .verif-declare-row select {
+  flex: 0 0 auto;
+}
+.console .verif-declare-row button {
+  color: var(--t2);
+  border-bottom: 1px solid var(--hair-2);
+}
+.console .verif-declare-row button:hover:not(:disabled) {
+  color: var(--t1);
+}

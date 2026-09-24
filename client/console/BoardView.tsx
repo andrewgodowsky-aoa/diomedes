@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { pendingTaskCreation } from '../task-create';
-import type { Slot, Task, TeamMember } from '../../shared/types';
+import type { HistoryEntry, Slot, Task, TeamMember } from '../../shared/types';
 import { formatOrigin, originForSession } from '../attribution-display';
 import type { BoardProps } from './types';
 import { travel } from './motion';
@@ -13,6 +13,7 @@ import './board.css';
 import { TaskDocumentSelect } from './TaskDocumentSelect';
 import { SegmentBar } from './SegmentBar';
 import { planGroups } from './progress-bars';
+import { VerificationBadge, verificationFor } from './Verification';
 import { taskDocumentProblem } from '../../shared/task-sources';
 
 const ORDER: Column[] = ['Ready', 'Queued', 'Working', 'Review', 'Blocked', 'Done'];
@@ -417,6 +418,7 @@ export function BoardView({
                     task={task}
                     column={column}
                     evidence={evidenceOf(task)}
+                    history={state.history}
                     worker={workerOf(task)}
                     workerTitle={workerTitleOf(task)}
                     age={ageOf(task)}
@@ -476,6 +478,7 @@ function TaskRow({
   task,
   column,
   evidence,
+  history,
   worker,
   workerTitle,
   age,
@@ -502,6 +505,8 @@ function TaskRow({
   task: Task;
   column: Column;
   evidence: ReturnType<typeof taskEvidence>;
+  /** H17: the project's History, from which a finished run's result is projected. */
+  history: readonly HistoryEntry[];
   worker: string;
   workerTitle: string | undefined;
   age: string;
@@ -536,6 +541,8 @@ function TaskRow({
   // Ready column uses. A stopped or unrecorded run is a different state and is
   // not restarted from here.
   const failed = !evidence.active && evidence.session?.state === 'failed';
+  // H17: a finished run's four-state result sits with the row's own words, "Not verified" included.
+  const verification = evidence.active ? null : verificationFor(evidence.session, task, history);
   const canStart = column === 'Ready' || (column === 'Blocked' && failed);
   const startLabel = column === 'Ready' ? 'Start' : 'Start again';
   const startBlocked = canStart && slotBusy;
@@ -564,9 +571,10 @@ function TaskRow({
       {task.sourceDocument && (
         <div className="x" title={task.sourceDocument}>Default document: {task.sourceDocument}</div>
       )}
-      {(evidenceLine || focus) && (
+      {(evidenceLine || focus || verification) && (
         <div className="x">
           {evidenceLine && <span className="why">{evidenceLine}</span>}
+          {verification && <VerificationBadge view={verification} />}
           {column === 'Review' && reviewCount > 0 && <span>{reviewCount} files</span>}
           {focus && <span className="mono here">this thread</span>}
         </div>
