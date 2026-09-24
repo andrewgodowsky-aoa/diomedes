@@ -8,9 +8,11 @@
  *   guarded read path the Files pane uses. Reading also records an outside
  *   change in History when the bytes on disk moved, so what a check judged is
  *   always a digest History holds.
- * - A `command` check is never run. Running project code is a Trust decision
- *   this build does not make (server/change-review/checks.ts says the same),
- *   so it is recorded as not run and the result can never be Verified on it.
+ * - A `command` check is never run here. Where the Software Engineering pack
+ *   is on, it is judged on that pack's recorded run of the command (P07): a
+ *   run the person approved, after the work finished, against a repository
+ *   still in the state it ran on. Anywhere else it is recorded as not run and
+ *   the result can never be Verified on it.
  * - A `review` check goes to the separate reviewer route only when the host
  *   wired one, the Codex connection is on, and the project allows review
  *   packets to be shared (requireCloudReview). Otherwise it is not run.
@@ -60,6 +62,17 @@ export const verifierOrigin = (): OriginSnapshot => ({
 export interface VerificationOptions {
   /** How long the reviewer pass may take. Tests shorten it to prove a timeout is uncertain. */
   reviewTimeoutMs?: number;
+  /**
+   * P07: what the Software Engineering pack recorded about a declared command,
+   * run by the person's approval after the work finished. Null where the pack
+   * is off, which keeps the not-run sentence below. The verifier never runs a
+   * command itself; it reads the recorded result.
+   */
+  commandEvidence?: (
+    projectId: string,
+    command: string,
+    notBefore: string | null,
+  ) => Promise<{ outcome: 'passed' | 'failed' | 'incomplete'; sentence: string } | null>;
 }
 
 interface Read {
@@ -74,12 +87,36 @@ const FINISHED = new Set<Session['state']>(['done', 'failed', 'stopped']);
 export class VerificationService {
   private readonly inFlight = new Map<string, Promise<VerificationView>>();
   private readonly reviewTimeoutMs: number;
+  private readonly commandEvidence: VerificationOptions['commandEvidence'];
   constructor(
     private readonly store: Store,
     private readonly reviewer: VerificationReviewerAdapter | null,
     options: VerificationOptions = {},
   ) {
     this.reviewTimeoutMs = options.reviewTimeoutMs ?? REVIEWER_TIMEOUT_MS;
+    this.commandEvidence = options.commandEvidence;
+  }
+
+  /** A command check judged on the pack's recorded run, or the not-run sentence where there is none. */
+  private async fromCommandEvidence(
+    projectId: string,
+    check: Extract<AcceptanceCheck, { kind: 'command' }>,
+    notBefore: string | null,
+  ): Promise<VerificationCheckResult> {
+    const started = Date.now();
+    const found = await this.commandEvidence!(projectId, check.command, notBefore);
+    if (!found) return this.deterministic(check, async () => ({ text: null, sha: null, error: null }));
+    return {
+      id: check.id,
+      kind: check.kind,
+      label: checkLabel(check),
+      origin: verifierOrigin(),
+      outcome: found.outcome,
+      sentence: found.sentence,
+      evidence: [],
+      ranAt: now(),
+      durationMs: Date.now() - started,
+    };
   }
 
   private task(projectId: string, taskId: string): Task {
@@ -220,6 +257,8 @@ export class VerificationService {
       const reviews: Extract<AcceptanceCheck, { kind: 'review' }>[] = [];
       for (const check of declaration.checks) {
         if (check.kind === 'review') reviews.push(check);
+        else if (check.kind === 'command' && this.commandEvidence)
+          results.push(await this.fromCommandEvidence(projectId, check, session.endedAt));
         else results.push(await this.deterministic(check, readOnce));
       }
       const current = this.store.state(projectId);

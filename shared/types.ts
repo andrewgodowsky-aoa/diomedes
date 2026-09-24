@@ -662,6 +662,8 @@ export interface ProjectState {
   supervision?: import('./supervision.js').SupervisionRecord[];
   /** P06 review comments on changes and file versions. Absent until the first one. */
   reviewComments?: import('./review-comments.js').ReviewComment[];
+  /** P07 Software Engineering pack: declared commands, their runs and worktrees. Absent until first used. */
+  softwarePack?: import('./software-pack.js').SoftwarePackRecord;
 }
 /** How Diomedes knows whether an engine is signed in. 'first-use' means the first run reports it. */
 export type SignInState = 'signed-in' | 'not-signed-in' | 'unknown' | 'first-use' | 'not-needed';

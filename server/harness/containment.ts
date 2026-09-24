@@ -317,6 +317,10 @@ export async function containedSpawn(
       limits.signal?.removeEventListener('abort', onAbort);
       if (error) {
         killTree(child.pid);
+        // What the process wrote before it was stopped, for a caller that reports it.
+        Object.assign(error, {
+          partial: { stdout: Buffer.concat(out).toString('utf8'), stderr: Buffer.concat(err).toString('utf8') },
+        });
         reject(error);
       } else resolve({ code, stdout: Buffer.concat(out).toString('utf8'), stderr: Buffer.concat(err).toString('utf8') });
     };
