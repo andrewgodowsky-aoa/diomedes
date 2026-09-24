@@ -18,11 +18,18 @@
  * docs/implementation/2026-09-24-automations-a.md).
  */
 import type { HarnessRunState } from './harness.js';
+import type { AutomationSchedule } from './automation-schedule.js';
 
 export const AUTOMATIONS_CONTRACT_VERSION = 1 as const;
+/**
+ * The occurrence file's envelope. Version 2 (Milestone B) may hold scheduled
+ * occurrences; a version 1 file is read as it is and written back as 2. A
+ * build that knows only version 1 refuses a version 2 file and leaves it alone.
+ */
+export const OCCURRENCES_FILE_VERSION = 2 as const;
 
-/** The one trigger Milestone A has. A schedule is Milestone B's to add. */
-export type AutomationTriggerKind = 'manual';
+/** Manual: a person pressed Run once. Schedule: an enabled schedule's slot came due (B). */
+export type AutomationTriggerKind = 'manual' | 'schedule';
 
 /** The derived weekly brief's id. One per organization; never stored as a definition in A. */
 export const briefAutomationId = (organizationId: string) => `brief:${organizationId}`;
@@ -40,13 +47,7 @@ export interface TriggerOccurrence {
   readonly automationId: string;
   readonly organizationId: string;
   readonly tenantId: string;
-  readonly trigger: {
-    readonly kind: AutomationTriggerKind;
-    readonly commandId: string;
-    readonly payloadDigest: string;
-    /** The person id that pressed Run once. A local development fixture identity in this build. */
-    readonly requestedBy: string;
-  };
+  readonly trigger: ManualTrigger | ScheduleTrigger;
   /** The configuration revision admission pinned. Null only when there was none to pin. */
   readonly configuration: { readonly revision: number; readonly digest: string } | null;
   /** The project admission pinned. Null only when no output project resolved. */
@@ -73,11 +74,184 @@ export interface TriggerOccurrence {
       };
 }
 
+export interface ManualTrigger {
+  readonly kind: 'manual';
+  readonly commandId: string;
+  readonly payloadDigest: string;
+  /** The person id that pressed Run once. A local development fixture identity in this build. */
+  readonly requestedBy: string;
+}
+
+/**
+ * A slot of an enabled schedule. The command id is derived from the
+ * automation, the definition revision and the slot, so a duplicate dispatch
+ * or a restart names the same occurrence and gets a receipt (A05).
+ */
+export interface ScheduleTrigger {
+  readonly kind: 'schedule';
+  readonly commandId: string;
+  readonly payloadDigest: string;
+  /** The slot's instant, UTC ISO: the slot's identity. */
+  readonly slot: string;
+  /** The intended local date and time, `YYYY-MM-DD HH:MM`, in `timezone`. */
+  readonly local: string;
+  readonly timezone: string;
+  /** `gap`: that local time did not exist, so it ran when the clocks jumped. */
+  readonly shifted: 'gap' | null;
+  /** The definition revision whose schedule named this slot (A13, A35). */
+  readonly definitionRevision: number;
+  /** The owner or admin whose recorded enable this runs under. Never anyone else (A15). */
+  readonly enabledBy: string;
+  /** The computer the schedule is assigned to. */
+  readonly hostId: string;
+  /** Started more than two minutes after its time: a catch-up after the computer was off. */
+  readonly late: boolean;
+}
+
 /** The stored envelope, one file per organization. Occurrences are never pruned (decision 10). */
 export interface StoredOccurrences {
-  readonly v: typeof AUTOMATIONS_CONTRACT_VERSION;
+  readonly v: 1 | typeof OCCURRENCES_FILE_VERSION;
   readonly organizationId: string;
   readonly occurrences: readonly TriggerOccurrence[];
+}
+
+// --- Milestone B: the stored definition --------------------------------------
+
+export const AUTOMATION_DEFINITION_VERSION = 1 as const;
+
+/**
+ * One revision of what an automation's schedule is. An edit makes a new
+ * revision and never rewrites an old one, so an occurrence admitted under
+ * revision 3 keeps saying so after revision 4 exists (A13, A35).
+ */
+export interface ScheduleRevision {
+  readonly revision: number;
+  readonly at: string;
+  readonly by: string;
+  readonly schedule: AutomationSchedule;
+  /** Missed-run policy: the most recent missed slot may still run within this many minutes. 0: never. */
+  readonly catchUpMinutes: number;
+}
+
+/**
+ * The recorded authority an enable (or a resume) carries. A schedule runs only
+ * under it, only on the computer it names, and only while the setup it was
+ * given for is still the active one. Configuration never creates one (A01).
+ */
+export interface ScheduleGrant {
+  readonly personId: string;
+  readonly at: string;
+  readonly configuration: { readonly revision: number; readonly digest: string };
+  readonly hostId: string;
+}
+
+export type ScheduleControl =
+  | { readonly state: 'off' }
+  | {
+      readonly state: 'enabled';
+      /** Slots after this moment are this schedule's: the enable or resume time. Never a backlog before it. */
+      readonly since: string;
+      readonly grant: ScheduleGrant;
+    }
+  | {
+      readonly state: 'paused';
+      readonly since: string;
+      readonly by: string;
+      readonly reason: string;
+      readonly grant: ScheduleGrant;
+    };
+
+export type ScheduleActKind = 'edited' | 'enabled' | 'paused' | 'resumed' | 'turned-off';
+
+/** Every change to the definition, kept as evidence (decision 10). */
+export interface ScheduleAct {
+  readonly at: string;
+  readonly by: string;
+  readonly kind: ScheduleActKind;
+  /** The schedule revision current after this act. */
+  readonly revision: number;
+  readonly reason?: string;
+  /** A pause's receipt: the scheduled occurrence already started before it, which it does not stop. */
+  readonly inFlight?: string | null;
+}
+
+/** One deduplicated thing a person should know about (A31). In-app only: nothing is pushed. */
+export interface AutomationAttention {
+  readonly id: string;
+  readonly kind: 'missed' | 'skipped' | 'blocked' | 'failed';
+  /** The underlying issue. Open items with the same code absorb new occurrences instead of repeating. */
+  readonly code: string;
+  readonly title: string;
+  readonly detail: string;
+  readonly occurrenceIds: readonly string[];
+  readonly openedAt: string;
+  readonly lastSeenAt: string;
+  readonly resolved: {
+    readonly at: string;
+    readonly how: 'seen' | 'recovered' | 'addressed';
+    readonly by: string;
+  } | null;
+}
+
+export interface AutomationDefinition {
+  readonly v: typeof AUTOMATION_DEFINITION_VERSION;
+  /** `brief:<organizationId>`. */
+  readonly id: string;
+  readonly organizationId: string;
+  readonly tenantId: string;
+  readonly kind: 'weekly-brief';
+  /** Bumped by every change; a change sent against an older one is a 409 (A24). */
+  readonly generation: number;
+  /** Oldest first. Never pruned. */
+  readonly revisions: readonly ScheduleRevision[];
+  readonly control: ScheduleControl;
+  readonly acts: readonly ScheduleAct[];
+  readonly attention: readonly AutomationAttention[];
+}
+
+export interface StoredDefinitions {
+  readonly v: typeof AUTOMATION_DEFINITION_VERSION;
+  readonly organizationId: string;
+  readonly definitions: readonly AutomationDefinition[];
+}
+
+/** The last heartbeat this computer's scheduler wrote. It is what "last known" means (A03). */
+export interface HostRecord {
+  readonly v: 1;
+  readonly hostId: string;
+  readonly name: string;
+  readonly firstSeenAt: string;
+  readonly lastSeenAt: string;
+}
+
+/**
+ * Why a scheduled slot did not start, in words a person reads once. Each is
+ * the reason a recorded occurrence carries; none is a new run state.
+ */
+export const SCHEDULE_OUTCOME: Readonly<Record<string, string>> = Object.freeze({
+  missed_host_off: 'Missed — computer was off',
+  project_busy: 'Skipped — previous run still active',
+  schedule_paused: 'Skipped — paused',
+  schedule_authority_lost: 'Blocked — the person who turned it on lost access',
+  schedule_owner_not_signed_in: 'Blocked — someone else is signed in on this computer',
+  configuration_changed: 'Blocked — the setup changed',
+  assigned_to_another_computer: 'Blocked — assigned to another computer',
+  schedule_budget_unbounded: 'Blocked — no hard spending bound',
+});
+
+/** Codes that stop every slot until an owner or admin acts. */
+export const SCHEDULE_BLOCKING_CODES: readonly string[] = [
+  'schedule_authority_lost',
+  'schedule_owner_not_signed_in',
+  'configuration_changed',
+  'assigned_to_another_computer',
+  'schedule_budget_unbounded',
+];
+
+/** The outcome text of a scheduled occurrence that did not start, or null. */
+export function scheduleOutcome(occurrence: Pick<TriggerOccurrence, 'trigger' | 'admission'>): string | null {
+  if (occurrence.trigger.kind !== 'schedule' || occurrence.admission.state !== 'refused') return null;
+  return SCHEDULE_OUTCOME[occurrence.admission.code] ?? 'Did not start';
 }
 
 // --- the facts a label is computed from ---------------------------------------
@@ -119,11 +293,27 @@ export interface OccurrenceFacts {
   readonly run: RunFacts | null;
 }
 
+/** What the definition and this computer say about the schedule (Milestone B). */
+export interface ScheduleFacts {
+  readonly state: 'off' | 'enabled' | 'paused';
+  /** Whether this computer's scheduler has checked recently. Never a live claim about another device. */
+  readonly host: 'available' | 'unknown';
+  /** The schedule is assigned to this computer. */
+  readonly here: boolean;
+  /** The newest scheduled slot was blocked, and why. */
+  readonly blocked: { readonly code: string; readonly reason: string } | null;
+}
+
 export interface AutomationFacts {
   readonly trigger: AutomationTriggerKind;
   readonly setup: SetupFacts;
-  /** The newest occurrence, or null when Run once has never been pressed. */
+  /**
+   * The newest occurrence that is not a scheduled slot that never started, or
+   * null when nothing has run. Missed and skipped slots are read from `schedule`.
+   */
   readonly latest: OccurrenceFacts | null;
+  /** Absent reads as no schedule: Milestone A's facts. */
+  readonly schedule?: ScheduleFacts;
 }
 
 // --- labels ---------------------------------------------------------------------
@@ -134,7 +324,10 @@ export type AutomationLabel =
   | 'needs-approval'
   | 'waiting-for-data'
   | 'setup-incomplete'
-  | 'needs-investigation';
+  | 'needs-investigation'
+  | 'scheduled'
+  | 'paused'
+  | 'waiting-for-computer';
 
 export const AUTOMATION_LABEL_TEXT: Readonly<Record<AutomationLabel, string>> = Object.freeze({
   manual: 'Manual — not scheduled',
@@ -143,6 +336,9 @@ export const AUTOMATION_LABEL_TEXT: Readonly<Record<AutomationLabel, string>> = 
   'waiting-for-data': 'Waiting for data',
   'setup-incomplete': 'Setup incomplete',
   'needs-investigation': 'Needs investigation',
+  scheduled: 'Scheduled',
+  paused: 'Paused',
+  'waiting-for-computer': 'Waiting for computer',
 });
 
 export interface AutomationStatus {
@@ -158,8 +354,11 @@ const ATTENTION: Readonly<Record<AutomationLabel, number>> = Object.freeze({
   'needs-investigation': 1,
   'waiting-for-data': 2,
   'setup-incomplete': 3,
-  running: 4,
-  manual: 5,
+  'waiting-for-computer': 4,
+  running: 5,
+  paused: 6,
+  scheduled: 7,
+  manual: 8,
 });
 
 export const attentionRank = (label: AutomationLabel) => ATTENTION[label];
@@ -211,12 +410,26 @@ export function automationLabel(facts: AutomationFacts): AutomationStatus {
     if (run.state === 'failed' && !run.waitingForData)
       return status('needs-investigation', 'The last run stopped because something went wrong.');
   }
+  const schedule = facts.schedule;
+  if (schedule && schedule.state !== 'off' && schedule.blocked)
+    return status('needs-investigation', schedule.blocked.reason);
   if (facts.setup.state === 'incomplete') return status('setup-incomplete', facts.setup.message);
   if (run?.state === 'failed' && run.waitingForData)
     return status(
       'waiting-for-data',
       `${listFiles(run.missing)} could not be read, so nothing was written.`,
     );
+  if (schedule?.state === 'paused')
+    return status('paused', 'Nothing starts on its own until an owner or admin resumes it.');
+  if (schedule?.state === 'enabled' && !schedule.here)
+    return status('waiting-for-computer', 'Its schedule is assigned to another computer, so nothing starts here.');
+  if (schedule?.state === 'enabled' && schedule.host === 'unknown')
+    return status(
+      'waiting-for-computer',
+      'This computer has not checked its schedule recently, so it cannot say it will start on time.',
+    );
+  if (schedule?.state === 'enabled')
+    return status('scheduled', 'Starts on its own at its scheduled time while this computer is on.');
   return status('manual', 'Runs only when someone presses Run once.');
 }
 
@@ -274,6 +487,55 @@ export interface OccurrenceView {
   readonly resultText: string | null;
   /** Refused occurrences say what to do next. */
   readonly next: string | null;
+  /** A scheduled slot that did not start, in words: "Missed — computer was off". */
+  readonly note: string | null;
+  /** The slot in the schedule's own local time, for a scheduled occurrence. */
+  readonly slotText: string | null;
+}
+
+/** An attention item as the Console shows it, with where it points. */
+export interface AttentionView {
+  readonly id: string;
+  readonly automationId: string;
+  readonly automationName: string;
+  readonly organizationId: string;
+  readonly kind: AutomationAttention['kind'];
+  readonly title: string;
+  readonly detail: string;
+  readonly count: number;
+  readonly openedAt: string;
+  readonly lastSeenAt: string;
+}
+
+/** The schedule as the Console shows it. Nothing here is a live claim about another device. */
+export interface ScheduleView {
+  readonly state: ScheduleControl['state'];
+  /** "Every Monday at 8:00 a.m. America/New_York", or null with no schedule saved. */
+  readonly text: string | null;
+  readonly current: ScheduleRevision | null;
+  readonly generation: number;
+  /** The next slots, computed at `observedAt`. Shown for an enabled schedule, and as a preview otherwise. */
+  readonly next: readonly { readonly at: string; readonly text: string }[];
+  readonly catchUpText: string;
+  readonly since: string | null;
+  readonly by: string | null;
+  readonly pauseReason: string | null;
+  readonly host: {
+    readonly name: string;
+    /** The last heartbeat this computer's scheduler wrote. */
+    readonly lastSeenAt: string | null;
+    readonly state: 'available' | 'unknown';
+    /** The schedule is assigned to this computer, or nothing is assigned yet. */
+    readonly here: boolean;
+  };
+  /** Whether this person may edit, turn on, pause, resume or turn off the schedule. */
+  readonly mayControl: boolean;
+  /** Why the schedule could not be turned on now, or null. */
+  readonly enableBlocked: string | null;
+  /** The recorded setup answer, kept inactive until someone turns a schedule on (A01). */
+  readonly recorded: string | null;
+  /** Newest first. */
+  readonly acts: readonly ScheduleAct[];
 }
 
 export interface AutomationView {
@@ -321,10 +583,16 @@ export interface AutomationView {
   readonly occurrences: number;
   /** The newest occurrence, so the list can link to its run without a second read. */
   readonly latest: OccurrenceView | null;
+  /** Milestone B: the stored schedule and this computer. */
+  readonly schedule: ScheduleView;
+  /** Open attention items, one per underlying issue (A31). */
+  readonly attention: readonly AttentionView[];
 }
 
 export interface AutomationSummary {
   readonly configured: number;
+  /** Enabled schedules on an available computer: the only count that means "starts on its own". */
+  readonly scheduled: number;
   readonly running: number;
   readonly needsAttention: number;
   readonly notReady: number;
@@ -333,32 +601,45 @@ export interface AutomationSummary {
 /** Each count's definition, shown beside it. */
 export const AUTOMATION_SUMMARY_CAPTIONS: Readonly<Record<keyof AutomationSummary, string>> =
   Object.freeze({
-    configured: 'Set up and able to run when someone presses Run once.',
+    configured: 'Set up and able to run, on a schedule or when someone presses Run once.',
+    scheduled: 'Starts on its own at its scheduled time on this computer.',
     running: 'Working now.',
-    needsAttention: 'Waiting for data, an approval, or a check.',
+    needsAttention: 'Waiting for data, an approval, or a check, or a run was missed or blocked.',
     notReady: 'Setup is not finished, so it cannot run.',
   });
 
 /**
  * The counts over the automations this person may see. A manual job counts as
- * configured, never as active: there is no "active" count until something runs
- * on its own.
+ * configured, never as scheduled: only an enabled schedule on an available
+ * computer counts as starting on its own, and a recorded or paused schedule
+ * never does (A01).
  */
 export function automationSummary(
-  statuses: readonly Pick<AutomationStatus, 'label'>[],
+  statuses: readonly (Pick<AutomationStatus, 'label'> & {
+    readonly scheduled?: boolean;
+    /** Open attention items, which need a person even while the label is calm. */
+    readonly attention?: number;
+  })[],
 ): AutomationSummary {
   let configured = 0;
+  let scheduled = 0;
   let running = 0;
   let needsAttention = 0;
   let notReady = 0;
-  for (const { label } of statuses) {
+  for (const { label, scheduled: starts, attention } of statuses) {
     if (label === 'setup-incomplete') notReady += 1;
     else configured += 1;
+    if (starts) scheduled += 1;
     if (label === 'running') running += 1;
-    if (label === 'needs-approval' || label === 'waiting-for-data' || label === 'needs-investigation')
+    if (
+      label === 'needs-approval' ||
+      label === 'waiting-for-data' ||
+      label === 'needs-investigation' ||
+      (attention ?? 0) > 0
+    )
       needsAttention += 1;
   }
-  return { configured, running, needsAttention, notReady };
+  return { configured, scheduled, running, needsAttention, notReady };
 }
 
 /** Attention first, then name, so a live update never reorders rows for any other reason. */
@@ -399,4 +680,12 @@ export interface RunOnceResult {
   /** True when this command id had already been admitted: nothing new was started. */
   readonly duplicate: boolean;
   readonly automation: AutomationView;
+}
+
+/** What a schedule change answers with. */
+export interface ScheduleChangeResult {
+  readonly automation: AutomationView;
+  readonly act: ScheduleAct;
+  /** A pause's receipt: the scheduled run already started, which the pause does not stop. */
+  readonly inFlight: OccurrenceView | null;
 }

@@ -5,6 +5,8 @@ import { WorkspaceService } from './workspaces.js';
 import { mountWorkspaceRoutes } from './workspace-routes.js';
 import { mountAutomationRoutes } from './automation-routes.js';
 import { AutomationOccurrences, AutomationService } from './automations.js';
+import { AutomationDefinitions } from './automation-definitions.js';
+import { AutomationScheduler } from './automation-scheduler.js';
 import { ThemeService, THEME_PACK_ID_PATTERN, THEME_SCOPE_PATTERN } from './themes.js';
 import { mountThemeRoutes } from './theme-routes.js';
 import { CustomizationGate } from './customization-gate.js';
@@ -271,6 +273,9 @@ interface AppOptions {
     onInstallAccepted?: () => void;
     transport?: Partial<UpdateTransport>;
   };
+  /** The automation scheduler's clock and pass interval. Tests inject both; null runs no timer. */
+  automationClock?: () => number;
+  automationTickMs?: number | null;
 }
 const owners: Owner[] = ['you', 'diomedes', 'diomedes-with-ok'];
 const states: TaskState[] = ['todo', 'working', 'waiting', 'done'];
@@ -907,8 +912,12 @@ export async function createApp(options: AppOptions) {
     configuration,
     harness,
     new AutomationOccurrences(store.dataDir),
+    new AutomationDefinitions(store.dataDir),
+    { clock: options.automationClock },
   );
   await automations.init();
+  // The one clock for automation slots. It admits only through `automations`.
+  const automationScheduler = new AutomationScheduler(store, automations, options.automationTickMs);
   const connections = new DesktopConnections(store, harness);
   const app = express();
   // The port this service listens on, learned from the first request's socket (listen(0)
@@ -5201,6 +5210,8 @@ export async function createApp(options: AppOptions) {
   app.locals.connections = connections;
   app.locals.workControl = workControl;
   app.locals.readyScheduler = readyScheduler;
+  app.locals.automationScheduler = automationScheduler;
+  app.locals.automations = automations;
   app.locals.close = async () => {
     // A window closed on the way out must not start a check against services
     // that are already shutting down.
@@ -5211,6 +5222,7 @@ export async function createApp(options: AppOptions) {
     store.off('change', deliverFor);
     await Promise.allSettled([...deliveries]);
     await readyScheduler.close();
+    await automationScheduler.close();
     // Change-review writes into the data dir; drain its queued builds before
     // the remaining services' close persists can settle, or a late record
     // write can race removal of the data dir.
@@ -5227,5 +5239,6 @@ export async function createApp(options: AppOptions) {
   // Last, once every route and service exists: a claim a restart interrupted is settled or
   // replayed through `admitWork` here, before the first request is served.
   await readyScheduler.init();
+  await automationScheduler.init();
   return app;
 }

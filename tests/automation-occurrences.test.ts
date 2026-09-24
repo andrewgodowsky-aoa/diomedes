@@ -59,7 +59,8 @@ describe('the versioned file', () => {
     await store.put(occurrence('c1'));
     await store.put(occurrence('c2'));
     const stored = JSON.parse(await fs.readFile(file('org_a'), 'utf8'));
-    expect(stored).toMatchObject({ v: 1, organizationId: 'org_a' });
+    // Version 2 from Milestone B: it may hold scheduled occurrences.
+    expect(stored).toMatchObject({ v: 2, organizationId: 'org_a' });
     expect(stored.occurrences).toHaveLength(2);
     const reopened = new AutomationOccurrences(root);
     await reopened.init();
@@ -79,7 +80,7 @@ describe('the versioned file', () => {
 
   test('a file from another version is refused and left alone', async () => {
     await fs.mkdir(path.dirname(file('org_new')), { recursive: true });
-    const foreign = JSON.stringify({ v: 2, organizationId: 'org_new', occurrences: [], extra: true });
+    const foreign = JSON.stringify({ v: 3, organizationId: 'org_new', occurrences: [], extra: true });
     await fs.writeFile(file('org_new'), foreign);
     await store.put(occurrence('c1'));
     const reopened = new AutomationOccurrences(root);
@@ -89,6 +90,24 @@ describe('the versioned file', () => {
     expect(await fs.readFile(file('org_new'), 'utf8')).toBe(foreign);
     // Every other organization keeps working.
     expect(reopened.list('org_a')).toHaveLength(1);
+  });
+
+  test('a Milestone A file (version 1) is read as it is and written back as version 2', async () => {
+    await fs.mkdir(path.dirname(file('org_old')), { recursive: true });
+    await fs.writeFile(
+      file('org_old'),
+      JSON.stringify({ v: 1, organizationId: 'org_old', occurrences: [occurrence('a1', undefined, 'org_old')] }),
+    );
+    const reopened = new AutomationOccurrences(root);
+    await reopened.init();
+    expect(reopened.list('org_old').map((item) => item.trigger.commandId)).toEqual(['a1']);
+    await reopened.put(occurrence('a2', undefined, 'org_old'));
+    const stored = JSON.parse(await fs.readFile(file('org_old'), 'utf8'));
+    expect(stored.v).toBe(2);
+    expect(stored.occurrences.map((item: { trigger: { commandId: string } }) => item.trigger.commandId)).toEqual([
+      'a1',
+      'a2',
+    ]);
   });
 
   test('an organization id that is not a plain name never reaches a path', async () => {
