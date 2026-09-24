@@ -342,6 +342,14 @@ attention only; its push/email/phone part stays planned under Milestone C.
 
 ## BUILD STATUS
 
-See the lane's final report for the exact counts of its own final run (tsc, full vitest, vite build,
-the three Playwright gate specs, and `tests/automations.spec.ts`), on the Linux sprint container.
+From this lane's own final run, on the branch after merging `origin/main` `9bd5147`, on the Linux
+sprint container (CI runs Windows and macOS):
+
+- `npx tsc --noEmit`: clean.
+- vitest (full suite, `--maxWorkers=2`, under the shared lock): 363 files passed, 1 skipped; 6479
+  tests passed, 16 skipped, 0 failed.
+- `npx vite build`: built.
+- Playwright gates: `ui.spec.ts` 17, `native-ui.spec.ts` 11, `field.spec.ts` 8 — 36 passed, 0 failed.
+- `tests/automations.spec.ts`: 3 passed (Milestone A's two and the new schedule journey).
+
 Publication: branch pushed; no pull request, merge, release or deployment by this lane.
