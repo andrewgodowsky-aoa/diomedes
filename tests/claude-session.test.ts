@@ -42,12 +42,13 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
  fs.appendFileSync(${JSON.stringify(log)},line+'\\n');
  if(m.type==='control_request') {
   emit({type:'control_response',response:{subtype:'success',request_id:m.request_id,response:{}}});
-  if(m.request.subtype==='interrupt' && mode!=='no-result') setTimeout(result,20);
+  if(m.request.subtype==='interrupt' && mode==='interrupt-error') setTimeout(()=>emit({type:'result',uuid:prefix+'-stopped-'+count,subtype:'error_during_execution',is_error:true,session_id:session,errors:['Request was aborted']}),20);
+  else if(m.request.subtype==='interrupt' && mode!=='no-result') setTimeout(result,20);
  }
  if(m.type==='user') {
   count++;
   emit({type:'system',subtype:'init',session_id:mode==='missing'?'wrong':session,model:mode==='reroute'?'other-model':'claude-test',tools:mode==='tools'?['Bash']:[],mcp_servers:[]});
-  if(mode==='hang'||mode==='no-result') return;
+  if(mode==='hang'||mode==='no-result'||mode==='interrupt-error') return;
   if(mode==='exit') return process.exit(0);
   if(mode==='unknown') { emit({type:'future_completion',session_id:session,status:'success'}); return process.exit(0); }
   if(mode==='permission') return setTimeout(()=>emit({type:'control_request',request_id:'permission-1',request:{subtype:'can_use_tool',tool_name:'Bash',input:{command:'echo forbidden'}}}),75);
@@ -213,6 +214,60 @@ describe('Claude persistent native transport', () => {
     await session.close();
     await rejection;
     expect(session.checkpoint.state).toBe('uncertain');
+  });
+  it('stops a running turn gracefully and keeps the same live process for the next turn (H03)', async () => {
+    const f = await fixture('hang');
+    const session = await f.adapter.openSession(request, f.options);
+    try {
+      const turn = session.turn(request);
+      const rejection = expect(turn).rejects.toMatchObject({ code: 'CANCELLED' });
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(await session.stop(1000)).toBe('interrupted');
+      await rejection;
+      expect(session.checkpoint.state).toBe('idle');
+      expect(f.launches).toHaveLength(1);
+      expect((await f.received()).some((line) => line.request?.subtype === 'interrupt')).toBe(true);
+    } finally {
+      await session.close();
+    }
+  });
+  it('takes an error-shaped result after an acknowledged interrupt as the stopped turn (H03)', async () => {
+    const f = await fixture('interrupt-error');
+    const session = await f.adapter.openSession(request, f.options);
+    try {
+      const turn = session.turn({ ...request });
+      const rejection = expect(turn).rejects.toMatchObject({ code: 'CANCELLED' });
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(await session.stop(1000)).toBe('interrupted');
+      await rejection;
+      expect(session.checkpoint.state).toBe('idle');
+    } finally {
+      await session.close();
+    }
+  });
+  it('ends the process when a stopped turn does not finish within the grace, and says so (H03)', async () => {
+    const f = await fixture('no-result');
+    const session = await f.adapter.openSession(request, f.options);
+    const turn = session.turn(request);
+    const rejection = expect(turn).rejects.toMatchObject({ code: 'STOP_FORCED' });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    const started = Date.now();
+    expect(await session.stop(150)).toBe('killed');
+    expect(Date.now() - started).toBeLessThan(1400);
+    await rejection;
+    // A turn ended by killing its process has an unknown outcome and is never resumed.
+    expect(session.checkpoint.state).toBe('uncertain');
+    expect(f.children[0].closed).toBe(true);
+    await session.close();
+  });
+  it('refuses a stop when no turn is running (H03)', async () => {
+    const f = await fixture();
+    const session = await f.adapter.openSession(request, f.options);
+    try {
+      await expect(session.stop(100)).rejects.toMatchObject({ code: 'SESSION_IDLE' });
+    } finally {
+      await session.close();
+    }
   });
   it('persists a busy checkpoint before dispatch and refuses recovery from that durable checkpoint', async () => {
     const f = await fixture();

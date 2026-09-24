@@ -34,10 +34,18 @@ import {
 import {
   contextMessage,
   type AdapterInspection,
-  type TextEngineAdapter,
+  type PersistentTextAdapter,
   type TextRequest,
   type TextResponse,
 } from './contract.js';
+import {
+  acpSessionRoot,
+  openAcpSession,
+  type AcpSessionCheckpoint,
+  type AcpSessionOptions,
+  type AcpTurnKeep,
+  type AcpTurnRunner,
+} from './acp-session.js';
 import {
   abortFailure,
   capture,
@@ -184,9 +192,11 @@ function modelsFrom(value: unknown): EngineModel[] {
   });
 }
 
-export class CursorAdapter implements TextEngineAdapter {
+export class CursorAdapter implements PersistentTextAdapter<AcpSessionCheckpoint> {
   readonly id = 'cursor' as const;
   readonly contract = routeContractFor('cursor');
+  /** The kept conversation over the shared ACP session layer, admitted separately (H05). */
+  readonly sessionContract = routeContractFor('cursor-session');
   private readonly launch: NonNullable<CursorAdapterDeps['spawn']>;
   private readonly capture: typeof capture;
   private readonly startupTimeout: number;
@@ -245,8 +255,11 @@ export class CursorAdapter implements TextEngineAdapter {
     run: (rpc: AcpClient, created: Json, version: string) => Promise<T>,
     turn?: AcpTurn,
     read?: { scope: ReadScope; sink: TextRequest['onToolActivity'] },
+    keep?: AcpTurnKeep,
   ): Promise<T> {
-    const reading = read ? acpReadTurn(CURSOR_ACP_PROFILE, read.scope, read.sink) : undefined;
+    const reading = read
+      ? acpReadTurn(CURSOR_ACP_PROFILE, read.scope, read.sink, keep?.approvedCalls)
+      : undefined;
     phase.at = 'launch';
     if (signal?.aborted) throw abortFailure(signal.reason, acpTimeoutDetail(CURSOR_ACP_PROFILE));
     const entry = await resolveCursorEntry(this.file);
@@ -278,13 +291,17 @@ export class CursorAdapter implements TextEngineAdapter {
         signal,
         rootParent: this.cwd,
         rootPrefix: '.diomedes-cursor-',
+        ...(keep ? { keep } : {}),
         prepare: async (root) => {
           // The configuration and the workspace both stay in the private root: no
-          // turn has a file tool, so none needs to sit in the project folder.
+          // turn has a file tool, so none needs to sit in the project folder. A kept
+          // conversation's root outlives the turn; its configuration is still written
+          // fresh every turn, and only Cursor's session data carries over.
           const config = path.join(root, 'config'),
             workspace = path.join(root, 'workspace');
+          if (keep) await fs.rm(config, { recursive: true, force: true });
           await fs.mkdir(config);
-          await fs.mkdir(workspace);
+          await fs.mkdir(workspace, { recursive: Boolean(keep) });
           await fs.writeFile(
             path.join(config, 'cli-config.json'),
             JSON.stringify(cursorPermissions(read?.scope)),
@@ -317,6 +334,7 @@ export class CursorAdapter implements TextEngineAdapter {
           // other reported mode is a drift the text route does not accept.
           acpSessionUpdate(CURSOR_ACP_PROFILE, rpc, params, turn, {
             ...(reading ? { reads: reading.reads } : {}),
+            ...(keep ? { plans: keep.plans } : {}),
             onModeUpdate: (modeId) => {
               if (modeId !== 'ask')
                 throw new EngineError(
@@ -367,6 +385,10 @@ export class CursorAdapter implements TextEngineAdapter {
     }
   }
   async generate(input: TextRequest): Promise<TextResponse> {
+    return (await this.turn(input)).response;
+  }
+  /** The request checks every Cursor turn makes before a process starts. */
+  private admit(input: TextRequest) {
     if (input.accountRoute !== CURSOR_ACCOUNT_ROUTE)
       throw new EngineError(
         'ACCOUNT_CHANGED',
@@ -388,6 +410,13 @@ export class CursorAdapter implements TextEngineAdapter {
         false,
         'model-list',
       );
+  }
+  /** One Cursor turn: the single-turn route, or a kept conversation's turn under `keep` (H05). */
+  private async turn(
+    input: TextRequest,
+    keep?: AcpTurnKeep,
+  ): Promise<{ response: TextResponse; version: string }> {
+    this.admit(input);
     const prompt = contextMessage(input);
     if (this.generating)
       throw new EngineError(
@@ -417,7 +446,11 @@ export class CursorAdapter implements TextEngineAdapter {
         phase,
         async (rpc, created, version) => {
           phase.at = 'model-list';
+          // A loaded session may not list the catalogue again; set_model below still
+          // names the requested id and Cursor refuses one it does not offer.
+          const listed = Array.isArray(record(created.models).availableModels);
           if (
+            (!keep || listed) &&
             !modelsFrom(record(created.models).availableModels).some(
               (model) => model.slug === input.model,
             )
@@ -432,6 +465,7 @@ export class CursorAdapter implements TextEngineAdapter {
             sessionId: rpc.sessionId,
             modelId: input.model,
           });
+          await keep?.beforePrompt();
           phase.at = 'dispatch';
           await acpPromptTurn(
             CURSOR_ACP_PROFILE,
@@ -441,15 +475,32 @@ export class CursorAdapter implements TextEngineAdapter {
             this.requestTimeout,
             prompt,
           );
-          return acpTurnResponse(input, turn, version);
+          return { response: acpTurnResponse(input, turn, version), version };
         },
         turn,
         input.readScope ? { scope: input.readScope, sink: input.onToolActivity } : undefined,
+        keep,
       );
     } catch (error) {
       throw staged(error, phase.at);
     } finally {
       this.generating = false;
     }
+  }
+  /**
+   * A kept Cursor conversation (H05): the shared ACP session layer, running each
+   * turn through this adapter's own turn so it holds the same boundary.
+   */
+  async openSession(input: TextRequest, options: AcpSessionOptions) {
+    const runner: AcpTurnRunner = {
+      engine: 'cursor',
+      profile: CURSOR_ACP_PROFILE,
+      accountRoute: CURSOR_ACCOUNT_ROUTE,
+      reads: true,
+      admit: (request) => this.admit(request),
+      root: (lineageId) => acpSessionRoot(this.cwd, 'cursor', lineageId),
+      run: (request, keep) => this.turn(request, keep),
+    };
+    return openAcpSession(runner, input, options);
   }
 }
