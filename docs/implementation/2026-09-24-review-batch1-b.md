@@ -280,7 +280,17 @@ Not fixed (suspected):
 
 ## Gates (this branch, Linux, final run)
 
-Filled in from the final run on the pushed head; see the PR for the same counts.
+Run on the tree of the commit that adds these counts:
+
+- `npx tsc --noEmit`: clean.
+- `CODEX_HOME=$(mktemp -d) node node_modules/vitest/vitest.mjs run --maxWorkers=3`: **361 files
+  passed, 1 skipped; 6435 tests passed, 16 skipped, 0 failed.** The first run hit the known
+  "Electron failed to install" in three native-auth files. After `node node_modules/electron/install.js`
+  those files pass 80 of 80, and the full rerun above is clean.
+- `npx vite build`: ok.
+- `npx playwright test tests/ui.spec.ts tests/native-ui.spec.ts tests/field.spec.ts
+  tests/instructions-inspector.spec.ts tests/pack-lifecycle-ui.spec.ts tests/editor-guard-ui.spec.ts`:
+  **50 passed.** H04 adds no Playwright spec: it has no Console surface yet.
 
 PILLAR IMPACT: none against. Decision 14 is strengthened: applied instructions stay inspectable,
 and damaged or stranded packs do not turn on. Decision 8 is strengthened: steered answers are
