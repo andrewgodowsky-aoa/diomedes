@@ -1,0 +1,84 @@
+WHAT IS NEW
+  This release starts over. The first time 0.1.9 opens on a computer that had
+  an earlier version, it sets aside everything the earlier version kept: its
+  settings, its list of projects, its routes and their saved keys, its
+  conversations, the saved account sign-in and the Documents\Diomedes projects
+  folder. Nothing is deleted. Each is renamed with "(before 0.1.9" and the date
+  in its name, next to where it was, so a file can still be found by hand.
+  Nectovia then opens as a new install: the Nectovia look, setup from the
+  start, and no projects. This happens once.
+
+  Installed tools are accepted at whatever version they report. Claude Code,
+  OpenCode, Oh My Pi, Cursor and Devin are no longer held to one reviewed
+  version, so a tool that updated itself, such as Claude Code, is not called
+  incompatible. When a tool you chose updates itself in place, Nectovia keeps
+  using it without asking you to choose it or test it again. A tool that cannot
+  report its version at all is still refused. A Claude Code conversation carries
+  on after Claude Code updates.
+
+  When Check this computer finds nothing Nectovia can use, it says so: "No
+  available engines found. Install a compatible one below."
+
+  The Workbook is gone. The Console is the only way to work in a project.
+
+  The Console has two views, chosen from the detail menu. Conversation shows
+  the message box and the threads; Architect shows the whole Console. A new
+  person lands in Conversation when setup finishes. A view changes what is
+  shown, never what Nectovia can do.
+
+  A thread's menu has "Update this conversation". It asks first, then starts
+  each open conversation whose instructions are older than this build over on
+  today's, and a note in the thread says so. It is not offered while a message
+  is being answered or a proposal is waiting.
+
+  Each artifact in an answer is recorded with a fingerprint of its content,
+  and the thread can show that record. An artifact whose message is gone shows
+  as "No longer in the conversation".
+
+  A Markdown or Mermaid file a model writes is refused if it begins with HTML,
+  so opening it from disk in a browser cannot run anything in it. Files you
+  write or save yourself are unchanged.
+
+UPDATES
+  Settings > App updates offers stable releases only, and this is one: an
+  installed 0.1.7 or 0.1.8 can find it when you press Check for updates.
+  Nothing is downloaded, verified or installed until you confirm it, and a
+  download is accepted only when its SHA-256 matches the digest the release
+  publishes.
+  Unlike earlier updates, this one does not keep your look, routes, saved keys,
+  projects or conversations: they are set aside as described above. Later
+  updates keep them again.
+
+LIMITS
+  Unsigned, experimental, tested on one machine.
+  The installer was built but not installed on the build machine, so its
+  install, repair and uninstall and the installed runtime are listed above as
+  not verified, and neither the update from 0.1.8 nor the one-time fresh start
+  has been run end to end on an installed copy.
+  No route was exercised live on this build. Every route in its tests was
+  scripted or fake, so no answer, spend or saved key was exercised against a
+  real installed tool or against AWS Bedrock, Google Vertex AI, Azure OpenAI or
+  OpenRouter.
+
+  Accepting any version means a new version of an installed tool is used
+  without being tried first. If a tool changes how it answers, a request can
+  fail. Nectovia cannot tell an update of your own installation from a
+  different file put in its place at the same path. Nectovia's private copy of
+  a tool is still checked against its release before it runs.
+  If the old app data cannot be set aside (for example, another program has
+  it open), Nectovia starts on it as before and tries again at the next start.
+  A projects folder another program holds open stays where it is.
+
+  The Console has no Keep or Undo for a waiting change, and no "Make tasks
+  from this plan"; both were Workbook controls.
+  This app is not signed in to a Nectovia account. No credit balance or usage
+  is shown, and every route runs on, and is billed to, your own account.
+  There is no sign-in. The Tiers card is marked Owner, but anyone using the app
+  on this computer can change it.
+
+  The two names meet in places: History sentences, the window title, the
+  first conversation in each project and some messages still say Diomedes.
+  Connections is unavailable. It runs on example data rather than your own
+  software, and there is no live connection to a business system.
+  The release is Windows x64 only. The local service listens on 127.0.0.1
+  only.
