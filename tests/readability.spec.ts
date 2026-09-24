@@ -341,7 +341,8 @@ test('the newer Console surfaces take the same semantic roles', async ({ page })
   expect(pane.row).toBe(14);
   expect(pane.row).toBe(pane.spine);
   expect(pane.paneHeading).toBe(pane.railHeading);
-  expect(pane.body).toBe(16);
+  // Conversation text reads a step below body text (15px) until the person picks a size.
+  expect(pane.body).toBe(15);
 
   // A document read in the pane: prose at the reading role, the raw bytes at
   // the code role rather than at 16 px prose.

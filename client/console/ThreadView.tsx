@@ -38,6 +38,7 @@ import { ToolActivityList } from './ToolActivity';
 import { resolvedDetail, threadStyle, useWorkStyleView } from './WorkStylePicker';
 import { WORK_STYLE_LABELS } from '../../shared/work-style';
 import { TurnBody } from './TurnBody';
+import { sizeLabel } from './FilesPane';
 import { turnKeyOf, type ArtifactIndex, type ArtifactRecord } from './artifacts';
 
 function fmtDur(ms: number): string {
@@ -484,8 +485,8 @@ export function ThreadView({
           </span>
         )}
         {context != null && (
-          <span>
-            context <b>{Math.round(context)}%</b>
+          <span title="The size of the project documents sent with the latest request">
+            context <b>{sizeLabel(context)}</b>
           </span>
         )}
         {lastRun?.endedAt && (

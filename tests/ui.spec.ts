@@ -305,7 +305,8 @@ test('F01-F02: first run preserves detail and approvals, supports AI skip, and r
   expect(comfortableSettings.detail).toBe('technical');
   expect(comfortableSettings.permissions.changingFiles).toBe(true);
 
-  // The menu offers the Console's two views and the detail levels, and nothing that leaves the Console.
+  // The menu offers the Console's two views, the detail levels and the conversation text
+  // size, and nothing that leaves the Console.
   await page.getByRole('button', { name: 'Interface detail menu' }).click();
   const menu = page.getByRole('menu');
   await expect(menu.getByRole('menuitemradio')).toHaveText([
@@ -314,6 +315,10 @@ test('F01-F02: first run preserves detail and approvals, supports AI skip, and r
     'Guided',
     'Standard',
     'Technical',
+    '90%',
+    '100% (Default)',
+    '110%',
+    '125%',
   ]);
   await expect(page.getByText('The Workbook', { exact: true })).toHaveCount(0);
   await page.keyboard.press('Escape');

@@ -47,6 +47,8 @@
   --dm-font-code: 'IBM Plex Mono', 'Cascadia Mono', Consolas, monospace;
   /* Semantic roles at a stable root; width and information density never size type. */
   --dm-type-body: 1rem;
+  /* Messages and replies read a step below body text; Conversation text size scales it. */
+  --dm-type-conversation: 0.9375rem;
   --dm-type-input: 0.9375rem;
   --dm-type-ui: 0.875rem;
   --dm-type-caption: 0.8125rem;

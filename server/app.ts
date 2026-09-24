@@ -13,6 +13,7 @@ import { mountConfigurationRoutes } from './configuration-routes.js';
 import { DiscoveryService } from './discovery/service.js';
 import { mountDiscoveryRoutes } from './discovery/routes.js';
 import { WeeklyBriefService } from './weekly-brief.js';
+import { planTitle, taskNameFromText } from '../shared/display-names.js';
 import { browseImports, inspectImport, importExports } from './file-imports.js';
 import { isActiveMember } from '../shared/workspaces.js';
 import { AllowanceLedger } from './managed-usage.js';
@@ -257,14 +258,6 @@ const asString = (value: unknown, name: string, max = 10000): string => {
     throw new ApiError(400, `Provide ${name} of up to ${max} characters.`);
   return value;
 };
-function taskNameFromText(text: string): string {
-  const firstLine = text.split('\n')[0].trim();
-  if (firstLine.length <= 80) return firstLine;
-  const shortened = firstLine.slice(0, 80);
-  if (/\s/.test(firstLine[80])) return shortened.trimEnd();
-  const boundary = shortened.search(/\s+\S*$/);
-  return (boundary > 0 ? shortened.slice(0, boundary) : shortened).trimEnd();
-}
 const choice = <const T extends string>(value: unknown, values: readonly T[], name: string): T => {
   if (typeof value !== 'string' || !values.includes(value as T))
     throw new ApiError(400, `Choose a valid ${name}.`);
@@ -4762,13 +4755,18 @@ export async function createApp(options: AppOptions) {
         let session: Session | undefined;
         let createdTaskId: string | null = null;
         if (mode === 'plan' && !isExternalEngine(serviceRoute)) {
-          const safeTitle =
-            text
-              .split('\n')[0]
-              .replace(/[<>:"/\\|?*\x00-\x1f]/g, '')
-              .trim()
-              .replace(/[. ]+$/, '')
-              .slice(0, 72) || 'New plan';
+          // A name the person gave the thread titles its plans. One the app made from the
+          // thread's first message says nothing this plan's own heading or words do not.
+          const planThread = state.conversations.find((c) => c.id === prepared.conversationId);
+          const firstYou = planThread?.turns.find((t) => t.role === 'you');
+          const safeTitle = planTitle({
+            threadName:
+              planThread && (!firstYou || planThread.name !== threadNameFromText(firstYou.text))
+                ? planThread.name
+                : null,
+            answer,
+            text,
+          });
           document = `${safeTitle}.md`;
           if ((await store.current(projectId, document)) !== null)
             document = `${safeTitle} ${identifier().slice(0, 4)}.md`;

@@ -45,6 +45,7 @@ import {
   type UnresolvedIssue,
 } from './configuration.js';
 import type { PermissionChoiceId } from './permissions.js';
+import { clip } from './display-names.js';
 
 export type PackVariantId = string;
 const PACK_VARIANT_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -52,6 +53,15 @@ const PACK_VARIANT_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 export const WEEKLY_BRIEF_PACK_ID = 'diomedes.weekly-brief';
 export const WEEKLY_BRIEF_PACK_VERSION = '1.0.0';
 export const DEFAULT_WEEKLY_BRIEF_VARIANT_ID: PackVariantId = 'professional-services';
+
+/**
+ * An expected output's own name: the part of its label before the job and result wording,
+ * which `compileOutput` always puts first. A brief is titled with this, not the sentence.
+ */
+export function outputName(label: string): string {
+  const at = label.indexOf(' — ');
+  return at > 0 ? label.slice(0, at) : label;
+}
 
 export interface CompileInput {
   organizationId: string | null;
@@ -525,7 +535,7 @@ function compileOutput(
         : variant.outputLabel;
   return {
     id: 'weekly-brief',
-    label: raw.length > MAX_LABEL ? raw.slice(0, MAX_LABEL) : raw,
+    label: clip(raw, MAX_LABEL),
     artifact: WEEKLY_BRIEF_TEMPLATE.expectedOutput.artifact,
     destination: variant.destination,
     reviewedBy: WEEKLY_BRIEF_TEMPLATE.expectedOutput.reviewedBy,

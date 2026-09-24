@@ -119,6 +119,7 @@ export function CloudSharing({
 
   return (
     <Modal title="Cloud sharing" onClose={onClose}>
+      <div className="cloud-sharing">
       <p className="caption muted">
         {projectName}: cloud routes and project files start off. Your typed text and task instructions
         can be sent when you start an enabled route.
@@ -131,7 +132,7 @@ export function CloudSharing({
         <p className="caption muted">Loading sharing policy…</p>
       ) : (
         <>
-          <section aria-label="Cloud routes">
+          <section aria-label="Cloud routes" className="cloud-routes">
             <h3>Cloud routes</h3>
             {CLOUD_ROUTES.map((route) => (
               <label key={route} className="check">
@@ -140,7 +141,7 @@ export function CloudSharing({
                   checked={routes.includes(route)}
                   onChange={() => setRoutes((next) => toggle(next, route))}
                 />
-                <span className="mono">{routeDisplayName(route)}</span>
+                <span>{routeDisplayName(route)}</span>
               </label>
             ))}
           </section>
@@ -160,7 +161,7 @@ export function CloudSharing({
                     checked={documents.includes(path)}
                     onChange={() => setDocuments((next) => toggle(next, path))}
                   />
-                  <span className="mono">{path}</span>
+                  <span className="mono lc">{path}</span>
                 </label>
               ))
             )}
@@ -207,6 +208,7 @@ export function CloudSharing({
         <Button onClick={save} disabled={loading || saving || version === null}>
           {saving ? 'Saving…' : 'Save'}
         </Button>
+      </div>
       </div>
     </Modal>
   );

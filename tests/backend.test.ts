@@ -720,14 +720,18 @@ describe('threads are first-class conversations', () => {
     expect(work.data.conversation.id).toBe(workThread.id);
     expect(work.data.conversation.taskId).toBeTruthy();
   });
-  test('Work task names use the trimmed first line at an 80-character word boundary', async () => {
+  test('Work task names use the trimmed first line, cut on a word with an ellipsis', async () => {
     const cases = [
       {
         firstLine: `  ${'Plan '.repeat(15)}finishing touches  `,
-        name: 'Plan '.repeat(15).trim(),
+        name: `${'Plan '.repeat(15).trim()}…`,
       },
-      { firstLine: `  ${'Plan '.repeat(15)}steps follow  `, name: `${'Plan '.repeat(15)}steps` },
+      { firstLine: `  ${'Plan '.repeat(15)}steps follow  `, name: `${'Plan '.repeat(15).trim()}…` },
       { firstLine: '  Short task name  ', name: 'Short task name' },
+      {
+        firstLine: 'Using this plan, write catering/replies-draft.md: a short, friendly reply to each inquiry',
+        name: 'Using this plan, write catering/replies-draft.md',
+      },
     ];
     for (const { firstLine, name } of cases) {
       const id = await sample();

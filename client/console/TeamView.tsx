@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { sizeLabel } from './FilesPane';
 import type {
   Conversation,
   MailboxMessage,
@@ -676,11 +677,8 @@ function Lane({
         <span className="state">{STATE_WORD[lane]}</span>
       </header>
       <div className="ctx">
-        <span className="bar">
-          <i style={{ ['--f' as string]: typeof ctx === 'number' ? ctx / 100 : 0 }} />
-        </span>
         <span className="mono">
-          {typeof ctx === 'number' ? `context ${ctx}%` : 'context unknown'}
+          {typeof ctx === 'number' ? `context ${sizeLabel(ctx)}` : 'context unknown'}
           {unread > 0 ? ` · ${unread} message${unread === 1 ? '' : 's'} waiting` : ''}
         </span>
       </div>
