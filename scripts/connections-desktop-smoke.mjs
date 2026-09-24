@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
+import { AGENT_NAME, enterLastOpenProject, windowFetch } from './smoke-window.mjs';
 
 // The version the packaged build reports comes from package.json; read the
 // expectation from the same file so a bump cannot leave a green assertion
@@ -22,11 +23,11 @@ delete env.ELECTRON_RUN_AS_NODE;
 await fs.mkdir(env.CODEX_HOME);
 const proof = { startedAt: new Date().toISOString(), executablePath, root, checks: [], errors: [], passed: false };
 let desktop, page, origin, project, savedEvent;
-const headers = { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' };
+// The packaged service answers only the app window's own requests (smoke-window.mjs).
 async function api(route, method = 'GET', body, status = 200) {
-  const result = await fetch(`${origin}/api${route}`, { method, headers,
+  const result = await windowFetch(page, `/api${route}`, { method,
     ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
-  const value = await result.json(); expect(result.status, JSON.stringify(value)).toBe(status); return value;
+  const value = JSON.parse(result.text); expect(result.status, JSON.stringify(value)).toBe(status); return value;
 }
 async function launch(extra = {}) {
   const at = performance.now();
@@ -37,30 +38,11 @@ async function launch(extra = {}) {
   await api('/health');
   proof.launches ??= []; proof.launches.push({ pid: desktop.process().pid, readyMs: Math.round(performance.now() - at), origin });
 }
-// tests/fixtures/landing.ts does this for the browser suite and is TypeScript, so
-// the same pattern lives here: a launch opens on Diomedes even with openProjects
-// saved, and the last open project is entered through its Open projects button,
-// with the same guard against clicking "Projects" and the same active-state check.
-async function enterLastOpenProject(win) {
-  const openProjects = () => win.getByRole('navigation', { name: 'Open projects', exact: true });
-  const buttons = openProjects().getByRole('button');
-  await expect(buttons.first()).toBeVisible();
-  if ((await buttons.count()) < 2) {
-    throw new Error(
-      'enterLastOpenProject: the Open projects bar has only the "Projects" button, so there is ' +
-        'no project to enter. Give the settings at least one project in openProjects first.',
-    );
-  }
-  await buttons.last().click();
-  await expect(openProjects().getByRole('button').last()).toHaveClass(
-    /(?:^|\s)(?:on|active)(?:\s|$)/,
-  );
-}
 try {
   await launch(); proof.version = (await api('/health')).version;
   expect(proof.version).toBe(appVersion);
   project = await api('/projects/sample', 'POST', {});
-  await api('/settings', 'PUT', { detail: 'technical', surface: 'console', openProjects: [project.id],
+  await api('/settings', 'PUT', { detail: 'technical', openProjects: [project.id],
     onboarding: { work: 'business', detail: 'technical', familiarity: 'some', resumeAt: 'done', completedAt: new Date().toISOString() } });
   const base = `/projects/${project.id}/connections`;
   // The retired Connections screen's own calls, driven at the same API it used
@@ -156,11 +138,13 @@ try {
   proof.checks.push('Fresh process requires explicit authorization, starts stale, keeps durable receipts and never duplicates manager Task');
   // Connections is retired from navigation: the Console lists it in Everything
   // under Not ready yet with its reason (client/console/Shell.tsx), and nothing
-  // opens a screen. On a fresh process the window lands on Diomedes; the project
+  // opens a screen. On a fresh process the window lands on the agent's home; the project
   // is entered through the Open projects bar the way tests/fixtures/landing.ts
   // does, and the row is read where a person actually finds it.
-  await expect(page.locator('html[data-surface="console"]')).toHaveCount(1);
-  await expect(page.getByRole('main', { name: 'Diomedes', exact: true })).toBeVisible();
+  // The Console is the only surface; the retired Workbook's keys are never stored.
+  for (const key of ['surface', 'lastPage', 'tasksView'])
+    expect(Object.keys(await api('/settings'))).not.toContain(key);
+  await expect(page.getByRole('main', { name: AGENT_NAME, exact: true })).toBeVisible();
   await enterLastOpenProject(page);
   await page.getByRole('button', { name: 'Everything', exact: true }).click();
   const menu = page.getByRole('menu', { name: 'Everything' });

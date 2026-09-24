@@ -4,6 +4,7 @@ import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { windowApi } from './smoke-window.mjs';
 
 // The build under test reports package.json's version, so the expectation is
 // read from the same place. Restated as a literal it survived a version bump
@@ -41,6 +42,9 @@ await fs.mkdir(evidence, { recursive: true });
 let desktop;
 let fixtureURL;
 
+// Only the owned fixture host below is asked from Node: it is created without a
+// loopback session. The packaged service answers only the app window's own
+// requests, so its calls go through windowApi (smoke-window.mjs).
 async function request(base, route, method = 'GET', body) {
   const response = await fetch(`${base}/api${route}`, {
     method,
@@ -157,8 +161,7 @@ try {
   page.on('pageerror', (error) => errors.push(error.message));
   await page.waitForURL('http://127.0.0.1:*/');
   await page.setViewportSize({ width: 1440, height: 960 });
-  const defaultURL = new URL(page.url()).origin;
-  const status = await request(defaultURL, '/updates/status');
+  const status = await windowApi(page, '/updates/status');
   expect(status).toMatchObject({
     installedVersion: appVersion,
     platform: 'win32',
@@ -169,7 +172,6 @@ try {
   });
   checks.push({ name: 'compiled portable shell facts; no automatic release check', ok: true });
   const settings = {
-    surface: 'console',
     detail: 'technical',
     onboarding: {
       work: 'software',
@@ -179,7 +181,7 @@ try {
       completedAt: new Date().toISOString(),
     },
   };
-  await request(defaultURL, '/settings', 'PUT', settings);
+  await windowApi(page, '/settings', 'PUT', settings);
   await page.reload();
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   await page.getByRole('button', { name: 'App updates', exact: true }).click();
