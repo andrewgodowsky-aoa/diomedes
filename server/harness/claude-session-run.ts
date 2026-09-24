@@ -1189,6 +1189,7 @@ export class ClaudeSessionRuns<C extends SessionCheckpointFacts = ClaudeSessionC
     runId: string,
     commandId: string,
   ): Promise<{ state: 'requested' | 'idle' | 'superseded'; stop?: 'interrupted' | 'killed' | 'withdrawn' }> {
+    await this.get(projectId, runId);
     // H03: a message still waiting behind a running turn is withdrawn; nothing was sent.
     if (await this.withdraw(projectId, runId, commandId)) return { state: 'requested', stop: 'withdrawn' };
     const active = this.active.get(runId);
