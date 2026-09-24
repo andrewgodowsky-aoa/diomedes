@@ -211,7 +211,7 @@ async function launchInstallerHandoff(artifact, facts) {
     throw new Error('Close-and-install runs on the packaged Windows app only.');
   if (!(await readInstallMarker(installRoot ?? installedRootFrom(execPath), { fs: fsImpl })))
     throw new Error(
-      'This copy is not the installed Diomedes application, so it cannot install in place. ' +
+      'This copy is not the installed Nectovia application, so it cannot install in place. ' +
         'Download the update from the release page instead.',
     );
   if (!ownedUpdatesDir || !dataDir) throw new Error('The update staging directory is unavailable.');
@@ -219,7 +219,7 @@ async function launchInstallerHandoff(artifact, facts) {
   // Claim the version before any async work so two admissions cannot both hand off.
   const descriptor = parseInstallArtifact(artifact);
   if (facts.handoffs.has(descriptor.version))
-    throw new Error('That update has already been handed off. Diomedes will close to finish it.');
+    throw new Error('That update has already been handed off. Nectovia will close to finish it.');
   facts.handoffs.set(descriptor.version, 'preparing');
   try {
     const parsed = await verifyStagedInstaller(artifact, {

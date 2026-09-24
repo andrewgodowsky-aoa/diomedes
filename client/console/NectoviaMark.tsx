@@ -21,8 +21,9 @@ export const TRAIL_MIN_SIZE = 18;
  * travelling point settles onto it (Wake.tsx). It is a registration point, not
  * a drawn shape, so it paints nothing and the approved drawing stays exact.
  *
- * Mark.tsx (the Diomedes spear) is still the desktop icon's source and is not
- * drawn in the UI any more.
+ * The desktop app icon draws this geometry in the site favicon's fixed colours
+ * (scripts/app-icon.mjs; tests/app-icon.test.ts holds it to this file).
+ * Mark.tsx, the Diomedes spear, is no longer drawn anywhere.
  */
 export function NectoviaMark({ word = true, size = 20 }: NectoviaMarkProps) {
   return (
