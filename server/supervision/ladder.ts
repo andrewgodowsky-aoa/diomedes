@@ -69,6 +69,13 @@ export interface LadderContext {
   readonly live: boolean;
   /** Every supervision record on the project, oldest first. */
   readonly records: readonly SupervisionRecord[];
+  /**
+   * The run and the runs it continues without a person in between: a run a supervision
+   * correction started (a queued correction becomes the next run) shares its origin's bound,
+   * so a correction can never start a chain of runs that each get a fresh one. Defaults to
+   * this run alone.
+   */
+  readonly lineage?: readonly string[];
   /** The project's Needs, to read whether an escalation is still open and how it was answered. */
   readonly needs: readonly Pick<Need, 'id' | 'state' | 'supervision'>[];
 }
@@ -120,9 +127,10 @@ export function nextStep(finding: DriftFinding, context: LadderContext): LadderS
     };
   }
   const bound = correctionBound(finding.code);
+  const lineage = new Set(context.lineage ?? [context.sessionId]);
   const corrections = context.records.filter(
     (record) =>
-      record.sessionId === context.sessionId &&
+      lineage.has(record.sessionId) &&
       record.code === finding.code &&
       record.action === 'correct',
   ).length;

@@ -347,3 +347,111 @@ test('a run inside its selected folder, or with no selected source, is not drift
   );
   expect(await records(session.id)).toEqual([]);
 });
+
+/** A task with no selected source, a finished first run Verified, and a second run started. */
+async function regressingRun(): Promise<{ first: string; second: string; task: string }> {
+  const created = await request(`/projects/${projectId}/tasks`, 'POST', {
+    name: 'Add the sample notes',
+    description: 'Add the sample notes',
+  });
+  const task = created.data.id as string;
+  const run = async () => {
+    const started = await request(`/projects/${projectId}/work/start`, 'POST', {
+      protocolVersion: 1,
+      commandId: crypto.randomUUID(),
+      taskId: task,
+      route: 'sample',
+    });
+    expect(started.status).toBe(200);
+    const id = (started.data as Session).id;
+    const asked = await until(
+      (r) => r.needs.some((n) => n.sessionId === id && n.state === 'open'),
+      'the notes request',
+    );
+    const notes = asked.needs.find((n) => n.sessionId === id && n.state === 'open')!;
+    await request(`/projects/${projectId}/needs/${notes.id}/resolve`, 'POST', {
+      resolution: 'go-ahead',
+    });
+    return id;
+  };
+  const first = await run();
+  await until((r) => r.sessions.find((s) => s.id === first)?.state === 'done', 'the first run');
+  expect(
+    (
+      await request(`/projects/${projectId}/tasks/${task}/acceptance`, 'PUT', {
+        checks: [{ id: 'plan', kind: 'file-exists', path: 'Reopening plan.md' }],
+      })
+    ).status,
+  ).toBe(200);
+  const verified = await request(`/projects/${projectId}/sessions/${first}/verification`, 'POST', {});
+  expect(verified.data).toMatchObject({ state: 'verified' });
+  const second = await run();
+  return { first, second, task };
+}
+
+test('a correction steers the running turn where the route can, labelled as Diomedes supervision', async () => {
+  await request(`/projects/${projectId}/controls/fixture`, 'PUT', { enabled: true });
+  const { first, second } = await regressingRun();
+  const done = await until(
+    (r) =>
+      r.sessions.find((s) => s.id === second)?.state === 'done' &&
+      (r.supervision ?? []).some((rec) => rec.sessionId === second),
+    'the second run to finish supervised',
+  );
+  const [correction] = (done.supervision ?? []).filter((rec) => rec.sessionId === second);
+  expect(correction).toMatchObject({
+    action: 'correct',
+    code: 'verification-regression',
+    issueKey: `verification:${first}`,
+    severity: 'warning',
+    attempt: { n: 1, of: 1 },
+    control: { control: 'steer', outcome: 'applied' },
+  });
+  expect(correction.message).toBe(
+    `[Diomedes supervision] It changed Reopening plan.md that an earlier run had Verified. Reopening plan.md was Verified before this run changed it. Leave verified files as they were unless the task asks for the change.`,
+  );
+  const receipt = done.controlReceipts!.find((r) => r.commandId === correction.control!.commandId)!;
+  expect(receipt).toMatchObject({
+    control: 'steer',
+    requestedBy: { actor: 'diomedes', via: 'supervision', recordId: correction.id },
+    performedBy: { kind: 'engine', engine: 'control-fixture' },
+  });
+  const run = done.sessions.find((s) => s.id === second)!;
+  expect(run.log.some((line) => line.sentence === `Steered while running: ${correction.message}`)).toBe(
+    true,
+  );
+  expect(
+    done.history.some(
+      (h) => h.actor === 'diomedes' && h.sentence.startsWith('Diomedes supervision steered'),
+    ),
+  ).toBe(true);
+  // No escalation: one correction was enough for the ladder, and nothing was asked of you.
+  expect(done.needs.filter((n) => n.supervision)).toEqual([]);
+});
+
+test('where the route cannot steer, the correction is queued in supervision’s name for after the turn', async () => {
+  const { second, task } = await regressingRun();
+  const queued = await until(
+    (r) => (r.followUps ?? []).some((f) => f.queuedBy === 'diomedes-supervision'),
+    'the queued correction',
+  );
+  const [correction] = (queued.supervision ?? []).filter((rec) => rec.sessionId === second);
+  expect(correction).toMatchObject({ action: 'correct', control: { control: 'queue', outcome: 'queued' } });
+  const followUp = queued.followUps!.find((f) => f.queuedBy === 'diomedes-supervision')!;
+  expect(followUp).toMatchObject({ taskId: task, waitsFor: 'turn', queuedDuringSessionId: second });
+  expect(followUp.text).toBe(correction.message);
+  expect(
+    queued.history.some(
+      (h) => h.actor === 'diomedes' && h.sentence.startsWith('Diomedes supervision queued a correction'),
+    ),
+  ).toBe(true);
+  // When the turn ends the correction is sent as the next run, through ordinary admission.
+  const sent = await until(
+    (r) =>
+      r.followUps!.some((f) => f.id === followUp.id && f.state === 'delivered') &&
+      r.history.some((h) => h.sentence.startsWith('Diomedes sent its supervision correction')),
+    'the correction to be delivered',
+  );
+  const next = sent.followUps!.find((f) => f.id === followUp.id)!.deliveredSessionId!;
+  expect(sent.sessions.find((s) => s.id === next)!.inputs?.instruction).toBe(correction.message);
+});

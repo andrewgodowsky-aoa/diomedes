@@ -152,6 +152,7 @@ export class SupervisionService {
       const step = nextStep(finding, {
         sessionId,
         taskId: session.taskId,
+        lineage: this.lineage(projectId, sessionId),
         live: isLive(session),
         records: state.supervision ?? [],
         needs: state.needs,
@@ -160,6 +161,21 @@ export class SupervisionService {
       created.push(await this.act(projectId, session, finding, step));
     }
     return created;
+  }
+
+  /** This run and the runs before it that only a supervision correction started. */
+  private lineage(projectId: string, sessionId: string): string[] {
+    const followUps = this.store.state(projectId).followUps ?? [];
+    const chain = [sessionId];
+    for (;;) {
+      const started = followUps.find(
+        (item) =>
+          item.queuedBy === 'diomedes-supervision' && item.deliveredSessionId === chain.at(-1),
+      );
+      if (!started?.queuedDuringSessionId || chain.includes(started.queuedDuringSessionId))
+        return chain;
+      chain.push(started.queuedDuringSessionId);
+    }
   }
 
   private base(
