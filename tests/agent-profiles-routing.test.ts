@@ -326,6 +326,15 @@ describe('routing preferences and fallback', () => {
     expect(reason(fine.profileId)).toMatchObject({ available: true, reason: null });
   });
 
+  test('a route that is on but not connected is unavailable before admission, not at dispatch', async () => {
+    await request('/settings', 'PUT', { services: { codex: true, opencode: true } });
+    const unconnected = await profile({ name: 'Unconnected', engine: 'opencode', model: 'glm-9' });
+    const { data } = await request(`/projects/${projectId}/agent-profiles`);
+    expect(
+      data.profiles.find((item: { profileId: string }) => item.profileId === unconnected.profileId),
+    ).toMatchObject({ available: false, reason: 'OpenCode is not connected in AI setup.' });
+  });
+
   test('a thread that chose its own model or WorkStyle is not overridden by a project list', () => {
     expect(threadChoosesItsOwnModel(null)).toBe(false);
     expect(

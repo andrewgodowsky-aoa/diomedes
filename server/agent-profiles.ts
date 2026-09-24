@@ -339,6 +339,13 @@ export class AgentProfileService {
       return `${revision.engine} is not a route this build has.`;
     if (this.store.settings.services?.[revision.engine] !== true)
       return `${route} is off in Settings > Engines.`;
+    // Every route but Codex dispatches through the account AI setup connected; without
+    // one the run would be refused after admission, past the point a fallback could help.
+    if (
+      revision.engine !== 'codex' &&
+      typeof this.store.settings.services?.[`${revision.engine}AccountRoute`] !== 'string'
+    )
+      return `${route} is not connected in AI setup.`;
     const catalog = engineCatalog(revision.engine);
     // An engine that reports its list is held to it. One that does not is sent the
     // model as named, and the runtime's own report is what the run records.
