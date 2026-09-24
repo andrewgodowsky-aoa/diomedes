@@ -75,6 +75,26 @@ describe('semver, the part packs use', () => {
     expect(maxSatisfying(['1.0.0', '1.4.0', '2.0.0', '1.3.9'], '^1.0.0')).toBe('1.4.0');
     expect(maxSatisfying(['2.0.0'], '^1.0.0')).toBeNull();
   });
+
+  test('prerelease precedence follows semver 2.0: numeric identifiers numerically, below alphanumeric, fewer fields first', () => {
+    const chain = [
+      '1.0.0-1',
+      '1.0.0-2',
+      '1.0.0-10',
+      '1.0.0-alpha',
+      '1.0.0-alpha.1',
+      '1.0.0-alpha.beta',
+      '1.0.0-beta',
+      '1.0.0-beta.2',
+      '1.0.0-beta.11',
+      '1.0.0-rc.1',
+      '1.0.0',
+    ];
+    for (let i = 1; i < chain.length; i++)
+      expect(compareVersions(chain[i], chain[i - 1]), `${chain[i]} > ${chain[i - 1]}`).toBeGreaterThan(0);
+    expect(compareVersions('1.0.0-beta.10', '1.0.0-beta.10')).toBe(0);
+    expect(maxSatisfying(['1.0.0-beta.2', '1.0.0-beta.10'], '>=1.0.0-beta.1')).toBe('1.0.0-beta.10');
+  });
 });
 
 describe('the manifest schema', () => {
@@ -177,6 +197,30 @@ describe('the manifest schema', () => {
       canonicalPackBytes(a),
     );
     expect(canonicalJson({ b: 1, a: [2, { d: 1, c: 2 }] })).toBe('{"a":[2,{"c":2,"d":1}],"b":1}');
+  });
+
+  test('text with leading or trailing whitespace is refused, not trimmed, so the digest covers what was written', () => {
+    expect(manifestProblems(body({ name: 'Bookkeeping ' }), false).join(' ')).toContain('name');
+    expect(manifestProblems(body({ publisher: { id: 'acme', name: ' Acme' } }), false).join(' ')).toContain(
+      'publisher.name',
+    );
+    const parsed = packManifestBodySchema.parse(body());
+    expect(canonicalPackBytes(parsed)).toBe(canonicalPackBytes(body()));
+  });
+
+  test.each(['CON', 'fixtures/nul.txt', 'aux.md', 'com1', 'docs/LPT9.txt', 'prn', 'notes.', 'fixtures./a.md'])(
+    'refuses the payload path %s, which Windows reads as a device or renames',
+    (file) => {
+      const problems = manifestProblems(body({ files: [{ path: file, sha256: 'a'.repeat(64), bytes: 1 }] }), false);
+      expect(problems.join(' ')).toContain('files');
+    },
+  );
+
+  test('ordinary names that only start like a device name are accepted', () => {
+    const files = ['console.md', 'nullable.csv', 'auxiliary/com10x.md', 'fixtures/location-{{location.index}}.csv'];
+    expect(
+      manifestProblems(body({ files: files.map((path) => ({ path, sha256: 'a'.repeat(64), bytes: 1 })) }), false),
+    ).toEqual([]);
   });
 });
 
