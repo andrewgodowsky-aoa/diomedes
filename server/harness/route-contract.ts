@@ -138,6 +138,43 @@ export const ROUTE_CONTRACTS: Record<string, AdapterRouteContract> = Object.free
     'native-sign-in',
     '2.1.252',
   ),
+  'opencode-session': contract(
+    'opencode-session',
+    'external-session',
+    { id: 'opencode', version: '1.18.4', protocolVersion: 'http+sse' },
+    commands({
+      start: native(
+        'Opt-in kept `opencode serve` process and OpenCode session; each turn has a fenced RunService step.',
+      ),
+      'follow-up': native('Sequential messages go to the same OpenCode session after a known idle.'),
+      steer: host(
+        'Queued by Diomedes while a turn runs and sent as the next turn once it finishes; never injected mid-turn, and dropped with a stated reason if the turn stops.',
+      ),
+      interrupt: native(
+        'POST /session/:id/abort, then idle is confirmed from /session/status; only a confirmed idle session stays resumable.',
+      ),
+      resume: native(
+        'A later server finds the saved session id in OpenCode’s own store; a session OpenCode no longer has starts fresh and the record says so.',
+      ),
+      retry: host(
+        'Duplicate command IDs replay durable outcomes; unknown dispatches refuse redispatch.',
+      ),
+      fork: native(
+        'POST /session/:id/fork from a saved idle session starts a child run; no hidden state is copied into the run record.',
+      ),
+      status: host('Durable run state and transport presence; no provider status is invented.'),
+      reconcile: unsupported(
+        'Unknown outcomes remain parked; no provider reconciliation is attempted.',
+      ),
+      close: native(
+        'Ends the owned server; the OpenCode session stays in OpenCode’s store for an explicit resume.',
+      ),
+    }),
+    { transientPreview: 'text-delta', durableEvents: 'run-record' },
+    { source: 'runtime-reported' },
+    'native-sign-in',
+    '1.18.4',
+  ),
   // --- the harness-side routes: the run service is the mechanism ------------
   'native-fixture': contract(
     'native-fixture',
