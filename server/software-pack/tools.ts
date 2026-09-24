@@ -40,6 +40,7 @@ import {
   listWorktrees,
   newFileDiff,
   readRepository,
+  realNative,
   repositoryProblem,
   worktreeDirty,
 } from './git.js';
@@ -308,8 +309,8 @@ export function registerSoftwareTools(tools: ToolRegistry, host: SoftwareToolHos
       }
       const stat = await fs.lstat(found.absolute).catch(() => null);
       if (!stat?.isDirectory()) return refused('worktree_missing', `${relative} is not there. Nothing was changed.`);
-      const real = await fs.realpath(found.absolute);
-      const known = await Promise.all((await listWorktrees(root)).map((item) => fs.realpath(item).catch(() => item)));
+      const real = await realNative(found.absolute);
+      const known = await Promise.all((await listWorktrees(root)).map((item) => realNative(item).catch(() => item)));
       const fold = (value: string) => (process.platform === 'linux' ? value : value.toLowerCase());
       if (!known.some((item) => fold(path.resolve(item)) === fold(real)))
         return refused('not_a_worktree', `${relative} is not a worktree of this repository. Nothing was changed.`);

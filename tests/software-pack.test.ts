@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { execFileSync } from 'node:child_process';
+import { realpathSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -83,7 +84,7 @@ const SCRIPTS: Record<string, string> = {
 
 beforeEach(async () => {
   spawned.calls = [];
-  temp = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'diomedes-p07-')));
+  temp = realpathSync.native(await fs.mkdtemp(path.join(os.tmpdir(), 'diomedes-p07-')));
   folder = path.join(temp, 'repo');
   await fs.mkdir(folder);
   git(folder, 'init', '-q', '-b', 'main');
@@ -430,6 +431,22 @@ describe('declared commands', () => {
     const asked = await ask(listed.id);
     expect([asked.status, asked.data.code]).toEqual([400, 'command_shell_refused']);
     expect(await app.locals.harness.list(projectId)).toEqual([]);
+  });
+
+  test('a run a stop interrupted is said to be unconfirmed, is never re-run, and does not block the next one', async () => {
+    await activate();
+    const id = await declared('node pass.js');
+    const asked = await ask(id);
+    // What a stop between Go ahead and the result leaves behind: a record that says running,
+    // which no job in this process is carrying out.
+    const state = store().state(projectId);
+    state.softwarePack!.runs.at(-1)!.state = 'running';
+    await store().persist(state);
+    const shown = await view();
+    expect(shown.runs[0]).toMatchObject({ id: asked.data.id, state: 'uncertain' });
+    expect(shown.runs[0]!.detail).toMatch(/not confirmed\. It will not run it again on its own\./);
+    await expect(fs.access(path.join(folder, 'ran-pass.txt'))).rejects.toThrow();
+    expect((await ask(id)).data.state).toBe('waiting-approval');
   });
 
   test('a declaration outside the project folder is refused', async () => {

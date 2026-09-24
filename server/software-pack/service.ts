@@ -108,6 +108,8 @@ export class SoftwarePackService {
   readonly tools = new ToolRegistry();
   private readonly owner = identifier('software-pack-');
   private readonly jobs = new Set<Promise<void>>();
+  /** Records whose run this process is carrying out. A `running` record not here was left by a stop. */
+  private readonly live = new Set<string>();
 
   constructor(
     private readonly store: Store,
@@ -135,6 +137,28 @@ export class SoftwarePackService {
   /** Wait for every command or worktree change started here to settle. For tests and shutdown. */
   async settled() {
     while (this.jobs.size) await Promise.allSettled([...this.jobs]);
+  }
+
+  /**
+   * A command or worktree change this process is not carrying out, yet recorded as
+   * running, was interrupted by a stop. H12 already treats its effect as uncertain; the
+   * record says so, and nothing re-runs it. Call under `store.locked`.
+   */
+  private async settleInterrupted(projectId: string) {
+    const state = this.store.state(projectId);
+    const record = state.softwarePack;
+    if (!record) return;
+    const at = now();
+    let changed = false;
+    for (const item of [...record.runs, ...record.worktreeRequests]) {
+      if (item.state !== 'running' || this.live.has(item.id)) continue;
+      item.state = 'uncertain';
+      item.endedAt = at;
+      item.detail = 'Diomedes stopped while this was running, so what it did is not confirmed. It will not run it again on its own.';
+      this.store.addEntry(state, { actor: 'diomedes', kind: 'pack-interrupted', origin: SOFTWARE_PACK_ORIGIN, sentence: item.detail });
+      changed = true;
+    }
+    if (changed) await this.store.persist(state);
   }
 
   private record(state: ProjectState): SoftwarePackRecord {
@@ -209,6 +233,7 @@ export class SoftwarePackService {
 
   async view(projectId: string): Promise<SoftwarePackView> {
     this.assertActive(projectId);
+    await this.store.locked(() => this.settleInterrupted(projectId));
     const repository = await this.repository(projectId);
     const state = this.store.state(projectId);
     const record = state.softwarePack ?? emptySoftwarePackRecord();
@@ -373,6 +398,7 @@ export class SoftwarePackService {
       const command = this.runnable(state).find((item) => item.id === id);
       if (!command) throw new ApiError(404, 'This command is not declared for this project.', { code: 'unknown_command' });
       if (!command.parsed.ok) throw new ApiError(400, command.parsed.message, { code: command.parsed.code });
+      await this.settleInterrupted(projectId);
       const pending = (state.softwarePack?.runs ?? []).find((run) => run.state === 'waiting-approval' || run.state === 'running');
       return { command, pending };
     });
@@ -441,6 +467,7 @@ export class SoftwarePackService {
         found.detail = 'You declined. Nothing ran.';
       } else {
         found.state = 'running';
+        this.live.add(found.id);
         found.startedAt = found.decidedAt;
         found.historyMark = [...state.history].reverse().find((item) => item.files.length > 0)?.id ?? null;
         found.detail = `Running ${found.command}${where}.`;
@@ -481,6 +508,7 @@ export class SoftwarePackService {
     await this.store.locked(async () => {
       const state = this.store.state(projectId);
       const found = state.softwarePack?.runs.find((run) => run.id === entry.id);
+      this.live.delete(entry.id);
       if (!found) return;
       if (outcome) {
         found.state = outcome.outcome === 'refused' ? 'error' : outcome.outcome;
@@ -530,6 +558,7 @@ export class SoftwarePackService {
       const state = this.store.state(projectId);
       if (taskId && !state.tasks.some((task) => task.id === taskId && !task.deletedAt))
         throw new ApiError(404, 'This task was not found.');
+      await this.settleInterrupted(projectId);
       const record = state.softwarePack ?? emptySoftwarePackRecord();
       if (record.worktreeRequests.some((item) => item.state === 'waiting-approval' || item.state === 'running'))
         throw new ApiError(409, 'Another worktree change is waiting. Answer it first.', { code: 'worktree_pending' });
@@ -602,6 +631,7 @@ export class SoftwarePackService {
         found.detail = 'You declined. Nothing changed.';
       } else {
         found.state = 'running';
+        this.live.add(found.id);
         found.detail = `${found.operation === 'add' ? 'Adding' : 'Removing'} ${found.path}.`;
       }
       this.store.addEntry(state, {
@@ -640,6 +670,7 @@ export class SoftwarePackService {
       const state = this.store.state(projectId);
       const record = this.record(state);
       const found = record.worktreeRequests.find((item) => item.id === request.id);
+      this.live.delete(request.id);
       if (!found) return;
       found.endedAt = now();
       if (!outcome) {

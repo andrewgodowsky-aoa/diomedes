@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import express from 'express';
 import { execFileSync } from 'node:child_process';
+import { realpathSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createServer, type Server } from 'node:http';
@@ -36,7 +37,7 @@ const section = (page: Page) => pane(page).getByRole('region', { name: 'Reposito
 
 test.beforeAll(async () => {
   await fs.mkdir(path.resolve('test-results'), { recursive: true });
-  const root = await fs.realpath(await fs.mkdtemp(path.resolve('test-results/p07-software-')));
+  const root = realpathSync.native(await fs.mkdtemp(path.resolve('test-results/p07-software-')));
   repo = path.join(root, 'compiler');
   await fs.mkdir(repo);
   git('init', '-q', '-b', 'main');

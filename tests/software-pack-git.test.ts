@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import { execFileSync } from 'node:child_process';
+import { realpathSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -21,8 +22,9 @@ import { WORKTREE_FOLDER, parseCommandLine } from '../shared/software-pack.js';
 
 let temp: string;
 beforeEach(async () => {
-  // Resolved: macOS temp folders sit behind a link, and the path guard refuses links.
-  temp = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'diomedes-p07-git-')));
+  // Resolved natively: macOS temp folders sit behind a link, which the path guard refuses, and
+  // a Windows runner's temp folder is spelled with an 8.3 alias.
+  temp = realpathSync.native(await fs.mkdtemp(path.join(os.tmpdir(), 'diomedes-p07-git-')));
 });
 afterEach(async () => {
   await fs.rm(temp, { recursive: true, force: true });

@@ -21,7 +21,7 @@
  * Nothing here decides authority. The tools in `tools.ts` call these, and
  * the writes among them wait for an exact approval first.
  */
-import fs from 'node:fs/promises';
+import { realpath } from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import {
@@ -59,6 +59,15 @@ export interface GitResult {
   stderr: string;
 }
 
+/**
+ * The real path as the operating system spells it. Unlike `fs.promises.realpath`
+ * it expands a Windows 8.3 alias (`RUNNER~1`), which is how git spells a folder.
+ */
+export const realNative = (value: string) =>
+  new Promise<string>((resolve, reject) =>
+    realpath.native(value, (error, resolved) => (error ? reject(error) : resolve(resolved))),
+  );
+
 export class GitUnavailable extends Error {
   constructor() {
     super('Git is not installed or not on the search path, so the repository cannot be read.');
@@ -69,7 +78,7 @@ export class GitUnavailable extends Error {
 async function gitEnv(root: string): Promise<Record<string, string>> {
   let real = root;
   try {
-    real = await fs.realpath(root);
+    real = await realNative(root);
   } catch {
     // The funnel below refuses a missing root with its own reason.
   }
@@ -102,7 +111,8 @@ export async function git(
 
 const sameFolder = async (a: string, b: string) => {
   try {
-    const [x, y] = await Promise.all([fs.realpath(a), fs.realpath(b)]);
+    // Native: it expands a Windows 8.3 alias (RUNNER~1) the way git's own answer is spelled.
+    const [x, y] = await Promise.all([realNative(a), realNative(b)]);
     return process.platform === 'win32' || process.platform === 'darwin'
       ? x.toLowerCase() === y.toLowerCase()
       : x === y;
