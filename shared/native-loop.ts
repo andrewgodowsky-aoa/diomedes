@@ -27,6 +27,7 @@
 import type { OriginSnapshot } from './attribution.js';
 import type { ContextAccount } from './context-accounting.js';
 import type { HandoffEnvelope } from './handoff.js';
+import type { TeamConfig, TeamRetry } from './team-delegation.js';
 import type {
   HarnessBudget,
   HarnessRun,
@@ -113,6 +114,10 @@ export interface LoopRunInput {
   /** The route a bounded sub-task may be handed to, chosen by the person. Null offers no delegation. */
   readonly delegate: { readonly route: string; readonly model: string | null; readonly accountRoute: string | null } | null;
   readonly sources: readonly string[];
+  /** H14: the workers and advisor the person admitted this lead with. Absent or null offers none. */
+  readonly team?: TeamConfig | null;
+  /** H14: set on a lead started by an H08 Retry, naming the attempt it runs again. */
+  readonly retryOf?: TeamRetry | null;
 }
 
 /** What a delegate child run was admitted with. */
@@ -149,7 +154,8 @@ export interface LoopPlanRecord {
 export interface LoopObservationRecord {
   readonly v: 1;
   readonly turn: number;
-  readonly action: 'tool' | 'delegate' | 'refused';
+  /** `workers` and `advice` are H14's: a lead's assignment and a question to its advisor. */
+  readonly action: 'tool' | 'delegate' | 'refused' | 'workers' | 'advice';
   readonly tool: string;
   readonly ok: boolean;
   /** sha-256 of the full canonical output, so the excerpt can be tied to the step record. */
@@ -187,7 +193,8 @@ export interface LoopFinishRecord {
   readonly account: ContextAccount | null;
 }
 
-export type LoopStopReason = 'turn-limit' | 'budget';
+/** `worker`: a worker the lead waited for failed or died (H14); the person retries the lead. */
+export type LoopStopReason = 'turn-limit' | 'budget' | 'worker';
 export interface LoopStopRecord {
   readonly v: 1;
   readonly reason: LoopStopReason;
@@ -207,7 +214,7 @@ export interface LoopModel {
 
 export interface LoopTurnView {
   readonly turn: number;
-  readonly decision: 'tool' | 'delegate' | 'finish' | 'refused' | 'deciding';
+  readonly decision: 'tool' | 'delegate' | 'workers' | 'advice' | 'finish' | 'refused' | 'deciding';
   readonly tool: string | null;
   readonly actionState: StepState | null;
   readonly approval: boolean;
@@ -306,6 +313,8 @@ export function loopView(run: HarnessRun, children: readonly HarnessRun[] = []):
     const tool = byId.get(`tool:${turn}`);
     const handoffStep = byId.get(`handoff:${turn}`);
     const delegate = byId.get(`delegate:${turn}`);
+    const workers = byId.get(`workers:${turn}`);
+    const advise = byId.get(`advise:${turn}`);
     const observation = record<LoopObservationRecord>(byId.get(`observe:${turn}`));
     const finished = record<LoopFinishRecord>(byId.get(`finish:${turn}`));
     if (finished) finish = finished;
@@ -313,12 +322,16 @@ export function loopView(run: HarnessRun, children: readonly HarnessRun[] = []):
       ? 'finish'
       : handoffStep || delegate
         ? 'delegate'
-        : tool
+        : workers
+          ? 'workers'
+          : advise
+            ? 'advice'
+            : tool
           ? 'tool'
           : observation?.action === 'refused'
             ? 'refused'
             : 'deciding';
-    const action = tool ?? delegate ?? null;
+    const action = tool ?? delegate ?? workers ?? advise ?? null;
     turns.push({
       turn,
       decision,
@@ -355,7 +368,9 @@ export function loopView(run: HarnessRun, children: readonly HarnessRun[] = []):
     }
   }
   const stop =
-    record<LoopStopRecord>(byId.get('stop:turns')) ?? record<LoopStopRecord>(byId.get('stop:budget'));
+    record<LoopStopRecord>(byId.get('stop:turns')) ??
+    record<LoopStopRecord>(byId.get('stop:budget')) ??
+    record<LoopStopRecord>(byId.get('stop:worker'));
   const context = record<LoopContextRecord>(byId.get('loop:context'));
   const waitingStep = run.steps.find((step) => step.state === 'waiting_approval');
   const limit = typeof input.maxTurns === 'number' ? input.maxTurns : LOOP_LIMITS.defaultTurns;
@@ -460,7 +475,12 @@ export function loopOutcome(
       if (view.stop)
         return {
           state: 'stopped-limit',
-          label: view.stop.reason === 'turn-limit' ? 'Stopped: turn limit reached' : 'Stopped: budget reached',
+          label:
+            view.stop.reason === 'turn-limit'
+              ? 'Stopped: turn limit reached'
+              : view.stop.reason === 'worker'
+                ? 'Stopped: a worker did not answer'
+                : 'Stopped: budget reached',
           sentence: view.stop.detail,
         };
       return {

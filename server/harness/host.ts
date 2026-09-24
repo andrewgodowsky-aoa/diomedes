@@ -11,6 +11,7 @@ import { HarnessError } from './policy.js';
 import { HarnessBridge, localHarnessPrincipal } from './bridge.js';
 import { ScriptedModelAdapter } from './fixture-adapter.js';
 import {
+  CHILD_CAPABILITIES,
   NATIVE_LOOP,
   NATIVE_LOOP_DELEGATE,
   createLoopProcedure,
@@ -412,7 +413,7 @@ export function createHarnessHost({
     (MODEL_SESSION_CAPABILITIES as readonly string[]).includes(capabilityId);
   // H13 loop runs and their delegates: the admitted route must be on and still selected.
   const loopAuthorize = loopEgressAuthorizer(() => store.settings.services);
-  const loopRun = (capabilityId: string) => capabilityId === NATIVE_LOOP.id || capabilityId === NATIVE_LOOP_DELEGATE.id;
+  const loopRun = (capabilityId: string) => capabilityId === NATIVE_LOOP.id || CHILD_CAPABILITIES.includes(capabilityId);
   const runs: HostRunService = new HostRunService(files, {
     clock: Date.now,
     policyVersion: HARNESS_POLICY_VERSION,
@@ -660,7 +661,7 @@ export function createHarnessHost({
             (run) =>
               run.capabilityId !== CLAUDE_SESSION_CAPABILITY.id &&
               run.capabilityId !== OPENCODE_SESSION_CAPABILITY.id &&
-              run.capabilityId !== NATIVE_LOOP_DELEGATE.id &&
+              !CHILD_CAPABILITIES.includes(run.capabilityId) &&
               !modelRun(run.capabilityId),
           ),
         );

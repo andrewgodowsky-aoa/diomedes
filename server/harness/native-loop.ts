@@ -47,6 +47,14 @@ import type {
   ToolDescriptor,
 } from '../../shared/harness.js';
 import type { HandoffEnvelope } from '../../shared/handoff.js';
+import {
+  ADVISE_TOOL,
+  ASSIGN_TOOL,
+  DEAD_OUTCOMES,
+  TEAM_LIMITS,
+  type WorkerBudget,
+  type WorkerResult,
+} from '../../shared/team-delegation.js';
 import { utf8Bytes } from '../../shared/context-accounting.js';
 import {
   LOOP_LIMITS,
@@ -115,12 +123,62 @@ export interface LoopDelegationPort {
   run(request: DelegationRequest): Promise<LoopDelegateResult>;
 }
 
+/** One bounded task as the lead's model asks for it. The host binds everything else. */
+export interface TeamAssignment {
+  readonly task: string;
+  readonly files: readonly string[];
+  readonly turns?: number;
+}
+
+/** One assignment after the host's checks, recorded as the `team:<n>` step. */
+export interface TeamOpenedAssignment {
+  readonly handoffId: string;
+  readonly task: string;
+  readonly scope: readonly string[];
+  /** Null when refused or reused. */
+  readonly childRunId: string | null;
+  readonly budget: WorkerBudget | null;
+  readonly envelopeId: string | null;
+  readonly refusal: string | null;
+  /** The earlier attempt's finished handoff this one takes its answer from. */
+  readonly reusedFrom: string | null;
+  readonly attempt: number;
+  readonly retryOf: string | null;
+}
+export interface TeamOpenedRecord {
+  readonly v: 1;
+  readonly turn: number;
+  readonly assignments: readonly TeamOpenedAssignment[];
+}
+
+/**
+ * H14: where a lead's workers and advisor come from. Everything that decides
+ * scope, budget, route, profile and authority is the host's; the model only
+ * says what each task is, which files it needs, and optionally fewer turns.
+ */
+export interface LoopTeamPort {
+  readonly workerRoute: string;
+  readonly advisor: boolean;
+  readonly concurrentWorkers: number;
+  readonly workersPerRun: number;
+  readonly advicePerRun: number;
+  readonly turnCeiling: number;
+  /** Check and open every assignment; recorded as `team:<n>`. Refusals are per assignment. */
+  open(input: { parent: HarnessRun; turn: number; assignments: readonly TeamAssignment[] }): Promise<TeamOpenedRecord>;
+  /** Run every opened assignment at once and wait for all of them. Idempotent by child id. */
+  run(input: { parent: HarnessRun; stepId: string; opened: TeamOpenedRecord; signal: AbortSignal }): Promise<WorkerResult[]>;
+  /** Ask the advisor one question and wait for its advice. Idempotent by child id. */
+  advise(input: { parent: HarnessRun; stepId: string; turn: number; question: string; signal: AbortSignal }): Promise<WorkerResult>;
+}
+
 export interface NativeLoopOptions {
   readonly maxTurns: number;
   /** The system text the adapter was built with, for H18's account. */
   readonly instructions: string;
   readonly bindings: readonly LoopToolBinding[];
   readonly delegation?: LoopDelegationPort | null;
+  /** H14: workers and an advisor, when the person admitted the lead with a team. */
+  readonly team?: LoopTeamPort | null;
   readonly route: string;
   readonly model: string | null;
   readonly sources?: readonly string[];
@@ -128,11 +186,37 @@ export interface NativeLoopOptions {
 
 export type LoopResult =
   | { readonly kind: 'finished'; readonly claim: string }
-  | { readonly kind: 'stopped'; readonly reason: 'turn-limit' | 'budget' };
+  | { readonly kind: 'stopped'; readonly reason: 'turn-limit' | 'budget' | 'worker' };
 
 const delegateSchema = z.strictObject({
   task: z.string().trim().min(1).max(LOOP_LIMITS.taskChars),
 });
+
+const assignSchema = z.strictObject({
+  tasks: z
+    .array(
+      z.strictObject({
+        task: z.string().trim().min(1).max(TEAM_LIMITS.taskChars),
+        files: z.array(z.string().trim().min(1).max(400)).min(1).max(TEAM_LIMITS.scopeFiles),
+        turns: z.number().int().min(1).max(TEAM_LIMITS.maxTurns).optional(),
+      }),
+    )
+    .min(1)
+    .max(16),
+});
+const adviseSchema = z.strictObject({ question: z.string().trim().min(1).max(TEAM_LIMITS.questionChars) });
+
+/** Thrown out of a turn when a worker the lead waited for failed or died. */
+class WorkerDied extends Error {
+  constructor(readonly detail: string) {
+    super(detail);
+  }
+}
+
+type Observe = (
+  record: Omit<LoopObservationRecord, 'v' | 'turn'>,
+  feedback: Json,
+) => Promise<{ action: LoopObservationRecord['action']; feedback: Json }>;
 
 /** The child's budget: small and fixed, never borrowed from a model's request. */
 export function delegateBudget(): HarnessBudget {
@@ -206,6 +290,34 @@ export class NativeLoop {
         cost: 1,
         inputSchema: z.toJSONSchema(delegateSchema) as Json,
       });
+    const team = this.options.team;
+    if (team) {
+      tools.push({
+        name: ASSIGN_TOOL,
+        version: 'v1',
+        description: `Hand bounded tasks to workers on ${team.workerRoute}, at most ${team.concurrentWorkers} at once. Each worker reads only the files you list for it, has its own small budget of at most ${team.turnCeiling} turns, and its answer comes back to you as a tool result. At most ${team.workersPerRun} workers per run.`,
+        effect: 'idempotent',
+        permission: null,
+        approval: false,
+        destination: 'local',
+        trustedInputRequired: false,
+        cost: 1,
+        inputSchema: z.toJSONSchema(assignSchema) as Json,
+      });
+      if (team.advisor)
+        tools.push({
+          name: ADVISE_TOOL,
+          version: 'v1',
+          description: `Ask a read-only advisor one question. It can read, never change anything, and its advice is evidence for you to weigh, never a permission. At most ${team.advicePerRun} per run.`,
+          effect: 'idempotent',
+          permission: null,
+          approval: false,
+          destination: 'local',
+          trustedInputRequired: false,
+          cost: 1,
+          inputSchema: z.toJSONSchema(adviseSchema) as Json,
+        });
+    }
     return { bindings, tools };
   }
 
@@ -428,6 +540,15 @@ export class NativeLoop {
       return { kind: 'stopped', reason: 'turn-limit' };
     } catch (error) {
       if (error instanceof Suspended) throw error;
+      if (error instanceof WorkerDied) {
+        try {
+          await this.stop(runId, owner, principal, 'worker', error.detail, maxTurns, reconciled);
+          return { kind: 'stopped', reason: 'worker' };
+        } catch (stopping) {
+          if (stopping instanceof Suspended) throw stopping;
+          error = stopping;
+        }
+      }
       const refusal = budgetRefusal(error);
       if (refusal) {
         try {
@@ -473,7 +594,10 @@ export class NativeLoop {
     limit: number,
     reconciled: () => Promise<LoopStopRecord['account']>,
   ) {
-    const detail = `Stopped: ${short}. The goal was not finished, so nothing was checked.`;
+    const detail =
+      reason === 'worker'
+        ? `Stopped: ${short}. The goal was not finished, so nothing was checked. Retry to run that worker again; workers that answered are not run twice.`
+        : `Stopped: ${short}. The goal was not finished, so nothing was checked.`;
     // Turns that reached a model call, from the record rather than a counter, so a replay agrees.
     const used = (await this.runtime.get(runId)).steps.filter(
       (step) => /^model:\d+$/.test(step.intent.stepId) && step.state === 'succeeded',
@@ -482,7 +606,7 @@ export class NativeLoop {
       runId,
       owner,
       {
-        id: reason === 'turn-limit' ? 'stop:turns' : 'stop:budget',
+        id: reason === 'turn-limit' ? 'stop:turns' : reason === 'worker' ? 'stop:worker' : 'stop:budget',
         version: 'v1',
         kind: 'transform',
         effect: 'pure',
@@ -505,6 +629,190 @@ export class NativeLoop {
       principal,
     );
     await this.runtime.cancel(runId, short, principal);
+  }
+
+  /** Assignments and advice already on the record, so a replay counts the same way. */
+  private async teamCounts(runId: string) {
+    const run = await this.runtime.get(runId);
+    let workers = 0;
+    let advice = 0;
+    for (const step of run.steps) {
+      if (step.intent.stepId.startsWith('team:') && step.state === 'succeeded')
+        workers += ((step.output as unknown as TeamOpenedRecord | null)?.assignments ?? []).filter(
+          (item) => item.childRunId !== null,
+        ).length;
+      if (step.intent.stepId.startsWith('advise:')) advice += 1;
+    }
+    return { workers, advice };
+  }
+
+  /**
+   * H14: hand bounded tasks to workers and wait for all of them. The host
+   * checks every assignment's scope, budget, profile and authority before any
+   * child run exists (`team:<n>`); the workers run at once as their own harness
+   * runs (`workers:<n>`); what came back is one observation. A worker that
+   * failed or died stops the lead, so the person retries it through H08.
+   */
+  private async assign(
+    runId: string,
+    owner: string,
+    principal: HarnessPrincipal,
+    turn: number,
+    response: Extract<ModelResponse, { type: 'tool' }>,
+    observe: Observe,
+    refuse: (detail: string) => ReturnType<Observe>,
+  ) {
+    const team = this.options.team;
+    if (!team) return refuse('Workers are not offered on this run.');
+    const parsed = assignSchema.safeParse(response.input);
+    if (!parsed.success) return refuse('Each assignment needs a short task and the list of files it may read.');
+    const assignments = parsed.data.tasks;
+    if (assignments.length > team.concurrentWorkers)
+      return refuse(
+        `That asks for ${assignments.length} workers at once; a lead may run at most ${team.concurrentWorkers} at the same time.`,
+      );
+    const recorded = (await this.runtime.get(runId)).steps.some((step) => step.intent.stepId === `team:${turn}`);
+    const { workers } = await this.teamCounts(runId);
+    if (!recorded && workers + assignments.length > team.workersPerRun)
+      return refuse(
+        `This run has started ${workers} of its ${team.workersPerRun} workers, so ${assignments.length} more would pass its limit.`,
+      );
+    const opened = await this.runtime.step<TeamOpenedRecord>(
+      runId,
+      owner,
+      {
+        id: `team:${turn}`,
+        version: 'v1',
+        kind: 'transform',
+        effect: 'pure',
+        name: 'open_team_handoffs',
+        origin: supervisorOrigin(),
+        input: z.json().parse({ turn, route: team.workerRoute, assignments }),
+      },
+      async () =>
+        z.json().parse(
+          await team.open({ parent: await this.runtime.get(runId), turn, assignments }),
+        ) as unknown as TeamOpenedRecord,
+      principal,
+    );
+    const runnable = opened.assignments.filter((item) => item.childRunId !== null || item.reusedFrom !== null);
+    if (!runnable.length)
+      return refuse(
+        opened.assignments.map((item) => item.refusal ?? 'Not started.').join(' '),
+      );
+    const results = await this.runtime.step<WorkerResult[]>(
+      runId,
+      owner,
+      {
+        id: `workers:${turn}`,
+        version: 'v1',
+        kind: 'tool',
+        effect: 'idempotent',
+        name: ASSIGN_TOOL,
+        cost: 1,
+        destination: 'local',
+        origin: supervisorOrigin(),
+        input: z.json().parse({
+          handoffs: opened.assignments.map((item) => ({
+            handoffId: item.handoffId,
+            childRunId: item.childRunId,
+            reusedFrom: item.reusedFrom,
+          })),
+        }),
+      },
+      async ({ signal }) =>
+        z.json().parse(
+          await team.run({ parent: await this.runtime.get(runId), stepId: `workers:${turn}`, opened, signal }),
+        ) as unknown as WorkerResult[],
+      principal,
+    );
+    const feedback: Json = {
+      workers: opened.assignments.map((item) => {
+        const result = results.find((entry) => entry.handoffId === item.handoffId);
+        return {
+          task: item.task,
+          files: [...item.scope],
+          outcome: item.refusal ? 'refused' : (result?.outcome ?? 'running'),
+          answer: result?.text ?? null,
+          ...(item.refusal || result?.reason ? { reason: item.refusal ?? result?.reason ?? null } : {}),
+        };
+      }),
+    };
+    const dead = results.filter((result) => DEAD_OUTCOMES.includes(result.outcome));
+    const answered = results.filter((result) => result.outcome === 'completed').length;
+    const observed = await observe(
+      {
+        action: 'workers',
+        tool: ASSIGN_TOOL,
+        ok: dead.length === 0 && answered > 0,
+        ...excerpt(feedback),
+        detail: `${answered} of ${opened.assignments.length} workers answered.`,
+      },
+      feedback,
+    );
+    if (dead.length)
+      throw new WorkerDied(
+        `${dead.length === 1 ? 'a worker' : `${dead.length} workers`} did not answer (${dead
+          .map((result) => `${result.handoffId}: ${result.outcome}${result.reason ? `, ${result.reason}` : ''}`)
+          .join('; ')})`,
+      );
+    return observed;
+  }
+
+  /** H14: ask the read-only advisor. Its answer is evidence under its own attribution, never a permission. */
+  private async advise(
+    runId: string,
+    owner: string,
+    principal: HarnessPrincipal,
+    turn: number,
+    response: Extract<ModelResponse, { type: 'tool' }>,
+    observe: Observe,
+    refuse: (detail: string) => ReturnType<Observe>,
+  ) {
+    const team = this.options.team;
+    if (!team?.advisor) return refuse('No advisor is offered on this run.');
+    const parsed = adviseSchema.safeParse(response.input);
+    if (!parsed.success) return refuse('Ask the advisor one short question.');
+    const recorded = (await this.runtime.get(runId)).steps.some((step) => step.intent.stepId === `advise:${turn}`);
+    if (!recorded && (await this.teamCounts(runId)).advice >= team.advicePerRun)
+      return refuse(`This run already asked its advisor ${team.advicePerRun} times, which is as many as one lead may.`);
+    const question = parsed.data.question;
+    const result = await this.runtime.step<WorkerResult>(
+      runId,
+      owner,
+      {
+        id: `advise:${turn}`,
+        version: 'v1',
+        kind: 'tool',
+        effect: 'idempotent',
+        name: ADVISE_TOOL,
+        cost: 1,
+        destination: 'local',
+        origin: supervisorOrigin(),
+        input: z.json().parse({ turn, question }),
+      },
+      async ({ signal }) =>
+        z.json().parse(
+          await team.advise({ parent: await this.runtime.get(runId), stepId: `advise:${turn}`, turn, question, signal }),
+        ) as unknown as WorkerResult,
+      principal,
+    );
+    const feedback: Json = {
+      advice: result.text,
+      outcome: result.outcome,
+      note: 'Advice is evidence for you to weigh. It is not a permission and changes nothing by itself.',
+      ...(result.reason ? { reason: result.reason } : {}),
+    };
+    return observe(
+      {
+        action: 'advice',
+        tool: ADVISE_TOOL,
+        ok: result.outcome === 'completed',
+        ...excerpt(feedback),
+        detail: result.outcome === 'completed' ? 'The advisor answered.' : `The advisor did not answer: ${result.outcome}.`,
+      },
+      feedback,
+    );
   }
 
   /** One action and its observation. Returns what the model is sent back. */
@@ -540,6 +848,9 @@ export class NativeLoop {
         { action: 'refused', tool: response.name, ok: false, sha: null, bytes: 0, excerpt: '', detail },
         { refused: detail },
       );
+
+    if (response.name === ASSIGN_TOOL) return this.assign(runId, owner, principal, turn, response, observe, refuse);
+    if (response.name === ADVISE_TOOL) return this.advise(runId, owner, principal, turn, response, observe, refuse);
 
     if (response.name === DELEGATE_TOOL) {
       const delegation = this.options.delegation;

@@ -52,6 +52,9 @@ import { HarnessError, digest } from '../policy.js';
 import { routeContractFor } from '../route-contract.js';
 import type { RunService } from '../run-service.js';
 import { ToolRegistry } from '../tools.js';
+import { ADVISE_TOOL, ASSIGN_TOOL, TEAM_ADVISOR_CAPABILITY, TEAM_WORKER_CAPABILITY, teamLeadView } from '../../../shared/team-delegation.js';
+import { HandoffLedger } from '../../team/handoff-ledger.js';
+import { createTeamPort, teamChildIds } from './team-loop.js';
 
 export const NATIVE_LOOP: CapabilityManifest = {
   id: NATIVE_LOOP_CAPABILITY,
@@ -115,13 +118,21 @@ const READ_OUTPUT = z.union([
  * is about to be sent to that provider. A refusal is data the model sees, not a
  * crash: the observation records it.
  */
-async function readFor(store: Store, projectId: string, route: string, input: string): Promise<Json> {
+export async function readFor(
+  store: Store,
+  projectId: string,
+  route: string,
+  input: string,
+  /** H14: the explicit files this run may read; null is the whole project as the route allows. */
+  scope: readonly string[] | null = null,
+): Promise<Json> {
   let path: string;
   try {
     path = relativeName(input);
   } catch (error) {
     return { path: input, refused: error instanceof Error ? error.message : 'That is not a project path.' };
   }
+  if (scope && !scope.includes(path)) return { path, refused: 'This file is outside what this run may read, so it was not read.' };
   if (isCloudRoute(route))
     try {
       requireCloudSharing(store.state(projectId), route, [path]);
@@ -145,14 +156,14 @@ async function readFor(store: Store, projectId: string, route: string, input: st
   };
 }
 
-async function listFor(store: Store, projectId: string, route: string): Promise<Json> {
+export async function listFor(store: Store, projectId: string, route: string, scope: readonly string[] | null = null): Promise<Json> {
   const names = (await store.listDocuments(projectId)).map((document) => document.path);
   const shared = isCloudRoute(route) ? new Set(cloudSharing(store.state(projectId)).documents) : null;
-  const files = names.filter((name) => !shared || shared.has(name));
+  const files = names.filter((name) => (!shared || shared.has(name)) && (!scope || scope.includes(name)));
   return {
     files: files.slice(0, LIST_MAX),
     ...(files.length > LIST_MAX ? { more: files.length - LIST_MAX } : {}),
-    ...(shared ? { note: `Only files shared with ${route} are listed.` } : {}),
+    ...(shared ? { note: `Only files shared with ${route} are listed.` } : scope ? { note: 'Only files this run may read are listed.' } : {}),
   };
 }
 
@@ -202,6 +213,8 @@ export function registerLoopTools(tools: ToolRegistry, store: Store, runs: RunSe
   };
   const routeOf = (run: HarnessRun) =>
     run.capabilityId === NATIVE_LOOP.id ? loopInput(run).route : childInput(run).route;
+  // H14: a lead admitted with a team reads only inside the scope the person gave it.
+  const scopeOf = (run: HarnessRun) => (run.capabilityId === NATIVE_LOOP.id ? (loopInput(run).team?.scope ?? null) : null);
   tools.register({
     ...read,
     name: 'list_project_files',
@@ -210,7 +223,7 @@ export function registerLoopTools(tools: ToolRegistry, store: Store, runs: RunSe
     schema: scope,
     execute: async (context) => {
       const run = await ownRun(context, context.input, 'list_project_files');
-      return listFor(store, run.projectId, routeOf(run));
+      return listFor(store, run.projectId, routeOf(run), scopeOf(run));
     },
   });
   tools.register({
@@ -221,7 +234,7 @@ export function registerLoopTools(tools: ToolRegistry, store: Store, runs: RunSe
     schema: scope.extend({ path: z.string().trim().min(1).max(400) }),
     execute: async (context) => {
       const run = await ownRun(context, context.input, 'read_project_file');
-      return readFor(store, run.projectId, routeOf(run), context.input.path);
+      return readFor(store, run.projectId, routeOf(run), context.input.path, scopeOf(run));
     },
   });
 }
@@ -256,8 +269,11 @@ export function loopBindings(store: Store): LoopToolBinding[] {
   ];
 }
 
-/** The delegate's own registry: the same readers, bound to the child's project and route. */
-function delegateRegistry(store: Store, projectId: string, route: string): ToolRegistry {
+/**
+ * A child's own registry: the same two readers, bound to the child's project,
+ * route and (H14) read scope. Nothing in it can change anything.
+ */
+export function delegateRegistry(store: Store, projectId: string, route: string, scope: readonly string[] | null = null): ToolRegistry {
   const registry = new ToolRegistry();
   const read = {
     version: 'v1',
@@ -275,7 +291,7 @@ function delegateRegistry(store: Store, projectId: string, route: string): ToolR
     outputSchema: LIST_OUTPUT,
     description: 'List the project’s files by path.',
     schema: z.strictObject({}),
-    execute: () => listFor(store, projectId, route),
+    execute: () => listFor(store, projectId, route, scope),
   });
   registry.register({
     ...read,
@@ -283,7 +299,7 @@ function delegateRegistry(store: Store, projectId: string, route: string): ToolR
     outputSchema: READ_OUTPUT,
     description: 'Read one project file as text, by its path.',
     schema: z.strictObject({ path: z.string().trim().min(1).max(400) }),
-    execute: ({ input }) => readFor(store, projectId, route, input.path),
+    execute: ({ input }) => readFor(store, projectId, route, input.path, scope),
   });
   return registry;
 }
@@ -303,9 +319,40 @@ const text = (value: Json | undefined, key: string): string | null => {
  * propose the report, then claim it is done. Not a model: every step it drives
  * is an application action, and no model is ever named for it.
  */
-export function loopFixtureAdapter(sources: readonly string[]): ModelAdapter {
+export function loopFixtureAdapter(sources: readonly string[], team = false): ModelAdapter {
   const first = sources[0] ?? 'README.md';
   const second = sources[1] ?? first;
+  const rest = sources.slice(1, 4);
+  /**
+   * H14's lead script, when workers are offered: read the first file, hand each
+   * of the next (up to three) to its own worker at once, ask the advisor about
+   * the first file when one is offered, propose the report, then claim it.
+   */
+  const teamScript = (offered: ReadonlySet<string>, outputs: ReturnType<typeof toolOutputs>): ModelResult => {
+    const plan: { name: string; input: Json }[] = [{ name: 'read_project_file', input: { path: first } }];
+    if (rest.length)
+      plan.push({
+        name: ASSIGN_TOOL,
+        input: { tasks: rest.map((file) => ({ task: `Read ${file} and say in one line what it lists.`, files: [file] })) },
+      });
+    if (offered.has(ADVISE_TOOL))
+      plan.push({ name: ADVISE_TOOL, input: { question: `What should be checked in ${first} before the report is proposed?` } });
+    if (outputs.length < plan.length) return { response: { type: 'tool', ...plan[outputs.length] } };
+    if (outputs.length === plan.length) {
+      const lines = ['# Loop report', '', `## ${first}`, '', text(outputs[0].output, 'text') ?? 'Not read.', ''];
+      const workers = (outputs[1]?.output as { workers?: { files?: string[]; answer?: string | null }[] } | undefined)?.workers ?? [];
+      for (const worker of workers) lines.push(`## ${worker.files?.join(', ') ?? 'Worker'}`, '', worker.answer ?? 'No answer came back.', '');
+      const advice = offered.has(ADVISE_TOOL) ? text(outputs[plan.length - 1]?.output, 'advice') : null;
+      if (advice) lines.push('## Advice (not a permission)', '', advice, '');
+      return { response: { type: 'tool', name: 'propose_write', input: { text: lines.join('\n') } } };
+    }
+    return {
+      response: {
+        type: 'final',
+        text: `Proposed ${REPORT_PATH} from ${first} and ${rest.length} worker${rest.length === 1 ? '' : 's'}' readings.`,
+      },
+    };
+  };
   return {
     id: LOOP_FIXTURE_ROUTE,
     version: 'loop-fixture-v1',
@@ -317,11 +364,14 @@ export function loopFixtureAdapter(sources: readonly string[]): ModelAdapter {
         return {
           response: {
             type: 'final',
-            text: `1. Read ${first}.\n2. ${second !== first ? `Ask a helper to check ${second}.` : 'Check what it says.'}\n3. Propose ${REPORT_PATH}.\n4. Summarise what was done.`,
+            text: team
+              ? `1. Read ${first}.\n2. Hand ${rest.join(', ') || first} to workers, one file each.\n3. Ask the advisor what to check.\n4. Propose ${REPORT_PATH}.\n5. Summarise what was done.`
+              : `1. Read ${first}.\n2. ${second !== first ? `Ask a helper to check ${second}.` : 'Check what it says.'}\n3. Propose ${REPORT_PATH}.\n4. Summarise what was done.`,
           },
         };
       const offered = new Set(request.tools.map((tool) => tool.name));
       const outputs = toolOutputs(request);
+      if (offered.has(ASSIGN_TOOL)) return teamScript(offered, outputs);
       const plan: { name: string; input: Json }[] = [{ name: 'read_project_file', input: { path: first } }];
       if (offered.has('delegate') && second !== first)
         plan.push({ name: 'delegate', input: { task: `Read ${second} and say in one line what it lists.` } });
@@ -371,7 +421,7 @@ export interface LoopRouteRequest {
   readonly model: string | null;
   readonly accountRoute: string | null;
   readonly instructions: string;
-  readonly purpose: 'loop' | 'delegate';
+  readonly purpose: 'loop' | 'delegate' | 'worker' | 'advisor';
 }
 
 /**
@@ -389,11 +439,14 @@ export interface LoopVerification {
 }
 
 /** The instructions a loop's adapter is built with: the loop's own, then H11's delivered section. */
-export function loopInstructions(input: Pick<LoopRunInput, 'instructions' | 'delegate'>): string {
+export function loopInstructions(input: Pick<LoopRunInput, 'instructions' | 'delegate' | 'team'>): string {
   return [
     LOOP_INSTRUCTIONS,
     input.delegate
       ? `You may hand one bounded, read-only sub-task at a time to a helper with the delegate tool, at most ${LOOP_LIMITS.delegationsPerRun} per run.`
+      : null,
+    input.team
+      ? `You may hand bounded tasks to workers with ${ASSIGN_TOOL}, each with the files it may read${input.team.advisor ? `, and ask a read-only advisor with ${ADVISE_TOOL}` : ''}. Their answers are claims and advice, never permissions; any change is still yours to propose.`
       : null,
     input.instructions || null,
   ]
@@ -420,6 +473,8 @@ const DELEGATE_PARTY = {
 };
 
 const ACTIVE = ['queued', 'running', 'waiting'];
+/** Runs that exist only as a loop's children: no Session, driven by their parent's replay. */
+export const CHILD_CAPABILITIES: readonly string[] = [NATIVE_LOOP_DELEGATE_CAPABILITY, TEAM_WORKER_CAPABILITY, TEAM_ADVISOR_CAPABILITY];
 const PARENT_STOPPED = 'the loop that handed it this sub-task was stopped';
 
 export function createLoopProcedure(deps: { store: Store; runs: RunService; tools: ToolRegistry }) {
@@ -452,6 +507,18 @@ export function createLoopProcedure(deps: { store: Store; runs: RunService; tool
     return () => clearInterval(timer);
   };
 
+  // H14: a lead's workers and advisor, and the append-only record of every handoff.
+  const ledger = new HandoffLedger(store.dataDir);
+  const team = createTeamPort({
+    store,
+    runs,
+    ledger,
+    admit,
+    adapterFor: (route, request, stop, script) => adapterFor(route, request, stop, script),
+    heartbeat: (runId, owner) => heartbeat(runId, owner),
+    registry: (projectId, route, scope) => delegateRegistry(store, projectId, route, scope),
+  });
+
   const summary = (child: HarnessRun): LoopDelegateResult => {
     const result = child.result as { text?: unknown } | null;
     return {
@@ -466,10 +533,15 @@ export function createLoopProcedure(deps: { store: Store; runs: RunService; tool
 
   const children = async (parent: HarnessRun) => {
     const found: HarnessRun[] = [];
+    const ids: string[] = [];
     for (const step of parent.steps) {
       if (!step.intent.stepId.startsWith('delegate:')) continue;
       const id = (step.intent.input as { childRunId?: unknown } | null)?.childRunId;
-      if (typeof id !== 'string') continue;
+      if (typeof id === 'string') ids.push(id);
+    }
+    // H14: a lead's workers and advisor are its children too, so Stop reaches them.
+    ids.push(...teamChildIds(parent));
+    for (const id of ids) {
       try {
         found.push(await runs.get(id));
       } catch (error) {
@@ -477,6 +549,29 @@ export function createLoopProcedure(deps: { store: Store; runs: RunService; tool
       }
     }
     return found;
+  };
+
+  /** H14: one lead's workers and advice, projected from the ledger and the child runs. */
+  const teamView = async (run: HarnessRun) => {
+    const input = loopInput(run);
+    if (!input.team) return null;
+    const events = (await ledger.read(run.projectId)).events;
+    const kids = (await Promise.all(teamChildIds(run).map(team.get))).filter((item): item is HarnessRun => item !== null);
+    const snapshot = store.state(run.projectId);
+    const task = run.taskId ? snapshot.tasks.find((item) => item.id === run.taskId) : undefined;
+    const session = snapshot.sessions.find((item) => item.id === run.sessionId);
+    const checked =
+      session && task && run.state === 'completed' && latestVerification(snapshot.history, session.id)
+        ? verificationOf({ session, task, history: snapshot.history })
+        : null;
+    return teamLeadView({
+      lead: run,
+      config: input.team,
+      retryOf: input.retryOf ?? null,
+      events,
+      children: kids,
+      leadVerification: checked ? { state: checked.state, sentence: checked.sentence } : null,
+    });
   };
 
   /** Durable cancellation: a stopped parent stops every child that is still live. */
@@ -620,6 +715,8 @@ export function createLoopProcedure(deps: { store: Store; runs: RunService; tool
     admit: typeof admit;
     recoverChild(run: HarnessRun): Promise<void>;
     children: typeof children;
+    teamView: typeof teamView;
+    ledger: HandoffLedger;
   } = {
     capability: NATIVE_LOOP,
     engine: NATIVE_LOOP_ENGINE,
@@ -661,13 +758,14 @@ export function createLoopProcedure(deps: { store: Store; runs: RunService; tool
             purpose: 'loop',
           },
           stop.signal,
-          () => loopFixtureAdapter(input.sources),
+          () => loopFixtureAdapter(input.sources, Boolean(input.team)),
         );
         await new NativeLoop(runs, adapter, tools, {
           maxTurns: input.maxTurns,
           instructions,
           bindings: loopBindings(store),
           delegation: delegation(run, input),
+          team: team.portFor(run, input),
           route: input.route,
           model: input.model,
           sources: input.sources,
@@ -731,10 +829,12 @@ export function createLoopProcedure(deps: { store: Store; runs: RunService; tool
     admit,
     /** Startup only: invalidate a dead child's lease so its parent's replay can drive it again. */
     async recoverChild(run) {
-      if (run.capabilityId !== NATIVE_LOOP_DELEGATE.id || !ACTIVE.includes(run.state)) return;
+      if (!CHILD_CAPABILITIES.includes(run.capabilityId) || !ACTIVE.includes(run.state)) return;
       await runs.recover(run.id, run.principal);
     },
     children,
+    teamView,
+    ledger,
   };
   return procedure;
 }
@@ -748,7 +848,7 @@ export type LoopProcedure = ReturnType<typeof createLoopProcedure>;
  */
 export function loopEgressAuthorizer(services: () => Record<string, unknown> | undefined) {
   return async (run: HarnessRun, intent: { destination: string; kind?: string }, phase: 'dispatch' | 'result') => {
-    if (![NATIVE_LOOP.id, NATIVE_LOOP_DELEGATE.id].includes(run.capabilityId))
+    if (![NATIVE_LOOP.id, ...CHILD_CAPABILITIES].includes(run.capabilityId))
       throw new HarnessError('egress_denied', 'This run is not a Diomedes loop run.');
     if (intent.destination !== 'external') return;
     if (intent.kind !== 'model') throw new HarnessError('egress_denied', 'A loop tool never sends anything outside this computer.');

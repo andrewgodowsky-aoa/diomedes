@@ -1156,7 +1156,8 @@ export async function createApp(options: AppOptions) {
   mountVerificationRoutes(app, store, verification);
   // H13: the Diomedes work loop's finish gate runs the task's declared checks through H17's verifier.
   harness.loop.attachVerification(verification);
-  mountNativeLoopRoutes(app, store, harness, verification);
+  // H14: team roles resolve their H09 profiles and Agents at admission; H08 retries a loop.
+  const loopRoutes = mountNativeLoopRoutes(app, store, harness, verification, { profiles: agentProfiles, agents });
   mountWorkspaceRoutes(app, store, workspaces, configuration, automations);
   mountAutomationRoutes(app, store, automations);
   mountThemeRoutes(app, store, themes, customization);
@@ -2433,14 +2434,19 @@ export async function createApp(options: AppOptions) {
       );
     },
     contractFor: (projectId, workRoute, session) =>
-      workRoute === 'sample' && controlFixtureProjects.has(projectId)
+      session?.engine.name === NATIVE_LOOP_ENGINE
+        ? loopRoutes.contract
+        : workRoute === 'sample' && controlFixtureProjects.has(projectId)
         ? CONTROL_FIXTURE_CONTRACT
         : workRoute === 'codex'
           ? codexControls.contract(session)
           : defaultWorkContract(workRoute),
     // H12: a harness run's uncertain tool effects block Retry and Resume too.
     harnessEffects: (projectId, session) => harness.bridge.uncertainEffects(projectId, session.id),
+    // H14: a loop on the fixture route is still available to retry; every other route as before.
+    routeAvailable: (route) => isRoute(route) || route === 'native-fixture',
   });
+  durableControls.registerDriver(loopRoutes.contract.routeId, loopRoutes.retryDriver);
   durableControls.registerDriver(CONTROL_FIXTURE_ROUTE, controlFixtureDriver(work));
   // H02: the Codex route's steer, resume and fork, offered only where the Codex that
   // served a run advertised them (`codexControls.contract`).

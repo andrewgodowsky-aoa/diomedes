@@ -583,7 +583,14 @@ export class DurableControls {
   private consented(projectId: string, taskId: string, route: string) {
     return this.store
       .state(projectId)
-      .sessions.some((item) => item.taskId === taskId && item.receipt?.route === route);
+      .sessions.some(
+        (item) =>
+          item.taskId === taskId &&
+          (item.receipt?.route === route ||
+            // A loop's own start asked for consent before sending anything (H13), and on
+            // the fixture route nothing is sent at all.
+            (item.engine.name === NATIVE_LOOP_ENGINE && workRouteOf(item) === route)),
+      );
   }
 
   /** The run's thread: the one it recorded, else its task's thread (a sample run records none). */
