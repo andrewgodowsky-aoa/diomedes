@@ -2000,6 +2000,7 @@ export function Shell({
               allNeeds={state.needs}
               changes={state.changes}
               instructionFiles={activeInstructionFiles(state.project.packs, state.instructionFiles)}
+              onOpenInFiles={openDocument}
               followUps={state.followUps ?? []}
               onError={report}
               grantActive={!!activeGrant}

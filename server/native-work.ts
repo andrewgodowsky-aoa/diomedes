@@ -486,6 +486,7 @@ export class NativeWorkService {
       agentRole: `Diomedes ${input.mode ?? 'build'} file proposal writer`,
       budgetBytes: instructionSectionBudget(bytes),
       allowedDocuments: cloudSharing(state).documents,
+      workPaths: sources.map((source) => source.path),
     });
     const team = input.team;
     const member = team
@@ -589,7 +590,7 @@ export class NativeWorkService {
             : 'The adapter disables engine tools and sends only selected text. This is not an operating-system sandbox.',
           'technical',
         );
-      if (instructions.delivery) {
+      if (instructions.delivery?.files.length) {
         // Said once, in the place History already reads: which files went, at
         // which sha, and which were left out whole. The session carries the same
         // record structurally; this is the sentence a person sees.
