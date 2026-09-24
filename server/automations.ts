@@ -1505,57 +1505,71 @@ export class AutomationService {
 
   /**
    * Scheduled runs that ended badly raise one item per issue; the newest
-   * scheduled run that completed clears the failed and skipped items before it.
+   * scheduled run that completed clears every item before it except missed runs.
    */
   private async followScheduledRuns(
     organizationId: string,
     start: AutomationDefinition,
   ): Promise<AutomationDefinition> {
     let definition = start;
-    const scheduled = this.occurrences
+    const mine = this.occurrences
       .list(organizationId)
-      .filter(
-        (item) =>
-          item.automationId === definition.id &&
-          item.trigger.kind === 'schedule' &&
-          item.admission.state === 'admitted',
-      )
-      .slice(-10);
+      .filter((item) => item.automationId === definition.id && item.trigger.kind === 'schedule');
     const known = new Set(definition.attention.flatMap((item) => item.occurrenceIds));
+    const raiseOnce = async (
+      occurrence: TriggerOccurrence,
+      item: Pick<AutomationAttention, 'kind' | 'code' | 'title' | 'detail'>,
+    ) => {
+      const raised = this.raise(definition, item, [occurrence.id]);
+      definition = raised.definition;
+      known.add(occurrence.id);
+      if (raised.opened)
+        await this.history(organizationId, `Diomedes: ${raised.opened.title.toLowerCase()} (the weekly brief).`, 'diomedes');
+    };
+    // A slot a crash interrupted before its run started is settled on restart
+    // and never re-admitted (A06); a person should know it did not run.
+    for (const occurrence of mine)
+      if (
+        occurrence.admission.state === 'refused' &&
+        occurrence.admission.code === 'interrupted_before_start' &&
+        !known.has(occurrence.id)
+      )
+        await raiseOnce(occurrence, {
+          kind: 'failed',
+          code: 'interrupted_before_start',
+          title: 'A scheduled run was interrupted before it started',
+          detail: 'Diomedes stopped before the run started, so nothing was written. It is not run again on its own.',
+        });
+    // Newest first, stopping at the newest run that completed: the steady
+    // state reads one run record per pass.
     let clean: TriggerOccurrence | null = null;
-    for (const occurrence of scheduled) {
+    const admitted = mine.filter((item) => item.admission.state === 'admitted').slice(-10).reverse();
+    for (const occurrence of admitted) {
       const run = await this.findRun(occurrence);
       if (!run) continue;
       if (run.state === 'completed') {
         clean = occurrence;
-        continue;
+        break;
       }
       if (known.has(occurrence.id)) continue;
       const waiting = run.state === 'failed' && run.failure?.name === WAITING_FOR_DATA;
-      const unsure = run.state === 'reconcile_required' || run.steps.some((step) => step.state === 'reconcile_required');
+      const unsure =
+        run.state === 'reconcile_required' || run.steps.some((step) => step.state === 'reconcile_required');
       if (!waiting && !unsure && run.state !== 'failed') continue;
-      const code = waiting ? 'waiting_for_data' : unsure ? 'needs_check' : 'run_failed';
-      const raised = this.raise(
-        definition,
-        {
-          kind: 'failed',
-          code,
-          title: waiting
-            ? 'A scheduled run is waiting for data'
-            : unsure
-              ? 'A scheduled run needs a check'
-              : 'A scheduled run failed',
-          detail: waiting
-            ? `${run.failure?.message ?? 'A source could not be read'} Nothing was written.`
-            : unsure
-              ? 'It may have done something it could not confirm. Check it before it runs again.'
-              : (run.failure?.message ?? 'It stopped because something went wrong.'),
-        },
-        [occurrence.id],
-      );
-      definition = raised.definition;
-      if (raised.opened)
-        await this.history(organizationId, `Diomedes: ${raised.opened.title.toLowerCase()} (the weekly brief).`, 'diomedes');
+      await raiseOnce(occurrence, {
+        kind: 'failed',
+        code: waiting ? 'waiting_for_data' : unsure ? 'needs_check' : 'run_failed',
+        title: waiting
+          ? 'A scheduled run is waiting for data'
+          : unsure
+            ? 'A scheduled run needs a check'
+            : 'A scheduled run failed',
+        detail: waiting
+          ? `${run.failure?.message ?? 'A source could not be read'} Nothing was written.`
+          : unsure
+            ? 'It may have done something it could not confirm. Check it before it runs again.'
+            : (run.failure?.message ?? 'It stopped because something went wrong.'),
+      });
     }
     if (clean) {
       const after = clean.observedAt;
@@ -1563,10 +1577,9 @@ export class AutomationService {
         definition,
         'recovered',
         'diomedes',
-        // Missed runs stay until a person has seen them: a later clean run does
-        // not make the days that never ran disappear. Blocks are answered by an
-        // owner turning the schedule on again.
-        (item) => item.lastSeenAt <= after && (item.kind === 'failed' || item.kind === 'skipped'),
+        // Missed runs stay until a person has seen them: a later clean run
+        // does not make the days that never ran disappear.
+        (item) => item.lastSeenAt <= after && item.kind !== 'missed',
       );
     }
     return definition;

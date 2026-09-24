@@ -18,7 +18,13 @@ import path from 'node:path';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createApp } from '../server/app.js';
-import type { AutomationService } from '../server/automations.js';
+import {
+  occurrenceIdFor,
+  runIdFor,
+  scheduleCommandId,
+  type AutomationService,
+} from '../server/automations.js';
+import { payloadDigest } from '../server/command-admission.js';
 import type { AutomationScheduler } from '../server/automation-scheduler.js';
 import { WEEKLY_BRIEF_BUDGET } from '../server/harness/capabilities/weekly-brief.js';
 import type { Store } from '../server/store.js';
@@ -484,6 +490,59 @@ describe('missed work and this computer (OPS-09)', () => {
     const shown = await view();
     expect(shown.schedule.host.here).toBe(false);
     expect(await tasks()).toBe(0);
+  });
+});
+
+describe('a crash between recording a slot and starting its run (A06)', () => {
+  test('the slot is settled once on restart, never re-admitted, and a person is told', async () => {
+    await turnOn(DAILY_8_NY);
+    await stop();
+    const slot = '2026-09-28T12:00:00.000Z';
+    const commandId = scheduleCommandId(1, slot);
+    const id = occurrenceIdFor(organizationId, commandId);
+    const file = path.join(root, 'data', 'workspaces', 'automations', `${organizationId}.json`);
+    const stored = await fs
+      .readFile(file, 'utf8')
+      .then((text) => JSON.parse(text))
+      .catch(() => ({ v: 2, organizationId, occurrences: [] }));
+    stored.occurrences.push({
+      v: 1,
+      id,
+      automationId: `brief:${organizationId}`,
+      organizationId,
+      tenantId: 'tenant',
+      trigger: {
+        kind: 'schedule',
+        commandId,
+        payloadDigest: payloadDigest({ automationId: `brief:${organizationId}`, slot, definitionRevision: 1 }),
+        slot,
+        local: '2026-09-28 08:00',
+        timezone: 'America/New_York',
+        shifted: null,
+        definitionRevision: 1,
+        enabledBy: firstPerson.id,
+        hostId: 'H-unknown',
+        late: false,
+      },
+      configuration: null,
+      target: { projectId, projectName: 'Company books' },
+      sources: null,
+      observedAt: '2026-09-28T12:00:05.000Z',
+      admission: { state: 'admitting', runId: runIdFor(id) },
+    });
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, JSON.stringify(stored));
+    clock = Date.parse('2026-09-28T12:01:00Z');
+    await launch();
+    const [settled] = await scheduled();
+    expect(settled!.id).toBe(id);
+    expect(settled!.admission).toMatchObject({ state: 'refused', code: 'interrupted_before_start' });
+    expect(await scheduled()).toHaveLength(1);
+    expect(await tasks()).toBe(0);
+    const shown = await view();
+    expect(shown.attention.map((item) => item.title)).toEqual([
+      'A scheduled run was interrupted before it started',
+    ]);
   });
 });
 
