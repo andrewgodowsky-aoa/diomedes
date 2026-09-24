@@ -3,6 +3,7 @@ import {
   activeDiscoveryFacts,
   type CreateProspectDiscoveryInput,
   type ProspectDiscoveryRecord,
+  type StaleObservedEvidence,
 } from '../../shared/discovery';
 import { discoveryApi, readDocument } from '../api';
 import { Discovery } from './Discovery';
@@ -17,6 +18,7 @@ const lines = (value: string) =>
 /** The normal Console owns this view; a prospect does not need a Business account. */
 export function DiscoveryPage({ projectId }: { projectId: string }) {
   const [record, setRecord] = useState<ProspectDiscoveryRecord | null>(null);
+  const [stale, setStale] = useState<readonly StaleObservedEvidence[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -46,14 +48,17 @@ export function DiscoveryPage({ projectId }: { projectId: string }) {
     setBusy(false);
     setLoading(true);
     setRecord(null);
+    setStale([]);
     setError('');
     setImportPath('');
     setCorrectionId('');
     setCorrection('');
     discoveryApi
       .active(controller.signal)
-      .then(({ record: active }) => {
-        if (!controller.signal.aborted) setRecord(active);
+      .then(({ record: active, staleEvidence }) => {
+        if (controller.signal.aborted) return;
+        setRecord(active);
+        setStale(staleEvidence ?? []);
       })
       .catch((failure: unknown) => {
         if (!controller.signal.aborted)
@@ -72,7 +77,12 @@ export function DiscoveryPage({ projectId }: { projectId: string }) {
     };
   }, [projectId]);
 
-  async function perform(action: () => Promise<{ record: ProspectDiscoveryRecord | null }>) {
+  async function perform(
+    action: () => Promise<{
+      record: ProspectDiscoveryRecord | null;
+      staleEvidence?: readonly StaleObservedEvidence[];
+    }>,
+  ) {
     if (inFlight.current) return false;
     inFlight.current = true;
     const started = epoch.current;
@@ -82,6 +92,7 @@ export function DiscoveryPage({ projectId }: { projectId: string }) {
       const next = await action();
       if (started !== epoch.current) return false;
       setRecord(next.record);
+      setStale(next.staleEvidence ?? []);
       setCorrectionId('');
       setCorrection('');
       return true;
@@ -262,6 +273,7 @@ export function DiscoveryPage({ projectId }: { projectId: string }) {
         <>
           <Discovery
             record={record}
+            staleEvidence={stale}
             busy={busy}
             onStage={(stage) =>
               void perform(() =>

@@ -27,10 +27,12 @@ describe('Everything: a click on the trigger', () => {
 describe('Everything: a reserved destination', () => {
   const items: EverythingItem[] = [
     { id: 'files', label: 'Files', hint: 'Everything in this workspace.' },
+    // An invented destination: Automations held this place until Milestone A
+    // built it, and the reserved behaviour itself still needs its test.
     {
-      id: 'automations',
-      label: 'Automations',
-      hint: 'Work that runs on its own.',
+      id: 'reports',
+      label: 'Reports',
+      hint: 'Work that is not built yet.',
       unavailableReason: 'Nothing is built behind this yet.',
       reserved: true,
     },
@@ -47,17 +49,17 @@ describe('Everything: a reserved destination', () => {
   it('still collects with the other destinations that cannot open yet', () => {
     const sections = everythingSections(items);
     expect(sections.map((section) => section.heading)).toEqual(['', 'Not ready yet']);
-    expect(sections[1].items.map((item) => item.id)).toEqual(['automations', 'connections']);
+    expect(sections[1].items.map((item) => item.id)).toEqual(['reports', 'connections']);
   });
 
   it('stays where the caller put it when the caller supplies groups', () => {
     const sections = everythingSections(items, [
       { heading: 'In this workspace', ids: ['files'] },
-      { heading: 'Not ready yet', ids: ['automations', 'connections'] },
+      { heading: 'Not ready yet', ids: ['reports', 'connections'] },
     ]);
     expect(sections.map((section) => section.items.map((item) => item.id))).toEqual([
       ['files'],
-      ['automations', 'connections'],
+      ['reports', 'connections'],
     ]);
   });
 });

@@ -295,17 +295,32 @@ describe('a host-initiated connection test through the production wiring', () =>
   it('parks a host run interrupted after dispatch instead of sending it again', async () => {
     const root = temporary();
     let release: (() => void) | undefined;
+    let dispatched: () => void = () => {};
+    const reached = new Promise<'dispatched'>((resolve) => {
+      dispatched = () => resolve('dispatched');
+    });
     const first = await open(root, {
       generate: async (input) => {
-        await new Promise<void>((resolve) => {
+        const held = new Promise<void>((resolve) => {
           release = resolve;
         });
+        dispatched();
+        await held;
         return textResponse(input, ANSWER, VERSION);
       },
     });
+    // Teardown lets a held provider go first, so a failed assertion never strands shutdown.
+    cleanups.unshift(async () => release?.());
     await first.settle();
     const pending = first.post(`/ai/test/${ENGINE}`, { consent: true, model: 'small' });
-    await vi.waitFor(() => expect(first.generate).toHaveBeenCalledTimes(1));
+    // Wait for the dispatch itself, not a one-second poll that a loaded runner
+    // outlasts. A test that answers first never reached the provider, and says so.
+    const settledFirst = pending.then(
+      (response) => `answered ${response.status}`,
+      () => 'failed',
+    );
+    expect(await Promise.race([reached, settledFirst])).toBe('dispatched');
+    expect(first.generate).toHaveBeenCalledTimes(1);
 
     // Exactly what was on disk while the provider held the request: the run is
     // running and its one external dispatch step is in flight.

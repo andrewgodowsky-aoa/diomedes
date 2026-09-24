@@ -286,6 +286,45 @@ describe('a malformed result', () => {
     expect(refusal(raw).code).toBe('response_too_large');
   });
 
+  // DIO-88. The cap is declared in bytes, so it is measured in serialized UTF-8
+  // bytes, not UTF-16 code units. Sorted-key JSON and JSON.stringify differ only
+  // in key order, so the serialized size is the same either way.
+  const serializedBytes = (raw: unknown) => Buffer.byteLength(JSON.stringify(raw), 'utf8');
+  /** A reply whose one warning pads it to exactly `target` serialized bytes. */
+  const paddedTo = (target: number, unit: string) => {
+    const raw = wellFormed();
+    (raw as { warnings: string[] }).warnings = [''];
+    const room = target - serializedBytes(raw);
+    const unitBytes = Buffer.byteLength(unit, 'utf8');
+    const warning = unit.repeat(Math.floor(room / unitBytes)) + 'w'.repeat(room % unitBytes);
+    (raw as { warnings: string[] }).warnings = [warning];
+    expect(serializedBytes(raw)).toBe(target);
+    return raw;
+  };
+
+  test('is refused when 30,000 CJK characters pass the cap in UTF-8 bytes (DIO-88)', () => {
+    const raw = wellFormed();
+    (raw as { warnings: string[] }).warnings = ['警'.repeat(30_000)];
+    // Under the cap in UTF-16 units, over it in the bytes the cap names.
+    expect(JSON.stringify(raw).length).toBeLessThan(MAX_EVALUATION_RESPONSE_BYTES);
+    expect(serializedBytes(raw)).toBeGreaterThan(MAX_EVALUATION_RESPONSE_BYTES);
+    expect(refusal(raw).code).toBe('response_too_large');
+  });
+
+  test('accepts an ASCII result just under the cap', () => {
+    expect(() => validate(paddedTo(MAX_EVALUATION_RESPONSE_BYTES - 1, 'w'))).not.toThrow();
+  });
+
+  test('accepts a result of exactly the cap and refuses one byte more, ASCII or multi-byte', () => {
+    // "May not exceed N bytes": N is allowed, N + 1 is not.
+    for (const unit of ['w', '警']) {
+      expect(() => validate(paddedTo(MAX_EVALUATION_RESPONSE_BYTES, unit))).not.toThrow();
+      expect(refusal(paddedTo(MAX_EVALUATION_RESPONSE_BYTES + 1, unit)).code).toBe(
+        'response_too_large',
+      );
+    }
+  });
+
   test('is refused when the choice is absent from its own distribution', () => {
     const raw = wellFormed();
     raw.answers['most-relevant'].probabilities = {
