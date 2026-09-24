@@ -1,6 +1,8 @@
 import { assertReplay, findCommand } from './command-admission.js';
 import { validateTaskReceipts } from './task-admission.js';
 import { ScopeGrants, validateScopeGrants } from './trust/scope-grants.js';
+import { carryRememberedDecisions } from './trust/remembered-approvals.js';
+import { rememberedAttribution } from '../shared/remembered-approvals.js';
 import { validateAgentResolutions } from './agents.js';
 import { upgradeCloudSharing } from './cloud-sharing.js';
 import { applicationOrigin, formatOrigin, type OriginSnapshot } from '../shared/attribution.js';
@@ -1343,7 +1345,7 @@ export class Store extends EventEmitter {
     }
     entry.time = now();
     if (options.sessionId) {
-      entry.sentence = `${formatOrigin(entry.origin).primary} changed ${entry.files.length} ${entry.files.length === 1 ? 'file' : 'files'}${approval?.authorization ? ' - allowed for this task' : ''}`;
+      entry.sentence = `${formatOrigin(entry.origin).primary} changed ${entry.files.length} ${entry.files.length === 1 ? 'file' : 'files'}${approval?.authorization?.kind === 'remembered-approval' ? `. ${rememberedAttribution(approval.authorization)}` : approval?.authorization ? ' - allowed for this task' : ''}`;
       const session = state.sessions.find((s) => s.id === options.sessionId);
       if (session && !session.entryIds.includes(entry.id)) session.entryIds.push(entry.id);
     }
@@ -1606,6 +1608,7 @@ export class Store extends EventEmitter {
           record.revokedAt = current.revokedAt;
         }
       }
+      carryRememberedDecisions(journal.state, currentState);
       await this.persist(journal.state);
       this.invalidateDocuments(journal.projectId);
       await fs.unlink(path.join(pending, name));

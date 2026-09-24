@@ -114,6 +114,7 @@ export default defineConfig({
     'instructions-inspector.spec.ts',
     'ready-queue-ui.spec.ts',
     'pack-lifecycle-ui.spec.ts',
+    'remembered-approvals-ui.spec.ts',
   ],
   fullyParallel: false,
   workers: 1,
