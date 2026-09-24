@@ -83,6 +83,8 @@ import { engineCatalog, isKnownChoice } from './models.js';
 import { ReviewerService, type ReviewerAdapter } from './trust/reviewer.js';
 import { codexReviewerAdapter } from './trust/codex-reviewer.js';
 import { VerificationService } from './verification/service.js';
+import { mountNativeLoopRoutes } from './native-loop-routes.js';
+import { NATIVE_LOOP_ENGINE } from '../shared/native-loop.js';
 import { mountVerificationRoutes } from './verification/routes.js';
 import { codexVerificationReviewer, type VerificationReviewerAdapter } from './verification/reviewer.js';
 import { AgentRegistry } from './agents.js';
@@ -279,6 +281,8 @@ interface AppOptions {
     onInstallAccepted?: () => void;
     transport?: Partial<UpdateTransport>;
   };
+  /** H13: tests replace the Diomedes loop's model-API routes here. Production uses the engine service. */
+  loopModelRoutes?: import('./harness/capabilities/native-loop.js').LoopModelRoutes;
   /** The automation scheduler's clock and pass interval. Tests inject both; null runs no timer. */
   automationClock?: () => number;
   automationTickMs?: number | null;
@@ -913,6 +917,32 @@ export async function createApp(options: AppOptions) {
       ),
     },
   };
+  // H13: a model-API route drives a Diomedes work loop through the engine service's own
+  // admission. A loop resumed at startup waits until every route and the verifier exist.
+  harness.loop.hold();
+  harness.loop.setModelRoutes(options.loopModelRoutes ?? {
+    admit: async (route, input) => {
+      if (!isModelApiRoute(route) || !input.model || !input.accountRoute)
+        throw new ApiError(409, 'Connect this route and choose its model in AI setup first.');
+      const admission = await engines.admitModelApi(route, { model: input.model, accountRoute: input.accountRoute });
+      return { model: admission.model, accountRoute: admission.accountRoute };
+    },
+    adapter: (route, request, stop) => {
+      if (!isModelApiRoute(route) || !request.model || !request.accountRoute)
+        throw new ApiError(409, 'This loop has no admitted model-API connection.');
+      return engines.loopAdapter(
+        route,
+        {
+          projectId: request.projectId,
+          runId: request.runId,
+          model: request.model,
+          accountRoute: request.accountRoute,
+          instructions: request.instructions,
+        },
+        stop,
+      );
+    },
+  });
   await harness.init();
   // Run once admits the brief through the harness above, so its occurrences
   // are settled only after the harness has recovered its runs.
@@ -968,7 +998,7 @@ export async function createApp(options: AppOptions) {
   const serviceFor = (projectId: string, sessionId: string) => {
     const session = store.state(projectId).sessions.find((item) => item.id === sessionId);
     if (!session) throw new ApiError(404, 'This work session was not found.');
-    return [FIXTURE_ENGINE, CODEX_ENGINE].includes(session.engine.name)
+    return [FIXTURE_ENGINE, CODEX_ENGINE, NATIVE_LOOP_ENGINE].includes(session.engine.name)
       ? harness.bridge
       : session.sample
         ? work
@@ -1086,6 +1116,9 @@ export async function createApp(options: AppOptions) {
     { reviewTimeoutMs: options.verificationReviewTimeoutMs },
   );
   mountVerificationRoutes(app, store, verification);
+  // H13: the Diomedes work loop's finish gate runs the task's declared checks through H17's verifier.
+  harness.loop.attachVerification(verification);
+  mountNativeLoopRoutes(app, store, harness, verification);
   mountWorkspaceRoutes(app, store, workspaces, configuration, automations);
   mountAutomationRoutes(app, store, automations);
   mountThemeRoutes(app, store, themes, customization);
@@ -5305,6 +5338,8 @@ export async function createApp(options: AppOptions) {
     // The ChatGPT app-server kept between requests goes with the service.
     await closeWarmCodex();
   };
+  // Every route and the verifier exist now: a Diomedes loop resumed at startup may continue.
+  harness.loop.open();
   // Last, once every route and service exists: a claim a restart interrupted is settled or
   // replayed through `admitWork` here, before the first request is served.
   await readyScheduler.init();

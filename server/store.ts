@@ -9,6 +9,7 @@ import { applicationOrigin, formatOrigin, type OriginSnapshot } from '../shared/
 import { diomedesThread } from '../shared/diomedes-thread.js';
 import { CONVERSATION_DEFAULT_ROUTE, HOST_TEST_PROJECT } from '../shared/engines.js';
 import { CODEX_ENGINE, FIXTURE_ENGINE, harnessWrites } from './harness/approval.js';
+import { NATIVE_LOOP_ENGINE } from '../shared/native-loop.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { SecretBox } from './connection-secrets.js';
@@ -466,7 +467,7 @@ export class Store extends EventEmitter {
     await this.interruptUnpreparedApprovals();
     for (const state of this.states.values()) {
       for (const session of state.sessions.filter((item) =>
-        ![FIXTURE_ENGINE, CODEX_ENGINE].includes(item.engine.name) && ['working', 'waiting', 'queued'].includes(item.state),
+        ![FIXTURE_ENGINE, CODEX_ENGINE, NATIVE_LOOP_ENGINE].includes(item.engine.name) && ['working', 'waiting', 'queued'].includes(item.state),
       )) {
         session.state = 'stopped';
         session.endedAt = now();

@@ -166,17 +166,29 @@ export class VerificationService {
     }
   }
 
-  /** Run the declared checks on one finished run. One verification per run at a time. */
-  verify(projectId: string, sessionId: string): Promise<VerificationView> {
+  /**
+   * Run the declared checks on one finished run. One verification per run at a time. A
+   * Diomedes work loop's finish gate (H13) asks for the same checks the person declared; it
+   * never declares its own, and the record says who asked.
+   */
+  verify(
+    projectId: string,
+    sessionId: string,
+    options: { requestedBy?: VerificationRecord['requestedBy'] } = {},
+  ): Promise<VerificationView> {
     const key = `${projectId}\0${sessionId}`;
     const running = this.inFlight.get(key);
     if (running) return running;
-    const work = this.run(projectId, sessionId).finally(() => this.inFlight.delete(key));
+    const work = this.run(projectId, sessionId, options.requestedBy ?? 'you').finally(() => this.inFlight.delete(key));
     this.inFlight.set(key, work);
     return work;
   }
 
-  private async run(projectId: string, sessionId: string): Promise<VerificationView> {
+  private async run(
+    projectId: string,
+    sessionId: string,
+    requestedBy: VerificationRecord['requestedBy'],
+  ): Promise<VerificationView> {
     const startedAt = now();
     // 1. Under the store lock: read the exact bytes and run the deterministic checks.
     const prepared = await this.store.locked(async () => {
@@ -252,7 +264,7 @@ export class VerificationService {
         taskId: prepared.task.id,
         declarationDigest: prepared.declaration.digest,
         declaredChecks: prepared.declaration.checks.length,
-        requestedBy: 'you',
+        requestedBy,
         startedAt,
         endedAt: now(),
         producer: originForSession(prepared.session) ?? null,
@@ -263,9 +275,12 @@ export class VerificationService {
       const passed = record.checks.filter((check) => check.outcome === 'passed').length;
       const entry = this.store.addEntry(state, {
         origin: verifierOrigin(),
-        actor: 'you',
+        actor: requestedBy === 'you' ? 'you' : 'diomedes',
         kind: 'verified',
-        sentence: `You verified ${prepared.task.name}: ${passed} of ${record.checks.length} checks passed`,
+        sentence:
+          requestedBy === 'you'
+            ? `You verified ${prepared.task.name}: ${passed} of ${record.checks.length} checks passed`
+            : `Diomedes ran your checks on ${prepared.task.name} when its loop finished: ${passed} of ${record.checks.length} passed`,
         sessionId: prepared.session.id,
         taskId: prepared.task.id,
       });

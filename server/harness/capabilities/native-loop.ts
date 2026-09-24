@@ -402,6 +402,10 @@ export function createLoopProcedure(deps: { store: Store; runs: RunService; tool
   let modelRoutes: LoopModelRoutes | null = null;
   let verification: LoopVerification | null = null;
   const settling = new Set<string>();
+  // Startup recovery can resume a loop before the app has attached every route and the
+  // verifier. `hold` closes this gate until `open`; a host that never holds it is open.
+  let gate: Promise<void> = Promise.resolve();
+  let release = () => {};
 
   const admit = async (route: string, input: { projectId: string; model: string | null; accountRoute: string | null }) => {
     if (route === LOOP_FIXTURE_ROUTE) return { model: null, accountRoute: null };
@@ -586,6 +590,8 @@ export function createLoopProcedure(deps: { store: Store; runs: RunService; tool
   const procedure: HarnessProcedure & {
     setModelRoutes(routes: LoopModelRoutes): void;
     attachVerification(port: LoopVerification): void;
+    hold(): void;
+    open(): void;
     admit: typeof admit;
     recoverChild(run: HarnessRun): Promise<void>;
     children: typeof children;
@@ -611,6 +617,7 @@ export function createLoopProcedure(deps: { store: Store; runs: RunService; tool
           }
         : view,
     async run(runId: string, owner: string, principal: HarnessPrincipal) {
+      await gate;
       const run = await runs.get(runId);
       const input = loopInput(run);
       const stop = new AbortController();
@@ -648,6 +655,7 @@ export function createLoopProcedure(deps: { store: Store; runs: RunService; tool
     stopped: (run) => stopChildren(run),
     async settled(run) {
       if (run.capabilityId !== NATIVE_LOOP.id) return;
+      await gate;
       if (run.state !== 'completed') {
         await stopChildren(run);
         return;
@@ -668,7 +676,7 @@ export function createLoopProcedure(deps: { store: Store; runs: RunService; tool
           const current = state.tasks.find((item) => item.id === taskId);
           if (!session || !current || current.sessionIds.at(-1) !== session.id || current.state === 'done') return;
           if (verificationOf({ session, task: current, history: state.history }).state !== 'verified') return;
-          current.state = 'done';
+          store.moveTask(state, current, 'done', 'diomedes');
           current.reason = null;
           session.log.push({
             time: now(),
@@ -683,6 +691,14 @@ export function createLoopProcedure(deps: { store: Store; runs: RunService; tool
     },
     setModelRoutes(routes) {
       modelRoutes = routes;
+    },
+    hold() {
+      gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    },
+    open() {
+      release();
     },
     attachVerification(port) {
       verification = port;
