@@ -42,6 +42,7 @@ import { ToolActivityList } from './ToolActivity';
 import { resolvedDetail, threadStyle, useWorkStyleView } from './WorkStylePicker';
 import { WORK_STYLE_LABELS } from '../../shared/work-style';
 import { TurnBody } from './TurnBody';
+import { VerificationBadge, VerificationPanel, verificationFor } from './Verification';
 import { sizeLabel } from './FilesPane';
 import { turnKeyOf, type ArtifactIndex, type ArtifactRecord } from './artifacts';
 import { identityLabel, turnReference } from '../../shared/file-identity';
@@ -419,6 +420,8 @@ export function ThreadView({
   const receiptOn =
     lastReceipt?.sessionId ?? (lastReceipt ? (ordered.at(-1)?.id ?? null) : null);
   ordered.forEach((s) => {
+    // H17: every finished run shows its four-state result, "Not verified" included.
+    const verification = task ? verificationFor(s, task, history) : null;
     items.push({
       at: s.startedAt,
       seq: 2000,
@@ -448,6 +451,12 @@ export function ThreadView({
           receipt={
             lastReceipt && receiptOn === s.id ? <StopReceiptLine receipt={lastReceipt} /> : undefined
           }
+          verification={
+            verification ? (
+              <VerificationPanel view={verification} task={task} projectId={projectId} onError={onError} />
+            ) : undefined
+          }
+          verificationBadge={verification ? <VerificationBadge view={verification} /> : undefined}
         />
       ),
     });
@@ -739,6 +748,8 @@ function RunRecord({
   onStop,
   stop,
   receipt,
+  verification,
+  verificationBadge,
 }: {
   session: Session;
   /** Tool calls streamed for this run while it is live. Never saved; the log is the record. */
@@ -748,6 +759,10 @@ function RunRecord({
   /** The scoped Stop cluster. Falls back to today's single button when absent. */
   stop?: ReactNode;
   receipt?: ReactNode;
+  /** H17: the finished run's four-state result, with its evidence. */
+  verification?: ReactNode;
+  /** The same result's state word, for the folded record. */
+  verificationBadge?: ReactNode;
 }) {
   const live = ['queued', 'working', 'waiting'].includes(session.state);
   const waiting = live && session.state !== 'waiting' && !toolRunning(activity);
@@ -767,7 +782,8 @@ function RunRecord({
         <b>{session.log.length} events</b> {dur}{' '}
         <button type="button" onClick={() => setOpen(true)}>
           show run
-        </button>
+        </button>{' '}
+        {verificationBadge}
         {receipt}
       </div>
     );
@@ -808,6 +824,7 @@ function RunRecord({
           </button>
         </div>
       )}
+      {!live && verification}
       {receipt}
     </div>
   );

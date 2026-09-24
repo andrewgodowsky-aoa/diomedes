@@ -176,6 +176,8 @@ export interface Task {
   stopReceipts?: StopReceipt[];
   /** Immutable admission evidence; absent on tasks created by legacy/internal callers. */
   creationReceipt?: TaskCreationReceipt;
+  /** H17: what a finished run must satisfy. Absent means none declared: results read Not verified. */
+  acceptance?: import('./verification.js').AcceptanceDeclaration;
   createdBy: Owner;
   createdAt: string;
   assignedTo?: Slot | null;
@@ -404,6 +406,8 @@ export interface HistoryEntry {
   rawReply?: string;
   rawReplyLength?: number;
   parseError?: string;
+  /** H17: a verification's evidence. The four-state result is projected from it, never stored. */
+  verification?: import('./verification.js').VerificationRecord;
 }
 export interface Change {
   id: string;
