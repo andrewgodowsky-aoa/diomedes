@@ -16,8 +16,9 @@
  * - at most one run per project (the Work start path already refuses a second) and two across
  *   every project, manual starts included;
  * - a task whose route sends to a service starts automatically only when that task already has
- *   an admitted start on the same route: the confirmation a person gave names the engine, so a
- *   Ready task that was never confirmed for it waits for the person's own Start.
+ *   an admitted start of exactly the same request (route, documents and thread): the confirmation
+ *   a person gave names the engine and the documents, so a Ready task never confirmed for them
+ *   waits for the person's own Start.
  */
 import type { Change, Need, Route, Session, Task } from './types.js';
 
@@ -252,7 +253,8 @@ export function planReadyQueue(input: ReadyPlanInput): ReadyPlan {
 
 /**
  * Why a Ready task waits for the person instead of starting on its own, or null when the queue
- * may start it. `consented` is true when the task already has an admitted start on this route;
+ * may start it. `consented` is true when the task already has an admitted start of exactly the
+ * request the queue would send (same route, documents and thread);
  * `serviceOn` is the Settings switch for it. A refused claim for the same Ready moment holds the
  * task with the Work start path's own words until the person starts or reopens it.
  */
