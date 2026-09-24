@@ -1,4 +1,11 @@
-import type { HarnessPrincipal, HarnessRun } from '../../shared/harness.js';
+import type { OriginSnapshot } from '../../shared/attribution.js';
+import type {
+  CapabilityManifest,
+  HarnessBudget,
+  HarnessPrincipal,
+  HarnessRun,
+  Json,
+} from '../../shared/harness.js';
 import type { Need, Session } from '../../shared/types.js';
 import { assertApprovalMatches, type ApprovalAdmission } from '../approval-admission.js';
 import { ApiError } from '../paths.js';
@@ -31,10 +38,26 @@ export const localHarnessPrincipal = (projectId: string): HarnessPrincipal => ({
 
 const active = (session: Session) => ['queued', 'working', 'waiting'].includes(session.state);
 
+/**
+ * A capability whose steps are fixed host code rather than a model loop. It
+ * runs through the same RunService, Task, Session, mirror and recovery as every
+ * other capability here; no model is called and no provider route is involved.
+ */
+export interface HarnessProcedure {
+  readonly capability: CapabilityManifest;
+  /** The Session's engine name. Never a model or provider name. */
+  readonly engine: string;
+  /** The Session's origin from the start, so it never reads as model work. */
+  readonly origin: OriginSnapshot;
+  readonly budget: HarnessBudget;
+  run(runId: string, owner: string, principal: HarnessPrincipal): Promise<void>;
+}
+
 export class HarnessBridge {
   private readonly owner = identifier('harness-');
   private readonly mirrors = new Set<Promise<void>>();
   private readonly jobs = new Map<string, Promise<void>>();
+  private readonly procedures = new Map<string, HarnessProcedure>();
   private closed = false;
   private mirrorError: unknown;
 
@@ -53,6 +76,30 @@ export class HarnessBridge {
     private readonly hostProjectId: string,
     private readonly codex?: CodexEngineAdapter,
   ) {}
+
+  /** Register a procedure capability. The host does this once, before recovery. */
+  registerProcedure(procedure: HarnessProcedure) {
+    if (
+      this.procedures.has(procedure.capability.id) ||
+      [FORMAT_REPORT.id, CODEX_REPORT.id].includes(procedure.capability.id)
+    )
+      throw new Error(`Capability ${procedure.capability.id} is already registered.`);
+    this.procedures.set(procedure.capability.id, procedure);
+  }
+  /** The capabilities this bridge can start, by id. Codex needs its own admission input. */
+  private capabilityFor(capabilityId: string, codex: boolean): CapabilityManifest | undefined {
+    if (codex) return this.codex && capabilityId === CODEX_REPORT.id ? CODEX_REPORT : undefined;
+    if (capabilityId === FORMAT_REPORT.id) return FORMAT_REPORT;
+    return this.procedures.get(capabilityId)?.capability;
+  }
+  /** Session engines this bridge owns, for recovery and notes. */
+  private engines() {
+    return new Set([
+      FIXTURE_ENGINE,
+      CODEX_ENGINE,
+      ...[...this.procedures.values()].map((procedure) => procedure.engine),
+    ]);
+  }
 
   /** Notifications enqueue onto the existing Store lock, never await it inside a run commit. */
   enqueue(run: HarnessRun) {
@@ -99,11 +146,14 @@ export class HarnessBridge {
     prompt: string,
     principal: HarnessPrincipal,
     codex?: { runId: string; input: CodexRunInput; admission: WorkAdmission },
+    /** A procedure's admission-pinned run id and input, so a replay finds the same run. */
+    pinned?: { runId: string; input: Json },
   ): Promise<Session> {
     if (this.closed) throw new ApiError(503, 'The local service is closing.');
-    const capability =
-      codex && this.codex && capabilityId === CODEX_REPORT.id ? CODEX_REPORT : FORMAT_REPORT;
-    if (capabilityId !== capability.id)
+    const capability = this.capabilityFor(capabilityId, codex !== undefined);
+    const procedure = this.procedures.get(capabilityId) ?? null;
+    // A procedure starts only from its own admission, which pins its input.
+    if (!capability || capabilityId !== capability.id || (pinned !== undefined) !== !!procedure)
       throw new ApiError(400, 'This native capability is not available.');
     validatePrincipal(principal);
     if (
@@ -122,7 +172,7 @@ export class HarnessBridge {
     const task =
       taskId === null
         ? this.store.createTask(state, {
-            name: FORMAT_REPORT.label,
+            name: capability.label,
             description: prompt,
             owner: 'diomedes-with-ok',
           })
@@ -140,14 +190,15 @@ export class HarnessBridge {
       log: [{ time: now(), level: 'plain', sentence: this.redact(`Requested: ${prompt}`) }],
       entryIds: [],
       needId: null,
+      ...(procedure ? { origin: structuredClone(procedure.origin) } : {}),
       engine: {
-        name: codex ? CODEX_ENGINE : this.adapter.id,
+        name: codex ? CODEX_ENGINE : (procedure?.engine ?? this.adapter.id),
         model: null,
         worker: 1,
         branch: null,
         context: null,
         events: 0,
-        version: codex ? this.codex!.version : this.adapter.version,
+        version: codex ? this.codex!.version : procedure ? capability.version : this.adapter.version,
         verified: false,
       },
     };
@@ -169,7 +220,11 @@ export class HarnessBridge {
     let createdRunId: string | undefined;
     try {
       const run = await this.runs.start({
-        ...(codex ? { id: codex.runId, input: codex.input } : {}),
+        ...(codex
+          ? { id: codex.runId, input: codex.input }
+          : pinned
+            ? { id: pinned.runId, input: pinned.input }
+            : {}),
         tenantId: 'local',
         projectId,
         taskId: task.id,
@@ -179,7 +234,7 @@ export class HarnessBridge {
         tools: this.tools,
         budget: codex
           ? { units: 1, modelCalls: 1, toolCalls: 1, wallMs: null }
-          : { units: 6, modelCalls: 6, toolCalls: 6, wallMs: null },
+          : (procedure?.budget ?? { units: 6, modelCalls: 6, toolCalls: 6, wallMs: null }),
       });
       createdRunId = run.id;
       await this.runs.claim(run.id, this.owner, codex ? 5 * 60_000 : 60_000);
@@ -424,6 +479,11 @@ export class HarnessBridge {
         await this.codex.run(run, this.owner);
         return;
       }
+      const procedure = this.procedures.get(run.capabilityId);
+      if (procedure) {
+        await procedure.run(runId, this.owner, run.principal);
+        return;
+      }
       await new NativeAgent(this.runs, this.adapter, this.tools).run(
         runId,
         this.owner,
@@ -590,7 +650,7 @@ export class HarnessBridge {
   }
   async note(projectId: string, sessionId: string, text: string) {
     const session = this.store.state(projectId).sessions.find((item) => item.id === sessionId);
-    if (!session || ![FIXTURE_ENGINE, CODEX_ENGINE].includes(session.engine.name))
+    if (!session || !this.engines().has(session.engine.name))
       throw new ApiError(404, 'This run was not found.');
     session.log.push({
       time: now(),
@@ -616,9 +676,10 @@ export class HarnessBridge {
     const known = new Set<string>();
     for (let run of saved) {
       if (run.sessionId) this.sessionRuns.set(run.sessionId, run.id);
+      const procedure = this.procedures.get(run.capabilityId);
       if (
-        ![FORMAT_REPORT.id, CODEX_REPORT.id].includes(run.capabilityId) ||
-        run.capabilityVersion !== 'v1'
+        (![FORMAT_REPORT.id, CODEX_REPORT.id].includes(run.capabilityId) && !procedure) ||
+        run.capabilityVersion !== (procedure?.capability.version ?? 'v1')
       ) {
         console.warn('Skipped a harness run whose capability is unavailable.');
         continue;
@@ -716,7 +777,7 @@ export class HarnessBridge {
       let changed = false;
       for (const session of state.sessions.filter(
         (item) =>
-          [FIXTURE_ENGINE, CODEX_ENGINE].includes(item.engine.name) &&
+          this.engines().has(item.engine.name) &&
           active(item) &&
           !known.has(item.id),
       )) {

@@ -102,6 +102,7 @@ export default defineConfig({
     'file-imports-ui.spec.ts',
     'fd02-discovery.spec.ts',
     'fd03-readiness.spec.ts',
+    'automations.spec.ts',
     'files-pane-ux-20260917.spec.ts',
     'h01-preview-repair.spec.ts',
     'independent-h01-final-20260917.spec.ts',

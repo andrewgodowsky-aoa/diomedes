@@ -3,6 +3,8 @@ import { taskDocumentProblem } from '../shared/task-sources.js';
 import { mountPermissionRoutes } from './permission-routes.js';
 import { WorkspaceService } from './workspaces.js';
 import { mountWorkspaceRoutes } from './workspace-routes.js';
+import { mountAutomationRoutes } from './automation-routes.js';
+import { AutomationOccurrences, AutomationService } from './automations.js';
 import { ThemeService, THEME_PACK_ID_PATTERN, THEME_SCOPE_PATTERN } from './themes.js';
 import { mountThemeRoutes } from './theme-routes.js';
 import { CustomizationGate } from './customization-gate.js';
@@ -12,7 +14,6 @@ import { ConfigurationService } from './configuration.js';
 import { mountConfigurationRoutes } from './configuration-routes.js';
 import { DiscoveryService } from './discovery/service.js';
 import { mountDiscoveryRoutes } from './discovery/routes.js';
-import { WeeklyBriefService } from './weekly-brief.js';
 import { planTitle, taskNameFromText } from '../shared/display-names.js';
 import { browseImports, inspectImport, importExports } from './file-imports.js';
 import { isActiveMember } from '../shared/workspaces.js';
@@ -677,10 +678,6 @@ export async function createApp(options: AppOptions) {
   // live on every check, so a staged configuration cannot ride on an old reading.
   const configuration = new ConfigurationService(store, workspaces, agents);
   await configuration.init();
-  // The one job an activated setup can actually run. It composes from approved
-  // files and writes through the recorded writer; the workspace decides which
-  // project it writes into, and refuses rather than guessing when nobody has.
-  const briefs = new WeeklyBriefService(store);
   // Managed usage. The ledger is durable and per-organization; the gateway
   // reads membership, tenant, entitlement and processing policy from the host's
   // own services, so no request field can stand in for any of them.
@@ -815,6 +812,9 @@ export async function createApp(options: AppOptions) {
     dataDir: store.dataDir,
     currentAuthority: options.harnessAuthority,
     textLeaseMs: options.harnessTextLeaseMs,
+    // The one job an activated setup can run, as a harness procedure: the
+    // workspace decides where it writes and refuses rather than guessing.
+    weeklyBrief: AutomationService.host(workspaces, configuration),
   });
   // External text turns run through the host's RunService: the adapter is only
   // the provider transport inside the fenced dispatch step.
@@ -880,6 +880,16 @@ export async function createApp(options: AppOptions) {
     },
   };
   await harness.init();
+  // Run once admits the brief through the harness above, so its occurrences
+  // are settled only after the harness has recovered its runs.
+  const automations = new AutomationService(
+    store,
+    workspaces,
+    configuration,
+    harness,
+    new AutomationOccurrences(store.dataDir),
+  );
+  await automations.init();
   const connections = new DesktopConnections(store, harness);
   const app = express();
   // The port this service listens on, learned from the first request's socket (listen(0)
@@ -1028,7 +1038,8 @@ export async function createApp(options: AppOptions) {
     });
   });
   mountPermissionRoutes(app, store, nativeWork, harness.bridge);
-  mountWorkspaceRoutes(app, store, workspaces, configuration, briefs);
+  mountWorkspaceRoutes(app, store, workspaces, configuration, automations);
+  mountAutomationRoutes(app, store, automations);
   mountThemeRoutes(app, store, themes, customization);
   mountCustomizationBenefitRoutes(app, store, workspaces, customization, customizationBenefit);
   mountManagedUsageRoutes(app, store, ledger, gateway, billing, workspaces);
