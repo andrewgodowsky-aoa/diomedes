@@ -150,7 +150,8 @@ export class HarnessBridge {
     if (this.closed) throw new ApiError(503, 'The local service is closing.');
     const capability = this.capabilityFor(capabilityId, codex !== undefined);
     const procedure = this.procedures.get(capabilityId) ?? null;
-    if (!capability || capabilityId !== capability.id || (pinned !== undefined && !procedure))
+    // A procedure starts only from its own admission, which pins its input.
+    if (!capability || capabilityId !== capability.id || (pinned !== undefined) !== !!procedure)
       throw new ApiError(400, 'This native capability is not available.');
     validatePrincipal(principal);
     if (

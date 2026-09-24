@@ -255,6 +255,21 @@ describe('the weekly brief capability', () => {
     await expect(draft()).rejects.toThrow();
   });
 
+  test('the capability starts only from its admission, never from a bare request', async () => {
+    await expect(
+      store.locked(() =>
+        host.bridge.start(
+          projectId,
+          null,
+          WEEKLY_BRIEF.id,
+          'Prepare the brief.',
+          localHarnessPrincipal(projectId),
+        ),
+      ),
+    ).rejects.toThrow(/not available/);
+    expect(store.state(projectId).tasks).toEqual([]);
+  });
+
   test('a write replayed after a crash returns the same History entry', async () => {
     await start('R-brief-crash', input());
     const done = await settled('R-brief-crash');
