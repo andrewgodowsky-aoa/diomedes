@@ -441,7 +441,9 @@ describe('missed work and this computer (OPS-09)', () => {
     let shown = await view();
     expect(shown.attention).toHaveLength(1);
     expect(shown.attention[0]).toMatchObject({ kind: 'missed', count: 4, title: 'Missed while this computer was off' });
-    expect(shown.lastResult?.text).toBe('Missed — computer was off');
+    // Nothing ran, so there is no last result; the missed slots are in the runs list.
+    expect(shown.lastResult).toBeNull();
+    expect((await detail()).occurrences[0]!.note).toBe('Missed — computer was off');
     // A second outage while the first is unread joins it rather than repeating.
     await stop();
     clock = Date.parse('2026-10-03T16:00:00Z');

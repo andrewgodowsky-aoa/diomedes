@@ -760,10 +760,12 @@ export class AutomationService {
           : occurrence === labelled && forLabel
             ? forLabel
             : await this.occurrenceView(occurrence);
-      if (!lastResult && shown.view.result)
+      // The last result is what the last run or press left behind. A slot
+      // that never started is in the runs list and attention, not here.
+      if (!lastResult && shown.view.result && !shown.view.note)
         lastResult = {
           result: shown.view.result,
-          text: shown.view.note ?? AUTOMATION_RESULT_TEXT[shown.view.result],
+          text: AUTOMATION_RESULT_TEXT[shown.view.result],
           at:
             shown.view.run?.updatedAt ??
             (occurrence.admission.state === 'refused' ? occurrence.admission.at : occurrence.observedAt),
