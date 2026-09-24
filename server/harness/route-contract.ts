@@ -112,9 +112,11 @@ export const ROUTE_CONTRACTS: Record<string, AdapterRouteContract> = Object.free
         'Opt-in persistent stream-json process; each turn has a fenced RunService step.',
       ),
       'follow-up': native('Sequential user messages reuse the live process after a known result.'),
-      steer: unsupported('Active-turn steering has not been proven and is refused.'),
+      steer: host(
+        'H03: queued by Diomedes while a turn runs and sent as the next turn of the same live process once it finishes; never injected mid-turn, and refused with a stated reason if the turn ahead of it stops.',
+      ),
       interrupt: native(
-        'Native control interrupt acknowledgment is distinct from turn completion.',
+        'Native control interrupt acknowledgment is distinct from turn completion. A Stop waits a bounded grace for the turn boundary, then ends the process tree and says so.',
       ),
       resume: native(
         'Explicit --resume after validated idle metadata; uncertain turns are never replayed.',

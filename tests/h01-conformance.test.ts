@@ -75,9 +75,15 @@ describe('route descriptors', () => {
       mode: 'external-session',
       engine: { id: 'claude-code', version: '2.1.252', protocolVersion: 'stream-json' },
       streaming: { transientPreview: 'text-delta', durableEvents: 'run-record' },
-      commands: { fork: { support: 'native' }, steer: { support: 'unsupported' }, reconcile: { support: 'unsupported' } },
+      // H03: a message sent while Claude Code answers is the host's queue, never a native channel.
+      commands: { fork: { support: 'native' }, steer: { support: 'host' }, reconcile: { support: 'unsupported' } },
     });
     expect(contractChecks(contract).find(check => check.id === 'native-session-run-backing')?.outcome).toBe('passed');
+  });
+  it('fails native session backing while Claude steering is still declared unsupported (H03)', () => {
+    const contract = structuredClone(ROUTE_CONTRACTS['claude-code-session']);
+    contract.commands.steer.support = 'unsupported';
+    expect(contractChecks(contract).find(check => check.id === 'native-session-run-backing')?.outcome).toBe('failed');
   });
 
   it.each(['route', 'engine', 'version', 'protocol', 'mode', 'steer', 'resume', 'stream', 'auth', 'model'] as const)(

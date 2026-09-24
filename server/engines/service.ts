@@ -1717,6 +1717,8 @@ export class EngineService {
     runId: string,
     input: TextRequest,
     sourceRunId?: string,
+    /** H03: wait behind a running turn (the route's steer queue) instead of being refused. */
+    options: { queued?: boolean } = {},
   ) {
     return this.nativeTurn(
       { engine: 'claude-code', routeId: 'claude-code-session', driver: this.nativeSessions, name: 'Claude' },
@@ -1724,6 +1726,7 @@ export class EngineService {
       runId,
       input,
       sourceRunId,
+      options,
     );
   }
   /**
@@ -1756,6 +1759,7 @@ export class EngineService {
     runId: string,
     input: TextRequest,
     sourceRunId?: string,
+    options: { queued?: boolean } = {},
   ) {
     const driver = route.driver;
     if (!driver)
@@ -1793,6 +1797,7 @@ export class EngineService {
         runId,
         sourceRunId,
         input,
+        ...(options.queued ? { queued: true } : {}),
         admit: async (signal) => {
           await this.discover(true);
           await this.check(route.engine, signal);
