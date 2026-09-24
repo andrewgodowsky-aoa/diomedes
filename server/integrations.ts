@@ -274,22 +274,23 @@ const configArgs = (extra: JsonObject = {}) =>
 
 export async function killOwnedProcess(child: ChildProcess): Promise<void> {
   if (child.exitCode !== null || child.signalCode !== null || child.pid === undefined) return;
+  let refused = false;
   if (process.platform === 'win32') {
-    await new Promise<void>((resolve, reject) => {
+    // taskkill /T exits non-zero when any process in the tree could not be
+    // killed, including a short-lived descendant that exited before taskkill
+    // reached it, and its own exit usually arrives before Node delivers the
+    // child's. A refused tree kill is not a failed stop: the child's exit,
+    // awaited below, decides.
+    const code = await new Promise<number | null>((resolve, reject) => {
       const killer = spawn(
         path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'taskkill.exe'),
         ['/PID', String(child.pid), '/T', '/F'],
         { windowsHide: true, stdio: 'ignore' },
       );
       killer.once('error', reject);
-      killer.once('exit', (code) => {
-        if (code === 0 || child.exitCode !== null || child.signalCode !== null) resolve();
-        else
-          reject(
-            new IntegrationError('CLEANUP_FAILED', 'The owned process could not be stopped.'),
-          );
-      });
+      killer.once('exit', resolve);
     });
+    refused = code !== 0;
   } else {
     // Native Unix launches get a dedicated process group; never target by name.
     try {
@@ -303,10 +304,9 @@ export async function killOwnedProcess(child: ChildProcess): Promise<void> {
       const timer = setTimeout(
         () =>
           reject(
-            new IntegrationError(
-              'CLEANUP_TIMEOUT',
-              'The owned process did not confirm exit.',
-            ),
+            refused
+              ? new IntegrationError('CLEANUP_FAILED', 'The owned process could not be stopped.')
+              : new IntegrationError('CLEANUP_TIMEOUT', 'The owned process did not confirm exit.'),
           ),
         5000,
       );
