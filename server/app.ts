@@ -75,6 +75,9 @@ import { fakeCodexSnapshot, usageService } from './usage.js';
 import { engineCatalog, isKnownChoice } from './models.js';
 import { ReviewerService, type ReviewerAdapter } from './trust/reviewer.js';
 import { codexReviewerAdapter } from './trust/codex-reviewer.js';
+import { VerificationService } from './verification/service.js';
+import { mountVerificationRoutes } from './verification/routes.js';
+import { codexVerificationReviewer, type VerificationReviewerAdapter } from './verification/reviewer.js';
 import { AgentRegistry } from './agents.js';
 import { AUTO_AGENT, agentCompatibility } from '../shared/agents.js';
 import { effortFor } from '../shared/effort.js';
@@ -224,6 +227,13 @@ interface AppOptions {
    * synthetic reviewer to prove authority without a provider call.
    */
   reviewerAdapter?: ReviewerAdapter | null;
+  /**
+   * H17 reviewer pass for verification. Omitted follows `reviewerAdapter`: a
+   * host with no reviewer has no verification reviewer either. Tests inject one.
+   */
+  verificationReviewer?: VerificationReviewerAdapter | null;
+  /** H17 reviewer timeout; tests shorten it to prove a timeout reads uncertain. */
+  verificationReviewTimeoutMs?: number;
   /**
    * The Jev preflight (NC-2026-09-22.1, Phase F). Off unless given: omitted or
    * null mounts no preflight route and no provider is ever asked. Tests inject
@@ -1012,6 +1022,16 @@ export async function createApp(options: AppOptions) {
     });
   });
   mountPermissionRoutes(app, store, nativeWork);
+  const verification = new VerificationService(
+    store,
+    options.verificationReviewer !== undefined
+      ? options.verificationReviewer
+      : reviewerAdapter
+        ? codexVerificationReviewer()
+        : null,
+    { reviewTimeoutMs: options.verificationReviewTimeoutMs },
+  );
+  mountVerificationRoutes(app, store, verification);
   mountWorkspaceRoutes(app, store, workspaces, configuration, briefs);
   mountThemeRoutes(app, store, themes, customization);
   mountCustomizationBenefitRoutes(app, store, workspaces, customization, customizationBenefit);
@@ -1628,7 +1648,12 @@ export async function createApp(options: AppOptions) {
   );
   app.get(
     '/api/projects/:id/state',
-    route(async (req) => store.projectState(id(req))),
+    route(async (req) => {
+      // H17: record outside changes to verified files first, so a result the
+      // projection reads from History turns uncertain without anyone opening them.
+      await verification.sync(id(req));
+      return store.projectState(id(req));
+    }),
   );
   app.get(
     '/api/projects/:id/cloud-sharing',
