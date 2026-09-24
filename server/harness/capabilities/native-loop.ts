@@ -89,6 +89,25 @@ const isCloudRoute = (route: string): route is Route =>
 
 // --- reading project files --------------------------------------------------------------------
 
+/** What the loop's two readers return, which H12 checks before recording an output. */
+const LIST_OUTPUT = z.strictObject({
+  files: z.array(z.string()),
+  more: z.number().int().positive().optional(),
+  note: z.string().optional(),
+}) as unknown as z.ZodType<Json>;
+const READ_OUTPUT = z.union([
+  z.strictObject({ path: z.string(), refused: z.string() }),
+  z.strictObject({ path: z.string(), found: z.literal(false) }),
+  z.strictObject({
+    path: z.string(),
+    found: z.literal(true),
+    sha: z.string(),
+    bytes: z.number().int().nonnegative(),
+    text: z.string(),
+    truncated: z.boolean(),
+  }),
+]) as unknown as z.ZodType<Json>;
+
 /**
  * Read one project file for a loop or its delegate. The path guard is the
  * Files pane's (`projectFile` through `Store.current`); on a cloud route the
@@ -158,6 +177,7 @@ export function registerLoopTools(tools: ToolRegistry, store: Store, runs: RunSe
   const read = {
     version: 'v1',
     effect: 'read',
+    effectClass: 'read',
     permission: null,
     approval: false,
     destination: 'local',
@@ -185,6 +205,7 @@ export function registerLoopTools(tools: ToolRegistry, store: Store, runs: RunSe
   tools.register({
     ...read,
     name: 'list_project_files',
+    outputSchema: LIST_OUTPUT,
     description: 'List the project’s files.',
     schema: scope,
     execute: async (context) => {
@@ -195,6 +216,7 @@ export function registerLoopTools(tools: ToolRegistry, store: Store, runs: RunSe
   tools.register({
     ...read,
     name: 'read_project_file',
+    outputSchema: READ_OUTPUT,
     description: 'Read one project file as text.',
     schema: scope.extend({ path: z.string().trim().min(1).max(400) }),
     execute: async (context) => {
@@ -240,6 +262,7 @@ function delegateRegistry(store: Store, projectId: string, route: string): ToolR
   const read = {
     version: 'v1',
     effect: 'read',
+    effectClass: 'read',
     permission: null,
     approval: false,
     destination: 'local',
@@ -249,6 +272,7 @@ function delegateRegistry(store: Store, projectId: string, route: string): ToolR
   registry.register({
     ...read,
     name: 'list_project_files',
+    outputSchema: LIST_OUTPUT,
     description: 'List the project’s files by path.',
     schema: z.strictObject({}),
     execute: () => listFor(store, projectId, route),
@@ -256,6 +280,7 @@ function delegateRegistry(store: Store, projectId: string, route: string): ToolR
   registry.register({
     ...read,
     name: 'read_project_file',
+    outputSchema: READ_OUTPUT,
     description: 'Read one project file as text, by its path.',
     schema: z.strictObject({ path: z.string().trim().min(1).max(400) }),
     execute: ({ input }) => readFor(store, projectId, route, input.path),

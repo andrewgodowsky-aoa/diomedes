@@ -216,12 +216,14 @@ function registry(writes: string[]) {
     version: 'v1',
     description: 'Read a note.',
     effect: 'read',
+    effectClass: 'read',
     permission: null,
     approval: false,
     destination: 'local',
     trustedInputRequired: false,
     cost: 0,
     schema: z.strictObject({ path: z.string() }),
+    outputSchema: z.strictObject({ path: z.string(), text: z.string().nullable() }),
     execute: ({ input }) => ({ path: input.path, text: NOTES[input.path] ?? null }),
   });
   tools.register({
@@ -229,12 +231,15 @@ function registry(writes: string[]) {
     version: 'v1',
     description: 'Write the report.',
     effect: 'idempotent',
+    effectClass: 'idempotent-write',
     permission: 'write-project-file',
     approval: true,
     destination: 'local',
     trustedInputRequired: false,
     cost: 1,
     schema: z.strictObject({ path: z.literal('report.md'), text: z.string() }),
+    outputSchema: z.strictObject({ written: z.string() }),
+    targets: (input) => [input.path],
     execute: ({ input }) => {
       writes.push(input.text);
       return { written: input.path };
