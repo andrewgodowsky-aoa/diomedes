@@ -31,7 +31,9 @@ export function sessionLine(view: ThreadSessionView | null): SessionLine | null 
       attribution,
       tone: 'quiet',
     };
-  return { state: "Couldn't resume", detail: continuity.detail, attribution, tone: 'warn' };
+  // The state word says "Couldn't resume"; the record's reason follows it without saying it again.
+  const detail = continuity.detail.replace(/^Couldn't resume\.\s*/, '') || null;
+  return { state: "Couldn't resume", detail, attribution, tone: 'warn' };
 }
 
 /** Whether a message may be queued behind the answer now running. Only where the route queues. */
