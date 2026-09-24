@@ -142,12 +142,6 @@ export function migrateConversation(
 }
 
 /**
- * Settings written by an earlier build. The Workbook is gone (Andrew,
- * 2026-09-23), and with it the keys only it read: `surface` (which of the two
- * surfaces opened), `lastPage` and `tasksView`. A file that still holds them
- * loses them here, and the next write stores the settings without them.
- */
-/**
  * Where the Workbook left off in a project: the Workbook is gone, so the
  * record is dropped on load and the next persist stores the project without it.
  */
@@ -173,6 +167,11 @@ export function migrateSettings(settings: Settings): void {
   settings.onboarding.setupVersion = 2;
   settings.onboarding.discoveryConsentAt ??= null;
   settings.onboarding.aiSkipped ??= false;
+  // The Workbook is gone (Andrew, 2026-09-23), and with it the keys only it
+  // read: `surface` (which of the two surfaces opened), `lastPage` and
+  // `tasksView`. The API refuses them as unknown, but a file written by 0.1.8 or
+  // earlier still holds them, and a person can upgrade from there in one step.
+  // They are dropped here, and the next write stores the settings without them.
   const retired = settings as { surface?: unknown; lastPage?: unknown; tasksView?: unknown };
   delete retired.surface;
   delete retired.lastPage;

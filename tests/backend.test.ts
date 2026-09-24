@@ -601,9 +601,9 @@ describe('threads are first-class conversations', () => {
     expect(JSON.stringify(reloadedAgain.state(id).conversations)).toBe(snapshot);
   });
   // The Workbook is gone (2026-09-23). A stored file loses the keys only it
-  // read, and for one release a client that still sends them is answered
-  // rather than refused: they are accepted and dropped.
-  test('settings retired with the Workbook are dropped on load and on write', async () => {
+  // read, and a client that still sends one is refused as it would be for any
+  // unknown key: the allowance that accepted and dropped them lasted one release.
+  test('settings retired with the Workbook are dropped on load and refused on write', async () => {
     const settingsPath = path.join(temp, 'data', 'settings.json');
     await request('/settings', 'PUT', { detail: 'standard' });
     const raw = JSON.parse(await fs.readFile(settingsPath, 'utf8'));
@@ -618,18 +618,18 @@ describe('threads are first-class conversations', () => {
     for (const key of ['surface', 'lastPage', 'tasksView'])
       expect(Object.keys(reloaded.settings)).not.toContain(key);
 
-    const put = await request('/settings', 'PUT', {
-      surface: 'workbook',
-      lastPage: { '0123456789ab': 'home' },
-      tasksView: {},
-      detail: 'technical',
-    });
-    expect(put.status).toBe(200);
-    expect(put.data.detail).toBe('technical');
-    for (const key of ['surface', 'lastPage', 'tasksView']) {
-      expect(Object.keys(put.data)).not.toContain(key);
-      expect(Object.keys(JSON.parse(await fs.readFile(settingsPath, 'utf8')))).not.toContain(key);
+    const before = await fs.readFile(settingsPath, 'utf8');
+    for (const [key, value] of [
+      ['surface', 'workbook'],
+      ['lastPage', { '0123456789ab': 'home' }],
+      ['tasksView', {}],
+    ] as const) {
+      const put = await request('/settings', 'PUT', { [key]: value, detail: 'technical' });
+      expect(put.status).toBe(400);
+      expect(put.data.error).toBe(`Unknown setting: ${key}`);
     }
+    // A refused write changes nothing, the detail level it carried included.
+    expect(await fs.readFile(settingsPath, 'utf8')).toBe(before);
   });
   test('a stored project loses where the Workbook left off', async () => {
     const id = await sample();

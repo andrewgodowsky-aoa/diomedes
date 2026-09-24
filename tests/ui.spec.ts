@@ -26,7 +26,7 @@ test.describe.configure({ mode: 'serial' });
 const HEADERS = { 'X-Diomedes-Client': '1' };
 /** The sample project's plan, the one document these scenarios edit and restore. */
 const PLAN = 'Reopening plan.md';
-/** Settings keys the Workbook read. The server accepts and drops them, and stores none. */
+/** Settings keys the Workbook read. The server refuses them in a write and stores none. */
 const RETIRED_KEYS = ['surface', 'lastPage', 'tasksView'];
 
 let projectId = '';
@@ -317,17 +317,21 @@ test('F01-F02: first run preserves detail and approvals, supports AI skip, and r
   ]);
   await expect(page.getByText('The Workbook', { exact: true })).toHaveCount(0);
   await page.keyboard.press('Escape');
-  // A settings file from an earlier build can still ask for the Workbook. The
-  // server takes the request, drops the retired key, and keeps the detail level.
+  // A client from before the Workbook's removal can still ask for it. The
+  // server refuses the whole write as unknown, so the detail level it carried
+  // is not applied either, and the Console stays as it was.
   const legacy = await page.request.put('/api/settings', {
     headers: HEADERS,
     data: { surface: 'workbook', detail: 'standard' },
   });
-  expect(legacy.ok()).toBe(true);
-  expectNoRetiredKeys(await legacy.json());
+  expect(legacy.status()).toBe(400);
+  expect(await legacy.text()).toContain('Unknown setting: surface');
+  const afterLegacy = await readSettings(page);
+  expectNoRetiredKeys(afterLegacy);
+  expect(afterLegacy.detail).toBe('technical');
   await page.reload();
   await expect(page.locator('html')).toHaveAttribute('data-surface', 'console');
-  await expect(page.locator('html')).toHaveAttribute('data-detail', 'standard');
+  await expect(page.locator('html')).toHaveAttribute('data-detail', 'technical');
   await expect(railOf(page)).toBeVisible();
   await chooseDetail(page, 'Guided');
   const guidedSettings = await readSettings(page);
