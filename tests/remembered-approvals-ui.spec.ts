@@ -205,7 +205,7 @@ test('the learned offer is asked once at the threshold, and Keep asking is remem
   const project = await newProject('Keep asking');
   await approveByApi(project);
   await approveByApi(project);
-  await startRun(project);
+  const third = await startRun(project);
   await enter(page);
   await expect(offerBlock(page)).toHaveCount(0);
   await needBlock(page).getByRole('button', { name: 'Go ahead', exact: true }).click();
@@ -218,6 +218,9 @@ test('the learned offer is asked once at the threshold, and Keep asking is remem
   await expect(offerBlock(page)).toHaveCount(1);
   await offerBlock(page).getByRole('button', { name: 'Keep asking' }).click();
   await expect(offerBlock(page)).toHaveCount(0);
+  // The offer is made when the answer is recorded, before the approved run has finished:
+  // the next Work start waits for that run's session to settle, or the project is still busy.
+  await finished(project, third);
   // The answer is kept: more approvals do not bring the offer back.
   await approveByApi(project);
   await approveByApi(project);
