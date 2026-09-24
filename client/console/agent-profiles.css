@@ -1,0 +1,45 @@
+/* Settings > Agent profiles (H09). The Engines list's own classes carry the
+   layout; this file adds only the machine-string policy (decision 5) and the
+   routing list. */
+.agent-profiles .profile-line {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.agent-profiles .profile-unavailable {
+  color: var(--attn, var(--dm-text-2));
+}
+.agent-profiles .profile-rules {
+  margin: 6px 0;
+  padding-left: 18px;
+  color: var(--dm-text-2);
+}
+.agent-profiles .profile-rules li {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.agent-profiles .profile-editor {
+  border-top: 1px solid var(--dm-rule-2);
+  padding: 20px 0 4px;
+  margin-top: 16px;
+  max-width: 560px;
+}
+.agent-profiles .profile-routing {
+  border-top: 1px solid var(--dm-rule-2);
+  margin-top: 24px;
+  padding-top: 20px;
+  max-width: 560px;
+}
+.agent-profiles .profile-order {
+  margin: 10px 0;
+  padding-left: 20px;
+}
+.agent-profiles .profile-order li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+.agent-profiles .profile-order li > .profile-line {
+  flex: 1;
+}

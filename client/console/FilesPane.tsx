@@ -1,5 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { DocumentContent, DocumentInfo } from '../../shared/types';
+import type { DocumentContent, DocumentInfo, HistoryEntry } from '../../shared/types';
+import {
+  DROP_MAX_FILES,
+  dropName,
+  dropProblem,
+  pastedName,
+  previewKindForName,
+} from '../../shared/file-drops';
+import { dropIntoFiles } from './file-drops-api';
+import {
+  DocumentFactsPreview,
+  PicturePreview,
+  TablePreview,
+  VersionList,
+  VersionView,
+} from './FilePreview';
 import { readDocument } from '../api';
 import { date, time } from '../components';
 import type { FilesPaneProps } from './types';
@@ -284,10 +299,16 @@ function Viewer({
   onBack,
   onEdit,
   onOpenInPanel,
+  history,
+  onOpenVersion,
+  onAttach,
 }: {
   projectId: string;
   document: DocumentInfo;
   onBack(): void;
+  history?: readonly HistoryEntry[];
+  onOpenVersion?(identity: { path: string; sha: string }): void;
+  onAttach?(path: string): void;
   /** Write in this file. Offered only for the kinds the editor can open. */
   onEdit?(path: string): void;
   /** Open this file's artifacts in the artifact panel. Offered only when it holds some. */
@@ -321,7 +342,10 @@ function Viewer({
       controller.abort();
     };
   }, [projectId, info.path, readable, attempt]);
-  const rendered = info.kind === 'markdown' || info.kind === 'plan' || info.kind === 'drawing';
+  const preview = previewKindForName(info.path);
+  const table = readable && preview === 'table';
+  const rendered =
+    info.kind === 'markdown' || info.kind === 'plan' || info.kind === 'drawing' || table;
   return (
     <div className="files-doc">
       <div className="files-doc-head">
@@ -344,7 +368,7 @@ function Viewer({
               aria-pressed={!raw}
               onClick={() => setRaw(false)}
             >
-              Rendered
+              {table ? 'Table' : 'Rendered'}
             </button>
             <button
               type="button"
@@ -365,6 +389,11 @@ function Viewer({
             Write in this file
           </button>
         )}
+        {onAttach && (
+          <button type="button" className="files-edit" onClick={() => onAttach(info.path)}>
+            Attach to thread
+          </button>
+        )}
         {onOpenInPanel && content && fileHasArtifacts(info.path, content.text) && (
           <button
             type="button"
@@ -379,11 +408,23 @@ function Viewer({
       {/* The head and the bar already carry the path, kind, size and changed
           time, so the metadata is not repeated here (decision 4); what is left
           to say is where this file can be opened. */}
-      {!readable && (
+      {!readable && preview === 'image' && <PicturePreview projectId={projectId} path={info.path} />}
+      {!readable && (preview === 'pdf' || preview === 'xlsx') && (
+        <DocumentFactsPreview projectId={projectId} path={info.path} expect={preview} />
+      )}
+      {!readable && preview !== 'image' && preview !== 'pdf' && preview !== 'xlsx' && (
         <p className="caption files-external">
           Open in the app that owns it — this window has no hand-off to the desktop shell, so
           Nectovia cannot start it for you.
         </p>
+      )}
+      {history && onOpenVersion && (
+        <VersionList
+          history={history}
+          path={info.path}
+          currentSha={content?.sha ?? null}
+          onOpenVersion={onOpenVersion}
+        />
       )}
       {readable && failure && (
         <div className="files-read-failure">
@@ -417,6 +458,8 @@ function Viewer({
         (rendered && !raw ? (
           info.kind === 'drawing' ? (
             <DrawingPreview path={info.path} text={content.text} />
+          ) : table ? (
+            <TablePreview name={info.path} text={content.text} />
           ) : (
             <Markdown text={content.text} />
           )
@@ -447,8 +490,103 @@ function ProjectFilesPane({
   hidden = false,
   switcher,
   onOpenInPanel,
+  history,
+  openVersion = null,
+  onOpenVersion,
+  onAttach,
 }: FilesPaneProps) {
   const [importing, setImporting] = useState(false);
+  const [dropping, setDropping] = useState<'over' | 'busy' | null>(null);
+  // What the last drop or paste did, said beside the file it opened and gone once another opens.
+  const [dropNote, setDropNote] = useState<{ text: string; failed: boolean; opened: string | null } | null>(null);
+  const dragDepth = useRef(0);
+  useEffect(() => {
+    setDropNote((note) => (note && note.opened !== openPath ? null : note));
+  }, [openPath]);
+
+  /**
+   * Drop and paste add files through the recorded write (server/file-drops.ts).
+   * The pane refuses what it can see is wrong before uploading, and the local
+   * service decides again from the bytes.
+   */
+  const addFiles = async (files: { name: string; bytes: Uint8Array }[], how: 'drop' | 'paste') => {
+    if (!files.length) return;
+    if (files.length > DROP_MAX_FILES) {
+      setDropNote({ text: `Drop no more than ${DROP_MAX_FILES} files at once.`, failed: true, opened: null });
+      return;
+    }
+    for (const file of files) {
+      const problem = dropName(file.name) ? dropProblem(file.name, file.bytes) : 'A dropped file has no name Files can use.';
+      if (problem) {
+        setDropNote({ text: problem, failed: true, opened: null });
+        return;
+      }
+    }
+    setDropping('busy');
+    setDropNote(null);
+    try {
+      const result = await dropIntoFiles(projectId, files, how);
+      const renamed = result.files.filter((file) => file.renamed);
+      setDropNote({
+        text: `Added ${result.files.map((file) => file.path).join(', ')} · ${result.versionId}${
+          renamed.length
+            ? `. ${renamed.map((file) => file.name).join(', ')} ${renamed.length === 1 ? 'was' : 'were'} already taken, so the copy got the next free name.`
+            : ''
+        }`,
+        failed: false,
+        opened: result.files[0]?.path ?? null,
+      });
+      onOpen(result.files[0]?.path ?? null);
+    } catch (error) {
+      setDropNote({
+        text: error instanceof Error ? error.message : 'Files could not add these files.',
+        failed: true,
+        opened: null,
+      });
+    } finally {
+      setDropping(null);
+    }
+  };
+  const read = async (list: readonly File[]) =>
+    Promise.all(
+      list.map(async (file) => ({ name: file.name, bytes: new Uint8Array(await file.arrayBuffer()) })),
+    );
+  const onDrop = (event: React.DragEvent<HTMLElement>) => {
+    if (!event.dataTransfer.types.includes('Files')) return;
+    event.preventDefault();
+    dragDepth.current = 0;
+    setDropping(null);
+    const list = [...event.dataTransfer.files];
+    void read(list).then((files) => addFiles(files, 'drop'));
+  };
+  const onPaste = (event: React.ClipboardEvent<HTMLElement>) => {
+    // A paste into a field inside the pane belongs to the field.
+    const target = event.target as HTMLElement;
+    if (target.closest('input, textarea, [contenteditable="true"]')) return;
+    const items = [...event.clipboardData.items];
+    const pictures = items
+      .filter((item) => item.kind === 'file' && /^image\/(png|jpeg|gif|webp)$/.test(item.type))
+      .map((item) => item.getAsFile())
+      .filter((file): file is File => file !== null);
+    const text = event.clipboardData.getData('text/plain');
+    if (!pictures.length && !text) return;
+    event.preventDefault();
+    if (pictures.length) {
+      void read(pictures).then((files) =>
+        addFiles(
+          files.map((file, index) => {
+            const kind = pictures[index]!.type.slice('image/'.length) as 'png' | 'jpeg' | 'gif' | 'webp';
+            const named = dropName(file.name);
+            // A clipboard picture is usually called image.png; a dated name tells two apart.
+            return { ...file, name: named && named !== 'image.png' ? named : pastedName(kind) };
+          }),
+          'paste',
+        ),
+      );
+      return;
+    }
+    void addFiles([{ name: pastedName('text'), bytes: new TextEncoder().encode(text) }], 'paste');
+  };
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set<string>());
   const [focusPath, setFocusPath] = useState<string | null>(null);
   const restoreFocus = useRef(false);
@@ -495,7 +633,28 @@ function ProjectFilesPane({
   };
 
   return (
-    <aside className="files" aria-label="Files" style={{ width }} hidden={hidden}>
+    <aside
+      className={`files${dropping === 'over' ? ' files-dropping' : ''}`}
+      aria-label="Files"
+      style={{ width }}
+      hidden={hidden}
+      onDragEnter={(event) => {
+        if (!event.dataTransfer.types.includes('Files')) return;
+        dragDepth.current += 1;
+        setDropping((state) => state ?? 'over');
+      }}
+      onDragLeave={() => {
+        dragDepth.current = Math.max(0, dragDepth.current - 1);
+        if (!dragDepth.current) setDropping((state) => (state === 'over' ? null : state));
+      }}
+      onDragOver={(event) => {
+        if (!event.dataTransfer.types.includes('Files')) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'copy';
+      }}
+      onDrop={onDrop}
+      onPaste={onPaste}
+    >
       <div
         className="files-grip"
         role="separator"
@@ -522,6 +681,21 @@ function ProjectFilesPane({
         <button type="button" className="files-import" onClick={() => setImporting(true)}>
           Import files
         </button>
+        <p className="caption files-drop-hint">
+          {dropping === 'busy'
+            ? 'Adding to Imports...'
+            : dropping === 'over'
+              ? 'Drop to add to Imports'
+              : 'Or drop files here, or paste a picture or text.'}
+        </p>
+        {dropNote && (
+          <p
+            className={`caption files-drop-note${dropNote.failed ? ' files-fail' : ''}`}
+            role={dropNote.failed ? 'alert' : 'status'}
+          >
+            {dropNote.text}
+          </p>
+        )}
         {failure && <p className="caption files-fail">{failure}</p>}
         {!failure && loading && !documents.length && (
           <p className="caption">Reading the folder...</p>
@@ -529,7 +703,24 @@ function ProjectFilesPane({
         {!failure && !loading && !documents.length && (
           <p className="caption">This project's folder has nothing to list.</p>
         )}
-        {openDocument ? (
+        {openVersion ? (
+          <VersionView
+            key={JSON.stringify([projectId, openVersion.path, openVersion.sha])}
+            projectId={projectId}
+            path={openVersion.path}
+            sha={openVersion.sha}
+            history={history}
+            onBack={() => onOpenVersion?.(null)}
+            onOpenCurrent={
+              documents.some((d) => d.path === openVersion.path)
+                ? () => {
+                    onOpenVersion?.(null);
+                    onOpen(openVersion.path);
+                  }
+                : undefined
+            }
+          />
+        ) : openDocument ? (
           // A fresh viewer per document: the Rendered/Raw choice belongs to the
           // document being read, not to the pane.
           <Viewer
@@ -542,6 +733,9 @@ function ProjectFilesPane({
             }}
             onEdit={onEdit}
             onOpenInPanel={onOpenInPanel}
+            history={history}
+            onOpenVersion={onOpenVersion}
+            onAttach={onAttach}
           />
         ) : (
           documents.length > 0 && (

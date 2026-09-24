@@ -1,10 +1,12 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { Conversation, Mode, Route } from '../../shared/types';
+import type { Conversation, DocumentInfo, Mode, Route } from '../../shared/types';
+import { TASK_SOURCE_LIMITS } from '../../shared/task-sources';
 import type { ReadAccess } from '../../shared/read-access';
 import { AGENT_NAME } from '../../shared/agent-name';
 import { askDraftKey } from '../components';
 import { reducedMotion, spring } from './motion';
 import { SendConfirmation } from './SendConfirmation';
+import './attachments.css';
 
 /**
  * The composer's own accessible name. Exported so the Console can put focus in
@@ -68,6 +70,34 @@ interface ComposerProps {
     connectors?: { text: string; onAdd?: () => void } | null;
   } | null;
   onClearSkill?(): void;
+  /**
+   * Project files attached to the next message as references into this Thread.
+   * They are sent as the message's selected sources, shown before sending, and
+   * recorded on the turn; nothing else is read because of them.
+   */
+  attachments?: readonly DocumentInfo[];
+  onAttachments?(files: DocumentInfo[]): void;
+  /** The project's files for the Attach picker, read when the picker opens. */
+  attachable?(): Promise<DocumentInfo[]>;
+  /** Opens an attached file in Files. */
+  onOpenFile?(path: string): void;
+}
+
+/**
+ * Why an attached file cannot travel with a message, or null when it can. A
+ * message carries project files through the one source path every route
+ * already takes — text documents, read and hashed by the local service — so an
+ * attachment is exactly a selected source, never a wider read. A picture, PDF
+ * or workbook has no text for that path, and the composer says so rather than
+ * sending the message without it.
+ */
+export function attachmentProblem(file: Pick<DocumentInfo, 'path' | 'kind' | 'size'>): string | null {
+  const name = file.path.slice(file.path.lastIndexOf('/') + 1);
+  if (!['markdown', 'text', 'plan'].includes(file.kind))
+    return `${name} is not a text document, so a message cannot carry it to an engine. It stays in Files; remove it to send.`;
+  if (file.size > TASK_SOURCE_LIMITS.bytes)
+    return `${name} is larger than the 128 KB a message can carry. Remove it to send.`;
+  return null;
 }
 
 /** Pure, because React may run a state initializer twice; the effect below clears it. */
@@ -87,8 +117,10 @@ function carriedAsk(projectId: string): string {
  */
 export function Composer({
   thread, projectId, mode, onMode, busy, online, route, confirmSend, prepareSources, onSend,
-  skill = null, onClearSkill,
+  skill = null, onClearSkill, attachments = [], onAttachments, attachable, onOpenFile,
 }: ComposerProps) {
+  const [picking, setPicking] = useState<DocumentInfo[] | null>(null);
+  const [pickFailure, setPickFailure] = useState('');
   // What the person typed on the Projects page arrives here, once. It used to
   // be read by the Workbook alone, so from the Console the words were dropped
   // on the way into the project. It is taken, not copied: once this composer
@@ -278,6 +310,7 @@ export function Composer({
     preparingRef.current = false;
     setPending(null);
     send();
+    onAttachments?.([]);
     setText('');
     setFailingDocument('');
     setFailingText('');
@@ -287,6 +320,11 @@ export function Composer({
     const value = text.trim();
     if (!value || busy || !online || preparingRef.current) return;
     if (mode === 'fix' && !fixReady) return;
+    const blocked = attachments.map(attachmentProblem).find((problem) => problem !== null);
+    if (blocked) {
+      setError(blocked);
+      return;
+    }
     preparingRef.current = true;
     setPreparing(true);
     setError('');
@@ -294,8 +332,13 @@ export function Composer({
     const doc = failingDocument.trim();
     const failure = failingText.trim();
     try {
-      const selected = await prepareSources(value, doc);
+      // Attachments lead: they are what the person chose for this message.
+      const selected = [
+        ...new Set([...attachments.map((file) => file.path), ...(await prepareSources(value, doc))]),
+      ];
       if (preparation.current !== attempt) return;
+      if (selected.length > TASK_SOURCE_LIMITS.files)
+        throw new Error('A message can carry at most eight documents. Remove an attachment to send.');
       const send = (access: ReadAccess) => onSend(value, doc, failure, selected, access);
       setReadAccess('selected');
       if (confirmSend) setPending({ text: value, sources: selected, send });
@@ -341,6 +384,61 @@ export function Composer({
             <span className="mono lc names" style={{ color: 'var(--t1)' }} title={sources.join(', ')}>
               {sources.join(', ')}
             </span>
+          </div>
+        )}
+        {attachments.length > 0 && (
+          <div className="aux show attached" aria-label="Attached files">
+            <span className="mono">attached</span>
+            <span className="attach-chips">
+              {attachments.map((file) => {
+                const problem = attachmentProblem(file);
+                const name = file.path.slice(file.path.lastIndexOf('/') + 1);
+                return (
+                  <span className={`attach-chip${problem ? ' blocked' : ''}`} key={file.path} title={problem ?? file.path}>
+                    <button type="button" className="attach-open" onClick={() => onOpenFile?.(file.path)}>
+                      {name}
+                    </button>
+                    {problem && <span className="mono">not sent</span>}
+                    <button
+                      type="button"
+                      className="clear"
+                      aria-label={`Remove ${name}`}
+                      onClick={() => onAttachments?.(attachments.filter((item) => item.path !== file.path))}
+                    >
+                      ×
+                    </button>
+                  </span>
+                );
+              })}
+            </span>
+          </div>
+        )}
+        {picking && (
+          <div className="aux show">
+            <span className="mono">attach</span>
+            <select
+              aria-label="Attach a project file"
+              value=""
+              onChange={(event) => {
+                const file = picking.find((item) => item.path === event.target.value);
+                if (file && !attachments.some((item) => item.path === file.path))
+                  onAttachments?.([...attachments, file]);
+                setPicking(null);
+                box.current?.focus();
+              }}
+            >
+              <option value="">Choose a file</option>
+              {picking
+                .filter((file) => !attachments.some((item) => item.path === file.path))
+                .map((file) => (
+                  <option key={file.path} value={file.path}>
+                    {file.path}
+                  </option>
+                ))}
+            </select>
+            <button type="button" className="clear" onClick={() => setPicking(null)}>
+              Cancel
+            </button>
           </div>
         )}
         {skill && (
@@ -421,6 +519,25 @@ export function Composer({
               <b ref={line} />
             </span>
           </div>
+          {onAttachments && attachable && (
+            <button
+              type="button"
+              className="attach"
+              aria-expanded={picking !== null}
+              disabled={preparing || pending !== null}
+              onClick={() => {
+                if (picking) return setPicking(null);
+                setPickFailure('');
+                attachable()
+                  .then((files) => setPicking(files))
+                  .catch((e: unknown) =>
+                    setPickFailure(e instanceof Error ? e.message : 'The project files could not be listed.'),
+                  );
+              }}
+            >
+              Attach
+            </button>
+          )}
           {/* The box is locked while the message is prepared, so the caption says
               why: a locked box with the text still in it reads as a send that
               never happened. */}
@@ -443,6 +560,7 @@ export function Composer({
         </div>
       </form>
       {error && <p className="caption" role="alert">{error}</p>}
+      {pickFailure && <p className="caption" role="alert">{pickFailure}</p>}
       {pending && (
         <SendConfirmation
           kind="message"

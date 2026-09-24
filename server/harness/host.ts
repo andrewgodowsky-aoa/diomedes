@@ -10,6 +10,13 @@ import { ToolRegistry } from './tools.js';
 import { HarnessError } from './policy.js';
 import { HarnessBridge, localHarnessPrincipal } from './bridge.js';
 import { ScriptedModelAdapter } from './fixture-adapter.js';
+import {
+  NATIVE_LOOP,
+  NATIVE_LOOP_DELEGATE,
+  createLoopProcedure,
+  loopEgressAuthorizer,
+  registerLoopTools,
+} from './capabilities/native-loop.js';
 import { REPORT_PATH } from './approval.js';
 import { registerFormatReport } from './capabilities/format-report.js';
 import { registerWeeklyBrief, type WeeklyBriefHost } from './capabilities/weekly-brief.js';
@@ -62,6 +69,33 @@ const stepOrigin = z
     accountRoute: z.string().nullable().optional(),
   })
   .optional();
+/** H12 recorded effects, read fail-closed like every other part of a saved run. */
+const effectRecord = z.strictObject({
+  v: z.literal(1),
+  tool: z.string(),
+  effectClass: z.enum(['pure', 'read', 'idempotent-write', 'non-idempotent-effect', 'external-send']),
+  attempt: integer.positive(),
+  inputsDigest: sha,
+  targets: z.array(z.string()),
+  idempotencyKey: sha,
+  principalId: z.string(),
+  identityGeneration: integer,
+  authorization: z.string(),
+  status: z.enum([
+    'intended',
+    'applied',
+    'failed',
+    'uncertain',
+    'abandoned',
+    'reconciled-applied',
+    'reconciled-not-applied',
+  ]),
+  intendedAt: stamp,
+  outcomeAt: stamp.nullable(),
+  outputHash: sha.nullable(),
+  error: z.string().nullable(),
+  reconciliation: z.strictObject({ by: z.string(), evidence: z.string(), at: stamp }).nullable(),
+});
 const readableRun = z.object({
   v: z.literal(1),
   id: z.string(),
@@ -157,6 +191,7 @@ const readableRun = z.object({
       nativeCheckpoint: z
         .strictObject({ v: z.literal(1), providerId: z.string().min(1).max(80), payload: z.json() })
         .optional(),
+      effects: z.array(effectRecord).optional(),
       leaseFence: integer,
       startedAt: stamp.nullable(),
       endedAt: stamp.nullable(),
@@ -375,6 +410,9 @@ export function createHarnessHost({
   const modelAuthorize = modelApiDispatchAuthorizer(() => store.settings.services);
   const modelRun = (capabilityId: string) =>
     (MODEL_SESSION_CAPABILITIES as readonly string[]).includes(capabilityId);
+  // H13 loop runs and their delegates: the admitted route must be on and still selected.
+  const loopAuthorize = loopEgressAuthorizer(() => store.settings.services);
+  const loopRun = (capabilityId: string) => capabilityId === NATIVE_LOOP.id || capabilityId === NATIVE_LOOP_DELEGATE.id;
   const runs: HostRunService = new HostRunService(files, {
     clock: Date.now,
     policyVersion: HARNESS_POLICY_VERSION,
@@ -389,6 +427,7 @@ export function createHarnessHost({
       )
         return textAuthorize(run, intent, phase);
       if (modelRun(run.capabilityId)) return modelAuthorize(run, intent, phase);
+      if (loopRun(run.capabilityId)) return loopAuthorize(run, intent, phase);
       return codex.authorize(runId, intent, principal, phase);
     },
   });
@@ -401,6 +440,8 @@ export function createHarnessHost({
     };
   });
   registerFormatReport(tools, store, runs);
+  registerLoopTools(tools, store, runs);
+  const loop = createLoopProcedure({ store, runs, tools });
   const weeklyBriefProcedure = weeklyBrief
     ? registerWeeklyBrief(tools, store, runs, weeklyBrief)
     : null;
@@ -451,6 +492,7 @@ export function createHarnessHost({
   );
   const bridge = new HarnessBridge(store, runs, tools, adapter, redact, HOST_TEST_PROJECT, codex);
   if (weeklyBriefProcedure) bridge.registerProcedure(weeklyBriefProcedure);
+  bridge.registerProcedure(loop);
   const observers = new Set<{ runId: string; changed: () => void; closed: () => void }>();
   let closed = false;
   files.saved = (run) => {
@@ -526,6 +568,8 @@ export function createHarnessHost({
     adapters,
     bridge,
     codex,
+    /** H13: the Diomedes work loop procedure (routes and the finish gate are attached by the app). */
+    loop,
     textRoute,
     claudeSessions,
     modelSessions,
@@ -607,12 +651,16 @@ export function createHarnessHost({
       await files.list();
       for (const project of await store.projects()) {
         const saved = await savedRuns(project.id);
+        // A loop's delegate has no Session of its own: its dead lease is invalidated first, so
+        // the parent's replay below can drive it again instead of meeting a stale owner.
+        for (const run of saved) await loop.recoverChild(run);
         await bridge.recover(
           project.id,
           saved.filter(
             (run) =>
               run.capabilityId !== CLAUDE_SESSION_CAPABILITY.id &&
               run.capabilityId !== OPENCODE_SESSION_CAPABILITY.id &&
+              run.capabilityId !== NATIVE_LOOP_DELEGATE.id &&
               !modelRun(run.capabilityId),
           ),
         );

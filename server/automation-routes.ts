@@ -1,5 +1,5 @@
 /**
- * Automations routes (Milestone A).
+ * Automations routes (Milestones A and B).
  *
  * Mounted beside the workspace routes, behind the same loopback, origin and
  * client-header gates. Every route starts with the workspace's membership
@@ -53,4 +53,37 @@ export function mountAutomationRoutes(app: Express, store: Store, automations: A
     '/api/workspace/organizations/:organizationId/automations/:automationId/run',
     route((req) => automations.admit(organizationId(req), automationId(req), body(req))),
   );
+
+  /**
+   * Milestone B: edit, turn on, pause, resume or turn off the schedule, as
+   * `{ action, expectedGeneration, schedule?, catchUpMinutes?, reason? }`. An
+   * owner or admin only; each is a recorded act and a History entry. It takes
+   * the store lock, as the scheduler's pass does, so a pause and a due slot
+   * never interleave.
+   */
+  app.post(
+    '/api/workspace/organizations/:organizationId/automations/:automationId/schedule',
+    route((req) => automations.changeSchedule(organizationId(req), automationId(req), body(req))),
+  );
+
+  /** Say an attention item has been seen. Any active member; it changes no authority. */
+  app.post(
+    '/api/workspace/organizations/:organizationId/automations/:automationId/attention/:attentionId/seen',
+    route((req) =>
+      automations.markSeen(organizationId(req), automationId(req), String(req.params.attentionId ?? '')),
+    ),
+  );
+
+  /**
+   * The open attention items that belong in one project's Needs you. In-app
+   * only. It reads the in-memory definitions and takes no lock: the Console
+   * asks on every History change, and a read must not queue behind writes.
+   */
+  app.get('/api/projects/:projectId/automation-attention', (req, res, next) => {
+    try {
+      res.json({ items: automations.attentionForProject(String(req.params.projectId ?? '')) });
+    } catch (error) {
+      next(error);
+    }
+  });
 }

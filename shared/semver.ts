@@ -49,7 +49,35 @@ function compareParsed(a: SemVer, b: SemVer): number {
   if (a.prerelease === b.prerelease) return 0;
   if (a.prerelease === null) return 1;
   if (b.prerelease === null) return -1;
-  return a.prerelease < b.prerelease ? -1 : 1;
+  return comparePrerelease(a.prerelease, b.prerelease);
+}
+
+/**
+ * Semver 2.0 precedence for two prerelease tags: identifier by identifier,
+ * numeric ones numerically and below alphanumeric ones, and a tag that runs
+ * out first sorts first (`beta.2` < `beta.11` < `beta.11.a`).
+ */
+function comparePrerelease(a: string, b: string): number {
+  const left = a.split('.');
+  const right = b.split('.');
+  for (let i = 0; i < Math.min(left.length, right.length); i++) {
+    const x = left[i];
+    const y = right[i];
+    if (x === y) continue;
+    const xNumeric = /^\d+$/.test(x);
+    const yNumeric = /^\d+$/.test(y);
+    if (xNumeric && yNumeric) {
+      // Compared as digit strings, so an identifier past 2^53 still orders exactly.
+      const [m, n] = [x.replace(/^0+(?=\d)/, ''), y.replace(/^0+(?=\d)/, '')];
+      if (m.length !== n.length) return m.length - n.length;
+      if (m !== n) return m < n ? -1 : 1;
+      return x < y ? -1 : 1;
+    }
+    if (xNumeric) return -1;
+    if (yNumeric) return 1;
+    return x < y ? -1 : 1;
+  }
+  return left.length - right.length;
 }
 
 type Comparator = { readonly op: '>=' | '>' | '<=' | '<' | '='; readonly version: SemVer };

@@ -9,6 +9,7 @@ import { applicationOrigin, formatOrigin, type OriginSnapshot } from '../shared/
 import { diomedesThread } from '../shared/diomedes-thread.js';
 import { CONVERSATION_DEFAULT_ROUTE, HOST_TEST_PROJECT } from '../shared/engines.js';
 import { CODEX_ENGINE, FIXTURE_ENGINE, harnessWrites } from './harness/approval.js';
+import { NATIVE_LOOP_ENGINE } from '../shared/native-loop.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { SecretBox } from './connection-secrets.js';
@@ -36,7 +37,9 @@ import {
   absent,
   isContained,
   MAX_TEXT_BYTES,
+  MAX_BINARY_BYTES,
   projectFile,
+  readBytesOrNull,
   readTextOrNull,
   relativeName,
   rejectMarkupText,
@@ -44,6 +47,8 @@ import {
   textKind,
 } from './paths.js';
 import { MAX_WORK_RECEIPTS, validateWorkReceipts, type WorkAdmission } from './work-admission.js';
+import { assertReadable } from './migrations/framework.js';
+import { PROJECT_STATE, SETTINGS } from './migrations/registry.js';
 import {
   actionDigest,
   contentHash,
@@ -336,6 +341,26 @@ export async function readJson<T>(target: string, initial: () => T): Promise<T> 
   }
 }
 
+/**
+ * A project record as this build reads it: refused, with the file untouched,
+ * when a newer Diomedes wrote it (H21). The version belongs to the file, so it
+ * is dropped here and stamped again by `persist`.
+ */
+async function readProjectState(target: string, id: string): Promise<StoredState> {
+  const state = await readJson<StoredState>(target, () => {
+    throw new Error(`Project state is missing for ${id}.`);
+  });
+  assertReadable(PROJECT_STATE, state);
+  delete (state as { schemaVersion?: unknown }).schemaVersion;
+  return state;
+}
+async function readSettings(target: string): Promise<Settings> {
+  const settings = await readJson(target, defaults);
+  assertReadable(SETTINGS, settings);
+  migrateSettings(settings);
+  return settings;
+}
+
 const TEAM_SECRETS_PREFIX = Buffer.from('DIOMEDES-TEAM-SECRETS-V1\n');
 function parseTeamSecrets(text: string): Record<string, string> {
   let value: unknown;
@@ -362,6 +387,8 @@ interface PendingWrite {
   path: string;
   before: string | null;
   after: string | null;
+  /** Exact bytes (a dropped picture, PDF or workbook), not UTF-8 text. */
+  binary?: true;
 }
 interface Journal {
   id: string;
@@ -374,7 +401,16 @@ export interface WriteInput {
   path: string;
   text: string | null;
   expected: string | null;
+  /**
+   * These exact bytes instead of `text`, which must then be null. Only a
+   * person's own import writes bytes (server/file-drops.ts); a model, a task
+   * or an approval still writes text, so no proposal can carry a binary.
+   */
+  bytes?: Uint8Array;
 }
+/** The SHA-256 of exact bytes. For UTF-8 text it equals `hash(text)`. */
+export const bytesHash = (bytes: Uint8Array | null) =>
+  bytes === null ? null : createHash('sha256').update(bytes).digest('hex');
 export interface WriteOptions {
   origin?: OriginSnapshot;
   approvalId?: string;
@@ -388,6 +424,8 @@ export interface WriteOptions {
   label?: string;
   merge?: boolean;
   review?: boolean;
+  /** P06: a partial keep's evidence, written on the same entry as the write it describes. */
+  hunkReview?: HistoryEntry['hunkReview'];
 }
 
 export class Store extends EventEmitter {
@@ -416,8 +454,7 @@ export class Store extends EventEmitter {
     await safeAbsolute(this.dataDir);
     await safeAbsolute(this.projectRoot);
     await fs.mkdir(path.join(this.dataDir, 'pending'), { recursive: true });
-    this.settings = await readJson(path.join(this.dataDir, 'settings.json'), defaults);
-    migrateSettings(this.settings);
+    this.settings = await readSettings(path.join(this.dataDir, 'settings.json'));
     this.registry = await readJson(path.join(this.dataDir, 'registry.json'), () => []);
     for (const project of this.registry) {
       // A project id is generated here and never accepted from anyone, so a
@@ -428,9 +465,7 @@ export class Store extends EventEmitter {
       const id: unknown = (project as { id?: unknown } | null)?.id;
       if (typeof id !== 'string' || !PROJECT_ID.test(id) || id === HOST_TEST_PROJECT)
         throw new Error('A saved project registry entry names an id this build will not open.');
-      const state = await readJson<StoredState>(this.statePath(project.id), () => {
-        throw new Error(`Project state is missing for ${project.id}.`);
-      });
+      const state = await readProjectState(this.statePath(project.id), project.id);
       const loadTime = now();
       dropLeftOff(state, project);
       for (const conversation of state.conversations ?? [])
@@ -453,7 +488,7 @@ export class Store extends EventEmitter {
     await this.interruptUnpreparedApprovals();
     for (const state of this.states.values()) {
       for (const session of state.sessions.filter((item) =>
-        ![FIXTURE_ENGINE, CODEX_ENGINE].includes(item.engine.name) && ['working', 'waiting', 'queued'].includes(item.state),
+        ![FIXTURE_ENGINE, CODEX_ENGINE, NATIVE_LOOP_ENGINE].includes(item.engine.name) && ['working', 'waiting', 'queued'].includes(item.state),
       )) {
         session.state = 'stopped';
         session.endedAt = now();
@@ -489,9 +524,7 @@ export class Store extends EventEmitter {
   private async recoverAndReload() {
     await this.recover();
     for (const id of this.states.keys()) {
-      const fresh = await readJson<StoredState>(this.statePath(id), () => {
-        throw new Error(`Project state is missing for ${id}.`);
-      });
+      const fresh = await readProjectState(this.statePath(id), id);
       const loadTime = now();
       dropLeftOff(fresh);
       for (const conversation of fresh.conversations ?? [])
@@ -507,8 +540,7 @@ export class Store extends EventEmitter {
       this.states.set(id, fresh);
     }
     await this.interruptUnpreparedApprovals();
-    this.settings = await readJson(path.join(this.dataDir, 'settings.json'), defaults);
-    migrateSettings(this.settings);
+    this.settings = await readSettings(path.join(this.dataDir, 'settings.json'));
     this.recoveryRequired = false;
   }
   async locked<T>(action: () => Promise<T>): Promise<T> {
@@ -719,13 +751,35 @@ export class Store extends EventEmitter {
     if (text !== null && sha) await durableWrite(this.objectPath(id, sha), text);
     return sha;
   }
+  /** A recorded version's exact bytes, checked against the name they are stored under. */
+  async objectBytes(id: string, sha: string | null): Promise<Buffer | null> {
+    if (sha === null) return null;
+    if (!/^[a-f0-9]{64}$/.test(sha)) throw new ApiError(409, 'A recorded version identifier is invalid.');
+    const bytes = await fs.readFile(this.objectPath(id, sha));
+    if (bytesHash(bytes) !== sha) throw new ApiError(409, 'A recorded version is damaged. Its contents were not applied.');
+    return bytes;
+  }
+  private async saveObjectBytes(id: string, bytes: Uint8Array | null) {
+    const sha = bytesHash(bytes);
+    if (bytes !== null && sha) await durableWrite(this.objectPath(id, sha), bytes);
+    return sha;
+  }
+  /** The file's current exact bytes, through the same guards as `current`. */
+  async currentBytes(id: string, input: string) {
+    const file = await projectFile(this.state(id).project.folder, input);
+    return readBytesOrNull(file.absolute);
+  }
   async persist(state: StoredState) {
     migrateTeam(state);
     state.teamMeta ??= emptyTeamMeta();
     this.refreshCounts(state);
     // The documents listing is a cache, never persisted: it can hold 10,000 rows
     // and would otherwise be rewritten with fsync on every change.
-    await jsonWrite(this.statePath(state.project.id), { ...state, documents: [] });
+    await jsonWrite(this.statePath(state.project.id), {
+      schemaVersion: PROJECT_STATE.current,
+      ...state,
+      documents: [],
+    });
     this.states.set(state.project.id, state);
     this.emit('change', state.project.id);
   }
@@ -1252,6 +1306,7 @@ export class Store extends EventEmitter {
       versionId: `v${String(state.history.length + 1).padStart(4, '0')}`,
       commit: null,
       ...(options.approvalId ? { approvalId: options.approvalId } : {}),
+      ...(options.hunkReview ? { hunkReview: structuredClone(options.hunkReview) } : {}),
     };
     state.history.push(entry);
     return entry;
@@ -1283,6 +1338,24 @@ export class Store extends EventEmitter {
       throw new ApiError(400, 'A file may appear only once in a write.');
     for (const input of inputs) {
       const name = relativeName(input.path);
+      if (input.bytes) {
+        if (input.text !== null || options.approvalId || (options.actor ?? 'you') !== 'you')
+          throw new ApiError(400, 'Only your own import can add a picture, PDF or workbook.');
+        if (input.bytes.length > MAX_BINARY_BYTES)
+          throw new ApiError(413, 'This file is larger than the limit for a picture, PDF or workbook.');
+        const beforeBytes = await this.currentBytes(id, name);
+        const before = bytesHash(beforeBytes);
+        if (before !== input.expected)
+          throw new ApiError(
+            409,
+            'This document changed since you opened it. Read its current version before saving.',
+            { path: name, currentSha: before },
+          );
+        await this.saveObjectBytes(id, beforeBytes);
+        const after = await this.saveObjectBytes(id, input.bytes);
+        checked.push({ path: name, before, after, binary: true });
+        continue;
+      }
       if (
         input.text !== null &&
         (Buffer.byteLength(input.text) > MAX_TEXT_BYTES || input.text.includes('\0'))
@@ -1418,7 +1491,13 @@ export class Store extends EventEmitter {
     beforeEffect?: () => Promise<void>,
   ) {
     const absolute = (await projectFile(this.state(id).project.folder, file.path)).absolute;
-    const actual = hash(await readTextOrNull(absolute));
+    const read = async () =>
+      file.binary
+        ? bytesHash(await readBytesOrNull(absolute))
+        : hash(await readTextOrNull(absolute));
+    const image = async (sha: string) =>
+      file.binary ? this.objectBytes(id, sha) : this.object(id, sha);
+    const actual = await read();
     if (actual === file.after) return;
     if (actual !== file.before)
       throw new ApiError(
@@ -1428,7 +1507,7 @@ export class Store extends EventEmitter {
       );
     const finalCheck = async () => {
       await projectFile(this.state(id).project.folder, file.path);
-      const latest = hash(await readTextOrNull(absolute));
+      const latest = await read();
       if (latest !== file.before && latest !== file.after)
         throw new ApiError(
           409,
@@ -1448,7 +1527,7 @@ export class Store extends EventEmitter {
           entryId,
           file.path,
         );
-        await durableWrite(removed, (await this.object(id, actual))!);
+        await durableWrite(removed, (await image(actual))!);
         await projectFile(this.state(id).project.folder, file.path);
         await finalCheck();
         await fs.unlink(absolute);
@@ -1456,7 +1535,7 @@ export class Store extends EventEmitter {
     } else {
       await fs.mkdir(path.dirname(absolute), { recursive: true });
       await projectFile(this.state(id).project.folder, file.path);
-      await durableWrite(absolute, (await this.object(id, file.after))!, finalCheck);
+      await durableWrite(absolute, (await image(file.after))!, finalCheck);
     }
   }
   private async recover() {
@@ -1522,9 +1601,11 @@ export class Store extends EventEmitter {
       }
       for (const file of journal.writes) {
         let actual: string | null = null;
+        let actualBytes: Buffer | null = null;
         let unreadable: string | null = null;
         try {
-          actual = await this.current(journal.projectId, file.path);
+          if (file.binary) actualBytes = await this.currentBytes(journal.projectId, file.path);
+          else actual = await this.current(journal.projectId, file.path);
         } catch (error) {
           // An outside replacement may no longer be supported text. Preserve it
           // without following links or reading/snapshotting unsupported bytes.
@@ -1532,7 +1613,7 @@ export class Store extends EventEmitter {
           if (!(error instanceof ApiError) || ![403, 413, 415].includes(error.status)) throw error;
           unreadable = `The outside replacement was preserved but could not be recorded as text: ${error.message}`;
         }
-        const actualHash = hash(actual);
+        const actualHash = file.binary ? bytesHash(actualBytes) : hash(actual);
         if (
           !unreadable &&
           (actualHash === file.after || (scopeCurrent && actualHash === file.before))
@@ -1576,7 +1657,8 @@ export class Store extends EventEmitter {
           }
         } else {
           conflicts.push(file.path);
-          if (!unreadable) await this.saveObject(journal.projectId, actual);
+          if (!unreadable && file.binary) await this.saveObjectBytes(journal.projectId, actualBytes);
+          else if (!unreadable) await this.saveObject(journal.projectId, actual);
           const entry = this.addEntry(journal.state, {
             kind: 'outside',
             sentence: `${file.path} changed during an interrupted save; its current content was preserved`,
@@ -1585,7 +1667,7 @@ export class Store extends EventEmitter {
             path: file.path,
             before: file.after,
             after: actualHash,
-            op: !unreadable && actual === null ? 'deleted' : 'modified',
+            op: !unreadable && (file.binary ? actualBytes : actual) === null ? 'deleted' : 'modified',
             recorded: !unreadable,
             reason: unreadable,
           });
@@ -1616,6 +1698,22 @@ export class Store extends EventEmitter {
   }
   async changeFromFile(id: string, entry: HistoryEntry, index: number): Promise<Change> {
     const file = entry.files[index];
+    if (file.binary)
+      return {
+        id: `${entry.id}:${index}`,
+        entryId: entry.id,
+        sessionId: entry.sessionId,
+        taskId: entry.taskId,
+        path: file.path,
+        op: file.op,
+        summary: `${file.op === 'created' ? 'Added' : file.op === 'deleted' ? 'Removed' : 'Updated'} ${file.path}. It is not text, so no line changes are shown; open it from Files.`,
+        before: null,
+        after: null,
+        current: null,
+        changedSince: null,
+        hunks: [],
+        state: 'waiting',
+      };
     if (!file.recorded)
       return {
         id: `${entry.id}:${index}`,
@@ -1723,6 +1821,11 @@ export class Store extends EventEmitter {
     if (selected?.some((name) => !entry.files.some((f) => f.path === name)))
       throw new ApiError(400, 'A selected file is not part of this entry.');
     const files = entry.files.filter((f) => f.recorded && (!selected || selected.includes(f.path)));
+    if (files.some((file) => file.binary))
+      throw new ApiError(
+        409,
+        'Pictures, PDFs and workbooks cannot be restored from History yet. Their recorded versions are kept, and Files can still open them.',
+      );
     // A whole-folder saved version also represents the absence of later files.
     // Preserve any such contents in the restore's before-images before removal.
     if (entry.kind === 'saved-version' && entry.sentence.includes('(whole folder)') && !selected) {

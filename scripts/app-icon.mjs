@@ -1,178 +1,195 @@
-// Draws the Diomedes mark (client/console/Mark.tsx) as the Windows app icon,
-// desktop/diomedes.ico, which scripts/package-desktop.mjs embeds in Diomedes.exe.
+// Draws the Nectovia mark as the Windows app icon, desktop/diomedes.ico. The file keeps its
+// old name because scripts/package-desktop.mjs embeds it in Diomedes.exe by that name, and
+// the installer that scripts/build-windows-installer.mjs writes shows it for itself and its
+// uninstaller.
 //
-// No dependencies: every size is drawn from the mark's own geometry with distance-based
-// anti-aliasing, so 16 and 24 px stay legible instead of being shrunk from one large
-// bitmap. Run `node scripts/app-icon.mjs` after changing the mark or the palette;
-// tests/app-icon.test.ts fails while the committed icon differs from this drawing.
+// The drawing is the site's 24-unit favicon (diomedes-site public/favicon.svg): an ink tile
+// under NectoviaMark.tsx's three plates and cyan lead seam, with the violet trail seam added
+// once the mark is drawn larger than 18 px, as NectoviaMark.tsx adds it. A seam is a line,
+// not a plate: at every size it is 1.2 to 3 px wide, the rule the site's own icon rasters
+// follow (diomedes-site scripts/og.mjs), so it neither fades at 16 px nor swells at 256 px.
+//
+// No dependencies: every size is drawn from that geometry with supersampled coverage, so 16
+// and 24 px stay legible instead of being shrunk from one large bitmap. Run
+// `node scripts/app-icon.mjs` after changing the mark or the palette; tests/app-icon.test.ts
+// fails while the committed icon differs from this drawing.
 
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { deflateSync } from 'node:zlib';
 
-/** The mark as Mark.tsx and wake.css draw it, in its 24-unit viewBox. */
+/** The mark in its 24-unit viewBox: the favicon's tile, NectoviaMark.tsx's plates and seams. */
 export const MARK = {
-  line: [5, 3, 5, 21],
-  path: 'M5 3 C 14 3, 18 7.5, 18 12 C 18 16.5, 14 20.2, 9 21',
-  point: [20.5, 12, 1.6],
-  stroke: 1.6,
+  tile: { size: 24, radius: 5 },
+  plates: [
+    {
+      tone: 'bone',
+      points: [
+        [3, 3],
+        [7.6, 3],
+        [7.6, 21],
+        [3, 21],
+      ],
+    },
+    {
+      tone: 'graphite',
+      points: [
+        [8.9, 3],
+        [12.9, 3],
+        [15.3, 21],
+        [11.3, 21],
+      ],
+    },
+    {
+      tone: 'bone',
+      points: [
+        [16.5, 3],
+        [21, 3],
+        [21, 21],
+        [16.5, 21],
+      ],
+    },
+  ],
+  lead: [8.5, 3.4, 9.8, 12.6],
+  trail: [21.9, 15.5, 21.9, 21],
+  /** At this size and below the trail seam is left out, as NectoviaMark.tsx leaves it out. */
+  trailMinSize: 18,
 };
 
-/** The default `field` package: chrome behind the mark, t1 strokes, t2 point. */
-export const PALETTE = { chrome: '#121417', t1: '#e6e9ed', t2: '#a4acb6' };
+/** The favicon's paint: the ink tile, bone and graphite plates, the cyan lead, the violet trail. */
+export const PALETTE = {
+  ink: '#08080c',
+  bone: '#f2f0ea',
+  graphite: '#808b97',
+  lead: '#44d2c9',
+  trail: '#b569fb',
+};
 
 /** Sizes the Windows shell asks for across display scales, up to Explorer's 256 px. */
 export const ICON_SIZES = [16, 20, 24, 30, 32, 36, 40, 48, 60, 64, 72, 80, 96, 128, 256];
+
+/** A seam's width in pixels where the 24-unit mark is drawn `size` px wide. */
+export const seamPixels = (size) => Math.min(3, Math.max(1.2, size * 0.022));
 
 const hex = (color) => {
   const value = Number.parseInt(color.slice(1), 16);
   return [(value >> 16) & 255, (value >> 8) & 255, value & 255];
 };
 
-function parseCubics(d) {
-  const tokens = d.match(/[MC]|-?\d*\.?\d+/g) ?? [];
-  const pair = (index) => [Number(tokens[index]), Number(tokens[index + 1])];
-  const cubics = [];
-  let current = null;
-  for (let index = 0; index < tokens.length; ) {
-    if (tokens[index] === 'M') {
-      current = pair(index + 1);
-      index += 3;
-    } else if (tokens[index] === 'C' && current) {
-      const cubic = [current, pair(index + 1), pair(index + 3), pair(index + 5)];
-      cubics.push(cubic);
-      current = cubic[3];
-      index += 7;
-    } else {
-      throw new Error(`The mark path uses an unsupported command: ${tokens[index]}`);
-    }
-  }
-  return cubics;
-}
-
-function flatten(cubics, steps = 64) {
-  const points = [cubics[0][0]];
-  for (const [p0, p1, p2, p3] of cubics) {
-    for (let step = 1; step <= steps; step += 1) {
-      const t = step / steps;
-      const u = 1 - t;
-      const w = [u * u * u, 3 * u * u * t, 3 * u * t * t, t * t * t];
-      points.push([
-        w[0] * p0[0] + w[1] * p1[0] + w[2] * p2[0] + w[3] * p3[0],
-        w[0] * p0[1] + w[1] * p1[1] + w[2] * p2[1] + w[3] * p3[1],
-      ]);
-    }
-  }
-  return points;
-}
-
-const CURVE = flatten(parseCubics(MARK.path));
-
-/** Where the mark lands on a `size` px canvas, with its stroke weighted for that size. */
-function iconLayout(size) {
-  const [shaftX, shaftTop, , shaftBottom] = MARK.line;
-  const [uiPointX, pointY, uiRadius] = MARK.point;
-  // Heavier than the UI's 1.6 of 24 so the mark survives 16 px; the share of the
-  // canvas the mark fills shrinks as the canvas grows.
-  const stroke = 0.8 + size * 0.058;
-  const heightShare = Math.min(0.68, Math.max(0.58, 0.58 + (64 - size) / 480));
-  const scale = (heightShare * size - stroke) / (shaftBottom - shaftTop);
-  const grow = stroke / scale / MARK.stroke;
-  const strokeUnits = MARK.stroke * grow;
-  // Keep the UI's relation between the D and its point as the stroke grows: the
-  // radius tracks the stroke and the point sits the same scaled gap ahead of the curve.
-  const curveRight = Math.max(...CURVE.map(([x]) => x));
-  const uiGap = uiPointX - uiRadius - (curveRight + MARK.stroke / 2);
-  const radiusUnits = uiRadius * grow;
-  const pointX = curveRight + strokeUnits / 2 + uiGap * grow + radiusUnits;
-  const left = shaftX - strokeUnits / 2;
-  const top = shaftTop - strokeUnits / 2;
-  let originX = size / 2 - ((left + pointX + radiusUnits) / 2) * scale;
-  let originY = size / 2 - ((top + shaftBottom + strokeUnits / 2) / 2) * scale;
-  if (size <= 48) {
-    // Put the shaft's outer edge and the D's top on whole pixels at small sizes.
-    originX += Math.round(originX + left * scale) - (originX + left * scale);
-    originY += Math.round(originY + top * scale) - (originY + top * scale);
-  }
-  const toPixels = ([x, y]) => [originX + x * scale, originY + y * scale];
-  const margin = size <= 24 ? 0 : Math.round(size * 0.03);
+/**
+ * A convex polygon as the signed distance to its nearest edge line: negative inside. Outside
+ * it never exceeds the true distance, so it can only under-report how far away a pixel is.
+ */
+function convexShape(points, color) {
+  const cx = points.reduce((sum, [x]) => sum + x, 0) / points.length;
+  const cy = points.reduce((sum, [, y]) => sum + y, 0) / points.length;
+  const edges = points.map(([ax, ay], index) => {
+    const [bx, by] = points[(index + 1) % points.length];
+    const length = Math.hypot(bx - ax, by - ay);
+    let nx = (by - ay) / length;
+    let ny = (ax - bx) / length;
+    // Every normal points away from the centre, whichever way the points wind.
+    if (nx * (cx - ax) + ny * (cy - ay) > 0) [nx, ny] = [-nx, -ny];
+    return [nx, ny, nx * ax + ny * ay];
+  });
   return {
-    stroke,
-    shaft: [toPixels([shaftX, shaftTop]), toPixels([shaftX, shaftBottom])],
-    curve: CURVE.map(toPixels),
-    point: [...toPixels([pointX, pointY]), radiusUnits * scale],
-    tile: {
-      half: size / 2 - margin,
-      radius: (size / 2 - margin) * 0.44,
-      border: Math.max(1, size / 128),
+    color,
+    distance: (x, y) => {
+      let distance = -Infinity;
+      for (const [nx, ny, offset] of edges) distance = Math.max(distance, nx * x + ny * y - offset);
+      return distance;
     },
   };
 }
 
-function segmentDistance(px, py, [ax, ay], [bx, by]) {
-  const dx = bx - ax;
-  const dy = by - ay;
-  const lengthSquared = dx * dx + dy * dy;
-  const t =
-    lengthSquared === 0
-      ? 0
-      : Math.min(1, Math.max(0, ((px - ax) * dx + (py - ay) * dy) / lengthSquared));
-  const qx = ax + t * dx - px;
-  const qy = ay + t * dy - py;
-  return Math.sqrt(qx * qx + qy * qy);
+/** A stroked line with butt caps, as SVG draws `<line>`: the rectangle around the segment. */
+function seamShape([x1, y1, x2, y2], width, color) {
+  const length = Math.hypot(x2 - x1, y2 - y1);
+  const nx = ((y2 - y1) / length) * (width / 2);
+  const ny = ((x1 - x2) / length) * (width / 2);
+  return convexShape(
+    [
+      [x1 + nx, y1 + ny],
+      [x2 + nx, y2 + ny],
+      [x2 - nx, y2 - ny],
+      [x1 - nx, y1 - ny],
+    ],
+    color,
+  );
 }
 
-function roundedSquareDistance(px, py, center, half, radius) {
-  const qx = Math.abs(px - center) - half + radius;
-  const qy = Math.abs(py - center) - half + radius;
-  const ox = Math.max(qx, 0);
-  const oy = Math.max(qy, 0);
-  return Math.sqrt(ox * ox + oy * oy) + Math.min(Math.max(qx, qy), 0) - radius;
+/** The rounded square tile, as an exact signed distance. */
+function tileShape(size, radius, color) {
+  const half = size / 2;
+  return {
+    color,
+    distance: (x, y) => {
+      const qx = Math.abs(x - half) - half + radius;
+      const qy = Math.abs(y - half) - half + radius;
+      return Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0) - radius;
+    },
+  };
 }
 
-// A one-pixel linear ramp across the signed edge distance.
-const coverage = (distance) => Math.min(1, Math.max(0, 0.5 - distance));
+/** Where every shape lands on a `size` px canvas, in paint order. */
+function iconShapes(size) {
+  // Units times size over 24, in that order, so a half-pixel lands exactly on .5.
+  const pixels = (units) => (units * size) / MARK.tile.size;
+  // At 48 px and below the plates' outer left and top edges sit on whole pixels, rounding a
+  // half down, so the small sizes keep crisp plate edges; the tile never moves.
+  let shift = 0;
+  if (size <= 48) {
+    const edge = pixels(MARK.plates[0].points[0][0]);
+    shift = Math.ceil(edge - 0.5) - edge;
+  }
+  const at = ([x, y]) => [pixels(x) + shift, pixels(y) + shift];
+  const seam = ([x1, y1, x2, y2], color) =>
+    seamShape([...at([x1, y1]), ...at([x2, y2])], seamPixels(size), hex(color));
+  const shapes = [
+    tileShape(size, pixels(MARK.tile.radius), hex(PALETTE.ink)),
+    ...MARK.plates.map(({ tone, points }) => convexShape(points.map(at), hex(PALETTE[tone]))),
+    seam(MARK.lead, PALETTE.lead),
+  ];
+  if (size > MARK.trailMinSize) shapes.push(seam(MARK.trail, PALETTE.trail));
+  return shapes;
+}
+
+// Coverage from a 16 by 16 grid of samples in the pixel. A pixel whose centre is farther
+// than half its diagonal from an edge is wholly inside or outside and is not sampled.
+const SAMPLES = 16;
+const HALF_DIAGONAL = Math.SQRT1_2;
+function coverage(shape, x, y) {
+  const centre = shape.distance(x + 0.5, y + 0.5);
+  if (centre >= HALF_DIAGONAL) return 0;
+  if (centre <= -HALF_DIAGONAL) return 1;
+  let inside = 0;
+  for (let j = 0; j < SAMPLES; j += 1)
+    for (let i = 0; i < SAMPLES; i += 1)
+      if (shape.distance(x + (i + 0.5) / SAMPLES, y + (j + 0.5) / SAMPLES) <= 0) inside += 1;
+  return inside / (SAMPLES * SAMPLES);
+}
 
 /** Straight-alpha RGBA pixels of the icon at `size` px, row by row from the top. */
 export function renderIcon(size) {
-  const layout = iconLayout(size);
-  const chrome = hex(PALETTE.chrome);
-  const t1 = hex(PALETTE.t1);
-  const t2 = hex(PALETTE.t2);
-  const [cx, cy, radius] = layout.point;
-  const { half, radius: corner, border } = layout.tile;
+  const shapes = iconShapes(size);
   const rgba = Buffer.alloc(size * size * 4);
   for (let y = 0; y < size; y += 1) {
     for (let x = 0; x < size; x += 1) {
-      const px = x + 0.5;
-      const py = y + 0.5;
-      // Premultiplied source-over: the tile, its faint rim, the strokes, then the point.
+      // Premultiplied source-over in document order: the tile, the plates, then the seams.
       let r = 0;
       let g = 0;
       let b = 0;
       let a = 0;
-      const over = ([cr, cg, cb], alpha) => {
-        if (alpha <= 0) return;
+      for (const shape of shapes) {
+        const alpha = coverage(shape, x, y);
+        if (alpha <= 0) continue;
+        const [cr, cg, cb] = shape.color;
         r = cr * alpha + r * (1 - alpha);
         g = cg * alpha + g * (1 - alpha);
         b = cb * alpha + b * (1 - alpha);
         a = alpha + a * (1 - alpha);
-      };
-      const edge = roundedSquareDistance(px, py, size / 2, half, corner);
-      const inside = coverage(edge);
-      over(chrome, inside);
-      over(t1, coverage(Math.abs(edge + border / 2) - border / 2) * inside * 0.12);
-      let distance = segmentDistance(px, py, layout.shaft[0], layout.shaft[1]);
-      for (let index = 1; index < layout.curve.length; index += 1)
-        distance = Math.min(
-          distance,
-          segmentDistance(px, py, layout.curve[index - 1], layout.curve[index]),
-        );
-      over(t1, coverage(distance - layout.stroke / 2));
-      const dx = px - cx;
-      const dy = py - cy;
-      over(t2, coverage(Math.sqrt(dx * dx + dy * dy) - radius));
+      }
       const offset = (y * size + x) * 4;
       if (a > 0) {
         rgba[offset] = Math.min(255, Math.round(r / a));

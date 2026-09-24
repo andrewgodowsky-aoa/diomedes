@@ -1,0 +1,99 @@
+/* H13 Diomedes loop inside the run inspector (LoopInspector.tsx), in the Settings > Engines
+   language: caption headings, hairlines, mono for machine strings, the H17 state dot for the
+   outcome. Every line that can carry a path, id, model name or tool output wraps where it is
+   written (decision 5); nothing here sets a column's inline margin (decision 6). */
+.console .loop-inspector {
+  min-width: 0;
+  white-space: normal;
+}
+.console .loop-outcome {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  min-width: 0;
+}
+.console .loop-sentence {
+  min-width: 0;
+  flex: 1 1 240px;
+  color: var(--t2);
+  overflow-wrap: anywhere;
+}
+.console .loop-inspector h3 {
+  margin-top: 10px;
+}
+.console .loop-models,
+.console .loop-code {
+  font-family: var(--mono);
+  font-size: var(--dm-type-meta);
+  overflow-wrap: anywhere;
+}
+.console .loop-turns {
+  list-style: none;
+  padding-left: 0;
+}
+.console .loop-turn,
+.console .loop-delegation {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding-left: 10px;
+  border-left: 1px solid var(--hair);
+}
+.console .loop-turn.finish {
+  border-left-color: var(--t3);
+}
+.console .loop-turn-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  min-width: 0;
+}
+.console .loop-turn-n {
+  flex: none;
+  color: var(--t3);
+  font-family: var(--mono);
+  font-size: var(--dm-type-meta);
+}
+.console .loop-turn-tool {
+  min-width: 0;
+  color: var(--t1);
+  font-family: var(--mono);
+  font-size: var(--dm-type-meta);
+  overflow-wrap: anywhere;
+}
+.console .loop-turn-state {
+  color: var(--t3);
+  font-size: var(--dm-type-caption, var(--dm-type-ui));
+}
+.console .loop-obs {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.console .loop-obs-detail {
+  color: var(--t2);
+  overflow-wrap: anywhere;
+}
+.console .loop-obs-excerpt {
+  display: block;
+  min-width: 0;
+  max-height: 4.5em;
+  overflow: hidden;
+  color: var(--t2);
+  font-family: var(--mono);
+  font-size: var(--dm-type-meta);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.console .loop-obs-meta {
+  min-width: 0;
+  color: var(--t3);
+  font-size: var(--dm-type-meta);
+  overflow-wrap: anywhere;
+}
+.console .loop-claim {
+  color: var(--t2);
+  overflow-wrap: anywhere;
+}

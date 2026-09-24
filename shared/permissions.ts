@@ -91,6 +91,14 @@ export interface ScopeGrantRecord {
   grant: TaskScopeGrant;
   generation: number;
   revokedAt: string | null;
+  /**
+   * The ChatGPT account route this scope was confirmed for: the one the task's
+   * latest Codex proposal was prepared under when the person confirmed it, or
+   * `codex:chatgpt` when none had been seen. Kept outside `grant`, so it never
+   * changes `scopeGrantDigest`. Absent on a scope confirmed before it was
+   * recorded, which therefore always asks again.
+   */
+  confirmedAccountRoute?: string;
 }
 export interface ScopeGrantView extends ScopeGrantRecord {
   active: boolean;

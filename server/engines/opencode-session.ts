@@ -128,6 +128,13 @@ const sessionIdOf = (value: Json) => text(value.id) || text(value.sessionID);
 export const RESTARTED_FRESH_DETAIL =
   'OpenCode no longer had the saved session, so this message started a fresh OpenCode session. Earlier messages in this conversation were not carried into it.';
 
+/** OpenCode no longer has the session a live connection holds: refused before anything was sent. */
+const sessionGone = () =>
+  new EngineError(
+    'SESSION_INVALID',
+    'OpenCode no longer has this conversation’s session, so this message was not sent. Resume the conversation to continue in a fresh OpenCode session.',
+  );
+
 export class OpenCodeNativeSession<S extends OpenCodeServer = OpenCodeServer> {
   private active?: {
     id: string;
@@ -269,12 +276,17 @@ export class OpenCodeNativeSession<S extends OpenCodeServer = OpenCodeServer> {
         requestId: input.requestId,
       };
     } catch (error) {
-      // Nothing is left running in OpenCode on Diomedes' behalf: the turn is
-      // aborted there, then idle is confirmed rather than assumed. Only a
-      // confirmed idle session stays resumable.
-      const idle = stage === 'model-list' ? true : await this.settle();
+      // OpenCode refused the prompt itself because it no longer has the session:
+      // nothing was sent and nothing runs there, so the session stays idle and
+      // a resume reaches the stated fresh start instead of a reconciliation.
+      const gone = (stage as SetupStage) === 'dispatch' && error instanceof EngineError && error.code === 'NOT_FOUND';
+      // Otherwise nothing is left running in OpenCode on Diomedes' behalf: the
+      // turn is aborted there, then idle is confirmed rather than assumed. Only
+      // a confirmed idle session stays resumable.
+      const idle = stage === 'model-list' || gone ? true : await this.settle();
       this.saved = { ...this.saved, state: idle ? 'idle' : 'uncertain' };
       await this.save().catch(() => undefined);
+      if (gone) throw sessionGone();
       if (signal.aborted && !(error instanceof EngineError && error.code === 'TIMEOUT')) throw stopped();
       throw error;
     } finally {
@@ -282,6 +294,16 @@ export class OpenCodeNativeSession<S extends OpenCodeServer = OpenCodeServer> {
         /* The body is already bounded and no longer needed. */
       });
     }
+  }
+  /**
+   * Confirms, before a turn is recorded, that OpenCode still has this session.
+   * A clear "not found" is refused as `SESSION_INVALID` with nothing sent; any
+   * other failure to ask is thrown as it is. Never sends a prompt.
+   */
+  async verify(): Promise<void> {
+    if (this.closed || this.active || !this.saved.nativeSessionId || this.saved.state !== 'idle') return;
+    const found = await lookup(this.transport, this.server, this.saved.nativeSessionId, AbortSignal.timeout(ABORT_MS));
+    if (!found) throw sessionGone();
   }
   /** Aborts the session's running work in OpenCode and reports whether it then read as idle. */
   private async settle(): Promise<boolean> {

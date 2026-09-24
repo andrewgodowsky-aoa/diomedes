@@ -1,0 +1,79 @@
+/* Attachments in the composer and the file references on a sent message
+   (P05). Tokens only; every name is a flex child with min-width: 0 and
+   truncation where it is written (decision 5). */
+.console .composer .attach {
+  padding: 3px 8px;
+  margin-left: 6px;
+  color: var(--t2);
+  font-size: var(--dm-type-caption);
+}
+.console .composer .attach:hover,
+.console .composer .attach[aria-expanded='true'] {
+  color: var(--t1);
+}
+.console .aux.attached {
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+.console .attach-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+.console .attach-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 1px 8px;
+  border: 1px solid var(--hair-2);
+  border-radius: var(--rb);
+  color: var(--t1);
+}
+.console .attach-chip.blocked {
+  border-color: var(--attn);
+}
+.console .attach-chip .attach-open {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: inherit;
+  font: inherit;
+}
+.console .attach-chip .clear {
+  margin-left: 0;
+}
+.console .turn-refs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+  min-width: 0;
+}
+.console .ref-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 2px 8px;
+  border: 1px solid var(--hair-2);
+  border-radius: var(--rb);
+  color: var(--t1);
+  font-size: var(--dm-type-caption);
+  white-space: nowrap;
+}
+.console .ref-chip .ref-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.console .ref-chip .mono {
+  color: var(--t3);
+}
+.console .ref-chip:hover {
+  border-color: var(--t3);
+}

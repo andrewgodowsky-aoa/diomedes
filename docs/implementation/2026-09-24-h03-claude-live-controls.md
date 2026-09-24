@@ -161,6 +161,34 @@ Not applied (this lane does not edit the canonical documents or `QUESTIONS.md`).
 - **docs/harness/RUNTIME_VERIFICATION.md:** `claude-code-session` steer is `host`; stop escalation,
   continuity and resume failure are fixture-verified, live unverified.
 
+## Merge with batch 4 (H08 durable controls, H04 review)
+
+Merged `integration/overnight-batch-4` (main plus H02, D5-codex, H09, H21, H12, H13, H15, P06,
+CD-05, with H08 already on main) by a merge commit.
+
+- **One steering queue, two kinds of entry.** `server/harness/claude-session-run.ts` keeps both
+  sides' fields on `SteerEntry`. An entry made by H03's `queue()` (a conversation message sent with
+  `queued`) carries its whole admitted `turn`, its `intent`, the caller's `promise` and `settle`;
+  the drain sends it as admitted and settles that promise with its own turn's result. An entry made
+  by `steer()` may carry the H04-review/H08 `onDelivered` projection, which still runs once, before
+  the entry reads `delivered`, and a failed projection is still said on the acknowledgement. The
+  two never share an entry: a queued conversation message is projected by the caller that waits
+  on it, so `onDelivered` is never needed there and never runs twice. Because H03 declares
+  `claude-code-session` steer as `host`, the engine `/steer` route now exists for Claude Code too,
+  and it passes `onDelivered` there exactly as it does for OpenCode. New proof:
+  `tests/h03-claude-live-controls.test.ts` "a queued conversation message and a steered one share
+  the queue" sends one of each behind a running turn and checks the order, each result, one
+  projection for the steered message only, and both reading `delivered`.
+- **`shared/session-controls.ts`:** H08's `workControlProfile` / `controlNotApplicable` and H03's
+  `ThreadSessionView` are kept side by side; both are additive.
+- **Say it once (decision 4).** No unification was needed. H08's Stop menu and follow-up queue
+  render only in a Work task's thread (`ThreadView.tsx`, `StopMenu.tsx`, `FollowUpQueue.tsx`);
+  H03's session line and queue render only on the Diomedes conversation page
+  (`DiomedesHome.tsx`, `NativeSessionControls.tsx`), where Stop stays the composer's own. No
+  thread shows both. Work runs read their own route's contract, not `claude-code-session`; and if
+  one ever did, `workControlProfile` reads a `host` steer as "holds a message until the running
+  turn ends" and offers Queue, not a second Steer.
+
 ## PILLAR / ROADMAP / BUILD
 
 - PILLAR IMPACT: harness honesty advanced — the route declares a queue as a queue, Stop says whether

@@ -1,3 +1,4 @@
+import type { ContextAccount } from './context-accounting.js';
 import type { StepIntent } from './harness.js';
 import type {
   RememberedApprovals,
@@ -176,6 +177,8 @@ export interface Task {
   stopReceipts?: StopReceipt[];
   /** Immutable admission evidence; absent on tasks created by legacy/internal callers. */
   creationReceipt?: TaskCreationReceipt;
+  /** H17: what a finished run must satisfy. Absent means none declared: results read Not verified. */
+  acceptance?: import('./verification.js').AcceptanceDeclaration;
   createdBy: Owner;
   createdAt: string;
   assignedTo?: Slot | null;
@@ -245,6 +248,19 @@ export interface Need {
    * bind, so it is not part of the approval identity.
    */
   checks?: NeedCheck[];
+  /**
+   * The engine and account route the runtime reported a direct proposal was
+   * prepared under (never taken from the model or a request). Remembered
+   * approvals and task scopes compare it, so another ChatGPT account asks
+   * again. Outside every approval digest.
+   */
+  connection?: { engine: string; accountRoute: string };
+  /**
+   * H15: this Need is an escalation Diomedes supervision raised after pausing the run. It is
+   * answered only by a person, grants nothing, and is never resolved by a grant, a remembered
+   * approval or a reviewer (shared/supervision.ts).
+   */
+  supervision?: import('./supervision.js').SupervisionNeedRef;
 }
 /**
  * One proposed file's content check. An `.svg`, or an `.xml` that is SVG,
@@ -333,6 +349,10 @@ export interface Session {
   slotId?: Slot;
   permission?: ThreadPermission;
   receipt?: WorkReceipt;
+  /** What this run was asked to do, kept so Resume and Retry ask for the same thing (H08). */
+  inputs?: import('./work-control.js').WorkInputs;
+  /** The Codex app-server thread this run used, recorded before its turn was sent (H02). */
+  nativeThread?: import('./codex-thread.js').NativeThreadRecord;
   state: 'queued' | 'working' | 'waiting' | 'done' | 'stopped' | 'failed';
   startedAt: string;
   endedAt: string | null;
@@ -372,6 +392,8 @@ export interface FileRecord {
   after: string | null;
   recorded: boolean;
   reason: string | null;
+  /** The recorded images are exact bytes (a picture, PDF or workbook), not UTF-8 text. */
+  binary?: true;
 }
 export interface HistoryEntry {
   origin?: OriginSnapshot;
@@ -402,6 +424,10 @@ export interface HistoryEntry {
   rawReply?: string;
   rawReplyLength?: number;
   parseError?: string;
+  /** H17: a verification's evidence. The four-state result is projected from it, never stored. */
+  verification?: import('./verification.js').VerificationRecord;
+  /** P06: which hunks of a change a person kept and which they undid (shared/review-comments.ts). */
+  hunkReview?: import('./review-comments.js').HunkReviewRecord;
 }
 export interface Change {
   id: string;
@@ -417,6 +443,8 @@ export interface Change {
   changedSince: { actor: string; at: string } | null;
   hunks: { value: string; added?: boolean; removed?: boolean; count?: number }[];
   state: 'waiting' | 'kept' | 'undone';
+  /** P06: kept in part. The History entry that wrote the result, and the hunks on each side. */
+  partial?: { entryId: string; kept: number[]; undone: number[] };
 }
 export interface Turn {
   origin?: OriginSnapshot;
@@ -426,6 +454,13 @@ export interface Turn {
   text: string;
   at: string;
   sources: string[];
+  /**
+   * The exact bytes each source named when this turn was written, as
+   * `{ path, sha }` (shared/file-identity.ts). Set by the direct request path;
+   * absent on older turns and conversation turns, whose version History's
+   * record of the read at or before `at` still names.
+   */
+  sourceVersions?: { path: string; sha: string }[];
   route?: Route;
   /** Fix attempts only: which try this turn belongs to. */
   attempt?: { n: number; of: number };
@@ -441,6 +476,11 @@ export interface Turn {
     version?: string | null;
     verified: boolean;
   };
+  /**
+   * H18: what went into the model context for this answer, on a route where Diomedes assembled
+   * it (a model-API route). Absent for an external engine, which manages its own context.
+   */
+  context?: ContextAccount;
 }
 /** A thread: a named conversation that belongs to a project and, optionally, to a task. */
 /**
@@ -517,7 +557,13 @@ export interface Conversation {
    * either changes who works and with what intelligence, never what is allowed.
    * `agent` may be `auto`, which resolves per run and is recorded as automatic.
    */
-  requested?: { model: string | null; effort: string | null; agent?: string | null } | null;
+  requested?: {
+    model: string | null;
+    effort: string | null;
+    agent?: string | null;
+    /** An Agent profile id (H09): an exact engine, model and effort chosen as one. */
+    profile?: string | null;
+  } | null;
   /**
    * The thread's WorkStyle (`shared/work-style.ts`), or absent/null to follow
    * the Settings default (`services.workStyle`). It only chooses which offered
@@ -583,6 +629,8 @@ export interface ProjectState {
   conversations: Conversation[];
   /** Absent in projects written before the follow-up queue existed. */
   followUps?: FollowUpCommand[];
+  /** Receipts for Steer, Queue, Stop, Resume, Retry and Fork (H08). Append-only; absent before 2026-09-24. */
+  controlReceipts?: import('./work-control.js').ControlReceipt[];
   team?: TeamState;
   /**
    * What pack discovery found in the project folder. Derived, not authored:
@@ -594,6 +642,10 @@ export interface ProjectState {
    * shared/ready-queue.ts). Absent on every project written before it existed, which means off.
    */
   readyQueue?: import('./ready-queue.js').ReadyQueueRecord;
+  /** H15 supervision: detections, corrections, escalations and answers. Append-only; absent before 2026-09-24. */
+  supervision?: import('./supervision.js').SupervisionRecord[];
+  /** P06 review comments on changes and file versions. Absent until the first one. */
+  reviewComments?: import('./review-comments.js').ReviewComment[];
 }
 /** How Diomedes knows whether an engine is signed in. 'first-use' means the first run reports it. */
 export type SignInState = 'signed-in' | 'not-signed-in' | 'unknown' | 'first-use' | 'not-needed';

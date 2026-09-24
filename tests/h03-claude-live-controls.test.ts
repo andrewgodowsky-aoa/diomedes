@@ -204,6 +204,42 @@ describe('H03 Claude Code live controls over a fixture stream-json process', () 
     );
   });
 
+  it('a queued conversation message and a steered one share the queue: each settles with its own turn, and only the steered one is projected by onDelivered', async () => {
+    const w = await world();
+    const driver = await w.boot();
+    await driver.request(w.turn('start', 'one', 'first'));
+    const running = driver.request(w.turn('follow-up', 'two', 'long [slow]'));
+    await tick(50);
+    const queued = driver.request(w.turn('follow-up', 'three', 'queued turn', { queued: true }));
+    const projected: { requestId: string; prompt: string; text: string | undefined }[] = [];
+    const ack = await driver.steer('p', 'claude-run', 'four', 'steered message', {
+      onDelivered: async (result, input) => {
+        projected.push({ requestId: input.requestId, prompt: input.prompt, text: result.response?.text });
+      },
+    });
+    expect(ack).toMatchObject({ commandId: 'four', state: 'pending' });
+    expect((await running).response?.text).toBe('Answer to long [slow]');
+    // The queued turn's caller gets its own answer, never the steered message's.
+    expect((await queued).response?.text).toBe('Answer to queued turn');
+    for (let i = 0; i < 40 && projected.length === 0; i += 1) await tick(50);
+    // H08's projection fired once, for the steered message only, before it read delivered.
+    expect(projected).toEqual([
+      { requestId: 'four', prompt: 'steered message', text: 'Answer to steered message' },
+    ]);
+    const after = await driver.status('p', 'claude-run');
+    expect(after.steering).toEqual([
+      expect.objectContaining({ commandId: 'three', state: 'delivered' }),
+      expect.objectContaining({
+        commandId: 'four',
+        state: 'delivered',
+        detail: 'Sent as the next message once the answer it waited for finished.',
+      }),
+    ]);
+    const turns = (await w.lines()).filter((line) => line.turn).map((line) => line.turn);
+    expect(turns).toEqual(['first', 'long [slow]', 'queued turn', 'steered message']);
+    expect(w.launches).toHaveLength(1);
+  });
+
   it('Stop withdraws a queued message, and stopping the running turn refuses the rest with a reason', async () => {
     const w = await world();
     const driver = await w.boot();

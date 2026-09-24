@@ -47,6 +47,8 @@ import {
 } from './pack-catalogue.js';
 import { absent, ApiError, isContained, safeAbsolute } from './paths.js';
 import { durableWrite, identifier, jsonWrite, now, type Store } from './store.js';
+import { MigrationRefusal, migrateRecord } from './migrations/framework.js';
+import { PACK_STORE } from './migrations/registry.js';
 
 export const PACK_STORE_SCHEMA_VERSION = 1 as const;
 /** The file a local pack folder carries its manifest in. */
@@ -66,6 +68,12 @@ export interface InstalledVersion {
   readonly installedAt: string;
   /** Object folder under `objects/`, content-addressed by id, version and digest. */
   readonly object: string;
+  /**
+   * What this version depends on, copied from its verified manifest at
+   * install. It keeps a damaged pack protecting what it needs: the manifest
+   * may stop verifying, and this record still says what it depended on.
+   */
+  readonly dependencies?: readonly { readonly id: string; readonly range: string }[];
 }
 
 export interface InstalledPackRecord {
@@ -199,34 +207,73 @@ export class PackLifecycle {
 
   private async load(): Promise<PackStoreFile> {
     await fs.mkdir(this.options.root, { recursive: true });
-    let raw: unknown;
+    // Only a missing file means "no store yet". Anything else on disk is read
+    // as this schema or refused, and a refused store is never replaced.
+    let text: string | null;
     try {
-      raw = JSON.parse(await fs.readFile(this.storePath, 'utf8'));
+      text = await fs.readFile(this.storePath, 'utf8');
     } catch (error) {
       if (!absent(error)) throw error;
-      raw = null;
+      text = null;
     }
-    if (raw === null) {
+    if (text === null) {
       this.file = { schemaVersion: PACK_STORE_SCHEMA_VERSION, packs: {}, operations: [] };
       await this.persist();
-      const catalogue = await this.catalogue();
-      for (const id of PREINSTALLED_PACK_IDS) {
-        const manifest = catalogue.find((item) => item.id === id);
-        if (manifest)
-          await this.commit(await this.acquireBundled(manifest), 'install', 'diomedes', null);
+    } else {
+      let raw: unknown;
+      try {
+        raw = JSON.parse(text);
+      } catch {
+        refuse(409, 'The pack store is not readable JSON. Nothing in it was changed.', {
+          code: 'unreadable-store',
+        });
       }
-      return this.file;
+      // Through the migration framework (H21). A store without a version is not
+      // one this Diomedes wrote, and falls to the shape check below.
+      if (isPlainObject(raw) && 'schemaVersion' in raw)
+        try {
+          migrateRecord(PACK_STORE, raw);
+        } catch (error) {
+          if (!(error instanceof MigrationRefusal)) throw error;
+          refuse(
+            409,
+            `The pack store was written with schema ${String(raw.schemaVersion)}, which this Diomedes does not read. Nothing in it was changed.`,
+            { code: 'unknown-store-version' },
+          );
+        }
+      if (!isPackStoreFile(raw))
+        refuse(
+          409,
+          'The pack store does not have the shape this Diomedes writes. Nothing in it was changed.',
+          { code: 'unreadable-store' },
+        );
+      this.file = raw;
+      await this.recover();
     }
-    const version = (raw as { schemaVersion?: unknown })?.schemaVersion;
-    if (version !== PACK_STORE_SCHEMA_VERSION)
-      refuse(
-        409,
-        `The pack store was written with schema ${String(version)}, which this Diomedes does not read. Nothing in it was changed.`,
-        { code: 'unknown-store-version' },
-      );
-    this.file = raw as PackStoreFile;
-    await this.recover();
-    return this.file;
+    await this.preinstall();
+    return this.file!;
+  }
+
+  /**
+   * The packs whose runtime ships wired are installed by Diomedes: on a new
+   * store, and again on any later open that finds one missing without an
+   * uninstall recorded for it, which is what a stop part-way through the
+   * first open leaves. One you uninstalled stays uninstalled.
+   */
+  private async preinstall() {
+    const file = this.file!;
+    const uninstalled = new Set(
+      file.operations
+        .filter((op) => op.kind === 'uninstall' && op.phase === 'completed')
+        .map((op) => op.packId),
+    );
+    const missing = PREINSTALLED_PACK_IDS.filter((id) => !file.packs[id] && !uninstalled.has(id));
+    if (!missing.length) return;
+    const catalogue = await this.catalogue();
+    for (const id of missing) {
+      const manifest = catalogue.find((item) => item.id === id);
+      if (manifest) await this.commit(await this.acquireBundled(manifest), 'install', 'diomedes', null);
+    }
   }
 
   /** Close out anything a stopped process left half done. Appends; never rewrites. */
@@ -282,7 +329,21 @@ export class PackLifecycle {
 
   // --- reading what is installed -------------------------------------------------------
 
-  /** The installed manifest for one version, re-verified against its digest on first read. */
+  /**
+   * Start a public action from what is on disk now. The verification memo
+   * lives for one action only, so a manifest or payload file changed since
+   * the last action is caught by the next one.
+   */
+  private async fresh() {
+    this.manifests.clear();
+    return this.open();
+  }
+
+  /**
+   * The installed manifest for one version, re-verified on read: the manifest
+   * against its digest, and every payload file it lists against its recorded
+   * size and sha. Remembered only until the next public action begins.
+   */
   private async manifestOf(id: string, version: string): Promise<PackManifest | Error> {
     const file = await this.open();
     const record = file.packs[id]?.versions.find((v) => v.version === version);
@@ -290,19 +351,35 @@ export class PackLifecycle {
     const key = `${record.object}`;
     const cached = this.manifests.get(key);
     if (cached) return cached;
-    let result: PackManifest | Error;
-    try {
-      const text = await fs.readFile(path.join(this.objectsRoot, record.object, 'manifest.json'), 'utf8');
-      const manifest = packManifestSchema.parse(JSON.parse(text));
-      result =
-        packDigest(manifest) === manifest.digest && manifest.digest === record.digest
-          ? manifest
-          : new Error('Its installed files no longer match the digest they were installed with.');
-    } catch {
-      result = new Error('Its installed manifest could not be read.');
-    }
+    const result = await this.verifyObject(record);
     this.manifests.set(key, result);
     return result;
+  }
+
+  private async verifyObject(record: InstalledVersion): Promise<PackManifest | Error> {
+    const folder = path.join(this.objectsRoot, ...record.object.split('/'));
+    let manifest: PackManifest;
+    try {
+      const text = await fs.readFile(path.join(folder, 'manifest.json'), 'utf8');
+      manifest = packManifestSchema.parse(JSON.parse(text));
+    } catch {
+      return new Error('Its installed manifest could not be read.');
+    }
+    if (packDigest(manifest) !== manifest.digest || manifest.digest !== record.digest)
+      return new Error('Its installed files no longer match the digest they were installed with.');
+    for (const entry of manifest.files) {
+      const absolute = path.join(folder, 'files', ...entry.path.split('/'));
+      try {
+        const stat = await fs.lstat(absolute);
+        if (!stat.isFile() || stat.size !== entry.bytes)
+          return new Error(`Its installed file ${entry.path} no longer matches the digest it was installed with.`);
+        if (sha256(await fs.readFile(absolute)) !== entry.sha256)
+          return new Error(`Its installed file ${entry.path} no longer matches the digest it was installed with.`);
+      } catch {
+        return new Error(`Its installed file ${entry.path} is missing.`);
+      }
+    }
+    return manifest;
   }
 
   private async current(id: string): Promise<PackManifest | null> {
@@ -334,13 +411,36 @@ export class PackLifecycle {
       .map((project) => ({ id: project.id, name: project.name }));
   }
 
-  /** Installed packs whose current version depends on `id`. */
+  /**
+   * Installed packs whose current version depends on `id`, damaged ones
+   * included. A damaged pack is read from the dependencies recorded when it
+   * was installed; one with none recorded is returned in `unknown`, because
+   * what it depends on cannot be known and nothing may be assumed safe.
+   */
   private async dependentsOf(id: string) {
-    return (await this.installedCurrent()).filter((m) => m.dependencies.some((d) => d.id === id));
+    const file = await this.open();
+    const dependents: Pick<PackManifest, 'id' | 'name' | 'version' | 'dependencies'>[] = [];
+    const unknown: string[] = [];
+    for (const packId of Object.keys(file.packs).sort()) {
+      if (packId === id) continue;
+      const record = file.packs[packId];
+      const manifest = await this.current(packId);
+      const dependencies =
+        manifest?.dependencies ?? record.versions.find((v) => v.version === record.current)?.dependencies;
+      if (!dependencies) unknown.push(packId);
+      else if (dependencies.some((dep) => dep.id === id))
+        dependents.push({
+          id: packId,
+          name: manifest?.name ?? packId,
+          version: record.current,
+          dependencies: [...dependencies],
+        });
+    }
+    return { dependents, unknown };
   }
 
   async installed(): Promise<InstalledPackView[]> {
-    const file = await this.open();
+    const file = await this.fresh();
     const catalogue = await this.catalogue();
     const views: InstalledPackView[] = [];
     for (const id of Object.keys(file.packs).sort()) {
@@ -358,7 +458,7 @@ export class PackLifecycle {
         runtime: isCapabilityPackId(id) ? 'wired' : 'declared',
         damaged: manifest instanceof Error ? manifest.message : null,
         activeProjects: await this.projectsWith(id),
-        dependents: (await this.dependentsOf(id)).map((m) => m.id),
+        dependents: (await this.dependentsOf(id)).dependents.map((m) => m.id),
         updateAvailable: bundledNewer?.version ?? null,
       });
     }
@@ -376,6 +476,7 @@ export class PackLifecycle {
    * and on in that Project, and nothing for any other pack or Project.
    */
   async loadedContributions(projectId: string): Promise<LoadedPack[]> {
+    await this.fresh();
     const state = this.options.store.state(projectId);
     const loaded: LoadedPack[] = [];
     for (const manifest of await this.installedCurrent())
@@ -448,7 +549,11 @@ export class PackLifecycle {
         ),
       });
     const manifest = parsed.data;
-    if (manifest.id.startsWith('diomedes.') || manifest.publisher.id === 'diomedes')
+    if (
+      manifest.id.startsWith('diomedes.') ||
+      manifest.publisher.id === 'diomedes' ||
+      manifest.publisher.name.trim().toLowerCase() === 'diomedes'
+    )
       refuse(400, 'The diomedes publisher and ids are reserved for packs that ship with Diomedes.', {
         code: 'reserved-id',
       });
@@ -572,6 +677,7 @@ export class PackLifecycle {
           sourcePath: acquired.source.kind === 'directory' ? acquired.source.path : null,
           installedAt: this.clock(),
           object,
+          dependencies: manifest.dependencies.map((dep) => ({ id: dep.id, range: dep.range })),
         },
       ];
     if (fromVersion) record.previous = [...record.previous, fromVersion];
@@ -628,7 +734,7 @@ export class PackLifecycle {
 
   /** Read and verify a source, and say what installing it would do. Writes nothing. */
   async inspect(source: unknown) {
-    await this.open();
+    await this.fresh();
     const acquired = await this.acquire(source);
     return { manifest: acquired.manifest, plan: await this.installPlan(acquired.manifest) };
   }
@@ -659,7 +765,7 @@ export class PackLifecycle {
   }
 
   async install(source: unknown, options: { includeDependencies?: boolean } = {}) {
-    await this.open();
+    await this.fresh();
     const hint =
       (source as { packId?: unknown; path?: unknown } | null)?.packId ??
       (source as { path?: unknown } | null)?.path;
@@ -691,7 +797,9 @@ export class PackLifecycle {
 
   /** Refuse a version change that would break an installed pack's range. */
   private async assertDependentsAccept(id: string, version: string) {
-    const breaks = (await this.dependentsOf(id)).filter(
+    const { dependents, unknown } = await this.dependentsOf(id);
+    if (unknown.length) refuseUnknownDependents(unknown);
+    const breaks = dependents.filter(
       (dependent) => !satisfies(version, dependent.dependencies.find((d) => d.id === id)!.range),
     );
     if (breaks.length)
@@ -699,6 +807,45 @@ export class PackLifecycle {
         409,
         `${breaks.map((m) => `${m.name} needs ${id} ${m.dependencies.find((d) => d.id === id)!.range}`).join('; ')}, which ${version} does not satisfy.`,
         { code: 'version-conflict', dependents: breaks.map(brief) },
+      );
+  }
+
+  /**
+   * Refuse a version change that would leave the pack on in a project where a
+   * pack the new version needs is off. Activation asks before turning a
+   * dependency on; a version change has no one to ask, so it refuses and
+   * names each project and what is off there.
+   */
+  private async assertDependenciesOn(manifest: PackManifest) {
+    const projects = await this.projectsWith(manifest.id);
+    if (!projects.length) return;
+    const installed = (await this.installedCurrent()).filter((m) => m.id !== manifest.id);
+    const resolution = resolvePacks({
+      requests: [{ id: manifest.id, range: manifest.version }],
+      available: [...installed, manifest],
+    });
+    // An unresolvable version is refused by the install plan, with its reason.
+    if (!resolution.ok) return;
+    const byId = new Map(installed.map((m) => [m.id, m]));
+    const off = projects
+      .map((project) => {
+        const packs = this.options.store.state(project.id).project.packs;
+        const dependencies = resolution.order
+          .filter((item) => item.id !== manifest.id && !isPackActive(packs, item.id))
+          .map((item) => brief(byId.get(item.id)!));
+        return { ...project, dependencies };
+      })
+      .filter((project) => project.dependencies.length);
+    if (off.length)
+      refuse(
+        409,
+        off
+          .map(
+            (project) =>
+              `In ${project.name}, ${manifest.name} is on and ${manifest.version} needs ${names(project.dependencies)}, which ${project.dependencies.length === 1 ? 'is' : 'are'} off there.`,
+          )
+          .join(' ') + ` Turn ${off.length === 1 && off[0].dependencies.length === 1 ? 'it' : 'them'} on there first, or turn ${manifest.name} off.`,
+        { code: 'dependency-off', projects: off },
       );
   }
 
@@ -711,7 +858,7 @@ export class PackLifecycle {
   }
 
   async update(packId: string, source: unknown) {
-    await this.open();
+    await this.fresh();
     return this.guarded('update', packId, async () => {
       const record = this.file!.packs[packId];
       if (!record) refuse(404, 'That pack is not installed.');
@@ -732,6 +879,7 @@ export class PackLifecycle {
           code: 'needs-dependencies',
           dependencies: plan.alsoInstalls.map(brief),
         });
+      await this.assertDependenciesOn(manifest);
       const from = record.current;
       await this.commit(acquired, 'update', 'you', from);
       await this.noteProjects(
@@ -743,7 +891,7 @@ export class PackLifecycle {
   }
 
   async rollback(packId: string) {
-    await this.open();
+    await this.fresh();
     return this.guarded('rollback', packId, async () => {
       const record = this.file!.packs[packId];
       if (!record) refuse(404, 'That pack is not installed.');
@@ -757,6 +905,7 @@ export class PackLifecycle {
         refuse(409, `${manifest.name} ${target} no longer resolves against what is installed.`, {
           code: 'version-conflict',
         });
+      await this.assertDependenciesOn(manifest);
       const from = record.current;
       const opId = identifier('pk');
       const base = {
@@ -787,7 +936,7 @@ export class PackLifecycle {
   }
 
   async uninstall(packId: string) {
-    await this.open();
+    await this.fresh();
     return this.guarded('uninstall', packId, async () => {
       const record = this.file!.packs[packId];
       if (!record) refuse(404, 'That pack is not installed.');
@@ -800,12 +949,13 @@ export class PackLifecycle {
           `${name} is on in ${projects.map((p) => p.name).join(', ')}. Turn it off there first; uninstalling never turns a pack off for you.`,
           { code: 'in-use', projects },
         );
-      const dependents = await this.dependentsOf(packId);
+      const { dependents, unknown } = await this.dependentsOf(packId);
       if (dependents.length)
         refuse(409, `${names(dependents)} ${dependents.length === 1 ? 'depends' : 'depend'} on ${name}. Uninstall ${dependents.length === 1 ? 'it' : 'them'} first.`, {
           code: 'in-use',
           dependents: dependents.map(brief),
         });
+      if (unknown.length) refuseUnknownDependents(unknown);
       const opId = identifier('pk');
       const base = {
         opId,
@@ -835,7 +985,7 @@ export class PackLifecycle {
   // --- per-project activation ----------------------------------------------------------
 
   async activate(projectId: string, packId: string, options: { includeDependencies?: boolean } = {}) {
-    await this.open();
+    await this.fresh();
     return this.guarded('activate', packId, async () => {
       const state = this.options.store.state(projectId);
       const record = this.file!.packs[packId];
@@ -866,20 +1016,22 @@ export class PackLifecycle {
   }
 
   async deactivate(projectId: string, packId: string) {
-    await this.open();
+    await this.fresh();
     return this.guarded('deactivate', packId, async () => {
       const state = this.options.store.state(projectId);
       const manifest = await this.current(packId);
       const name = manifest?.name ?? packId;
-      const dependents = (await this.dependentsOf(packId)).filter((m) =>
-        isPackActive(state.project.packs, m.id),
-      );
+      const found = await this.dependentsOf(packId);
+      const dependents = found.dependents.filter((m) => isPackActive(state.project.packs, m.id));
+      // A damaged pack that is on here and whose dependencies are unknown may need this one.
+      const unknown = found.unknown.filter((id) => isPackActive(state.project.packs, id));
       if (dependents.length)
         refuse(
           409,
           `${names(dependents)} ${dependents.length === 1 ? 'is' : 'are'} on in this project and ${dependents.length === 1 ? 'depends' : 'depend'} on ${name}. Turn ${dependents.length === 1 ? 'it' : 'them'} off first.`,
           { code: 'in-use', dependents: dependents.map(brief) },
         );
+      if (unknown.length) refuseUnknownDependents(unknown);
       await this.turn(projectId, manifest ?? { id: packId, name, version: '0.0.0' }, 'inactive');
       return this.options.store.state(projectId);
     });
@@ -930,4 +1082,49 @@ function refuseResolution(name: string, refusals: readonly ResolutionRefusal[]):
     code: refusals[0]?.code ?? 'unresolved',
     refusals,
   });
+}
+
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+const isStringList = (value: unknown) =>
+  Array.isArray(value) && value.every((item) => typeof item === 'string');
+
+/** The shape this build writes, checked before a single field of it is trusted. */
+function isPackStoreFile(value: unknown): value is PackStoreFile {
+  if (!isPlainObject(value) || value.schemaVersion !== PACK_STORE_SCHEMA_VERSION) return false;
+  if (!isPlainObject(value.packs) || !Array.isArray(value.operations)) return false;
+  const packsOk = Object.entries(value.packs).every(
+    ([id, record]) =>
+      isPlainObject(record) &&
+      record.id === id &&
+      typeof record.current === 'string' &&
+      isStringList(record.previous) &&
+      Array.isArray(record.versions) &&
+      record.versions.every(
+        (version: unknown) =>
+          isPlainObject(version) &&
+          typeof version.version === 'string' &&
+          typeof version.digest === 'string' &&
+          typeof version.object === 'string' &&
+          (version.dependencies === undefined || Array.isArray(version.dependencies)),
+      ),
+  );
+  const operationsOk = value.operations.every(
+    (op: unknown) =>
+      isPlainObject(op) &&
+      typeof op.opId === 'string' &&
+      typeof op.kind === 'string' &&
+      typeof op.phase === 'string' &&
+      typeof op.packId === 'string',
+  );
+  return packsOk && operationsOk;
+}
+
+function refuseUnknownDependents(unknown: readonly string[]): never {
+  const one = unknown.length === 1;
+  return refuse(
+    409,
+    `${unknown.join(', ')} ${one ? 'is' : 'are'} damaged, and what ${one ? 'it depends' : 'they depend'} on cannot be read. Turn ${one ? 'it' : 'them'} off or uninstall ${one ? 'it' : 'them'} first.`,
+    { code: 'damaged-dependent', damaged: [...unknown] },
+  );
 }

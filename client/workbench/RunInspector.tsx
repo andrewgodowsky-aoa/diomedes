@@ -10,6 +10,21 @@ import {
 import { evidenceRows } from '../../shared/evidence-rows';
 import { rememberedAttribution } from '../../shared/remembered-approvals';
 import { loadHarnessEvidence, sessionEvidence, sessionEvidenceView } from './run-evidence';
+import {
+  CONTROL_COMMANDS,
+  CONTROL_LABELS,
+  type ControlReceipt,
+  type RouteControlProfile,
+} from '../../shared/work-control';
+import { AGENT_NAME } from '../../shared/agent-name';
+import {
+  ROUTING_SOURCE_LABELS,
+  fallbackSentence,
+  runtimeModelDifference,
+} from '../../shared/agent-profiles';
+import { NATIVE_LOOP_CAPABILITY } from '../../shared/native-loop';
+import { LoopInspector } from '../console/LoopInspector';
+import { SupervisionSection } from '../console/Supervision';
 import './workbench.css';
 
 /**
@@ -24,6 +39,10 @@ export interface RunInspectorProps {
   session: Session | null;
   needs: readonly Need[];
   history: readonly HistoryEntry[];
+  /** What this run's route offers of the six controls (H08). Absent while it loads. */
+  controls?: RouteControlProfile | null;
+  /** The project's control receipts, for this run's lineage. */
+  receipts?: readonly ControlReceipt[];
 }
 
 type Snapshot =
@@ -48,13 +67,22 @@ function SessionInspector({
   session,
   needs,
   history,
+  controls = null,
+  receipts = [],
 }: RunInspectorProps & { session: Session }) {
+  const lineage = receipts.find(
+    (receipt) => receipt.result.sessionId === session.id && receipt.lineage,
+  )?.lineage;
   const [open, setOpen] = useState(false);
   const [revision, setRevision] = useState(0);
   const [snapshot, setSnapshot] = useState<Snapshot>({ state: 'loading' });
   const evidence = sessionEvidence(session, needs, history);
   const origin = originForSession(session);
   const actor = formatOrigin(origin);
+  // H09: the profile revision this run pinned at admission, and decision 8's
+  // runtime-reported model beside the one that was asked for when they differ.
+  const profile = session.agent?.profile;
+  const modelDifference = runtimeModelDifference(session);
   const governance = evidenceRows(sessionEvidenceView(session)).filter((row) =>
     GOVERNANCE_ROWS.includes(row.label),
   );
@@ -116,6 +144,30 @@ function SessionInspector({
                 </dd>
               </Fragment>
             ))}
+            {profile && (
+              <>
+                <dt>Profile</dt>
+                <dd>
+                  {profile.name} · revision {profile.revision}{' '}
+                  <span className="run-inspector-code">{profile.digest.slice(0, 19)}</span>
+                </dd>
+                <dt>Resolved by</dt>
+                <dd>
+                  {ROUTING_SOURCE_LABELS[profile.source]}. Fallback {profile.fallbackPolicy}.
+                  {profile.fallback && <> {fallbackSentence(profile)}</>}
+                </dd>
+              </>
+            )}
+            {(profile || modelDifference) && (
+              <>
+                <dt>Model</dt>
+                <dd className="run-inspector-code">
+                  {modelDifference
+                    ? `Ran on ${modelDifference.reported}, as the runtime reported. Requested ${modelDifference.requested}.`
+                    : `${profile!.model}${profile!.effort ? ` · ${profile!.effort}` : ''}`}
+                </dd>
+              </>
+            )}
             <dt>Authority</dt>
             <dd>
               {session.agent
@@ -124,9 +176,59 @@ function SessionInspector({
             </dd>
             <dt>Controls</dt>
             <dd>
-              Stop requests cancellation. Already dispatched effects may require review. Live
-              steering and a next-turn queue are not available here.
+              {controls ? (
+                <ul className="run-inspector-controls">
+                  {CONTROL_COMMANDS.map((control) => {
+                    const offered = controls.controls[control];
+                    return (
+                      <li key={control}>
+                        <span>
+                          {CONTROL_LABELS[control]} ·{' '}
+                          {offered.support === 'native'
+                            ? 'by the route'
+                            : offered.support === 'host'
+                              ? `by ${AGENT_NAME}`
+                              : 'not offered'}
+                        </span>
+                        <small>{offered.note}</small>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : (
+                'Reading what this route offers.'
+              )}
             </dd>
+            {lineage && (
+              <>
+                <dt>Lineage</dt>
+                <dd>
+                  {lineage.kind === 'retry'
+                    ? `Attempt ${lineage.attempt ?? 2}, retrying `
+                    : lineage.kind === 'resume'
+                      ? 'Continues '
+                      : 'Forked from '}
+                  <span className="run-inspector-code">{lineage.originSessionId}</span>
+                </dd>
+              </>
+            )}
+            {session.nativeThread && (
+              <>
+                <dt>Codex thread</dt>
+                <dd>
+                  <span className="run-inspector-code">{session.nativeThread.id}</span>
+                  {session.nativeThread.origin === 'resumed'
+                    ? ' · resumed'
+                    : session.nativeThread.origin === 'forked'
+                      ? ' · a fork'
+                      : session.nativeThread.origin === 'restarted-fresh'
+                        ? ' · new, resume not possible'
+                        : session.nativeThread.kept
+                          ? ' · kept for resume'
+                          : ' · not kept'}
+                </dd>
+              </>
+            )}
             <dt>Session</dt>
             <dd className="run-inspector-code">{session.id}</dd>
             {session.receipt && (
@@ -226,6 +328,16 @@ function SessionInspector({
               </div>
             ))}
           </section>
+          <SupervisionSection
+            projectId={projectId}
+            session={session}
+            refreshKey={[
+              session.state,
+              session.log.length,
+              ...needs.filter((need) => need.sessionId === session.id).map((need) => `${need.id}:${need.state}`),
+              ...receipts.map((receipt) => receipt.id),
+            ].join('|')}
+          />
           <section aria-label="Recorded sources">
             <h3>Recorded sources</h3>
             {!evidence.sources.length && <p>No source snapshot is attached to this session.</p>}
@@ -259,7 +371,7 @@ function SessionInspector({
               <>
                 <p>Snapshot at {snapshot.at}</p>
                 {snapshot.run ? (
-                  <HarnessEvidence run={snapshot.run} />
+                  <HarnessEvidence run={snapshot.run} projectId={projectId} revision={revision} />
                 ) : (
                   <p>
                     No detailed Runtime record is linked to this session. Tool and budget evidence
@@ -275,9 +387,10 @@ function SessionInspector({
   );
 }
 
-function HarnessEvidence({ run }: { run: HarnessRun }) {
+function HarnessEvidence({ run, projectId, revision }: { run: HarnessRun; projectId: string; revision: number }) {
   return (
     <>
+      {run.capabilityId === NATIVE_LOOP_CAPABILITY && <LoopInspector projectId={projectId} runId={run.id} revision={revision} />}
       <dl>
         <dt>Run</dt>
         <dd className="run-inspector-code">{run.id}</dd>
