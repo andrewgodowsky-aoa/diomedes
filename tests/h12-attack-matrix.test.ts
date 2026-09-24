@@ -14,7 +14,7 @@ import type { CapabilityManifest, HarnessPrincipal, Json } from '../shared/harne
 import { FileRunStore, RunService, Suspended, ToolRegistry } from '../server/harness/index.js';
 import { containedFileTools } from '../server/harness/capabilities/contained-file-tools.js';
 import { readScopeTools } from '../server/harness/capabilities/read-scope-tools.js';
-import { containedPath, containedSpawn, containedWrite } from '../server/harness/containment.js';
+import { containedPath, containedSpawn, containedWrite, minimalEnvironment } from '../server/harness/containment.js';
 import { openReadGrant } from '../server/engines/turn-scope.js';
 
 const WINDOWS = process.platform === 'win32';
@@ -313,17 +313,25 @@ describe('containedPath: the one funnel', () => {
 describe('containedSpawn: minimal environment, bounded output, process-tree cleanup', () => {
   const node = process.execPath;
   test('no inherited secret reaches the child', async () => {
+    const hadAnthropic = 'ANTHROPIC_API_KEY' in process.env;
     process.env.H12_CANARY_SECRET_TOKEN = 'canary-7f3e';
     process.env.ANTHROPIC_API_KEY ??= 'canary-anthropic';
+    const allowed = /^(PATH|Path|SYSTEMROOT|SystemRoot|WINDIR|windir|TEMP|TMP|TMPDIR|COMSPEC|ComSpec|PATHEXT|LANG)$/;
     try {
+      // What Diomedes passes is exactly the allow-list.
+      expect(Object.keys(minimalEnvironment()).filter((key) => !allowed.test(key))).toEqual([]);
       const result = await containedSpawn(root, '.', node, ['-e', 'process.stdout.write(JSON.stringify(process.env))'], { timeoutMs: 20_000 });
       const env = JSON.parse(result.stdout) as Record<string, string>;
       expect(result.stdout).not.toContain('canary-7f3e');
       expect(Object.keys(env)).not.toContain('H12_CANARY_SECRET_TOKEN');
       expect(Object.keys(env)).not.toContain('ANTHROPIC_API_KEY');
-      expect(Object.keys(env).every((key) => /^(PATH|Path|SYSTEMROOT|SystemRoot|WINDIR|windir|TEMP|TMP|TMPDIR|COMSPEC|ComSpec|PATHEXT|LANG|HOME|USERPROFILE)$/.test(key))).toBe(true);
+      // What the child sees adds only what the operating system itself injects
+      // into every process (macOS: __CF_USER_TEXT_ENCODING), never an inherited name.
+      const injected = /^__CF_USER_TEXT_ENCODING$/;
+      expect(Object.keys(env).filter((key) => !allowed.test(key) && !injected.test(key))).toEqual([]);
     } finally {
       delete process.env.H12_CANARY_SECRET_TOKEN;
+      if (!hadAnthropic) delete process.env.ANTHROPIC_API_KEY;
     }
   });
   test.each([['GITHUB_TOKEN'], ['AWS_SECRET_ACCESS_KEY'], ['NPM_AUTH'], ['DB_PASSWORD'], ['OPENAI_API_KEY'], ['Cookie']])(
