@@ -44,6 +44,9 @@ const MARK: Readonly<Record<AutomationLabel, string>> = {
   'waiting-for-data': 'waiting',
   'setup-incomplete': 'waiting',
   'needs-investigation': 'fault',
+  scheduled: 'todo',
+  paused: 'waiting',
+  'waiting-for-computer': 'waiting',
 };
 
 const SUMMARY: readonly { key: keyof AutomationSummary; label: string }[] = [
@@ -161,8 +164,12 @@ function Occurrence({
             <dd className="mono lc">{occurrence.id}</dd>
           </div>
           <div>
-            <dt>Asked by</dt>
-            <dd className="mono lc">{occurrence.trigger.requestedBy}</dd>
+            <dt>{occurrence.trigger.kind === 'schedule' ? 'Turned on by' : 'Asked by'}</dt>
+            <dd className="mono lc">
+              {occurrence.trigger.kind === 'schedule'
+                ? occurrence.trigger.enabledBy
+                : occurrence.trigger.requestedBy}
+            </dd>
           </div>
           <div>
             <dt>Setup revision</dt>

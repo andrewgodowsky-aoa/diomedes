@@ -142,6 +142,7 @@ describe('summary counts', () => {
   test('a manual job is configured and never counted as running', () => {
     expect(automationSummary([{ label: 'manual' }])).toEqual({
       configured: 1,
+      scheduled: 0,
       running: 0,
       needsAttention: 0,
       notReady: 0,
@@ -158,12 +159,13 @@ describe('summary counts', () => {
         { label: 'needs-investigation' },
         { label: 'setup-incomplete' },
       ]),
-    ).toEqual({ configured: 5, running: 1, needsAttention: 3, notReady: 1 });
+    ).toEqual({ configured: 5, scheduled: 0, running: 1, needsAttention: 3, notReady: 1 });
   });
 
   test('an empty authorized list counts nothing', () => {
     expect(automationSummary([])).toEqual({
       configured: 0,
+      scheduled: 0,
       running: 0,
       needsAttention: 0,
       notReady: 0,
