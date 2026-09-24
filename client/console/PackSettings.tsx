@@ -326,7 +326,7 @@ export function PackSettings({ projectId, onChange }: { projectId: string; onCha
       })}
       {view && view.available.length > 0 && (
         <>
-          <p className="pack-label">Ships with Diomedes · not installed</p>
+          <p className="pack-label">Bundled · not installed</p>
           {view.available.map((manifest) => (
             <div className="pack" key={manifest.id} data-pack={manifest.id}>
               <div className="pack-head">
