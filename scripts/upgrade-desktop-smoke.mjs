@@ -54,9 +54,8 @@ try {
     `The prior build reports ${priorVersion}, which is not older than ${appVersion}: this pair would not exercise an upgrade.`).toBe(true);
   proof.priorVersion = priorVersion; proof.currentVersion = appVersion;
   const project = await api('/projects/sample', 'POST', {}), base = `/projects/${project.id}`;
-  await api('/settings', 'PUT', { detail: 'technical', surface: 'workbook', openProjects: [project.id],
-    onboarding: { work: 'business', detail: 'technical', familiarity: 'some', resumeAt: 'done', completedAt: new Date().toISOString() },
-    lastPage: { [project.id]: 'work' } });
+  await api('/settings', 'PUT', { detail: 'technical', openProjects: [project.id],
+    onboarding: { work: 'business', detail: 'technical', familiarity: 'some', resumeAt: 'done', completedAt: new Date().toISOString() } });
   const session = await api(`${base}/work/start`, 'POST', { capabilityId: 'format-report', taskId: null, instruction: 'Preserve this exact pending proposal across the experimental version upgrade.' });
   await expect.poll(async () => (await api(`${base}/state`)).sessions.find(s => s.id === session.id)?.state).toBe('waiting');
   const before = await api(`${base}/state`), need = before.needs.find(n => n.sessionId === session.id && n.state === 'open');
@@ -65,11 +64,17 @@ try {
   await fs.writeFile(sentinel, 'User project data survives the application upgrade.');
   proof.before = { projectId: project.id, need, settings, history: before.history };
   await desktop.close(); desktop = undefined;
+  // A profile from before the Workbook's removal still holds its keys. The server
+  // refuses them in a write, so they go into the stored file the way that build left them.
+  const settingsFile = path.join(root, 'data', 'settings.json');
+  const stored = JSON.parse(await fs.readFile(settingsFile, 'utf8'));
+  await fs.writeFile(settingsFile, JSON.stringify({ ...stored, surface: 'workbook',
+    lastPage: { [project.id]: 'work' }, tasksView: { [project.id]: 'board' } }));
   await open(current); expect((await api('/health')).version).toBe(appVersion);
   const after = await api(`${base}/state`), sameNeed = after.needs.find(n => n.id === need.id);
   expect(sameNeed.approval).toEqual(need.approval); expect(sameNeed.harness).toEqual(need.harness);
   expect(after.history).toEqual(before.history);
-  // The prior build stored the Workbook's keys; this build drops them on load and keeps the rest.
+  // The stored file held the Workbook's keys; this build drops them on load and keeps the rest.
   for (const key of ['surface', 'lastPage', 'tasksView'])
     expect(Object.keys(await api('/settings'))).not.toContain(key);
   expect((await api('/settings')).openProjects).toEqual(settings.openProjects);

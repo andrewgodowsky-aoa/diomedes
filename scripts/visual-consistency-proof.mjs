@@ -77,13 +77,10 @@ if (!state.conversations.some((c) => c.turns.length)) {
 const screens = ['settings', 'projects', 'home', 'ask', 'review', 'team', 'connections'];
 const reports = [];
 async function open(screen, scale = 1.1, theme = 'ember') {
-  const consoleView = ['settings', 'team', 'connections'].includes(screen);
   await api('/settings', 'PUT', {
     onboarding: { ...original.onboarding, resumeAt: 'done' },
-    surface: consoleView ? 'console' : 'workbook',
     detail: 'technical',
     openProjects: screen === 'projects' ? [] : [project.id],
-    lastPage: { [project.id]: ['ask', 'review'].includes(screen) ? screen : 'home' },
     appearance: {
       package: theme,
       motion: 'reduced',
