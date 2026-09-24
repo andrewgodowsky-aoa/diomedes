@@ -55,7 +55,9 @@ export type FilesPaneProps = { projectId: string; documents: DocumentInfo[]; loa
   openVersion?: { path: string; sha: string } | null;
   onOpenVersion?(identity: { path: string; sha: string } | null): void;
   /** Attach a file to the open Thread's next message. Offered only while a Thread is open. */
-  onAttach?(path: string): void; };
+  onAttach?(path: string): void;
+  /** The Software Engineering pack's Repository section (P07), present only where the pack is on. */
+  repository?: ReactNode; };
 export type PalettePoint = '' | 'live' | 'attn' | 'fail' | 'done';
 export type PaletteAction = { label: string; run(): void | Promise<void>; light?: boolean; stay?: boolean };
 export type PaletteEntry = { group: 'Recent' | 'Tasks' | 'Files' | 'Skills' | 'Workers' | 'Models' | 'Projects' | 'Views'; id: string; name: string; sub: string; point: PalettePoint; actions: PaletteAction[];

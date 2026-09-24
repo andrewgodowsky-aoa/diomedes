@@ -89,6 +89,8 @@ import { COMPOSER_LABEL } from './Composer';
 import { AgentPicker } from './AgentPicker';
 import { BoardView } from './BoardView';
 import { FilesPane, DEFAULT_WIDTH, clampWidth } from './FilesPane';
+import { Repository } from './Repository';
+import { SOFTWARE_PACK_ID } from '../../shared/software-pack';
 import { threadRun, useArtifactHost } from './artifact-panel';
 import { saveArtifact } from './artifact-save';
 import { boardFor } from './board-model';
@@ -344,6 +346,8 @@ export function Shell({
   const [openVersion, setOpenVersion] = useState<{ path: string; sha: string } | null>(null);
   // Files attached to one thread's next message. They go with that thread only.
   const [attached, setAttached] = useState<{ threadId: string; files: DocumentInfo[] } | null>(null);
+  // Text added to one thread's next message from Files > Repository (P07). It goes with that thread only.
+  const [inserted, setInserted] = useState<{ threadId: string; text: string; n: number } | null>(null);
   const [documents, setDocuments] = useState<DocumentInfo[]>([]);
   const [documentsLoading, setDocumentsLoading] = useState(false);
   const [documentsFailure, setDocumentsFailure] = useState<string | null>(null);
@@ -1837,6 +1841,18 @@ export function Shell({
     setMenuOpen(false);
     if (settings.view !== next) void saveSettings({ ...settings, view: next });
   };
+  // Attach a project file to the open thread's next message; offered only while a thread is open.
+  const attachToThread =
+    selected && view === 'Thread'
+      ? (path: string) => {
+          const file = documents.find((item) => item.path === path);
+          if (!file) return;
+          setAttached((prev) => {
+            const current = prev?.threadId === selected.id ? prev.files : [];
+            return current.some((item) => item.path === path) ? prev : { threadId: selected.id, files: [...current, file] };
+          });
+        }
+      : undefined;
 
   return (
     <div
@@ -2162,6 +2178,7 @@ export function Shell({
                   : null
               }
               onClearSkill={() => setSkillDraft(null)}
+              insert={inserted?.threadId === selected.id ? { text: inserted.text, n: inserted.n } : null}
               attachments={attached?.threadId === selected.id ? attached.files : []}
               onAttachments={(files) => setAttached({ threadId: selected.id, files })}
               attachable={async () => (await listDocuments(projectId)).documents}
@@ -2368,16 +2385,20 @@ export function Shell({
             history={state.history}
             openVersion={openVersion}
             onOpenVersion={setOpenVersion}
-            onAttach={
-              selected && view === 'Thread'
-                ? (path) => {
-                    const file = documents.find((item) => item.path === path);
-                    if (!file) return;
-                    const current = attached?.threadId === selected.id ? attached.files : [];
-                    if (!current.some((item) => item.path === path))
-                      setAttached({ threadId: selected.id, files: [...current, file] });
+            onAttach={attachToThread}
+            repository={
+              isPackActive(state.project.packs, SOFTWARE_PACK_ID) ? (
+                <Repository
+                  projectId={projectId}
+                  documents={documents}
+                  onAttach={attachToThread}
+                  onInsert={
+                    selected && view === 'Thread'
+                      ? (text) => setInserted((prev) => ({ threadId: selected.id, text, n: (prev?.n ?? 0) + 1 }))
+                      : undefined
                   }
-                : undefined
+                />
+              ) : undefined
             }
           />
         )}
