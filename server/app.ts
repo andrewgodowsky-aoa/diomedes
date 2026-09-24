@@ -2349,6 +2349,7 @@ export async function createApp(options: AppOptions) {
           projectId,
           taskId,
           state.conversations.find((c) => c.id === threadId),
+          command?.request.agentId ?? null,
         )
           ? undefined
           : nativeChoice(
@@ -4638,7 +4639,7 @@ export async function createApp(options: AppOptions) {
       // turn verified once the runtime reports its engine.
       const turnId = identifier('U');
       // A profile that decides this run supplies its own exact model (H09).
-      const resolvedChoice: RunChoice = agentProfiles.applies(projectId, task.id, conversation)
+      const resolvedChoice: RunChoice = !team && agentProfiles.applies(projectId, task.id, conversation)
         ? {}
         : nativeChoice(engine, projectId, conversation, { mode: runMode, text });
       // A member whose model Nectovia chose runs it as an automatic selection, so the run's
