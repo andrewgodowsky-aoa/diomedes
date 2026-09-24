@@ -41,6 +41,7 @@ import {
 import type { ProjectState, Route, Task } from '../shared/types.js';
 import { ApiError } from './paths.js';
 import { HOME_REFUSES_WORK, identifier, jsonWrite, now, readJson, type Store } from './store.js';
+import { parseWorkCommand } from './work-admission.js';
 
 export interface ReadySchedulerDeps {
   store: Store;
@@ -131,6 +132,49 @@ export class ReadyScheduler {
   }
 
   /**
+   * Exactly what a person's Start on the Board sends: the task, its route, the task's own
+   * default document when one is set, and the thread it runs in. Built in one place so the
+   * consent check below and admission read the same request.
+   */
+  private commandFor(state: ProjectState, task: Task, route: Route, commandId: string) {
+    const thread = state.conversations.find((item) => item.taskId === task.id);
+    return {
+      protocolVersion: 1,
+      commandId,
+      taskId: task.id,
+      route,
+      sources: route !== 'sample' && task.sourceDocument ? [task.sourceDocument] : [],
+      consent: route !== 'sample',
+      ...(thread ? { threadId: thread.id } : {}),
+    } satisfies Record<string, unknown>;
+  }
+
+  /**
+   * Whether the person already confirmed sending exactly this request on this route. The
+   * confirmation names the engine *and* the documents (and the thread), so only an admitted
+   * start whose Work payload digest equals this one counts: a start the person sent without
+   * the task's document, or with another one, is not consent to send that document now.
+   */
+  private confirmed(state: ProjectState, task: Task, route: Route) {
+    let digest: string | undefined;
+    try {
+      digest = parseWorkCommand(this.commandFor(state, task, route, 'ready-consent-check'))
+        ?.admission.payloadDigest;
+    } catch {
+      return false;
+    }
+    return (
+      digest !== undefined &&
+      state.sessions.some(
+        (session) =>
+          session.taskId === task.id &&
+          session.receipt?.route === route &&
+          session.receipt.payloadDigest === digest,
+      )
+    );
+  }
+
+  /**
    * The planner's input, read from the records alone. Ready lines are read for the projects
    * whose queue is on and for `viewed`; every other project contributes only what it runs.
    */
@@ -158,11 +202,9 @@ export class ReadyScheduler {
               route,
               routeName: routeDisplayName(route),
               serviceOn: this.store.settings.services?.[route] === true,
-              // The confirmation a person gives names the engine, so only a start already
-              // admitted for this task on this route is consent to send it there again.
-              consented: state.sessions.some(
-                (session) => session.taskId === task.id && session.receipt?.route === route,
-              ),
+              // The confirmation a person gives names the engine and the documents, so only a
+              // start already admitted for exactly this request is consent to send it again.
+              consented: this.confirmed(state, task, route),
               refused: refused?.reason ?? null,
             });
           } catch (error) {
@@ -318,18 +360,13 @@ export class ReadyScheduler {
     const state = this.store.state(projectId);
     const task = state.tasks.find((item) => item.id === claim.taskId && !item.deletedAt);
     if (!task) return settle({ reason: 'This task is no longer here.' });
-    const thread = state.conversations.find((item) => item.taskId === task.id);
-    // Exactly what a person's Start on the Board sends: the task, its route, the task's own
-    // default document when one is set, and the thread it runs in.
-    const command: Record<string, unknown> = {
-      protocolVersion: 1,
-      commandId: claim.commandId,
-      taskId: task.id,
-      route: claim.route,
-      sources: claim.route !== 'sample' && task.sourceDocument ? [task.sourceDocument] : [],
-      consent: claim.route !== 'sample',
-      ...(thread ? { threadId: thread.id } : {}),
-    };
+    // A replay after a restart re-checks the confirmation: consent is never assumed from a
+    // claim, only read from an admitted start of exactly this request.
+    if (claim.route !== 'sample' && !this.confirmed(state, task, claim.route))
+      return settle({
+        reason: `Sending to ${routeDisplayName(claim.route)} needs your confirmation.`,
+      });
+    const command: Record<string, unknown> = this.commandFor(state, task, claim.route, claim.commandId);
     let session: unknown;
     try {
       session = await this.deps.admit(projectId, command);

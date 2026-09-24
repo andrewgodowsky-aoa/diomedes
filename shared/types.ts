@@ -1,3 +1,4 @@
+import type { ContextAccount } from './context-accounting.js';
 import type { StepIntent } from './harness.js';
 import type {
   RememberedApprovals,
@@ -176,6 +177,8 @@ export interface Task {
   stopReceipts?: StopReceipt[];
   /** Immutable admission evidence; absent on tasks created by legacy/internal callers. */
   creationReceipt?: TaskCreationReceipt;
+  /** H17: what a finished run must satisfy. Absent means none declared: results read Not verified. */
+  acceptance?: import('./verification.js').AcceptanceDeclaration;
   createdBy: Owner;
   createdAt: string;
   assignedTo?: Slot | null;
@@ -333,6 +336,8 @@ export interface Session {
   slotId?: Slot;
   permission?: ThreadPermission;
   receipt?: WorkReceipt;
+  /** What this run was asked to do, kept so Resume and Retry ask for the same thing (H08). */
+  inputs?: import('./work-control.js').WorkInputs;
   state: 'queued' | 'working' | 'waiting' | 'done' | 'stopped' | 'failed';
   startedAt: string;
   endedAt: string | null;
@@ -372,6 +377,8 @@ export interface FileRecord {
   after: string | null;
   recorded: boolean;
   reason: string | null;
+  /** The recorded images are exact bytes (a picture, PDF or workbook), not UTF-8 text. */
+  binary?: true;
 }
 export interface HistoryEntry {
   origin?: OriginSnapshot;
@@ -402,6 +409,8 @@ export interface HistoryEntry {
   rawReply?: string;
   rawReplyLength?: number;
   parseError?: string;
+  /** H17: a verification's evidence. The four-state result is projected from it, never stored. */
+  verification?: import('./verification.js').VerificationRecord;
 }
 export interface Change {
   id: string;
@@ -426,6 +435,13 @@ export interface Turn {
   text: string;
   at: string;
   sources: string[];
+  /**
+   * The exact bytes each source named when this turn was written, as
+   * `{ path, sha }` (shared/file-identity.ts). Set by the direct request path;
+   * absent on older turns and conversation turns, whose version History's
+   * record of the read at or before `at` still names.
+   */
+  sourceVersions?: { path: string; sha: string }[];
   route?: Route;
   /** Fix attempts only: which try this turn belongs to. */
   attempt?: { n: number; of: number };
@@ -441,6 +457,11 @@ export interface Turn {
     version?: string | null;
     verified: boolean;
   };
+  /**
+   * H18: what went into the model context for this answer, on a route where Diomedes assembled
+   * it (a model-API route). Absent for an external engine, which manages its own context.
+   */
+  context?: ContextAccount;
 }
 /** A thread: a named conversation that belongs to a project and, optionally, to a task. */
 /**
@@ -583,6 +604,8 @@ export interface ProjectState {
   conversations: Conversation[];
   /** Absent in projects written before the follow-up queue existed. */
   followUps?: FollowUpCommand[];
+  /** Receipts for Steer, Queue, Stop, Resume, Retry and Fork (H08). Append-only; absent before 2026-09-24. */
+  controlReceipts?: import('./work-control.js').ControlReceipt[];
   team?: TeamState;
   /**
    * What pack discovery found in the project folder. Derived, not authored:

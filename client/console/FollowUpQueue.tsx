@@ -3,10 +3,11 @@ import type { Route, Task } from '../../shared/types';
 import {
   followUpWaitLabel,
   MAX_FOLLOW_UPS_PER_TASK,
+  type ControlAvailability,
   type FollowUpCommand,
   type FollowUpWaitsFor,
 } from '../../shared/work-control';
-import { editFollowUp, queueFollowUp, removeFollowUp, reorderFollowUps } from '../api';
+import { editFollowUp, performControl, removeFollowUp, reorderFollowUps } from '../api';
 import { mintCommandId } from '../work-start';
 
 interface FollowUpQueueProps {
@@ -15,7 +16,18 @@ interface FollowUpQueueProps {
   route: Route;
   followUps: FollowUpCommand[];
   busy?: boolean;
+  /**
+   * The run in progress, if any, and whether its route can take a message into
+   * the running turn (H08). Steer is offered only where it can; elsewhere the
+   * box says the message waits, because that is what Queue does.
+   */
+  live?: { sessionId: string; steer: ControlAvailability | null; routeName: string } | null;
 }
+
+/** When a message goes: into the running turn, or held for later. */
+type Delivery = 'now' | FollowUpWaitsFor;
+const deliveryLabel = (choice: Delivery) =>
+  choice === 'now' ? 'now, into this turn' : followUpWaitLabel(choice);
 
 const OUTCOME: Record<Exclude<FollowUpCommand['state'], 'queued'>, string> = {
   delivered: 'Sent',
@@ -35,12 +47,22 @@ function why(item: FollowUpCommand): string | null {
 /**
  * The queue under the composer. A follow-up is a command the person writes now
  * and Diomedes sends later, so it says when it will run, keeps its place, and
- * shows what became of it. It is not a way to speak into a running turn: the
- * run in progress never sees it.
+ * shows what became of it. A queued follow-up is never seen by the run in
+ * progress; only Steer reaches that, and only where the run's route offers it.
  */
-export function FollowUpQueue({ projectId, task, route, followUps, busy }: FollowUpQueueProps) {
+export function FollowUpQueue({
+  projectId,
+  task,
+  route,
+  followUps,
+  busy,
+  live = null,
+}: FollowUpQueueProps) {
   const [text, setText] = useState('');
-  const [waitsFor, setWaitsFor] = useState<FollowUpWaitsFor>('turn');
+  const [chosen, setWaitsFor] = useState<Delivery>('turn');
+  const canSteer = Boolean(live && live.steer?.support === 'native');
+  const choices: Delivery[] = canSteer ? ['now', 'turn', 'task'] : ['turn', 'task'];
+  const waitsFor: Delivery = chosen === 'now' && !canSteer ? 'turn' : chosen;
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
@@ -80,13 +102,13 @@ export function FollowUpQueue({ projectId, task, route, followUps, busy }: Follo
           rows={2}
           maxLength={16000}
           disabled={disabled || full}
-          placeholder="Queue a follow-up"
-          aria-label="Queue a follow-up"
+          placeholder={waitsFor === 'now' ? 'Steer the running turn' : 'Queue a follow-up'}
+          aria-label={waitsFor === 'now' ? 'Steer the running turn' : 'Queue a follow-up'}
           onChange={(event) => setText(event.target.value)}
         />
         <div className="row">
           <div className="seg" role="radiogroup" aria-label="When this follow-up runs">
-            {(['turn', 'task'] as FollowUpWaitsFor[]).map((choice) => (
+            {choices.map((choice) => (
               <button
                 key={choice}
                 type="button"
@@ -96,34 +118,52 @@ export function FollowUpQueue({ projectId, task, route, followUps, busy }: Follo
                 disabled={disabled}
                 onClick={() => setWaitsFor(choice)}
               >
-                {followUpWaitLabel(choice)}
+                {deliveryLabel(choice)}
               </button>
             ))}
           </div>
           <span className="grow" />
           <button
             type="button"
-            disabled={disabled || full || !text.trim()}
+            disabled={disabled || (full && waitsFor !== 'now') || !text.trim()}
             onClick={() =>
               void run(async () => {
-                await queueFollowUp(projectId, {
-                  protocolVersion: 1,
-                  commandId: mintCommandId(),
-                  taskId: task.id,
-                  text: text.trim(),
-                  waitsFor,
-                  route,
-                  model: null,
-                  agentId: null,
-                  sources: [],
-                });
+                // One command per press, through the one control route, so each
+                // leaves a receipt and a repeated press names the same command.
+                const receipt = await performControl(
+                  projectId,
+                  waitsFor === 'now' && live
+                    ? {
+                        protocolVersion: 1,
+                        commandId: mintCommandId(),
+                        taskId: task.id,
+                        control: 'steer',
+                        sessionId: live.sessionId,
+                        text: text.trim(),
+                      }
+                    : {
+                        protocolVersion: 1,
+                        commandId: mintCommandId(),
+                        taskId: task.id,
+                        control: 'queue',
+                        text: text.trim(),
+                        waitsFor: waitsFor === 'now' ? 'turn' : waitsFor,
+                        route,
+                      },
+                );
+                if (receipt.outcome === 'refused') throw new Error(receipt.detail);
                 setText('');
               })
             }
           >
-            Queue a follow-up
+            {waitsFor === 'now' ? 'Steer' : 'Queue a follow-up'}
           </button>
         </div>
+        {live && !canSteer && (
+          <p className="caption follow-up-steer-note">
+            {live.routeName} can’t steer a running turn, so a message waits for the turn to end.
+          </p>
+        )}
         {full && (
           <p className="caption">
             This task holds {MAX_FOLLOW_UPS_PER_TASK} queued follow-ups. Send or remove one first.

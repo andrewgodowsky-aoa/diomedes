@@ -79,8 +79,12 @@ function deliveryRows(
     bytes: file.bytes,
     sha: file.sha,
     detail: file.detail === 'Sent whole.' ? null : file.detail,
+    // A file this run sent stays readable after its pack is turned off: the
+    // read route serves every recorded path, and what was applied must stay
+    // inspectable (decision 14).
     readable:
-      readable(file.path) && file.exclusion !== 'refused' && file.exclusion !== 'missing',
+      file.state === 'sent' ||
+      (readable(file.path) && file.exclusion !== 'refused' && file.exclusion !== 'missing'),
   }));
   const excluded: Row[] = (delivery.excluded ?? []).map((file) => ({
     path: file.path,
@@ -127,11 +131,23 @@ export function ProjectInstructions({
   const [content, setContent] = useState<DocumentContent | null>(null);
   const [error, setError] = useState('');
 
-  if (!files.length) return null;
+  // A thread whose run was sent instructions keeps this line even when
+  // nothing is loaded now (the pack was turned off, or the files were
+  // removed): what was applied is never left where it cannot be inspected.
+  if (!files.length && !delivery?.files.some((file) => file.state === 'sent')) return null;
   const loaded = files
     .filter((file) => file.state === 'loaded')
     .sort((a, b) => compareInstructionPrecedence(a.path, b.path));
-  const named = (loaded.length ? loaded : files).map((file) => file.path).join(' · ');
+  const named = (
+    loaded.length
+      ? loaded
+      : files.length
+        ? files
+        : (delivery?.files ?? []).filter((file) => file.state === 'sent')
+  )
+    .map((file) => file.path)
+    .join(' · ');
+  const lead = loaded.length ? 'loaded' : files.length ? 'found' : 'last sent';
 
   // The run's record first; anything discovery has found since that run
   // follows it, so a file is never missing from the panel for being new.
@@ -220,7 +236,7 @@ export function ProjectInstructions({
         title={named}
       >
         <span className="instructions-lead">
-          Project instructions {loaded.length ? 'loaded' : 'found'} ·
+          Project instructions {lead} ·
         </span>{' '}
         <span>{named}</span>
       </button>

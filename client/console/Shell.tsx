@@ -96,6 +96,7 @@ import { useStartedWork } from './ProgressBoard';
 import { previewLine } from '../../shared/thread-preview';
 import { ActivityOverview } from './ActivityOverview';
 import { projectActivity, type ActivityRow } from './activity';
+import { useAutomationAttention } from './automation-attention';
 import { TeamView } from './TeamView';
 import { DocumentEditor } from './DocumentEditor';
 import { editorDocument, guardEditorExits, leaveEditor, type EditorExit } from './editor-guard';
@@ -318,6 +319,10 @@ export function Shell({
     (...args: A) =>
       leaveEditor(() => run(...args));
   const [openPath, setOpenPath] = useState<string | null>(null);
+  // One exact version open in Files by identity (a Thread reference or a file's version list).
+  const [openVersion, setOpenVersion] = useState<{ path: string; sha: string } | null>(null);
+  // Files attached to one thread's next message. They go with that thread only.
+  const [attached, setAttached] = useState<{ threadId: string; files: DocumentInfo[] } | null>(null);
   const [documents, setDocuments] = useState<DocumentInfo[]>([]);
   const [documentsLoading, setDocumentsLoading] = useState(false);
   const [documentsFailure, setDocumentsFailure] = useState<string | null>(null);
@@ -469,6 +474,8 @@ export function Shell({
     setSelectedId(null);
     setView('Thread');
     setOpenPath(null);
+    setOpenVersion(null);
+    setAttached(null);
     setDocuments([]);
     setDocumentsFailure(null);
     void load().catch(report);
@@ -693,16 +700,18 @@ export function Shell({
   // task, run, Need, change and History records the Board reads. Null when
   // nothing is happening, so the screen keeps its own sentence. Memoised on
   // the state object: it must not recompute on every keystroke.
+  // Automation attention (Milestone B) joins Needs you as its own rows.
+  const automationNeeds = useAutomationAttention(projectId, `${state?.history.length ?? 0}:${view}`);
   const activity = useMemo(() => {
     if (!state) return null;
-    const projected = projectActivity(state);
+    const projected = projectActivity(state, Date.now(), automationNeeds);
     return projected.working.length ||
       projected.needsYou.length ||
       projected.readyForReview.length ||
       projected.finishedRecently.length
       ? projected
       : null;
-  }, [state]);
+  }, [state, automationNeeds]);
 
   const threads = [...(state?.conversations ?? [])].sort((a, b) =>
     threadTime(b).localeCompare(threadTime(a)),
@@ -1527,12 +1536,25 @@ export function Shell({
   }
   /** Opening a document opens the pane; it never changes the selected thread. */
   function openDocument(path: string) {
+    setOpenVersion(null);
     setOpenPath(path);
+    setFilesOpen(true);
+    artifactHost.showFiles();
+  }
+  /** A sent message's file, at the version it named; the current file when none is recorded. */
+  function openReference(reference: { path: string; sha: string | null }) {
+    if (!reference.sha) return openDocument(reference.path);
+    setOpenPath(null);
+    setOpenVersion({ path: reference.path, sha: reference.sha });
     setFilesOpen(true);
     artifactHost.showFiles();
   }
   /** A row is a way back into the record it came from, never a new action. */
   function openActivityRow(row: ActivityRow) {
+    if (row.view === 'Automations') {
+      setView('Automations');
+      return;
+    }
     if (row.threadId) {
       setSelectedId(row.threadId);
       setView('Thread');
@@ -1671,6 +1693,9 @@ export function Shell({
   function goTo(id: string) {
     // The editor is the one screen holding writing that may exist only here, so
     // the rail leaves it through its gate and comes back here once it may.
+    // Files only shows or hides the pane beside the editor, like the palette's
+    // Open file, so it leaves nothing and passes no gate.
+    if (id === 'files') return artifactHost.toggleFiles();
     if (editingNow.current !== null) return leaveEditor(() => goTo(id));
     if (id === 'thread') setView('Thread');
     else if (id === 'board') setView('Board');
@@ -1678,7 +1703,6 @@ export function Shell({
     else if (id === 'discovery') setView('Discovery');
     else if (id === 'readiness') setView('Readiness');
     else if (id === 'automations') setView('Automations');
-    else if (id === 'files') artifactHost.toggleFiles();
     else if (id === 'engines') openEngineSettings();
     else if (id === 'settings') onOpenSettings();
     else if (id === 'projects') onShowProjects();
@@ -1974,6 +1998,9 @@ export function Shell({
               // in the copy, so these two leave without the gate.
               onClose={() => setEditing(null)}
               exits={editorExit}
+              // A file the listing cannot be read for, or does not have, can
+              // be looked for again: `load()` makes a new state, which lists again.
+              listing={{ loading: documentsLoading, refresh: () => void load().catch(report) }}
               onOpen={(path) => setEditing(path)}
               // `load()` refreshes the listing too: the documents effect runs
               // again on every new state object, so a saved file's new size and
@@ -2036,6 +2063,11 @@ export function Shell({
               instructionFiles={activeInstructionFiles(state.project.packs, state.instructionFiles)}
               onOpenInFiles={openDocument}
               followUps={state.followUps ?? []}
+              controlReceipts={state.controlReceipts ?? []}
+              onOpenTask={(taskId) => {
+                const target = state.tasks.find((item) => item.id === taskId);
+                if (target) openTaskThread(target);
+              }}
               onError={report}
               grantActive={!!activeGrant}
               onScope={() => setPermissionsOpen(true)}
@@ -2102,6 +2134,11 @@ export function Shell({
                   : null
               }
               onClearSkill={() => setSkillDraft(null)}
+              attachments={attached?.threadId === selected.id ? attached.files : []}
+              onAttachments={(files) => setAttached({ threadId: selected.id, files })}
+              attachable={async () => (await listDocuments(projectId)).documents}
+              onOpenFile={openDocument}
+              onOpenReference={openReference}
               onSend={(m, text, r, failing, sources, readAccess) =>
                 void send(
                   selected,
@@ -2300,6 +2337,20 @@ export function Shell({
             hidden={artifactHost.shown !== 'files'}
             switcher={artifactHost.switcher}
             onOpenInPanel={artifactHost.openFile}
+            history={state.history}
+            openVersion={openVersion}
+            onOpenVersion={setOpenVersion}
+            onAttach={
+              selected && view === 'Thread'
+                ? (path) => {
+                    const file = documents.find((item) => item.path === path);
+                    if (!file) return;
+                    const current = attached?.threadId === selected.id ? attached.files : [];
+                    if (!current.some((item) => item.path === path))
+                      setAttached({ threadId: selected.id, files: [...current, file] });
+                  }
+                : undefined
+            }
           />
         )}
         {artifactHost.pane}

@@ -43,8 +43,25 @@ const CAPABILITY = /^[a-z][a-z0-9-]{1,47}$/;
 const FILE_PATH =
   /^(?:[A-Za-z0-9_-][A-Za-z0-9._{}-]{0,63}\/){0,3}[A-Za-z0-9_-][A-Za-z0-9._{}-]{0,63}$/;
 export const PACK_DIGEST_PATTERN = /^sha256:[a-f0-9]{64}$/;
+/**
+ * A path segment Windows would not store as written: a device name, with or
+ * without an extension, or a name ending in a dot or space, which it drops.
+ * The same rule as `relativeName` in `server/paths.ts`.
+ */
+const WINDOWS_UNSAFE_SEGMENT = /^(con|prn|aux|nul|com\d|lpt\d)(\.|$)|[. ]$/i;
+const windowsSafe = (value: string) => !value.split('/').some((part) => WINDOWS_UNSAFE_SEGMENT.test(part));
 
-const text = (max: number) => z.string().trim().min(1).max(max);
+/**
+ * Text is refused, not trimmed, when it starts or ends with whitespace: a
+ * parse that changed the value would leave the digest pinning bytes other
+ * than the ones the publisher wrote and sealed.
+ */
+const text = (max: number) =>
+  z
+    .string()
+    .min(1)
+    .max(max)
+    .refine((value) => value.trim() === value && value.length > 0, 'no leading or trailing whitespace');
 const contributionId = z.string().regex(CONTRIBUTION_ID, 'a short kebab-case id');
 const capability = z.string().regex(CAPABILITY, 'a kebab-case capability name');
 const version = z.string().refine(isVersion, 'a semantic version X.Y.Z');
@@ -80,7 +97,10 @@ export const packRuleSchema = z.discriminatedUnion('kind', [
     id: contributionId,
     kind: z.literal('instruction-file'),
     /** A plain project-relative name discovered through `server/paths.ts`, never a path. */
-    file: z.string().regex(/^[A-Za-z0-9._-]{1,64}$/, 'a plain file name, not a path'),
+    file: z
+      .string()
+      .regex(/^[A-Za-z0-9._-]{1,64}$/, 'a plain file name, not a path')
+      .refine((file) => file !== '.' && file !== '..' && windowsSafe(file), 'a plain file name, not a path'),
     description: text(400),
   }),
 ]);
@@ -122,7 +142,10 @@ export const packDependencySchema = z.strictObject({
 
 /** A payload file shipped with a pack. Its sha is inside the digested manifest. */
 export const packFileSchema = z.strictObject({
-  path: z.string().regex(FILE_PATH, 'a contained relative path'),
+  path: z
+    .string()
+    .regex(FILE_PATH, 'a contained relative path')
+    .refine(windowsSafe, 'a path Windows stores as written, with no device name'),
   sha256: z.string().regex(/^[a-f0-9]{64}$/),
   bytes: z.number().int().min(0).max(1024 * 1024),
 });

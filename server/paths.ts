@@ -13,6 +13,8 @@ export class ApiError extends Error {
 }
 
 export const MAX_TEXT_BYTES = 8 * 1024 * 1024;
+/** A picture, PDF or workbook a person imported; see shared/file-drops.ts. */
+export const MAX_BINARY_BYTES = 16 * 1024 * 1024;
 const blocked = new Set([
   '.git',
   'node_modules',
@@ -191,6 +193,24 @@ export async function readTextOrNull(absolute: string): Promise<string | null> {
     } catch {
       throw new ApiError(415, 'This file is not UTF-8 text.');
     }
+  } catch (error) {
+    if (absent(error)) return null;
+    throw error;
+  }
+}
+
+/**
+ * A regular file's exact bytes, for a picture, PDF or workbook that has no
+ * text reading. The same refusals as `readTextOrNull` for links and size.
+ */
+export async function readBytesOrNull(absolute: string): Promise<Buffer | null> {
+  try {
+    const stat = await fs.lstat(absolute);
+    if (stat.isSymbolicLink() || !stat.isFile())
+      throw new ApiError(403, 'This path is not a regular file.');
+    if (stat.size > MAX_BINARY_BYTES)
+      throw new ApiError(413, 'This file is larger than the 16 MB limit for a picture, PDF or workbook.');
+    return await fs.readFile(absolute);
   } catch (error) {
     if (absent(error)) return null;
     throw error;

@@ -49,6 +49,7 @@ export const OPENCODE_SESSION_PROFILE: NativeSessionProfile<OpenCodeSessionCheck
   parseCheckpoint: (value) =>
     openCodeCheckpointSchema.parse(validateOpenCodeNativeCheckpoint(value).payload),
   steering: 'queue',
+  openBeforeTurn: true,
 };
 
 export const opencodeSessionRunId = (projectId: string, commandId: string) =>

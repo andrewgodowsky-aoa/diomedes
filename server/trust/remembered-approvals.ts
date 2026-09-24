@@ -42,8 +42,8 @@ import {
 import type { StepIntent } from '../../shared/harness.js';
 import { AGENT_NAME } from '../../shared/agent-name.js';
 import { digestSchema, payloadDigest } from '../command-admission.js';
-import { ApiError } from '../paths.js';
-import type { Store } from '../store.js';
+import { ApiError, relativeName } from '../paths.js';
+import type { Store, WriteInput } from '../store.js';
 
 export const MAX_PATTERN_GRANTS = 256;
 export const MAX_REMEMBER_OFFERS = 256;
@@ -563,8 +563,13 @@ export class RememberedApprovals {
     return structuredClone(record);
   }
 
-  /** Write-time check: the grant that covered this Need is still the live one. */
-  assertCurrent(projectId: string, need: Need) {
+  /**
+   * Write-time check: the grant that covered this Need is still the live one,
+   * and every write is to a file the grant names. A remembered approval never
+   * covers a deletion or a destination outside its pattern, whichever path
+   * reaches the Store (review batch1-a, D5-2).
+   */
+  assertCurrent(projectId: string, need: Need, writes?: readonly WriteInput[]) {
     const state = this.store.state(projectId);
     validateRememberedAuthorization(state, need);
     const evidence = need.authorization as RememberedAuthorization;
@@ -573,6 +578,25 @@ export class RememberedApprovals {
     );
     if (!record || record.generation !== evidence.grantGeneration || record.revokedAt)
       throw notCovered('This remembered approval was revoked before the write.');
+    if (!writes) return;
+    const pattern = record.grant.pattern;
+    const named = (value: string) => {
+      try {
+        return relativeName(value);
+      } catch {
+        return null;
+      }
+    };
+    const files = new Set(
+      pattern.destination.targets
+        .filter((target) => target.startsWith('file:'))
+        .map((target) => named(target.slice('file:'.length))),
+    );
+    if (
+      pattern.destination.kind !== 'local' ||
+      writes.some((write) => write.text === null || !files.has(named(write.path)))
+    )
+      throw notCovered('This write is outside what the remembered approval covers.');
   }
 }
 

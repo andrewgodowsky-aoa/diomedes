@@ -551,6 +551,8 @@ export class NativeWorkService {
         endedAt: null,
         sample: false,
         permission: input.permission ?? 'show-first',
+        // What was asked, kept so a Resume or Retry asks for exactly this (H08).
+        inputs: { instruction, sources: [...names], agentId: input.agentId ?? null, mode: input.mode ?? 'build' },
         ...(resolved ? { agent: structuredClone(resolved) } : {}),
         ...(instructions.delivery ? { instructions: instructions.delivery } : {}),
         productKnowledge: instructions.productKnowledge,

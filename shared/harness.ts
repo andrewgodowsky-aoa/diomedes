@@ -277,7 +277,8 @@ export type ModelResponse =
 export interface ModelResult {
   response: ModelResponse;
   transcript?: ProviderTranscriptRef | null;
-  usage?: { inputTokens?: number; outputTokens?: number } | null;
+  /** Cache counts are parts of `inputTokens` (`nectovia-usage/1`), kept apart when reported. */
+  usage?: { inputTokens?: number; outputTokens?: number; cacheReadTokens?: number; cacheWriteTokens?: number } | null;
 }
 
 /** A harness run in the words the Workbook and Console already use. */

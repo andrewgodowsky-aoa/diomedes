@@ -1,8 +1,17 @@
 import type {
+  ControlReceipt,
+  ControlRequest,
   FollowUpCommand,
   QueueFollowUpRequest,
+  RouteControlProfile,
   StopReceipt,
 } from '../shared/work-control';
+/** A control as the client sends it; the server fills the queue's optional defaults. */
+export type ControlRequestBody =
+  | Exclude<ControlRequest, { control: 'queue' | 'stop' }>
+  | (Omit<Extract<ControlRequest, { control: 'queue' }>, 'model' | 'agentId' | 'sources'> &
+      Partial<Pick<Extract<ControlRequest, { control: 'queue' }>, 'model' | 'agentId' | 'sources'>>)
+  | (Omit<Extract<ControlRequest, { control: 'stop' }>, 'sessionId'> & { sessionId?: string | null });
 
 export class ApiError extends Error {
   constructor(
@@ -168,6 +177,24 @@ export const stopWork = (
   projectId: string,
   request: { scope: StopReceipt['scope']; taskId: string; sessionId?: string | null },
 ) => api<StopReceipt>(`${base(projectId)}/stop`, 'POST', request);
+
+/**
+ * H08: one route for Steer, Queue, Stop, Resume, Retry and Fork. The caller mints
+ * the `commandId` once per press, so a lost response or a second click names the
+ * same command and reads back the same receipt.
+ */
+export const performControl = (projectId: string, request: ControlRequestBody) =>
+  api<{ receipt: ControlReceipt }>(`${base(projectId)}/controls`, 'POST', request).then(
+    (result) => result.receipt,
+  );
+/** Each of a task's runs with the controls its route offers, as the server enforces them. */
+export const controlProfiles = (projectId: string, taskId: string, signal?: AbortSignal) =>
+  api<{ profiles: Record<string, RouteControlProfile> }>(
+    `${base(projectId)}/controls?taskId=${encodeURIComponent(taskId)}`,
+    'GET',
+    undefined,
+    signal,
+  ).then((result) => result.profiles);
 
 /**
  * "Update this conversation": moves one thread onto the current instructions and answer format,

@@ -65,6 +65,8 @@ export class WorkService {
       endedAt: null,
       sample: true,
       permission: options.permission ?? 'show-first',
+      // What was asked, kept so a Resume or Retry asks for exactly this (H08).
+      inputs: { instruction, sources: [], agentId: null, mode: 'build' },
       log: [],
       entryIds: [],
       needId: null,
@@ -416,6 +418,18 @@ export class WorkService {
     this.runs.delete(projectId);
     await this.store.persist(state);
     return session;
+  }
+  /**
+   * The H08 control fixture's live steering, and nothing else: a message handed
+   * to the run in progress, which reads it at its next step. The sample route's
+   * own contract declares no steering, so no person reaches this on it. The
+   * caller persists.
+   */
+  steer(projectId: string, sessionId: string, text: string): boolean {
+    const run = this.runs.get(projectId);
+    if (!run || run.sessionId !== sessionId) return false;
+    this.log(this.session(run), `Steered while running: ${text.slice(0, 4000)}`);
+    return true;
   }
   async note(projectId: string, sessionId: string, text: string) {
     const state = this.store.state(projectId);

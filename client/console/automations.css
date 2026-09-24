@@ -1,4 +1,4 @@
-/* Automations (Milestone A). Flat rows on thin rules, the way Settings >
+/* Automations (Milestones A and B). Flat rows on thin rules, the way Settings >
    Engines draws its services: no raised cards, restrained accent, compact
    controls. The page column is `.col`'s alone (decision 6); nothing here sets
    its inline margin. Every name, path and project cell can carry a machine
@@ -86,10 +86,10 @@
   outline-offset: 2px;
 }
 
-/* The four counts, each with its definition beside it. */
+/* The five counts, each with its definition beside it. */
 .console .auto-summary {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   margin: 0;
   border-block: 1px solid var(--hair);
   min-width: 0;
@@ -205,6 +205,9 @@
 }
 .console .auto-state.running {
   color: var(--light);
+}
+.console .auto-state:is(.paused, .waiting-for-computer) {
+  color: var(--attn);
 }
 
 /* Label-value facts, the setting-row rhythm. */
@@ -423,15 +426,135 @@
   white-space: nowrap;
 }
 
+/* Milestone B: the schedule, its editor, and what needs attention. */
+.console .auto-schedule-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 10px;
+  min-width: 0;
+}
+.console .auto-schedule-actions .button[aria-disabled='true'] {
+  cursor: default;
+  opacity: 0.55;
+}
+.console :is(.auto-schedule-actions, .auto-attention) :is(button, input):focus-visible,
+.console .auto-schedule-form :is(select, input, button):focus-visible {
+  outline: 2px solid var(--light);
+  outline-offset: 2px;
+}
+.console .auto-schedule-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr));
+  gap: 12px 16px;
+  margin-top: 10px;
+  padding: 12px 0;
+  border-block: 1px solid var(--hair);
+  min-width: 0;
+}
+.console .auto-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.console .auto-field-wide {
+  grid-column: span 2;
+}
+.console .auto-field label {
+  color: var(--t3);
+  font-size: var(--dm-type-caption);
+}
+.console .auto-field :is(select, input),
+.console .auto-reason-input {
+  min-width: 0;
+  max-width: 100%;
+  min-height: 32px;
+  padding: 4px 8px;
+  border: 1px solid var(--hair-2);
+  border-radius: var(--rb);
+  color: var(--t1);
+  background: transparent;
+  font: inherit;
+}
+.console .auto-reason-input {
+  flex: 1 1 220px;
+}
+.console .auto-preview {
+  grid-column: 1 / -1;
+  min-width: 0;
+  color: var(--t2);
+  overflow-wrap: anywhere;
+}
+.console .auto-preview-head {
+  color: var(--t3);
+  font-size: var(--dm-type-caption);
+}
+.console .auto-preview ul,
+.console .auto-acts {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+.console .auto-schedule-form .auto-schedule-actions {
+  grid-column: 1 / -1;
+  margin-top: 0;
+}
+.console .auto-acts li {
+  padding: 2px 0;
+  color: var(--t2);
+  overflow-wrap: anywhere;
+}
+.console .auto-attention h3 {
+  margin: 0 0 6px;
+  color: var(--attn);
+  font: 500 var(--dm-type-caption) / 1.4 var(--ui);
+}
+.console .auto-attention ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.console .auto-attention li {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  min-width: 0;
+  padding: 8px 0;
+  border-top: 1px solid var(--hair);
+}
+.console .auto-attention-text {
+  min-width: 0;
+  flex: 1 1 260px;
+  overflow-wrap: anywhere;
+}
+.console .auto-attention-text strong {
+  color: var(--t1);
+  font-weight: 500;
+}
+.console .auto-attention-text p {
+  margin: 2px 0 0;
+  color: var(--t2);
+}
+.console .auto-attention-count {
+  color: var(--t3);
+  font-size: var(--dm-type-caption);
+}
+
 @media (max-width: 860px) {
   .console .auto-summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  .console .auto-summary > div:nth-child(3) {
+  .console .auto-summary > div:nth-child(odd) {
     border-left: 0;
   }
   .console .auto-summary > div:nth-child(n + 3) {
     border-top: 1px solid var(--hair);
+  }
+  .console .auto-field-wide {
+    grid-column: 1 / -1;
   }
   .console .auto-facts > div {
     grid-template-columns: 1fr;
@@ -450,7 +573,7 @@
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
-:is(html, .dc-stage)[data-package='nectovia'] .console :is(.auto-summary dt, .auto-detail h3, .auto-stage-name) {
+:is(html, .dc-stage)[data-package='nectovia'] .console :is(.auto-summary dt, .auto-detail h3, .auto-stage-name, .auto-attention h3) {
   font: 500 var(--dm-type-meta) / 1.6 var(--mono);
   letter-spacing: 0.08em;
   text-transform: uppercase;
