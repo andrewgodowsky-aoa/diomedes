@@ -467,22 +467,25 @@ export function triggerViews(
     );
     if (!handled) return { firing, state: 'pending', outcome: 'Handed to supervision.' };
     if (handled.control) {
-      const control = handled.control.control;
+      const { control, outcome, detail } = handled.control;
+      // The words follow what the route did, never only what was asked for.
       const word =
-        control === 'steer'
-          ? 'Steered'
-          : control === 'queue'
-            ? 'Correction queued'
-            : control === 'stop'
-              ? firing.intervention === 'hold'
-                ? 'Paused for you before it ran'
-                : 'Stopped'
-              : 'Resumed';
-      return {
-        firing,
-        state: handled.control.outcome === 'refused' ? 'refused' : 'acted',
-        outcome: `${word}: ${handled.control.detail}`,
-      };
+        outcome === 'refused'
+          ? control === 'stop'
+            ? 'Could not stop'
+            : 'Correction not sent'
+          : outcome === 'uncertain'
+            ? 'Not confirmed'
+            : control === 'steer'
+              ? 'Steered'
+              : control === 'queue'
+                ? 'Correction queued'
+                : control === 'stop'
+                  ? firing.intervention === 'hold'
+                    ? 'Paused for you before it ran'
+                    : 'Stopped'
+                  : 'Resumed';
+      return { firing, state: outcome === 'refused' ? 'refused' : 'acted', outcome: `${word}: ${detail}` };
     }
     return { firing, state: 'acted', outcome: handled.settled ?? handled.reason };
   });

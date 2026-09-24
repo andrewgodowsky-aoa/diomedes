@@ -20,6 +20,25 @@
 .console .run-inspector .supervision-records > li[data-action='escalate'] {
   border-left-color: var(--attn);
 }
+/* H16: a firing that stopped or paused the run, or waits for you, carries the attention rule. */
+.console .run-inspector .supervision-records > li[data-action='trigger']:is([data-intervention='stop'], [data-state='waiting']) {
+  border-left-color: var(--attn);
+}
+.console .run-inspector .supervision-records > li[data-action='trigger'] .supervision-rule {
+  font-family: var(--mono);
+  font-size: var(--dm-type-meta);
+  overflow-wrap: anywhere;
+}
+.console .run-inspector .supervision-records > li[data-action='trigger'] :is(.supervision-match, .supervision-message) {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.console .run-inspector .supervision-records > li[data-action='trigger'] > small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .console .run-inspector .supervision-head {
   color: var(--t1);
   font-size: var(--dm-type-caption, var(--dm-type-ui));

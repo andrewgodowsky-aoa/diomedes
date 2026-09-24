@@ -299,10 +299,13 @@ describe('H16 stream-time triggers on the scripted loop route', () => {
     expect(corrected.message).toBe(
       '[Diomedes supervision] A project rule (mind-the-count) matched the streamed text “Read order.md”: Counts are checked line by line. Count the napkins line by line.',
     );
-    // The loop route cannot steer a running turn, so the correction is queued, and the receipt says so.
-    expect(corrected.control?.control).toBe('queue');
-    expect(data.triggers[0]).toMatchObject({ firing: { intervention: 'steer' } });
-    expect(data.triggers[0].outcome).toMatch(/^Correction queued: /);
+    // The loop route cannot steer a running turn, so supervision asks H08 to queue the correction,
+    // and the route refuses a queued follow-up too. The records say exactly that; nothing claims it was sent.
+    expect(corrected.control).toMatchObject({ control: 'queue', outcome: 'refused' });
+    const receipt = (state().controlReceipts ?? []).find((item) => item.commandId === corrected.control!.commandId)!;
+    expect(receipt).toMatchObject({ control: 'queue', outcome: 'refused', requestedBy: { actor: 'diomedes', via: 'supervision' } });
+    expect(data.triggers[0]).toMatchObject({ firing: { intervention: 'steer' }, state: 'refused' });
+    expect(data.triggers[0].outcome).toBe(`Correction not sent: ${corrected.control!.detail}`);
   });
 
   test('authority: a project rule cannot loosen a global rule on the same requirement, and a global rule still fires', async () => {
