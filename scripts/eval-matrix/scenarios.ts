@@ -25,7 +25,16 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { MatrixCapability, ScenarioAssertion, ScenarioCheck } from '../../server/evaluation/route-matrix.js';
 import type { NativeGenerator } from '../../server/native-work.js';
-import { EngineService } from '../../server/engines/service.js';
+import { spawn as spawnChild, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { EngineService, TESTED_VERSIONS } from '../../server/engines/service.js';
+import { CursorAdapter } from '../../server/engines/cursor.js';
+import { OpenCodeAdapter } from '../../server/engines/opencode.js';
+import { opencodeSessionRunId } from '../../server/harness/opencode-session-run.js';
+import { ClaudeAdapter } from '../../server/engines/claude.js';
+import type { ClaudeSessionCheckpoint } from '../../server/engines/claude-session.js';
+import type { PersistentTextAdapter } from '../../server/engines/contract.js';
+import { openProcess, type ProcessFactory } from '../../server/engines/process.js';
+import { routeContractFor } from '../../server/harness/route-contract.js';
 import { AWS_LUNA_MODEL } from '../../server/engines/aws-bedrock.js';
 import { testOnlySecretBox } from '../../server/connection-secrets.js';
 import { responsesEvents, sseResponse } from '../../tests/fixtures/model-api-streams.js';
@@ -804,6 +813,553 @@ const modelApiTurn: Scenario = {
   },
 };
 
+// --- a kept ACP conversation, over the fixture agent process ---------------------------
+
+const ACP_FIXTURE = path.join(REPO, 'tests', 'fixtures', 'acp-agent.mjs');
+
+/** Which installations exist: one Cursor CLI, whose process is the fixture ACP agent (tests/fixtures/acp-agent.mjs). */
+const cursorService = (root: string) =>
+  new EngineService(path.join(root, 'engines'), {
+    discover: async () => [
+      {
+        id: 'cursor',
+        name: 'Fixture',
+        kind: 'online',
+        found: true,
+        available: false,
+        enabled: false,
+        status: 'Installed',
+        detail: 'Fixture',
+        capabilities: [],
+        signIn: 'unknown',
+        adapter: 'planned',
+        installedVersion: TESTED_VERSIONS.cursor,
+        location: process.execPath,
+        disclosure: [],
+      },
+    ],
+    version: async () => TESTED_VERSIONS.cursor,
+    adapter: (_engine, _location, cwd) =>
+      new CursorAdapter(path.join(root, 'agent'), cwd, {
+        spawn: (_file, _args, options) => spawnChild(process.execPath, [ACP_FIXTURE], options) as ChildProcessWithoutNullStreams,
+        capture: (async (options: { args: string[] }) =>
+          options.args.includes('--version')
+            ? { code: 0, stdout: '2026.08.11-e8db854' }
+            : { code: 0, stdout: JSON.stringify({ status: 'authenticated', isAuthenticated: true }) }) as never,
+        startupTimeoutMs: 5_000,
+        requestTimeoutMs: 10_000,
+      }),
+  });
+
+const cursorSession: Scenario = {
+  id: 'cursor-acp-session',
+  title: 'A kept Cursor conversation: turns, a follow-up, a plan approved and declined, Stop mid-turn, and resume after a restart',
+  fixture: 'cursor: tests/fixtures/acp-agent.mjs, a real ACP v1 agent process standing in for the Cursor CLI',
+  async run(ctx) {
+    const core = await ctx.core(() => ({ engineService: cursorService(ctx.root) }));
+    await core.api('/ai/discover', 'POST', { consent: true });
+    await core.api('/ai/check/cursor', 'POST', {});
+    await core.api('/ai/select', 'POST', { engine: 'cursor', model: 'fixture-model' });
+    const project = await core.api<Json>('/projects', 'POST', { name: 'Cursor session' });
+    const projectId = project.id as string;
+    await core.api(`/projects/${projectId}/cloud-sharing`, 'PUT', {
+      expectedVersion: 0,
+      routes: ['cursor'],
+      documents: [],
+      shareConversationHistory: true,
+      shareReviewPackets: false,
+    });
+    const thread = await core.api<Json>(`/projects/${projectId}/threads`, 'POST', {});
+    const endpoint = `/projects/${projectId}/cursor-sessions`;
+    const command = (commandId: string, text = commandId) => ({ commandId, threadId: thread.id, text, mode: 'ask', sources: [], consent: true });
+    const openAsk = async () =>
+      ((await core.api<Json>(`/projects/${projectId}/needs`)).needs as Json[]).find((need) => need.engineAsk && need.state === 'open');
+    const events = await core.events();
+    let runId = '';
+    try {
+      const first = await core.request<Json>(endpoint, 'POST', command('first'));
+      runId = first.data.runId;
+      ctx.check(
+        'cursor-session',
+        'turn',
+        'performs',
+        first.status === 200 && first.data.response?.text === 'answer after 0 earlier turns',
+        `the first turn answered ${first.status}: “${first.data.response?.text ?? JSON.stringify(first.data).slice(0, 160)}”.`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      const deltas = events.seen.filter((item) => item.event === 'engine-text' && item.data.threadId === thread.id && item.data.kind === 'delta');
+      ctx.check('cursor-session', 'stream', 'performs', deltas.length > 0, `${deltas.length} transient text deltas reached the event stream.`);
+    } finally {
+      events.stop();
+    }
+    if (!runId) return;
+    const second = await core.request<Json>(`${endpoint}/${runId}/turn`, 'POST', command('second'));
+    ctx.check(
+      'cursor-session',
+      'queue',
+      'performs',
+      second.status === 200 && second.data.response?.text === 'answer after 1 earlier turns',
+      `a follow-up continued the same ACP session: “${second.data.response?.text ?? second.status}”.`,
+    );
+    const steer = await core.request(`${endpoint}/${runId}/steer`, 'POST', { commandId: 'steer-1', text: 'Faster.' });
+    ctx.check('cursor-session', 'steer', 'refuses', steer.status === 404, `no steer route is mounted for a contract that declares none (${steer.status}).`);
+    const fork = await core.request<Json>(`${endpoint}/${runId}/fork`, 'POST', command('forked'));
+    ctx.check('cursor-session', 'fork', 'refuses', fork.status === 409, `fork answered ${fork.status}: ${String(fork.data?.error ?? '').slice(0, 160)}`);
+
+    const planned = core.request<Json>(`${endpoint}/${runId}/turn`, 'POST', command('plan-yes', 'make a plan'));
+    const ask = await until<Json>(openAsk, Boolean, 'Cursor’s plan to reach a Need', 10_000);
+    const yes = await core.request(`/projects/${projectId}/needs/${ask.id}/resolve`, 'POST', { resolution: 'go-ahead' });
+    const accepted = await planned;
+    ctx.check(
+      'cursor-session',
+      'approval',
+      'performs',
+      yes.status === 200 && accepted.data.response?.text === 'plan accepted; outlined',
+      `the plan Cursor presented mid-turn became a Need (“${ask.what}”); go-ahead reached the agent: “${accepted.data.response?.text}”.`,
+    );
+    const declinedTurn = core.request<Json>(`${endpoint}/${runId}/turn`, 'POST', command('plan-no', 'make a plan'));
+    const second_ask = await until<Json>(openAsk, Boolean, 'the second plan to reach a Need', 10_000);
+    await core.api(`/projects/${projectId}/needs/${second_ask.id}/resolve`, 'POST', { resolution: 'declined' });
+    const rejected = await declinedTurn;
+    ctx.assert('a declined plan tells the agent no', rejected.data.response?.text === 'plan rejected', `“${rejected.data.response?.text}”`);
+
+    // The single-turn Cursor text route, as the Console's direct Ask sends it: one fresh ACP
+    // process per request, answered and gone.
+    const directEvents = await core.events();
+    const direct = await core.request<Json>(`/projects/${projectId}/ask`, 'POST', {
+      mode: 'ask',
+      text: 'How many napkins came?',
+      route: 'cursor',
+      consent: true,
+      threadId: thread.id,
+      attachedTo: thread.attachedTo ?? null,
+    });
+    const answered = direct.data?.turn?.text ?? direct.data?.conversation?.turns?.at(-1)?.text;
+    ctx.check(
+      'cursor',
+      'turn',
+      'performs',
+      direct.status === 200 && answered === 'answer after 0 earlier turns',
+      `a direct Ask on the text route answered ${direct.status}: “${answered ?? JSON.stringify(direct.data).slice(0, 200)}” — a fresh session, no history.`,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    directEvents.stop();
+    const directDeltas = directEvents.seen.filter((item) => item.event === 'engine-text' && item.data.kind === 'delta');
+    ctx.check('cursor', 'stream', 'performs', directDeltas.length > 0, `${directDeltas.length} transient text deltas reached the event stream for the direct Ask.`);
+    const busyOn = (run: string) => async () => (await core.api<Json>(`${endpoint}/${run}`)).busy === true;
+    const stopTurn = async (run: string, commandId: string, settleMs: number) => {
+      const started = Date.now();
+      const turn = core.request<Json>(`${endpoint}/${run}/turn`, 'POST', command(commandId, 'hang'));
+      await until(busyOn(run), Boolean, `turn ${commandId} to be live`, 10_000);
+      // settleMs 0: Stop as soon as the conversation reads busy, as a person pressing Stop right after Send.
+      if (settleMs) await new Promise((resolve) => setTimeout(resolve, settleMs));
+      const stop = await core.request<Json>(`${endpoint}/${run}/interrupt`, 'POST', { commandId: `stop-${commandId}` });
+      const stopAt = Date.now() - started;
+      const ended = await turn;
+      return { stop, ended, stopAt, endedAt: Date.now() - started };
+    };
+    const stopDetail = (label: string, result: Awaited<ReturnType<typeof stopTurn>>) =>
+      `${label}: Stop at ${result.stopAt} ms answered ${result.stop.status} (acknowledged ${result.stop.data.acknowledged}); the turn ended at ${result.endedAt} ms, ${result.ended.status}${
+        result.ended.status === 200 ? ` interrupted=${result.ended.data.interrupted}` : ` ${result.ended.data?.code ?? ''} (“${result.ended.data?.error ?? ''}”)`
+      }.`;
+    const stopped = (result: Awaited<ReturnType<typeof stopTurn>>) =>
+      result.stop.status === 200 && result.stop.data.acknowledged === true && result.ended.status === 200 && result.ended.data.interrupted === true;
+
+    const late = await stopTurn(runId, 'hang-late', 300);
+    ctx.check('cursor-session', 'stop', 'performs', stopped(late), stopDetail('Stop once the prompt is running', late));
+
+    // Resume after a restart with the conversation idle.
+    await core.restart();
+    const resumed = await core.request<Json>(`${endpoint}/${runId}/resume`, 'POST', command('after-restart'));
+    const earlier = /answer after (\d+) earlier turns/.exec(resumed.data.response?.text ?? '')?.[1];
+    ctx.check(
+      'cursor-session',
+      'resume',
+      'performs',
+      resumed.status === 200 && Number(earlier) >= 2 && !resumed.data.continuity,
+      `restart while idle, then resume: the saved ACP session was loaded (“${resumed.data.response?.text ?? JSON.stringify(resumed.data).slice(0, 160)}”).`,
+    );
+
+    // Resume after a restart that happened while a turn was running. The contract's reconcile note:
+    // "A turn a restart interrupted is recorded as not completed and never resent; a loadable session
+    // stays resumable". The fixture agent advertises loadSession.
+    const lost = core.request<Json>(`${endpoint}/${runId}/turn`, 'POST', command('hang-restart', 'hang')).catch(() => null);
+    await until(busyOn(runId), Boolean, 'the turn to be live before the restart', 10_000);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    await core.restart();
+    await lost;
+    const view = await core.api<Json>(`${endpoint}/${runId}`);
+    const again = await core.request<Json>(`${endpoint}/${runId}/resume`, 'POST', command('after-live-restart'));
+    ctx.check(
+      'cursor-session',
+      'resume',
+      'performs',
+      again.status === 200 && Boolean(again.data.response?.text),
+      again.status === 200
+        ? `restart while a turn ran, then resume: the loadable session was resumed (“${again.data.response?.text}”).`
+        : `restart while a turn ran, then resume: refused ${again.status} ${again.data?.code ?? ''} (“${again.data?.error ?? ''}”); the conversation reads ${view.continuity?.state}: “${view.continuity?.detail}” — though the agent advertises loadSession.`,
+    );
+    ctx.evidence.afterLiveRestart = { status: again.status, code: again.data?.code ?? null, continuity: view.continuity?.state ?? null };
+
+    // Stop pressed as soon as the turn reads busy, on a fresh conversation in the same thread.
+    const fresh = await core.request<Json>(endpoint, 'POST', command('fresh'));
+    if (fresh.status === 200) {
+      const early = await stopTurn(fresh.data.runId, 'hang-early', 0);
+      ctx.check('cursor-session', 'stop', 'performs', stopped(early), stopDetail('Stop as soon as the turn reads busy', early));
+      ctx.evidence.earlyStop = { stopAt: early.stopAt, endedAt: early.endedAt, status: early.ended.status, code: early.ended.data?.code ?? null };
+    } else ctx.assert('a fresh conversation starts in the same thread', false, `${fresh.status}: ${JSON.stringify(fresh.data).slice(0, 200)}`);
+    ctx.evidence.runId = runId;
+    ctx.evidence.nativeSession = second.data.nativeSession?.id ?? null;
+  },
+};
+
+// --- a kept OpenCode session, over the fixture `opencode serve` -----------------------
+
+const OPENCODE_FIXTURE = path.join(REPO, 'tests', 'fixtures', 'opencode-session-server.mjs');
+const OPENCODE_MODEL = 'opencode-go/go-model';
+
+const opencodeSession: Scenario = {
+  id: 'opencode-kept-session',
+  title: 'A kept OpenCode session: turns, a message held and sent after the running turn, resume after a restart, fork, and Stop mid-turn',
+  fixture: 'opencode: tests/fixtures/opencode-session-server.mjs, a real HTTP+SSE server standing in for `opencode serve`',
+  async run(ctx) {
+    // Where the fixture keeps its sessions, as OpenCode does under XDG_DATA_HOME; restored afterwards.
+    const saved = { cache: process.env.XDG_CACHE_HOME, data: process.env.XDG_DATA_HOME };
+    process.env.XDG_CACHE_HOME = path.join(ctx.root, 'no-opencode-cache');
+    process.env.XDG_DATA_HOME = path.join(ctx.root, 'opencode-data');
+    try {
+      let mode = 'delayed';
+      const service = () =>
+        new EngineService(path.join(ctx.root, 'engines'), {
+          discover: async () => [
+            {
+              id: 'opencode',
+              name: 'Fixture',
+              kind: 'online',
+              found: true,
+              available: false,
+              enabled: false,
+              status: 'Installed',
+              detail: 'Fixture',
+              capabilities: [],
+              signIn: 'unknown',
+              adapter: 'planned',
+              installedVersion: TESTED_VERSIONS.opencode,
+              location: process.execPath,
+              disclosure: [],
+            },
+          ],
+          version: async () => TESTED_VERSIONS.opencode,
+          adapter: (_engine, _location, cwd) =>
+            new OpenCodeAdapter('opencode', cwd, {
+              spawn: (_command, args, options) =>
+                spawnChild(process.execPath, [OPENCODE_FIXTURE, args[args.indexOf('--port') + 1], mode], options) as ChildProcessWithoutNullStreams,
+              startupTimeoutMs: 5_000,
+              requestTimeoutMs: 5_000,
+            }),
+        });
+      const core = await ctx.core(() => ({ engineService: service() }));
+      await core.api('/ai/discover', 'POST', { consent: true });
+      await core.api('/ai/check/opencode', 'POST', {});
+      await core.api('/ai/select', 'POST', { engine: 'opencode', model: OPENCODE_MODEL });
+      const project = await core.api<Json>('/projects', 'POST', { name: 'OpenCode session' });
+      const projectId = project.id as string;
+      await core.api(`/projects/${projectId}/cloud-sharing`, 'PUT', {
+        expectedVersion: 0,
+        routes: ['opencode'],
+        documents: [],
+        shareConversationHistory: true,
+        shareReviewPackets: false,
+      });
+      const thread = await core.api<Json>(`/projects/${projectId}/threads`, 'POST', {});
+      const endpoint = `/projects/${projectId}/opencode-sessions`;
+      const command = (commandId: string, text = commandId) => ({ commandId, threadId: thread.id, text, mode: 'ask', sources: [], consent: true });
+      const events = await core.events();
+      let runId = '',
+        sessionRef = '';
+      try {
+        const first = await core.request<Json>(endpoint, 'POST', command('first'));
+        runId = first.data.runId;
+        sessionRef = first.data.nativeSession?.opaqueRef ?? '';
+        ctx.check(
+          'opencode-session',
+          'turn',
+          'performs',
+          first.status === 200 && first.data.response?.text === `answer:first (turn 1 of ${sessionRef})`,
+          `the first turn answered ${first.status}: “${first.data.response?.text ?? JSON.stringify(first.data).slice(0, 160)}”.`,
+        );
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        const deltas = events.seen.filter((item) => item.event === 'engine-text' && item.data.threadId === thread.id && item.data.kind === 'delta');
+        ctx.check('opencode-session', 'stream', 'performs', deltas.length > 0, `${deltas.length} transient text deltas reached the event stream.`);
+      } finally {
+        events.stop();
+      }
+      if (!runId) return;
+      const second = await core.request<Json>(`${endpoint}/${runId}/turn`, 'POST', command('second'));
+      ctx.check(
+        'opencode-session',
+        'queue',
+        'performs',
+        second.status === 200 && second.data.response?.text === `answer:second (turn 2 of ${sessionRef})`,
+        `a follow-up went to the same OpenCode session: “${second.data.response?.text ?? second.status}”.`,
+      );
+      // Steer is declared `host`: held while a turn runs, then sent as the next turn of the same session.
+      const running = core.request<Json>(`${endpoint}/${runId}/turn`, 'POST', command('third'));
+      const held = await until(
+        () => core.api<Json>(`${endpoint}/${runId}/steer`, 'POST', { commandId: 'steer-1', text: 'also this' }),
+        (ack) => ack.state === 'pending' || ack.state === 'delivered',
+        'the steer to be held behind the running turn',
+        5_000,
+      ).catch((error: unknown) => ({ state: String(error) }));
+      await running;
+      const delivered = await until(
+        () => core.api<Json>(`${endpoint}/${runId}`),
+        (status) => (status.steering ?? []).some((ack: Json) => ack.commandId === 'steer-1' && ack.state !== 'pending'),
+        'the held message to be sent',
+        10_000,
+      ).catch(() => null);
+      const ack = (delivered?.steering ?? []).find((item: Json) => item.commandId === 'steer-1');
+      const turns = ((await state(core, projectId)).conversations.find((item: Json) => item.id === thread.id)?.turns ?? []) as Json[];
+      ctx.check(
+        'opencode-session',
+        'steer',
+        'performs',
+        held.state === 'pending' && ack?.state === 'delivered' && turns.some((turn) => turn.text === 'also this'),
+        `a message sent while a turn ran was ${held.state}, then ${ack?.state ?? 'never sent'}; the thread shows it as its own turn (${turns.some((turn) => turn.text === 'also this')}).`,
+      );
+
+      await core.api(`${endpoint}/${runId}/close`, 'POST', { commandId: 'close-1' });
+      mode = 'ok';
+      await core.restart();
+      const resumed = await core.request<Json>(`${endpoint}/${runId}/resume`, 'POST', command('resumed'));
+      ctx.check(
+        'opencode-session',
+        'resume',
+        'performs',
+        resumed.status === 200 && resumed.data.nativeSession?.opaqueRef === sessionRef && /answer:resumed \(turn \d+ of /.test(resumed.data.response?.text ?? ''),
+        `closed, restarted, then resumed the same OpenCode session: “${resumed.data.response?.text ?? JSON.stringify(resumed.data).slice(0, 160)}”.`,
+      );
+      const fork = await core.request<Json>(`${endpoint}/${runId}/fork`, 'POST', command('forked'));
+      ctx.check(
+        'opencode-session',
+        'fork',
+        'performs',
+        fork.status === 200 && fork.data.runId !== runId && fork.data.nativeSession?.opaqueRef !== sessionRef && fork.data.nativeSession?.lineageId === resumed.data.nativeSession?.lineageId,
+        `fork started ${fork.data.runId ?? 'nothing'} on a new OpenCode session in the same lineage: “${fork.data.response?.text ?? JSON.stringify(fork.data).slice(0, 160)}”.`,
+      );
+
+      mode = 'slow';
+      await core.restart();
+      // In slow mode a turn streams part of its answer and then waits to be aborted. Two Stops:
+      // one once the session reads connected, and one pressed while it still reads busy but is
+      // still opening (the kept `opencode serve` starting), as a person pressing Stop right after Send.
+      const stopTurn = async (commandId: string, when: 'connected' | 'opening') => {
+        const slowId = opencodeSessionRunId(projectId, commandId);
+        const started = Date.now();
+        const turn = core.request<Json>(endpoint, 'POST', command(commandId));
+        const seen = await until(
+          async () => (await core.request<Json>(`${endpoint}/${slowId}`)).data,
+          (status) => status?.busy === true && (when === 'opening' || status.connected === true),
+          `turn ${commandId} to be ${when === 'opening' ? 'live' : 'connected'}`,
+          10_000,
+        );
+        const stop = await core.request<Json>(`${endpoint}/${slowId}/interrupt`, 'POST', { commandId: `stop-${commandId}` });
+        const stopAt = Date.now() - started;
+        const ended = await turn;
+        const passed = stop.status === 200 && stop.data.acknowledged === true && ended.status === 200 && ended.data.interrupted === true;
+        const detail = `Stop while the session reads busy and ${seen.connected ? 'connected' : 'not yet connected'}, at ${stopAt} ms: ${stop.status} (${
+          stop.status === 200 ? `acknowledged ${stop.data.acknowledged}` : `${stop.data?.code ?? ''}: ${stop.data?.error ?? ''}`
+        }); the turn ended at ${Date.now() - started} ms, ${ended.status}${
+          ended.status === 200 ? ` interrupted=${ended.data.interrupted}` : ` ${ended.data?.code ?? ''} (“${ended.data?.error ?? ''}”)`
+        }.`;
+        ctx.check('opencode-session', 'stop', 'performs', passed, detail);
+        return { stopAt, status: ended.status, code: ended.data?.code ?? null };
+      };
+      ctx.evidence.stopConnected = await stopTurn('slow-connected', 'connected');
+      ctx.evidence.stopOpening = await stopTurn('slow-opening', 'opening');
+      ctx.evidence.runId = runId;
+      ctx.evidence.forkRunId = fork.data.runId ?? null;
+    } finally {
+      if (saved.cache === undefined) delete process.env.XDG_CACHE_HOME;
+      else process.env.XDG_CACHE_HOME = saved.cache;
+      if (saved.data === undefined) delete process.env.XDG_DATA_HOME;
+      else process.env.XDG_DATA_HOME = saved.data;
+    }
+  },
+};
+
+// --- the Claude Code native session, over a scripted stream-json child ------------------
+
+const CLAUDE_FIXTURE = path.join(REPO, 'tests', 'fixtures', 'claude-stream-json.mjs');
+
+const claudeSession: Scenario = {
+  id: 'claude-code-native-session',
+  title: 'A Claude Code thread: a turn, a follow-up in the same process, a message queued behind a running answer, Stop mid-turn, and resume after a restart',
+  fixture: 'claude-code: tests/fixtures/claude-stream-json.mjs, a stream-json child standing in for the Claude Code CLI (the H03 route tests’ script)',
+  async run(ctx) {
+    const known = path.join(ctx.root, 'known.txt');
+    const log = path.join(ctx.root, 'log.jsonl');
+    const launches: string[][] = [];
+    const launch: ProcessFactory = (options) => {
+      launches.push(options.args);
+      // A fork is a new session Claude names itself (as in tests/claude-session.test.ts's launcher).
+      const fork = options.args.includes('--fork-session');
+      const resume = options.args.includes('--resume') && !fork;
+      const session = fork ? randomUUID() : options.args[options.args.indexOf(resume ? '--resume' : '--session-id') + 1];
+      return openProcess({ ...options, file: process.execPath, args: [CLAUDE_FIXTURE, session, known, log, resume ? 'resume' : 'new'], timeoutMs: 10_000 });
+    };
+    await fs.mkdir(path.join(ctx.root, 'transport'), { recursive: true });
+    const service = () => {
+      const transport = new ClaudeAdapter('claude.exe', path.join(ctx.root, 'transport'), {
+        launch,
+        account: async () => ({ loggedIn: true, authMethod: 'claude.ai', email: 'owner@example.com' }),
+      });
+      const adapter: PersistentTextAdapter<ClaudeSessionCheckpoint> = {
+        id: 'claude-code',
+        contract: routeContractFor('claude-code'),
+        sessionContract: routeContractFor('claude-code-session'),
+        inspect: async () => ({
+          authentication: 'signed-in',
+          accountRoute: 'claude-code:claude.ai',
+          detail: 'Fixture only',
+          models: [{ slug: 'sonnet', name: 'sonnet', description: '', efforts: [], defaultEffort: null }],
+        }),
+        generate: async () => {
+          throw new Error('Conversation requests must use the native transport.');
+        },
+        openSession: (input, options) => transport.openSession(input, options),
+      };
+      return new EngineService(path.join(ctx.root, 'engines'), {
+        discover: async () => [
+          {
+            id: 'claude-code',
+            name: 'Fixture',
+            kind: 'online',
+            found: true,
+            available: false,
+            enabled: false,
+            status: 'Installed',
+            detail: 'Fixture',
+            capabilities: [],
+            signIn: 'unknown',
+            adapter: 'planned',
+            installedVersion: TESTED_VERSIONS['claude-code'],
+            location: process.execPath,
+            disclosure: [],
+          },
+        ],
+        version: async () => TESTED_VERSIONS['claude-code'],
+        adapter: () => adapter,
+      });
+    };
+    const core = await ctx.core(() => ({ engineService: service() }));
+    await core.api('/ai/discover', 'POST', { consent: true });
+    await core.api('/ai/check/claude-code', 'POST', {});
+    await core.api('/ai/select', 'POST', { engine: 'claude-code', model: 'sonnet' });
+    const project = await core.api<Json>('/projects', 'POST', { name: 'Linen service' });
+    const projectId = project.id as string;
+    await core.api(`/projects/${projectId}/cloud-sharing`, 'PUT', {
+      expectedVersion: 0,
+      routes: ['claude-code'],
+      documents: [],
+      shareConversationHistory: true,
+      shareReviewPackets: false,
+    });
+    const thread = await core.api<Json>(`/projects/${projectId}/threads`, 'POST', {});
+    await core.api(`/projects/${projectId}/threads/${thread.id}`, 'PUT', { engine: 'claude-code' });
+    const messages = `/projects/${projectId}/threads/${thread.id}/messages`;
+    const send = (commandId: string, text: string, extra: Record<string, unknown> = {}) =>
+      core.request<Json>(messages, 'POST', { commandId, text, mode: 'auto', sources: [], consent: true, ...extra });
+    const view = () => core.api<Json>(`/projects/${projectId}/threads/${thread.id}/native-session`);
+    const said = async () =>
+      (await fs.readFile(log, 'utf8').catch(() => ''))
+        .trim()
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => JSON.parse(line) as { pid: number; turn: string; resumed: string });
+
+    const first = await send('m-one', 'Good morning');
+    ctx.check(
+      'claude-code-session',
+      'turn',
+      'performs',
+      first.status === 200 && first.data.answerText === 'Answer to Good morning',
+      `the first turn answered ${first.status}: “${first.data.answerText ?? JSON.stringify(first.data).slice(0, 160)}”.`,
+    );
+    const second = await send('m-two', 'Where is the linen?');
+    const pids = new Set((await said()).map((line) => line.pid));
+    ctx.check(
+      'claude-code-session',
+      'queue',
+      'performs',
+      second.status === 200 && second.data.answerText === 'Answer to Where is the linen?' && pids.size === 1,
+      `a follow-up was answered by the same live process (${pids.size} process): “${second.data.answerText ?? second.status}”.`,
+    );
+    const running = send('m-three', 'Plan the week [slow]');
+    await until(async () => (await view()).busy === true, Boolean, 'the slow answer to be running', 10_000);
+    const queued = send('m-four', 'Also check linen', { queued: true });
+    await until(async () => (await view()).queued.length === 1, Boolean, 'the message to be queued', 10_000);
+    const [ranFirst, ranNext] = await Promise.all([running, queued]);
+    const order = (await said()).map((line) => line.turn);
+    ctx.check(
+      'claude-code-session',
+      'steer',
+      'performs',
+      ranFirst.data.answerText === 'Answer to Plan the week [slow]' &&
+        ranNext.data.answerText === 'Answer to Also check linen' &&
+        order.indexOf('Also check linen') === order.indexOf('Plan the week [slow]') + 1,
+      `a message sent while an answer ran was held and sent as the next turn of the same process (${(await view()).queued.map((item: Json) => item.state).join(', ')}).`,
+    );
+    const hanging = send('m-five', 'Think hard [hang]');
+    await until(async () => (await said()).some((line) => line.turn === 'Think hard [hang]'), Boolean, 'the turn to reach Claude Code', 10_000);
+    const stop = await core.request<Json>(`${messages}/m-five/interrupt`, 'POST', {});
+    const stopped = await hanging;
+    ctx.check(
+      'claude-code-session',
+      'stop',
+      'performs',
+      stop.status === 200 && stop.data.stop === 'interrupted' && stopped.data.interrupted === true && (await view()).continuity?.state === 'live',
+      `Stop answered ${stop.status} (${stop.data.stop}); the turn ended interrupted=${stopped.data.interrupted}; the session stayed ${(await view()).continuity?.state}.`,
+    );
+    await core.restart();
+    const before = await view();
+    const resumed = await send('m-six', 'Where were we?');
+    const last = (await said()).at(-1);
+    ctx.check(
+      'claude-code-session',
+      'resume',
+      'performs',
+      before.continuity?.state === 'resumable' && resumed.data.answerText === 'Answer to Where were we?' && last?.resumed === 'resume' && (launches.at(-1) ?? []).includes('--resume'),
+      `after a restart the thread read ${before.continuity?.state}; the next message resumed the session by id (--resume: ${(launches.at(-1) ?? []).includes('--resume')}).`,
+    );
+    // Fork is declared native: --resume plus --fork-session starts a child run. The session route
+    // takes ask or plan, and a fork keeps its origin's instructions, so the lineage forked is an Ask one.
+    const sessionCommand = (commandId: string, text: string) => ({ commandId, threadId: thread.id, text, mode: 'ask', sources: [], consent: true });
+    const asked = await core.request<Json>(`/projects/${projectId}/claude-sessions`, 'POST', sessionCommand('s-ask', 'A quick question'));
+    const fromMessages = await core.request<Json>(`/projects/${projectId}/claude-sessions/${second.data.runId}/fork`, 'POST', sessionCommand('m-fork-auto', 'Fork the auto conversation'));
+    ctx.evidence.forkOfAutoLineage = { status: fromMessages.status, code: fromMessages.data?.code ?? null, error: fromMessages.data?.error ?? null };
+    const fork = await core.request<Json>(`/projects/${projectId}/claude-sessions/${asked.data.runId}/fork`, 'POST', {
+      commandId: 'm-fork',
+      threadId: thread.id,
+      text: 'Try another way',
+      mode: 'ask',
+      sources: [],
+      consent: true,
+    });
+    const forkLaunch = launches.at(-1) ?? [];
+    ctx.check(
+      'claude-code-session',
+      'fork',
+      'performs',
+      fork.status === 200 && fork.data.runId !== asked.data.runId && forkLaunch.includes('--fork-session') && fork.data.response?.text === 'Answer to Try another way',
+      fork.status === 200
+        ? `fork started ${fork.data.runId} with --resume and --fork-session (${forkLaunch.includes('--fork-session')}): “${fork.data.response?.text}”.`
+        : `fork answered ${fork.status}: ${fork.data?.code ?? ''} “${fork.data?.error ?? JSON.stringify(fork.data).slice(0, 200)}”.`,
+    );
+    ctx.evidence.launches = launches.length;
+  },
+};
+
 export const SCENARIOS: readonly Scenario[] = [
   modelApiTurn,
   sampleProposal,
@@ -814,4 +1370,7 @@ export const SCENARIOS: readonly Scenario[] = [
   uncertainRetry,
   driftEscalation,
   verificationEvidence,
+  cursorSession,
+  opencodeSession,
+  claudeSession,
 ];
