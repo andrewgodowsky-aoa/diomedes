@@ -21,6 +21,7 @@ import {
   tightestWindow,
 } from './components';
 import { Shell } from './console/Shell';
+import { leaveEditor } from './console/editor-guard';
 import { Home, type HomeDestination } from './console/Home';
 import { DiomedesHome } from './console/DiomedesHome';
 import type { EverythingItem } from './console/Everything';
@@ -138,6 +139,8 @@ export function App() {
   // Opener registered by the console Shell; Ctrl+K inside a project opens the
   // console palette instead of the project search.
   const paletteOpen = useRef<(() => void) | null>(null);
+  const selectedNow = useRef<string | null>(null);
+  selectedNow.current = selected;
   const report = useCallback(
     (e: unknown) =>
       setError(e instanceof Error ? e.message : 'The request could not be completed.'),
@@ -420,7 +423,7 @@ export function App() {
       window.removeEventListener('diomedes-interface-scale', desktop);
     };
   }, [report]);
-  const openProject = useCallback(
+  const enterProject = useCallback(
     (project: Project) => {
       setSelected(project.id);
       setShowSettings(false);
@@ -439,6 +442,28 @@ export function App() {
     },
     [report],
   );
+  // Settings, Projects and another project take the Console off the screen, and
+  // the document editor with it, so each passes the editor's exit gate first: it
+  // lets them through when no writing would be lost and asks when some would
+  // (DIO-85, console/editor-guard.ts). The project already open stays open.
+  const openProject = useCallback(
+    (project: Project) => {
+      if (project.id === selectedNow.current) enterProject(project);
+      else leaveEditor(() => enterProject(project));
+    },
+    [enterProject],
+  );
+  const showProjects = () =>
+    leaveEditor(() => {
+      setSelected(null);
+      setShowSettings(false);
+      setLanding('projects');
+    });
+  const openSettings = (helpers = false) =>
+    leaveEditor(() => {
+      setShowSettings(true);
+      if (helpers) setHelpersRequest((n) => n + 1);
+    });
   // Going back into Settings abandons the handover too: the person is back at
   // the screen that made the offer, where they can make it again.
   useEffect(() => {
@@ -660,13 +685,9 @@ export function App() {
                   settingsOpen={showSettings}
                   settings={settings}
                   saveSettings={saveSettings}
-                  onShowProjects={() => {
-                    setSelected(null);
-                    setShowSettings(false);
-                    setLanding('projects');
-                  }}
+                  onShowProjects={showProjects}
                   onOpenProject={openProject}
-                  onToggleSettings={() => setShowSettings(!showSettings)}
+                  onToggleSettings={() => (showSettings ? setShowSettings(false) : openSettings())}
                   onFind={() => setSearch(true)}
                   onCloudSharing={
                     landing === 'diomedes' && !selected && !showSettings
@@ -679,10 +700,7 @@ export function App() {
                       <UsageChip
                         snapshot={activeUsage}
                         name={activeIntegration.name}
-                        onOpen={() => {
-                          setShowSettings(true);
-                          setHelpersRequest((n) => n + 1);
-                        }}
+                        onOpen={() => openSettings(true)}
                       />
                     ) : null
                   }
@@ -747,17 +765,10 @@ export function App() {
                   integrations={integrations}
                   usage={usage}
                   saveSettings={saveSettings}
-                  openEngineSettings={() => {
-                    setShowSettings(true);
-                    setHelpersRequest((n) => n + 1);
-                  }}
+                  openEngineSettings={() => openSettings(true)}
                   onOpenProject={openProject}
-                  onShowProjects={() => {
-                    setSelected(null);
-                    setShowSettings(false);
-                    setLanding('projects');
-                  }}
-                  onOpenSettings={() => setShowSettings(true)}
+                  onShowProjects={showProjects}
+                  onOpenSettings={() => openSettings()}
                   report={report}
                   online={online}
                   onPaletteKey={(open) => {
