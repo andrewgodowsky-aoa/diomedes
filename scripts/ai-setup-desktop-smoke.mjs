@@ -2,6 +2,7 @@ import { _electron as electron, expect } from '@playwright/test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
+import { windowApi } from './smoke-window.mjs';
 
 // Owned clean/upgrade profiles; metadata only, never a model prompt or login.
 const root = path.resolve('test-results', `ai-desktop-${Date.now()}`);
@@ -28,15 +29,8 @@ async function launch() {
   url = new URL(page.url()).origin;
   await page.setViewportSize({ width: 1440, height: 1100 });
 }
-async function api(route, method = 'GET', body) {
-  const response = await fetch(`${url}/api${route}`, {
-    method,
-    headers: { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  if (!response.ok) throw new Error(`${route}: ${response.status} ${await response.text()}`);
-  return response.json();
-}
+// The packaged service answers only the app window's own requests (smoke-window.mjs).
+const api = (route, method = 'GET', body) => windowApi(page, route, method, body);
 const screenshot = (name) =>
   page.screenshot({ path: path.join(evidence, name), animations: 'disabled' });
 try {
@@ -104,7 +98,7 @@ try {
   await page.getByRole('button', { name: 'Skip AI setup' }).click();
   await expect(page.getByText(/AI setup was skipped/)).toBeVisible();
   await screenshot('desktop-skip-ready.png');
-  await page.getByRole('button', { name: 'Open Diomedes' }).click();
+  await page.getByRole('button', { name: 'Open Nectovia' }).click();
   const settings = await api('/settings');
   expect(settings.detail).toBe('technical');
   expect(settings.permissions.changingFiles).toBe(true);
@@ -115,7 +109,10 @@ try {
   // Simulate an actual older persisted profile, not a new-profile defaults test.
   const older = {
     ...settings,
+    // The Workbook's keys, as a build from before its removal stored them.
     surface: 'workbook',
+    lastPage: { [project.id]: 'work' },
+    tasksView: 'list',
     detail: 'guided',
     permissions: { ...settings.permissions, changingFiles: false },
     services: { codex: true, codexModel: 'gpt-5.5', defaultEngine: 'codex' },
@@ -126,8 +123,11 @@ try {
   delete older.onboarding.aiSkipped;
   await fs.writeFile(path.join(root, 'data', 'settings.json'), JSON.stringify(older));
   await launch();
-  await expect(page.locator('html')).toHaveAttribute('data-surface', 'workbook');
   const upgraded = await api('/settings');
+  // The only stored preferences an upgrade does not keep are the retired Workbook's
+  // keys: this build drops them on load and keeps the rest (server/store.ts).
+  for (const key of ['surface', 'lastPage', 'tasksView'])
+    expect(Object.keys(upgraded)).not.toContain(key);
   expect(upgraded.permissions).toEqual(older.permissions);
   expect(upgraded.detail).toBe('guided');
   expect(upgraded.services).toEqual(older.services);
@@ -139,7 +139,6 @@ try {
     true,
   );
   await screenshot('desktop-upgrade.png');
-  await api('/settings', 'PUT', { surface: 'console' });
   await page.reload();
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   await page

@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { checkPackagedRelease } from './packaged-release-check.mjs';
+import { enterLastOpenProject, shareFixtureProject } from './smoke-window.mjs';
 
 // Packaged proof for task-scope autonomy. Runs the candidate EXE with an
 // isolated profile, captures the default first-run app, then starts a second
@@ -193,6 +194,8 @@ try {
     // Fixture setup against the packaged backend (real proof, not stubs).
     const project = await fixtureApi('/projects/sample', 'POST', {});
     await fs.mkdir(path.join(project.folder, 'Packaged'));
+    // The threads below run on the Codex route, which a project has to share.
+    await shareFixtureProject(fixtureApi, project.id);
     const found = (
       await fixtureApi(`/projects/${project.id}/plans/find-tasks`, 'POST', {
         path: 'Reopening plan.md',
@@ -210,7 +213,6 @@ try {
       engine: 'codex',
     });
     await fixtureApi('/settings', 'PUT', {
-      surface: 'console',
       detail: 'technical',
       services: { codex: true, defaultEngine: 'codex' },
       onboarding: {
@@ -224,7 +226,12 @@ try {
     });
 
     await page.goto(fixtureUrl);
-    await expect(page.locator('html')).toHaveAttribute('data-surface', 'console');
+    // The Console is the only surface; the retired Workbook's keys are never stored.
+    const stored = Object.keys(await fixtureApi('/settings'));
+    for (const key of ['surface', 'lastPage', 'tasksView']) expect(stored).not.toContain(key);
+    // The window opens on the agent's home even with openProjects saved, so the
+    // project is entered through the Open projects bar (smoke-window.mjs).
+    await enterLastOpenProject(page);
     const rail = page.getByRole('navigation', { name: 'Threads and views' });
     // Any route but the sample asks first; only the dialog's Send task starts the work.
     const confirmSend = async () => {
@@ -403,7 +410,8 @@ try {
       changed.flatMap((entry) => entry.files).every((file) => /^[a-f0-9]{64}$/.test(file.after)),
     ).toBe(true);
     await page.getByRole('button', { name: 'History', exact: true }).click();
-    await expect(page.locator('.history-entry').first()).toBeVisible();
+    // The Console's History lists each entry as a row (client/console/HistoryView.tsx).
+    await expect(page.locator('.hrow').first()).toBeVisible();
     await shot('desktop-autonomy-history.png');
     checks.push({
       name: 'packaged History retains attributed hashes',

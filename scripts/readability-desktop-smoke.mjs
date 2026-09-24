@@ -1,6 +1,7 @@
 import { _electron as electron, expect } from '@playwright/test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { enterLastOpenProject, windowApi } from './smoke-window.mjs';
 
 const root = path.resolve('test-results', `desktop-readability-${Date.now()}`);
 await fs.mkdir(root, { recursive: true });
@@ -16,16 +17,9 @@ const env = {
 delete env.ELECTRON_RUN_AS_NODE;
 const records = [];
 let desktop;
-let url;
-async function api(route, method = 'GET', data) {
-  const response = await fetch(`${url}/api${route}`, {
-    method,
-    headers: { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' },
-    body: data === undefined ? undefined : JSON.stringify(data),
-  });
-  if (!response.ok) throw new Error(`${route}: ${response.status} ${await response.text()}`);
-  return response.json();
-}
+let page;
+// The packaged service answers only the app window's own requests (smoke-window.mjs).
+const api = (route, method = 'GET', data) => windowApi(page, route, method, data);
 async function record(page, name) {
   await page.evaluate(() => document.fonts.ready);
   const renderer = await page.evaluate(() => {
@@ -45,7 +39,7 @@ async function record(page, name) {
       body: font('.console .body p'),
       input: font('.console .composer textarea'),
       workColumn: font('.console .transcript .col'),
-      nav: font('.console .views button'),
+      nav: font('.console .rail .foot button'),
       horizontalOverflow: document.documentElement.scrollWidth > innerWidth + 2,
     };
   });
@@ -75,16 +69,13 @@ async function record(page, name) {
 }
 try {
   desktop = await electron.launch({ executablePath, env });
-  let page = await desktop.firstWindow();
+  page = await desktop.firstWindow();
   await page.waitForURL('http://127.0.0.1:*/');
-  url = new URL(page.url()).origin;
   const project = await api('/projects/sample', 'POST', {});
   await api('/settings', 'PUT', {
-    surface: 'console',
     detail: 'technical',
     onboarding: { work: 'personal', detail: 'technical', familiarity: 'some', resumeAt: 'done' },
     openProjects: [project.id],
-    lastPage: { [project.id]: 'home' },
     appearance: { package: 'graphite', motion: 'reduced', interfaceScale: 1 },
   });
   // Synthetic local data only. No provider consent, model calls, credentials or tools.
@@ -97,6 +88,9 @@ try {
     route: 'sample',
   });
   await page.reload();
+  // A launch opens on the agent's home and a reload keeps that place, so the
+  // project is entered through the Open projects bar (smoke-window.mjs).
+  await enterLastOpenProject(page);
   await expect(page.locator('.console .body p').first()).toBeVisible();
   await record(page, 'windowed-thread');
   await desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].maximize());
@@ -117,7 +111,7 @@ try {
   desktop = await electron.launch({ executablePath, env });
   page = await desktop.firstWindow();
   await page.waitForURL('http://127.0.0.1:*/');
-  url = new URL(page.url()).origin;
+  await enterLastOpenProject(page);
   await expect(page.locator('html')).toHaveCSS('zoom', '1.25');
   await desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].maximize());
   await record(page, 'restarted-125-percent');
@@ -149,14 +143,17 @@ try {
     });
   }
   const nav = page.getByRole('navigation', { name: 'Threads and views' });
-  for (const name of ['Board', 'Team', 'Connections', 'Thread']) {
+  // Connections left the rail's views for Everything, under Not ready yet
+  // (client/console/Shell.tsx), so it has no view of its own to record.
+  for (const name of ['Board', 'Team', 'History', 'Thread']) {
     await nav
-      .locator('.views')
+      .locator('.foot')
       .getByRole('button', { name: new RegExp(`^${name}\\b`) })
       .click();
     await record(page, `maximized-${name.toLowerCase()}`);
   }
-  await page.locator('.model-picker > button').click();
+  // The thread offers work styles, not models (client/console/WorkStylePicker.tsx).
+  await page.locator('.style-picker > button').click();
   await expect(page.getByRole('menu')).toBeVisible();
   await record(page, 'maximized-model-menu');
   await page.keyboard.press('Escape');
@@ -164,28 +161,23 @@ try {
   await expect(page.getByRole('dialog', { name: 'Find and act' })).toBeVisible();
   await record(page, 'maximized-palette');
   await page.keyboard.press('Escape');
-  await nav.getByRole('button', { name: 'Engines', exact: true }).click();
+  // Engines is a Settings page now, reached the way ai-setup-desktop-smoke.mjs does.
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await page
+    .getByRole('navigation', { name: 'Settings', exact: true })
+    .getByRole('button', { name: 'Engines', exact: true })
+    .click();
   await record(page, 'maximized-engines');
   for (const name of ['Appearance', 'Permissions', 'History']) {
     await page.locator('.settings-layout .rail').getByRole('button', { name, exact: true }).click();
     await record(page, `maximized-settings-${name.toLowerCase()}`);
   }
-  await api('/settings', 'PUT', { surface: 'workbook' });
-  await page.reload();
-  const rail = page.getByRole('navigation', { name: 'Project pages', exact: true });
-  for (const name of ['Home', 'Ask', 'Plan', 'Work', 'Review', 'Tasks', 'Documents', 'History']) {
-    await rail.getByRole('button', { name: new RegExp(`^${name}\\b`) }).click();
-    await record(page, `maximized-workbook-${name.toLowerCase()}`);
-  }
-  await api('/settings', 'PUT', { surface: 'console' });
-  await page.reload();
-  await expect(page.locator('.console')).toBeVisible();
   await fs.writeFile(
     path.join(root, 'report.json'),
     JSON.stringify({ executablePath, records }, null, 2),
   );
   console.log(
-    `PASS: native maximize, stable typography, persistent interface scale, shortcuts, menu and principal surfaces.\nEvidence: ${root}`,
+    `PASS: native maximize, stable typography, persistent interface scale, shortcuts, menu and principal Console views.\nEvidence: ${root}`,
   );
   if (process.argv.includes('--hold')) {
     console.log('Holding the isolated desktop for visual inspection; press Enter to close it.');
