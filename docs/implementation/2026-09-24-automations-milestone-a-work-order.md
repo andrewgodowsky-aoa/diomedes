@@ -1,7 +1,8 @@
 # Automations Milestone A: work order
 
-Version 2026-09-24.1, written 2026-09-24 at Andrew's request ("write the Milestone A work order").
+Version 2026-09-24.2, written 2026-09-24 at Andrew's request ("write the Milestone A work order").
 Version .1 records Andrew's answers to D1–D4 and his direction on remembered approvals (section 3).
+Version .2 records his choice of a one-click learned offer for remembered approvals (D5).
 
 - **Base:** `main` `a49f027` ("Merge pull request #66 … retired-settings-removal").
 - **Canonical documents read:** Core Pillars 2026-09-22.1, Live Roadmap 2026-09-23.1, Project Memory
@@ -158,40 +159,88 @@ inspectable; they are not open.
 - Not taken: the Console row becomes live and the home row stays held, with new reason text.
 - **Affects:** A5.
 
-### D5. Remembered approvals: one click per project (Andrew's direction, 2026-09-24)
+### D5. Remembered approvals: learned, offered, accepted once (Andrew, 2026-09-24)
 
 Andrew, answering D2: "We want to reduce unnecessary clicking for approvals, usually one click per
-project is enough for an item to be remembered as safe."
+project is enough for an item to be remembered as safe." And later: "one key point we advertise is
+'learns your approvals', as in if you constantly click 'yes, send email', then we shouldnt have to
+keep doing that for months over and over." Asked to choose between silent learning and a one-click
+offer, he chose **the one-click offer**.
 
-- **What it means here.** When a step does need a person's approval, the person approves it once in a
-  project. The same item in the same project is then remembered as safe and does not ask again.
-- **How it fits the standing decisions:**
-  - It is decision 7 made concrete ("a user-approved task or project grant may cover routine work
-    inside an explicit scope").
-  - The remembered approval is a scoped grant. It is recorded with who gave it, when, and for what,
-    and it can be revoked.
-  - Like every grant, it never widens itself.
-  - A configuration change, rollback, pack activation or restart never creates one or revives a
-    revoked one (*Configuration cannot revive spent or revoked authority*).
-  - Losing membership or the item's authority ends it.
-  - Exact approvals stay available, and consequential actions keep their exact approval.
-- **Effect on Milestone A: none to build.** Under D2 the brief asks for no approval at all, which is
-  fewer clicks than one per project. No A slice adds an approval prompt.
-- **Where it applies:** to the first automation step that declares an approval. That is expected in
-  Milestone B or C, for example a delivery step.
-- **What is built today.** Remembered project grants exist only for Codex writes
-  (`server/trust/scope-grants.ts`, which pins `engine: 'codex'`). A general harness form is future
-  work, with its own Trust owner.
-- **Still to confirm when that step is built:** what counts as "the same item". The proposed default
-  is the same automation, the same action and the same destination, in the same project. A different
-  destination, a wider action, or a new automation asks again.
-- **Canonical documents.** This is a permission default, so it belongs in the canonical documents, not
-  only in this order. Proposed Project Memory addition, pending cloud synchronisation and A8:
+**Decided:** Diomedes may learn which approvals a person keeps giving, but learning only *offers*.
+Authority is remembered only when the person accepts, and one acceptance per item per project is
+enough. There are two routes to a remembered approval, and both are an explicit act by the person:
 
-  > **Remembered approval.** By default one approval per project is enough: when a person approves an
-  > item in a project, that same item in that project is remembered as a scoped, revocable grant and
-  > does not ask again. It never widens, never survives revocation or loss of authority, and is never
-  > created or revived by configuration. Consequential actions keep their exact approval.
+1. **Remember when approving.** An approval prompt may offer **Approve and remember in this
+   project** beside the exact **Approve**. One click then covers that item in that project from then
+   on.
+2. **The learned offer.** When a person keeps giving the same exact approval in a project, Diomedes
+   notices and asks once, for example: "You've approved *send the weekly brief to ops@yourco.com* 4
+   times in this project. Stop asking?" Accepting creates the remembered approval. Declining is
+   remembered too, so the offer does not come back for that item unless the person asks for it.
+
+**What a remembered approval is:**
+- It is a scoped grant: decision 7 made concrete ("a user-approved task or project grant may cover
+  routine work inside an explicit scope"). The grant is itself the exact approval of a bounded
+  pattern, so each later action inside it is still evidenced against a recorded, exact decision.
+- It records who accepted it, when, from which route, and exactly what it covers.
+- It can be revoked from one place, and the automation's **Rules and access** section shows what is
+  remembered for it.
+- It is shown truthfully: a later action taken under it says it ran under a remembered approval,
+  naming whose and since when. It never looks like a fresh human click.
+
+**What it covers.** Proposed default, to confirm when the first such step is built: the same
+automation or procedure, the same action, the same destination or recipients, in the same project.
+
+**It asks again** when anything falls outside that pattern:
+- a new recipient or destination
+- a wider or different action
+- the person revokes the grant, or loses membership or the authority it rested on
+- the credential or connection it acts through changes
+
+**What learning and configuration can never do** (Project Memory: "repeated approvals … and learning
+cannot expand authority"; `AGENTS.md`, standing decision 7):
+- A remembered approval never exists without the person's click. Repeated approvals alone never
+  create one.
+- A grant never widens itself.
+- A configuration change, rollback, pack activation, restart or model change never creates a
+  remembered approval or revives a revoked one.
+
+**Always asks.** Proposed default, to confirm with Andrew when the first effectful connector is
+built: moving money or making a payment, deleting or irreversibly destroying data, and changing
+credentials, members or permissions keep an exact approval each time, and are never offered for
+remembering. Sending an email or a report *is* rememberable, which is the case Andrew named.
+
+**Offer threshold.** Proposed default: offered after 3 identical exact approvals in a project. It is
+a product setting to tune with evidence, and never a silent grant.
+
+**Effect on Milestone A: none to build.** Under D2 the brief asks for no approval at all. No A slice
+adds an approval prompt or an offer. The first step that uses D5 is expected in Milestone B or C,
+for example a delivery step.
+
+**What is built today.** Remembered project grants exist only for Codex writes
+(`server/trust/scope-grants.ts`, which pins `engine: 'codex'`). The general form (both routes, the
+learned offer, the decline memory and the one revocation place) is Trust work, with its own owner and
+review.
+
+**Website.** "Learns your approvals" is accurate for this design only if the copy says it *offers* to
+remember them. For example: "Notices the approvals you keep giving and offers to stop asking." The
+site is a separate repository (`diomedes-site`). Its wording is checked there, and no copy may
+describe the feature as shipped until it is built and proved.
+
+**Canonical documents.** This is a permission default, so it belongs in the canonical documents, not
+only in this order. Proposed Project Memory addition, pending cloud synchronisation and A8:
+
+> **Remembered approval.** Diomedes learns which approvals a person keeps giving, and learning only
+> offers. A person may approve and remember an item in a project, or accept a learned offer to stop
+> asking; one acceptance per item per project is enough. The result is a scoped, revocable, attributed
+> grant for that exact pattern. It never widens, never survives revocation or loss of authority, and
+> is never created by repeated approvals, learning or configuration without the person's click.
+> Payments, destructive actions and permission or credential changes always ask.
+
+The roadmap's section 6 B "exact consequential approvals" should gain one clause at the same time:
+a remembered approval accepted by the person is an exact approval of a bounded pattern, so it
+satisfies that rule.
 
 Not a decision, but recorded here so nobody makes one by accident: **who may press Run once** stays
 the current rule.
@@ -549,8 +598,8 @@ PILLAR IMPACT:
   missing data (D3).
 - No pillar conflict found.
 
-ROADMAP IMPACT: none yet. D5's proposed Project Memory wording waits for the canonical-document update
-and cloud synchronisation. On landing, A8 moves roadmap section 2 Milestone A from "approved plan,
+ROADMAP IMPACT: none yet. D5's proposed Project Memory wording and its section 6 B clause wait for the
+canonical-document update and cloud synchronisation. On landing, A8 moves roadmap section 2 Milestone A from "approved plan,
 implementation pending" to the status its evidence supports.
 
 BUILD / PUBLICATION / DEPLOYMENT STATUS: documentation only. No build, test run, commit to `main`,
