@@ -108,6 +108,17 @@ function mountNativeSessionRoutes(
   dependencies: ClaudeSessionRouteDependencies,
 ) {
   const base = spec.base;
+  /**
+   * The mode of the message each run last answered, in this process. A held message is sent
+   * under the instructions of the turn it waited behind, so it is shown in the thread under
+   * that turn's mode. Bounded; a run with no entry has no turn running to steer into.
+   */
+  const modes = new Map<string, ClaudeSessionBody['mode']>();
+  const noteMode = (runId: string, mode: ClaudeSessionBody['mode']) => {
+    modes.delete(runId);
+    modes.set(runId, mode);
+    if (modes.size > 512) modes.delete(modes.keys().next().value!);
+  };
   const contract = spec.routeId ? routeContractFor(spec.routeId) : undefined;
   const native = () => {
     const driver = spec.driver();
@@ -153,6 +164,7 @@ function mountNativeSessionRoutes(
         mode === 'start' || mode === 'fork'
           ? spec.runId(projectId, body.data.commandId)
           : String(req.params.runId);
+      noteMode(runId, body.data.mode);
       const result = await spec.turn(
         mode,
         runId,
@@ -181,12 +193,29 @@ function mountNativeSessionRoutes(
           .strictObject({ commandId, text: z.string().trim().min(1).max(32000) })
           .safeParse(req.body);
         if (!body.success) throw new ApiError(400, 'Provide a bounded command ID and the message text.');
-        return native().steer(
-          String(req.params.id),
-          String(req.params.runId),
-          body.data.commandId,
-          body.data.text,
-        );
+        const runId = String(req.params.runId);
+        const mode = modes.get(runId) ?? 'ask';
+        const record = dependencies.recordResult;
+        return native().steer(String(req.params.id), runId, body.data.commandId, body.data.text, {
+          // Once sent, the message and its answer are projected into the thread exactly as a
+          // turn sent through this route is, so the thread holds what the native session holds.
+          onDelivered: record
+            ? (result, input) =>
+                record(
+                  req,
+                  {
+                    commandId: input.requestId,
+                    threadId: input.threadId,
+                    text: input.prompt,
+                    mode,
+                    sources: [],
+                    consent: true,
+                  },
+                  result,
+                  input,
+                )
+            : undefined,
+        });
       }),
     );
   for (const command of ['interrupt', 'close'] as const)
