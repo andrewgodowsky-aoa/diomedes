@@ -124,6 +124,7 @@ export default defineConfig({
     'h08-durable-controls.spec.ts',
     'h02-codex-controls.spec.ts',
     'native-loop-ui.spec.ts',
+    'h14-team-ui.spec.ts',
     'h15-supervision.spec.ts',
     'review-diffs-ui.spec.ts',
     'cd05-zoom-motion.spec.ts',
