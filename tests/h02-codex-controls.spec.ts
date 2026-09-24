@@ -89,9 +89,10 @@ test.beforeAll(async () => {
       ].map(async (file) => (await fs.stat(file)).mtimeMs),
     )),
   );
-  expect(built, 'dist is older than the control sources. Run "npx vite build" first.').toBeGreaterThan(
-    source,
-  );
+  expect(
+    built,
+    'dist is older than the control sources. Run "npx vite build" first.',
+  ).toBeGreaterThan(source);
   application.use(express.static(dist));
   application.get('/{*path}', (_request, response) =>
     response.sendFile(path.join(dist, 'index.html')),
@@ -195,7 +196,9 @@ test('a Codex build that advertises steer, resume and fork is offered all three,
   await followUps(page).getByRole('button', { name: 'Steer', exact: true }).click();
   await expect(receipt(page, 'steer')).toHaveAttribute('data-outcome', 'applied');
   await expect(receipt(page, 'steer')).toContainText('by ChatGPT · fixture-codex-model');
-  await expect(receipt(page, 'steer')).toContainText('Codex took the message into the running turn');
+  await expect(receipt(page, 'steer')).toContainText(
+    'Codex took the message into the running turn',
+  );
   await expect(liveRecord(page)).toHaveCount(0);
 
   // A second run, stopped from its record, then resumed: Codex continues its thread.

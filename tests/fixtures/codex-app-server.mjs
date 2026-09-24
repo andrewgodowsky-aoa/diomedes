@@ -38,7 +38,10 @@ const control = () => {
 const has = (capability) =>
   (control().capabilities ?? ['resume', 'fork', 'steer']).includes(capability);
 const log = (entry) =>
-  fs.appendFileSync(path.join(root, 'calls.jsonl'), `${JSON.stringify({ pid: process.pid, ...entry })}\n`);
+  fs.appendFileSync(
+    path.join(root, 'calls.jsonl'),
+    `${JSON.stringify({ pid: process.pid, ...entry })}\n`,
+  );
 
 const MODEL = 'fixture-codex-model';
 const policy = {
@@ -93,8 +96,16 @@ function complete() {
   });
   thread.messages.push({ role: 'assistant', text });
   save(thread);
-  notify('item/agentMessage/delta', { threadId: thread.id, turnId: turn.turnId, delta: text.slice(0, 12) });
-  notify('item/completed', { threadId: thread.id, turnId: turn.turnId, item: { type: 'agentMessage', text } });
+  notify('item/agentMessage/delta', {
+    threadId: thread.id,
+    turnId: turn.turnId,
+    delta: text.slice(0, 12),
+  });
+  notify('item/completed', {
+    threadId: thread.id,
+    turnId: turn.turnId,
+    item: { type: 'agentMessage', text },
+  });
   notify('turn/completed', {
     threadId: thread.id,
     turn: { id: turn.turnId, status: 'completed', model: MODEL },
@@ -120,13 +131,15 @@ const handlers = {
     return { thread: { id: thread.id }, ...policy };
   },
   'thread/resume': (params, id) => {
-    if (typeof params.threadId !== 'string') return refuse(id, 'Invalid request: missing field `threadId`');
+    if (typeof params.threadId !== 'string')
+      return refuse(id, 'Invalid request: missing field `threadId`');
     const thread = find(params.threadId);
     if (!thread) return refuse(id, `no rollout found for thread id ${params.threadId}`);
     return { thread: { id: thread.id }, ...policy };
   },
   'thread/fork': (params, id) => {
-    if (typeof params.threadId !== 'string') return refuse(id, 'Invalid request: missing field `threadId`');
+    if (typeof params.threadId !== 'string')
+      return refuse(id, 'Invalid request: missing field `threadId`');
     const source = find(params.threadId);
     if (!source) return refuse(id, `no rollout found for thread id ${params.threadId}`);
     const thread = {
@@ -148,7 +161,8 @@ const handlers = {
     return { turn: { id: turnId, status: 'inProgress' } };
   },
   'turn/steer': (params, id) => {
-    if (typeof params.threadId !== 'string') return refuse(id, 'Invalid request: missing field `threadId`');
+    if (typeof params.threadId !== 'string')
+      return refuse(id, 'Invalid request: missing field `threadId`');
     if (!active || active.threadId !== params.threadId || active.turnId !== params.expectedTurnId)
       return refuse(id, 'no active turn to steer');
     const text = textOf(params.input);

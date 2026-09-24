@@ -79,9 +79,7 @@ export function codexWorkContract(session: Session | null): AdapterRouteContract
   }) as AdapterRouteContract;
 }
 
-const performer = (
-  record: { version: string; model: string | null },
-): ControlPerformer => ({
+const performer = (record: { version: string; model: string | null }): ControlPerformer => ({
   kind: 'engine',
   engine: 'codex',
   version: record.version,
@@ -226,7 +224,9 @@ export class CodexControls {
             },
           };
         const key = context.workCommandId;
-        this.pending.set(key, { resume: { threadId: thread.id, kept: thread.kept, origin: 'resumed' } });
+        this.pending.set(key, {
+          resume: { threadId: thread.id, kept: thread.kept, origin: 'resumed' },
+        });
         // Registered before the start, so an answer that arrives at once is not missed.
         const reached = new Promise<ThreadOutcome | null>((resolve) => {
           const timer = setTimeout(() => {

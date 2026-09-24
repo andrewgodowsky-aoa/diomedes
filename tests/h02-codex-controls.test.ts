@@ -63,18 +63,16 @@ const settled = (id: string) =>
   }, `run ${id} to settle`);
 
 /** What the fixture was asked, in order. */
-async function calls(): Promise<{ pid: number; method: string; params: Record<string, unknown> }[]> {
+async function calls(): Promise<
+  { pid: number; method: string; params: Record<string, unknown> }[]
+> {
   const text = await fs.readFile(path.join(codexDir, 'calls.jsonl'), 'utf8').catch(() => '');
   return text
     .split('\n')
     .filter(Boolean)
     .map((line) => JSON.parse(line));
 }
-async function codexBuild(control: {
-  capabilities?: string[];
-  hold?: boolean;
-  forget?: string[];
-}) {
+async function codexBuild(control: { capabilities?: string[]; hold?: boolean; forget?: string[] }) {
   await fs.writeFile(path.join(codexDir, 'control.json'), JSON.stringify(control));
 }
 const control = (body: Record<string, unknown>) =>
@@ -232,7 +230,11 @@ test('a Codex Work run records its thread before the turn, and offers what this 
     asked.findIndex((c) => c.method === 'turn/start'),
   );
   // The three methods were asked of the process, not assumed from its version.
-  expect(asked.filter((c) => ['thread/resume', 'thread/fork', 'turn/steer'].includes(c.method)).map((c) => [c.method, c.params])).toEqual([
+  expect(
+    asked
+      .filter((c) => ['thread/resume', 'thread/fork', 'turn/steer'].includes(c.method))
+      .map((c) => [c.method, c.params]),
+  ).toEqual([
     ['thread/resume', {}],
     ['thread/fork', {}],
     ['turn/steer', {}],
@@ -282,7 +284,9 @@ test('Steer reaches the running Codex turn and leaves a receipt performed by Cod
   expect(done.log.map((l) => l.sentence).join('\n')).toContain(
     'Steered: Mention the new opening hours.',
   );
-  expect(done.log.map((l) => l.sentence)).toContain('Codex took your message into the running turn.');
+  expect(done.log.map((l) => l.sentence)).toContain(
+    'Codex took your message into the running turn.',
+  );
 });
 
 test('where Codex does not offer mid-turn input, Steer is refused and Queue is what is offered', async () => {
@@ -343,7 +347,11 @@ test('Resume after Stop continues the same Codex thread in a new run; the stoppe
   expect(resumed.nativeThread).toMatchObject({ id: thread.id, origin: 'resumed', from: thread.id });
   // A new process continued the thread the stopped one had kept.
   const resume = (await calls()).find((c) => c.method === 'thread/resume' && c.params.threadId)!;
-  expect(resume.params).toMatchObject({ threadId: thread.id, sandbox: 'read-only', approvalPolicy: 'never' });
+  expect(resume.params).toMatchObject({
+    threadId: thread.id,
+    sandbox: 'read-only',
+    approvalPolicy: 'never',
+  });
   expect(resume.pid).not.toBe((await calls()).find((c) => c.method === 'thread/start')!.pid);
   expect(resumed.log.map((l) => l.sentence)).toContain(`Codex continued thread ${thread.id}.`);
   // The thread carried the stopped turn: this answer is its second user turn.
@@ -384,7 +392,10 @@ test('where Codex cannot resume, Resume starts a new Codex thread and says so', 
   await codexBuild({ capabilities: [], hold: true });
   const run = await codexStart();
   const thread = await until(async () => (await sessionOf(run.id)).nativeThread, 'the thread');
-  expect(thread).toMatchObject({ kept: false, capabilities: { resume: false, fork: false, steer: false } });
+  expect(thread).toMatchObject({
+    kept: false,
+    capabilities: { resume: false, fork: false, steer: false },
+  });
   expect((await calls()).find((c) => c.method === 'thread/start')!.params.ephemeral).toBe(true);
   receiptOf(await control({ control: 'stop', scope: 'task', sessionId: run.id }));
   await settled(run.id);
@@ -403,11 +414,17 @@ test('where Codex cannot resume, Resume starts a new Codex thread and says so', 
   const fresh = await settled(receipt.result.sessionId!);
   const sentence = `Couldn't resume Codex thread ${thread.id}: the run that used it could not keep it, because that Codex build offered no resume. Started a new Codex thread; earlier messages were not carried.`;
   expect(receipt.detail).toBe(`${sentence} The new run is ${fresh.id}.`);
-  expect(fresh.nativeThread).toMatchObject({ origin: 'restarted-fresh', from: thread.id, detail: sentence });
+  expect(fresh.nativeThread).toMatchObject({
+    origin: 'restarted-fresh',
+    from: thread.id,
+    detail: sentence,
+  });
   expect(fresh.nativeThread!.id).not.toBe(thread.id);
   expect(receipt.result.nativeThreadId).toBe(fresh.nativeThread!.id);
   expect(fresh.log.map((l) => l.sentence)).toContain(sentence);
-  expect((await calls()).filter((c) => c.method === 'thread/resume' && c.params.threadId)).toEqual([]);
+  expect((await calls()).filter((c) => c.method === 'thread/resume' && c.params.threadId)).toEqual(
+    [],
+  );
 });
 
 test('a kept thread Codex no longer has, or a build that dropped resume, also starts fresh and says why', async () => {
@@ -457,7 +474,9 @@ test('Fork branches a settled Codex thread into a new task, leaves the origin un
   expect(receipt.detail).toBe(
     `Codex forked thread ${thread.id} into ${branch}; the new task’s first run continues it. Forked into Fork of Prepare the reopening, from ${run.id}. Nothing runs until you start it.`,
   );
-  const saved = JSON.parse(await fs.readFile(path.join(codexDir, 'threads', `${branch}.json`), 'utf8'));
+  const saved = JSON.parse(
+    await fs.readFile(path.join(codexDir, 'threads', `${branch}.json`), 'utf8'),
+  );
   expect(saved.forkedFrom).toBe(thread.id);
   // Nothing ran: the fork asked Codex for a branch and sent no turn.
   expect((await calls()).filter((c) => c.method === 'turn/start')).toHaveLength(1);
