@@ -349,7 +349,7 @@ test('DIO-87: a file whose kind the listing has not settled cannot be typed in y
   await expect(textBox(page)).toHaveValue(mine);
   await expect(textBox(page)).toBeEditable();
   await expect(editorState(page)).toHaveText('All saved');
-  await page.unroute(/\/api\/projects\/[^/]+\/documents(\?.*)?$/);
+  await page.unrouteAll({ behavior: 'ignoreErrors' });
 });
 
 test('DIO-87: writing already in the box is never stranded by a later kind', async ({ page }) => {
@@ -358,16 +358,21 @@ test('DIO-87: writing already in the box is never stranded by a later kind', asy
   // From here on, every listing says this file is a kind the editor cannot save.
   await page.route(/\/api\/projects\/[^/]+\/documents(\?.*)?$/, async (route) => {
     if (route.request().method() !== 'GET') return route.continue();
-    const response = await route.fetch();
-    const body = (await response.json()) as { documents: DocumentInfo[] };
-    await route.fulfill({
-      response,
-      json: {
-        documents: body.documents.map((file) =>
-          file.path === ALPHA ? { ...file, kind: 'unsupported' as const } : file,
-        ),
-      },
-    });
+    try {
+      const response = await route.fetch();
+      const body = (await response.json()) as { documents: DocumentInfo[] };
+      await route.fulfill({
+        response,
+        json: {
+          documents: body.documents.map((file) =>
+            file.path === ALPHA ? { ...file, kind: 'unsupported' as const } : file,
+          ),
+        },
+      });
+    } catch (error) {
+      // A listing still in flight when the test lets go of the page has nobody to answer.
+      if (!String(error).includes('already handled')) throw error;
+    }
   });
   const draft = `${ALPHA_TEXT}\nTyped before the listing changed its mind.\n`;
   await box.fill(draft);
@@ -379,11 +384,12 @@ test('DIO-87: writing already in the box is never stranded by a later kind', asy
       response.request().method() === 'GET',
   );
   await api(`/projects/${project.id}/threads`, 'POST', { name: 'Something else' });
-  await listed;
+  const rewritten = (await (await listed).json()) as { documents: DocumentInfo[] };
+  expect(rewritten.documents.find((file) => file.path === ALPHA)?.kind).toBe('unsupported');
   await expect(editorState(page)).toHaveText('Not saved yet');
   await expect(textBox(page)).toBeEditable();
   await expect(textBox(page)).toHaveValue(draft);
   await page.getByRole('button', { name: 'Save changes', exact: true }).click();
   await expect.poll(() => fs.readFile(path.join(project.folder, ALPHA), 'utf8')).toBe(draft);
-  await page.unroute(/\/api\/projects\/[^/]+\/documents(\?.*)?$/);
+  await page.unrouteAll({ behavior: 'ignoreErrors' });
 });
