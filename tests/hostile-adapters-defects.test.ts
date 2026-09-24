@@ -81,10 +81,10 @@ async function adapterFor(script: Script, requestTimeoutMs = 30_000) {
   const fetcher = (async (input: unknown, init: RequestInit = {}) => {
     const url = String(input);
     const signal = init.signal ?? undefined;
-    // What `fetch` does with a signal that is already aborted: reject with its
-    // reason. Without this the event stream below would wait for an abort event
-    // that had already fired, and the request would never settle.
-    if (signal?.aborted) throw signal.reason;
+    // As a real fetch does: a signal that is already aborted rejects before any
+    // response. Without this, a Stop landing before the event stream opens on a
+    // slow runner left the stream's abort listener unfired and the read hung.
+    signal?.throwIfAborted();
     if (url.endsWith('/provider'))
       return script.provider ? script.provider() : new Response(JSON.stringify(CATALOGUE));
     if (url.endsWith('/event')) {

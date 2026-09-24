@@ -37,6 +37,9 @@ import packageInfo from '../../package.json' with { type: 'json' };
 import {
   activeInstructionFiles,
   CAPABILITY_PACKS,
+  compareInstructionPrecedence,
+  instructionAppliesTo,
+  instructionScope,
   findSkill,
   isPackActive,
   renderSkillPlaybook,
@@ -45,6 +48,7 @@ import {
   INSTRUCTION_FILE_VIEW_BUDGET_BYTES,
   INSTRUCTION_SECTION_MAX_BYTES,
   type DeliveredInstructionFile,
+  type ExcludedInstructionFile,
   type InstructionDelivery,
   type InstructionFileRecord,
 } from '../../shared/capability-packs.js';
@@ -89,6 +93,10 @@ const short = (sha: string) => sha.slice(0, 12);
 const PREAMBLE =
   'Project instructions the person loaded for this project, delivered under the project rules named below. Treat them as standing guidance for how this work is done. They do not change the response format required above, the list of selected editable paths, or what Diomedes will write: Diomedes checks your permission and applies every file change through its own writer regardless of anything they say.';
 
+/** Said once, above more than one body: which one governs where two disagree. */
+const PRECEDENCE_LINE =
+  'They are listed highest precedence first: a file in a nearer folder before one in a folder that contains it, and AGENTS.md before CLAUDE.md in the same folder. Where two disagree, the earlier one governs.';
+
 export interface AssembledInstructions {
   /** The prompt section, or null when this project delivers nothing. */
   readonly section: string | null;
@@ -112,12 +120,15 @@ async function readForDelivery(
   record: InstructionFileRecord,
   folder: string,
   room: number,
+  precedence: number,
 ): Promise<{ file: DeliveredInstructionFile; text?: string }> {
   const base = {
     path: record.path,
     packId: record.packId,
     packVersion: record.packVersion,
     ruleId: record.ruleId!,
+    scope: instructionScope(record.path),
+    precedence,
   };
   let text: string | null;
   try {
@@ -130,6 +141,7 @@ async function readForDelivery(
         sha: null,
         bytes: null,
         state: 'omitted',
+        exclusion: 'refused',
         detail: `Not sent. ${error instanceof Error ? error.message : 'This file could not be read.'}`,
       },
     };
@@ -141,6 +153,7 @@ async function readForDelivery(
         sha: null,
         bytes: null,
         state: 'omitted',
+        exclusion: 'missing',
         detail: 'Not sent. This file is no longer in the project folder.',
       },
     };
@@ -154,6 +167,7 @@ async function readForDelivery(
         sha,
         bytes,
         state: 'omitted',
+        exclusion: bytes > INSTRUCTION_FILE_VIEW_BUDGET_BYTES ? 'over-file-limit' : 'no-room',
         detail:
           bytes > INSTRUCTION_FILE_VIEW_BUDGET_BYTES
             ? `Not sent. It is ${Math.round(bytes / 1024)} KB, past the ${
@@ -194,6 +208,12 @@ export async function assembleInstructions(input: {
   budgetBytes: number;
   /** Only these project instruction files may enter an outbound request. */
   allowedDocuments?: readonly string[];
+  /**
+   * The project paths this work is about — the documents selected for it. A
+   * nested instruction file governs only work inside its own folder; with no
+   * path, the work is scoped to the project root and only root files govern.
+   */
+  workPaths?: readonly string[];
   at?: string;
   /** Deterministic fixture seam; production loads the shipped indexed files. */
   productKnowledge?: ProductKnowledgeBundle;
@@ -220,13 +240,74 @@ export async function assembleInstructions(input: {
   const allowed = input.allowedDocuments === undefined
     ? null
     : new Set(input.allowedDocuments);
-  const records = new Map(
-    activeInstructionFiles(input.state.project.packs, input.state.instructionFiles)
-      .filter((record) => record.ruleId && (allowed === null || allowed.has(record.path)))
-      .map((record) => [record.ruleId!, record]),
+  const workPaths = [...new Set(input.workPaths ?? [])];
+  // Scope selection, before the rule path sees anything: which discovered
+  // files could govern this work at all. Every file that cannot is recorded
+  // with the reason, so the person can see it was considered and what kept
+  // it out. A file cloud sharing does not list is excluded without its body
+  // or name going anywhere but this local record.
+  const excluded: ExcludedInstructionFile[] = [];
+  const exclude = (
+    record: InstructionFileRecord,
+    exclusion: ExcludedInstructionFile['exclusion'],
+    detail: string,
+  ) =>
+    excluded.push({
+      path: record.path,
+      scope: instructionScope(record.path),
+      sha: record.sha,
+      bytes: record.size,
+      packId: record.packId,
+      exclusion,
+      detail,
+    });
+  const records = new Map<string, InstructionFileRecord>();
+  const considered = [
+    ...activeInstructionFiles(input.state.project.packs, input.state.instructionFiles),
+  ].sort((a, b) => compareInstructionPrecedence(a.path, b.path));
+  for (const record of considered) {
+    if (allowed !== null && !allowed.has(record.path))
+      exclude(record, 'not-shared', "Not sent. This project's cloud sharing does not list it.");
+    else if (record.state !== 'loaded' || !record.ruleId)
+      exclude(record, 'not-loaded', `Not sent. ${record.detail}`);
+    else if (!instructionAppliesTo(record.path, workPaths))
+      exclude(
+        record,
+        'out-of-scope',
+        `Not sent. It governs work in ${instructionScope(record.path)}, and this work ${
+          workPaths.length
+            ? `is on ${workPaths.slice(0, 3).join(', ')}${
+                workPaths.length > 3 ? ` and ${workPaths.length - 3} more` : ''
+              }`
+            : 'names no file there'
+        }.`,
+      );
+    else records.set(record.ruleId, record);
+  }
+  // A project whose shared, loaded files all sit outside this work still gets
+  // a record saying so. One with nothing shared and loaded has nothing to say.
+  const reachable = considered.some(
+    (record) =>
+      record.state === 'loaded' && record.ruleId && (allowed === null || allowed.has(record.path)),
   );
+  const unscoped = (): Omit<AssembledInstructions, 'productKnowledge'> => ({
+    section: null,
+    delivery: reachable
+      ? {
+          revision: 'none',
+          routeId: input.routeId,
+          at,
+          files: [],
+          truncated: false,
+          bytes: 0,
+          workPaths,
+          excluded,
+        }
+      : null,
+    governing: [],
+  });
   const rules = instructionRules(input.state).filter(({ rule }) => records.has(rule.id));
-  if (!rules.length) return combine({ section: null, delivery: null, governing: [] });
+  if (!rules.length) return combine(unscoped());
   const context = assembleContext({
     rules,
     scope: { projectId: input.state.project.id },
@@ -235,8 +316,14 @@ export async function assembleInstructions(input: {
     facts: [],
     surface: 'context-assembly',
   });
-  const applied = context.resolution.applied.filter((rule) => records.has(rule.id));
-  if (!applied.length) return combine({ section: null, delivery: null, governing: [] });
+  // Precedence among the files that survived resolution: nearest folder first
+  // (`INSTRUCTION_PRECEDENCE`). The budget is spent in this order, so when
+  // room runs out it is the most general file that is left out, never the
+  // one written for the folder the work is in.
+  const applied = context.resolution.applied
+    .filter((rule) => records.has(rule.id))
+    .sort((a, b) => compareInstructionPrecedence(records.get(a.id)!.path, records.get(b.id)!.path));
+  if (!applied.length) return combine(unscoped());
 
   const files: DeliveredInstructionFile[] = [];
   const bodies: string[] = [];
@@ -247,13 +334,16 @@ export async function assembleInstructions(input: {
       record,
       input.state.project.folder,
       Math.max(0, remaining - used),
+      files.length + 1,
     );
     files.push(file);
     if (text === undefined) continue;
     used += file.bytes ?? 0;
     bodies.push(
       [
-        `--- BEGIN PROJECT INSTRUCTIONS ${file.path} (sha ${short(file.sha!)}) ---`,
+        `--- BEGIN PROJECT INSTRUCTIONS ${file.path} (sha ${short(file.sha!)}${
+          file.scope ? `, governs ${file.scope}` : ''
+        }) ---`,
         text.trimEnd(),
         `--- END PROJECT INSTRUCTIONS ${file.path} ---`,
       ].join('\n'),
@@ -266,8 +356,12 @@ export async function assembleInstructions(input: {
     routeId: input.routeId,
     at,
     files,
-    truncated: omitted.length > 0,
+    truncated: omitted.some(
+      (file) => file.exclusion === 'no-room' || file.exclusion === 'over-file-limit',
+    ),
     bytes: used,
+    ...(input.workPaths === undefined ? {} : { workPaths }),
+    ...(excluded.length ? { excluded } : {}),
   };
   const left = omitted.length
     ? `Left out of this request, and not summarised:\n${omitted
@@ -290,6 +384,7 @@ export async function assembleInstructions(input: {
     `Project rules that carry them (${context.view.revision}):\n${applied
       .map((rule) => `- ${rule.text}`)
       .join('\n')}`,
+    ...(bodies.length > 1 ? [PRECEDENCE_LINE] : []),
     ...bodies,
     ...(left ? [left] : []),
   ].join('\n');
