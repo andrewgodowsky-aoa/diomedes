@@ -23,12 +23,15 @@ export function NeedBlock({
   decide,
   show,
   onScope,
+  onRemember,
   session,
 }: {
   need: Need;
   decide: (resolution: 'go-ahead' | 'declined', allow?: boolean) => void;
   show: () => void;
   onScope?: () => void;
+  /** Present only where this exact approval may be remembered (D5, route 1). */
+  onRemember?: () => void;
   session?: Session;
 }) {
   const why = [need.why, need.consequence].filter(Boolean).join(' ');
@@ -50,6 +53,11 @@ export function NeedBlock({
         <button type="button" className="verb go" onClick={() => decide('go-ahead')}>
           Go ahead
         </button>
+        {onRemember && (
+          <button type="button" className="verb" onClick={onRemember}>
+            Go ahead and remember in this project
+          </button>
+        )}
         {!need.approval && (
           <button type="button" className="verb" onClick={() => decide('go-ahead', true)}>
             Go ahead for this whole task

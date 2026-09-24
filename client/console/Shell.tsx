@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { selectedEngine } from '../../shared/ai-selection';
 import { formatOrigin, originForNeed, originForSession } from '../attribution-display';
-import type { ScopeGrantView } from '../../shared/permissions';
+import type { RememberOffer, ScopeGrantView } from '../../shared/permissions';
 import { isRoute, isExternalEngine, routeDisplayName } from '../../shared/engines';
 import type { EngineConnection } from '../../shared/engines';
 import {
@@ -790,6 +790,13 @@ export function Shell({
           )
           .slice(-1)
       : [];
+  const selectedOffers =
+    selected && state
+      ? (state.rememberedApprovals?.offers ?? []).filter((offer) => {
+          const need = state.needs.find((n) => n.id === offer.needId);
+          return offer.state === 'open' && !!need && threadOwnsNeed(selected, need, state);
+        })
+      : [];
   // Live text shows only for the exact selected thread: cross-thread events
   // never render elsewhere.
   const streamingForSelected =
@@ -1166,6 +1173,25 @@ export function Shell({
   ) {
     await perform(async () => {
       await decideApproval(projectId, need, resolution, allowForTask);
+      await load();
+    });
+  }
+  // Remembered approvals (D5): the exact approval is given first and stays
+  // the evidence; remembering its pattern is a second, explicit request.
+  async function rememberNeed(need: Need) {
+    await perform(async () => {
+      await decideApproval(projectId, need, 'go-ahead');
+      await api(`${base}/permissions/remembered`, 'POST', { needId: need.id });
+      await load();
+    });
+  }
+  async function answerOffer(offer: RememberOffer, accept: boolean) {
+    await perform(async () => {
+      await api(
+        `${base}/permissions/remembered/offers/${encodeURIComponent(offer.id)}/${accept ? 'accept' : 'decline'}`,
+        'POST',
+        {},
+      );
       await load();
     });
   }
@@ -2045,6 +2071,9 @@ export function Shell({
                 )
               }
               onResolve={(n, res, allow) => void resolveNeed(n, res, allow)}
+              onRemember={(n) => void rememberNeed(n)}
+              rememberOffers={selectedOffers}
+              onAnswerOffer={(offer, accept) => void answerOffer(offer, accept)}
               onPreview={setPreviewNeed}
               onStopSession={(id) => void stopSession(id)}
               onOpenBoard={() => setView('Board')}

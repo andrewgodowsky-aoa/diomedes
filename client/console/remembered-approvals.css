@@ -1,0 +1,52 @@
+/* Remembered approvals (D5). The offer takes the Need's own block (.need) and
+   adds nothing but wrapping for the action it names, which can carry a file
+   name or an address (decision 5). The list sits in the task-permissions
+   dialog beside Capabilities and inherits the panel's typography. */
+.console .remember-offer .ask {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.remembered-approvals {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--hair-2);
+  min-width: 0;
+}
+.remembered-approvals h3 {
+  margin: 0 0 8px;
+  font: inherit;
+  font-weight: 500;
+}
+.remembered-approvals p {
+  margin: 4px 0 10px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.remembered-approval {
+  min-width: 0;
+}
+.remembered-approval + .remembered-approval {
+  padding-top: 8px;
+  border-top: 1px solid var(--hair-2);
+}
+.remembered-approval.is-revoked {
+  opacity: 0.7;
+}
+.remembered-approval-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  min-width: 0;
+}
+.remembered-approval-head strong {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.remembered-approval-head > :not(strong) {
+  flex: 0 0 auto;
+}
