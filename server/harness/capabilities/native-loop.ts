@@ -115,19 +115,21 @@ const READ_OUTPUT = z.union([
  * is about to be sent to that provider. A refusal is data the model sees, not a
  * crash: the observation records it.
  */
-async function readFor(store: Store, projectId: string, route: string, input: string): Promise<Json> {
+async function readFor(store: Store, projectId: string, routes: string | readonly string[], input: string): Promise<Json> {
   let path: string;
   try {
     path = relativeName(input);
   } catch (error) {
     return { path: input, refused: error instanceof Error ? error.message : 'That is not a project path.' };
   }
-  if (isCloudRoute(route))
-    try {
-      requireCloudSharing(store.state(projectId), route, [path]);
-    } catch {
-      return { path, refused: `This file is not shared with ${route}, so it was not read.` };
-    }
+  // Every cloud route the text can reach must be granted it (a delegate's answer goes to its parent's).
+  for (const route of typeof routes === 'string' ? [routes] : routes)
+    if (isCloudRoute(route))
+      try {
+        requireCloudSharing(store.state(projectId), route, [path]);
+      } catch {
+        return { path, refused: `This file is not shared with ${route}, so it was not read.` };
+      }
   let text: string | null;
   try {
     text = await store.current(projectId, path);
@@ -145,14 +147,15 @@ async function readFor(store: Store, projectId: string, route: string, input: st
   };
 }
 
-async function listFor(store: Store, projectId: string, route: string): Promise<Json> {
+async function listFor(store: Store, projectId: string, routes: string | readonly string[]): Promise<Json> {
   const names = (await store.listDocuments(projectId)).map((document) => document.path);
-  const shared = isCloudRoute(route) ? new Set(cloudSharing(store.state(projectId)).documents) : null;
+  const cloud = (typeof routes === 'string' ? [routes] : routes).find(isCloudRoute);
+  const shared = cloud ? new Set(cloudSharing(store.state(projectId)).documents) : null;
   const files = names.filter((name) => !shared || shared.has(name));
   return {
     files: files.slice(0, LIST_MAX),
     ...(files.length > LIST_MAX ? { more: files.length - LIST_MAX } : {}),
-    ...(shared ? { note: `Only files shared with ${route} are listed.` } : {}),
+    ...(shared ? { note: `Only files shared with ${cloud} are listed.` } : {}),
   };
 }
 
@@ -256,8 +259,11 @@ export function loopBindings(store: Store): LoopToolBinding[] {
   ];
 }
 
-/** The delegate's own registry: the same readers, bound to the child's project and route. */
-function delegateRegistry(store: Store, projectId: string, route: string): ToolRegistry {
+/**
+ * The delegate's own registry: the same readers, bound to the child's project, and to both the
+ * child's route and the parent's, because the child's answer is sent on to the parent's route.
+ */
+function delegateRegistry(store: Store, projectId: string, route: readonly string[]): ToolRegistry {
   const registry = new ToolRegistry();
   const read = {
     version: 'v1',
@@ -529,7 +535,7 @@ export function createLoopProcedure(deps: { store: Store; runs: RunService; tool
         } catch (error) {
           if (!(error instanceof HarnessError) || error.code !== 'unknown_run') throw error;
         }
-        const registry = delegateRegistry(store, request.parent.projectId, target.route);
+        const registry = delegateRegistry(store, request.parent.projectId, [target.route, loopInput(request.parent).route]);
         if (!child) {
           // The child's route is admitted in its own right, fresh, before it starts.
           let admitted: { model: string | null; accountRoute: string | null };
