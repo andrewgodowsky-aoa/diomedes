@@ -3,7 +3,7 @@
   "kind": "diomedes-capability-record",
   "appVersion": "0.1.9",
   "generatedFrom": {
-    "commit": "7e14fdf07bb9b28f8af4458685434d5cf3634c33",
+    "commit": "cfcf96e376475b19a8bbe31b55d64f3ee7c5bc6e",
     "note": "The commit checked out when this file was written. The commit that carries the file is its child."
   },
   "states": {
