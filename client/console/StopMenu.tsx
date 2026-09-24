@@ -164,8 +164,12 @@ interface RunControlsProps {
   onError?(error: Error): void;
 }
 
-const CONFIRM: Record<'resume' | 'retry', (route: string) => string> = {
-  resume: (route) => `Continues this run on ${route} from where it stopped.`,
+const CONFIRM: Record<'resume' | 'retry', (route: string, support: string | null) => string> = {
+  // A resume the route cannot continue natively is a fresh start, and it is named as one (H02).
+  resume: (route, support) =>
+    support === 'host'
+      ? `Sends the same request to ${route} in a new thread; ${route} cannot continue this one.`
+      : `Continues this run on ${route} from where it stopped.`,
   retry: (route) => `Sends the same request to ${route} again, as a new attempt.`,
 };
 
@@ -266,7 +270,9 @@ export function RunControls({
       </span>
       {confirming && (
         <span className="run-control-confirm" role="group" aria-label={`Confirm ${confirming}`}>
-          <span className="caption">{CONFIRM[confirming](routeName)}</span>{' '}
+          <span className="caption">
+            {CONFIRM[confirming](routeName, profile.controls[confirming].support)}
+          </span>{' '}
           <button
             type="button"
             disabled={disabled}
@@ -332,6 +338,9 @@ export function ControlReceiptLine({
         <b>{CONTROL_LABELS[receipt.control]}</b>{' '}
         <span className="lc">{OUTCOME_WORDS[receipt.outcome]}</span>
         {by && <span className="lc"> · by {by}</span>}
+        {receipt.performedBy?.kind === 'engine' && receipt.performedBy.model && (
+          <span className="mono"> · {receipt.performedBy.model}</span>
+        )}
         <span className="mono"> · {new Date(receipt.requestedAt).toTimeString().slice(0, 5)}</span>
       </span>
       <span className="control-receipt-detail">{receipt.detail}</span>

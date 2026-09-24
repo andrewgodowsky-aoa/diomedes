@@ -261,7 +261,13 @@ export type ControlRefusalCode = (typeof CONTROL_REFUSALS)[number];
  */
 export type ControlPerformer =
   | { readonly kind: 'diomedes' }
-  | { readonly kind: 'engine'; readonly engine: string; readonly version: string };
+  | {
+      readonly kind: 'engine';
+      readonly engine: string;
+      readonly version: string;
+      /** The model the engine itself reported for this action, when it reported one (H02). */
+      readonly model?: string | null;
+    };
 
 /** The link between a run and the one it continues, retries or forks from. */
 export interface ControlLineage {
@@ -313,6 +319,8 @@ export interface ControlReceipt {
     readonly stop?: StopReceipt;
     readonly taskId?: string;
     readonly threadId?: string;
+    /** The engine's own thread a native resume continued or a native fork made (H02). */
+    readonly nativeThreadId?: string;
   };
   readonly lineage: ControlLineage | null;
   /** Effects that may have happened and are not confirmed. A retry refused for them names them. */

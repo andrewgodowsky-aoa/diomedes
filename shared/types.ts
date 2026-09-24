@@ -338,6 +338,8 @@ export interface Session {
   receipt?: WorkReceipt;
   /** What this run was asked to do, kept so Resume and Retry ask for the same thing (H08). */
   inputs?: import('./work-control.js').WorkInputs;
+  /** The Codex app-server thread this run used, recorded before its turn was sent (H02). */
+  nativeThread?: import('./codex-thread.js').NativeThreadRecord;
   state: 'queued' | 'working' | 'waiting' | 'done' | 'stopped' | 'failed';
   startedAt: string;
   endedAt: string | null;

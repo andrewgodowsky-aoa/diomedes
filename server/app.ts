@@ -74,9 +74,13 @@ import { ChangeReviewService } from './change-review/service.js';
 import {
   askCodex,
   closeWarmCodex,
+  forkCodexThread,
   getIntegrationStatuses,
+  steerCodex,
+  type CodexIntegration,
   type NativeTeamOptions,
 } from './integrations.js';
+import { CodexControls } from './codex-controls.js';
 import { MODES, modeOf } from './modes.js';
 import { fakeCodexSnapshot, usageService } from './usage.js';
 import { engineCatalog, isKnownChoice } from './models.js';
@@ -240,6 +244,11 @@ interface AppOptions {
   port?: number;
   clientPort?: number;
   nativeGenerator?: NativeGenerator;
+  /**
+   * The Codex entry points Work runs and their controls use (H02). Omitted means
+   * the app's own adapter; tests pass one over a fixture app-server.
+   */
+  codexIntegration?: CodexIntegration;
   /**
    * Reviewer route for `Approve for me`. Omitted means no reviewer exists and
    * the option cannot be confirmed. Tests and packaged smokes inject a
@@ -761,6 +770,16 @@ export async function createApp(options: AppOptions) {
         }
       : null;
   };
+  // H02: Codex Work runs keep, resume and fork their app-server thread through this.
+  const codexControls = new CodexControls(
+    store,
+    options.codexIntegration ?? {
+      askCodex,
+      steerCodex,
+      forkCodexThread,
+      closeWarm: closeWarmCodex,
+    },
+  );
   const nativeWork = new NativeWorkService(
     store,
     options.nativeGenerator ??
@@ -817,7 +836,7 @@ export async function createApp(options: AppOptions) {
           });
         }
         if (!isExternalEngine(input.engine))
-          return askCodex({ ...input, ...(team ? { team, onTeamToolCall } : {}) });
+          return codexControls.ask({ ...input, ...(team ? { team, onTeamToolCall } : {}) });
         if (!input.projectId || !input.threadId || !input.requestId || !input.model)
           throw new ApiError(409, 'Select a model and thread before requesting work.');
         const accountRoute = input.accountRoute;
@@ -2342,12 +2361,17 @@ export async function createApp(options: AppOptions) {
         ).model ?? null
       );
     },
-    contractFor: (projectId, workRoute) =>
+    contractFor: (projectId, workRoute, session) =>
       workRoute === 'sample' && controlFixtureProjects.has(projectId)
         ? CONTROL_FIXTURE_CONTRACT
-        : defaultWorkContract(workRoute),
+        : workRoute === 'codex'
+          ? codexControls.contract(session)
+          : defaultWorkContract(workRoute),
   });
   durableControls.registerDriver(CONTROL_FIXTURE_ROUTE, controlFixtureDriver(work));
+  // H02: the Codex route's steer, resume and fork, offered only where the Codex that
+  // served a run advertised them (`codexControls.contract`).
+  durableControls.registerDriver('codex', codexControls.driver());
   /**
    * The one trigger. A session reaching a terminal state and a task becoming
    * done both end in a durable write, and `persist` announces that write, so
@@ -5304,6 +5328,7 @@ export async function createApp(options: AppOptions) {
     await nativeWork.close();
     // The ChatGPT app-server kept between requests goes with the service.
     await closeWarmCodex();
+    if (options.codexIntegration) await options.codexIntegration.closeWarm();
   };
   // Last, once every route and service exists: a claim a restart interrupted is settled or
   // replayed through `admitWork` here, before the first request is served.

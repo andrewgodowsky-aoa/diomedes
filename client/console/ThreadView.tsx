@@ -239,7 +239,10 @@ export function ThreadView({
   const profiles = useControlProfiles(
     projectId,
     task?.id,
-    ordered.map((session) => `${session.id}:${session.state}`).join(','),
+    // A Codex run's thread record changes what its route offers (H02), so it is part of the key.
+    ordered
+      .map((session) => `${session.id}:${session.state}:${session.nativeThread?.id ?? ''}`)
+      .join(','),
   );
 
   const savedModel =

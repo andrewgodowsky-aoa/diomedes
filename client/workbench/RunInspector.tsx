@@ -176,6 +176,23 @@ function SessionInspector({
                 </dd>
               </>
             )}
+            {session.nativeThread && (
+              <>
+                <dt>Codex thread</dt>
+                <dd>
+                  <span className="run-inspector-code">{session.nativeThread.id}</span>
+                  {session.nativeThread.origin === 'resumed'
+                    ? ' · resumed'
+                    : session.nativeThread.origin === 'forked'
+                      ? ' · a fork'
+                      : session.nativeThread.origin === 'restarted-fresh'
+                        ? ' · new, resume not possible'
+                        : session.nativeThread.kept
+                          ? ' · kept for resume'
+                          : ' · not kept'}
+                </dd>
+              </>
+            )}
             <dt>Session</dt>
             <dd className="run-inspector-code">{session.id}</dd>
             {session.receipt && (
