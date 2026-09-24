@@ -1,5 +1,11 @@
 import type { StepIntent } from './harness.js';
-import type { ReviewerDecision, ScopeGrantRecord, ScopedAuthorization } from './permissions.js';
+import type {
+  RememberedApprovals,
+  RememberedAuthorization,
+  ReviewerDecision,
+  ScopeGrantRecord,
+  ScopedAuthorization,
+} from './permissions.js';
 import type { AgentResolution } from './agents.js';
 import type { OriginSnapshot } from './attribution.js';
 import type { WorkspaceRef } from './workspaces.js';
@@ -204,7 +210,7 @@ export interface TaskCreationReceipt {
 export interface Need {
   origin?: OriginSnapshot;
   /** Versioned delegated decision; mutually exclusive with exact approvalReceipt. */
-  authorization?: ScopedAuthorization;
+  authorization?: ScopedAuthorization | RememberedAuthorization;
   /** Host policy explanation when an existing task scope did not cover this proposal. */
   authorizationBoundary?: string;
   id: string;
@@ -369,7 +375,7 @@ export interface FileRecord {
 }
 export interface HistoryEntry {
   origin?: OriginSnapshot;
-  authorization?: ScopedAuthorization;
+  authorization?: ScopedAuthorization | RememberedAuthorization;
   /** Mirrors the reviewer decision this event records, for audit without the Need. */
   review?: ReviewerDecision;
   id: string;
@@ -565,6 +571,8 @@ export interface ProjectState {
   cloudSharing?: CloudSharingPolicy;
   /** Absent in v1 projects. Persisted grants alone never restore active authority. */
   scopeGrants?: ScopeGrantRecord[];
+  /** Remembered approvals (D5). Absent until the first exact approval that could be remembered. */
+  rememberedApprovals?: RememberedApprovals;
   project: Project;
   documents: DocumentInfo[];
   tasks: Task[];

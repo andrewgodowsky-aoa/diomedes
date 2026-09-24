@@ -1011,7 +1011,7 @@ export async function createApp(options: AppOptions) {
       skipped,
     });
   });
-  mountPermissionRoutes(app, store, nativeWork);
+  mountPermissionRoutes(app, store, nativeWork, harness.bridge);
   mountWorkspaceRoutes(app, store, workspaces, configuration, briefs);
   mountThemeRoutes(app, store, themes, customization);
   mountCustomizationBenefitRoutes(app, store, workspaces, customization, customizationBenefit);

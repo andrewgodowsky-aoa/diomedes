@@ -18,6 +18,8 @@ import {
   type CodexRunInput,
 } from './codex-engine.js';
 import type { WorkAdmission } from '../work-admission.js';
+import { patternForStep, type ApprovalCandidate } from '../trust/remembered-approvals.js';
+import { rememberedAttribution } from '../../shared/remembered-approvals.js';
 
 export const localHarnessPrincipal = (projectId: string): HarnessPrincipal => ({
   id: 'local-client',
@@ -249,6 +251,7 @@ export class HarnessBridge {
       task.needId = null;
     }
     session.needId = null;
+    let covered: Need | undefined;
     if (run.state === 'waiting' && view.waiting) {
       const step = run.steps.find((item) => item.intent.stepId === view.waiting!.stepId)!;
       let need = state.needs.find(
@@ -283,6 +286,18 @@ export class HarnessBridge {
         need.approval = identifyHarnessApproval(run.projectId, need, sources);
         harnessWrites(run.projectId, need);
         state.needs.push(need);
+        // A remembered approval (D5) may cover this exact step. The Need is
+        // still created and kept: it is the record the grant is evidenced on.
+        const candidate = await this.candidate(run, need);
+        const grant = candidate && this.store.scopeGrants.remembered.cover(run.projectId, need, candidate);
+        if (grant) {
+          covered = need;
+          session.log.push({
+            time: need.decidedAt!,
+            level: 'plain',
+            sentence: `${rememberedAttribution({ acceptedBy: grant.grant.acceptedBy, acceptedAt: grant.grant.createdAt })} ${grant.grant.what}.`,
+          });
+        }
       }
       session.needId = need.id;
       if (currentTask) task.needId = need.id;
@@ -309,6 +324,76 @@ export class HarnessBridge {
           conflicts: [],
         };
     await this.store.persist(state);
+    if (covered) {
+      const need = covered;
+      // Queued behind this mirror on the Store lock, exactly as a person's
+      // answer is: the decision is durable before the run is told.
+      void this.store.locked(() => this.decide(need, run)).catch((error: unknown) => {
+        console.error('A remembered approval could not be applied:', this.redact(String(error)));
+      });
+    }
+  }
+
+  /**
+   * What the host knows about a waiting step now, for remembered approvals:
+   * its exact pattern and the principal a decision would be made under. Null
+   * when the step names its destination in a shape that cannot be read.
+   */
+  private async candidate(run: HarnessRun, need: Need): Promise<ApprovalCandidate | null> {
+    if (!need.harness) return null;
+    const session = this.store
+      .state(run.projectId)
+      .sessions.find((item) => item.id === need.sessionId);
+    if (!session) return null;
+    const codex = run.capabilityId === CODEX_REPORT.id;
+    const found = patternForStep({
+      projectId: run.projectId,
+      procedure: run.capabilityId,
+      intent: need.harness.intent,
+      engine: session.engine.name,
+      accountRoute: codex ? String(this.store.settings.services?.codexAccountRoute ?? 'codex:chatgpt') : null,
+      procedureLabel: codex ? CODEX_REPORT.label : FORMAT_REPORT.label,
+    });
+    if (!found) return null;
+    let authority: ApprovalCandidate['authority'] = null;
+    try {
+      const principal = codex
+        ? (await this.codex!.authorityForRun(run, 'approval.decide')).principal
+        : localHarnessPrincipal(run.projectId);
+      // The run itself must still hold the permission, as well as whoever decides.
+      authority = {
+        principalId: principal.id,
+        identityGeneration: principal.identityGeneration,
+        capabilities: principal.capabilities.filter((item) =>
+          run.principal.capabilities.includes(item),
+        ),
+      };
+    } catch (error) {
+      if (!(error instanceof HarnessAuthorityUnavailable)) throw error;
+    }
+    return { ...found, authority };
+  }
+
+  /**
+   * "Go ahead and remember in this project" (D5, route 1). The exact approval
+   * was given first through `resolve`; this remembers its pattern. Caller owns
+   * Store.locked.
+   */
+  async remember(projectId: string, needId: string) {
+    const need = this.store.state(projectId).needs.find((item) => item.id === needId);
+    if (!need?.harness) throw new ApiError(404, 'This approval was not found.');
+    const run = await this.runs.get(need.harness.runId);
+    if (run.projectId !== projectId) throw new ApiError(404, 'This approval was not found.');
+    const candidate = await this.candidate(run, need);
+    if (!candidate)
+      throw new ApiError(
+        409,
+        'Diomedes cannot tell this action is safe to remember, so it always asks.',
+        { code: 'always_asks' },
+      );
+    const record = this.store.scopeGrants.remembered.rememberFromNeed(projectId, need, candidate);
+    await this.store.persist(this.store.state(projectId));
+    return record;
   }
 
   private launch(runId: string, prompt: string) {
@@ -414,13 +499,39 @@ export class HarnessBridge {
     )
       throw new ApiError(409, 'This request no longer matches the waiting run.');
     this.store.recordApprovalDecision(projectId, need, admission);
+    // Count this exact answer toward a learned offer (D5). Counting never
+    // grants anything; at most it makes one offer the person answers.
+    const candidate = await this.candidate(run, need);
+    if (candidate)
+      this.store.scopeGrants.remembered.noteDecision(projectId, candidate, resolution, need);
     await this.store.persist(this.store.state(projectId));
     await this.decide(need, run);
     return structuredClone(need);
   }
   private async decide(need: Need, run: HarnessRun) {
-    if (!need.harness || !need.approvalReceipt || !need.approval)
+    const remembered = need.authorization?.kind === 'remembered-approval' ? need.authorization : null;
+    const decision = need.approvalReceipt?.decision ?? (remembered ? 'go-ahead' : null);
+    if (!need.harness || !decision || !need.approval)
       throw new Error('A durable harness decision is required.');
+    if (remembered) {
+      try {
+        // Revoked since it covered this Need: nothing runs under it.
+        this.store.scopeGrants.remembered.assertCurrent(run.projectId, need);
+      } catch (error) {
+        if (!(error instanceof ApiError) || error.details?.code !== 'scope_not_authorized') throw error;
+        const state = this.store.state(run.projectId);
+        need.execution = {
+          state: 'not-applied',
+          eventId: null,
+          completedAt: now(),
+          reason: 'The remembered approval was revoked before this ran. Start the work again to be asked.',
+          conflicts: [],
+        };
+        await this.store.persist(state);
+        await this.runs.cancel(run.id, 'The remembered approval was revoked.', localHarnessPrincipal(run.projectId));
+        return;
+      }
+    }
     const ttlMs = Date.parse(need.approval.expiresAt) - Date.now();
     if (ttlMs <= 0)
       throw new ApiError(409, 'This approval window expired. The run is still waiting.', {
@@ -431,10 +542,11 @@ export class HarnessBridge {
         {
           runId: run.id,
           stepId: need.harness.intent.stepId,
-          decision: need.approvalReceipt.decision === 'go-ahead' ? 'approved' : 'denied',
+          decision: decision === 'go-ahead' ? 'approved' : 'denied',
           ttlMs,
           expiresAt: need.approval.expiresAt,
-          decidedBy: 'local-client',
+          // Truthful in the run record too: not a fresh click.
+          decidedBy: remembered ? `remembered-approval:${remembered.grantId}` : 'local-client',
         },
         run.capabilityId === CODEX_REPORT.id
           ? (await this.codex!.authorityForRun(run, 'approval.decide')).principal
@@ -449,7 +561,7 @@ export class HarnessBridge {
         );
       throw error;
     }
-    if (need.approvalReceipt.decision === 'go-ahead') {
+    if (decision === 'go-ahead') {
       await this.runs.claim(
         run.id,
         this.owner,
@@ -574,7 +686,7 @@ export class HarnessBridge {
           .needs.find(
             (item) =>
               item.harness?.runId === run.id &&
-              item.approvalReceipt &&
+              (item.approvalReceipt || item.authorization?.kind === 'remembered-approval') &&
               run.steps.some(
                 (step) =>
                   step.state === 'waiting_approval' &&
