@@ -92,6 +92,7 @@ export default defineConfig({
     'change-review-ui.spec.ts',
     'reviewer-ui.spec.ts',
     'agent-ui.spec.ts',
+    'agent-profiles-ui.spec.ts',
     'diomedes-home.spec.ts',
     'home-luna.spec.ts',
     'home-history-sharing.spec.ts',

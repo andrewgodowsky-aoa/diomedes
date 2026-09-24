@@ -1148,6 +1148,11 @@ export function Shell({
           };
     void setRequested(selected, next as Conversation['requested'], route);
   }
+  /** An exact-model profile (H09) replaces the thread's own Agent and model pick. */
+  function pickProfile(profileId: string) {
+    if (!selected) return;
+    void setRequested(selected, { model: null, effort: null, profile: profileId }, route);
+  }
   /**
    * One thread's route and model, changed through the one guard every caller
    * passes. The refusal used to live in the Picker's own menu, which the
@@ -1850,6 +1855,7 @@ export function Shell({
               live={selectedLive}
               busy={busy}
               onPick={pickAgent}
+              onPickProfile={pickProfile}
             />
           )}
           {selected && (

@@ -547,7 +547,13 @@ export interface Conversation {
    * either changes who works and with what intelligence, never what is allowed.
    * `agent` may be `auto`, which resolves per run and is recorded as automatic.
    */
-  requested?: { model: string | null; effort: string | null; agent?: string | null } | null;
+  requested?: {
+    model: string | null;
+    effort: string | null;
+    agent?: string | null;
+    /** An Agent profile id (H09): an exact engine, model and effort chosen as one. */
+    profile?: string | null;
+  } | null;
   /**
    * The thread's WorkStyle (`shared/work-style.ts`), or absent/null to follow
    * the Settings default (`services.workStyle`). It only chooses which offered
