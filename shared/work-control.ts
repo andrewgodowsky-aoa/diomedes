@@ -7,8 +7,10 @@
  * stays that way. A follow-up is different: it has its own command identity,
  * its own route and source snapshot, a visible place in a queue and a visible
  * outcome, and it starts new work only through the ordinary admission path
- * with the grant the task already has. Nothing here is a steering channel into
- * a running provider turn, because no supported route has proven one.
+ * with the grant the task already has. Nothing in this part is a steering
+ * channel into a running provider turn. Steer, in revision 2026-09-24.1 below,
+ * is offered only where a route declares one natively and the host has wired it
+ * to Work runs; no provider route does yet.
  *
  * Stop scopes:
  * - `generation` interrupts the current provider request. The session stays
