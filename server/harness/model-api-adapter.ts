@@ -283,7 +283,13 @@ export function createModelApiAdapter(spec: ModelApiAdapterSpec): ModelAdapter &
       return {
         response,
         transcript,
-        usage: { inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens },
+        usage: {
+          inputTokens: result.usage.inputTokens,
+          outputTokens: result.usage.outputTokens,
+          // The parts of the input the provider read from or wrote to its prompt cache (H18).
+          cacheReadTokens: result.usage.cacheReadTokens,
+          cacheWriteTokens: result.usage.cacheWriteTokens,
+        },
       };
     },
   };
