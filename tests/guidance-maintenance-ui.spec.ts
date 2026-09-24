@@ -10,6 +10,7 @@ import type { NativeGenerator } from '../server/native-work';
 import type { Conversation, Project, ProjectState, Task } from '../shared/types';
 import type { GuidanceRevision } from '../shared/guidance';
 import { reopenLastProject } from './fixtures/landing';
+import { AGENT_NAME } from '../shared/agent-name';
 
 // H10 in the built Console against the real host, Store and routes: three runs
 // rewrite the kitchen's summary and each time a person undoes it. The
@@ -226,7 +227,7 @@ test('propose, review the diff, approve, and roll back in the instructions inspe
   await expect(revisions.locator('.instructions-run-head')).toHaveText('revisions · chain intact · 1');
   const applied = revisions.locator('.guidance-revision').first();
   await expect(applied.locator('.instructions-name')).toHaveText('Applied · AGENTS.md');
-  await expect(applied.locator('p')).toHaveText('Proposed by Diomedes · approved by you');
+  await expect(applied.locator('p')).toHaveText(`Proposed by ${AGENT_NAME} · approved by you`);
   await expect(proposals).toHaveCount(0);
   const afterApprove = await state();
   const record = afterApprove.instructionFiles!.find((item) => item.path === 'AGENTS.md')!;

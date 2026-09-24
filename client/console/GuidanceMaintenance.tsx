@@ -9,6 +9,7 @@ import {
   type GuidanceRevision,
 } from '../../shared/guidance';
 import { time } from '../components';
+import { AGENT_NAME } from '../../shared/agent-name';
 import { DiffView } from './DiffView';
 import './guidance.css';
 
@@ -19,7 +20,7 @@ import './guidance.css';
  * A proposal is read, never acted on here without a person: its line, its
  * evidence, the replayed evaluation in its own words, and the P06 diff of the
  * whole file, with Approve and Decline under the diff. A revision row names
- * who made it truthfully — Diomedes proposed and you approved, or you — and
+ * who made it truthfully — the application proposed and you approved, or you — and
  * offers one step back to the text before it. The chain check is shown as the
  * server reports it; a broken chain is said, and nothing is offered on it.
  */
@@ -32,7 +33,7 @@ interface GuidanceView {
 const sha12 = (sha: string | null) => (sha ? sha.slice(0, 12) : 'none');
 
 function authorLine(revision: GuidanceRevision): string {
-  return revision.author.kind === 'proposal' ? 'Proposed by Diomedes · approved by you' : 'You';
+  return revision.author.kind === 'proposal' ? `Proposed by ${AGENT_NAME} · approved by you` : 'You';
 }
 
 export function GuidanceMaintenance({ projectId }: { projectId: string }) {
