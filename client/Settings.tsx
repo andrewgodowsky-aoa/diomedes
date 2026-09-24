@@ -18,6 +18,7 @@ import { AppUpdates, useInstalledVersion } from './AppUpdates';
 import { freshnessLine, planLine, shouldShowEmptyDetail } from './usage-presentation';
 import { AIConnections } from './AISetup';
 import { ReadConnectors } from './ReadConnectors';
+import { AgentProfiles } from './console/AgentProfiles';
 import { isExternalEngine } from '../shared/engines';
 import { SCHEMES, schemeId } from './console/schemes';
 import { readCustomizationStatus } from './console/design-center/entitlement-api';
@@ -224,6 +225,7 @@ export function SettingsPage({
     'About',
     'Design Center',
     'Engines',
+    'Agent profiles',
     'App updates',
     'Rules',
     'Developer',
@@ -248,6 +250,7 @@ export function SettingsPage({
         </header>
         <div className="workbook-layout">
           <div className="reading">
+            {section === 'Agent profiles' && <AgentProfiles />}
             {section === 'Interface detail' && (
               <>
                 <p className="prose">
