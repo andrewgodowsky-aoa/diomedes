@@ -526,7 +526,7 @@ export class ClaudeNativeSession {
       // An interrupt already awaiting its acknowledgment is the same request; it is not sent twice.
       if (this.dispatched && !this.interruptPending) void this.interrupt().catch(() => undefined);
       const finished = this.dispatched || this.interruptPending ? await Promise.race([ended, expired]) : false;
-      if (finished && !this.forced && this.saved.state === 'idle') return 'interrupted';
+      if (finished && !this.forced && this.checkpoint.state === 'idle') return 'interrupted';
     } finally {
       clearTimeout(timer);
     }

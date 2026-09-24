@@ -10,7 +10,7 @@ import type {
 } from '../harness/claude-session-run.js';
 import { opencodeSessionRunId } from '../harness/opencode-session-run.js';
 import { routeContractFor } from '../harness/route-contract.js';
-import { sessionControls } from '../../shared/session-controls.js';
+import { sessionControls, type ThreadSessionView } from '../../shared/session-controls.js';
 import type { TextRequest } from './contract.js';
 import { EngineError } from './process.js';
 import type { EngineService } from './service.js';
@@ -63,6 +63,8 @@ export function mountClaudeSessionRoutes(
       driver: () => engines.nativeSessions,
       runId: claudeSessionRunId,
       turn: (mode, runId, input, sourceRunId) => engines.claudeSession(mode, runId, input, sourceRunId),
+      // H03: its status carries the contract's controls too, and its steer is the host queue.
+      routeId: 'claude-code-session',
     },
     dependencies,
   );
@@ -203,4 +205,71 @@ function mountNativeSessionRoutes(
         );
       }),
     );
+}
+
+/**
+ * H03: what a Console thread may offer for its open native conversation, read from the route
+ * contract (the H04 `sessionControls` pattern) and from the conversation's durable record, and
+ * nothing else. A thread whose open lineage is not a native session gets no controls.
+ */
+export interface ThreadSessionRouteDependencies {
+  authorize(req: Request): Promise<void>;
+  /** The run of the thread's open native lineage for `mode` (the newest when absent), or null. */
+  lineage(projectId: string, threadId: string, mode?: 'ask' | 'plan' | 'auto'): Promise<string | null>;
+  drivers: {
+    claude(): ClaudeSessionRuns<SessionCheckpointFacts> | undefined;
+    opencode(): ClaudeSessionRuns<SessionCheckpointFacts> | undefined;
+  };
+}
+export function mountThreadSessionRoute(app: Express, dependencies: ThreadSessionRouteDependencies) {
+  app.get('/api/projects/:id/threads/:threadId/native-session', async (req, res, next) => {
+    try {
+      await dependencies.authorize(req);
+      const mode = z.enum(['ask', 'plan', 'auto']).optional().safeParse(req.query.mode);
+      if (!mode.success) throw new ApiError(400, 'Provide a mode of ask, plan or auto, or none.');
+      const projectId = String(req.params.id);
+      const runId = await dependencies.lineage(projectId, String(req.params.threadId), mode.data);
+      const native = runId?.startsWith('claude-')
+        ? { driver: dependencies.drivers.claude(), routeId: 'claude-code-session' }
+        : runId?.startsWith('opencode-')
+          ? { driver: dependencies.drivers.opencode(), routeId: 'opencode-session' }
+          : null;
+      const empty: ThreadSessionView = {
+        runId: null,
+        controls: null,
+        busy: false,
+        continuity: null,
+        requestedModel: null,
+        reportedModel: null,
+        queued: [],
+      };
+      if (!runId || !native?.driver) return res.json(empty);
+      let status;
+      try {
+        status = await native.driver.status(projectId, runId);
+      } catch (error) {
+        // A lineage opened for a message that has not reached its run yet: nothing to control.
+        if (error instanceof HarnessError && error.code === 'unknown_run')
+          return res.json({ ...empty, controls: sessionControls(routeContractFor(native.routeId)) });
+        throw error;
+      }
+      const view: ThreadSessionView = {
+        runId,
+        controls: sessionControls(routeContractFor(native.routeId)),
+        busy: status.busy,
+        continuity: status.continuity,
+        requestedModel: status.requestedModel,
+        reportedModel: status.reportedModel,
+        queued: (status.steering ?? []).map((ack) => ({
+          commandId: ack.commandId,
+          state: ack.state,
+          detail: ack.detail,
+          at: ack.at,
+        })),
+      };
+      res.json(view);
+    } catch (error) {
+      next(error);
+    }
+  });
 }

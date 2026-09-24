@@ -140,6 +140,7 @@ import { EngineService, HOST_TEST_PROJECT } from './engines/service.js';
 import {
   mountClaudeSessionRoutes,
   mountOpenCodeSessionRoutes,
+  mountThreadSessionRoute,
   type ClaudeSessionRouteDependencies,
 } from './engines/claude-session-routes.js';
 import { mountJevAdvisorRoutes } from './jev-advisor-routes.js';
@@ -3230,6 +3231,25 @@ export async function createApp(options: AppOptions) {
     },
   });
   mountClaudeSessionRoutes(app, engines, nativeSessionDependencies('claude-code'));
+  // H03: the Console's read of a thread's open native conversation: its contract controls,
+  // whether it can resume, its reported model and its steering queue.
+  mountThreadSessionRoute(app, {
+    authorize: async (req) => {
+      store.state(String(req.params.id));
+    },
+    lineage: async (projectId, threadId, mode) => {
+      const thread = store.state(projectId).conversations.find((item) => item.id === threadId);
+      if (!thread) throw new ApiError(404, 'This thread was not found.');
+      const open = (thread.lineages ?? [])
+        .filter((lineage) => !lineage.retired && (!mode || lineage.mode === mode))
+        .sort((a, b) => b.generation - a.generation)[0];
+      return open?.runId ?? null;
+    },
+    drivers: {
+      claude: () => engines.nativeSessions as never,
+      opencode: () => engines.opencodeSessions as never,
+    },
+  });
   mountOpenCodeSessionRoutes(app, engines, nativeSessionDependencies('opencode'));
   /**
    * The digest the task route would give this message's own task command. A message too long
