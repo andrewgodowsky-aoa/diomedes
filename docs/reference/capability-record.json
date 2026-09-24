@@ -3,7 +3,7 @@
   "kind": "diomedes-capability-record",
   "appVersion": "0.1.11",
   "generatedFrom": {
-    "commit": "f01d74e14faa6cf83a30584727cd16f3bd8dd54a",
+    "commit": "95ea25904c95fad11de64c2c2d057c2a2c3ac18e",
     "note": "The commit checked out when this file was written. The commit that carries the file is its child."
   },
   "states": {
@@ -12,19 +12,19 @@
     "cleanMachine": "That exact build was installed and used on a machine other than the one that built it."
   },
   "release": {
-    "releaseId": "diomedes-0.1.10-windows-experimental-20260924-46891e4dacbc",
-    "appVersion": "0.1.10",
+    "releaseId": "diomedes-0.1.11-windows-experimental-20260924-a492c42a5513",
+    "appVersion": "0.1.11",
     "channel": "experimental",
-    "baseCommit": "46891e4dacbc38ef319d7f91c2b6363a161aa3fb",
-    "recordedAt": "2026-09-24T01:40:13.031Z",
-    "installerFilename": "Diomedes-Experimental-0.1.10-unsigned-setup.exe",
-    "installerSha256": "1802ce5d0dab3a960d549f16270f7e88a3ce0043e564710b3b6a4f196a2adca8",
+    "baseCommit": "a492c42a5513f1156262c457fbb43597d6d177cb",
+    "recordedAt": "2026-09-24T03:00:05.135Z",
+    "installerFilename": "Diomedes-Experimental-0.1.11-unsigned-setup.exe",
+    "installerSha256": "b6a0fa8f19591995469eee3da6d5c96c98ff2fac9a68b9b7295fb57fa4cb53d7",
     "signing": {
       "application": "NotSigned",
       "installer": "NotSigned"
     },
-    "evidence": "evidence/release-candidates/diomedes-0.1.10-windows-experimental-20260924-46891e4dacbc.json",
-    "appVersionMatchesSource": false,
+    "evidence": "evidence/release-candidates/diomedes-0.1.11-windows-experimental-20260924-a492c42a5513.json",
+    "appVersionMatchesSource": true,
     "note": "This evidence is build-level, not route-level. It records build identity, installer bytes, reviewed tool versions and test counts. It records no request through any adapter route, and it does not record whether this build was published."
   },
   "routes": [
@@ -39,8 +39,8 @@
       "states": {
         "source": "implemented",
         "packaged": {
-          "release": "diomedes-0.1.10-windows-experimental-20260924-46891e4dacbc",
-          "note": "The candidate record names this reviewed tool version. It does not record a request through this route, and the adapter in that build is at commit 46891e4dacbc38ef319d7f91c2b6363a161aa3fb."
+          "release": "diomedes-0.1.11-windows-experimental-20260924-a492c42a5513",
+          "note": "The candidate record names this reviewed tool version. It does not record a request through this route, and the adapter in that build is at commit a492c42a5513f1156262c457fbb43597d6d177cb."
         },
         "cleanMachine": null
       }
@@ -56,8 +56,8 @@
       "states": {
         "source": "implemented",
         "packaged": {
-          "release": "diomedes-0.1.10-windows-experimental-20260924-46891e4dacbc",
-          "note": "The candidate record names this reviewed tool version. It does not record a request through this route, and the adapter in that build is at commit 46891e4dacbc38ef319d7f91c2b6363a161aa3fb."
+          "release": "diomedes-0.1.11-windows-experimental-20260924-a492c42a5513",
+          "note": "The candidate record names this reviewed tool version. It does not record a request through this route, and the adapter in that build is at commit a492c42a5513f1156262c457fbb43597d6d177cb."
         },
         "cleanMachine": null
       }
@@ -73,8 +73,8 @@
       "states": {
         "source": "implemented",
         "packaged": {
-          "release": "diomedes-0.1.10-windows-experimental-20260924-46891e4dacbc",
-          "note": "The candidate record names this reviewed tool version. It does not record a request through this route, and the adapter in that build is at commit 46891e4dacbc38ef319d7f91c2b6363a161aa3fb."
+          "release": "diomedes-0.1.11-windows-experimental-20260924-a492c42a5513",
+          "note": "The candidate record names this reviewed tool version. It does not record a request through this route, and the adapter in that build is at commit a492c42a5513f1156262c457fbb43597d6d177cb."
         },
         "cleanMachine": null
       }
@@ -90,8 +90,8 @@
       "states": {
         "source": "implemented",
         "packaged": {
-          "release": "diomedes-0.1.10-windows-experimental-20260924-46891e4dacbc",
-          "note": "The candidate record names this reviewed tool version. It does not record a request through this route, and the adapter in that build is at commit 46891e4dacbc38ef319d7f91c2b6363a161aa3fb."
+          "release": "diomedes-0.1.11-windows-experimental-20260924-a492c42a5513",
+          "note": "The candidate record names this reviewed tool version. It does not record a request through this route, and the adapter in that build is at commit a492c42a5513f1156262c457fbb43597d6d177cb."
         },
         "cleanMachine": null
       }
@@ -107,8 +107,8 @@
       "states": {
         "source": "implemented",
         "packaged": {
-          "release": "diomedes-0.1.10-windows-experimental-20260924-46891e4dacbc",
-          "note": "The candidate record names this reviewed tool version. It does not record a request through this route, and the adapter in that build is at commit 46891e4dacbc38ef319d7f91c2b6363a161aa3fb."
+          "release": "diomedes-0.1.11-windows-experimental-20260924-a492c42a5513",
+          "note": "The candidate record names this reviewed tool version. It does not record a request through this route, and the adapter in that build is at commit a492c42a5513f1156262c457fbb43597d6d177cb."
         },
         "cleanMachine": null
       }
