@@ -121,11 +121,35 @@ export function contractChecks(contract: AdapterRouteContract): ConformanceCheck
       'native-session-run-backing', nativeRunBacked,
       'The opt-in Claude native profile must match the versioned RunService lifecycle integration; live provider acceptance is separate.',
     ));
+  // The kept OpenCode session (H04) is driven by the same RunService lifecycle.
+  // Its steering is the host's queue, never a claimed native channel.
+  const openCodeRunBacked =
+    contract.routeId === 'opencode-session' &&
+    contract.mode === 'external-session' &&
+    contract.engine.id === 'opencode' &&
+    contract.engine.version === '1.18.4' &&
+    contract.engine.protocolVersion === 'http+sse' &&
+    contract.testedWith === '1.18.4' &&
+    contract.authentication === 'native-sign-in' &&
+    contract.models.source === 'runtime-reported' &&
+    contract.streaming.transientPreview === 'text-delta' &&
+    contract.streaming.durableEvents === 'run-record' &&
+    (['start', 'follow-up', 'interrupt', 'resume', 'fork', 'close'] as const)
+      .every(command => contract.commands[command].support === 'native') &&
+    contract.commands.retry.support === 'host' &&
+    contract.commands.status.support === 'host' &&
+    contract.commands.steer.support === 'host' &&
+    contract.commands.reconcile.support === 'unsupported';
+  if (contract.routeId === 'opencode-session')
+    checks.push(check(
+      'native-session-run-backing', openCodeRunBacked,
+      'The opt-in OpenCode session profile must match the versioned RunService lifecycle integration; live provider acceptance is separate.',
+    ));
   checks.push(
     check(
       'streaming-matches-mode',
       contract.streaming.durableEvents === 'run-record'
-        ? RUN_DRIVEN_MODES.includes(contract.mode) || nativeRunBacked
+        ? RUN_DRIVEN_MODES.includes(contract.mode) || nativeRunBacked || openCodeRunBacked
         : contract.mode !== 'harness-agent',
       contract.mode === 'harness-agent'
         ? 'Harness routes persist through the run record.'

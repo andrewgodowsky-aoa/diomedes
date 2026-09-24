@@ -55,11 +55,15 @@ describe('route descriptors', () => {
     }
   });
 
-  it('every route starts and closes; only Harness and the integrated Claude session route fork', () => {
+  it('every route starts and closes; only Harness and the integrated Claude and OpenCode session routes fork', () => {
     for (const [routeId, contract] of Object.entries(ROUTE_CONTRACTS)) {
       expect(contract.commands.start.support, routeId).toBe('native');
       expect(['native', 'host'], `${routeId} close`).toContain(contract.commands.close.support);
-      if (contract.mode === 'harness-agent' || routeId === 'claude-code-session')
+      if (
+        contract.mode === 'harness-agent' ||
+        routeId === 'claude-code-session' ||
+        routeId === 'opencode-session'
+      )
         expect(contract.commands.fork.support, routeId).toBe('native');
       else expect(contract.commands.fork.support, routeId).toBe('unsupported');
     }
@@ -91,6 +95,48 @@ describe('route descriptors', () => {
       if (drift === 'model') contract.models.source = 'fixed';
       const failed = contractChecks(contract).filter(check => check.outcome === 'failed');
       expect(failed.map(check => check.id)).toContain(drift === 'route' ? 'streaming-matches-mode' : 'native-session-run-backing');
+    },
+  );
+});
+
+describe('the OpenCode session route descriptor (H04)', () => {
+  it('declares a kept session whose steering is the host queue, never a native channel', () => {
+    const contract = ROUTE_CONTRACTS['opencode-session'];
+    expect(contract).toMatchObject({
+      mode: 'external-session',
+      engine: { id: 'opencode', version: '1.18.4', protocolVersion: 'http+sse' },
+      streaming: { transientPreview: 'text-delta', durableEvents: 'run-record' },
+      models: { source: 'runtime-reported' },
+      commands: {
+        'follow-up': { support: 'native' },
+        steer: { support: 'host' },
+        interrupt: { support: 'native' },
+        resume: { support: 'native' },
+        fork: { support: 'native' },
+        reconcile: { support: 'unsupported' },
+      },
+    });
+    expect(contractChecks(contract).find((check) => check.id === 'native-session-run-backing')?.outcome).toBe('passed');
+    // The single-turn OpenCode route is unchanged by it.
+    expect(ROUTE_CONTRACTS.opencode.commands['follow-up'].support).toBe('unsupported');
+  });
+
+  it.each(['route', 'engine', 'version', 'protocol', 'mode', 'steer', 'resume', 'stream', 'auth', 'model'] as const)(
+    'does not extend native session backing across %s drift', (drift) => {
+      const contract = structuredClone(ROUTE_CONTRACTS['opencode-session']);
+      if (drift === 'route') contract.routeId = 'unproven-native-session';
+      if (drift === 'engine') contract.engine.id = 'other-engine';
+      if (drift === 'version') contract.engine.version = contract.testedWith = '1.18.5';
+      if (drift === 'protocol') contract.engine.protocolVersion = 'unknown';
+      if (drift === 'mode') contract.mode = 'single-turn-text';
+      // A claimed native steering channel is exactly what this route has not proven.
+      if (drift === 'steer') contract.commands.steer.support = 'native';
+      if (drift === 'resume') contract.commands.resume.support = 'host';
+      if (drift === 'stream') contract.streaming.durableEvents = 'host-record';
+      if (drift === 'auth') contract.authentication = 'host-credential';
+      if (drift === 'model') contract.models.source = 'fixed';
+      const failed = contractChecks(contract).filter((check) => check.outcome === 'failed');
+      expect(failed.map((check) => check.id)).toContain(drift === 'route' ? 'streaming-matches-mode' : 'native-session-run-backing');
     },
   );
 });
