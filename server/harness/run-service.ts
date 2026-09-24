@@ -110,11 +110,20 @@ export interface StepContext {
   saveNativeCheckpoint?: (checkpoint: NativeCheckpoint, signal?: AbortSignal) => Promise<void>;
 }
 export type StepHandler<T> = (context: StepContext) => Promise<T> | T;
+/**
+ * H16: what a hook may answer besides refusing (by throwing). A hold sends the
+ * step to the same approval gate an approval policy does, so it waits for a
+ * person's exact OK before its effect intent is written or its handler runs.
+ * A hook can hold and refuse; it can never admit what policy or approval would not.
+ */
+export type HarnessHookVerdict = void | undefined | { hold: { reason: string; refs: string[] } };
 export type HarnessHook = (context: {
   runId: string;
   step: StepIntent;
   principal: HarnessPrincipal;
-}) => Promise<void> | void;
+  /** H12: the typed tool's effect declaration, when the step carries one. */
+  effect?: { tool: string; effectClass: ToolEffectClass; targets: string[] };
+}) => Promise<HarnessHookVerdict> | HarnessHookVerdict;
 
 export interface StartInput {
   input?: Json;
@@ -720,8 +729,26 @@ export class RunService {
           : undefined,
       );
     await checkPolicy();
-    for (const hook of this.hooks)
-      await hook({ runId, step: copy(intent), principal: copy(principal) });
+    const holds: { reason: string; refs: string[] }[] = [];
+    for (const hook of this.hooks) {
+      const verdict = await hook({
+        runId,
+        step: copy(intent),
+        principal: copy(principal),
+        ...(definition.effectRecord
+          ? {
+              effect: {
+                tool: definition.effectRecord.tool,
+                effectClass: definition.effectRecord.effectClass,
+                targets: [...definition.effectRecord.targets],
+              },
+            }
+          : {}),
+      });
+      const hold = verdict && typeof verdict === 'object' ? verdict.hold : undefined;
+      if (hold && typeof hold.reason === 'string' && Array.isArray(hold.refs))
+        holds.push({ reason: hold.reason.slice(0, 400), refs: hold.refs.filter((ref) => typeof ref === 'string').slice(0, 16) });
+    }
     await checkPolicy();
 
     const start: StartOutcome = await this.serialize(runId, async () => {
@@ -778,7 +805,8 @@ export class RunService {
         : intent.permission
           ? `permission:${intent.permission}`
           : 'none';
-      if (intent.approval) {
+      // A hold (H16) waits at the same gate as an approval policy, bound to the same intent.
+      if (intent.approval || holds.length > 0) {
         const now = this.clock();
         const approval = run.approvals.find(
           (a) =>
@@ -791,6 +819,18 @@ export class RunService {
         if (!approval) {
           s.state = 'waiting_approval';
           run.state = 'waiting';
+          if (holds.length > 0)
+            this.note(
+              run,
+              'step.held',
+              {
+                intentHash: s.intentHash,
+                refs: [...new Set(holds.flatMap((hold) => hold.refs))],
+                reason: holds.map((hold) => hold.reason).join(' '),
+              },
+              s.intent.stepId,
+              s.attempt,
+            );
           this.note(
             run,
             'step.waiting_approval',
