@@ -608,33 +608,47 @@ export async function createApp(options: AppOptions) {
   const workspaces = new WorkspaceService(store);
   await workspaces.init();
   const discovery = new DiscoveryService(store, {
-    verifyObservedEvidence: async ({ operatorId, evidence }) => {
-      if (operatorId !== workspaces.currentPerson().id) return false;
+    // A new observation needs `verified`. A stored one whose approved file has
+    // changed since reads `stale` and stays inspectable (DIO-84); `stale` is
+    // never enough to record a new observed fact.
+    checkObservedEvidence: async ({ operatorId, evidence }) => {
+      const invalid = { status: 'invalid' } as const;
+      if (operatorId !== workspaces.currentPerson().id) return invalid;
       let state: ReturnType<Store['state']>;
       try {
         state = store.state(evidence.projectId);
       } catch (error) {
-        if (error instanceof ApiError && error.status === 404) return false;
+        if (error instanceof ApiError && error.status === 404) return invalid;
         throw error;
       }
       const entry = state.history.find((item) => item.id === evidence.historyEntryId);
-      if (!entry) return false;
+      if (!entry) return invalid;
       if (evidence.kind === 'approved-file') {
         const name = relativeName(evidence.path);
-        return (
-          (entry.actor === 'you' || !!entry.approvalId || !!entry.authorization) &&
-          entry.files.some(
-            (file) => file.path === name && file.recorded && file.after === evidence.sha,
-          ) &&
-          hash(await store.current(evidence.projectId, name)) === evidence.sha
+        const written = entry.files.find((file) => file.path === name && file.recorded);
+        if (!(entry.actor === 'you' || !!entry.approvalId || !!entry.authorization) || !written)
+          return invalid;
+        const currentSha = hash(await store.current(evidence.projectId, name));
+        if (written.after === evidence.sha)
+          return currentSha === evidence.sha
+            ? ({ status: 'verified' } as const)
+            : ({ status: 'stale', currentSha } as const);
+        // A quick second edit folds into the same History entry and moves its
+        // `after` on (Store.writeRecorded). The recorded bytes are still in
+        // this project's History objects, which is what makes this history
+        // rather than an invented citation.
+        const recorded = await store.object(evidence.projectId, evidence.sha).then(
+          (text) => text !== null,
+          () => false,
         );
+        return recorded ? ({ status: 'stale', currentSha } as const) : invalid;
       }
-      return (
-        entry.sessionId === evidence.executionId &&
+      return entry.sessionId === evidence.executionId &&
         state.sessions.some(
           (session) => session.id === evidence.executionId && session.state === 'done',
         )
-      );
+        ? ({ status: 'verified' } as const)
+        : invalid;
     },
   });
   // Design Studio storage. It reads the *live* workspace rather than the stored
