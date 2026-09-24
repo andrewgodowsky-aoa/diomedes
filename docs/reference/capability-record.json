@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
   "kind": "diomedes-capability-record",
-  "appVersion": "0.1.8",
+  "appVersion": "0.1.9",
   "generatedFrom": {
-    "commit": "c41942fc5983041e3ca2d0be5068893688ecd021",
+    "commit": "7e14fdf07bb9b28f8af4458685434d5cf3634c33",
     "note": "The commit checked out when this file was written. The commit that carries the file is its child."
   },
   "states": {
@@ -24,7 +24,7 @@
       "installer": "NotSigned"
     },
     "evidence": "evidence/release-candidates/diomedes-0.1.8-windows-experimental-20260923-44fc3e536747.json",
-    "appVersionMatchesSource": true,
+    "appVersionMatchesSource": false,
     "note": "This evidence is build-level, not route-level. It records build identity, installer bytes, reviewed tool versions and test counts. It records no request through any adapter route, and it does not record whether this build was published."
   },
   "routes": [
