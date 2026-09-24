@@ -268,6 +268,16 @@ describe('plan, act, observe, finish', () => {
 });
 
 describe('bounded: turns and budget stop the run truthfully', () => {
+  test('a loop takes at most 16 turns, and at least one', async () => {
+    const { runs } = await setup();
+    const tools = registry([]);
+    for (const maxTurns of [0, 17, 1.5])
+      expect(() => new NativeLoop(runs, scripted([]), tools, { maxTurns, instructions: '', bindings, route: 'native-fixture', model: null })).toThrow(
+        expect.objectContaining({ code: expect.stringMatching(/invalid_turns|invalid_units|invalid/) }),
+      );
+    expect(() => new NativeLoop(runs, scripted([]), tools, { maxTurns: 16, instructions: '', bindings, route: 'native-fixture', model: null })).not.toThrow();
+  });
+
   test('the turn limit stops the run with a record saying so; it is cancelled, never completed', async () => {
     const { runs } = await setup();
     const tools = registry([]);

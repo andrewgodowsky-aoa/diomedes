@@ -297,6 +297,22 @@ test('continuing goes through H08 Resume and its revalidation, and never with wi
   expect((later.supervision ?? []).find((rec) => rec.sessionId === next)?.reason).toMatch(/You chose to continue/);
 });
 
+test('supervision can never ask to resume, retry or fork a run: continuing is always yours', async () => {
+  const { session } = await driftingRun();
+  const controls = app.locals.durableControls as {
+    perform(projectId: string, body: unknown, requestedBy: unknown): Promise<unknown>;
+  };
+  for (const control of ['resume', 'retry', 'fork'])
+    await expect(
+      controls.perform(
+        projectId,
+        { protocolVersion: 1, commandId: `sv-${control}`, taskId, control, sessionId: session.id },
+        { actor: 'diomedes', via: 'supervision', recordId: 'SV-forged' },
+      ),
+    ).rejects.toMatchObject({ status: 403 });
+  expect((await state()).sessions.filter((s) => ['queued', 'working', 'waiting'].includes(s.state))).toEqual([]);
+});
+
 test('redirect queues your words as the next run through ordinary admission', async () => {
   const { need } = await driftingRun();
   const redirected = await answer(need.id, {
