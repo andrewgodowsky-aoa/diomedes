@@ -158,7 +158,7 @@ export function LoopInspector({ projectId, runId, revision }: { projectId: strin
   const account = view.account;
   const reported = account?.provider && account.provider.reportedCalls > 0 ? account.provider.inputTokens : null;
   return (
-    <section className="loop-inspector" aria-label="Diomedes loop">
+    <section className="loop-inspector" aria-label={`${AGENT_NAME} work loop`}>
       <div className="loop-outcome">
         <span className={`verif-badge ${BADGE[outcome.state]}`} data-loop-outcome={outcome.state}>
           {outcome.label}

@@ -134,7 +134,7 @@ async function openLoop(page: Page, name: string) {
     .click();
   const inspector = page.locator('details.run-inspector');
   await inspector.locator('summary').click();
-  const loop = page.getByRole('region', { name: 'Diomedes loop' });
+  const loop = page.getByRole('region', { name: `${AGENT_NAME} work loop` });
   await expect(loop).toBeVisible();
   return loop;
 }
