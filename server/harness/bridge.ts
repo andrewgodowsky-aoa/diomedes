@@ -445,7 +445,9 @@ export class HarnessBridge {
       intent: need.harness.intent,
       engine: session.engine.name,
       accountRoute,
-      procedureLabel: codex ? CODEX_REPORT.label : FORMAT_REPORT.label,
+      procedureLabel: codex
+        ? CODEX_REPORT.label
+        : (this.procedures.get(run.capabilityId)?.capability.label ?? FORMAT_REPORT.label),
     });
     if (!found) return null;
     let authority: ApprovalCandidate['authority'] = null;
