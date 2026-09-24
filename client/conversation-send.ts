@@ -16,12 +16,13 @@ import type {
  *
  * A thread is one sequential conversation, so it holds at most one unconfirmed message, and that
  * message belongs to the person rather than to the window that typed it. Two records say so: a
- * shared claim in local storage, which every window of this browser reads and which alone decides
- * whether a message is pending, and a window reference in session storage, which records that this
- * window is the one waiting for it. An exclusive Web Lock covers a whole send, so a second window
- * waits for the first to finish and then reuses the command the claim holds instead of minting its
- * own. Clearing this browser's local storage makes the next send a new message; that is the cost a
- * Work start carries. Nothing here deduplicates equal text once it has been confirmed: only a
+ * shared claim, which every window of this browser reads and which alone decides whether a message
+ * is pending, and a window reference in session storage, which records that this window is the one
+ * waiting for it. The claim is kept in local storage for the page to show and mirrored in IndexedDB
+ * for the lock holder to decide on (see `heldClaim`). An exclusive Web Lock covers a whole send, so
+ * a second window waits for the first to finish and then reuses the command the claim holds
+ * instead of minting its own. Clearing this site's stored data makes the next send a new message;
+ * that is the cost a Work start carries. Nothing here deduplicates equal text once it has been confirmed: only a
  * pending claim is shared, and only until it settles, so two windows that each send the same text
  * after a confirmation send two messages, exactly as pressing Enter twice does.
  */
@@ -147,6 +148,10 @@ function readRecord(storage: Storage, prefix: string, projectId: string, threadI
   } catch {
     throw unavailable();
   }
+  return parseRecord(raw, projectId, threadId);
+}
+
+function parseRecord(raw: string | null, projectId: string, threadId: string) {
   if (raw === null) return null;
   if (raw.length > 80_000) throw invalid();
   let value: unknown;
@@ -181,12 +186,118 @@ const readReference = (projectId: string, threadId: string) =>
   readRecord(storageFor('session'), PENDING, projectId, threadId);
 
 /**
- * The claim first, then this window's reference, both before the first request. A write that fails
- * leaves nothing half saved: a claim this send minted is taken back, and nothing is sent.
+ * The claim as the window holding the lock must read it. Each window reads local storage from its
+ * own copy, and a change another window made reaches that copy later, on no schedule the lock
+ * knows about: the window that takes the lock next can still read a claim the last holder already
+ * settled, or miss one it saved (measured in Chromium for DIO-107: two windows taking turns under
+ * one lock to add one to a stored number lost 16 of 600 additions idle, and 24 of 600 with every
+ * CPU busy). IndexedDB reads the one store every window shares, so a write finished before the lock
+ * is let go is what the next holder reads; the same count kept there lost none of 2,000. The claim
+ * is therefore mirrored there on every change made under the lock, and read from there under it.
+ * Local storage stays the record a page reads to show what is pending, and a holder that finds
+ * its copy behind puts the mirror's claim back into it. Where IndexedDB cannot be opened, or holds
+ * nothing yet for a conversation (a claim saved before the mirror existed), local storage decides
+ * as it always did.
  */
-function save(pending: PendingMessage, minted: boolean) {
+const MIRROR_DB = 'diomedes.conversation';
+const MIRROR_STORE = 'claims';
+let mirror: Promise<IDBDatabase | null> | undefined;
+function openMirror(): Promise<IDBDatabase | null> {
+  mirror ??= new Promise<IDBDatabase | null>((resolve) => {
+    let request: IDBOpenDBRequest;
+    try {
+      const factory = globalThis.indexedDB;
+      if (!factory) return resolve(null);
+      request = factory.open(MIRROR_DB, 1);
+    } catch {
+      return resolve(null);
+    }
+    request.onupgradeneeded = () => request.result.createObjectStore(MIRROR_STORE);
+    request.onsuccess = () => {
+      const db = request.result;
+      // A newer version elsewhere closes this one; the next read opens it again.
+      db.onversionchange = () => {
+        db.close();
+        mirror = undefined;
+      };
+      resolve(db);
+    };
+    request.onerror = () => resolve(null);
+  });
+  return mirror;
+}
+/** One mirror transaction, finished before it resolves. Undefined when there is no mirror. */
+async function inMirror<T>(
+  mode: IDBTransactionMode,
+  work: (store: IDBObjectStore) => IDBRequest<T>,
+): Promise<{ value: T } | undefined> {
+  const db = await openMirror();
+  if (!db) return undefined;
+  return new Promise((resolve, reject) => {
+    try {
+      const tx = db.transaction(MIRROR_STORE, mode);
+      const request = work(tx.objectStore(MIRROR_STORE));
+      tx.oncomplete = () => resolve({ value: request.result });
+      tx.onerror = tx.onabort = () => reject(tx.error ?? new Error('IndexedDB transaction failed'));
+    } catch (error) {
+      reject(error);
+    }
+  });
+}
+/**
+ * The mirrored claim: its JSON, null once it was settled, or undefined when the mirror has nothing
+ * to say and local storage decides.
+ */
+async function readMirror(key: string): Promise<string | null | undefined> {
+  try {
+    const read = await inMirror('readonly', (store) => store.get(key));
+    const value: unknown = read?.value;
+    return typeof value === 'string' || value === null ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+/**
+ * Mirrors one change. A mirror that cannot be written is emptied for this conversation, so the
+ * next holder reads local storage rather than an older claim; a caller that must not send on a
+ * write it cannot mirror is told so.
+ */
+async function writeMirror(key: string, json: string | null): Promise<boolean> {
+  try {
+    await inMirror('readwrite', (store) => store.put(json, key));
+    return true;
+  } catch {
+    await inMirror('readwrite', (store) => store.delete(key)).catch(() => undefined);
+    return false;
+  }
+}
+
+/** The claim a lock holder decides on. Call it inside the lock. */
+async function heldClaim(projectId: string, threadId: string): Promise<PendingMessage | null> {
+  const key = keyOf(CLAIM, projectId, threadId);
+  const mirrored = await readMirror(key);
+  if (mirrored === undefined) return readClaim(projectId, threadId);
+  try {
+    const shared = storageFor('local');
+    if (shared.getItem(key) !== mirrored) {
+      if (mirrored === null) shared.removeItem(key);
+      else shared.setItem(key, mirrored);
+    }
+  } catch {
+    // What the page shows catches up when this copy does; the decision below does not wait for it.
+  }
+  return parseRecord(mirrored, projectId, threadId);
+}
+
+/**
+ * The claim first, then this window's reference, both before the first request, and then the
+ * mirror. A write that fails leaves nothing half saved: a claim this send minted is taken back,
+ * and nothing is sent.
+ */
+async function save(pending: PendingMessage, minted: boolean) {
   const json = JSON.stringify(pending);
   const claimKey = keyOf(CLAIM, pending.projectId, pending.threadId);
+  const referenceKey = keyOf(PENDING, pending.projectId, pending.threadId);
   const shared = storageFor('local');
   if (minted) {
     try {
@@ -195,15 +306,27 @@ function save(pending: PendingMessage, minted: boolean) {
       throw unavailable();
     }
   }
-  try {
-    storageFor('session').setItem(keyOf(PENDING, pending.projectId, pending.threadId), json);
-  } catch {
+  const takeBack = () => {
     if (minted)
       try {
         shared.removeItem(claimKey);
       } catch {
         // Nothing was sent under it. The next send reads it and sends that command, not a new one.
       }
+  };
+  try {
+    storageFor('session').setItem(referenceKey, json);
+  } catch {
+    takeBack();
+    throw unavailable();
+  }
+  if (!(await writeMirror(claimKey, json))) {
+    takeBack();
+    try {
+      storageFor('session').removeItem(referenceKey);
+    } catch {
+      // A reference no claim backs is dropped the next time it is read.
+    }
     throw unavailable();
   }
 }
@@ -214,10 +337,16 @@ function save(pending: PendingMessage, minted: boolean) {
  * a control pressed beside an older message, must never take a newer message's claim with it.
  * Call it inside the lock. A cleanup fault never retries a send.
  */
-function clear(projectId: string, threadId: string, commandId: string) {
+async function clear(projectId: string, threadId: string, commandId: string) {
   try {
-    if (readClaim(projectId, threadId)?.commandId === commandId)
-      storageFor('local').removeItem(keyOf(CLAIM, projectId, threadId));
+    if ((await heldClaim(projectId, threadId))?.commandId === commandId) {
+      const key = keyOf(CLAIM, projectId, threadId);
+      try {
+        storageFor('local').removeItem(key);
+      } finally {
+        await writeMirror(key, null);
+      }
+    }
   } catch {
     // The same body and identity read back the same answer.
   }
@@ -298,7 +427,7 @@ export function pendingMessage(projectId: string, threadId: string): PendingMess
   // window claims before that cleanup runs is left alone.
   if (claim.commandId === lastCommand(projectId, threadId)) {
     const settled = claim.commandId;
-    void underLock(projectId, threadId, undefined, async () =>
+    void underLock(projectId, threadId, undefined, () =>
       clear(projectId, threadId, settled),
     ).catch(() => undefined);
     return null;
@@ -321,8 +450,8 @@ export async function discardPendingMessage(
 ): Promise<boolean> {
   if (!id(projectId) || !id(threadId)) throw invalid();
   return underLock(projectId, threadId, undefined, async () => {
-    const held = readClaim(projectId, threadId)?.commandId === commandId;
-    clear(projectId, threadId, commandId);
+    const held = (await heldClaim(projectId, threadId))?.commandId === commandId;
+    await clear(projectId, threadId, commandId);
     return held;
   });
 }
@@ -370,14 +499,14 @@ async function dispatch(
       );
       if (!confirms(result, pending)) throw new UnconfirmedMessage();
       // A cleanup failure must never retry a confirmed send.
-      clear(pending.projectId, pending.threadId, pending.commandId);
+      await clear(pending.projectId, pending.threadId, pending.commandId);
       rememberLast(pending.projectId, pending.threadId, pending.commandId);
       return result;
     } catch (error) {
       if (final(error)) {
         // A first attempt the server refused was never accepted. After an uncertain attempt a
         // refusal may be about the retry, not the original, so the saved message is kept.
-        if (!uncertain) clear(pending.projectId, pending.threadId, pending.commandId);
+        if (!uncertain) await clear(pending.projectId, pending.threadId, pending.commandId);
         throw error;
       }
       // Stopping is the person's act, not a fault to retry. The saved message stays, so sending
@@ -428,11 +557,11 @@ export async function sendMessage(
   if (onClaim) entry.waiting.add(onClaim);
   entry.promise = underLock(projectId, threadId, signal, async () => {
     const reference = readReference(projectId, threadId);
-    let claim = readClaim(projectId, threadId);
+    let claim = await heldClaim(projectId, threadId);
     // A claim naming the last confirmed command is a cleanup that failed. It is settled, so it
     // neither blocks a new message nor lends it an identity.
     if (claim && claim.commandId === lastCommand(projectId, threadId)) {
-      clear(projectId, threadId, claim.commandId);
+      await clear(projectId, threadId, claim.commandId);
       claim = null;
     }
     if (claim && JSON.stringify(claim.input) !== inputJson) throw earlier();
@@ -445,7 +574,7 @@ export async function sendMessage(
     if (signal?.aborted) throw stopped();
     const pending =
       claim ?? { commandId: presetCommandId ?? mintCommandId(), projectId, threadId, input: normalized };
-    save(pending, claim === null);
+    await save(pending, claim === null);
     // The dispatch identity, issued once this send owns the claim: minted now, or the pending
     // command this window found and is sending again. The sender and every same-window join
     // waiting on it are told the same command.
@@ -474,7 +603,7 @@ export async function resendPending(
   return underLock(projectId, threadId, signal, async () => {
     // A Stop that landed while this resend waited for the lock ends it before it saves or sends.
     if (signal?.aborted) throw stopped();
-    const claim = readClaim(projectId, threadId);
+    const claim = await heldClaim(projectId, threadId);
     if (claim && claim.commandId === commandId) {
       // This branch is a real dispatch of the claimed command: the identity it issues is the
       // claim's own, so a Stop beside it names this command and no other.
