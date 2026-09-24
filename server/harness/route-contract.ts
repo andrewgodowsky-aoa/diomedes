@@ -102,6 +102,48 @@ const contract = (
   testedWith,
 });
 
+/**
+ * A kept ACP conversation (H05), the same for every ACP agent: each turn is one
+ * owned process continuing the conversation's ACP session through `session/load`
+ * where the agent advertises it (`server/engines/acp-session.ts`).
+ */
+const ACP_SESSION_CONTRACT = (engine: 'cursor' | 'devin', name: string, version: string) =>
+  contract(
+    `${engine}-session`,
+    'external-session',
+    { id: engine, version, protocolVersion: 'acp/1' },
+    commands({
+      start: native(
+        `Opt-in kept ${name} conversation; each turn is a fenced RunService step whose ACP session id is saved before the prompt is sent.`,
+      ),
+      'follow-up': native(
+        `Each message continues the saved ACP session with session/load where ${name} advertises loadSession; otherwise it starts fresh and the turn says so.`,
+      ),
+      steer: unsupported('ACP has no in-band steering channel; a message waits for the turn to end.'),
+      interrupt: native(
+        'session/cancel, a bounded wait for the agent to end the prompt, then the owned process tree is ended; the checkpoint records which happened.',
+      ),
+      resume: native(
+        `After a restart the saved session id is continued with session/load where advertised; a session ${name} no longer has, or an agent without loadSession, starts fresh and the record says so.`,
+      ),
+      retry: host(
+        'Duplicate command IDs replay durable outcomes; unknown dispatches refuse redispatch.',
+      ),
+      fork: unsupported('ACP v1 has no fork of a saved session.'),
+      status: host('Durable run state and transport presence; no provider status is invented.'),
+      reconcile: host(
+        'A turn a restart interrupted is recorded as not completed and never resent; a loadable session stays resumable, anything else is marked as unable to resume.',
+      ),
+      close: native(
+        `Ends the conversation's transport; ${name}'s session store stays in the conversation's private folder for an explicit resume.`,
+      ),
+    }),
+    { transientPreview: 'text-delta', durableEvents: 'run-record' },
+    { source: 'runtime-reported' },
+    'native-sign-in',
+    version,
+  );
+
 export const ROUTE_CONTRACTS: Record<string, AdapterRouteContract> = Object.freeze({
   'claude-code-session': contract(
     'claude-code-session',
@@ -175,6 +217,9 @@ export const ROUTE_CONTRACTS: Record<string, AdapterRouteContract> = Object.free
     'native-sign-in',
     '1.18.4',
   ),
+  // --- the kept ACP conversations (H05): one shared ACP session layer --------
+  'cursor-session': ACP_SESSION_CONTRACT('cursor', 'Cursor', '2026.08.11'),
+  'devin-session': ACP_SESSION_CONTRACT('devin', 'Devin', '3000.10.23'),
   // --- the harness-side routes: the run service is the mechanism ------------
   'native-fixture': contract(
     'native-fixture',
