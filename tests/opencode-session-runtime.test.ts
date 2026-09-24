@@ -176,6 +176,35 @@ describe('kept OpenCode session over the native conversation driver', () => {
     expect(await driver.steer('p1', runId, 'steer-2', 'late')).toMatchObject({ state: 'rejected' });
   });
 
+  it('sends several held messages in the order they were sent, and holds again behind a later turn', async () => {
+    const f = await fixture();
+    f.state.mode = 'delayed';
+    const { driver } = f.driverFor();
+    const prompts = async () => (await f.log()).filter((line) => line.endsWith('/prompt_async')).length;
+    const running = driver.request(f.turn('start', runId, input('first')));
+    await vi.waitFor(async () => expect(await prompts()).toBe(1));
+    await driver.steer('p1', runId, 'steer-1', 'one');
+    await driver.steer('p1', runId, 'steer-2', 'two');
+    await running;
+    await vi.waitFor(
+      async () => expect((await driver.steering('p1', runId)).map((ack) => ack.state)).toEqual(['delivered', 'delivered']),
+      { timeout: 5_000 },
+    );
+    const first = await driver.request(f.turn('follow-up', runId, input('probe-1')));
+    // Turn order in the session: first, one, two, then the follow-up.
+    expect(first.response?.text).toContain('(turn 4 of');
+    // The first drain has ended; a message held behind a new turn starts another.
+    const later = driver.request(f.turn('follow-up', runId, input('later')));
+    await vi.waitFor(async () => expect(await prompts()).toBe(5));
+    await driver.steer('p1', runId, 'steer-3', 'three');
+    await later;
+    await vi.waitFor(
+      async () => expect((await driver.steering('p1', runId)).at(-1)).toMatchObject({ commandId: 'steer-3', state: 'delivered' }),
+      { timeout: 5_000 },
+    );
+    expect(await driver.turnResult('p1', runId, 'steer-3')).toEqual({ answered: true, interrupted: false });
+  });
+
   it('a stop leaves the session resumable and cancels what was held, with the reason', async () => {
     const f = await fixture();
     f.state.mode = 'slow';

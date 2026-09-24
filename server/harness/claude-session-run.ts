@@ -1207,18 +1207,22 @@ export class ClaudeSessionRuns<C extends SessionCheckpointFacts = ClaudeSessionC
     };
     queue.push(entry);
     this.steers.set(runId, queue.slice(-STEER_HISTORY - STEER_QUEUE_LIMIT));
+    // One drain per run. It stops being the drain in the same synchronous step that finds
+    // nothing left to send, so a message pushed here is either seen by it or starts a new one.
     if (!this.draining.has(runId)) {
       this.draining.add(runId);
       const base = active.request;
-      void active.promise
-        .then(
-          (result) =>
-            result.interrupted
-              ? this.cancelSteers(runId, 'The answer it was waiting for was stopped, so this message was not sent.')
-              : this.sendSteers(runId, base),
-          () => this.cancelSteers(runId, 'The answer it was waiting for did not finish, so this message was not sent.'),
-        )
-        .finally(() => this.draining.delete(runId));
+      void active.promise.then(
+        (result) => {
+          if (!result.interrupted) return this.sendSteers(runId, base);
+          this.cancelSteers(runId, 'The answer it was waiting for was stopped, so this message was not sent.');
+          this.draining.delete(runId);
+        },
+        () => {
+          this.cancelSteers(runId, 'The answer it was waiting for did not finish, so this message was not sent.');
+          this.draining.delete(runId);
+        },
+      );
     }
     return structuredClone(entry.ack);
   }
@@ -1247,7 +1251,10 @@ export class ClaudeSessionRuns<C extends SessionCheckpointFacts = ClaudeSessionC
   private async sendSteers(runId: string, base: ClaudeSessionTurn<C>) {
     for (;;) {
       const entry = (this.steers.get(runId) ?? []).find((item) => item.ack.state === 'pending');
-      if (!entry || this.closed) break;
+      if (!entry || this.closed) {
+        this.draining.delete(runId);
+        break;
+      }
       try {
         const result = await this.request({
           ...base,
@@ -1279,12 +1286,14 @@ export class ClaudeSessionRuns<C extends SessionCheckpointFacts = ClaudeSessionC
         else {
           this.settleSteer(runId, entry, 'cancelled', 'This message was stopped before it was answered.');
           this.cancelSteers(runId, 'The message before this one was stopped, so this message was not sent.');
+          this.draining.delete(runId);
           break;
         }
       } catch (error) {
         const reason = error instanceof EngineError || error instanceof HarnessError ? error.message : 'It could not be sent.';
         this.settleSteer(runId, entry, 'rejected', reason.slice(0, 2000));
         this.cancelSteers(runId, 'The message before this one could not be sent, so this message was not sent.');
+        this.draining.delete(runId);
         break;
       }
     }
