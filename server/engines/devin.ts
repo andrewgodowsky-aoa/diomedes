@@ -62,10 +62,18 @@ import {
 import {
   contextMessage,
   type AdapterInspection,
-  type TextEngineAdapter,
+  type PersistentTextAdapter,
   type TextRequest,
   type TextResponse,
 } from './contract.js';
+import {
+  acpSessionRoot,
+  openAcpSession,
+  type AcpSessionCheckpoint,
+  type AcpSessionOptions,
+  type AcpTurnKeep,
+  type AcpTurnRunner,
+} from './acp-session.js';
 import {
   abortFailure,
   capture,
@@ -162,9 +170,11 @@ function modelsFrom(created: Json): EngineModel[] {
   });
 }
 
-export class DevinAdapter implements TextEngineAdapter {
+export class DevinAdapter implements PersistentTextAdapter<AcpSessionCheckpoint> {
   readonly id = 'devin' as const;
   readonly contract = routeContractFor('devin');
+  /** The kept conversation over the shared ACP session layer, admitted separately (H05). */
+  readonly sessionContract = routeContractFor('devin-session');
   private readonly launch: NonNullable<DevinAdapterDeps['spawn']>;
   private readonly capture: typeof capture;
   private readonly startupTimeout: number;
@@ -189,6 +199,7 @@ export class DevinAdapter implements TextEngineAdapter {
     run: (rpc: AcpClient, created: Json, version: string) => Promise<T>,
     turn?: AcpTurn,
     model?: string,
+    keep?: AcpTurnKeep,
   ): Promise<T> {
     phase.at = 'launch';
     if (signal?.aborted) throw abortFailure(signal.reason, acpTimeoutDetail(DEVIN_ACP_PROFILE));
@@ -220,8 +231,11 @@ export class DevinAdapter implements TextEngineAdapter {
         signal,
         rootParent: this.cwd,
         rootPrefix: '.diomedes-devin-',
+        ...(keep ? { keep } : {}),
         prepare: async (root) => {
           const workspace = path.join(root, 'workspace');
+          // A kept conversation's workspace outlives the turn; its deny rules are rewritten.
+          if (keep) await fs.rm(path.join(workspace, '.devin'), { recursive: true, force: true });
           // Devin has no configuration-directory override; the session workspace is
           // fresh, carries deny rules for every documented tool scope, and nothing
           // is copied from the person's Devin configuration. The user-scope
@@ -263,6 +277,7 @@ export class DevinAdapter implements TextEngineAdapter {
           // a startup mode echo can lag behind it — only a different mode once
           // ask is confirmed (or a non-startup mode before) is a real change.
           acpSessionUpdate(DEVIN_ACP_PROFILE, rpc, params, turn, {
+            ...(keep ? { plans: keep.plans } : {}),
             onModeUpdate: (modeId) => {
               if (modeId === 'ask') {
                 session.askConfirmed = true;
@@ -358,6 +373,10 @@ export class DevinAdapter implements TextEngineAdapter {
     }
   }
   async generate(input: TextRequest): Promise<TextResponse> {
+    return (await this.turn(input)).response;
+  }
+  /** The request checks every Devin turn makes before a process starts. */
+  private admit(input: TextRequest) {
     if (input.accountRoute !== DEVIN_ACCOUNT_ROUTE)
       throw new EngineError(
         'ACCOUNT_CHANGED',
@@ -372,6 +391,13 @@ export class DevinAdapter implements TextEngineAdapter {
         false,
         'model-list',
       );
+  }
+  /** One Devin turn: the single-turn route, or a kept conversation's turn under `keep` (H05). */
+  private async turn(
+    input: TextRequest,
+    keep?: AcpTurnKeep,
+  ): Promise<{ response: TextResponse; version: string }> {
+    this.admit(input);
     const prompt = contextMessage(input);
     if (this.generating)
       throw new EngineError(
@@ -394,7 +420,9 @@ export class DevinAdapter implements TextEngineAdapter {
         phase,
         async (rpc, created, version) => {
           phase.at = 'model-list';
-          if (!modelsFrom(created).some((model) => model.slug === input.model))
+          // A loaded session may not list the catalogue again; --model still pins it.
+          const listed = modelsFrom(created).length > 0;
+          if ((!keep || listed) && !modelsFrom(created).some((model) => model.slug === input.model))
             throw new EngineError(
               'MODEL_UNAVAILABLE',
               'Devin no longer offers the requested model. No substitute was selected.',
@@ -412,6 +440,7 @@ export class DevinAdapter implements TextEngineAdapter {
               'model-list',
             );
           if (selected) turn.model = selected;
+          await keep?.beforePrompt();
           phase.at = 'dispatch';
           await acpPromptTurn(
             DEVIN_ACP_PROFILE,
@@ -421,16 +450,34 @@ export class DevinAdapter implements TextEngineAdapter {
             this.requestTimeout,
             prompt,
           );
-          return acpTurnResponse(input, turn, version);
+          return { response: acpTurnResponse(input, turn, version), version };
         },
         turn,
         input.model,
+        keep,
       );
     } catch (error) {
       throw staged(error, phase.at);
     } finally {
       this.generating = false;
     }
+  }
+  /**
+   * A kept Devin conversation (H05): the shared ACP session layer, running each
+   * turn through this adapter's own turn so it holds the same boundary.
+   */
+  async openSession(input: TextRequest, options: AcpSessionOptions) {
+    const runner: AcpTurnRunner = {
+      engine: 'devin',
+      profile: DEVIN_ACP_PROFILE,
+      accountRoute: DEVIN_ACCOUNT_ROUTE,
+      // Devin's route has no read policy: every tool call stops the turn.
+      reads: false,
+      admit: (request) => this.admit(request),
+      root: (lineageId) => acpSessionRoot(this.cwd, 'devin', lineageId),
+      run: (request, keep) => this.turn(request, keep),
+    };
+    return openAcpSession(runner, input, options);
   }
 }
 
