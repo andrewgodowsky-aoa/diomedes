@@ -6,7 +6,7 @@ them in one place. The canonical documents were reconciled from the records' pro
 one pass: Live Roadmap and Project Memory 2026-09-24.2, and `QUESTIONS.md` O11–O34 and R9.
 
 **Nothing here is released.** The latest release is 0.1.11. Batches 1 to 3 are source on app main
-at `f13be72`; batch 4 is PR #106 (`integration/overnight-batch-4` at `ceb4836`), which is landing
+at `f13be72`; batch 4 is PR #106 (`integration/overnight-batch-4` at `6a3219a`), which is landing
 on main now. No lane has live-provider, hosted, packaged-installer or device proof, and none claims
 it.
 
@@ -20,7 +20,8 @@ How the work reached main:
 - **Batch 3**: PR #97, merge `f13be72`. PRs #88, #89, #93 and #96, plus batch 2.
 - **Batch 4**: PR #106, open. PRs #94, #98, #99, #100, #101, #102, #103, #104 and #105, plus the
   integration fix `ceb4836`, which gives the H13 loop's tools the effect class and output schema
-  H12 requires.
+  H12 requires, and two commits (`82c758b`, `6a3219a`) that stop tracking committed
+  `node_modules` links.
 
 "Reviewed" means an independent whole-prompt review by a lane that wrote none of the code. A
 lane marked "not reviewed" is implemented and tested by its own author only.
