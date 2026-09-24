@@ -12,6 +12,7 @@
 //
 // argv: <port> <mode>. Modes:
 //   ok           answers every prompt
+//   delayed      answers every prompt after 300 ms, long enough to steer into
 //   slow         streams a partial answer, then waits to be aborted
 //   stuck-abort  like slow, but an abort leaves the session busy
 //   no-fork      has no fork route (404), like a build without one
@@ -102,7 +103,7 @@ function prompt(sessionID, payload) {
     send(info({ time: { created: 1, completed: 2 }, finish: 'stop' }));
     busy.delete(sessionID);
     send({ type: 'session.status', properties: { sessionID, status: { type: 'idle' } } });
-  }, 5);
+  }, mode === 'delayed' ? 300 : 5);
   busy.set(sessionID, () => {});
 }
 

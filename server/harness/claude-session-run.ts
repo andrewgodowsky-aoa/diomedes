@@ -5,7 +5,11 @@ import type {
   Json,
   NativeCheckpoint,
 } from '../../shared/harness.js';
-import type { NativeSessionRef } from '../../shared/contract-revision.js';
+import {
+  steeringAckSchema,
+  type NativeSessionRef,
+  type SteeringAck,
+} from '../../shared/contract-revision.js';
 import type { TextRequest, TextResponse } from '../engines/contract.js';
 import {
   claudeCheckpointSchema,
@@ -43,6 +47,45 @@ export function validateClaudeNativeCheckpoint(value: NativeCheckpoint): NativeC
     throw new HarnessError('invalid_checkpoint', 'Claude recovery metadata is malformed.');
   return { v: 1, providerId: 'claude-code', payload: parsed.data };
 }
+/**
+ * The fields of a provider checkpoint this driver reads. Each transport keeps
+ * its own schema (`claudeCheckpointSchema`, `openCodeCheckpointSchema`); the
+ * driver never writes into one, it only reads these to decide resume and fork.
+ */
+export interface SessionCheckpointFacts {
+  nativeSessionId: string | null;
+  lineageId: string;
+  requestedModel: string;
+  reportedModel: string | null;
+  scopeDigest?: string;
+  state: 'idle' | 'busy' | 'uncertain';
+}
+/**
+ * What makes one native conversation driver a Claude one or an OpenCode one.
+ * The lifecycle (turn records, replay, fork lineage, recovery) is the same;
+ * the engine, its capability, its checkpoint schema and whether it may queue
+ * steering are not.
+ */
+export interface NativeSessionProfile<C extends SessionCheckpointFacts> {
+  engine: 'claude-code' | 'opencode';
+  label: string;
+  capability: CapabilityManifest;
+  /** Validates a saved checkpoint for this engine and returns its payload. Throws `invalid_checkpoint`. */
+  parseCheckpoint(value: NativeCheckpoint): C;
+  /**
+   * `queue`: a message sent while a turn runs is held by Diomedes and sent as the
+   * next turn once that one finishes. `none`: steering is refused. Must agree
+   * with the route contract's `steer` answer.
+   */
+  steering: 'queue' | 'none';
+}
+export const CLAUDE_SESSION_PROFILE: NativeSessionProfile<ClaudeSessionCheckpoint> = {
+  engine: 'claude-code',
+  label: 'Claude',
+  capability: CLAUDE_SESSION_CAPABILITY,
+  parseCheckpoint: (value) => claudeCheckpointSchema.parse(validateClaudeNativeCheckpoint(value).payload),
+  steering: 'none',
+};
 export interface ClaudeSessionAdmission {
   location: string;
   version: string;
@@ -53,14 +96,36 @@ export type ClaudeConversation = Pick<
   ClaudeNativeSession,
   'turn' | 'interrupt' | 'close' | 'checkpoint' | 'nativeSession'
 >;
+/** One held steering message and what has happened to it so far. */
+type SteerEntry = { commandId: string; text: string; ack: SteeringAck };
+/** How many messages may wait behind one running turn, and how many answered ones are kept to read. */
+const STEER_QUEUE_LIMIT = 8;
+const STEER_HISTORY = 16;
+/** A live native conversation of any profile: what `open` returns. */
+export interface NativeConversation<C extends SessionCheckpointFacts> {
+  turn(input: TextRequest): Promise<TextResponse>;
+  interrupt(): Promise<void>;
+  close(reason?: unknown): Promise<void>;
+  readonly checkpoint: C;
+  readonly nativeSession: NativeSessionRef | null;
+  /** Set by a transport that can report how it reached its session (a resume that started fresh). */
+  readonly continuity?: { origin: string; detail: string | null };
+}
 type Connection = {
-  session: ClaudeConversation;
+  session: NativeConversation<SessionCheckpointFacts>;
   writer?: StepContext['saveNativeCheckpoint'];
   timer?: ReturnType<typeof setTimeout>;
   detach?: () => void;
   closing?: Promise<void>;
 };
-export interface ClaudeSessionTurn {
+/** `ClaudeSessionOptions`, for any profile's checkpoint. */
+export interface NativeSessionOptions<C extends SessionCheckpointFacts> {
+  observedVersion: string;
+  restore?: C;
+  fork?: boolean;
+  onCheckpoint(checkpoint: C, signal: AbortSignal): Promise<void>;
+}
+export interface ClaudeSessionTurn<C extends SessionCheckpointFacts = ClaudeSessionCheckpoint> {
   mode: 'start' | 'follow-up' | 'resume' | 'fork';
   runId: string;
   sourceRunId?: string;
@@ -69,8 +134,8 @@ export interface ClaudeSessionTurn {
   open(
     admission: ClaudeSessionAdmission,
     input: TextRequest,
-    options: ClaudeSessionOptions,
-  ): Promise<ClaudeConversation>;
+    options: NativeSessionOptions<C>,
+  ): Promise<NativeConversation<C>>;
   preview?(
     context: StepContext,
     stepId: string,
@@ -97,6 +162,12 @@ export interface ClaudeSessionTurnResult {
    * prompt carried messages from and how many, never their text. Absent when nothing was carried.
    */
   carried?: { from: string; messages: number };
+  /**
+   * On a turn that opened its connection, when the transport reports how it reached its
+   * session and has something to say: a resume the engine could not honour, which started a
+   * fresh native session. Absent on every other turn and on every Claude turn.
+   */
+  continuity?: { origin: string; detail: string };
 }
 /**
  * What happened to one conversation message after its answer, in the order it can happen.
@@ -144,8 +215,8 @@ type SavedTurn = {
   sourceRunId?: Json;
   binding?: Json;
 } | null;
-const scope = (input: TextRequest): Json => ({
-  engine: 'claude-code',
+const scope = (input: TextRequest, engine: NativeSessionProfile<SessionCheckpointFacts>['engine'] = 'claude-code'): Json => ({
+  engine,
   projectId: input.projectId,
   threadId: input.threadId,
   model: input.model,
@@ -166,14 +237,15 @@ const waitDefinition = (id: string): StepDefinition => ({
 });
 
 /** A capability driver over RunService. Only live transport handles are held here. */
-export class ClaudeSessionRuns {
+export class ClaudeSessionRuns<C extends SessionCheckpointFacts = ClaudeSessionCheckpoint> {
   private closed = false;
   private sharingPolicy: (projectId: string, documents: readonly string[], priorConversation: boolean) => void = () => {
     throw new HarnessError('cloud_sharing_unconfigured', 'Project cloud sharing is not configured for this native session.');
   };
   /** Whether conversation history may go to Claude Code for this project now. Off until the host says. */
   private historyPolicy: (projectId: string) => boolean = () => false;
-  private readonly owner = `claude-session-${randomUUID()}`;
+  private readonly owner: string;
+  private readonly profile: NativeSessionProfile<C>;
   private readonly connections = new Map<string, Connection>();
   private readonly active = new Map<
     string,
@@ -182,16 +254,21 @@ export class ClaudeSessionRuns {
       intent: string;
       controller: AbortController;
       promise: Promise<ClaudeSessionTurnResult>;
+      request: ClaudeSessionTurn<C>;
     }
   >();
+  /** Messages held while a turn runs, per run, in the order they were sent (`profile.steering`). */
+  private readonly steers = new Map<string, SteerEntry[]>();
   private readonly forkLocks = new Set<string>();
   private readonly closing = new Set<Promise<void>>();
   private readonly cleanupFailures: unknown[] = [];
   private readonly lifetimeMs: number;
   constructor(
     private readonly runs: RunService,
-    options: { connectionLifetimeMs?: number } = {},
+    options: { connectionLifetimeMs?: number; profile?: NativeSessionProfile<C> } = {},
   ) {
+    this.profile = options.profile ?? (CLAUDE_SESSION_PROFILE as unknown as NativeSessionProfile<C>);
+    this.owner = `${this.profile.engine === 'claude-code' ? 'claude' : this.profile.engine}-session-${randomUUID()}`;
     const lifetime = options.connectionLifetimeMs ?? 30 * 60_000;
     if (!Number.isFinite(lifetime) || lifetime <= 0 || lifetime > 30 * 60_000)
       throw new Error('Native connection lifetime must be positive and at most 30 minutes.');
@@ -216,7 +293,7 @@ export class ClaudeSessionRuns {
    * Code at send time, where the carried run cannot be read or gives nothing, and on every later
    * turn. `from` and `messages` are recorded on the turn as evidence; the text never is.
    */
-  private async carried(request: ClaudeSessionTurn): Promise<{ text: string; from: string; messages: number } | null> {
+  private async carried(request: ClaudeSessionTurn<C>): Promise<{ text: string; from: string; messages: number } | null> {
     if (request.mode !== 'start' || !request.input.carriedFrom || !this.historyPolicy(request.input.projectId))
       return null;
     const run = await carriedRun(this.runs, request.input);
@@ -246,20 +323,18 @@ export class ClaudeSessionRuns {
 
   async get(projectId: string, runId: string): Promise<HarnessRun> {
     const run = await this.runs.get(runId);
-    if (run.projectId !== projectId || run.capabilityId !== CLAUDE_SESSION_CAPABILITY.id)
+    if (run.projectId !== projectId || run.capabilityId !== this.profile.capability.id)
       throw new HarnessError(
         'unknown_run',
         'This native conversation was not found in this project.',
       );
     return run;
   }
-  private checkpoint(run: HarnessRun): ClaudeSessionCheckpoint | undefined {
+  private checkpoint(run: HarnessRun): C | undefined {
     const saved = [...run.steps]
       .reverse()
       .find((step) => step.intent.kind === 'model' && step.nativeCheckpoint)?.nativeCheckpoint;
-    return saved
-      ? claudeCheckpointSchema.parse(validateClaudeNativeCheckpoint(saved).payload)
-      : undefined;
+    return saved ? this.profile.parseCheckpoint(saved) : undefined;
   }
   async status(projectId: string, runId: string) {
     const run = await this.get(projectId, runId);
@@ -276,20 +351,24 @@ export class ClaudeSessionRuns {
       nativeSession:
         checkpoint?.nativeSessionId && checkpoint.reportedModel
           ? {
-              providerId: 'claude-code',
+              providerId: this.profile.engine,
               lineageId: checkpoint.lineageId,
               opaqueRef: checkpoint.nativeSessionId,
             }
           : null,
+      // Only a profile that holds messages has anything to say here.
+      ...(this.profile.steering === 'queue'
+        ? { steering: (this.steers.get(runId) ?? []).map((entry) => structuredClone(entry.ack)) }
+        : {}),
     };
   }
-  request(request: ClaudeSessionTurn): Promise<ClaudeSessionTurnResult> {
+  request(request: ClaudeSessionTurn<C>): Promise<ClaudeSessionTurnResult> {
     if (this.closed)
       return Promise.reject(
         new EngineError('SESSION_CLOSED', 'The native runtime is shutting down.'),
       );
     const intent = digest({
-      scope: scope(request.input),
+      scope: scope(request.input, this.profile.engine),
       prompt: request.input.prompt,
       documents: request.input.documents,
       requestId: request.input.requestId,
@@ -339,12 +418,13 @@ export class ClaudeSessionRuns {
       intent,
       controller,
       promise,
+      request,
     });
     return promise;
   }
   /** The person's text and the first phase, from a committed answer. Pure; nothing is written here. */
   private decide(
-    request: ClaudeSessionTurn,
+    request: ClaudeSessionTurn<C>,
     result: ClaudeSessionTurnResult,
   ): { result: ClaudeSessionTurnResult; phase: InteractionPhase | null } {
     const interaction = request.input.interaction;
@@ -372,7 +452,7 @@ export class ClaudeSessionRuns {
   private async replay(
     run: HarnessRun,
     turn: HarnessRun['steps'][number],
-    request: ClaudeSessionTurn,
+    request: ClaudeSessionTurn<C>,
   ): Promise<ClaudeSessionTurnResult> {
     const { input } = request;
     const saved = turn.intent.input as SavedTurn;
@@ -431,7 +511,7 @@ export class ClaudeSessionRuns {
    * (`artifact-steps.ts`): none for a message that is not a conversation message, was not
    * answered, or holds no artifact.
    */
-  private artifacts(request: ClaudeSessionTurn, runId: string, result: ClaudeSessionTurnResult): StepDefinition[] {
+  private artifacts(request: ClaudeSessionTurn<C>, runId: string, result: ClaudeSessionTurnResult): StepDefinition[] {
     const interaction = request.input.interaction;
     if (!interaction || !result.response) return [];
     return artifactSteps({
@@ -575,7 +655,7 @@ export class ClaudeSessionRuns {
   async fenced<T>(projectId: string, runId: string, commit: () => Promise<T>): Promise<T> {
     try {
       return await this.runs.fence(runId, localHarnessPrincipal(projectId), async (run) => {
-        if (run.projectId !== projectId || run.capabilityId !== CLAUDE_SESSION_CAPABILITY.id)
+        if (run.projectId !== projectId || run.capabilityId !== this.profile.capability.id)
           throw new HarnessError(
             'unknown_run',
             'This native conversation was not found in this project.',
@@ -669,7 +749,7 @@ export class ClaudeSessionRuns {
       if (!(error instanceof Suspended && error.reason === 'event')) throw error;
     }
   }
-  private async drive(request: ClaudeSessionTurn): Promise<ClaudeSessionTurnResult> {
+  private async drive(request: ClaudeSessionTurn<C>): Promise<ClaudeSessionTurnResult> {
     const { input, runId } = request;
     const principal = localHarnessPrincipal(input.projectId);
     let run: HarnessRun | undefined;
@@ -684,20 +764,20 @@ export class ClaudeSessionRuns {
     // process have no bearing on what was already said.
     const answered = run?.steps.find((step) => step.intent.stepId === turnId);
     if (run && answered?.state === 'succeeded') return this.replay(run, answered, request);
-    let restore: ClaudeSessionCheckpoint | undefined;
+    let restore: C | undefined;
     if (!run && request.mode === 'start') {
       run = await this.runs.start({
         id: runId,
         projectId: input.projectId,
         tenantId: principal.tenantId,
         principal,
-        capability: CLAUDE_SESSION_CAPABILITY,
-        input: scope(input),
+        capability: this.profile.capability,
+        input: scope(input, this.profile.engine),
         budget: { units: 128, modelCalls: 128, toolCalls: 384, wallMs: null },
       });
     } else if (!run && request.mode === 'fork') {
       const parent = await this.get(input.projectId, request.sourceRunId!);
-      if (terminal(parent) || digest(parent.input) !== digest(scope(input)))
+      if (terminal(parent) || digest(parent.input) !== digest(scope(input, this.profile.engine)))
         throw new EngineError(
           'SESSION_MISMATCH',
           'Fork requires the same idle project, thread, model and instructions.',
@@ -725,7 +805,7 @@ export class ClaudeSessionRuns {
         'This run is settled or requires reconciliation; it cannot accept new work.',
         true,
       );
-    if (digest(run.input) !== digest(scope(input)))
+    if (digest(run.input) !== digest(scope(input, this.profile.engine)))
       throw new EngineError('SESSION_MISMATCH', 'The native conversation scope changed.');
     await this.runs.claim(runId, this.owner, 35 * 60_000);
     // An unfinished turn saved before bindings existed keeps the shape it was saved with, or
@@ -739,9 +819,9 @@ export class ClaudeSessionRuns {
       version: '1',
       kind: 'model',
       effect: 'read',
-      name: 'Claude native turn',
+      name: `${this.profile.label} native turn`,
       input: {
-        engine: 'claude-code',
+        engine: this.profile.engine,
         requestId: input.requestId,
         prompt: input.prompt,
         documents: input.documents,
@@ -760,7 +840,7 @@ export class ClaudeSessionRuns {
         (step) => step.intent.stepId === 'fork:source',
       )?.nativeCheckpoint;
       if (pinned)
-        restore = claudeCheckpointSchema.parse(validateClaudeNativeCheckpoint(pinned).payload);
+        restore = this.profile.parseCheckpoint(pinned);
       if (!restore)
         throw new EngineError(
           'SESSION_INVALID',
@@ -788,8 +868,8 @@ export class ClaudeSessionRuns {
         async (context) => {
           await context.saveNativeCheckpoint!({
             v: 1,
-            providerId: 'claude-code',
-            payload: restore!,
+            providerId: this.profile.engine,
+            payload: restore! as unknown as Json,
           });
           return { pinned: true };
         },
@@ -821,7 +901,7 @@ export class ClaudeSessionRuns {
         kind: 'tool',
         effect: 'read',
         name: 'Native session admission',
-        input: { engine: 'claude-code', model: input.model, accountRoute: input.accountRoute },
+        input: { engine: this.profile.engine, model: input.model, accountRoute: input.accountRoute },
         destination: 'local',
         cost: 0,
         maxAttempts: 3,
@@ -851,6 +931,7 @@ export class ClaudeSessionRuns {
               'The runtime does not support native checkpoints.',
             );
           let connection = this.connections.get(runId);
+          const opened = !connection;
           if (!connection) {
             let owned: Connection | undefined;
             const session = await request.open(
@@ -874,7 +955,10 @@ export class ClaudeSessionRuns {
                       'stale_attempt',
                       'No running attempt owns this checkpoint callback.',
                     );
-                  return writer({ v: 1, providerId: 'claude-code', payload: checkpoint }, signal);
+                  return writer(
+                    { v: 1, providerId: this.profile.engine, payload: checkpoint as unknown as Json },
+                    signal,
+                  );
                 },
               },
             );
@@ -942,7 +1026,7 @@ export class ClaudeSessionRuns {
             context.reportOrigin?.({
               protocolVersion: 1,
               mode: 'direct',
-              engine: { id: 'claude-code', version: admission.version },
+              engine: { id: this.profile.engine, version: admission.version },
               model: {
                 requested: input.model,
                 reported: connection.session.checkpoint.reportedModel,
@@ -957,6 +1041,15 @@ export class ClaudeSessionRuns {
               nativeSession: connection.session.nativeSession,
               // What this first turn carried, as evidence on the run: the run and the count only.
               ...(carried ? { carried: { from: carried.from, messages: carried.messages } } : {}),
+              // A resume the engine could not honour, said on the turn it happened, and saved with it.
+              ...(opened && connection.session.continuity?.detail
+                ? {
+                    continuity: {
+                      origin: connection.session.continuity.origin,
+                      detail: connection.session.continuity.detail,
+                    },
+                  }
+                : {}),
             };
           } catch (error) {
             await this.dispose(runId, connection, error);
@@ -1026,7 +1119,7 @@ export class ClaudeSessionRuns {
       version: '1',
       kind: 'tool',
       effect: 'read',
-      name: `Claude ${command}`,
+      name: `${this.profile.label} ${command}`,
       input: { command, commandId },
       cost: 0,
       destination: 'local',
@@ -1072,12 +1165,139 @@ export class ClaudeSessionRuns {
     await this.park(runId, projectId, commandId);
     return receipt;
   }
+  /**
+   * A message for a conversation whose turn is still running (`profile.steering`). The message
+   * is held here, in this process, and sent as the next turn of the same native session once
+   * the running one finishes; it is never injected into the running turn. If that turn is
+   * stopped or fails, every held message is cancelled with that reason and nothing is sent.
+   * The acknowledgement says exactly which of those happened: `pending` while it waits,
+   * `delivered` once its own turn reached the native session, `cancelled` or `rejected` otherwise.
+   * The queue is not durable: a restart cancels what was waiting, and each sent message is a
+   * durable turn of its own, found again by its command id.
+   */
+  async steer(projectId: string, runId: string, commandId: string, text: string): Promise<SteeringAck> {
+    if (this.closed) throw new EngineError('SESSION_CLOSED', 'The native runtime is shutting down.');
+    await this.get(projectId, runId);
+    if (this.profile.steering !== 'queue')
+      throw new EngineError(
+        'COMMAND_UNSUPPORTED',
+        `This ${this.profile.label} conversation does not accept messages while it is answering.`,
+      );
+    const queue = this.steers.get(runId) ?? [];
+    const existing = queue.find((entry) => entry.commandId === commandId);
+    if (existing) {
+      if (existing.text !== text)
+        throw new HarnessError(
+          'intent_mismatch',
+          'This command was already used for a different message. Send this one as a new message.',
+        );
+      return structuredClone(existing.ack);
+    }
+    const ack = (state: SteeringAck['state'], detail: string, nativeSession: NativeSessionRef | null = null) =>
+      steeringAckSchema.parse({ commandId, state, nativeSession, at: new Date().toISOString(), detail });
+    const active = this.active.get(runId);
+    if (!active)
+      return ack('rejected', 'Nothing is being answered in this conversation now. Send this as a message instead.');
+    if (queue.filter((entry) => entry.ack.state === 'pending').length >= STEER_QUEUE_LIMIT)
+      return ack('rejected', `${STEER_QUEUE_LIMIT} messages are already waiting for this answer to finish.`);
+    const entry: SteerEntry = {
+      commandId,
+      text,
+      ack: ack('pending', 'Waiting for the current answer to finish; it will be sent next, as its own message.'),
+    };
+    queue.push(entry);
+    this.steers.set(runId, queue.slice(-STEER_HISTORY - STEER_QUEUE_LIMIT));
+    if (!this.draining.has(runId)) {
+      this.draining.add(runId);
+      const base = active.request;
+      void active.promise
+        .then(
+          (result) =>
+            result.interrupted
+              ? this.cancelSteers(runId, 'The answer it was waiting for was stopped, so this message was not sent.')
+              : this.sendSteers(runId, base),
+          () => this.cancelSteers(runId, 'The answer it was waiting for did not finish, so this message was not sent.'),
+        )
+        .finally(() => this.draining.delete(runId));
+    }
+    return structuredClone(entry.ack);
+  }
+  /** What happened to the messages sent while this conversation was answering. A read. */
+  async steering(projectId: string, runId: string): Promise<SteeringAck[]> {
+    await this.get(projectId, runId);
+    return (this.steers.get(runId) ?? []).map((entry) => structuredClone(entry.ack));
+  }
+  private readonly draining = new Set<string>();
+  private settleSteer(runId: string, entry: SteerEntry, state: SteeringAck['state'], detail: string, nativeSession: NativeSessionRef | null = null) {
+    entry.ack = steeringAckSchema.parse({
+      commandId: entry.commandId,
+      state,
+      nativeSession,
+      at: new Date().toISOString(),
+      detail,
+    });
+    const queue = this.steers.get(runId);
+    if (queue) this.steers.set(runId, queue.slice(-STEER_HISTORY - STEER_QUEUE_LIMIT));
+  }
+  private cancelSteers(runId: string, detail: string) {
+    for (const entry of this.steers.get(runId) ?? [])
+      if (entry.ack.state === 'pending') this.settleSteer(runId, entry, 'cancelled', detail);
+  }
+  /** Sends the held messages one at a time, each as its own follow-up turn with no documents. */
+  private async sendSteers(runId: string, base: ClaudeSessionTurn<C>) {
+    for (;;) {
+      const entry = (this.steers.get(runId) ?? []).find((item) => item.ack.state === 'pending');
+      if (!entry || this.closed) break;
+      try {
+        const result = await this.request({
+          ...base,
+          mode: 'follow-up',
+          // Live previews stay with the message a caller is watching; this turn's answer is
+          // read from its durable record like any other.
+          preview: undefined,
+          input: {
+            ...base.input,
+            requestId: entry.commandId,
+            prompt: entry.text,
+            documents: [],
+            binding: undefined,
+            interaction: undefined,
+            carriedFrom: undefined,
+            signal: undefined,
+            onPreview: undefined,
+            onActivity: undefined,
+          },
+        });
+        if (result.response && !result.interrupted)
+          this.settleSteer(
+            runId,
+            entry,
+            'delivered',
+            'Sent as the next message once the answer it waited for finished.',
+            result.nativeSession,
+          );
+        else {
+          this.settleSteer(runId, entry, 'cancelled', 'This message was stopped before it was answered.');
+          this.cancelSteers(runId, 'The message before this one was stopped, so this message was not sent.');
+          break;
+        }
+      } catch (error) {
+        const reason = error instanceof EngineError || error instanceof HarnessError ? error.message : 'It could not be sent.';
+        this.settleSteer(runId, entry, 'rejected', reason.slice(0, 2000));
+        this.cancelSteers(runId, 'The message before this one could not be sent, so this message was not sent.');
+        break;
+      }
+    }
+    if (this.closed) this.cancelSteers(runId, 'Diomedes closed before this message was sent.');
+  }
   async recover(run: HarnessRun) {
-    if (run.capabilityId === CLAUDE_SESSION_CAPABILITY.id && !terminal(run))
+    if (run.capabilityId === this.profile.capability.id && !terminal(run))
       await this.runs.recover(run.id, localHarnessPrincipal(run.projectId));
   }
   async closeAll() {
     this.closed = true;
+    for (const runId of this.steers.keys())
+      this.cancelSteers(runId, 'Diomedes closed before this message was sent.');
     for (const active of this.active.values()) active.controller.abort();
     const closed = await Promise.allSettled(
       [...this.connections].map(([runId, value]) => this.dispose(runId, value)),
