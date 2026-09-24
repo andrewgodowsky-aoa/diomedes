@@ -28,6 +28,12 @@ import {
 } from '../server/engines/opencode-session.js';
 import type { TextRequest } from '../server/engines/contract.js';
 
+/**
+ * A hang guard for waits on the fixture process's real events. Each wait ends on
+ * the event itself; the guard only has to outlast a slow runner starting the
+ * fixture server (Windows CI took longer than vi.waitFor's 1 s default).
+ */
+const HANG_GUARD = { timeout: 20_000 };
 const FIXTURE = fileURLToPath(new URL('./fixtures/opencode-session-server.mjs', import.meta.url));
 const roots: string[] = [];
 const drivers: ClaudeSessionRuns<OpenCodeSessionCheckpoint>[] = [];
@@ -151,7 +157,7 @@ describe('kept OpenCode session over the native conversation driver', () => {
     f.state.mode = 'delayed';
     const { driver } = f.driverFor();
     const running = driver.request(f.turn('start', runId, input('first')));
-    await vi.waitFor(async () => expect((await f.log()).some((line) => line.endsWith('/prompt_async'))).toBe(true));
+    await vi.waitFor(async () => expect((await f.log()).some((line) => line.endsWith('/prompt_async'))).toBe(true), HANG_GUARD);
     expect(driver.busy(runId)).toBe(true);
     const held = await driver.steer('p1', runId, 'steer-1', 'also this');
     expect(held).toMatchObject({ commandId: 'steer-1', state: 'pending', nativeSession: null });
@@ -182,7 +188,7 @@ describe('kept OpenCode session over the native conversation driver', () => {
     const { driver } = f.driverFor();
     const prompts = async () => (await f.log()).filter((line) => line.endsWith('/prompt_async')).length;
     const running = driver.request(f.turn('start', runId, input('first')));
-    await vi.waitFor(async () => expect(await prompts()).toBe(1));
+    await vi.waitFor(async () => expect(await prompts()).toBe(1), HANG_GUARD);
     await driver.steer('p1', runId, 'steer-1', 'one');
     await driver.steer('p1', runId, 'steer-2', 'two');
     await running;
@@ -195,7 +201,7 @@ describe('kept OpenCode session over the native conversation driver', () => {
     expect(first.response?.text).toContain('(turn 4 of');
     // The first drain has ended; a message held behind a new turn starts another.
     const later = driver.request(f.turn('follow-up', runId, input('later')));
-    await vi.waitFor(async () => expect(await prompts()).toBe(5));
+    await vi.waitFor(async () => expect(await prompts()).toBe(5), HANG_GUARD);
     await driver.steer('p1', runId, 'steer-3', 'three');
     await later;
     await vi.waitFor(
@@ -210,7 +216,7 @@ describe('kept OpenCode session over the native conversation driver', () => {
     f.state.mode = 'slow';
     const { driver, runs } = f.driverFor();
     const running = driver.request(f.turn('start', runId, input('first')));
-    await vi.waitFor(async () => expect((await f.log()).some((line) => line.endsWith('/prompt_async'))).toBe(true));
+    await vi.waitFor(async () => expect((await f.log()).some((line) => line.endsWith('/prompt_async'))).toBe(true), HANG_GUARD);
     await driver.steer('p1', runId, 'steer-1', 'queued behind it');
     expect(await driver.interruptCommand('p1', runId, 'first')).toEqual({ state: 'requested' });
     const stopped = await running;
@@ -220,7 +226,7 @@ describe('kept OpenCode session over the native conversation driver', () => {
         state: 'cancelled',
         detail: 'The answer it was waiting for was stopped, so this message was not sent.',
       }),
-    );
+    HANG_GUARD);
     expect((await f.log()).some((line) => line.endsWith('/abort'))).toBe(true);
     const saved = (await runs.get(runId)).steps.filter((step) => step.intent.kind === 'model').at(-1);
     expect(saved?.nativeCheckpoint?.payload).toMatchObject({ state: 'idle' });
