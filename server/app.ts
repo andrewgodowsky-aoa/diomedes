@@ -22,6 +22,7 @@ import {
   dropFiles,
   pictureBytes,
   turnSourceVersions,
+  workbookSheet,
 } from './file-drops.js';
 import { isActiveMember } from '../shared/workspaces.js';
 import { AllowanceLedger } from './managed-usage.js';
@@ -1745,6 +1746,12 @@ export async function createApp(options: AppOptions) {
   app.get(
     '/api/projects/:id/documents/facts',
     route(async (req) => documentFacts(store, id(req), req.query.path, req.query.sha)),
+  );
+  app.get(
+    '/api/projects/:id/documents/sheet',
+    route(async (req) =>
+      workbookSheet(store, id(req), req.query.path, req.query.sha, req.query.offset),
+    ),
   );
   app.get(
     '/api/projects/:id/documents/version',

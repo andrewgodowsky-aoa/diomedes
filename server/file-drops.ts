@@ -16,8 +16,9 @@
  * - The bytes decide what a file is (`shared/file-drops.ts`). Only PNG, JPEG,
  *   GIF and WebP are ever served as bytes, with their own type, `nosniff`, and
  *   a sandbox policy; SVG is drawing text that passed svg-check, shown in the
- *   existing sandboxed drawing frame. PDFs and workbooks are described, not
- *   rendered: this build has no safe in-app viewer for either.
+ *   existing sandboxed drawing frame. A PDF is described, not rendered: this
+ *   build has no safe in-app viewer for one. A workbook's first sheet is read
+ *   as saved values into a bounded table (server/xlsx-preview.ts).
  */
 import fs from 'node:fs/promises';
 import {
@@ -41,6 +42,7 @@ import { svgProblem } from '../shared/svg-check.js';
 import { readImageHeader } from '../shared/theme-pack/package.js';
 import { ApiError, absent, projectFile, relativeName } from './paths.js';
 import { bytesHash, type Store, type WriteInput } from './store.js';
+import { readFirstSheet, WorkbookUnreadable } from './xlsx-preview.js';
 
 export interface DroppedFile {
   name: string;
@@ -317,4 +319,31 @@ export async function turnSourceVersions(store: Store, projectId: string, source
     }
   }
   return versions.length ? { sourceVersions: versions } : {};
+}
+
+/**
+ * The first sheet of a workbook as a bounded page of rows (server/xlsx-preview.ts),
+ * served only when the bytes are a workbook, whatever the file is named.
+ */
+export async function workbookSheet(
+  store: Store,
+  projectId: string,
+  input: unknown,
+  sha: unknown,
+  offset: unknown,
+) {
+  const found = await versionBytes(store, projectId, input, sha);
+  if (sniffBytes(found.bytes) !== 'xlsx')
+    throw new ApiError(415, 'This file is not an XLSX workbook, so Files does not read it as one.');
+  const from = typeof offset === 'string' && /^\d{1,7}$/.test(offset) ? Number(offset) : 0;
+  try {
+    return {
+      identity: identityOf(store.state(projectId).history, found.path, found.sha),
+      current: found.current,
+      ...readFirstSheet(found.bytes, { offset: from }),
+    };
+  } catch (error) {
+    if (error instanceof WorkbookUnreadable) throw new ApiError(422, error.message);
+    throw error;
+  }
 }

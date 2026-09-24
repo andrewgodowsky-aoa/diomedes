@@ -4,7 +4,15 @@ import { delimiterFor, parseDelimited, TABLE_PAGE_ROWS } from '../../shared/deli
 import { IMAGE_KINDS } from '../../shared/file-drops';
 import { identityLabel, versionsOf, type FileIdentity } from '../../shared/file-identity';
 import { date, time } from '../components';
-import { documentFacts, documentVersion, pictureUrl, type DocumentFacts, type DocumentVersion } from './file-drops-api';
+import {
+  documentFacts,
+  documentVersion,
+  pictureUrl,
+  workbookSheet,
+  type DocumentFacts,
+  type DocumentVersion,
+  type WorkbookPage,
+} from './file-drops-api';
 
 /**
  * Read-only previews for the Files pane: a picture, a PDF's facts, a workbook's
@@ -129,42 +137,100 @@ export function DocumentFactsPreview({
           </>
         )}
       </dl>
-      <p className="caption">
-        {expect === 'pdf'
-          ? 'Files has no in-app PDF viewer in this build.'
-          : 'Files does not preview workbooks in this build; save a sheet as CSV to read it here as a table.'}{' '}
-        {NO_HANDOFF}
-      </p>
+      {expect === 'pdf' ? (
+        <p className="caption">Files has no in-app PDF viewer in this build. {NO_HANDOFF}</p>
+      ) : (
+        <WorkbookPreview projectId={projectId} path={path} sha={facts.identity.sha} />
+      )}
     </div>
   );
 }
 
-/** CSV or TSV as a table, a page of rows at a time. Cells are exactly the text between delimiters. */
-export function TablePreview({ name, text }: { name: string; text: string }) {
+/**
+ * A workbook's first sheet, a page of rows at a time, read by the local
+ * service from the saved values. Nothing is recalculated.
+ */
+function WorkbookPreview({ projectId, path, sha }: { projectId: string; path: string; sha: string }) {
   const [page, setPage] = useState(0);
-  const table = useMemo(
-    () => parseDelimited(text, delimiterFor(name), { offset: page * TABLE_PAGE_ROWS }),
-    [text, name, page],
+  const [sheet, setSheet] = useState<WorkbookPage | null>(null);
+  const [failure, setFailure] = useState<string | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    setFailure(null);
+    workbookSheet(projectId, path, sha, page * TABLE_PAGE_ROWS, controller.signal)
+      .then(setSheet)
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted)
+          setFailure(error instanceof Error ? error.message : 'Files could not read this workbook.');
+      });
+    return () => controller.abort();
+  }, [projectId, path, sha, page]);
+  if (failure) return <p className="caption">{failure} {NO_HANDOFF}</p>;
+  if (!sheet) return <p className="caption" role="status">Reading...</p>;
+  return (
+    <>
+      <p className="caption">
+        The first sheet, {sheet.sheet}
+        {sheet.sheets.length > 1 ? `, of ${sheet.sheets.length} sheets` : ''}. Values are shown as the
+        workbook saved them: formulas are not recalculated and dates are serial numbers.
+      </p>
+      <RowsTable
+        rows={sheet.rows}
+        total={sheet.total}
+        columns={sheet.columns}
+        clipped={sheet.clipped}
+        page={page}
+        onPage={setPage}
+        header={false}
+      />
+    </>
   );
-  const pages = Math.max(1, Math.ceil(table.total / TABLE_PAGE_ROWS));
+}
+
+/** One page of rows, with its count and pager. Cells are text only. */
+function RowsTable({
+  rows,
+  total,
+  columns,
+  clipped,
+  unterminated = false,
+  page,
+  onPage,
+  header,
+}: {
+  rows: string[][];
+  total: number;
+  columns: number;
+  clipped: boolean;
+  unterminated?: boolean;
+  page: number;
+  onPage(page: number): void;
+  /** Whether the file's first row names the columns. */
+  header: boolean;
+}) {
+  const pages = Math.max(1, Math.ceil(total / TABLE_PAGE_ROWS));
   const first = page * TABLE_PAGE_ROWS;
-  const [head, ...rest] = page === 0 ? table.rows : [null, ...table.rows];
+  const [head, ...rest] = header && page === 0 ? rows : [null, ...rows];
   return (
     <div className="files-table-wrap">
       <p className="caption mono" role="status">
-        {table.total === 0
+        {total === 0
           ? 'No rows'
-          : `Rows ${first + 1}–${first + table.rows.length} of ${table.total} · ${table.columns} ${table.columns === 1 ? 'column' : 'columns'}`}
+          : `Rows ${first + 1}–${first + rows.length} of ${total} · ${columns} ${columns === 1 ? 'column' : 'columns'}`}
       </p>
-      {table.clipped && <p className="caption">Columns past the 50th are not shown; Raw has them.</p>}
-      {table.unterminated && <p className="caption">A quote is never closed, so the last rows may be joined; Raw shows the text as written.</p>}
+      {clipped && <p className="caption">Columns past the 50th are not shown.</p>}
+      {unterminated && (
+        <p className="caption">A quote is never closed, so the last rows may be joined; Raw shows the text as written.</p>
+      )}
       <div className="files-table-scroll">
         <table className="files-table">
           {head && (
             <thead>
               <tr>
                 {head.map((cell, i) => (
-                  <th key={i} scope="col">{cell}</th>
+                  <th key={i} scope="col">
+                    {cell}
+                  </th>
                 ))}
               </tr>
             </thead>
@@ -182,16 +248,39 @@ export function TablePreview({ name, text }: { name: string; text: string }) {
       </div>
       {pages > 1 && (
         <div className="files-pager">
-          <button type="button" disabled={page === 0} onClick={() => setPage(page - 1)}>
+          <button type="button" disabled={page === 0} onClick={() => onPage(page - 1)}>
             Previous rows
           </button>
-          <span className="mono">{page + 1} / {pages}</span>
-          <button type="button" disabled={page >= pages - 1} onClick={() => setPage(page + 1)}>
+          <span className="mono">
+            {page + 1} / {pages}
+          </span>
+          <button type="button" disabled={page >= pages - 1} onClick={() => onPage(page + 1)}>
             Next rows
           </button>
         </div>
       )}
     </div>
+  );
+}
+
+/** CSV or TSV as a table, a page of rows at a time. Cells are exactly the text between delimiters. */
+export function TablePreview({ name, text }: { name: string; text: string }) {
+  const [page, setPage] = useState(0);
+  const table = useMemo(
+    () => parseDelimited(text, delimiterFor(name), { offset: page * TABLE_PAGE_ROWS }),
+    [text, name, page],
+  );
+  return (
+    <RowsTable
+      rows={table.rows}
+      total={table.total}
+      columns={table.columns}
+      clipped={table.clipped}
+      unterminated={table.unterminated}
+      page={page}
+      onPage={setPage}
+      header
+    />
   );
 }
 

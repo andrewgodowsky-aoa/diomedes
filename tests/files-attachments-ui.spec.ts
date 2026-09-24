@@ -6,7 +6,7 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createApp } from '../server/app';
 import type { Conversation, Project } from '../shared/types';
-import { PDF_SMALL, PNG_1X1 } from './fixtures/file-drop-samples';
+import { PDF_SMALL, PNG_1X1, buildXlsx } from './fixtures/file-drop-samples';
 
 // P05 in the built Console against the production routes: drop and paste into
 // Files, byte-sniffed previews, attaching a file to a Thread message, and
@@ -80,6 +80,7 @@ test.beforeAll(async () => {
     'client/console/files.css',
     'client/console/attachments.css',
     'shared/file-drops.ts',
+    'client/console/file-drops-api.ts',
   ])
     expect(built, `Build first: ${source}`).toBeGreaterThan((await fs.stat(source)).mtimeMs);
   app.use(express.static(dist));
@@ -158,6 +159,20 @@ test('drop, paste, previews, the attach-to-thread chip and an older version, in 
   await dropFiles(pane(page), [{ name: 'invoice.pdf', type: 'application/pdf', bytes: [...PDF_SMALL] }]);
   await expect(pane(page).getByText('PDF 1.4', { exact: true })).toBeVisible();
   await expect(pane(page).getByText(/no in-app PDF viewer/)).toBeVisible();
+
+  // A workbook's first sheet reads as a table, from the values the workbook saved.
+  await pane(page).getByRole('button', { name: 'Back', exact: true }).click();
+  const workbook = buildXlsx(
+    '<worksheet><sheetData><row><c t="s"><v>0</v></c><c t="s"><v>1</v></c></row>' +
+      '<row><c t="inlineStr"><is><t>Tables &amp; chairs</t></is></c><c><v>7</v></c></row></sheetData></worksheet>',
+    { shared: ['item', 'count'] },
+  );
+  await dropFiles(pane(page), [
+    { name: 'stock.xlsx', type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', bytes: [...workbook] },
+  ]);
+  await expect(pane(page).getByText(/The first sheet, Stock, of 2 sheets/)).toBeVisible();
+  await expect(pane(page).getByRole('cell', { name: 'Tables & chairs', exact: true })).toBeVisible();
+  await expect(pane(page).getByText('Rows 1–2 of 2 · 2 columns')).toBeVisible();
 
   // Paste text while the pane has focus: it becomes a dated text file.
   await pane(page).getByRole('button', { name: 'Back', exact: true }).click();

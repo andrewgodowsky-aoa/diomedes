@@ -10,6 +10,7 @@ import {
   droppedFiles,
   dropFiles,
   pictureBytes,
+  workbookSheet,
   type DroppedFile,
 } from '../server/file-drops.js';
 import { createApp } from '../server/app.js';
@@ -23,6 +24,7 @@ import {
   SCRIPTED_SVG,
   WEBP_1X1,
   XLSX_HEAD,
+  buildXlsx,
   pngClaiming,
 } from './fixtures/file-drop-samples.js';
 
@@ -358,4 +360,59 @@ test('production HTTP routes keep the client boundary and serve pictures with a 
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
+});
+
+describe('an XLSX workbook reads as a bounded first-sheet table, with no new dependency', () => {
+  const sheet = (rows: string) => `<worksheet><sheetData>${rows}</sheetData></worksheet>`;
+  test('shared, inline, boolean and number cells, gaps by reference, and entities decoded', async () => {
+    const bytes = buildXlsx(
+      sheet(
+        '<row r="1"><c r="A1" t="s"><v>0</v></c><c r="C1" t="s"><v>1</v></c></row>' +
+          '<row r="2"><c r="A2" t="inlineStr"><is><t>Tables &amp; chairs</t></is></c><c r="B2"><v>7</v></c><c r="C2" t="b"><v>1</v></c></row>' +
+          '<row r="3"><c r="A3"><f>B2*2</f><v>14</v></c></row>',
+      ),
+      { shared: ['item', 'in stock'] },
+    );
+    await drop([file('stock.xlsx', bytes)]);
+    const page = await workbookSheet(store, projectId, 'Imports/stock.xlsx', undefined, undefined);
+    expect(page).toMatchObject({
+      sheets: ['Stock', 'Second'],
+      sheet: 'Stock',
+      total: 3,
+      columns: 3,
+      clipped: false,
+      current: true,
+      rows: [
+        ['item', '', 'in stock'],
+        ['Tables & chairs', '7', 'TRUE'],
+        ['14'],
+      ],
+    });
+  });
+
+  test('pages past the first hundred rows', async () => {
+    const rows = Array.from({ length: 130 }, (_, i) => `<row><c t="inlineStr"><is><t>r${i + 1}</t></is></c></row>`).join('');
+    await drop([file('long.xlsx', buildXlsx(sheet(rows)))]);
+    const page = await workbookSheet(store, projectId, 'Imports/long.xlsx', undefined, '100');
+    expect(page.total).toBe(130);
+    expect(page.rows[0]).toEqual(['r101']);
+    expect(page.rows).toHaveLength(30);
+  });
+
+  test('a part that inflates past its cap is refused in words, and so is a non-workbook', async () => {
+    const huge = `<worksheet><sheetData>${'<row><c><v>1</v></c></row>'.repeat(400_000)}</sheetData></worksheet>`;
+    await drop([file('bomb.xlsx', buildXlsx(huge, { lieAboutSize: true }))]);
+    await expect(workbookSheet(store, projectId, 'Imports/bomb.xlsx', undefined, undefined)).rejects.toMatchObject({
+      status: 422,
+      message: expect.stringContaining('too large for Files to preview'),
+    });
+    await drop([file('photo.png', PNG_1X1)]);
+    await expect(workbookSheet(store, projectId, 'Imports/photo.png', undefined, undefined)).rejects.toMatchObject({
+      status: 415,
+    });
+    await fs.writeFile(path.join(folder, 'broken.xlsx'), XLSX_HEAD);
+    await expect(workbookSheet(store, projectId, 'broken.xlsx', undefined, undefined)).rejects.toMatchObject({
+      status: 422,
+    });
+  });
 });

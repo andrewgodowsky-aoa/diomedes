@@ -73,3 +73,23 @@ export const documentVersion = (projectId: string, path: string, sha: string, si
 /** Same-origin, so the app's `img-src 'self'` admits it; the route serves pictures only. */
 export const pictureUrl = (projectId: string, path: string, sha?: string | null) =>
   `/api${documents(projectId)}/picture?${query(path, sha)}`;
+
+export interface WorkbookPage {
+  identity: FileIdentity;
+  current: boolean;
+  sheets: string[];
+  sheet: string;
+  rows: string[][];
+  total: number;
+  columns: number;
+  clipped: boolean;
+}
+
+export const workbookSheet = (
+  projectId: string,
+  path: string,
+  sha: string | null | undefined,
+  offset: number,
+  signal?: AbortSignal,
+) =>
+  api<WorkbookPage>(`${documents(projectId)}/sheet?${query(path, sha)}&offset=${offset}`, 'GET', undefined, signal);
