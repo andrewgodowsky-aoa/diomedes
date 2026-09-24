@@ -207,7 +207,7 @@ describe('a Diomedes loop through the real host', () => {
     expect(data.verification?.record?.requestedBy).toBe('diomedes-loop');
     const entry = state().history.find((item) => item.kind === 'verified')!;
     expect(entry.actor).toBe('diomedes');
-    expect(entry.sentence).toMatch(/Diomedes ran your checks/);
+    expect(entry.sentence).toMatch(/ran your checks on Check the linen delivery when its loop finished: 3 of 3 passed/);
     await vi.waitFor(() => expect(state().tasks.find((item) => item.id === taskId)!.state).toBe('done'));
     expect(state().tasks.find((item) => item.id === taskId)!.moves.at(-1)).toMatchObject({ by: 'diomedes', to: 'done' });
   });

@@ -224,7 +224,8 @@ export function VerificationPanel({
         <div className="verif-evidence">
           <div className="verif-meta">
             <span>
-              Checked <time dateTime={record.endedAt}>{when(record.endedAt)}</time>, at your request
+              Checked <time dateTime={record.endedAt}>{when(record.endedAt)}</time>,{' '}
+              {record.requestedBy === 'diomedes-loop' ? 'your checks, run when its loop finished' : 'at your request'}
             </span>
             {record.producer && <span>Output by {formatOrigin(record.producer).label}</span>}
           </div>

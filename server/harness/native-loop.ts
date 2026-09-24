@@ -628,8 +628,8 @@ export class NativeLoop {
           ...excerpt(feedback),
           detail:
             result.state === 'completed'
-              ? `The sub-task on ${delegation.route} finished.`
-              : `The sub-task on ${delegation.route} ended ${result.state}${result.reason ? `: ${result.reason}` : '.'}`,
+              ? 'The sub-task finished.'
+              : `The sub-task ended ${result.state}${result.reason ? `: ${result.reason}` : '.'}`,
         },
         feedback,
       );

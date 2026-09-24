@@ -17,6 +17,8 @@ import {
   type RouteControlProfile,
 } from '../../shared/work-control';
 import { AGENT_NAME } from '../../shared/agent-name';
+import { NATIVE_LOOP_CAPABILITY } from '../../shared/native-loop';
+import { LoopInspector } from '../console/LoopInspector';
 import './workbench.css';
 
 /**
@@ -308,7 +310,7 @@ function SessionInspector({
               <>
                 <p>Snapshot at {snapshot.at}</p>
                 {snapshot.run ? (
-                  <HarnessEvidence run={snapshot.run} />
+                  <HarnessEvidence run={snapshot.run} projectId={projectId} revision={revision} />
                 ) : (
                   <p>
                     No detailed Runtime record is linked to this session. Tool and budget evidence
@@ -324,9 +326,10 @@ function SessionInspector({
   );
 }
 
-function HarnessEvidence({ run }: { run: HarnessRun }) {
+function HarnessEvidence({ run, projectId, revision }: { run: HarnessRun; projectId: string; revision: number }) {
   return (
     <>
+      {run.capabilityId === NATIVE_LOOP_CAPABILITY && <LoopInspector projectId={projectId} runId={run.id} revision={revision} />}
       <dl>
         <dt>Run</dt>
         <dd className="run-inspector-code">{run.id}</dd>

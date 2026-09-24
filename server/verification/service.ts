@@ -39,6 +39,7 @@ import {
 import { applicationOrigin, directOrigin, originForSession, type OriginSnapshot } from '../../shared/attribution.js';
 import { REVIEWER_MAX_EXCERPT_BYTES, REVIEWER_TIMEOUT_MS } from '../../shared/permissions.js';
 import type { Session, Task } from '../../shared/types.js';
+import { AGENT_NAME } from '../../shared/agent-name.js';
 import { ApiError } from '../paths.js';
 import { requireCloudReview } from '../cloud-sharing.js';
 import { hash, now, type Store } from '../store.js';
@@ -280,7 +281,7 @@ export class VerificationService {
         sentence:
           requestedBy === 'you'
             ? `You verified ${prepared.task.name}: ${passed} of ${record.checks.length} checks passed`
-            : `Diomedes ran your checks on ${prepared.task.name} when its loop finished: ${passed} of ${record.checks.length} passed`,
+            : `${AGENT_NAME} ran your checks on ${prepared.task.name} when its loop finished: ${passed} of ${record.checks.length} passed`,
         sessionId: prepared.session.id,
         taskId: prepared.task.id,
       });
