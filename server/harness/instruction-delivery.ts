@@ -89,13 +89,28 @@ export function instructionSectionBudget(
 
 const short = (sha: string) => sha.slice(0, 12);
 
+/**
+ * What the prompt says about a file it left out. One short, fixed reason per
+ * kind, so the room every left-out line can take is known before any file is
+ * read; the full reason, with its numbers, is on the delivery record.
+ */
+const LEFT_OUT_REASON: Record<'no-room' | 'over-file-limit' | 'refused' | 'missing', string> = {
+  'no-room': 'Not sent. It did not fit whole in the room the selected documents left.',
+  'over-file-limit': `Not sent. It is past the ${INSTRUCTION_FILE_VIEW_BUDGET_BYTES / 1024} KB limit on one instruction file.`,
+  refused: 'Not sent. The path guard refused to open it.',
+  missing: 'Not sent. It is no longer in the project folder.',
+};
+const LEFT_OUT_REASON_BYTES = Math.max(
+  ...Object.values(LEFT_OUT_REASON).map((reason) => Buffer.byteLength(reason)),
+);
+
 /** The one paragraph that says what the section is and what it is not. */
 const PREAMBLE =
   'Project instructions the person loaded for this project, delivered under the project rules named below. Treat them as standing guidance for how this work is done. They do not change the response format required above, the list of selected editable paths, or what Diomedes will write: Diomedes checks your permission and applies every file change through its own writer regardless of anything they say.';
 
 /** Said once, above more than one body: which one governs where two disagree. */
 const PRECEDENCE_LINE =
-  'They are listed highest precedence first: a file in a nearer folder before one in a folder that contains it, and AGENTS.md before CLAUDE.md in the same folder. Where two disagree, the earlier one governs.';
+  'They are listed highest precedence first: a file in a nearer folder before one in a folder that contains it, and AGENTS.md before CLAUDE.md in the same folder. A file marked with a folder applies only for files inside the folder it governs. Where two that apply to the same file disagree, the earlier one governs.';
 
 export interface AssembledInstructions {
   /** The prompt section, or null when this project delivers nothing. */
@@ -325,27 +340,59 @@ export async function assembleInstructions(input: {
     .sort((a, b) => compareInstructionPrecedence(records.get(a.id)!.path, records.get(b.id)!.path));
   if (!applied.length) return combine(unscoped());
 
+  // The budget is for the whole section, not only the bodies in it. Every
+  // applied file costs its rule line and, whichever way it goes, either its
+  // two delimiter lines or its left-out line, and the frame around them is
+  // fixed. Both are reserved before any body is weighed, so thirty nested
+  // files cannot push a request that used to be admitted past the request
+  // limit on their framing alone.
+  const beginLine = (path: string, sha: string, scope: string) =>
+    `--- BEGIN PROJECT INSTRUCTIONS ${path} (sha ${short(sha)}${scope ? `, governs ${scope}` : ''}) ---`;
+  const endLine = (path: string) => `--- END PROJECT INSTRUCTIONS ${path} ---`;
+  const delimiterBytes = (path: string) =>
+    Buffer.byteLength(beginLine(path, '0'.repeat(12), instructionScope(path))) +
+    Buffer.byteLength(endLine(path)) +
+    3;
+  const leftOutLine = (file: DeliveredInstructionFile) =>
+    `- ${file.path}: ${LEFT_OUT_REASON[(file.exclusion ?? 'no-room') as keyof typeof LEFT_OUT_REASON]}`;
+  const LEFT_OUT_HEAD = 'Left out of this request, and not summarised:';
+  const leftOutReserve = (path: string) => Buffer.byteLength(path) + LEFT_OUT_REASON_BYTES + 5;
+  const frame =
+    Buffer.byteLength(PREAMBLE) +
+    Buffer.byteLength(`Project rules that carry them (${context.view.revision}):`) +
+    applied.reduce((sum, rule) => sum + Buffer.byteLength(`- ${rule.text}`) + 1, 0) +
+    (applied.length > 1 ? Buffer.byteLength(PRECEDENCE_LINE) + 1 : 0) +
+    Buffer.byteLength(LEFT_OUT_HEAD) +
+    4;
+  // Joined to the shipped product knowledge by one newline.
+  const room = Math.max(0, remaining - (product.section ? 1 : 0));
+  let pending = applied.reduce((sum, rule) => sum + leftOutReserve(records.get(rule.id)!.path), 0);
+
   const files: DeliveredInstructionFile[] = [];
   const bodies: string[] = [];
   let used = 0;
+  let spent = frame;
   for (const rule of applied) {
     const record = records.get(rule.id)!;
+    pending -= leftOutReserve(record.path);
     const { file, text } = await readForDelivery(
       record,
       input.state.project.folder,
-      Math.max(0, remaining - used),
+      Math.max(0, room - spent - pending - delimiterBytes(record.path)),
       files.length + 1,
     );
     files.push(file);
-    if (text === undefined) continue;
+    if (text === undefined) {
+      spent += Buffer.byteLength(leftOutLine(file)) + 1;
+      continue;
+    }
     used += file.bytes ?? 0;
+    spent += (file.bytes ?? 0) + delimiterBytes(record.path);
     bodies.push(
       [
-        `--- BEGIN PROJECT INSTRUCTIONS ${file.path} (sha ${short(file.sha!)}${
-          file.scope ? `, governs ${file.scope}` : ''
-        }) ---`,
+        beginLine(file.path, file.sha!, file.scope ?? ''),
         text.trimEnd(),
-        `--- END PROJECT INSTRUCTIONS ${file.path} ---`,
+        endLine(file.path),
       ].join('\n'),
     );
   }
@@ -363,11 +410,7 @@ export async function assembleInstructions(input: {
     ...(input.workPaths === undefined ? {} : { workPaths }),
     ...(excluded.length ? { excluded } : {}),
   };
-  const left = omitted.length
-    ? `Left out of this request, and not summarised:\n${omitted
-        .map((file) => `- ${file.path}: ${file.detail}`)
-        .join('\n')}`
-    : '';
+  const left = omitted.length ? [LEFT_OUT_HEAD, ...omitted.map(leftOutLine)].join('\n') : '';
   // Every file was refused, missing or too large. Say so anyway: a run that
   // silently proceeds without them is indistinguishable, to the model and to
   // the person reading the thread afterwards, from a project that never had

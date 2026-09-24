@@ -19,7 +19,7 @@ import {
   discoverInstructionFiles,
   instructionRules,
 } from '../server/capability-packs.js';
-import { assembleInstructions } from '../server/harness/instruction-delivery.js';
+import { assembleInstructions, instructionSectionBudget } from '../server/harness/instruction-delivery.js';
 import { toScopedRule } from '../server/rules.js';
 import { resolveRules, type ScopedRule } from '../shared/rule-authority.js';
 import {
@@ -285,6 +285,22 @@ describe('a run is scoped: the nearest folder governs, and every file not sent s
     expect(section).not.toContain('pkg/AGENTS.md');
   });
 
+  test('work in two sibling folders is not told that one sibling governs the other', async () => {
+    // Review (2026-09-24): the order is total, so pkg/api's file is listed
+    // before pkg/web's when work spans both. The sentence above the bodies
+    // said only "where two disagree, the earlier one governs", which tells
+    // the model pkg/api's rules override pkg/web's on pkg/web's own files.
+    // Sibling folders never govern each other's work; precedence is between
+    // files that cover the same file.
+    const { store, id } = await project(MONOREPO);
+    await activatePack(store, id, PACK);
+    const { section } = await assemble(store, id, ['pkg/api/src/index.ts', 'pkg/web/page.md']);
+    expect(section).toContain('WEB-AGENTS-BODY');
+    expect(section).toContain('governs pkg/web');
+    expect(section).not.toMatch(/Where two disagree, the earlier one governs\./);
+    expect(section).toContain('only for files inside the folder it governs');
+  });
+
   test('a folder whose name only starts like a scoped folder does not inherit its rules', async () => {
     const { store, id } = await project(MONOREPO);
     await activatePack(store, id, PACK);
@@ -332,9 +348,12 @@ describe('the byte budget spends on the strongest file first and never cuts one'
     const { store, id } = await project({ 'AGENTS.md': root, 'pkg/api/AGENTS.md': nested });
     await activatePack(store, id, PACK);
     // Shipped product knowledge is placed first and takes its share of the
-    // budget; the room left for project files is what this test sizes.
+    // budget; the room left for project files is what this test sizes. That
+    // room also carries the section's frame (the preamble, the rule lines,
+    // each file's delimiters or left-out line), so it is sized for one
+    // 3 KB body and its frame, and not two.
     const product = (await assemble(store, id, ['pkg/api/x.ts'])).productKnowledge.bytes;
-    const { section, delivery } = await assemble(store, id, ['pkg/api/x.ts'], product + 4000);
+    const { section, delivery } = await assemble(store, id, ['pkg/api/x.ts'], product + 5000);
     expect(delivery!.files.map((file) => [file.path, file.state, file.exclusion])).toEqual([
       ['pkg/api/AGENTS.md', 'sent', undefined],
       ['AGENTS.md', 'omitted', 'no-room'],
@@ -346,6 +365,34 @@ describe('the byte budget spends on the strongest file first and never cuts one'
     expect(section).toContain('n'.repeat(3000));
     expect(section).not.toContain('r'.repeat(100));
     expect(section).toContain('- AGENTS.md: Not sent.');
+  });
+
+  test('the whole section, not only the bodies, stays inside its budget when many nested files apply', async () => {
+    // Review (2026-09-24): the budget was spent on bodies alone, while each
+    // applied file also brings a rule line, two delimiter lines or a
+    // left-out line. With 32 nested files in scope and the selection at the
+    // 128 KB source ceiling that frame alone overran the section's share of
+    // the 160 KB request by several KB, so a selection that used to be
+    // admitted could be refused once instructions were added behind it.
+    const files: Record<string, string> = { 'AGENTS.md': `# Root\n${'r'.repeat(400)}\n` };
+    for (let index = 0; index < 32; index++)
+      files[`packages/service-number-${String(index).padStart(2, '0')}/src/AGENTS.md`] =
+        `# Service ${index}\n${'s'.repeat(300)}\n`;
+    const { store, id } = await project(files);
+    await activatePack(store, id, PACK);
+    const work = Object.keys(files)
+      .filter((name) => name.includes('/'))
+      .map((name) => name.replace('AGENTS.md', 'index.ts'));
+    for (const budget of [instructionSectionBudget(128_000), instructionSectionBudget(0), 6000]) {
+      const { section, delivery } = await assemble(store, id, work, budget);
+      expect(Buffer.byteLength(section!)).toBeLessThanOrEqual(budget);
+      // Still strongest first: the files are near enough one size that what
+      // went is a prefix of the precedence order.
+      const states = delivery!.files.map((file) => file.state);
+      expect(states).toEqual([...states].sort((a, b) => (a === b ? 0 : a === 'sent' ? -1 : 1)));
+      if (budget >= instructionSectionBudget(128_000))
+        expect(delivery!.files.filter((file) => file.state === 'sent').length).toBeGreaterThan(0);
+    }
   });
 
   test('a file that grew past the per-file limit after discovery is left out whole and says so', async () => {
