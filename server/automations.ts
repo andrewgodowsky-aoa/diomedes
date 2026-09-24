@@ -490,10 +490,23 @@ export class AutomationService {
     const binding = this.workspaces.outputBinding(organization.id);
     const newestFirst = [...occurrences].reverse();
     const latest = newestFirst[0] ? await this.occurrenceView(newestFirst[0]) : null;
+    // The label reads the latest *run* (work order A1). A press refused before anything
+    // started (a busy project, a changed source) ran nothing and wrote nothing, so it must
+    // not hide a run still going or the missing files the last run named; an admission
+    // interrupted before its run started still reads as needing investigation.
+    const labelled = newestFirst.find(
+      (occurrence) =>
+        occurrence.admission.state !== 'refused' ||
+        occurrence.admission.code === 'interrupted_before_start',
+    );
+    const labelFacts =
+      labelled === undefined || labelled === newestFirst[0]
+        ? (latest?.facts ?? null)
+        : (await this.occurrenceView(labelled)).facts;
     const status = automationLabel({
       trigger: 'manual',
       setup: setup.facts,
-      latest: latest?.facts ?? null,
+      latest: labelFacts,
     });
     let lastResult: AutomationView['lastResult'] = null;
     let freshness: AutomationView['freshness'] = null;
