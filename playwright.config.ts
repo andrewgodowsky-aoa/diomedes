@@ -121,6 +121,7 @@ export default defineConfig({
     'remembered-approvals-ui.spec.ts',
     'editor-guard-ui.spec.ts',
     'h08-durable-controls.spec.ts',
+    'h15-supervision.spec.ts',
   ],
   fullyParallel: false,
   workers: 1,

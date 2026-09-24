@@ -103,18 +103,22 @@ export function nextStep(finding: DriftFinding, context: LadderContext): LadderS
   );
   const notedOnRun = onRun.some((record) => record.action === 'note');
   if (acknowledged)
-    return notedOnRun ? { rung: null, reason: 'Acknowledged and already noted on this run.' } : {
-      rung: 'note',
-      reason: 'You chose to continue after this was raised, so it is noted, not raised again.',
-      settled: 'Acknowledged by your earlier answer.',
-    };
+    return notedOnRun
+      ? { rung: null, reason: 'Acknowledged and already noted on this run.' }
+      : {
+          rung: 'note',
+          reason: 'You chose to continue after this was raised, so it is noted, not raised again.',
+          settled: 'Acknowledged by your earlier answer.',
+        };
   // One escalation per run: an issue already escalated on this run is only noted from here.
   if (onRun.some((record) => record.action === 'escalate'))
-    return notedOnRun ? { rung: null, reason: 'Already paused and noted on this run.' } : {
-      rung: 'note',
-      reason: 'This run was already paused for this.',
-      settled: 'Already escalated on this run.',
-    };
+    return notedOnRun
+      ? { rung: null, reason: 'Already paused and noted on this run.' }
+      : {
+          rung: 'note',
+          reason: 'This run was already paused for this.',
+          settled: 'Already escalated on this run.',
+        };
   const ladder = DRIFT_LADDERS[finding.code];
   const entry = ladder.entry[finding.severity];
   if (!context.live) {
@@ -130,9 +134,7 @@ export function nextStep(finding: DriftFinding, context: LadderContext): LadderS
   const lineage = new Set(context.lineage ?? [context.sessionId]);
   const corrections = context.records.filter(
     (record) =>
-      lineage.has(record.sessionId) &&
-      record.code === finding.code &&
-      record.action === 'correct',
+      lineage.has(record.sessionId) && record.code === finding.code && record.action === 'correct',
   ).length;
   const correctedThis = onRun.some((record) => record.action === 'correct');
   const tryCorrect = (why: string): LadderStep => {
@@ -151,7 +153,10 @@ export function nextStep(finding: DriftFinding, context: LadderContext): LadderS
     };
   };
   if (entry === 'escalate')
-    return { rung: 'escalate', reason: 'This is something only you can admit, so the run is paused for you.' };
+    return {
+      rung: 'escalate',
+      reason: 'This is something only you can admit, so the run is paused for you.',
+    };
   if (entry === 'correct')
     return tryCorrect(
       correctedThis
@@ -160,9 +165,16 @@ export function nextStep(finding: DriftFinding, context: LadderContext): LadderS
     );
   // Info: a note, once per issue per run, unless it already climbed past one.
   if (correctedThis) {
-    if (onRun.some((record) => record.action === 'note' && record.evidenceDigest === finding.evidenceDigest))
+    if (
+      onRun.some(
+        (record) => record.action === 'note' && record.evidenceDigest === finding.evidenceDigest,
+      )
+    )
       return { rung: null, reason: 'Already noted.' };
-    return { rung: null, reason: 'Already corrected; this is below the level that corrects again.' };
+    return {
+      rung: null,
+      reason: 'Already corrected; this is below the level that corrects again.',
+    };
   }
   if (onRun.some((record) => record.action === 'note'))
     return { rung: null, reason: 'Already noted on this run.' };

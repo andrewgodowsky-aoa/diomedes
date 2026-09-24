@@ -45,7 +45,15 @@ export type DriftSeverity = 'info' | 'warning' | 'critical';
 /** One fact a finding rests on, pointing at the durable record that holds it. */
 export interface DriftEvidence {
   /** What kind of record: a History entry, a Need, a harness step, a budget line, a rule, a verification. */
-  readonly kind: 'write' | 'proposal' | 'read' | 'destination' | 'tool-call' | 'budget' | 'rule' | 'verification';
+  readonly kind:
+    | 'write'
+    | 'proposal'
+    | 'read'
+    | 'destination'
+    | 'tool-call'
+    | 'budget'
+    | 'rule'
+    | 'verification';
   /** The record's own id (History entry, Need, step, rule, verification entry). */
   readonly ref: string;
   /** One plain sentence. Names paths and counts; never file content. */

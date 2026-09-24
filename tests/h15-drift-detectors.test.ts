@@ -16,12 +16,7 @@ import {
   machineRules,
   within,
 } from '../server/supervision/detectors.js';
-import type {
-  DriftAction,
-  DriftInput,
-  DriftSeverity,
-  DriftTouch,
-} from '../shared/supervision.js';
+import type { DriftAction, DriftInput, DriftSeverity, DriftTouch } from '../shared/supervision.js';
 import type { HistoryEntry, Session, Task } from '../shared/types.js';
 import type { VerificationRecord } from '../shared/verification.js';
 
@@ -108,14 +103,22 @@ describe('(a) scope drift', () => {
       name: 'a read outside is noted',
       touches: [touch('Plans/launch.md', { access: 'read' })],
       expect: [
-        { issueKey: 'scope:Plans', severity: 'info', summary: 'it read files outside the selected folder' },
+        {
+          issueKey: 'scope:Plans',
+          severity: 'info',
+          summary: 'it read files outside the selected folder',
+        },
       ],
     },
     {
       name: 'a proposal outside is noted: the person is already being asked',
       touches: [touch('notes.md', { status: 'proposed' })],
       expect: [
-        { issueKey: 'scope:/', severity: 'info', summary: 'it proposed writing outside the selected folder' },
+        {
+          issueKey: 'scope:/',
+          severity: 'info',
+          summary: 'it proposed writing outside the selected folder',
+        },
       ],
     },
     {
@@ -154,8 +157,16 @@ describe('(a) scope drift', () => {
       ],
     },
     // Near misses.
-    { name: 'a write inside the selected folder, nested', touches: [touch('Menu/drafts/a.md')], expect: [] },
-    { name: 'a write a person approved exactly', touches: [touch('Plans/a.md', { approved: true })], expect: [] },
+    {
+      name: 'a write inside the selected folder, nested',
+      touches: [touch('Menu/drafts/a.md')],
+      expect: [],
+    },
+    {
+      name: 'a write a person approved exactly',
+      touches: [touch('Plans/a.md', { approved: true })],
+      expect: [],
+    },
     {
       name: 'a folder a task grant admits',
       scope: { ...menu, admitted: ['Plans/'] },
@@ -194,9 +205,9 @@ describe('(a) scope drift', () => {
   ];
   test.each(cases)('$name', ({ scope = menu, touches, expect: expected }) => {
     const found = detectScopeDrift(input({ scope, touches }));
-    expect(found.map(({ issueKey, severity, summary }) => ({ issueKey, severity, summary }))).toEqual(
-      expected,
-    );
+    expect(
+      found.map(({ issueKey, severity, summary }) => ({ issueKey, severity, summary })),
+    ).toEqual(expected);
     for (const item of found) {
       expect(item.code).toBe('scope-drift');
       expect(item.evidence.length).toBe(touches.length);
@@ -215,7 +226,11 @@ describe('(a) scope drift', () => {
 });
 
 describe('(b) no-progress loop', () => {
-  const call = (tool: string, input: string, output: string | null = `out-${input}`): DriftAction => ({
+  const call = (
+    tool: string,
+    input: string,
+    output: string | null = `out-${input}`,
+  ): DriftAction => ({
     ref: `step-${++serial}`,
     at: AT,
     tool,
@@ -224,7 +239,11 @@ describe('(b) no-progress loop', () => {
   });
   const same = (count: number) => Array.from({ length: count }, () => call('search', 'a'));
   const cases: { name: string; actions: DriftAction[]; expect: [string, DriftSeverity][] }[] = [
-    { name: 'three identical calls in a row are noted', actions: same(3), expect: [['call', 'info']] },
+    {
+      name: 'three identical calls in a row are noted',
+      actions: same(3),
+      expect: [['call', 'info']],
+    },
     { name: 'four ask for a correction', actions: same(4), expect: [['call', 'warning']] },
     { name: 'six pause the run', actions: same(6), expect: [['call', 'critical']] },
     {
@@ -297,7 +316,12 @@ describe('(c) budget burn', () => {
     // Near misses.
     { name: 'seventy-nine per cent', budget: [line(79)], expect: [] },
     { name: 'a run that has ended', budget: [line(99)], live: false, expect: [] },
-    { name: 'a plan that is complete', budget: [line(99)], plan: { done: 10, total: 10 }, expect: [] },
+    {
+      name: 'a plan that is complete',
+      budget: [line(99)],
+      plan: { done: 10, total: 10 },
+      expect: [],
+    },
     {
       name: 'a pace that fits the budget',
       budget: [line(40)],
@@ -352,12 +376,21 @@ describe('(d) instruction drift', () => {
       ['config/prod.json', 3],
       ['secrets/', 3],
     ]);
-    expect(machineRules('- Never edit `dist/`', { path: 'pkg/AGENTS.md', sha: file.sha }, 'pkg')[0].forbids).toBe(
-      'pkg/dist/',
-    );
+    expect(
+      machineRules('- Never edit `dist/`', { path: 'pkg/AGENTS.md', sha: file.sha }, 'pkg')[0]
+        .forbids,
+    ).toBe('pkg/dist/');
   });
-  const rules = machineRules('- Do not edit `generated/`\n- Never change `config/prod.json`', file, '');
-  const nested = machineRules('- Do not edit `dist/`', { path: 'pkg/AGENTS.md', sha: file.sha }, 'pkg');
+  const rules = machineRules(
+    '- Do not edit `generated/`\n- Never change `config/prod.json`',
+    file,
+    '',
+  );
+  const nested = machineRules(
+    '- Do not edit `dist/`',
+    { path: 'pkg/AGENTS.md', sha: file.sha },
+    'pkg',
+  );
   const cases: {
     name: string;
     touches: DriftTouch[];
@@ -391,11 +424,19 @@ describe('(d) instruction drift', () => {
       expect: [['pkg/dist/', 'critical']],
     },
     // Near misses.
-    { name: 'a read of a forbidden path', touches: [touch('generated/a.ts', { access: 'read' })], expect: [] },
-    { name: 'a sibling folder', touches: [touch('generated2/a.ts')], expect: [] },
-    { name: 'a file whose name starts the same', touches: [touch('config/prod.json.bak')], expect: [] },
     {
-      name: "a nested rule does not reach outside its folder",
+      name: 'a read of a forbidden path',
+      touches: [touch('generated/a.ts', { access: 'read' })],
+      expect: [],
+    },
+    { name: 'a sibling folder', touches: [touch('generated2/a.ts')], expect: [] },
+    {
+      name: 'a file whose name starts the same',
+      touches: [touch('config/prod.json.bak')],
+      expect: [],
+    },
+    {
+      name: 'a nested rule does not reach outside its folder',
       rules: nested,
       touches: [touch('dist/x.js')],
       expect: [],
@@ -403,7 +444,12 @@ describe('(d) instruction drift', () => {
   ];
   test.each(cases)('$name', ({ touches, rules: own = rules, expect: expected }) => {
     const found = detectInstructionDrift(input({ rules: own, touches }));
-    expect(found.map((item) => [own.find((rule) => `instruction:${rule.id}` === item.issueKey)!.forbids, item.severity])).toEqual(expected);
+    expect(
+      found.map((item) => [
+        own.find((rule) => `instruction:${rule.id}` === item.issueKey)!.forbids,
+        item.severity,
+      ]),
+    ).toEqual(expected);
     for (const item of found) {
       expect(item.code).toBe('instruction-drift');
       expect(item.evidence[0]).toMatchObject({ kind: 'rule' });
@@ -531,7 +577,10 @@ describe('(e) verification regression', () => {
     );
     expect(found.map((item) => item.severity)).toEqual(expected);
     for (const item of found) {
-      expect(item).toMatchObject({ code: 'verification-regression', issueKey: 'verification:S-old' });
+      expect(item).toMatchObject({
+        code: 'verification-regression',
+        issueKey: 'verification:S-old',
+      });
       expect(item.evidence.map((e) => e.detail)).toEqual([
         'Run S-old was Verified; it now reads Verification uncertain: out.md changed after verification, so the result no longer describes these bytes.',
         `out.md: verified ${A.slice(0, 12)}, now ${B.slice(0, 12)}.`,

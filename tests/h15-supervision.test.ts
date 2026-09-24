@@ -42,11 +42,8 @@ async function until(predicate: (result: ProjectState) => boolean, what: string)
   throw new Error(`Never reached ${what}.`);
 }
 const records = async (sessionId?: string): Promise<SupervisionRecord[]> =>
-  (
-    await request(
-      `/projects/${projectId}/supervision${sessionId ? `?sessionId=${sessionId}` : ''}`,
-    )
-  ).data.records;
+  (await request(`/projects/${projectId}/supervision${sessionId ? `?sessionId=${sessionId}` : ''}`))
+    .data.records;
 const answer = (needId: string, body: Record<string, unknown>) =>
   request(`/projects/${projectId}/supervision/escalations/${needId}/answer`, 'POST', {
     protocolVersion: 1,
@@ -156,7 +153,11 @@ test('a run writing outside the selected folder is paused through H08 Stop and e
     files: ['Reopening plan.md'],
     allowForTask: false,
     origin: { mode: 'application', executorId: 'diomedes:supervision' },
-    supervision: { code: 'scope-drift', issueKey: 'scope:/', choices: ['continue', 'redirect', 'stop'] },
+    supervision: {
+      code: 'scope-drift',
+      issueKey: 'scope:/',
+      choices: ['continue', 'redirect', 'stop'],
+    },
   });
   expect(need.why).toContain('Wrote Reopening plan.md, outside Menu/.');
   const current = await state();
@@ -218,11 +219,9 @@ test('an escalation is never answered for the task and never by anything but a p
     allowForTask: true,
   });
   expect(wide.status).toBe(400);
-  const remember = await request(
-    `/projects/${projectId}/permissions/remembered`,
-    'POST',
-    { needId: need.id },
-  );
+  const remember = await request(`/projects/${projectId}/permissions/remembered`, 'POST', {
+    needId: need.id,
+  });
   expect(remember.status).toBeGreaterThanOrEqual(400);
   await new Promise((resolve) => setTimeout(resolve, 150));
   expect((await state()).needs.find((n) => n.id === need.id)!.state).toBe('open');
@@ -240,7 +239,9 @@ test('continue is refused where the route cannot resume, and the escalation stay
   expect(stopped.data.need).toMatchObject({ state: 'declined', supervision: { answer: 'stop' } });
   const current = await state();
   expect(current.tasks.find((t) => t.id === taskId)).toMatchObject({ state: 'todo', needId: null });
-  expect(current.sessions.filter((s) => ['queued', 'working', 'waiting'].includes(s.state))).toEqual([]);
+  expect(
+    current.sessions.filter((s) => ['queued', 'working', 'waiting'].includes(s.state)),
+  ).toEqual([]);
   // Answered once; another answer is refused.
   expect((await answer(need.id, { answer: 'stop' })).status).toBe(409);
 });
@@ -252,7 +253,8 @@ test('continuing goes through H08 Resume and its revalidation, and never with wi
   const { session, need } = await driftingRun();
   // The thread was widened after the pause: Resume refuses rather than run with more authority.
   expect(
-    (await request(`/projects/${projectId}/threads/${threadId}`, 'PUT', { permission: 'task' })).status,
+    (await request(`/projects/${projectId}/threads/${threadId}`, 'PUT', { permission: 'task' }))
+      .status,
   ).toBeLessThan(300);
   const widened = await answer(need.id, { answer: 'continue' });
   expect(widened.data.receipt).toMatchObject({
@@ -263,7 +265,11 @@ test('continuing goes through H08 Resume and its revalidation, and never with wi
   });
   expect(widened.data.need.state).toBe('open');
   expect(
-    (await request(`/projects/${projectId}/threads/${threadId}`, 'PUT', { permission: 'show-first' })).status,
+    (
+      await request(`/projects/${projectId}/threads/${threadId}`, 'PUT', {
+        permission: 'show-first',
+      })
+    ).status,
   ).toBeLessThan(300);
   const resumed = await answer(need.id, { answer: 'continue' });
   const receipt = resumed.data.receipt as ControlReceipt;
@@ -273,7 +279,10 @@ test('continuing goes through H08 Resume and its revalidation, and never with wi
     lineage: { kind: 'resume', originSessionId: session.id },
   });
   expect(receipt.revalidated.join(' ')).toContain('Permission: every change waits for your OK.');
-  expect(resumed.data.need).toMatchObject({ state: 'go-ahead', supervision: { answer: 'continue' } });
+  expect(resumed.data.need).toMatchObject({
+    state: 'go-ahead',
+    supervision: { answer: 'continue' },
+  });
   // Continuing acknowledges the issue: the resumed run's same drift is noted, not raised again.
   const next = receipt.result.sessionId!;
   const later = await until(
@@ -383,7 +392,11 @@ async function regressingRun(): Promise<{ first: string; second: string; task: s
       })
     ).status,
   ).toBe(200);
-  const verified = await request(`/projects/${projectId}/sessions/${first}/verification`, 'POST', {});
+  const verified = await request(
+    `/projects/${projectId}/sessions/${first}/verification`,
+    'POST',
+    {},
+  );
   expect(verified.data).toMatchObject({ state: 'verified' });
   const second = await run();
   return { first, second, task };
@@ -417,9 +430,9 @@ test('a correction steers the running turn where the route can, labelled as Diom
     performedBy: { kind: 'engine', engine: 'control-fixture' },
   });
   const run = done.sessions.find((s) => s.id === second)!;
-  expect(run.log.some((line) => line.sentence === `Steered while running: ${correction.message}`)).toBe(
-    true,
-  );
+  expect(
+    run.log.some((line) => line.sentence === `Steered while running: ${correction.message}`),
+  ).toBe(true);
   expect(
     done.history.some(
       (h) => h.actor === 'diomedes' && h.sentence.startsWith('Diomedes supervision steered'),
@@ -436,13 +449,17 @@ test('where the route cannot steer, the correction is queued in supervision’s 
     'the queued correction',
   );
   const [correction] = (queued.supervision ?? []).filter((rec) => rec.sessionId === second);
-  expect(correction).toMatchObject({ action: 'correct', control: { control: 'queue', outcome: 'queued' } });
+  expect(correction).toMatchObject({
+    action: 'correct',
+    control: { control: 'queue', outcome: 'queued' },
+  });
   const followUp = queued.followUps!.find((f) => f.queuedBy === 'diomedes-supervision')!;
   expect(followUp).toMatchObject({ taskId: task, waitsFor: 'turn', queuedDuringSessionId: second });
   expect(followUp.text).toBe(correction.message);
   expect(
     queued.history.some(
-      (h) => h.actor === 'diomedes' && h.sentence.startsWith('Diomedes supervision queued a correction'),
+      (h) =>
+        h.actor === 'diomedes' && h.sentence.startsWith('Diomedes supervision queued a correction'),
     ),
   ).toBe(true);
   // When the turn ends the correction is sent as the next run, through ordinary admission.

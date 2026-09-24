@@ -242,20 +242,41 @@ export class SupervisionService {
       let receipt = await this.control(
         projectId,
         steer
-          ? { protocolVersion: 1, commandId, taskId: session.taskId, control: 'steer', sessionId: session.id, text: message }
+          ? {
+              protocolVersion: 1,
+              commandId,
+              taskId: session.taskId,
+              control: 'steer',
+              sessionId: session.id,
+              text: message,
+            }
           : this.queueBody(commandId, session, message),
         by,
       );
       // A steer the route turned away is queued instead, so the correction is still asked for.
       if (steer && 'outcome' in receipt && receipt.outcome === 'refused')
-        receipt = await this.control(projectId, this.queueBody(`${commandId}.q`, session, message), by);
+        receipt = await this.control(
+          projectId,
+          this.queueBody(`${commandId}.q`, session, message),
+          by,
+        );
       return this.append(projectId, {
         ...record,
         message,
         control:
           'outcome' in receipt
-            ? { commandId: receipt.commandId, control: receipt.control as 'steer' | 'queue', outcome: receipt.outcome, detail: receipt.detail }
-            : { commandId, control: steer ? 'steer' : 'queue', outcome: 'refused', detail: receipt.refused },
+            ? {
+                commandId: receipt.commandId,
+                control: receipt.control as 'steer' | 'queue',
+                outcome: receipt.outcome,
+                detail: receipt.detail,
+              }
+            : {
+                commandId,
+                control: steer ? 'steer' : 'queue',
+                outcome: 'refused',
+                detail: receipt.refused,
+              },
       });
     }
 
@@ -263,7 +284,14 @@ export class SupervisionService {
     const commandId = `sup.${record.id}`;
     const stop = await this.control(
       projectId,
-      { protocolVersion: 1, commandId, taskId: session.taskId, control: 'stop', scope: 'task', sessionId: session.id },
+      {
+        protocolVersion: 1,
+        commandId,
+        taskId: session.taskId,
+        control: 'stop',
+        scope: 'task',
+        sessionId: session.id,
+      },
       by,
     );
     const state = this.store.state(projectId);
@@ -322,7 +350,12 @@ export class SupervisionService {
         : { settled: 'The run could not be paused, so nothing was asked; see the stop receipt.' }),
       control:
         'outcome' in stop
-          ? { commandId: stop.commandId, control: 'stop', outcome: stop.outcome, detail: stop.detail }
+          ? {
+              commandId: stop.commandId,
+              control: 'stop',
+              outcome: stop.outcome,
+              detail: stop.detail,
+            }
           : { commandId, control: 'stop', outcome: 'refused', detail: stop.refused },
     });
   }
@@ -360,8 +393,7 @@ export class SupervisionService {
     let state = this.store.state(projectId);
     const need = state.needs.find((item) => item.id === needId);
     if (!need) throw new ApiError(404, 'This request was not found.');
-    if (!need.supervision)
-      throw new ApiError(400, 'This request is not a supervision escalation.');
+    if (!need.supervision) throw new ApiError(400, 'This request is not a supervision escalation.');
     const replay = (state.supervision ?? []).find(
       (record) => record.action === 'answer' && record.control?.commandId === request.commandId,
     );
@@ -374,8 +406,7 @@ export class SupervisionService {
         (state.controlReceipts ?? []).find((item) => item.commandId === request.commandId) ?? null;
       return { need: structuredClone(need), record: structuredClone(replay), receipt };
     }
-    if (need.state !== 'open')
-      throw new ApiError(409, 'This request has already been answered.');
+    if (need.state !== 'open') throw new ApiError(409, 'This request has already been answered.');
     const escalation = (state.supervision ?? []).find(
       (record) => record.id === need.supervision!.recordId,
     );
@@ -388,7 +419,13 @@ export class SupervisionService {
       const outcome = await this.control(
         projectId,
         request.answer === 'continue'
-          ? { protocolVersion: 1, commandId: request.commandId, taskId: need.taskId, control: 'resume', sessionId: session.id }
+          ? {
+              protocolVersion: 1,
+              commandId: request.commandId,
+              taskId: need.taskId,
+              control: 'resume',
+              sessionId: session.id,
+            }
           : this.queueBody(request.commandId, session, request.text!),
         { actor: 'you', via: 'local-client' },
       );
@@ -426,10 +463,25 @@ export class SupervisionService {
       answer: request.answer as EscalationAnswer,
       ...(request.text ? { text: request.text } : {}),
       control: receipt
-        ? { commandId: receipt.commandId, control: receipt.control as 'resume' | 'queue', outcome: receipt.outcome, detail: receipt.detail }
+        ? {
+            commandId: receipt.commandId,
+            control: receipt.control as 'resume' | 'queue',
+            outcome: receipt.outcome,
+            detail: receipt.detail,
+          }
         : request.answer === 'stop'
-          ? { commandId: request.commandId, control: 'stop', outcome: 'applied', detail: 'The run stays stopped.' }
-          : { commandId: request.commandId, control: request.answer === 'continue' ? 'resume' : 'queue', outcome: 'refused', detail: refusal ?? '' },
+          ? {
+              commandId: request.commandId,
+              control: 'stop',
+              outcome: 'applied',
+              detail: 'The run stays stopped.',
+            }
+          : {
+              commandId: request.commandId,
+              control: request.answer === 'continue' ? 'resume' : 'queue',
+              outcome: 'refused',
+              detail: refusal ?? '',
+            },
     };
     if (!refusal) {
       current.state = request.answer === 'stop' ? 'declined' : 'go-ahead';
@@ -474,7 +526,10 @@ export class SupervisionService {
     }
     let live: string[];
     try {
-      live = this.store.state(projectId).sessions.filter(isLive).map((session) => session.id);
+      live = this.store
+        .state(projectId)
+        .sessions.filter(isLive)
+        .map((session) => session.id);
     } catch {
       return;
     }
@@ -484,7 +539,9 @@ export class SupervisionService {
       .locked(async () => {
         for (const sessionId of live) {
           if (this.closed) return;
-          const session = this.store.state(projectId).sessions.find((item) => item.id === sessionId);
+          const session = this.store
+            .state(projectId)
+            .sessions.find((item) => item.id === sessionId);
           if (!session || !isLive(session)) continue;
           // A detector failing is logged, never allowed to roll the store back.
           await this.evaluate(projectId, sessionId).catch((error: unknown) =>

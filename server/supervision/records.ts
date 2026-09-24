@@ -30,7 +30,8 @@ function pathsIn(input: unknown): string[] {
   for (const key of PATH_KEYS) {
     const value = (input as Record<string, unknown>)[key];
     if (typeof value === 'string') found.push(value);
-    else if (Array.isArray(value)) found.push(...value.filter((item): item is string => typeof item === 'string'));
+    else if (Array.isArray(value))
+      found.push(...value.filter((item): item is string => typeof item === 'string'));
   }
   return found;
 }
@@ -40,7 +41,9 @@ function contextAccountOf(output: unknown): ContextAccount | null {
   const context = (output as { context?: unknown }).context;
   if (!context || typeof context !== 'object') return null;
   const account = context as Partial<ContextAccount>;
-  return typeof account.estimatedTokens === 'number' && account.window ? (account as ContextAccount) : null;
+  return typeof account.estimatedTokens === 'number' && account.window
+    ? (account as ContextAccount)
+    : null;
 }
 
 export interface InstructionSource {
@@ -57,9 +60,7 @@ export async function driftInputFor(input: {
 }): Promise<DriftInput> {
   const { state, session, harness } = input;
   const task = state.tasks.find((item) => item.id === session.taskId) ?? null;
-  const ownNeeds = state.needs.filter(
-    (need) => need.sessionId === session.id && !need.supervision,
-  );
+  const ownNeeds = state.needs.filter((need) => need.sessionId === session.id && !need.supervision);
   const approvedFiles = new Set(
     ownNeeds.filter((need) => need.state === 'go-ahead').flatMap((need) => need.files),
   );
@@ -72,7 +73,8 @@ export async function driftInputFor(input: {
     if (entry.sessionId !== session.id || entry.verification || entry.kind === 'saved-version')
       continue;
     const approved =
-      Boolean(entry.authorization) || Boolean(entry.approvalId && approvedNeeds.has(entry.approvalId));
+      Boolean(entry.authorization) ||
+      Boolean(entry.approvalId && approvedNeeds.has(entry.approvalId));
     for (const file of entry.files) {
       if (!file.recorded || file.before === file.after) continue;
       touches.push({
@@ -143,7 +145,8 @@ export async function driftInputFor(input: {
         });
     }
     const limit = (dimension: DriftBudgetLine['dimension'], used: number, max: number) => {
-      if (max > 0) budget.push({ dimension, used, limit: max, source: `harness run ${harness.id}` });
+      if (max > 0)
+        budget.push({ dimension, used, limit: max, source: `harness run ${harness.id}` });
     };
     limit('units', harness.used.units, harness.budget.units);
     limit('model-calls', harness.used.modelCalls, harness.budget.modelCalls);
@@ -154,7 +157,10 @@ export async function driftInputFor(input: {
         Math.max(0, (input.now ?? Date.now()) - Date.parse(harness.createdAt)),
         harness.budget.wallMs,
       );
-    const account = [...harness.steps].reverse().map((step) => contextAccountOf(step.output)).find(Boolean);
+    const account = [...harness.steps]
+      .reverse()
+      .map((step) => contextAccountOf(step.output))
+      .find(Boolean);
     if (account?.window.tokens)
       budget.push({
         dimension: 'context-tokens',
@@ -177,7 +183,10 @@ export async function driftInputFor(input: {
   );
   const admitted = grants.flatMap((record) =>
     record.grant.roots.map((root) => {
-      const folder = root.replace(/\\/g, '/').replace(/^\.\/?$/, '').replace(/\/+$/, '');
+      const folder = root
+        .replace(/\\/g, '/')
+        .replace(/^\.\/?$/, '')
+        .replace(/\/+$/, '');
       return folder ? `${folder}/` : './';
     }),
   );

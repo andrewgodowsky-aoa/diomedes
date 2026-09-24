@@ -3,7 +3,12 @@
  * once per underlying issue and never re-raised once you chose to continue.
  */
 import { expect, test } from 'vitest';
-import { correctionBound, DRIFT_LADDERS, nextStep, type LadderContext } from '../server/supervision/ladder.js';
+import {
+  correctionBound,
+  DRIFT_LADDERS,
+  nextStep,
+  type LadderContext,
+} from '../server/supervision/ladder.js';
 import { CORRECTION_LIMITS } from '../server/harness/lifecycle.js';
 import {
   DRIFT_CODES,
@@ -50,7 +55,10 @@ const record = (
   reason: '',
   ...extra,
 });
-const context = (records: SupervisionRecord[], extra: Partial<LadderContext> = {}): LadderContext => ({
+const context = (
+  records: SupervisionRecord[],
+  extra: Partial<LadderContext> = {},
+): LadderContext => ({
   sessionId: 'S1',
   taskId: 'T1',
   live: true,
@@ -61,7 +69,11 @@ const context = (records: SupervisionRecord[], extra: Partial<LadderContext> = {
 
 test('every detector declares a ladder whose corrections stay inside the harness limit', () => {
   for (const code of DRIFT_CODES) {
-    expect(DRIFT_LADDERS[code].entry).toEqual({ info: 'note', warning: 'correct', critical: 'escalate' });
+    expect(DRIFT_LADDERS[code].entry).toEqual({
+      info: 'note',
+      warning: 'correct',
+      critical: 'escalate',
+    });
     expect(correctionBound(code)).toBeGreaterThan(0);
     expect(correctionBound(code)).toBeLessThanOrEqual(CORRECTION_LIMITS.maxAttempts);
   }
@@ -90,16 +102,19 @@ test('a warning is corrected up to the bound, then escalated', () => {
 });
 
 test('the bound is per detector per run: another issue of the same detector shares it', () => {
-  const trail = [
-    record(finding('warning', 'scope-drift', 'scope:Plans'), 'correct'),
-  ];
-  expect(nextStep(finding('warning', 'scope-drift', 'scope:Other'), context(trail)).rung).toBe('escalate');
+  const trail = [record(finding('warning', 'scope-drift', 'scope:Plans'), 'correct')];
+  expect(nextStep(finding('warning', 'scope-drift', 'scope:Other'), context(trail)).rung).toBe(
+    'escalate',
+  );
   // Another run starts with its own bound.
   expect(
-    nextStep(finding('warning', 'scope-drift', 'scope:Other'), context(trail, { sessionId: 'S2' })).rung,
+    nextStep(finding('warning', 'scope-drift', 'scope:Other'), context(trail, { sessionId: 'S2' }))
+      .rung,
   ).toBe('correct');
   // Another detector has its own bound.
-  expect(nextStep(finding('warning', 'budget-burn', 'budget:units'), context(trail)).rung).toBe('correct');
+  expect(nextStep(finding('warning', 'budget-burn', 'budget:units'), context(trail)).rung).toBe(
+    'correct',
+  );
 });
 
 test('critical escalates at once', () => {
@@ -112,13 +127,20 @@ test('an open escalation holds the issue for the whole task, on any run', () => 
   const found = finding('critical', 'scope-drift', 'scope:Plans');
   const escalated = [record(found, 'escalate', { needId: 'N1' })];
   const open = [{ id: 'N1', state: 'open' as const }];
-  expect(nextStep(finding('critical', 'scope-drift', 'scope:Plans'), context(escalated, { needs: open })).rung).toBeNull();
   expect(
-    nextStep(finding('critical', 'scope-drift', 'scope:Plans'), context(escalated, { needs: open, sessionId: 'S2' })).rung,
+    nextStep(finding('critical', 'scope-drift', 'scope:Plans'), context(escalated, { needs: open }))
+      .rung,
+  ).toBeNull();
+  expect(
+    nextStep(
+      finding('critical', 'scope-drift', 'scope:Plans'),
+      context(escalated, { needs: open, sessionId: 'S2' }),
+    ).rung,
   ).toBeNull();
   // A different issue is a different escalation.
   expect(
-    nextStep(finding('critical', 'scope-drift', 'scope:Other'), context(escalated, { needs: open })).rung,
+    nextStep(finding('critical', 'scope-drift', 'scope:Other'), context(escalated, { needs: open }))
+      .rung,
   ).toBe('escalate');
 });
 
@@ -136,7 +158,9 @@ test('after you chose to continue, the same issue is noted once and never raised
   const onNext = context(trail, { needs: answered, sessionId: 'S2' });
   const step = nextStep(finding('critical', 'scope-drift', 'scope:Plans'), onNext);
   expect(step).toMatchObject({ rung: 'note', settled: 'Acknowledged by your earlier answer.' });
-  trail.push(record(finding('critical', 'scope-drift', 'scope:Plans'), 'note', { sessionId: 'S2' }));
+  trail.push(
+    record(finding('critical', 'scope-drift', 'scope:Plans'), 'note', { sessionId: 'S2' }),
+  );
   expect(nextStep(finding('critical', 'scope-drift', 'scope:Plans'), onNext).rung).toBeNull();
 });
 
@@ -167,7 +191,9 @@ test('a run that has ended is only noted, once per severity', () => {
 });
 
 test('a run a supervision correction started shares its origin run’s bound', () => {
-  const origin = record(finding('warning', 'scope-drift', 'scope:Plans'), 'correct', { sessionId: 'S1' });
+  const origin = record(finding('warning', 'scope-drift', 'scope:Plans'), 'correct', {
+    sessionId: 'S1',
+  });
   const next = context([origin], { sessionId: 'S2', lineage: ['S2', 'S1'] });
   expect(nextStep(finding('warning', 'scope-drift', 'scope:Plans'), next).rung).toBe('escalate');
 });

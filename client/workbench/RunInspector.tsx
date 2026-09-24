@@ -17,6 +17,7 @@ import {
   type RouteControlProfile,
 } from '../../shared/work-control';
 import { AGENT_NAME } from '../../shared/agent-name';
+import { SupervisionSection } from '../console/Supervision';
 import './workbench.css';
 
 /**
@@ -275,6 +276,16 @@ function SessionInspector({
               </div>
             ))}
           </section>
+          <SupervisionSection
+            projectId={projectId}
+            session={session}
+            refreshKey={[
+              session.state,
+              session.log.length,
+              ...needs.filter((need) => need.sessionId === session.id).map((need) => `${need.id}:${need.state}`),
+              ...receipts.map((receipt) => receipt.id),
+            ].join('|')}
+          />
           <section aria-label="Recorded sources">
             <h3>Recorded sources</h3>
             {!evidence.sources.length && <p>No source snapshot is attached to this session.</p>}

@@ -84,7 +84,11 @@ export function detectScopeDrift(input: DriftInput): DriftFinding[] {
     );
   const groups = new Map<
     string,
-    { severity: DriftSeverity; touches: DriftTouch[]; kind: 'outside-project' | 'folder' | 'destination' }
+    {
+      severity: DriftSeverity;
+      touches: DriftTouch[];
+      kind: 'outside-project' | 'folder' | 'destination';
+    }
   >();
   const add = (
     key: string,
@@ -112,8 +116,7 @@ export function detectScopeDrift(input: DriftInput): DriftFinding[] {
     if (!roots.length || touch.approved || covered(touch.target)) continue;
     add(`scope:${folderOf(touch.target) || '/'}`, 'folder', done ? 'critical' : 'info', touch);
   }
-  const scopeLabel =
-    roots.length === 1 ? folderLabel(roots[0]) : roots.map(folderLabel).join(', ');
+  const scopeLabel = roots.length === 1 ? folderLabel(roots[0]) : roots.map(folderLabel).join(', ');
   return [...groups].map(([issueKey, group]) => {
     const writes = group.touches.filter((touch) => touch.access === 'write');
     const recorded = writes.some((touch) => touch.status === 'recorded' && !touch.approved);
@@ -128,7 +131,14 @@ export function detectScopeDrift(input: DriftInput): DriftFinding[] {
               ? `it proposed writing outside the selected ${roots.length === 1 ? 'folder' : 'folders'}`
               : `it read files outside the selected ${roots.length === 1 ? 'folder' : 'folders'}`;
     const evidence = group.touches.map<DriftEvidence>((touch) => ({
-      kind: touch.kind === 'destination' ? 'destination' : touch.status === 'proposed' ? 'proposal' : touch.access === 'write' ? 'write' : 'read',
+      kind:
+        touch.kind === 'destination'
+          ? 'destination'
+          : touch.status === 'proposed'
+            ? 'proposal'
+            : touch.access === 'write'
+              ? 'write'
+              : 'read',
       ref: touch.ref,
       path: touch.target,
       at: touch.at,
@@ -161,7 +171,10 @@ interface Streak {
   start: number;
   length: number;
 }
-function longest(actions: readonly DriftAction[], same: (a: DriftAction, b: DriftAction) => boolean) {
+function longest(
+  actions: readonly DriftAction[],
+  same: (a: DriftAction, b: DriftAction) => boolean,
+) {
   const streaks: Streak[] = [];
   let start = 0;
   for (let index = 1; index <= actions.length; index++) {
@@ -362,7 +375,9 @@ export function machineRules(
 
 const forbidden = (target: string, rule: DriftRule) =>
   within(target, rule.scope) &&
-  (rule.forbids.endsWith('/') ? within(target, rule.forbids) : clean(target) === clean(rule.forbids) || within(target, `${clean(rule.forbids)}/`));
+  (rule.forbids.endsWith('/')
+    ? within(target, rule.forbids)
+    : clean(target) === clean(rule.forbids) || within(target, `${clean(rule.forbids)}/`));
 
 /**
  * A write that contradicts a delivered instruction's machine-checkable rule. A
@@ -373,7 +388,11 @@ export function detectInstructionDrift(input: DriftInput): DriftFinding[] {
   const findings: DriftFinding[] = [];
   for (const rule of input.rules) {
     const hits = input.touches.filter(
-      (touch) => touch.kind === 'file' && touch.access === 'write' && insideProject(touch.target) && forbidden(touch.target, rule),
+      (touch) =>
+        touch.kind === 'file' &&
+        touch.access === 'write' &&
+        insideProject(touch.target) &&
+        forbidden(touch.target, rule),
     );
     if (!hits.length) continue;
     const recorded = hits.some((touch) => touch.status === 'recorded' && !touch.approved);

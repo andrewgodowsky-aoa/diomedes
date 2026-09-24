@@ -331,6 +331,9 @@ export function ControlReceiptLine({
       <span className="control-receipt-head">
         <b>{CONTROL_LABELS[receipt.control]}</b>{' '}
         <span className="lc">{OUTCOME_WORDS[receipt.outcome]}</span>
+        {receipt.requestedBy.actor === 'diomedes' && (
+          <span className="lc"> · asked by {AGENT_NAME} supervision</span>
+        )}
         {by && <span className="lc"> · by {by}</span>}
         <span className="mono"> · {new Date(receipt.requestedAt).toTimeString().slice(0, 5)}</span>
       </span>
