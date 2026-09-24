@@ -97,7 +97,8 @@ import { previewLine } from '../../shared/thread-preview';
 import { ActivityOverview } from './ActivityOverview';
 import { projectActivity, type ActivityRow } from './activity';
 import { TeamView } from './TeamView';
-import { DocumentEditor, UNSAVED_WARNING } from './DocumentEditor';
+import { DocumentEditor } from './DocumentEditor';
+import { editorDocument, guardEditorExits, leaveEditor, type EditorExit } from './editor-guard';
 import type { EverythingItem } from './Everything';
 import { DiscoveryPage } from './DiscoveryPage';
 import { ReadinessPage } from './ReadinessPage';
@@ -278,11 +279,34 @@ export function Shell({
       return DEFAULT_PINS;
     }
   });
-  // The file being written in, on the main stage, and whether it holds writing
-  // that has not been saved. The Console owns the warning because the Console
-  // owns the navigation the warning is about.
+  // The file being written in, on the main stage. Every way off it goes
+  // through one gate (editor-guard.ts): the editor lets the person go when no
+  // writing would be lost and asks when some would (DIO-85). `editingNow` is
+  // read by exits that run again once the gate has let them through, before
+  // this component has rendered the editor away.
   const [editing, setEditing] = useState<string | null>(null);
-  const [unsaved, setUnsaved] = useState(false);
+  const editorExit = useRef<EditorExit | null>(null);
+  const editingNow = useRef(editing);
+  editingNow.current = editing;
+  useEffect(
+    () =>
+      guardEditorExits((then) => {
+        if (editingNow.current === null) return then();
+        const leave = () => {
+          editingNow.current = null;
+          setEditing(null);
+          then();
+        };
+        if (editorExit.current) editorExit.current(leave);
+        else leave();
+      }),
+    [],
+  );
+  // Navigation handed out below (the palette's, the header's) leaves the editor first.
+  const leavingEditor =
+    <A extends unknown[]>(run: (...args: A) => void) =>
+    (...args: A) =>
+      leaveEditor(() => run(...args));
   const [openPath, setOpenPath] = useState<string | null>(null);
   const [documents, setDocuments] = useState<DocumentInfo[]>([]);
   const [documentsLoading, setDocumentsLoading] = useState(false);
@@ -1605,14 +1629,9 @@ export function Shell({
         : 'thread';
 
   function goTo(id: string) {
-    // The editor is the one screen holding writing that only exists here. It
-    // confirms its own close, so the rail does not close it out from under a
-    // person; it says why it did nothing and leaves them where they are.
-    if (editing && unsaved) {
-      say(UNSAVED_WARNING);
-      return;
-    }
-    if (editing) setEditing(null);
+    // The editor is the one screen holding writing that may exist only here, so
+    // the rail leaves it through its gate and comes back here once it may.
+    if (editingNow.current !== null) return leaveEditor(() => goTo(id));
     if (id === 'thread') setView('Thread');
     else if (id === 'board') setView('Board');
     else if (id === 'team') setView('Team');
@@ -1680,37 +1699,37 @@ export function Shell({
         const running = liveByTask(task.id);
         if (running) void stopSession(running.id);
       },
-      reviewTask: (task) => {
+      reviewTask: leavingEditor((task: Task) => {
         openTaskThread(task);
         const need =
           task.needId != null
             ? (waiting.find((n) => n.id === task.needId) ?? null)
             : (waiting.find((n) => n.taskId === task.id) ?? null);
         if (need) scrollToNeed(need);
-      },
+      }),
       routeTask: (task, to) =>
         void perform(async () => {
           await api(`${base}/tasks/${task.id}`, 'PUT', { assignedTo: to });
           await load();
         }),
       reopenTask: (task) => void moveTask(task, 'todo'),
-      openBoard: () => setView('Board'),
-      openTeam: () => setView('Team'),
+      openBoard: leavingEditor(() => setView('Board')),
+      openTeam: leavingEditor(() => setView('Team')),
       setRequested: (requested) => {
         if (selected) void setRequested(selected, requested);
       },
-      messageMember: focusTeamComposer,
+      messageMember: leavingEditor(focusTeamComposer),
       stopMember: (m) => void stopMember(m),
       wakeMember: (m) => void wakeMember(m),
-      selectThread: (id) => {
+      selectThread: leavingEditor((id: string) => {
         setSelectedId(id);
         setView('Thread');
-      },
-      setView: (v) => setView(v),
+      }),
+      setView: leavingEditor((v: ShellView) => setView(v)),
       setConsoleView: (v) => void saveSettings({ ...settings, view: v }),
       openProject: (p) => onOpenProject(p),
       openDocument,
-      launchSkill: (skill) => void launchSkill(skill),
+      launchSkill: leavingEditor((skill: PackSkill) => void launchSkill(skill)),
       turnOnSkills: () => void turnOnSkills(),
     },
   };
@@ -1753,7 +1772,7 @@ export function Shell({
         </nav>
         <div className="top-right">
           {elsewhere.length > 0 && (
-            <button type="button" className="needs-elsewhere" onClick={() => reviewElsewhere(elsewhere[0])}>
+            <button type="button" className="needs-elsewhere" onClick={() => leaveEditor(() => reviewElsewhere(elsewhere[0]))}>
               {elsewhere.length === 1 ? 'Something needs your OK' : `${elsewhere.length} things need your OK`}
             </button>
           )}
@@ -1886,16 +1905,13 @@ export function Shell({
           top={<WorkspaceMark view={workspace} onOpen={() => setWorkspacesOpen(true)} />}
           items={railItems}
           selectedId={selectedId}
-          onSelect={(id) => {
-            if (editing && unsaved) {
-              say(UNSAVED_WARNING);
-              return;
-            }
-            setEditing(null);
-            setSelectedId(id);
-            setView('Thread');
-          }}
-          onNew={() => void newThread()}
+          onSelect={(id) =>
+            leaveEditor(() => {
+              setSelectedId(id);
+              setView('Thread');
+            })
+          }
+          onNew={() => leaveEditor(() => void newThread())}
           destinations={destinations}
           groups={destinationGroups}
           pinned={conversation ? [] : pins}
@@ -1910,21 +1926,13 @@ export function Shell({
             <DocumentEditor
               key={`${projectId}:${editing}`}
               projectId={projectId}
-              document={
-                documents.find((file) => file.path === editing) ?? {
-                  path: editing,
-                  kind: 'markdown',
-                  size: 0,
-                  changedAt: new Date().toISOString(),
-                  hasChangesWaiting: false,
-                  recorded: false,
-                }
-              }
-              onClose={() => {
-                setUnsaved(false);
-                setEditing(null);
-              }}
-              onUnsavedChange={setUnsaved}
+              // No guessed kind: until the listing says what this file is, the
+              // editor reads nothing and takes no typing (DIO-87).
+              document={editorDocument(documents, editing, documentsFailure)}
+              // Close has already asked, and a rescue copy's writing is on disk
+              // in the copy, so these two leave without the gate.
+              onClose={() => setEditing(null)}
+              exits={editorExit}
               onOpen={(path) => setEditing(path)}
               // `load()` refreshes the listing too: the documents effect runs
               // again on every new state object, so a saved file's new size and
@@ -2221,7 +2229,7 @@ export function Shell({
             onOpen={setOpenPath}
             onWidth={setFilesWidth}
             onClose={() => setFilesOpen(false)}
-            onEdit={(path) => setEditing(path)}
+            onEdit={(path) => path !== editing && leaveEditor(() => setEditing(path))}
             hidden={artifactHost.shown !== 'files'}
             switcher={artifactHost.switcher}
             onOpenInPanel={artifactHost.openFile}
