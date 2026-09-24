@@ -486,6 +486,21 @@ describe('launching a skill from the Console', () => {
     expect(h.launchSkill).toHaveBeenCalledWith(skill('cash-flow-snapshot'));
   });
 
+  test('P04: where the Console can open a playbook, each row also offers Read; off offers none', () => {
+    const h = { ...handlers(), readSkill: vi.fn() };
+    const rows = buildEntries(context({ active: true, name: 'Small Business', list: SKILLS }, h)).filter(
+      (row) => row.group === 'Skills',
+    );
+    const cash = rows.find((row) => row.id === 'skill:cash-flow-snapshot')!;
+    expect(cash.actions.map((action) => action.label)).toEqual(['Use', 'Read']);
+    cash.actions[1].run();
+    expect(h.readSkill).toHaveBeenCalledWith(skill('cash-flow-snapshot'));
+    const off = buildEntries(context({ active: false, name: 'Small Business', list: SKILLS }, h)).filter(
+      (row) => row.group === 'Skills',
+    );
+    expect(off.flatMap((row) => row.actions.map((action) => action.label))).toEqual(['Turn on']);
+  });
+
   test('the palette renders the Skills group, and the composer names the playbook and fills the box', () => {
     const entries = buildEntries(context({ active: true, name: 'Small Business', list: SKILLS }));
     const palette = renderToStaticMarkup(

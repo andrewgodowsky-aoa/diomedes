@@ -128,6 +128,7 @@ export default defineConfig({
     'h15-supervision.spec.ts',
     'review-diffs-ui.spec.ts',
     'cd05-zoom-motion.spec.ts',
+    'p04-pack-panel.spec.ts',
   ],
   fullyParallel: false,
   workers: 1,
