@@ -248,6 +248,12 @@ export interface Need {
    * bind, so it is not part of the approval identity.
    */
   checks?: NeedCheck[];
+  /**
+   * H15: this Need is an escalation Diomedes supervision raised after pausing the run. It is
+   * answered only by a person, grants nothing, and is never resolved by a grant, a remembered
+   * approval or a reviewer (shared/supervision.ts).
+   */
+  supervision?: import('./supervision.js').SupervisionNeedRef;
 }
 /**
  * One proposed file's content check. An `.svg`, or an `.xml` that is SVG,
@@ -617,6 +623,8 @@ export interface ProjectState {
    * shared/ready-queue.ts). Absent on every project written before it existed, which means off.
    */
   readyQueue?: import('./ready-queue.js').ReadyQueueRecord;
+  /** H15 supervision: detections, corrections, escalations and answers. Append-only; absent before 2026-09-24. */
+  supervision?: import('./supervision.js').SupervisionRecord[];
 }
 /** How Diomedes knows whether an engine is signed in. 'first-use' means the first run reports it. */
 export type SignInState = 'signed-in' | 'not-signed-in' | 'unknown' | 'first-use' | 'not-needed';

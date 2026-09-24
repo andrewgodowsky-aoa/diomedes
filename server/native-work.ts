@@ -1313,7 +1313,7 @@ export class NativeWorkService {
     this.finishTeam(run, 'failed', sentence);
     await this.store.persist(state);
   }
-  async stop(projectId: string, sessionId: string) {
+  async stop(projectId: string, sessionId: string, by: 'you' | 'supervision' = 'you') {
     const state = this.store.state(projectId),
       session = state.sessions.find((item) => item.id === sessionId);
     if (!session || session.sample)
@@ -1345,7 +1345,7 @@ export class NativeWorkService {
     this.store.moveTask(state, task, 'todo', 'diomedes');
     this.store.addEntry(state, {
       kind: 'stop',
-      sentence: `You stopped ${task.name}. No unapproved changes were written.`,
+      sentence: `${by === 'you' ? 'You stopped' : 'Diomedes supervision paused'} ${task.name}. No unapproved changes were written.`,
       sessionId,
       taskId: task.id,
     });
