@@ -147,6 +147,57 @@ describe('the OpenCode session route descriptor (H04)', () => {
   );
 });
 
+describe.each([
+  ['cursor-session', 'cursor', '2026.08.11'],
+  ['devin-session', 'devin', '3000.10.23'],
+] as const)('the kept ACP session descriptor %s (H05)', (routeId, engine, version) => {
+  it('declares session/load continuation, a bounded cancel and host reconciliation, with no steer or fork', () => {
+    const contract = ROUTE_CONTRACTS[routeId];
+    expect(contract).toMatchObject({
+      mode: 'external-session',
+      engine: { id: engine, version, protocolVersion: 'acp/1' },
+      testedWith: version,
+      streaming: { transientPreview: 'text-delta', durableEvents: 'run-record' },
+      models: { source: 'runtime-reported' },
+      commands: {
+        'follow-up': { support: 'native' },
+        steer: { support: 'unsupported' },
+        interrupt: { support: 'native' },
+        resume: { support: 'native' },
+        fork: { support: 'unsupported' },
+        reconcile: { support: 'host' },
+      },
+    });
+    expect(contractChecks(contract).filter((check) => check.outcome === 'failed')).toEqual([]);
+    expect(contractChecks(contract).find((check) => check.id === 'native-session-run-backing')?.outcome).toBe('passed');
+    // The single-turn ACP route is unchanged by it.
+    expect(ROUTE_CONTRACTS[engine].commands.resume.support).toBe('unsupported');
+  });
+
+  it.each(['route', 'engine', 'version', 'protocol', 'mode', 'steer', 'fork', 'resume', 'reconcile', 'stream', 'auth', 'model'] as const)(
+    'does not extend native session backing across %s drift', (drift) => {
+      const contract = structuredClone(ROUTE_CONTRACTS[routeId]);
+      if (drift === 'route') contract.routeId = 'unproven-native-session';
+      if (drift === 'engine') contract.engine.id = 'other-engine';
+      if (drift === 'version') contract.engine.version = contract.testedWith = '9999.1.1';
+      if (drift === 'protocol') contract.engine.protocolVersion = 'acp/2';
+      if (drift === 'mode') contract.mode = 'single-turn-text';
+      // ACP v1 has neither a steering channel nor a fork of a saved session.
+      if (drift === 'steer') contract.commands.steer.support = 'native';
+      if (drift === 'fork') contract.commands.fork.support = 'native';
+      if (drift === 'resume') contract.commands.resume.support = 'host';
+      if (drift === 'reconcile') contract.commands.reconcile.support = 'native';
+      if (drift === 'stream') contract.streaming.durableEvents = 'host-record';
+      if (drift === 'auth') contract.authentication = 'host-credential';
+      if (drift === 'model') contract.models.source = 'fixed';
+      const failed = contractChecks(contract).filter((check) => check.outcome === 'failed');
+      expect(failed.map((check) => check.id)).toContain(
+        drift === 'route' ? 'streaming-matches-mode' : 'native-session-run-backing',
+      );
+    },
+  );
+});
+
 // --- the fake ACP child -----------------------------------------------------------
 
 function fakeChild(options: { stdinNeverDrains?: boolean } = {}) {

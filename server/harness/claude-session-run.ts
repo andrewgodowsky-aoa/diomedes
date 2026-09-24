@@ -67,7 +67,7 @@ export interface SessionCheckpointFacts {
  * steering are not.
  */
 export interface NativeSessionProfile<C extends SessionCheckpointFacts> {
-  engine: 'claude-code' | 'opencode';
+  engine: 'claude-code' | 'opencode' | 'cursor' | 'devin';
   label: string;
   capability: CapabilityManifest;
   /** Validates a saved checkpoint for this engine and returns its payload. Throws `invalid_checkpoint`. */
@@ -78,6 +78,17 @@ export interface NativeSessionProfile<C extends SessionCheckpointFacts> {
    * with the route contract's `steer` answer.
    */
   steering: 'queue' | 'none';
+  /**
+   * What a restart makes of a checkpoint whose turn was running (H05). Without it
+   * the run stays parked for reconciliation, as before. With it, the driver
+   * reconciles the run from its durable record at startup: `resume` keeps the
+   * returned checkpoint for an explicit resume and records the interrupted turn as
+   * not completed; `refuse` ends the run with the sentence given. Never resends.
+   */
+  recoverInterrupted?(
+    checkpoint: C,
+    interruptedRequestId: string | null,
+  ): { resume: C } | { refuse: string };
   /**
    * Open a missing connection before the turn is recorded, and confirm a live one still has its
    * native session. A refusal found there (a fork the engine cannot make, a session it no longer
@@ -151,6 +162,8 @@ export interface NativeConversation<C extends SessionCheckpointFacts> {
   readonly nativeSession: NativeSessionRef | null;
   /** Set by a transport that can report how it reached its session (a resume that started fresh). */
   readonly continuity?: { origin: string; detail: string | null };
+  /** True where every turn may reach its session differently, so each turn reports it (H05). */
+  readonly continuityPerTurn?: boolean;
   /** Set by a transport that can confirm, sending nothing, that its native session still exists. */
   verify?(): Promise<void>;
 }
@@ -260,6 +273,8 @@ export const claudeSessionRunId = (projectId: string, commandId: string) =>
 const stepKey = (prefix: string, commandId: string) =>
   `${prefix}:${digest(commandId).slice(0, 40)}`;
 const PHASE_PREFIX = 'phase.';
+/** The startup reconciliation step that keeps a restart-interrupted session resumable (H05). */
+const RECOVER_PREFIX = 'recover:';
 /** A `transform` step charges neither the model nor the tool counter, and costs no units. */
 const phaseDefinition = (phase: InteractionPhase): StepDefinition => ({
   id: stepKey(`${PHASE_PREFIX}${phase.phase}`, phase.sourceMessageId),
@@ -406,7 +421,11 @@ export class ClaudeSessionRuns<C extends SessionCheckpointFacts = ClaudeSessionC
   private checkpoint(run: HarnessRun): C | undefined {
     const saved = [...run.steps]
       .reverse()
-      .find((step) => step.intent.kind === 'model' && step.nativeCheckpoint)?.nativeCheckpoint;
+      .find(
+        (step) =>
+          (step.intent.kind === 'model' || step.intent.stepId.startsWith(RECOVER_PREFIX)) &&
+          step.nativeCheckpoint,
+      )?.nativeCheckpoint;
     return saved ? this.profile.parseCheckpoint(saved) : undefined;
   }
   async status(projectId: string, runId: string) {
@@ -1196,7 +1215,8 @@ export class ClaudeSessionRuns<C extends SessionCheckpointFacts = ClaudeSessionC
               // What this first turn carried, as evidence on the run: the run and the count only.
               ...(carried ? { carried: { from: carried.from, messages: carried.messages } } : {}),
               // A resume the engine could not honour, said on the turn it happened, and saved with it.
-              ...(opened && connection.session.continuity?.detail
+              ...((opened || connection.session.continuityPerTurn) &&
+              connection.session.continuity?.detail
                 ? {
                     continuity: {
                       origin: connection.session.continuity.origin,
@@ -1603,8 +1623,60 @@ export class ClaudeSessionRuns<C extends SessionCheckpointFacts = ClaudeSessionC
     if (this.closed) this.cancelSteers(runId, 'Diomedes closed before this message was sent.');
   }
   async recover(run: HarnessRun) {
-    if (run.capabilityId === this.profile.capability.id && !terminal(run))
-      await this.runs.recover(run.id, localHarnessPrincipal(run.projectId));
+    if (run.capabilityId !== this.profile.capability.id || terminal(run)) return;
+    const principal = localHarnessPrincipal(run.projectId);
+    await this.runs.recover(run.id, principal);
+    const decide = this.profile.recoverInterrupted;
+    if (!decide) return;
+    // Reconciled from the durable record alone (the H01 rule): the saved checkpoint and the
+    // event cursor. Nothing is asked of the provider here and nothing is resent.
+    const recovered = await this.runs.get(run.id);
+    const saved = this.checkpoint(recovered);
+    if (recovered.state !== 'reconcile_required' || saved?.state !== 'busy') return;
+    const interrupted = recovered.steps.find(
+      (step) => step.state === 'reconcile_required' && step.intent.stepId.startsWith('turn:'),
+    );
+    const requestId = (interrupted?.intent.input as { requestId?: unknown } | undefined)?.requestId;
+    const decision = decide(saved, typeof requestId === 'string' ? requestId : null);
+    if ('refuse' in decision) {
+      await this.runs.cancel(run.id, decision.refuse, principal);
+      return;
+    }
+    const { afterSeq } = await this.runs.reconcileInterrupted(
+      run.id,
+      principal,
+      'Diomedes restarted during this turn. Its answer was not recorded and it was not resent.',
+    );
+    await this.runs.claim(run.id, this.owner, 60_000);
+    await this.runs.step(
+      run.id,
+      this.owner,
+      {
+        id: `${RECOVER_PREFIX}${afterSeq}`,
+        version: '1',
+        kind: 'tool',
+        effect: 'read',
+        name: `${this.profile.label} restart reconciliation`,
+        input: {
+          afterSeq,
+          interruptedRequestId: typeof requestId === 'string' ? requestId : null,
+          nativeSessionId: saved.nativeSessionId,
+        },
+        destination: 'local',
+        cost: 0,
+        maxAttempts: 1,
+      },
+      async (context) => {
+        await context.saveNativeCheckpoint!({
+          v: 1,
+          providerId: this.profile.engine,
+          payload: decision.resume as unknown as Json,
+        });
+        return { resumable: true, afterSeq };
+      },
+      principal,
+    );
+    await this.park(run.id, run.projectId, `recovered.${afterSeq}`);
   }
   async closeAll() {
     this.closed = true;
