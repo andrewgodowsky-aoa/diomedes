@@ -24,6 +24,7 @@ import {
 } from '../../shared/agent-profiles';
 import { NATIVE_LOOP_CAPABILITY } from '../../shared/native-loop';
 import { LoopInspector } from '../console/LoopInspector';
+import { SupervisionSection } from '../console/Supervision';
 import './workbench.css';
 
 /**
@@ -327,6 +328,16 @@ function SessionInspector({
               </div>
             ))}
           </section>
+          <SupervisionSection
+            projectId={projectId}
+            session={session}
+            refreshKey={[
+              session.state,
+              session.log.length,
+              ...needs.filter((need) => need.sessionId === session.id).map((need) => `${need.id}:${need.state}`),
+              ...receipts.map((receipt) => receipt.id),
+            ].join('|')}
+          />
           <section aria-label="Recorded sources">
             <h3>Recorded sources</h3>
             {!evidence.sources.length && <p>No source snapshot is attached to this session.</p>}

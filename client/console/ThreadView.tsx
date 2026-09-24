@@ -39,6 +39,7 @@ import { ProjectInstructions } from './ProjectInstructions';
 import { FollowUpQueue } from './FollowUpQueue';
 import { ControlReceiptLine, RunControls, StopReceiptLine } from './StopMenu';
 import { NeedBlock } from './Need';
+import { EscalationBlock } from './Supervision';
 import { RememberOfferBlock } from './RememberedApprovals';
 import { classifyIntent, classifyProposal } from '../../shared/remembered-approvals';
 import type { RememberOffer } from '../../shared/permissions';
@@ -662,28 +663,32 @@ export function ThreadView({
           )}
           {needs.map((n) => (
             <div id={`need-${n.id}`} key={n.id}>
-              <NeedBlock
-                need={n}
-                session={sessions.find((session) => session.id === n.sessionId)}
-                onScope={onScope}
-                onRemember={
-                  onRemember &&
-                  n.approval &&
-                  (n.harness
-                    ? classifyIntent('', n.harness.intent).rememberable
-                    : classifyProposal(n).rememberable)
-                    ? () => onRemember(n)
-                    : undefined
-                }
-                decide={(r, a) =>
-                  onResolve(
-                    n,
-                    r,
-                    n.approval ? false : (a ?? (r === 'go-ahead' && permission === 'task')),
-                  )
-                }
-                show={() => onPreview(n)}
-              />
+              {n.supervision && projectId ? (
+                <EscalationBlock projectId={projectId} need={n} />
+              ) : (
+                <NeedBlock
+                  need={n}
+                  session={sessions.find((session) => session.id === n.sessionId)}
+                  onScope={onScope}
+                  onRemember={
+                    onRemember &&
+                    n.approval &&
+                    (n.harness
+                      ? classifyIntent('', n.harness.intent).rememberable
+                      : classifyProposal(n).rememberable)
+                      ? () => onRemember(n)
+                      : undefined
+                  }
+                  decide={(r, a) =>
+                    onResolve(
+                      n,
+                      r,
+                      n.approval ? false : (a ?? (r === 'go-ahead' && permission === 'task')),
+                    )
+                  }
+                  show={() => onPreview(n)}
+                />
+              )}
             </div>
           ))}
           {onAnswerOffer &&

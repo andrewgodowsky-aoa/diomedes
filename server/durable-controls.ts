@@ -42,6 +42,7 @@ import {
   type ControlReceipt,
   type ControlRefusalCode,
   type ControlRequest,
+  type ControlRequester,
   type ControlSupport,
   type RouteControlProfile,
   type WorkInputs,
@@ -249,7 +250,12 @@ export class DurableControls {
    * A replay of a command already answered returns its receipt unchanged and
    * performs nothing; the same identity with another payload is refused.
    */
-  async perform(projectId: string, body: unknown): Promise<ControlReceipt> {
+  async perform(
+    projectId: string,
+    body: unknown,
+    /** H15: Diomedes supervision asks for Steer, Queue and Stop in its own name. */
+    requestedBy: ControlRequester = { actor: 'you', via: 'local-client' },
+  ): Promise<ControlReceipt> {
     const parsed = controlRequestSchema.safeParse(body);
     if (!parsed.success)
       throw new ApiError(
@@ -285,7 +291,7 @@ export class DurableControls {
       : undefined;
     if (sessionId && !session) throw new ApiError(404, 'This run was not found for this task.');
     const requestedAt = now();
-    const draft = await this.dispatch(projectId, request, task, session ?? null);
+    const draft = await this.dispatch(projectId, request, task, session ?? null, requestedBy);
 
     const fresh = this.store.state(projectId);
     const workRoute = session
@@ -306,7 +312,7 @@ export class DurableControls {
       family: CONTROL_FAMILY[request.control],
       payloadDigest: digest,
       control: request.control,
-      requestedBy: { actor: 'you', via: 'local-client' },
+      requestedBy: structuredClone(requestedBy),
       requestedAt,
       target: {
         taskId: task.id,
@@ -337,7 +343,7 @@ export class DurableControls {
       this.store.addEntry(fresh, {
         kind: 'control',
         sentence: draft.history.sentence,
-        actor: 'you',
+        actor: requestedBy.actor === 'you' ? 'you' : 'diomedes',
         taskId: draft.history.taskId,
         ...(draft.history.sessionId ? { sessionId: draft.history.sessionId } : {}),
       });
@@ -350,13 +356,18 @@ export class DurableControls {
     request: ControlRequest,
     task: Task,
     session: Session | null,
+    requestedBy: ControlRequester,
   ): Promise<Draft> {
+    const supervision = requestedBy.actor === 'diomedes';
     switch (request.control) {
       case 'queue':
-        return this.queue(projectId, request, task);
+        return this.queue(projectId, request, task, supervision);
       case 'stop':
-        return this.stop(projectId, request, task, session);
+        return this.stop(projectId, request, task, session, supervision);
     }
+    // Supervision asks for Steer, Queue and Stop only: continuing is always the person's.
+    if (supervision && request.control !== 'steer')
+      throw new ApiError(403, 'Only you can resume, retry or fork a run.');
     // Every other control names a run; the schema requires it.
     const run = session!;
     const workRoute = workRouteOf(run);
@@ -378,7 +389,7 @@ export class DurableControls {
         : { kind: 'diomedes' };
     switch (request.control) {
       case 'steer':
-        return this.steer(projectId, request, task, run, driver!, performer);
+        return this.steer(projectId, request, task, run, driver!, performer, supervision);
       case 'resume':
       case 'retry':
         return this.continueRun(projectId, request, task, run, offered.support, driver, performer);
@@ -394,6 +405,7 @@ export class DurableControls {
     session: Session,
     driver: WorkControlDriver,
     performer: ControlPerformer,
+    supervision = false,
   ): Promise<Draft> {
     let answer: SteerAnswer;
     try {
@@ -419,7 +431,9 @@ export class DurableControls {
       detail: answer.detail,
       performedBy: answer.performedBy ?? performer,
       history: {
-        sentence: `You steered ${task.name} while it ran.`,
+        sentence: supervision
+          ? `Diomedes supervision steered ${task.name} while it ran.`
+          : `You steered ${task.name} while it ran.`,
         sessionId: session.id,
         taskId: task.id,
       },
@@ -430,19 +444,24 @@ export class DurableControls {
     projectId: string,
     request: Extract<ControlRequest, { control: 'queue' }>,
     task: Task,
+    supervision = false,
   ): Promise<Draft> {
     try {
-      const followUp = await this.deps.workControl.queue(projectId, {
-        protocolVersion: 1,
-        commandId: derivedWorkCommandId(request.commandId),
-        taskId: task.id,
-        text: request.text,
-        waitsFor: request.waitsFor,
-        route: request.route,
-        model: request.model,
-        agentId: request.agentId,
-        sources: [...request.sources],
-      });
+      const followUp = await this.deps.workControl.queue(
+        projectId,
+        {
+          protocolVersion: 1,
+          commandId: derivedWorkCommandId(request.commandId),
+          taskId: task.id,
+          text: request.text,
+          waitsFor: request.waitsFor,
+          route: request.route,
+          model: request.model,
+          agentId: request.agentId,
+          sources: [...request.sources],
+        },
+        supervision ? 'diomedes-supervision' : 'you',
+      );
       return {
         outcome: 'queued',
         detail: `Queued to send ${followUpWaitLabel(followUp.waitsFor)}.`,
@@ -461,6 +480,7 @@ export class DurableControls {
     request: Extract<ControlRequest, { control: 'stop' }>,
     task: Task,
     session: Session | null,
+    supervision = false,
   ): Promise<Draft> {
     const state = this.store.state(projectId);
     const target =
@@ -479,11 +499,11 @@ export class DurableControls {
         );
       }
     }
-    const stop = await this.deps.workControl.stop(projectId, {
-      scope: request.scope,
-      taskId: task.id,
-      sessionId: request.sessionId,
-    });
+    const stop = await this.deps.workControl.stop(
+      projectId,
+      { scope: request.scope, taskId: task.id, sessionId: request.sessionId },
+      supervision ? 'supervision' : 'you',
+    );
     const cancelled = stop.cancelledFollowUpIds.length;
     const cancelledSentence = cancelled
       ? ` ${cancelled} queued ${cancelled === 1 ? 'follow-up was' : 'follow-ups were'} cancelled.`

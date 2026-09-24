@@ -337,6 +337,9 @@ export function ControlReceiptLine({
       <span className="control-receipt-head">
         <b>{CONTROL_LABELS[receipt.control]}</b>{' '}
         <span className="lc">{OUTCOME_WORDS[receipt.outcome]}</span>
+        {receipt.requestedBy.actor === 'diomedes' && (
+          <span className="lc"> · asked by {AGENT_NAME} supervision</span>
+        )}
         {by && <span className="lc"> · by {by}</span>}
         {receipt.performedBy?.kind === 'engine' && receipt.performedBy.model && (
           <span className="mono"> · {receipt.performedBy.model}</span>

@@ -141,6 +141,7 @@ import {
   CONTROL_FIXTURE_ROUTE,
   controlFixtureDriver,
 } from './durable-controls-fixture.js';
+import { SupervisionService } from './supervision/service.js';
 import { ReadyScheduler } from './ready-scheduler.js';
 import { DesktopConnections } from './connections/desktop.js';
 import { toastConnector } from './connections/fixture.js';
@@ -2377,8 +2378,13 @@ export async function createApp(options: AppOptions) {
     store,
     native: nativeWork,
     admit: (projectId, command) => admitWork(projectId, command, listeningPort),
-    stopSession: (projectId, sessionId) =>
-      serviceFor(projectId, sessionId).stop(projectId, sessionId),
+    stopSession: (projectId, sessionId, by) => {
+      const service = serviceFor(projectId, sessionId);
+      if (service === nativeWork) return nativeWork.stop(projectId, sessionId, by);
+      if (service === harness.bridge && by === 'supervision')
+        return harness.bridge.stop(projectId, sessionId, 'Paused by Diomedes supervision.');
+      return service.stop(projectId, sessionId);
+    },
     modelFor: (projectId, threadId, engine) => {
       if (engine === 'sample') return null;
       // A name for a queued follow-up. A style that would ask is answered when it is sent.
@@ -2430,6 +2436,21 @@ export async function createApp(options: AppOptions) {
   // H02: the Codex route's steer, resume and fork, offered only where the Codex that
   // served a run advertised them (`codexControls.contract`).
   durableControls.registerDriver('codex', codexControls.driver());
+  /**
+   * H15 supervision: drift detection over each live run's durable records, answered on a
+   * bounded ladder through the controls above and an ordinary Need. It listens to the same
+   * `change` announcement the follow-up queue does and grants nothing.
+   */
+  const supervision = new SupervisionService({
+    store,
+    controls: durableControls,
+    harnessRun: async (projectId, session) =>
+      [FIXTURE_ENGINE, CODEX_ENGINE].includes(session.engine.name)
+        ? ((await harness.list(projectId)).find((run) => run.sessionId === session.id) ?? null)
+        : null,
+  });
+  const superviseOnChange = (projectId: string) => supervision.schedule(projectId);
+  store.on('change', superviseOnChange);
   /**
    * The one trigger. A session reaching a terminal state and a task becoming
    * done both end in a durable write, and `persist` announces that write, so
@@ -2582,6 +2603,26 @@ export async function createApp(options: AppOptions) {
       }),
     );
   app.get(
+    '/api/projects/:id/supervision',
+    route(async (req) => ({
+      records: supervision.list(
+        id(req),
+        typeof req.query.sessionId === 'string' ? req.query.sessionId : undefined,
+      ),
+    })),
+  );
+  app.post(
+    '/api/projects/:id/supervision/evaluate',
+    route(async (req) => {
+      const sessionId = asString(body(req).sessionId, 'a run', 100);
+      return { records: await supervision.evaluate(id(req), sessionId) };
+    }),
+  );
+  app.post(
+    '/api/projects/:id/supervision/escalations/:needId/answer',
+    route(async (req) => supervision.answer(id(req), String(req.params.needId), body(req))),
+  );
+  app.get(
     '/api/projects/:id/follow-ups',
     route(async (req) => ({ followUps: workControl.list(id(req)) })),
   );
@@ -2635,6 +2676,16 @@ export async function createApp(options: AppOptions) {
         throw new ApiError(400, 'Choose true or false for the task allowance.');
       const need = store.state(id(req)).needs.find((item) => item.id === req.params.needId);
       if (!need) throw new ApiError(404, 'This request was not found.');
+      // A supervision escalation is answered only by a person, never for the whole task.
+      if (need.supervision) {
+        if (b.allowForTask === true)
+          throw new ApiError(400, 'A supervision escalation is answered for this run only.');
+        return supervision.answer(id(req), need.id, {
+          protocolVersion: 1,
+          commandId: typeof b.commandId === 'string' ? b.commandId : `answer.${identifier()}`,
+          answer: choice(b.resolution, ['go-ahead', 'declined'], 'decision') === 'go-ahead' ? 'continue' : 'stop',
+        });
+      }
       const admission = parseApprovalCommand(id(req), need.id, b);
       if (need.harness)
         return harness.bridge.resolve(
@@ -5375,6 +5426,8 @@ export async function createApp(options: AppOptions) {
     // announce a settled session and schedule a delivery on the way out.
     deliveryClosed = true;
     store.off('change', deliverFor);
+    store.off('change', superviseOnChange);
+    await supervision.close();
     await Promise.allSettled([...deliveries]);
     await readyScheduler.close();
     await automationScheduler.close();

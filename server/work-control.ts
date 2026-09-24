@@ -68,7 +68,8 @@ export interface WorkControlDeps {
    * Ends a session the way the existing Stop route does, for every kind of
    * session the host can hold — native, sample or harness.
    */
-  stopSession(projectId: string, sessionId: string): Promise<unknown>;
+  /** `by` is who asked: you, or (H15) Diomedes supervision pausing a run. */
+  stopSession(projectId: string, sessionId: string, by?: 'you' | 'supervision'): Promise<unknown>;
   /** Which routes may still be used. Injected so a withdrawn route is provable. */
   routeAvailable?(route: string): boolean;
   /**
@@ -125,7 +126,7 @@ export class WorkControl {
   async queue(
     projectId: string,
     request: unknown,
-    by: 'you' = 'you',
+    by: 'you' | 'diomedes-supervision' = 'you',
   ): Promise<FollowUpCommand> {
     const parsed = queueFollowUpSchema.safeParse(request);
     if (!parsed.success)
@@ -175,13 +176,17 @@ export class WorkControl {
       order: (queued.at(-1)?.order ?? 0) + 1,
       queuedAt: now(),
       state: 'queued',
+      ...(by === 'diomedes-supervision' ? { queuedBy: by } : {}),
     };
     state.followUps ??= [];
     state.followUps.push(record);
     this.store.addEntry(state, {
       kind: 'follow-up',
-      sentence: `You queued a follow-up for ${task.name}, ${followUpWaitLabel(record.waitsFor)}.`,
-      actor: by,
+      sentence:
+        by === 'you'
+          ? `You queued a follow-up for ${task.name}, ${followUpWaitLabel(record.waitsFor)}.`
+          : `Diomedes supervision queued a correction for ${task.name}, ${followUpWaitLabel(record.waitsFor)}.`,
+      actor: by === 'you' ? 'you' : 'diomedes',
       taskId: task.id,
     });
     await this.store.persist(state);
@@ -246,7 +251,11 @@ export class WorkControl {
    * because delivering one would restart work the person just stopped.
    * `queued` cancels the queue and touches no session at all.
    */
-  async stop(projectId: string, request: unknown): Promise<StopReceipt> {
+  async stop(
+    projectId: string,
+    request: unknown,
+    by: 'you' | 'supervision' = 'you',
+  ): Promise<StopReceipt> {
     const parsed = stopSchema.safeParse(request);
     if (!parsed.success) throw new ApiError(400, 'Choose what to stop, and for which task.');
     const { scope, taskId } = parsed.data;
@@ -272,7 +281,7 @@ export class WorkControl {
           .state(projectId)
           .sessions.find((item) => item.id === sessionId && isActive(item));
         if (session) {
-          await this.deps.stopSession(projectId, sessionId);
+          await this.deps.stopSession(projectId, sessionId, by);
           acknowledged = true;
         }
       }
@@ -431,7 +440,10 @@ export class WorkControl {
     if (sessionId) delivered.deliveredSessionId = sessionId;
     this.store.addEntry(fresh, {
       kind: 'follow-up',
-      sentence: `Diomedes sent your queued follow-up for ${task.name}.`,
+      sentence:
+        item.queuedBy === 'diomedes-supervision'
+          ? `Diomedes sent its supervision correction for ${task.name}.`
+          : `Diomedes sent your queued follow-up for ${task.name}.`,
       actor: 'diomedes',
       taskId: task.id,
       ...(sessionId ? { sessionId } : {}),
