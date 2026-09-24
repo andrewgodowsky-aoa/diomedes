@@ -2058,6 +2058,11 @@ export function Shell({
               instructionFiles={activeInstructionFiles(state.project.packs, state.instructionFiles)}
               onOpenInFiles={openDocument}
               followUps={state.followUps ?? []}
+              controlReceipts={state.controlReceipts ?? []}
+              onOpenTask={(taskId) => {
+                const target = state.tasks.find((item) => item.id === taskId);
+                if (target) openTaskThread(target);
+              }}
               onError={report}
               grantActive={!!activeGrant}
               onScope={() => setPermissionsOpen(true)}

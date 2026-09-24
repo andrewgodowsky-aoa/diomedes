@@ -10,6 +10,13 @@ import {
 import { evidenceRows } from '../../shared/evidence-rows';
 import { rememberedAttribution } from '../../shared/remembered-approvals';
 import { loadHarnessEvidence, sessionEvidence, sessionEvidenceView } from './run-evidence';
+import {
+  CONTROL_COMMANDS,
+  CONTROL_LABELS,
+  type ControlReceipt,
+  type RouteControlProfile,
+} from '../../shared/work-control';
+import { AGENT_NAME } from '../../shared/agent-name';
 import './workbench.css';
 
 /**
@@ -24,6 +31,10 @@ export interface RunInspectorProps {
   session: Session | null;
   needs: readonly Need[];
   history: readonly HistoryEntry[];
+  /** What this run's route offers of the six controls (H08). Absent while it loads. */
+  controls?: RouteControlProfile | null;
+  /** The project's control receipts, for this run's lineage. */
+  receipts?: readonly ControlReceipt[];
 }
 
 type Snapshot =
@@ -48,7 +59,12 @@ function SessionInspector({
   session,
   needs,
   history,
+  controls = null,
+  receipts = [],
 }: RunInspectorProps & { session: Session }) {
+  const lineage = receipts.find(
+    (receipt) => receipt.result.sessionId === session.id && receipt.lineage,
+  )?.lineage;
   const [open, setOpen] = useState(false);
   const [revision, setRevision] = useState(0);
   const [snapshot, setSnapshot] = useState<Snapshot>({ state: 'loading' });
@@ -124,9 +140,42 @@ function SessionInspector({
             </dd>
             <dt>Controls</dt>
             <dd>
-              Stop requests cancellation. Already dispatched effects may require review. Live
-              steering and a next-turn queue are not available here.
+              {controls ? (
+                <ul className="run-inspector-controls">
+                  {CONTROL_COMMANDS.map((control) => {
+                    const offered = controls.controls[control];
+                    return (
+                      <li key={control}>
+                        <span>
+                          {CONTROL_LABELS[control]} ·{' '}
+                          {offered.support === 'native'
+                            ? 'by the route'
+                            : offered.support === 'host'
+                              ? `by ${AGENT_NAME}`
+                              : 'not offered'}
+                        </span>
+                        <small>{offered.note}</small>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : (
+                'Reading what this route offers.'
+              )}
             </dd>
+            {lineage && (
+              <>
+                <dt>Lineage</dt>
+                <dd>
+                  {lineage.kind === 'retry'
+                    ? `Attempt ${lineage.attempt ?? 2}, retrying `
+                    : lineage.kind === 'resume'
+                      ? 'Continues '
+                      : 'Forked from '}
+                  <span className="run-inspector-code">{lineage.originSessionId}</span>
+                </dd>
+              </>
+            )}
             <dt>Session</dt>
             <dd className="run-inspector-code">{session.id}</dd>
             {session.receipt && (
