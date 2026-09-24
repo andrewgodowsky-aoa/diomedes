@@ -107,6 +107,24 @@ describe('the pack routes', () => {
     expect(busy.data.projects).toEqual([{ id: project, name: 'Kitchen' }]);
   });
 
+  test('activate and deactivate still accept a request with no body, as before the lifecycle', async () => {
+    const folder = path.join(temp, 'bare');
+    await fs.mkdir(folder, { recursive: true });
+    const project = (await call('/projects', 'POST', { name: 'Bare', folder })).data.id as string;
+    // No Content-Type and no body, the way a bare client POST arrives.
+    const bare = (route: string) =>
+      fetch(`${url}/api${route}`, { method: 'POST', headers: { 'X-Diomedes-Client': '1' } }).then(
+        async (response) => ({ status: response.status, data: await response.json() }),
+      );
+    const on = await bare(`/projects/${project}/packs/diomedes.software-engineering/activate`);
+    expect(on.status).toBe(200);
+    expect(on.data.activations).toEqual([
+      expect.objectContaining({ packId: 'diomedes.software-engineering', state: 'active' }),
+    ]);
+    const off = await bare(`/projects/${project}/packs/diomedes.software-engineering/deactivate`);
+    expect(off.status).toBe(200);
+  });
+
   test('an id nobody ships or installed is 404 on every route', async () => {
     const folder = path.join(temp, 'kitchen');
     await fs.mkdir(folder, { recursive: true });

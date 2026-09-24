@@ -47,6 +47,8 @@ export function mountPackRoutes(
     throw new ApiError(404, 'This capability pack does not exist.');
   };
   const flag = (value: unknown) => value === true;
+  /** Options for a per-project action. A bare POST, as the Console sent before the lifecycle, has none. */
+  const options = (req: Request) => (req.body === undefined ? {} : body(req));
 
   /** Everything the Capabilities section shows for one Project, read from the records. */
   const view = async (id: string) => {
@@ -90,7 +92,7 @@ export function mountPackRoutes(
       const id = projectId(req);
       store.state(id);
       await packs.activate(id, await packId(req), {
-        includeDependencies: flag(body(req).includeDependencies),
+        includeDependencies: flag(options(req).includeDependencies),
       });
       return decided(id);
     }),
