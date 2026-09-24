@@ -43,6 +43,9 @@ function openSetupReference(destination) {
     .openExternal(destination)
     .catch((error) => dialog.showErrorBox('The reference could not open', error.message));
 }
+// The app's name is an identifier, not the product's name on screen: Electron keeps the
+// profile at %APPDATA%\Diomedes by it, so it stays Diomedes. The window and dialogs say
+// Nectovia.
 app.setName('Diomedes');
 // A profile or data folder chosen through the environment belongs to a test,
 // a smoke driver or an installer proof, and is never reset.
@@ -222,7 +225,7 @@ async function createMainWindow() {
     height: 960,
     minWidth: 800,
     minHeight: 600,
-    title: 'Diomedes',
+    title: 'Nectovia',
     backgroundColor: await windowBackground(),
     show: false,
     ...titleBarWindowOptions(process.platform),
@@ -343,7 +346,7 @@ if (!app.requestSingleInstanceLock()) {
     if (shuttingDown || !appUrl) return;
     if (!shouldReopenMainWindow(process.platform, BrowserWindow.getAllWindows().length)) return;
     void createMainWindow().catch((error) =>
-      dialog.showErrorBox('Diomedes could not reopen its window', error.message),
+      dialog.showErrorBox('Nectovia could not reopen its window', error.message),
     );
   });
   app.on('before-quit', (event) => {
@@ -358,13 +361,13 @@ if (!app.requestSingleInstanceLock()) {
           void Promise.resolve(releaseLock?.())
             .then(() => app.quit())
             .catch((error) => {
-              dialog.showErrorBox('Diomedes could not release its data folder', error.message);
+              dialog.showErrorBox('Nectovia could not release its data folder', error.message);
               app.exit(1);
             });
         });
       })
       .catch((error) => {
-        dialog.showErrorBox('Diomedes could not close cleanly', error.message);
+        dialog.showErrorBox('Nectovia could not close cleanly', error.message);
         app.exit(1);
       });
   });
@@ -406,7 +409,7 @@ if (!app.requestSingleInstanceLock()) {
         ...updateShell,
         onInstallAccepted: createInstallAccepted(() => app.quit(), {
           onError: (error) =>
-            dialog.showErrorBox('Diomedes could not close for the update', error.message),
+            dialog.showErrorBox('Nectovia could not close for the update', error.message),
         }),
       };
       service = await createApp({
@@ -449,7 +452,7 @@ if (!app.requestSingleInstanceLock()) {
       );
     })
     .catch((error) => {
-      dialog.showErrorBox('Diomedes could not start', error.message);
+      dialog.showErrorBox('Nectovia could not start', error.message);
       app.exit(1);
     });
 }
