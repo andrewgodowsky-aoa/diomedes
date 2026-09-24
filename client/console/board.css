@@ -422,4 +422,9 @@
     padding-right: 16px;
     grid-template-columns: 1fr;
   }
+  /* Compact keeps its one-line rows, but a narrow or zoomed window (C47)
+     wraps the six columns instead of scrolling the board sideways. */
+  .console .columns.compact {
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 210px), 1fr));
+  }
 }

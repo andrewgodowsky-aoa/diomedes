@@ -108,7 +108,7 @@ export function Rail({
         }
       >
         {row && (
-          <span className="gp" style={{ top: row.top + 12 }}>
+          <span className="gp" aria-hidden="true" style={{ top: row.top + 12 }}>
             {/* The seam's step beside the selected row. Only the Nectovia scheme
                 draws it (nectovia.css); every other scheme shows the point. */}
             <svg
