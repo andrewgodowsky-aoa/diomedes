@@ -1806,6 +1806,40 @@ html[data-motion='reduced'] .console .modes .ind b {
 .pack-contributes {
   min-width: 0;
 }
+/* Lifecycle controls. Versions, ids and folder paths are machine strings, so
+   every child that can carry one sets min-width: 0 and wraps (decision 5). */
+.pack-settings .pack {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--hair-2);
+}
+.pack-state {
+  flex: none;
+  white-space: nowrap;
+}
+.pack-actions,
+.pack-confirm,
+.pack-folder {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.pack-confirm p {
+  flex: 1 1 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.pack-folder input {
+  flex: 1 1 220px;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.pack-where,
+.pack-record li {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 
 /* Follow-up queue and the scoped Stops. The queue sits under the composer as
    one line per item (decision 4): the person's sentence, when it runs, and what

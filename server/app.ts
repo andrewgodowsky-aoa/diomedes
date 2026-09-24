@@ -43,12 +43,7 @@ import type {
 } from '../shared/types.js';
 import type { ConversationUpdateNotCarried } from '../shared/conversation.js';
 import { ApiError, absent, relativeName, safeAbsolute } from './paths.js';
-import { activatePack, deactivatePack, discoverInstructionFiles } from './capability-packs.js';
-import {
-  CAPABILITY_PACK_IDS,
-  CAPABILITY_PACKS,
-  isCapabilityPackId,
-} from '../shared/capability-packs.js';
+import { mountPackRoutes } from './pack-routes.js';
 import {
   defaults,
   findTasks,
@@ -1784,47 +1779,10 @@ export async function createApp(options: AppOptions) {
     }),
   );
   /**
-   * Capability packs for one Project.
-   *
-   * Activation is a Project-level record and nothing more: no grant, no Need,
-   * no permission changes here (`AGENTS.md` decision 14). The listing carries
-   * the manifests so the person reads what a pack would use before deciding,
-   * and the instruction records so what discovery found is inspectable rather
-   * than a hidden behaviour change.
+   * Capability packs: per-project activation and the installation-wide
+   * lifecycle (`server/pack-routes.ts`). Activation is not authorization.
    */
-  const packId = (req: Request) => {
-    const value = String(req.params.packId);
-    if (!isCapabilityPackId(value)) throw new ApiError(404, 'This capability pack does not exist.');
-    return value;
-  };
-  app.get(
-    '/api/projects/:id/packs',
-    route(async (req) => ({
-      packs: CAPABILITY_PACK_IDS.map((id) => CAPABILITY_PACKS[id]),
-      activations: store.state(id(req)).project.packs ?? [],
-      instructionFiles: await discoverInstructionFiles(store, id(req)),
-    })),
-  );
-  app.post(
-    '/api/projects/:id/packs/:packId/activate',
-    route(async (req) => {
-      const state = await activatePack(store, id(req), packId(req));
-      return {
-        activations: state.project.packs ?? [],
-        instructionFiles: state.instructionFiles ?? [],
-      };
-    }),
-  );
-  app.post(
-    '/api/projects/:id/packs/:packId/deactivate',
-    route(async (req) => {
-      const state = await deactivatePack(store, id(req), packId(req));
-      return {
-        activations: state.project.packs ?? [],
-        instructionFiles: state.instructionFiles ?? [],
-      };
-    }),
-  );
+  mountPackRoutes(app, { store, route, body });
   /**
    * Read one discovered instruction file, as Diomedes read it.
    *

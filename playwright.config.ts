@@ -113,6 +113,7 @@ export default defineConfig({
     'console-view-ui.spec.ts',
     'instructions-inspector.spec.ts',
     'ready-queue-ui.spec.ts',
+    'pack-lifecycle-ui.spec.ts',
   ],
   fullyParallel: false,
   workers: 1,
