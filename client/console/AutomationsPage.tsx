@@ -11,15 +11,17 @@ import {
 import type { WorkspaceView } from '../../shared/workspaces';
 import { api, automationDetail, listAutomations, runAutomation } from '../api';
 import { Mark } from '../components';
+import { AttentionList, ScheduleSection } from './AutomationSchedule';
 import './automations.css';
 
 /**
- * Automations (Milestone A).
+ * Automations (Milestones A and B).
  *
  * What runs for the active business, what it last did, and what needs a
  * person, read from the host's records and never inferred here. The only
- * automation this build has is the weekly brief, and it is manual: this screen
- * says so on every row until something runs on its own.
+ * automation this build has is the weekly brief. It is "Manual — not
+ * scheduled" until an owner or admin turns a schedule on, and "Scheduled"
+ * only while that schedule is on and this computer has checked it recently.
  *
  * Modelled on Readiness: an abort-and-epoch loader, loading, error and status
  * states, and evidence behind a disclosure. The run is followed through the
@@ -51,6 +53,7 @@ const MARK: Readonly<Record<AutomationLabel, string>> = {
 
 const SUMMARY: readonly { key: keyof AutomationSummary; label: string }[] = [
   { key: 'configured', label: 'Configured' },
+  { key: 'scheduled', label: 'Scheduled' },
   { key: 'running', label: 'Running' },
   { key: 'needsAttention', label: 'Needs attention' },
   { key: 'notReady', label: 'Not ready' },
@@ -68,7 +71,13 @@ const shortSha = (sha: string) => sha.slice(0, 12);
 
 type Loaded =
   | { kind: 'personal' }
-  | { kind: 'business'; organizationId: string; list: AutomationList; readAt: string };
+  | {
+      kind: 'business';
+      organizationId: string;
+      personId: string;
+      list: AutomationList;
+      readAt: string;
+    };
 
 function Status({ view }: { view: Pick<AutomationView, 'status'> }) {
   return (
@@ -109,11 +118,13 @@ function Occurrence({
   const occurrence = item.occurrence;
   const run = item.run;
   const admission = occurrence.admission;
-  const outcome = item.resultText ?? run?.sentence ?? 'Starting.';
+  const outcome = item.note ?? item.resultText ?? run?.sentence ?? 'Starting.';
   return (
-    <li className="auto-occurrence">
+    <li className="auto-occurrence" data-trigger={occurrence.trigger.kind}>
       <div className="auto-occurrence-head">
-        <span className="auto-occurrence-time">{when(occurrence.observedAt)}</span>
+        <span className="auto-occurrence-time">
+          {item.slotText ? `Scheduled · ${item.slotText}` : when(occurrence.observedAt)}
+        </span>
         <span className="auto-occurrence-outcome">{outcome}</span>
       </div>
       {admission.state === 'refused' && (
@@ -214,15 +225,19 @@ function Occurrence({
 
 function Detail({
   organizationId,
+  personId,
   automation,
   here,
   refresh,
+  onChanged,
   props,
 }: {
   organizationId: string;
+  personId: string;
   automation: AutomationView;
   here: boolean;
   refresh: number;
+  onChanged(message: string): void;
   props: AutomationsPageProps;
 }) {
   const [detail, setDetail] = useState<AutomationDetail | null>(null);
@@ -303,6 +318,12 @@ function Detail({
           ))}
         </ul>
       </section>
+      <ScheduleSection
+        organizationId={organizationId}
+        automation={automation}
+        personId={personId}
+        onChanged={onChanged}
+      />
       <section aria-label="Rules and access">
         <h3>Rules and access</h3>
         <dl className="auto-facts">
@@ -317,7 +338,16 @@ function Detail({
           </div>
           <div>
             <dt>Who may run it</dt>
-            <dd>Any active member, with the files the setup approved.</dd>
+            <dd>
+              Any active member, with the files the setup approved. Only an owner or administrator
+              may change, turn on or pause its schedule.
+            </dd>
+          </div>
+          <div>
+            <dt>Alerts</dt>
+            <dd>
+              Shown here and in its project’s Needs you. Nothing is sent by push, email or phone.
+            </dd>
           </div>
           <div>
             <dt>Approvals</dt>
@@ -383,19 +413,23 @@ function Detail({
 
 function Row({
   organizationId,
+  personId,
   automation,
   open,
   onToggle,
   onRun,
+  onChanged,
   pressing,
   refresh,
   props,
 }: {
   organizationId: string;
+  personId: string;
   automation: AutomationView;
   open: boolean;
   onToggle(): void;
   onRun(): void;
+  onChanged(message: string): void;
   pressing: boolean;
   refresh: number;
   props: AutomationsPageProps;
@@ -416,11 +450,22 @@ function Row({
         </div>
         <p className="auto-reason">{automation.status.reason}</p>
         {automation.scheduleRecorded && <p className="auto-quiet">{automation.scheduleRecorded}</p>}
+        <AttentionList
+          organizationId={organizationId}
+          items={automation.attention}
+          onChanged={onChanged}
+        />
         <dl className="auto-meta">
           {automation.status.label !== 'manual' && (
             <div>
               <dt>Trigger</dt>
               <dd>{automation.trigger.text}</dd>
+            </div>
+          )}
+          {automation.schedule.state === 'enabled' && automation.schedule.next[0] && (
+            <div>
+              <dt>Next run</dt>
+              <dd data-next-run={automation.schedule.next[0].at}>{automation.schedule.next[0].text}</dd>
             </div>
           )}
           <div>
@@ -479,9 +524,11 @@ function Row({
           {open && (
             <Detail
               organizationId={organizationId}
+              personId={personId}
               automation={automation}
               here={here}
               refresh={refresh}
+              onChanged={onChanged}
               props={props}
             />
           )}
@@ -531,7 +578,13 @@ export function AutomationsPage(props: AutomationsPageProps) {
           list.automations.flatMap((item) => (item.project ? [item.project.id] : [])),
         );
         shown.current = true;
-        setLoaded({ kind: 'business', organizationId, list, readAt: list.observedAt });
+        setLoaded({
+          kind: 'business',
+          organizationId,
+          personId: workspace.person.id,
+          list,
+          readAt: list.observedAt,
+        });
         const watched = list.automations.find(
           (item) => item.latest?.occurrence.id === watching.current,
         );
@@ -697,6 +750,7 @@ export function AutomationsPage(props: AutomationsPageProps) {
                 <Row
                   key={automation.id}
                   organizationId={list.organization.id}
+                  personId={loaded?.kind === 'business' ? loaded.personId : ''}
                   automation={automation}
                   open={open[automation.id] ?? single}
                   onToggle={() =>
@@ -706,6 +760,10 @@ export function AutomationsPage(props: AutomationsPageProps) {
                     }))
                   }
                   onRun={() => void run(list.organization.id, automation)}
+                  onChanged={(message) => {
+                    setAnnounce(message);
+                    void load();
+                  }}
                   pressing={pressing === automation.id}
                   refresh={refresh}
                   props={props}

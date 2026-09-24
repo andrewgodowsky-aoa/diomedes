@@ -1,5 +1,5 @@
 /**
- * Automations Milestone A: the acceptance path, in the built Console.
+ * Automations Milestones A and B: the acceptance paths, in the built Console.
  *
  * From the normal Console a person finds the configured job, sees that it is
  * manual, runs it through the existing admission, follows its real work and
@@ -18,7 +18,10 @@ import { createApp } from '../server/app.js';
 import type { Project } from '../shared/types.js';
 import type { WorkspaceView } from '../shared/workspaces.js';
 import type { BusinessSetupView } from '../shared/business-setup.js';
-import type { AutomationDetail } from '../shared/automations.js';
+import type { AutomationDetail, TriggerOccurrence } from '../shared/automations.js';
+import { nextSlots, slotText, type AutomationSchedule } from '../shared/automation-schedule.js';
+import type { AutomationScheduler } from '../server/automation-scheduler.js';
+import type { AutomationService } from '../server/automations.js';
 import { reopenLastProject } from './fixtures/landing';
 
 let app: Awaited<ReturnType<typeof createApp>>;
@@ -28,6 +31,8 @@ let root: string;
 let project: Project;
 let organizationId: string;
 let selection: string[] = [];
+/** The scheduler's clock: real time until a test fixes it (Milestone B). */
+let fixedClock: number | null = null;
 const headers = { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' };
 
 async function api<T>(route: string, method = 'GET', body?: unknown): Promise<T> {
@@ -51,11 +56,15 @@ async function launch() {
     dataDir: path.join(root, 'data'),
     projectRoot: path.join(root, 'projects'),
     reviewerAdapter: null,
+    // Milestone B: no timer; the schedule test moves the clock and asks for a pass.
+    automationClock: () => fixedClock ?? Date.now(),
+    automationTickMs: null,
   });
   const dist = path.resolve('dist');
   const built = (await fs.stat(path.join(dist, 'index.html'))).mtimeMs;
   for (const source of [
     'client/console/AutomationsPage.tsx',
+    'client/console/AutomationSchedule.tsx',
     'client/console/automations.css',
     'client/console/Shell.tsx',
     'client/App.tsx',
@@ -268,4 +277,90 @@ test('the palette opens Automations too', async ({ page }) => {
   // A row runs its first action, Open, when it is clicked.
   await palette.getByText('Automations', { exact: true }).click();
   await expect(screen(page).getByRole('heading', { name: 'Automations', level: 1 })).toBeVisible();
+});
+
+test('an owner turns a schedule on, sees the next run, the due slot starts on its own, and a pause stops the next', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const scheduler = () => app.locals.automationScheduler as AutomationScheduler;
+  const service = () => app.locals.automations as AutomationService;
+  const MONDAY_8: AutomationSchedule = {
+    cadence: 'weekly',
+    weekday: 1,
+    time: '08:00',
+    timezone: 'America/New_York',
+  };
+  // Ten minutes before the next Monday 8:00 a.m. in New York, whenever this runs.
+  const [first, second] = nextSlots(MONDAY_8, Date.now(), 2);
+  fixedClock = first!.ms - 10 * 60_000;
+  await scheduler().tick();
+  // The first test removed a source; put it back so the scheduled run can read it.
+  await fs.writeFile(path.join(project.folder, selection[0]!), '- Three cabinets fitted.\n');
+
+  await page.goto(url);
+  await reopenLastProject(page);
+  await openDestination(page, 'Automations');
+  // One clean manual run first, so the last run no longer reads Waiting for data.
+  await row(page).getByRole('button', { name: 'Run once' }).click();
+  await expect(row(page)).toContainText('Draft saved for review', { timeout: 30_000 });
+  await expect(row(page).locator('.auto-state')).toHaveText('Manual — not scheduled');
+  const tasksBefore = (await api<{ tasks: unknown[] }>(`/projects/${project.id}/state`)).tasks.length;
+  const schedule = row(page).getByRole('region', { name: 'Schedule' });
+  await expect(schedule).toContainText('Off. It runs only when someone presses Run once.');
+
+  // Edit: saving a schedule does not turn it on (A01).
+  await schedule.getByRole('button', { name: 'Set a schedule' }).click();
+  const form = schedule.getByRole('form', { name: 'Edit schedule' });
+  await form.getByLabel('Repeats').selectOption('weekly');
+  await form.getByLabel('Day').selectOption({ label: 'Monday' });
+  await form.getByLabel('Local time').fill('08:00');
+  await form.getByLabel('Timezone').selectOption('America/New_York');
+  await expect(form.locator('.auto-preview')).toContainText('Would run');
+  await form.getByRole('button', { name: 'Save schedule' }).click();
+  await expect(screen(page).locator('.auto-announce')).toContainText('It is not on until someone turns it on');
+  await expect(row(page)).toContainText('Manual — not scheduled');
+  await expect(schedule).toContainText('Every Monday at 8:00 a.m. America/New_York');
+
+  // Turn on: Scheduled, with the next run the host computed.
+  await schedule.getByRole('button', { name: 'Turn on schedule' }).click();
+  await expect(row(page).locator('.auto-state')).toHaveText('Scheduled');
+  const nextText = slotText(MONDAY_8, first!);
+  await expect(row(page).locator('[data-next-run]')).toHaveText(nextText);
+  await expect(schedule.getByRole('list', { name: 'Next runs' })).toContainText(nextText);
+  await expect(screen(page).getByLabel('Summary').locator(':scope > div').nth(1).locator('strong')).toHaveText('1');
+  await page.screenshot({ path: 'test-results/automations-scheduled.png' });
+
+  // The due slot starts on its own: nobody presses Run once.
+  fixedClock = first!.ms + 10_000;
+  await scheduler().tick();
+  const scheduled = async () =>
+    (await detail()).occurrences
+      .map((item) => item.occurrence)
+      .filter((item): item is TriggerOccurrence => item.trigger.kind === 'schedule');
+  const [admitted] = await scheduled();
+  expect(admitted!.admission.state).toBe('admitted');
+  await service().settled(admitted!);
+  await screen(page).getByRole('button', { name: 'Refresh' }).click();
+  await expect(row(page)).toContainText('Draft saved for review', { timeout: 30_000 });
+  await expect(row(page).locator('.auto-occurrence[data-trigger="schedule"]').first()).toContainText(
+    `Scheduled · ${slotText(MONDAY_8, first!).replace(/ \(.*\)$/, '')}`,
+  );
+  expect((await api<{ tasks: unknown[] }>(`/projects/${project.id}/state`)).tasks.length).toBe(tasksBefore + 1);
+
+  // Pause, with a reason: the next Monday is recorded as skipped and nothing runs.
+  await schedule.getByRole('button', { name: 'Pause' }).click();
+  await schedule.getByRole('textbox', { name: 'Reason' }).fill('Stocktake week');
+  await schedule.getByRole('group', { name: 'Pause the schedule' }).getByRole('button', { name: 'Pause' }).click();
+  await expect(row(page).locator('.auto-state')).toHaveText('Paused');
+  await expect(schedule).toContainText('Stocktake week');
+  fixedClock = second!.ms + 10_000;
+  await scheduler().tick();
+  await screen(page).getByRole('button', { name: 'Refresh' }).click();
+  await expect(row(page).locator('.auto-occurrence[data-trigger="schedule"]').first()).toContainText(
+    'Skipped — paused',
+  );
+  expect((await api<{ tasks: unknown[] }>(`/projects/${project.id}/state`)).tasks.length).toBe(tasksBefore + 1);
+  await page.screenshot({ path: 'test-results/automations-paused.png' });
+  fixedClock = null;
 });

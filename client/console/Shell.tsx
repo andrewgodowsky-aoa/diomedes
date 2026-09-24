@@ -96,6 +96,7 @@ import { useStartedWork } from './ProgressBoard';
 import { previewLine } from '../../shared/thread-preview';
 import { ActivityOverview } from './ActivityOverview';
 import { projectActivity, type ActivityRow } from './activity';
+import { useAutomationAttention } from './automation-attention';
 import { TeamView } from './TeamView';
 import { DocumentEditor } from './DocumentEditor';
 import { editorDocument, guardEditorExits, leaveEditor, type EditorExit } from './editor-guard';
@@ -693,16 +694,18 @@ export function Shell({
   // task, run, Need, change and History records the Board reads. Null when
   // nothing is happening, so the screen keeps its own sentence. Memoised on
   // the state object: it must not recompute on every keystroke.
+  // Automation attention (Milestone B) joins Needs you as its own rows.
+  const automationNeeds = useAutomationAttention(projectId, `${state?.history.length ?? 0}:${view}`);
   const activity = useMemo(() => {
     if (!state) return null;
-    const projected = projectActivity(state);
+    const projected = projectActivity(state, Date.now(), automationNeeds);
     return projected.working.length ||
       projected.needsYou.length ||
       projected.readyForReview.length ||
       projected.finishedRecently.length
       ? projected
       : null;
-  }, [state]);
+  }, [state, automationNeeds]);
 
   const threads = [...(state?.conversations ?? [])].sort((a, b) =>
     threadTime(b).localeCompare(threadTime(a)),
@@ -1533,6 +1536,10 @@ export function Shell({
   }
   /** A row is a way back into the record it came from, never a new action. */
   function openActivityRow(row: ActivityRow) {
+    if (row.view === 'Automations') {
+      setView('Automations');
+      return;
+    }
     if (row.threadId) {
       setSelectedId(row.threadId);
       setView('Thread');

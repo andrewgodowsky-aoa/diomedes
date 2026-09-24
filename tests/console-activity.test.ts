@@ -170,3 +170,26 @@ describe('projectActivity groups the project by what a person has to do', () => 
     });
   });
 });
+
+describe('automation attention in Needs you (Automations Milestone B, OPS-10 in-app)', () => {
+  it('lists one row per open item, opening the Automations screen, beside the project’s own', async () => {
+    const { attentionRow } = await import('../client/console/automation-attention');
+    const row = attentionRow({
+      id: 'N-1',
+      automationId: 'brief:org_1',
+      automationName: 'Weekly brief',
+      organizationId: 'org_1',
+      kind: 'missed',
+      title: 'Missed while this computer was off',
+      detail: 'The Mon 28 Sep 2026, 8:00 a.m. run did not start because Diomedes was not running.',
+      count: 3,
+      openedAt: ago(60_000),
+      lastSeenAt: ago(30_000),
+    });
+    const activity = projectActivity(stateFixture(), NOW, [row]);
+    expect(labels(activity.needsYou)).toEqual(['Weekly brief: Missed while this computer was off']);
+    expect(activity.needsYou[0]).toMatchObject({ view: 'Automations', id: 'automation:N-1' });
+    expect(activity.needsYou[0].detail).toMatch(/\(3 times\)$/);
+    expect(projectActivity(stateFixture(), NOW).needsYou).toEqual([]);
+  });
+});
