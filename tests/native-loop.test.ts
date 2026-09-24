@@ -329,6 +329,69 @@ describe('approval, replay and restart', () => {
     expect(calls.count).toBe(4);
   });
 
+  test('an action goes through the registry’s mediated dispatch: its effect intent, targets and authority are recorded (H12)', async () => {
+    const { runs } = await setup();
+    const writes: string[] = [];
+    const tools = registry(writes);
+    await start(runs, 'loop-5e', BUDGET, tools);
+    const loop = () => new NativeLoop(runs, writing(), tools, { maxTurns: 5, instructions: '', bindings, route: 'native-fixture', model: null });
+    await expect(loop().run('loop-5e', 'host', 'Write the report.', principal)).rejects.toBeInstanceOf(Suspended);
+    const waiting = await runs.get('loop-5e');
+    const intentHash = waiting.steps.find((step) => step.intent.stepId === 'tool:1')!.intentHash;
+    await runs.decide({ runId: 'loop-5e', stepId: 'tool:1', decision: 'approved', decidedBy: 'local-client', ttlMs: 60_000 }, principal);
+    await runs.claim('loop-5e', 'host', 60_000);
+    await loop().run('loop-5e', 'host', 'Write the report.', principal);
+    const run = await runs.get('loop-5e');
+    expect(run.steps.find((step) => step.intent.stepId === 'tool:0')?.effects).toMatchObject([
+      { tool: 'read_note', effectClass: 'read', targets: [], status: 'applied' },
+    ]);
+    expect(run.steps.find((step) => step.intent.stepId === 'tool:1')?.effects).toMatchObject([
+      { tool: 'write_note', effectClass: 'idempotent-write', targets: ['report.md'], authorization: `approval:${intentHash}`, status: 'applied' },
+    ]);
+    expect(run.events.filter((event) => event.type === 'effect.intended').map((event) => event.stepId)).toEqual(['tool:0', 'tool:1']);
+  });
+
+  test('a loop write interrupted between its intent and its outcome is uncertain and never runs again on a guess (H12)', async () => {
+    const { root, runs } = await setup();
+    const writes: string[] = [];
+    const tools = registry(writes);
+    const kill = new AbortController();
+    let hang = true;
+    const hanging = new ToolRegistry();
+    for (const name of ['read_note', 'write_note']) {
+      const tool = tools.get(name);
+      hanging.register({
+        ...tool,
+        execute: async (context) => {
+          if (name === 'write_note' && hang) await new Promise((_resolve, reject) => kill.signal.addEventListener('abort', () => reject(new Error('process died'))));
+          return tool.execute(context);
+        },
+      });
+    }
+    await start(runs, 'loop-5u', BUDGET, hanging);
+    const loop = (service: RunService) =>
+      new NativeLoop(service, writing(), hanging, { maxTurns: 5, instructions: '', bindings, route: 'native-fixture', model: null });
+    await expect(loop(runs).run('loop-5u', 'host', 'Write the report.', principal)).rejects.toBeInstanceOf(Suspended);
+    await runs.decide({ runId: 'loop-5u', stepId: 'tool:1', decision: 'approved', decidedBy: 'local-client', ttlMs: 60_000 }, principal);
+    await runs.claim('loop-5u', 'host', 60_000);
+    const first = loop(runs).run('loop-5u', 'host', 'Write the report.', principal).catch((error: unknown) => error);
+    await expect.poll(async () => (await runs.get('loop-5u')).steps.find((step) => step.intent.stepId === 'tool:1')?.state).toBe('running');
+
+    // The process dies inside the write. A new one must not guess that it did not happen.
+    const { runs: next } = await setup(BUDGET, root);
+    await next.recover('loop-5u', principal);
+    const run = await next.get('loop-5u');
+    const step = run.steps.find((item) => item.intent.stepId === 'tool:1')!;
+    expect(step.state).toBe('reconcile_required');
+    expect(step.effects?.at(-1)).toMatchObject({ tool: 'write_note', targets: ['report.md'], status: 'uncertain' });
+    hang = false;
+    await next.claim('loop-5u', 'host-2', 60_000).catch(() => undefined);
+    await expect(loop(next).run('loop-5u', 'host-2', 'Write the report.', principal)).rejects.toMatchObject({ code: 'effect_uncertain' });
+    expect(writes).toEqual([]);
+    kill.abort();
+    await first;
+  });
+
   test('restart recovery: a new service over the same records resumes a mid-loop run and never repeats a recorded step', async () => {
     const { root, runs } = await setup();
     const writes: string[] = [];
