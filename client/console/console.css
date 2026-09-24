@@ -1908,6 +1908,55 @@ html[data-motion='reduced'] .console .modes .ind b {
   overflow-wrap: anywhere;
 }
 
+/* H08: a run's controls and each control's receipt. The controls sit in the run
+   record, whose mono text keeps its line breaks, so they reset white-space at
+   their own edge. A receipt reads like a run record — a thin rule on the left, a
+   short head, the route's own sentence under it — and every line wraps where it
+   is written, since it can carry run ids and route names (decision 5). */
+.console .run-controls,
+.console .run-control-bar,
+.console .run-control-confirm {
+  display: inline;
+  min-width: 0;
+  white-space: normal;
+}
+.console .run-control-bar button + button,
+.console .run-control-confirm {
+  margin-left: 8px;
+}
+.console .control-receipt {
+  margin: 4px 0 8px;
+  padding: 2px 0 2px 10px;
+  border-left: 1px solid var(--hair-2);
+  font: 400 var(--dm-type-ui) / 1.5 var(--dm-font-ui);
+  color: var(--t3);
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.console .control-receipt-head,
+.console .control-receipt-detail {
+  display: block;
+  min-width: 0;
+}
+.console .control-receipt-head b {
+  color: var(--t2);
+  font-weight: 500;
+}
+.console .control-receipt button {
+  color: var(--t3);
+  font: inherit;
+  border-bottom: 1px solid var(--hair-2);
+  cursor: pointer;
+}
+.console .control-receipt button:hover {
+  color: var(--t1);
+}
+.console .follow-up-steer-note {
+  margin: 4px 0 0;
+  color: var(--t3);
+}
+
 /* ---- the strip outside a project (TopStrip.tsx) ----
    The Projects page and Settings wear the same strip the Shell draws. This root
    holds the strip and nothing else, so it takes the strip's height rather than

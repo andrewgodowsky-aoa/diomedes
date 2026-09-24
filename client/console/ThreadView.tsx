@@ -15,7 +15,12 @@ import type {
   ThreadPermission,
   Turn,
 } from '../../shared/types';
-import type { FollowUpCommand } from '../../shared/work-control';
+import {
+  controlReceiptsFor,
+  type ControlReceipt,
+  type FollowUpCommand,
+  type RouteControlProfile,
+} from '../../shared/work-control';
 import { AGENT_NAME } from '../../shared/agent-name';
 import { effortFor } from '../../shared/effort';
 import { isExternalEngine, isRoute } from '../../shared/engines';
@@ -25,11 +30,12 @@ import { formatOrigin, originForSession, originForTurn } from '../attribution-di
 import { ApprovalStatus, time } from '../components';
 import { RunInspector } from '../workbench/RunInspector';
 import { taskEvidence } from '../workbench/task-evidence';
-import { stopWork } from '../api';
+import { controlProfiles } from '../api';
+import { routeDisplayName } from '../../shared/engines';
 import { Composer } from './Composer';
 import { ProjectInstructions } from './ProjectInstructions';
 import { FollowUpQueue } from './FollowUpQueue';
-import { StopMenu, StopReceiptLine } from './StopMenu';
+import { ControlReceiptLine, RunControls, StopReceiptLine } from './StopMenu';
 import { NeedBlock } from './Need';
 import { RememberOfferBlock } from './RememberedApprovals';
 import { classifyIntent } from '../../shared/remembered-approvals';
@@ -86,6 +92,10 @@ interface ThreadViewProps {
   onOpenInFiles?(path: string): void;
   /** The project's follow-up queue. The rows for this task are shown and driven here. */
   followUps?: FollowUpCommand[];
+  /** The project's control receipts (H08). This task's are woven into the timeline. */
+  controlReceipts?: ControlReceipt[];
+  /** Opens another task's thread: the other side of a fork. */
+  onOpenTask?(taskId: string): void;
   permissionControl?: ReactNode;
   onScope?(): void;
   grantActive?: boolean;
@@ -171,6 +181,8 @@ export function ThreadView({
   instructionFiles = [],
   onOpenInFiles,
   followUps = [],
+  controlReceipts = [],
+  onOpenTask,
   permissionControl,
   onScope,
   grantActive = false,
@@ -208,6 +220,11 @@ export function ThreadView({
   const live = sessions.find((s) => ['queued', 'working', 'waiting'].includes(s.state)) ?? null;
   const ordered = [...sessions].sort((a, b) => a.startedAt.localeCompare(b.startedAt));
   const last = ordered.at(-1) ?? null;
+  const profiles = useControlProfiles(
+    projectId,
+    task?.id,
+    ordered.map((session) => `${session.id}:${session.state}`).join(','),
+  );
 
   const savedModel =
     typeof settings.services?.[`${route}Model`] === 'string'
@@ -371,13 +388,23 @@ export function ThreadView({
       ),
     });
   });
-  // Three Stops, and what the last one actually did. The plain Stop keeps its
-  // word and today's meaning; the other two are offered only where they would
-  // do something. The receipt sits under the run it was pressed on.
+  // The run's controls sit in its own record (RunControls): the three Stops while
+  // it runs, and Resume, Retry and Fork once it has settled, each only where its
+  // route offers it. Every control leaves a receipt, woven into the timeline by
+  // time. A Stop's own receipt line stays under its run only when no control
+  // receipt already says it (a Stop pressed through another route).
   const queuedForTask = task
     ? followUps.filter((item) => item.taskId === task.id && item.state === 'queued')
     : [];
+  const receipts = task ? controlReceiptsFor(controlReceipts, task.id) : [];
   const lastReceipt = task?.stopReceipts?.at(-1) ?? null;
+  const saidByControl =
+    lastReceipt !== null &&
+    receipts.some(
+      (receipt) =>
+        receipt.result.stop?.at === lastReceipt.at &&
+        receipt.result.stop?.scope === lastReceipt.scope,
+    );
   const receiptOn =
     lastReceipt?.sessionId ?? (lastReceipt ? (ordered.at(-1)?.id ?? null) : null);
   ordered.forEach((s) => {
@@ -391,25 +418,41 @@ export function ThreadView({
           activity={runActivity?.[s.id]}
           technical={technical}
           onStop={() => onStopSession(s.id)}
+          latest={s.id === last?.id}
           stop={
             projectId && task ? (
-              <StopMenu
-                live={['queued', 'working'].includes(s.state)}
+              <RunControls
+                projectId={projectId}
+                task={task}
+                session={s}
+                profile={profiles?.[s.id] ?? null}
                 queuedCount={queuedForTask.length}
+                latest={s.id === last?.id}
                 busy={busy}
                 onStopTask={() => onStopSession(s.id)}
-                onStopScope={(scope) =>
-                  void stopWork(projectId, { scope, taskId: task.id, sessionId: s.id }).catch(
-                    (error: unknown) =>
-                      onError?.(error instanceof Error ? error : new Error(String(error))),
-                  )
-                }
+                onError={onError}
               />
             ) : undefined
           }
           receipt={
-            lastReceipt && receiptOn === s.id ? <StopReceiptLine receipt={lastReceipt} /> : undefined
+            lastReceipt && receiptOn === s.id && !saidByControl ? (
+              <StopReceiptLine receipt={lastReceipt} />
+            ) : undefined
           }
+        />
+      ),
+    });
+  });
+  receipts.forEach((receipt) => {
+    items.push({
+      at: receipt.requestedAt,
+      seq: 3000,
+      node: (
+        <ControlReceiptLine
+          key={receipt.id}
+          receipt={receipt}
+          taskId={task!.id}
+          onOpenTask={onOpenTask}
         />
       ),
     });
@@ -550,6 +593,8 @@ export function ThreadView({
               session={live ?? last}
               needs={allNeeds ?? needs}
               history={history}
+              controls={(live ?? last) ? (profiles?.[(live ?? last)!.id] ?? null) : null}
+              receipts={controlReceipts}
             />
           )}
           {projectId && task && (
@@ -684,6 +729,15 @@ export function ThreadView({
           route={route}
           followUps={followUps}
           busy={busy}
+          live={
+            live
+              ? {
+                  sessionId: live.id,
+                  steer: profiles?.[live.id]?.controls.steer ?? null,
+                  routeName: routeDisplayName(profiles?.[live.id]?.workRoute ?? live.route ?? route),
+                }
+              : null
+          }
         />
       )}
     </main>
@@ -697,15 +751,21 @@ function RunRecord({
   onStop,
   stop,
   receipt,
+  latest = false,
 }: {
   session: Session;
   /** Tool calls streamed for this run while it is live. Never saved; the log is the record. */
   activity?: ToolLine[];
   technical: boolean;
   onStop(): void;
-  /** The scoped Stop cluster. Falls back to today's single button when absent. */
+  /**
+   * The run's controls (H08): the scoped Stop cluster while it runs, Resume,
+   * Retry and Fork once it has settled. Falls back to today's single Stop.
+   */
   stop?: ReactNode;
   receipt?: ReactNode;
+  /** The task's latest run keeps its controls in view while its record is folded. */
+  latest?: boolean;
 }) {
   const live = ['queued', 'working', 'waiting'].includes(session.state);
   const waiting = live && session.state !== 'waiting' && !toolRunning(activity);
@@ -726,6 +786,7 @@ function RunRecord({
         <button type="button" onClick={() => setOpen(true)}>
           show run
         </button>
+        {latest && stop && <> {stop}</>}
         {receipt}
       </div>
     );
@@ -758,6 +819,7 @@ function RunRecord({
       )}
       {!live && (
         <div>
+          {stop && <>{stop} </>}
           <button type="button" onClick={() => setOpen(false)}>
             hide run
           </button>{' '}
@@ -769,4 +831,32 @@ function RunRecord({
       {receipt}
     </div>
   );
+}
+
+/**
+ * The controls each of a task's runs offers, read from the server that enforces
+ * them (`GET …/controls?taskId=`). Re-read when a run starts or changes state,
+ * since a new run can be on another route. Null until the first answer.
+ */
+function useControlProfiles(
+  projectId: string | undefined,
+  taskId: string | undefined,
+  key: string,
+): Record<string, RouteControlProfile> | null {
+  const [profiles, setProfiles] = useState<Record<string, RouteControlProfile> | null>(null);
+  useEffect(() => {
+    if (!projectId || !taskId) {
+      setProfiles(null);
+      return;
+    }
+    const controller = new AbortController();
+    void controlProfiles(projectId, taskId, controller.signal).then(
+      (next) => {
+        if (!controller.signal.aborted) setProfiles(next);
+      },
+      () => undefined,
+    );
+    return () => controller.abort();
+  }, [projectId, taskId, key]);
+  return profiles;
 }
