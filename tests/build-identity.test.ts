@@ -105,6 +105,15 @@ describe('build identity', () => {
     expect(identity(() => padded).source).toBe('unreadable-record');
   });
 
+  test('the record ceiling is measured in UTF-8 bytes, not UTF-16 units (DIO-88 class)', () => {
+    // A valid record padded with 400,000 CJK characters: under the ceiling in
+    // UTF-16 units, about 1.2 MB on disk.
+    const wide = JSON.stringify({ ...RECORD, filler: '警'.repeat(400_000) });
+    expect(wide.length).toBeLessThan(MAX_BUILD_RECORD_BYTES);
+    expect(Buffer.byteLength(wide, 'utf8')).toBeGreaterThan(MAX_BUILD_RECORD_BYTES);
+    expect(identity(() => wide).source).toBe('unreadable-record');
+  });
+
   test('a reader that fails is unreadable, not development', () => {
     const build = identity(() => {
       throw new Error('EPERM: quarantined');
