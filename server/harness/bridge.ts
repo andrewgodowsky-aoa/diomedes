@@ -401,12 +401,22 @@ export class HarnessBridge {
       .sessions.find((item) => item.id === need.sessionId);
     if (!session) return null;
     const codex = run.capabilityId === CODEX_REPORT.id;
+    // The connection a Codex step acts through is the ChatGPT account its run was prepared
+    // under (the run's pinned grant), so signing in to another account asks again. A run
+    // whose account cannot be read is never guessed at (review batch1-a, D5-3).
+    let accountRoute: string | null = null;
+    if (codex) {
+      const input = run.input as { grant?: { accountRoute?: unknown } } | null;
+      const pinned = input && typeof input === 'object' ? input.grant?.accountRoute : undefined;
+      if (typeof pinned !== 'string' || !pinned) return null;
+      accountRoute = pinned;
+    }
     const found = patternForStep({
       projectId: run.projectId,
       procedure: run.capabilityId,
       intent: need.harness.intent,
       engine: session.engine.name,
-      accountRoute: codex ? String(this.store.settings.services?.codexAccountRoute ?? 'codex:chatgpt') : null,
+      accountRoute,
       procedureLabel: codex ? CODEX_REPORT.label : FORMAT_REPORT.label,
     });
     if (!found) return null;

@@ -745,6 +745,29 @@ describe('out of pattern asks again', () => {
     expect(asked.authorizationBoundary).toMatch(/connection it acts through changed/);
   });
 
+  // Review batch1-a, finding D5-3: a Codex step's connection is the ChatGPT account its run
+  // actually used (the run's pinned grant), not a settings key production never writes, so a
+  // different account is a different pattern and asks again.
+  test('a Codex step is bound to the account its run used, so another account asks again', async () => {
+    const need = await approveOnce();
+    const bridge = host().bridge as unknown as {
+      candidate: (run: HarnessRun, need: Need) => Promise<ApprovalCandidate | null>;
+      codex: { authorityForRun: (...args: unknown[]) => Promise<unknown> };
+    };
+    vi.spyOn(bridge.codex, 'authorityForRun').mockResolvedValue({
+      principal: localHarnessPrincipal(projectId),
+    });
+    const run = await host().get(projectId, need.harness!.runId);
+    const asCodex = (input: unknown) =>
+      ({ ...run, capabilityId: 'codex-report', input }) as unknown as HarnessRun;
+    const first = await bridge.candidate(asCodex({ grant: { accountRoute: 'openai:chatgpt:aaa' } }), need);
+    const other = await bridge.candidate(asCodex({ grant: { accountRoute: 'openai:chatgpt:bbb' } }), need);
+    expect(first!.pattern.connection.accountRoute).toBe('openai:chatgpt:aaa');
+    expect(patternDigest(first!.pattern)).not.toBe(patternDigest(other!.pattern));
+    // A run whose account cannot be read is never guessed at: it always asks.
+    expect(await bridge.candidate(asCodex({}), need)).toBeNull();
+  });
+
   test('always-asks steps are never offered, remembered or covered', async () => {
     const need = await approveOnce();
     const pay = await candidateFor(need);
