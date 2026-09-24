@@ -1436,6 +1436,28 @@ html[data-surface='console'] body {
   }
 }
 
+/* A narrow window is also a zoomed one: at 200 percent a 1440 x 900 window is
+   720 x 450 CSS pixels (C47). Stacked, the rail alone can be taller than the
+   stage, which used to leave the screen a sliver and the composer below the
+   fold of a box that never scrolled. Now the stage scrolls: the rail keeps its
+   height, and a screen's work column is never shorter than the stage's own
+   visible height (up to 24rem) or than its heading, instruments and composer
+   need. */
+@media (max-width: 860px) {
+  .console .stage {
+    container: stage / size;
+    grid-template-rows: max-content minmax(min(100%, 24rem), 1fr);
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+  .console .stage > .screen.on > .work {
+    min-height: min(100cqh, 24rem);
+  }
+  .console.diomedes .stage > .dio-screen {
+    grid-template-rows: minmax(min-content, 1fr) auto;
+  }
+}
+
 /* the spine slide and the indicator move stand still under reduced motion */
 html[data-motion='reduced'] .console .spine .gp,
 html[data-motion='reduced'] .console .modes .ind,
@@ -1597,6 +1619,52 @@ html[data-motion='reduced'] .console .modes .ind b {
     grid-column: 2;
     grid-row: auto;
     flex-wrap: wrap;
+  }
+}
+/* C47, continued: the app container's own narrow rules above come later than
+   the window rule, so the stage keeps its scroll and the screen its working
+   height here too, and the strip's controls wrap instead of running off the
+   right edge. From 1100 px down the thread's inspector stands under the
+   conversation, as the Diomedes page's ledger does, rather than going away. */
+@container app (max-width: 700px) {
+  .console .stage {
+    grid-template-rows: max-content minmax(min(100%, 24rem), 1fr);
+  }
+  /* styles.css pins the Workbook-era `.top-right` to 40 px under 600 px; the
+     strip's own row grows with the controls that wrap into it. */
+  .console .top-right {
+    flex-wrap: wrap;
+    height: auto;
+    min-height: 40px;
+  }
+  /* The rail runs sideways here, and a focused button half past its edge is
+     not scrolled in, so the foot's ways out wrap onto a row of their own. */
+  .console .rail {
+    flex-wrap: wrap;
+    max-height: none;
+  }
+  .console .rail .spine {
+    flex: 1 1 200px;
+    max-height: 140px;
+  }
+  .console .rail .foot {
+    flex: 1 1 100%;
+    flex-direction: row;
+    flex-wrap: wrap;
+    border-left: 0;
+    border-top: 1px solid var(--hair);
+  }
+}
+@container app (max-width: 1100px) {
+  .console #scrThread {
+    grid-template-rows: minmax(min-content, 1fr) auto;
+  }
+  .console #scrThread > .ledger {
+    display: block;
+    max-height: 176px;
+    padding: 12px 16px;
+    border-left: 0;
+    border-top: 1px solid var(--hair);
   }
 }
 /* Shared task authority controls follow the Settings typography and theme. */

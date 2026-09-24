@@ -1,0 +1,369 @@
+/* P06 readable diffs (DiffView.tsx) and the change review in a thread (ChangeDiffs.tsx), in the
+   Settings > Engines language: caption type, hairlines, the code role on the chrome ground,
+   and restrained colour — the glacier accent for added text, the fault colour for removed text,
+   attention only for a conflict. Every line of text wraps inside its own column (decision 5);
+   nothing here sets a page column's margin (decision 6). */
+
+.console .dv {
+  min-width: 0;
+  margin-block: 6px;
+  font-size: var(--dm-type-caption);
+  color: var(--t2);
+  white-space: normal;
+}
+.console .dv-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  min-width: 0;
+}
+.console .dv-head {
+  flex: 1 1 16rem;
+  min-width: 0;
+  margin: 0;
+  color: var(--t1);
+  overflow-wrap: anywhere;
+}
+.console .dv-note,
+.console .dv-problem {
+  margin: 4px 0;
+  overflow-wrap: anywhere;
+}
+.console .dv-note {
+  color: var(--t3);
+}
+.console .dv-problem {
+  color: var(--fail);
+}
+.console .dv-body {
+  margin-top: 6px;
+  min-width: 0;
+  max-height: 560px;
+  overflow: auto;
+  background: var(--chrome);
+  border: 1px solid var(--hair);
+  border-radius: var(--r);
+  font: 400 var(--dm-type-code) / 1.55 var(--mono);
+}
+
+/* one line: two line numbers, the marker, the text, and a comment button that shows on hover */
+.console .dv-row {
+  display: grid;
+  grid-template-columns: 3.2em 3.2em 1.2em minmax(0, 1fr) 1.6em;
+  align-items: start;
+  min-width: 0;
+}
+.console .dv-no {
+  padding-right: 6px;
+  text-align: right;
+  color: var(--t3);
+  user-select: none;
+  font-variant-numeric: tabular-nums;
+}
+.console .dv-mark {
+  color: var(--t3);
+  user-select: none;
+}
+.console .dv-text {
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--t2);
+}
+.console .dv-row.added,
+.console .dv-text.added {
+  background: color-mix(in srgb, var(--dm-glacier) 9%, transparent);
+}
+.console .dv-row.added .dv-mark,
+.console .dv-row.added .dv-text,
+.console .dv-text.added {
+  color: var(--t1);
+}
+.console .dv-row.removed,
+.console .dv-text.removed {
+  background: color-mix(in srgb, var(--dm-fault) 8%, transparent);
+}
+.console .dv-row.removed .dv-mark {
+  color: var(--dm-fault);
+}
+.console .dv-row.added .dv-mark {
+  color: var(--dm-glacier);
+}
+.console .dv-w {
+  color: inherit;
+  border-radius: 2px;
+}
+.console .dv-w.added {
+  background: color-mix(in srgb, var(--dm-glacier) 28%, transparent);
+}
+.console .dv-w.removed {
+  background: color-mix(in srgb, var(--dm-fault) 26%, transparent);
+  text-decoration: line-through;
+}
+.console .dv-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* side by side: two numbered halves and the comment buttons at the edge */
+.console .dv-split-row {
+  display: grid;
+  grid-template-columns: 3.2em minmax(0, 1fr) 3.2em minmax(0, 1fr) 3.2em;
+  align-items: start;
+  min-width: 0;
+}
+.console .dv-split-row > .dv-text {
+  padding-right: 6px;
+}
+.console .dv-split-row > .dv-text + .dv-no {
+  border-left: 1px solid var(--hair);
+}
+.console .dv-text.blank {
+  background: color-mix(in srgb, var(--t3) 5%, transparent);
+}
+.console .dv-split-add {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.console .dv-add {
+  width: 1.6em;
+  color: var(--t3);
+  opacity: 0;
+}
+.console .dv-row:hover .dv-add,
+.console .dv-split-row:hover .dv-add,
+.console .dv-add:focus-visible {
+  opacity: 1;
+}
+.console .dv-add:hover {
+  color: var(--t1);
+}
+
+.console .dv-fold {
+  display: block;
+  width: 100%;
+  padding: 2px 0 2px calc(7.6em + 6px);
+  text-align: left;
+  font: 400 var(--dm-type-caption) / 1.6 var(--ui);
+  color: var(--t3);
+  border-block: 1px solid var(--hair);
+}
+.console .dv-fold:hover {
+  color: var(--t1);
+}
+
+.console .dv-hunk-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 10px;
+  padding: 3px 8px;
+  font: 400 var(--dm-type-caption) / 1.5 var(--ui);
+  color: var(--t3);
+  border-top: 1px solid var(--hair);
+}
+.console .dv-hunk-head:first-child {
+  border-top: 0;
+}
+.console .dv-keep {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  color: var(--t1);
+}
+.console .dv-undoing,
+.console .dv-decision.undone {
+  color: var(--attn);
+}
+.console .dv-decision.kept {
+  color: var(--t2);
+}
+
+/* comments hang under the line they are about, in the reading type */
+.console .dv-comments {
+  padding: 4px 8px 6px calc(7.6em + 6px);
+  font: 400 var(--dm-type-caption) / 1.5 var(--ui);
+  border-block: 1px solid var(--hair);
+  background: var(--dm-well, transparent);
+}
+.console .dv-comment + .dv-comment {
+  margin-top: 6px;
+}
+.console .dv-comment-text {
+  margin: 0;
+  color: var(--t1);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.console .dv-comment.resolved .dv-comment-text {
+  color: var(--t3);
+}
+.console .dv-comment-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  margin: 2px 0 0;
+  color: var(--t3);
+}
+.console .dv-comment-meta button,
+.console .dv-compose-actions button {
+  color: var(--t2);
+  border-bottom: 1px solid var(--hair-2);
+}
+.console .dv-comment-meta button:hover,
+.console .dv-compose-actions button:hover:not(:disabled) {
+  color: var(--t1);
+}
+.console .dv-compose textarea {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  font: inherit;
+  color: var(--t1);
+  background: var(--chrome);
+  border: 1px solid var(--hair-2);
+  border-radius: var(--r);
+  padding: 4px 6px;
+  resize: vertical;
+}
+.console .dv-compose-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+/* the thread's review of a task's changes */
+.console .cdiff {
+  min-width: 0;
+  padding: 12px 0 8px;
+  font: 400 var(--dm-type-body) / 1.5 var(--ui);
+  color: var(--t1);
+}
+.console .cdiff-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 12px;
+}
+.console .cdiff-head h2 {
+  margin: 0;
+  font: 500 var(--dm-type-body) / 1.5 var(--ui);
+}
+.console .cdiff-card {
+  min-width: 0;
+  padding-block: 8px;
+  border-top: 1px solid var(--hair);
+}
+.console .cdiff-title {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+.console .cdiff-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.console .cdiff-state {
+  flex: none;
+  font-size: var(--dm-type-caption);
+  color: var(--t3);
+}
+.console .cdiff-conflict {
+  margin: 6px 0;
+  font-size: var(--dm-type-caption);
+  color: var(--attn);
+  overflow-wrap: anywhere;
+}
+.console .cdiff-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 14px;
+  margin-top: 6px;
+  font-size: var(--dm-type-caption);
+}
+.console .cdiff-actions button {
+  color: var(--t2);
+  border-bottom: 1px solid var(--hair-2);
+}
+.console .cdiff-actions button.primary {
+  color: var(--light);
+  border-bottom-color: var(--light);
+}
+.console .cdiff-actions button:hover:not(:disabled) {
+  color: var(--t1);
+}
+.console .cdiff-actions button:disabled {
+  color: var(--t3);
+  border-bottom-color: transparent;
+}
+.console .cdiff-note {
+  margin: 4px 0;
+  font-size: var(--dm-type-caption);
+  color: var(--t3);
+  overflow-wrap: anywhere;
+}
+.console .cdiff-revise {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--hair);
+  font-size: var(--dm-type-caption);
+  color: var(--t2);
+}
+.console .cdiff-revise ul {
+  list-style: none;
+  margin: 6px 0;
+  padding: 0;
+}
+.console .cdiff-revise li label {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.console .cdiff-revise textarea {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  color: var(--t1);
+  background: var(--chrome);
+  border: 1px solid var(--hair-2);
+  border-radius: var(--r);
+  padding: 4px 6px;
+}
+.console .cdiff-message {
+  margin: 6px 0;
+  padding: 8px 10px;
+  max-height: 240px;
+  overflow: auto;
+  background: var(--chrome);
+  border: 1px solid var(--hair);
+  border-radius: var(--r);
+  font: 400 var(--dm-type-code) / 1.55 var(--mono);
+  color: var(--t2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* a version opened from Files: compare it, and comment on its lines */
+.console .files-compare {
+  min-width: 0;
+  margin-block: 8px;
+}
+.console .files-compare .seg {
+  margin-left: 0;
+  flex-wrap: wrap;
+}

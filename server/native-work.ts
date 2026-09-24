@@ -50,6 +50,8 @@ import {
 import { secretScrubber } from './secrets.js';
 import { reviewerBoundary, type ReviewerService } from './trust/reviewer.js';
 import type { AgentRegistry } from './agents.js';
+import type { AgentProfileService } from './agent-profiles.js';
+import { fallbackSentence } from '../shared/agent-profiles.js';
 import type { AgentResolution } from '../shared/agents.js';
 import type { InstructionDelivery } from '../shared/capability-packs.js';
 import {
@@ -63,6 +65,13 @@ import {
 } from './readiness/instructions.js';
 import type { Route } from '../shared/types.js';
 import { cloudSharing, requireCloudSharing } from './cloud-sharing.js';
+import { patternForProposal, type ApprovalCandidate } from './trust/remembered-approvals.js';
+import {
+  ALWAYS_ASK_REASON,
+  CHATGPT_ACCOUNT_ROUTE,
+  classifyProposal,
+  rememberedAttribution,
+} from '../shared/remembered-approvals.js';
 
 export type NativeGenerator = (input: {
   engine?: Exclude<Route, 'sample'>;
@@ -85,6 +94,8 @@ export type NativeGenerator = (input: {
   instructions?: string;
   /** The reasoning level for this run, already resolved from the mode and the thread's choice. */
   effort?: string;
+  /** Codex only: told the ChatGPT account route the turn is prepared under, by the runtime. */
+  onAccountRoute?: (accountRoute: string) => void;
 }) => Promise<{ text: string; model?: string; version?: string; threadId?: string }>;
 interface Source {
   path: string;
@@ -103,6 +114,8 @@ interface Proposal {
 interface NativeRun {
   engine: Exclude<Route, 'sample'>;
   accountRoute?: string;
+  /** The ChatGPT account route the Codex runtime reported this run was prepared under. */
+  preparedAccountRoute?: string;
   threadId: string;
   projectId: string;
   taskId: string;
@@ -317,6 +330,8 @@ export class NativeWorkService {
     private changeReview?: {
       runStarted(projectId: string, sessionId: string, taskId: string | null): Promise<void>;
     },
+    /** Exact-model Agent profiles (H09). Absent leaves route and model to the caller. */
+    private profiles?: AgentProfileService,
   ) {}
   running(projectId: string) {
     return this.runs.has(projectId);
@@ -405,6 +420,33 @@ export class NativeWorkService {
       commit?: <T>(step: () => Promise<T>) => Promise<T>;
     },
   ) {
+    // A profile, where one decides this run, names the route, the exact model and
+    // the Agent, and is pinned below exactly as resolved. Fallback off is a refusal
+    // by name; nothing moves to another route or payer unless the person said so.
+    const routing = this.profiles
+      ? await this.profiles.resolve({
+          projectId,
+          taskId,
+          thread: input.threadId
+            ? this.store.state(projectId).conversations.find((item) => item.id === input.threadId)
+            : null,
+          projectFolder: this.store.state(projectId).project.folder,
+        })
+      : ({ outcome: 'none' } as const);
+    if (routing.outcome === 'refused')
+      throw new ApiError(409, routing.reason, { code: 'profile_unavailable', tried: routing.tried });
+    const profile = routing.outcome === 'resolved' ? routing.pick : undefined;
+    if (profile)
+      input = {
+        ...input,
+        engine: profile.engine as Exclude<Route, 'sample'>,
+        requested: {
+          model: profile.model,
+          ...(profile.effort ? { effort: profile.effort } : {}),
+          selection: profile.source === 'thread' ? 'manual' : 'automatic',
+        },
+        agentId: profile.agentId,
+      };
     const engine = input.engine ?? 'codex';
     if (this.store.settings.services?.[engine] !== true)
       throw new ApiError(409, `Turn ${engine} on in Settings before using it.`);
@@ -448,6 +490,7 @@ export class NativeWorkService {
             input.requested?.selection ?? (input.requested?.model ? 'manual' : 'runtime-default'),
           state,
           taskId,
+          ...(profile ? { profile } : {}),
         })
       : undefined;
     if (resolved && !resolved.compatible)
@@ -583,6 +626,9 @@ export class NativeWorkService {
           ? `Preparing a proposal with ${routeDisplayName(engine)} from ${sources.length} ${sources.length === 1 ? 'document' : 'documents'}.`
           : `Preparing a proposal with ${routeDisplayName(engine)}.`,
       );
+      // A fallback is never silent: the run says which profile it skipped and why.
+      const fellBack = profile ? fallbackSentence(profile) : null;
+      if (fellBack) this.log(session, fellBack);
       if (input.team) this.log(session, teamWorkDisclosure(engine as TeamRoute), 'technical');
       else
         this.log(
@@ -641,7 +687,20 @@ export class NativeWorkService {
         ...(input.team ? { team: { ...input.team } } : {}),
         ...(input.requested ? { requested: { ...input.requested } } : {}),
         ...(resolved ? { agent: resolved } : {}),
-        ...(instructions.section ? { instructionSection: instructions.section } : {}),
+        ...(instructions.section || profile?.rules.length
+          ? {
+              instructionSection: [
+                ...(instructions.section ? [instructions.section] : []),
+                // The person's own profile rules, as they saved them; shown in the run's record.
+                ...(profile?.rules.length
+                  ? [
+                      `Rules from the person's Agent profile "${profile.name}" (revision ${profile.revision}):`,
+                      ...profile.rules.map((rule) => `- ${rule}`),
+                    ]
+                  : []),
+              ].join('\n'),
+            }
+          : {}),
         instructionPaths: instructions.delivery?.files
           .filter((file) => file.state === 'sent')
           .map((file) => file.path) ?? [],
@@ -798,6 +857,13 @@ export class NativeWorkService {
         documents: run.sources.map(({ path, text }) => ({ path, text })),
         sharingPaths: run.instructionPaths,
         signal: run.controller.signal,
+        ...(run.engine === 'codex'
+          ? {
+              onAccountRoute: (route: string) => {
+                run.preparedAccountRoute = route;
+              },
+            }
+          : {}),
         // Only the ChatGPT adapter takes a raw sink. The engine service refuses
         // one from a caller and hands previews through its own contract.
         ...(run.engine === 'codex' ? { onDelta } : {}),
@@ -990,6 +1056,12 @@ export class NativeWorkService {
           allowForTask: false,
           preview: previews,
           ...(checks.length ? { checks } : {}),
+          // The account the runtime said this was prepared under; unread, it stays absent.
+          ...(run.engine === 'codex' &&
+          run.preparedAccountRoute &&
+          CHATGPT_ACCOUNT_ROUTE.test(run.preparedAccountRoute)
+            ? { connection: { engine: 'codex', accountRoute: run.preparedAccountRoute } }
+            : {}),
         };
         need.approval = identifyApproval(run.projectId, need, run.sources);
         state.needs.push(need);
@@ -1052,7 +1124,8 @@ export class NativeWorkService {
       run.engine,
       this.accountRouteFor(run),
     );
-    if (!match) return false;
+    // No task scope covers this: a remembered approval (D5) still may.
+    if (!match) return this.applyRemembered(projectId, run, need.id);
     if (match.grant.review === 'model-reviewer') {
       // Deferred on purpose: an inference call must never hold the Store lock.
       const job = this.reviewThenApply(projectId, run, need.id).finally(() =>
@@ -1062,6 +1135,93 @@ export class NativeWorkService {
       return false;
     }
     return this.authorizeAndWrite(projectId, run, need.id);
+  }
+  /**
+   * What the host knows about a waiting Codex proposal now, for remembered
+   * approvals (D5): its exact pattern (the files it writes and the ChatGPT
+   * account the runtime prepared it under) and whether the Codex connection it
+   * rests on is still on. Null for anything that is not a person's own direct
+   * Codex proposal, or whose account route was never reported.
+   */
+  private rememberedCandidate(projectId: string, need: Need): ApprovalCandidate | null {
+    if (need.harness || !need.approval) return null;
+    const session = this.store.state(projectId).sessions.find((item) => item.id === need.sessionId);
+    if (!session || session.route !== 'codex' || session.slotId || session.sample) return null;
+    if (need.preview?.some((change) => textKind(change.path) === 'unsupported')) return null;
+    const found = patternForProposal({ projectId, need });
+    if (!found) return null;
+    // The live authority: the person deciding on the local client, while the
+    // Codex connection is on. Turning it off asks again.
+    const authority =
+      this.store.settings.services?.codex === true
+        ? { principalId: 'local-client', identityGeneration: 1, capabilities: ['write-project-file'] }
+        : null;
+    return { ...found, authority };
+  }
+  /** A remembered approval covers this exact proposal, or nothing happens. Caller owns the lock. */
+  private async applyRemembered(projectId: string, run: NativeRun, needId: string) {
+    const state = this.store.state(projectId);
+    const need = state.needs.find((item) => item.id === needId);
+    if (!need || need.state !== 'open' || need.reviews?.length || !run.writes) return false;
+    const candidate = this.rememberedCandidate(projectId, need);
+    if (!candidate) return false;
+    const boundary = need.authorizationBoundary;
+    const record = this.store.scopeGrants.remembered.cover(projectId, need, candidate);
+    if (!record) {
+      if (need.authorizationBoundary !== boundary) await this.store.persist(state);
+      return false;
+    }
+    // Nobody clicked this time; the session says whose earlier click it ran under.
+    this.log(
+      this.session(run),
+      `${rememberedAttribution({ acceptedBy: record.grant.acceptedBy, acceptedAt: record.grant.createdAt })} ${record.grant.what}.`,
+    );
+    // The decision and its evidence are durable before any writer runs.
+    await this.store.persist(state);
+    try {
+      await this.store.writeRecorded(projectId, run.writes, {
+        actor: 'diomedes-with-ok',
+        kind: 'changed',
+        sentence: run.proposal?.summary,
+        sessionId: run.sessionId,
+        taskId: run.taskId,
+        sample: false,
+        review: true,
+        merge: false,
+        approvalId: need.id,
+      });
+      return true;
+    } finally {
+      this.runs.delete(projectId);
+      run.releaseToken?.();
+    }
+  }
+  /**
+   * "Go ahead and remember in this project" (D5, route 1) on a Codex direct
+   * proposal. The exact approval was given first through `resolve` and stays
+   * the evidence; this remembers its pattern. Caller owns Store.locked.
+   */
+  async remember(projectId: string, needId: string) {
+    const need = this.store.state(projectId).needs.find((item) => item.id === needId);
+    if (!need || need.harness) throw new ApiError(404, 'This approval was not found.');
+    const candidate = this.rememberedCandidate(projectId, need);
+    if (!candidate) {
+      const classification = classifyProposal(need);
+      throw new ApiError(
+        409,
+        classification.rememberable ? ALWAYS_ASK_REASON.unrecognised : classification.reason,
+        { code: 'always_asks' },
+      );
+    }
+    const record = this.store.scopeGrants.remembered.rememberFromNeed(projectId, need, candidate);
+    await this.store.persist(this.store.state(projectId));
+    return record;
+  }
+  /** Count one exact decision toward a learned offer (D5). Counting never grants anything. */
+  private noteRemembered(projectId: string, need: Need, resolution: 'go-ahead' | 'declined') {
+    const candidate = this.rememberedCandidate(projectId, need);
+    if (candidate)
+      this.store.scopeGrants.remembered.noteDecision(projectId, candidate, resolution, need);
   }
   /** Runs unlocked, then re-enters the lock to mint authority and write. */
   private async reviewThenApply(projectId: string, run: NativeRun, needId: string) {
@@ -1189,6 +1349,7 @@ export class NativeWorkService {
       task = state.tasks.find((item) => item.id === run.taskId)!;
     if (resolution === 'declined') {
       this.store.recordApprovalDecision(projectId, need, admission);
+      this.noteRemembered(projectId, need, resolution);
       session.state = 'stopped';
       session.endedAt = now();
       session.needId = null;
@@ -1239,6 +1400,7 @@ export class NativeWorkService {
       throw error;
     }
     this.store.recordApprovalDecision(projectId, need, admission);
+    this.noteRemembered(projectId, need, resolution);
     session.state = 'working';
     session.needId = null;
     task.needId = null;
@@ -1313,7 +1475,7 @@ export class NativeWorkService {
     this.finishTeam(run, 'failed', sentence);
     await this.store.persist(state);
   }
-  async stop(projectId: string, sessionId: string) {
+  async stop(projectId: string, sessionId: string, by: 'you' | 'supervision' = 'you') {
     const state = this.store.state(projectId),
       session = state.sessions.find((item) => item.id === sessionId);
     if (!session || session.sample)
@@ -1345,7 +1507,7 @@ export class NativeWorkService {
     this.store.moveTask(state, task, 'todo', 'diomedes');
     this.store.addEntry(state, {
       kind: 'stop',
-      sentence: `You stopped ${task.name}. No unapproved changes were written.`,
+      sentence: `${by === 'you' ? 'You stopped' : 'Diomedes supervision paused'} ${task.name}. No unapproved changes were written.`,
       sessionId,
       taskId: task.id,
     });

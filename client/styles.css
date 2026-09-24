@@ -2270,6 +2270,13 @@ input[type='range'] {
 .settings-layout .rail-link.active::before {
   display: none;
 }
+/* Under 600 px the sections run as a row of tabs. A focused tab half past the
+   row's edge is not scrolled in, so at 200 percent zoom (C47) they wrap. */
+@media (max-width: 600px) {
+  .settings-layout .rail {
+    flex-wrap: wrap;
+  }
+}
 
 /* The strip lives inside the frame on the Projects page and Settings, exactly
    where the Shell draws its own, so the frame becomes a column under it. */

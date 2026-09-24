@@ -1,0 +1,93 @@
+/* H15 supervision, in the run inspector's register: caption type, thin rules, restrained accent. */
+.console .run-inspector .supervision-records {
+  list-style: none;
+  padding-left: 0;
+  margin: 6px 0 0;
+}
+.console .run-inspector .supervision-records > li {
+  font-size: var(--dm-type-caption, var(--dm-type-ui));
+  line-height: 1.5;
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  margin: 0;
+  padding: 8px 0 8px 10px;
+  border-left: 1px solid var(--hair-2);
+}
+.console .run-inspector .supervision-records > li + li {
+  margin-top: 6px;
+}
+.console .run-inspector .supervision-records > li[data-action='escalate'] {
+  border-left-color: var(--attn);
+}
+.console .run-inspector .supervision-head {
+  color: var(--t1);
+  font-size: var(--dm-type-caption, var(--dm-type-ui));
+}
+.console .run-inspector .supervision-head b {
+  font-weight: 500;
+}
+.console .run-inspector .supervision-head .mono {
+  font-family: var(--mono);
+  font-size: var(--dm-type-meta);
+  color: var(--t3);
+}
+.console .run-inspector .supervision-severity.critical {
+  color: var(--attn);
+}
+.console .run-inspector :is(.supervision-by, .supervision-detail) {
+  color: var(--t3);
+  font-size: var(--dm-type-caption, var(--dm-type-ui));
+}
+.console .run-inspector .supervision-summary {
+  color: var(--t1);
+}
+.console .run-inspector .supervision-message {
+  font-family: var(--mono);
+  font-size: var(--dm-type-meta);
+}
+.console .run-inspector ul.supervision-evidence {
+  list-style: none;
+  padding-left: 0;
+  margin: 4px 0 0;
+}
+.console .run-inspector ul.supervision-evidence li {
+  margin-block: 4px;
+  color: var(--t2);
+}
+.console .run-inspector .supervision-evidence small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The escalation sits where a Need sits and reads like one. */
+.console .need.escalation {
+  white-space: normal;
+}
+.console .need.escalation .escalation-redirect {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  max-width: 62ch;
+}
+.console .need.escalation .escalation-redirect label {
+  display: grid;
+  gap: 4px;
+  font-size: var(--dm-type-caption);
+  color: var(--t2);
+}
+.console .need.escalation textarea {
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  padding: 6px 8px;
+  border: 1px solid var(--hair-2);
+  border-radius: var(--r);
+  background: var(--raised);
+  color: var(--t1);
+  font: inherit;
+}
+.console .need.escalation .verb:disabled {
+  color: var(--t3);
+}

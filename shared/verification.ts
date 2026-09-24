@@ -121,7 +121,8 @@ export interface VerificationRecord {
   /** The declaration this ran against. */
   readonly declarationDigest: string;
   readonly declaredChecks: number;
-  readonly requestedBy: 'you';
+  /** Who asked: the person, or a Diomedes work loop's finish gate (H13) running the person's checks. */
+  readonly requestedBy: 'you' | 'diomedes-loop';
   readonly startedAt: string;
   readonly endedAt: string;
   /** Who produced the output, copied from the run when it was verified. */

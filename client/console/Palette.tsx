@@ -16,6 +16,9 @@ export function Palette({ open, entries, onClose, query: controlled, onQuery }: 
   const [sel, setSel] = useState(0);
   const [selAct, setSelAct] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  // Whatever had focus when the palette opened, so dismissing it puts the
+  // person back where they were (WCAG 2.4.3), not always in the composer.
+  const openerRef = useRef<HTMLElement | null>(null);
 
   const rows = useMemo(() => entries(query), [entries, query]);
   const clamped = Math.min(sel, Math.max(rows.length - 1, 0));
@@ -28,6 +31,8 @@ export function Palette({ open, entries, onClose, query: controlled, onQuery }: 
     if (open) {
       setSel(0);
       setSelAct(0);
+      const active = document.activeElement;
+      openerRef.current = active instanceof HTMLElement && active !== document.body ? active : null;
       const t = window.setTimeout(() => inputRef.current?.focus(), 0);
       return () => window.clearTimeout(t);
     }
@@ -81,8 +86,12 @@ export function Palette({ open, entries, onClose, query: controlled, onQuery }: 
   }
 
   function requestClose() {
+    const opener = openerRef.current;
+    openerRef.current = null;
     onClose();
-    focusComposer();
+    if (opener?.isConnected && opener.getClientRects().length && !opener.closest('.palette'))
+      window.setTimeout(() => opener.focus(), 0);
+    else focusComposer();
   }
 
   function run(entry: PaletteEntry | null, j: number) {

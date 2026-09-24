@@ -17,6 +17,14 @@ import {
   type RouteControlProfile,
 } from '../../shared/work-control';
 import { AGENT_NAME } from '../../shared/agent-name';
+import {
+  ROUTING_SOURCE_LABELS,
+  fallbackSentence,
+  runtimeModelDifference,
+} from '../../shared/agent-profiles';
+import { NATIVE_LOOP_CAPABILITY } from '../../shared/native-loop';
+import { LoopInspector } from '../console/LoopInspector';
+import { SupervisionSection } from '../console/Supervision';
 import './workbench.css';
 
 /**
@@ -71,6 +79,10 @@ function SessionInspector({
   const evidence = sessionEvidence(session, needs, history);
   const origin = originForSession(session);
   const actor = formatOrigin(origin);
+  // H09: the profile revision this run pinned at admission, and decision 8's
+  // runtime-reported model beside the one that was asked for when they differ.
+  const profile = session.agent?.profile;
+  const modelDifference = runtimeModelDifference(session);
   const governance = evidenceRows(sessionEvidenceView(session)).filter((row) =>
     GOVERNANCE_ROWS.includes(row.label),
   );
@@ -132,6 +144,30 @@ function SessionInspector({
                 </dd>
               </Fragment>
             ))}
+            {profile && (
+              <>
+                <dt>Profile</dt>
+                <dd>
+                  {profile.name} · revision {profile.revision}{' '}
+                  <span className="run-inspector-code">{profile.digest.slice(0, 19)}</span>
+                </dd>
+                <dt>Resolved by</dt>
+                <dd>
+                  {ROUTING_SOURCE_LABELS[profile.source]}. Fallback {profile.fallbackPolicy}.
+                  {profile.fallback && <> {fallbackSentence(profile)}</>}
+                </dd>
+              </>
+            )}
+            {(profile || modelDifference) && (
+              <>
+                <dt>Model</dt>
+                <dd className="run-inspector-code">
+                  {modelDifference
+                    ? `Ran on ${modelDifference.reported}, as the runtime reported. Requested ${modelDifference.requested}.`
+                    : `${profile!.model}${profile!.effort ? ` · ${profile!.effort}` : ''}`}
+                </dd>
+              </>
+            )}
             <dt>Authority</dt>
             <dd>
               {session.agent
@@ -173,6 +209,23 @@ function SessionInspector({
                       ? 'Continues '
                       : 'Forked from '}
                   <span className="run-inspector-code">{lineage.originSessionId}</span>
+                </dd>
+              </>
+            )}
+            {session.nativeThread && (
+              <>
+                <dt>Codex thread</dt>
+                <dd>
+                  <span className="run-inspector-code">{session.nativeThread.id}</span>
+                  {session.nativeThread.origin === 'resumed'
+                    ? ' · resumed'
+                    : session.nativeThread.origin === 'forked'
+                      ? ' · a fork'
+                      : session.nativeThread.origin === 'restarted-fresh'
+                        ? ' · new, resume not possible'
+                        : session.nativeThread.kept
+                          ? ' · kept for resume'
+                          : ' · not kept'}
                 </dd>
               </>
             )}
@@ -275,6 +328,16 @@ function SessionInspector({
               </div>
             ))}
           </section>
+          <SupervisionSection
+            projectId={projectId}
+            session={session}
+            refreshKey={[
+              session.state,
+              session.log.length,
+              ...needs.filter((need) => need.sessionId === session.id).map((need) => `${need.id}:${need.state}`),
+              ...receipts.map((receipt) => receipt.id),
+            ].join('|')}
+          />
           <section aria-label="Recorded sources">
             <h3>Recorded sources</h3>
             {!evidence.sources.length && <p>No source snapshot is attached to this session.</p>}
@@ -308,7 +371,7 @@ function SessionInspector({
               <>
                 <p>Snapshot at {snapshot.at}</p>
                 {snapshot.run ? (
-                  <HarnessEvidence run={snapshot.run} />
+                  <HarnessEvidence run={snapshot.run} projectId={projectId} revision={revision} />
                 ) : (
                   <p>
                     No detailed Runtime record is linked to this session. Tool and budget evidence
@@ -324,9 +387,10 @@ function SessionInspector({
   );
 }
 
-function HarnessEvidence({ run }: { run: HarnessRun }) {
+function HarnessEvidence({ run, projectId, revision }: { run: HarnessRun; projectId: string; revision: number }) {
   return (
     <>
+      {run.capabilityId === NATIVE_LOOP_CAPABILITY && <LoopInspector projectId={projectId} runId={run.id} revision={revision} />}
       <dl>
         <dt>Run</dt>
         <dd className="run-inspector-code">{run.id}</dd>

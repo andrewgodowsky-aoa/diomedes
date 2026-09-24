@@ -39,10 +39,13 @@ import { ProjectInstructions } from './ProjectInstructions';
 import { FollowUpQueue } from './FollowUpQueue';
 import { ControlReceiptLine, RunControls, StopReceiptLine } from './StopMenu';
 import { NeedBlock } from './Need';
+import { EscalationBlock } from './Supervision';
 import { RememberOfferBlock } from './RememberedApprovals';
-import { classifyIntent } from '../../shared/remembered-approvals';
+import { classifyIntent, classifyProposal } from '../../shared/remembered-approvals';
 import type { RememberOffer } from '../../shared/permissions';
 import { ChangeReview } from './ChangeReview';
+import { ChangeDiffs } from './ChangeDiffs';
+import type { ReviewComment } from '../../shared/review-comments';
 import { useWorkingWord, workingLine } from './working-words';
 import { toolRunning, type ToolLine } from './engine-activity';
 import { ToolActivityList } from './ToolActivity';
@@ -168,6 +171,8 @@ interface ThreadViewProps {
   onAnswerOffer?(offer: RememberOffer, accept: boolean): void;
   /** Go ahead on this exact approval and remember it in this project (D5, route 1). */
   onRemember?(need: Need): void;
+  /** P06 review comments, for the task's change review. */
+  reviewComments?: ReviewComment[];
 }
 
 /**
@@ -230,6 +235,7 @@ export function ThreadView({
   rememberOffers = [],
   onAnswerOffer,
   onRemember,
+  reviewComments = [],
 }: ThreadViewProps) {
   const technical = settings.detail === 'technical';
   const permission: ThreadPermission = thread.permission ?? 'show-first';
@@ -239,7 +245,10 @@ export function ThreadView({
   const profiles = useControlProfiles(
     projectId,
     task?.id,
-    ordered.map((session) => `${session.id}:${session.state}`).join(','),
+    // A Codex run's thread record changes what its route offers (H02), so it is part of the key.
+    ordered
+      .map((session) => `${session.id}:${session.state}:${session.nativeThread?.id ?? ''}`)
+      .join(','),
   );
 
   const savedModel =
@@ -657,29 +666,45 @@ export function ThreadView({
           {projectId && !task && (
             <ChangeReview projectId={projectId} taskId={null} refreshKey="" />
           )}
+          {projectId && task && (
+            <ChangeDiffs
+              projectId={projectId}
+              task={task}
+              changes={changes}
+              history={history}
+              comments={reviewComments}
+              route={last?.receipt?.route ?? last?.route ?? route}
+              onError={onError}
+            />
+          )}
           {needs.map((n) => (
             <div id={`need-${n.id}`} key={n.id}>
-              <NeedBlock
-                need={n}
-                session={sessions.find((session) => session.id === n.sessionId)}
-                onScope={onScope}
-                onRemember={
-                  onRemember &&
-                  n.harness &&
-                  n.approval &&
-                  classifyIntent('', n.harness.intent).rememberable
-                    ? () => onRemember(n)
-                    : undefined
-                }
-                decide={(r, a) =>
-                  onResolve(
-                    n,
-                    r,
-                    n.approval ? false : (a ?? (r === 'go-ahead' && permission === 'task')),
-                  )
-                }
-                show={() => onPreview(n)}
-              />
+              {n.supervision && projectId ? (
+                <EscalationBlock projectId={projectId} need={n} />
+              ) : (
+                <NeedBlock
+                  need={n}
+                  session={sessions.find((session) => session.id === n.sessionId)}
+                  onScope={onScope}
+                  onRemember={
+                    onRemember &&
+                    n.approval &&
+                    (n.harness
+                      ? classifyIntent('', n.harness.intent).rememberable
+                      : classifyProposal(n).rememberable)
+                      ? () => onRemember(n)
+                      : undefined
+                  }
+                  decide={(r, a) =>
+                    onResolve(
+                      n,
+                      r,
+                      n.approval ? false : (a ?? (r === 'go-ahead' && permission === 'task')),
+                    )
+                  }
+                  show={() => onPreview(n)}
+                />
+              )}
             </div>
           ))}
           {onAnswerOffer &&

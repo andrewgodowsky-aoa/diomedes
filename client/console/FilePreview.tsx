@@ -13,6 +13,7 @@ import {
   type DocumentVersion,
   type WorkbookPage,
 } from './file-drops-api';
+import { VersionCompare } from './VersionCompare';
 
 /**
  * Read-only previews for the Files pane: a picture, a PDF's facts, a workbook's
@@ -20,7 +21,8 @@ import {
  *
  * Every preview is decided by the bytes the local service sniffed, never by
  * the name alone, and each says plainly when it cannot show a file. Nothing
- * here writes, and nothing here is an editor (decision 13).
+ * here writes a file, and nothing here is an editor (decision 13); a review
+ * comment on a version (VersionCompare) is the one record it can add.
  */
 
 const size = (bytes: number) =>
@@ -333,12 +335,15 @@ export function VersionView({
   sha,
   onBack,
   onOpenCurrent,
+  history,
 }: {
   projectId: string;
   path: string;
   sha: string;
   onBack(): void;
   onOpenCurrent?(): void;
+  /** P06: History, so the version can be compared with the one before it. */
+  history?: readonly HistoryEntry[];
 }) {
   const [version, setVersion] = useState<DocumentVersion | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
@@ -388,6 +393,15 @@ export function VersionView({
             <button type="button" className="files-edit" onClick={onOpenCurrent}>
               Open the current file
             </button>
+          )}
+          {history && version.text !== null && (
+            <VersionCompare
+              projectId={projectId}
+              path={path}
+              sha={version.identity.sha}
+              current={version.current}
+              history={history}
+            />
           )}
           {version.kind && IMAGE_KINDS.includes(version.kind) ? (
             <PicturePreview projectId={projectId} path={path} sha={sha} />

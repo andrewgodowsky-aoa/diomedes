@@ -25,10 +25,34 @@ export const FORMAT_REPORT = {
   supportedPlatforms: ['win32', 'linux', 'darwin'],
 } satisfies CapabilityManifest;
 
+/** What a recorded write returns: its History entry, path and the text's sha-256. */
+export const recordedWrite = z.strictObject({ entryId: z.string(), path: z.string(), sha: z.string().nullable() });
+
+/**
+ * The recorded writer's own answer about an uncertain write: the History entry
+ * labelled with the attempt's idempotency key is the write, and its absence
+ * means the write never committed (the writer journals files and History as
+ * one). Returns the recorded outcome, so recovery never writes twice.
+ */
+export function reconcileRecorded(
+  store: Store,
+  projectId: string,
+  key: string,
+  expected: { path: string; after: string },
+) {
+  const entry = store.state(projectId).history.find((item) => item.label === key);
+  if (!entry) return Promise.resolve('not-applied' as const);
+  // Anything but exactly this write under this key needs a person, as the handler says too.
+  if (entry.files.length !== 1 || entry.files[0].path !== expected.path || entry.files[0].after !== expected.after)
+    return Promise.resolve('unknown' as const);
+  return Promise.resolve({ applied: { entryId: entry.id, path: expected.path, sha: expected.after } });
+}
+
 export function registerFormatReport(tools: ToolRegistry, store: Store, runs: RunService) {
   const pure = {
     version: 'v1',
     effect: 'pure',
+    effectClass: 'pure',
     permission: null,
     approval: false,
     destination: 'local',
@@ -40,6 +64,7 @@ export function registerFormatReport(tools: ToolRegistry, store: Store, runs: Ru
     name: 'read_fixture',
     description: 'Read the shipped synthetic report lines.',
     schema: z.strictObject({}),
+    outputSchema: z.strictObject({ text: z.string() }),
     execute: async () => ({
       text: await fs.readFile(
         new URL(
@@ -57,6 +82,7 @@ export function registerFormatReport(tools: ToolRegistry, store: Store, runs: Ru
     name: 'format_lines',
     description: 'Turn lines into a deterministic Markdown report.',
     schema: z.strictObject({ text: z.string().max(128000) }),
+    outputSchema: z.strictObject({ text: z.string() }),
     execute: ({ input }) => ({
       text:
         '# Fixture report\n\n' +
@@ -73,9 +99,18 @@ export function registerFormatReport(tools: ToolRegistry, store: Store, runs: Ru
     name: 'propose_write',
     description: 'Write the exact report after the person approves it.',
     effect: 'idempotent',
+    effectClass: 'idempotent-write',
     permission: 'write-project-file',
     approval: true,
     schema: writeInputSchema,
+    outputSchema: recordedWrite,
+    targets: (input) => [...input.files],
+    // The recorded writer keeps a History entry labelled with the idempotency key.
+    reconcile: async ({ input, record }) =>
+      reconcileRecorded(store, input.projectId, record.idempotencyKey, {
+        path: input.files[0],
+        after: digestText(input.text),
+      }),
     execute: (context) =>
       store.locked(async () => {
         context.signal.throwIfAborted();

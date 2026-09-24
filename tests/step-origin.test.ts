@@ -67,12 +67,14 @@ const sumTool = {
   version: '1',
   description: 'Add finite numbers.',
   effect: 'pure' as const,
+  effectClass: 'pure' as const,
   permission: 'sum',
   approval: false,
   destination: 'local' as const,
   trustedInputRequired: false,
   cost: 1,
   schema: z.object({ values: z.array(z.number().finite()) }).strict(),
+  outputSchema: z.number(),
   execute: ({ input }: { input: unknown }) =>
     (input as { values: number[] }).values.reduce((a, b) => a + b, 0),
 };

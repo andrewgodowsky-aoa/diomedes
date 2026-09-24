@@ -9,6 +9,7 @@ import { applicationOrigin, formatOrigin, type OriginSnapshot } from '../shared/
 import { diomedesThread } from '../shared/diomedes-thread.js';
 import { CONVERSATION_DEFAULT_ROUTE, HOST_TEST_PROJECT } from '../shared/engines.js';
 import { CODEX_ENGINE, FIXTURE_ENGINE, harnessWrites } from './harness/approval.js';
+import { NATIVE_LOOP_ENGINE } from '../shared/native-loop.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { SecretBox } from './connection-secrets.js';
@@ -46,6 +47,8 @@ import {
   textKind,
 } from './paths.js';
 import { MAX_WORK_RECEIPTS, validateWorkReceipts, type WorkAdmission } from './work-admission.js';
+import { assertReadable } from './migrations/framework.js';
+import { PROJECT_STATE, SETTINGS } from './migrations/registry.js';
 import {
   actionDigest,
   contentHash,
@@ -338,6 +341,26 @@ export async function readJson<T>(target: string, initial: () => T): Promise<T> 
   }
 }
 
+/**
+ * A project record as this build reads it: refused, with the file untouched,
+ * when a newer Diomedes wrote it (H21). The version belongs to the file, so it
+ * is dropped here and stamped again by `persist`.
+ */
+async function readProjectState(target: string, id: string): Promise<StoredState> {
+  const state = await readJson<StoredState>(target, () => {
+    throw new Error(`Project state is missing for ${id}.`);
+  });
+  assertReadable(PROJECT_STATE, state);
+  delete (state as { schemaVersion?: unknown }).schemaVersion;
+  return state;
+}
+async function readSettings(target: string): Promise<Settings> {
+  const settings = await readJson(target, defaults);
+  assertReadable(SETTINGS, settings);
+  migrateSettings(settings);
+  return settings;
+}
+
 const TEAM_SECRETS_PREFIX = Buffer.from('DIOMEDES-TEAM-SECRETS-V1\n');
 function parseTeamSecrets(text: string): Record<string, string> {
   let value: unknown;
@@ -401,6 +424,8 @@ export interface WriteOptions {
   label?: string;
   merge?: boolean;
   review?: boolean;
+  /** P06: a partial keep's evidence, written on the same entry as the write it describes. */
+  hunkReview?: HistoryEntry['hunkReview'];
 }
 
 export class Store extends EventEmitter {
@@ -429,8 +454,7 @@ export class Store extends EventEmitter {
     await safeAbsolute(this.dataDir);
     await safeAbsolute(this.projectRoot);
     await fs.mkdir(path.join(this.dataDir, 'pending'), { recursive: true });
-    this.settings = await readJson(path.join(this.dataDir, 'settings.json'), defaults);
-    migrateSettings(this.settings);
+    this.settings = await readSettings(path.join(this.dataDir, 'settings.json'));
     this.registry = await readJson(path.join(this.dataDir, 'registry.json'), () => []);
     for (const project of this.registry) {
       // A project id is generated here and never accepted from anyone, so a
@@ -441,9 +465,7 @@ export class Store extends EventEmitter {
       const id: unknown = (project as { id?: unknown } | null)?.id;
       if (typeof id !== 'string' || !PROJECT_ID.test(id) || id === HOST_TEST_PROJECT)
         throw new Error('A saved project registry entry names an id this build will not open.');
-      const state = await readJson<StoredState>(this.statePath(project.id), () => {
-        throw new Error(`Project state is missing for ${project.id}.`);
-      });
+      const state = await readProjectState(this.statePath(project.id), project.id);
       const loadTime = now();
       dropLeftOff(state, project);
       for (const conversation of state.conversations ?? [])
@@ -466,7 +488,7 @@ export class Store extends EventEmitter {
     await this.interruptUnpreparedApprovals();
     for (const state of this.states.values()) {
       for (const session of state.sessions.filter((item) =>
-        ![FIXTURE_ENGINE, CODEX_ENGINE].includes(item.engine.name) && ['working', 'waiting', 'queued'].includes(item.state),
+        ![FIXTURE_ENGINE, CODEX_ENGINE, NATIVE_LOOP_ENGINE].includes(item.engine.name) && ['working', 'waiting', 'queued'].includes(item.state),
       )) {
         session.state = 'stopped';
         session.endedAt = now();
@@ -502,9 +524,7 @@ export class Store extends EventEmitter {
   private async recoverAndReload() {
     await this.recover();
     for (const id of this.states.keys()) {
-      const fresh = await readJson<StoredState>(this.statePath(id), () => {
-        throw new Error(`Project state is missing for ${id}.`);
-      });
+      const fresh = await readProjectState(this.statePath(id), id);
       const loadTime = now();
       dropLeftOff(fresh);
       for (const conversation of fresh.conversations ?? [])
@@ -520,8 +540,7 @@ export class Store extends EventEmitter {
       this.states.set(id, fresh);
     }
     await this.interruptUnpreparedApprovals();
-    this.settings = await readJson(path.join(this.dataDir, 'settings.json'), defaults);
-    migrateSettings(this.settings);
+    this.settings = await readSettings(path.join(this.dataDir, 'settings.json'));
     this.recoveryRequired = false;
   }
   async locked<T>(action: () => Promise<T>): Promise<T> {
@@ -756,7 +775,11 @@ export class Store extends EventEmitter {
     this.refreshCounts(state);
     // The documents listing is a cache, never persisted: it can hold 10,000 rows
     // and would otherwise be rewritten with fsync on every change.
-    await jsonWrite(this.statePath(state.project.id), { ...state, documents: [] });
+    await jsonWrite(this.statePath(state.project.id), {
+      schemaVersion: PROJECT_STATE.current,
+      ...state,
+      documents: [],
+    });
     this.states.set(state.project.id, state);
     this.emit('change', state.project.id);
   }
@@ -1283,6 +1306,7 @@ export class Store extends EventEmitter {
       versionId: `v${String(state.history.length + 1).padStart(4, '0')}`,
       commit: null,
       ...(options.approvalId ? { approvalId: options.approvalId } : {}),
+      ...(options.hunkReview ? { hunkReview: structuredClone(options.hunkReview) } : {}),
     };
     state.history.push(entry);
     return entry;

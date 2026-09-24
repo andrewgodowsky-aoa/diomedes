@@ -85,6 +85,8 @@ export interface FollowUpCommand {
   readonly deliveredSessionId?: string;
   readonly cancelledAt?: string;
   readonly cancelledBy?: 'you' | `stop:${StopScope}`;
+  /** H15: present when Diomedes supervision queued this as a correction; absent means you did. */
+  readonly queuedBy?: 'diomedes-supervision';
   readonly rejectedAt?: string;
   /** Why delivery could not proceed: route gone, model no longer advertised, grant expired. */
   readonly rejectedReason?: string;
@@ -261,7 +263,18 @@ export type ControlRefusalCode = (typeof CONTROL_REFUSALS)[number];
  */
 export type ControlPerformer =
   | { readonly kind: 'diomedes' }
-  | { readonly kind: 'engine'; readonly engine: string; readonly version: string };
+  | {
+      readonly kind: 'engine';
+      readonly engine: string;
+      readonly version: string;
+      /** The model the engine itself reported for this action, when it reported one (H02). */
+      readonly model?: string | null;
+    };
+
+/** Who asked for a control (H15 adds supervision; absent from receipts before 2026-09-24 it was always you). */
+export type ControlRequester =
+  | { readonly actor: 'you'; readonly via: 'local-client' }
+  | { readonly actor: 'diomedes'; readonly via: 'supervision'; readonly recordId: string };
 
 /** The link between a run and the one it continues, retries or forks from. */
 export interface ControlLineage {
@@ -286,8 +299,11 @@ export interface ControlReceipt {
   readonly family: (typeof CONTROL_FAMILY)[ControlCommand];
   readonly payloadDigest: string;
   readonly control: ControlCommand;
-  /** Who asked. The local person through this computer's client; never a model. */
-  readonly requestedBy: { readonly actor: 'you'; readonly via: 'local-client' };
+  /**
+   * Who asked. The local person through this computer's client, or (H15) Diomedes supervision —
+   * deterministic code acting on a drift finding, named by its supervision record. Never a model.
+   */
+  readonly requestedBy: ControlRequester;
   readonly requestedAt: string;
   readonly target: {
     readonly taskId: string;
@@ -313,6 +329,8 @@ export interface ControlReceipt {
     readonly stop?: StopReceipt;
     readonly taskId?: string;
     readonly threadId?: string;
+    /** The engine's own thread a native resume continued or a native fork made (H02). */
+    readonly nativeThreadId?: string;
   };
   readonly lineage: ControlLineage | null;
   /** Effects that may have happened and are not confirmed. A retry refused for them names them. */

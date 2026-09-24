@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "detail": "guided",
+  "view": "architect",
+  "onboarding": {
+    "setupVersion": 2,
+    "discoveryConsentAt": null,
+    "aiSkipped": false,
+    "work": null,
+    "detail": null,
+    "familiarity": null,
+    "resumeAt": "welcome",
+    "completedAt": null
+  },
+  "permissions": {
+    "changingFiles": true,
+    "deleting": true,
+    "sending": false,
+    "workingOutside": true,
+    "spending": true
+  },
+  "explanations": "persistent",
+  "appearance": {
+    "package": "nectovia",
+    "motion": "normal"
+  },
+  "seen": {
+    "onlineServiceNotice": false,
+    "guidedDescriptors": {},
+    "firstUse": []
+  },
+  "openProjects": [
+    "3c7f6a676ba2"
+  ],
+  "activeWorkspace": {
+    "kind": "personal"
+  },
+  "home": null,
+  "services": {
+    "codex": false
+  }
+}
