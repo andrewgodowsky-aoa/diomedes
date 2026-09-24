@@ -5134,6 +5134,7 @@ export async function createApp(options: AppOptions) {
   app.locals.workControl = workControl;
   app.locals.readyScheduler = readyScheduler;
   app.locals.automationScheduler = automationScheduler;
+  app.locals.automations = automations;
   app.locals.close = async () => {
     // A window closed on the way out must not start a check against services
     // that are already shutting down.

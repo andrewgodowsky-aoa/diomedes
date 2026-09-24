@@ -508,7 +508,8 @@ export class AutomationService {
       !newest ||
       newest.admission.state !== 'refused' ||
       !SCHEDULE_BLOCKING_CODES.includes(newest.admission.code) ||
-      newest.observedAt < definition.control.since
+      // A block recorded before (or at) the latest enable or resume was answered by it.
+      newest.observedAt <= definition.control.since
     )
       return null;
     return { code: newest.admission.code, reason: newest.admission.reason };
@@ -1504,7 +1505,7 @@ export class AutomationService {
 
   /**
    * Scheduled runs that ended badly raise one item per issue; the newest
-   * scheduled run that saved a draft clears what came before it.
+   * scheduled run that completed clears the failed and skipped items before it.
    */
   private async followScheduledRuns(
     organizationId: string,
@@ -1562,7 +1563,10 @@ export class AutomationService {
         definition,
         'recovered',
         'diomedes',
-        (item) => item.lastSeenAt <= after && item.kind !== 'blocked',
+        // Missed runs stay until a person has seen them: a later clean run does
+        // not make the days that never ran disappear. Blocks are answered by an
+        // owner turning the schedule on again.
+        (item) => item.lastSeenAt <= after && (item.kind === 'failed' || item.kind === 'skipped'),
       );
     }
     return definition;
