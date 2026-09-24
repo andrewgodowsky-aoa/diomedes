@@ -828,3 +828,64 @@ describe('ChatGPT route speed and streaming', () => {
     expect(integration.createClient).toHaveBeenCalledTimes(2);
   });
 });
+
+describe('independent review of the ChatGPT warm process (2026-09-24)', () => {
+  function reviewSetup(clients: FakeNative[]) {
+    const verifySandbox = vi.fn(async () => {});
+    const queue = [...clients];
+    const createClient = vi.fn(async () => queue.shift() ?? new FakeNative());
+    const fetch = vi.fn<typeof globalThis.fetch>(
+      async () =>
+        new Response(JSON.stringify({ state: 'idle_unloaded', resident: null }), { status: 200 }),
+    );
+    return {
+      verifySandbox,
+      createClient,
+      ...createIntegrations({
+        platform: 'win32',
+        createClient,
+        verifySandbox,
+        fetch,
+        turnTimeoutMs: 1000,
+        keepWarmMs: 60_000,
+        sandboxProofTtlMs: 60_000,
+      }),
+    };
+  }
+
+  it('a failed sandbox proof in the connection check withdraws the proof a request would have trusted', async () => {
+    const integration = reviewSetup([]);
+    await integration.askCodex(request);
+    expect(integration.verifySandbox).toHaveBeenCalledTimes(1);
+    integration.verifySandbox.mockRejectedValue(
+      new IntegrationError('SANDBOX_UNPROVEN', 'The write-denial proof failed.'),
+    );
+    const statuses = await integration.getIntegrationStatuses({ refresh: true });
+    expect(statuses.find((entry) => entry.id === 'codex')?.status).toBe(
+      'Read-only boundary unavailable',
+    );
+    // The next request proves the sandbox again instead of trusting the earlier pass.
+    await expect(integration.askCodex(request)).rejects.toThrow('write-denial proof failed');
+    expect(integration.verifySandbox).toHaveBeenCalledTimes(3);
+    await integration.closeWarm();
+  });
+
+  it('a request that finishes after shutdown closes its process instead of keeping it', async () => {
+    const client = new FakeNative();
+    const original = client.request.getMockImplementation()!;
+    let releaseTurn!: () => void;
+    const turnGate = new Promise<void>((resolve) => (releaseTurn = resolve));
+    client.request.mockImplementation(async (method: string, params: Params) => {
+      if (method === 'turn/start') await turnGate;
+      return original(method, params);
+    });
+    const integration = reviewSetup([client]);
+    const pending = integration.askCodex(request);
+    await vi.waitFor(() => expect(client.calls.some((c) => c.method === 'mcpServerStatus/list')).toBe(true));
+    // The service shuts down while the answer is still being written.
+    await integration.closeWarm();
+    releaseTurn();
+    await expect(pending).resolves.toMatchObject({ text: 'A native answer.' });
+    expect(client.closed).toBe(true);
+  });
+});

@@ -1,5 +1,5 @@
 /**
- * Contract revision 2026-09-13.1: the frozen additive amendment C00 proposes.
+ * Contract revision 2026-09-13.1: the frozen additive amendment C00 produced and C00.R accepted.
  *
  * Every shape here is either an existing type re-exported under a frozen name
  * or a small new record that reuses existing fields. The tests validate the
@@ -7,7 +7,7 @@
  * saved run reopened under this revision never silently acquires new powers.
  */
 import { describe, expect, test } from 'vitest';
-import { promises as fs } from 'node:fs';
+import { promises as fs, readFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
@@ -47,9 +47,22 @@ describe('the revision identity', () => {
     expect(CONTRACT_REVISION).toEqual({
       revision: '2026-09-13.1',
       amends: { harness: 1, workControl: 1, capabilityPacks: 1, agents: 1 },
-      status: 'proposed',
+      status: 'accepted',
+      acceptedBy: 'evidence/unified-20260913/C00.R-rollout-20260917.json',
     });
     expect(Object.isFrozen(CONTRACT_REVISION)).toBe(true);
+  });
+  test('says what its C00.R acceptance record says, and names that record', () => {
+    // The marker is only as true as the record behind it: a status of accepted
+    // needs a dated C00.R verdict that approves exactly this revision.
+    const record = JSON.parse(
+      readFileSync(path.join(process.cwd(), CONTRACT_REVISION.acceptedBy), 'utf8'),
+    ) as Record<string, unknown>;
+    expect(record.node_id).toBe('C00.R');
+    expect(record.verdict).toBe(CONTRACT_REVISION.status);
+    expect(record.approved_contract_revision).toBe(CONTRACT_REVISION.revision);
+    expect(record.produced_contract_revision).toBe(CONTRACT_REVISION.revision);
+    expect(record.blockers).toEqual([]);
   });
 });
 
