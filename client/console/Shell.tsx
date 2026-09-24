@@ -97,7 +97,6 @@ import { previewLine } from '../../shared/thread-preview';
 import { ActivityOverview } from './ActivityOverview';
 import { projectActivity, type ActivityRow } from './activity';
 import { TeamView } from './TeamView';
-import { HistoryView } from './HistoryView';
 import { DocumentEditor, UNSAVED_WARNING } from './DocumentEditor';
 import type { EverythingItem } from './Everything';
 import { DiscoveryPage } from './DiscoveryPage';
@@ -164,12 +163,12 @@ const emptyTeam: TeamState = { members: [], messages: [], runs: [] };
 
 /**
  * What the rail carries before anybody changes it: the three screens that were
- * already in the view switch, the History the Console just gained, and the
- * Files pane that was already in its foot. That is six fewer decisions made for
- * everybody than the eight fixed buttons this replaces, and every one of them
- * can now be taken out. Everything else is one click away in Everything.
+ * already in the view switch and the Files pane that was already in its foot.
+ * Every one of them can be taken out. Everything else is one click away in
+ * Everything. A stored pin for the retired History screen names nothing any
+ * more, and the rail skips it.
  */
-const DEFAULT_PINS = ['thread', 'board', 'team', 'history', 'files'];
+const DEFAULT_PINS = ['thread', 'board', 'team', 'files'];
 
 // Cap for the live streamed display: ephemeral text never persists.
 const MAX_STREAM_CHARS = 256 * 1024;
@@ -1543,11 +1542,6 @@ export function Shell({
       badge: team.members.length > 0 ? `${team.members.length} workers` : undefined,
     },
     {
-      id: 'history',
-      label: 'History',
-      hint: 'Every change made in this project, and the way to put files back.',
-    },
-    {
       id: 'files',
       label: 'Files',
       hint: "Read and write in this project's documents.",
@@ -1594,7 +1588,7 @@ export function Shell({
     },
   ];
   const destinationGroups = [
-    { heading: 'In this project', ids: ['thread', 'board', 'team', 'history', 'files'] },
+    { heading: 'In this project', ids: ['thread', 'board', 'team', 'files'] },
     { heading: 'Nectovia', ids: ['engines', 'settings', 'projects'] },
     { heading: 'Not ready yet', ids: ['automations', 'connections'] },
   ];
@@ -1607,9 +1601,7 @@ export function Shell({
       ? 'board'
       : view === 'Team'
         ? 'team'
-        : view === 'History'
-          ? 'history'
-          : 'thread';
+        : 'thread';
 
   function goTo(id: string) {
     // The editor is the one screen holding writing that only exists here. It
@@ -1623,7 +1615,6 @@ export function Shell({
     if (id === 'thread') setView('Thread');
     else if (id === 'board') setView('Board');
     else if (id === 'team') setView('Team');
-    else if (id === 'history') setView('History');
     else if (id === 'discovery') setView('Discovery');
     else if (id === 'readiness') setView('Readiness');
     else if (id === 'files') artifactHost.toggleFiles();
@@ -2083,40 +2074,6 @@ export function Shell({
                 scrollToNeed(need);
               }}
             />}
-          </section>
-        )}
-        {!editing && view === 'History' && (
-          <section className="screen on" aria-label="History">
-            <HistoryView
-              projectId={projectId}
-              entries={state.history}
-              sessions={state.sessions}
-              needs={state.needs}
-              busy={busy}
-              detail={settings.detail}
-              onError={report}
-              onRestored={() => void load().catch(report)}
-              onSavedVersion={() => void load().catch(report)}
-              onOpenFile={(path) => setEditing(path)}
-              // Stopped by session, not by task. The session stop route reads
-              // the session and takes the task from it, so a restore is never
-              // blocked by a task id this view could not name.
-              //
-              // Not through `perform`: it reports a failure and swallows it, so
-              // a stop that did not happen would look like one that did, and
-              // History would go straight on to a restore that meets the same
-              // 409 with nothing said about why. This rejects, and the dialog
-              // says what went wrong. Busy is still held for the same window.
-              onStopWork={async (work) => {
-                setBusy(true);
-                try {
-                  await api(`${base}/work/${work.sessionId}/stop`, 'POST', {});
-                  await load();
-                } finally {
-                  setBusy(false);
-                }
-              }}
-            />
           </section>
         )}
         {!editing && view === 'Thread' && !selected && (

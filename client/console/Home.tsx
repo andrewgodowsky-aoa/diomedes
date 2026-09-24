@@ -46,7 +46,6 @@ export type HomeDestination =
   | 'diomedes'
   | 'new-project'
   | 'open-folder'
-  | 'sample'
   | 'find'
   | 'engines'
   | 'appearance'
@@ -164,7 +163,6 @@ export function Home({
       (b.status?.needsYou ? 1 : 0) - (a.status?.needsYou ? 1 : 0) ||
       (b.lastOpenedAt || b.createdAt).localeCompare(a.lastOpenedAt || a.createdAt),
   );
-  const hasSample = projects.some((p) => p.name.toLowerCase().includes('harbor street'));
   const waiting = listed.filter((p) => p.status?.needsYou);
   const running = listed.filter((p) => p.status?.working);
   const runningTasks = running.reduce((n, p) => n + (p.status?.working ?? 0), 0);
@@ -191,15 +189,6 @@ export function Home({
       label: 'Open a folder',
       hint: 'Make a project of documents you already have.',
     },
-    ...(hasSample
-      ? []
-      : [
-          {
-            id: 'sample',
-            label: 'Sample project',
-            hint: 'Three example documents to explore on this computer.',
-          },
-        ]),
     { id: 'find', label: 'Find a project', hint: 'Search every project by name.', badge: 'Ctrl K' },
     {
       id: 'engines',
@@ -222,7 +211,7 @@ export function Home({
     { id: 'about', label: 'About', hint: 'Version, licences and where your data lives.' },
   ];
   const groups = [
-    { heading: 'Projects', ids: ['new-project', 'open-folder', 'sample', 'find'] },
+    { heading: 'Projects', ids: ['new-project', 'open-folder', 'find'] },
     {
       heading: 'Nectovia',
       ids: ['diomedes', 'engines', 'appearance', 'design-center', 'permissions', 'detail', 'updates', 'about'],
@@ -438,18 +427,6 @@ export function Home({
                     </ul>
                     <p className="home-note">
                       Projects are ordinary folders on this computer.
-                      {!hasSample && (
-                        <>
-                          {' '}
-                          <button
-                            type="button"
-                            className="home-link"
-                            onClick={() => onGo('sample')}
-                          >
-                            Try the sample project.
-                          </button>
-                        </>
-                      )}
                     </p>
                   </section>
                 </div>
@@ -480,20 +457,6 @@ export function Home({
                           <span className="home-name">
                             <strong>Open a folder as a project</strong>
                             <span className="home-sub">Use documents you already have.</span>
-                          </span>
-                        </button>
-                      </li>
-                      <li>
-                        <button
-                          type="button"
-                          className="home-row first"
-                          onClick={() => onGo('sample')}
-                        >
-                          <span className="home-name">
-                            <strong>Try the sample project</strong>
-                            <span className="home-sub">
-                              Three example documents to explore on this computer.
-                            </span>
                           </span>
                         </button>
                       </li>

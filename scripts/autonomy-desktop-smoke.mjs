@@ -409,10 +409,9 @@ try {
     expect(
       changed.flatMap((entry) => entry.files).every((file) => /^[a-f0-9]{64}$/.test(file.after)),
     ).toBe(true);
-    await page.getByRole('button', { name: 'History', exact: true }).click();
-    // The Console's History lists each entry as a row (client/console/HistoryView.tsx).
-    await expect(page.locator('.hrow').first()).toBeVisible();
-    await shot('desktop-autonomy-history.png');
+    // The Console has no History screen any more (removed 2026-09-23); the
+    // attributed record above is what the packaged app keeps.
+    await expect(page.getByRole('button', { name: 'History', exact: true })).toHaveCount(0);
     checks.push({
       name: 'packaged History retains attributed hashes',
       ok: true,

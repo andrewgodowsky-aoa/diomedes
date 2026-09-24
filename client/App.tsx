@@ -481,18 +481,6 @@ export function App() {
       setBusy(false);
     }
   }
-  async function sampleProject() {
-    setBusy(true);
-    try {
-      const p = await api<Project>('/projects/sample', 'POST', {});
-      await refreshProjects();
-      openProject(p);
-    } catch (e) {
-      report(e);
-    } finally {
-      setBusy(false);
-    }
-  }
   async function browseFolder(path = '') {
     try {
       setBrowse(await api(`/fs/list?path=${encodeURIComponent(path)}`));
@@ -568,7 +556,6 @@ export function App() {
     if (destination === 'diomedes') setLanding('diomedes');
     else if (destination === 'new-project') setProjectDialog('new');
     else if (destination === 'open-folder') setProjectDialog('open');
-    else if (destination === 'sample') void sampleProject();
     else if (destination === 'find') setSearch(true);
     else if (section[destination]) {
       setSectionRequest((last) => ({ section: section[destination]!, n: (last?.n ?? 0) + 1 }));

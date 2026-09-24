@@ -221,7 +221,6 @@ test('Native UI: consent, exact proposal preview, approval, Review and History w
   const session = (await api<ProjectState>(`/projects/${project.id}/state`)).sessions[0];
   await api(`/projects/${project.id}/review/all`, 'POST', { action: 'keep', sessionId: session.id });
   await expect.poll(async () => (await api<ProjectState>(`/projects/${project.id}/state`)).tasks[0]?.state).toBe('done');
-  await rail.getByRole('button', { name: /^History\b/ }).click();
   const state = await api<ProjectState>(`/projects/${project.id}/state`);
   const changed = state.history.find(entry => entry.kind === 'changed');
   expect(changed?.files[0].before).toBeTruthy();
@@ -229,7 +228,8 @@ test('Native UI: consent, exact proposal preview, approval, Review and History w
   expect(changed?.files[0].before).not.toBe(changed?.files[0].after);
   expect(state.needs[0].state).toBe('go-ahead');
   expect(state.history.some(entry => entry.kind === 'decision' && entry.sessionId === state.sessions[0].id)).toBe(true);
-  await expect(page.locator('.hist .hrow').filter({ hasText: changed!.sentence })).toBeVisible();
+  // The Console's History screen is gone; the rail offers no way to it.
+  await expect(rail.getByRole('button', { name: /^History\b/ })).toHaveCount(0);
   expect(generationCount).toBe(1);
   expect(errors).toEqual([]);
   // Back to the fixture's own services: codex on, no default chosen.

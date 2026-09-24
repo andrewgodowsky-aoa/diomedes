@@ -105,7 +105,6 @@ for (const [width, height, scale] of [
       'Interface detail',
       'Helpers on this computer',
       'Permissions',
-      'History',
       'Appearance',
       'About',
       'Design Center',

@@ -145,7 +145,7 @@ try {
   const nav = page.getByRole('navigation', { name: 'Threads and views' });
   // Connections left the rail's views for Everything, under Not ready yet
   // (client/console/Shell.tsx), so it has no view of its own to record.
-  for (const name of ['Board', 'Team', 'History', 'Thread']) {
+  for (const name of ['Board', 'Team', 'Thread']) {
     await nav
       .locator('.foot')
       .getByRole('button', { name: new RegExp(`^${name}\\b`) })
@@ -168,7 +168,7 @@ try {
     .getByRole('button', { name: 'Engines', exact: true })
     .click();
   await record(page, 'maximized-engines');
-  for (const name of ['Appearance', 'Permissions', 'History']) {
+  for (const name of ['Appearance', 'Permissions']) {
     await page.locator('.settings-layout .rail').getByRole('button', { name, exact: true }).click();
     await record(page, `maximized-settings-${name.toLowerCase()}`);
   }

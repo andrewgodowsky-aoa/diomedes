@@ -409,7 +409,7 @@ function projectEntries(ctx: PaletteContext): PaletteEntry[] {
 function viewEntries(ctx: PaletteContext): PaletteEntry[] {
   const focus = ctx.focusTaskName ?? 'no open task';
   const views: PaletteEntry[] = (
-    ['Thread', 'Board', 'Team', 'History', 'Discovery', 'Readiness'] as ShellView[]
+    ['Thread', 'Board', 'Team', 'Discovery', 'Readiness'] as ShellView[]
   ).map((v) => ({
     group: 'Views',
     id: `view:${v}`,

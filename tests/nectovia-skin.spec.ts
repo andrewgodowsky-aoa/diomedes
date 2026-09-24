@@ -167,10 +167,6 @@ async function shootScreens(page: Page, scheme: string) {
   await expect(page.locator('.board[aria-label="Board"]')).toBeVisible();
   await shot(page, `${scheme}-board`);
 
-  await rail(page).getByRole('button', { name: /^History\b/ }).click();
-  await expect(page.locator('.hist')).toBeVisible();
-  await shot(page, `${scheme}-history`);
-
   await page.evaluate(() => localStorage.setItem('console.files.open', 'true'));
   await page.reload();
   await expect(page.getByRole('complementary', { name: 'Files', exact: true })).toBeVisible();

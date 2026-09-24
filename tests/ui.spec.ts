@@ -121,14 +121,13 @@ function boardOf(page: Page) {
 }
 
 /** The Console's views, from the rail's foot. Board and Team carry a count after their name. */
-async function goTo(page: Page, view: 'Thread' | 'Board' | 'Team' | 'History') {
+async function goTo(page: Page, view: 'Thread' | 'Board' | 'Team') {
   await railOf(page)
     .getByRole('button', { name: view === 'Thread' ? /^Thread$/ : new RegExp(`^${view}\\b`) })
     .click();
   if (view === 'Thread') await expect(page.locator('#scrThread')).toBeVisible();
   else if (view === 'Board') await expect(boardOf(page)).toBeVisible();
-  else if (view === 'Team') await expect(page.locator('.team[aria-label="Team"]')).toBeVisible();
-  else await expect(page.getByRole('heading', { name: 'History', exact: true, level: 1 })).toBeVisible();
+  else await expect(page.locator('.team[aria-label="Team"]')).toBeVisible();
 }
 
 async function chooseDetail(page: Page, name: 'Guided' | 'Standard' | 'Technical') {
@@ -279,7 +278,18 @@ test('F01-F02: first run preserves detail and approvals, supports AI skip, and r
   await page.getByRole('button', { name: 'Open Nectovia' }).click();
   // First run now ends on Nectovia's own page too; the Projects page is one click away.
   await showProjects(page);
-  await page.getByRole('button', { name: /^Try the sample project/ }).click();
+  // The Projects page offers no sample project any more (Andrew, 2026-09-23).
+  // The server route stays as a test fixture, so the project is made there and
+  // opened from the list the way any other project is.
+  await expect(page.getByRole('button', { name: /sample project/i })).toHaveCount(0);
+  const made = await page.request.post('/api/projects/sample', {
+    headers: { 'X-Diomedes-Client': '1' },
+    data: {},
+  });
+  expect(made.ok()).toBe(true);
+  await page.reload();
+  await showProjects(page);
+  await page.getByRole('button', { name: /^Harbor Street restaurants/ }).first().click();
   await expect(page.locator('html')).toHaveAttribute('data-surface', 'console');
   await expect(page.locator('html')).toHaveAttribute('data-detail', 'technical');
   // A new person starts in the Conversation view (shared/onboarding.ts): the
@@ -346,8 +356,16 @@ test('F04, F06: sample project opens and a plan edit survives reload with Histor
   // The first-run test already opened the sample project; reuse it rather than creating a second one.
   await showProjects(page);
   const existing = page.getByRole('button', { name: /^Harbor Street restaurants/ }).first();
-  if (await existing.count()) await existing.click();
-  else await page.getByRole('button', { name: /^Try the sample project/ }).click();
+  if (!(await existing.count())) {
+    const made = await page.request.post('/api/projects/sample', {
+      headers: { 'X-Diomedes-Client': '1' },
+      data: {},
+    });
+    expect(made.ok()).toBe(true);
+    await page.reload();
+    await showProjects(page);
+  }
+  await page.getByRole('button', { name: /^Harbor Street restaurants/ }).first().click();
   await expect(railOf(page)).toBeVisible();
   await expect(page.locator('html')).toHaveAttribute('data-detail', 'guided');
   await expect(
@@ -553,29 +571,22 @@ test('F15-F16: Review keeps the changed file and History exposes the recorded ch
     fullPage: true,
     animations: 'disabled',
   });
-  await goTo(page, 'History');
+  // The Console's History screen is gone (Andrew, 2026-09-23). The record it
+  // showed is still written, so the changed file is read from state.
+  await expect(railOf(page).getByRole('button', { name: /^History\b/ })).toHaveCount(0);
   const workEntry = state.history.find((entry) => entry.kind === 'changed' && entry.files.length)!;
-  const row = page.locator('.hrow').filter({ hasText: workEntry.sentence }).first();
-  await expect(row).toBeVisible();
-  await row.locator('.hopen').click();
-  await expect(page.getByRole('heading', { name: workEntry.sentence, level: 2 })).toBeVisible();
-  const showChange = page.getByRole('button', { name: 'Show what changed', exact: true }).first();
-  await expect(showChange).toBeVisible();
-  await showChange.click();
-  await expect(page.getByRole('button', { name: 'Hide what changed', exact: true }).first()).toBeVisible();
-  await expect(
-    page.getByRole('button', { name: 'Put this file back', exact: true }).first(),
-  ).toBeVisible();
-  await page.screenshot({
-    path: testInfo.outputPath('history-changes.png'),
-    fullPage: true,
-    animations: 'disabled',
-  });
+  expect(workEntry.sentence).toBeTruthy();
+  expect(workEntry.files[0].before).toBeTruthy();
+  expect(workEntry.files[0].after).toBeTruthy();
+  expect(workEntry.files[0].before).not.toBe(workEntry.files[0].after);
 });
 
-test('F07-F08: restore and Undo recover both versions; newer edits expose conflict choices', async ({
+test('F07-F08: restore and undo recover both versions; newer edits are a conflict', async ({
   page,
-}, testInfo) => {
+}) => {
+  // No Console screen restores files any more (the History screen was removed
+  // 2026-09-23). The routes it called still hold the record, so they are driven
+  // directly: restore, undo that restore, then a restore over a newer edit.
   await openProject(page);
   const state = await projectState(page);
   const workEntry = state.history.find((entry) => entry.kind === 'changed');
@@ -583,27 +594,21 @@ test('F07-F08: restore and Undo recover both versions; newer edits expose confli
   const current = await readPlan(page);
   const workChange = state.changes.find((change) => change.entryId === workEntry!.id);
   expect(workChange?.before).toBeTruthy();
-  await goTo(page, 'History');
-  const row = page.locator('.hrow').filter({ hasText: workEntry!.sentence }).first();
-  await row.getByRole('button', { name: 'Put the files back', exact: true }).click();
-  const dialog = page.getByRole('dialog');
-  await expect(dialog.getByRole('heading', { name: 'Put 1 file back?', exact: true })).toBeVisible();
-  await dialog.getByRole('button', { name: 'Put 1 file back', exact: true }).click();
-  await expect(dialog).not.toBeVisible();
+  const restore = (entryId: string, data: Record<string, unknown> = {}) =>
+    page.request.post(`/api/projects/${projectId}/history/${entryId}/restore`, {
+      headers: HEADERS,
+      data,
+    });
+
+  const restored = await restore(workEntry!.id);
+  expect(restored.ok(), await restored.text()).toBe(true);
   await expect.poll(async () => (await readPlan(page)).text).toBe(workChange!.before);
-  expect(
-    (await projectState(page)).history.some(
-      (entry) => entry.kind === 'restore' && entry.restoreOf === workEntry!.id,
-    ),
-  ).toBe(true);
-  // The Console's Undo asks once more before it puts the restored file back.
-  await page
-    .getByRole('status')
-    .getByRole('button', { name: 'Undo this restore', exact: true })
-    .click();
-  await expect(dialog.getByRole('heading', { name: 'Undo the restore?', exact: true })).toBeVisible();
-  await dialog.getByRole('button', { name: 'Undo the restore', exact: true }).click();
-  await expect(dialog).not.toBeVisible();
+  const restoreEntry = (await projectState(page)).history.find(
+    (entry) => entry.kind === 'restore' && entry.restoreOf === workEntry!.id,
+  );
+  expect(restoreEntry).toBeTruthy();
+  const undone = await restore(restoreEntry!.id);
+  expect(undone.ok(), await undone.text()).toBe(true);
   await expect.poll(async () => (await readPlan(page)).text).toBe(current.text);
 
   const editor = await openInEditor(page, planPath);
@@ -612,33 +617,10 @@ test('F07-F08: restore and Undo recover both versions; newer edits expose confli
   await editor.fill(newer);
   await page.getByRole('button', { name: 'Save changes', exact: true }).click();
   await expect.poll(async () => (await readPlan(page)).text).toBe(newer);
-  await goTo(page, 'History');
-  await row.getByRole('button', { name: 'Put the files back', exact: true }).click();
-  await dialog.getByRole('button', { name: 'Put 1 file back', exact: true }).click();
-  await expect(
-    dialog.getByRole('heading', { name: 'Some files have changed since then', exact: true }),
-  ).toBeVisible();
-  await expect(
-    dialog.getByRole('button', { name: 'Put all of them back', exact: true }),
-  ).toBeVisible();
-  await expect(
-    dialog.getByRole('button', {
-      name: 'Put back only the files that have not changed',
-      exact: true,
-    }),
-  ).toBeVisible();
-  await expect(
-    dialog.getByRole('button', { name: 'Save copies beside the files you have now', exact: true }),
-  ).toBeVisible();
-  await page.screenshot({
-    path: testInfo.outputPath('restore-conflict.png'),
-    fullPage: true,
-    animations: 'disabled',
-  });
-  await dialog
-    .getByRole('button', { name: 'Put back only the files that have not changed', exact: true })
-    .click();
-  await expect(dialog).not.toBeVisible();
+  const conflict = await restore(workEntry!.id);
+  expect(conflict.status()).toBe(409);
+  const onlyUnchanged = await restore(workEntry!.id, { mode: 'unchanged-only' });
+  expect(onlyUnchanged.ok(), await onlyUnchanged.text()).toBe(true);
   expect((await readPlan(page)).text).toBe(newer);
 });
 
@@ -679,7 +661,7 @@ test('F17, F20-F22: detail changes preserve data; the Console meets layout and m
   const before = await projectState(page);
   for (const detail of ['Guided', 'Standard'] as const) {
     await chooseDetail(page, detail);
-    for (const view of ['Thread', 'Board', 'Team', 'History'] as const) await goTo(page, view);
+    for (const view of ['Thread', 'Board', 'Team'] as const) await goTo(page, view);
   }
 
   // Asking from a thread of the project's own records the turn on that thread.
@@ -813,7 +795,7 @@ test('F17, F20-F22: detail changes preserve data; the Console meets layout and m
   ).toBe(true);
   await setInterfaceScale(1);
   await page.setViewportSize({ width: 390, height: 844 });
-  for (const view of ['Thread', 'Board', 'History'] as const) {
+  for (const view of ['Thread', 'Board'] as const) {
     await goTo(page, view);
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1),
