@@ -100,10 +100,7 @@ try {
     path: 'Reopening plan.md',
     items: found,
   });
-  // New profiles default to the Console surface; this lifecycle smoke keeps
-  // exercising the still-supported Workbook task path, so it opts in explicitly.
   await api('/settings', 'PUT', {
-    surface: 'workbook',
     detail: 'standard',
     onboarding: {
       work: 'business',
@@ -113,27 +110,35 @@ try {
       completedAt: new Date().toISOString(),
     },
     openProjects: [project.id],
-    lastPage: { [project.id]: 'tasks' },
   });
+  // The Console is the only surface; the retired Workbook's keys are never stored.
+  for (const key of ['surface', 'lastPage', 'tasksView'])
+    expect(Object.keys(await api('/settings'))).not.toContain(key);
   await page.reload();
-  // A launch lands on Diomedes even with openProjects and lastPage saved: those
-  // settings are navigation context, and only a window that already selected a
-  // project keeps its place on reload (client/App.tsx keptPlace). Assert that
-  // landing, enter the project through its bar button, then reach Tasks over the
-  // rail the way a person does: openProject lands on the project's Home page.
+  await expect(page.locator('html[data-surface="console"]')).toHaveCount(1);
+  // A launch lands on Diomedes even with openProjects saved: that setting is
+  // navigation context, and only a window that already selected a project keeps
+  // its place on reload (client/App.tsx keptPlace). Assert that landing, enter the
+  // project through its bar button, then reach the task board over the rail.
   await expect(page.getByRole('main', { name: AGENT_NAME, exact: true })).toBeVisible();
   await enterLastOpenProject(page);
-  await page
-    .getByRole('navigation', { name: 'Project pages' })
-    .getByRole('button', { name: /^Tasks/ })
-    .click();
-  await expect(page.locator('.task-card')).toHaveCount(found.length);
+  await expect(page.locator('.console')).toBeVisible();
+  // The Console is client/console/: a rail with the three views, a board of rows
+  // with one verb each, and lanes instead of panes.
+  const rail = page.getByRole('navigation', { name: 'Threads and views' });
+  const board = page.locator('.board[aria-label="Board"]');
+  const openBoard = async () => {
+    await rail.getByRole('button', { name: /^Board/ }).click();
+    await expect(board).toBeVisible();
+  };
+  await openBoard();
+  await expect(board.locator('.crow')).toHaveCount(found.length);
   const sizes = () =>
     page.evaluate(() =>
       Object.fromEntries(
         // Under the root zoom the body stays viewport-bound and fluid text wraps
         // differently, so measure short, fixed-width things that only scale.
-        ['.rail-link', '.task-card .button', '.task-card .caption.owner'].map((selector) => [
+        ['.rail .foot button', '.crow .verb', '.crow .m .mono'].map((selector) => [
           selector,
           document.querySelector(selector).getBoundingClientRect().height,
         ]),
@@ -142,18 +147,17 @@ try {
   const fonts = () =>
     page.evaluate(() =>
       Object.fromEntries(
-        ['body', '.task-title'].map((selector) => [
+        ['body', '.crow .t'].map((selector) => [
           selector,
           parseFloat(getComputedStyle(document.querySelector(selector)).fontSize),
         ]),
       ),
     );
   const beforeFonts = await fonts();
-  // The body sits at the shared 16px body role before user scaling; a task
-  // title stays at the 13px caption role and is carried by weight, not size
-  // (client/styles.css .task-title), which is what the readability patch kept.
+  // The body sits at the shared 16px body role before user scaling; a board
+  // row's title sits at the 15px input role (client/console/board.css .crow .t).
   expect(beforeFonts.body).toBe(16);
-  expect(beforeFonts['.task-title']).toBe(13);
+  expect(beforeFonts['.crow .t']).toBe(15);
   const before = await sizes();
   await page.screenshot({
     path: path.resolve('evidence/screenshots/desktop-tasks.png'),
@@ -165,7 +169,9 @@ try {
     appearance: { ...settings.appearance, interfaceScale: 1.24 },
   });
   await page.reload();
-  await expect(page.locator('.task-card')).toHaveCount(found.length);
+  // A reload keeps the project but not the view, so open the Board again.
+  await openBoard();
+  await expect(board.locator('.crow')).toHaveCount(found.length);
   const after = await sizes();
   for (const key of Object.keys(before))
     expect(
@@ -225,22 +231,6 @@ try {
     await page.unroute(endpoint);
     await api(`/projects/${project.id}/work/${saved.id}/stop`, 'POST', {});
   }
-  await page.locator('.task-card').first().locator('.task-title').click();
-  await startWithLostResponse('workbook', () => page.getByRole('dialog')
-    .getByRole('button', { name: 'Do this for me', exact: true }).click());
-
-  const deskSettings = await api('/settings');
-  await api('/settings', 'PUT', { ...deskSettings, surface: 'console' });
-  await page.reload();
-  await expect(page.locator('html[data-surface="console"]')).toHaveCount(1);
-  await expect(page.locator('.console')).toBeVisible();
-  // The Console is client/console/ now: a rail with the three views, a board of
-  // rows with one verb each, and lanes instead of panes.
-  const rail = page.getByRole('navigation', { name: 'Threads and views' });
-  await expect(rail).toBeVisible();
-  await rail.getByRole('button', { name: /^Board/ }).click();
-  const board = page.locator('.board[aria-label="Board"]');
-  await expect(board).toBeVisible();
   await startWithLostResponse('console', async () => {
     // Under "Show me first" the row's Start opens an inline confirm, and the
     // confirm's own Start is the one that sends the Work command.
@@ -275,22 +265,6 @@ try {
   await rail.getByRole('button', { name: /^Team/ }).click();
   await expect(helperLane.locator('.msg')).toContainText(teamMessage);
 
-  const bookSettings = await api('/settings');
-  await api('/settings', 'PUT', {
-    ...bookSettings,
-    surface: 'workbook',
-    lastPage: { ...bookSettings.lastPage, [project.id]: 'home' },
-  });
-  await page.reload();
-  await expect(page.locator('html[data-surface="workbook"]')).toHaveCount(1);
-  await expect(page.locator('.intents')).toBeVisible();
-
-  // Keep the original restart check on the task page after proving the Workbook home surface.
-  const restartSettings = await api('/settings');
-  await api('/settings', 'PUT', {
-    ...restartSettings,
-    lastPage: { ...restartSettings.lastPage, [project.id]: 'tasks' },
-  });
   await page.evaluate(() => document.fonts.ready);
   expect(await page.evaluate(() => typeof window.require)).toBe('undefined');
   const startup = JSON.parse(
@@ -331,23 +305,18 @@ try {
   // the settings calls below and the receipt reads after them reach it through
   // this window; url is kept pointing at the live service.
   url = new URL(reopened.url()).origin;
-  // A restart is a launch: the window opens on Diomedes, and migrateSettings
-  // opens every stored surface on the Console at launch (server/store.ts). This
-  // legacy smoke still exercises the Workbook, which the settings API accepts
-  // for one more release, so it opts in again for this window before entering.
+  // A restart is a launch: the window opens on Diomedes, on the Console, and the
+  // retired Workbook's keys are still absent from the stored settings.
   await expect(reopened.locator('html[data-surface="console"]')).toHaveCount(1);
   await expect(reopened.getByRole('main', { name: AGENT_NAME, exact: true })).toBeVisible();
-  const reopenedSettings = await api('/settings');
-  await api('/settings', 'PUT', { ...reopenedSettings, surface: 'workbook' });
-  await reopened.reload();
-  await expect(reopened.locator('html[data-surface="workbook"]')).toHaveCount(1);
-  await expect(reopened.getByRole('main', { name: AGENT_NAME, exact: true })).toBeVisible();
+  for (const key of ['surface', 'lastPage', 'tasksView'])
+    expect(Object.keys(await api('/settings'))).not.toContain(key);
   await enterLastOpenProject(reopened);
   await reopened
-    .getByRole('navigation', { name: 'Project pages' })
-    .getByRole('button', { name: /^Tasks/ })
+    .getByRole('navigation', { name: 'Threads and views' })
+    .getByRole('button', { name: /^Board/ })
     .click();
-  await expect(reopened.locator('.task-card')).toHaveCount(found.length);
+  await expect(reopened.locator('.board[aria-label="Board"] .crow')).toHaveCount(found.length);
   for (const proof of admissionProof) {
     const saved = await api(`/projects/${project.id}/work/commands/${proof.receipt.commandId}`);
     expect(saved.receipt).toEqual(proof.receipt);
@@ -381,7 +350,7 @@ try {
     ),
   );
   console.log(
-    'PASS: packaged desktop, task board, font scaling, Workbook and Console lost-response recovery, team threads and messages, renderer isolation, shutdown, and receipt persistence after restart.',
+    'PASS: packaged desktop, task board, font scaling, Console lost-response recovery, team threads and messages, renderer isolation, shutdown, and receipt persistence after restart.',
   );
 } catch (error) {
   const message = error instanceof Error ? error.message.split(/\r?\n/, 1)[0] : String(error);
