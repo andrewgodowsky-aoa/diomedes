@@ -2346,6 +2346,8 @@ export async function createApp(options: AppOptions) {
       workRoute === 'sample' && controlFixtureProjects.has(projectId)
         ? CONTROL_FIXTURE_CONTRACT
         : defaultWorkContract(workRoute),
+    // H12: a harness run's uncertain tool effects block Retry and Resume too.
+    harnessEffects: (projectId, session) => harness.bridge.uncertainEffects(projectId, session.id),
   });
   durableControls.registerDriver(CONTROL_FIXTURE_ROUTE, controlFixtureDriver(work));
   /**
