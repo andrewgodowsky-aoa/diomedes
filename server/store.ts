@@ -1542,6 +1542,11 @@ export class Store extends EventEmitter {
     const pending = path.join(this.dataDir, 'pending');
     for (const name of (await fs.readdir(pending)).filter((n) => n.endsWith('.json')).sort()) {
       const journal = JSON.parse(await fs.readFile(path.join(pending, name), 'utf8')) as Journal;
+      // A prepared write carries a whole project record, so it is held to the same
+      // version check as state.json: a newer one stops recovery with nothing written,
+      // and the file's version never enters the record in memory (H21).
+      assertReadable(PROJECT_STATE, journal.state);
+      delete (journal.state as { schemaVersion?: unknown }).schemaVersion;
       const currentState = this.state(journal.projectId);
       validateTaskReceipts(journal.state);
       validateWorkReceipts(journal.state);

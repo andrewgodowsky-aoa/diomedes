@@ -38,20 +38,22 @@ export function backupPath(file: string, from: number, bytes: string | Uint8Arra
 export async function commitMigration(
   family: DurableFamily,
   file: string,
-  original: string,
+  original: string | Uint8Array,
   migrated: { record: DurableRecord; from: number },
   serialize: (record: DurableRecord) => string = (record) => JSON.stringify(record, null, 2),
 ): Promise<string> {
   const backup = backupPath(file, migrated.from, original);
-  let existing: string | null;
+  // Bytes, never decoded text: the backup is evidence of exactly what the file held.
+  const originalBytes = typeof original === 'string' ? Buffer.from(original) : Buffer.from(original);
+  let existing: Buffer | null;
   try {
-    existing = await fs.readFile(backup, 'utf8');
+    existing = await fs.readFile(backup);
   } catch (error) {
     if (!absent(error)) throw error;
     existing = null;
   }
-  if (existing === null) await durableWrite(backup, original);
-  else if (existing !== original)
+  if (existing === null) await durableWrite(backup, originalBytes);
+  else if (!existing.equals(originalBytes))
     throw new MigrationRefusal(
       'invalid-migration',
       family.id,
@@ -61,7 +63,7 @@ export async function commitMigration(
   await durableWrite(file, serialize(migrated.record), async () => {
     // The last look before replacing: another writer must not be overwritten
     // by a migration of what it replaced.
-    if ((await fs.readFile(file, 'utf8')) !== original)
+    if (!(await fs.readFile(file)).equals(originalBytes))
       throw new MigrationRefusal(
         'invalid-migration',
         family.id,
@@ -82,16 +84,16 @@ export async function openVersionedFile(
   file: string,
   serialize?: (record: DurableRecord) => string,
 ): Promise<OpenedFile | null> {
-  let text: string;
+  let bytes: Buffer;
   try {
-    text = await fs.readFile(file, 'utf8');
+    bytes = await fs.readFile(file);
   } catch (error) {
     if (absent(error)) return null;
     throw error;
   }
   let value: unknown;
   try {
-    value = JSON.parse(text);
+    value = JSON.parse(bytes.toString('utf8'));
   } catch {
     throw new MigrationRefusal(
       'not-a-record',
@@ -102,6 +104,6 @@ export async function openVersionedFile(
   }
   const result = migrateRecord(family, value);
   if (!result.migrated) return { record: result.record, from: result.from, to: result.to, backup: null };
-  const backup = await commitMigration(family, file, text, result, serialize);
+  const backup = await commitMigration(family, file, bytes, result, serialize);
   return { record: result.record, from: result.from, to: result.to, backup };
 }
