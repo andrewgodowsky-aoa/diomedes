@@ -3,7 +3,14 @@ import { z } from 'zod';
 import { ApiError } from '../paths.js';
 import { HarnessError } from '../harness/policy.js';
 import { claudeSessionRunId } from '../harness/claude-session-run.js';
-import type { ClaudeSessionTurnResult } from '../harness/claude-session-run.js';
+import type {
+  ClaudeSessionRuns,
+  ClaudeSessionTurnResult,
+  SessionCheckpointFacts,
+} from '../harness/claude-session-run.js';
+import { opencodeSessionRunId } from '../harness/opencode-session-run.js';
+import { routeContractFor } from '../harness/route-contract.js';
+import { sessionControls } from '../../shared/session-controls.js';
 import type { TextRequest } from './contract.js';
 import { EngineError } from './process.js';
 import type { EngineService } from './service.js';
@@ -49,11 +56,63 @@ export function mountClaudeSessionRoutes(
   engines: EngineService,
   dependencies: ClaudeSessionRouteDependencies,
 ) {
-  const base = '/api/projects/:id/claude-sessions';
+  mountNativeSessionRoutes(
+    app,
+    {
+      base: '/api/projects/:id/claude-sessions',
+      driver: () => engines.nativeSessions,
+      runId: claudeSessionRunId,
+      turn: (mode, runId, input, sourceRunId) => engines.claudeSession(mode, runId, input, sourceRunId),
+    },
+    dependencies,
+  );
+}
+/**
+ * The kept OpenCode session (H04): the same routes, plus `steer` because its
+ * contract answers it (as a host queue), and a `controls` block on its status
+ * read from that contract, so a surface offers only what the route supports.
+ */
+export function mountOpenCodeSessionRoutes(
+  app: Express,
+  engines: EngineService,
+  dependencies: ClaudeSessionRouteDependencies,
+) {
+  mountNativeSessionRoutes(
+    app,
+    {
+      base: '/api/projects/:id/opencode-sessions',
+      driver: () => engines.opencodeSessions,
+      runId: opencodeSessionRunId,
+      turn: (mode, runId, input, sourceRunId) => engines.opencodeSession(mode, runId, input, sourceRunId),
+      routeId: 'opencode-session',
+    },
+    dependencies,
+  );
+}
+type NativeTurnMode = 'start' | 'follow-up' | 'resume' | 'fork';
+function mountNativeSessionRoutes(
+  app: Express,
+  spec: {
+    base: string;
+    driver: () => ClaudeSessionRuns<SessionCheckpointFacts> | undefined;
+    runId: (projectId: string, commandId: string) => string;
+    turn: (
+      mode: NativeTurnMode,
+      runId: string,
+      input: TextRequest,
+      sourceRunId?: string,
+    ) => Promise<ClaudeSessionTurnResult>;
+    /** Set for a route whose status carries its contract-derived controls. */
+    routeId?: string;
+  },
+  dependencies: ClaudeSessionRouteDependencies,
+) {
+  const base = spec.base;
+  const contract = spec.routeId ? routeContractFor(spec.routeId) : undefined;
   const native = () => {
-    if (!engines.nativeSessions)
-      throw new ApiError(503, 'The native conversation runtime is unavailable.');
-    return engines.nativeSessions;
+    const driver = spec.driver();
+    if (!driver) throw new ApiError(503, 'The native conversation runtime is unavailable.');
+    return driver;
   };
   const route =
     (action: (req: Request) => Promise<unknown>) =>
@@ -71,7 +130,7 @@ export function mountClaudeSessionRoutes(
         else next(error);
       }
     };
-  const turn = (mode: 'start' | 'follow-up' | 'resume' | 'fork') =>
+  const turn = (mode: NativeTurnMode) =>
     route(async (req) => {
       const body = claudeSessionBody.safeParse(req.body);
       if (!body.success)
@@ -92,9 +151,9 @@ export function mountClaudeSessionRoutes(
         throw new ApiError(400, 'The admitted conversation identity does not match this command.');
       const runId =
         mode === 'start' || mode === 'fork'
-          ? claudeSessionRunId(projectId, body.data.commandId)
+          ? spec.runId(projectId, body.data.commandId)
           : String(req.params.runId);
-      const result = await engines.claudeSession(
+      const result = await spec.turn(
         mode,
         runId,
         input,
@@ -109,8 +168,27 @@ export function mountClaudeSessionRoutes(
   app.post(`${base}/:runId/fork`, turn('fork'));
   app.get(
     `${base}/:runId`,
-    route((req) => native().status(String(req.params.id), String(req.params.runId))),
+    route(async (req) => {
+      const status = await native().status(String(req.params.id), String(req.params.runId));
+      return contract ? { ...status, controls: sessionControls(contract) } : status;
+    }),
   );
+  if (contract && contract.commands.steer.support !== 'unsupported')
+    app.post(
+      `${base}/:runId/steer`,
+      route(async (req) => {
+        const body = z
+          .strictObject({ commandId, text: z.string().trim().min(1).max(32000) })
+          .safeParse(req.body);
+        if (!body.success) throw new ApiError(400, 'Provide a bounded command ID and the message text.');
+        return native().steer(
+          String(req.params.id),
+          String(req.params.runId),
+          body.data.commandId,
+          body.data.text,
+        );
+      }),
+    );
   for (const command of ['interrupt', 'close'] as const)
     app.post(
       `${base}/:runId/${command}`,

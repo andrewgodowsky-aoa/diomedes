@@ -360,6 +360,47 @@ export async function discoverInstructionFiles(
   return [...next];
 }
 
+/** What an activation record names: a built-in manifest or an installed one. */
+export interface ActivationSubject {
+  readonly id: string;
+  readonly name: string;
+  readonly version: string;
+}
+
+/**
+ * Append one activation decision and its History entry, or nothing when the
+ * decision changes nothing. The one writer of `project.packs`, for built-in
+ * and installed packs alike.
+ */
+export async function recordPackActivation(
+  store: Store,
+  projectId: string,
+  subject: ActivationSubject,
+  next: PackActivation['state'],
+  at: string,
+): Promise<boolean> {
+  const state = store.state(projectId);
+  const already = isPackActive(state.project.packs, subject.id);
+  // Records are appended for every decision that changes something. Turning on
+  // a pack that is already on decided nothing, so it writes nothing: a History
+  // entry saying a person changed a setting they did not change would be
+  // untrue, and the record is evidence before it is a log.
+  if (already === (next === 'active')) return false;
+  state.project.packs = [
+    ...(state.project.packs ?? []),
+    { packId: subject.id, packVersion: subject.version, state: next, at, by: 'you' },
+  ];
+  store.addEntry(state, {
+    kind: 'pack',
+    sentence:
+      next === 'active'
+        ? `You turned on ${subject.name} for this project. It adds no permission.`
+        : `You turned off ${subject.name} for this project. What it already found stays recorded.`,
+  });
+  await store.persist(state);
+  return true;
+}
+
 async function setActivation(
   store: Store,
   projectId: string,
@@ -369,25 +410,8 @@ async function setActivation(
 ): Promise<ProjectState> {
   const manifest = manifestFor(packId);
   assertLoadable(manifest);
-  const state = store.state(projectId);
-  const already = isPackActive(state.project.packs, packId);
-  // Records are appended for every decision that changes something. Turning on
-  // a pack that is already on decided nothing, so it writes nothing: a History
-  // entry saying a person changed a setting they did not change would be
-  // untrue, and the record is evidence before it is a log.
-  if (already === (next === 'active')) return state;
-  state.project.packs = [
-    ...(state.project.packs ?? []),
-    { packId, packVersion: manifest.version, state: next, at, by: 'you' },
-  ];
-  store.addEntry(state, {
-    kind: 'pack',
-    sentence:
-      next === 'active'
-        ? `You turned on ${manifest.name} for this project. It adds no permission.`
-        : `You turned off ${manifest.name} for this project. What it already found stays recorded.`,
-  });
-  await store.persist(state);
+  const changed = await recordPackActivation(store, projectId, manifest, next, at);
+  if (!changed) return store.state(projectId);
   if (next === 'active') await discoverInstructionFiles(store, projectId, at);
   return store.state(projectId);
 }

@@ -1,4 +1,11 @@
-import type { HarnessPrincipal, HarnessRun } from '../../shared/harness.js';
+import type { OriginSnapshot } from '../../shared/attribution.js';
+import type {
+  CapabilityManifest,
+  HarnessBudget,
+  HarnessPrincipal,
+  HarnessRun,
+  Json,
+} from '../../shared/harness.js';
 import type { Need, Session } from '../../shared/types.js';
 import { assertApprovalMatches, type ApprovalAdmission } from '../approval-admission.js';
 import { ApiError } from '../paths.js';
@@ -18,6 +25,8 @@ import {
   type CodexRunInput,
 } from './codex-engine.js';
 import type { WorkAdmission } from '../work-admission.js';
+import { patternForStep, type ApprovalCandidate } from '../trust/remembered-approvals.js';
+import { ALWAYS_ASK_REASON, rememberedAttribution } from '../../shared/remembered-approvals.js';
 
 export const localHarnessPrincipal = (projectId: string): HarnessPrincipal => ({
   id: 'local-client',
@@ -29,10 +38,26 @@ export const localHarnessPrincipal = (projectId: string): HarnessPrincipal => ({
 
 const active = (session: Session) => ['queued', 'working', 'waiting'].includes(session.state);
 
+/**
+ * A capability whose steps are fixed host code rather than a model loop. It
+ * runs through the same RunService, Task, Session, mirror and recovery as every
+ * other capability here; no model is called and no provider route is involved.
+ */
+export interface HarnessProcedure {
+  readonly capability: CapabilityManifest;
+  /** The Session's engine name. Never a model or provider name. */
+  readonly engine: string;
+  /** The Session's origin from the start, so it never reads as model work. */
+  readonly origin: OriginSnapshot;
+  readonly budget: HarnessBudget;
+  run(runId: string, owner: string, principal: HarnessPrincipal): Promise<void>;
+}
+
 export class HarnessBridge {
   private readonly owner = identifier('harness-');
   private readonly mirrors = new Set<Promise<void>>();
   private readonly jobs = new Map<string, Promise<void>>();
+  private readonly procedures = new Map<string, HarnessProcedure>();
   private closed = false;
   private mirrorError: unknown;
 
@@ -51,6 +76,30 @@ export class HarnessBridge {
     private readonly hostProjectId: string,
     private readonly codex?: CodexEngineAdapter,
   ) {}
+
+  /** Register a procedure capability. The host does this once, before recovery. */
+  registerProcedure(procedure: HarnessProcedure) {
+    if (
+      this.procedures.has(procedure.capability.id) ||
+      [FORMAT_REPORT.id, CODEX_REPORT.id].includes(procedure.capability.id)
+    )
+      throw new Error(`Capability ${procedure.capability.id} is already registered.`);
+    this.procedures.set(procedure.capability.id, procedure);
+  }
+  /** The capabilities this bridge can start, by id. Codex needs its own admission input. */
+  private capabilityFor(capabilityId: string, codex: boolean): CapabilityManifest | undefined {
+    if (codex) return this.codex && capabilityId === CODEX_REPORT.id ? CODEX_REPORT : undefined;
+    if (capabilityId === FORMAT_REPORT.id) return FORMAT_REPORT;
+    return this.procedures.get(capabilityId)?.capability;
+  }
+  /** Session engines this bridge owns, for recovery and notes. */
+  private engines() {
+    return new Set([
+      FIXTURE_ENGINE,
+      CODEX_ENGINE,
+      ...[...this.procedures.values()].map((procedure) => procedure.engine),
+    ]);
+  }
 
   /** Notifications enqueue onto the existing Store lock, never await it inside a run commit. */
   enqueue(run: HarnessRun) {
@@ -97,11 +146,14 @@ export class HarnessBridge {
     prompt: string,
     principal: HarnessPrincipal,
     codex?: { runId: string; input: CodexRunInput; admission: WorkAdmission },
+    /** A procedure's admission-pinned run id and input, so a replay finds the same run. */
+    pinned?: { runId: string; input: Json },
   ): Promise<Session> {
     if (this.closed) throw new ApiError(503, 'The local service is closing.');
-    const capability =
-      codex && this.codex && capabilityId === CODEX_REPORT.id ? CODEX_REPORT : FORMAT_REPORT;
-    if (capabilityId !== capability.id)
+    const capability = this.capabilityFor(capabilityId, codex !== undefined);
+    const procedure = this.procedures.get(capabilityId) ?? null;
+    // A procedure starts only from its own admission, which pins its input.
+    if (!capability || capabilityId !== capability.id || (pinned !== undefined) !== !!procedure)
       throw new ApiError(400, 'This native capability is not available.');
     validatePrincipal(principal);
     if (
@@ -120,7 +172,7 @@ export class HarnessBridge {
     const task =
       taskId === null
         ? this.store.createTask(state, {
-            name: FORMAT_REPORT.label,
+            name: capability.label,
             description: prompt,
             owner: 'diomedes-with-ok',
           })
@@ -138,14 +190,15 @@ export class HarnessBridge {
       log: [{ time: now(), level: 'plain', sentence: this.redact(`Requested: ${prompt}`) }],
       entryIds: [],
       needId: null,
+      ...(procedure ? { origin: structuredClone(procedure.origin) } : {}),
       engine: {
-        name: codex ? CODEX_ENGINE : this.adapter.id,
+        name: codex ? CODEX_ENGINE : (procedure?.engine ?? this.adapter.id),
         model: null,
         worker: 1,
         branch: null,
         context: null,
         events: 0,
-        version: codex ? this.codex!.version : this.adapter.version,
+        version: codex ? this.codex!.version : procedure ? capability.version : this.adapter.version,
         verified: false,
       },
     };
@@ -167,7 +220,11 @@ export class HarnessBridge {
     let createdRunId: string | undefined;
     try {
       const run = await this.runs.start({
-        ...(codex ? { id: codex.runId, input: codex.input } : {}),
+        ...(codex
+          ? { id: codex.runId, input: codex.input }
+          : pinned
+            ? { id: pinned.runId, input: pinned.input }
+            : {}),
         tenantId: 'local',
         projectId,
         taskId: task.id,
@@ -177,7 +234,7 @@ export class HarnessBridge {
         tools: this.tools,
         budget: codex
           ? { units: 1, modelCalls: 1, toolCalls: 1, wallMs: null }
-          : { units: 6, modelCalls: 6, toolCalls: 6, wallMs: null },
+          : (procedure?.budget ?? { units: 6, modelCalls: 6, toolCalls: 6, wallMs: null }),
       });
       createdRunId = run.id;
       await this.runs.claim(run.id, this.owner, codex ? 5 * 60_000 : 60_000);
@@ -249,6 +306,7 @@ export class HarnessBridge {
       task.needId = null;
     }
     session.needId = null;
+    let covered: Need | undefined;
     if (run.state === 'waiting' && view.waiting) {
       const step = run.steps.find((item) => item.intent.stepId === view.waiting!.stepId)!;
       let need = state.needs.find(
@@ -283,6 +341,18 @@ export class HarnessBridge {
         need.approval = identifyHarnessApproval(run.projectId, need, sources);
         harnessWrites(run.projectId, need);
         state.needs.push(need);
+        // A remembered approval (D5) may cover this exact step. The Need is
+        // still created and kept: it is the record the grant is evidenced on.
+        const candidate = await this.candidate(run, need);
+        const grant = candidate && this.store.scopeGrants.remembered.cover(run.projectId, need, candidate);
+        if (grant) {
+          covered = need;
+          session.log.push({
+            time: need.decidedAt!,
+            level: 'plain',
+            sentence: `${rememberedAttribution({ acceptedBy: grant.grant.acceptedBy, acceptedAt: grant.grant.createdAt })} ${grant.grant.what}.`,
+          });
+        }
       }
       session.needId = need.id;
       if (currentTask) task.needId = need.id;
@@ -309,6 +379,76 @@ export class HarnessBridge {
           conflicts: [],
         };
     await this.store.persist(state);
+    if (covered) {
+      const need = covered;
+      // Queued behind this mirror on the Store lock, exactly as a person's
+      // answer is: the decision is durable before the run is told.
+      void this.store.locked(() => this.decide(need, run)).catch((error: unknown) => {
+        console.error('A remembered approval could not be applied:', this.redact(String(error)));
+      });
+    }
+  }
+
+  /**
+   * What the host knows about a waiting step now, for remembered approvals:
+   * its exact pattern and the principal a decision would be made under. Null
+   * when the step names its destination in a shape that cannot be read.
+   */
+  private async candidate(run: HarnessRun, need: Need): Promise<ApprovalCandidate | null> {
+    if (!need.harness) return null;
+    const session = this.store
+      .state(run.projectId)
+      .sessions.find((item) => item.id === need.sessionId);
+    if (!session) return null;
+    const codex = run.capabilityId === CODEX_REPORT.id;
+    const found = patternForStep({
+      projectId: run.projectId,
+      procedure: run.capabilityId,
+      intent: need.harness.intent,
+      engine: session.engine.name,
+      accountRoute: codex ? String(this.store.settings.services?.codexAccountRoute ?? 'codex:chatgpt') : null,
+      procedureLabel: codex ? CODEX_REPORT.label : FORMAT_REPORT.label,
+    });
+    if (!found) return null;
+    let authority: ApprovalCandidate['authority'] = null;
+    try {
+      const principal = codex
+        ? (await this.codex!.authorityForRun(run, 'approval.decide')).principal
+        : localHarnessPrincipal(run.projectId);
+      // The run itself must still hold the permission, as well as whoever decides.
+      authority = {
+        principalId: principal.id,
+        identityGeneration: principal.identityGeneration,
+        capabilities: principal.capabilities.filter((item) =>
+          run.principal.capabilities.includes(item),
+        ),
+      };
+    } catch (error) {
+      if (!(error instanceof HarnessAuthorityUnavailable)) throw error;
+    }
+    return { ...found, authority };
+  }
+
+  /**
+   * "Go ahead and remember in this project" (D5, route 1). The exact approval
+   * was given first through `resolve`; this remembers its pattern. Caller owns
+   * Store.locked.
+   */
+  async remember(projectId: string, needId: string) {
+    const need = this.store.state(projectId).needs.find((item) => item.id === needId);
+    if (!need?.harness) throw new ApiError(404, 'This approval was not found.');
+    const run = await this.runs.get(need.harness.runId);
+    if (run.projectId !== projectId) throw new ApiError(404, 'This approval was not found.');
+    const candidate = await this.candidate(run, need);
+    if (!candidate)
+      throw new ApiError(
+        409,
+        ALWAYS_ASK_REASON.unrecognised,
+        { code: 'always_asks' },
+      );
+    const record = this.store.scopeGrants.remembered.rememberFromNeed(projectId, need, candidate);
+    await this.store.persist(this.store.state(projectId));
+    return record;
   }
 
   private launch(runId: string, prompt: string) {
@@ -337,6 +477,11 @@ export class HarnessBridge {
     try {
       if (run.capabilityId === CODEX_REPORT.id && this.codex) {
         await this.codex.run(run, this.owner);
+        return;
+      }
+      const procedure = this.procedures.get(run.capabilityId);
+      if (procedure) {
+        await procedure.run(runId, this.owner, run.principal);
         return;
       }
       await new NativeAgent(this.runs, this.adapter, this.tools).run(
@@ -414,13 +559,39 @@ export class HarnessBridge {
     )
       throw new ApiError(409, 'This request no longer matches the waiting run.');
     this.store.recordApprovalDecision(projectId, need, admission);
+    // Count this exact answer toward a learned offer (D5). Counting never
+    // grants anything; at most it makes one offer the person answers.
+    const candidate = await this.candidate(run, need);
+    if (candidate)
+      this.store.scopeGrants.remembered.noteDecision(projectId, candidate, resolution, need);
     await this.store.persist(this.store.state(projectId));
     await this.decide(need, run);
     return structuredClone(need);
   }
   private async decide(need: Need, run: HarnessRun) {
-    if (!need.harness || !need.approvalReceipt || !need.approval)
+    const remembered = need.authorization?.kind === 'remembered-approval' ? need.authorization : null;
+    const decision = need.approvalReceipt?.decision ?? (remembered ? 'go-ahead' : null);
+    if (!need.harness || !decision || !need.approval)
       throw new Error('A durable harness decision is required.');
+    if (remembered) {
+      try {
+        // Revoked since it covered this Need: nothing runs under it.
+        this.store.scopeGrants.remembered.assertCurrent(run.projectId, need);
+      } catch (error) {
+        if (!(error instanceof ApiError) || error.details?.code !== 'scope_not_authorized') throw error;
+        const state = this.store.state(run.projectId);
+        need.execution = {
+          state: 'not-applied',
+          eventId: null,
+          completedAt: now(),
+          reason: 'The remembered approval was revoked before this ran. Start the work again to be asked.',
+          conflicts: [],
+        };
+        await this.store.persist(state);
+        await this.runs.cancel(run.id, 'The remembered approval was revoked.', localHarnessPrincipal(run.projectId));
+        return;
+      }
+    }
     const ttlMs = Date.parse(need.approval.expiresAt) - Date.now();
     if (ttlMs <= 0)
       throw new ApiError(409, 'This approval window expired. The run is still waiting.', {
@@ -431,10 +602,11 @@ export class HarnessBridge {
         {
           runId: run.id,
           stepId: need.harness.intent.stepId,
-          decision: need.approvalReceipt.decision === 'go-ahead' ? 'approved' : 'denied',
+          decision: decision === 'go-ahead' ? 'approved' : 'denied',
           ttlMs,
           expiresAt: need.approval.expiresAt,
-          decidedBy: 'local-client',
+          // Truthful in the run record too: not a fresh click.
+          decidedBy: remembered ? `remembered-approval:${remembered.grantId}` : 'local-client',
         },
         run.capabilityId === CODEX_REPORT.id
           ? (await this.codex!.authorityForRun(run, 'approval.decide')).principal
@@ -449,7 +621,7 @@ export class HarnessBridge {
         );
       throw error;
     }
-    if (need.approvalReceipt.decision === 'go-ahead') {
+    if (decision === 'go-ahead') {
       await this.runs.claim(
         run.id,
         this.owner,
@@ -478,7 +650,7 @@ export class HarnessBridge {
   }
   async note(projectId: string, sessionId: string, text: string) {
     const session = this.store.state(projectId).sessions.find((item) => item.id === sessionId);
-    if (!session || ![FIXTURE_ENGINE, CODEX_ENGINE].includes(session.engine.name))
+    if (!session || !this.engines().has(session.engine.name))
       throw new ApiError(404, 'This run was not found.');
     session.log.push({
       time: now(),
@@ -504,9 +676,10 @@ export class HarnessBridge {
     const known = new Set<string>();
     for (let run of saved) {
       if (run.sessionId) this.sessionRuns.set(run.sessionId, run.id);
+      const procedure = this.procedures.get(run.capabilityId);
       if (
-        ![FORMAT_REPORT.id, CODEX_REPORT.id].includes(run.capabilityId) ||
-        run.capabilityVersion !== 'v1'
+        (![FORMAT_REPORT.id, CODEX_REPORT.id].includes(run.capabilityId) && !procedure) ||
+        run.capabilityVersion !== (procedure?.capability.version ?? 'v1')
       ) {
         console.warn('Skipped a harness run whose capability is unavailable.');
         continue;
@@ -574,7 +747,7 @@ export class HarnessBridge {
           .needs.find(
             (item) =>
               item.harness?.runId === run.id &&
-              item.approvalReceipt &&
+              (item.approvalReceipt || item.authorization?.kind === 'remembered-approval') &&
               run.steps.some(
                 (step) =>
                   step.state === 'waiting_approval' &&
@@ -604,7 +777,7 @@ export class HarnessBridge {
       let changed = false;
       for (const session of state.sessions.filter(
         (item) =>
-          [FIXTURE_ENGINE, CODEX_ENGINE].includes(item.engine.name) &&
+          this.engines().has(item.engine.name) &&
           active(item) &&
           !known.has(item.id),
       )) {

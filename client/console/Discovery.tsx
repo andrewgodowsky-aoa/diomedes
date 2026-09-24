@@ -9,10 +9,13 @@ import {
   type HypothesisOutcome,
   type PersonalizationLevel,
   type ProspectDiscoveryRecord,
+  type StaleObservedEvidence,
 } from '../../shared/discovery';
 
 export interface DiscoveryProps {
   readonly record: ProspectDiscoveryRecord | null;
+  /** Observed facts whose approved file has changed since they were observed. */
+  readonly staleEvidence?: readonly StaleObservedEvidence[];
   readonly busy?: boolean;
   readonly onStage?: (stage: DiscoveryStage) => void;
   readonly onPersonalizationLevel?: (level: PersonalizationLevel) => void;
@@ -30,10 +33,12 @@ function Fact({
   record,
   id,
   prefix,
+  stale,
 }: {
   record: ProspectDiscoveryRecord;
   id: string;
   prefix?: string;
+  stale: ReadonlySet<string>;
 }) {
   const fact = currentFact(record, id);
   return (
@@ -42,6 +47,9 @@ function Fact({
       <span className="disc-fact-value">{fact.value ?? 'Unknown'}</span>
       <span className={`disc-provenance is-${fact.provenance.class}`}>
         {displayProvenance(fact.provenance)}
+        {stale.has(fact.id) && (
+          <span className="disc-stale">Stale: the file has changed since</span>
+        )}
       </span>
     </li>
   );
@@ -49,6 +57,7 @@ function Fact({
 
 export function Discovery({
   record,
+  staleEvidence = [],
   busy = false,
   onStage,
   onPersonalizationLevel,
@@ -64,6 +73,7 @@ export function Discovery({
       </section>
     );
 
+  const stale = new Set(staleEvidence.map((item) => item.factId));
   const hypothesis = currentFact(record, record.hypothesisFactId);
   const outcome = record.hypothesisOutcomes.at(-1)?.outcome ?? 'unknown';
   const stages = DISCOVERY_STAGES.filter(
@@ -128,7 +138,7 @@ export function Discovery({
         <h3 id="discovery-goals">Goals</h3>
         <ul className="disc-facts">
           {record.goalFactIds.map((id) => (
-            <Fact key={id} record={record} id={id} />
+            <Fact key={id} record={record} stale={stale} id={id} />
           ))}
         </ul>
       </section>
@@ -140,21 +150,21 @@ export function Discovery({
             <li className="disc-step" key={step.id}>
               <h4>{currentFact(record, step.actionFactId).value ?? 'Unknown step'}</h4>
               <ul className="disc-facts">
-                <Fact record={record} id={step.actorFactId} prefix="Actor" />
+                <Fact record={record} stale={stale} id={step.actorFactId} prefix="Actor" />
                 {step.inputFactIds.map((id) => (
-                  <Fact key={id} record={record} id={id} prefix="Input" />
+                  <Fact key={id} record={record} stale={stale} id={id} prefix="Input" />
                 ))}
                 {step.outputFactIds.map((id) => (
-                  <Fact key={id} record={record} id={id} prefix="Output" />
+                  <Fact key={id} record={record} stale={stale} id={id} prefix="Output" />
                 ))}
                 {step.handoffFactIds.map((id) => (
-                  <Fact key={id} record={record} id={id} prefix="Hand-off" />
+                  <Fact key={id} record={record} stale={stale} id={id} prefix="Hand-off" />
                 ))}
                 {step.timingFactId && (
-                  <Fact record={record} id={step.timingFactId} prefix="Timing" />
+                  <Fact record={record} stale={stale} id={step.timingFactId} prefix="Timing" />
                 )}
                 {step.painPointFactIds.map((id) => (
-                  <Fact key={id} record={record} id={id} prefix="Pain point" />
+                  <Fact key={id} record={record} stale={stale} id={id} prefix="Pain point" />
                 ))}
               </ul>
             </li>

@@ -84,6 +84,79 @@
   color: var(--t3);
   cursor: default;
 }
+/* The Ready queue (H07): one row under the heading. The switch, the queue's one-line state
+   and its pause. A pause reason is a person's text, so it wraps inside the row (decision 5). */
+.console .bhead .queue {
+  flex: 1 0 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 14px;
+  min-width: 0;
+  font-size: var(--dm-type-caption);
+}
+.console .bhead .queue .auto {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--t2);
+  cursor: pointer;
+}
+.console .bhead .queue .auto input {
+  accent-color: var(--light);
+  margin: 0;
+}
+.console .bhead .queue .state {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.console .bhead .queue .state.attn {
+  color: var(--attn);
+}
+.console .bhead .queue .verb {
+  cursor: pointer;
+  font-size: var(--dm-type-caption);
+  color: var(--t1);
+  border-radius: var(--rb);
+}
+.console .bhead .queue .verb.quiet {
+  color: var(--t3);
+}
+.console .bhead .queue .verb:disabled {
+  color: var(--t3);
+  cursor: default;
+}
+.console .bhead .queue .pause {
+  flex: 1 0 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+.console .bhead .queue .pause input {
+  min-width: 0;
+  flex: 0 1 260px;
+  font: 400 var(--dm-type-input) / 1.4 var(--ui);
+  color: var(--t1);
+  background: var(--raised);
+  border: 1px solid var(--hair-2);
+  border-radius: var(--rb);
+  padding: 4px 8px;
+}
+.console .bhead .queue .pause input:focus-visible {
+  border-color: var(--light);
+}
+.console .bhead .queue .pause button {
+  cursor: pointer;
+  font-size: var(--dm-type-caption);
+  color: var(--light);
+  border-radius: var(--rb);
+}
+.console .bhead .queue .pause .mono {
+  color: var(--t3);
+}
 .console .bhead .plans {
   /* A plan's tasks, counted: one row a plan, the plan's file name and a bar
      with one segment a task, in the plan's own order. It sits under the board's
@@ -241,6 +314,14 @@
 }
 .console .crow .m .age {
   font-variant-numeric: tabular-nums;
+}
+.console .crow .m .q {
+  flex: none;
+  color: var(--t3);
+  font-variant-numeric: tabular-nums;
+}
+.console .crow .m .q.attn {
+  color: var(--attn);
 }
 .console .crow .x {
   grid-column: 2 / -1;

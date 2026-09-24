@@ -421,3 +421,15 @@
 .console .nu-when.nu-stale {
   color: var(--t2);
 }
+
+/* The brief's result links to its run on the Automations screen. */
+.ws-brief .ws-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--light);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}

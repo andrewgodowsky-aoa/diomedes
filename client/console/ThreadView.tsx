@@ -32,6 +32,9 @@ import { ProjectInstructions } from './ProjectInstructions';
 import { FollowUpQueue } from './FollowUpQueue';
 import { StopMenu, StopReceiptLine } from './StopMenu';
 import { NeedBlock } from './Need';
+import { RememberOfferBlock } from './RememberedApprovals';
+import { classifyIntent } from '../../shared/remembered-approvals';
+import type { RememberOffer } from '../../shared/permissions';
 import { ChangeReview } from './ChangeReview';
 import { useWorkingWord, workingLine } from './working-words';
 import { toolRunning, type ToolLine } from './engine-activity';
@@ -140,6 +143,11 @@ interface ThreadViewProps {
   openArtifactKey?: string | null;
   /** The conversation's "···" menu (ThreadMenu.tsx), at the end of the head. */
   menu?: ReactNode;
+  /** Open learned offers (D5) whose approval this thread owns, asked once each. */
+  rememberOffers?: RememberOffer[];
+  onAnswerOffer?(offer: RememberOffer, accept: boolean): void;
+  /** Go ahead on this exact approval and remember it in this project (D5, route 1). */
+  onRemember?(need: Need): void;
 }
 
 /**
@@ -192,6 +200,9 @@ export function ThreadView({
   onOpenArtifact,
   openArtifactKey = null,
   menu = null,
+  rememberOffers = [],
+  onAnswerOffer,
+  onRemember,
 }: ThreadViewProps) {
   const technical = settings.detail === 'technical';
   const permission: ThreadPermission = thread.permission ?? 'show-first';
@@ -559,6 +570,14 @@ export function ThreadView({
                 need={n}
                 session={sessions.find((session) => session.id === n.sessionId)}
                 onScope={onScope}
+                onRemember={
+                  onRemember &&
+                  n.harness &&
+                  n.approval &&
+                  classifyIntent('', n.harness.intent).rememberable
+                    ? () => onRemember(n)
+                    : undefined
+                }
                 decide={(r, a) =>
                   onResolve(
                     n,
@@ -570,6 +589,14 @@ export function ThreadView({
               />
             </div>
           ))}
+          {onAnswerOffer &&
+            rememberOffers.map((offer) => (
+              <RememberOfferBlock
+                key={offer.id}
+                offer={offer}
+                answer={(accept) => onAnswerOffer(offer, accept)}
+              />
+            ))}
           {!thread.turns.length && !live && (
             <div className="greeting" data-thread-point>
               <p>A new thread.</p>

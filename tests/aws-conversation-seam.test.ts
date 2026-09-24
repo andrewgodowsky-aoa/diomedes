@@ -589,7 +589,11 @@ describe('AWS Luna in the actual Diomedes conversation', () => {
       'the Work session to stop',
     );
     expect(stopped.needs.some((need) => need.state === 'open')).toBe(false);
-    const holds = (await view()).spend!.recent;
+    // Stop records the session stopped as it aborts; the aborted call resolves its
+    // hold when it unwinds, a moment later. Wait for that call, not for the session.
+    const { recent: holds } = (
+      await until(view, (value) => value.spend!.recent[0]?.state !== 'pending', 'the stopped call to resolve its hold')
+    ).spend!;
     expect(holds[0]).toMatchObject({ state: 'uncertain' });
 
     await close();

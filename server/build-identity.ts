@@ -115,7 +115,8 @@ export function buildIdentity(input: BuildIdentityInput): BuildIdentity {
     return blank('unreadable-record');
   }
   if (text === null) return blank('development');
-  if (text.length > MAX_BUILD_RECORD_BYTES) return blank('unreadable-record');
+  // The ceiling is the record's size on disk: UTF-8 bytes, not UTF-16 units.
+  if (Buffer.byteLength(text, 'utf8') > MAX_BUILD_RECORD_BYTES) return blank('unreadable-record');
 
   let parsed: unknown;
   try {
