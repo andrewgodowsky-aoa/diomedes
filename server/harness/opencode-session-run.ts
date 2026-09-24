@@ -12,6 +12,7 @@ import {
   type OpenCodeSessionCheckpoint,
 } from '../engines/opencode-session.js';
 import { validateClaudeNativeCheckpoint, type NativeSessionProfile } from './claude-session-run.js';
+import { isAcpProvider, validateAcpNativeCheckpoint } from './acp-session-run.js';
 import { digest, HarnessError } from './policy.js';
 
 export const OPENCODE_SESSION_CAPABILITY: CapabilityManifest = {
@@ -39,6 +40,7 @@ export function validateOpenCodeNativeCheckpoint(value: NativeCheckpoint): Nativ
 /** The host's one checkpoint validator: each provider's checkpoint is read by its own schema. */
 export function validateNativeCheckpoint(value: NativeCheckpoint): NativeCheckpoint {
   if (value.providerId === 'opencode') return validateOpenCodeNativeCheckpoint(value);
+  if (isAcpProvider(value.providerId)) return validateAcpNativeCheckpoint(value);
   return validateClaudeNativeCheckpoint(value);
 }
 

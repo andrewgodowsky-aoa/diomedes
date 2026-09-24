@@ -9,6 +9,8 @@ import type {
   SessionCheckpointFacts,
 } from '../harness/claude-session-run.js';
 import { opencodeSessionRunId } from '../harness/opencode-session-run.js';
+import { acpSessionRunId } from '../harness/acp-session-run.js';
+import type { AcpSessionEngine } from './acp-session.js';
 import { routeContractFor } from '../harness/route-contract.js';
 import { sessionControls } from '../../shared/session-controls.js';
 import type { TextRequest } from './contract.js';
@@ -85,6 +87,30 @@ export function mountOpenCodeSessionRoutes(
       runId: opencodeSessionRunId,
       turn: (mode, runId, input, sourceRunId) => engines.opencodeSession(mode, runId, input, sourceRunId),
       routeId: 'opencode-session',
+    },
+    dependencies,
+  );
+}
+/**
+ * A kept ACP conversation (H05): the same routes under the agent's own base, with
+ * `controls` from its contract (no steer, no fork). A permission ask or plan the
+ * agent presents mid-turn is answered through the ordinary Needs route.
+ */
+export function mountAcpSessionRoutes(
+  app: Express,
+  engines: EngineService,
+  engine: AcpSessionEngine,
+  dependencies: ClaudeSessionRouteDependencies,
+) {
+  mountNativeSessionRoutes(
+    app,
+    {
+      base: `/api/projects/:id/${engine}-sessions`,
+      driver: () => (engine === 'cursor' ? engines.cursorSessions : engines.devinSessions),
+      runId: acpSessionRunId(engine),
+      turn: (mode, runId, input, sourceRunId) =>
+        engines.acpSession(engine, mode, runId, input, sourceRunId),
+      routeId: `${engine}-session`,
     },
     dependencies,
   );

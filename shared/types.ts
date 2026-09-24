@@ -227,6 +227,12 @@ export interface Need {
   /** Optional v1 harness binding. The Need remains the single approval record. */
   harness?: { runId: string; intent: StepIntent };
   /**
+   * A question a kept engine conversation asked mid-turn (H05): an ACP permission
+   * ask or a plan presented for approval. Answered once, by a person, and the
+   * answer goes back to the engine; it never grants anything beyond that one ask.
+   */
+  engineAsk?: EngineAskBinding;
+  /**
    * Bounded reviewer decisions for this proposal, newest last. A reviewer
    * decision is evidence, never a person's approval, and a refusal leaves the
    * proposal open for you rather than deciding it.
@@ -248,6 +254,16 @@ export interface Need {
 export type NeedCheck =
   | { path: string; check: 'svg'; version: number; outcome: 'passed'; sentence: string }
   | { path: string; check: 'none'; outcome: 'unchecked'; sentence: string };
+export interface EngineAskBinding {
+  runId: string;
+  threadId: string;
+  requestId: string;
+  engine: ExternalEngine;
+  kind: 'permission' | 'plan';
+  toolKind?: string;
+  /** After this the question is expired, the engine is told so and the turn stops. */
+  expiresAt: string;
+}
 export interface ApprovalIdentity {
   readonly protocolVersion: 1;
   readonly proposalDigest: string;
