@@ -287,3 +287,215 @@ test('research import requires an unchanged Files import and preserves public pr
     ).status,
   ).toBe(403);
 });
+
+// DIO-84. An observed fact cites an approved file at one SHA. Editing that file
+// normally must not lock the record: History is evidence, so the old fact and
+// its evidence stay exactly as recorded, and the record says the evidence is
+// stale instead of refusing to open.
+interface DiscoveryReply {
+  record: ProspectDiscoveryRecord;
+  staleEvidence: {
+    factId: string;
+    projectId: string;
+    path: string;
+    recordedSha: string;
+    currentSha: string | null;
+  }[];
+}
+async function importedFile(name: string, text: string) {
+  const source = path.join(root, name);
+  await fs.writeFile(source, text);
+  const candidate = await api(`/projects/${project.id}/imports/inspect`, 'POST', { path: source });
+  const imported = await api<{ entryId: string; files: { path: string; sha: string }[] }>(
+    `/projects/${project.id}/imports`,
+    'POST',
+    { files: [candidate] },
+  );
+  return { entryId: imported.entryId, ...imported.files[0]! };
+}
+const observedFrom = (file: { path: string; sha: string }, historyEntryId: string) => ({
+  class: 'observed' as const,
+  evidence: {
+    kind: 'approved-file' as const,
+    projectId: project.id,
+    path: file.path,
+    sha: file.sha,
+    historyEntryId,
+  },
+});
+
+test('listing, correcting and retiring after the evidence file is edited all answer 200 (DIO-84 report)', async () => {
+  const { record } = await created('Harbor Workshop');
+  const file = await importedFile('counts.txt', 'Twelve orders a week\n');
+  const added = await api<DiscoveryReply>(`/discovery/${record.prospectId}/facts`, 'POST', {
+    field: 'observation.orders',
+    label: 'Orders',
+    value: 'Twelve orders a week',
+    provenance: observedFrom(file, file.entryId),
+  });
+  const fact = added.record.facts.at(-1)!;
+  const edited = await api<{ sha: string; entryId: string }>(
+    `/projects/${project.id}/documents/write`,
+    'POST',
+    { path: file.path, text: 'Fifteen orders a week\n', baseSha: file.sha },
+  );
+  const list = (await request('/discovery')).status;
+  const correct = (
+    await request(`/discovery/${record.prospectId}/facts/correct`, 'POST', {
+      factId: fact.id,
+      value: 'Fifteen orders a week',
+      provenance: observedFrom({ path: file.path, sha: edited.sha }, edited.entryId),
+    })
+  ).status;
+  const listed = await request('/discovery');
+  const current = listed.status === 200
+    ? currentFact(((await listed.json()) as DiscoveryReply).record, fact.id).id
+    : fact.id;
+  const retire = (
+    await request(`/discovery/${record.prospectId}/facts/correct`, 'POST', {
+      factId: current,
+      value: null,
+      provenance: { class: 'unknown', reason: 'Retired after the file changed.' },
+    })
+  ).status;
+  expect({ list, correct, retire }).toEqual({ list: 200, correct: 200, retire: 200 });
+});
+
+test('an edited evidence file leaves the record inspectable, correctable and retirable (DIO-84)', async () => {
+  const { record } = await created('Harbor Workshop');
+  const file = await importedFile('counts.txt', 'Twelve orders a week\n');
+  const evidence = observedFrom(file, file.entryId);
+  await api(`/discovery/${record.prospectId}/facts`, 'POST', {
+    field: 'observation.orders',
+    label: 'Orders',
+    value: 'Twelve orders a week',
+    provenance: evidence,
+  });
+  const added = await api<DiscoveryReply>(`/discovery/${record.prospectId}/facts`, 'POST', {
+    field: 'observation.staff',
+    label: 'Staff',
+    value: 'Two people prepare orders',
+    provenance: evidence,
+  });
+  expect(added.staleEvidence ?? []).toEqual([]);
+  const [orders, staff] = added.record.facts.slice(-2);
+
+  // Edit the file normally, through the ordinary recorded write.
+  const edited = await api<{ sha: string; entryId: string }>(
+    `/projects/${project.id}/documents/write`,
+    'POST',
+    { path: file.path, text: 'Fifteen orders a week\n', baseSha: file.sha },
+  );
+  expect(edited.sha).not.toBe(file.sha);
+
+  // Listing succeeds and names the stale evidence, recorded against current.
+  const listed = await api<DiscoveryReply>('/discovery');
+  expect(listed.record.facts).toEqual(added.record.facts);
+  const stale = (factId: string) => ({
+    factId,
+    projectId: project.id,
+    path: file.path,
+    recordedSha: file.sha,
+    currentSha: edited.sha,
+  });
+  expect(listed.staleEvidence).toEqual([stale(orders!.id), stale(staff!.id)]);
+
+  // New observations stay strict: the old SHA is not fresh evidence.
+  const refused = await request(`/discovery/${record.prospectId}/facts/correct`, 'POST', {
+    factId: orders!.id,
+    value: 'Fifteen orders a week',
+    provenance: evidence,
+  });
+  expect(refused.status).toBe(403);
+  expect(await refused.json()).toMatchObject({ code: 'unverified_observed_evidence' });
+
+  // Correcting with fresh evidence from the edit works, and appends.
+  const fresh = observedFrom({ path: file.path, sha: edited.sha }, edited.entryId);
+  const corrected = await api<DiscoveryReply>(
+    `/discovery/${record.prospectId}/facts/correct`,
+    'POST',
+    { factId: orders!.id, value: 'Fifteen orders a week', provenance: fresh },
+  );
+  const replacement = corrected.record.facts.at(-1)!;
+  expect(replacement).toMatchObject({
+    replacesFactId: orders!.id,
+    value: 'Fifteen orders a week',
+    provenance: fresh,
+  });
+  // The earlier fact and its evidence are untouched history.
+  expect(corrected.record.facts.find((fact) => fact.id === orders!.id)).toEqual(orders);
+  expect(corrected.staleEvidence.map((item) => item.factId)).toEqual([orders!.id, staff!.id]);
+
+  // Retiring works whatever the evidence says.
+  const retired = await api<DiscoveryReply>(`/discovery/${record.prospectId}/facts/correct`, 'POST', {
+    factId: staff!.id,
+    value: null,
+    provenance: { class: 'unknown', reason: 'The owner no longer tracks this.' },
+  });
+  expect(retired.record.facts.at(-1)).toMatchObject({ replacesFactId: staff!.id, value: null });
+  expect(retired.record.facts.find((fact) => fact.id === staff!.id)).toEqual(staff);
+
+  // Still readable after a restart, with the same stale reading.
+  await stop();
+  await start();
+  const reopened = await api<DiscoveryReply>('/discovery');
+  expect(reopened.record).toEqual(retired.record);
+  expect(reopened.staleEvidence).toEqual([stale(orders!.id), stale(staff!.id)]);
+});
+
+test('evidence from an edit that a later quick edit folded into stays inspectable (DIO-84)', async () => {
+  const { record } = await created('Harbor Workshop');
+  const createdEntry = await api<{ id: string }>(`/projects/${project.id}/documents/create`, 'POST', {
+    path: 'Notes/visit.md',
+    text: 'Owner copies totals by hand.\n',
+  });
+  const first = await api<{ sha: string }>(
+    `/projects/${project.id}/documents/read?path=Notes%2Fvisit.md`,
+  );
+  const evidence = observedFrom({ path: 'Notes/visit.md', sha: first.sha }, createdEntry.id);
+  const added = await api<DiscoveryReply>(`/discovery/${record.prospectId}/facts`, 'POST', {
+    field: 'observation.copying',
+    label: 'Copying',
+    value: 'Totals are copied by hand',
+    provenance: evidence,
+  });
+  const fact = added.record.facts.at(-1)!;
+  // A second edit inside ten minutes folds into the same History entry.
+  const edited = await api<{ sha: string; entryId: string }>(
+    `/projects/${project.id}/documents/write`,
+    'POST',
+    { path: 'Notes/visit.md', text: 'Owner copies totals by hand, twice.\n', baseSha: first.sha },
+  );
+  expect(edited.entryId).toBe(createdEntry.id);
+  const listed = await api<DiscoveryReply>('/discovery');
+  expect(listed.record.facts.at(-1)).toEqual(fact);
+  expect(listed.staleEvidence).toEqual([
+    {
+      factId: fact.id,
+      projectId: project.id,
+      path: 'Notes/visit.md',
+      recordedSha: first.sha,
+      currentSha: edited.sha,
+    },
+  ]);
+});
+
+test('stored evidence that never checked out still refuses the record (DIO-84 boundary)', async () => {
+  const { record } = await created('Harbor Workshop');
+  const file = await importedFile('counts.txt', 'Twelve orders a week\n');
+  await api(`/discovery/${record.prospectId}/facts`, 'POST', {
+    field: 'observation.orders',
+    label: 'Orders',
+    value: 'Twelve orders a week',
+    provenance: observedFrom(file, file.entryId),
+  });
+  // Rewrite the stored record so its evidence cites a History entry that does not exist.
+  await stop();
+  const stored = path.join(root, 'data', 'prospects', 'discovery', `${record.prospectId}.json`);
+  const text = await fs.readFile(stored, 'utf8');
+  await fs.writeFile(stored, text.replace(file.entryId, 'E-invented'));
+  await start();
+  const response = await request('/discovery');
+  expect(response.status).toBe(409);
+  expect(await response.json()).toMatchObject({ code: 'invalid_observed_evidence' });
+});

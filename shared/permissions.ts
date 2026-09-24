@@ -3,6 +3,7 @@ import {
   type FullAccessEligibility,
   type IsolatedEnvironment,
 } from './capabilities.js';
+import type { ApprovalPattern, RememberRoute } from './remembered-approvals.js';
 
 /**
  * Reviewer routing is a separate axis from access scope.
@@ -351,4 +352,136 @@ export function describePermissionChoices(input: {
     },
   ];
   return { choices, fullAccess };
+}
+
+/*
+ * Remembered approvals (work order D5). The same grant model as the task scope
+ * above, generalised: an engine-agnostic exact-pattern grant, protocol version
+ * 3, beside the version 2 Codex task scope. Version 2 records are kept exactly
+ * as written (their digest binds recorded authorizations and reviewer
+ * decisions), so a project written before this carries forward unchanged.
+ */
+export type { ApprovalPattern, RememberRoute };
+
+/** The on-disk format of `ProjectState.rememberedApprovals`. Unknown versions are refused. */
+export const REMEMBERED_APPROVALS_FORMAT = 1;
+/** An exact-pattern grant. Follows the version 2 task scope; never rewrites one. */
+export const PATTERN_GRANT_VERSION = 3;
+
+/** Who a remembered approval rests on: the person who clicked and the authority current then. */
+export interface PatternGrantAuthority {
+  /** The harness principal the approval decided under. */
+  readonly principalId: string;
+  /** A later rotation or revocation of that principal asks again. */
+  readonly identityGeneration: number;
+  /** The permission the pattern's action needs; losing it asks again. */
+  readonly permission: string;
+}
+
+export interface PatternGrant {
+  readonly protocolVersion: 3;
+  readonly kind: 'remembered-approval';
+  readonly id: string;
+  readonly projectId: string;
+  readonly tenantId: null;
+  readonly issuer: {
+    readonly actor: 'local-client';
+    readonly assurance: 'loopback';
+    readonly authenticated: false;
+    readonly deviceId: null;
+    readonly sessionId: null;
+  };
+  /** Who accepted, in the words attribution uses. The local prototype knows only "you". */
+  readonly acceptedBy: 'you';
+  readonly route: RememberRoute;
+  readonly pattern: ApprovalPattern;
+  readonly patternDigest: string;
+  /** The exact action in the person's words. */
+  readonly what: string;
+  readonly authority: PatternGrantAuthority;
+  /** The exact approval (route 1) or the offer and its count (route 2) this rests on. */
+  readonly basis: {
+    readonly needId: string | null;
+    readonly offerId: string | null;
+    readonly approvals: number;
+  };
+  readonly createdAt: string;
+  readonly eventId: string;
+}
+export interface PatternGrantRecord {
+  grant: PatternGrant;
+  /** 0 while live. Revocation advances it and nothing ever moves it back. */
+  generation: number;
+  revokedAt: string | null;
+  revokedEventId: string | null;
+}
+/** Counts identical exact approvals per pattern. A learning aid, never authority. */
+export interface ApprovalTally {
+  patternDigest: string;
+  approvals: number;
+  lastApprovedAt: string;
+}
+/** A learned offer, asked once. Its answer is remembered: a declined offer never returns. */
+export interface RememberOffer {
+  id: string;
+  patternDigest: string;
+  pattern: ApprovalPattern;
+  what: string;
+  authority: PatternGrantAuthority;
+  approvals: number;
+  /** The approval that reached the threshold, so the offer appears where it was given. */
+  needId: string;
+  sessionId: string;
+  taskId: string;
+  offeredAt: string;
+  state: 'open' | 'accepted' | 'declined';
+  decidedAt: string | null;
+  /** The History entry recording the answer. */
+  eventId: string | null;
+  grantId: string | null;
+}
+export interface RememberedApprovals {
+  formatVersion: 1;
+  grants: PatternGrantRecord[];
+  tallies: ApprovalTally[];
+  offers: RememberOffer[];
+}
+/**
+ * The evidence on a Need that a remembered approval covered it. It is never an
+ * exact-approval receipt and never carries a reviewer: nobody clicked this
+ * time, and the attribution says whose earlier click it rests on.
+ */
+export interface RememberedAuthorization {
+  readonly protocolVersion: 3;
+  readonly kind: 'remembered-approval';
+  readonly id: string;
+  readonly grantId: string;
+  readonly grantDigest: string;
+  readonly grantGeneration: number;
+  readonly patternDigest: string;
+  readonly projectId: string;
+  readonly taskId: string;
+  readonly sessionId: string;
+  readonly approvalId: string;
+  readonly proposalDigest: string;
+  readonly actionDigest: string;
+  readonly baseDigest: string;
+  readonly engine: string;
+  readonly accountRoute: string | null;
+  readonly acceptedBy: 'you';
+  readonly acceptedAt: string;
+  readonly route: RememberRoute;
+  readonly authorizedAt: string;
+  readonly eventId: string;
+  /** Never present: a remembered approval is not a reviewer decision. */
+  readonly reviewId?: never;
+}
+export interface PatternGrantView extends PatternGrantRecord {
+  active: boolean;
+  reason: string;
+}
+export interface RememberedApprovalsView {
+  grants: PatternGrantView[];
+  offers: RememberOffer[];
+  threshold: number;
 }

@@ -10,6 +10,11 @@ import type {
   TaskScopeGrant,
 } from '../../shared/permissions.js';
 import { usableApproval, validateReviewerDecisions } from './reviewer.js';
+import {
+  RememberedApprovals,
+  validateRememberedApprovals,
+  validateRememberedAuthorization,
+} from './remembered-approvals.js';
 import { commandIdSchema, digestSchema, findCommand, payloadDigest } from '../command-admission.js';
 import {
   ApiError,
@@ -188,7 +193,14 @@ export class ScopeGrants {
     role: string;
     ceiling: string;
   } | null>;
-  constructor(private readonly store: Store) {}
+  /**
+   * Remembered approvals (D5): the engine-agnostic exact-pattern grants that
+   * share this model's evidence, revocation and validation rules.
+   */
+  readonly remembered: RememberedApprovals;
+  constructor(private readonly store: Store) {
+    this.remembered = new RememberedApprovals(store);
+  }
 
   view(projectId: string) {
     return (this.store.state(projectId).scopeGrants ?? []).map((record) => {
@@ -460,7 +472,11 @@ export class ScopeGrants {
       await projectFile(state.project.folder, name);
     }
     const used = state.needs.flatMap((item) =>
-      item.authorization?.grantId === grant.id && item.id !== need.id ? [item.authorization] : [],
+      item.authorization?.kind === 'scope-grant' &&
+      item.authorization.grantId === grant.id &&
+      item.id !== need.id
+        ? [item.authorization]
+        : [],
     );
     const writesUsed = used.reduce((n, item) => n + item.writes, 0);
     const bytesUsed = used.reduce((n, item) => n + item.bytes, 0);
@@ -482,7 +498,11 @@ export class ScopeGrants {
     const used = this.store
       .state(projectId)
       .needs.flatMap((item) =>
-        item.authorization?.grantId === grantId && item.id !== needId ? [item.authorization] : [],
+        item.authorization?.kind === 'scope-grant' &&
+        item.authorization.grantId === grantId &&
+        item.id !== needId
+          ? [item.authorization]
+          : [],
       );
     return {
       writes: Math.max(0, grant.budget.maxWrites - used.reduce((n, item) => n + item.writes, 0)),
@@ -585,8 +605,11 @@ export class ScopeGrants {
     return true;
   }
   async assertCurrent(projectId: string, need: Need, writes: readonly WriteInput[]) {
+    // One write-time funnel for every delegated decision the Store honours.
+    if (need.authorization?.kind === 'remembered-approval')
+      return this.remembered.assertCurrent(projectId, need);
     validateScopedAuthorization(this.store.state(projectId), need);
-    const evidence = need.authorization!;
+    const evidence = need.authorization as ScopedAuthorization;
     const record = this.store
       .state(projectId)
       .scopeGrants?.find((item) => item.grant.id === evidence.grantId);
@@ -606,6 +629,8 @@ export class ScopeGrants {
  * the saved state is never rewritten, trimmed, or broadened here.
  */
 export function validateScopeGrants(state: ProjectState) {
+  // The remembered-approval ledger is the same grant model's version 3 form.
+  validateRememberedApprovals(state);
   const grants = state.scopeGrants;
   if (grants === undefined) return;
   const incompatible = () => {
@@ -664,7 +689,9 @@ export function validateScopeGrants(state: ProjectState) {
 
 /** Validates historical evidence without resurrecting its authority. */
 export function validateScopedAuthorization(state: ProjectState, need: Need) {
-  const evidence = need.authorization;
+  if (need.authorization?.kind === 'remembered-approval')
+    return validateRememberedAuthorization(state, need);
+  const evidence = need.authorization as ScopedAuthorization | undefined;
   const record = state.scopeGrants?.find((item) => item.grant.id === evidence?.grantId);
   const event = state.history.find((item) => item.id === evidence?.eventId);
   const session = state.sessions.find((item) => item.id === need.sessionId);

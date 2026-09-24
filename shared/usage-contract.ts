@@ -106,7 +106,8 @@ function rawOf(value: unknown): { raw: RawUsageEvidence | null } | { reason: str
   if (!isPlainObject(value) || !isJson(value))
     return { reason: 'The raw usage evidence is not a plain JSON object.' };
   const text = JSON.stringify(value);
-  if (text.length > MAX_RAW_USAGE_BYTES)
+  // Serialized UTF-8 bytes, not UTF-16 units. TextEncoder, because the client bundles this module.
+  if (new TextEncoder().encode(text).byteLength > MAX_RAW_USAGE_BYTES)
     return { reason: 'The raw usage evidence is too large to keep.' };
   return { raw: JSON.parse(text) as RawUsageEvidence };
 }

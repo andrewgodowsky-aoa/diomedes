@@ -525,7 +525,10 @@ describe('every installation is a candidate, and one failure hides nothing', () 
     expect(value.candidates?.[0].sha256).toBe(digestOf(odd));
   });
 
-  it('records one digest per file and does not re-hash an unchanged one', async () => {
+  // DIO-86. This test used to assert the opposite: that a same-length change
+  // with the modification time put back reused the earlier digest. Identity is
+  // the bytes, so the digest is read from the bytes on every look.
+  it('records the digest of the bytes on disk, even when size and modification time are preserved', async () => {
     const file = place(path.join(root(), 'tools', 'opencode.exe'), 'first bytes!');
     const stamp = new Date(1_700_000_000_000);
     fs.utimesSync(file, stamp, stamp);
@@ -533,12 +536,52 @@ describe('every installation is a candidate, and one failure hides nothing', () 
     await h.service.discover(true);
     const first = connection(h.service, 'opencode').candidates![0].sha256;
     expect(first).toBe(digestOf(file));
-    // Same path, same size, same modification time: nothing is read again.
+    // An unchanged file reads back the same digest.
+    await h.service.discover(true);
+    expect(connection(h.service, 'opencode').candidates![0].sha256).toBe(first);
+    // Same path, same size, same modification time, different bytes.
     fs.writeFileSync(file, 'other bytes!');
     fs.utimesSync(file, stamp, stamp);
+    expect(fs.statSync(file).size).toBe('first bytes!'.length);
+    expect(fs.statSync(file).mtimeMs).toBe(stamp.getTime());
     await h.service.discover(true);
-    // Same path, same size, same modification time: the recorded digest is reused.
-    expect(connection(h.service, 'opencode').candidates![0].sha256).toBe(first);
+    const second = connection(h.service, 'opencode').candidates![0].sha256;
+    expect(second).toBe(digestOf(file));
+    expect(second).not.toBe(first);
+  });
+
+  it('moves the bound identity to the new bytes when a same-length change keeps size and modification time (DIO-86)', async () => {
+    const serviceRoot = root();
+    const file = place(path.join(root(), 'chosen', 'opencode.exe'), 'the copy they picked');
+    const stamp = new Date(1_700_000_000_000);
+    fs.utimesSync(file, stamp, stamp);
+    const h = host({ system: [{ file }], service: serviceRoot });
+    await h.service.discover(true);
+    const id = connection(h.service, 'opencode').recommendedCandidateId!;
+    await h.service.bind('opencode', id);
+    const before = new BindingStore(serviceRoot).get('opencode')!;
+    expect(before.binding.sha256).toBe(digestOf(file));
+    // Replaced in place: same length, modification time restored.
+    fs.writeFileSync(file, 'a copy nobody picked');
+    fs.utimesSync(file, stamp, stamp);
+    expect(fs.statSync(file).size).toBe('the copy they picked'.length);
+    expect(fs.statSync(file).mtimeMs).toBe(stamp.getTime());
+    await h.service.discover(true);
+    const value = connection(h.service, 'opencode');
+    expect(value.candidates![0].sha256).toBe(digestOf(file));
+    expect(value.binding).toMatchObject({ id, sha256: digestOf(file) });
+    // The binding record, and the revision key a receipt is checked against,
+    // now name the new bytes rather than the ones that were bound.
+    const after = new BindingStore(serviceRoot).get('opencode')!;
+    expect(after.binding.sha256).toBe(digestOf(file));
+    expect(after.binding.sha256).not.toBe(before.binding.sha256);
+    expect(after.key).not.toBe(before.key);
+    expect(after.key).toContain(digestOf(file));
+    // Re-binding the same installation binds the bytes that are there now.
+    await h.service.bind('opencode', id);
+    expect(new BindingStore(serviceRoot).get('opencode')!.binding.sha256).toBe(digestOf(file));
+    // Nothing was launched: the version answer is the test's own.
+    expect(h.version).toHaveBeenCalled();
   });
 
   it('shares one run between two simultaneous scans of the same scope', async () => {
