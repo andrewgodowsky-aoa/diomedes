@@ -1025,6 +1025,12 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
     /** In-process host grant check. Never accepted from renderer/request JSON. */
     beforeDispatch?: (identity: CodexDispatchIdentity) => Promise<void>;
     /**
+     * Told the ChatGPT account route this turn is prepared under (a hash of
+     * nonsecret account metadata, read from the runtime) just before the turn
+     * is sent, so a caller can tell an account switch. Set only by the host.
+     */
+    onAccountRoute?: (accountRoute: string) => void;
+    /**
      * Read-only tools for a person's own Ask or Plan turn (engines/read-scope.ts):
      * the thread works in the project folder under the read-only sandbox, with
      * web search and approved MCP read tools. Set only by the host. Never with
@@ -1618,6 +1624,7 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
       // disconnect during turn/start cannot become an unhandled rejection.
       void completed.catch(() => {});
       await checkDispatch();
+      input.onAccountRoute?.(accountRoute);
       const turnAck = await ownedClient.request('turn/start', {
         threadId,
         input: [{ type: 'text', text: prompt, text_elements: [] }],

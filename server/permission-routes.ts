@@ -146,9 +146,15 @@ export function mountPermissionRoutes(
       typeof (input as { needId: unknown }).needId !== 'string'
     )
       throw new ApiError(400, 'Name the approval you just gave to remember it.');
-    if (!bridge) throw new ApiError(503, 'Remembered approvals are not available on this host.');
     const projectId = String(req.params.id);
     const needId = (input as { needId: string }).needId;
+    // A Codex direct text proposal is remembered by Native Work; a harness step by the bridge.
+    const need = store.state(projectId).needs.find((item) => item.id === needId);
+    if (need && !need.harness) {
+      res.json(await store.locked(() => nativeWork.remember(projectId, needId)));
+      return;
+    }
+    if (!bridge) throw new ApiError(503, 'Remembered approvals are not available on this host.');
     res.json(await store.locked(() => bridge.remember(projectId, needId)));
   });
   app.post(`${remembered}/offers/:offerId/accept`, async (req, res) => {
