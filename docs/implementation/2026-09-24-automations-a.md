@@ -310,4 +310,21 @@ unchanged.
 
 ## BUILD STATUS
 
-Filled in from the final run before the last push; see the lane's final report for the exact counts.
+From this lane's own final run, on the branch after merging `origin/main` `de86916`, on the Linux
+sprint container (CI runs Windows and macOS):
+
+- `npx tsc --noEmit`: clean.
+- vitest (full suite, `--maxWorkers=2`): 351 files passed, 1 skipped; 6194 tests passed, 16 skipped,
+  0 failed.
+- `npx vite build`: built.
+- Playwright gates `ui.spec.ts` + `native-ui.spec.ts` + `field.spec.ts`: 36 passed (17 + 11 + 8), 0
+  failed.
+- New and changed specs: `automations.spec.ts` 2 passed; `file-imports-ui.spec.ts` 1 passed;
+  `diomedes-home.spec.ts` 33 passed on a rerun. In two runs under a load average near 7 on four CPUs,
+  its two-window race test `CD05-R-10: concurrent first sends adopt one project thread` failed (the
+  file is serial, so the rest were skipped); it passes alone, together with the edited first test, and
+  in the full-file rerun, and it does not touch Automations. Recorded as load-sensitive, not fixed here.
+- Also run while iterating: `allowance-ui`, `configuration-ui`, `workspace-ui` and `fd03-readiness`
+  specs, all passed.
+
+Publication: branch pushed; no pull request, merge, release or deployment by this lane.
