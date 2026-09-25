@@ -92,6 +92,7 @@ const MESSAGE_ROLES = ['developer', 'system', 'user', 'assistant'];
 const MESSAGE_PARTS = ['input_text', 'output_text', 'input_image'];
 const TOOL_OUTPUT_PARTS = ['input_text', 'input_image'];
 const DATA_IMAGE = /^data:image\/[A-Za-z0-9.+-]{1,64};base64,[A-Za-z0-9+/]*={0,2}$/;
+const IMAGE_DETAIL = ['low', 'high', 'auto'];
 const TOOL_NAME = /^[A-Za-z0-9_-]{1,64}$/;
 const MAX_TOOLS = 64;
 const MAX_TOOL_BYTES = 16_384;
@@ -101,10 +102,15 @@ function part(value: unknown, field: string, allowed: readonly string[]) {
   if (typeof value.type !== 'string') return invalid(at(field, 'type'), `${at(field, 'type')} must be text.`);
   if (!allowed.includes(value.type)) unsupported(at(field, 'type'), `Nectovia’s managed model service does not accept ${value.type} content (${at(field, 'type')}).`);
   if (value.type === 'input_image') {
-    only(value, field, ['type', 'image_url']);
+    only(value, field, ['type', 'image_url', 'detail']);
     if (typeof value.image_url !== 'string') return invalid(at(field, 'image_url'), `${at(field, 'image_url')} must be an inline data: image.`);
     if (!DATA_IMAGE.test(value.image_url))
       unsupported(at(field, 'image_url'), `Only inline data: images are accepted, so ${at(field, 'image_url')} was refused; a remote image is never fetched.`);
+    if (value.detail !== undefined) {
+      if (typeof value.detail !== 'string') return invalid(at(field, 'detail'), `${at(field, 'detail')} must be low, high or auto.`);
+      if (!IMAGE_DETAIL.includes(value.detail))
+        unsupported(at(field, 'detail'), `${at(field, 'detail')} ${value.detail} is not accepted; use low, high or auto.`);
+    }
     return;
   }
   only(value, field, ['type', 'text']);
@@ -115,10 +121,15 @@ function item(value: unknown, field: string) {
   if (!isObject(value)) return invalid(field, `${field} must be an input item.`);
   const type = value.type;
   if (type === undefined || type === 'message') {
-    only(value, field, ['type', 'role', 'content']);
+    only(value, field, ['type', 'role', 'content', 'phase']);
     if (typeof value.role !== 'string') return invalid(at(field, 'role'), `${at(field, 'role')} must be text.`);
     if (!MESSAGE_ROLES.includes(value.role))
       unsupported(at(field, 'role'), `Nectovia’s managed model service does not accept a ${value.role} message (${at(field, 'role')}).`);
+    if (value.phase !== undefined) {
+      if (value.role !== 'assistant') unsupported(at(field, 'phase'), `Only an assistant message carries a phase, so ${at(field, 'phase')} was refused.`);
+      if (typeof value.phase !== 'string' || value.phase.length > 32)
+        invalid(at(field, 'phase'), `${at(field, 'phase')} must be text of at most 32 characters.`);
+    }
     if (typeof value.content === 'string') return;
     if (!Array.isArray(value.content)) return invalid(at(field, 'content'), `${at(field, 'content')} must be text or a list of content parts.`);
     value.content.forEach((entry, index) => part(entry, `${field}.content[${index}]`, MESSAGE_PARTS));
@@ -244,8 +255,10 @@ function validate(value: unknown): ResponsesBody {
     if (!isObject(format)) return invalid('text.format', 'text.format must be an object.');
     if (format.type === 'text') only(format, 'text.format', ['type']);
     else if (format.type === 'json_schema') {
-      only(format, 'text.format', ['type', 'name', 'schema', 'strict']);
+      only(format, 'text.format', ['type', 'name', 'schema', 'strict', 'description']);
       if (typeof format.name !== 'string' || !TOOL_NAME.test(format.name)) invalid('text.format.name', 'text.format.name must be a short name of letters, digits, _ or -.');
+      if (format.description !== undefined && (typeof format.description !== 'string' || format.description.length > 1_000))
+        invalid('text.format.description', 'text.format.description must be text of at most 1,000 characters.');
       if (!isObject(format.schema)) invalid('text.format.schema', 'text.format.schema must be a JSON schema object.');
       if (format.strict !== undefined && typeof format.strict !== 'boolean') invalid('text.format.strict', 'text.format.strict must be true or false.');
     } else if (typeof format.type === 'string') unsupported('text.format.type', `text.format.type ${format.type} is not accepted; use text or json_schema.`);

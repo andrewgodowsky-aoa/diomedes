@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createOpenAI } from '@ai-sdk/openai';
-import { jsonSchema, stepCountIs, streamText, tool, type ModelMessage } from 'ai';
+import { OpenAIResponsesLanguageModel } from '@ai-sdk/openai/internal';
+import { jsonSchema, Output, stepCountIs, streamText, tool, type ModelMessage } from 'ai';
 import { validateResponsesBody } from '../src/managed-inference.js';
 import { MANAGED_PROVIDERS, scriptedResponsesFetch } from '../src/managed-providers.js';
 
@@ -32,7 +33,7 @@ function capturing() {
     return scripted(input, init);
   }) as typeof globalThis.fetch;
   const model = createOpenAI({ name: 'nectovia', baseURL: 'http://faux.local/managed/v1', apiKey: 'placeholder', fetch }).responses(MODEL);
-  return { bodies, model };
+  return { bodies, model, fetch };
 }
 
 const readFile = tool({
@@ -98,6 +99,42 @@ describe('the body the real SDK sends is inside the allowlist', () => {
     expect(validateResponsesBody({ ...bodies[1], text: { format: { type: 'json_schema', name: 'answer', schema: { type: 'object' }, strict: true } } }))
       .toMatchObject({ ok: true });
   });
+
+  it('accepts what the SDK sends for an image detail, an assistant phase, a json_schema description and explicit message types', async () => {
+    const { bodies, fetch } = capturing();
+    // createOpenAI never sets explicitMessageItemType; the responses model the SDK exports for other hosts does.
+    const model = new OpenAIResponsesLanguageModel(MODEL, {
+      provider: 'nectovia.responses', url: ({ path }) => `http://faux.local/managed/v1${path}`,
+      headers: () => ({ authorization: 'Bearer placeholder' }), fetch, explicitMessageItemType: true,
+    });
+    const result = streamText({
+      model,
+      system: 'You are the Nectovia agent for Juniper Street Bakery.',
+      messages: [
+        { role: 'user', content: [
+          { type: 'text', text: 'What is in this photo?' },
+          { type: 'file', data: new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]), mediaType: 'image/png', providerOptions: { openai: { imageDetail: 'high' } } },
+        ] },
+        { role: 'assistant', content: [{ type: 'text', text: 'A loaf of rye.', providerOptions: { openai: { phase: 'final_answer' } } }] },
+        { role: 'user', content: 'Answer as JSON.' },
+      ],
+      output: Output.object({
+        schema: jsonSchema({ type: 'object', properties: { answer: { type: 'string' } }, required: ['answer'], additionalProperties: false }),
+        name: 'answer', description: 'The answer, in one field.',
+      }),
+      maxRetries: 0, stopWhen: stepCountIs(1), providerOptions: AWS_BINDING_PROVIDER_OPTIONS as never,
+    });
+    // The scripted answer is not JSON; only the request matters here, so the output is never parsed.
+    await result.text;
+    expect(bodies).toHaveLength(1);
+    const [body] = bodies;
+    expect(validateResponsesBody(body)).toMatchObject({ ok: true });
+    const input = body.input as Record<string, unknown>[];
+    expect(input.map((item) => `${String(item.type)}:${String(item.role)}`)).toEqual(['message:developer', 'message:user', 'message:assistant', 'message:user']);
+    expect((input[1].content as Record<string, unknown>[])[1]).toMatchObject({ type: 'input_image', detail: 'high' });
+    expect(input[2]).toMatchObject({ type: 'message', role: 'assistant', content: 'A loaf of rye.', phase: 'final_answer' });
+    expect(body.text).toMatchObject({ format: { type: 'json_schema', name: 'answer', description: 'The answer, in one field.' } });
+  });
 });
 
 const base = () => ({
@@ -124,7 +161,6 @@ describe('everything outside the allowlist is refused by name', () => {
     ['a reasoning summary', { reasoning: { effort: 'low', summary: 'auto' } }, 'reasoning.summary'],
     ['text verbosity', { text: { format: { type: 'text' }, verbosity: 'low' } }, 'text.verbosity'],
     ['json_object output', { text: { format: { type: 'json_object' } } }, 'text.format.type'],
-    ['a json_schema description', { text: { format: { type: 'json_schema', name: 'a', schema: {}, description: 'x' } } }, 'text.format.description'],
   ])('refuses %s', (_label, extra, field) => {
     expect(refusal({ ...base(), ...extra })).toMatchObject({ ok: false, code: 'unsupported_field', field });
   });
@@ -134,12 +170,15 @@ describe('everything outside the allowlist is refused by name', () => {
     ['a file input', { role: 'user', content: [{ type: 'input_file', file_id: 'file-1' }] }, 'input[0].content[0].type'],
     ['an uploaded image id', { role: 'user', content: [{ type: 'input_image', file_id: 'file-1' }] }, 'input[0].content[0].file_id'],
     ['a remote image URL', { role: 'user', content: [{ type: 'input_image', image_url: 'https://example.test/cat.png' }] }, 'input[0].content[0].image_url'],
-    ['an image detail', { role: 'user', content: [{ type: 'input_image', image_url: 'data:image/png;base64,AAAA', detail: 'high' }] }, 'input[0].content[0].detail'],
     ['a tool role', { role: 'tool', content: 'x' }, 'input[0].role'],
-    ['a message phase', { role: 'assistant', content: 'Done.', phase: 'final_answer' }, 'input[0].phase'],
     ['a message id', { type: 'message', id: 'msg_1', role: 'assistant', content: 'Done.' }, 'input[0].id'],
     ['a namespaced call', { type: 'function_call', call_id: 'c', name: 'n', arguments: '{}', namespace: 'x' }, 'input[0].namespace'],
     ['an async call', { type: 'function_call', call_id: 'c', name: 'n', arguments: '{}', async: true }, 'input[0].async'],
+    ['a call with a caller', { type: 'function_call', call_id: 'c', name: 'n', arguments: '{}', caller: { type: 'x' } }, 'input[0].caller'],
+    ['a prompt cache breakpoint on a message', { role: 'user', content: 'Hello.', prompt_cache_breakpoint: { type: 'ephemeral' } }, 'input[0].prompt_cache_breakpoint'],
+    ['a prompt cache breakpoint on a content part', { role: 'user', content: [{ type: 'input_text', text: 'Hello.', prompt_cache_breakpoint: { type: 'ephemeral' } }] }, 'input[0].content[0].prompt_cache_breakpoint'],
+    ['a phase on a user message', { role: 'user', content: 'Hello.', phase: 'final_answer' }, 'input[0].phase'],
+    ['an image detail outside low, high and auto', { role: 'user', content: [{ type: 'input_image', image_url: 'data:image/png;base64,AAAA', detail: 'original' }] }, 'input[0].content[0].detail'],
     ['reasoning without encrypted content', { type: 'reasoning', id: 'rs_1', summary: [] }, 'input[0].encrypted_content'],
     ['a web search call', { type: 'web_search_call', id: 'ws_1', status: 'completed' }, 'input[0].type'],
     ['a remote image in a tool result', { type: 'function_call_output', call_id: 'c', output: [{ type: 'input_image', image_url: 'http://example.test/a.png' }] }, 'input[0].output[0].image_url'],
@@ -178,6 +217,27 @@ describe('everything outside the allowlist is refused by name', () => {
     expect(refusal({ ...base(), max_output_tokens: 1.5 })).toMatchObject({ code: 'invalid_body', field: 'max_output_tokens' });
     expect(refusal({ ...base(), instructions: 7 })).toMatchObject({ code: 'invalid_body', field: 'instructions' });
     expect(refusal({ ...base(), input: [{ role: 'user', content: [{ type: 'input_text', text: 3 }] }] })).toMatchObject({ code: 'invalid_body', field: 'input[0].content[0].text' });
+  });
+
+  it('accepts the revision 2 clarifications: an assistant phase, an image detail, a json_schema description and an explicit message type', () => {
+    const image = (detail: string) => ({ type: 'input_image', image_url: 'data:image/png;base64,AAAA', detail });
+    expect(validateResponsesBody({ ...base(), input: [
+      { type: 'message', role: 'user', content: [image('low'), image('high'), image('auto')] },
+      { type: 'message', role: 'assistant', content: 'Done.', phase: 'final_answer' },
+      { role: 'assistant', content: 'Thinking aloud.', phase: 'x'.repeat(32) },
+      { type: 'function_call_output', call_id: 'c', output: [image('high')] },
+    ] })).toMatchObject({ ok: true });
+    expect(validateResponsesBody({ ...base(), text: { format: { type: 'json_schema', name: 'answer', schema: { type: 'object' }, description: 'd'.repeat(1_000) } } }))
+      .toMatchObject({ ok: true });
+  });
+
+  it('bounds the clarifications: phase text of at most 32 characters, detail and description as text', () => {
+    expect(refusal({ ...base(), input: [{ role: 'assistant', content: 'Done.', phase: 'x'.repeat(33) }] })).toMatchObject({ code: 'invalid_body', field: 'input[0].phase' });
+    expect(refusal({ ...base(), input: [{ role: 'assistant', content: 'Done.', phase: 3 }] })).toMatchObject({ code: 'invalid_body', field: 'input[0].phase' });
+    expect(refusal({ ...base(), input: [{ role: 'user', content: [{ type: 'input_image', image_url: 'data:image/png;base64,AAAA', detail: 7 }] }] }))
+      .toMatchObject({ code: 'invalid_body', field: 'input[0].content[0].detail' });
+    expect(refusal({ ...base(), text: { format: { type: 'json_schema', name: 'a', schema: {}, description: 'd'.repeat(1_001) } } }))
+      .toMatchObject({ code: 'invalid_body', field: 'text.format.description' });
   });
 
   it('keeps each refusal a plain sentence that names the field', () => {
