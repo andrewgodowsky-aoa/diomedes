@@ -127,6 +127,7 @@ export default defineConfig({
     'native-loop-ui.spec.ts',
     'h15-supervision.spec.ts',
     'review-diffs-ui.spec.ts',
+    'guidance-maintenance-ui.spec.ts',
     'cd05-zoom-motion.spec.ts',
   ],
   fullyParallel: false,

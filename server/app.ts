@@ -144,6 +144,7 @@ import {
 import { SupervisionService } from './supervision/service.js';
 import { keepPartially } from './change-review/partial-keep.js';
 import { documentDiff, ReviewComments } from './review-comments.js';
+import { mountGuidanceRoutes } from './guidance.js';
 import { ReadyScheduler } from './ready-scheduler.js';
 import { DesktopConnections } from './connections/desktop.js';
 import { toastConnector } from './connections/fixture.js';
@@ -1974,6 +1975,8 @@ export async function createApp(options: AppOptions) {
    * lifecycle (`server/pack-routes.ts`). Activation is not authorization.
    */
   mountPackRoutes(app, { store, route, body });
+  // H10: guidance proposals from evidence, signed instruction revisions and rollback.
+  mountGuidanceRoutes(app, { store, route, body });
   /**
    * Read one discovered instruction file, as Diomedes read it.
    *

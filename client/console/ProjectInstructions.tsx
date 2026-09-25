@@ -8,6 +8,7 @@ import {
   type InstructionFileRecord,
 } from '../../shared/capability-packs';
 import type { DocumentContent } from '../../shared/types';
+import { GuidanceMaintenance } from './GuidanceMaintenance';
 
 /**
  * One line in the thread head saying which repository instruction files this
@@ -256,6 +257,7 @@ export function ProjectInstructions({
               <ol className="instructions-list">{later.map((item) => row(item, false))}</ol>
             </section>
           )}
+          <GuidanceMaintenance projectId={projectId} />
         </div>
       )}
     </div>
