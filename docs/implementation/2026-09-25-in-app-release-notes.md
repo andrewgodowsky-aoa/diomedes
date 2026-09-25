@@ -153,12 +153,12 @@ server.
 
 ## Gates
 
-Run on this branch after `git merge origin/main`. The counts are from that run:
+Run on Linux with the Chromium under `/opt/pw-browsers`. `main` brought in documentation only (PR #120). Counts:
 
-- `npx tsc --noEmit`: GATE_TSC
-- `vitest run --maxWorkers=3`: GATE_VITEST
-- `npx vite build`: GATE_BUILD
-- `npx playwright test tests/ui.spec.ts tests/native-ui.spec.ts tests/field.spec.ts tests/release-notes-ui.spec.ts tests/app-updates-ui.spec.ts`: GATE_PW
+- `npx tsc --noEmit`: passed, no errors
+- `vitest run --maxWorkers=3`: 409 files passed, 1 skipped; 7,304 tests passed, 18 skipped (7,322), 0 failed (run on this branch's code before the docs-only merge of `a37e2f6`)
+- `npx vite build`: passed, 2,505 modules
+- `npx playwright test tests/ui.spec.ts tests/native-ui.spec.ts tests/field.spec.ts tests/release-notes-ui.spec.ts tests/app-updates-ui.spec.ts`: 42 passed, 0 failed, 0 skipped (the three standing specs, the 5 new tests and the updated App updates test)
 
 ## Gaps
 
