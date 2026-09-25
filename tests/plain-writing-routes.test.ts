@@ -35,6 +35,7 @@ import type { HarnessRun } from '../shared/harness';
 import { ROUTES } from '../shared/engines';
 import { responsesEvents, sseResponse } from './fixtures/model-api-streams.js';
 import { AUTOMATION_LABEL_TEXT, SCHEDULE_OUTCOME } from '../shared/automations';
+import { briefSources } from '../shared/citations';
 
 const headers = { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' };
 const STANDARD = '--- NECTOVIA WRITING STANDARD ---';
@@ -421,4 +422,23 @@ test('the status words automations show carry no em dash', () => {
   const words = [...Object.values(SCHEDULE_OUTCOME), ...Object.values(AUTOMATION_LABEL_TEXT)];
   expect(words.length).toBeGreaterThan(8);
   for (const text of words) expect(checkPlainWriting(text), text).toEqual([]);
+});
+
+test('a reader still finds every source, in the new Sources line and the old', () => {
+  const sha = 'c'.repeat(64);
+  const brief = (line: string) => `# Weekly brief\n\n- Revenue rose [imports-pos-1]\n\n## Sources\n\n${line}\n`;
+  const expected = (path: string) => ({ id: 'imports-pos-1', path, sha });
+  const read = (line: string) => {
+    const found = briefSources(brief(line)).get('imports-pos-1');
+    return found && { id: found.id, path: found.path, sha: found.sha };
+  };
+  expect(read(`- [imports-pos-1] Weekly operations exports: POS weekly summary (Imports/pos-weekly.txt, SHA-256: ${sha})`)).toEqual(
+    expected('Imports/pos-weekly.txt'),
+  );
+  expect(read(`- [imports-pos-1] POS (old) summary (Imports/pos (old).txt, SHA-256: ${sha})`)).toEqual(
+    expected('Imports/pos (old).txt'),
+  );
+  expect(read(`- [imports-pos-1] Weekly operations exports: POS weekly summary — Imports/pos-weekly.txt (SHA-256: ${sha})`)).toEqual(
+    expected('Imports/pos-weekly.txt'),
+  );
 });

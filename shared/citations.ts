@@ -2,7 +2,8 @@
  * The source tags the weekly brief writes, read back so a person sees a source, never an id.
  *
  * The brief (server/weekly-brief.ts) ends every claim line with `[<id>]` and lists each id under
- * `## Sources` as `- [<id>] <label> — <path> (SHA-256: <sha>)`. That text is the brief's record and
+ * `## Sources` as `- [<id>] <label> (<path>, SHA-256: <sha>)` (before plain writing, 2026-09-25:
+ * `<label> — <path> (SHA-256: <sha>)`, still read). That text is the brief's record and
  * its change detection reads it back, so it is never rewritten; only its rendering changes. A
  * reader of the brief resolves each tag through the document's own Sources list. An answer that
  * quotes a tag resolves it through the project's recorded files, by the same slug the brief made
@@ -31,7 +32,11 @@ export interface CitedSource {
   readonly sha: string | null;
 }
 
-const SOURCE_LINE = /^\s*[-*]\s+\[([^\]\s]+)\]\s+.*\s—\s(.+?)\s\(SHA-256:\s*([a-f0-9]{64})\)\s*$/;
+/** `- [<id>] <label> (<path>, SHA-256: <sha>)`; a path may hold balanced parentheses. */
+const SOURCE_LINE =
+  /^\s*[-*]\s+\[([^\]\s]+)\]\s+.*?\s\(((?:[^()]|\([^()]*\))+?),\s*SHA-256:\s*([a-f0-9]{64})\)\s*$/;
+/** The same line as briefs wrote it before plain writing: `- [<id>] <label> — <path> (SHA-256: <sha>)`. */
+const SOURCE_LINE_DASHED = /^\s*[-*]\s+\[([^\]\s]+)\]\s+.*\s—\s(.+?)\s\(SHA-256:\s*([a-f0-9]{64})\)\s*$/;
 
 /**
  * The `## Sources` list of a brief, by id. Empty for a document that has none, which is how a
@@ -46,7 +51,7 @@ export function briefSources(markdown: string): Map<string, CitedSource> {
       continue;
     }
     if (!inSources) continue;
-    const match = SOURCE_LINE.exec(line);
+    const match = SOURCE_LINE_DASHED.exec(line) ?? SOURCE_LINE.exec(line);
     if (!match) continue;
     const [, id, path, sha] = match;
     sources.set(id, { id, name: readableFileName(path), path, sha });
