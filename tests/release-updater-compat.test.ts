@@ -41,7 +41,7 @@ const VERSION = '0.2.0';
 const TAG = `v${VERSION}`;
 const OWNER_REPO = 'andrewgodowsky-aoa/diomedes';
 const names = assets.releaseAssetNames(VERSION);
-const sha = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
+const sha = (bytes: Uint8Array | string) => createHash('sha256').update(bytes).digest('hex');
 // Small stand-ins above the updater's 1 MiB floor; only their digests matter here.
 const installerBytes = new Uint8Array(2 * 1024 * 1024).fill(7);
 const dmgBytes = new Uint8Array(3 * 1024 * 1024).fill(9);
@@ -74,8 +74,9 @@ function latestRelease(overrides: Record<string, unknown> = {}) {
 
 describe('the frozen 0.1.11 updater', () => {
   it('is the file release commit a492c42 shipped', async () => {
-    const text = await fs.readFile(path.join(import.meta.dirname, 'fixtures/updater-0.1.11/app-updates.ts'));
-    expect(sha(text)).toBe(FIXTURE_SHA256);
+    // Hashed as Git stores it: a Windows checkout may hand the file back with CRLF.
+    const text = await fs.readFile(path.join(import.meta.dirname, 'fixtures/updater-0.1.11/app-updates.ts'), 'utf8');
+    expect(sha(Buffer.from(text.replace(/\r\n/g, '\n')))).toBe(FIXTURE_SHA256);
   });
 
   it('finds the Windows installer, and only it, in a release that also carries macOS', () => {

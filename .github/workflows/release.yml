@@ -107,8 +107,6 @@ jobs:
         working-directory: services/control-plane
       - name: Gate 1 of 4, TypeScript
         run: node node_modules/typescript/bin/tsc --noEmit
-      - name: Gate 2 of 4, unit tests
-        run: node node_modules/vitest/vitest.mjs run --maxWorkers=2 --reporter=default --reporter=json --outputFile.json=test-results/candidate/unit-results.json
       # Both archives are checked before anything is packaged; nothing below
       # downloads a runtime unverified.
       - name: Native runtime from the published v0.1.11 archive (pinned hashes)
@@ -116,11 +114,16 @@ jobs:
       - name: Electron archive (SHASUMS256 and the locked checksums must agree)
         run: node scripts/release-support/acquire-electron-archive.mjs --platform win32 --arch x64 --dir "${{ runner.temp }}\electron-zips"
       # package:windows runs tsc and vite build (gate 3) and then packages. Nothing
-      # rebuilds dist/ after this: the candidate record re-hashes it.
+      # rebuilds dist/ after this: the candidate record re-hashes it. It comes
+      # before the unit gate, as in a hand release, because packaging stamps
+      # evidence/windows-release/build-info.json with this version, and
+      # tests/build-identity.test.ts requires the stamp to match package.json.
       - name: Gate 3 of 4 and package
         run: npm run package:windows
         env:
           DIOMEDES_ELECTRON_ZIP_DIR: ${{ runner.temp }}\electron-zips
+      - name: Gate 2 of 4, unit tests
+        run: node node_modules/vitest/vitest.mjs run --maxWorkers=2 --reporter=default --reporter=json --outputFile.json=test-results/candidate/unit-results.json
       - name: Gate 4 of 4, browser tests
         run: node node_modules/@playwright/test/cli.js test tests/ui.spec.ts tests/native-ui.spec.ts tests/field.spec.ts --reporter=list,json
         env:
