@@ -682,6 +682,8 @@ export interface ProjectState {
   streamTriggerRules?: import('./stream-rules.js').StreamRule[];
   /** H16 trigger firings. Append-only; absent before the first firing. */
   streamTriggerFirings?: import('./stream-rules.js').StreamTriggerFiring[];
+  /** P07 Software Engineering pack: declared commands, their runs and worktrees. Absent until first used. */
+  softwarePack?: import('./software-pack.js').SoftwarePackRecord;
 }
 /** How Diomedes knows whether an engine is signed in. 'first-use' means the first run reports it. */
 export type SignInState = 'signed-in' | 'not-signed-in' | 'unknown' | 'first-use' | 'not-needed';

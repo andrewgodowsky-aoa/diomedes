@@ -56,6 +56,8 @@ import type {
 import type { ConversationUpdateNotCarried } from '../shared/conversation.js';
 import { ApiError, absent, relativeName, safeAbsolute } from './paths.js';
 import { mountPackRoutes } from './pack-routes.js';
+import { SoftwarePackService } from './software-pack/service.js';
+import { mountSoftwarePackRoutes } from './software-pack/routes.js';
 import { playbookAccess } from './harness/capabilities/pack-playbooks.js';
 import {
   defaults,
@@ -1168,6 +1170,8 @@ export async function createApp(options: AppOptions) {
   });
   mountAgentProfileRoutes(app, store, agentProfiles);
   mountPermissionRoutes(app, store, nativeWork, harness.bridge);
+  // P07: the Software Engineering pack's repository slice, on the host's RunService.
+  const softwarePack = new SoftwarePackService(store, harness.runs);
   const verification = new VerificationService(
     store,
     options.verificationReviewer !== undefined
@@ -1175,7 +1179,10 @@ export async function createApp(options: AppOptions) {
       : reviewerAdapter
         ? codexVerificationReviewer()
         : null,
-    { reviewTimeoutMs: options.verificationReviewTimeoutMs },
+    {
+      reviewTimeoutMs: options.verificationReviewTimeoutMs,
+      commandEvidence: (projectId, command, notBefore) => softwarePack.commandEvidence(projectId, command, notBefore),
+    },
   );
   mountVerificationRoutes(app, store, verification);
   // H13: the Diomedes work loop's finish gate runs the task's declared checks through H17's verifier.
@@ -1991,6 +1998,7 @@ export async function createApp(options: AppOptions) {
   const packLifecycle = mountPackRoutes(app, { store, route, body });
   // H10: guidance proposals from evidence, signed instruction revisions and rollback.
   mountGuidanceRoutes(app, { store, route, body });
+  mountSoftwarePackRoutes(app, { service: softwarePack, route, body });
   /**
    * Read one discovered instruction file, as Diomedes read it.
    *
@@ -5596,6 +5604,7 @@ export async function createApp(options: AppOptions) {
   app.locals.readyScheduler = readyScheduler;
   app.locals.automationScheduler = automationScheduler;
   app.locals.automations = automations;
+  app.locals.softwarePack = softwarePack;
   app.locals.close = async () => {
     // A window closed on the way out must not start a check against services
     // that are already shutting down.
@@ -5613,6 +5622,8 @@ export async function createApp(options: AppOptions) {
     // the remaining services' close persists can settle, or a late record
     // write can race removal of the data dir.
     await changeReview.close();
+    // A declared command already approved finishes and is recorded before the run store closes.
+    await softwarePack.settled();
     engines.close();
     await login.close();
     await connections.close();
