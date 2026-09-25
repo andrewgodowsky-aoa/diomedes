@@ -196,8 +196,6 @@ jobs:
     # architecture instead of trusting the label.
     runs-on: macos-14
     timeout-minutes: 60
-    env:
-      TMPDIR: ${{ runner.temp }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -262,6 +260,8 @@ jobs:
           exit $status
         env:
           VERSION_BASE: ${{ needs.prepare.outputs.base }}
+          # macOS /var is a symlink, and the product's path guard refuses linked ancestors.
+          TMPDIR: ${{ runner.temp }}
       - name: Release proof for the disk image
         run: |
           node --input-type=module -e "
