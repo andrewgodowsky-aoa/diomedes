@@ -130,6 +130,31 @@ async function goTo(page: Page, view: 'Thread' | 'Board' | 'Team') {
   else await expect(page.locator('.team[aria-label="Team"]')).toBeVisible();
 }
 
+/**
+ * The rail's New creates the thread, reloads the project (state and grants), and only then
+ * opens it, and opening a different thread empties the composer. Text typed before that
+ * lands in the box the switch then clears, which a slower machine (a hosted Windows runner)
+ * reaches, so wait for the switch before typing.
+ */
+async function newThread(page: Page) {
+  const path = (url: string) => new URL(url).pathname;
+  let created = false;
+  const creating = page.waitForResponse((r) => {
+    const hit = r.request().method() === 'POST' && path(r.url()).endsWith('/threads');
+    if (hit) created = true;
+    return hit;
+  });
+  const reloaded = (suffix: string) =>
+    page.waitForResponse(
+      (r) => created && r.request().method() === 'GET' && path(r.url()).endsWith(suffix),
+    );
+  const reloading = Promise.all([reloaded('/state'), reloaded('/permissions/grants')]);
+  await railOf(page).getByRole('button', { name: 'New', exact: true }).click();
+  await creating;
+  await reloading;
+  await expect(page.getByText('A new thread.', { exact: true })).toBeVisible();
+}
+
 async function chooseDetail(page: Page, name: 'Guided' | 'Standard' | 'Technical') {
   await page.getByRole('button', { name: 'Interface detail menu' }).click();
   await page.getByRole('menuitemradio', { name, exact: true }).click();
@@ -679,8 +704,7 @@ test('F17, F20-F22: detail changes preserve data; the Console meets layout and m
   const beforeProjectThreads = beforeAsk.conversations.filter(
     (thread) => thread.attachedTo.kind === 'project',
   );
-  await railOf(page).getByRole('button', { name: 'New', exact: true }).click();
-  await expect(page.locator('#scrThread')).toBeVisible();
+  await newThread(page);
   const askText = 'How should I organize the restaurant menu work?';
   const modes = page.getByRole('radiogroup', { name: 'Mode' });
   await modes.getByRole('radio', { name: 'ask', exact: true }).click();
@@ -1175,7 +1199,7 @@ test('Landing: ask box carries a draft into the chosen project', async ({ page }
 test('Unavailable helper: the application notice has no invented runtime caption', async ({ page }) => {
   await openProject(page);
   await goTo(page, 'Thread');
-  await railOf(page).getByRole('button', { name: 'New', exact: true }).click();
+  await newThread(page);
   const modes = page.getByRole('radiogroup', { name: 'Mode' });
   await modes.getByRole('radio', { name: 'ask', exact: true }).click();
   await page
@@ -1304,7 +1328,7 @@ test('Modes: the Console composer shows four modes and Fix needs what is failing
   await reopenLastProject(page);
   await expect(railOf(page)).toBeVisible();
   // A new project has no thread yet; the rail's New opens one.
-  await railOf(page).getByRole('button', { name: 'New', exact: true }).click();
+  await newThread(page);
   const modes = page.getByRole('radiogroup', { name: 'Mode' });
   for (const name of ['ask', 'plan', 'build', 'fix'])
     await expect(modes.getByRole('radio', { name, exact: true })).toBeVisible();
@@ -1350,26 +1374,7 @@ test('Modes: the Console composer shows four modes and Fix needs what is failing
 test('Enter sends from the Console composer and Shift+Enter adds a line', async ({ page }) => {
   await openProject(page);
   await goTo(page, 'Thread');
-  // New creates the thread, reloads the project (state and grants), and only then
-  // opens it, and opening a different thread empties the box. Typing before that
-  // lands in the box the switch then clears, which a slower machine (a hosted
-  // Windows runner) reaches. So wait for the switch before typing.
-  const path = (url: string) => new URL(url).pathname;
-  let created = false;
-  const creating = page.waitForResponse((r) => {
-    const hit = r.request().method() === 'POST' && path(r.url()).endsWith('/threads');
-    if (hit) created = true;
-    return hit;
-  });
-  const reloaded = (suffix: string) =>
-    page.waitForResponse(
-      (r) => created && r.request().method() === 'GET' && path(r.url()).endsWith(suffix),
-    );
-  const reloading = Promise.all([reloaded('/state'), reloaded('/permissions/grants')]);
-  await railOf(page).getByRole('button', { name: 'New', exact: true }).click();
-  await creating;
-  await reloading;
-  await expect(page.getByText('A new thread.', { exact: true })).toBeVisible();
+  await newThread(page);
   await page
     .getByRole('radiogroup', { name: 'Mode' })
     .getByRole('radio', { name: 'ask', exact: true })
