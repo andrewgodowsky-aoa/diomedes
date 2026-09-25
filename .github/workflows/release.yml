@@ -435,7 +435,9 @@ jobs:
           $assets = @(Get-ChildItem "$env:RUNNER_TEMP/assets" -File | Where-Object { $_.Name -ne '.release-assets-owner.json' } | ForEach-Object { $_.FullName })
           $kind = if ($env:VERSION -match '-rc\.') { 'release candidate, ' } else { '' }
           $title = "Diomedes $env:VERSION (${kind}experimental, unsigned)"
-          $mode = if ($env:PUBLISH -eq 'prerelease') { @('--prerelease', '--latest=false') } else { @('--draft') }
+          # [string[]]: PowerShell unrolls a one-element array from an if, and splatting a
+          # string passes it one character at a time, which gh reads as asset names.
+          [string[]]$mode = if ($env:PUBLISH -eq 'prerelease') { @('--prerelease', '--latest=false') } else { @('--draft') }
           gh release create $env:TAG --repo $env:GITHUB_REPOSITORY --target $env:SHA --title $title --notes-file "$env:RUNNER_TEMP/body.md" @mode @assets
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Check every uploaded asset against GitHub's own digest
