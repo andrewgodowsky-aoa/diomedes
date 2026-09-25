@@ -246,6 +246,58 @@ const ROUTE = [
   '  B --> C[South stop]',
 ];
 
+// ---- the sample bakery's answers, as the 2026-09-24 product captures show them ---------------
+
+/**
+ * Nine weeks of sales, one label per week, one of them long enough that a bare cut read
+ * "W36 (price …" in the capture. The numbers are the capture's own.
+ */
+export const NINE_WEEKS = {
+  kind: 'line',
+  labels: ['W30', 'W31', 'W32', 'W33', 'W34', 'W35', 'W36 (price change)', 'W37', 'W38'],
+  series: [
+    { name: 'Croissant units (butter+almond)', values: [598, 612, 615, 604, 620, 596, 487, 488, 483] },
+    { name: 'Pumpkin items', values: [144, 146, 148, 150, 214, 277, 355, 415, 492] },
+  ],
+};
+
+/** Every label long: each one must stay readable, wrapped or with its full text on hover. */
+export const LONG_LABELS = {
+  kind: 'bar',
+  title: 'Catering by client',
+  labels: [
+    'Millbrook Library Friends reception',
+    'Harper & Vale wedding brunch',
+    'Brightline Dental standing Friday box',
+    'Juniper Street walk-in orders',
+  ],
+  series: [{ name: 'Orders', values: [1, 1, 4, 22] }],
+};
+
+export const BAKERY_ANSWERS: Readonly<Record<string, string>> = {
+  SATURDAY: answer(
+    '## Smallest fixes',
+    [
+      '- **Saturday:** No new hire needed — Marco is already on the Saturday open shift (5:30–1:30), which overlaps the 9–11 rush.',
+      '- **Sunday:** Dana is already on the Sunday mid shift (9–5), which covers the likely delivery window for the Oct 25 brunch.',
+      "- **Friday:** No staffing change shows up as needed yet, but since it's a *weekly recurring* add-on to a one-person open shift, it's worth a light check once the quote is `final`.",
+    ].join('\n'),
+    [
+      '| Inquiry | Day/Date | Gap | Smallest fix |',
+      '|---|---|---|---|',
+      '| Millbrook Library Friends | Sat 2026-10-10 | No one assigned to pack catering during *9–11 rush* | Assign **Marco** |',
+      '| Harper & Vale wedding brunch | Sun 2026-10-25 | No one assigned for the `4-mile` delivery | Assign **Dana** |',
+      '| Brightline Dental | Weekly, Fri 8:00am | Single-person open shift, 5 * 3 boxes a week | No change *now* |',
+    ].join('\n'),
+    'Sources: `staff/schedule-2026-W39.md`, `catering/inquiries.md`.',
+  ),
+  NINEWEEKS: answer(
+    fence('visual', [JSON.stringify(NINE_WEEKS)]),
+    '- **Croissant units held steady around 590–620/week through W30–W35, then dropped sharply to ~487 in W36** [imports-pos-weekly-summary-1].',
+    fence('visual', [JSON.stringify(LONG_LABELS)]),
+  ),
+};
+
 /** What arrives first while the STREAM answer is held: an artifact fence that is still open. */
 export const STREAM_PREVIEW = ['Here is the route.', '', '```mermaid', ROUTE[0], ROUTE[1], '  A[Depot] --> B'].join('\n');
 
@@ -285,6 +337,7 @@ export const ANSWERS: Readonly<Record<string, string>> = {
   ICON: answer('Here is who hands the parcel to whom.', fence('mermaid', ACTOR_PICTURE)),
   // A reply that is the diagram alone: no line of prose before or after the fence.
   FENCE: fence('mermaid', ROUTE),
+  ...BAKERY_ANSWERS,
 };
 
 export function artifactAnswer(prompt: string): string {

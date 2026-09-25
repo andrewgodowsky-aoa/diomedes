@@ -77,3 +77,15 @@
 .console .ref-chip:hover {
   border-color: var(--t3);
 }
+/* A source a brief or an answer cites, read in the line that cites it: the same reference as a
+   message's own sources, sized to sit in a sentence. */
+.console .ref-chip.cite {
+  display: inline-flex;
+  vertical-align: baseline;
+  margin: 0 2px;
+  padding: 0 6px;
+  line-height: 1.35;
+}
+.console .cite-named {
+  color: var(--t2);
+}

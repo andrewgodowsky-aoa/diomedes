@@ -445,17 +445,40 @@
   padding-right: 0;
   font-size: var(--dm-type-input);
 }
+/* Where the window has the height for it, a compact title keeps two lines, never a few
+   characters and an ellipsis, and hover and keyboard focus open it to its whole length (its
+   title attribute says it too). A window too short for that (the 800 x 600 minimum at 200%
+   zoom, C47) keeps the one-line row, so a focused title never grows off the screen. */
+@media (min-height: 500px) {
+  .console .columns.compact .crow .t {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    white-space: normal;
+    text-overflow: clip;
+  }
+  .console .columns.compact .crow .t:is(:hover, :focus) {
+    -webkit-line-clamp: unset;
+    line-clamp: none;
+    overflow: visible;
+  }
+}
 .console .columns.compact .crow .m {
   grid-column: 3;
   grid-row: 1;
   margin: 0;
   flex-wrap: nowrap;
   /* The title keeps the first claim on the row: a long model slug in the
-     meta used to take the whole line and leave the name with no width. */
+     meta used to take the whole line and leave the name with no width. The
+     worker gives way first; the age is short and never cut. */
   max-width: 55%;
   min-width: 0;
   overflow: hidden;
   transition: opacity var(--quick);
+}
+.console .columns.compact .crow .m .mono:not(.age, .q) {
+  flex: 0 1 auto;
 }
 .console .columns.compact .crow .m .mono {
   white-space: nowrap;

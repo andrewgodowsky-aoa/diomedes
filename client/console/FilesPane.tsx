@@ -21,7 +21,9 @@ import type { FilesPaneProps } from './types';
 import { ImportFiles } from './ImportFiles';
 import { fileHasArtifacts, indexFile } from './artifacts';
 import { ArtifactFrame } from './artifact-frames';
-import { spans } from './TurnBody';
+import { spans, type Citations } from './TurnBody';
+import { briefSources } from '../../shared/citations';
+import { versionsOf } from '../../shared/file-identity';
 import {
   fileTreeKey,
   visibleFileNodes,
@@ -138,9 +140,9 @@ function DrawingPreview({ path, text }: { path: string; text: string }) {
  * Markdown, at the grammar the app already reads: fenced code, three heading
  * levels, list lines, and the inline code, bold and italic a reply shows, from
  * the same reader. No new dependency, and nothing is interpreted that the raw
- * view would not show.
+ * view would not show. A brief's source tags read as references to their files (`cite`).
  */
-function Markdown({ text }: { text: string }) {
+function Markdown({ text, cite }: { text: string; cite?: Citations }) {
   const lines = text.split('\n');
   let inCode = false;
   return (
@@ -156,21 +158,52 @@ function Markdown({ text }: { text: string }) {
               {line || ' '}
             </pre>
           );
-        if (/^### /.test(line)) return <h4 key={i}>{spans(line.slice(4))}</h4>;
-        if (/^## /.test(line)) return <h3 key={i}>{spans(line.slice(3))}</h3>;
-        if (/^# /.test(line)) return <h3 key={i}>{spans(line.slice(2))}</h3>;
+        if (/^### /.test(line)) return <h4 key={i}>{spans(line.slice(4), cite)}</h4>;
+        if (/^## /.test(line)) return <h3 key={i}>{spans(line.slice(3), cite)}</h3>;
+        if (/^# /.test(line)) return <h3 key={i}>{spans(line.slice(2), cite)}</h3>;
         if (/^\s*([-*]|\d+\.) /.test(line))
           return (
             <div className="files-li" key={i}>
               <span>{line.match(/^\s*([-*]|\d+\.)/)?.[1]}</span>
-              <span>{spans(line.replace(/^\s*([-*]|\d+\.) /, '').replace(/\[ \] /, ''))}</span>
+              <span>{spans(line.replace(/^\s*([-*]|\d+\.) /, '').replace(/\[ \] /, ''), cite)}</span>
             </div>
           );
         if (!line.trim()) return <div className="files-gap" key={i} />;
-        return <p key={i}>{spans(line)}</p>;
+        return <p key={i}>{spans(line, cite)}</p>;
       })}
     </div>
   );
+}
+
+/**
+ * A brief's source tags, read through its own Sources list: each opens the exact version the
+ * brief read when History still holds it, else the file as it is now. A document with no Sources
+ * list is not a brief, and its brackets stay as written.
+ */
+function citationsFor(
+  text: string,
+  history: readonly HistoryEntry[] | undefined,
+  onOpenVersion: ((identity: { path: string; sha: string }) => void) | undefined,
+  onOpenFile: ((path: string) => void) | undefined,
+): Citations | undefined {
+  const sources = briefSources(text);
+  if (sources.size === 0) return undefined;
+  return {
+    strict: false,
+    resolve: (id) => sources.get(id) ?? null,
+    onOpen:
+      onOpenVersion || onOpenFile
+        ? (source) => {
+            const sha = source.sha;
+            const kept =
+              sha !== null &&
+              history !== undefined &&
+              versionsOf(history, source.path).some((version) => version.sha === sha);
+            if (kept && onOpenVersion) onOpenVersion({ path: source.path, sha });
+            else onOpenFile?.(source.path);
+          }
+        : undefined,
+  };
 }
 
 function FileTree({
@@ -302,10 +335,13 @@ function Viewer({
   history,
   onOpenVersion,
   onAttach,
+  onOpenFile,
 }: {
   projectId: string;
   document: DocumentInfo;
   onBack(): void;
+  /** Opens another project file, for a brief's source reference whose exact bytes are gone. */
+  onOpenFile?(path: string): void;
   history?: readonly HistoryEntry[];
   onOpenVersion?(identity: { path: string; sha: string }): void;
   onAttach?(path: string): void;
@@ -461,7 +497,10 @@ function Viewer({
           ) : table ? (
             <TablePreview name={info.path} text={content.text} />
           ) : (
-            <Markdown text={content.text} />
+            <Markdown
+              text={content.text}
+              cite={citationsFor(content.text, history, onOpenVersion, onOpenFile)}
+            />
           )
         ) : (
           <pre className="files-raw">{content.text}</pre>
@@ -738,6 +777,7 @@ function ProjectFilesPane({
             history={history}
             onOpenVersion={onOpenVersion}
             onAttach={onAttach}
+            onOpenFile={onOpen}
           />
         ) : (
           documents.length > 0 && (

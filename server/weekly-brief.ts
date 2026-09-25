@@ -27,6 +27,8 @@ import { hash, type Store } from './store.js';
 import { checkExport, fileReferences } from './file-imports.js';
 import { IMPORT_MAX_TOTAL_BYTES } from '../shared/file-imports.js';
 import { outputName } from '../shared/packs.js';
+import { readableFileName } from '../shared/display-names.js';
+import { sourceSlug } from '../shared/citations.js';
 
 export interface BriefSource {
   readonly id: string;
@@ -70,25 +72,17 @@ export interface BriefDraft {
   readonly producedAt: string;
 }
 
-/** A path slug, so a reference reads like the file it came from. */
+/** A path slug, so a reference reads like the file it came from (shared/citations.ts reads it back). */
 export function slugFor(selected: string): string {
-  const base = selected.split('/').pop() ?? selected;
-  const stem = base.includes('.') ? base.slice(0, base.lastIndexOf('.')) : base;
-  const folder = selected.includes('/') ? selected.slice(0, selected.lastIndexOf('/')) : '';
-  const slug = `${folder} ${stem}`
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-  return slug === '' ? 'source' : slug;
+  return sourceSlug(selected);
 }
 
-/** A short display name derived from the path, never from file contents. */
+/**
+ * A short display name derived from the path, never from file contents. Known acronyms keep
+ * their capitals (`pos-weekly-summary` reads "POS weekly summary"; shared/display-names.ts).
+ */
 export function prettyFor(selected: string): string {
-  const base = selected.split('/').pop() ?? selected;
-  const stem = base.includes('.') ? base.slice(0, base.lastIndexOf('.')) : base;
-  const words = stem.replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim();
-  if (words === '') return selected;
-  return words.charAt(0).toUpperCase() + words.slice(1);
+  return readableFileName(selected);
 }
 
 /**

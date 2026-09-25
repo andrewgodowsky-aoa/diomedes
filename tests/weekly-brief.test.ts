@@ -548,3 +548,37 @@ describe('refusals', () => {
     );
   });
 });
+
+describe('what the brief calls itself and its sources (capture polish, 2026-09-25)', () => {
+  // The setup label a compiled pack gives its output: the output's name, then the setup sentence.
+  const SETUP_LABEL =
+    'Weekly operations brief — Produce a recurring report: A Monday note on last week: sales, margin, what changed, and what to watch';
+
+  test('the title is the output name, not the setup sentence, in the draft and in the file', async () => {
+    await fs.mkdir(path.join(store.state(projectId).project.folder, 'Imports'), { recursive: true });
+    await writeFixture('Imports/pos-weekly-summary.txt', '2026-W38: croissants 483, pumpkin items 492');
+    const manifest = manifestFor({ outputLabel: SETUP_LABEL, selection: ['Imports/pos-weekly-summary.txt'] });
+    const sources = await service.gather(projectId, manifest);
+    const draft = composeBrief({ manifest, sources, previous: null, at: AT });
+    expect(draft.title).toBe('Weekly operations brief');
+    expect(draft.markdown.split('\n')[0]).toBe('# Weekly operations brief');
+    expect(draft.markdown).not.toContain('Produce a recurring report');
+    // The setup sentence stays where the task's details read it.
+    expect(manifest.proposal.expectedOutputs[0].label).toBe(SETUP_LABEL);
+  });
+
+  test('a source named from a file keeps its acronym, and its tag still reads back for change detection', async () => {
+    await fs.mkdir(path.join(store.state(projectId).project.folder, 'Imports'), { recursive: true });
+    await writeFixture('Imports/pos-weekly-summary.txt', '2026-W38: croissants 483, pumpkin items 492');
+    const manifest = manifestFor({ selection: ['Imports/pos-weekly-summary.txt'] });
+    const sources = await service.gather(projectId, manifest);
+    expect(sources[0].label).toBe('Weekly operations exports: POS weekly summary');
+    expect(sources[0].id).toBe('imports-pos-weekly-summary');
+    const first = composeBrief({ manifest, sources, previous: null, at: AT });
+    expect(first.markdown).toContain('## Weekly operations exports: POS weekly summary');
+    // The file format is unchanged: the next run reads the tag back and finds nothing new.
+    const second = composeBrief({ manifest, sources, previous: first.markdown, at: AT });
+    expect(second.sections).toEqual([]);
+    expect(second.unused).toEqual(['imports-pos-weekly-summary']);
+  });
+});
