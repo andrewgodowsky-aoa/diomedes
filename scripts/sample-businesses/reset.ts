@@ -96,14 +96,13 @@ export function assertSafeTarget(target: string, guarded: string[]) {
   const real = realish(target);
   if (same(real, path.parse(real).root))
     throw new Error(`Refusing to reset into a drive root: ${target}`);
+  // The sample root may sit inside the home folder (AppData\Local does); it may not be or
+  // hold it. Checked first, so the refusal reads the same wherever the repository lives.
+  if (inside(real, realish(os.homedir())))
+    throw new Error(`Refusing to reset ${target}: it is or holds the home folder.`);
   for (const g of guarded) {
+    if (same(g, os.homedir())) continue;
     const gr = realish(g);
-    if (same(g, os.homedir())) {
-      // The sample root may sit inside the home folder (AppData\Local does); it may not be or hold it.
-      if (inside(real, gr))
-        throw new Error(`Refusing to reset ${target}: it is or holds the home folder.`);
-      continue;
-    }
     if (inside(gr, real) || inside(real, gr))
       throw new Error(
         `Refusing to reset ${target}: it overlaps ${g}, which a sample reset never touches.`,
