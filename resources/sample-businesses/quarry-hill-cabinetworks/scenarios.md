@@ -59,7 +59,7 @@ A good plan counts six open items, not four: the scribe (item 4) and the crown n
 (item 8) were marked closed on 09-15 with no check recorded, so they are still open. Four
 belong to the installer and two to the finisher, and three of the six carry a photo.
 
-Then make each item a task (**Ready**). Start the crown gap task in Build mode to write the
+Then use **New task** on the Board once per open item; each arrives in **Ready**. Start the crown gap task in Build mode to write the
 fix into a new `jobs/MAR-11/fixes-2026-09-21.md`: **Working**, then **Review**, then **Done**
 once approved. Start the pantry sheen task the same way and leave its proposal in Review.
 Leave the rest Ready.

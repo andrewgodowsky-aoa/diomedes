@@ -54,7 +54,7 @@ A good plan:
 - says E-6651 and E-6653 go to customers with no mobile number, so those are calls, not
   texts, per `notes/front-counter.md`.
 
-Then make each follow-up a task (**Ready**). Start the E-6651 task in Build mode to write a
+Then use **New task** on the Board once per estimate; each arrives in **Ready**. Start the E-6651 task in Build mode to write a
 call script into a new `notes/follow-ups-2026-09-21.md`: **Working**, then **Review**, then
 **Done** once approved. Start E-6659 the same way and leave its proposal in Review. Leave
 the other two Ready.

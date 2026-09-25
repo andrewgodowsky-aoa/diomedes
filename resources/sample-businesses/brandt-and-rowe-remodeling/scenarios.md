@@ -69,7 +69,7 @@ sign-off (towel bar anchors, toilet supply escutcheon). It groups them by owner 
 Electric: fan grille; Brandt & Rowe: baseboard gap, paint scuff, mirror, towel bar; Tolliver
 Plumbing: escutcheon), says three have no photo, and flags the grout touch-up as unassigned.
 
-Then make each step a task (**Ready**). Start the Brandt & Rowe task in Build mode to write a
+Then use **New task** on the Board once per owner; each arrives in **Ready**. Start the Brandt & Rowe task in Build mode to write a
 checklist into a new `jobs/marsh/walkthrough-2026-10-02.md`: **Working** while it runs,
 **Review** when the proposal is ready, **Done** once approved. Start the Delta task the same
 way and leave its proposal in Review. Leave the rest Ready.

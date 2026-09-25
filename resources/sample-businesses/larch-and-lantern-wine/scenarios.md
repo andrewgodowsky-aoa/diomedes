@@ -77,7 +77,7 @@ A good plan has three steps: Fall Line (Malbec overcharge $120.00, rosé short $
 118 $84.00: $360.00), Tidewater (Vinho Verde $30.00, Prosecco short $138.00, memo 42
 $168.00: $336.00), and notes to the six club members.
 
-Then make each step a task (all **Ready**). Start the Fall Line task in Build mode to write a
+Then use **New task** on the Board once per step; all three arrive in **Ready**. Start the Fall Line task in Build mode to write a
 credit request into a new `claims/fall-line-2026-09.md`: **Working** while it runs, the
 proposal in **Review**, approve it to **Done**. Start the Tidewater task the same way and
 leave its proposal in Review. Leave the club task Ready.

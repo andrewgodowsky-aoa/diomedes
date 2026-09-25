@@ -88,7 +88,8 @@ A good plan:
   because nothing in the files says the kitchen can keep it separate;
 - notices the library event is a Saturday pickup in the 9 to 11 rush.
 
-Then, on the Board: make each step a task; all three arrive in **Ready**. Start the
+Then, on the Board, use **New task** once per step (name it after the step, with
+`catering/inquiries.md` as its document); all three arrive in **Ready**. Start the
 Brightline task in Build mode to write its reply into `catering/replies-draft.md`: it is
 **Working** while the run is live, its proposal waits in **Review**, and approving it moves
 it to **Done**. Start the library task the same way and leave its proposal unapproved in
