@@ -1,0 +1,244 @@
+/* P07: the Software Engineering pack's Repository section inside the Files
+   pane. The Settings > Engines language (decision 2): caption type, thin
+   separators, compact controls, the accent only on Go ahead. Tokens only.
+   Every element that can carry a path, branch, sha or command is a grid or
+   flex child with `min-width: 0` and truncation or wrapping where it is
+   written (decision 5). */
+.console .repo {
+  min-width: 0;
+  margin: 2px 0 10px;
+  padding: 0 8px 10px;
+  border-bottom: 1px solid var(--hair);
+  font-size: var(--dm-type-caption);
+  color: var(--t2);
+  white-space: normal;
+}
+.console .repo-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px 0 4px;
+}
+.console .repo-head h3 {
+  margin: 0;
+  font-family: var(--dm-font-ui);
+  font-size: var(--dm-type-caption);
+  font-weight: 500;
+  color: var(--t1);
+}
+.console .repo-branch {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--t3);
+}
+.console .repo-sub {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 10px 0 4px;
+  font-size: var(--dm-type-caption);
+  font-weight: 500;
+  color: var(--t3);
+}
+.console .repo-count {
+  font-family: var(--mono);
+}
+.console .repo-caption {
+  margin: 2px 0 4px;
+  color: var(--t3);
+  overflow-wrap: anywhere;
+}
+.console .repo-caption.files-fail {
+  color: var(--attn);
+}
+.console .repo-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+.console .repo-change {
+  display: grid;
+  grid-template-columns: auto 14px minmax(0, 1fr);
+  gap: 0 6px;
+  align-items: center;
+  min-width: 0;
+  padding: 2px 0;
+}
+.console .repo-change input {
+  margin: 0;
+}
+.console .repo-kind {
+  color: var(--t3);
+  text-align: center;
+}
+.console .repo-kind.k-untracked,
+.console .repo-kind.k-added {
+  color: var(--t2);
+}
+.console .repo-kind.k-conflicted,
+.console .repo-kind.k-deleted {
+  color: var(--attn);
+}
+.console .repo-path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+  color: var(--t1);
+  font-family: var(--mono);
+  font-size: var(--dm-type-caption);
+}
+.console .repo-path:hover {
+  text-decoration: underline;
+  text-decoration-color: var(--hair-2);
+}
+.console .repo-commits li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 0 8px;
+  align-items: baseline;
+  min-width: 0;
+  padding: 2px 0;
+}
+.console .repo-sha {
+  color: var(--t3);
+}
+.console .repo-subject {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--t1);
+}
+.console .repo-author {
+  min-width: 0;
+  max-width: 12ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--t3);
+}
+.console .repo-command-block {
+  min-width: 0;
+  padding: 2px 0;
+}
+.console .repo-command {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  gap: 0 8px;
+  align-items: baseline;
+  min-width: 0;
+}
+.console .repo-path-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--t1);
+}
+.console .repo-link {
+  color: var(--t2);
+  font-size: var(--dm-type-caption);
+  border-bottom: 1px solid var(--hair-2);
+}
+.console .repo-link:hover:not(:disabled) {
+  color: var(--t1);
+}
+.console .repo-link:disabled,
+.console .repo-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.console .repo-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 6px 0 2px;
+}
+.console .repo-button {
+  padding: 3px 8px;
+  border: 1px solid var(--hair-2);
+  border-radius: var(--rb);
+  color: var(--t1);
+  font-size: var(--dm-type-caption);
+}
+.console .repo-button:hover:not(:disabled) {
+  background: var(--raised);
+}
+.console .repo-button.primary {
+  border-color: var(--light);
+  color: var(--light);
+}
+.console .repo-approval {
+  margin: 4px 0 6px;
+  padding: 8px;
+  border: 1px solid var(--hair-2);
+  border-radius: var(--rb);
+  background: var(--surface);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.console .repo-question {
+  margin: 0 0 4px;
+  color: var(--t1);
+}
+.console .repo-approval .caption {
+  margin: 0;
+  color: var(--t3);
+}
+.console .repo-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+  margin: 6px 0 2px;
+}
+.console .repo-form input {
+  min-width: 0;
+  padding: 3px 6px;
+  border: 1px solid var(--hair-2);
+  border-radius: var(--rb);
+  background: var(--chrome);
+  color: var(--t1);
+  font-size: var(--dm-type-caption);
+}
+.console .repo-result {
+  margin: 2px 0 0 0;
+  min-width: 0;
+}
+.console .repo-result summary {
+  cursor: pointer;
+  color: var(--t3);
+  overflow-wrap: anywhere;
+}
+.console .repo-state.s-passed {
+  color: var(--t1);
+}
+.console .repo-state.s-failed,
+.console .repo-state.s-timed-out,
+.console .repo-state.s-output-capped,
+.console .repo-state.s-error,
+.console .repo-state.s-uncertain {
+  color: var(--attn);
+}
+.console .repo-output {
+  margin: 4px 0 0;
+  max-height: 180px;
+  overflow: auto;
+  padding: 6px;
+  border: 1px solid var(--hair);
+  border-radius: var(--rb);
+  font-family: var(--mono);
+  font-size: var(--dm-type-caption);
+  color: var(--t2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.console .repo-requests {
+  margin-top: 10px;
+}

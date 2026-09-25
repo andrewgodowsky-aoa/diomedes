@@ -1,0 +1,474 @@
+{
+  "schemaVersion": 1,
+  "releases": [
+    {
+      "version": "0.2.0",
+      "date": "2026-09-25",
+      "channel": "draft",
+      "platforms": [
+        "windows"
+      ],
+      "headline": "Nectovia can now run a weekly brief for you, show you exactly what a task changed before you keep it, and take files you drop into a project.",
+      "sections": [
+        {
+          "title": "New",
+          "items": [
+            "Automations. Open Automations from the Nectovia group or Ctrl K. The weekly brief is listed there, and Run once runs it now. Owners and admins can turn on a schedule, pause it, resume it or turn it off; the screen shows the next three runs and any that were missed or skipped. Saving a schedule does not turn it on.",
+            "Review what a task changed before you keep it. A task's thread shows each change line by line, and you can keep or undo each one, keep or undo them all, or send notes back with Revise with these comments.",
+            "Approvals you give often can be remembered. After you approve the same step three times in a project, Nectovia asks whether to stop asking. Remembered approvals are listed in the Task permissions dialog, where Revoke takes any of them back.",
+            "Ready work can start by itself. A switch on the Board, off until you turn it on, starts ready tasks automatically, and Pause queue or Pause all stops that again.",
+            "Files you drop or paste into a project land in its Imports folder. Pictures, CSV files and the first sheet of an Excel file show as previews, a file's older versions can be opened, and Attach adds a file to a thread.",
+            "A run's result now says whether it was checked: Verified, Not verified, Failed verification or Verification uncertain, in the thread and on the Board, with Run checks and Verify again.",
+            "Running work has more controls. Stop options offers ways to stop a request, and Resume, Retry, Fork and a Steer box work on ChatGPT (Codex) runs.",
+            "On the Nectovia home conversation, Claude Code keeps its session between messages. While an answer is being written you can queue your next message, and Stop ends the answer cleanly.",
+            "Settings > Agent profiles saves a route, an exact model and an effort setting as a profile, and a project can list which profiles its work uses, in order.",
+            "A Context used line under replies on the AWS, Azure, OpenRouter and Google Cloud routes shows what was sent to the model and what was summarised to fit.",
+            "Project instructions now include instruction files in subfolders, and a run shows exactly which files it received, with Open in Files.",
+            "Nectovia can suggest edits to a project's instruction files. You approve or decline each one, and can roll back to before any of them.",
+            "Run details have a Supervision section that flags a run drifting away from its task.",
+            "Capability packs can be installed, turned off, updated, rolled back or uninstalled from the Task permissions dialog, including a pack from a folder on this computer. With the Small Business pack on, Ctrl K can open a playbook to read it as well as use it.",
+            "Conversation text size can be set to 90, 100, 110 or 125 percent under Settings > Appearance or from the ··· menu.",
+            "The Windows icon, the installer, the Start menu entry and the window title now say Nectovia. The install folder and the program file keep the Diomedes name, so an update still finds your projects.",
+            "Settings > What's new lists what every release changed, and after an update Nectovia shows the new version's notes once. When Check for updates finds a newer version, its notes appear before you download it."
+          ]
+        },
+        {
+          "title": "Fixed",
+          "items": [
+            "Unsaved writing is no longer lost when you leave the editor another way, such as through Settings, Projects, another file or the command palette.",
+            "The thread header no longer shows a document's context as a percentage like 4182 percent; it shows a size.",
+            "Plan files no longer get broken names, task names no longer stop mid-thought, and the weekly brief no longer uses the whole setup sentence as its title.",
+            "Italic text displays, and each choice in the Cloud sharing dialog sits on its own line.",
+            "Stopping a tool on Windows no longer sometimes reports a clean-up failure that did not happen.",
+            "Facts in Discovery can be corrected or retired again after their source file is edited.",
+            "An installed tool that changes in place is noticed, and size limits count the real size of text in any language.",
+            "At 200 percent zoom and in small windows the work area and the inspector are usable again, and the Interface detail menu closes with Escape."
+          ]
+        },
+        {
+          "title": "Known limits",
+          "items": [
+            "Unsigned and experimental. The release is for Windows x64 only; there is no macOS build.",
+            "Nothing in this version was tried against a real provider. Every route in its tests was scripted or fake, including Codex, Claude Code, OpenCode, AWS Bedrock, Google Vertex AI, Azure OpenAI and OpenRouter.",
+            "Some parts are new and have not yet had an independent review: suggested edits to instruction files, playbook reading and the zoom and accessibility fixes. The Claude Code session controls are still under review.",
+            "Automations run only the weekly brief, only while this computer is on, and tell you only inside the app: nothing is sent by push, email or phone.",
+            "Resume, Retry, Fork and Steer work on ChatGPT (Codex) runs only. Claude Code keeps its session on the home conversation only, not in project threads.",
+            "Run checks run only the checks a task declares, and never run your project's own code. Nothing checks a run automatically when it finishes.",
+            "Files has no PDF viewer. Pictures and PDFs cannot be sent to an AI, and a binary file cannot be put back from an earlier version.",
+            "A step-by-step plan-act-check loop and a lead that hands work to helpers are built, but nothing in the app starts them yet.",
+            "The Console still has no History screen, no Make tasks from this plan and no Stop for a conversation.",
+            "This app is not signed in to a Nectovia account, and every route runs on, and is billed to, your own account."
+          ]
+        }
+      ]
+    },
+    {
+      "version": "0.1.11",
+      "date": "2026-09-24",
+      "channel": "stable",
+      "platforms": [
+        "windows"
+      ],
+      "headline": "The Files list no longer stalls the app on a large project, and a conversation keeps answering when one of its earlier runs cannot be read.",
+      "sections": [
+        {
+          "title": "Fixed",
+          "items": [
+            "The Files list no longer stalls the app on a large project. Listing a 3,000-file folder used to take about 40 seconds. It now takes well under a second, and a link, junction or private name is still refused exactly as before.",
+            "A conversation keeps answering when one of its earlier runs cannot be read, for example after a damaged file or a downgrade. Before, every new message on that thread was refused. Now the thread says once that it won't remember the part it couldn't read, and carries on; the unreadable file is left as it is.",
+            "Settings no longer accept the keys the retired Workbook used. Nothing in the app sends them; a settings file from an older build still loses them when it loads.",
+            "Everything else is 0.1.10."
+          ]
+        },
+        {
+          "title": "Updating",
+          "items": [
+            "Settings > App updates offers stable releases only. Nothing is downloaded, verified or installed until you confirm it, and a download is accepted only when its SHA-256 matches the digest the release publishes. An installed 0.1.7, 0.1.8, 0.1.9 or 0.1.10 can find this release when you press Check for updates.",
+            "An update from 0.1.9 or 0.1.10 keeps your settings, routes, saved keys, projects and conversations. An update from 0.1.7 or 0.1.8 still gets the one-time fresh start 0.1.9 introduced: the earlier version's data and the Documents\\Diomedes folder are set aside, renamed with \"before 0.1.9\" and the date, and nothing is deleted."
+          ]
+        },
+        {
+          "title": "Known limits",
+          "items": [
+            "Unsigned, experimental, tested on one machine.",
+            "The installer was built but not installed on the build machine, so its install, repair and uninstall are not verified, and the update from 0.1.10 has not been run end to end on an installed copy.",
+            "No route was exercised live on this build. Every route in its tests was scripted or fake, so no answer, spend or saved key was exercised against a real installed tool or against AWS Bedrock, Google Vertex AI, Azure OpenAI or OpenRouter.",
+            "Accepting any version means a new version of an installed tool is used without being tried first. If a tool changes how it answers, a request can fail. Nectovia cannot tell an update of your own installation from a different file put in its place at the same path. Nectovia's private copy of a tool is still checked against its release before it runs.",
+            "The Console has no History screen, no Keep or Undo for a waiting change, and no \"Make tasks from this plan\".",
+            "This app is not signed in to a Nectovia account. No credit balance or usage is shown, and every route runs on, and is billed to, your own account.",
+            "There is no sign-in. The Tiers card is marked Owner, but anyone using the app on this computer can change it.",
+            "The two names meet in places: the window title, the first conversation in each project and some messages still say Diomedes.",
+            "Connections is unavailable. It runs on example data rather than your own software, and there is no live connection to a business system.",
+            "The release is Windows x64 only. The local service listens on 127.0.0.1 only."
+          ]
+        }
+      ]
+    },
+    {
+      "version": "0.1.10",
+      "date": "2026-09-24",
+      "channel": "stable",
+      "platforms": [
+        "windows"
+      ],
+      "headline": "The Sample project and the History screen are gone from the Console.",
+      "sections": [
+        {
+          "title": "New",
+          "items": [
+            "The Sample project is gone. The Projects page, its empty state and the Everything list no longer offer it; a project is a folder you choose.",
+            "The History screen is gone from the Console, with its place in the rail, its Ctrl K entry and the Settings section that described it. Nectovia still records every change a task makes, but putting files back and saving a named version have no button in the Console in this release.",
+            "Everything else is 0.1.9: installed tools are accepted at whatever version they report, Check this computer says so when it finds nothing it can use, and the Console is the only way to work in a project."
+          ]
+        },
+        {
+          "title": "Updating",
+          "items": [
+            "Settings > App updates offers stable releases only. Nothing is downloaded, verified or installed until you confirm it, and a download is accepted only when its SHA-256 matches the digest the release publishes. An installed 0.1.7, 0.1.8 or 0.1.9 can find this release when you press Check for updates.",
+            "An update from 0.1.9 keeps your settings, routes, saved keys, projects and conversations. An update from 0.1.7 or 0.1.8 that skips 0.1.9 still gets the one-time fresh start 0.1.9 introduced: the earlier version's data and the Documents\\Diomedes folder are set aside, renamed with \"before 0.1.9\" and the date, and nothing is deleted."
+          ]
+        },
+        {
+          "title": "Known limits",
+          "items": [
+            "Unsigned, experimental, tested on one machine.",
+            "The installer was built but not installed on the build machine, so its install, repair and uninstall are not verified, and the update from 0.1.9 has not been run end to end on an installed copy.",
+            "No route was exercised live on this build. Every route in its tests was scripted or fake, so no answer, spend or saved key was exercised against a real installed tool or against AWS Bedrock, Google Vertex AI, Azure OpenAI or OpenRouter.",
+            "Accepting any version means a new version of an installed tool is used without being tried first. If a tool changes how it answers, a request can fail. Nectovia cannot tell an update of your own installation from a different file put in its place at the same path. Nectovia's private copy of a tool is still checked against its release before it runs.",
+            "The Console has no History screen, no Keep or Undo for a waiting change, and no \"Make tasks from this plan\".",
+            "This app is not signed in to a Nectovia account. No credit balance or usage is shown, and every route runs on, and is billed to, your own account.",
+            "There is no sign-in. The Tiers card is marked Owner, but anyone using the app on this computer can change it.",
+            "The two names meet in places: the window title, the first conversation in each project and some messages still say Diomedes.",
+            "Connections is unavailable. It runs on example data rather than your own software, and there is no live connection to a business system.",
+            "The release is Windows x64 only. The local service listens on 127.0.0.1 only."
+          ]
+        }
+      ]
+    },
+    {
+      "version": "0.1.9",
+      "date": "2026-09-24",
+      "channel": "stable",
+      "platforms": [
+        "windows"
+      ],
+      "headline": "This release starts over: the first time it opens, it sets aside what the earlier version kept and opens as a new install.",
+      "sections": [
+        {
+          "title": "New",
+          "items": [
+            "This release starts over. The first time 0.1.9 opens on a computer that had an earlier version, it sets aside everything the earlier version kept: its settings, its list of projects, its routes and their saved keys, its conversations, the saved account sign-in and the Documents\\Diomedes projects folder. Nothing is deleted. Each is renamed with \"before 0.1.9\" and the date in its name, next to where it was, so a file can still be found by hand. Nectovia then opens as a new install. This happens once.",
+            "Installed tools are accepted at whatever version they report. Claude Code, OpenCode, Oh My Pi, Cursor and Devin are no longer held to one reviewed version, so a tool that updated itself is not called incompatible. A tool that cannot report its version at all is still refused. A Claude Code conversation carries on after Claude Code updates.",
+            "When Check this computer finds nothing Nectovia can use, it says so: \"No available engines found. Install a compatible one below.\"",
+            "The Workbook is gone. The Console is the only way to work in a project.",
+            "The Console has two views, chosen from the detail menu. Conversation shows the message box and the threads; Architect shows the whole Console. A new person lands in Conversation when setup finishes. A view changes what is shown, never what Nectovia can do.",
+            "A thread's menu has \"Update this conversation\". It asks first, then starts each open conversation whose instructions are older than this build over on today's, and a note in the thread says so.",
+            "Each artifact in an answer is recorded with a fingerprint of its content, and the thread can show that record. An artifact whose message is gone shows as \"No longer in the conversation\".",
+            "A Markdown or Mermaid file a model writes is refused if it begins with HTML, so opening it from disk in a browser cannot run anything in it. Files you write or save yourself are unchanged."
+          ]
+        },
+        {
+          "title": "Updating",
+          "items": [
+            "Settings > App updates offers stable releases only. Nothing is downloaded, verified or installed until you confirm it, and a download is accepted only when its SHA-256 matches the digest the release publishes. An installed 0.1.7 or 0.1.8 can find this release when you press Check for updates.",
+            "Unlike earlier updates, this one does not keep your look, routes, saved keys, projects or conversations: they are set aside as described above. Later updates keep them again."
+          ]
+        },
+        {
+          "title": "Known limits",
+          "items": [
+            "Unsigned, experimental, tested on one machine.",
+            "The installer was built but not installed on the build machine, so its install, repair and uninstall are not verified, and neither the update from 0.1.8 nor the one-time fresh start has been run end to end on an installed copy.",
+            "No route was exercised live on this build. Every route in its tests was scripted or fake, so no answer, spend or saved key was exercised against a real installed tool or against AWS Bedrock, Google Vertex AI, Azure OpenAI or OpenRouter.",
+            "Accepting any version means a new version of an installed tool is used without being tried first. If a tool changes how it answers, a request can fail. Nectovia cannot tell an update of your own installation from a different file put in its place at the same path. Nectovia's private copy of a tool is still checked against its release before it runs.",
+            "If the old app data cannot be set aside (for example, another program has it open), Nectovia starts on it as before and tries again at the next start. A projects folder another program holds open stays where it is.",
+            "The Console has no Keep or Undo for a waiting change, and no \"Make tasks from this plan\"; both were Workbook controls.",
+            "This app is not signed in to a Nectovia account. No credit balance or usage is shown, and every route runs on, and is billed to, your own account.",
+            "There is no sign-in. The Tiers card is marked Owner, but anyone using the app on this computer can change it.",
+            "The two names meet in places: History sentences, the window title, the first conversation in each project and some messages still say Diomedes.",
+            "Connections is unavailable. It runs on example data rather than your own software, and there is no live connection to a business system.",
+            "The release is Windows x64 only. The local service listens on 127.0.0.1 only."
+          ]
+        }
+      ]
+    },
+    {
+      "version": "0.1.8",
+      "date": "2026-09-23",
+      "channel": "stable",
+      "platforms": [
+        "windows"
+      ],
+      "headline": "The app calls itself Nectovia, answers appear as they are written, and work styles choose where work runs.",
+      "sections": [
+        {
+          "title": "New",
+          "items": [
+            "The app calls itself Nectovia. Its screens, its home page and its answers use the new name. The installer, the Start menu entry, the window title, the Documents\\Diomedes projects folder and the release files keep the Diomedes name, so this build upgrades an earlier experimental install in place and finds your projects where they were.",
+            "A new install opens on the Nectovia look: ink and cyan, a home page that opens with the date, a greeting and a row for each of your projects. An update keeps the look you already had. To switch, choose Nectovia under Settings > Appearance.",
+            "Answers appear as they are written, on the Nectovia page and in project threads, and a line under the answer names each tool call while it runs, such as a web search. Not every route reports its tool calls.",
+            "Work styles choose where work runs. Pick Efficient, Focused or Thorough from the style control in a thread or on the Nectovia page, and the tier map in Settings > Engines > Tiers decides the route and the model. As shipped, Efficient runs GPT-5.6 Luna on AWS Bedrock and Focused runs Gemini 3.8 Flash on Google Vertex AI, each on your own account. Thorough has no model until you choose one there. A tier whose route is not connected is refused by name, and its work never moves to another provider.",
+            "Each job on AWS Bedrock, Google Vertex AI, Azure OpenAI or OpenRouter has a cap: 20 credits for Efficient, 50 for Focused and 100 for Thorough. A job stops before the step that would pass its cap, and nothing more is spent. On the Nectovia page the app asks before sending a message that is likely to pass its cap.",
+            "Google Vertex AI is a new route, set up in Settings > Engines. Azure OpenAI and OpenRouter can be connected there too, with your own keys and the prices you declare. AWS Bedrock is set up as before and now streams its answers.",
+            "The OpenCode route reads your OpenCode model list as it is now, gives each readiness check at most five seconds, and shows the answer without the model's reasoning.",
+            "Answers can carry artifacts. A diagram, an image, a design or a document opens in a side panel from a chip under the answer, and a table is drawn in the answer itself. Ask and Plan answers can also draw charts, figures and progress bars in place. In a project, the panel saves to Files under Saved artifacts.",
+            "Each project has a Cloud sharing button in its top bar. A new project shares nothing: every route except the sample is refused until you tick it there. The same dialog chooses each document a route may read and whether earlier messages may be sent.",
+            "Ask and Plan can look things up. Helper routes can search and read the web, and Claude Code can look through the project folder for one message when you tick that box before sending.",
+            "The local service answers only this app's own window. Another program on this computer, or a web page in your browser, is refused.",
+            "A Small Business pack of twelve playbooks can be turned on for a project from Ctrl K. Using a playbook fills the composer with a prepared Ask or Plan request."
+          ]
+        },
+        {
+          "title": "Updating",
+          "items": [
+            "Settings > App updates offers stable releases only. Nothing is downloaded, verified or installed until you confirm it, and a download is accepted only when its SHA-256 matches the digest the release publishes. An installed 0.1.7 can find this release when you press Check for updates.",
+            "An update keeps your look, your routes and their saved keys, your projects and your conversations."
+          ]
+        },
+        {
+          "title": "Known limits",
+          "items": [
+            "Unsigned, experimental, tested on one machine.",
+            "The installer was built but not installed on the build machine, so its install, repair and uninstall are not verified, and no upgrade from 0.1.7 has been run end to end.",
+            "No route was exercised live on this build. Every route in its tests was scripted or fake, so no answer, spend or saved key was exercised against a real installed tool or against AWS Bedrock, Google Vertex AI, Azure OpenAI or OpenRouter.",
+            "On a new install the Nectovia page runs on AWS Bedrock, and it asks you to turn AWS Bedrock on in Settings before anything is sent.",
+            "This app is not signed in to a Nectovia account. No credit balance or usage is shown, and every route runs on, and is billed to, your own account.",
+            "A job with no style chosen is held to the Efficient cap. The warning before a job passes its cap can be missing or priced for another route when a style sends the job elsewhere; the cap still stops the job.",
+            "AWS Bedrock runs only GPT-5.6 Luna in us-east-1, and Google Vertex AI only Gemini 3.8 Flash.",
+            "There is no sign-in. The Tiers card is marked Owner, but anyone using the app on this computer can change it.",
+            "Nothing tells a model to write a diagram, design or document, so those appear only when a model writes one unprompted. Artifacts can be saved only in a project, and playbooks do not run in provider-route conversations yet.",
+            "The two names meet in places: History sentences, the window title, the first conversation in each project and some messages still say Diomedes.",
+            "Connections is unavailable. It runs on example data rather than your own software, and there is no live connection to a business system.",
+            "The release is Windows x64 only. The local service listens on 127.0.0.1 only."
+          ]
+        }
+      ]
+    },
+    {
+      "version": "0.1.7",
+      "date": "2026-09-21",
+      "channel": "stable",
+      "platforms": [
+        "windows"
+      ],
+      "headline": "The Diomedes page is now a durable conversation, and AWS Bedrock can be connected on your own account.",
+      "sections": [
+        {
+          "title": "New",
+          "items": [
+            "The Diomedes page is now a durable conversation. All projects has its own conversation, and each project has its own Diomedes thread. Each is created on your first message and kept after that; opening the page creates nothing.",
+            "A conversation without a route you chose yourself runs on AWS Bedrock (GPT-5.6 Luna). A route you chose is kept, and you can choose another available route. Work a conversation starts still needs an explicit project and the same approvals as before.",
+            "Stop requests an end to the turn you sent. A stop the app cannot confirm is shown as unconfirmed, and provider charges already incurred may remain.",
+            "In Settings, find AWS Bedrock (GPT-5.6 Luna). Enter your AWS account number and your Bedrock API key yourself, confirm what may be sent to AWS Bedrock under that account, and press Connect AWS. Then approve a spend limit and press Save limit. The app's estimated limit is not a cap enforced by AWS billing. The key is saved using the desktop app's protected storage."
+          ]
+        },
+        {
+          "title": "Updating",
+          "items": [
+            "Settings > App updates offers stable releases only. Nothing is downloaded, verified or installed until you confirm it, and a download is accepted only when its SHA-256 matches the digest the release publishes. An installed earlier version can find this release when you press Check for updates. The build remains experimental and unsigned."
+          ]
+        },
+        {
+          "title": "Known limits",
+          "items": [
+            "Connections is unavailable in the app and opens no screen. There is no live connection to a business system in this release.",
+            "The AWS account, its access, its credits and its bill belong to the person who sets it up. This release includes no AWS access, and there is no automatic fallback to another provider.",
+            "Replies appear after they complete.",
+            "No live provider call was made in this release, and every provider in its tests was scripted or fake. Nobody has installed this build on a clean customer machine and connected AWS end to end.",
+            "The release is Windows x64 only. A public upgrade from an older customer installation has not been exercised end to end."
+          ]
+        }
+      ]
+    },
+    {
+      "version": "0.1.6",
+      "date": "2026-09-20",
+      "channel": "stable",
+      "platforms": [
+        "windows"
+      ],
+      "headline": "The Console is one screen language, and Setup can repair an installation it cannot use.",
+      "sections": [
+        {
+          "title": "New",
+          "items": [
+            "The Console is one screen language. Home, the strip across the top, the Everything rail and History were rebuilt so spacing, corner radius, motion and colour are decided in one place. History is a screen inside the Console now, and there is an editor for a task document.",
+            "Every dropdown in the app is drawn by the app, so a menu no longer opens in the app's colours and closes in the system's. How a dropdown behaves did not change: it is still reachable from the keyboard and still read by a screen reader.",
+            "The Projects view lets you choose how a question runs. The mode sits beside the question with a line naming what that mode is allowed to do, and it travels with the question. If the project you pick has no thread yet, one is opened for the question.",
+            "Discovery and Readiness are screens you can open. Discovery records a prospect's inputs, hand-offs and time, takes an owner's correction on a recorded fact, and imports a research brief. Readiness shows which tools are available and what each workflow still needs. Neither screen needs a Business account.",
+            "Setup can repair an installation it cannot use. A wrong-version, changed or corrupt installation now offers to repair itself with a compatible copy, and a missing one offers to install that copy. Claude Code, OpenCode and oh-my-pi have such a copy; Cursor and Devin do not.",
+            "Setup also offers a connection test you press yourself. It says what it will do before it does it: one small synthetic request through the route you chose, which may use that service's allowance or add provider charges. It is sent once rather than retried.",
+            "The app ships what it knows about itself, so an answer about how Diomedes works comes from the build you are running."
+          ]
+        },
+        {
+          "title": "Updating",
+          "items": [
+            "Settings > App updates offers stable releases only. Nothing is downloaded, verified or installed until you confirm it, and a download is accepted only when its SHA-256 matches the digest the release publishes. An installed 0.1.5 is offered this build when you press Check for updates."
+          ]
+        },
+        {
+          "title": "Known limits",
+          "items": [
+            "Unsigned, experimental, one machine tested.",
+            "Every Claude Code text request still starts a fresh process, so a follow-up is a new request and nothing is resumed.",
+            "Organisation access is in this build as groundwork with no screen, so there is no multi-user behaviour to see.",
+            "Durable inventory stock receipts are in this build, but no screen shows them.",
+            "The Design Center is in this build. Authoring inside the app is still developer-only, because the account and subscription software it depends on is not shipped yet. In an ordinary install you can open the Design Center, change things and watch the preview, while Apply, Save as new theme and Import do not work, and the screen says so.",
+            "Appearance work is included in a Diomedes Business subscription and is done by our own design team: we build and install your first look after a design consultation, and up to two revisions a year are included. There is nothing extra to buy.",
+            "The OpenCode route runs on the native OpenCode Go account. A sign-in to OpenCode Zen, or to any other provider inside your own OpenCode, is a different account and is invisible to this route.",
+            "No real provider request was made in testing, and nothing here has been run on a machine that did not build it.",
+            "The local service listens on 127.0.0.1 only.",
+            "There is no delete for a theme, and removing a picture from a theme leaves its bytes on disk."
+          ]
+        }
+      ]
+    },
+    {
+      "version": "0.1.5",
+      "date": "2026-09-20",
+      "channel": "stable",
+      "platforms": [
+        "windows"
+      ],
+      "headline": "This build adds reviewed foundations for sign-in, inventory and workforce planning.",
+      "sections": [
+        {
+          "title": "New",
+          "items": [
+            "Adds the reviewed account-service and native sign-in prerequisites, including protected credential storage and packaged sign-in support.",
+            "Adds reviewed inventory contracts, catalog and import preparation and stock-command calculations for later integration into authorized workflows.",
+            "Adds workforce proposal constraints and scoped outcome-evidence calculations.",
+            "Improves local durable-event recovery."
+          ]
+        },
+        {
+          "title": "Known limits",
+          "items": [
+            "This is an experimental Windows build. The application and installer are unsigned.",
+            "Native sign-in still requires the deployed identity configuration and provider and Windows qualification before it can be offered as a working customer sign-in flow.",
+            "Inventory, scheduling and value calculations are prerequisites; this release does not enable autonomous purchasing, guest messaging, kitchen devices or a complete restaurant workflow.",
+            "The personalized meeting displays remain labeled concepts.",
+            "Local event recovery does not certify remote tenancy or provider reconnection."
+          ]
+        }
+      ]
+    },
+    {
+      "version": "0.1.4",
+      "date": "2026-09-19",
+      "channel": "stable",
+      "platforms": [
+        "windows"
+      ],
+      "headline": "The Files pane works from the keyboard, and streaming answers now belong to the run that produced them.",
+      "sections": [
+        {
+          "title": "New",
+          "items": [
+            "The Files pane works from the keyboard. The file tree takes a single tab stop and moves under the arrow keys, Home and End, with Enter and Space to open a file. Back returns focus to the row you came from.",
+            "A preview that fails to load now offers an explicit retry instead of leaving an empty panel. The pane keeps its state per project, so switching projects no longer carries the previous project's open folders and selection across.",
+            "Streaming answers now belong to the run that produced them. Before this build, text from a cancelled or taken-over attempt could still arrive and paint over a newer answer. If the connection drops, the app throws the partial text away and re-reads the saved answer.",
+            "Cursor and Devin now run through one shared implementation. Nothing about how you use either route changed.",
+            "A dropped connection mid-answer now produces exactly one outcome. The app records a single result that needs reconciling, invents no completion, and still shows that same single result after a restart."
+          ]
+        },
+        {
+          "title": "Fixed",
+          "items": [
+            "Deep folder hierarchies no longer widen the Files pane past its own scroll container.",
+            "A slow preview that lost its race is discarded rather than painting over the file you are looking at now."
+          ]
+        },
+        {
+          "title": "Updating",
+          "items": [
+            "Settings > App updates offers stable releases only. Nothing is downloaded, verified or installed until you confirm it, and a download is accepted only when its SHA-256 matches the digest the release publishes. An installed 0.1.3 is offered this build when you press Check for updates."
+          ]
+        },
+        {
+          "title": "Known limits",
+          "items": [
+            "Unsigned, experimental, one machine tested.",
+            "Live streaming text is never replayed. If you lose the connection while a model is writing, you see the finished answer when it lands, not the part you missed. This is a deliberate limit.",
+            "No live engine turn was run on these bytes. Codex, oh-my-pi, Cursor and Devin were not live-tested on this build.",
+            "The Design Center is in this build. Authoring inside the app is still developer-only, because the account and subscription software it depends on is not shipped yet. In an ordinary install you can open the Design Center, change things and watch the preview, while Apply, Save as new theme and Import do not work, and the screen says so.",
+            "Appearance work is included in a Diomedes Business subscription and is done by our own design team: we build and install your first look after a design consultation, and up to two revisions a year are included. There is nothing extra to buy.",
+            "Connections runs on synthetic data only. The local service is loopback-only.",
+            "There is no delete for a theme, and removing a picture from a theme leaves its bytes on disk."
+          ]
+        }
+      ]
+    },
+    {
+      "version": "0.1.3",
+      "date": "2026-09-18",
+      "channel": "stable",
+      "platforms": [
+        "windows"
+      ],
+      "headline": "This build adds the Design Center, which changes how Diomedes looks with the real screens previewing live beside the controls.",
+      "sections": [
+        {
+          "title": "New",
+          "items": [
+            "This build adds the Design Center: Settings > Design Center > Open Design Center. It changes how Diomedes looks - colours, type, spacing, corner radius, motion, and imported pictures - with the real screens previewing live beside the controls. It needs no internet connection, no account and no AI engine, and it sends nothing anywhere.",
+            "Appearance work is included in a Diomedes Business subscription and is done by our own design team: we build and install your first look after a design consultation, and up to two revisions a year are included. You do not have to author it yourself, and there is no add-on to buy.",
+            "Nothing about appearance costs money to undo. Built-in schemes, text size, zoom, contrast, reduced motion, texture off, focus visibility and the safe reset are free and always work; Settings > Appearance > any built-in scheme puts everything back.",
+            "A theme is data, never a plug-in. Imported pictures must be PNG, JPEG or WebP; SVG is refused with a sentence.",
+            "Applying a theme does not restart anything. The app changes colour where it stands; unsent messages, scroll position and running work are untouched.",
+            "A theme that will not load is not a broken app. Diomedes falls back to the last version that worked, then to the built-in package, and says which one you are looking at.",
+            "Themes are private to the account and workspace they were made in.",
+            "If you never open it, nothing changes for you except one new Design Center entry in the Settings list on desktop."
+          ]
+        },
+        {
+          "title": "Updating",
+          "items": [
+            "Settings > App updates offers stable releases only. Nothing is downloaded, verified or installed until you confirm it, and a download is accepted only when its SHA-256 matches the digest the release publishes. An installed 0.1.2 is offered this build when you press Check for updates."
+          ]
+        },
+        {
+          "title": "Known limits",
+          "items": [
+            "Unsigned, experimental, one machine tested.",
+            "Authoring inside the app is developer-only in 0.1.3, because the account and subscription software it depends on is not shipped yet. In an ordinary install you can open the Design Center, change things and watch the preview, while Apply, Save as new theme and Import do not work - the screen says so.",
+            "No live engine turn was run on these bytes. Codex, oh-my-pi, Cursor and Devin were not live-tested on this build.",
+            "Connections runs on synthetic data only. The local service is loopback-only.",
+            "A texture is capped so that text over it stays readable, so a dark texture is dimmed as hard as a white one.",
+            "There is no delete for a theme, and removing a picture from a theme leaves its bytes on disk."
+          ]
+        }
+      ]
+    },
+    {
+      "version": "0.1.2",
+      "date": "2026-09-18",
+      "channel": "stable",
+      "platforms": [
+        "windows"
+      ],
+      "headline": "This is the first stable release on the update channel.",
+      "sections": [
+        {
+          "title": "New",
+          "items": [
+            "This is the first stable release on the update channel, and the first build whose version differs from the experimental builds before it.",
+            "Settings > App updates offers stable releases only. Every experimental build so far reported version 0.1.1; from this release on, those builds will be offered this one when you press Check for updates.",
+            "Nothing is downloaded, verified or installed until you confirm it, and the download is accepted only when its SHA-256 matches the digest the release publishes."
+          ]
+        },
+        {
+          "title": "Known limits",
+          "items": [
+            "Unsigned, experimental, one machine tested.",
+            "The whole update path has not been exercised against the live public channel, which cannot be run until a stable release exists to run it against. Treat that step as present, not proven.",
+            "Claude Code produced a reviewed file proposal. OpenCode did not start within 45 seconds in three of four attempts while the project folder sat inside a large git repository; with the project folder outside any git repository it produced a proposal in about 10 seconds.",
+            "Codex, oh-my-pi, Cursor and Devin were not live-tested on this build.",
+            "Connections runs on synthetic data only. The local service is loopback-only."
+          ]
+        }
+      ]
+    }
+  ]
+}

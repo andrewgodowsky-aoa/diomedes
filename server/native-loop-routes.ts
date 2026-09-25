@@ -74,12 +74,20 @@ const startSchema = z.strictObject({
   sources: z.array(z.string().min(1).max(400)).max(32).optional(),
   delegate: z
     .strictObject({
-      route: routeName,
+      /** Absent when an H09 profile names it (Andrew, 2026-09-24: delegate routes come from profiles). */
+      route: routeName.optional(),
       model: z.string().min(1).max(200).nullable().optional(),
       accountRoute: z.string().min(1).max(400).nullable().optional(),
+      profileId: z.string().min(1).max(120).optional(),
     })
+    .refine((value) => Boolean(value.route || value.profileId), { message: 'Name a route or a profile for the delegate.' })
     .nullable()
     .optional(),
+  /**
+   * The files and folders this loop may apply its delegates' and workers' changes in without
+   * asking again (`.` is the whole project). Absent: every change they return waits for you.
+   */
+  applyScope: z.array(z.string().min(1).max(400)).min(1).max(32).nullable().optional(),
   /** H14: workers and an advisor for this lead. */
   team: z
     .strictObject({
@@ -325,10 +333,17 @@ export function mountNativeLoopRoutes(
     const task = state.tasks.find((item) => item.id === body.taskId && !item.deletedAt);
     if (!task) throw new ApiError(404, 'This task was not found.');
     const sources = [...new Set((body.sources ?? []).map((source) => relativeName(source)))];
+    const applyScope = body.applyScope
+      ? [...new Set(body.applyScope.map((entry) => (entry.trim() === '.' ? '.' : relativeName(entry))))]
+      : null;
     const consent = body.consent === true;
     const admitted = await admitRoute(projectId, body.route, body, sources, consent);
     let delegate: LoopRunInput['delegate'] = null;
-    if (body.delegate) {
+    if (body.delegate?.profileId) {
+      // The person's H09 profile fixes the delegate's route and exact model, by H09's own rules.
+      const role = await admitRole(projectId, task.id, 'worker', { profileId: body.delegate.profileId }, body, [], consent);
+      delegate = { route: role.route, model: role.model, accountRoute: role.accountRoute, profile: role.profile };
+    } else if (body.delegate?.route) {
       const child = await admitRoute(projectId, body.delegate.route, body.delegate, [], consent);
       delegate = { route: body.delegate.route, model: child.model, accountRoute: child.accountRoute };
     }
@@ -358,6 +373,7 @@ export function mountNativeLoopRoutes(
       instructions: instructions.section ?? '',
       delegate,
       sources,
+      ...(applyScope ? { applyScope } : {}),
       ...(team ? { team } : {}),
       ...(extra.retryOf ? { retryOf: extra.retryOf } : {}),
       command: { id: commandId, digest: commandDigest },
@@ -414,7 +430,33 @@ export function mountNativeLoopRoutes(
         outcome: loopOutcome(view, checked),
         verification: checked,
         team: await harness.loop.teamView(run),
+        changeSets: await harness.loop.changeSets.views(projectId, { rootRunId: run.id }),
       });
+    }),
+  );
+
+  /**
+   * The change sets a loop's sandboxed delegates and workers returned: one entry's both sides
+   * with P06's readable diff, and a person's keep or discard, per entry or per hunk.
+   */
+  app.get(
+    '/api/projects/:id/change-sets/:changeSetId/entries/:index/diff',
+    handle(async (req) => {
+      const projectId = String(req.params.id);
+      store.state(projectId);
+      const index = Number(req.params.index);
+      if (!Number.isSafeInteger(index) || index < 0) throw new ApiError(400, 'Name one change by its number.');
+      return harness.scrub(await harness.loop.changeSets.diff(projectId, String(req.params.changeSetId), index));
+    }),
+  );
+  app.post(
+    '/api/projects/:id/change-sets/:changeSetId/decide',
+    handle((req) => {
+      const projectId = String(req.params.id);
+      store.state(projectId);
+      return store.locked(async () => ({
+        changeSet: await harness.loop.changeSets.decide(projectId, String(req.params.changeSetId), req.body ?? {}),
+      }));
     }),
   );
 
@@ -456,6 +498,7 @@ export function mountNativeLoopRoutes(
           usage: view.usage,
           outcome: loopOutcome(view, checked),
           team: await harness.loop.teamView(run),
+          changeSets: await harness.loop.changeSets.views(projectId, { rootRunId: run.id }),
         });
       }
       return harness.scrub({ leads });

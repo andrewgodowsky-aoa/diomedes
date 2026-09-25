@@ -59,9 +59,48 @@ import { HarnessError, digest } from '../policy.js';
 import { routeContractFor } from '../route-contract.js';
 import type { RunService } from '../run-service.js';
 import { ToolRegistry } from '../tools.js';
-import { ADVISE_TOOL, ASSIGN_TOOL, TEAM_ADVISOR_CAPABILITY, TEAM_WORKER_CAPABILITY, teamLeadView } from '../../../shared/team-delegation.js';
+import {
+  ADVISE_TOOL,
+  ASSIGN_TOOL,
+  TEAM_ADVISOR_CAPABILITY,
+  TEAM_LIMITS,
+  TEAM_WORKER_CAPABILITY,
+  harnessBudgetOf,
+  teamLeadView,
+} from '../../../shared/team-delegation.js';
 import { HandoffLedger } from '../../team/handoff-ledger.js';
 import { createTeamPort, teamChildIds } from './team-loop.js';
+import { applicationOrigin, type OriginSnapshot } from '../../../shared/attribution.js';
+import { DELEGATION_LIMITS, SANDBOX_LIMITS, intersectScope, type SandboxManifest } from '../../../shared/sandbox.js';
+import { SandboxRefused, SandboxStore } from '../../sandbox/sandbox.js';
+import { ChangeSetService } from '../../sandbox/change-sets.js';
+import { DELEGATE_TOOL } from '../native-loop.js';
+
+/** A depth-2 helper's carve: fixed, so it can be the price of the tool that starts it. */
+const NESTED_UNITS = 4;
+const NESTED_OUTPUT = z.strictObject({
+  state: z.string(),
+  answer: z.string().nullable(),
+  reason: z.string().optional(),
+  changes: z
+    .strictObject({ applied: z.array(z.string()), waitingForAPerson: z.array(z.string()), conflicts: z.array(z.string()) })
+    .optional(),
+}) as unknown as z.ZodType<Json>;
+
+/** What a delegate is told about where it works. */
+export function delegateInstructions(depth: number, scope: readonly string[] | null, canWrite: boolean): string {
+  return [
+    LOOP_INSTRUCTIONS,
+    'You are a helper given one bounded sub-task. Answer it in a few lines.',
+    `You work in your own copy of ${scope ? scope.join(', ') : 'the files you were given'}. Nothing you do changes the project directly.`,
+    canWrite
+      ? 'You may change files in your copy with write_file, or propose a change for a person with propose_file. What you change comes back to the loop that handed you this task as a change set.'
+      : 'You may read your copy; you cannot change anything.',
+    depth < LOOP_LIMITS.delegationDepth ? 'You may hand one smaller part to a helper of your own with delegate; it cannot hand work on.' : null,
+  ]
+    .filter(Boolean)
+    .join('\n\n');
+}
 
 export const NATIVE_LOOP: CapabilityManifest = {
   id: NATIVE_LOOP_CAPABILITY,
@@ -352,9 +391,14 @@ function streamed(stream: ModelStreamSink | undefined, result: ModelResult): Mod
  * propose the report, then claim it is done. Not a model: every step it drives
  * is an application action, and no model is ever named for it.
  */
-export function loopFixtureAdapter(sources: readonly string[], team = false): ModelAdapter {
+export function loopFixtureAdapter(sources: readonly string[], team = false, goal = ''): ModelAdapter {
   const first = sources[0] ?? 'README.md';
   const second = sources[1] ?? first;
+  // "have a helper write <file>" (or propose) in the goal: the helper changes that file in its sandbox.
+  const helperChange = goal.match(/\bhave a helper (write|propose) ([\w./-]+\.[A-Za-z0-9]{1,8})/);
+  const helperTask = helperChange
+    ? `Read ${second} and ${helperChange[1]} ${helperChange[2]} with what it lists.`
+    : `Read ${second} and say in one line what it lists.`;
   const rest = sources.slice(1, 4);
   /**
    * H14's lead script, when workers are offered: read the first file, hand each
@@ -407,7 +451,7 @@ export function loopFixtureAdapter(sources: readonly string[], team = false): Mo
       if (offered.has(ASSIGN_TOOL)) return teamScript(offered, outputs);
       const plan: { name: string; input: Json }[] = [{ name: 'read_project_file', input: { path: first } }];
       if (offered.has('delegate') && second !== first)
-        plan.push({ name: 'delegate', input: { task: `Read ${second} and say in one line what it lists.` } });
+        plan.push({ name: 'delegate', input: { task: helperTask } });
       if (outputs.length < plan.length) return { response: { type: 'tool', ...plan[outputs.length] } };
       if (outputs.length === plan.length) {
         const lines = [`# Loop report`, ''];
@@ -426,9 +470,14 @@ export function loopFixtureAdapter(sources: readonly string[], team = false): Mo
   };
 }
 
-/** The delegate's fixed local script: read the file its task names, answer with its first line. */
-export function delegateFixtureAdapter(task: string): ModelAdapter {
+/**
+ * The delegate's fixed local script: read the file its task names; when the
+ * task says "write <file>" or "propose <file>" and its copy may be changed,
+ * write that file in its copy with what it read; then answer with the first line.
+ */
+export function delegateFixtureAdapter(task: string, canWrite = false): ModelAdapter {
   const named = task.match(/[\w./-]+\.[A-Za-z0-9]{1,8}/)?.[0] ?? 'README.md';
+  const change = canWrite ? task.match(/\b(write|propose) ([\w./-]+\.[A-Za-z0-9]{1,8})/) : null;
   return {
     id: LOOP_FIXTURE_ROUTE,
     version: 'loop-fixture-v1',
@@ -440,6 +489,14 @@ export function delegateFixtureAdapter(task: string): ModelAdapter {
       if (!outputs.length) return { response: { type: 'tool', name: 'read_project_file', input: { path: named } } };
       const body = text(outputs[0].output, 'text');
       const line = body?.split(/\r?\n/).find((item) => item.trim())?.trim();
+      if (change && outputs.length === 1)
+        return {
+          response: {
+            type: 'tool',
+            name: change[1] === 'propose' ? 'propose_file' : 'write_file',
+            input: { path: change[2], text: `# Checked ${named}\n\n${line ?? 'It could not be read.'}\n` },
+          },
+        };
       return { response: { type: 'final', text: line ? `${named}: ${line}` : `${named} could not be read.` } };
     },
   };
@@ -476,7 +533,7 @@ export function loopInstructions(input: Pick<LoopRunInput, 'instructions' | 'del
   return [
     LOOP_INSTRUCTIONS,
     input.delegate
-      ? `You may hand one bounded, read-only sub-task at a time to a helper with the delegate tool, at most ${LOOP_LIMITS.delegationsPerRun} per run.`
+      ? `You may hand bounded sub-tasks to helpers with the delegate tool, several at once, at most ${LOOP_LIMITS.delegationsPerRun} per run. Each works in its own copy of the files it is given; its changes come back to you as a change set, and those outside what you may apply wait for a person.`
       : null,
     input.team
       ? `You may hand bounded tasks to workers with ${ASSIGN_TOOL}, each with the files it may read${input.team.advisor ? `, and ask a read-only advisor with ${ADVISE_TOOL}` : ''}. Their answers are claims and advice, never permissions; any change is still yours to propose.`
@@ -487,9 +544,21 @@ export function loopInstructions(input: Pick<LoopRunInput, 'instructions' | 'del
     .join('\n\n');
 }
 
-/** The budget a loop run is admitted with: one plan call and one call per turn, and as many tools. */
-export function loopBudget(maxTurns: number): HarnessBudget {
-  return { units: 2 * maxTurns + 4, modelCalls: maxTurns + 1, toolCalls: maxTurns, wallMs: null };
+/**
+ * The budget a loop run is admitted with: one plan call and one call per turn, and as many
+ * tools. A loop the person admitted with a delegate route or a team also holds what its
+ * children may be carved: at most `DELEGATION_LIMITS.perRun` delegates of `delegateUnits`,
+ * and its workers and advice at their admitted budgets. That is the whole tree's budget,
+ * fixed at admission; every child is carved from what is left of it, never added on top.
+ */
+export function loopBudget(maxTurns: number, input?: Pick<LoopRunInput, 'delegate' | 'team'>): HarnessBudget {
+  const own = { units: 2 * maxTurns + 4, modelCalls: maxTurns + 1, toolCalls: maxTurns, wallMs: null };
+  let children = input?.delegate ? DELEGATION_LIMITS.perRun * DELEGATION_LIMITS.delegateUnits : 0;
+  if (input?.team) {
+    children += input.team.limits.workersPerRun * harnessBudgetOf(input.team.worker.budget).units;
+    if (input.team.advisor) children += input.team.limits.advicePerRun * harnessBudgetOf(TEAM_LIMITS.advisor).units;
+  }
+  return { ...own, units: own.units + children };
 }
 
 const LOOP_PARTY = {
@@ -546,6 +615,9 @@ export function createLoopProcedure(deps: {
     return () => clearInterval(timer);
   };
 
+  // Sandboxes for every delegate and worker, and the change sets they hand back (decision 2026-09-24).
+  const sandboxes = new SandboxStore(store, store.dataDir);
+  const changeSets = new ChangeSetService(store, sandboxes);
   // H14: a lead's workers and advisor, and the append-only record of every handoff.
   const ledger = new HandoffLedger(store.dataDir);
   const team = createTeamPort({
@@ -556,6 +628,44 @@ export function createLoopProcedure(deps: {
     adapterFor: (route, request, stop, script) => adapterFor(route, request, stop, script),
     heartbeat: (runId, owner) => heartbeat(runId, owner),
     registry: (projectId, routes, scope) => delegateRegistry(store, projectId, routes, scope),
+    // Decision 2026-09-24: a worker works in its own sandbox and hands back a change set.
+    sandbox: async ({ lead, childRunId, routes, scope, canWrite, create }) => {
+      let manifest = await sandboxes.read(lead.projectId, childRunId);
+      if (!manifest || manifest.state === 'creating') {
+        if (!create && !manifest) return { refusal: 'Its sandbox is no longer there, so it was stopped.' };
+        try {
+          manifest = await sandboxes.create({
+            projectId: lead.projectId,
+            runId: childRunId,
+            parentRunId: lead.id,
+            rootRunId: lead.id,
+            depth: 1,
+            role: 'worker',
+            base: { kind: 'project' },
+            scope,
+          });
+        } catch (error) {
+          if (error instanceof SandboxRefused) return { refusal: error.message };
+          throw error;
+        }
+      }
+      if (manifest.state !== 'open') return { refusal: 'Its sandbox was already collected.' };
+      return { registry: sandboxes.registry(manifest, { readable: readableFor(lead.projectId, routes), write: canWrite }) };
+    },
+    settle: async ({ lead, child, handoffId }) => {
+      const manifest = await sandboxes.read(lead.projectId, child.id);
+      if (!manifest) return null;
+      const recorded = await changeSets.record({
+        manifest,
+        handoffId,
+        taskId: lead.taskId,
+        sessionId: lead.sessionId,
+        origin: authorOf(child),
+        models: reportedModels(child),
+        applyScope: applyGrant(lead).applyScope,
+      });
+      return changeSets.settleIntoProject(recorded, { canWrite: applyGrant(lead).canWrite });
+    },
   });
 
   const summary = (child: HarnessRun): LoopDelegateResult => {
@@ -575,11 +685,16 @@ export function createLoopProcedure(deps: {
     const ids: string[] = [];
     for (const step of parent.steps) {
       if (!step.intent.stepId.startsWith('delegate:')) continue;
-      const id = (step.intent.input as { childRunId?: unknown } | null)?.childRunId;
-      if (typeof id === 'string') ids.push(id);
+      const input = step.intent.input as { childRunId?: unknown; handoffs?: { childRunId?: unknown }[] } | null;
+      if (typeof input?.childRunId === 'string') ids.push(input.childRunId);
+      for (const item of Array.isArray(input?.handoffs) ? input.handoffs : [])
+        if (typeof item?.childRunId === 'string') ids.push(item.childRunId);
     }
     // H14: a lead's workers and advisor are its children too, so Stop reaches them.
     ids.push(...teamChildIds(parent));
+    // Every sandbox names the run that handed it out, so a delegate's own delegate is found too.
+    for (const manifest of await sandboxes.list(parent.projectId))
+      if (manifest.parentRunId === parent.id && !ids.includes(manifest.runId)) ids.push(manifest.runId);
     for (const id of ids) {
       try {
         found.push(await runs.get(id));
@@ -613,10 +728,298 @@ export function createLoopProcedure(deps: {
     });
   };
 
-  /** Durable cancellation: a stopped parent stops every child that is still live. */
-  const stopChildren = async (parent: HarnessRun) => {
-    for (const child of await children(parent))
+  /** Durable cancellation: a stopped parent stops every run below it that is still live, at every depth. */
+  const stopChildren = async (parent: HarnessRun, seen = new Set<string>()) => {
+    for (const child of await children(parent)) {
+      if (seen.has(child.id)) continue;
+      seen.add(child.id);
       if (ACTIVE.includes(child.state)) await runs.cancel(child.id, PARENT_STOPPED, child.principal);
+      await stopChildren(await runs.get(child.id), seen);
+    }
+  };
+  /** Once the loop the person started has ended, what is left of its sandboxes goes with it. */
+  const sweepTree = (run: HarnessRun) => sandboxes.sweep(run.projectId, async (root) => root === run.id);
+
+  /** The loop the person started, from any run in its tree. */
+  const rootOf = async (run: HarnessRun): Promise<HarnessRun> => {
+    if (run.capabilityId === NATIVE_LOOP.id) return run;
+    const input = run.input as { rootRunId?: unknown; parent?: { runId?: unknown } } | null;
+    const id = typeof input?.rootRunId === 'string' ? input.rootRunId : input?.parent?.runId;
+    return typeof id === 'string' ? rootOf(await runs.get(id)) : run;
+  };
+  /** Every cloud route a child's reads can reach must be granted what it reads. */
+  const readableFor = (projectId: string, routes: readonly string[]) => (file: string) => {
+    for (const route of routes)
+      if (isCloudRoute(route))
+        try {
+          requireCloudSharing(store.state(projectId), route, [file]);
+        } catch {
+          return false;
+        }
+    return true;
+  };
+  /** Who wrote a child's changes: the first model the runtime reported for it, else an application action. */
+  const authorOf = (child: HarnessRun): OriginSnapshot =>
+    child.steps.find(
+      (step) => step.intent.kind === 'model' && step.state === 'succeeded' && step.origin?.mode === 'direct' && step.origin.model.source === 'runtime',
+    )?.origin ?? applicationOrigin();
+  /** Whether the loop the person started may apply its children's changes itself, and where. */
+  const applyGrant = (root: HarnessRun) => {
+    const input = root.input as unknown as Partial<LoopRunInput> | undefined;
+    return {
+      applyScope: input?.applyScope ?? null,
+      canWrite: root.principal.capabilities.includes('write-project-file'),
+    };
+  };
+
+  /** A delegate's capability, naming exactly the tools its sandbox registry holds. */
+  const delegateCapability = (registry: ToolRegistry): CapabilityManifest => ({
+    ...NATIVE_LOOP_DELEGATE,
+    version: 'v2',
+    tools: registry.describe().map((tool) => tool.name),
+    requestedPermissions: [],
+  });
+
+  interface DelegateSpec {
+    readonly parent: HarnessRun;
+    readonly stepId: string;
+    readonly childRunId: string;
+    readonly handoffId: string;
+    readonly task: string;
+    readonly budget: HarnessBudget;
+    readonly maxTurns: number;
+    readonly signal: AbortSignal;
+    readonly scope: readonly string[] | null;
+    readonly depth: number;
+    readonly target: { route: string; model: string | null; accountRoute: string | null };
+  }
+
+  const failedResult = (childRunId: string, reason: string): LoopDelegateResult => ({
+    v: 1,
+    childRunId,
+    state: 'failed',
+    text: null,
+    reason,
+    models: [],
+  });
+
+  /**
+   * Start or resume one delegate in its own sandbox and wait for it, then
+   * record what its copy holds as a change set and settle it: into the project
+   * for a delegate of the loop, into its parent's copy for a delegate's own.
+   * Idempotent by child id, so a replay resumes the child and settles once.
+   */
+  const driveDelegate = async (spec: DelegateSpec): Promise<LoopDelegateResult> => {
+    const { parent } = spec;
+    const root = await rootOf(parent);
+    const principal = parent.principal;
+    const routes = [...new Set([spec.target.route, loopInput(root).route, ...(parent.id !== root.id ? [childInput(parent).route] : [])])];
+    const canWrite = principal.capabilities.includes('write-project-file');
+    const build = (manifest: SandboxManifest) => childRegistry(manifest, routes, canWrite, spec);
+    let child: HarnessRun | null = null;
+    try {
+      child = await runs.get(spec.childRunId);
+    } catch (error) {
+      if (!(error instanceof HarnessError) || error.code !== 'unknown_run') throw error;
+    }
+    let manifest = await sandboxes.read(parent.projectId, spec.childRunId);
+    if (!child) {
+      let admitted: { model: string | null; accountRoute: string | null };
+      try {
+        // The child's route is admitted in its own right, fresh, before it starts.
+        admitted = await admit(spec.target.route, { projectId: parent.projectId, model: spec.target.model, accountRoute: spec.target.accountRoute });
+      } catch (error) {
+        return failedResult(spec.childRunId, `The sub-task could not start on ${spec.target.route}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+      try {
+        manifest = await sandboxes.create({
+          projectId: parent.projectId,
+          runId: spec.childRunId,
+          parentRunId: parent.id,
+          rootRunId: root.id,
+          depth: spec.depth,
+          role: 'delegate',
+          base: spec.depth > 1 ? { kind: 'sandbox', runId: parent.id } : { kind: 'project' },
+          scope: spec.scope,
+        });
+      } catch (error) {
+        if (error instanceof SandboxRefused) return failedResult(spec.childRunId, error.message);
+        throw error;
+      }
+      const registry = build(manifest);
+      const input: LoopChildInput = {
+        v: 1,
+        kind: 'diomedes-loop-delegate',
+        parent: { runId: parent.id, stepId: spec.stepId, handoffId: spec.handoffId },
+        task: spec.task,
+        route: spec.target.route,
+        model: admitted.model,
+        accountRoute: admitted.accountRoute,
+        maxTurns: spec.maxTurns,
+        rootRunId: root.id,
+        depth: spec.depth,
+        scope: spec.scope,
+      };
+      child = await runs.start({
+        id: spec.childRunId,
+        tenantId: parent.tenantId,
+        projectId: parent.projectId,
+        taskId: parent.taskId,
+        sessionId: null,
+        principal,
+        capability: delegateCapability(registry),
+        tools: registry,
+        input: input as unknown as Json,
+        budget: spec.budget,
+      });
+    }
+    if (ACTIVE.includes(child.state)) {
+      if (!manifest || manifest.state !== 'open') {
+        await runs.cancel(child.id, 'its sandbox is no longer there', principal).catch(() => undefined);
+        return failedResult(child.id, 'Its sandbox is no longer there, so it was stopped.');
+      }
+      const registry = build(manifest);
+      const owner = identifier('loop-child-');
+      const input = childInput(child);
+      const stopChild = () => void runs.cancel(child!.id, PARENT_STOPPED, principal).catch(() => undefined);
+      if (spec.signal.aborted) stopChild();
+      spec.signal.addEventListener('abort', stopChild, { once: true });
+      const controller = new AbortController();
+      let beat = () => {};
+      let driven = false;
+      try {
+        await runs.claim(child.id, owner, 60_000, { refuseSettled: true });
+        beat = heartbeat(child.id, owner);
+        const adapter = await adapterFor(
+          input.route,
+          {
+            projectId: child.projectId,
+            runId: child.id,
+            taskId: child.taskId,
+            model: input.model,
+            accountRoute: input.accountRoute,
+            instructions: delegateInstructions(spec.depth, spec.scope, canWrite),
+            purpose: 'delegate',
+          },
+          AbortSignal.any([controller.signal, spec.signal]),
+          () => delegateFixtureAdapter(input.task, canWrite),
+        );
+        driven = true;
+        await new NativeAgent(runs, adapter, registry).run(child.id, owner, input.task, principal, { maxTurns: input.maxTurns });
+      } catch {
+        // The child's own record says how it ended; the parent observes that record. A child
+        // claimed but never driven (its route could not open) is failed here with the reason,
+        // so it is not left running with nobody to drive it.
+        if (!driven && !spec.signal.aborted) await runs.fail(child.id, owner, new Error('Its route could not be opened.')).catch(() => undefined);
+      } finally {
+        beat();
+        controller.abort();
+        spec.signal.removeEventListener('abort', stopChild);
+      }
+      child = await runs.get(child.id);
+    }
+    const result = summary(child);
+    if (child.state !== 'completed' || !manifest) return result;
+    // What the child's copy holds comes back as a change set, never as effects.
+    const recorded = await changeSets.record({
+      manifest,
+      handoffId: spec.handoffId,
+      taskId: root.taskId,
+      sessionId: root.sessionId,
+      origin: authorOf(child),
+      models: reportedModels(child),
+      applyScope: applyGrant(root).applyScope,
+    });
+    const parentManifest = spec.depth > 1 ? await sandboxes.read(parent.projectId, parent.id) : null;
+    const changeSet =
+      spec.depth > 1 && parentManifest
+        ? await changeSets.settleIntoSandbox(recorded, parentManifest)
+        : await changeSets.settleIntoProject(recorded, { canWrite: applyGrant(root).canWrite });
+    return { ...result, changeSet };
+  };
+
+  /**
+   * A delegate's registry: the sandbox's readers and writers rooted at its copy,
+   * and, below the depth limit, a `delegate` tool whose child works in a copy of
+   * this delegate's own copy.
+   */
+  const childRegistry = (manifest: SandboxManifest, routes: readonly string[], canWrite: boolean, spec: DelegateSpec): ToolRegistry => {
+    const registry = sandboxes.registry(manifest, { readable: readableFor(manifest.projectId, routes), write: canWrite });
+    if (spec.depth >= LOOP_LIMITS.delegationDepth) return registry;
+    const units = NESTED_UNITS;
+    registry.register({
+      name: DELEGATE_TOOL,
+      version: 'v1',
+      description: `Hand one smaller part of your task to a helper. It works in a copy of the files you name, taken from your own copy, and what it changes comes back into your copy. It cannot hand work on. Its budget of ${units} units is carved from yours.`,
+      // It changes nothing outside this delegate's own copy, and resuming it is idempotent by the helper's id.
+      effect: 'read',
+      effectClass: 'read',
+      permission: null,
+      approval: false,
+      destination: 'local',
+      trustedInputRequired: false,
+      cost: units,
+      limits: { timeoutMs: 10 * 60_000 },
+      schema: z.strictObject({
+        task: z.string().trim().min(1).max(LOOP_LIMITS.taskChars),
+        files: z.array(z.string().trim().min(1).max(400)).min(1).max(SANDBOX_LIMITS.scopeEntries).optional(),
+      }),
+      outputSchema: NESTED_OUTPUT,
+      execute: async ({ input, idempotencyKey, signal }) => {
+        const me = await runs.get(manifest.runId);
+        const grandId = `${me.id}-g${idempotencyKey.slice(0, 8)}`;
+        const siblings = (await sandboxes.list(me.projectId)).filter((item) => item.parentRunId === me.id && item.runId !== grandId);
+        if (siblings.length >= LOOP_LIMITS.delegationsPerRun)
+          return { state: 'refused', answer: null, reason: `This sub-task already handed on ${LOOP_LIMITS.delegationsPerRun} parts, which is as many as one run may.` };
+        const scoped = intersectScope(manifest.scope, input.files ?? null);
+        if (scoped.outside.length)
+          return { state: 'refused', answer: null, reason: `${scoped.outside.join(', ')} ${scoped.outside.length === 1 ? 'is' : 'are'} outside your own scope.` };
+        const opened = openHandoff({
+          id: `${grandId}-h`,
+          tenantId: null,
+          from: { ...DELEGATE_PARTY, produces: ['plan.markdown'] as const },
+          to: DELEGATE_PARTY,
+          artifact: 'plan.markdown',
+          parentWork: { runId: me.id, taskId: me.taskId ?? '', summary: input.task.slice(0, 200) },
+          evidence: [],
+          unresolved: [],
+          depth: spec.depth,
+          siblings: siblings.length,
+          payer: {
+            kind: spec.target.route === LOOP_FIXTURE_ROUTE ? 'local-machine' : 'bring-your-own',
+            id: spec.target.accountRoute,
+            coversChildren: true,
+            reason: 'The connection the person chose for this loop pays for its sub-tasks; a handoff mints no credit.',
+          },
+          requiredAuthority: [],
+          createdAt: now(),
+        });
+        if (!opened.ok) return { state: 'refused', answer: null, reason: opened.reason };
+        const turns = Math.max(1, Math.floor(units / 2));
+        const result = await driveDelegate({
+          parent: me,
+          stepId: 'delegate',
+          childRunId: grandId,
+          handoffId: opened.envelope.id,
+          task: input.task,
+          budget: { units, modelCalls: turns, toolCalls: turns, wallMs: null },
+          maxTurns: turns,
+          signal,
+          scope: scoped.scope,
+          depth: spec.depth + 1,
+          target: { route: childInput(me).route, model: childInput(me).model, accountRoute: childInput(me).accountRoute },
+        });
+        return {
+          state: result.state,
+          answer: result.text,
+          ...(result.reason ? { reason: result.reason } : {}),
+          ...(result.changeSet
+            ? { changes: { applied: [...result.changeSet.applied], waitingForAPerson: [...result.changeSet.waiting], conflicts: [...result.changeSet.conflicts] } }
+            : {}),
+        };
+      },
+    });
+    return registry;
   };
 
   const delegation = (parent: HarnessRun, input: LoopRunInput): LoopDelegationPort | null => {
@@ -624,9 +1027,12 @@ export function createLoopProcedure(deps: {
     if (!target) return null;
     return {
       route: target.route,
-      open: ({ parent: current, turn, task, siblings }) => {
+      // A delegate's scope sits inside the loop's own: the person's team scope, else the whole project.
+      scope: ({ files }) => intersectScope(input.team?.scope ?? null, files ? files.map((file) => relativeName(file)) : null),
+      open: ({ parent: current, childRunId, task, siblings }) => {
         const opened = openHandoff({
-          id: `${current.id}-h${turn}`,
+          // `<run>-d3` opens `<run>-h3`, and `<run>-d3-1` (a second task in the same call) `<run>-h3-1`.
+          id: `${current.id}-h${childRunId.slice(`${current.id}-d`.length)}`,
           tenantId: null,
           from: LOOP_PARTY,
           to: DELEGATE_PARTY,
@@ -655,99 +1061,20 @@ export function createLoopProcedure(deps: {
         });
         return accepted.ok ? { envelope: opened.envelope, refusal: null } : { envelope: null, refusal: accepted.reason };
       },
-      run: async (request) => {
-        const principal = request.parent.principal;
-        let child: HarnessRun | null = null;
-        try {
-          child = await runs.get(request.childRunId);
-        } catch (error) {
-          if (!(error instanceof HarnessError) || error.code !== 'unknown_run') throw error;
-        }
-        const registry = delegateRegistry(store, request.parent.projectId, [target.route, loopInput(request.parent).route]);
-        if (!child) {
-          // The child's route is admitted in its own right, fresh, before it starts.
-          let admitted: { model: string | null; accountRoute: string | null };
-          try {
-            admitted = await admit(target.route, {
-              projectId: request.parent.projectId,
-              model: target.model,
-              accountRoute: target.accountRoute,
-            });
-          } catch (error) {
-            return {
-              v: 1,
-              childRunId: request.childRunId,
-              state: 'failed',
-              text: null,
-              reason: `The sub-task could not start on ${target.route}: ${error instanceof Error ? error.message : String(error)}`,
-              models: [],
-            };
-          }
-          const input: LoopChildInput = {
-            v: 1,
-            kind: 'diomedes-loop-delegate',
-            parent: { runId: request.parent.id, stepId: request.stepId, handoffId: request.envelope.id },
-            task: request.task,
-            route: target.route,
-            model: admitted.model,
-            accountRoute: admitted.accountRoute,
-            maxTurns: request.maxTurns,
-          };
-          child = await runs.start({
-            id: request.childRunId,
-            tenantId: request.parent.tenantId,
-            projectId: request.parent.projectId,
-            taskId: request.parent.taskId,
-            sessionId: null,
-            principal,
-            capability: NATIVE_LOOP_DELEGATE,
-            tools: registry,
-            input: input as unknown as Json,
-            budget: request.budget,
-          });
-        }
-        if (!ACTIVE.includes(child.state)) return summary(child);
-        const owner = identifier('loop-child-');
-        const input = childInput(child);
-        const stopChild = () => void runs.cancel(child!.id, PARENT_STOPPED, principal).catch(() => undefined);
-        if (request.signal.aborted) stopChild();
-        request.signal.addEventListener('abort', stopChild, { once: true });
-        const controller = new AbortController();
-        let beat = () => {};
-        let driven = false;
-        try {
-          await runs.claim(child.id, owner, 60_000, { refuseSettled: true });
-          beat = heartbeat(child.id, owner);
-          const adapter = await adapterFor(
-            input.route,
-            {
-              projectId: child.projectId,
-              runId: child.id,
-              taskId: child.taskId,
-              model: input.model,
-              accountRoute: input.accountRoute,
-              instructions: `${LOOP_INSTRUCTIONS}\n\nYou are a helper given one bounded sub-task. Answer it in a few lines.`,
-              purpose: 'delegate',
-            },
-            AbortSignal.any([controller.signal, request.signal]),
-            () => delegateFixtureAdapter(input.task),
-          );
-          driven = true;
-          await new NativeAgent(runs, adapter, registry).run(child.id, owner, input.task, principal, {
-            maxTurns: input.maxTurns,
-          });
-        } catch (error) {
-          // The child's own record says how it ended; the parent observes that record. A child
-          // claimed but never driven (its route could not open) is failed here with the reason,
-          // so it is not left running with nobody to drive it.
-          if (!driven && !request.signal.aborted) await runs.fail(child.id, owner, error).catch(() => undefined);
-        } finally {
-          beat();
-          controller.abort();
-          request.signal.removeEventListener('abort', stopChild);
-        }
-        return summary(await runs.get(child.id));
-      },
+      run: (request) =>
+        driveDelegate({
+          parent: request.parent,
+          stepId: request.stepId,
+          childRunId: request.childRunId,
+          handoffId: request.envelope.id,
+          task: request.task,
+          budget: request.budget,
+          maxTurns: request.maxTurns,
+          signal: request.signal,
+          scope: request.scope,
+          depth: 1,
+          target,
+        }),
     };
   };
 
@@ -758,6 +1085,9 @@ export function createLoopProcedure(deps: {
     open(): void;
     admit: typeof admit;
     recoverChild(run: HarnessRun): Promise<void>;
+    sweep(projectId: string): Promise<void>;
+    sandboxes: SandboxStore;
+    changeSets: ChangeSetService;
     children: typeof children;
     teamView: typeof teamView;
     ledger: HandoffLedger;
@@ -766,7 +1096,7 @@ export function createLoopProcedure(deps: {
     engine: NATIVE_LOOP_ENGINE,
     origin: supervisorOrigin(),
     budget: loopBudget(LOOP_LIMITS.defaultTurns),
-    budgetFor: (input) => loopBudget(loopInput({ input }).maxTurns),
+    budgetFor: (input) => loopBudget(loopInput({ input }).maxTurns, loopInput({ input })),
     routeFor: (input) => {
       const route = loopInput({ input }).route;
       return isCloudRoute(route) ? route : undefined;
@@ -802,7 +1132,7 @@ export function createLoopProcedure(deps: {
             purpose: 'loop',
           },
           stop.signal,
-          () => loopFixtureAdapter(input.sources, Boolean(input.team)),
+          () => loopFixtureAdapter(input.sources, Boolean(input.team), input.goal),
         );
         await new NativeLoop(runs, adapter, tools, {
           maxTurns: input.maxTurns,
@@ -826,8 +1156,10 @@ export function createLoopProcedure(deps: {
       await gate;
       if (run.state !== 'completed') {
         await stopChildren(run);
+        await sweepTree(run);
         return;
       }
+      await sweepTree(run);
       if (!run.sessionId || !run.taskId || settling.has(run.id)) return;
       settling.add(run.id);
       try {
@@ -874,9 +1206,30 @@ export function createLoopProcedure(deps: {
     admit,
     /** Startup only: invalidate a dead child's lease so its parent's replay can drive it again. */
     async recoverChild(run) {
-      if (!CHILD_CAPABILITIES.includes(run.capabilityId) || !ACTIVE.includes(run.state)) return;
-      await runs.recover(run.id, run.principal);
+      if (!CHILD_CAPABILITIES.includes(run.capabilityId) || !['reconcile_required', ...ACTIVE].includes(run.state)) return;
+      if (ACTIVE.includes(run.state)) await runs.recover(run.id, run.principal);
+      // A write into a child's own copy interrupted by the exit is settled by its reconciler,
+      // which compares the copy's bytes with what was written; anything else stays for a person.
+      const recovered = await runs.get(run.id);
+      const manifest = await sandboxes.read(run.projectId, run.id).catch(() => null);
+      if (!manifest || manifest.state !== 'open') return;
+      const registry = sandboxes.registry(manifest, { readable: () => true, write: true });
+      for (const step of recovered.steps)
+        if (step.state === 'reconcile_required' && registry.has(step.intent.name ?? ''))
+          await registry.reconcile(runs, run.id, step.intent.stepId, run.principal).catch(() => 'unknown');
     },
+    /** Startup: remove every sandbox whose loop has ended, including one a crash left behind. */
+    async sweep(projectId: string) {
+      await sandboxes.sweep(projectId, async (root) => {
+        try {
+          return !ACTIVE.includes((await runs.get(root)).state);
+        } catch {
+          return true;
+        }
+      });
+    },
+    sandboxes,
+    changeSets,
     children,
     teamView,
     ledger,

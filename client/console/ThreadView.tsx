@@ -143,6 +143,8 @@ interface ThreadViewProps {
     connectors?: { text: string; onAdd?: () => void } | null;
   } | null;
   onClearSkill?(): void;
+  /** Text added to the next message from elsewhere in the Console, passed through to the composer. */
+  insert?: { text: string; n: number } | null;
   /**
    * A conversation message this thread sent and never had confirmed. Sending it again reads
    * what the record says and never asks twice; Discard gives it up.
@@ -222,6 +224,7 @@ export function ThreadView({
   onError,
   skill = null,
   onClearSkill,
+  insert = null,
   unconfirmed = null,
   artifacts,
   onOpenArtifact,
@@ -791,6 +794,7 @@ export function ThreadView({
         onSend={submit}
         skill={skill}
         onClearSkill={onClearSkill}
+        insert={insert}
         attachments={attachments}
         onAttachments={onAttachments}
         attachable={attachable}
