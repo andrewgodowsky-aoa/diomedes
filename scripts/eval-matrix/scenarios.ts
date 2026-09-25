@@ -679,10 +679,25 @@ const uncertainRetry: Scenario = {
 // --- the model-API route, below the SDK ------------------------------------------------
 
 const SECRET = 'test-only-bedrock-key-0123456789abcdef-never-real';
+const CHECKLIST = 'Linen checklist.md';
+const CHECKLIST_TEXT = '# Linen checklist\n\n- [ ] Count napkins against the order\n';
+const decisionBlock = (sourceMessageId: string, summary: string) =>
+  '```diomedes-decision\n' +
+  JSON.stringify({
+    source_message_id: sourceMessageId,
+    disposition: 'act',
+    requested_project_id: null,
+    operation_class: 'write_internal',
+    source_refs: [],
+    target_run_id: null,
+    question: null,
+    public_summary: summary,
+  }) +
+  '\n```';
 
 const modelApiTurn: Scenario = {
   id: 'aws-ask-answer-stream',
-  title: 'Ask and answer on AWS Bedrock: a streamed turn, a follow-up with history, Stop mid-turn, and its context account',
+  title: 'Ask and answer on AWS Bedrock: a streamed turn and its context account, a follow-up, Stop mid-turn, a proposal approved and verified, and resume after a restart',
   fixture: 'aws-bedrock: captured-shape Responses stream (tests/fixtures/model-api-streams.ts) below the AI SDK',
   async run(ctx) {
     const seen: { input: Json[] }[] = [];
@@ -698,6 +713,37 @@ const modelApiTurn: Scenario = {
       const body = JSON.parse(String(init?.body)) as { input: Json[] };
       seen.push(body);
       const message = said(body);
+      const whole = JSON.stringify(body.input);
+      const reply = (text: string) => ({
+        type: 'message',
+        id: `msg_${seen.length}`,
+        role: 'assistant',
+        status: 'completed',
+        content: [{ type: 'output_text', text, annotations: [] }],
+      });
+      // Work's single call asks for the strict file proposal (as in tests/aws-conversation-seam.test.ts).
+      const work = whole.includes('Return STRICT JSON only');
+      const issued = /\[\[diomedes source_message_id=(sm\.[0-9a-f]{32})\]\]/.exec(whole)?.[1];
+      const output = work
+        ? reply(JSON.stringify({ summary: 'Draft a linen checklist', changes: [{ path: CHECKLIST, text: CHECKLIST_TEXT, summary: 'A new checklist.' }] }))
+        : message.startsWith('ACT') && issued
+          ? reply(`I can draft that checklist.\n\n${decisionBlock(issued, 'Draft a linen checklist')}`)
+          : null;
+      if (output)
+        return sseResponse(
+          responsesEvents({
+            id: `resp_${seen.length}`,
+            object: 'response',
+            created_at: 1_790_000_000,
+            status: 'completed',
+            model: AWS_LUNA_MODEL,
+            output: [output],
+            usage: { input_tokens: 900, input_tokens_details: { cached_tokens: 0 }, output_tokens: 40, output_tokens_details: { reasoning_tokens: 0 }, total_tokens: 940 },
+            incomplete_details: null,
+            error: null,
+          }),
+          { 'x-amzn-requestid': `req-${seen.length}` },
+        );
       if (message.includes('SLOW')) {
         hang.waiting = true;
         return new Promise<Response>((_resolve, reject) => {
@@ -809,6 +855,57 @@ const modelApiTurn: Scenario = {
     } finally {
       events.stop();
     }
+    // A proposal: the conversation decides to act, the person selects it, and Work on this route
+    // proposes an exact file change that waits on a Need.
+    const settings = await core.api<Json>('/settings');
+    await core.api('/settings', 'PUT', { ...settings, services: { ...settings.services, defaultEngine: 'aws-bedrock' } });
+    const folder = (await state(core, projectId)).project.folder as string;
+    const acted = await core.request<Json>(messages, 'POST', { commandId: 'h20-act', text: 'ACT draft a linen checklist', mode: 'auto', sources: [], consent: true });
+    const selected =
+      acted.data?.outcome?.status === 'proposed'
+        ? await core.request<Json>(`${messages}/h20-act/select`, 'POST', { proposalDigest: acted.data.outcome.proposalDigest, projectId, consent: true })
+        : null;
+    const asked = await until(() => state(core, projectId), (value) => value.needs.some((need: Json) => need.state === 'open'), 'the Work proposal', 10_000).catch(() => null);
+    const need = asked?.needs.find((item: Json) => item.state === 'open');
+    const before = await fs.access(path.join(folder, CHECKLIST)).then(() => true, () => false);
+    const work = asked?.sessions.find((session: Json) => session.id === need?.sessionId);
+    ctx.check(
+      'aws-bedrock',
+      'tool-proposal',
+      'performs',
+      selected?.status === 200 && work?.route === 'aws-bedrock' && Boolean(need?.approval) && need.files.includes(CHECKLIST) && !before,
+      need
+        ? `the conversation proposed acting (${acted.data.outcome.status}); selected, Work on ${work?.route} proposed ${need.files.join(', ')} as an exact Need before the file existed.`
+        : `no Work proposal appeared (message ${acted.status} ${acted.data?.outcome?.status ?? ''}, select ${selected?.status ?? '-'}).`,
+    );
+    if (need) {
+      const decided = await core.request(`/projects/${projectId}/needs/${need.id}/resolve`, 'POST', versioned(need, 'go-ahead'));
+      const done = await settled(core, projectId, need.sessionId);
+      const written = await fs.readFile(path.join(folder, CHECKLIST), 'utf8').catch(() => null);
+      ctx.check(
+        'aws-bedrock',
+        'approval',
+        'performs',
+        decided.status === 200 && written === CHECKLIST_TEXT,
+        `the exact approval was ${decided.status === 200 ? 'recorded' : `refused (${decided.status})`}; the file holds the approved bytes (${written === CHECKLIST_TEXT}); the run ended ${sessionOf(done, need.sessionId).state}.`,
+      );
+      await core.api(`/projects/${projectId}/tasks/${need.taskId}/acceptance`, 'PUT', {
+        checks: [{ id: 'napkins', kind: 'text-contains', path: CHECKLIST, text: 'Count napkins' }],
+      });
+      const verified = await core.api<Json>(`/projects/${projectId}/sessions/${need.sessionId}/verification`, 'POST', {});
+      ctx.check('aws-bedrock', 'verification', 'performs', verified.state === 'verified', `H17 on the Work run: ${verified.label} — ${verified.sentence}`);
+    }
+    // Resume: after a restart the conversation continues from the durable record, not from any provider state.
+    await core.restart();
+    const later = await send('h20-after-restart', 'Anything else? H20-LATER');
+    const carriedAfter = JSON.stringify(seen.at(-1)?.input ?? []).includes('H20-FIRST');
+    ctx.check(
+      'aws-bedrock',
+      'resume',
+      'performs',
+      later.status === 200 && String(later.data.answerText ?? '').includes('H20-LATER') && carriedAfter,
+      `after a restart the next message was answered (${later.status}) and its request carried the conversation from the durable record (${carriedAfter}).`,
+    );
     ctx.assert('every provider request stayed below the SDK fixture', seen.length >= 3, `${seen.length} captured requests`);
   },
 };
