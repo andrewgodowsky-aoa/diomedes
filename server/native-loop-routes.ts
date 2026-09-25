@@ -74,10 +74,13 @@ const startSchema = z.strictObject({
   sources: z.array(z.string().min(1).max(400)).max(32).optional(),
   delegate: z
     .strictObject({
-      route: routeName,
+      /** Absent when an H09 profile names it (Andrew, 2026-09-24: delegate routes come from profiles). */
+      route: routeName.optional(),
       model: z.string().min(1).max(200).nullable().optional(),
       accountRoute: z.string().min(1).max(400).nullable().optional(),
+      profileId: z.string().min(1).max(120).optional(),
     })
+    .refine((value) => Boolean(value.route || value.profileId), { message: 'Name a route or a profile for the delegate.' })
     .nullable()
     .optional(),
   /**
@@ -336,7 +339,11 @@ export function mountNativeLoopRoutes(
     const consent = body.consent === true;
     const admitted = await admitRoute(projectId, body.route, body, sources, consent);
     let delegate: LoopRunInput['delegate'] = null;
-    if (body.delegate) {
+    if (body.delegate?.profileId) {
+      // The person's H09 profile fixes the delegate's route and exact model, by H09's own rules.
+      const role = await admitRole(projectId, task.id, 'worker', { profileId: body.delegate.profileId }, body, [], consent);
+      delegate = { route: role.route, model: role.model, accountRoute: role.accountRoute, profile: role.profile };
+    } else if (body.delegate?.route) {
       const child = await admitRoute(projectId, body.delegate.route, body.delegate, [], consent);
       delegate = { route: body.delegate.route, model: child.model, accountRoute: child.accountRoute };
     }

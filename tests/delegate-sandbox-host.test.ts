@@ -230,6 +230,29 @@ describe('a delegate’s change set, settled into the project', () => {
   });
 });
 
+describe('the delegate’s route comes from an H09 profile', () => {
+  test('a profile named at start fixes the delegate’s route and model, pinned by revision', async () => {
+    await close();
+    await open(teamRoutes({ delegate: (call) => (outputs(call).length ? final('Done.') : tool('write_file', { path: 'Notes/p.md', text: 'p\n' })) }));
+    await vertexOn();
+    const created = await fetch(`${url}/api/agent-profiles`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ name: 'Vertex helper', engine: 'google-vertex', model: 'stub-gemini', effort: null, agentId: 'auto', rules: [] }),
+    });
+    const profile = (await created.json()) as { profileId: string };
+    expect(created.status, JSON.stringify(profile)).toBe(200);
+    const started = await start({ delegate: { profileId: profile.profileId }, consent: true, applyScope: ['Notes'] });
+    const run = await host().get(projectId, started.runId);
+    expect(run.input).toMatchObject({
+      delegate: { route: 'google-vertex', model: 'stub-gemini', profile: { profileId: profile.profileId, revision: 1, name: 'Vertex helper' } },
+    });
+    await approve(started.session.id);
+    await untilRun(started.runId, 'completed');
+    expect(await read('Notes/p.md')).toBe('p\n');
+  });
+});
+
 describe('Stop, depth and restart', () => {
   test('a delegate may hand one part on; Stop on the loop cancels the whole tree and removes its sandboxes', async () => {
     await close();

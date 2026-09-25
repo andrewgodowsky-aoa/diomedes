@@ -116,7 +116,13 @@ export interface LoopRunInput {
   /** The H11 instruction section this run was admitted with, or empty. */
   readonly instructions: string;
   /** The route a bounded sub-task may be handed to, chosen by the person. Null offers no delegation. */
-  readonly delegate: { readonly route: string; readonly model: string | null; readonly accountRoute: string | null } | null;
+  readonly delegate: {
+    readonly route: string;
+    readonly model: string | null;
+    readonly accountRoute: string | null;
+    /** The H09 profile revision that named the route and model, when one did. */
+    readonly profile?: import('./team-delegation.js').TeamRole['profile'];
+  } | null;
   /**
    * The files and folders the person let this loop apply its delegates' and workers' changes
    * in without asking again. Absent or null: every change a sandbox returns waits for a person.
