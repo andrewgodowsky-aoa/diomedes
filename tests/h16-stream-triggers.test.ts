@@ -317,6 +317,45 @@ describe('H16 stream-time triggers on the scripted loop route', () => {
     expect(state().needs.filter((need) => need.supervision && need.state === 'open')).toHaveLength(1);
   });
 
+  test('review-g: two stop rules firing on one run pause it once and ask the person once', async () => {
+    await projectRules(
+      rule('no-reading', { match: { kind: 'text', phrase: 'Read order' }, intervention: 'stop' }),
+      rule('no-summaries', { match: { kind: 'text', phrase: 'Summarise' }, intervention: 'stop' }),
+    );
+    const started = await start();
+    await untilRun(started.runId, 'cancelled');
+    await openNeed(started.session.id);
+    await vi.waitFor(() => expect((state().streamTriggerFirings ?? []).length).toBe(2), { timeout: 15_000 });
+    await store().locked(async () => undefined);
+    const open = state().needs.filter((need) => need.sessionId === started.session.id && need.state === 'open');
+    expect(open).toHaveLength(1);
+    const stops = (await supervision(started.session.id)).data.records.filter((record) => record.control?.control === 'stop');
+    expect(stops).toHaveLength(1);
+  });
+
+  for (const intervention of ['stop', 'hold'] as const)
+    test(`review-g: a tool ${intervention} whose escalation is already open on the task still refuses the next run's intent`, async () => {
+      await projectRules(
+        rule('orders-guarded', { match: { kind: 'tool', tool: 'read_project_file', target: 'order.md' }, intervention }),
+      );
+      const first = await start();
+      await untilRun(first.runId, 'cancelled');
+      await openNeed(first.session.id);
+      // The escalation stays open, so supervision raises nothing more for this rule on this task.
+      const second = await start();
+      const run = await vi.waitFor(
+        async () => {
+          const current = await host().get(projectId, second.runId);
+          expect(['failed', 'cancelled']).toContain(current.state);
+          return current;
+        },
+        { timeout: 15_000 },
+      );
+      const read = run.steps.find((step) => step.intent.stepId === 'tool:0');
+      expect(read?.state ?? 'never').not.toBe('succeeded');
+      expect(run.steps.some((step) => step.intent.stepId === 'observe:0')).toBe(false);
+    });
+
   test('stop on a proposed tool intent: the intent is refused before admission and the run is paused for you', async () => {
     await projectRules(rule('no-reads', { match: { kind: 'tool', effectClass: ['read'] }, intervention: 'stop' }));
     const started = await start();
