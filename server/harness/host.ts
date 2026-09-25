@@ -707,6 +707,8 @@ export function createHarnessHost({
         for (const run of saved) await cursorSessions.recover(run);
         for (const run of saved) await devinSessions.recover(run);
         for (const run of saved) await modelSessions.recover(run);
+        // Sandboxes whose loop has ended, including any a crash left behind, go now.
+        await loop.sweep(project.id);
       }
       // A host run has no Session and no Task, so the bridge has nothing to
       // recover for it. The runtime still invalidates its dead lease and parks

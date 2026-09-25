@@ -126,6 +126,7 @@ export default defineConfig({
     'h08-durable-controls.spec.ts',
     'h02-codex-controls.spec.ts',
     'native-loop-ui.spec.ts',
+    'delegate-sandbox-ui.spec.ts',
     'h14-team-ui.spec.ts',
     'h15-supervision.spec.ts',
     'h16-stream-triggers.spec.ts',

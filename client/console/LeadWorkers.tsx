@@ -7,6 +7,8 @@ import type { ControlReceipt } from '../../shared/work-control';
 import { displayName } from '../attribution-display';
 import { AGENT_NAME } from '../../shared/agent-name';
 import { api } from '../api';
+import type { ChangeSetView } from '../../shared/sandbox';
+import { ChangeSetReview } from './ChangeSetReview';
 import './verification.css';
 import './loop-inspector.css';
 import './lead-workers.css';
@@ -33,6 +35,8 @@ interface LeadRead {
   usage: LoopView['usage'];
   outcome: LoopOutcome;
   team: TeamLeadView | null;
+  /** What each sandboxed worker returned (shared/sandbox.ts). */
+  changeSets?: ChangeSetView[];
 }
 
 const BADGE: Record<LoopOutcomeState, string> = {
@@ -94,7 +98,17 @@ function budgetLine(item: HandoffView) {
   return parts.join(' · ');
 }
 
-function Handoff({ item, index }: { item: HandoffView; index: number }) {
+function Handoff({
+  item,
+  index,
+  projectId,
+  changeSet = null,
+}: {
+  item: HandoffView;
+  index: number;
+  projectId?: string;
+  changeSet?: ChangeSetView | null;
+}) {
   const ran = modelsLine(item.models, item.route);
   const budget = budgetLine(item);
   return (
@@ -139,6 +153,7 @@ function Handoff({ item, index }: { item: HandoffView; index: number }) {
             </span>
           )}
         </span>
+        {changeSet && projectId && <ChangeSetReview projectId={projectId} changeSet={changeSet} />}
       </span>
     </li>
   );
@@ -227,7 +242,13 @@ function Lead({
       {team.workers.length ? (
         <ol className="loop-turns lw-workers">
           {team.workers.map((item, index) => (
-            <Handoff key={item.handoffId} item={item} index={index} />
+            <Handoff
+              key={item.handoffId}
+              item={item}
+              index={index}
+              projectId={projectId}
+              changeSet={lead.changeSets?.find((set) => set.childRunId === item.childRunId) ?? null}
+            />
           ))}
         </ol>
       ) : (
