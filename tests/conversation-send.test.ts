@@ -980,3 +980,228 @@ describe('the dispatch identity a Stop may act on', () => {
     expect(session.getItem(PENDING)).toBe(referenceBefore);
   });
 });
+
+/**
+ * DIO-107. Each window of a browser reads local storage from its own copy, and a change another
+ * window made reaches that copy later, on no schedule the Web Lock knows about: measured in
+ * Chromium, two windows taking turns under one lock to add one to a stored number lost 16 of
+ * 600 additions idle and 24 of 600 with every CPU busy. The same count kept in IndexedDB, each
+ * write finished before the lock was let go, lost none of 2,000. So the claim a lock holder
+ * decides on is read from IndexedDB, and local storage stays the record a page shows.
+ */
+describe('the claim a lock holder reads, while local storage lags', () => {
+  /**
+   * Local storage as a window that is behind reads it: once held, every write is kept back from
+   * every read until it is delivered, in the order it was made.
+   */
+  function laggingStorage() {
+    const map = new Map<string, string>();
+    let queue: (() => void)[] | null = null;
+    const later = (apply: () => void) => (queue ? queue.push(apply) : apply());
+    return {
+      getItem: (k: string) => (map.has(k) ? map.get(k)! : null),
+      setItem: (k: string, v: string) => later(() => void map.set(k, v)),
+      removeItem: (k: string) => later(() => void map.delete(k)),
+      clear: () => map.clear(),
+      key: (i: number) => Array.from(map.keys())[i] ?? null,
+      get length() {
+        return map.size;
+      },
+      hold() {
+        queue = [];
+      },
+      deliver() {
+        const due = queue ?? [];
+        queue = null;
+        for (const apply of due) apply();
+      },
+    };
+  }
+
+  /**
+   * IndexedDB, reduced to the calls the claim mirror makes: one database, one object store,
+   * get, put and delete, each transaction completing on a later turn. It is one store for the
+   * whole browser, which is the property that matters.
+   */
+  function makeIndexedDB() {
+    const stores = new Map<string, Map<string, unknown>>();
+    const later = (fn: () => void) => setTimeout(fn, 0);
+    const request = <T>(run: () => T) => {
+      const req: { result?: T; error?: unknown; onsuccess?: () => void; onerror?: () => void } = {};
+      return { req, run: () => (req.result = run()) };
+    };
+    const database = {
+      objectStoreNames: { contains: (name: string) => stores.has(name) },
+      createObjectStore(name: string) {
+        stores.set(name, new Map());
+      },
+      transaction(name: string) {
+        const store = stores.get(name)!;
+        const pending: (() => void)[] = [];
+        const tx: {
+          oncomplete?: () => void;
+          onerror?: () => void;
+          onabort?: () => void;
+          error: unknown;
+          objectStore: () => unknown;
+        } = {
+          error: null,
+          objectStore: () => ({
+            get(key: string) {
+              const r = request(() => store.get(key));
+              pending.push(r.run);
+              return r.req;
+            },
+            put(value: unknown, key: string) {
+              const r = request(() => void store.set(key, structuredClone(value)));
+              pending.push(r.run);
+              return r.req;
+            },
+            delete(key: string) {
+              const r = request(() => void store.delete(key));
+              pending.push(r.run);
+              return r.req;
+            },
+          }),
+        };
+        later(() => {
+          for (const run of pending) run();
+          tx.oncomplete?.();
+        });
+        return tx;
+      },
+      close() {},
+    };
+    return {
+      stores,
+      open() {
+        const req: {
+          result: typeof database;
+          onupgradeneeded?: () => void;
+          onsuccess?: () => void;
+          onerror?: () => void;
+        } = { result: database };
+        later(() => {
+          if (stores.size === 0) req.onupgradeneeded?.();
+          req.onsuccess?.();
+        });
+        return req;
+      },
+    };
+  }
+
+  let lagging: ReturnType<typeof laggingStorage>;
+  /** A second window: this browser's storage, locks and IndexedDB, its own session and module. */
+  const newWindow = async () => {
+    vi.stubGlobal('sessionStorage', makeStorage());
+    vi.resetModules();
+    return import('../client/conversation-send.js');
+  };
+
+  beforeEach(async () => {
+    lagging = laggingStorage();
+    vi.stubGlobal('localStorage', lagging);
+    vi.stubGlobal('indexedDB', makeIndexedDB());
+    vi.resetModules();
+    mod = await import('../client/conversation-send.js');
+  });
+
+  test('a claim the last holder settled is not read back as pending by the next one', async () => {
+    // The first window's message is on its way, its claim saved and seen by every window.
+    let reply!: () => void;
+    const replied = new Promise<void>((resolve) => (reply = resolve));
+    fetchMock.mockImplementationOnce(async () => {
+      await replied;
+      return answered();
+    });
+    const a = mod.sendMessage(PROJECT, THREAD, input('Second R10'));
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(JSON.parse(lagging.getItem(CLAIM)!).input.text).toBe('Second R10');
+
+    // A second window sends different words, and waits for the lock.
+    const secondWindow = await newWindow();
+    fetchMock.mockImplementationOnce(answered);
+    const b = secondWindow.sendMessage(PROJECT, THREAD, input('First R10'));
+
+    // The first window is confirmed and lets go, but its clearing has not reached the second.
+    lagging.hold();
+    reply();
+    await a;
+    const result = await b;
+
+    // The second window's own message went out as itself, under its own identity.
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(sent(1)).toMatchObject({ text: 'First R10', commandId: 'uuid-2' });
+    expect(result.commandId).toBe('uuid-2');
+    lagging.deliver();
+    expect(lagging.getItem(CLAIM)).toBeNull();
+  });
+
+  test('a claim still pending is found by the next holder before local storage shows it', async () => {
+    // The first window's claim is saved, but has not reached the second window's copy.
+    lagging.hold();
+    fetchMock.mockRejectedValue(new TypeError('network'));
+    await expect(mod.sendMessage(PROJECT, THREAD, input())).rejects.toBeInstanceOf(
+      mod.UnconfirmedMessage,
+    );
+    expect(lagging.getItem(CLAIM)).toBeNull();
+    const secondWindow = await newWindow();
+    fetchMock.mockReset();
+    // One conversation holds one unconfirmed message: different words are refused as
+    // themselves, and nothing is sent.
+    await expect(secondWindow.sendMessage(PROJECT, THREAD, input('Order double'))).rejects.toThrow(
+      /never confirmed/,
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+    // The same words are that message, sent again under its own identity.
+    fetchMock.mockImplementationOnce(answered);
+    await secondWindow.sendMessage(PROJECT, THREAD, input());
+    expect(sent(0).commandId).toBe('uuid-1');
+  });
+
+  test('a refusal leaves the pending claim readable here, so it can be offered back', async () => {
+    lagging.hold();
+    fetchMock.mockRejectedValue(new TypeError('network'));
+    await expect(mod.sendMessage(PROJECT, THREAD, input())).rejects.toBeInstanceOf(
+      mod.UnconfirmedMessage,
+    );
+    const secondWindow = await newWindow();
+    fetchMock.mockReset();
+    await expect(secondWindow.sendMessage(PROJECT, THREAD, input('Order double'))).rejects.toThrow(
+      /never confirmed/,
+    );
+    // The page offers back what local storage shows; the lock holder put the claim there.
+    lagging.deliver();
+    expect(secondWindow.pendingMessage(PROJECT, THREAD)?.commandId).toBe('uuid-1');
+  });
+
+  test('a Discard that the next holder cannot yet see in local storage still holds', async () => {
+    fetchMock.mockRejectedValue(new TypeError('network'));
+    await expect(mod.sendMessage(PROJECT, THREAD, input())).rejects.toBeInstanceOf(
+      mod.UnconfirmedMessage,
+    );
+    lagging.hold();
+    expect(await mod.discardPendingMessage(PROJECT, THREAD, 'uuid-1')).toBe(true);
+    // Local storage here still shows the discarded claim.
+    expect(JSON.parse(lagging.getItem(CLAIM)!).commandId).toBe('uuid-1');
+    const secondWindow = await newWindow();
+    fetchMock.mockReset().mockImplementationOnce(answered);
+    await secondWindow.sendMessage(PROJECT, THREAD, input('Order double'));
+    expect(sent(0)).toMatchObject({ text: 'Order double', commandId: 'uuid-2' });
+  });
+
+  test('without IndexedDB, the lock holder reads local storage as it did', async () => {
+    vi.stubGlobal('indexedDB', undefined);
+    vi.resetModules();
+    mod = await import('../client/conversation-send.js');
+    fetchMock.mockRejectedValue(new TypeError('network'));
+    await expect(mod.sendMessage(PROJECT, THREAD, input())).rejects.toBeInstanceOf(
+      mod.UnconfirmedMessage,
+    );
+    const secondWindow = await newWindow();
+    fetchMock.mockReset();
+    await expect(secondWindow.sendMessage(PROJECT, THREAD, input('Order double'))).rejects.toThrow(
+      /never confirmed/,
+    );
+  });
+});
