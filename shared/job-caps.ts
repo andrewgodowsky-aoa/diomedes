@@ -31,6 +31,7 @@ import {
   type JobTier,
   type MicroUsd,
 } from './managed-usage.js';
+import { inputTokenBound } from './token-bound.js';
 import { WORK_STYLE_LABELS, type WorkStyle } from './work-style.js';
 
 // The job tiers and the WorkStyles are the same three words. If either list
@@ -63,15 +64,9 @@ export const jobTierLabel = (tier: JobTier): string => WORK_STYLE_LABELS[tier];
 
 // --- the input-token bound ----------------------------------------------------
 
-/**
- * The input-token ceiling a request can reach, from its bytes: a token never
- * covers less than one byte, so a byte count is an upper bound on tokens. The
- * constant and the per-message allowance cover framing the provider adds.
- * `server/engines/model-api-core.ts` holds every call to this same bound.
- */
-export function inputTokenBound(bytes: number, messages: number): number {
-  return bytes + 1_024 + messages * 16;
-}
+// Kept in its own dependency-free module so the gateway can share it; re-exported so no caller
+// here changes.
+export { inputTokenBound };
 
 // --- the estimate -------------------------------------------------------------
 

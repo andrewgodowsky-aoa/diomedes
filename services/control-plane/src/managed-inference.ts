@@ -16,7 +16,7 @@
  * through FundingService (openJob, reserve, markDispatched, settle,
  * markUncertain, releaseRefused).
  */
-import { inputTokenBound } from '../../../shared/job-caps.js';
+import { inputTokenBound } from '../../../shared/token-bound.js';
 import {
   approvedJobCap,
   isJobTier,
