@@ -191,7 +191,8 @@ test('propose, review the diff, approve, and roll back in the instructions inspe
     .click();
   await expect(page.locator('#scrThread')).toBeVisible();
 
-  const line = page.locator('.instructions-line');
+  // Trigger rules shares the thread head's line styling; find this one by what it says.
+  const line = page.getByRole('button', { name: /^Project instructions / });
   await expect(line).toContainText('Project instructions loaded ·');
   await line.click();
 
