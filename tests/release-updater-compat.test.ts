@@ -237,12 +237,16 @@ describe('the public manifest and asset names', () => {
     expect(assets.TAG.test('v0.2.0-beta.1')).toBe(false);
   });
 
-  it('publishes a macOS image only beside a passing darwin/arm64 launch proof of this version', () => {
-    const proof = { passed: true, platform: 'darwin', arch: 'arm64', appVersion: VERSION, health: { version: VERSION }, pageErrors: [], checks: ['x'] };
+  it('publishes a macOS image only beside a passing darwin/arm64 launch proof of this version whose bundle signature verifies', () => {
+    const proof = { passed: true, platform: 'darwin', arch: 'arm64', appVersion: VERSION, health: { version: VERSION }, pageErrors: [], checks: ['x'], signature: { bundleSignatureVerifies: true } };
     expect(assets.macLaunchOutcome(proof, VERSION).result).toBe('passed');
     expect(() => assets.macLaunchOutcome({ ...proof, passed: false, error: 'no window' }, VERSION)).toThrow('no window');
     expect(() => assets.macLaunchOutcome({ ...proof, arch: 'x64' }, VERSION)).toThrow('darwin/arm64');
     expect(() => assets.macLaunchOutcome({ ...proof, health: { version: '0.1.11' } }, VERSION)).toThrow('0.1.11');
+    // What the 0.2.0-rc.1 proof run recorded: the app launched, but its bundle signature did not verify.
+    const unsealed = { ...proof, signature: { bundleSignatureVerifies: false, codesignVerify: 'Diomedes.app: code has no resources but signature indicates they must be present' } };
+    expect(() => assets.macLaunchOutcome(unsealed, VERSION)).toThrow('code has no resources');
+    expect(() => assets.macLaunchOutcome({ ...proof, signature: undefined }, VERSION)).toThrow('does not verify');
   });
 });
 

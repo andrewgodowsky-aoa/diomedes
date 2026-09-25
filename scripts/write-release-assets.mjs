@@ -386,6 +386,13 @@ export function macLaunchOutcome(proof, version) {
     throw new Error(`The macOS launch proof is for version ${proof.health?.version ?? proof.appVersion}, not ${version}.`);
   if (!Array.isArray(proof.pageErrors) || proof.pageErrors.length)
     throw new Error('The macOS launch proof records page errors.');
+  // The smoke runs the executable directly. A downloaded, quarantined copy is
+  // judged by its bundle signature, and one that does not verify is refused as
+  // damaged, so an image whose signature does not verify is never published.
+  if (proof.signature?.bundleSignatureVerifies !== true)
+    throw new Error(
+      `The macOS app bundle's signature does not verify${proof.signature?.codesignVerify ? ` (${proof.signature.codesignVerify})` : ''}; macOS would refuse a downloaded copy.`,
+    );
   return { result: 'passed', ranAt: proof.startedAt ?? null, checks: proof.checks?.length ?? 0 };
 }
 

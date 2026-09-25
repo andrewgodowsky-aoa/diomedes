@@ -196,6 +196,8 @@ jobs:
     # architecture instead of trusting the label.
     runs-on: macos-14
     timeout-minutes: 60
+    outputs:
+      publishable: ${{ steps.publishable.outputs.publishable }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -237,15 +239,31 @@ jobs:
           hdiutil verify "$dmg"
         env:
           VERSION_BASE: ${{ needs.prepare.outputs.base }}
-      - name: Signature facts (recorded, not a gate)
+      # The launch smoke runs the executable directly, which macOS allows for an
+      # app that was never downloaded. A downloaded copy is quarantined, and
+      # Gatekeeper refuses one whose bundle signature does not verify as damaged,
+      # with no way to open it short of a workaround nobody may tell a customer.
+      # So this is recorded here and decides below whether the image may be published.
+      - name: Signature facts
         run: |
           set +e
           app="release/Diomedes-darwin-arm64/Diomedes.app"
           mkdir -p test-results/mac
-          { echo '$ codesign -dv'; codesign -dv --verbose=2 "$app" 2>&1
-            echo; echo '$ codesign --verify --deep --strict'; codesign --verify --deep --strict --verbose=2 "$app" 2>&1; echo "exit $?"
-            echo; echo '$ spctl --assess --type execute'; spctl --assess --type execute -vv "$app" 2>&1; echo "exit $?"
-          } | tee test-results/mac/signature.txt
+          codesign -dv --verbose=2 "$app" > test-results/mac/codesign-display.txt 2>&1
+          codesign --verify --deep --strict --verbose=2 "$app" > test-results/mac/codesign-verify.txt 2>&1; verify=$?
+          spctl --assess --type execute -vv "$app" > test-results/mac/spctl.txt 2>&1; assess=$?
+          cat test-results/mac/codesign-display.txt test-results/mac/codesign-verify.txt test-results/mac/spctl.txt
+          node -e "
+            const fs = require('fs');
+            const read = (f) => fs.readFileSync('test-results/mac/' + f, 'utf8').trim();
+            fs.writeFileSync('test-results/mac/signature.json', JSON.stringify({
+              bundleSignatureVerifies: $verify === 0,
+              gatekeeperAccepts: $assess === 0,
+              codesignDisplay: read('codesign-display.txt').replace(/^Executable=.*\n/m, ''),
+              codesignVerify: read('codesign-verify.txt').replace(/^[^:]*Diomedes\.app: /m, 'Diomedes.app: '),
+              spctl: read('spctl.txt').replace(/^[^:]*Diomedes\.app: /m, 'Diomedes.app: '),
+            }, null, 2) + '\n');
+          "
           exit 0
       - name: Launch smoke from the mounted disk image
         run: |
@@ -277,11 +295,18 @@ jobs:
             proof.dmgSha256 = createHash('sha256').update(fs.readFileSync(dmg)).digest('hex');
             proof.build = { baseCommit: build.baseCommit, sourceStatus: build.sourceStatus, sourceDigest: build.sourceDigest, electronVersion: build.electronVersion, macFrameworkSignature: build.macFrameworkSignature ?? null };
             proof.testedOn = 'a GitHub-hosted macOS ' + os + ' arm64 runner';
+            proof.signature = JSON.parse(fs.readFileSync('test-results/mac/signature.json', 'utf8'));
             fs.writeFileSync('release/mac-release-proof.json', JSON.stringify(proof, null, 2) + '\n');
             console.log(proof.dmg, proof.dmgBytes, proof.dmgSha256);
           "
         env:
           VERSION_BASE: ${{ needs.prepare.outputs.base }}
+      - name: Whether this image may be published
+        id: publishable
+        run: |
+          ok=$(node -p "const p=require('./release/mac-release-proof.json'); p.passed === true && p.signature.bundleSignatureVerifies === true")
+          echo "publishable=$ok" >> "$GITHUB_OUTPUT"
+          echo "publishable=$ok"
       - name: Summary
         if: always()
         run: |
@@ -295,7 +320,10 @@ jobs:
             else
               echo '- **macOS did not produce a disk image that launched.** The release carries Windows only.'
             fi
-            echo "- Publish mode for macOS: $MACOS"
+            if [ -f test-results/mac/signature.json ]; then
+              node -e "const s=require('./test-results/mac/signature.json');console.log('- App bundle signature verifies: **'+(s.bundleSignatureVerifies?'yes':'NO')+'**'+(s.bundleSignatureVerifies?'':' ('+s.codesignVerify.split('\\n')[0]+'). A downloaded copy would be refused by Gatekeeper, so this image is not publishable.'));console.log('- Gatekeeper assessment: '+(s.gatekeeperAccepts?'accepted':'rejected'))"
+            fi
+            echo "- Publish mode for macOS: $MACOS; publishable: ${{ steps.publishable.outputs.publishable || 'false' }}"
           } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
@@ -327,7 +355,7 @@ jobs:
       SHA: ${{ needs.prepare.outputs.sha }}
       TAG: ${{ needs.prepare.outputs.tag }}
       BASE: ${{ needs.prepare.outputs.base }}
-      WITH_MAC: ${{ inputs.macos == 'attach-if-passing' && needs.macos.result == 'success' }}
+      WITH_MAC: ${{ inputs.macos == 'attach-if-passing' && needs.macos.result == 'success' && needs.macos.outputs.publishable == 'true' }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
