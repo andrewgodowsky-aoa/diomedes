@@ -89,10 +89,13 @@ export function WhatsNew({
  */
 export function ReleaseNotice({
   release,
+  note,
   onRead,
   onDismiss,
 }: {
   release: ReleaseEntry;
+  /** What the first-launch reconcile changed, said in the same notice (decision 2). */
+  note?: string;
   onRead: () => void;
   onDismiss: () => void;
 }) {
@@ -101,6 +104,7 @@ export function ReleaseNotice({
       <Mark state="done" />
       <span>
         <strong>Updated to {release.version}.</strong> {release.headline}
+        {note ? ` ${note}` : null}
       </span>
       <Button tone="quiet" onClick={onRead}>
         What's new

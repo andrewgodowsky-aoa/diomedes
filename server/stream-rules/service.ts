@@ -41,7 +41,7 @@ import {
   type StreamTriggerFiring,
   type StreamTriggerMatch,
 } from '../../shared/stream-rules.js';
-import { ApiError } from '../paths.js';
+import { ApiError, relativeName } from '../paths.js';
 import { identifier, now, type Store } from '../store.js';
 import { digest, HarnessError } from '../harness/policy.js';
 import type { HarnessHook, HarnessHookVerdict, RunService } from '../harness/run-service.js';
@@ -82,10 +82,28 @@ function pathsIn(input: Json): string[] {
 
 const clean = (name: string) => name.replace(/^\.\/+/, '');
 
+/** Where the project folder's file names ignore case, so a spelling in another case names the same file. */
+const FOLDS_CASE = process.platform === 'win32' || process.platform === 'darwin';
+
+/**
+ * A target as the readers and writers resolve it (decision 11: a path is judged by
+ * what it resolves to, not by how it is spelled): `docs\order.md` is `docs/order.md`,
+ * and where file names ignore case, so does the comparison.
+ */
+function canonical(name: string, foldCase: boolean): string {
+  let resolved: string;
+  try {
+    resolved = relativeName(name);
+  } catch {
+    resolved = clean(name.replaceAll('\\', '/'));
+  }
+  return foldCase ? resolved.toLowerCase() : resolved;
+}
+
 /** A target inside a rule's target: the same file, or anything under a folder ending in `/`. */
-export function targetMatches(target: string, wanted: string): boolean {
-  const have = clean(target);
-  const want = clean(wanted);
+export function targetMatches(target: string, wanted: string, foldCase = FOLDS_CASE): boolean {
+  const have = canonical(target, foldCase);
+  const want = wanted.endsWith('/') ? `${canonical(wanted.slice(0, -1), foldCase)}/` : canonical(wanted, foldCase);
   return want.endsWith('/') ? have.startsWith(want) : have === want;
 }
 
@@ -285,18 +303,35 @@ export class StreamRuleService {
     };
   }
 
-  /** The Session and task a harness run belongs to, when it belongs to a person's work. */
+  /**
+   * The Session and task a harness run belongs to, when it belongs to a person's work. A
+   * child run a loop hands work to (an H13 delegate, an H14 worker or advisor) carries no
+   * Session of its own; it answers to its parent's, so the rules that watch the parent watch
+   * every intent the parent hands on.
+   */
   private async owner(runId: string) {
     const run = await this.deps.runs.get(runId).catch(() => null);
-    if (!run?.sessionId || !run.taskId) return null;
+    if (!run?.taskId) return null;
+    let sessionId = run.sessionId;
+    let parent = run;
+    for (let depth = 0; !sessionId && depth < 4; depth++) {
+      const input = parent.input as { parent?: { runId?: unknown } } | null | undefined;
+      const parentId = parent.parentRunId ?? (typeof input?.parent?.runId === 'string' ? input.parent.runId : null);
+      if (!parentId) break;
+      const next = await this.deps.runs.get(parentId).catch(() => null);
+      if (!next || next.projectId !== run.projectId || next.taskId !== run.taskId) break;
+      parent = next;
+      sessionId = next.sessionId;
+    }
+    if (!sessionId) return null;
     let state: ProjectState;
     try {
       state = this.store.state(run.projectId);
     } catch {
       return null;
     }
-    if (!state.sessions.some((session) => session.id === run.sessionId)) return null;
-    return { run, state, ref: { id: run.id, sessionId: run.sessionId, taskId: run.taskId } };
+    if (!state.sessions.some((session) => session.id === sessionId)) return null;
+    return { run, state, ref: { id: run.id, sessionId, taskId: run.taskId } };
   }
 
   // --- tool intents, at admission ------------------------------------------------------

@@ -71,6 +71,13 @@ import {
 } from './store.js';
 import { buildSupportBundle, renderSupportBundle } from './support-bundle.js';
 import { currentBuildIdentity } from './build-identity.js';
+import {
+  currentUpdateNotice,
+  markUpdateNoticeSeen,
+  reconcileAfterUpdate,
+  type BuildStamp,
+  type ReconcilePolicy,
+} from './update-reconcile.js';
 import { WorkService } from './work.js';
 import { NativeWorkService, type NativeGenerator } from './native-work.js';
 import { ChangeReviewService } from './change-review/service.js';
@@ -308,6 +315,16 @@ interface AppOptions {
   };
   /** H13: tests replace the Diomedes loop's model-API routes here. Production uses the engine service. */
   loopModelRoutes?: import('./harness/capabilities/native-loop.js').LoopModelRoutes;
+  /**
+   * The first launch of a new build (server/update-reconcile.ts). `build` is
+   * the running build, read from its build record when omitted; tests pass an
+   * older or newer one. The desktop shell passes `clearRendererCache`.
+   */
+  updateReconcile?: {
+    build?: BuildStamp;
+    clearRendererCache?: () => Promise<void>;
+    policy?: ReconcilePolicy;
+  };
   /** The automation scheduler's clock and pass interval. Tests inject both; null runs no timer. */
   automationClock?: () => number;
   automationTickMs?: number | null;
@@ -648,6 +665,16 @@ export async function createApp(options: AppOptions) {
     throw new Error('The desktop local-service token is invalid.');
   const store = new Store(path.resolve(options.dataDir), options.projectRoot, options.secretBox ?? null);
   await store.init();
+  // Before anything reads a setting: an update carries never-chosen values to
+  // this build's defaults and records what it did. A no-op on every other launch.
+  const running = currentBuildIdentity(packageInfo.version);
+  const reconciled = await reconcileAfterUpdate({
+    dataDir: store.dataDir,
+    build: options.updateReconcile?.build ?? { version: running.version, buildId: running.buildId },
+    clearRendererCache: options.updateReconcile?.clearRendererCache,
+    policy: options.updateReconcile?.policy,
+  });
+  if (reconciled.settingsChanged) await store.reloadSettings();
   // Automatic Change Review: deterministic per-run evidence. Constructed before
   // the work services so every run can capture its baseline from the start.
   const changeReview = new ChangeReviewService(store);
@@ -1459,6 +1486,22 @@ export async function createApp(options: AppOptions) {
   app.get(
     '/api/settings',
     route(async (_req, res) => withSettingsTag(res, store.settings)),
+  );
+  // The one quiet line after an update, until the person dismisses it. The
+  // record behind it is append-only evidence and is never changed by this.
+  app.get(
+    '/api/update-notice',
+    route(async () => ({ notice: await currentUpdateNotice(store.dataDir) }), false),
+  );
+  app.post(
+    '/api/update-notice/seen',
+    route(async (req) => {
+      const noticeId = plain(req.body).id;
+      if (typeof noticeId !== 'string' || !/^[A-Za-z0-9._-]{1,200}$/.test(noticeId))
+        throw new ApiError(400, 'That is not an update notice.');
+      await markUpdateNoticeSeen(store.dataDir, noticeId);
+      return { ok: true };
+    }, false),
   );
   app.put(
     '/api/settings',
