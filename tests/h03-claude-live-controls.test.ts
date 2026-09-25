@@ -439,6 +439,31 @@ describe('H03 review F: Stop tells the truth about what it stopped', () => {
     expect(turns).toEqual(['first', 'again']);
   });
 
+  it('at most 8 messages wait; the ninth is refused and nothing extra is sent', async () => {
+    const w = await world();
+    const driver = await w.boot();
+    await driver.request(w.turn('start', 'one', 'first'));
+    const running = settle(driver.request(w.turn('follow-up', 'two', 'wait [hang]')));
+    await tick();
+    const waiting = Array.from({ length: 8 }, (_, i) =>
+      settle(driver.request(w.turn('follow-up', `q${i}`, `queued ${i}`, { queued: true }))),
+    );
+    await expect(driver.request(w.turn('follow-up', 'q8', 'one too many', { queued: true }))).rejects.toMatchObject({
+      code: 'STEER_QUEUE_FULL',
+    });
+    // Two Stops for one turn get one answer.
+    const [a, b] = await Promise.all([
+      driver.interruptCommand('p', 'claude-run', 'two'),
+      driver.interruptCommand('p', 'claude-run', 'two'),
+    ]);
+    expect(a).toEqual({ state: 'requested', stop: 'interrupted' });
+    expect(b).toEqual(a);
+    await running;
+    for (const item of await Promise.all(waiting)) expect(item.error).toMatchObject({ code: 'STEER_CANCELLED' });
+    const turns = (await w.lines()).filter((line) => line.turn).map((line) => line.turn);
+    expect(turns).toEqual(['first', 'wait [hang]']);
+  });
+
   it('a Stop Claude Code never acknowledges is recorded as forced, whatever the grace', async () => {
     // The interrupt's own acknowledgement timeout (5 s) ends the process too; it must say so.
     const w = await world(5500);
