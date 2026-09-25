@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import type { RawToolActivity } from '../shared/adapter-contract.js';
 import type { ToolDescriptor } from '../shared/harness.js';
 import { micro } from '../shared/managed-usage.js';
-import { isModelApiRoute, MODEL_API_ROUTES } from '../shared/model-api.js';
+import { isModelApiRoute, MODEL_API_PROVIDERS, MODEL_API_ROUTES } from '../shared/model-api.js';
 import {
   GOOGLE_VERTEX_ROUTE,
   mintVertexToken,
@@ -191,7 +191,9 @@ const holds = () => exposure.list(CONNECTION.id);
 describe('google-vertex is its own route', () => {
   test('a distinct model-API route beside the accepted ones, which are unchanged', () => {
     expect(isModelApiRoute(GOOGLE_VERTEX_ROUTE)).toBe(true);
-    expect(MODEL_API_ROUTES).toEqual(['aws-bedrock', 'azure-openai', 'openrouter', 'google-vertex']);
+    expect(MODEL_API_PROVIDERS).toEqual(['aws-bedrock', 'azure-openai', 'openrouter', 'google-vertex']);
+    // Nectovia's managed route is a model-API route too, never a provider (bot-mode item 1).
+    expect(MODEL_API_ROUTES).toEqual([...MODEL_API_PROVIDERS, 'nectovia']);
     expect(VERTEX_GEMINI_MODEL).toBe('gemini-3.8-flash');
   });
 
