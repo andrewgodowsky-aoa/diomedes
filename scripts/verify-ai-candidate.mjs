@@ -37,7 +37,7 @@ const verification = {
   sourceDigest: build.sourceDigest,
   sourceStatus: build.sourceStatus,
   candidate,
-  exeSha256: sha(await fs.readFile(path.join(candidate, 'Diomedes.exe'))),
+  exeSha256: sha(await fs.readFile(path.join(candidate, 'nectovia.exe'))),
   asarSha256: sha(await fs.readFile(asar)),
   typecheck: 'passed',
   unitTests: {

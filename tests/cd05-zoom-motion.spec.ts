@@ -98,9 +98,9 @@ async function openEngines(page: Page) {
   await page.getByRole('button', { name: 'Settings', exact: true }).first().click();
   await page
     .getByRole('navigation', { name: 'Settings', exact: true })
-    .getByRole('button', { name: 'Engines', exact: true })
+    .getByRole('button', { name: /^(Engines|Helpers on this computer)$/ })
     .click();
-  await expect(page.getByRole('heading', { name: 'Engines', exact: true, level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^(Engines|Helpers on this computer)$/, level: 1 })).toBeVisible();
 }
 const rail = (page: Page) => page.getByRole('navigation', { name: 'Threads and views' });
 

@@ -18,7 +18,7 @@ afterEach(async () => {
 async function checkout({ packaged = true, dist = true } = {}) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'packaged-release-'));
   roots.push(root);
-  const executablePath = path.join(root, 'release/Diomedes-win32-x64/Diomedes.exe');
+  const executablePath = path.join(root, 'release/Diomedes-win32-x64/nectovia.exe');
   const asar = path.join(root, 'release/Diomedes-win32-x64/resources/app.asar');
   if (packaged) {
     await fs.mkdir(path.dirname(asar), { recursive: true });
@@ -38,7 +38,7 @@ describe('checkPackagedRelease', () => {
   it('names the package command when there is nothing to launch', async () => {
     const { root, executablePath } = await checkout({ packaged: false });
     await expect(checkPackagedRelease({ root, executablePath })).rejects.toThrow(
-      /No packaged desktop app at .*Diomedes\.exe.*npm run package:windows/s,
+      /No packaged desktop app at .*nectovia\.exe.*npm run package:windows/s,
     );
   });
 

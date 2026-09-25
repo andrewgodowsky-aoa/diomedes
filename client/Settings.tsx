@@ -18,6 +18,7 @@ import { AppUpdates, useInstalledVersion } from './AppUpdates';
 import { WhatsNew } from './WhatsNew';
 import { freshnessLine, planLine, shouldShowEmptyDetail } from './usage-presentation';
 import { AIConnections } from './AISetup';
+import { CodexSetup } from './CodexSetup';
 import { ReadConnectors } from './ReadConnectors';
 import { AgentProfiles } from './console/AgentProfiles';
 import { TriggerRules } from './console/TriggerRules';
@@ -205,7 +206,12 @@ export function SettingsPage({
       ...settings,
       services: { ...settings.services, codexModel: model, codexEffort: effort },
     });
-  const helpersSection = 'Engines';
+  const helpersSection = settings.detail === 'technical' ? 'Engines' : 'Helpers on this computer';
+  useEffect(() => {
+    setSection((current) =>
+      current === 'Engines' || current === 'Helpers on this computer' ? helpersSection : current,
+    );
+  }, [helpersSection]);
   // The top-bar chip asks for the helpers section by raising this signal.
   useEffect(() => {
     if (openHelpersSignal) setSection(helpersSection);
@@ -216,17 +222,17 @@ export function SettingsPage({
   const requestCount = sectionRequest?.n;
   useEffect(() => {
     if (!requested) return;
-    const known = requested === 'Engines' ? helpersSection : requested;
+    const known =
+      requested === 'Engines' || requested === 'Helpers on this computer' ? helpersSection : requested;
     setSection(known);
   }, [requested, requestCount, helpersSection]);
   const sections = [
     'Interface detail',
-    'Helpers on this computer',
+    helpersSection,
     'Permissions',
     'Appearance',
     'About',
     'Design Center',
-    'Engines',
     'Agent profiles',
     'App updates',
     "What's new",
@@ -339,6 +345,9 @@ export function SettingsPage({
                           <span className="caption push-right">{s.status}</span>
                         </div>
                         <p>{s.detail}</p>
+                        {s.id === 'codex' && (
+                          <CodexSetup settings={settings} save={save} embedded onChecked={refresh} />
+                        )}
                         {(() => {
                           const snapshot = usage.find((u) => u.engine === s.id);
                           if (!snapshot) return null;

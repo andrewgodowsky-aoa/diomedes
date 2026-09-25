@@ -38,7 +38,7 @@ The generated NSIS installer is deliberately isolated from a future production i
 - Uninstall first verifies the exact ownership marker. It deletes the files enumerated from the packaged app at build time, the experimental shortcut, its two exact HKCU registry keys, its marker, and its uninstaller. Directory removal uses only non-recursive `RMDir`, so unknown files and nonempty directories remain. It never recursively removes the selected install root.
 - User data outside the install directory, including Electron profile data under the user's application-data folders, is not read or removed. Unknown files placed inside the install directory are also left behind.
 
-The builder rejects symlinks in the packaged payload, requires `Diomedes.exe`, compiles with NSIS warnings treated as errors, and directly checks the PE certificate table to ensure the result remains unsigned.
+The builder rejects symlinks in the packaged payload, requires `nectovia.exe`, compiles with NSIS warnings treated as errors, and directly checks the PE certificate table to ensure the result remains unsigned.
 
 ## Tool provenance and license
 

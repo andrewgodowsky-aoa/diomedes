@@ -67,7 +67,7 @@ Set-PendingRestore $snapshotPath
 function Assert-ProofRegistration([string]$Stage) {
   foreach ($key in $keys) { if (-not (Test-Path -LiteralPath $key)) { throw ($Stage + ' left registration missing: ' + $key) } }
   if (-not (Test-Path -LiteralPath $shortcut)) { throw ($Stage + ' left the shortcut missing') }
-  $exe = Join-Path $installTarget 'app\Diomedes.exe'
+  $exe = Join-Path $installTarget 'app\nectovia.exe'
   $registered = Get-ItemProperty -LiteralPath $keys[0]
   $uninstall = Get-ItemProperty -LiteralPath $keys[1]
   $expected = [ordered]@{
@@ -108,7 +108,7 @@ try {
   $proof.checks += 'Installed all payload files with identical SHA-256; both current-user keys and the Start Menu shortcut name this installation'
   $runtimeProof = Join-Path $proofPath 'runtime-proof'
   $smokeScript = if ($RuntimeSmoke -eq 'launch') { 'packaged-launch-smoke.mjs' } else { 'connections-desktop-smoke.mjs' }
-  & node (Join-Path $PSScriptRoot $smokeScript) (Join-Path $installTarget 'app/Diomedes.exe') $runtimeProof
+  & node (Join-Path $PSScriptRoot $smokeScript) (Join-Path $installTarget 'app/nectovia.exe') $runtimeProof
   if ($LASTEXITCODE -ne 0) { throw ('Installed app smoke failed: ' + $LASTEXITCODE) }
   $proof.runtime = Join-Path $runtimeProof 'proof.json'
   $proof.runtimeSmoke = $RuntimeSmoke

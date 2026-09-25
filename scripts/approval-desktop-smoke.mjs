@@ -24,7 +24,7 @@ await fs.mkdir(dataDir, { recursive: true });
 await fs.mkdir(projectsDir, { recursive: true });
 await fs.mkdir(path.resolve('evidence/screenshots'), { recursive: true });
 
-const executablePath = path.resolve('release/Diomedes-win32-x64/Diomedes.exe');
+const executablePath = path.resolve('release/Diomedes-win32-x64/nectovia.exe');
 const env = {
   ...process.env,
   DIOMEDES_DESKTOP_PROFILE: profileDir,

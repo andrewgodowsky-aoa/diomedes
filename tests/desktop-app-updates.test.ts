@@ -74,7 +74,7 @@ async function installRootFor(root: string): Promise<{ installRoot: string; exec
   const installRoot = path.join(root, 'Programs', 'Diomedes Experimental 20260909');
   await fs.mkdir(installRoot, { recursive: true });
   await fs.writeFile(path.join(installRoot, MARKER), MARKER_CONTENT);
-  return { installRoot, execPath: path.join(installRoot, 'app', 'Diomedes.exe') };
+  return { installRoot, execPath: path.join(installRoot, 'app', 'nectovia.exe') };
 }
 
 /** A fake child missing only the pieces the handoff uses; tests drive its events. */
@@ -182,7 +182,7 @@ describe('desktop shell facts and marker ownership', () => {
     const dev = await appUpdates.updateShellConfig({
       platform: 'linux',
       packaged: true,
-      execPath: path.join(root, 'app', 'Diomedes.exe'),
+      execPath: path.join(root, 'app', 'nectovia.exe'),
       dataDir,
       deps: {},
     });
@@ -190,7 +190,7 @@ describe('desktop shell facts and marker ownership', () => {
     const unpackaged = await appUpdates.updateShellConfig({
       platform: 'win32',
       packaged: false,
-      execPath: path.join(root, 'app', 'Diomedes.exe'),
+      execPath: path.join(root, 'app', 'nectovia.exe'),
       dataDir,
       deps: {},
     });
@@ -199,18 +199,19 @@ describe('desktop shell facts and marker ownership', () => {
     const portable = await appUpdates.updateShellConfig({
       platform: 'win32',
       packaged: true,
-      execPath: path.join(root, 'Diomedes-win32-x64', 'Diomedes.exe'),
+      execPath: path.join(root, 'Diomedes-win32-x64', 'nectovia.exe'),
       dataDir,
       deps: {},
     });
     expect(portable.installed).toBe(false);
   });
 
-  it('resolves the install root from INSTALLDIR/app/Diomedes.exe only', () => {
-    expect(appUpdates.installedRootFrom('C:\\Apps\\Diomedes\\app\\Diomedes.exe')).toBe(
+  it('recognizes both installed executable names while refusing other layouts', () => {
+    expect(appUpdates.installedRootFrom('C:\\Apps\\Diomedes\\app\\Diomedes.exe')).toBe('C:\\Apps\\Diomedes');
+    expect(appUpdates.installedRootFrom('C:\\Apps\\Diomedes\\app\\nectovia.exe')).toBe(
       'C:\\Apps\\Diomedes',
     );
-    expect(appUpdates.installedRootFrom('C:\\Apps\\Diomedes-win32-x64\\Diomedes.exe')).toBeNull();
+    expect(appUpdates.installedRootFrom('C:\\Apps\\Diomedes-win32-x64\\nectovia.exe')).toBeNull();
     expect(appUpdates.installedRootFrom('C:\\Apps\\Diomedes\\app\\Other.exe')).toBeNull();
     // A Mac bundle is never a Windows installation.
     expect(
@@ -241,7 +242,7 @@ describe('install handoff validation', () => {
     const shell = await appUpdates.updateShellConfig({
       platform: 'win32',
       packaged: true,
-      execPath: path.join(root, 'Diomedes-win32-x64', 'Diomedes.exe'),
+      execPath: path.join(root, 'Diomedes-win32-x64', 'nectovia.exe'),
       dataDir,
       deps: { spawn: vi.fn() },
     });

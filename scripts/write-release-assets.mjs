@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url';
 //     [--mac-dmg <Diomedes-Experimental-<version>-mac-arm64.dmg> --mac-proof <launch smoke proof.json>]
 //
 // It refuses to proceed unless the installer's bytes hash to what the record
-// says and the payload's Diomedes.exe and app.asar hash to what the record says,
+// says and the payload's nectovia.exe and app.asar hash to what the record says,
 // so the assets can only describe the candidate that was tested. Output:
 //
 //   Diomedes-Experimental-<version>-win32-x64.zip   one folder, the whole payload
@@ -272,7 +272,7 @@ WHICH FILE
     experimental install in place. Uninstall removes only its own files, its two
     current-user registry keys and its shortcut; your projects and history stay.
   ${zipName}
-    Portable. Extract the whole archive; it contains one folder. Run Diomedes.exe
+    Portable. Extract the whole archive; it contains one folder. Run nectovia.exe
     from inside that folder and keep every file beside it. The bare executable is
     not the application and will not start alone.${macFile}
 
@@ -294,7 +294,7 @@ FIRST RUN
   Which of those were exercised live on this build is under LIMITS.
 
 ISOLATED EVALUATION
-  ${launcherName} -Executable <path to Diomedes.exe> starts the app with a
+  ${launcherName} -Executable <path to nectovia.exe> starts the app with a
   separate profile, data and projects folder, and an empty home for the bundled
   native runtime's own configuration, so it copies no account and touches no
   existing Diomedes profile.
@@ -433,8 +433,8 @@ async function main() {
     throw new Error(`Installer hash ${installerSha} differs from the record's ${record.installer.sha256}.`);
   if (path.basename(installerPath) !== record.installer.filename)
     throw new Error(`Installer is named ${path.basename(installerPath)}; the record names ${record.installer.filename}.`);
-  const exeSha = await sha256(path.join(payloadDir, 'Diomedes.exe'));
-  if (exeSha !== record.package.executableSha256) throw new Error('Payload Diomedes.exe differs from the record.');
+  const exeSha = await sha256(path.join(payloadDir, 'nectovia.exe'));
+  if (exeSha !== record.package.executableSha256) throw new Error('Payload nectovia.exe differs from the record.');
   const asarSha = await sha256(path.join(payloadDir, 'resources', 'app.asar'));
   if (asarSha !== record.package.asarSha256) throw new Error('Payload app.asar differs from the record.');
 

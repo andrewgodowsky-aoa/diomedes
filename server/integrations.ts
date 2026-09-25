@@ -622,6 +622,18 @@ async function requireChatGpt(client: NativeRpc) {
   return `openai:chatgpt:${createHash('sha256').update(JSON.stringify(result.account)).digest('hex')}`;
 }
 
+/** The same isolated, version-checked runtime, kept open only for native account login. */
+export async function createCodexLoginClient(): Promise<NativeRpc> {
+  const client = await startNative();
+  try {
+    await initialize(client);
+    return client;
+  } catch (error) {
+    await client.close();
+    throw error;
+  }
+}
+
 /**
  * H02: what the installed app-server offers for thread continuity, asked of the
  * process itself rather than assumed from a version. Each method is called with

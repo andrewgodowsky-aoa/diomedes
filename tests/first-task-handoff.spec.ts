@@ -255,9 +255,9 @@ test('A verified route carries the person to a composer, chooses itself for the 
     await reopenLastProject(page);
     await expect(page.locator('.console')).toBeVisible();
     await page.getByRole('button', { name: 'Settings', exact: true }).click();
-    await page.getByRole('button', { name: 'Engines', exact: true }).click();
+    await page.getByRole('button', { name: /^(Engines|Helpers on this computer)$/ }).click();
     await expect(
-      page.getByRole('heading', { name: 'Engines', exact: true, level: 1 }),
+      page.getByRole('heading', { name: /^(Engines|Helpers on this computer)$/, level: 1 }),
     ).toBeVisible();
 
     const section = setupSection(page);
@@ -279,7 +279,7 @@ test('A verified route carries the person to a composer, chooses itself for the 
     await start.click();
 
     // Settings is closed and the Console is showing.
-    await expect(page.getByRole('heading', { name: 'Engines', exact: true, level: 1 })).toHaveCount(
+    await expect(page.getByRole('heading', { name: /^(Engines|Helpers on this computer)$/, level: 1 })).toHaveCount(
       0,
     );
     await expect(page.locator('.console')).toBeVisible();
@@ -355,7 +355,7 @@ test('Dismissing the project search abandons the handover, so opening a project 
   try {
     await page.goto(baseURL);
     await page.getByRole('button', { name: 'Settings', exact: true }).click();
-    await page.getByRole('button', { name: 'Engines', exact: true }).click();
+    await page.getByRole('button', { name: /^(Engines|Helpers on this computer)$/ }).click();
     const section = setupSection(page);
     await section.getByRole('button', { name: 'Start a first task', exact: true }).click();
 
@@ -399,7 +399,7 @@ test('A route whose saved model moved between the offer and the Console chooses 
     await reopenLastProject(page);
     await expect(page.locator('.console')).toBeVisible();
     await page.getByRole('button', { name: 'Settings', exact: true }).click();
-    await page.getByRole('button', { name: 'Engines', exact: true }).click();
+    await page.getByRole('button', { name: /^(Engines|Helpers on this computer)$/ }).click();
     const section = setupSection(page);
     const start = section.getByRole('button', { name: 'Start a first task', exact: true });
     await expect(start).toBeVisible();

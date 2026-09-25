@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { checkPackagedRelease } from './packaged-release-check.mjs';
 
-const executablePath = path.resolve('release/Diomedes-win32-x64/Diomedes.exe');
+const executablePath = path.resolve('release/Diomedes-win32-x64/nectovia.exe');
 await checkPackagedRelease({ executablePath });
 const root = path.resolve('test-results', `desktop-${Date.now()}`);
 await fs.mkdir(root, { recursive: true });

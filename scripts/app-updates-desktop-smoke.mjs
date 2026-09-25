@@ -29,7 +29,7 @@ const nextAssetName = `Diomedes-Experimental-${nextVersion}-unsigned-setup.exe`;
 // and helper. Neither check can launch an installer or alter an installation.
 const root = path.resolve('test-results', `updates-desktop-${Date.now()}`);
 const evidence = path.resolve('evidence/autonomy-workbench');
-const executablePath = path.resolve('release/Diomedes-win32-x64/Diomedes.exe');
+const executablePath = path.resolve('release/Diomedes-win32-x64/nectovia.exe');
 const asarPath = path.join(path.dirname(executablePath), 'resources/app.asar');
 const helperPath = path.join(asarPath, 'update-helper.mjs');
 const headers = { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' };

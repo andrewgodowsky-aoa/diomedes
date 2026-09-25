@@ -217,6 +217,17 @@ async function startFirstReady(page: Page): Promise<string> {
 test('F01-F02: first run preserves detail and approvals, supports AI skip, and resumes', async ({
   page,
 }, testInfo) => {
+  let codexLogin = false;
+  let codexStarts = 0;
+  await page.route('**/api/ai/codex{,/**}', (route) => {
+    if (route.request().url().endsWith('/login')) { codexLogin = true; codexStarts++; }
+    if (route.request().url().endsWith('/cancel')) codexLogin = false;
+    return route.fulfill({ json: {
+      supported: true, installed: true, login: codexLogin ? 'waiting' : 'idle',
+      authUrl: codexLogin ? 'https://auth.openai.com/oauth/authorize?state=fixture' : null,
+      detail: '', integration: null,
+    } });
+  });
   await page.goto('/');
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await page.getByRole('radio', { name: 'Business', exact: true }).click();
@@ -239,6 +250,14 @@ test('F01-F02: first run preserves detail and approvals, supports AI skip, and r
     page.getByRole('heading', { name: 'Connect an AI service', exact: true }),
   ).toBeVisible();
   await expect(page.getByRole('button', { name: 'Check this computer' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'ChatGPT through Codex' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Sign in to ChatGPT', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Use ChatGPT', exact: true })).toBeDisabled();
+  await page.getByRole('button', { name: 'Sign in to ChatGPT', exact: true }).click();
+  await expect(page.getByRole('link', { name: 'Continue to OpenAI' })).toHaveAttribute('href', 'https://auth.openai.com/oauth/authorize?state=fixture');
+  expect(codexStarts).toBe(1);
+  await page.getByRole('button', { name: 'Cancel ChatGPT sign-in' }).click();
+  await expect(page.getByRole('link', { name: 'Continue to OpenAI' })).toHaveCount(0);
   await page.screenshot({ path: testInfo.outputPath('first-run-ai.png'), fullPage: true });
   await page.getByRole('button', { name: 'Skip AI setup' }).click();
   await expect(page.getByRole('heading', { name: 'Your workspace is ready' })).toBeVisible();
@@ -1028,6 +1047,8 @@ test('Services roster: every reported engine listed with switch discipline at ev
   await expect(service(/ChatGPT/).locator('input[type="checkbox"]')).toHaveCount(1);
   await expect(service('Sample work').locator('input[type="checkbox"]')).toHaveCount(0);
   await expect(service(/ChatGPT/).getByRole('button', { name: 'What is sent' })).toHaveCount(1);
+  await expect(service(/ChatGPT/).getByRole('button', { name: 'Sign in to ChatGPT', exact: true })).toBeVisible();
+  await expect(rail.getByRole('button', { name: 'Engines', exact: true })).toHaveCount(0);
   // Check connections reaches the server with a refresh request.
   const [refreshRequest] = await Promise.all([
     page.waitForRequest(
@@ -1049,8 +1070,11 @@ test('Services roster: every reported engine listed with switch discipline at ev
     await expect(service(name).getByRole('button', { name: 'What is sent' })).toHaveCount(0);
   }
 
-  // Settings keep Engines and no longer list a Connections section.
+  // The same section changes its label at technical detail, never duplicates itself.
+  await expect(rail.getByRole('button', { name: 'Engines', exact: true })).toHaveCount(0);
+  await chooseDetail(page, 'Technical');
   await expect(rail.getByRole('button', { name: 'Engines', exact: true })).toBeVisible();
+  await expect(rail.getByRole('button', { name: 'Helpers on this computer', exact: true })).toHaveCount(0);
   await expect(rail.getByRole('button', { name: 'Connections', exact: true })).toHaveCount(0);
   await rail.getByRole('button', { name: 'Engines', exact: true }).click();
   await expect(service('Sample work')).toHaveCount(0);
@@ -1106,7 +1130,7 @@ test('Usage: chip, signal bar and Settings bars from the test-mode snapshot', as
   await expect(chip.locator('.usage-fill.signal')).toBeVisible();
   // The chip opens Settings at the engines section with both bars.
   await chip.click();
-  await expect(page.getByRole('heading', { level: 1, name: 'Engines', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: 'Helpers on this computer', exact: true })).toBeVisible();
   const codexService = page.locator('.service', {
     has: page.getByRole('heading', { name: /ChatGPT/ }),
   });
@@ -1241,7 +1265,7 @@ test('Engine choices: the list comes from the engine, and the levels follow the 
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   await page
     .getByRole('navigation', { name: 'Settings', exact: true })
-    .getByRole('button', { name: 'Engines', exact: true })
+    .getByRole('button', { name: /^(Engines|Helpers on this computer)$/ })
     .click();
 
   // Choosing brings that choice's own level with it, and its own ladder.

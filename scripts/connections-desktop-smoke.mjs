@@ -14,7 +14,7 @@ const { version: appVersion } = JSON.parse(
 
 const executablePath = path.resolve(process.argv[2] ?? '');
 const root = path.resolve(process.argv[3] ?? '');
-if (path.basename(executablePath) !== 'Diomedes.exe' || !process.argv[3]) throw new Error('Supply exact packaged executable and a NEW isolated proof directory.');
+if (path.basename(executablePath) !== 'nectovia.exe' || !process.argv[3]) throw new Error('Supply exact packaged executable and a NEW isolated proof directory.');
 await fs.mkdir(path.dirname(root), { recursive: true }); await fs.mkdir(root);
 const env = { ...process.env, DIOMEDES_DESKTOP_PROFILE: path.join(root, 'profile'),
   DIOMEDES_DATA_DIR: path.join(root, 'data'), DIOMEDES_PROJECTS_DIR: path.join(root, 'projects'),

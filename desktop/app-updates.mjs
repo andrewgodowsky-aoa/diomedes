@@ -47,8 +47,8 @@ export function isUpdateReleaseReference(destination) {
 /** The ownership marker the per-user installer writes into INSTALLDIR. */
 export const UPDATE_MARKER_NAME = '.diomedes-experimental-20260909';
 export const UPDATE_MARKER_CONTENT = 'Diomedes.Experimental.8c27d61a-1919-4b12-9df7-20260909e001';
-/** A real install keeps its executable at INSTALLDIR/app/Diomedes.exe. */
-export const UPDATE_EXECUTABLE_NAME = 'Diomedes.exe';
+/** A real install keeps its executable at INSTALLDIR/app/nectovia.exe. */
+export const UPDATE_EXECUTABLE_NAME = 'nectovia.exe';
 /** Mirrors shared/app-updates.ts UPDATE_ASSET_PATTERN. */
 export const UPDATE_ASSET_PATTERN = /^Diomedes-Experimental-(\d+\.\d+\.\d+)-unsigned-setup\.exe$/;
 export const UPDATE_MAX_ASSET_BYTES = 500 * 1024 * 1024;
@@ -69,17 +69,17 @@ export async function sha256File(filePath) {
 }
 
 /**
- * Resolve INSTALLDIR only for the installed layout `<INSTALLDIR>/app/Diomedes.exe`.
+ * Resolve INSTALLDIR only for the installed layout `<INSTALLDIR>/app/nectovia.exe`.
  * Portable extractions, development runs and renamed copies return null; a
  * packaged app is not automatically an installed app.
  */
 export function installedRootFrom(execPath) {
   if (typeof execPath !== 'string' || !execPath) return null;
-  // INSTALLDIR/app/Diomedes.exe is the Windows installer's layout, so the path
+  // INSTALLDIR/app/nectovia.exe is the Windows installer's layout, so the path
   // is read with Windows rules whatever host runs this. The host's own rules
   // see no separator in `C:\...` on macOS and return null for every input.
   const win = path.win32;
-  if (win.basename(execPath).toLowerCase() !== UPDATE_EXECUTABLE_NAME.toLowerCase()) return null;
+  if (![UPDATE_EXECUTABLE_NAME, 'diomedes.exe'].includes(win.basename(execPath).toLowerCase())) return null;
   const appDir = win.dirname(execPath);
   if (win.basename(appDir).toLowerCase() !== 'app') return null;
   return win.dirname(appDir);

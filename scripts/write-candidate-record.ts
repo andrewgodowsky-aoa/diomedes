@@ -298,7 +298,7 @@ async function main(): Promise<void> {
   const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8', windowsHide: true }).trim();
   const appDirRel = 'release/Diomedes-win32-x64';
   const asarRel = `${appDirRel}/resources/app.asar`;
-  const executableSha256 = await hashRequired(path.join(root, `${appDirRel}/Diomedes.exe`), `${appDirRel}/Diomedes.exe`, 'packaged executable');
+  const executableSha256 = await hashRequired(path.join(root, `${appDirRel}/nectovia.exe`), `${appDirRel}/nectovia.exe`, 'packaged executable');
   const asarSha256 = await hashRequired(path.join(root, asarRel), asarRel, 'packaged asar');
 
   if (buildInfo.version !== packageJson.version)

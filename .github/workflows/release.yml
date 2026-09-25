@@ -154,7 +154,7 @@ jobs:
       - name: Packaged negative smoke (recorded, not a gate)
         id: negative
         continue-on-error: true
-        run: node scripts/package-negative-smoke.mjs release/Diomedes-win32-x64/Diomedes.exe test-results/negative-smoke
+        run: node scripts/package-negative-smoke.mjs release/Diomedes-win32-x64/nectovia.exe test-results/negative-smoke
       - name: Installer install, launch, repair and uninstall in a temporary folder
         shell: pwsh
         run: |

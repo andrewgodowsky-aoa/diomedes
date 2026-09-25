@@ -40,7 +40,7 @@ ssldragon, ssl.com). Rechecked 2026-09-25: SSLmentor's Certum cloud listings, an
 
 ## Recommendation
 
-Use **Azure Artifact Signing**. Sign two files per release: `Diomedes.exe` inside the
+Use **Azure Artifact Signing**. Sign two files per release: `nectovia.exe` inside the
 packaged application before the installer is compiled, and the installer itself after. Keep
 the product identity (`Diomedes.Experimental.8c27d61a-…`, marker
 `.diomedes-experimental-20260909`) unchanged so a signed installer upgrades an unsigned
@@ -102,7 +102,7 @@ installation in place.
   exits non-zero on any failure. Exit 2 when the machine is not configured, exit 3 if the
   metadata file carries anything secret-shaped. It never accepts a key, password or
   thumbprint.
-- `scripts/build-windows-installer.mjs --signed`: signs `Diomedes.exe` before the payload is
+- `scripts/build-windows-installer.mjs --signed`: signs `nectovia.exe` before the payload is
   hashed, compiles the installer, signs the installer, and then **requires** an Authenticode
   signature on the output. Without `--signed` the behaviour is unchanged: the build must be
   unsigned and the manifest records `authenticodeStatus: "NotSigned"`. The output name drops

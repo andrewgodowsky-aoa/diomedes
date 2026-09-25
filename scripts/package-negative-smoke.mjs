@@ -12,7 +12,7 @@ const { version: appVersion } = JSON.parse(
 
 const executablePath = path.resolve(process.argv[2] ?? '');
 const root = path.resolve(process.argv[3] ?? '');
-if (path.basename(executablePath) !== 'Diomedes.exe' || !process.argv[3])
+if (path.basename(executablePath) !== 'nectovia.exe' || !process.argv[3])
   throw new Error('Supply the exact packaged executable and a NEW isolated proof directory.');
 await fs.mkdir(path.dirname(root), { recursive: true });
 await fs.mkdir(root);

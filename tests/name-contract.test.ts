@@ -68,11 +68,6 @@ const SHELL_ALLOWED: Allowed[] = [
   },
   {
     file: 'desktop/app-updates.mjs',
-    text: 'Diomedes.exe',
-    why: 'the installed executable, INSTALLDIR/app/Diomedes.exe',
-  },
-  {
-    file: 'desktop/app-updates.mjs',
     text: 'Diomedes',
     why: "the macOS application menu, which macOS titles with the bundle's name whatever the label says",
   },
@@ -342,13 +337,13 @@ describe('the desktop shell (contract A3)', () => {
       ).toBe(true);
   });
 
-  it('keeps the names the app finds its data by, and the executable, as Diomedes', () => {
+  it('keeps the data identity while naming the Windows executable nectovia', () => {
     expect(read('desktop/main.mjs')).toContain("app.setName('Diomedes');");
-    // The packaged app's name decides the profile folder and the executable's file name;
-    // only the version resource Windows shows for the running app says Nectovia.
+    // Executable naming is independent of the existing app and data identity.
     const packaging = read('scripts/package-desktop.mjs');
     expect(packaging).toContain("productName: 'Diomedes',");
     expect(packaging).toContain("name: 'Diomedes',");
+    expect(packaging).toContain("executableName: 'nectovia',");
     expect(packaging).toContain("ProductName: 'Nectovia',");
     expect(packaging).toContain("FileDescription: 'Nectovia desktop',");
   });

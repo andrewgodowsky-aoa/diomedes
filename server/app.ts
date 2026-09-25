@@ -257,6 +257,7 @@ import { parseStableVersion } from '../shared/app-updates.js';
 import { RELEASE_NOTES_SEEN_LIMIT } from '../shared/release-notes.js';
 import { EngineInstaller } from './engines/install.js';
 import { NativeLogin } from './engines/login.js';
+import { CodexSetup } from './codex-setup.js';
 import { changeCloudSharing, cloudSharing, requireCloudSharing, sharesHistory } from './cloud-sharing.js';
 import { assembleSkillSection, instructionSectionBudget } from './harness/instruction-delivery.js';
 
@@ -693,6 +694,7 @@ export async function createApp(options: AppOptions) {
   // only asks for one fresh inspection, and what that inspection answers is what
   // the screen shows.
   let closing = false;
+  const codexSetup = new CodexSetup();
   const login = new NativeLogin(engines.root, options.nativeLoginLaunch, {
     onFinished: async (engine) => {
       if (closing) return;
@@ -1050,6 +1052,8 @@ export async function createApp(options: AppOptions) {
   const automationScheduler = new AutomationScheduler(store, automations, options.automationTickMs);
   const connections = new DesktopConnections(store, harness);
   const app = express();
+  app.locals.allowsCodexSignInReference = (destination: string) =>
+    codexSetup.allowsReference(destination);
   // The port this service listens on, learned from the first request's socket (listen(0)
   // in tests picks it late). A wake has no request of its own, so it uses the remembered one.
   let listeningPort: number | undefined;
@@ -1711,6 +1715,19 @@ export async function createApp(options: AppOptions) {
     '/api/ai/login/:engine/cancel',
     route(async (req) => login.stop(externalEngine(req)), false),
   );
+  app.get(
+    '/api/ai/codex',
+    route(() => codexSetup.view(), false),
+  );
+  app.post(
+    '/api/ai/codex/check',
+    route((req) => codexSetup.check(body(req).consent === true), false),
+  );
+  app.post(
+    '/api/ai/codex/login',
+    route((req) => codexSetup.start(body(req).consent === true), false),
+  );
+  app.post('/api/ai/codex/cancel', route(() => codexSetup.cancel(), false));
   app.get(
     '/api/integrations',
     route(
@@ -5669,6 +5686,7 @@ export async function createApp(options: AppOptions) {
     await softwarePack.settled();
     engines.close();
     await login.close();
+    await codexSetup.close();
     await connections.close();
     await harness.close();
     await work.close();

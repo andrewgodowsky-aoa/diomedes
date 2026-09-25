@@ -38,7 +38,11 @@ const secretBox = {
 // on a platform they cannot install on, and an unlisted destination is ignored.
 function openSetupReference(destination) {
   const allowed = new Set(setupReferenceLinks(process.platform));
-  if (!allowed.has(destination) && !isUpdateReleaseReference(destination)) return;
+  if (
+    !allowed.has(destination) &&
+    !isUpdateReleaseReference(destination) &&
+    !service?.locals.allowsCodexSignInReference?.(destination)
+  ) return;
   void shell
     .openExternal(destination)
     .catch((error) => dialog.showErrorBox('The reference could not open', error.message));
