@@ -116,6 +116,7 @@ import type { ConnectionSecrets } from '../connection-secrets.js';
 import type { SpendExposure } from '../spend-exposure.js';
 import type { ModelApiRoute } from '../../shared/model-api.js';
 import type { AdmittedAgentWork, AgentGatePort, AgentWork } from '../accounts/agent-gate.js';
+import type { ObservationBinder } from '../observability/scopes.js';
 
 function recordShimError(error: unknown): boolean {
   return (
@@ -434,6 +435,8 @@ export class EngineService {
    * includes the Agent. It runs before any model step, so a refusal is recorded as nothing sent.
    */
   agentGate?: AgentGatePort;
+  /** Optional metadata observation (server/observability/). Bound only after every check below passed. */
+  observation?: ObservationBinder;
   constructor(
     readonly root: string,
     deps: Partial<EngineServiceDeps> = {},
@@ -1964,7 +1967,7 @@ export class EngineService {
     const api = this.modelApi;
     if (!api)
       throw new EngineError('RUNTIME_UNAVAILABLE', 'This model-API route is not available in this process.', true);
-    await this.admitAgent(input, agent);
+    const admitted = await this.admitAgent(input, agent);
     const handle = await modelApiRoute(api, route);
     const { short, long } = handle.names;
     if (!handle.connected) throw new EngineError('ROUTE_REFUSED', `Connect ${long} in AI setup before sending.`, true);
@@ -1982,6 +1985,17 @@ export class EngineService {
         `The approved ${short} spend limit has no room left. Nothing was sent. The owner can review usage and approve more in AI setup.`,
         true,
       );
+    try {
+      this.observation?.bind({
+        admission: admitted,
+        rootJobId: agent?.rootJobId ?? null,
+        route,
+        connectionId: handle.connectionId,
+        model: input.model,
+      });
+    } catch {
+      // Observation never changes an admission.
+    }
     return {
       route,
       connectionId: handle.connectionId,

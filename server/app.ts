@@ -6,6 +6,7 @@ import { AccountAgentGate } from './accounts/agent-gate.js';
 import { resolveAccountBackend, type AccountBackend } from './accounts/backend.js';
 import { mountAccountSessionRoutes } from './accounts/routes.js';
 import { AccountSessionService } from './accounts/session.js';
+import { createObservation, type ObservationOptions } from './observability/runtime.js';
 import { FAUX_DEMO_PASSWORD } from '../services/control-plane/src/faux/seed.js';
 import { ACCOUNT_VIEW_VERSION, type AccountsOffView } from '../shared/accounts.js';
 import { mountWorkspaceRoutes } from './workspace-routes.js';
@@ -327,6 +328,11 @@ interface AppOptions {
   accounts?: { env?: NodeJS.ProcessEnv; backend?: AccountBackend } | null;
   /** Tests replace the network below the SDK here. Production leaves it unset. */
   modelApiTransport?: typeof globalThis.fetch;
+  /**
+   * Metadata observation of admitted Agent work (server/observability/). Unset reads
+   * `NECTOVIA_OBSERVATION` once, whose default is off; null is off. Needs `accounts`.
+   */
+  observation?: ObservationOptions | null;
   updateOverrides?: {
     platform?: string;
     packaged?: boolean;
@@ -776,6 +782,10 @@ export async function createApp(options: AppOptions) {
       await accountSession.signIn({ email: testAccount, password: FAUX_DEMO_PASSWORD, remember: false });
     engines.agentGate = new AccountAgentGate(accountSession, workspaces);
   }
+  const observation = accountSession
+    ? createObservation({ options: options.observation, env: process.env, build: running.version, session: accountSession, workspaces })
+    : null;
+  if (observation) engines.observation = observation.scopes;
   const discovery = new DiscoveryService(store, {
     // A new observation needs `verified`. A stored one whose approved file has
     // changed since reads `stale` and stays inspectable (DIO-84); `stale` is
@@ -1018,6 +1028,7 @@ export async function createApp(options: AppOptions) {
     // The one job an activated setup can run, as a harness procedure: the
     // workspace decides where it writes and refuses rather than guessing.
     weeklyBrief: AutomationService.host(workspaces, configuration),
+    observation: observation?.projector ?? null,
   });
   // External text turns run through the host's RunService: the adapter is only
   // the provider transport inside the fenced dispatch step.
@@ -1050,6 +1061,7 @@ export async function createApp(options: AppOptions) {
   const engineAsks = new EngineAskNeeds(store);
   const exposure = new SpendExposure(store.dataDir);
   await exposure.init();
+  observation?.projector.attachLedger(exposure);
   // Parent-job caps (owner decision 2026-09-23): each job's tier is its thread's WorkStyle, else
   // the Settings default, read here by the host; the engine service holds every model-API call
   // to its job's cap as well as the connection's.
@@ -1300,6 +1312,7 @@ export async function createApp(options: AppOptions) {
     {
       reviewTimeoutMs: options.verificationReviewTimeoutMs,
       commandEvidence: (projectId, command, notBefore) => softwarePack.commandEvidence(projectId, command, notBefore),
+      observe: observation ? (record, view) => observation.projector.onVerification(record, view) : undefined,
     },
   );
   mountVerificationRoutes(app, store, verification);
@@ -5829,6 +5842,7 @@ export async function createApp(options: AppOptions) {
   app.locals.nativeWork = nativeWork;
   app.locals.changeReview = changeReview;
   app.locals.harness = harness;
+  app.locals.observation = observation;
   app.locals.connections = connections;
   app.locals.workControl = workControl;
   app.locals.durableControls = durableControls;
@@ -5857,6 +5871,7 @@ export async function createApp(options: AppOptions) {
     // A declared command already approved finishes and is recorded before the run store closes.
     await softwarePack.settled();
     engines.close();
+    await observation?.exporter.close();
     await accountSession?.backend.close();
     await login.close();
     await codexSetup.close();

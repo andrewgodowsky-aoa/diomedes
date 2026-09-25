@@ -391,6 +391,7 @@ export function createHarnessHost({
   codexAccountRoute,
   textLeaseMs,
   weeklyBrief,
+  observation,
 }: {
   store: Store;
   dataDir: string;
@@ -401,6 +402,8 @@ export function createHarnessHost({
   textLeaseMs?: number;
   /** The pinned configuration and live target the weekly brief procedure needs. */
   weeklyBrief?: WeeklyBriefHost;
+  /** Optional metadata observation (server/observability/): reads each saved run, never changes it. */
+  observation?: { onRunSaved(run: HarnessRun): void } | null;
 }) {
   if (path.resolve(dataDir) !== store.dataDir)
     throw new Error('The harness must use the Store data folder.');
@@ -530,6 +533,11 @@ export function createHarnessHost({
     // authorized snapshot after the atomic write, using the same durable log.
     for (const observer of observers)
       if (observer.runId === run.id) observer.changed();
+    try {
+      observation?.onRunSaved(run);
+    } catch {
+      // Observation never changes a run, its commit or its readers.
+    }
   };
   runs.afterStep = () => bridge.flush();
   runs.use((context) => bridge.beforeStep(context));

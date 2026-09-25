@@ -1131,7 +1131,18 @@ export class RunService {
           }
           if (state === 'reconcile_required') run.state = 'reconcile_required';
           if (state === 'waiting_event') run.state = 'waiting';
-          this.note(run, `step.${state}`, { errorType: s.error.name }, s.intent.stepId, s.attempt);
+          // The thrown error's own code, when it is an identifier and never a sentence (PH-01).
+          const code = (error as { code?: unknown } | null)?.code;
+          this.note(
+            run,
+            `step.${state}`,
+            {
+              errorType: s.error.name,
+              ...(typeof code === 'string' && /^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(code) ? { errorCode: code } : {}),
+            },
+            s.intent.stepId,
+            s.attempt,
+          );
           await this.commit(run);
         });
       } catch (fencing) {
