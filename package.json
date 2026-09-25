@@ -18,6 +18,8 @@
     "capability-record:check": "tsx scripts/write-capability-record.ts --check",
     "probe:team": "tsx scripts/team-probe.ts",
     "fixtures": "tsx scripts/fixtures.ts",
+    "samples:check": "tsx scripts/sample-businesses/check.ts",
+    "samples:reset": "tsx scripts/sample-businesses/reset-cli.ts",
     "theme-pack:handoff": "tsx scripts/theme-pack-handoff.ts",
     "prepare-native": "tsx scripts/prepare-native.ts",
     "test:ui": "playwright test",

@@ -1,0 +1,29 @@
+sku,wine,distributor,category,case_size,shelf_price
+FL-101,Sancerre 2024,Fall Line,white,12,32.00
+FL-102,"House Malbec, Mendoza 2023",Fall Line,red,12,16.00
+FL-103,"Dry Rosé, Provence 2025",Fall Line,rosé,12,20.00
+FL-104,Champagne Brut NV,Fall Line,sparkling,6,62.00
+FL-105,"Pinot Noir, Willamette 2023",Fall Line,red,12,38.00
+FL-106,"Sauvignon Blanc, Marlborough 2025",Fall Line,white,12,19.00
+FL-107,Rioja Crianza 2021,Fall Line,red,12,22.00
+FL-108,"Chardonnay, Sonoma 2023",Fall Line,white,12,28.00
+FL-109,Côtes du Rhône 2023,Fall Line,red,12,18.00
+FL-110,"Albariño, Rías Baixas 2024",Fall Line,white,12,23.00
+FL-111,"Cabernet Sauvignon, Paso Robles 2022",Fall Line,red,12,30.00
+FL-112,Grüner Veltliner 2024,Fall Line,white,12,20.00
+FL-113,Barbera d'Asti 2023,Fall Line,red,12,21.00
+FL-114,Crémant de Loire NV,Fall Line,sparkling,12,26.00
+FL-115,"Zinfandel, Lodi 2022",Fall Line,red,12,22.00
+FL-116,Muscadet 2024,Fall Line,white,12,16.00
+TW-201,Prosecco NV,Tidewater,sparkling,12,18.00
+TW-202,Vinho Verde 2025,Tidewater,white,12,13.00
+TW-203,Chianti Classico 2022,Tidewater,red,12,24.00
+TW-204,Montepulciano d'Abruzzo 2023,Tidewater,red,12,14.00
+TW-205,"Pinot Grigio, Alto Adige 2024",Tidewater,white,12,19.00
+TW-206,Nero d'Avola 2023,Tidewater,red,12,16.00
+TW-207,"Garnacha, Calatayud 2023",Tidewater,red,12,14.00
+TW-208,"Verdejo, Rueda 2024",Tidewater,white,12,15.00
+TW-209,Douro Red 2022,Tidewater,red,12,19.00
+TW-210,Lambrusco NV,Tidewater,sparkling,12,17.00
+TW-211,"Primitivo, Puglia 2023",Tidewater,red,12,18.00
+TW-212,Txakoli 2024,Tidewater,white,12,24.00

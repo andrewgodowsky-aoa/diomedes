@@ -1,0 +1,8 @@
+date,type,reference,amount,balance
+2026-06-16,balance,Balance forward,,964.50
+2026-06-22,payment,"Payment, prior balance",-964.50,0.00
+2026-06-25,invoice,Invoice 7654,2268.00,2268.00
+2026-07-09,invoice,Invoice 7671,2064.00,4332.00
+2026-07-09,payment,"Payment, invoice 7654",-2268.00,2064.00
+2026-07-10,credit,Credit memo 37,-11.50,2052.50
+2026-07-15,balance,Closing balance,,2052.50

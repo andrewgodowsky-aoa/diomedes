@@ -1,0 +1,84 @@
+date,sku,wine,bottles,revenue
+2026-09-18,FL-101,Sancerre 2024,1,32.00
+2026-09-18,FL-102,"House Malbec, Mendoza 2023",6,96.00
+2026-09-18,FL-103,"Dry Rosé, Provence 2025",2,40.00
+2026-09-18,FL-104,Champagne Brut NV,1,62.00
+2026-09-18,FL-105,"Pinot Noir, Willamette 2023",2,76.00
+2026-09-18,FL-106,"Sauvignon Blanc, Marlborough 2025",3,57.00
+2026-09-18,FL-107,Rioja Crianza 2021,2,44.00
+2026-09-18,FL-108,"Chardonnay, Sonoma 2023",2,56.00
+2026-09-18,FL-109,Côtes du Rhône 2023,4,72.00
+2026-09-18,FL-110,"Albariño, Rías Baixas 2024",2,46.00
+2026-09-18,FL-111,"Cabernet Sauvignon, Paso Robles 2022",2,60.00
+2026-09-18,FL-112,Grüner Veltliner 2024,1,20.00
+2026-09-18,FL-113,Barbera d'Asti 2023,2,42.00
+2026-09-18,FL-114,Crémant de Loire NV,2,52.00
+2026-09-18,FL-115,"Zinfandel, Lodi 2022",2,44.00
+2026-09-18,FL-116,Muscadet 2024,1,16.00
+2026-09-18,TW-201,Prosecco NV,4,72.00
+2026-09-18,TW-202,Vinho Verde 2025,4,52.00
+2026-09-18,TW-203,Chianti Classico 2022,3,72.00
+2026-09-18,TW-204,Montepulciano d'Abruzzo 2023,5,70.00
+2026-09-18,TW-205,"Pinot Grigio, Alto Adige 2024",2,38.00
+2026-09-18,TW-206,Nero d'Avola 2023,2,32.00
+2026-09-18,TW-207,"Garnacha, Calatayud 2023",2,28.00
+2026-09-18,TW-208,"Verdejo, Rueda 2024",1,15.00
+2026-09-18,TW-209,Douro Red 2022,1,19.00
+2026-09-18,TW-210,Lambrusco NV,1,17.00
+2026-09-18,TW-211,"Primitivo, Puglia 2023",2,36.00
+2026-09-18,TW-212,Txakoli 2024,1,24.00
+2026-09-19,FL-101,Sancerre 2024,2,64.00
+2026-09-19,FL-102,"House Malbec, Mendoza 2023",9,144.00
+2026-09-19,FL-103,"Dry Rosé, Provence 2025",4,80.00
+2026-09-19,FL-104,Champagne Brut NV,1,62.00
+2026-09-19,FL-105,"Pinot Noir, Willamette 2023",2,76.00
+2026-09-19,FL-106,"Sauvignon Blanc, Marlborough 2025",5,95.00
+2026-09-19,FL-107,Rioja Crianza 2021,4,88.00
+2026-09-19,FL-108,"Chardonnay, Sonoma 2023",3,84.00
+2026-09-19,FL-109,Côtes du Rhône 2023,6,108.00
+2026-09-19,FL-110,"Albariño, Rías Baixas 2024",2,46.00
+2026-09-19,FL-111,"Cabernet Sauvignon, Paso Robles 2022",3,90.00
+2026-09-19,FL-112,Grüner Veltliner 2024,1,20.00
+2026-09-19,FL-113,Barbera d'Asti 2023,3,63.00
+2026-09-19,FL-114,Crémant de Loire NV,2,52.00
+2026-09-19,FL-115,"Zinfandel, Lodi 2022",2,44.00
+2026-09-19,FL-116,Muscadet 2024,2,32.00
+2026-09-19,TW-201,Prosecco NV,5,90.00
+2026-09-19,TW-202,Vinho Verde 2025,5,65.00
+2026-09-19,TW-203,Chianti Classico 2022,4,96.00
+2026-09-19,TW-204,Montepulciano d'Abruzzo 2023,7,98.00
+2026-09-19,TW-205,"Pinot Grigio, Alto Adige 2024",3,57.00
+2026-09-19,TW-206,Nero d'Avola 2023,3,48.00
+2026-09-19,TW-207,"Garnacha, Calatayud 2023",3,42.00
+2026-09-19,TW-208,"Verdejo, Rueda 2024",2,30.00
+2026-09-19,TW-209,Douro Red 2022,2,38.00
+2026-09-19,TW-210,Lambrusco NV,1,17.00
+2026-09-19,TW-211,"Primitivo, Puglia 2023",4,72.00
+2026-09-19,TW-212,Txakoli 2024,1,24.00
+2026-09-20,FL-101,Sancerre 2024,1,32.00
+2026-09-20,FL-102,"House Malbec, Mendoza 2023",6,96.00
+2026-09-20,FL-103,"Dry Rosé, Provence 2025",2,40.00
+2026-09-20,FL-105,"Pinot Noir, Willamette 2023",1,38.00
+2026-09-20,FL-106,"Sauvignon Blanc, Marlborough 2025",3,57.00
+2026-09-20,FL-107,Rioja Crianza 2021,2,44.00
+2026-09-20,FL-108,"Chardonnay, Sonoma 2023",1,28.00
+2026-09-20,FL-109,Côtes du Rhône 2023,3,54.00
+2026-09-20,FL-110,"Albariño, Rías Baixas 2024",1,23.00
+2026-09-20,FL-111,"Cabernet Sauvignon, Paso Robles 2022",1,30.00
+2026-09-20,FL-112,Grüner Veltliner 2024,1,20.00
+2026-09-20,FL-113,Barbera d'Asti 2023,1,21.00
+2026-09-20,FL-114,Crémant de Loire NV,1,26.00
+2026-09-20,FL-115,"Zinfandel, Lodi 2022",1,22.00
+2026-09-20,FL-116,Muscadet 2024,1,16.00
+2026-09-20,TW-201,Prosecco NV,3,54.00
+2026-09-20,TW-202,Vinho Verde 2025,3,39.00
+2026-09-20,TW-203,Chianti Classico 2022,2,48.00
+2026-09-20,TW-204,Montepulciano d'Abruzzo 2023,3,42.00
+2026-09-20,TW-205,"Pinot Grigio, Alto Adige 2024",2,38.00
+2026-09-20,TW-206,Nero d'Avola 2023,2,32.00
+2026-09-20,TW-207,"Garnacha, Calatayud 2023",1,14.00
+2026-09-20,TW-208,"Verdejo, Rueda 2024",1,15.00
+2026-09-20,TW-209,Douro Red 2022,1,19.00
+2026-09-20,TW-210,Lambrusco NV,1,17.00
+2026-09-20,TW-211,"Primitivo, Puglia 2023",2,36.00
+2026-09-20,TW-212,Txakoli 2024,1,24.00

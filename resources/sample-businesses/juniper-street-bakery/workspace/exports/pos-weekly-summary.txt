@@ -1,0 +1,10 @@
+# FICTIONAL DEMO DATA. Juniper Street Bakery & Cafe and everyone named here are invented for a Nectovia demonstration.
+2026-W30 (week of Jul 20): revenue $10,139, gross margin $7,817, croissants 589, pumpkin items 144
+2026-W31 (week of Jul 27): revenue $10,051, gross margin $7,743, croissants 612, pumpkin items 147
+2026-W32 (week of Aug 03): revenue $10,322, gross margin $7,959, croissants 619, pumpkin items 149
+2026-W33 (week of Aug 10): revenue $10,078, gross margin $7,766, croissants 600, pumpkin items 151
+2026-W34 (week of Aug 17): revenue $10,425, gross margin $8,035, croissants 619, pumpkin items 214
+2026-W35 (week of Aug 24): revenue $10,689, gross margin $8,259, croissants 588, pumpkin items 277
+2026-W36 (week of Aug 31): revenue $10,982, gross margin $8,354, croissants 487, pumpkin items 355
+2026-W37 (week of Sep 07): revenue $11,191, gross margin $8,516, croissants 488, pumpkin items 412
+2026-W38 (week of Sep 14): revenue $11,612, gross margin $8,856, croissants 483, pumpkin items 492

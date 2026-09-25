@@ -1,0 +1,46 @@
+part_order,ro,part,supplier,ordered_on,eta,status
+PO-7600,4440,Refrigerant and dye,Northgate Parts Supply,2026-08-31,2026-08-31,received
+PO-7601,4441,"Front strut assemblies, pair",Northgate Parts Supply,2026-08-31,2026-08-31,received
+PO-7602,4442,Front pads and rotors,Northgate Parts Supply,2026-08-31,2026-08-31,received
+PO-7603,4443,Serpentine belt,Northgate Parts Supply,2026-08-31,2026-08-31,received
+PO-7604,4444,"Front strut assemblies, pair",Northgate Parts Supply,2026-09-01,2026-09-01,received
+PO-7605,4445,Upstream O2 sensor,Northgate Parts Supply,2026-09-01,2026-09-01,received
+PO-7606,4446,"Starter, remanufactured",Northgate Parts Supply,2026-09-01,2026-09-01,received
+PO-7607,4447,"Front strut assemblies, pair",Northgate Parts Supply,2026-09-01,2026-09-01,received
+PO-7608,4448,Upstream O2 sensor,Northgate Parts Supply,2026-09-02,2026-09-02,received
+PO-7609,4449,"Starter, remanufactured",Northgate Parts Supply,2026-09-02,2026-09-02,received
+PO-7610,4450,Front pads and rotors,Northgate Parts Supply,2026-09-02,2026-09-02,received
+PO-7611,4451,Thermostat and coolant,Northgate Parts Supply,2026-09-02,2026-09-02,received
+PO-7612,4452,Serpentine belt,Northgate Parts Supply,2026-09-03,2026-09-03,received
+PO-7614,4454,"Front strut assemblies, pair",Northgate Parts Supply,2026-09-03,2026-09-03,received
+PO-7615,4456,"Front strut assemblies, pair",Northgate Parts Supply,2026-09-04,2026-09-04,received
+PO-7616,4457,Thermostat and coolant,Northgate Parts Supply,2026-09-04,2026-09-04,received
+PO-7617,4460,Oil and filter,Northgate Parts Supply,2026-09-08,2026-09-08,received
+PO-7618,4461,"Starter, remanufactured",Northgate Parts Supply,2026-09-08,2026-09-08,received
+PO-7619,4463,"Starter, remanufactured",Northgate Parts Supply,2026-09-08,2026-09-08,received
+PO-7620,4464,Refrigerant and dye,Northgate Parts Supply,2026-09-09,2026-09-09,received
+PO-7621,4466,Serpentine belt,Northgate Parts Supply,2026-09-09,2026-09-09,received
+PO-7622,4467,"Starter, remanufactured",Northgate Parts Supply,2026-09-09,2026-09-09,received
+PO-7623,4468,Oil and filter,Northgate Parts Supply,2026-09-10,2026-09-10,received
+PO-7624,4469,Refrigerant and dye,Northgate Parts Supply,2026-09-10,2026-09-10,received
+PO-7625,4472,Thermostat and coolant,Northgate Parts Supply,2026-09-11,2026-09-11,received
+PO-7626,4473,"Starter, remanufactured",Northgate Parts Supply,2026-09-11,2026-09-11,received
+PO-7627,4474,"Starter, remanufactured",Northgate Parts Supply,2026-09-11,2026-09-11,received
+PO-7628,4475,"Front strut assemblies, pair",Northgate Parts Supply,2026-09-11,2026-09-11,received
+PO-7722,4465,"Ignition coil, cylinder 3",Northgate Parts Supply,2026-09-11,2026-09-14,ordered
+PO-7613,4453,Upstream O2 sensor,Northgate Parts Supply,2026-09-14,2026-09-14,received
+PO-7630,4477,Serpentine belt,Northgate Parts Supply,2026-09-14,2026-09-14,received
+PO-7631,4478,Refrigerant and dye,Northgate Parts Supply,2026-09-14,2026-09-14,received
+PO-7632,4479,Refrigerant and dye,Northgate Parts Supply,2026-09-14,2026-09-14,received
+PO-7731,4471,"Rear wheel bearing and hub, left",Northgate Parts Supply,2026-09-14,2026-09-15,ordered
+PO-7633,4480,Oil and filter,Northgate Parts Supply,2026-09-15,2026-09-15,received
+PO-7634,4482,Oil and filter,Northgate Parts Supply,2026-09-15,2026-09-15,received
+PO-7636,4485,Oil and filter,Northgate Parts Supply,2026-09-16,2026-09-16,received
+PO-7638,4487,Thermostat and coolant,Northgate Parts Supply,2026-09-16,2026-09-16,received
+PO-7629,4476,Oil and filter,Northgate Parts Supply,2026-09-17,2026-09-17,received
+PO-7635,4484,Serpentine belt,Northgate Parts Supply,2026-09-17,2026-09-17,received
+PO-7637,4486,Thermostat and coolant,Northgate Parts Supply,2026-09-17,2026-09-17,received
+PO-7639,4490,Oil and filter,Northgate Parts Supply,2026-09-17,2026-09-17,received
+PO-7640,4491,"Battery, group 48",Northgate Parts Supply,2026-09-17,2026-09-17,received
+PO-7740,4488,Cabin blower motor,Beltway Auto Parts,2026-09-17,,back-ordered
+PO-7744,4494,"Front strut assemblies, pair",Northgate Parts Supply,2026-09-19,2026-09-19,received
