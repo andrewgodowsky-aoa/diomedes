@@ -53,6 +53,7 @@ import { CODEX_ENGINE, FIXTURE_ENGINE } from './harness/approval.js';
 import { NATIVE_LOOP_ENGINE } from '../shared/native-loop.js';
 import { AWS_MODEL_CONTRACT } from './harness/aws-model-adapter.js';
 import { AZURE_MODEL_CONTRACT } from './harness/azure-model-adapter.js';
+import { NECTOVIA_MODEL_CONTRACT } from './harness/nectovia-model-adapter.js';
 import { OPENROUTER_MODEL_CONTRACT } from './harness/openrouter-model-adapter.js';
 import { VERTEX_MODEL_CONTRACT } from './harness/vertex-model-adapter.js';
 import { ApiError } from './paths.js';
@@ -64,7 +65,13 @@ const isLive = (session: Session) => LIVE.includes(session.state);
 
 /** The model-API routes' contracts, which live with their adapters rather than in ROUTE_CONTRACTS. */
 const MODEL_API_CONTRACTS: Record<string, AdapterRouteContract> = Object.fromEntries(
-  [AWS_MODEL_CONTRACT, AZURE_MODEL_CONTRACT, OPENROUTER_MODEL_CONTRACT, VERTEX_MODEL_CONTRACT].map(
+  [
+    AWS_MODEL_CONTRACT,
+    AZURE_MODEL_CONTRACT,
+    OPENROUTER_MODEL_CONTRACT,
+    VERTEX_MODEL_CONTRACT,
+    NECTOVIA_MODEL_CONTRACT,
+  ].map(
     (contract) => [contract.routeId, contract],
   ),
 );
