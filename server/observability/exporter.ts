@@ -10,8 +10,10 @@
  * sent. A scope that fails (sign-out, another person, a workspace switch, an entitlement that
  * ended, an organization no longer internal) has its queued events dropped, never relabelled.
  *
- * PH-01 ships the queue with a memory sink, which records the exact batch bodies a transport
- * would send (without `api_key`). The PostHog transport is PH-02's.
+ * Sinks: memory (the exact batch bodies a transport would send, without `api_key`) and the
+ * PostHog transport (PH-02), which alone adds the key. A paid sink also has a gate: funding and a
+ * daily budget, both off unless the operator sets them. A failed send is retried with backoff at
+ * most three times, ahead of anything newer; three failures in a row pause export.
  */
 import type { Observation } from '../../shared/observability.js';
 import type { ObservationDenial, ObservationScope, ScopeRecheck } from './eligibility.js';
@@ -109,6 +111,15 @@ export interface ExporterLimits {
   readonly flushEveryMs: number;
   readonly sendDeadlineMs: number;
   readonly shutdownMs: number;
+  /** Sends of one batch, the first included. */
+  readonly attempts: number;
+  readonly backoffBaseMs: number;
+  readonly backoffCapMs: number;
+  /** A longer `Retry-After` drops the batch rather than holding the queue. */
+  readonly retryAfterCapMs: number;
+  /** Consecutive failed sends that pause export. */
+  readonly circuitFailures: number;
+  readonly pauseMs: number;
 }
 export const EXPORTER_LIMITS: ExporterLimits = Object.freeze({
   eventBytes: 8 * 1024,
@@ -120,7 +131,23 @@ export const EXPORTER_LIMITS: ExporterLimits = Object.freeze({
   flushEveryMs: 10_000,
   sendDeadlineMs: 5_000,
   shutdownMs: 2_000,
+  attempts: 3,
+  backoffBaseMs: 1_000,
+  backoffCapMs: 30_000,
+  retryAfterCapMs: 60_000,
+  circuitFailures: 3,
+  pauseMs: 5 * 60 * 1000,
 });
+
+/**
+ * What a paid destination may spend (PH-02). Absent for the memory sink. `fundedUntil` is the last
+ * UTC day the vendor benefit is known to cover; null or past sends nothing and keeps nothing.
+ * `dailyEvents` is the pilot's cap per UTC day; zero, the default, sends nothing.
+ */
+export interface ExportGate {
+  readonly fundedUntil: string | null;
+  readonly dailyEvents: number;
+}
 
 const emptyDrops = (): Record<DropReason, number> =>
   Object.fromEntries(DROP_REASONS.map((reason) => [reason, 0])) as Record<DropReason, number>;
@@ -157,6 +184,13 @@ interface Queued {
   readonly enqueuedAt: number;
 }
 
+/** A batch that failed and waits to be sent again, ahead of anything newer. */
+interface InFlight {
+  batch: Queued[];
+  readonly attempts: number;
+  readonly notBefore: number;
+}
+
 export interface BoundedExporterOptions {
   readonly sink: ObservationSink;
   readonly scopes: ScopeRecheckPort;
@@ -164,10 +198,15 @@ export interface BoundedExporterOptions {
   readonly limits?: Partial<ExporterLimits>;
   /** A periodic flush, unref'd. Tests turn it off and flush by hand. */
   readonly timer?: boolean;
+  /** Funding and the daily budget. Required for a paid sink; absent for memory. */
+  readonly gate?: ExportGate | null;
+  /** The backoff jitter's source, in [0, 1). Tests fix it. */
+  readonly random?: () => number;
 }
 
 /** `{"batch":[` + events + `]}`: the bytes `encodeBatch` would produce for the same events. */
 const BATCH_OVERHEAD = Buffer.byteLength('{"batch":[]}');
+const DAY_MS = 86_400_000;
 
 export class BoundedObservationExporter implements ObservationExporter {
   protected readonly limits: ExporterLimits;
@@ -179,6 +218,11 @@ export class BoundedObservationExporter implements ObservationExporter {
   protected exported = 0;
   protected lastFailure: SinkFailure | null = null;
   protected closed = false;
+  private inflight: InFlight | null = null;
+  private consecutiveFailures = 0;
+  private pausedUntil = 0;
+  private budgetDay = '';
+  private sentToday = 0;
   private flushing: Promise<void> | null = null;
   private kicked = false;
   private readonly interval: ReturnType<typeof setInterval> | null;
@@ -194,6 +238,9 @@ export class BoundedObservationExporter implements ObservationExporter {
   enqueue(observation: Observation, scope: ObservationScope): void {
     try {
       if (this.closed) return this.drop('shutdown');
+      // Unfunded or over today's budget: nothing is kept for later, so nothing is backfilled.
+      if (this.unfunded()) return this.drop('funding');
+      if (this.budgetLeft() <= 0) return this.drop('budget');
       if (!this.live(scope)) return this.drop('scope-ended');
       let text: string;
       try {
@@ -226,33 +273,43 @@ export class BoundedObservationExporter implements ObservationExporter {
   }
 
   discard(ended: (scope: ObservationScope) => boolean, reason: DropReason): number {
+    const matches = (item: Queued) => {
+      try {
+        return ended(item.scope);
+      } catch {
+        return true;
+      }
+    };
     let removed = 0;
     for (let index = this.queue.length - 1; index >= 0; index -= 1) {
       const item = this.queue[index];
-      let end = true;
-      try {
-        end = ended(item.scope);
-      } catch {
-        end = true;
-      }
-      if (!end) continue;
+      if (!matches(item)) continue;
       this.queue.splice(index, 1);
       this.queuedBytes -= item.bytes;
       this.dropped[reason] += 1;
       removed += 1;
     }
+    if (this.inflight) {
+      const kept = this.inflight.batch.filter((item) => !matches(item));
+      const gone = this.inflight.batch.length - kept.length;
+      this.dropped[reason] += gone;
+      removed += gone;
+      this.inflight.batch = kept;
+      if (kept.length === 0) this.inflight = null;
+    }
     return removed;
   }
 
   health(): ObservationHealth {
+    const waiting = this.inflight?.batch ?? [];
     return {
       state: this.state(),
       enqueued: this.enqueued,
       exported: this.exported,
       dropped: { ...this.dropped },
       denied: this.options.scopes.denials(),
-      queued: this.queue.length,
-      queuedBytes: this.queuedBytes,
+      queued: this.queue.length + waiting.length,
+      queuedBytes: this.queuedBytes + waiting.reduce((sum, item) => sum + item.bytes, 0),
       lastFailure: this.lastFailure,
     };
   }
@@ -269,11 +326,14 @@ export class BoundedObservationExporter implements ObservationExporter {
   }
 
   protected state(): ObservationHealth['state'] {
+    if (this.unfunded()) return 'disabled:funding';
+    if (this.options.gate && this.budgetLeft() <= 0) return 'disabled:budget';
+    if (this.pausedUntil > this.clock()) return 'paused';
     return this.options.sink.kind === 'memory' ? 'memory' : 'exporting';
   }
 
-  protected drop(reason: DropReason) {
-    this.dropped[reason] += 1;
+  protected drop(reason: DropReason, count = 1) {
+    this.dropped[reason] += count;
   }
 
   protected live(scope: ObservationScope) {
@@ -284,28 +344,99 @@ export class BoundedObservationExporter implements ObservationExporter {
     }
   }
 
-  /** Expire, recheck, then send batches until the queue is empty or the deadline passes. */
+  /** Funding ends at the close of its last UTC day. No gate: a memory sink, never funded or charged. */
+  private unfunded(): boolean {
+    const gate = this.options.gate;
+    if (!gate) return false;
+    if (!gate.fundedUntil || !/^\d{4}-\d{2}-\d{2}$/.test(gate.fundedUntil)) return true;
+    const end = Date.parse(`${gate.fundedUntil}T00:00:00.000Z`) + DAY_MS;
+    return !(this.clock() < end);
+  }
+
+  /** Events this process may still send today (UTC). */
+  private budgetLeft(): number {
+    const gate = this.options.gate;
+    if (!gate) return Number.POSITIVE_INFINITY;
+    const today = new Date(this.clock()).toISOString().slice(0, 10);
+    if (today !== this.budgetDay) {
+      this.budgetDay = today;
+      this.sentToday = 0;
+    }
+    return Math.max(0, gate.dailyEvents - this.sentToday);
+  }
+
+  /** Expire, recheck, then send: a waiting retry first, then new batches, until empty or the deadline. */
   protected async drain(deadlineMs: number): Promise<void> {
     const started = this.clock();
+    if (this.unfunded()) {
+      this.discard(() => true, 'funding');
+      return;
+    }
     this.expire();
     this.dropEnded();
-    while (this.queue.length > 0 && this.clock() - started < deadlineMs) {
-      const batch = this.takeBatch();
-      if (batch.length === 0) break;
-      const body = `{"batch":[${batch.map((item) => item.text).join(',')}]}`;
+    while (this.clock() - started < deadlineMs) {
+      if (this.pausedUntil > this.clock()) break;
+      let entry = this.inflight;
+      if (entry) {
+        if (this.clock() < entry.notBefore) break;
+        // Rechecked again before it is sent again.
+        const checked = new Map<ObservationScope, boolean>();
+        const kept = entry.batch.filter((item) => {
+          let live = checked.get(item.scope);
+          if (live === undefined) checked.set(item.scope, (live = this.live(item.scope)));
+          if (!live) this.dropped['scope-ended'] += 1;
+          return live;
+        });
+        if (kept.length === 0) {
+          this.inflight = null;
+          continue;
+        }
+        entry.batch = kept;
+      } else {
+        if (this.queue.length === 0) break;
+        const left = this.budgetLeft();
+        if (left <= 0) {
+          this.discard(() => true, 'budget');
+          break;
+        }
+        const batch = this.takeBatch(Math.min(left, this.limits.batchEvents));
+        if (batch.length === 0) continue;
+        // Counted when first sent, so an answer that never came back still counts against the cap.
+        this.sentToday += batch.length;
+        entry = { batch, attempts: 0, notBefore: 0 };
+        this.inflight = entry;
+      }
+      const body = `{"batch":[${entry.batch.map((item) => item.text).join(',')}]}`;
       const result = await this.send(body, Math.max(1, deadlineMs - (this.clock() - started)));
-      this.settle(batch, result);
+      this.settle(entry, result);
     }
   }
 
-  /** One batch out. PH-01 drops a failed batch; PH-02 retries it. */
-  protected settle(batch: readonly Queued[], result: SinkResult) {
+  /** One send's answer: done, dropped, or held to be sent again after a backoff. */
+  protected settle(entry: InFlight, result: SinkResult) {
     if (result.ok) {
-      this.exported += batch.length;
+      this.exported += entry.batch.length;
+      this.consecutiveFailures = 0;
+      this.inflight = null;
       return;
     }
     this.lastFailure = result.failure;
-    this.dropped.rejected += batch.length;
+    this.consecutiveFailures += 1;
+    if (this.consecutiveFailures >= this.limits.circuitFailures) {
+      this.pausedUntil = this.clock() + this.limits.pauseMs;
+      this.consecutiveFailures = 0;
+    }
+    const attempts = entry.attempts + 1;
+    const give = (reason: DropReason) => {
+      this.drop(reason, entry.batch.length);
+      this.inflight = null;
+    };
+    if (result.failure === 'http-4xx') return give('rejected');
+    if (result.retryAfterMs !== null && result.retryAfterMs > this.limits.retryAfterCapMs) return give('retry-after-too-long');
+    if (attempts >= this.limits.attempts) return give('retries-exhausted');
+    const jitter = 0.5 + 0.5 * Math.min(1, Math.max(0, (this.options.random ?? Math.random)()));
+    const backoff = Math.min(this.limits.backoffCapMs, this.limits.backoffBaseMs * 2 ** (attempts - 1)) * jitter;
+    this.inflight = { batch: entry.batch, attempts, notBefore: this.clock() + (result.retryAfterMs ?? backoff) };
   }
 
   protected async send(body: string, deadlineMs: number): Promise<SinkResult> {
@@ -329,11 +460,11 @@ export class BoundedObservationExporter implements ObservationExporter {
   }
 
   /** Oldest first, up to the event and byte caps; every event's scope rechecked just before it goes. */
-  protected takeBatch(): Queued[] {
+  protected takeBatch(maxEvents: number): Queued[] {
     const batch: Queued[] = [];
     let bytes = BATCH_OVERHEAD;
     const checked = new Map<ObservationScope, boolean>();
-    while (this.queue.length > 0 && batch.length < this.limits.batchEvents) {
+    while (this.queue.length > 0 && batch.length < maxEvents) {
       const next = this.queue[0];
       const separator = batch.length > 0 ? 1 : 0;
       if (batch.length > 0 && bytes + separator + next.bytes > this.limits.batchBytes) break;
@@ -349,13 +480,6 @@ export class BoundedObservationExporter implements ObservationExporter {
       bytes += separator + next.bytes;
     }
     return batch;
-  }
-
-  protected requeue(batch: readonly Queued[]) {
-    for (let index = batch.length - 1; index >= 0; index -= 1) {
-      this.queue.unshift(batch[index]);
-      this.queuedBytes += batch[index].bytes;
-    }
   }
 
   private expire() {

@@ -19,6 +19,7 @@ import {
   type ObservationExporter,
   type ObservationSink,
 } from './exporter.js';
+import { PostHogTransport } from './posthog-transport.js';
 import { ObservationProjector } from './projector.js';
 import { ObservationScopes } from './scopes.js';
 
@@ -32,6 +33,9 @@ export interface ObservationOptions {
   readonly limits?: Partial<ExporterLimits>;
   readonly timer?: boolean;
   readonly clock?: () => number;
+  /** Tests replace the network under the PostHog transport. Production leaves it unset. */
+  readonly fetch?: typeof globalThis.fetch;
+  readonly random?: () => number;
 }
 
 export interface ObservationRuntime {
@@ -51,9 +55,14 @@ export function createObservation(input: {
   if (input.options === null) return null;
   const operator = input.options?.operator ?? operatorConfigFromEnv(input.env);
   if (operator.mode === 'off' || operator === OBSERVATION_OFF) return null;
-  // PH-01 has no network transport: `posthog` mode stays off until PH-02 wires it.
-  const sink = input.options?.sink ?? (operator.mode === 'memory' ? new MemoryObservationSink() : null);
-  if (!sink) return null;
+  // `posthog` mode needs a well-formed host and capture key; otherwise nothing is constructed.
+  const posthog = operator.mode === 'posthog' ? operator.posthog : null;
+  if (operator.mode === 'posthog' && !posthog) return null;
+  const sink =
+    input.options?.sink ??
+    (posthog
+      ? new PostHogTransport({ host: posthog.host, captureKey: posthog.captureKey, fetch: input.options?.fetch })
+      : new MemoryObservationSink());
   const { session, workspaces } = input;
   const scopes = new ObservationScopes({
     operator,
@@ -75,6 +84,9 @@ export function createObservation(input: {
     clock: input.options?.clock,
     limits: input.options?.limits,
     timer: input.options?.timer,
+    // A paid destination spends only inside its funding and today's pilot budget; both default to nothing.
+    gate: posthog ? { fundedUntil: posthog.fundedUntil, dailyEvents: posthog.dailyEvents } : null,
+    random: input.options?.random,
   });
   const projector = new ObservationProjector({ scopes, exporter, build: input.build });
   return { operator, scopes, projector, exporter };

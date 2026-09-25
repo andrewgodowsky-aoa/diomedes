@@ -21,6 +21,7 @@ import {
   known,
   unknown,
   type AttemptOutcome,
+  type CostReconciledObservation,
   type GenerationObservation,
   type Observation,
   type ObservationIds,
@@ -57,6 +58,8 @@ import type { ObservationScopes, ResolvedScope } from './scopes.js';
 /** What the projector reads from the local spend ledger. */
 export interface ObservationLedgerPort {
   list(connectionId: string): readonly ExposureReservation[];
+  /** Late costs (PH-02): told, after the write, when an open hold reaches a final cost. */
+  onResolved?(listener: ((reservation: ExposureReservation) => void) | null): void;
 }
 
 export interface ObservationProjectorOptions {
@@ -112,6 +115,9 @@ class Bounded<K, V> {
     this.map.set(key, value);
     while (this.map.size > this.limit) this.map.delete(this.map.keys().next().value as K);
   }
+  delete(key: K) {
+    return this.map.delete(key);
+  }
   get size() {
     return this.map.size;
   }
@@ -124,6 +130,13 @@ interface SessionLink {
   readonly lineageRunId: string | null;
 }
 
+/** A generation sent while its hold was still open, waiting for its final cost. */
+interface OpenCost {
+  readonly ids: ObservationIds;
+  readonly scope: ObservationScope;
+  readonly capability: ObservedCapability;
+}
+
 export type LedgerMatch = { readonly linked: false } | { readonly linked: true; readonly hold: ExposureReservation | null };
 
 export class ObservationProjector {
@@ -132,18 +145,63 @@ export class ObservationProjector {
   private readonly seen: Bounded<string, true>;
   private readonly sessions = new Bounded<string, SessionLink>(TRACKED);
   private readonly children = new Bounded<string, Set<string>>(TRACKED);
+  private readonly openCosts = new Bounded<string, OpenCost>(TRACKED);
   private projected = 0;
   private failures = 0;
   private unlinkedVerifications = 0;
 
   constructor(private readonly options: ObservationProjectorOptions) {
-    this.ledger = options.ledger ?? null;
+    this.ledger = null;
     this.seen = new Bounded(Math.max(1, options.seenLimit ?? 10_000));
+    this.attachLedger(options.ledger ?? null);
   }
 
   /** The ledger exists after the harness does; the app attaches it once it has loaded. */
   attachLedger(ledger: ObservationLedgerPort | null) {
     this.ledger = ledger;
+    try {
+      ledger?.onResolved?.((hold) => this.onCostResolved(hold));
+    } catch {
+      this.failures += 1;
+    }
+  }
+
+  /**
+   * A hold that was open when its generation was sent has reached a final cost: one
+   * `cost-reconciled` event joined on the generation's span id. Never a second generation.
+   */
+  onCostResolved(hold: ExposureReservation): void {
+    try {
+      const open = this.openCosts.get(hold.id);
+      if (!open || (hold.state !== 'settled' && hold.state !== 'written-off')) return;
+      this.openCosts.delete(hold.id);
+      const environment = open.scope.facts.environment;
+      const cost = costOf({ linked: true, hold }, false, this.pseudonymKey());
+      this.emit(
+        {
+          kind: 'cost-reconciled',
+          contract: OBSERVATION_CONTRACT,
+          ids: {
+            uuid: uuidFor(environment, `cost|${open.ids.spanId}|${hold.state}`),
+            traceId: open.ids.traceId,
+            spanId: spanIdFor(environment, `cost|${hold.id}`),
+            parentId: open.ids.spanId,
+            sessionId: open.ids.sessionId,
+          },
+          at: new Date(at(hold.resolvedAt) || Date.now()).toISOString(),
+          scope: open.scope.facts,
+          build: this.options.build,
+          capability: open.capability,
+          generationSpanId: open.ids.spanId,
+          reconciledFrom: hold.reconciledFrom ?? (hold.state === 'written-off' ? 'write-off' : 'response'),
+          costState: hold.state,
+          cost,
+        } satisfies CostReconciledObservation,
+        open.scope,
+      );
+    } catch {
+      this.failures += 1;
+    }
   }
 
   /** Synchronous, never throws, never awaits. */
@@ -334,6 +392,9 @@ export class ObservationProjector {
           (dispatch ? (typeof output.model === 'string' && output.model ? output.model : null) : null) ??
           (typeof record(output.transcript).modelId === 'string' ? (record(output.transcript).modelId as string) : null))
         : null;
+    // A byo hold still open now settles later: remember where its cost belongs (PH-02 late cost).
+    if (!managed && hold && (hold.state === 'pending' || hold.state === 'uncertain'))
+      this.openCosts.set(hold.id, { ids: common.ids, scope: resolved.scope, capability });
     this.emit(
       {
         kind: 'generation',
@@ -527,7 +588,8 @@ export function costOf(
   if (hold.state === 'pending') return unknown('cost-pending');
   if (hold.state === 'uncertain') return unknown('cost-uncertain');
   if (hold.state === 'released') return unknown('not-applicable');
-  const micro = count(hold.settledMicroUsd);
+  // A write-off accepts the call as spent at its ceiling unless a figure was recorded.
+  const micro = count(hold.state === 'written-off' ? (hold.settledMicroUsd ?? hold.maxMicroUsd) : hold.settledMicroUsd);
   if (micro === null || !key) return unknown('cost-uncertain');
   return known({ microUsd: micro, rateCardKey: rateCardKeyFor(key, hold.rateCardVersion) });
 }
