@@ -20,7 +20,7 @@ work run without it, without signing in and without network access
 conversation needs connectivity. What a task sends leaves through the route it uses:
 the AI tool you signed in to, or your own AWS account.
 
-Diomedes Systems (LLC formation pending). This source tree is Diomedes 0.2.0;
+Made by Diomedes Systems LLC. This source tree is Diomedes 0.2.0;
 `package.json` holds that number and `tests/engine-routes.test.ts` fails if this file
 disagrees with it.
 
@@ -62,6 +62,12 @@ making an exception. Code signing is tracked in `docs/releases/CODE_SIGNING.md`.
 
 The application can check that same releases page for a newer stable Windows per-user
 installer. There is no other remote service of its own.
+
+From 0.2.0 the same releases page also carries a Mac disk image for Apple silicon,
+`Diomedes-Experimental-<version>-mac-arm64.dmg`, listed in the same `SHA256SUMS.txt`.
+It is signed ad hoc, not with an Apple Developer ID, and not notarized, so macOS asks
+before opening it the first time. On a Mac, Check for updates says when a newer version
+exists; the app does not install it itself.
 
 A portable archive is published beside the installer. Extract the whole folder and run
 `Diomedes.exe` from inside it; the bare executable is not the application.
@@ -372,10 +378,16 @@ Windows, `npm run package:desktop` and `npm run package:windows` both write
 `npm run package:windows` and `npm run test:desktop` so the release on disk is
 current and verified.
 
-`npm run package:mac` is experimental and has not produced a Mac app. On any
-host it refuses until an offline Electron archive is supplied. On a **Mac** host
-it then refuses pending a decision about the packager's automatic ad-hoc
-signing. On a **Windows** host that second refusal does not apply: with the
+`npm run package:mac` is experimental. On any host it refuses until an offline
+Electron archive is supplied. On a **Mac** host it then refuses unless
+`DIOMEDES_MAC_ADHOC_FRAMEWORK_RESIGN=accept` is set, which lets the packager restore
+the ad-hoc signature Electron ships with; it adds no Developer ID and no notarization.
+The release workflow (`.github/workflows/release.yml`) sets it on a GitHub-hosted
+macOS 14 arm64 runner, gives the bundle an ad-hoc whole-bundle signature (Andrew,
+2026-09-25, `QUESTIONS.md` O43), wraps it in a disk image and launch-checks it from the
+mounted image. 0.2.0 is the first release to publish that image,
+`Diomedes-Experimental-0.2.0-mac-arm64.dmg`: packaged and launch-checked on that runner,
+not verified on a person's Mac. On a **Windows** host the Mac-host refusal does not apply: with the
 archive supplied and permission to create symbolic links (Developer Mode or an
 elevated shell) it will build a `.app` that nobody has launched, with Electron's
 default icon, no ASAR integrity digest and only the ad-hoc signature Electron
@@ -465,5 +477,6 @@ junctions are rejected.
   installer proofs. A proof carries the machine it ran on; read that before reading it as
   a claim about anyone else's computer.
 - `docs/releases/CODE_SIGNING.md` — the signing work that is still outstanding.
-- `licenses/` — the bundled font licences. `reference/` — read-only copies of source
+- `licenses/` — the third-party notices, the dependency list, and the licences of the
+  bundled fonts and dependencies. `reference/` — read-only copies of source
   documents used during the build.
