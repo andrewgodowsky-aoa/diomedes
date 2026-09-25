@@ -1,0 +1,15 @@
+invoice,job,date,status,file,total
+2180,OKA,2026-05-04,paid,billing/invoice-2180.csv,10375.00
+2182,ALV,2026-05-18,paid,billing/invoice-2182.csv,16800.00
+2186,OKA,2026-06-12,paid,billing/invoice-2186.csv,14525.00
+2190,ALV,2026-06-15,paid,billing/invoice-2190.csv,21000.00
+2194,OKA,2026-07-06,paid,billing/invoice-2194.csv,13690.00
+2196,ALV,2026-07-20,paid,billing/invoice-2196.csv,21860.00
+2199,HEN,2026-07-27,paid,billing/invoice-2199.csv,17280.00
+2201,MAR,2026-08-10,paid,billing/invoice-2201.csv,7640.00
+2207,ALV,2026-08-24,paid,billing/invoice-2207.csv,16800.00
+2212,HEN,2026-08-28,paid,billing/invoice-2212.csv,22380.00
+2215,MAR,2026-08-31,sent,billing/invoice-2215.csv,11460.00
+2219,OKA,2026-09-01,paid,billing/invoice-2219.csv,4150.00
+2226,KES,2026-09-08,paid,billing/invoice-2226.csv,12960.00
+2231,HEN,2026-09-25,"draft, goes out Friday",billing/invoice-2231-draft.csv,21600.00

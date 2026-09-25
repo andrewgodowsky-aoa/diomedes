@@ -1,0 +1,21 @@
+distributor,invoice,date,file,lines,total
+Fall Line,30262,2026-06-23,invoices/fall-line-30262.csv,6,1620.00
+Tidewater,7654,2026-06-25,invoices/tidewater-7654.csv,7,2268.00
+Fall Line,30279,2026-06-30,invoices/fall-line-30279.csv,6,2886.00
+Fall Line,30294,2026-07-07,invoices/fall-line-30294.csv,7,2208.00
+Tidewater,7671,2026-07-09,invoices/tidewater-7671.csv,7,2064.00
+Fall Line,30311,2026-07-14,invoices/fall-line-30311.csv,5,2298.00
+Fall Line,30327,2026-07-21,invoices/fall-line-30327.csv,5,1620.00
+Tidewater,7699,2026-07-23,invoices/tidewater-7699.csv,5,1536.00
+Fall Line,30342,2026-07-28,invoices/fall-line-30342.csv,5,1920.00
+Fall Line,30358,2026-08-04,invoices/fall-line-30358.csv,6,3048.00
+Tidewater,7720,2026-08-06,invoices/tidewater-7720.csv,4,852.00
+Fall Line,30373,2026-08-11,invoices/fall-line-30373.csv,5,1836.00
+Fall Line,30390,2026-08-18,invoices/fall-line-30390.csv,5,1392.00
+Tidewater,7743,2026-08-20,invoices/tidewater-7743.csv,5,1434.00
+Fall Line,30418,2026-08-25,invoices/fall-line-30418.csv,5,1716.00
+Fall Line,30437,2026-09-01,invoices/fall-line-30437.csv,6,3042.00
+Tidewater,7788,2026-09-03,invoices/tidewater-7788.csv,4,990.00
+Fall Line,30455,2026-09-08,invoices/fall-line-30455.csv,4,2214.00
+Fall Line,30471,2026-09-15,invoices/fall-line-30471.csv,5,1302.00
+Tidewater,7806,2026-09-17,invoices/tidewater-7806.csv,7,1938.00

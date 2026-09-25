@@ -1,0 +1,57 @@
+ro,opened_on,customer_id,vehicle,concern,tech,status,completed_at,closed_on,invoice
+4440,2026-08-31,C301,2016 compact sedan,A/C recharge and leak check,Ana Kowalski,Closed,2026-09-01 15:00,2026-09-01,INV-9120
+4441,2026-08-31,C308,2019 midsize SUV,Replace front struts,Ben Adeyemi,Closed,2026-09-02 15:11,2026-09-02,INV-9121
+4442,2026-08-31,C315,2014 pickup,Front brake pads and rotors,Carl Sorensen,Closed,2026-09-01 15:22,2026-09-01,INV-9122
+4443,2026-08-31,C323,2021 hatchback,Replace serpentine belt,Farid Haddad,Closed,2026-09-02 15:33,2026-09-02,INV-9123
+4444,2026-09-01,C329,2018 minivan,Replace front struts,Ana Kowalski,Closed,2026-09-02 15:44,2026-09-02,INV-9124
+4445,2026-09-01,C336,2017 compact SUV,"Diagnose check engine light, replace O2 sensor",Ben Adeyemi,Closed,2026-09-03 15:55,2026-09-03,INV-9125
+4446,2026-09-01,C303,2020 sedan,Replace starter,Carl Sorensen,Closed,2026-09-02 15:06,2026-09-02,INV-9126
+4447,2026-09-01,C310,2015 wagon,Replace front struts,Farid Haddad,Closed,2026-09-03 15:17,2026-09-03,INV-9127
+4448,2026-09-02,C317,2022 crossover,"Diagnose check engine light, replace O2 sensor",Ana Kowalski,Closed,2026-09-03 15:28,2026-09-03,INV-9128
+4449,2026-09-02,C325,2013 pickup,Replace starter,Ben Adeyemi,Closed,2026-09-04 15:39,2026-09-04,INV-9129
+4450,2026-09-02,C331,2016 compact sedan,Front brake pads and rotors,Carl Sorensen,Closed,2026-09-03 15:50,2026-09-03,INV-9130
+4451,2026-09-02,C338,2019 midsize SUV,Coolant flush and thermostat,Farid Haddad,Closed,2026-09-04 15:01,2026-09-04,INV-9131
+4452,2026-09-03,C305,2014 pickup,Replace serpentine belt,Ana Kowalski,Closed,2026-09-04 15:12,2026-09-04,INV-9132
+4453,2026-09-14,C312,2021 hatchback,"Diagnose check engine light, replace O2 sensor",Ben Adeyemi,Closed,2026-09-16 15:23,2026-09-16,
+4454,2026-09-03,C319,2018 minivan,Replace front struts,Carl Sorensen,Closed,2026-09-04 15:34,2026-09-04,INV-9133
+4455,2026-09-03,C326,2017 compact SUV,Tire rotation and alignment,Farid Haddad,Closed,2026-09-05 15:45,2026-09-05,INV-9134
+4456,2026-09-04,C333,2020 sedan,Replace front struts,Ana Kowalski,Closed,2026-09-05 15:56,2026-09-05,INV-9135
+4457,2026-09-04,C340,2015 wagon,Coolant flush and thermostat,Ben Adeyemi,Closed,2026-09-06 15:07,2026-09-06,INV-9136
+4458,2026-09-04,C307,2022 crossover,Tire rotation and alignment,Carl Sorensen,Closed,2026-09-05 15:18,2026-09-05,INV-9137
+4459,2026-09-16,C314,2021 sedan,Front brake pads and rotors,Farid Haddad,Complete,2026-09-18 11:20,,
+4460,2026-09-08,C321,2016 compact sedan,Oil change and inspection,Ana Kowalski,Closed,2026-09-09 15:40,2026-09-09,INV-9138
+4461,2026-09-08,C328,2019 midsize SUV,Replace starter,Ben Adeyemi,Closed,2026-09-10 15:51,2026-09-10,INV-9139
+4462,2026-09-16,C335,2014 pickup,Replace battery,Carl Sorensen,Complete,2026-09-18 10:50,,
+4463,2026-09-08,C302,2021 hatchback,Replace starter,Farid Haddad,Closed,2026-09-10 15:13,2026-09-10,INV-9140
+4464,2026-09-09,C309,2018 minivan,A/C recharge and leak check,Ana Kowalski,Closed,2026-09-10 15:24,2026-09-10,INV-9141
+4465,2026-09-11,C316,2017 compact SUV,"Misfire, cylinder 3; replace ignition coil",Ben Adeyemi,Waiting on parts,,,
+4466,2026-09-09,C323,2020 sedan,Replace serpentine belt,Carl Sorensen,Closed,2026-09-10 15:46,2026-09-10,INV-9142
+4467,2026-09-09,C330,2015 wagon,Replace starter,Farid Haddad,Closed,2026-09-11 15:57,2026-09-11,INV-9143
+4468,2026-09-10,C337,2022 crossover,Oil change and inspection,Ana Kowalski,Closed,2026-09-11 15:08,2026-09-11,INV-9144
+4469,2026-09-10,C304,2013 pickup,A/C recharge and leak check,Ben Adeyemi,Closed,2026-09-12 15:19,2026-09-12,INV-9145
+4470,2026-09-17,C311,2017 van,Coolant flush and thermostat,Carl Sorensen,Complete,2026-09-18 14:05,,
+4471,2026-09-14,C318,2018 midsize SUV,Grinding from rear left; replace rear wheel bearing,Ben Adeyemi,Waiting on parts,,,
+4472,2026-09-11,C325,2014 pickup,Coolant flush and thermostat,Ana Kowalski,Closed,2026-09-12 15:52,2026-09-12,INV-9146
+4473,2026-09-11,C332,2021 hatchback,Replace starter,Ben Adeyemi,Closed,2026-09-13 15:03,2026-09-13,INV-9147
+4474,2026-09-11,C339,2018 minivan,Replace starter,Carl Sorensen,Closed,2026-09-12 15:14,2026-09-12,INV-9148
+4475,2026-09-11,C306,2017 compact SUV,Replace front struts,Farid Haddad,Closed,2026-09-13 15:25,2026-09-13,INV-9149
+4476,2026-09-17,C313,2020 sedan,Oil change and inspection,Ana Kowalski,Closed,2026-09-18 15:36,2026-09-18,INV-9150
+4477,2026-09-14,C320,2015 wagon,Replace serpentine belt,Ben Adeyemi,Closed,2026-09-16 15:47,2026-09-16,INV-9151
+4478,2026-09-14,C327,2022 crossover,A/C recharge and leak check,Carl Sorensen,Closed,2026-09-15 15:58,2026-09-15,INV-9152
+4479,2026-09-14,C334,2013 pickup,A/C recharge and leak check,Farid Haddad,Closed,2026-09-16 15:09,2026-09-16,INV-9153
+4480,2026-09-15,C301,2016 compact sedan,Oil change and inspection,Ana Kowalski,Closed,2026-09-16 15:20,2026-09-16,INV-9154
+4481,2026-09-14,C322,2019 pickup,Rear brakes and parking brake cables,Ben Adeyemi,Waiting on approval,,,
+4482,2026-09-15,C315,2014 pickup,Oil change and inspection,Carl Sorensen,Closed,2026-09-16 15:42,2026-09-16,INV-9155
+4483,2026-09-14,C324,2015 wagon,Power steering leak; replace pressure hose,Farid Haddad,Waiting on approval,,,
+4484,2026-09-17,C329,2018 minivan,Replace serpentine belt,Ana Kowalski,Closed,2026-09-18 15:04,2026-09-18,INV-9156
+4485,2026-09-16,C336,2017 compact SUV,Oil change and inspection,Ben Adeyemi,Closed,2026-09-18 15:15,2026-09-18,INV-9157
+4486,2026-09-17,C303,2020 sedan,Coolant flush and thermostat,Carl Sorensen,Closed,2026-09-18 15:26,2026-09-18,INV-9158
+4487,2026-09-16,C310,2015 wagon,Coolant flush and thermostat,Farid Haddad,Closed,2026-09-18 15:37,2026-09-18,INV-9159
+4488,2026-09-17,C317,2020 sedan,No air from vents; replace cabin blower motor,Carl Sorensen,Waiting on parts,,,
+4489,2026-09-15,C325,2014 compact sedan,Timing belt and water pump at 105k,Ben Adeyemi,Waiting on approval,,,
+4490,2026-09-17,C331,2016 compact sedan,Oil change and inspection,Carl Sorensen,Closed,2026-09-18 15:10,2026-09-18,INV-9160
+4491,2026-09-17,C338,2019 midsize SUV,Replace battery,Farid Haddad,Closed,2026-09-19 15:21,2026-09-19,INV-9161
+4492,2026-09-18,C305,2022 crossover,Cracked windshield; sublet to glass shop,Farid Haddad,Waiting on parts,,,
+4493,2026-09-18,C312,2021 hatchback,Replace serpentine belt,Ben Adeyemi,In progress,,,
+4494,2026-09-19,C319,2018 minivan,Tire rotation and alignment,Carl Sorensen,In progress,,,
+4495,2026-09-21,C326,2016 compact sedan,Front sway bar links clunking,Farid Haddad,Waiting on approval,,,

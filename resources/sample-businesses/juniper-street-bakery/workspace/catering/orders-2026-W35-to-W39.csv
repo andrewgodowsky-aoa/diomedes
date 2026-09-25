@@ -1,0 +1,8 @@
+order,placed_on,customer,pickup_date,pickup_day,pickup_time,pastry_trays,quiches,carafes,total,packed_by,status
+C-0412,2026-08-24,Oakmont Running Club,2026-08-29,Sat,10:00,3,0,2,182.00,Dana,picked up
+C-0415,2026-08-31,Cedar Row Book Club,2026-09-02,Wed,14:00,1,1,1,108.00,Sam,picked up
+C-0418,2026-09-01,Millbrook Rotary,2026-09-05,Sat,09:30,4,2,2,300.00,Marco,picked up
+C-0421,2026-09-08,Hillside Nursery School,2026-09-11,Fri,08:00,2,0,1,112.00,Priya,picked up
+C-0423,2026-09-08,Oakmont Running Club,2026-09-12,Sat,10:15,3,0,2,182.00,Dana,picked up
+C-0426,2026-09-14,Oakmont Soccer Boosters,2026-09-19,Sat,09:45,6,2,3,412.00,Sam,picked up
+C-0429,2026-09-18,Cedar Row Book Club,2026-09-26,Sat,09:30,4,1,2,262.00,,confirmed

@@ -1,0 +1,10 @@
+date,type,reference,amount,balance
+2026-06-16,balance,Balance forward,,1842.00
+2026-06-20,payment,"Payment, prior balance",-1842.00,0.00
+2026-06-23,invoice,Invoice 30262,1620.00,1620.00
+2026-06-30,invoice,Invoice 30279,2886.00,4506.00
+2026-07-07,invoice,Invoice 30294,2208.00,6714.00
+2026-07-07,payment,"Payment, invoice 30262",-1620.00,5094.00
+2026-07-14,invoice,Invoice 30311,2298.00,7392.00
+2026-07-14,payment,"Payment, invoice 30279",-2886.00,4506.00
+2026-07-15,balance,Closing balance,,4506.00

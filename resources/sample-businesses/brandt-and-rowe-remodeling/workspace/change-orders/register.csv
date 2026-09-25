@@ -1,0 +1,9 @@
+co,job,description,amount,signed_on,status,file
+OKA-CO-01,OKA,Insulated garage door in place of the standard door,1240.00,2026-06-22,signed,change-orders/okafor-co-01.md
+OKA-CO-02,OKA,Extra 20-amp garage circuit for a freezer,465.00,2026-07-29,signed,change-orders/okafor-co-02.md
+ALV-CO-03,ALV,Under-cabinet lighting,860.00,2026-07-08,signed,change-orders/alvarez-co-03.md
+ALV-CO-04,ALV,"Pantry pull-outs, four drawers",1180.00,2026-08-14,signed,change-orders/alvarez-co-04.md
+HEN-CO-05,HEN,Relocate the island pendant box 14 inches,780.00,2026-08-19,signed,change-orders/pine-st-co-05.md
+HEN-CO-06,HEN,Heated floor in the hall bath,1650.00,,declined,change-orders/pine-st-co-06.md
+HEN-CO-07,HEN,Upgrade hall bath floor to 24-inch porcelain,2140.00,2026-09-03,signed,change-orders/pine-st-co-07.md
+KES-CO-01,KES,Add a pantry outlet,240.00,,"sent, not signed",change-orders/kessler-co-01.md

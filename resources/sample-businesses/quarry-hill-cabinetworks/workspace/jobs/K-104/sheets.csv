@@ -1,0 +1,6 @@
+sheet,material,thickness,outcome,waste_sq_ft
+S1,MDF,1/4,cut,2.0
+S2,MDF,1/4,cut,2.0
+S3,MDF,1/4,cut,2.0
+S4,MDF,1/4,cut,2.0
+S5,MDF,1/4,returned whole,0.0

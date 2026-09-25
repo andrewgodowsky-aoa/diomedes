@@ -1,0 +1,10 @@
+job,permit,inspection,date,result
+OKA,B-26-0412,Rough electrical,2026-06-08,pass
+OKA,B-26-0412,Final,2026-08-21,pass
+ALV,B-26-0388,Rough electrical and plumbing,2026-06-10,pass
+ALV,B-26-0388,Final,2026-09-12,pass
+HEN,B-26-0517,Rough electrical and plumbing,2026-08-26,pass
+HEN,B-26-0517,Final,2026-10-02,scheduled
+MAR,B-26-0550,Rough plumbing,2026-08-27,pass
+MAR,B-26-0550,Final,2026-10-06,scheduled
+KES,B-26-0601,Rough electrical and plumbing,2026-10-09,scheduled

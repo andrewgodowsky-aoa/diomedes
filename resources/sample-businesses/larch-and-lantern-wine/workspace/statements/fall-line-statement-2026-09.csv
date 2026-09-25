@@ -1,0 +1,13 @@
+date,type,reference,amount,balance
+2026-08-16,balance,Balance forward,,4858.00
+2026-08-18,invoice,Invoice 30390,1392.00,6250.00
+2026-08-18,payment,"Payment, invoice 30358",-3048.00,3202.00
+2026-08-25,invoice,Invoice 30418,1716.00,4918.00
+2026-08-25,payment,"Payment, invoice 30373",-1836.00,3082.00
+2026-09-01,invoice,Invoice 30437,3042.00,6124.00
+2026-09-01,payment,"Payment, invoice 30390",-1392.00,4732.00
+2026-09-08,invoice,Invoice 30455,2214.00,6946.00
+2026-09-08,payment,"Payment, invoice 30418",-1716.00,5230.00
+2026-09-15,invoice,Invoice 30471,1302.00,6532.00
+2026-09-15,payment,"Payment, invoice 30437",-3042.00,3490.00
+2026-09-15,balance,Closing balance,,3490.00

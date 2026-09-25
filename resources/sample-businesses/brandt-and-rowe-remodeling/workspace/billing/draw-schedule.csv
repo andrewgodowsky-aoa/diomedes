@@ -1,0 +1,24 @@
+job,draw,milestone,percent,amount
+HEN,HEN-D1,Deposit,20,17280.00
+HEN,HEN-D2,Rough-in inspection passed,25,21600.00
+HEN,HEN-D3,Cabinets and tile set,25,21600.00
+HEN,HEN-D4,Substantial completion,20,17280.00
+HEN,HEN-D5,Final walkthrough,10,8640.00
+KES,KES-D1,Deposit,20,12960.00
+KES,KES-D2,Rough-in inspection passed,25,16200.00
+KES,KES-D3,Cabinets set,25,16200.00
+KES,KES-D4,Substantial completion,20,12960.00
+KES,KES-D5,Final inspection passed,10,6480.00
+MAR,MAR-D1,Deposit,20,7640.00
+MAR,MAR-D2,Rough-in inspection passed,30,11460.00
+MAR,MAR-D3,Tile and fixtures set,30,11460.00
+MAR,MAR-D4,Final inspection passed,20,7640.00
+ALV,ALV-D1,Deposit,20,16800.00
+ALV,ALV-D2,Rough-in inspection passed,25,21000.00
+ALV,ALV-D3,Cabinets set,25,21000.00
+ALV,ALV-D4,Substantial completion,20,16800.00
+ALV,ALV-D5,Final inspection passed,10,8400.00
+OKA,OKA-D1,Deposit,25,10375.00
+OKA,OKA-D2,Rough-in inspection passed,35,14525.00
+OKA,OKA-D3,Drywall and doors,30,12450.00
+OKA,OKA-D4,Final inspection passed,10,4150.00
