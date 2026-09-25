@@ -898,9 +898,9 @@ describe('explainProposal', () => {
     );
     const routeRow = changedRoutes.find((row) => row.field === 'modelPolicy')!;
     expect(routeRow.kind).toBe('changed');
-    expect(routeRow.was).toBe('harness-runtime — only material that is not sensitive may leave');
+    expect(routeRow.was).toBe('harness-runtime: only material that is not sensitive may leave');
     expect(routeRow.now).toBe(
-      'harness-runtime, sample — only material that is not sensitive may leave',
+      'harness-runtime, sample: only material that is not sensitive may leave',
     );
   });
 
