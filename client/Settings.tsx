@@ -20,6 +20,7 @@ import { freshnessLine, planLine, shouldShowEmptyDetail } from './usage-presenta
 import { AIConnections } from './AISetup';
 import { ReadConnectors } from './ReadConnectors';
 import { AgentProfiles } from './console/AgentProfiles';
+import { TriggerRules } from './console/TriggerRules';
 import { isExternalEngine } from '../shared/engines';
 import { SCHEMES, schemeId } from './console/schemes';
 import { readCustomizationStatus } from './console/design-center/entitlement-api';
@@ -767,6 +768,12 @@ export function SettingsPage({
                   <br />
                   Review: human Keep / Undo
                 </p>
+                <h2 className="trigger-rules-title">Trigger rules</h2>
+                <p className="prose">
+                  Written here, a rule applies to every project on this computer. A project rule
+                  can add to it or tighten it, never loosen it.
+                </p>
+                <TriggerRules authority="organization" />
               </>
             )}
             {section === 'Developer' && (
