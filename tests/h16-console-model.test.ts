@@ -112,7 +112,7 @@ describe('a rule and its resolution, in words', () => {
       ],
       'T1',
     );
-    expect(decisionLine(decisionFor(resolution, 'organization', 'reports-held')!)).toBe('Governs · Governs trigger:reports-held on Nectovia work loop runs.');
+    expect(decisionLine(decisionFor(resolution, 'organization', 'reports-held')!)).toBe('Governs · Governs trigger:reports-held on the tool calls Nectovia runs itself.');
     expect(decisionLine(decisionFor(resolution, 'project', 'noted')!)).toBe(
       'Blocked · reports-held (organization) restricts trigger:reports-held with organization authority, and this cannot loosen it.',
     );
@@ -123,6 +123,9 @@ describe('a rule and its resolution, in words', () => {
   test('which runs rules watch is said from the server answer', () => {
     expect(watchesSentence(['diomedes-loop'])).toBe(
       `Trigger rules watch ${AGENT_NAME} work loop runs only. Runs on Codex, Claude Code, OpenCode and other external engines use their own tools and are not watched.`,
+    );
+    expect(watchesSentence(['diomedes-loop', 'external-work'])).toBe(
+      `Text rules watch what the model writes, on ${AGENT_NAME} work loop runs and on task work on every engine; on external engines other than Codex they read it after secrets are removed, so a rule looking for a secret may not fire there. Tool rules watch the tool calls ${AGENT_NAME} runs itself. Codex, Claude Code, OpenCode and other external engines run their own tools, and those are not watched.`,
     );
   });
 });

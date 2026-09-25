@@ -125,6 +125,7 @@ import { teamToolRegistry } from './team/tools.js';
 import type { UsageSnapshot } from '../shared/types.js';
 import { mountTeamRoutes } from './team/routes.js';
 import { createHarnessHost } from './harness/host.js';
+import { watchedGenerator } from './stream-rules/work-watch.js';
 import { mountHarnessRoutes } from './harness/routes.js';
 import { localHarnessPrincipal } from './harness/bridge.js';
 import { TEXT_DISPATCH_STEP, textRunId } from './harness/text-route.js';
@@ -851,8 +852,14 @@ export async function createApp(options: AppOptions) {
   );
   const nativeWork = new NativeWorkService(
     store,
+    // H16: trigger rules watch the text of Work on every route (server/stream-rules/work-watch.ts).
+    watchedGenerator(
     options.nativeGenerator ??
-      (async ({ team, onTeamToolCall, ...input }) => {
+      (async ({ team, onTeamToolCall, onStreamText, ...input }) => {
+        // The preview frames carry the answer as it streams, secrets removed; only the rule watch reads them.
+        const watchText = onStreamText
+          ? { onPreview: (frame: { text: string }) => onStreamText(frame.text) }
+          : {};
         // A request that names no project or route has no sharing scope to check, so it is
         // refused rather than sent unchecked.
         if (!input.projectId || !input.engine)
@@ -902,10 +909,24 @@ export async function createApp(options: AppOptions) {
             instructions: input.instructions ?? '',
             accountRoute: input.accountRoute,
             onActivity: (frame) => store.emit('engine-activity', frame),
+            ...watchText,
           });
         }
-        if (!isExternalEngine(input.engine))
-          return codexControls.ask({ ...input, ...(team ? { team, onTeamToolCall } : {}) });
+        if (!isExternalEngine(input.engine)) {
+          const { onDelta } = input;
+          return codexControls.ask({
+            ...input,
+            ...(team ? { team, onTeamToolCall } : {}),
+            ...(onStreamText
+              ? {
+                  onDelta: (text: string) => {
+                    onStreamText(text);
+                    onDelta?.(text);
+                  },
+                }
+              : {}),
+          });
+        }
         if (!input.projectId || !input.threadId || !input.requestId || !input.model)
           throw new ApiError(409, 'Select a model and thread before requesting work.');
         const accountRoute = input.accountRoute;
@@ -923,8 +944,11 @@ export async function createApp(options: AppOptions) {
           ...(team ? { team: { ...team, onToolCall: onTeamToolCall } } : {}),
           // A work run's requestId is its session id, which is how its run card finds these.
           onActivity: (frame) => store.emit('engine-activity', frame),
+          ...watchText,
         });
       }),
+      () => harness.streamRules,
+    ),
     reviewer,
     agents,
     changeReview,
