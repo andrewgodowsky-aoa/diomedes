@@ -240,7 +240,12 @@ export function createHandler(create: (config: Configuration) => AccountService 
  * BEDROCK_API_KEY, a Bedrock long-term API key set by the owner and read by the
  * gateway at call time. It is never in wrangler.jsonc, a log, a response or a row.
  */
-export type GatewayEnv = WorkerEnv & { BEDROCK_API_KEY?: string };
+/** The managed gateway's secret and its two optional spend settings (see src/managed-inference.ts). */
+export type GatewayEnv = WorkerEnv & {
+  BEDROCK_API_KEY?: string;
+  MANAGED_SPEND_CEILING_MICRO_USD?: string | number;
+  MANAGED_MAX_OUTPUT_TOKENS?: string | number;
+};
 
 const fetchHandler = createHandler();
 export default {

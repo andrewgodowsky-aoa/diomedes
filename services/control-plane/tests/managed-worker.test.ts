@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { Configuration } from '../src/config.js';
 import { createFauxCloud } from '../src/faux/cloud.js';
 import { FAUX_ISSUER } from '../src/faux/identity.js';
@@ -80,5 +80,22 @@ describe('the Worker entry for managed inference', () => {
     // The account routes keep their own shape.
     const account = await createHandler()(new Request('http://127.0.0.1:8791/account/session'), validEnv);
     expect((await account.json()).error).toEqual(expect.any(String));
+  });
+
+  it('reads MANAGED_MAX_OUTPUT_TOKENS and MANAGED_SPEND_CEILING_MICRO_USD from the Worker environment at call time', async () => {
+    const { spy, handler, request } = await setup();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const env = { BEDROCK_API_KEY: 'ABSK-key', MANAGED_MAX_OUTPUT_TOKENS: '2000', MANAGED_SPEND_CEILING_MICRO_USD: '0' };
+    const refused = await handler(request('run-1:1'), env);
+    expect(refused.status).toBe(503);
+    expect(refused.headers.get('x-nectovia-max-output')).toBe('2000');
+    expect(await refused.json()).toEqual({ error: { code: 'route_unavailable', message: 'Nectovia’s model service isn’t available right now. Nothing was charged.' } });
+    expect(spy.calls).toHaveLength(0);
+    // Numbers are read too, as a JSON var would arrive.
+    const passed = await handler(request('run-1:2'), { ...env, MANAGED_MAX_OUTPUT_TOKENS: 1_500, MANAGED_SPEND_CEILING_MICRO_USD: 100_000_000 });
+    expect(passed.status).toBe(200);
+    await readAll(passed.body);
+    expect(spy.calls.map((call) => call.body.max_output_tokens)).toEqual([1_500]);
+    warn.mockRestore();
   });
 });

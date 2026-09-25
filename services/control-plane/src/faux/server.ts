@@ -11,6 +11,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { createFauxCloud, FAUX_BACKEND_LABEL, type FauxCloud, type FauxCloudOptions } from './cloud.js';
 import { seedDemo, type SeedResult } from './seed.js';
+import { SPEND_SETTINGS } from '../managed-inference.js';
 
 export const FAUX_CLOUD_PORT = 8795;
 
@@ -112,7 +113,9 @@ export interface RunningFauxCloud {
  * Start a faux cloud listener on loopback. Seeds demo data into an empty store
  * when asked. Managed calls are answered by the scripted provider unless
  * NECTOVIA_FAUX_BEDROCK_API_KEY is set, which calls Bedrock for real and needs
- * Andrew's separate spend approval before it is ever set.
+ * Andrew's separate spend approval before it is ever set. The Worker's spend
+ * settings, MANAGED_SPEND_CEILING_MICRO_USD and MANAGED_MAX_OUTPUT_TOKENS, are
+ * read from the environment under the same names; `managed.settings` wins.
  */
 export async function startFauxCloud(options: {
   file?: string | null;
@@ -128,8 +131,10 @@ export async function startFauxCloud(options: {
   try {
     const liveBedrockApiKey = options.liveBedrockApiKey !== undefined ? options.liveBedrockApiKey
       : process.env.NECTOVIA_FAUX_BEDROCK_API_KEY?.trim() || null;
+    const fromEnvironment = Object.fromEntries(SPEND_SETTINGS.filter((name) => process.env[name] !== undefined).map((name) => [name, process.env[name]!]));
+    const managed = { ...options.managed, settings: { ...fromEnvironment, ...options.managed?.settings } };
     const cloud = await createFauxCloud({ file, allowedOrigins: options.allowedOrigins, passwordIterations: options.passwordIterations,
-      managed: options.managed, liveBedrockApiKey });
+      managed, liveBedrockApiKey });
     const seed = options.seed ? await seedDemo(cloud) : null;
     const port = options.port ?? FAUX_CLOUD_PORT;
     const server = http.createServer(async (req, res) => {

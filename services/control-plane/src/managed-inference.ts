@@ -24,7 +24,9 @@ import {
   micro,
   periodIdFor,
   publishedMonthlyGrant,
+  type FundedAttempt,
   type JobTier,
+  type MicroUsd,
   type UsageClass,
 } from '../../../shared/managed-usage.js';
 import { decideAgentAdmission, snapshotFromView } from '../contract/contract.js';
@@ -283,6 +285,9 @@ export class ManagedError extends Error {
 
 export const ROUTE_UNAVAILABLE = 'Nectovia’s model service is not available right now.';
 const unavailable = () => new ManagedError(503, 'route_unavailable', ROUTE_UNAVAILABLE);
+/** The company spend ceiling's only customer-facing words: nothing about the ceiling itself. */
+export const CEILING_REFUSAL = 'Nectovia’s model service isn’t available right now. Nothing was charged.';
+const ceilingReached = () => new ManagedError(503, 'route_unavailable', CEILING_REFUSAL);
 /** The contract names these three funding refusals as 402, whatever status FundingService gives them. */
 const PAYMENT_REFUSALS: ReadonlySet<string> = new Set(['insufficient_allowance', 'cap_request_required', 'no_period']);
 
@@ -294,6 +299,7 @@ export function managedHeaders(): Headers {
 export function managedErrorResponse(error: unknown, headers: Headers = managedHeaders()): Response {
   let refusal: ManagedError;
   if (error instanceof ManagedError) refusal = error;
+  else if (error instanceof FundingError && error.code === 'company_ceiling') refusal = ceilingReached();
   else if (error instanceof FundingError)
     refusal = new ManagedError(PAYMENT_REFUSALS.has(error.code) ? 402 : error.status, error.code, error.message);
   else {
@@ -342,6 +348,50 @@ function gatewayHeaders(headers: Headers): GatewayHeaders {
   const usageClass = header(headers, 'X-Nectovia-Usage-Class', isUsageClass) as UsageClass;
   const revision = header(headers, 'X-Nectovia-Policy-Revision', (value) => REVISION.test(value) && Number.isSafeInteger(Number(value)));
   return { token, organizationId, admissionId, jobId, attemptId, parentAttemptId, tier, usageClass, policyRevision: Number(revision) };
+}
+
+// --- the owner's spend controls ----------------------------------------------------------------
+
+/**
+ * Two optional settings, read from the Worker's environment (or the faux
+ * cloud's) at call time, beside BEDROCK_API_KEY:
+ *
+ * - MANAGED_SPEND_CEILING_MICRO_USD: the most the company's provider account
+ *   may owe, across every tenant and organization and for all time: settled
+ *   provider cost plus every open hold in full plus the new hold. A call that
+ *   would pass it is refused before any hold (FundingService.reserve checks it
+ *   inside the reserving transaction). Unset: no company ceiling.
+ * - MANAGED_MAX_OUTPUT_TOKENS: lowers the registry row's output cap, never
+ *   raises it. A request asking for more is clamped silently, and the clamp is
+ *   named in X-Nectovia-Max-Output. Unset: the registry's cap.
+ *
+ * Blank is unset. Any other value that is not a whole number in range refuses
+ * every managed call with 503 route_unavailable, sending and holding nothing:
+ * a spend limit that ignored a typo would not be a limit.
+ */
+export const SPEND_SETTINGS = ['MANAGED_SPEND_CEILING_MICRO_USD', 'MANAGED_MAX_OUTPUT_TOKENS'] as const;
+export type SpendSetting = typeof SPEND_SETTINGS[number];
+
+interface SpendControls {
+  ceilingMicroUsd: MicroUsd | null;
+  maxOutputTokens: number | null;
+}
+
+function wholeSetting(env: ProviderEnv, name: SpendSetting, minimum: number): number | null {
+  const value = env[name];
+  if (value === undefined || value === null || (typeof value === 'string' && value.trim() === '')) return null;
+  const count = typeof value === 'number' ? value
+    : typeof value === 'string' && /^[0-9]{1,16}$/.test(value.trim()) ? Number(value.trim()) : Number.NaN;
+  if (!Number.isSafeInteger(count) || count < minimum) {
+    console.error(JSON.stringify({ event: 'managed-setting-unreadable', setting: name }));
+    throw unavailable();
+  }
+  return count;
+}
+
+export function spendControls(env: ProviderEnv): SpendControls {
+  const ceiling = wholeSetting(env, 'MANAGED_SPEND_CEILING_MICRO_USD', 0);
+  return { ceilingMicroUsd: ceiling === null ? null : micro(ceiling), maxOutputTokens: wholeSetting(env, 'MANAGED_MAX_OUTPUT_TOKENS', 1) };
 }
 
 // --- the provider stream --------------------------------------------------------------------
@@ -624,14 +674,18 @@ export class ManagedInferenceService {
     const checked = validateResponsesBody(parsed);
     if (!checked.ok) throw new ManagedError(400, checked.code, checked.message);
     const body = checked.body;
-    // 6. The route.
+    // 6. The route, and the owner's spend controls.
+    const controls = spendControls(env);
     const { entry, row, credential } = this.resolve(state.policy, state.routes, h, body, env);
     headers.set('X-Nectovia-Route', entry.id);
     headers.set('X-Nectovia-Model', entry.model);
     headers.set('X-Nectovia-Rate-Card', row.rate.version);
-    const maxOutputTokens = body.max_output_tokens ?? row.maxOutputTokens;
-    if (maxOutputTokens > row.maxOutputTokens)
+    if ((body.max_output_tokens ?? 0) > row.maxOutputTokens)
       throw new ManagedError(400, 'invalid_body', `max_output_tokens can be at most ${row.maxOutputTokens.toLocaleString('en-US')} here.`);
+    // An override only lowers the route's cap. Asking for more than it is clamped, not refused.
+    const outputCap = Math.min(row.maxOutputTokens, controls.maxOutputTokens ?? row.maxOutputTokens);
+    if (outputCap < row.maxOutputTokens) headers.set('X-Nectovia-Max-Output', String(outputCap));
+    const maxOutputTokens = Math.min(body.max_output_tokens ?? outputCap, outputCap);
     // 7. The input bound.
     const bound = inputTokenBound(bytes.byteLength, body.input.length);
     if (bound > MAX_INPUT_TOKEN_BOUND)
@@ -647,10 +701,19 @@ export class ManagedInferenceService {
     const maxMicroUsd = micro(Number(
       (BigInt(bound) * BigInt(row.rate.inputMicroUsdPerMillion) + BigInt(maxOutputTokens) * BigInt(row.rate.outputMicroUsdPerMillion) + 999_999n) / 1_000_000n,
     ));
-    const attempt = await this.options.funding.reserve({
-      ...ref, rootJobId: h.jobId, parentAttemptId: h.parentAttemptId, kind: 'generation', route: entry.id,
-      requestDigest: await digest(canonicalJson(parsed)), rateSnapshot: row.rate, maxMicroUsd, usageClass: h.usageClass,
-    });
+    // The company ceiling is checked inside the reserving transaction, so a refusal holds nothing.
+    let attempt: FundedAttempt;
+    try {
+      attempt = await this.options.funding.reserve({
+        ...ref, rootJobId: h.jobId, parentAttemptId: h.parentAttemptId, kind: 'generation', route: entry.id,
+        requestDigest: await digest(canonicalJson(parsed)), rateSnapshot: row.rate, maxMicroUsd, usageClass: h.usageClass,
+        companyCeilingMicroUsd: controls.ceilingMicroUsd,
+      });
+    } catch (error) {
+      if (!(error instanceof FundingError && error.code === 'company_ceiling')) throw error;
+      console.warn(JSON.stringify({ event: 'managed-spend-ceiling-reached', attemptId: h.attemptId }));
+      throw ceilingReached();
+    }
     // An identical reservation came back: this attempt has been here before. Only one that
     // never left may go on; anything already sent is never sent again.
     const key = `${tenantId}\n${h.attemptId}`;

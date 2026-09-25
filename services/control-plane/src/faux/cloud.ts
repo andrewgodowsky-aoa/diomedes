@@ -14,7 +14,8 @@
  * extra seam is the provider transport: a scripted Responses stream with exact
  * usage by default, so the desktop's loop runs offline. Bedrock is called for
  * real only when `liveBedrockApiKey` is given (NECTOVIA_FAUX_BEDROCK_API_KEY,
- * which needs Andrew's separate spend approval before it is ever set).
+ * which needs Andrew's separate spend approval before it is ever set). The
+ * Worker's spend settings apply here too, through `managed.settings`.
  */
 import { z } from 'zod';
 import type { Configuration } from '../config.js';
@@ -22,7 +23,7 @@ import { AccountService } from '../account-service.js';
 import { CommercialService } from '../commercial.js';
 import { AccountError } from '../errors.js';
 import { FundingService, UsageService } from '../funding.js';
-import { ManagedInferenceService } from '../managed-inference.js';
+import { ManagedInferenceService, SPEND_SETTINGS, type SpendSetting } from '../managed-inference.js';
 import { FAUX_SCRIPTED_CREDENTIAL, bedrockResponsesCaller, scriptedResponsesFetch } from '../managed-providers.js';
 import { createHandler } from '../worker.js';
 import { readBytes } from '../crypto.js';
@@ -54,6 +55,12 @@ export interface FauxCloudOptions {
     /** What the gateway reads as BEDROCK_API_KEY. Null: no key is configured. */
     credential?: string | null;
     idleTimeoutMs?: number;
+    /**
+     * The Worker's two optional spend settings, read exactly as the Worker reads
+     * them: MANAGED_SPEND_CEILING_MICRO_USD and MANAGED_MAX_OUTPUT_TOKENS. The
+     * ceiling counts this store's ledger only, never the Worker's.
+     */
+    settings?: Partial<Record<SpendSetting, string | number>>;
   };
   /** An owner-approved live test only: the gateway calls Bedrock for real with this key. */
   liveBedrockApiKey?: string | null;
@@ -107,8 +114,12 @@ export async function createFauxCloud(options: FauxCloudOptions): Promise<FauxCl
   };
   const live = typeof options.liveBedrockApiKey === 'string' && options.liveBedrockApiKey.length > 0;
   const credential = live ? options.liveBedrockApiKey! : options.managed?.credential === undefined ? FAUX_SCRIPTED_CREDENTIAL : options.managed.credential;
-  // The environment the gateway reads its key from, as the Worker's would be.
-  const managedEnv: Record<string, unknown> = credential === null ? {} : { BEDROCK_API_KEY: credential };
+  // The environment the gateway reads its key and spend settings from, as the Worker's would be.
+  const settings = options.managed?.settings ?? {};
+  const managedEnv: Record<string, unknown> = {
+    ...Object.fromEntries(SPEND_SETTINGS.filter((name) => settings[name] !== undefined).map((name) => [name, settings[name]])),
+    ...(credential === null ? {} : { BEDROCK_API_KEY: credential }),
+  };
   const managed = new ManagedInferenceService({
     accounts,
     commercial: store.commercial,

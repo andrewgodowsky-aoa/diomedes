@@ -26,8 +26,8 @@ let answer: (request: ProviderRequest) => Response | Promise<Response>;
 const scripted = scriptedResponsesFetch({ now });
 const scriptedAnswer = (request: ProviderRequest) => scripted(request.url, { method: 'POST', headers: request.headers, body: request.rawBody });
 
-async function makeCloud(credential: string | null = CANARY) {
-  cloud = await createFauxCloud({ file: null, now, passwordIterations: 1_000, managed: { transport: spy.fetch, credential } });
+async function makeCloud(credential: string | null = CANARY, settings: Record<string, string> = {}) {
+  cloud = await createFauxCloud({ file: null, now, passwordIterations: 1_000, managed: { transport: spy.fetch, credential, settings } });
   const seed = await seedDemo(cloud);
   orgs = seed.organizations!;
 }
@@ -695,5 +695,157 @@ describe('reading an attempt', () => {
     expect(stranger).toMatchObject({ status: 403, body: { error: { code: 'not_a_member' } } });
     const missing = await call('GET', '/managed/v1/attempts/run-1:9', token, undefined, { 'x-nectovia-organization': orgs.juniper });
     expect(missing.status).toBe(404);
+  });
+});
+
+// --- the owner's spend controls ------------------------------------------------------------------
+
+const CEILING_REFUSAL = 'Nectovia’s model service isn’t available right now. Nothing was charged.';
+/** The hold the gateway prices for this request body: its input bound at the input rate plus the output cap at the output rate. */
+function holdFor(raw: string, items: number, maxOutputTokens: number) {
+  const bound = inputTokenBound(new TextEncoder().encode(raw).byteLength, items);
+  return Math.ceil((bound * LUNA.rate.inputMicroUsdPerMillion + maxOutputTokens * LUNA.rate.outputMicroUsdPerMillion) / 1_000_000);
+}
+/** The default chat call's hold: far above one settled scripted call (112 micro-USD). */
+const chatHold = () => holdFor(JSON.stringify(chatBody()), chatBody().input.length, 4_096);
+
+describe('the company spend ceiling (MANAGED_SPEND_CEILING_MICRO_USD)', () => {
+  it('passes a call that lands exactly on the ceiling, then refuses the next with 503 and no provider call or hold', async () => {
+    // Room for one settled scripted call and then one more hold, exactly.
+    await makeCloud(CANARY, { MANAGED_SPEND_CEILING_MICRO_USD: String(SCRIPTED_COST + chatHold()) });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { token, admission } = await employee();
+    const first = await ask({ token, admission, attempt: 'run-1:1' });
+    expect(first.status).toBe(200);
+    await readAll(first.body);
+    await cloud.idle();
+    // 112 settled plus this call's hold is the ceiling to the micro-USD.
+    const second = await ask({ token, admission, attempt: 'run-1:2' });
+    expect(second.status).toBe(200);
+    await readAll(second.body);
+    await cloud.idle();
+    const third = await ask({ token, admission, attempt: 'run-1:3' });
+    expect(await refusal(third)).toEqual({ status: 503, code: 'route_unavailable', message: CEILING_REFUSAL });
+    expect(third.headers.get('retry-after')).toBeNull();
+    expect(spy.calls).toHaveLength(2);
+    expect(attempts().map((row) => [row.id, row.state])).toEqual([['run-1:1', 'settled'], ['run-1:2', 'settled']]);
+    // The owner learns why from the log; the customer never does.
+    expect(warn.mock.calls.map((args) => String(args[0]))).toContain(JSON.stringify({ event: 'managed-spend-ceiling-reached', attemptId: 'run-1:3' }));
+    warn.mockRestore();
+  });
+
+  it('counts an open hold in full: of two calls near the edge at once, exactly one passes', async () => {
+    const hold = chatHold();
+    await makeCloud(CANARY, { MANAGED_SPEND_CEILING_MICRO_USD: String(2 * hold - 1) });
+    const { token, admission } = await employee();
+    let open!: () => void;
+    const gate = new Promise<void>((resolve) => { open = resolve; });
+    answer = async (request) => { await gate; return scriptedAnswer(request); };
+    const both = [ask({ token, admission, attempt: 'run-1:1' }), ask({ token, admission, attempt: 'run-1:2' })];
+    // The refused call answers at once; the one that passed is still waiting on the provider.
+    const refused = await Promise.race(both);
+    expect(await refusal(refused)).toEqual({ status: 503, code: 'route_unavailable', message: CEILING_REFUSAL });
+    open();
+    const responses = await Promise.all(both);
+    expect(responses.map((response) => response.status).sort()).toEqual([200, 503]);
+    await readAll(responses.find((response) => response.status === 200)!.body);
+    await cloud.idle();
+    expect(spy.calls).toHaveLength(1);
+    expect(attempts()).toHaveLength(1);
+    // Settled at 112, that call leaves room again: the refusal was its open hold.
+    expect(SCRIPTED_COST + hold).toBeLessThanOrEqual(2 * hold - 1);
+    const third = await ask({ token, admission, attempt: 'run-1:3' });
+    expect(third.status).toBe(200);
+    await readAll(third.body);
+  });
+
+  it('counts an uncertain hold in full', async () => {
+    const hold = chatHold();
+    await makeCloud(CANARY, { MANAGED_SPEND_CEILING_MICRO_USD: String(2 * hold - 1) });
+    const { token, admission } = await employee();
+    answer = async (request) => {
+      const full = await readAll((await scriptedAnswer(request)).body);
+      return new Response(chunkedStream([full.slice(0, 200)], { failAfter: 1 }), { status: 200, headers: { 'content-type': 'text/event-stream' } });
+    };
+    const first = await ask({ token, admission, attempt: 'run-1:1' });
+    await expect(readAll(first.body)).rejects.toThrow();
+    await cloud.idle();
+    expect(attempts()[0]).toMatchObject({ state: 'uncertain', maxMicroUsd: hold });
+    answer = scriptedAnswer;
+    // Counted at a settled call's cost, the next call would fit; counted in full, it does not.
+    expect(SCRIPTED_COST + hold).toBeLessThanOrEqual(2 * hold - 1);
+    expect(await refusal(await ask({ token, admission, attempt: 'run-1:2' }))).toEqual({ status: 503, code: 'route_unavailable', message: CEILING_REFUSAL });
+    expect(spy.calls).toHaveLength(1);
+    expect(attempts()).toHaveLength(1);
+  });
+
+  it('refuses every call, sending and holding nothing, when a setting cannot be read; empty means unset', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const unreadable: Record<string, string>[] = [
+      { MANAGED_SPEND_CEILING_MICRO_USD: '100 dollars' }, { MANAGED_SPEND_CEILING_MICRO_USD: '-1' }, { MANAGED_SPEND_CEILING_MICRO_USD: '1e8' },
+      { MANAGED_SPEND_CEILING_MICRO_USD: '9007199254740993' }, { MANAGED_MAX_OUTPUT_TOKENS: '0' }, { MANAGED_MAX_OUTPUT_TOKENS: '2000.5' },
+    ];
+    for (const settings of unreadable) {
+      await makeCloud(CANARY, settings);
+      const { token, admission } = await employee();
+      expect(await refusal(await ask({ token, admission }))).toEqual({ status: 503, code: 'route_unavailable', message: 'Nectovia’s model service is not available right now.' });
+      expectNothingSentOrHeld();
+    }
+    expect(error.mock.calls.map((args) => String(args[0]))).toContain(JSON.stringify({ event: 'managed-setting-unreadable', setting: 'MANAGED_MAX_OUTPUT_TOKENS' }));
+    error.mockRestore();
+    // A ceiling of zero is readable, and nothing passes it.
+    await makeCloud(CANARY, { MANAGED_SPEND_CEILING_MICRO_USD: '0' });
+    const zero = await employee();
+    expect(await refusal(await ask(zero))).toMatchObject({ status: 503, message: CEILING_REFUSAL });
+    expectNothingSentOrHeld();
+    await makeCloud(CANARY, { MANAGED_SPEND_CEILING_MICRO_USD: '', MANAGED_MAX_OUTPUT_TOKENS: ' ' });
+    const unset = await employee();
+    const passed = await ask(unset);
+    expect(passed.status).toBe(200);
+    expect(passed.headers.get('x-nectovia-max-output')).toBeNull();
+    await readAll(passed.body);
+  });
+});
+
+describe('the output cap override (MANAGED_MAX_OUTPUT_TOKENS)', () => {
+  it('clamps max_output_tokens silently, prices the hold at the clamp, and names the clamp in X-Nectovia-Max-Output', async () => {
+    await makeCloud(CANARY, { MANAGED_MAX_OUTPUT_TOKENS: '2000' });
+    const { token, admission } = await employee();
+    const over = await ask({ token, admission, attempt: 'run-1:1' });
+    expect(over.status).toBe(200);
+    expect(over.headers.get('x-nectovia-max-output')).toBe('2000');
+    await readAll(over.body);
+    expect(spy.calls[0].body.max_output_tokens).toBe(2_000);
+    expect(attempts()[0].maxMicroUsd).toBe(holdFor(JSON.stringify(chatBody()), chatBody().input.length, 2_000));
+
+    // Absent means the lowered cap; less than it goes through as asked.
+    const body = chatBody();
+    delete (body as Record<string, unknown>).max_output_tokens;
+    const absent = await ask({ token, admission, attempt: 'run-1:2', rawBody: JSON.stringify(body) });
+    expect(absent.headers.get('x-nectovia-max-output')).toBe('2000');
+    await readAll(absent.body);
+    const under = await ask({ token, admission, attempt: 'run-1:3', body: chatBody({ max_output_tokens: 500 }) });
+    expect(under.headers.get('x-nectovia-max-output')).toBe('2000');
+    await readAll(under.body);
+    expect(spy.calls.map((item) => item.body.max_output_tokens)).toEqual([2_000, 2_000, 500]);
+
+    // Past the route's own cap is still outside the contract's range.
+    expect(await refusal(await ask({ token, admission, attempt: 'run-1:4', body: chatBody({ max_output_tokens: 16_001 }) })))
+      .toMatchObject({ status: 400, code: 'invalid_body' });
+    expect(spy.calls).toHaveLength(3);
+  });
+
+  it('never raises the route cap', async () => {
+    await makeCloud(CANARY, { MANAGED_MAX_OUTPUT_TOKENS: '20000' });
+    const { token, admission } = await employee();
+    const body = chatBody();
+    delete (body as Record<string, unknown>).max_output_tokens;
+    const response = await ask({ token, admission, rawBody: JSON.stringify(body) });
+    expect(response.status).toBe(200);
+    expect(response.headers.get('x-nectovia-max-output')).toBeNull();
+    await readAll(response.body);
+    expect(spy.calls[0].body.max_output_tokens).toBe(16_000);
+    expect(await refusal(await ask({ token, admission, attempt: 'run-1:2', body: chatBody({ max_output_tokens: 16_001 }) })))
+      .toMatchObject({ status: 400, code: 'invalid_body' });
   });
 });

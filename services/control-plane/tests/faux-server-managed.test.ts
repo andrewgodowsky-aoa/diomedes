@@ -4,7 +4,7 @@
  * leaves mid-stream parks the attempt. Loopback only; nothing leaves the machine.
  */
 import http from 'node:http';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DEMO_ACCOUNTS, FAUX_DEMO_PASSWORD } from '../src/faux/seed.js';
 import { startFauxCloud, type RunningFauxCloud } from '../src/faux/server.js';
 import { MANAGED_PROVIDERS, scriptedResponsesFetch } from '../src/managed-providers.js';
@@ -15,6 +15,7 @@ afterEach(async () => {
   await running?.cloud.idle();
   await running?.close();
   running = null;
+  vi.unstubAllEnvs();
 });
 
 function send(url: string, method: string, headers: Record<string, string>, body?: string) {
@@ -75,5 +76,29 @@ describe('the faux cloud server and the managed gateway', () => {
     await running.cloud.idle();
     expect(spy.calls).toHaveLength(1);
     expect(attempt()).toMatchObject({ state: 'uncertain', uncertainReason: expect.stringMatching(/disconnected/) });
+  });
+
+  it('reads MANAGED_SPEND_CEILING_MICRO_USD and MANAGED_MAX_OUTPUT_TOKENS from its environment', async () => {
+    vi.stubEnv('MANAGED_SPEND_CEILING_MICRO_USD', '0');
+    vi.stubEnv('MANAGED_MAX_OUTPUT_TOKENS', '2000');
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const spy = providerSpy(() => new Response(null, { status: 500 }));
+    running = await startFauxCloud({ file: null, port: 0, seed: true, passwordIterations: 1_000, managed: { transport: spy.fetch } });
+    const organization = running.seed!.organizations!.juniper;
+    const signIn = await json(await send(`${running.url}/auth/sign-in`, 'POST', { 'content-type': 'application/json' },
+      JSON.stringify({ email: DEMO_ACCOUNTS.employee.email, password: FAUX_DEMO_PASSWORD })));
+    const token = signIn.accessToken as string;
+    const admission = await json(await send(`${running.url}/account/organizations/${organization}/agent-admissions`, 'POST',
+      { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, JSON.stringify({ surface: 'conversation', routeKind: 'managed' })));
+    const response = await send(`${running.url}/managed/v1/responses`, 'POST', {
+      authorization: `Bearer ${token}`, 'content-type': 'application/json', 'x-nectovia-organization': organization,
+      'x-nectovia-admission': admission.admissionId, 'x-nectovia-job': 'run-1', 'x-nectovia-attempt': 'run-1:1',
+      'x-nectovia-tier': 'efficient', 'x-nectovia-usage-class': 'included-chat', 'x-nectovia-policy-revision': '1',
+    }, JSON.stringify({ model: MANAGED_PROVIDERS[0].model, input: [{ role: 'user', content: 'Hello.' }] }));
+    expect(response.statusCode).toBe(503);
+    expect(response.headers['x-nectovia-max-output']).toBe('2000');
+    expect((await json(response)).error.code).toBe('route_unavailable');
+    expect(spy.calls).toHaveLength(0);
+    warn.mockRestore();
   });
 });
