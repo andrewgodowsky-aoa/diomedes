@@ -48,12 +48,17 @@ const proof = {
   platform: process.platform,
   arch: process.arch,
   executable: path.basename(executablePath),
+  // The full path is what scripts/write-candidate-record.ts checks lies inside
+  // the installer proof's install target when this smoke is its runtime proof.
+  executablePath,
   executableSha256: createHash('sha256')
     .update(await fs.readFile(executablePath))
     .digest('hex'),
   appVersion,
+  version: null,
   checks: [],
   pageErrors: [],
+  errors: [],
   passed: false,
 };
 const exists = (file) =>
@@ -90,6 +95,7 @@ try {
     version: health.body.version,
     service: health.body.service,
   };
+  proof.version = health.body.version;
   proof.checks.push(`/api/health answered ok with version ${appVersion} inside the app window`);
 
   const outside = await fetch(`${origin}/api/health`);
@@ -124,6 +130,7 @@ try {
   proof.passed = true;
 } catch (error) {
   proof.error = error instanceof Error ? error.message : String(error);
+  proof.errors.push(proof.error);
   process.exitCode = 1;
 } finally {
   if (desktop) await desktop.close().catch(() => {});

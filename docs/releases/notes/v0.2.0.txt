@@ -1,86 +1,129 @@
 WHAT IS NEW
-  This release carries the overnight sprint of 24 September: batches 1 to 6 on
-  main. Each item below was built and tested in source; the ones an
-  independent review has not yet read are named under LIMITS.
+  Nectovia can now run a weekly brief for you, show you exactly what a task
+  changed before you keep it, and take files you drop into a project.
 
-  Automations. A project can hold a recurring job: an Automations screen, Run
-  once, schedules, pause, and a note in the app when a run needs you. A run
-  missed while the computer was off is caught up for at most two hours; older
-  ones are listed as missed rather than run.
+  Automations. Open Automations from the Nectovia group or Ctrl K. The weekly
+  brief is listed there, and Run once runs it now. Owners and admins can turn
+  on a schedule, pause it, resume it or turn it off; the screen shows the next
+  three runs and any that were missed or skipped. Saving a schedule does not
+  turn it on.
 
-  The Ready queue can start waiting tasks on its own. It is off until you turn
-  it on, and then starts at most one task per project and two overall.
+  Review what a task changed before you keep it. A task's thread shows each
+  change line by line, and you can keep or undo each one, keep or undo them
+  all, or send notes back with Revise with these comments.
 
-  After you approve the same kind of step three times, Nectovia offers to
-  remember it for that project. Declining starts the count again, and a
-  remembered approval lasts 15 minutes.
+  Approvals you give often can be remembered. After you approve the same step
+  three times in a project, Nectovia asks whether to stop asking. Remembered
+  approvals are listed in the Task permissions dialog, where Revoke takes any
+  of them back.
 
-  Files. You can drop or paste files into a project, preview them, and attach
-  them to a thread. A change a task wants to make is shown as a readable diff:
-  keep or undo it one part at a time, and leave a comment on it.
+  Ready work can start by itself. A switch on the Board, off until you turn it
+  on, starts ready tasks automatically, and Pause queue or Pause all stops
+  that again.
 
-  A finished task is checked against the exact files it produced and shows one
-  of four states. A finish that could not be checked stays in Review.
+  Files you drop or paste into a project land in its Imports folder. Pictures,
+  CSV files and the first sheet of an Excel file show as previews, a file's
+  older versions can be opened, and Attach adds a file to a thread.
 
-  Stop, Resume, Retry and Fork each leave a receipt. Resume and Retry ask
-  first; Stop and Fork act when you press them. Claude Code accepts a queued
-  follow-up while it works and reconciles its runs after a restart. Cursor and
-  Devin keep their conversations. Codex can be steered, resumed and forked.
+  A run's result now says whether it was checked: Verified, Not verified,
+  Failed verification or Verification uncertain, in the thread and on the
+  Board, with Run checks and Verify again.
 
-  Nectovia watches a running task for drift from what you asked, corrects it
-  within fixed limits, and pauses it at once if it writes outside its folder.
-  This is always on.
+  Running work has more controls. Stop options offers ways to stop a request,
+  and Resume, Retry, Fork and a Steer box work on ChatGPT (Codex) runs.
 
-  Instruction files such as AGENTS.md and CLAUDE.md are read from nested
-  folders too, nearest first, and the thread records which ones were used.
-  A thread shows how much of the model's context it used and what was
-  summarised to make room.
+  On the Nectovia home conversation, Claude Code keeps its session between
+  messages. While an answer is being written you can queue your next message,
+  and Stop ends the answer cleanly.
 
-  Agent profiles name the exact model a job uses. Falling back to another
-  model is off unless you turn it on.
+  Settings > Agent profiles saves a route, an exact model and an effort
+  setting as a profile, and a project can list which profiles its work uses,
+  in order.
 
-  The Console works at 200 percent zoom, and respects the system's reduce
-  motion setting.
+  A Context used line under replies on the AWS, Azure, OpenRouter and Google
+  Cloud routes shows what was sent to the model and what was summarised to
+  fit.
 
-  Data from an older version is migrated when this version first opens, and
-  a byte-for-byte backup is kept beside it. A data file written by a newer
-  version stops the service instead of being overwritten.
+  Project instructions now include instruction files in subfolders, and a run
+  shows exactly which files it received, with Open in Files.
 
-UPDATES
-  Settings > App updates offers stable releases only. Once this release is
-  published as stable, an installed 0.1.7, 0.1.8, 0.1.9, 0.1.10 or 0.1.11 can
-  find it when you press Check for updates. Nothing is downloaded, verified or
-  installed until you confirm it, and a download is accepted only when its
-  SHA-256 matches the digest the release publishes.
-  An update from 0.1.9, 0.1.10 or 0.1.11 is meant to keep your settings,
-  routes, saved keys, projects and conversations. An update from 0.1.7 or 0.1.8
-  still gets the one-time fresh start 0.1.9 introduced.
+  Nectovia can suggest edits to a project's instruction files. You approve or
+  decline each one, and can roll back to before any of them.
+
+  Run details have a Supervision section that flags a run drifting away from
+  its task.
+
+  Capability packs can be installed, turned off, updated, rolled back or
+  uninstalled from the Task permissions dialog, including a pack from a folder
+  on this computer. With the Small Business pack on, Ctrl K can open a
+  playbook to read it as well as use it.
+
+  Conversation text size can be set to 90, 100, 110 or 125 percent under
+  Settings > Appearance or from the ··· menu.
+
+  The Windows icon, the installer, the Start menu entry and the window title
+  now say Nectovia. The install folder and the program file keep the Diomedes
+  name, so an update still finds your projects.
+
+  Settings > What's new lists what every release changed, and after an update
+  Nectovia shows the new version's notes once. When Check for updates finds a
+  newer version, its notes appear before you download it.
+
+FIXED
+  Unsaved writing is no longer lost when you leave the editor another way,
+  such as through Settings, Projects, another file or the command palette.
+
+  The thread header no longer shows a document's context as a percentage like
+  4182 percent; it shows a size.
+
+  Plan files no longer get broken names, task names no longer stop
+  mid-thought, and the weekly brief no longer uses the whole setup sentence as
+  its title.
+
+  Italic text displays, and each choice in the Cloud sharing dialog sits on
+  its own line.
+
+  Stopping a tool on Windows no longer sometimes reports a clean-up failure
+  that did not happen.
+
+  Facts in Discovery can be corrected or retired again after their source file
+  is edited.
+
+  An installed tool that changes in place is noticed, and size limits count
+  the real size of text in any language.
+
+  At 200 percent zoom and in small windows the work area and the inspector are
+  usable again, and the Interface detail menu closes with Escape.
 
 LIMITS
-  Unsigned and experimental. This build was packaged and checked on a
-  GitHub-hosted Windows Server runner, not on a person's computer, and no
-  Windows 11 desktop install of these exact bytes is recorded. The update from
-  0.1.11 has not been run end to end on an installed copy.
-  No route was exercised live on this build. Every route in its tests was
-  scripted or fake, so no answer, spend or saved key was exercised against a
-  real installed tool or provider. Codex Steer, Resume and Fork, the kept
-  Claude Code, Cursor, Devin and OpenCode sessions, and the task loop on AWS
-  Bedrock or Google Vertex AI have no live proof yet.
+  Unsigned and experimental. The release is for Windows x64 only; there is no
+  macOS build.
 
-  Guidance proposals, team runs with helper workers, and on-demand playbook
-  loading are in this build without an independent review. Team runs have no
-  Console control to start one, and their workers only read.
-  Automations have not been run as a packaged journey. The Files pane has no
-  PDF viewer, and pictures and PDFs are not sent to an engine. A change a task
-  could not confirm has no screen to reconcile it yet.
+  Nothing in this version was tried against a real provider. Every route in
+  its tests was scripted or fake, including Codex, Claude Code, OpenCode, AWS
+  Bedrock, Google Vertex AI, Azure OpenAI and OpenRouter.
 
-  The Console has no History screen and no "Make tasks from this plan".
-  This app is not signed in to a Nectovia account. No credit balance or usage
-  is shown, and every route runs on, and is billed to, your own account.
+  Some parts are new and have not yet had an independent review: suggested
+  edits to instruction files, playbook reading and the zoom and accessibility
+  fixes. The Claude Code session controls are still under review.
 
-  The two names meet in places: the window title, the first conversation in
-  each project and some messages still say Diomedes.
-  Connections is unavailable. It runs on example data rather than your own
-  software, and there is no live connection to a business system.
-  The release is Windows x64 only. The local service listens on 127.0.0.1
-  only.
+  Automations run only the weekly brief, only while this computer is on, and
+  tell you only inside the app: nothing is sent by push, email or phone.
+
+  Resume, Retry, Fork and Steer work on ChatGPT (Codex) runs only. Claude Code
+  keeps its session on the home conversation only, not in project threads.
+
+  Run checks run only the checks a task declares, and never run your project's
+  own code. Nothing checks a run automatically when it finishes.
+
+  Files has no PDF viewer. Pictures and PDFs cannot be sent to an AI, and a
+  binary file cannot be put back from an earlier version.
+
+  A step-by-step plan-act-check loop and a lead that hands work to helpers are
+  built, but nothing in the app starts them yet.
+
+  The Console still has no History screen, no Make tasks from this plan and no
+  Stop for a conversation.
+
+  This app is not signed in to a Nectovia account, and every route runs on,
+  and is billed to, your own account.
