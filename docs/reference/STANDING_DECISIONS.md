@@ -283,10 +283,15 @@ column. Activation is the line, and the default side of that line is off.
 
 The Software Engineering pack supplies, on the Core Files surface: repository-aware tree, syntax
 highlighting, code editing, project-wide code and text search, symbol/function/class navigation, line
-references into Threads, Git status and history, unified or split diffs, changed-file review,
-diagnostics, test and build commands, worktrees and branches, repo-aware context construction,
-software-specific Agents and subagents, coding tools and workflows, discovery of repository
-instruction files, and later LSP where justified.
+references into Threads, Git status and history, Git-backed and highlighted unified or split code
+diffs, changed-file review, diagnostics, test and build commands, worktrees and branches, repo-aware
+context construction, software-specific Agents and subagents, coding tools and workflows, discovery
+of repository instruction files, and later LSP where justified.
+
+Readable diffs of recorded versions, per-change keep and review comments are Core, not the pack:
+a spreadsheet export or a contract draft needs a readable diff as much as source code does (Andrew,
+2026-09-24, `docs/reference/DECISIONS_2026-09-24.md`; `QUESTIONS.md` R10). This replaces the pack's
+claim on "unified or split diffs" for recorded versions only.
 
 Repository instruction files (`AGENTS.md`, `CLAUDE.md`, relevant project documentation) are
 discovered and fed through the correct context and rule path rather than pasted into a prompt: an
