@@ -333,6 +333,29 @@ describe('H16 stream-time triggers on the scripted loop route', () => {
     expect(stops).toHaveLength(1);
   });
 
+  test('review-g: a hold on a read an H14 lead hands to a worker still holds; the worker never reads it', async () => {
+    await projectRules(
+      rule('delivery-held', {
+        match: { kind: 'tool', tool: 'read_project_file', target: 'delivery.md' },
+        intervention: 'hold',
+        text: 'Delivery notes are read only after a person says so.',
+      }),
+    );
+    const started = await start({ team: { worker: {}, advisor: null } });
+    await vi.waitFor(
+      async () => expect(['cancelled', 'waiting', 'completed', 'failed']).toContain((await host().get(projectId, started.runId)).state),
+      { timeout: 15_000 },
+    );
+    await host().bridge.flush();
+    expect((await host().get(projectId, started.runId)).state).toBe('cancelled');
+    const firings = state().streamTriggerFirings ?? [];
+    expect(firings).toHaveLength(1);
+    expect(firings[0]).toMatchObject({ rule: { id: 'delivery-held' }, sessionId: started.session.id });
+    expect(firings[0].runId).not.toBe(started.runId);
+    const worker = await host().get(projectId, firings[0].runId);
+    expect(worker.steps.some((step) => step.intent.name === 'read_project_file' && step.state === 'succeeded')).toBe(false);
+  });
+
   for (const intervention of ['stop', 'hold'] as const)
     test(`review-g: a tool ${intervention} whose escalation is already open on the task still refuses the next run's intent`, async () => {
       await projectRules(

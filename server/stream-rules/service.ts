@@ -305,8 +305,9 @@ export class StreamRuleService {
 
   /**
    * The Session and task a harness run belongs to, when it belongs to a person's work. A
-   * delegate child (H13) carries no Session of its own; it answers to its parent's, so the
-   * rules that watch the parent watch every intent the parent hands on.
+   * child run a loop hands work to (an H13 delegate, an H14 worker or advisor) carries no
+   * Session of its own; it answers to its parent's, so the rules that watch the parent watch
+   * every intent the parent hands on.
    */
   private async owner(runId: string) {
     const run = await this.deps.runs.get(runId).catch(() => null);
@@ -314,10 +315,8 @@ export class StreamRuleService {
     let sessionId = run.sessionId;
     let parent = run;
     for (let depth = 0; !sessionId && depth < 4; depth++) {
-      const input = parent.input as { kind?: unknown; parent?: { runId?: unknown } } | undefined;
-      const parentId =
-        parent.parentRunId ??
-        (input?.kind === 'diomedes-loop-delegate' && typeof input.parent?.runId === 'string' ? input.parent.runId : null);
+      const input = parent.input as { parent?: { runId?: unknown } } | null | undefined;
+      const parentId = parent.parentRunId ?? (typeof input?.parent?.runId === 'string' ? input.parent.runId : null);
       if (!parentId) break;
       const next = await this.deps.runs.get(parentId).catch(() => null);
       if (!next || next.projectId !== run.projectId || next.taskId !== run.taskId) break;
