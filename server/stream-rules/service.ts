@@ -385,6 +385,10 @@ export class StreamRuleService {
         .then(async () => {
           const created = await this.record(run.projectId, [pending]);
           await this.handOff(run.projectId, ref.sessionId, created);
+          // Supervision may not pause the run (an escalation for this rule is already open on
+          // the task). A stop rule still never lets the run act on what it streamed.
+          if (pending.intervention === 'stop' && (await this.deps.runs.get(runId)).state !== 'cancelled')
+            throw new HarnessError('trigger_stopped', `A rule stopped this run: ${pending.rule.text}`);
         })
         .catch((error: unknown) => {
           failure ??= error;

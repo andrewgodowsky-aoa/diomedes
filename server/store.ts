@@ -255,6 +255,9 @@ export const defaults = (): Settings => ({
   // these defaults to decide whether a settings key exists at all.
   home: null,
   services: { codex: false },
+  // H16: listed so a client echoing the whole settings object back is accepted. Like `home`,
+  // `validateSettings` never reads it, so only the stream-rules route writes these rules.
+  streamTriggerRules: [],
 });
 
 /**

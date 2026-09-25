@@ -268,6 +268,26 @@ describe('H16 stream-time triggers on the scripted loop route', () => {
     expect(receipt.requestedBy).toMatchObject({ actor: 'diomedes', via: 'supervision', recordId: escalated.id });
   });
 
+  test('a stop rule whose escalation is already open on the task still stops the next run before anything it proposed runs', async () => {
+    await projectRules(rule('no-summaries', { match: { kind: 'text', phrase: 'Summarise' }, intervention: 'stop' }));
+    const first = await start();
+    await untilRun(first.runId, 'cancelled');
+    await openNeed(first.session.id);
+    // The escalation stays open; H15 raises nothing more for this rule on this task while it is.
+    const second = await start();
+    const run = await vi.waitFor(
+      async () => {
+        const current = await host().get(projectId, second.runId);
+        expect(['failed', 'cancelled']).toContain(current.state);
+        return current;
+      },
+      { timeout: 15_000 },
+    );
+    expect(run.steps.some((step) => step.intent.stepId.startsWith('tool:'))).toBe(false);
+    expect(run.failure?.message ?? run.cancelReason).toMatch(/A rule stopped this run: Rule no-summaries\./);
+    expect(state().needs.filter((need) => need.supervision && need.state === 'open')).toHaveLength(1);
+  });
+
   test('stop on a proposed tool intent: the intent is refused before admission and the run is paused for you', async () => {
     await projectRules(rule('no-reads', { match: { kind: 'tool', effectClass: ['read'] }, intervention: 'stop' }));
     const started = await start();
@@ -406,5 +426,19 @@ describe('H16 holds and remembered approvals', () => {
     expect((await host().get(projectId, runId)).state).toBe('waiting');
     await answer(waiting);
     await untilRun(runId, 'completed');
+  });
+});
+
+describe('H16 organization rules and ordinary settings saves', () => {
+  test('a settings save that echoes the whole object is accepted, and cannot change the rules; only the rules route writes them', async () => {
+    await globalRules(rule('writes-held', { match: { kind: 'tool', tool: 'propose_write' }, intervention: 'hold' }));
+    const current = await call<Record<string, unknown>>('/settings');
+    expect(current.data.streamTriggerRules).toHaveLength(1);
+    const echoed = await call('/settings', 'PUT', { ...current.data, detail: 'technical' });
+    expect(echoed.status, JSON.stringify(echoed.data)).toBe(200);
+    const emptied = await call('/settings', 'PUT', { streamTriggerRules: [] });
+    expect(emptied.status).toBe(200);
+    expect(store().settings.streamTriggerRules?.map((item) => item.id)).toEqual(['writes-held']);
+    expect(store().settings.detail).toBe('technical');
   });
 });
