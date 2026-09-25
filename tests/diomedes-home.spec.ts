@@ -551,6 +551,9 @@ test('CD05-R-06 closure: another window offers the unconfirmed message and sends
     await open(other);
     await expect(strip(other)).toContainText('Lost R06');
     await strip(other).getByRole('button', { name: 'Send again', exact: true }).click();
+    // The answer was already in the transcript this window opened on, and the strip is hidden
+    // for as long as a delivery runs. The delivery ending is what says the message is settled.
+    await expect(other.locator('.dio-pending')).toHaveCount(0);
     await expect(answers(other).last()).toHaveText('You said: Lost R06');
     await expect(strip(other)).toHaveCount(0);
     // Two attempts in the first window and one in the second, all one command.
@@ -786,6 +789,8 @@ test('CD05-R-09 closure: sending again sends what was saved, whatever the Mode c
   await page.unroute('**/api/projects/*/threads/*/messages');
   await page.getByRole('combobox', { name: 'Mode' }).selectOption({ label: 'Answer only' });
   await strip(page).getByRole('button', { name: 'Send again', exact: true }).click();
+  // The strip is hidden for as long as a delivery runs; its ending is what settles the message.
+  await expect(page.locator('.dio-pending')).toHaveCount(0);
   await expect(answers(page).last()).toHaveText('You said: Uncertain R09b');
   await expect(strip(page)).toHaveCount(0);
   expect(bodies).toHaveLength(3);
@@ -831,6 +836,8 @@ test("CD05-R-10 closure: a first send's lost reply is recovered from the other w
 
     // Either window can settle it. This one does, then sends its own.
     await strip(page).getByRole('button', { name: 'Send again', exact: true }).click();
+    // The box ignores Enter until the delivery has ended, as a person would wait for it.
+    await expect(page.locator('.dio-pending')).toHaveCount(0);
     await expect(answers(page).last()).toHaveText('You said: Second R10b');
     await expect(strip(page)).toHaveCount(0);
     await composer(page).press('Enter');

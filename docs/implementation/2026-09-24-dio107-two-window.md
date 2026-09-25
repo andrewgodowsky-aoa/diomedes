@@ -116,6 +116,27 @@ R-11 reproducers and their two closure cases), fixed build, same load, `--repeat
 R-10's concurrent pattern; the others send in sequence and wait on a web-first assertion between
 steps. They share the product fix and needed no change.
 
+## A second finding: Send again assertions that ran before the delivery ended
+
+On the merged head, the first full run of `diomedes-home.spec.ts` failed `CD05-R-06 closure: another
+window offers the unconfirmed message and sends the same command`. It expected 3 message POSTs under
+one command and saw 2. In the trace, the second window's Send again POST *was* issued; the test
+counted before it was. `answers(other).last()` was already "You said: Lost R06", from the transcript
+the window opened on, and the unconfirmed strip is hidden while any delivery runs (`Diomedes.tsx`,
+`unconfirmed !== null && !pending`). So both web-first assertions passed while the resend was still
+in flight, and the count raced it. That is a test defect. The spec's own `say()` helper and the
+R-11 closure tests already name this trap, and they wait for `.dio-pending` to reach 0. The fix in
+this lane widens the race: the resend now awaits one IndexedDB read before its POST.
+
+The same wait was added after Send again in the three tests that count requests, or act, right after
+it: R-06 closure (counts POSTs), R-09 closure (counts request bodies) and the first R-10 closure (presses
+Enter, which the box ignores while a delivery runs). No assertion was removed or loosened.
+
+- R-06 closure on the fixed build, before the test change, idle: 1 of 10 failed.
+- After the test change, idle: 0 of 30 failed.
+- The base rate of this race was not measured: `diomedes-home.spec.ts` was not in this lane's
+  base gate run.
+
 ## Gates
 
 See the PR body for the counts from the final run on the merged head. Base counts, recorded before
