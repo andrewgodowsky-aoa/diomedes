@@ -17,7 +17,6 @@
             "Rule triggers. Write rules in Settings > Rules for every project, or from the Trigger rules line under Project instructions in a thread for one project or one task. A rule watches what a Nectovia work loop run writes, or the tool it is about to use on a file, and can note it, ask the run to correct, hold the step for your go-ahead before it runs, or stop and ask you. A project rule can add to or tighten a rule written for every project but never loosen it, and the app shows the reason when it refuses one. Each time a rule acts, it shows in the run's Supervision section.",
             "Start a Nectovia work loop run on a task with Loop run in the task's work panel. It offers only the routes that are ready, asks before a route sends anything off this computer, and opens the run so you can watch it plan, act and check.",
             "Software projects get a Repository section at the top of Files when the Software Engineering pack is on: the branch, changed files with a readable diff, and recent commits. It can add or remove a separate worktree on a new branch without touching your own checkout, and run the build and test commands you declare, asking you every time. A task whose check is one of those commands can be Verified on that result.",
-            "Updates now refresh your install the first time the new version opens. Settings you never changed move to the new defaults, anything you chose is kept, cached screens are cleared, and a byte-for-byte backup and a record of what moved are kept. A custom look keeps its colours, fonts and artwork, while text sizes, line spacing and density follow the new version. You see it once: Updated to 0.2.0, with how many settings moved.",
             "A Mac build for Apple silicon (M1 and later) is published beside the Windows installer.",
             "Automations. Open Automations from the Nectovia group or Ctrl K. The weekly brief is listed there, and Run once runs it now. Owners and admins can turn on a schedule, pause it, resume it or turn it off; the screen shows the next three runs and any that were missed or skipped. Saving a schedule does not turn it on.",
             "Review what a task changed before you keep it. A task's thread shows each change line by line, and you can keep or undo each one, keep or undo them all, or send notes back with Revise with these comments.",
@@ -53,10 +52,19 @@
           ]
         },
         {
+          "title": "Updating",
+          "items": [
+            "Settings > App updates offers stable releases only. Nothing is downloaded, verified or installed until you confirm it, and a download is accepted only when its SHA-256 matches the digest the release publishes. An installed 0.1.7, 0.1.8, 0.1.9, 0.1.10 or 0.1.11 on Windows can find this release when you press Check for updates.",
+            "An update from 0.1.9, 0.1.10 or 0.1.11 keeps your settings, routes, saved keys, projects and conversations. An update from 0.1.7 or 0.1.8 that skips 0.1.9 still gets the one-time fresh start 0.1.9 introduced: the earlier version's data and the Documents\\Diomedes folder are set aside, renamed with \"before 0.1.9\" and the date, and nothing is deleted.",
+            "Your install is refreshed the first time this version opens, and again after each later update. Settings you never changed move to the new defaults, anything you chose is kept, cached screens are cleared, and a byte-for-byte backup and a record of what moved are kept. A custom look keeps its colours, fonts and artwork, while text sizes, line spacing and density follow the new version. You see it once: Updated to 0.2.0, with how many settings moved.",
+            "This is the first Mac version. On a Mac, Check for updates says when a newer version exists, and you download it from the release page; the app does not install it itself."
+          ]
+        },
+        {
           "title": "Known limits",
           "items": [
             "Unsigned and experimental. On Windows, SmartScreen may warn before the installer runs: choose More info, then Run anyway, after checking the file's SHA-256. The Mac build is signed ad hoc, not with an Apple Developer ID, and is not notarized, so the first time you open it, right-click the app and choose Open, or allow it under System Settings, Privacy and Security.",
-            "The Mac build is for Apple silicon only; there is no Intel Mac build. It was built and launched on a GitHub-hosted Mac, not on a person's computer, and it does not install updates itself: Check for updates says when a new version exists, and you download it from the release page.",
+            "The Mac build is for Apple silicon only; there is no Intel Mac build. It was built and launched on a GitHub-hosted Mac, not on a person's computer.",
             "Nothing in this version was tried against a real provider. Every route in its tests was scripted or fake, including Codex, Claude Code, OpenCode, AWS Bedrock, Google Vertex AI, Azure OpenAI and OpenRouter.",
             "Some parts are new and have not yet had an independent review: suggested edits to instruction files, playbook reading, the zoom and accessibility fixes, the Repository section, the update refresh, the Rules screens and Loop run. Rule triggers themselves were reviewed and the problems found were fixed.",
             "Automations run only the weekly brief, only while this computer is on, and tell you only inside the app: nothing is sent by push, email or phone.",

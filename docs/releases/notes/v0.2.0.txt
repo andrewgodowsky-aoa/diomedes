@@ -25,13 +25,6 @@ WHAT IS NEW
   commands you declare, asking you every time. A task whose check is one of
   those commands can be Verified on that result.
 
-  Updates now refresh your install the first time the new version opens.
-  Settings you never changed move to the new defaults, anything you chose is
-  kept, cached screens are cleared, and a byte-for-byte backup and a record of
-  what moved are kept. A custom look keeps its colours, fonts and artwork,
-  while text sizes, line spacing and density follow the new version. You see
-  it once: Updated to 0.2.0, with how many settings moved.
-
   A Mac build for Apple silicon (M1 and later) is published beside the Windows
   installer.
 
@@ -131,6 +124,30 @@ FIXED
   Two windows sending the first message in a new project at the same moment no
   longer makes one of them refuse its own message.
 
+UPDATES
+  Settings > App updates offers stable releases only. Nothing is downloaded,
+  verified or installed until you confirm it, and a download is accepted only
+  when its SHA-256 matches the digest the release publishes. An installed
+  0.1.7, 0.1.8, 0.1.9, 0.1.10 or 0.1.11 on Windows can find this release when
+  you press Check for updates.
+
+  An update from 0.1.9, 0.1.10 or 0.1.11 keeps your settings, routes, saved
+  keys, projects and conversations. An update from 0.1.7 or 0.1.8 that skips
+  0.1.9 still gets the one-time fresh start 0.1.9 introduced: the earlier
+  version's data and the Documents\Diomedes folder are set aside, renamed with
+  "before 0.1.9" and the date, and nothing is deleted.
+
+  Your install is refreshed the first time this version opens, and again after
+  each later update. Settings you never changed move to the new defaults,
+  anything you chose is kept, cached screens are cleared, and a byte-for-byte
+  backup and a record of what moved are kept. A custom look keeps its colours,
+  fonts and artwork, while text sizes, line spacing and density follow the new
+  version. You see it once: Updated to 0.2.0, with how many settings moved.
+
+  This is the first Mac version. On a Mac, Check for updates says when a newer
+  version exists, and you download it from the release page; the app does not
+  install it itself.
+
 LIMITS
   Unsigned and experimental. On Windows, SmartScreen may warn before the
   installer runs: choose More info, then Run anyway, after checking the file's
@@ -139,9 +156,7 @@ LIMITS
   choose Open, or allow it under System Settings, Privacy and Security.
 
   The Mac build is for Apple silicon only; there is no Intel Mac build. It was
-  built and launched on a GitHub-hosted Mac, not on a person's computer, and
-  it does not install updates itself: Check for updates says when a new
-  version exists, and you download it from the release page.
+  built and launched on a GitHub-hosted Mac, not on a person's computer.
 
   Nothing in this version was tried against a real provider. Every route in
   its tests was scripted or fake, including Codex, Claude Code, OpenCode, AWS
