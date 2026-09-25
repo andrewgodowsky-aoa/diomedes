@@ -88,6 +88,13 @@ export interface TextRequest {
    */
   readScope?: ReadScope;
   /**
+   * P04: the playbooks this message may load on demand, pinned by the host at admission from
+   * the Project's contribution index. A model-API conversation turn offers them as one read
+   * tool whose description is the index; a body loads only when the model asks for it.
+   * Absent where no pack with playbooks is on. Never from a client or a model.
+   */
+  playbooks?: import('../harness/capabilities/pack-playbooks.js').PlaybookAccess;
+  /**
    * The Diomedes team tools for one member's Work run, reached over the loopback
    * team MCP service with the member's leased token (server/team/carriage.ts).
    * Set only by the host's Work path for a route that carries team tools by MCP;

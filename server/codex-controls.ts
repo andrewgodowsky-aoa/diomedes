@@ -64,14 +64,16 @@ export function codexWorkContract(session: Session | null): AdapterRouteContract
           'This Codex build could not keep the thread for a resume, so Resume starts a new Codex thread with the same request and says so.',
         );
   const fork =
-    capabilities.fork && kept
+    capabilities.fork && capabilities.resume && kept
       ? native(
           'Codex branches this run’s kept thread (thread/fork) into a new task; the origin is not changed.',
         )
       : unsupported(
-          capabilities.fork
-            ? 'Codex was not asked to keep this run’s thread, so there is nothing for it to fork.'
-            : 'This Codex build does not offer thread fork, so a Codex run cannot be forked.',
+          !capabilities.fork
+            ? 'This Codex build does not offer thread fork, so a Codex run cannot be forked.'
+            : !capabilities.resume
+              ? 'This Codex build does not offer thread resume, so a fork could not be continued.'
+              : 'Codex was not asked to keep this run’s thread, so there is nothing for it to fork.',
         );
   return Object.freeze({
     ...base,
@@ -223,6 +225,23 @@ export class CodexControls {
               reason: 'This run has no Codex thread recorded, so there is nothing to resume.',
             },
           };
+        // A thread moves on with every run that continues it: resuming this run a second time
+        // would continue the later run's turns, not this one's.
+        const later = this.store
+          .state(context.projectId)
+          .sessions.find(
+            (item) =>
+              item.id !== context.session.id &&
+              (item.nativeThread?.id === thread.id ||
+                (item.nativeThread?.origin === 'resumed' && item.nativeThread.from === thread.id)),
+          );
+        if (later)
+          return {
+            refused: {
+              code: 'not-applicable',
+              reason: `Codex thread ${thread.id} has since been continued by ${later.id}; resume that run instead.`,
+            },
+          };
         const key = context.workCommandId;
         this.pending.set(key, {
           resume: { threadId: thread.id, kept: thread.kept, origin: 'resumed' },
@@ -278,6 +297,14 @@ export class CodexControls {
           support: 'host',
           nativeThreadId: record.id,
         };
+      },
+
+      recorded: (session) => {
+        const record = session.nativeThread;
+        if (!record) return { performedBy: { kind: 'diomedes' }, support: 'host' };
+        return record.origin === 'resumed'
+          ? { performedBy: performer(record), support: 'native', nativeThreadId: record.id }
+          : { performedBy: { kind: 'diomedes' }, support: 'host', nativeThreadId: record.id };
       },
 
       fork: async (context): Promise<StartAnswer> => {

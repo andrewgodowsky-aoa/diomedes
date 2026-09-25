@@ -858,6 +858,9 @@ export function validateRememberedApprovals(state: ProjectState) {
     throw incompatible();
 }
 
+const patternDigestOf = (found: ReturnType<typeof patternForProposal>) =>
+  found ? patternDigest(found.pattern) : null;
+
 /** Validates the evidence a remembered approval left on a Need, without reviving it. */
 export function validateRememberedAuthorization(state: ProjectState, need: Need) {
   const evidence = need.authorization as RememberedAuthorization | undefined;
@@ -881,7 +884,10 @@ export function validateRememberedAuthorization(state: ProjectState, need: Need)
       (need.connection?.engine !== evidence.engine ||
         need.connection.accountRoute !== evidence.accountRoute ||
         session?.route !== 'codex' ||
-        !!session.slotId)) ||
+        !!session.slotId ||
+        // The grant is the one whose pattern is this proposal's own: its files, on its account.
+        patternDigestOf(patternForProposal({ projectId: state.project.id, need })) !==
+          record.grant.patternDigest)) ||
     need.approvalReceipt ||
     need.allowForTask ||
     need.reviews?.length ||

@@ -693,6 +693,52 @@ describe('a wake runs the member as recorded', () => {
   });
 });
 
+describe('independent review (review-e): a project profile list does not route a team wake', () => {
+  test('a member with no model of its own wakes on its own route, never on the project list', async () => {
+    const seenRuns: { engine?: string; model?: string; team: boolean }[] = [];
+    generator = vi.fn(async (input: Parameters<NativeGenerator>[0]) => {
+      seenRuns.push({ engine: input.engine, model: input.model, team: Boolean(input.team) });
+      return { text: JSON.stringify({ summary: 'Nothing to change', changes: [] }), model: input.model ?? 'm' };
+    });
+    await open({ generator: generator as unknown as NativeGenerator });
+    await request('/settings', 'PUT', {
+      services: { codex: true, 'claude-code': true, 'claude-codeAccountRoute': 'claude-code:claude.ai' },
+    });
+    const created = await request(`/projects/${projectId}/team/members`, 'POST', {
+      name: 'Opal',
+      role: 'member',
+      engine: 'codex',
+      model: 'gpt-5.5',
+    });
+    expect(created.status, JSON.stringify(created.data)).toBe(200);
+    const member = created.data.member as TeamMember;
+    // The member runs on its route's own default model.
+    await store().locked(async () => {
+      const current = store().state(projectId);
+      current.team!.members.find((item) => item.slotId === member.slotId)!.model = null;
+      await store().persist(current);
+    });
+    const listed = (
+      await request('/agent-profiles', 'POST', {
+        name: 'Project writer',
+        engine: 'codex',
+        model: 'gpt-6-astra',
+        effort: null,
+        agentId: 'diomedes.builder',
+        rules: [],
+      })
+    ).data;
+    expect((await request(`/projects/${projectId}/agent-routing`, 'PUT', { order: [listed.profileId] })).status).toBe(200);
+    await request(`/projects/${projectId}/team/messages`, 'POST', { to: member.slotId, content: 'Plan lunch.' });
+    const woke = await request(`/projects/${projectId}/team/members/${member.slotId}/wake`, 'POST', {});
+    expect(woke.status, JSON.stringify(woke.data)).toBe(200);
+    const done = await until((value) => value.sessions.some((item) => item.state === 'done'), 'the wake');
+    expect(seenRuns[0]).toMatchObject({ engine: 'codex', team: true });
+    expect(seenRuns[0].model).not.toBe('gpt-6-astra');
+    expect(done.sessions[0].agent?.profile).toBeUndefined();
+  });
+});
+
 describe('capability commands keep the route their driver needs', () => {
   test('codex-report is refused on another route with a message that names why', async () => {
     const { parseWorkCommand } = await import('../server/work-admission');

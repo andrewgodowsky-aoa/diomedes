@@ -153,6 +153,7 @@ export class SupervisionService {
         sessionId,
         taskId: session.taskId,
         lineage: this.lineage(projectId, sessionId),
+        continues: this.continues(projectId, sessionId),
         live: isLive(session),
         records: state.supervision ?? [],
         needs: state.needs,
@@ -175,6 +176,21 @@ export class SupervisionService {
       if (!started?.queuedDuringSessionId || chain.includes(started.queuedDuringSessionId))
         return chain;
       chain.push(started.queuedDuringSessionId);
+    }
+  }
+
+  /** The runs your "continue" answers resumed this run from, oldest last. */
+  private continues(projectId: string, sessionId: string): string[] {
+    const state = this.store.state(projectId);
+    const chain = [sessionId];
+    for (;;) {
+      const answer = (state.supervision ?? []).find((record) => {
+        if (record.action !== 'answer' || record.answer !== 'continue' || !record.control) return false;
+        const receipt = (state.controlReceipts ?? []).find((item) => item.commandId === record.control!.commandId);
+        return receipt?.control === 'resume' && receipt.result.sessionId === chain.at(-1);
+      });
+      if (!answer || chain.includes(answer.sessionId)) return chain.slice(1);
+      chain.push(answer.sessionId);
     }
   }
 

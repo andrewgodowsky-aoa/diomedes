@@ -20,12 +20,20 @@ import type { OriginSnapshot } from './attribution.js';
 import type { HistoryEntry, Session, Task } from './types.js';
 
 export const VERIFICATION_PROTOCOL_VERSION = 1 as const;
-/** A declaration names at most this many checks; a record binds at most this many files. */
+/** A declaration names at most this many checks. A record binds every file its checks judged. */
 export const VERIFICATION_MAX_CHECKS = 16;
-export const VERIFICATION_MAX_BOUND_FILES = 64;
 
-const checkId = z.string().regex(/^[a-z0-9][a-z0-9-]{0,39}$/, 'A check id is lowercase letters, digits and dashes.');
-const filePath = z.string().trim().min(1).max(400);
+const checkId = z
+  .string()
+  .regex(/^[a-z0-9][a-z0-9-]{0,39}$/, 'A check id is lowercase letters, digits and dashes.')
+  .refine((id) => id !== 'outputs-intact', 'outputs-intact is the verifier’s own check.');
+// Spelled as History records paths (forward slashes), so a bound digest is looked up under the same name.
+const filePath = z
+  .string()
+  .trim()
+  .min(1)
+  .max(400)
+  .transform((value) => value.replaceAll('\\', '/'));
 
 /**
  * What a person declares a finished run must satisfy. File checks read the
@@ -249,7 +257,8 @@ export function latestDigest(history: readonly HistoryEntry[], path: string): st
 export function runOutputs(history: readonly HistoryEntry[], sessionId: string): BoundFile[] {
   const outputs = new Map<string, string | null>();
   for (const entry of history) {
-    if (entry.sessionId !== sessionId || entry.verification) continue;
+    // A saved version taken under the run's session is a snapshot of the folder, not what the run wrote.
+    if (entry.sessionId !== sessionId || entry.verification || entry.kind === 'saved-version') continue;
     for (const file of entry.files) if (file.recorded) outputs.set(file.path, file.after);
   }
   return [...outputs].map(([path, sha]) => ({ path, sha })).sort((a, b) => a.path.localeCompare(b.path));
@@ -361,6 +370,14 @@ export function verificationOf(input: VerificationInput): VerificationView {
       'failed',
       'check-failed',
       `${plural(failed.length, 'check')} failed: ${failed[0].sentence}`,
+    );
+  // Verified needs a result for every declared check, never a pass on the others alone.
+  const missing = declaration.checks.filter((declared) => !checks.some((check) => check.id === declared.id));
+  if (missing.length)
+    return view(
+      'uncertain',
+      'check-incomplete',
+      `${plural(missing.length, 'check')} could not complete: ${missing[0].id} has no result on record.`,
     );
   const incomplete = checks.filter((check) => check.outcome === 'incomplete');
   if (incomplete.length)

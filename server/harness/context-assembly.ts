@@ -27,6 +27,7 @@ import {
   CONTEXT_ESTIMATOR,
   estimateTokens,
   modelContextWindow,
+  summarisedCount,
   utf8Bytes,
   type CompactionRecord,
   type ContextAccount,
@@ -90,7 +91,12 @@ const firstSentence = (text: string) => {
   const flat = text.replace(/\s+/g, ' ').trim();
   const end = flat.search(/[.!?](\s|$)/);
   const sentence = end >= 0 ? flat.slice(0, end + 1) : flat;
-  return sentence.length > EXCERPT_CHARS ? `${sentence.slice(0, EXCERPT_CHARS - 1).trimEnd()}…` : sentence;
+  if (sentence.length <= EXCERPT_CHARS) return sentence;
+  // Never end on half of a surrogate pair: a lone surrogate is not text a provider accepts.
+  let cut = EXCERPT_CHARS - 1;
+  const last = sentence.charCodeAt(cut - 1);
+  if (last >= 0xd800 && last <= 0xdbff) cut -= 1;
+  return `${sentence.slice(0, cut).trimEnd()}…`;
 };
 
 type Compactable = Pick<AnsweredTurn, 'runId' | 'stepId' | 'index' | 'prompt' | 'answer'>;
@@ -133,6 +139,7 @@ export function compactTurns(turns: readonly Compactable[]): CompactionRecord {
     turns: refs,
     text,
     bytes: utf8Bytes(text),
+    listed,
   };
 }
 
@@ -183,24 +190,26 @@ export function selectHistory(input: {
   const included = new Map<AnsweredTurn, HistoryIncluded>();
   const take = (turn: AnsweredTurn, reason: HistoryIncluded['reason'], score?: number) =>
     included.set(turn, { runId: turn.runId, stepId: turn.stepId, index: turn.index, reason, ...(score === undefined ? {} : { score }) });
-  const recent = ownTurns.slice(-RECENT_KEEP);
-  for (const turn of recent) take(turn, 'recent');
-  if (ownTurns.length > recent.length) take(ownTurns[0], 'pinned');
-
-  const joined = (turns: Iterable<AnsweredTurn>) => {
-    let sum = 0;
-    let count = 0;
-    for (const turn of turns) {
-      sum += turn.text.length;
-      count += 1;
-    }
-    return sum + Math.max(0, count - 1) * 2;
-  };
-  // Room for the rest: what the protected messages leave, less the marker's and summary's reserve.
+  // Room for the history: the bound less the marker's and summary's reserve.
   const budget = MAX_HISTORY_CHARS - OMISSION_RESERVE_CHARS;
-  let used = joined(included.keys());
   const fits = (turn: AnsweredTurn) =>
     included.size < MAX_HISTORY_TURNS && used + 2 + turn.text.length <= budget;
+  // The newest message always; the other recent ones, newest first, and the opening message only
+  // while they fit. One that does not is omitted and summarised rather than recorded as included
+  // and then cut out of the text.
+  const recent = ownTurns.slice(-RECENT_KEEP);
+  const newest = recent.at(-1);
+  if (newest) take(newest, 'recent');
+  let used = newest ? newest.text.length : 0;
+  for (const turn of recent.slice(0, -1).reverse())
+    if (fits(turn)) {
+      take(turn, 'recent');
+      used += 2 + turn.text.length;
+    }
+  if (ownTurns.length > recent.length && fits(ownTurns[0])) {
+    take(ownTurns[0], 'pinned');
+    used += 2 + ownTurns[0].text.length;
+  }
   const ranked = ownTurns
     .filter((turn) => !included.has(turn))
     .map((turn) => ({ turn, score: relevance(turn.text, input.message) }))
@@ -236,6 +245,13 @@ export function selectHistory(input: {
   const room = MAX_HISTORY_CHARS - (head ? head.length + 2 : 0);
   const cut = cutHistory(chosen, room);
   const text = head ? `${head}\n\n${cut.text}` : cut.text;
+  // Only the newest message can still meet the cut (it is taken whatever its size): say so.
+  const truncated = new Set<AnsweredTurn>();
+  let at = 0;
+  for (const turn of chosen) {
+    if (at < cut.cut) truncated.add(turn);
+    at += turn.text.length + 2;
+  }
   return {
     text,
     messages: cut.messages,
@@ -243,7 +259,9 @@ export function selectHistory(input: {
       method: 'recency+lexical/1',
       budget: { turns: MAX_HISTORY_TURNS, chars: MAX_HISTORY_CHARS },
       available: all.length,
-      included: chosen.map((turn) => included.get(turn)!),
+      included: chosen.map((turn) =>
+        truncated.has(turn) ? { ...included.get(turn)!, truncated: true as const } : included.get(turn)!,
+      ),
       omitted: omitted.map((turn) => ({ runId: turn.runId, stepId: turn.stepId, index: turn.index, carried: carriedSet.has(turn) })),
       marker,
       cutChars: cut.cut,
@@ -323,7 +341,7 @@ export function accountContext(input: {
   const format = input.guidance.filter((text) => text && input.system.includes(text)).reduce((sum, text) => sum + utf8Bytes(text), 0);
   const historyDetail = input.history
     ? `${input.history.included.length} of ${input.history.available} earlier messages${
-        input.compaction ? `, ${input.compaction.turns.length} summarised` : ''
+        input.compaction ? `, ${summarisedCount(input.compaction)} summarised` : ''
       }`
     : undefined;
   const sections = [

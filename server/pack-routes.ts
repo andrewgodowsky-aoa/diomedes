@@ -17,7 +17,24 @@ import { discoverInstructionFiles } from './capability-packs.js';
 import { bundledCatalogue } from './pack-catalogue.js';
 import { PackLifecycle } from './pack-lifecycle.js';
 import { ApiError } from './paths.js';
-import type { Store } from './store.js';
+import { identifier, type Store } from './store.js';
+import { activeIndexes, loadedIn } from './pack-contributions.js';
+import {
+  isContributionKind,
+  renderIndex,
+  type RegisteredPackIndex,
+} from '../shared/pack-contributions.js';
+
+/** What a pack's index costs a request against what all its bodies would, in bytes (P04). */
+function indexBudgetOf(index: RegisteredPackIndex) {
+  const kinds = [...new Set(index.entries.map((entry) => entry.kind))];
+  const indexBytes = kinds.reduce(
+    (total, kind) => total + Buffer.byteLength(renderIndex([index], kind)),
+    0,
+  );
+  const bodyBytes = index.entries.reduce((total, entry) => total + entry.bytes, 0);
+  return { indexBytes, bodyBytes };
+}
 
 type Route = (
   action: (req: Request, res: Response) => Promise<unknown>,
@@ -104,6 +121,42 @@ export function mountPackRoutes(
       store.state(id);
       await packs.deactivate(id, await packId(req));
       return decided(id);
+    }),
+  );
+
+  // P04: the contribution index of the packs that are on here, and what is loaded. Bodies are
+  // never listed; a panel loads one when a person opens it.
+  app.get(
+    '/api/projects/:id/packs/contributions',
+    route(async (req) => {
+      const state = store.state(projectId(req));
+      const indexes = activeIndexes(state);
+      return {
+        indexes,
+        loaded: loadedIn(state),
+        records: (state.contributionRecords ?? []).slice(-50),
+        budgets: indexes.map((index) => ({
+          packId: index.packId,
+          ...indexBudgetOf(index),
+        })),
+      };
+    }),
+  );
+  app.post(
+    '/api/projects/:id/packs/:packId/contributions/:kind/:contributionId/open',
+    route(async (req) => {
+      const id = projectId(req);
+      const state = store.state(id);
+      const kind = String(req.params.kind);
+      if (!isContributionKind(kind)) throw new ApiError(404, 'That is not a kind of contribution.');
+      const pin = await packs.contributions.admit(state, identifier('open-'));
+      const loaded = await packs.contributions.load(
+        pin,
+        { packId: String(req.params.packId), kind, id: String(req.params.contributionId) },
+        { reason: 'opened', state },
+      );
+      await store.persist(state);
+      return loaded;
     }),
   );
 

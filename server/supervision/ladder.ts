@@ -76,6 +76,12 @@ export interface LadderContext {
    * this run alone.
    */
   readonly lineage?: readonly string[];
+  /**
+   * The runs this run continues through your answer "continue" to an escalation (a Resume
+   * starts a new run). A continue acknowledges its issue for these runs only, never for a
+   * later, unrelated run of the task.
+   */
+  readonly continues?: readonly string[];
   /** The project's Needs, to read whether an escalation is still open and how it was answered. */
   readonly needs: readonly Pick<Need, 'id' | 'state' | 'supervision'>[];
 }
@@ -90,16 +96,29 @@ export function nextStep(finding: DriftFinding, context: LadderContext): LadderS
   const open = escalations.find((record) =>
     context.needs.some((need) => need.id === record.needId && need.state === 'open'),
   );
-  if (open) return { rung: null, reason: 'An escalation about this is already waiting for you.' };
   const onRun = sameIssue.filter((record) => record.sessionId === context.sessionId);
+  const lineage = new Set(context.lineage ?? [context.sessionId]);
+  const resumed = new Set([...lineage, ...(context.continues ?? [])]);
+  if (open) {
+    // Raised once, but never silent: the same issue on another run of the task is noted there.
+    if (resumed.has(open.sessionId) || onRun.some((record) => record.action === 'note'))
+      return { rung: null, reason: 'An escalation about this is already waiting for you.' };
+    return {
+      rung: 'note',
+      reason: 'An escalation about this is already waiting for you on an earlier run, so it is noted here, not raised again.',
+      settled: 'An escalation about this is already waiting for you.',
+    };
+  }
   const last = onRun.at(-1);
   if (last && last.evidenceDigest === finding.evidenceDigest)
     return { rung: null, reason: 'Nothing new since the last supervision action.' };
+  // Only a continue Resume carried out, and only for the run it resumed.
   const acknowledged = sameIssue.some(
     (record) =>
       record.action === 'answer' &&
       record.answer === 'continue' &&
-      record.control?.outcome !== 'refused',
+      (record.control?.outcome === 'applied' || record.control?.outcome === 'queued') &&
+      resumed.has(record.sessionId),
   );
   const notedOnRun = onRun.some((record) => record.action === 'note');
   if (acknowledged)
@@ -131,7 +150,6 @@ export function nextStep(finding: DriftFinding, context: LadderContext): LadderS
     };
   }
   const bound = correctionBound(finding.code);
-  const lineage = new Set(context.lineage ?? [context.sessionId]);
   const corrections = context.records.filter(
     (record) =>
       lineage.has(record.sessionId) && record.code === finding.code && record.action === 'correct',

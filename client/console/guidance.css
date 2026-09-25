@@ -1,0 +1,72 @@
+/* H10: proposed instruction revisions and the revision record, inside the
+   instructions inspector. The same graphite rows as the run record; the
+   proposed line takes the code role, the verdict is a word with restrained
+   colour, and every machine string truncates or wraps where it is written
+   (decision 5). */
+
+.console .guidance-proposal,
+.console .guidance-revision {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.console .guidance-proposal p,
+.console .guidance-revision p {
+  margin: 0;
+  color: var(--t3);
+  overflow-wrap: anywhere;
+}
+.console .guidance-proposal .guidance-line {
+  padding: 6px 10px;
+  background: var(--chrome);
+  border: 1px solid var(--hair);
+  border-radius: var(--r);
+  font: 400 var(--dm-type-code) / 1.55 var(--mono);
+  color: var(--t1);
+  white-space: pre-wrap;
+}
+.console .guidance-verdict {
+  color: var(--t1);
+}
+.console .guidance-evaluation.improved .guidance-verdict {
+  color: var(--light);
+}
+.console .guidance-evaluation.worse .guidance-verdict {
+  color: var(--fail);
+}
+.console .guidance-evidence {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+  font-size: var(--dm-type-caption);
+  color: var(--t2);
+}
+.console .guidance-evidence li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  min-width: 0;
+}
+.console .guidance-evidence li > span:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.console .guidance-ref {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--t3);
+}
+.console .guidance-problem {
+  margin: 0;
+  color: var(--fail);
+  overflow-wrap: anywhere;
+}
+.console .guidance-revision .instructions-file-head > :not(.instructions-rank) {
+  min-width: 0;
+}
