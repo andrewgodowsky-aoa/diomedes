@@ -55,6 +55,15 @@ let awsCalls: number;
 let refuseWith: { status: number; code: string; message: string } | null;
 
 /** The managed gateway double: one streamed answer per call, echoing the attempt it was given. */
+/** A message that asks to check the files, before the tool's output has come back. */
+const wantsFiles = (body: Item) => {
+  const input = (body.input as Item[]) ?? [];
+  return (
+    JSON.stringify(input).includes('Check the attached files') &&
+    !input.some((item) => item.type === 'function_call_output')
+  );
+};
+
 async function managed(request: Request): Promise<Response> {
   const body = (await request.json()) as Item;
   gateway.push({ url: request.url, headers: Object.fromEntries(request.headers.entries()), body });
@@ -72,13 +81,16 @@ async function managed(request: Request): Promise<Response> {
       model: String(body.model),
       status: 'completed',
       output: [
-        {
-          type: 'message',
-          id: `msg_gw_${n}`,
-          role: 'assistant',
-          status: 'completed',
-          content: [{ type: 'output_text', text: 'Twelve loaves are on order.', annotations: [] }],
-        },
+        // Asked to check the files, the model first lists them; with the tool's output it answers.
+        wantsFiles(body)
+          ? { type: 'function_call', id: `fc_gw_${n}`, call_id: `call_list_${n}`, name: 'list_sources', arguments: '{}', status: 'completed' }
+          : {
+              type: 'message',
+              id: `msg_gw_${n}`,
+              role: 'assistant',
+              status: 'completed',
+              content: [{ type: 'output_text', text: 'Twelve loaves are on order.', annotations: [] }],
+            },
       ],
       usage: {
         input_tokens: 90,
@@ -251,6 +263,56 @@ describe('the Nectovia bot', () => {
       routeKind: 'managed',
       surface: 'conversation',
     });
+  });
+
+  test('each message is its own job: two messages carry two job ids, each the rootJobId its admission names', async () => {
+    const owner = await signIn(DEMO_ACCOUNTS.owner.email);
+    const organizationId = owner.workspaces[0].organization.id;
+    const binding = await home();
+    const results: MessageResult[] = [];
+    for (const [commandId, text] of [['m-first', 'How many loaves are on order?'], ['m-second', 'And rolls?']]) {
+      const sent = await say(binding, commandId, text);
+      expect(sent.status, await sent.clone().text()).toBe(200);
+      results.push((await sent.json()) as MessageResult);
+    }
+    expect(gateway).toHaveLength(2);
+    const jobs = gateway.map((call) => call.headers['x-nectovia-job']);
+    expect(new Set(jobs).size).toBe(2);
+    // Both messages continue one conversation run; each job is that message's own turn run.
+    expect(results[1].runId).toBe(results[0].runId);
+    for (const job of jobs) {
+      expect(job).not.toBe(results[0].runId);
+      expect(job.startsWith(`${results[0].runId}.t`)).toBe(true);
+    }
+    // One managed admission per message, pinned to that message's job.
+    const admissions = gateway.map((call) => call.headers['x-nectovia-admission']);
+    expect(new Set(admissions).size).toBe(2);
+    const billing = await staffToken(DEMO_ACCOUNTS.staffBilling.email);
+    const recorded = (await cloud.commercial.customer(billing, organizationId)).admissions;
+    for (const call of gateway) {
+      const record = recorded.find((row) => row.id === call.headers['x-nectovia-admission']);
+      expect(record).toMatchObject({ decision: 'admitted', routeKind: 'managed', rootJobId: call.headers['x-nectovia-job'] });
+    }
+  });
+
+  test('a message with a tool step sends the same job on both calls, each with its own attempt', async () => {
+    await signIn(DEMO_ACCOUNTS.owner.email);
+    const binding = await home();
+    const sent = await say(binding, 'm-files', 'Check the attached files, then tell me the loaves on order.');
+    expect(sent.status, await sent.clone().text()).toBe(200);
+    expect(((await sent.json()) as MessageResult).answerText).toBe('Twelve loaves are on order.');
+    expect(gateway).toHaveLength(2);
+    const [asked, continued] = gateway;
+    // The second call carries the tool's output: the same message, one step on.
+    expect(JSON.stringify(continued.body.input)).toContain('function_call_output');
+    expect(continued.headers['x-nectovia-job']).toBe(asked.headers['x-nectovia-job']);
+    expect(continued.headers['x-nectovia-admission']).toBe(asked.headers['x-nectovia-admission']);
+    expect(continued.headers['x-nectovia-attempt']).not.toBe(asked.headers['x-nectovia-attempt']);
+    for (const call of gateway) {
+      expect(call.headers['x-nectovia-attempt']).toMatch(/^exp-[0-9a-f]{40}$/);
+      // Neither call is a retry, so neither names a parent attempt.
+      expect(call.headers).not.toHaveProperty('x-nectovia-parent-attempt');
+    }
   });
 
   test('a tier chosen on the Home thread stays on nectovia: Focused runs the policy’s model at medium, Thorough is refused by name', async () => {

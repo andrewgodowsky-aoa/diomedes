@@ -25,7 +25,7 @@ import { GPT6_LUNA, NECTOVIA_ROUTE } from '../../shared/model-api.js';
 import type { TierResolution } from '../../shared/tier-map.js';
 import { classifyTask, WORK_STYLE_LABELS, type WorkStyle } from '../../shared/work-style.js';
 import { digest } from '../harness/policy.js';
-import type { ModelRateCard } from '../spend-exposure.js';
+import { attemptIdFor, type ModelRateCard } from '../spend-exposure.js';
 import { AWS_BEDROCK_SDK } from './aws-bedrock.js';
 import {
   classifyEnvelope,
@@ -243,6 +243,8 @@ export function nectoviaBinding(input: {
   effort: 'low' | 'medium' | 'high';
   managed: ManagedAdmission;
   attemptId: () => string | null;
+  /** The attempt this call retries, when it is a retry. */
+  parentAttemptId?: string | null;
 }): RouteBinding {
   const baseUrl = `${input.base}/managed/v1`;
   const { managed } = input;
@@ -258,6 +260,7 @@ export function nectoviaBinding(input: {
     headers.set('x-nectovia-admission', managed.admissionId);
     headers.set('x-nectovia-job', managed.rootJobId);
     headers.set('x-nectovia-attempt', attempt);
+    if (input.parentAttemptId) headers.set('x-nectovia-parent-attempt', input.parentAttemptId);
     headers.set('x-nectovia-tier', managed.tier);
     headers.set('x-nectovia-usage-class', managed.usageClass);
     headers.set('x-nectovia-policy-revision', String(managed.policyRevision));
@@ -328,6 +331,11 @@ export async function respondNectovia(
   } & StreamSinks,
 ): Promise<RespondResult> {
   let attemptId: string | null = null;
+  // A retry is the next attempt number of the same step, and names the attempt before it.
+  const parentAttemptId =
+    input.attempt.attempt > 1
+      ? attemptIdFor(input.connectionId, { ...input.attempt, attempt: input.attempt.attempt - 1 })
+      : null;
   // The hold's id is the attempt the gateway records, so it is read from the hold as it is made.
   const exposure: CallExposure = {
     reserve: async (hold) => {
@@ -347,7 +355,7 @@ export async function respondNectovia(
       exposure,
       secret: token,
       limits: nectoviaLimits(limits),
-      binding: nectoviaBinding({ base, connectionId, model, effort, managed, attemptId: () => attemptId }),
+      binding: nectoviaBinding({ base, connectionId, model, effort, managed, attemptId: () => attemptId, parentAttemptId }),
     });
   } catch (error) {
     if (!(error instanceof ModelApiError) || error.code !== 'nectovia_policy_changed') throw error;

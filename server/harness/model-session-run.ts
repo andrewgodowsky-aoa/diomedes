@@ -120,7 +120,11 @@ const TEAM_WORK_NOTE = `You are working as a member of a Diomedes team. Use the 
 
 export const modelSessionRunId = (projectId: string, commandId: string) =>
   `model-${digest({ projectId, commandId })}`;
-const turnRunId = (runId: string, commandId: string) => `${runId}.t${digest(commandId).slice(0, 24)}`;
+/**
+ * One message's own run inside its conversation run. The Nectovia route meters each message as its
+ * own job under this id, so a job cap applies to one message, never to the whole conversation.
+ */
+export const turnRunId = (runId: string, commandId: string) => `${runId}.t${digest(commandId).slice(0, 24)}`;
 
 /** What admission established for this message. Identifiers only. */
 export interface ModelSessionAdmission {

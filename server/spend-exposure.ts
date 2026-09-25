@@ -329,6 +329,10 @@ function attemptOf(value: unknown): ExposureAttempt {
 const reservationIdFor = (connectionId: string, attempt: ExposureAttempt): string =>
   `exp-${digest({ connectionId, attempt: pickAttempt(attempt) }).slice(0, 40)}`;
 
+/** The hold id an attempt has, or would have, on one connection: its identity, fixed before sending. */
+export const attemptIdFor = (connectionId: string, attempt: ExposureAttempt): string =>
+  reservationIdFor(connectionIdOf(connectionId), attemptOf(attempt));
+
 /**
  * The usage contract's own verdict on the five counts. Only those fields are
  * read here: a stored record may carry more, and an extra key must never change

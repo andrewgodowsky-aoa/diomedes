@@ -124,7 +124,7 @@ import {
 import type { ModelAdapter } from '../harness/native-agent.js';
 import type { ExposureAttempt, JobScope, ModelRateCard } from '../spend-exposure.js';
 import type { ModelTranscripts } from '../harness/model-transcripts.js';
-import type { ModelSessionAdmission, ModelSessionRuns, ModelSessionTurn } from '../harness/model-session-run.js';
+import { turnRunId, type ModelSessionAdmission, type ModelSessionRuns, type ModelSessionTurn } from '../harness/model-session-run.js';
 import type { ReadToolDeps } from '../harness/capabilities/read-scope-tools.js';
 import type { ConnectionSecrets } from '../connection-secrets.js';
 import type { SpendExposure } from '../spend-exposure.js';
@@ -2156,7 +2156,10 @@ export class EngineService {
         route,
         input,
         readTools: api.readTools,
-        admit: () => this.admitModelApi(route, input, { surface: 'conversation', rootJobId: runId }),
+        // Each message is its own job: admitted, capped and metered under the message's own turn
+        // run, never the conversation's, so a job cap applies to one message.
+        admit: () =>
+          this.admitModelApi(route, input, { surface: 'conversation', rootJobId: turnRunId(runId, input.requestId) }),
         // The caller's channels, stamped with the turn step's identity and published only while
         // that exact attempt still owns its lease.
         activity:

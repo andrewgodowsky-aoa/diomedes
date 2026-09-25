@@ -358,6 +358,28 @@ describe('the request the real SDK sends to the gateway', () => {
     expect(new Set(holds.map((hold) => hold.id)).size).toBe(2);
   });
 
+  test('a retry of a step is its own attempt under the same job, and names the attempt it retries', async () => {
+    const net = gateway([
+      () => refusal(429, 'provider_busy', 'Slow down.'),
+      () => answer(envelope([reasoning(), message('Forty loaves are on order.')])),
+    ]);
+    const first = exposureAttempt(`run-${run}`, 'model@1', [{ role: 'user', content: 'How many loaves are on order?' }]);
+    await failure(call(net.fetch, { attempt: first }));
+    const result = await call(net.fetch, { attempt: { ...first, attempt: 2 } });
+    expect(result.outcome).toEqual({ kind: 'final', text: 'Forty loaves are on order.' });
+    const [refusedHold, retryHold] = exposure.list(CONNECTION);
+    expect(refusedHold.state).toBe('released');
+    expect(retryHold.id).not.toBe(refusedHold.id);
+    const [before, after] = net.sent.map((sent) => Object.fromEntries(sent.headers.entries()));
+    expect(before['x-nectovia-attempt']).toBe(refusedHold.id);
+    expect(before).not.toHaveProperty('x-nectovia-parent-attempt');
+    expect(after).toMatchObject({
+      'x-nectovia-job': before['x-nectovia-job'],
+      'x-nectovia-attempt': retryHold.id,
+      'x-nectovia-parent-attempt': refusedHold.id,
+    });
+  });
+
   test("Work's longer limits are held to Nectovia's own 16,000-token output cap", async () => {
     const net = gateway([() => answer(envelope([message('Done.')]))]);
     await call(net.fetch, { limits: WORK_LIMITS });
