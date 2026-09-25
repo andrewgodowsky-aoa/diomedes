@@ -190,26 +190,38 @@ describe('Diomedes staff administration', () => {
     expect((await call('POST', '/ops/staff', support, { personId: 'person_x', role: 'admin' })).status).toBe(403);
   });
 
+  it('seeds GPT-6 Luna as the one qualified route behind all three tiers', async () => {
+    const policy = await call('GET', '/account/routing-policy', await token('employee'));
+    const luna = { entryId: 'aws-luna-6', provider: 'aws-bedrock', model: 'us.openai.gpt-6-luna' };
+    expect(policy.body).toMatchObject({ revision: 1, tiers: { efficient: luna, focused: luna, thorough: luna } });
+    const routes = await call('GET', '/ops/routing', await token('staffRouting'));
+    expect(routes.body.routes.find((row: { id: string }) => row.id === 'aws-luna-6'))
+      .toMatchObject({ status: 'qualified', evidence: 'Faux seed: scripted provider, 2026-09-25' });
+  });
+
   it('publishes only qualified routes, refuses a stale publish, and rolls back as a new revision', async () => {
     const routing = await token('staffRouting');
-    expect((await call('POST', '/ops/routing/publish', routing, { tiers: { efficient: 'aws-luna-6', focused: null, thorough: null }, note: 'Try GPT-6 Luna', baseRevision: 1 })).status).toBe(422);
-    const qualified = await call('POST', '/ops/routes', routing, { id: 'aws-luna-6', provider: 'aws-bedrock', model: 'us.openai.gpt-6-luna', label: 'GPT-6 Luna', region: 'us',
+    expect((await call('POST', '/ops/routing/publish', routing, { tiers: { efficient: 'aws-sol-6', focused: null, thorough: null }, note: 'Try GPT-6 Sol', baseRevision: 1 })).status).toBe(422);
+    const qualified = await call('POST', '/ops/routes', routing, { id: 'aws-sol-6', provider: 'aws-bedrock', model: 'us.openai.gpt-6-sol', label: 'GPT-6 Sol', region: 'us',
       processing: 'AWS Bedrock US.', status: 'qualified', evidence: 'Live proof run 2026-09-25 on the company account.', baseRevision: 1 });
     expect(qualified.status).toBe(200);
-    const preview = await call('POST', '/ops/routing/preview', routing, { tiers: { efficient: 'aws-luna-6', focused: 'vertex-gemini-3-8-flash', thorough: null }, note: 'Move Efficient', baseRevision: 1 });
+    const preview = await call('POST', '/ops/routing/preview', routing, { tiers: { efficient: 'aws-luna-6', focused: 'aws-luna-6', thorough: 'aws-sol-6' }, note: 'Move Thorough', baseRevision: 1 });
     expect(preview.body).toMatchObject({ baseRevision: 1, affectedCustomers: 1 });
     expect(preview.body.changes).toHaveLength(1);
-    const published = await call('POST', '/ops/routing/publish', routing, { tiers: { efficient: 'aws-luna-6', focused: 'vertex-gemini-3-8-flash', thorough: null }, note: 'Move Efficient to GPT-6 Luna.', baseRevision: 1 });
-    expect(published.body).toMatchObject({ revision: 2, tiers: { efficient: { model: 'us.openai.gpt-6-luna' } } });
+    const published = await call('POST', '/ops/routing/publish', routing, { tiers: { efficient: 'aws-luna-6', focused: 'aws-luna-6', thorough: 'aws-sol-6' }, note: 'Move Thorough to GPT-6 Sol.', baseRevision: 1 });
+    expect(published.body).toMatchObject({ revision: 2, tiers: { thorough: { model: 'us.openai.gpt-6-sol' } } });
     expect((await call('POST', '/ops/routing/publish', routing, { tiers: { efficient: 'aws-luna-5-6', focused: null, thorough: null }, note: 'stale', baseRevision: 1 })).status).toBe(409);
     // A route in use cannot be unqualified until a policy stops using it.
-    expect((await call('POST', '/ops/routes', routing, { id: 'aws-luna-6', provider: 'aws-bedrock', model: 'us.openai.gpt-6-luna', label: 'GPT-6 Luna', region: 'us',
+    expect((await call('POST', '/ops/routes', routing, { id: 'aws-sol-6', provider: 'aws-bedrock', model: 'us.openai.gpt-6-sol', label: 'GPT-6 Sol', region: 'us',
       processing: 'AWS Bedrock US.', status: 'unqualified', evidence: '', baseRevision: 2 })).status).toBe(409);
-    const rolled = await call('POST', '/ops/routing/rollback', routing, { toRevision: 1, note: 'Back to GPT-5.6 Luna.', baseRevision: 2 });
-    expect(rolled.body).toMatchObject({ revision: 3, kind: 'rollback', basedOn: 1, tiers: { efficient: { model: 'us.openai.gpt-5.6-luna' } } });
+    const rolled = await call('POST', '/ops/routing/rollback', routing, { toRevision: 1, note: 'Back to GPT-6 Luna everywhere.', baseRevision: 2 });
+    expect(rolled.body).toMatchObject({ revision: 3, kind: 'rollback', basedOn: 1, tiers: { thorough: { model: 'us.openai.gpt-6-luna' } } });
+    // A tier with no route is refused by name once a policy leaves it empty.
+    const emptied = await call('POST', '/ops/routing/publish', routing, { tiers: { efficient: 'aws-luna-6', focused: 'aws-luna-6', thorough: null }, note: 'Hold Thorough.', baseRevision: 3 });
+    expect(emptied.body).toMatchObject({ revision: 4, tiers: { thorough: null } });
     // Customers read the policy by tier, with identifiers only.
     const policy = await call('GET', '/account/routing-policy', await token('employee'));
-    expect(policy.body).toMatchObject({ revision: 3, tiers: { efficient: { provider: 'aws-bedrock' }, thorough: null } });
+    expect(policy.body).toMatchObject({ revision: 4, tiers: { efficient: { provider: 'aws-bedrock' }, thorough: null } });
     expect(JSON.stringify(policy.body)).not.toMatch(/secret|password|apiKey/i);
     const audit = await call('GET', '/ops/audit?limit=50', routing);
     expect(audit.body.map((row: { action: string }) => row.action)).toEqual(expect.arrayContaining(['policy.published', 'policy.rolled-back', 'route.saved']));
