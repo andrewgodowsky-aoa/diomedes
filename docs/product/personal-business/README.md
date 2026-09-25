@@ -38,6 +38,6 @@ The [synthetic setup fixture](fixtures/business-setup.example.json) is a design 
 
 $300/month including $100 inference is a candidate package, not an approved price change. Preserve existing approved prices and keep live billing unavailable until production identity, entitlement, gateway, spending and provider terms are ready. No company keys in the desktop; no automatic overage or cross-payer fallback.
 
-The current Apache-2.0 license remains unchanged. Sell managed services and maintained organizational capability; do not claim published code is restricted to noncommercial Personal use or that a local flag is an unbreakable paywall.
+Since 2026-09-25 the repository carries an interim all-rights-reserved notice from Diomedes Systems LLC (PR #135); releases published before then keep their Apache-2.0 grant. Sell managed services and maintained organizational capability; do not claim published code is restricted to noncommercial Personal use or that a local flag is an unbreakable paywall.
 
 Application code, release packaging, deployment, payments and licensing changes remain outside this documentation patch. Workers follow AGENTS.md and current explicit authorization. Current source/evidence outranks an intended post-run feature list.

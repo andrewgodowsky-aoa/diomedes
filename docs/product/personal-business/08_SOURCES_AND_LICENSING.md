@@ -39,13 +39,13 @@ Useful guidance on authenticated tenant context and scoping data/caches/operatio
 
 ## Licensing constraint
 
-The inspected repository carries Apache License 2.0. Its grants include modification and redistribution under its terms; the license does not make use free only for individuals or prohibit businesses from using the published code. It also distinguishes trademark rights from copyright permission.
+Updated 2026-09-25. Until September 25, 2026 the repository carried Apache License 2.0. Releases published before then (through 0.1.11) keep that grant: it allows modification and redistribution under its terms, does not limit use to individuals or prohibit businesses from using that code, and distinguishes trademark rights from copyright permission. On September 25, 2026 the root `LICENSE` was replaced with an interim all-rights-reserved notice from Diomedes Systems LLC (PR #135). Code from that point on is source-available for inspection only; using, copying, modifying, distributing or commercially using it needs written permission.
 
-Authoritative text: https://www.apache.org/licenses/LICENSE-2.0
+Current terms: the root `LICENSE`. Terms for releases through 0.1.11: https://www.apache.org/licenses/LICENSE-2.0
 
-Recommended path now: keep the existing Core/license intact and sell the official managed Business service, maintained configuration, organization infrastructure, included inference and scoped support. Do not rely on an open-source desktop flag as an unbreakable paywall. Users can modify locally available software; server-controlled service access is a separate boundary.
+Recommended path now: keep the existing Core intact and sell the official managed Business service, maintained configuration, organization infrastructure, included inference and scoped support. Do not rely on a desktop flag as an unbreakable paywall. Users can modify locally available software; server-controlled service access is a separate boundary.
 
-Separately licensed future Business modules may be an option only after deliberate ownership/contributor and licensing review. Do not relicense existing releases, change LICENSE, insert noncommercial restrictions, or promise exclusivity over already published code in this implementation. This is product/engineering guidance, not a legal opinion.
+Separately licensed future Business modules may be an option only after deliberate ownership/contributor and licensing review. Releases published under Apache 2.0 cannot be relicensed: do not claim exclusivity over that code or add restrictions to it. Any license change beyond the interim notice needs owner and legal review. This is product/engineering guidance, not a legal opinion.
 
 ## Approval versus proposal versus implementation
 
