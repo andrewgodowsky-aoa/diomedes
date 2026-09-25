@@ -368,12 +368,14 @@ describe('the byte budget spends on the strongest file first and never cuts one'
     const root = `# Root\n${'r'.repeat(3000)}\n`;
     const { store, id } = await project({ 'AGENTS.md': root, 'pkg/api/AGENTS.md': nested });
     await activatePack(store, id, PACK);
-    // Shipped product knowledge is placed first and takes its share of the
-    // budget; the room left for project files is what this test sizes. That
+    // The writing standard and shipped product knowledge are placed first and
+    // take their share of the budget (each joined by one newline); the room
+    // left for project files is what this test sizes. That
     // room also carries the section's frame (the preamble, the rule lines,
     // each file's delimiters or left-out line), so it is sized for one
     // 3 KB body and its frame, and not two.
-    const product = (await assemble(store, id, ['pkg/api/x.ts'])).productKnowledge.bytes;
+    const first = await assemble(store, id, ['pkg/api/x.ts']);
+    const product = first.productKnowledge.bytes + first.writing.bytes + 1;
     const { section, delivery } = await assemble(store, id, ['pkg/api/x.ts'], product + 5000);
     expect(delivery!.files.map((file) => [file.path, file.state, file.exclusion])).toEqual([
       ['pkg/api/AGENTS.md', 'sent', undefined],
@@ -404,7 +406,10 @@ describe('the byte budget spends on the strongest file first and never cuts one'
     const work = Object.keys(files)
       .filter((name) => name.includes('/'))
       .map((name) => name.replace('AGENTS.md', 'index.ts'));
-    for (const budget of [instructionSectionBudget(128_000), instructionSectionBudget(0), 6000]) {
+    // 6000 was the smallest room this frame was proven inside before the writing standard
+    // (plain writing, 2026-09-25) took its share ahead of it, so that share is added back.
+    const standard = (await assemble(store, id, work)).writing.bytes + 1;
+    for (const budget of [instructionSectionBudget(128_000), instructionSectionBudget(0), 6000 + standard]) {
       const { section, delivery } = await assemble(store, id, work, budget);
       expect(Buffer.byteLength(section!)).toBeLessThanOrEqual(budget);
       // Still strongest first: the files are near enough one size that what

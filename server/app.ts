@@ -212,6 +212,7 @@ import {
   type RetirementCause,
 } from './lineage-continuity.js';
 import { answerInstructions } from './answer-format.js';
+import { repairWriting, type PlainWritingRecord } from './plain-writing.js';
 import { AGENT_NAME } from '../shared/agent-name.js';
 import { admitInteraction } from './interaction-admission.js';
 import {
@@ -439,6 +440,16 @@ function validateSettings(current: Settings, body: unknown): Settings {
   // reads `supplied.activeWorkspace` or `supplied.home`.
   if (supplied.version !== undefined && supplied.version !== 1)
     throw new ApiError(400, 'This settings version is unsupported.');
+  if (supplied.plainWritingPhrases !== undefined) {
+    const phrases = supplied.plainWritingPhrases;
+    if (
+      !Array.isArray(phrases) ||
+      phrases.length > 200 ||
+      phrases.some((item) => typeof item !== 'string' || item.trim().length < 2 || item.trim().length > 80)
+    )
+      throw new ApiError(400, 'Add up to 200 phrases to avoid, each 2 to 80 characters.');
+    result.plainWritingPhrases = [...new Set(phrases.map((item: string) => item.trim().toLowerCase()))];
+  }
   if (supplied.detail !== undefined)
     result.detail = choice(supplied.detail, ['guided', 'standard', 'technical'], 'detail level');
   if (supplied.view !== undefined)
@@ -3609,6 +3620,7 @@ export async function createApp(options: AppOptions) {
           documents,
           instructions: MODES[command.mode].instructions,
           ...(rules ? { rules } : {}),
+          writing: { phrases: store.settings.plainWritingPhrases ?? [] },
           model: selection.model,
           accountRoute,
           ...(await readScopeFor(projectId, command.mode, {
@@ -4427,6 +4439,7 @@ export async function createApp(options: AppOptions) {
             instructions,
             documents,
             ...(rules ? { rules } : {}),
+            writing: { phrases: store.settings.plainWritingPhrases ?? [] },
             model: selection.model as string,
             ...(modelRoute && selection.effort ? { effort: selection.effort } : {}),
             ...(carrying ? { carriedFrom: carrying } : {}),
@@ -5366,6 +5379,21 @@ export async function createApp(options: AppOptions) {
                 ? 'Started a clearly labelled sample fix. No AI service is involved.'
                 : 'Started clearly labelled sample work. No AI service is involved.';
       }
+      // Plain writing on the answer a person reads, and the plan it may become. One request with
+      // no run of its own to add a step to, so: check and fix in code, and keep the record on the
+      // turn (server/plain-writing.ts). The sample route's fixed text is checked by its tests.
+      let writing: PlainWritingRecord | undefined;
+      if (serviceRoute !== 'sample') {
+        const repaired = await repairWriting({
+          text: answer,
+          options: {
+            userTexts: [text, ...prepared.documents.map((doc) => doc.text)],
+            ownerPhrases: store.settings.plainWritingPhrases ?? [],
+          },
+        });
+        answer = repaired.text;
+        writing = repaired.record;
+      }
       return store.locked(async () => {
         let state = store.state(projectId);
         let document: string | undefined;
@@ -5441,6 +5469,7 @@ export async function createApp(options: AppOptions) {
           route: serviceRoute,
           ...(prepared.attempt ? { attempt: prepared.attempt } : {}),
           helper,
+          ...(writing ? { writing } : {}),
           origin:
             serviceRoute === 'sample'
               ? applicationOrigin()
