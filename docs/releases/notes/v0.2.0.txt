@@ -1,0 +1,86 @@
+WHAT IS NEW
+  This release carries the overnight sprint of 24 September: batches 1 to 6 on
+  main. Each item below was built and tested in source; the ones an
+  independent review has not yet read are named under LIMITS.
+
+  Automations. A project can hold a recurring job: an Automations screen, Run
+  once, schedules, pause, and a note in the app when a run needs you. A run
+  missed while the computer was off is caught up for at most two hours; older
+  ones are listed as missed rather than run.
+
+  The Ready queue can start waiting tasks on its own. It is off until you turn
+  it on, and then starts at most one task per project and two overall.
+
+  After you approve the same kind of step three times, Nectovia offers to
+  remember it for that project. Declining starts the count again, and a
+  remembered approval lasts 15 minutes.
+
+  Files. You can drop or paste files into a project, preview them, and attach
+  them to a thread. A change a task wants to make is shown as a readable diff:
+  keep or undo it one part at a time, and leave a comment on it.
+
+  A finished task is checked against the exact files it produced and shows one
+  of four states. A finish that could not be checked stays in Review.
+
+  Stop, Resume, Retry and Fork each leave a receipt. Resume and Retry ask
+  first; Stop and Fork act when you press them. Claude Code accepts a queued
+  follow-up while it works and reconciles its runs after a restart. Cursor and
+  Devin keep their conversations. Codex can be steered, resumed and forked.
+
+  Nectovia watches a running task for drift from what you asked, corrects it
+  within fixed limits, and pauses it at once if it writes outside its folder.
+  This is always on.
+
+  Instruction files such as AGENTS.md and CLAUDE.md are read from nested
+  folders too, nearest first, and the thread records which ones were used.
+  A thread shows how much of the model's context it used and what was
+  summarised to make room.
+
+  Agent profiles name the exact model a job uses. Falling back to another
+  model is off unless you turn it on.
+
+  The Console works at 200 percent zoom, and respects the system's reduce
+  motion setting.
+
+  Data from an older version is migrated when this version first opens, and
+  a byte-for-byte backup is kept beside it. A data file written by a newer
+  version stops the service instead of being overwritten.
+
+UPDATES
+  Settings > App updates offers stable releases only. Once this release is
+  published as stable, an installed 0.1.7, 0.1.8, 0.1.9, 0.1.10 or 0.1.11 can
+  find it when you press Check for updates. Nothing is downloaded, verified or
+  installed until you confirm it, and a download is accepted only when its
+  SHA-256 matches the digest the release publishes.
+  An update from 0.1.9, 0.1.10 or 0.1.11 is meant to keep your settings,
+  routes, saved keys, projects and conversations. An update from 0.1.7 or 0.1.8
+  still gets the one-time fresh start 0.1.9 introduced.
+
+LIMITS
+  Unsigned and experimental. This build was packaged and checked on a
+  GitHub-hosted Windows Server runner, not on a person's computer, and no
+  Windows 11 desktop install of these exact bytes is recorded. The update from
+  0.1.11 has not been run end to end on an installed copy.
+  No route was exercised live on this build. Every route in its tests was
+  scripted or fake, so no answer, spend or saved key was exercised against a
+  real installed tool or provider. Codex Steer, Resume and Fork, the kept
+  Claude Code, Cursor, Devin and OpenCode sessions, and the task loop on AWS
+  Bedrock or Google Vertex AI have no live proof yet.
+
+  Guidance proposals, team runs with helper workers, and on-demand playbook
+  loading are in this build without an independent review. Team runs have no
+  Console control to start one, and their workers only read.
+  Automations have not been run as a packaged journey. The Files pane has no
+  PDF viewer, and pictures and PDFs are not sent to an engine. A change a task
+  could not confirm has no screen to reconcile it yet.
+
+  The Console has no History screen and no "Make tasks from this plan".
+  This app is not signed in to a Nectovia account. No credit balance or usage
+  is shown, and every route runs on, and is billed to, your own account.
+
+  The two names meet in places: the window title, the first conversation in
+  each project and some messages still say Diomedes.
+  Connections is unavailable. It runs on example data rather than your own
+  software, and there is no live connection to a business system.
+  The release is Windows x64 only. The local service listens on 127.0.0.1
+  only.
