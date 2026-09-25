@@ -179,7 +179,8 @@ describe('a lead with workers and an advisor on the fixture route', () => {
       ['finish', null],
     ]);
     const team = data.team!;
-    expect(team.limits).toEqual({ depth: 1, concurrentWorkers: 3, workersPerRun: 6, advicePerRun: 2 });
+    // Four workers per run, as for any run's delegates (Andrew, 2026-09-24).
+    expect(team.limits).toEqual({ depth: 1, concurrentWorkers: 3, workersPerRun: 4, advicePerRun: 2 });
     expect(team.scope).toEqual(['order.md', 'delivery.md', 'invoice.md']);
     expect(team.workers.map((worker) => [worker.scope, worker.outcome, worker.text])).toEqual([
       [['delivery.md'], 'completed', 'delivery.md: Delivered 94 napkins and 40 tablecloths. Six napkins short.'],
@@ -211,13 +212,14 @@ describe('a lead with workers and an advisor on the fixture route', () => {
     expect(report).toContain('Invoice 77');
     expect(report).toContain('## Advice (not a permission)');
 
-    // Each child is its own harness run: no Session, the lead's budget untouched, read tools only.
+    // Each child is its own harness run: no Session, a budget carved from the lead's, and
+    // (Andrew, 2026-09-24) its own sandbox's tools: it reads and writes only its copy.
     const lead = await host().get(projectId, started.runId);
     for (const worker of team.workers) {
       const child = await host().get(projectId, worker.childRunId!);
       expect(child).toMatchObject({ capabilityId: 'diomedes-loop-worker', sessionId: null, taskId });
       expect(child.budget).toEqual({ units: 8, modelCalls: 4, toolCalls: 4, wallMs: 300_000 });
-      expect(child.capabilityTools).toEqual(['list_project_files', 'read_project_file']);
+      expect(child.capabilityTools).toEqual(['list_project_files', 'read_project_file', 'write_file', 'propose_file']);
       // Never more authority than the lead.
       expect(child.principal.capabilities.every((item) => lead.principal.capabilities.includes(item))).toBe(true);
     }

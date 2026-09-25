@@ -494,6 +494,7 @@ function ProjectFilesPane({
   openVersion = null,
   onOpenVersion,
   onAttach,
+  repository,
 }: FilesPaneProps) {
   const [importing, setImporting] = useState(false);
   const [dropping, setDropping] = useState<'over' | 'busy' | null>(null);
@@ -678,6 +679,7 @@ function ProjectFilesPane({
         </button>
       </div>
       <div className="files-body">
+        {!openVersion && !openDocument && repository}
         <button type="button" className="files-import" onClick={() => setImporting(true)}>
           Import files
         </button>

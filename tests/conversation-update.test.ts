@@ -158,6 +158,13 @@ const sessions = () => app.locals.harness.modelSessions as ModelSessionRuns;
 const current = () => store().state(project.id).conversations.find((item) => item.id === thread.id)!;
 const lineages = (): ConversationLineage[] => current().lineages ?? [];
 const notes = (): Turn[] => current().turns.filter((turn) => turn.role === 'diomedes');
+/**
+ * Room for the two tests that drive fifteen or more real turns through the server, each one a
+ * durable write. They take about 2 seconds on Linux; a loaded Windows runner, whose file writes
+ * are far slower while other workers create repositories and folders, can pass the suite's
+ * 30-second default. It is a hang guard, not a speed target: every assertion is unchanged.
+ */
+const LONG_CONVERSATION = { timeout: 120_000 };
 const send = (commandId: string, words: string, mode: 'ask' | 'plan' | 'auto') =>
   api<MessageResult>(`/projects/${project.id}/threads/${thread.id}/messages`, 'POST', {
     commandId,
@@ -282,7 +289,7 @@ describe('"Update this conversation" with history sharing on', () => {
     expect(notes()).toHaveLength(1);
   });
 
-  test('a turn records the carry only while the carried messages still reach it', async () => {
+  test('a turn records the carry only while the carried messages still reach it', LONG_CONVERSATION, async () => {
     const first = await onMain('ask', 'm-first');
     await updated('u-1');
     const carrying = await send('m-2', 'Q02 question', 'ask');
@@ -301,7 +308,7 @@ describe('"Update this conversation" with history sharing on', () => {
     expect(input).not.toHaveProperty('carriedMessages');
   });
 
-  test('the carried history is bounded: the last 12 messages, which give way to the new lineage\'s own', async () => {
+  test('the carried history is bounded: the last 12 messages, which give way to the new lineage\'s own', LONG_CONVERSATION, async () => {
     composedFor.set('ask', main('ask'));
     for (let n = 1; n <= 14; n++) await send(`m-${n}`, `Q${String(n).padStart(2, '0')} question`, 'ask');
     composedFor.delete('ask');

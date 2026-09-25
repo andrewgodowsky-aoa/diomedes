@@ -71,6 +71,12 @@ interface ComposerProps {
   } | null;
   onClearSkill?(): void;
   /**
+   * Text a person chose to add to the next message from elsewhere in the Console, such
+   * as a repository diff from Files. Appended to the box, where it can be read and
+   * edited before sending, each time `n` changes.
+   */
+  insert?: { text: string; n: number } | null;
+  /**
    * Project files attached to the next message as references into this Thread.
    * They are sent as the message's selected sources, shown before sending, and
    * recorded on the turn; nothing else is read because of them.
@@ -117,7 +123,7 @@ function carriedAsk(projectId: string): string {
  */
 export function Composer({
   thread, projectId, mode, onMode, busy, online, route, confirmSend, prepareSources, onSend,
-  skill = null, onClearSkill, attachments = [], onAttachments, attachable, onOpenFile,
+  skill = null, onClearSkill, attachments = [], onAttachments, attachable, onOpenFile, insert = null,
 }: ComposerProps) {
   const [picking, setPicking] = useState<DocumentInfo[] | null>(null);
   const [pickFailure, setPickFailure] = useState('');
@@ -191,6 +197,13 @@ export function Composer({
     setText(skill.starter);
     box.current?.focus();
   }, [skill?.n]);
+  const appliedInsert = useRef(insert?.n ?? 0);
+  useEffect(() => {
+    if (!insert || appliedInsert.current === insert.n) return;
+    appliedInsert.current = insert.n;
+    setText((current) => (current.trim() ? `${current.replace(/\s+$/, '')}\n\n${insert.text}` : insert.text));
+    box.current?.focus();
+  }, [insert?.n]);
   useEffect(() => {
     if (mode !== 'fix') {
       setFailingDocument('');

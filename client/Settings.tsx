@@ -15,6 +15,7 @@ import {
   conversationTextLabel,
 } from '../shared/interface-scale';
 import { AppUpdates, useInstalledVersion } from './AppUpdates';
+import { WhatsNew } from './WhatsNew';
 import { freshnessLine, planLine, shouldShowEmptyDetail } from './usage-presentation';
 import { AIConnections } from './AISetup';
 import { ReadConnectors } from './ReadConnectors';
@@ -227,6 +228,7 @@ export function SettingsPage({
     'Engines',
     'Agent profiles',
     'App updates',
+    "What's new",
     'Rules',
     'Developer',
   ];
@@ -531,6 +533,7 @@ export function SettingsPage({
               </>
             )}
             {section === 'App updates' && <AppUpdates />}
+            {section === "What's new" && <WhatsNew />}
             {section === 'Permissions' && (
               <>
                 <h2>Ask before...</h2>

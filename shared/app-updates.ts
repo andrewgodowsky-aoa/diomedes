@@ -36,6 +36,16 @@ export const UPDATE_MIN_ASSET_BYTES = 1024 * 1024;
 export const UPDATE_MAX_ASSET_BYTES = 500 * 1024 * 1024;
 /** Upper bound for one stable version component; keeps parsing exact. */
 export const UPDATE_MAX_VERSION_PART = 99999;
+/**
+ * What the update card shows about an offered release before anything is
+ * downloaded. The bundled release-notes file is preferred when it already
+ * knows the version; otherwise the person-facing part of the GitHub release
+ * body is carried as plain text. Either is drawn as text, never as markup.
+ */
+export type UpdateReleaseNotes =
+  | { source: 'bundled'; release: import('./release-notes.js').ReleaseEntry }
+  | { source: 'release-page'; text: string };
+
 const VERSION_PATTERN = /^v?(\d+)\.(\d+)\.(\d+)$/;
 const DIGEST_PATTERN = /^sha256:([0-9a-fA-F]{64})$/;
 
@@ -287,6 +297,11 @@ export interface UpdateStatusSnapshot {
     latestVersion: string | null;
     notesUrl: string | null;
     detail: string | null;
+    /**
+     * The offered release's notes, present only while a newer release is on
+     * offer. Optional: a snapshot from before it existed has none.
+     */
+    notes?: UpdateReleaseNotes | null;
   };
   download: {
     ready: boolean;

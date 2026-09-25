@@ -85,6 +85,12 @@ export interface Settings {
     onlineServiceNotice: boolean;
     guidedDescriptors: Record<string, number>;
     firstUse: string[];
+    /**
+     * Versions whose "What's new" notice the person has dismissed, so each
+     * version's notice is offered once. Missing on settings written before
+     * 2026-09-25, which reads as none dismissed.
+     */
+    releaseNotes?: string[];
   };
   openProjects: string[];
   /**
@@ -118,6 +124,8 @@ export interface Settings {
    * thread follows when it names none.
    */
   services?: Record<string, boolean | string>;
+  /** H16 stream-time trigger rules for every project on this installation (organization authority). */
+  streamTriggerRules?: import('./stream-rules.js').StreamRule[];
 }
 export interface Project {
   ai?: { engine: Route; model: string | null };
@@ -267,6 +275,12 @@ export interface Need {
    * approval or a reviewer (shared/supervision.ts).
    */
   supervision?: import('./supervision.js').SupervisionNeedRef;
+  /**
+   * H13/H14 sandboxes: this Need holds the entries of a delegate's or worker's change set that
+   * its parent may not apply itself (shared/sandbox.ts). A person keeps or discards each one;
+   * nothing is written until they do, and it never expires with the run that raised it.
+   */
+  changeSet?: { readonly protocolVersion: 1; readonly changeSetId: string; readonly indexes: readonly number[] };
 }
 /**
  * One proposed file's content check. An `.svg`, or an `.xml` that is SVG,
@@ -664,6 +678,12 @@ export interface ProjectState {
   reviewComments?: import('./review-comments.js').ReviewComment[];
   /** H10 guidance maintenance: the signed revision chain and declines. Absent until the first. */
   guidance?: import('./guidance.js').GuidanceLedger;
+  /** H16 stream-time trigger rules at project authority. Absent until the first one. */
+  streamTriggerRules?: import('./stream-rules.js').StreamRule[];
+  /** H16 trigger firings. Append-only; absent before the first firing. */
+  streamTriggerFirings?: import('./stream-rules.js').StreamTriggerFiring[];
+  /** P07 Software Engineering pack: declared commands, their runs and worktrees. Absent until first used. */
+  softwarePack?: import('./software-pack.js').SoftwarePackRecord;
 }
 /** How Diomedes knows whether an engine is signed in. 'first-use' means the first run reports it. */
 export type SignInState = 'signed-in' | 'not-signed-in' | 'unknown' | 'first-use' | 'not-needed';

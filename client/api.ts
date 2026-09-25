@@ -410,3 +410,37 @@ export async function runAutomation(organizationId: string, automationId: string
     }
   }
 }
+
+/* P07: the Software Engineering pack's repository slice. Every route refuses where the pack is off. */
+const softwarePath = (projectId: string) => `/projects/${encodeURIComponent(projectId)}/software`;
+export const softwarePackApi = {
+  view: (projectId: string, signal?: AbortSignal) =>
+    api<import('../shared/software-pack').SoftwarePackView>(softwarePath(projectId), 'GET', undefined, signal),
+  file: (projectId: string, path: string) =>
+    api<{ path: string; before: string | null; after: string | null; binary: boolean; tooLarge: boolean }>(
+      `${softwarePath(projectId)}/file?path=${encodeURIComponent(path)}`,
+    ),
+  diff: (projectId: string, paths: readonly string[]) =>
+    api<{ text: string; tooLarge: boolean }>(`${softwarePath(projectId)}/diff`, 'POST', { paths }),
+  declare: (projectId: string, commands: readonly { command: string; label?: string; kind?: string; cwd?: string; timeoutMs?: number }[]) =>
+    api<{ commands: import('../shared/software-pack').DeclaredCommand[] }>(`${softwarePath(projectId)}/commands`, 'PUT', { commands }),
+  run: (projectId: string, commandId: string) =>
+    api<import('../shared/software-pack').CommandRunRecord>(
+      `${softwarePath(projectId)}/commands/${encodeURIComponent(commandId)}/run`,
+      'POST',
+    ),
+  answerRun: (projectId: string, runId: string, decision: 'go-ahead' | 'declined', intentHash: string) =>
+    api<import('../shared/software-pack').CommandRunRecord>(
+      `${softwarePath(projectId)}/runs/${encodeURIComponent(runId)}/decision`,
+      'POST',
+      { decision, intentHash },
+    ),
+  worktree: (projectId: string, body: { operation: 'add' | 'remove'; name: string; branch?: string; taskId?: string }) =>
+    api<import('../shared/software-pack').WorktreeRequest>(`${softwarePath(projectId)}/worktrees`, 'POST', body),
+  answerWorktree: (projectId: string, requestId: string, decision: 'go-ahead' | 'declined', intentHash: string) =>
+    api<import('../shared/software-pack').WorktreeRequest>(
+      `${softwarePath(projectId)}/worktrees/${encodeURIComponent(requestId)}/decision`,
+      'POST',
+      { decision, intentHash },
+    ),
+};
