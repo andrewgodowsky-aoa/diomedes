@@ -326,6 +326,9 @@ describe('the update check carries the offered release notes', () => {
   const service = (releaseNotes: unknown) =>
     new AppUpdateService({
       currentVersion: '0.1.11',
+      // The Windows installer channel, pinned as tests/app-updates.test.ts pins it: on a Mac
+      // the check looks for the disk image instead (selectReleaseAsset).
+      platform: 'win32',
       dataDir: path.join(process.cwd(), 'test-results', 'release-notes-unused'),
       isBusy: () => false,
       releaseNotes,
@@ -350,6 +353,9 @@ describe('the update check carries the offered release notes', () => {
   it('carries no notes when nothing newer is offered', async () => {
     const current = new AppUpdateService({
       currentVersion: '0.1.12',
+      // The Windows installer channel, pinned as tests/app-updates.test.ts pins it: on a Mac
+      // the check looks for the disk image instead (selectReleaseAsset).
+      platform: 'win32',
       dataDir: path.join(process.cwd(), 'test-results', 'release-notes-unused'),
       isBusy: () => false,
       transport: { fetchRelease: async () => structuredClone(payload) },
