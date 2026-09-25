@@ -613,7 +613,49 @@ Raised 2026-09-24 by review E (`docs/implementation/2026-09-24-review-e.md`, PR 
 
 Default: each stays as built.
 
+### O43. Customer accounts: what the first slice leaves open
+
+Raised 2026-09-25 with customer accounts (`server/accounts/`, `services/control-plane/src/commercial.ts`).
+
+1. **Businesses made before sign-in.** Signing in makes the account's person the current person.
+   A business created locally before accounts existed (a `development-fixture` organization, such
+   as a demo install's Juniper Street Bakery) belongs to the old local person, so after the first
+   sign-in it reads as someone else's. Migrate those into the account service, wipe them once, or
+   leave them? Andrew's call.
+2. **Which service a packaged build signs in to.** Until `NECTOVIA_ACCOUNT_SERVICE` names the
+   deployed control plane, the desktop app hosts the faux test service on 127.0.0.1:8795 and says
+   so on every account screen. The deployed service signs in through WorkOS in a browser, which
+   this build does not open yet.
+3. **A loop already running when a grant is withdrawn.** Admission happens when work starts,
+   resumes or retries, never inside a model step (the run service would record a refusal there as
+   a possibly-sent call). A native loop that is mid-run keeps its admission until it next resumes.
+   Per-call enforcement for Diomedes-funded routes belongs to the company proxy, not built yet.
+4. **The Operations app's home.** The staff app is a separate private repository
+   (`diomedes-ops`). Creating it on GitHub is Andrew's call.
+
+Default: each stays as built.
+
 ## Resolved
+
+### R14. Who may start the Nectovia Agent, and who manages people (customer accounts)
+
+Decided by Andrew on 2026-09-25.
+
+- **The Agent is paid-only.** Free is the workspace plus the person's own AI tools and direct
+  engines. The Nectovia Agent needs a business whose plan or scoped grant includes it. A working
+  provider connection is not a plan. The host admits every Agent conversation, Work turn, team
+  turn and work loop through the account service before anything is sent
+  (`server/accounts/agent-gate.ts`), and Personal work is refused with a sentence saying why.
+  Pillar 12 was amended to match (2026-09-25.1).
+- **Roles.** Business owner (`owner`) manages everyone and alone sees the plan and billing.
+  Manager (`admin`) invites and removes Employees only. Employee (`member`) manages nobody. The
+  account service enforces this (`shared/access.ts` `canInviteRole`, `canChangeMember`).
+- **Sign-in is required.** Every host route answers `sign_in_required` until someone signs in.
+  "Keep me signed in" seals the refresh token with the operating system's protected storage;
+  without it nothing is kept and the chooser asks for the password.
+- **Staff roles.** Support reads; Billing issues and withdraws grants and funding; Routing edits
+  routes and publishes tier policy; Admin does everything and manages staff. Every staff change
+  is audit-logged in the same transaction as the change.
 
 ### R13. How a helper Diomedes dispatches works (team mode)
 

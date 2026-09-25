@@ -11,6 +11,7 @@ import '@fontsource/ibm-plex-mono/500';
 import './fonts/instrument-serif.css';
 import './styles.css';
 import { App } from './App';
+import { AccountGate } from './AccountGate';
 import { ErrorBoundary } from './ErrorBoundary';
 // Outside everything, because a render error that reaches React with nothing
 // above it unmounts the whole tree and leaves an empty window. Two such
@@ -18,7 +19,10 @@ import { ErrorBoundary } from './ErrorBoundary';
 createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <ErrorBoundary>
-      <App />
+      {/* Nobody reaches the app without signing in; each person gets a fresh app. */}
+      <AccountGate>
+        <App />
+      </AccountGate>
     </ErrorBoundary>
   </React.StrictMode>,
 );

@@ -28,6 +28,7 @@ import type { EverythingItem } from './console/Everything';
 import type { ShellView } from './console/types';
 import type { WorkspaceView } from '../shared/workspaces';
 import { TopStrip } from './console/TopStrip';
+import { OPEN_SETTINGS_EVENT } from './AccountGate';
 import { DesignCenter } from './console/DesignCenter';
 import { Setup } from './Setup';
 import { SettingsPage } from './Settings';
@@ -489,6 +490,21 @@ export function App() {
       setShowSettings(true);
       if (helpers) setHelpersRequest((n) => n + 1);
     });
+  // The account menu asks for Settings, Account from either strip.
+  const openSettingsRef = useRef<(section: string) => void>(() => {});
+  openSettingsRef.current = (section) =>
+    leaveEditor(() => {
+      setSectionRequest((last) => ({ section, n: (last?.n ?? 0) + 1 }));
+      setShowSettings(true);
+    });
+  useEffect(() => {
+    const open = (event: Event) => {
+      const section = (event as CustomEvent<unknown>).detail;
+      if (typeof section === 'string') openSettingsRef.current(section);
+    };
+    window.addEventListener(OPEN_SETTINGS_EVENT, open);
+    return () => window.removeEventListener(OPEN_SETTINGS_EVENT, open);
+  }, []);
   // Going back into Settings abandons the handover too: the person is back at
   // the screen that made the offer, where they can make it again.
   useEffect(() => {

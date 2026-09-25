@@ -98,6 +98,7 @@ async function startService(
         DIOMEDES_PORT: String(port),
         DIOMEDES_CLIENT_PORT: String(clientPort),
         DIOMEDES_TEST_MODE: '1',
+        DIOMEDES_TEST_ACCOUNT: 'owner@juniper.test',
         DIOMEDES_ALLOW_UNPROTECTED_BROWSER: '1',
         CODEX_HOME: codexHome,
       },

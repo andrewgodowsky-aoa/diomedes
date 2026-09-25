@@ -4,6 +4,7 @@ import { titleCase } from '../components';
 import { NectoviaMark } from './NectoviaMark';
 import { Mark as StateMark } from '../components';
 import { TextSizeMenuItems } from './TextSizeMenu';
+import { AccountMenu } from './AccountMenu';
 import './console.css';
 import './nectovia.css';
 
@@ -130,6 +131,7 @@ export function TopStrip({
           >
             Settings
           </button>
+          <AccountMenu />
           {onCloudSharing && (
             <button type="button" onClick={onCloudSharing}>
               Cloud sharing
