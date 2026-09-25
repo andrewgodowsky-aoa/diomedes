@@ -87,10 +87,15 @@ inherently a software feature.
 
 **The pack supplies**, on the same surface: repository-aware tree · syntax highlighting · code
 editing · project-wide code and text search · symbol, function and class navigation · line references
-into Threads · Git status and history · unified or split diffs · changed-file review · diagnostics ·
-test and build commands · worktrees and branches · repo-aware context construction ·
-software-specific Agents and subagents · coding tools and workflows · automatic discovery of
-repository instruction files · later, LSP and code intelligence where justified.
+into Threads · Git status and history · Git-backed and highlighted unified or split code diffs ·
+changed-file review · diagnostics · test and build commands · worktrees and branches · repo-aware
+context construction · software-specific Agents and subagents · coding tools and workflows ·
+automatic discovery of repository instruction files · later, LSP and code intelligence where
+justified.
+
+Amended 2026-09-24 (Andrew, `docs/reference/DECISIONS_2026-09-24.md`; `QUESTIONS.md` R10): readable
+diffs of recorded versions, per-change keep and review comments are Core, as P06 built them. The
+pack keeps Git, syntax highlighting, unified and split code views and LSP.
 
 ### 4.1 Repository instruction files
 
