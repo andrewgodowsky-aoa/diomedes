@@ -27,7 +27,7 @@ beforeEach(async () => {
   temp = realpathSync.native(await fs.mkdtemp(path.join(os.tmpdir(), 'diomedes-p07-git-')));
 });
 afterEach(async () => {
-  await fs.rm(temp, { recursive: true, force: true });
+  await fs.rm(temp, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 });
 
 const run = (cwd: string, ...args: string[]) =>

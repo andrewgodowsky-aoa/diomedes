@@ -115,7 +115,7 @@ afterEach(async () => {
       await new Promise<void>((resolve, reject) => closingServer.close((error) => (error ? reject(error) : resolve())));
     }
   }
-  await fs.rm(temp, { recursive: true, force: true });
+  await fs.rm(temp, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 });
 
 const activate = async () => {
@@ -376,7 +376,8 @@ describe('declared commands', () => {
 
   test('a timeout ends the command and every process it started', async () => {
     await activate();
-    const id = await declared('node hang.js', { timeoutMs: 1500 });
+    // Long enough for a slow Windows runner to start node and its child before the limit.
+    const id = await declared('node hang.js', { timeoutMs: 5000 });
     const asked = await ask(id);
     await answer('runs', asked.data.id, 'go-ahead', asked.data.intentHash);
     await settle();
