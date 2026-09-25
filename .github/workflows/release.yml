@@ -244,6 +244,16 @@ jobs:
         env:
           DIOMEDES_ELECTRON_ZIP_DIR: ${{ runner.temp }}/electron-zips
           DIOMEDES_MAC_ADHOC_FRAMEWORK_RESIGN: accept
+      # Andrew, 2026-09-25: publish macOS with an ad-hoc whole-bundle signature (QUESTIONS.md O43,
+      # option a). It gives the bundle a seal that verifies, so a downloaded copy is not refused as
+      # damaged; it names no developer, so Gatekeeper still asks the person to open it once from
+      # right-click > Open or System Settings. No Developer ID, no notarization.
+      - name: Ad-hoc bundle signature
+        run: |
+          set -eu
+          app="release/Diomedes-darwin-arm64/Diomedes.app"
+          codesign --force --deep --sign - "$app"
+          codesign --verify --deep --strict --verbose=2 "$app"
       - name: Disk image
         run: |
           set -eu
@@ -314,6 +324,7 @@ jobs:
             proof.build = { baseCommit: build.baseCommit, sourceStatus: build.sourceStatus, sourceDigest: build.sourceDigest, electronVersion: build.electronVersion, macFrameworkSignature: build.macFrameworkSignature ?? null };
             proof.testedOn = 'a GitHub-hosted macOS ' + os + ' arm64 runner';
             proof.signature = JSON.parse(fs.readFileSync('test-results/mac/signature.json', 'utf8'));
+            proof.bundleSignature = 'ad-hoc (codesign --force --deep --sign -), decided by Andrew on 2026-09-25; no Developer ID, not notarized';
             fs.writeFileSync('release/mac-release-proof.json', JSON.stringify(proof, null, 2) + '\n');
             console.log(proof.dmg, proof.dmgBytes, proof.dmgSha256);
           "
