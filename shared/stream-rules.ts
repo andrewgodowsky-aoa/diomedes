@@ -102,8 +102,11 @@ export function patternProblem(pattern: string): string | null {
   if (/\(\?(?:[=!]|<[=!])/.test(pattern)) return 'A pattern cannot use lookahead or lookbehind.';
   if (/\\[1-9]|\\k</.test(pattern)) return 'A pattern cannot use backreferences.';
   // A repeated group holding a repeat or a choice: (a+)+, (a*)*, (a{2,})+, (a|aa)*.
-  const stack: boolean[] = [];
+  const stack: { risky: boolean; chooses: boolean }[] = [];
   let risky = false;
+  // A group that chooses, (a|b), is a place the pattern varies, as a repeat is: choices in
+  // sequence multiply the paths tried at every start, (a|a)(a|a)… exponentially.
+  let chooses = false;
   let repeats = 0;
   for (let index = 0; index < pattern.length; index++) {
     const char = pattern[index];
@@ -117,20 +120,22 @@ export function patternProblem(pattern: string): string | null {
       continue;
     }
     if (char === '(') {
-      stack.push(risky);
+      stack.push({ risky, chooses });
       risky = false;
+      chooses = false;
       continue;
     }
     if (char === ')') {
       const inner = risky;
-      risky = stack.pop() ?? false;
+      if (chooses) repeats += 1;
+      ({ risky, chooses } = stack.pop() ?? { risky: false, chooses: false });
       const next = pattern[index + 1];
       if (inner && (next === '*' || next === '+' || next === '{' || next === '?'))
         return 'A pattern cannot repeat a group that already repeats or chooses.';
       if (inner) risky = true;
       continue;
     }
-    if (char === '|' && stack.length > 0) risky = true;
+    if (char === '|' && stack.length > 0) risky = chooses = true;
     // A fixed count ({3}) never backtracks; every other quantifier can.
     const fixed = char === '{' && /^\{\d+\}/.test(pattern.slice(index));
     const lazy = char === '?' && '*+?}'.includes(pattern[index - 1] ?? '');
@@ -141,7 +146,8 @@ export function patternProblem(pattern: string): string | null {
     }
   }
   // Two variable repeats can backtrack against each other, which makes the cost per chunk cubic.
-  if (repeats > 1) return 'A pattern varies in one place at most (one *, +, ? or {m,n}); write two rules instead.';
+  if (repeats > 1)
+    return 'A pattern varies in one place at most (one *, +, ?, {m,n} or (a|b) choice); write two rules instead.';
   try {
     new RegExp(pattern, 'g');
   } catch {

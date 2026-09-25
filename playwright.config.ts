@@ -135,6 +135,7 @@ export default defineConfig({
     'cd05-zoom-motion.spec.ts',
     'software-pack-ui.spec.ts',
     'p04-pack-panel.spec.ts',
+    'update-notice.spec.ts',
   ],
   fullyParallel: false,
   workers: 1,

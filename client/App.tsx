@@ -43,6 +43,7 @@ import {
 } from './console/theme-runtime';
 import { TextureLayer } from './console/theme-artwork';
 import { resolveAppearance } from '../shared/theme-pack/resolve';
+import { withBaseStructure } from '../shared/appearance-structure';
 import type { ThemePackV1 } from '../shared/theme-pack/types';
 import { useWake } from './console/useWake';
 
@@ -144,6 +145,8 @@ export function App() {
    */
   const [themeApplies, setThemeApplies] = useState(false);
   const [appearanceNotice, setAppearanceNotice] = useState('');
+  /** The one line after an update (server/update-reconcile.ts), until dismissed. */
+  const [updateNotice, setUpdateNotice] = useState<{ id: string; text: string } | null>(null);
   // The scheme the document is actually painted in, read back after painting: a
   // custom theme paints its base scheme, and a theme that fails to apply falls
   // back to the saved one. Screens with scheme-only art follow this, not the setting.
@@ -254,6 +257,9 @@ export function App() {
       if (kept && p.projects.some((project) => project.id === kept)) setSelected(kept);
       void refreshIntegrations();
       void refreshUsage();
+      void api<{ notice: { id: string; text: string } | null }>('/update-notice')
+        .then((answer) => setUpdateNotice(answer.notice))
+        .catch(() => setUpdateNotice(null));
     } catch (e) {
       setOnline(false);
       report(e);
@@ -371,8 +377,11 @@ export function App() {
     };
     try {
       if (activeTheme) {
+        // Structural outputs (the reading measure, type rhythm, control sizes)
+        // are never written inline, so the running build's stylesheet decides
+        // them and an update's changes to them show under a custom skin too.
         applyResolvedAppearance(
-          resolveAppearance({
+          withBaseStructure(resolveAppearance({
             surface: 'app-console',
             theme: activeTheme,
             personal: { motion: settings.appearance.motion },
@@ -380,7 +389,7 @@ export function App() {
               reducedMotion: settings.appearance.motion === 'reduced',
               textureOff: settings.appearance.textureOff === true,
             },
-          }),
+          })).resolved,
         );
         // The resolver's personal layer only carries the four approved scales,
         // and Ctrl+Plus writes any size between 0.75 and 2. A person's own size
@@ -941,24 +950,53 @@ export function App() {
           </Button>
         </div>
       )}
-      {/* Quiet and last in line: it waits while another notice is showing. */}
+      {/* One notice after an update (decision 2): the release's notes, carrying what the
+          first-launch reconcile moved; the reconcile's own line only when no notes exist. */}
       {releaseNotice &&
-        releaseNotice.version !== releaseNoticeSettled &&
-        !error &&
-        !homeNotice &&
-        !appearanceNotice && (
-          <ReleaseNotice
-            release={releaseNotice}
-            onRead={() => {
-              settleReleaseNotice(releaseNotice.version);
-              leaveEditor(() => {
-                setSectionRequest((last) => ({ section: "What's new", n: (last?.n ?? 0) + 1 }));
-                setShowSettings(true);
-              });
-            }}
-            onDismiss={() => settleReleaseNotice(releaseNotice.version)}
-          />
-        )}
+      releaseNotice.version !== releaseNoticeSettled &&
+      !error &&
+      !homeNotice &&
+      !appearanceNotice ? (
+        <ReleaseNotice
+          release={releaseNotice}
+          note={updateNotice?.text.split(' — ')[1]}
+          onRead={() => {
+            settleReleaseNotice(releaseNotice.version);
+            if (updateNotice) {
+              setUpdateNotice(null);
+              void api('/update-notice/seen', 'POST', { id: updateNotice.id }).catch(report);
+            }
+            leaveEditor(() => {
+              setSectionRequest((last) => ({ section: "What's new", n: (last?.n ?? 0) + 1 }));
+              setShowSettings(true);
+            });
+          }}
+          onDismiss={() => {
+            settleReleaseNotice(releaseNotice.version);
+            if (updateNotice) {
+              setUpdateNotice(null);
+              void api('/update-notice/seen', 'POST', { id: updateNotice.id }).catch(report);
+            }
+          }}
+        />
+      ) : (
+        updateNotice && (
+          <div className="error-bar appearance-notice update-notice" role="status">
+            <Mark state="done" />
+            <span>{updateNotice.text}</span>
+            <Button
+              tone="quiet"
+              onClick={() => {
+                const { id } = updateNotice;
+                setUpdateNotice(null);
+                void api('/update-notice/seen', 'POST', { id }).catch(report);
+              }}
+            >
+              Dismiss
+            </Button>
+          </div>
+        )
+      )}
       {appearanceNotice && (
         <div className="error-bar appearance-notice" role="status">
           <Mark state="waiting" />

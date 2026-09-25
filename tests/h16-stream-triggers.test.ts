@@ -72,8 +72,9 @@ async function globalRules(...rules: StreamRule[]) {
   expect(saved.status, JSON.stringify(saved.data)).toBe(200);
 }
 
-async function start() {
+async function start(extra: Record<string, unknown> = {}) {
   const response = await project<{ runId: string; session: Session }>('/loop/start', 'POST', {
+    ...extra,
     protocolVersion: 1,
     commandId: `loop-${Math.random().toString(36).slice(2)}`,
     taskId,
@@ -242,6 +243,34 @@ describe('H16 stream-time triggers on the scripted loop route', () => {
     expect(view[0].outcome).toMatch(/^Paused for you before it ran: /);
   });
 
+  test('review-g: a hold on a read the loop hands to a delegate still holds; the helper never reads it', async () => {
+    // The parent reads order.md itself and hands delivery.md to a delegate child run, which
+    // carries no Session of its own. The rule must reach the child's intent all the same.
+    await projectRules(
+      rule('delivery-held', {
+        match: { kind: 'tool', tool: 'read_project_file', target: 'delivery.md' },
+        intervention: 'hold',
+        text: 'Delivery notes are read only after a person says so.',
+      }),
+    );
+    const started = await start({ delegate: { route: 'native-fixture' } });
+    await vi.waitFor(
+      async () => expect(['cancelled', 'waiting', 'completed', 'failed']).toContain((await host().get(projectId, started.runId)).state),
+      { timeout: 15_000 },
+    );
+    await host().bridge.flush();
+    const child = await host().get(projectId, `${started.runId}-d1`).catch(() => null);
+    // Either the helper never started, or it started and its read was never admitted.
+    const read = child?.steps.find((step) => step.intent.kind === 'tool' && step.intent.name === 'read_project_file');
+    expect(read?.state ?? 'never', JSON.stringify(read ?? null)).not.toBe('succeeded');
+    const firings = state().streamTriggerFirings ?? [];
+    expect(firings.map((firing) => [firing.rule.id, firing.runId, firing.sessionId])).toEqual([
+      ['delivery-held', `${started.runId}-d1`, started.session.id],
+    ]);
+    const escalation = await openNeed(started.session.id);
+    expect(escalation.supervision?.code).toBe('rule-trigger');
+  });
+
   test('stop on streamed text: supervision pauses the run through H08 Stop and asks you; nothing the plan proposed runs', async () => {
     await globalRules(
       rule('no-summaries', {
@@ -287,6 +316,68 @@ describe('H16 stream-time triggers on the scripted loop route', () => {
     expect(run.failure?.message ?? run.cancelReason).toMatch(/A rule stopped this run: Rule no-summaries\./);
     expect(state().needs.filter((need) => need.supervision && need.state === 'open')).toHaveLength(1);
   });
+
+  test('review-g: two stop rules firing on one run pause it once and ask the person once', async () => {
+    await projectRules(
+      rule('no-reading', { match: { kind: 'text', phrase: 'Read order' }, intervention: 'stop' }),
+      rule('no-summaries', { match: { kind: 'text', phrase: 'Summarise' }, intervention: 'stop' }),
+    );
+    const started = await start();
+    await untilRun(started.runId, 'cancelled');
+    await openNeed(started.session.id);
+    await vi.waitFor(() => expect((state().streamTriggerFirings ?? []).length).toBe(2), { timeout: 15_000 });
+    await store().locked(async () => undefined);
+    const open = state().needs.filter((need) => need.sessionId === started.session.id && need.state === 'open');
+    expect(open).toHaveLength(1);
+    const stops = (await supervision(started.session.id)).data.records.filter((record) => record.control?.control === 'stop');
+    expect(stops).toHaveLength(1);
+  });
+
+  test('review-g: a hold on a read an H14 lead hands to a worker still holds; the worker never reads it', async () => {
+    await projectRules(
+      rule('delivery-held', {
+        match: { kind: 'tool', tool: 'read_project_file', target: 'delivery.md' },
+        intervention: 'hold',
+        text: 'Delivery notes are read only after a person says so.',
+      }),
+    );
+    const started = await start({ team: { worker: {}, advisor: null } });
+    await vi.waitFor(
+      async () => expect(['cancelled', 'waiting', 'completed', 'failed']).toContain((await host().get(projectId, started.runId)).state),
+      { timeout: 15_000 },
+    );
+    await host().bridge.flush();
+    expect((await host().get(projectId, started.runId)).state).toBe('cancelled');
+    const firings = state().streamTriggerFirings ?? [];
+    expect(firings).toHaveLength(1);
+    expect(firings[0]).toMatchObject({ rule: { id: 'delivery-held' }, sessionId: started.session.id });
+    expect(firings[0].runId).not.toBe(started.runId);
+    const worker = await host().get(projectId, firings[0].runId);
+    expect(worker.steps.some((step) => step.intent.name === 'read_project_file' && step.state === 'succeeded')).toBe(false);
+  });
+
+  for (const intervention of ['stop', 'hold'] as const)
+    test(`review-g: a tool ${intervention} whose escalation is already open on the task still refuses the next run's intent`, async () => {
+      await projectRules(
+        rule('orders-guarded', { match: { kind: 'tool', tool: 'read_project_file', target: 'order.md' }, intervention }),
+      );
+      const first = await start();
+      await untilRun(first.runId, 'cancelled');
+      await openNeed(first.session.id);
+      // The escalation stays open, so supervision raises nothing more for this rule on this task.
+      const second = await start();
+      const run = await vi.waitFor(
+        async () => {
+          const current = await host().get(projectId, second.runId);
+          expect(['failed', 'cancelled']).toContain(current.state);
+          return current;
+        },
+        { timeout: 15_000 },
+      );
+      const read = run.steps.find((step) => step.intent.stepId === 'tool:0');
+      expect(read?.state ?? 'never').not.toBe('succeeded');
+      expect(run.steps.some((step) => step.intent.stepId === 'observe:0')).toBe(false);
+    });
 
   test('stop on a proposed tool intent: the intent is refused before admission and the run is paused for you', async () => {
     await projectRules(rule('no-reads', { match: { kind: 'tool', effectClass: ['read'] }, intervention: 'stop' }));

@@ -1,0 +1,30 @@
+name: Release version check
+
+# Phase 0 of the update-refresh work: a release whose app files changed since
+# its version was tagged cannot keep that version, or the updater (which offers
+# only a newer version) never delivers it. This runs when a release tag is
+# pushed and on demand before one is cut. It deliberately does not run on pull
+# requests: between releases main is expected to differ from the last tag.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  release-version:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          # Every tag and the history between them: the check diffs against one.
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - run: node scripts/release-check.mjs
