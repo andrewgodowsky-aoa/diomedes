@@ -76,6 +76,8 @@ export interface CollectedEntry {
   readonly proposed: boolean;
   /** The child's text, null for a deletion. */
   readonly text: string | null;
+  /** The snapshot's text, null for a file the child created. */
+  readonly beforeText: string | null;
 }
 
 export interface CreateSpec {
@@ -217,8 +219,11 @@ export class SandboxStore {
     const existing = await this.read(spec.projectId, spec.runId);
     if (existing && existing.state !== 'creating') return existing;
     const work = path.join(dir, 'work');
+    const kept = path.join(dir, 'snapshot');
     await fs.rm(work, { recursive: true, force: true });
+    await fs.rm(kept, { recursive: true, force: true });
     await fs.mkdir(work, { recursive: true });
+    await fs.mkdir(kept, { recursive: true });
     const manifest: SandboxManifest = {
       v: 1,
       projectId: spec.projectId,
@@ -237,9 +242,12 @@ export class SandboxStore {
     const files = await this.source(spec.projectId, spec.base, spec.scope);
     const snapshot: SandboxFile[] = [];
     for (const file of files) {
-      const target = path.join(work, ...file.path.split('/'));
-      await fs.mkdir(path.dirname(target), { recursive: true });
-      await fs.writeFile(target, file.bytes, { flag: 'wx' });
+      // The copy the child works in, and the snapshot a change set is read against.
+      for (const into of [work, kept]) {
+        const target = path.join(into, ...file.path.split('/'));
+        await fs.mkdir(path.dirname(target), { recursive: true });
+        await fs.writeFile(target, file.bytes, { flag: 'wx' });
+      }
       snapshot.push({ path: file.path, sha: sha256(file.bytes), bytes: file.bytes.byteLength });
     }
     const open: SandboxManifest = { ...manifest, state: 'open', files: snapshot };
@@ -270,6 +278,11 @@ export class SandboxStore {
     const { files, links } = await walk(work);
     const proposed = new Set(await this.proposed(manifest.projectId, manifest.runId));
     const snapshot = new Map(manifest.files.map((file) => [file.path, file]));
+    const kept = path.join(this.dir(manifest.projectId, manifest.runId), 'snapshot');
+    const earlier = async (relative: string) => {
+      const bytes = await fs.readFile(path.join(kept, ...relative.split('/'))).catch(() => null);
+      return bytes && sha256(bytes) === snapshot.get(relative)?.sha ? textOf(bytes) : null;
+    };
     const dropped = links.map((item) => ({ path: item, reason: 'A link in the copy is never returned.' }));
     const entries: CollectedEntry[] = [];
     for (const name of files) {
@@ -289,7 +302,8 @@ export class SandboxStore {
       const before = snapshot.get(relative) ?? null;
       if (before?.sha === sha) continue;
       const text = textOf(bytes);
-      if (text === null) {
+      const beforeText = before ? await earlier(relative) : null;
+      if (text === null || (before && beforeText === null)) {
         dropped.push({ path: relative, reason: 'Not text, so it cannot be returned as a change.' });
         continue;
       }
@@ -301,12 +315,16 @@ export class SandboxStore {
         bytes: bytes.byteLength,
         proposed: proposed.has(relative),
         text,
+        beforeText,
       });
     }
     const present = new Set(files);
     for (const file of manifest.files)
-      if (!present.has(file.path))
-        entries.push({ path: file.path, op: 'deleted', before: file.sha, after: null, bytes: 0, proposed: true, text: null });
+      if (!present.has(file.path)) {
+        const beforeText = await earlier(file.path);
+        if (beforeText === null) dropped.push({ path: file.path, reason: 'Not text, so it cannot be returned as a change.' });
+        else entries.push({ path: file.path, op: 'deleted', before: file.sha, after: null, bytes: 0, proposed: true, text: null, beforeText });
+      }
     return { entries: entries.sort((a, b) => a.path.localeCompare(b.path)), dropped };
   }
 
@@ -315,6 +333,37 @@ export class SandboxStore {
     const dir = this.dir(manifest.projectId, manifest.runId);
     await atomicJson(path.join(dir, 'manifest.json'), { ...manifest, state: 'collected' });
     await fs.rm(path.join(dir, 'work'), { recursive: true, force: true });
+    await fs.rm(path.join(dir, 'snapshot'), { recursive: true, force: true });
+  }
+
+  /** The current sha of one file in a child's copy, or null when it has none. */
+  async shaIn(manifest: SandboxManifest, relative: string): Promise<string | null> {
+    const found = await containedPath(this.work(manifest.projectId, manifest.runId), relative, { write: false });
+    const stat = await fs.lstat(found.absolute).catch(() => null);
+    return stat?.isFile() ? sha256(await fs.readFile(found.absolute)) : null;
+  }
+
+  /**
+   * Write one file of a depth-2 child's change set into its parent delegate's
+   * copy, through the same funnel rooted at that copy. Null text removes it.
+   */
+  async writeInto(manifest: SandboxManifest, relative: string, text: string | null) {
+    const work = this.work(manifest.projectId, manifest.runId);
+    const found = await containedPath(work, relative, { write: true });
+    if (!inScope(found.relative, manifest.scope)) throw new SandboxRefused('This file is outside the scope that copy was given.');
+    if (text === null) {
+      const stat = await fs.lstat(found.absolute).catch(() => null);
+      if (stat?.isFile()) await fs.rm(found.absolute);
+      return;
+    }
+    const parts = found.relative.split('/').slice(0, -1);
+    for (let depth = 1; depth <= parts.length; depth++) {
+      const folder = await containedPath(work, parts.slice(0, depth).join('/'), { write: true });
+      const stat = await fs.lstat(folder.absolute).catch(() => null);
+      if (!stat) await fs.mkdir(folder.absolute);
+      else if (!stat.isDirectory() || stat.isSymbolicLink()) throw new HarnessError('path_link', 'A folder on this path is not a plain folder.');
+    }
+    await containedWrite(work, found.relative, text, { declared: [found.relative], maxBytes: SANDBOX_LIMITS.maxFileBytes });
   }
 
   async remove(projectId: string, runId: string) {

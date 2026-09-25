@@ -116,7 +116,7 @@ test('H14-UI-01: a worker that failed stops its lead, and the Team view says whi
   await expect(lead.locator('[data-lead-outcome]')).toHaveText('Stopped: a worker did not answer');
   await expect(lead.locator('.lw-lead-task')).toHaveText(TASK);
   await expect(lead.locator('.lw-facts')).toContainText('General Assistant · a fixed local script');
-  await expect(lead.locator('.lw-facts')).toContainText('at most 3 at once, 6 per run, one level');
+  await expect(lead.locator('.lw-facts')).toContainText('at most 3 at once, 4 per run, one level');
   await expect(lead.locator('.lw-facts')).toContainText('Solution Architect');
 
   const workers = lead.locator('.lw-workers .lw-handoff');

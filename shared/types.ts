@@ -267,6 +267,12 @@ export interface Need {
    * approval or a reviewer (shared/supervision.ts).
    */
   supervision?: import('./supervision.js').SupervisionNeedRef;
+  /**
+   * H13/H14 sandboxes: this Need holds the entries of a delegate's or worker's change set that
+   * its parent may not apply itself (shared/sandbox.ts). A person keeps or discards each one;
+   * nothing is written until they do, and it never expires with the run that raised it.
+   */
+  changeSet?: { readonly protocolVersion: 1; readonly changeSetId: string; readonly indexes: readonly number[] };
 }
 /**
  * One proposed file's content check. An `.svg`, or an `.xml` that is SVG,

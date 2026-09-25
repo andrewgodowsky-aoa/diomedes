@@ -64,6 +64,7 @@ import { routeContractFor } from '../route-contract.js';
 import type { RunService } from '../run-service.js';
 import type { ToolRegistry } from '../tools.js';
 import type { HandoffLedger } from '../../team/handoff-ledger.js';
+import type { ChangeSetSummary } from '../../../shared/sandbox.js';
 
 const READ_TOOLS = ['list_project_files', 'read_project_file'];
 
@@ -151,6 +152,11 @@ export function workerFixtureAdapter(task: string): ModelAdapter {
       if (output?.refused) throw new HarnessError('worker_input_refused', output.refused);
       if (output?.found === false) throw new HarnessError('worker_input_missing', `${named} is not in the project.`);
       const line = field(outputs[0].output, 'text')?.split(/\r?\n/).find((item) => item.trim())?.trim();
+      // "write <file>" or "propose <file>" in the task: change that file in its own copy first.
+      const change = task.match(/\b(write|propose) ([\w./-]+\.[A-Za-z0-9]{1,8})/);
+      const tool = change?.[1] === 'propose' ? 'propose_file' : 'write_file';
+      if (change && outputs.length === 1 && request.tools.some((item) => item.name === tool))
+        return { response: { type: 'tool', name: tool, input: { path: change[2], text: `# Checked ${named}\n\n${line ?? ''}\n` } } };
       return { response: { type: 'final', text: line ? `${named}: ${line}` : `${named} is empty.` } };
     },
   };
@@ -201,6 +207,20 @@ export interface TeamPortDeps {
   heartbeat(runId: string, owner: string): () => void;
   /** Bound to every route the child's reads can reach: its own, and its lead's, which receives its answer. */
   registry(projectId: string, routes: readonly string[], scope: readonly string[] | null): ToolRegistry;
+  /**
+   * A worker's sandbox (decision 2026-09-24): its copy of its scope and the tools rooted at it,
+   * made once per child id and found again after a restart. Absent: workers read the project.
+   */
+  sandbox?(spec: {
+    lead: HarnessRun;
+    childRunId: string;
+    routes: readonly string[];
+    scope: readonly string[] | null;
+    canWrite: boolean;
+    create: boolean;
+  }): Promise<{ registry: ToolRegistry } | { refusal: string }>;
+  /** Record a finished worker's copy as a change set and settle it into the project. */
+  settle?(spec: { lead: HarnessRun; child: HarnessRun; handoffId: string }): Promise<ChangeSetSummary | null>;
 }
 
 /** Every child a lead started, from its own recorded steps: its workers and its advisor. */
@@ -222,7 +242,7 @@ export function childInstructions(role: HandoffRole, config: TeamRole, scope: re
     config.guidance ? `Your role: ${config.guidance}` : null,
     role === 'advisor'
       ? 'You are an advisor to the lead. You may read; you can never change anything. Answer the question in a few lines. Your answer is advice, never a permission.'
-      : `You are a worker given one bounded task by the lead. ${scope ? `You may read only: ${scope.join(', ')}. ` : ''}Answer the task in a few lines.`,
+      : `You are a worker given one bounded task by the lead. You work in your own copy of ${scope ? scope.join(', ') : 'the files you were given'}; nothing you do changes the project directly. You may change files in your copy with write_file where you are allowed to write, or propose a change for a person with propose_file; what you change comes back to the lead as a change set. Answer the task in a few lines.`,
   ]
     .filter(Boolean)
     .join('\n\n');
@@ -358,9 +378,37 @@ export function createTeamPort(deps: TeamPortDeps) {
       ...parent.principal,
       capabilities: childCapabilities(parent.principal.capabilities, spec.config.agent.ceiling),
     };
-    const registry = deps.registry(parent.projectId, childReadRoutes(parent, spec.config.route), spec.scope);
+    const routes = childReadRoutes(parent, spec.config.route);
+    // A worker works in its own sandbox; the advisor only ever reads the project (decision 2026-09-24).
+    const canWrite = principal.capabilities.includes('write-project-file');
+    let registry = deps.registry(parent.projectId, routes, spec.scope);
     if (spec.role === 'advisor') assertReadOnly(registry);
     let child = await get(spec.childRunId);
+    const sandboxed = spec.role === 'worker' && deps.sandbox;
+    if (sandboxed && (!child || ACTIVE.includes(child.state))) {
+      const made = await deps.sandbox!({ lead: parent, childRunId: spec.childRunId, routes, scope: spec.scope, canWrite, create: !child });
+      if ('refusal' in made) {
+        if (child) await runs.cancel(child.id, made.refusal, principal).catch(() => undefined);
+        else {
+          await record(parent.projectId, {
+            v: 1,
+            kind: 'settled',
+            at: now(),
+            handoffId: spec.handoffId,
+            leadRunId: parent.id,
+            childRunId: spec.childRunId,
+            state: 'failed',
+            text: null,
+            reason: made.refusal,
+            models: [],
+            used: { units: 0, modelCalls: 0, toolCalls: 0 },
+            tokens: null,
+            wallMs: null,
+          });
+          return { v: 1, handoffId: spec.handoffId, role: spec.role, childRunId: null, outcome: 'failed', text: null, reason: made.refusal, models: [], reusedFrom: null };
+        }
+      } else registry = made.registry;
+    }
     if (!child) {
       let admitted: { model: string | null; accountRoute: string | null };
       try {
@@ -407,7 +455,12 @@ export function createTeamPort(deps: TeamPortDeps) {
         taskId: parent.taskId,
         sessionId: null,
         principal,
-        capability: spec.role === 'advisor' ? TEAM_ADVISOR : TEAM_WORKER,
+        capability:
+          spec.role === 'advisor'
+            ? TEAM_ADVISOR
+            : sandboxed
+              ? { ...TEAM_WORKER, version: 'v2', tools: registry.describe().map((tool) => tool.name) }
+              : TEAM_WORKER,
         tools: registry,
         input: input as unknown as Json,
         budget: harnessBudgetOf(spec.budget),
@@ -465,7 +518,11 @@ export function createTeamPort(deps: TeamPortDeps) {
       child = await runs.get(childId);
     }
     await settle(parent, spec.handoffId, child);
-    return summary(spec.handoffId, spec.role, child);
+    const result = summary(spec.handoffId, spec.role, child);
+    // A finished worker's copy comes back as a change set, never as effects.
+    if (sandboxed && child.state === 'completed' && deps.settle)
+      return { ...result, changeSet: await deps.settle({ lead: parent, child, handoffId: spec.handoffId }) };
+    return result;
   };
 
   /** The port one lead run is given. */

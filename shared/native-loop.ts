@@ -28,6 +28,7 @@ import type { OriginSnapshot } from './attribution.js';
 import type { ContextAccount } from './context-accounting.js';
 import type { HandoffEnvelope } from './handoff.js';
 import type { TeamConfig, TeamRetry } from './team-delegation.js';
+import type { ChangeSetSummary } from './sandbox.js';
 import type {
   HarnessBudget,
   HarnessRun,
@@ -93,9 +94,12 @@ export const LOOP_LIMITS = Object.freeze({
   planItemChars: 240,
   claimChars: 4000,
   excerptChars: 600,
-  /** One level only: a delegate is never offered `delegate`. */
-  delegationDepth: 1,
-  delegationsPerRun: 2,
+  /**
+   * Andrew, 2026-09-24: depth at most 2 (a delegate may hand one sub-task on; its own
+   * delegate may not), at most 4 delegates per run, started together when asked together.
+   */
+  delegationDepth: 2,
+  delegationsPerRun: 4,
   delegateTurns: 4,
   taskChars: 2000,
 });
@@ -113,6 +117,11 @@ export interface LoopRunInput {
   readonly instructions: string;
   /** The route a bounded sub-task may be handed to, chosen by the person. Null offers no delegation. */
   readonly delegate: { readonly route: string; readonly model: string | null; readonly accountRoute: string | null } | null;
+  /**
+   * The files and folders the person let this loop apply its delegates' and workers' changes
+   * in without asking again. Absent or null: every change a sandbox returns waits for a person.
+   */
+  readonly applyScope?: readonly string[] | null;
   readonly sources: readonly string[];
   /** H14: the workers and advisor the person admitted this lead with. Absent or null offers none. */
   readonly team?: TeamConfig | null;
@@ -130,6 +139,11 @@ export interface LoopChildInput {
   readonly model: string | null;
   readonly accountRoute: string | null;
   readonly maxTurns: number;
+  /** The loop the person started, and how far below it this delegate sits (1 or 2). Absent on older runs: 1. */
+  readonly rootRunId?: string;
+  readonly depth?: number;
+  /** The files and folders its sandbox copy holds: the handoff's scope inside its parent's. */
+  readonly scope?: readonly string[] | null;
 }
 
 export interface LoopContextRecord {
@@ -174,6 +188,10 @@ export interface LoopHandoffRecord {
   readonly childRunId: string;
   readonly task: string;
   readonly budget: HarnessBudget;
+  /** The scope its sandbox copy holds; absent on older records (the whole project, read-only). */
+  readonly scope?: readonly string[] | null;
+  /** The other handoffs opened in the same call, which run at the same time as this one. */
+  readonly parallel?: readonly Omit<LoopHandoffRecord, 'v' | 'turn' | 'parallel'>[];
 }
 
 export interface LoopDelegateResult {
@@ -183,6 +201,10 @@ export interface LoopDelegateResult {
   readonly text: string | null;
   readonly reason: string | null;
   readonly models: readonly LoopModel[];
+  /** What its sandbox returned, and what became of it (shared/sandbox.ts). */
+  readonly changeSet?: ChangeSetSummary | null;
+  /** The results of the other delegates started in the same call. */
+  readonly parallel?: readonly Omit<LoopDelegateResult, 'parallel'>[];
 }
 
 export interface LoopFinishRecord {
@@ -230,7 +252,9 @@ export interface LoopDelegationView {
   readonly budget: HarnessBudget;
   readonly refusal: string | null;
   readonly state: StepState | null;
-  readonly result: LoopDelegateResult | null;
+  readonly result: LoopDelegateResult | Omit<LoopDelegateResult, 'parallel'> | null;
+  /** The scope its sandbox held; null for the whole scope its parent had. */
+  readonly scope?: readonly string[] | null;
   readonly child: {
     readonly state: HarnessRunState;
     readonly used: HarnessUsage;
@@ -343,8 +367,22 @@ export function loopView(run: HarnessRun, children: readonly HarnessRun[] = []):
     if (handoffStep) {
       const handoff = record<LoopHandoffRecord>(handoffStep);
       const handoffInput = handoffStep.intent.input as unknown as Partial<LoopHandoffRecord> | null;
+      const recorded = record<LoopDelegateResult>(delegate);
+      const results = recorded ? [recorded, ...(recorded.parallel ?? [])] : [];
+      const resultOf = (childRunId: string) => results.find((entry) => entry.childRunId === childRunId) ?? null;
+      const childOf = (childRunId: string) => {
+        const child = children.find((item) => item.id === childRunId) ?? null;
+        return child
+          ? {
+              state: child.state,
+              used: child.used,
+              budget: child.budget,
+              models: reportedModels(child),
+              cancelReason: child.cancelReason,
+            }
+          : null;
+      };
       const childRunId = handoff?.childRunId ?? handoffInput?.childRunId ?? '';
-      const child = children.find((item) => item.id === childRunId) ?? null;
       delegations.push({
         turn,
         handoffId: handoff?.envelope?.id ?? null,
@@ -354,17 +392,25 @@ export function loopView(run: HarnessRun, children: readonly HarnessRun[] = []):
         budget: handoff?.budget ?? { units: 0, modelCalls: 0, toolCalls: 0, wallMs: null },
         refusal: handoff?.refusal ?? null,
         state: delegate?.state ?? null,
-        result: record<LoopDelegateResult>(delegate),
-        child: child
-          ? {
-              state: child.state,
-              used: child.used,
-              budget: child.budget,
-              models: reportedModels(child),
-              cancelReason: child.cancelReason,
-            }
-          : null,
+        result: resultOf(childRunId),
+        child: childOf(childRunId),
+        scope: handoff?.scope ?? null,
       });
+      // Handoffs opened in the same call ran at the same time; each is its own row.
+      for (const item of handoff?.parallel ?? [])
+        delegations.push({
+          turn,
+          handoffId: item.envelope?.id ?? null,
+          route: item.route,
+          childRunId: item.childRunId,
+          task: item.task,
+          budget: item.budget,
+          refusal: item.refusal,
+          state: delegate?.state ?? null,
+          result: resultOf(item.childRunId),
+          child: childOf(item.childRunId),
+          scope: item.scope ?? null,
+        });
     }
   }
   const stop =

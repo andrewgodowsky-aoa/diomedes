@@ -2736,6 +2736,18 @@ export async function createApp(options: AppOptions) {
           choice(b.resolution, ['go-ahead', 'declined'], 'decision'),
           b.allowForTask === true,
         );
+      // A sandbox's change set: go ahead keeps every waiting change, decline discards them.
+      if (need.changeSet) {
+        if (b.allowForTask === true)
+          throw new ApiError(400, 'A change set is decided change by change, never for the whole task.');
+        await harness.loop.changeSets.resolveNeed(
+          id(req),
+          need,
+          choice(b.resolution, ['go-ahead', 'declined'], 'decision'),
+          typeof b.commandId === 'string' ? b.commandId : `need.${need.id}`,
+        );
+        return store.state(id(req)).needs.find((item) => item.id === need.id);
+      }
       // A supervision escalation is answered only by a person, never for the whole task.
       if (need.supervision) {
         if (b.allowForTask === true)
