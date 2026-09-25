@@ -123,7 +123,8 @@ export function skipZones(text: string): Range[] {
     re.lastIndex = 0;
     for (let m = re.exec(text); m; m = re.exec(text)) zones.push([m.index, m.index + m[0].length]);
   };
-  add(/`[^`\n]+`/g);
+  // Inline code may wrap onto the next line of its paragraph, never past a blank line.
+  add(/`(?:[^`\n]|\n(?![ \t]*\n))+`/g);
   add(URL);
   add(FILE_NAME);
   // Quoted words: curly and straight double quotes within one line.
@@ -334,9 +335,13 @@ export interface CodeFix {
   readonly after: string;
 }
 
-/** What follows a dash reads as its own clause: a subject pronoun, or a verb within five words. */
+/** What follows a dash reads as its own clause: a subject pronoun ("no one" too), or a verb within five words. */
+/** A finite verb: what makes the words before a dash a clause rather than a label. */
+const CLAUSE_VERB =
+  /\b(?:(?:is|are|was|were|has|have|had|does|do|did|wo|ca|could|should|would)n['’]t|is|are|was|were|has|have|had|will|would|can|could|should|must|does|did|costs?|sells?|sold|opens?|closes?|arrives?|arrived)\b/i;
+const PRONOUN_LEAD =/^(?:i|you|we|they|he|she|it|there|no one|nobody|nothing|everyone|someone)\s/i;
 const INDEPENDENT =
-  /^(?:(?:i|you|we|they|he|she|it|this|that|these|those|there|here)\b|(?:\S+\s+){0,4}(?:is|are|was|were|has|have|had|will|would|can|could|should|must|does|did|costs?|sells?|opens?|closes?|arrives?|arrived)\b)/i;
+  /^(?:(?:i|you|we|they|he|she|it|this|that|these|those|there|here|no one|nobody|nothing|none|everyone|someone)\b|(?:\S+\s+){0,6}(?:(?:is|are|was|were|has|have|had|does|do|did|wo|ca|could|should|would)n['’]t|is|are|was|were|has|have|had|will|would|can|could|should|must|does|did|costs?|sells?|opens?|closes?|arrives?|arrived)\b)/i;
 
 /**
  * Fix what is unambiguous without a model, and only that: an em dash between two clauses, a
@@ -424,22 +429,43 @@ export function fixInCode(text: string, options: PlainWritingOptions = {}): { te
  *   or a comma when the sentence already has a colon.
  */
 export function fixDashes(sentence: string): string | null {
-  const DASH = /\s*(?:\u2014| \u2013 | -- )\s*/g;
-  let text = sentence.replace(/(\d)\s*\u2014\s*(\d)/g, '$1\u2013$2');
+  const DASH = /\s*(?:—| – | -- )\s*/g;
+  const text = sentence.replace(/(\d)\s*—\s*(\d)/g, '$1–$2');
   const parts = text.split(DASH);
   if (parts.length === 1) return text;
   if (parts.some((part, i) => !part.trim() && i > 0 && i < parts.length - 1)) return null;
-  if (parts.length === 3 && parts[1].trim() && parts[2].trim()) {
-    const aside = parts[1].trim();
-    return aside.includes(',')
-      ? `${parts[0].trimEnd()} (${aside}) ${parts[2].trimStart()}`
-      : `${parts[0].trimEnd()}, ${aside}, ${parts[2].trimStart()}`;
+  // A pair around a short aside: commas, or parentheses when the aside has its own commas. Two
+  // dashes that each start a list ("4 open — items 2, 3; 2 unverified — items 4, 8") are no pair.
+  if (parts.length === 3 && parts[1]!.trim() && parts[2]!.trim()) {
+    const aside = parts[1]!.trim();
+    if (!/[;:]/.test(aside) && aside.split(/\s+/).length <= 12)
+      return aside.includes(',')
+        ? `${parts[0]!.trimEnd()} (${aside}) ${parts[2]!.trimStart()}`
+        : `${parts[0]!.trimEnd()}, ${aside}, ${parts[2]!.trimStart()}`;
   }
-  if (parts.length !== 2) return null;
-  const [left, right] = [parts[0].trimEnd(), parts[1].trimStart()];
+  let out = parts[0]!;
+  for (const part of parts.slice(1)) {
+    const joined = joinAtDash(out, part);
+    if (joined === null) return null;
+    out = joined;
+  }
+  return out;
+}
+
+/** One dash between `left` and `right`, replaced by what the two sides need. */
+function joinAtDash(leftRaw: string, rightRaw: string): string | null {
+  const [left, right] = [leftRaw.trimEnd(), rightRaw.trimStart()];
   if (!left) return null;
   if (!right || /^[.!?]/.test(right)) return `${left}${right}`;
   if (/[,;:]$/.test(left)) return null;
-  if (INDEPENDENT.test(right)) return `${left}. ${right.charAt(0).toUpperCase()}${right.slice(1)}`;
-  return left.includes(':') ? `${left}, ${right}` : `${left}: ${right}`;
+  // The clause the dash ends, from the last full stop or semicolon.
+  const clause = left.split(/[;.!?]\s+/).pop()!;
+  const colon = () => (clause.includes(':') ? `${left}, ${right}` : `${left}: ${right}`);
+  const sentence = () => `${left}. ${right.charAt(0).toUpperCase()}${right.slice(1)}`;
+  if (PRONOUN_LEAD.test(right)) return sentence();
+  // A short label before the dash ("Brandt & Rowe crew — close out three items") takes a colon.
+  const label = clause.replace(/[*_#>`]+/g, ' ').replace(/^\s*(?:[-+]|\d+[.)])\s+/, '').trim();
+  if (label.split(/\s+/).length <= 5 && !CLAUSE_VERB.test(label)) return colon();
+  if (INDEPENDENT.test(right)) return sentence();
+  return colon();
 }

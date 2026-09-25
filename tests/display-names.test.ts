@@ -51,8 +51,11 @@ describe('names made from a person\'s words', () => {
 
   it('titles a brief with its output name, not the whole setup sentence', () => {
     expect(
-      outputName('Weekly operations brief — Produce a recurring report: A Monday note on last week'),
+      outputName('Weekly operations brief (Produce a recurring report): A Monday note on last week'),
     ).toBe('Weekly operations brief');
+    expect(outputName('Weekly brief: A Monday note')).toBe('Weekly brief');
+    // A label saved before plain writing keeps reading the same way.
+    expect(outputName('Weekly operations brief — Produce a recurring report: A Monday note')).toBe('Weekly operations brief');
     expect(outputName('Weekly brief')).toBe('Weekly brief');
   });
 });

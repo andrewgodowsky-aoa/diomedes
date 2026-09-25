@@ -552,7 +552,7 @@ describe('refusals', () => {
 describe('what the brief calls itself and its sources (capture polish, 2026-09-25)', () => {
   // The setup label a compiled pack gives its output: the output's name, then the setup sentence.
   const SETUP_LABEL =
-    'Weekly operations brief — Produce a recurring report: A Monday note on last week: sales, margin, what changed, and what to watch';
+    'Weekly operations brief (Produce a recurring report): A Monday note on last week: sales, margin, what changed, and what to watch';
 
   test('the title is the output name, not the setup sentence, in the draft and in the file', async () => {
     await fs.mkdir(path.join(store.state(projectId).project.folder, 'Imports'), { recursive: true });

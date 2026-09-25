@@ -61,7 +61,7 @@ const headers = { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' }
 const store = (): Store => app.locals.store;
 const host = (): HarnessHost => app.locals.harness;
 const state = () => store().state(projectId);
-const ATTRIBUTION = /^Ran under a remembered approval — you, since \d{1,2} [A-Z][a-z]+ \d{4}\.$/;
+const ATTRIBUTION = /^Ran under a remembered approval: you, since \d{1,2} [A-Z][a-z]+ \d{4}\.$/;
 
 async function open() {
   app = await createApp({

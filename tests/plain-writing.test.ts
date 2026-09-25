@@ -66,6 +66,9 @@ describe('skip zones', () => {
   test('code blocks and inline code', () => {
     expect(rules('Run this:\n\n```js\nconst a = b — c; // leverage\n```\n\nDone.')).toEqual([]);
     expect(rules('Set `mode — robust` and save.')).toEqual([]);
+    // Inline code may wrap within its paragraph, but a blank line ends it.
+    expect(rules('The line `- [S1] exports: POS\n  summary — Imports/pos.csv` changed.')).toEqual([]);
+    expect(rules('An open ` tick.\n\nThe soup sold out — we made 40.')).toEqual(['em-dash']);
   });
 
   test('file names, paths and links', () => {
@@ -101,6 +104,22 @@ describe('repairs in code', () => {
     expect(fixDashes('The soup sold out — we made 40.')).toBe('The soup sold out. We made 40.');
     expect(fixDashes('The order — all 100 napkins — arrived.')).toBe('The order, all 100 napkins, arrived.');
     expect(fixDashes('The order — napkins, cloths — arrived.')).toBe('The order (napkins, cloths) arrived.');
+    // From the sample-business run: a short label before the dash takes a colon,
+    expect(fixDashes('Brandt & Rowe crew — close out three punch items')).toBe(
+      'Brandt & Rowe crew: close out three punch items',
+    );
+    // a clause after it ("no one" leads one) becomes its own sentence, not a comma splice,
+    expect(
+      fixDashes('Ben can do it today (Friday, through 4pm) or Saturday morning — no one else on the schedule is listed for bearings.'),
+    ).toBe('Ben can do it today (Friday, through 4pm) or Saturday morning. No one else on the schedule is listed for bearings.');
+    expect(fixDashes('The draft only carries Draw 3 — CO-07 isn’t on it.')).toBe('The draft only carries Draw 3. CO-07 isn’t on it.');
+    expect(fixDashes('The packed_by field is blank — every earlier order in that log has a name.')).toBe(
+      'The packed_by field is blank. Every earlier order in that log has a name.',
+    );
+    // and two dashes that each open a list are not a pair around an aside.
+    expect(fixDashes('10 items: 4 still open — items 2, 3, 6, 9; 2 closed but unverified — items 4, 8.')).toBe(
+      '10 items: 4 still open, items 2, 3, 6, 9; 2 closed but unverified: items 4, 8.',
+    );
     expect(fixDashes('Open 9—5.')).toBe('Open 9–5.');
     expect(fixDashes('One: two — three.')).toBe('One: two, three.');
   });

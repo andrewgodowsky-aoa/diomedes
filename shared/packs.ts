@@ -59,8 +59,10 @@ export const DEFAULT_WEEKLY_BRIEF_VARIANT_ID: PackVariantId = 'professional-serv
  * which `compileOutput` always puts first. A brief is titled with this, not the sentence.
  */
 export function outputName(label: string): string {
-  const at = label.indexOf(' — ');
-  return at > 0 ? label.slice(0, at) : label;
+  // "Weekly brief (job): result", "Weekly brief: result", "Weekly brief (job)"; a label saved
+  // before plain writing reads "Weekly brief — job: result", so its dash still ends the name.
+  const cuts = [' (', ': ', ' — '].map((mark) => label.indexOf(mark)).filter((at) => at > 0);
+  return cuts.length ? label.slice(0, Math.min(...cuts)) : label;
 }
 
 export interface CompileInput {
@@ -529,9 +531,11 @@ function compileOutput(
   // even when the job and result wording fill the rest of the line.
   const raw =
     result !== null
-      ? `${variant.outputLabel} — ${jobDisplay !== null ? `${jobDisplay}: ` : ''}${result}`
+      ? jobDisplay !== null
+        ? `${variant.outputLabel} (${jobDisplay}): ${result}`
+        : `${variant.outputLabel}: ${result}`
       : jobDisplay !== null
-        ? `${variant.outputLabel} — ${jobDisplay}`
+        ? `${variant.outputLabel} (${jobDisplay})`
         : variant.outputLabel;
   return {
     id: 'weekly-brief',

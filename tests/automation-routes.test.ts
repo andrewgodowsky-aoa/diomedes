@@ -175,8 +175,8 @@ describe('the Automations list', () => {
     expect(shown.organization.name).toBe('Fernbrook Joinery');
     expect(shown.organization.identitySource).toBe('development-fixture');
     const [brief] = shown.automations;
-    expect(brief!.status.text).toBe('Manual — not scheduled');
-    expect(brief!.trigger).toEqual({ kind: 'manual', text: 'Manual — not scheduled' });
+    expect(brief!.status.text).toBe('Manual, not scheduled');
+    expect(brief!.trigger).toEqual({ kind: 'manual', text: 'Manual, not scheduled' });
     // A01: the weekly answer is recorded, said to be inactive, and counts as nothing active.
     expect(brief!.scheduleRecorded).toMatch(/recorded but stays inactive/);
     expect(shown.summary).toEqual({ configured: 1, scheduled: 0, running: 0, needsAttention: 0, notReady: 0 });

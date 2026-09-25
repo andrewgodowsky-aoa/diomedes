@@ -716,7 +716,7 @@ export interface UpdateNotice {
 export function noticeText(record: Pick<UpdateRecord, 'to' | 'settings'>): string {
   const moved = record.settings.moved.length;
   if (moved === 0) return `Updated to ${record.to.version}.`;
-  return `Updated to ${record.to.version} — ${moved} ${moved === 1 ? 'setting' : 'settings'} moved to new defaults.`;
+  return `Updated to ${record.to.version}: ${moved} ${moved === 1 ? 'setting' : 'settings'} moved to new defaults.`;
 }
 
 async function listRecords(dataDir: string): Promise<UpdateRecord[]> {

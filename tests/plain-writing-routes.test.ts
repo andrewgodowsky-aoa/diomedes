@@ -34,6 +34,7 @@ import type { Conversation, Project } from '../shared/types';
 import type { HarnessRun } from '../shared/harness';
 import { ROUTES } from '../shared/engines';
 import { responsesEvents, sseResponse } from './fixtures/model-api-streams.js';
+import { AUTOMATION_LABEL_TEXT, SCHEDULE_OUTCOME } from '../shared/automations';
 
 const headers = { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' };
 const STANDARD = '--- NECTOVIA WRITING STANDARD ---';
@@ -107,7 +108,7 @@ async function stepOutput(commandId: string) {
       (item.intent.input as { requestId?: string } | null)?.requestId === commandId &&
       Boolean((item.output as { response?: unknown } | null)?.response),
   )!;
-  return step.output as { writing?: PlainWritingRecord; response: { text: string } };
+  return step.output as unknown as { writing?: PlainWritingRecord; response: { text: string } };
 }
 async function until<T>(read: () => Promise<T> | T, done: (value: T) => boolean, what: string): Promise<T> {
   for (let attempt = 0; attempt < 400; attempt++) {
@@ -392,4 +393,32 @@ test('the weekly brief, which has no model, passes the check', () => {
   expect(markdown).toContain('- [S1] Sales export (Sales.csv, SHA-256: ');
   // Without the export as the person's words, the only hit is its own dash.
   expect(checkPlainWriting(markdown).map((hit) => hit.match)).toEqual(['—']);
+});
+
+test('the brief Sources line the capture showed is flagged in its old form and gone in the new', () => {
+  // docs/verification/2026-09-25-capture-polish/after-4-6-weekly-brief.png, before this change.
+  const label = 'Weekly operations exports: POS weekly summary';
+  const path = 'Imports/pos-weekly-2026-W38.csv';
+  const old = `- [S1] ${label} — ${path} (SHA-256: ${'a'.repeat(64)})`;
+  expect(checkPlainWriting(old).map((hit) => hit.rule)).toEqual(['em-dash']);
+  const markdown = renderBrief({
+    organizationId: 'org',
+    tenantId: 'tenant',
+    configurationRevision: 1,
+    variantId: 'weekly-brief',
+    title: 'Weekly operations brief',
+    sections: [{ heading: 'Sales', claims: [{ text: 'Covers rose 4%.', sources: ['S1'] }] }],
+    sources: [{ id: 'S1', label, path, sha: 'a'.repeat(64) }],
+    unused: [],
+    missing: [],
+    producedAt: '2026-09-25T09:00:00.000Z',
+  } as unknown as Parameters<typeof renderBrief>[0]);
+  expect(markdown).toContain(`- [S1] ${label} (${path}, SHA-256: `);
+  expect(checkPlainWriting(markdown)).toEqual([]);
+});
+
+test('the status words automations show carry no em dash', () => {
+  const words = [...Object.values(SCHEDULE_OUTCOME), ...Object.values(AUTOMATION_LABEL_TEXT)];
+  expect(words.length).toBeGreaterThan(8);
+  for (const text of words) expect(checkPlainWriting(text), text).toEqual([]);
 });

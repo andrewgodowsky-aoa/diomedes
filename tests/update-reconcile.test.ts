@@ -142,7 +142,7 @@ describe('the first launch of a new build', () => {
     }
 
     // Said once, in one line.
-    expect(noticeText(record)).toBe('Updated to 0.2.0 — 1 setting moved to new defaults.');
+    expect(noticeText(record)).toBe('Updated to 0.2.0: 1 setting moved to new defaults.');
     expect(await currentUpdateNotice(dataDir)).toMatchObject({ id: record.id, version: '0.2.0', moved: 1 });
     await markUpdateNoticeSeen(dataDir, record.id);
     expect(await currentUpdateNotice(dataDir)).toBeNull();
@@ -330,7 +330,7 @@ describe('createApp', () => {
     });
     try {
       const notice = await currentUpdateNotice(dataDir);
-      expect(notice?.text).toBe('Updated to 0.2.0 — 1 setting moved to new defaults.');
+      expect(notice?.text).toBe('Updated to 0.2.0: 1 setting moved to new defaults.');
     } finally {
       await app.locals.close();
     }

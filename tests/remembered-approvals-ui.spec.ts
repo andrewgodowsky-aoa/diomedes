@@ -153,7 +153,7 @@ test.afterAll(async () => {
 const rail = (page: Page) => page.getByRole('navigation', { name: 'Threads and views' });
 const needBlock = (page: Page) => page.getByRole('region', { name: 'Needs your OK' });
 const offerBlock = (page: Page) => page.getByRole('region', { name: 'Offer to stop asking' });
-const ATTRIBUTION = /Ran under a remembered approval — you, since \d{1,2} [A-Z][a-z]+ \d{4}\./;
+const ATTRIBUTION = /Ran under a remembered approval: you, since \d{1,2} [A-Z][a-z]+ \d{4}\./;
 
 async function enter(page: Page) {
   await page.goto(`${baseURL}/`);
