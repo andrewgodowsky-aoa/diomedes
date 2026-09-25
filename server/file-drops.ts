@@ -198,7 +198,7 @@ export async function dropFiles(
  * The bytes of `path` as it is now, or of the version `sha` names when History
  * recorded that pair. A refusal says which of the two is missing.
  */
-async function versionBytes(
+export async function versionBytes(
   store: Store,
   projectId: string,
   input: unknown,

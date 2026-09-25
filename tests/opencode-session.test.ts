@@ -349,7 +349,7 @@ describe('the kept session route contract', () => {
       resume: false,
       fork: false,
     });
-    // Claude's session declares no steering, so none is offered for it.
-    expect(sessionControls(routeContractFor('claude-code-session')).steer).toBeNull();
+    // H03: Claude's session steers through the same host queue, and never claims a live channel.
+    expect(sessionControls(routeContractFor('claude-code-session')).steer).toBe('queued');
   });
 });

@@ -212,13 +212,13 @@ test('a tool removed from the final prepared context cannot dispatch', async () 
       name,
       version: '1',
       description: name,
-      effect: 'pure',
+      effect: 'pure', effectClass: 'pure',
       permission: null,
       approval: false,
       destination: 'local',
       trustedInputRequired: false,
       cost: 1,
-      schema: z.strictObject({}),
+      schema: z.strictObject({}), outputSchema: z.strictObject({ called: z.string() }),
       execute: async () => {
         dispatches++;
         return { called: name };

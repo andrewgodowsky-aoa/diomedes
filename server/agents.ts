@@ -31,6 +31,13 @@ import {
   type AgentResolution,
 } from '../shared/agents.js';
 import { PERMISSION_CHOICES, type PermissionChoiceId } from '../shared/permissions.js';
+import {
+  PROFILE_MAX_ORDER,
+  PROFILE_MAX_RULE,
+  PROFILE_MAX_RULES,
+  PROFILE_MODEL,
+  type ProfileResolution,
+} from '../shared/agent-profiles.js';
 import type { Mode, ProjectState } from '../shared/types.js';
 import { payloadDigest } from './command-admission.js';
 import { ApiError } from './paths.js';
@@ -191,6 +198,8 @@ export class AgentRegistry {
     taskId: string;
     /** Whether the model came from an explicit pick or a saved default. */
     modelSelection?: AgentResolution['modelSelection'];
+    /** The profile revision that chose the route and model, pinned as it is (H09). */
+    profile?: ProfileResolution;
   }): Promise<AgentResolution> {
     // The type excludes `auto`, but this guards the boundary in case a caller
     // reaches it through an untyped path: Automatic never selects a worker.
@@ -248,6 +257,7 @@ export class AgentRegistry {
         grantId: record?.grant.id ?? null,
         grantsAuthority: false,
       },
+      ...(input.profile ? { profile: structuredClone(input.profile) } : {}),
       resolvedAt: new Date().toISOString(),
     };
   }
@@ -283,6 +293,39 @@ export const resolutionSchema = z.strictObject({
     // A saved snapshot can never say it granted anything.
     grantsAuthority: z.literal(false),
   }),
+  profile: z
+    .strictObject({
+      protocolVersion: z.literal(1),
+      profileId: z.string().min(1).max(80),
+      revision: z.number().int().min(1),
+      digest: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+      name: z.string().min(1).max(60),
+      engine: z.string().min(1).max(40),
+      model: z.string().regex(PROFILE_MODEL),
+      effort: z.string().min(1).max(40).nullable(),
+      agentId: z.string().min(1).max(80),
+      rules: z.array(z.string().max(PROFILE_MAX_RULE)).max(PROFILE_MAX_RULES),
+      source: z.enum(['thread', 'task', 'project']),
+      fallbackPolicy: z.enum(['off', 'on']),
+      fallback: z
+        .strictObject({
+          fromProfileId: z.string().min(1).max(80),
+          fromName: z.string().min(1).max(80),
+          reason: z.string().min(1).max(1000),
+        })
+        .nullable(),
+      skipped: z
+        .array(
+          z.strictObject({
+            profileId: z.string().min(1).max(80),
+            name: z.string().min(1).max(80),
+            revision: z.number().int().min(1).nullable(),
+            reason: z.string().min(1).max(1000),
+          }),
+        )
+        .max(PROFILE_MAX_ORDER),
+    })
+    .optional(),
   resolvedAt: timeSchema,
 });
 
@@ -307,7 +350,12 @@ export function validateAgentResolutions(state: ProjectState) {
       (snapshot.agentSelection === 'automatic' &&
         snapshot.requestedAgentId !== null &&
         snapshot.requestedAgentId !== AUTO_AGENT) ||
-      (snapshot.agentSelection === 'manual' && snapshot.requestedAgentId !== snapshot.agentId)
+      (snapshot.agentSelection === 'manual' && snapshot.requestedAgentId !== snapshot.agentId) ||
+      // A pinned profile names the route and model the run was sent to, exactly.
+      (snapshot.profile !== undefined &&
+        (snapshot.profile.engine !== snapshot.routeId ||
+          snapshot.profile.model !== snapshot.requestedModel ||
+          (snapshot.profile.fallback !== null && snapshot.profile.fallbackPolicy !== 'on')))
     )
       fail();
   }

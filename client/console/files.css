@@ -346,6 +346,14 @@
     z-index: 4;
     box-shadow: -18px 0 40px -30px rgba(0, 0, 0, 0.9);
   }
+  /* The narrow stage scrolls (console.css, C47), so the pane takes the
+     screen's own grid area rather than the stage's first screenful. */
+  .console .stage.files-open > .files {
+    position: relative;
+    grid-row: 2;
+    grid-column: 1;
+    justify-self: end;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

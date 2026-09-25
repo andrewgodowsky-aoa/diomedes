@@ -260,6 +260,27 @@ export function Shell({
   const [teamRoutes, setTeamRoutes] = useState<TeamRoutesView | null>(null);
   const [toast, setToast] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
+  // Escape or a click outside closes the Interface detail menu, as TopStrip's
+  // copy of it does, and Escape puts focus back on the button that opened it.
+  const menuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!menuOpen) return;
+    const close = (e: MouseEvent | KeyboardEvent) => {
+      if (e instanceof KeyboardEvent) {
+        if (e.key !== 'Escape') return;
+        setMenuOpen(false);
+        menuRef.current?.querySelector<HTMLButtonElement>(':scope > button')?.focus();
+        return;
+      }
+      if (!menuRef.current?.contains(e.target as Node)) setMenuOpen(false);
+    };
+    document.addEventListener('mousedown', close);
+    document.addEventListener('keydown', close);
+    return () => {
+      document.removeEventListener('mousedown', close);
+      document.removeEventListener('keydown', close);
+    };
+  }, [menuOpen]);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [paletteQuery, setPaletteQuery] = useState('');
   const [pendingTaskId, setPendingTaskId] = useState<string | null>(null);
@@ -1148,6 +1169,11 @@ export function Shell({
           };
     void setRequested(selected, next as Conversation['requested'], route);
   }
+  /** An exact-model profile (H09) replaces the thread's own Agent and model pick. */
+  function pickProfile(profileId: string) {
+    if (!selected) return;
+    void setRequested(selected, { model: null, effort: null, profile: profileId }, route);
+  }
   /**
    * One thread's route and model, changed through the one guard every caller
    * passes. The refusal used to live in the Picker's own menu, which the
@@ -1850,6 +1876,7 @@ export function Shell({
               live={selectedLive}
               busy={busy}
               onPick={pickAgent}
+              onPickProfile={pickProfile}
             />
           )}
           {selected && (
@@ -1886,7 +1913,7 @@ export function Shell({
               Cloud sharing
             </button>
           )}
-          <div className="surface-menu">
+          <div className="surface-menu" ref={menuRef}>
             <button
               type="button"
               aria-label="Interface detail menu"
@@ -2068,6 +2095,7 @@ export function Shell({
                 const target = state.tasks.find((item) => item.id === taskId);
                 if (target) openTaskThread(target);
               }}
+              reviewComments={state.reviewComments ?? []}
               onError={report}
               grantActive={!!activeGrant}
               onScope={() => setPermissionsOpen(true)}

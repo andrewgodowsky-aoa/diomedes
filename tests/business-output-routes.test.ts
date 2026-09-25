@@ -24,6 +24,7 @@ import { createApp } from '../server/app.js';
 import type { Person, WorkspaceView } from '../shared/workspaces.js';
 
 let server: Server | undefined;
+let app: Awaited<ReturnType<typeof createApp>> | undefined;
 let root = '';
 let url = '';
 const headers = { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' };
@@ -38,7 +39,7 @@ async function request<T = any>(route: string, method = 'GET', body?: unknown) {
 }
 
 async function launch() {
-  const app = await createApp({
+  app = await createApp({
     dataDir: path.join(root, 'data'),
     projectRoot: path.join(root, 'projects'),
   });
@@ -50,7 +51,13 @@ async function launch() {
 async function stop() {
   if (!server) return;
   const current = server;
+  const running = app;
   server = undefined;
+  app = undefined;
+  // Close the services too, so nothing the app queued (a change-review build, a
+  // supervision pass) is still writing into the data dir when it is removed.
+  await running?.locals.close();
+  current.closeAllConnections();
   await new Promise<void>((resolve) => current.close(() => resolve()));
 }
 

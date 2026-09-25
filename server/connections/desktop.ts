@@ -44,8 +44,9 @@ export class DesktopConnections {
     }, (projectId) => this.principal(projectId));
     if (process.env.DIOMEDES_TEST_MODE === '1') host.tools.register({
       name: 'fixture_write_probe', version: '1', description: 'Test-only denied write; no external transport.',
-      effect: 'non-idempotent', permission: 'connections.write', approval: true,
+      effect: 'non-idempotent', effectClass: 'non-idempotent-effect', permission: 'connections.write', approval: true,
       destination: 'local', trustedInputRequired: false, cost: 1, schema: z.strictObject({}),
+      outputSchema: z.strictObject({ unexpectedDispatch: z.literal(true) }), targets: () => ['fixture:write-probe'],
       execute: async () => { this.writeDispatches++; return { unexpectedDispatch: true }; },
     });
   }

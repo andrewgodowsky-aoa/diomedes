@@ -15,6 +15,7 @@
  */
 import type { Destination, Effect, StepIntent } from './harness.js';
 import { AGENT_NAME } from './agent-name.js';
+import { exactReviewOnly } from './exact-review.js';
 
 /**
  * Identical exact approvals in one project before Diomedes offers to stop
@@ -41,7 +42,8 @@ export const ALWAYS_ASK_REASON: Record<AlwaysAskCategory, string> = {
  * pattern, so it asks again.
  */
 export interface ApprovalPattern {
-  readonly kind: 'harness-step';
+  /** A harness procedure step, or a Codex direct text proposal (the native Work path). */
+  readonly kind: 'harness-step' | 'codex-proposal';
   readonly projectId: string;
   /** The procedure (capability) the step belongs to. */
   readonly procedure: string;
@@ -542,4 +544,64 @@ const day = (at: string) =>
  */
 export function rememberedAttribution(grant: { acceptedBy: string; acceptedAt: string }): string {
   return `Ran under a remembered approval — ${grant.acceptedBy}, since ${day(grant.acceptedAt)}.`;
+}
+
+/**
+ * A Codex direct text proposal, remembered as one exact pattern: writing these
+ * files (created or updated, never removed) in this project, through Codex on
+ * this ChatGPT account. The procedure, tool and permission are fixed host
+ * names, so nothing a model writes can choose them.
+ */
+export const CODEX_PROPOSAL = {
+  procedure: 'codex-proposal',
+  tool: 'text.apply',
+  permission: 'write-project-file',
+  label: 'Codex text proposal',
+} as const;
+/** The account route the native Codex runtime reports: a hash of ChatGPT account metadata. */
+export const CHATGPT_ACCOUNT_ROUTE = /^openai:chatgpt:[a-f0-9]{64}$/;
+
+/** The files a proposal writes, as pattern targets, and whether it removes any. */
+export function proposalTargets(changes: readonly { path: string; after: string | null }[]): {
+  targets: string[];
+  deletes: boolean;
+} {
+  return {
+    targets: [...new Set(changes.map((change) => `file:${change.path}`))].sort(),
+    deletes: changes.some((change) => change.after === null),
+  };
+}
+
+/**
+ * The classifier for a Codex direct text proposal, as both the host and the
+ * Console read it from a Need. A proposal whose account route the runtime did
+ * not report, or that writes a file a browser runs code from, always asks.
+ */
+export function classifyProposal(need: {
+  connection?: { engine: string; accountRoute: string };
+  preview?: readonly { path: string; after: string | null }[];
+}): Classification {
+  if (
+    need.connection?.engine !== 'codex' ||
+    !CHATGPT_ACCOUNT_ROUTE.test(need.connection.accountRoute) ||
+    !need.preview?.length
+  )
+    return always('unrecognised');
+  const runsCode = need.preview.find((change) => exactReviewOnly(change.path));
+  if (runsCode)
+    return {
+      rememberable: false,
+      category: 'unrecognised',
+      reason: `${runsCode.path} always needs your exact review: an SVG, HTML or XML file can run code when it is opened.`,
+    };
+  const read = proposalTargets(need.preview);
+  return classifyApproval({
+    procedure: CODEX_PROPOSAL.procedure,
+    tool: CODEX_PROPOSAL.tool,
+    permission: CODEX_PROPOSAL.permission,
+    effect: 'idempotent',
+    destination: 'local',
+    targets: read.targets,
+    deletes: read.deletes,
+  });
 }

@@ -1,4 +1,4 @@
-node_modules/
+node_modules
 .npm-cache/
 dist/
 .data/
@@ -14,3 +14,5 @@ output/
 .data-*
 .profile-smoke/
 .dev-server.json
+# A node_modules symlink is a file, which "node_modules/" does not match.
+node_modules

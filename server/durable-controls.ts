@@ -42,6 +42,7 @@ import {
   type ControlReceipt,
   type ControlRefusalCode,
   type ControlRequest,
+  type ControlRequester,
   type ControlSupport,
   type RouteControlProfile,
   type WorkInputs,
@@ -49,6 +50,7 @@ import {
 import { findCommand, payloadDigest } from './command-admission.js';
 import { ROUTE_CONTRACTS } from './harness/route-contract.js';
 import { CODEX_ENGINE, FIXTURE_ENGINE } from './harness/approval.js';
+import { NATIVE_LOOP_ENGINE } from '../shared/native-loop.js';
 import { AWS_MODEL_CONTRACT } from './harness/aws-model-adapter.js';
 import { AZURE_MODEL_CONTRACT } from './harness/azure-model-adapter.js';
 import { OPENROUTER_MODEL_CONTRACT } from './harness/openrouter-model-adapter.js';
@@ -71,7 +73,7 @@ const MODEL_API_CONTRACTS: Record<string, AdapterRouteContract> = Object.fromEnt
 export function workRouteOf(session: Session): string {
   if (session.route) return session.route;
   if (session.sample) return 'sample';
-  if (session.engine.name === FIXTURE_ENGINE) return 'native-fixture';
+  if (session.engine.name === FIXTURE_ENGINE || session.engine.name === NATIVE_LOOP_ENGINE) return 'native-fixture';
   if (session.engine.name === CODEX_ENGINE) return 'codex-report';
   return 'codex';
 }
@@ -87,6 +89,8 @@ export function defaultWorkContract(workRoute: string): AdapterRouteContract | n
 export interface SteerAnswer {
   state: 'delivered' | 'rejected' | 'uncertain';
   detail: string;
+  /** Who did it, when the driver knows better than the profile (e.g. the engine's reported model). */
+  performedBy?: ControlPerformer;
 }
 /** What a resume, retry or native fork started. */
 export interface StartAnswer {
@@ -94,6 +98,17 @@ export interface StartAnswer {
   taskId?: string;
   threadId?: string;
   detail?: string;
+  /**
+   * Who actually did it, when that differs from what the route's profile
+   * promised: a native resume the engine could not honour was a fresh start
+   * Diomedes composed, and the receipt says so (decision 8).
+   */
+  performedBy?: ControlPerformer;
+  support?: ControlSupport;
+  /** The engine's own thread the resume continued or the fork made. */
+  nativeThreadId?: string;
+  /** The route declined; nothing was started or made. */
+  refused?: { code: ControlRefusalCode; reason: string };
 }
 export interface ContinueContext {
   projectId: string;
@@ -145,6 +160,11 @@ export interface DurableControlsDeps {
   /** The model this thread and route would resolve to now. */
   modelFor?(projectId: string, threadId: string | null, route: Route): string | null;
   routeAvailable?(route: string): boolean;
+  /**
+   * H12: recorded tool effects of this run's harness run whose outcome is uncertain
+   * (a crash, takeover or cancel between the effect's intent and its outcome).
+   */
+  harnessEffects?(projectId: string, session: Session): Promise<readonly string[]>;
 }
 
 interface Draft {
@@ -230,7 +250,12 @@ export class DurableControls {
    * A replay of a command already answered returns its receipt unchanged and
    * performs nothing; the same identity with another payload is refused.
    */
-  async perform(projectId: string, body: unknown): Promise<ControlReceipt> {
+  async perform(
+    projectId: string,
+    body: unknown,
+    /** H15: Diomedes supervision asks for Steer, Queue and Stop in its own name. */
+    requestedBy: ControlRequester = { actor: 'you', via: 'local-client' },
+  ): Promise<ControlReceipt> {
     const parsed = controlRequestSchema.safeParse(body);
     if (!parsed.success)
       throw new ApiError(
@@ -266,7 +291,7 @@ export class DurableControls {
       : undefined;
     if (sessionId && !session) throw new ApiError(404, 'This run was not found for this task.');
     const requestedAt = now();
-    const draft = await this.dispatch(projectId, request, task, session ?? null);
+    const draft = await this.dispatch(projectId, request, task, session ?? null, requestedBy);
 
     const fresh = this.store.state(projectId);
     const workRoute = session
@@ -287,7 +312,7 @@ export class DurableControls {
       family: CONTROL_FAMILY[request.control],
       payloadDigest: digest,
       control: request.control,
-      requestedBy: { actor: 'you', via: 'local-client' },
+      requestedBy: structuredClone(requestedBy),
       requestedAt,
       target: {
         taskId: task.id,
@@ -318,7 +343,7 @@ export class DurableControls {
       this.store.addEntry(fresh, {
         kind: 'control',
         sentence: draft.history.sentence,
-        actor: 'you',
+        actor: requestedBy.actor === 'you' ? 'you' : 'diomedes',
         taskId: draft.history.taskId,
         ...(draft.history.sessionId ? { sessionId: draft.history.sessionId } : {}),
       });
@@ -331,13 +356,18 @@ export class DurableControls {
     request: ControlRequest,
     task: Task,
     session: Session | null,
+    requestedBy: ControlRequester,
   ): Promise<Draft> {
+    const supervision = requestedBy.actor === 'diomedes';
     switch (request.control) {
       case 'queue':
-        return this.queue(projectId, request, task);
+        return this.queue(projectId, request, task, supervision);
       case 'stop':
-        return this.stop(projectId, request, task, session);
+        return this.stop(projectId, request, task, session, supervision);
     }
+    // Supervision asks for Steer, Queue and Stop only: continuing is always the person's.
+    if (supervision && request.control !== 'steer')
+      throw new ApiError(403, 'Only you can resume, retry or fork a run.');
     // Every other control names a run; the schema requires it.
     const run = session!;
     const workRoute = workRouteOf(run);
@@ -359,7 +389,7 @@ export class DurableControls {
         : { kind: 'diomedes' };
     switch (request.control) {
       case 'steer':
-        return this.steer(projectId, request, task, run, driver!, performer);
+        return this.steer(projectId, request, task, run, driver!, performer, supervision);
       case 'resume':
       case 'retry':
         return this.continueRun(projectId, request, task, run, offered.support, driver, performer);
@@ -375,6 +405,7 @@ export class DurableControls {
     session: Session,
     driver: WorkControlDriver,
     performer: ControlPerformer,
+    supervision = false,
   ): Promise<Draft> {
     let answer: SteerAnswer;
     try {
@@ -398,9 +429,11 @@ export class DurableControls {
     return {
       outcome: answer.state === 'delivered' ? 'applied' : 'uncertain',
       detail: answer.detail,
-      performedBy: performer,
+      performedBy: answer.performedBy ?? performer,
       history: {
-        sentence: `You steered ${task.name} while it ran.`,
+        sentence: supervision
+          ? `Diomedes supervision steered ${task.name} while it ran.`
+          : `You steered ${task.name} while it ran.`,
         sessionId: session.id,
         taskId: task.id,
       },
@@ -411,19 +444,24 @@ export class DurableControls {
     projectId: string,
     request: Extract<ControlRequest, { control: 'queue' }>,
     task: Task,
+    supervision = false,
   ): Promise<Draft> {
     try {
-      const followUp = await this.deps.workControl.queue(projectId, {
-        protocolVersion: 1,
-        commandId: derivedWorkCommandId(request.commandId),
-        taskId: task.id,
-        text: request.text,
-        waitsFor: request.waitsFor,
-        route: request.route,
-        model: request.model,
-        agentId: request.agentId,
-        sources: [...request.sources],
-      });
+      const followUp = await this.deps.workControl.queue(
+        projectId,
+        {
+          protocolVersion: 1,
+          commandId: derivedWorkCommandId(request.commandId),
+          taskId: task.id,
+          text: request.text,
+          waitsFor: request.waitsFor,
+          route: request.route,
+          model: request.model,
+          agentId: request.agentId,
+          sources: [...request.sources],
+        },
+        supervision ? 'diomedes-supervision' : 'you',
+      );
       return {
         outcome: 'queued',
         detail: `Queued to send ${followUpWaitLabel(followUp.waitsFor)}.`,
@@ -442,6 +480,7 @@ export class DurableControls {
     request: Extract<ControlRequest, { control: 'stop' }>,
     task: Task,
     session: Session | null,
+    supervision = false,
   ): Promise<Draft> {
     const state = this.store.state(projectId);
     const target =
@@ -460,11 +499,11 @@ export class DurableControls {
         );
       }
     }
-    const stop = await this.deps.workControl.stop(projectId, {
-      scope: request.scope,
-      taskId: task.id,
-      sessionId: request.sessionId,
-    });
+    const stop = await this.deps.workControl.stop(
+      projectId,
+      { scope: request.scope, taskId: task.id, sessionId: request.sessionId },
+      supervision ? 'supervision' : 'you',
+    );
     const cancelled = stop.cancelledFollowUpIds.length;
     const cancelledSentence = cancelled
       ? ` ${cancelled} queued ${cancelled === 1 ? 'follow-up was' : 'follow-ups were'} cancelled.`
@@ -505,7 +544,7 @@ export class DurableControls {
    * Provider work that may still be charged is not one of them: it changes
    * nothing in the world a retry would change again.
    */
-  uncertainEffects(projectId: string, session: Session): string[] {
+  async uncertainEffects(projectId: string, session: Session): Promise<string[]> {
     const state = this.store.state(projectId);
     const effects: string[] = [];
     for (const need of state.needs.filter((item) => item.sessionId === session.id)) {
@@ -526,6 +565,8 @@ export class DurableControls {
     const contract = this.contract(projectId, workRouteOf(session), session);
     const driver = contract ? this.drivers.get(contract.routeId) : undefined;
     for (const effect of driver?.uncertainEffects?.(projectId, session) ?? [])
+      if (!effects.includes(effect)) effects.push(effect);
+    for (const effect of (await this.deps.harnessEffects?.(projectId, session)) ?? [])
       if (!effects.includes(effect)) effects.push(effect);
     return effects;
   }
@@ -664,7 +705,12 @@ export class DurableControls {
       ...(control === 'retry' ? { attempt: this.attemptOf(projectId, session.id) + 1 } : {}),
     };
     const verb = control === 'resume' ? 'Resumed' : 'Retried';
-    const started = (sessionId: string | undefined, detail?: string, revalidated: string[] = []) =>
+    const started = (
+      sessionId: string | undefined,
+      detail?: string,
+      revalidated: string[] = [],
+      answer: StartAnswer = {},
+    ) =>
       ({
         outcome: 'applied',
         detail:
@@ -672,8 +718,12 @@ export class DurableControls {
           (control === 'resume'
             ? `Resumed as a new run${sessionId ? ` (${sessionId})` : ''} that continues ${session.id}.`
             : `Retried as attempt ${lineage.attempt}${sessionId ? ` (${sessionId})` : ''}, with the same inputs as ${session.id}.`),
-        performedBy: performer,
-        result: sessionId ? { sessionId } : {},
+        performedBy: answer.performedBy ?? performer,
+        ...(answer.support ? { support: answer.support } : {}),
+        result: {
+          ...(sessionId ? { sessionId } : {}),
+          ...(answer.nativeThreadId ? { nativeThreadId: answer.nativeThreadId } : {}),
+        },
         lineage,
         revalidated,
         history: {
@@ -697,7 +747,7 @@ export class DurableControls {
         'inputs-unrecorded',
         `This run was recorded before its inputs were kept, so it cannot be ${control === 'resume' ? 'resumed' : 'retried'} with the same ones. Start the task again instead.`,
       );
-    const effects = this.uncertainEffects(projectId, session);
+    const effects = await this.uncertainEffects(projectId, session);
     if (effects.length)
       return refused(
         'uncertain-effects',
@@ -745,7 +795,9 @@ export class DurableControls {
         return refused('admission-refused', error.message, { revalidated: checks });
       throw error;
     }
-    return started(answer.sessionId, answer.detail, checks);
+    if (answer.refused)
+      return refused(answer.refused.code, answer.refused.reason, { revalidated: checks });
+    return started(answer.sessionId, answer.detail, checks, answer);
   }
 
   private async fork(
@@ -765,29 +817,60 @@ export class DurableControls {
     if (support === 'native') {
       if (!driver?.fork || !session.inputs)
         return refused('unsupported', 'This route has no fork wired to Work runs.');
-      const answer = await driver.fork({
-        projectId,
-        task,
-        session,
-        inputs: session.inputs,
-        workCommandId: derivedWorkCommandId(request.commandId),
-        start: () => Promise.reject(new ApiError(409, 'A native fork starts its own run.')),
-      });
+      let answer: StartAnswer;
+      try {
+        answer = await driver.fork({
+          projectId,
+          task,
+          session,
+          inputs: session.inputs,
+          workCommandId: derivedWorkCommandId(request.commandId),
+          start: () => Promise.reject(new ApiError(409, 'A native fork starts its own run.')),
+        });
+      } catch (error) {
+        if (error instanceof ApiError && error.status < 500)
+          return refused('route-refused', error.message);
+        throw error;
+      }
+      if (answer.refused) return refused(answer.refused.code, answer.refused.reason);
+      if (!answer.taskId && answer.nativeThreadId) {
+        // The engine branched its own thread; the new task and thread that carry
+        // the branch are made here, exactly as a host fork makes them.
+        const made = this.forkTask(projectId, task, session);
+        return {
+          ...made,
+          detail: `${answer.detail ?? `Forked from ${session.id}.`} ${made.detail}`,
+          performedBy: answer.performedBy ?? performer,
+          result: { ...made.result, nativeThreadId: answer.nativeThreadId },
+          lineage,
+        };
+      }
       return {
         outcome: 'applied',
         detail: answer.detail ?? `Forked from ${session.id}.`,
-        performedBy: performer,
+        performedBy: answer.performedBy ?? performer,
         result: {
           ...(answer.sessionId ? { sessionId: answer.sessionId } : {}),
           ...(answer.taskId ? { taskId: answer.taskId } : {}),
           ...(answer.threadId ? { threadId: answer.threadId } : {}),
+          ...(answer.nativeThreadId ? { nativeThreadId: answer.nativeThreadId } : {}),
         },
         lineage,
       };
     }
-    // Host fork: a new task and thread that refer to the origin. The origin's
-    // records are read, never written; nothing is copied from its history, and
-    // no run starts until the person starts one.
+    return { ...this.forkTask(projectId, task, session), performedBy: performer, lineage };
+  }
+
+  /**
+   * A new task and thread that refer to the origin run. The origin's records are
+   * read, never written; nothing is copied from its history, and no run starts
+   * until the person starts one.
+   */
+  private forkTask(
+    projectId: string,
+    task: Task,
+    session: Session,
+  ): Draft & { result: { taskId: string; threadId: string } } {
     const state = this.store.state(projectId);
     const origin =
       this.thread(projectId, session) ??
@@ -822,9 +905,7 @@ export class DurableControls {
     return {
       outcome: 'applied',
       detail: `Forked into ${forked.name}, from ${session.id}. Nothing runs until you start it.`,
-      performedBy: performer,
       result: { taskId: forked.id, threadId: thread.id },
-      lineage,
       history: {
         sentence: `You forked ${task.name} into ${forked.name}.`,
         taskId: forked.id,

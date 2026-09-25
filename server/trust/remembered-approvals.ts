@@ -33,16 +33,21 @@ import type {
   RememberedAuthorization,
 } from '../../shared/permissions.js';
 import {
+  ALWAYS_ASK_REASON,
+  CHATGPT_ACCOUNT_ROUTE,
   classifyApproval,
+  CODEX_PROPOSAL,
   describePattern,
   intentTargets,
+  proposalTargets,
   REMEMBER_OFFER_THRESHOLD,
   rememberedAttribution,
+  type Classification,
 } from '../../shared/remembered-approvals.js';
 import type { StepIntent } from '../../shared/harness.js';
 import { AGENT_NAME } from '../../shared/agent-name.js';
 import { digestSchema, payloadDigest } from '../command-admission.js';
-import { ApiError, relativeName } from '../paths.js';
+import { ApiError, exactReviewOnly, relativeName } from '../paths.js';
 import type { Store, WriteInput } from '../store.js';
 
 export const MAX_PATTERN_GRANTS = 256;
@@ -67,7 +72,7 @@ export interface ApprovalCandidate {
 /** Fixed key order, so a digest never depends on how a pattern was parsed. */
 export function canonicalPattern(pattern: ApprovalPattern): ApprovalPattern {
   return {
-    kind: 'harness-step',
+    kind: pattern.kind,
     projectId: pattern.projectId,
     procedure: pattern.procedure,
     tool: pattern.tool,
@@ -124,16 +129,69 @@ export function patternForStep(input: {
   return { pattern, deletes: read.deletes, what: describePattern(pattern, input.procedureLabel) };
 }
 
-const classify = (candidate: Pick<ApprovalCandidate, 'pattern' | 'deletes'>) =>
-  classifyApproval({
-    procedure: candidate.pattern.procedure,
-    tool: candidate.pattern.tool,
-    permission: candidate.pattern.action.permission,
-    effect: candidate.pattern.action.effect,
-    destination: candidate.pattern.destination.kind,
-    targets: candidate.pattern.destination.targets,
-    deletes: candidate.deletes,
+/**
+ * The pattern a Codex direct text proposal would be remembered as, from the
+ * Need's persisted facts: the files it writes and the engine and account route
+ * the runtime reported it was prepared under. Null when that route was not
+ * reported, so an unknown account is never guessed at and always asks.
+ */
+export function patternForProposal(input: {
+  projectId: string;
+  need: Pick<Need, 'connection' | 'preview'>;
+}): Omit<ApprovalCandidate, 'authority'> | null {
+  const connection = input.need.connection;
+  if (
+    connection?.engine !== 'codex' ||
+    !CHATGPT_ACCOUNT_ROUTE.test(connection.accountRoute) ||
+    !input.need.preview?.length
+  )
+    return null;
+  const read = proposalTargets(input.need.preview);
+  const pattern = canonicalPattern({
+    kind: 'codex-proposal',
+    projectId: input.projectId,
+    procedure: CODEX_PROPOSAL.procedure,
+    tool: CODEX_PROPOSAL.tool,
+    action: { kind: 'tool', permission: CODEX_PROPOSAL.permission, effect: 'idempotent' },
+    destination: { kind: 'local', targets: read.targets },
+    connection: { engine: 'codex', accountRoute: connection.accountRoute },
   });
+  return {
+    pattern,
+    deletes: read.deletes,
+    what: describePattern(pattern, CODEX_PROPOSAL.label),
+  };
+}
+
+/** A Codex proposal pattern is exactly the fixed shape above; anything else is not one. */
+function codexProposalShape(pattern: ApprovalPattern) {
+  return (
+    pattern.procedure === CODEX_PROPOSAL.procedure &&
+    pattern.tool === CODEX_PROPOSAL.tool &&
+    pattern.action.kind === 'tool' &&
+    pattern.action.permission === CODEX_PROPOSAL.permission &&
+    pattern.action.effect === 'idempotent' &&
+    pattern.destination.kind === 'local' &&
+    pattern.destination.targets.every(
+      (target) => target.startsWith('file:') && !exactReviewOnly(target),
+    ) &&
+    pattern.connection.engine === 'codex' &&
+    CHATGPT_ACCOUNT_ROUTE.test(pattern.connection.accountRoute ?? '')
+  );
+}
+
+const classify = (candidate: Pick<ApprovalCandidate, 'pattern' | 'deletes'>): Classification =>
+  candidate.pattern.kind === 'codex-proposal' && !codexProposalShape(candidate.pattern)
+    ? { rememberable: false, category: 'unrecognised', reason: ALWAYS_ASK_REASON.unrecognised }
+    : classifyApproval({
+        procedure: candidate.pattern.procedure,
+        tool: candidate.pattern.tool,
+        permission: candidate.pattern.action.permission,
+        effect: candidate.pattern.action.effect,
+        destination: candidate.pattern.destination.kind,
+        targets: candidate.pattern.destination.targets,
+        deletes: candidate.deletes,
+      });
 
 const refused = (reason: string, code = 'remember_refused') => new ApiError(409, reason, { code });
 const notCovered = (reason: string) => new ApiError(403, reason, { code: 'scope_not_authorized' });
@@ -145,11 +203,16 @@ const notCovered = (reason: string) => new ApiError(403, reason, { code: 'scope_
  */
 function difference(grant: ApprovalPattern, candidate: ApprovalPattern): string | null {
   const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+  const proposal = candidate.kind === 'codex-proposal';
   if (!same(grant.destination, candidate.destination))
-    return 'this goes to a destination or recipient it does not cover';
+    return proposal
+      ? 'this writes files it does not cover'
+      : 'this goes to a destination or recipient it does not cover';
   if (!same(grant.action, candidate.action)) return 'this is a different or wider action';
   if (!same(grant.connection, candidate.connection))
-    return 'the connection it acts through changed';
+    return proposal
+      ? 'this was prepared under a different ChatGPT account'
+      : 'the connection it acts through changed';
   return null;
 }
 
@@ -452,8 +515,9 @@ export class RememberedApprovals {
   ): PatternGrantRecord {
     const state = this.store.state(projectId);
     const receipt = need.approvalReceipt;
+    // A harness step, or a Codex direct text proposal (never another kind of Need).
     if (
-      !need.harness ||
+      (candidate.pattern.kind === 'codex-proposal') === !!need.harness ||
       !receipt ||
       receipt.decision !== 'go-ahead' ||
       receipt.actor !== 'local-client' ||
@@ -609,7 +673,7 @@ const time = z
   .max(40)
   .refine((value) => Number.isFinite(Date.parse(value)));
 const patternSchema = z.strictObject({
-  kind: z.literal('harness-step'),
+  kind: z.enum(['harness-step', 'codex-proposal']),
   projectId: id,
   procedure: z.string().min(1).max(120),
   tool: z.string().min(1).max(120),
@@ -807,9 +871,17 @@ export function validateRememberedAuthorization(state: ProjectState, need: Need)
   if (!record || !recordSchema.safeParse(record).success) return fail();
   const event = state.history.find((item) => item.id === evidence.eventId);
   const session = state.sessions.find((item) => item.id === need.sessionId);
+  const proposal = record.grant.pattern.kind === 'codex-proposal';
   if (
     !need.approval ||
-    !need.harness ||
+    // A harness step's grant covers harness steps; a Codex proposal's grant
+    // covers only a direct proposal prepared on the same Codex account.
+    proposal === !!need.harness ||
+    (proposal &&
+      (need.connection?.engine !== evidence.engine ||
+        need.connection.accountRoute !== evidence.accountRoute ||
+        session?.route !== 'codex' ||
+        !!session.slotId)) ||
     need.approvalReceipt ||
     need.allowForTask ||
     need.reviews?.length ||
@@ -853,7 +925,13 @@ export function validateRememberedAuthorization(state: ProjectState, need: Need)
     if (
       !write ||
       write.approvalId !== need.id ||
-      JSON.stringify(write.authorization) !== JSON.stringify(evidence)
+      JSON.stringify(write.authorization) !== JSON.stringify(evidence) ||
+      // A direct proposal's write is exactly the action it was approved as.
+      (proposal &&
+        payloadDigest({
+          type: 'text.apply',
+          writes: write.files.map(({ path, before, after }) => ({ path, before, after })),
+        }) !== evidence.actionDigest)
     )
       return fail();
   }

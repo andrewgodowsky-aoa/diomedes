@@ -74,18 +74,25 @@ import { ChangeReviewService } from './change-review/service.js';
 import {
   askCodex,
   closeWarmCodex,
+  forkCodexThread,
   getIntegrationStatuses,
+  steerCodex,
+  type CodexIntegration,
   type NativeTeamOptions,
 } from './integrations.js';
+import { CodexControls } from './codex-controls.js';
 import { MODES, modeOf } from './modes.js';
 import { fakeCodexSnapshot, usageService } from './usage.js';
 import { engineCatalog, isKnownChoice } from './models.js';
 import { ReviewerService, type ReviewerAdapter } from './trust/reviewer.js';
 import { codexReviewerAdapter } from './trust/codex-reviewer.js';
 import { VerificationService } from './verification/service.js';
+import { mountNativeLoopRoutes } from './native-loop-routes.js';
+import { NATIVE_LOOP_ENGINE } from '../shared/native-loop.js';
 import { mountVerificationRoutes } from './verification/routes.js';
 import { codexVerificationReviewer, type VerificationReviewerAdapter } from './verification/reviewer.js';
 import { AgentRegistry } from './agents.js';
+import { AgentProfileService, AgentProfileStore, mountAgentProfileRoutes } from './agent-profiles.js';
 import { AUTO_AGENT, agentCompatibility } from '../shared/agents.js';
 import { effortFor } from '../shared/effort.js';
 import {
@@ -134,6 +141,9 @@ import {
   CONTROL_FIXTURE_ROUTE,
   controlFixtureDriver,
 } from './durable-controls-fixture.js';
+import { SupervisionService } from './supervision/service.js';
+import { keepPartially } from './change-review/partial-keep.js';
+import { documentDiff, ReviewComments } from './review-comments.js';
 import { ReadyScheduler } from './ready-scheduler.js';
 import { DesktopConnections } from './connections/desktop.js';
 import { toastConnector } from './connections/fixture.js';
@@ -157,8 +167,11 @@ import { EngineService, HOST_TEST_PROJECT } from './engines/service.js';
 import {
   mountClaudeSessionRoutes,
   mountOpenCodeSessionRoutes,
+  mountThreadSessionRoute,
+  mountAcpSessionRoutes,
   type ClaudeSessionRouteDependencies,
 } from './engines/claude-session-routes.js';
+import type { EngineAsk } from './engines/contract.js';
 import { mountJevAdvisorRoutes } from './jev-advisor-routes.js';
 import type { JevAdvisor } from './harness/jev-advisor.js';
 import { loadApprovedReadServers, readScopeDigest, type ReadScope } from './engines/read-scope.js';
@@ -203,6 +216,8 @@ import {
 import { assertReplay, findCommand } from './command-admission.js';
 import { claudeSessionRunId } from './harness/claude-session-run.js';
 import { opencodeSessionRunId } from './harness/opencode-session-run.js';
+import { acpSessionRunId } from './harness/acp-session-run.js';
+import { EngineAskNeeds } from './engines/engine-asks.js';
 import { modelSessionRunId } from './harness/model-session-run.js';
 import { FileModelTranscripts } from './harness/model-transcripts.js';
 import { AWS_BEDROCK_ROUTE, AwsConnections } from './engines/aws-bedrock.js';
@@ -240,6 +255,11 @@ interface AppOptions {
   port?: number;
   clientPort?: number;
   nativeGenerator?: NativeGenerator;
+  /**
+   * The Codex entry points Work runs and their controls use (H02). Omitted means
+   * the app's own adapter; tests pass one over a fixture app-server.
+   */
+  codexIntegration?: CodexIntegration;
   /**
    * Reviewer route for `Approve for me`. Omitted means no reviewer exists and
    * the option cannot be confirmed. Tests and packaged smokes inject a
@@ -279,6 +299,8 @@ interface AppOptions {
     onInstallAccepted?: () => void;
     transport?: Partial<UpdateTransport>;
   };
+  /** H13: tests replace the Diomedes loop's model-API routes here. Production uses the engine service. */
+  loopModelRoutes?: import('./harness/capabilities/native-loop.js').LoopModelRoutes;
   /** The automation scheduler's clock and pass interval. Tests inject both; null runs no timer. */
   automationClock?: () => number;
   automationTickMs?: number | null;
@@ -342,6 +364,15 @@ function parseRequested(value: unknown, engine: Route = 'codex'): Conversation['
       throw new ApiError(400, 'That is not an Agent.');
     agent = v.agent.trim();
   }
+  let profile: string | null = null;
+  if (v.profile !== null && v.profile !== undefined) {
+    if (typeof v.profile !== 'string' || !/^pr-[a-z0-9-]{1,60}$/.test(v.profile))
+      throw new ApiError(400, 'That is not an Agent profile.');
+    profile = v.profile;
+  }
+  // A profile is an exact engine, model and Agent chosen as one (H09), so it stands
+  // alone: it carries no second model or Agent that could disagree with it.
+  if (profile !== null) return { model: null, effort: null, profile };
   // Agent and model are independent axes: an Agent with no model chosen keeps
   // the runtime default, and clearing the model does not clear the Agent.
   if (model === null) return agent === null ? null : { model: null, effort: null, agent };
@@ -638,6 +669,10 @@ export async function createApp(options: AppOptions) {
   const reviewerAdapter =
     options.reviewerAdapter === undefined ? codexReviewerAdapter() : options.reviewerAdapter;
   const agents = new AgentRegistry(store.dataDir);
+  // Exact-model Agent profiles and routing preferences (H09).
+  const agentProfileStore = new AgentProfileStore(store.dataDir);
+  await agentProfileStore.load();
+  const agentProfiles = new AgentProfileService(agentProfileStore, store, agents);
   // Organizations, membership and the Business intake. Identity for them comes
   // from server/trust/, whose production backend is not installed, so what this
   // creates is a labelled local fixture rather than a hosted organization.
@@ -761,6 +796,16 @@ export async function createApp(options: AppOptions) {
         }
       : null;
   };
+  // H02: Codex Work runs keep, resume and fork their app-server thread through this.
+  const codexControls = new CodexControls(
+    store,
+    options.codexIntegration ?? {
+      askCodex,
+      steerCodex,
+      forkCodexThread,
+      closeWarm: closeWarmCodex,
+    },
+  );
   const nativeWork = new NativeWorkService(
     store,
     options.nativeGenerator ??
@@ -817,7 +862,7 @@ export async function createApp(options: AppOptions) {
           });
         }
         if (!isExternalEngine(input.engine))
-          return askCodex({ ...input, ...(team ? { team, onTeamToolCall } : {}) });
+          return codexControls.ask({ ...input, ...(team ? { team, onTeamToolCall } : {}) });
         if (!input.projectId || !input.threadId || !input.requestId || !input.model)
           throw new ApiError(409, 'Select a model and thread before requesting work.');
         const accountRoute = input.accountRoute;
@@ -840,6 +885,7 @@ export async function createApp(options: AppOptions) {
     reviewer,
     agents,
     changeReview,
+    agentProfiles,
   );
   const harness = createHarnessHost({
     store,
@@ -874,7 +920,11 @@ export async function createApp(options: AppOptions) {
   };
   engines.nativeSessions = harness.claudeSessions;
   engines.opencodeSessions = harness.opencodeSessions;
+  engines.cursorSessions = harness.cursorSessions;
+  engines.devinSessions = harness.devinSessions;
   engines.modelSessions = harness.modelSessions;
+  // A kept ACP conversation's mid-turn questions become Needs a person answers (H05).
+  const engineAsks = new EngineAskNeeds(store);
   const exposure = new SpendExposure(store.dataDir);
   await exposure.init();
   // Parent-job caps (owner decision 2026-09-23): each job's tier is its thread's WorkStyle, else
@@ -913,7 +963,34 @@ export async function createApp(options: AppOptions) {
       ),
     },
   };
+  // H13: a model-API route drives a Diomedes work loop through the engine service's own
+  // admission. A loop resumed at startup waits until every route and the verifier exist.
+  harness.loop.hold();
+  harness.loop.setModelRoutes(options.loopModelRoutes ?? {
+    admit: async (route, input) => {
+      if (!isModelApiRoute(route) || !input.model || !input.accountRoute)
+        throw new ApiError(409, 'Connect this route and choose its model in AI setup first.');
+      const admission = await engines.admitModelApi(route, { model: input.model, accountRoute: input.accountRoute });
+      return { model: admission.model, accountRoute: admission.accountRoute };
+    },
+    adapter: (route, request, stop) => {
+      if (!isModelApiRoute(route) || !request.model || !request.accountRoute)
+        throw new ApiError(409, 'This loop has no admitted model-API connection.');
+      return engines.loopAdapter(
+        route,
+        {
+          projectId: request.projectId,
+          runId: request.runId,
+          model: request.model,
+          accountRoute: request.accountRoute,
+          instructions: request.instructions,
+        },
+        stop,
+      );
+    },
+  });
   await harness.init();
+  await engineAsks.expireOpen();
   // Run once admits the brief through the harness above, so its occurrences
   // are settled only after the harness has recovered its runs.
   const automations = new AutomationService(
@@ -968,7 +1045,7 @@ export async function createApp(options: AppOptions) {
   const serviceFor = (projectId: string, sessionId: string) => {
     const session = store.state(projectId).sessions.find((item) => item.id === sessionId);
     if (!session) throw new ApiError(404, 'This work session was not found.');
-    return [FIXTURE_ENGINE, CODEX_ENGINE].includes(session.engine.name)
+    return [FIXTURE_ENGINE, CODEX_ENGINE, NATIVE_LOOP_ENGINE].includes(session.engine.name)
       ? harness.bridge
       : session.sample
         ? work
@@ -1075,6 +1152,7 @@ export async function createApp(options: AppOptions) {
       skipped,
     });
   });
+  mountAgentProfileRoutes(app, store, agentProfiles);
   mountPermissionRoutes(app, store, nativeWork, harness.bridge);
   const verification = new VerificationService(
     store,
@@ -1086,6 +1164,9 @@ export async function createApp(options: AppOptions) {
     { reviewTimeoutMs: options.verificationReviewTimeoutMs },
   );
   mountVerificationRoutes(app, store, verification);
+  // H13: the Diomedes work loop's finish gate runs the task's declared checks through H17's verifier.
+  harness.loop.attachVerification(verification);
+  mountNativeLoopRoutes(app, store, harness, verification);
   mountWorkspaceRoutes(app, store, workspaces, configuration, automations);
   mountAutomationRoutes(app, store, automations);
   mountThemeRoutes(app, store, themes, customization);
@@ -1828,6 +1909,13 @@ export async function createApp(options: AppOptions) {
     '/api/projects/:id/documents/version',
     route(async (req) => documentVersion(store, id(req), req.query.path, req.query.sha)),
   );
+  // P06: the readable difference between two recorded versions of one file.
+  app.get(
+    '/api/projects/:id/documents/diff',
+    route(async (req) =>
+      documentDiff(store, id(req), req.query.path, req.query.from, req.query.to),
+    ),
+  );
   app.get(
     '/api/projects/:id/documents/picture',
     route(async (req, res) => {
@@ -2266,12 +2354,19 @@ export async function createApp(options: AppOptions) {
           command?.request.agentId ??
           state.conversations.find((c) => c.id === threadId)?.requested?.agent ??
           null,
-        requested: nativeChoice(
-          selectedRoute,
+        // A profile that decides this run supplies its own exact model (H09).
+        requested: agentProfiles.applies(
           projectId,
+          taskId,
           state.conversations.find((c) => c.id === threadId),
-          { mode: 'build', text: typeof b.instruction === 'string' ? b.instruction : null },
-        ),
+        )
+          ? undefined
+          : nativeChoice(
+              selectedRoute,
+              projectId,
+              state.conversations.find((c) => c.id === threadId),
+              { mode: 'build', text: typeof b.instruction === 'string' ? b.instruction : null },
+            ),
         instruction:
           b.instruction === undefined
             ? undefined
@@ -2302,8 +2397,13 @@ export async function createApp(options: AppOptions) {
     store,
     native: nativeWork,
     admit: (projectId, command) => admitWork(projectId, command, listeningPort),
-    stopSession: (projectId, sessionId) =>
-      serviceFor(projectId, sessionId).stop(projectId, sessionId),
+    stopSession: (projectId, sessionId, by) => {
+      const service = serviceFor(projectId, sessionId);
+      if (service === nativeWork) return nativeWork.stop(projectId, sessionId, by);
+      if (service === harness.bridge && by === 'supervision')
+        return harness.bridge.stop(projectId, sessionId, 'Paused by Diomedes supervision.');
+      return service.stop(projectId, sessionId);
+    },
     modelFor: (projectId, threadId, engine) => {
       if (engine === 'sample') return null;
       // A name for a queued follow-up. A style that would ask is answered when it is sent.
@@ -2342,12 +2442,34 @@ export async function createApp(options: AppOptions) {
         ).model ?? null
       );
     },
-    contractFor: (projectId, workRoute) =>
+    contractFor: (projectId, workRoute, session) =>
       workRoute === 'sample' && controlFixtureProjects.has(projectId)
         ? CONTROL_FIXTURE_CONTRACT
-        : defaultWorkContract(workRoute),
+        : workRoute === 'codex'
+          ? codexControls.contract(session)
+          : defaultWorkContract(workRoute),
+    // H12: a harness run's uncertain tool effects block Retry and Resume too.
+    harnessEffects: (projectId, session) => harness.bridge.uncertainEffects(projectId, session.id),
   });
   durableControls.registerDriver(CONTROL_FIXTURE_ROUTE, controlFixtureDriver(work));
+  // H02: the Codex route's steer, resume and fork, offered only where the Codex that
+  // served a run advertised them (`codexControls.contract`).
+  durableControls.registerDriver('codex', codexControls.driver());
+  /**
+   * H15 supervision: drift detection over each live run's durable records, answered on a
+   * bounded ladder through the controls above and an ordinary Need. It listens to the same
+   * `change` announcement the follow-up queue does and grants nothing.
+   */
+  const supervision = new SupervisionService({
+    store,
+    controls: durableControls,
+    harnessRun: async (projectId, session) =>
+      [FIXTURE_ENGINE, CODEX_ENGINE].includes(session.engine.name)
+        ? ((await harness.list(projectId)).find((run) => run.sessionId === session.id) ?? null)
+        : null,
+  });
+  const superviseOnChange = (projectId: string) => supervision.schedule(projectId);
+  store.on('change', superviseOnChange);
   /**
    * The one trigger. A session reaching a terminal state and a task becoming
    * done both end in a durable write, and `persist` announces that write, so
@@ -2500,6 +2622,26 @@ export async function createApp(options: AppOptions) {
       }),
     );
   app.get(
+    '/api/projects/:id/supervision',
+    route(async (req) => ({
+      records: supervision.list(
+        id(req),
+        typeof req.query.sessionId === 'string' ? req.query.sessionId : undefined,
+      ),
+    })),
+  );
+  app.post(
+    '/api/projects/:id/supervision/evaluate',
+    route(async (req) => {
+      const sessionId = asString(body(req).sessionId, 'a run', 100);
+      return { records: await supervision.evaluate(id(req), sessionId) };
+    }),
+  );
+  app.post(
+    '/api/projects/:id/supervision/escalations/:needId/answer',
+    route(async (req) => supervision.answer(id(req), String(req.params.needId), body(req))),
+  );
+  app.get(
     '/api/projects/:id/follow-ups',
     route(async (req) => ({ followUps: workControl.list(id(req)) })),
   );
@@ -2521,6 +2663,29 @@ export async function createApp(options: AppOptions) {
     '/api/projects/:id/follow-ups/:fid',
     route(async (req) => ({
       followUp: await workControl.remove(id(req), String(req.params.fid), 'you'),
+    })),
+  );
+  // P06: review comments on changes and file versions, and "Revise with these comments",
+  // which is an ordinary follow-up through the queue above.
+  const reviewComments = new ReviewComments(store, (projectId, request) =>
+    workControl.queue(projectId, request),
+  );
+  app.get(
+    '/api/projects/:id/review-comments',
+    route(async (req) => ({ comments: reviewComments.list(id(req)) })),
+  );
+  app.post(
+    '/api/projects/:id/review-comments',
+    route(async (req) => ({ comment: await reviewComments.add(id(req), body(req)) })),
+  );
+  app.post(
+    '/api/projects/:id/review-comments/revise',
+    route(async (req) => reviewComments.revise(id(req), body(req))),
+  );
+  app.post(
+    '/api/projects/:id/review-comments/:cid/resolve',
+    route(async (req) => ({
+      comment: await reviewComments.resolve(id(req), String(req.params.cid), body(req)),
     })),
   );
   app.post(
@@ -2553,6 +2718,23 @@ export async function createApp(options: AppOptions) {
         throw new ApiError(400, 'Choose true or false for the task allowance.');
       const need = store.state(id(req)).needs.find((item) => item.id === req.params.needId);
       if (!need) throw new ApiError(404, 'This request was not found.');
+      if (need.engineAsk)
+        return engineAsks.resolve(
+          id(req),
+          need.id,
+          choice(b.resolution, ['go-ahead', 'declined'], 'decision'),
+          b.allowForTask === true,
+        );
+      // A supervision escalation is answered only by a person, never for the whole task.
+      if (need.supervision) {
+        if (b.allowForTask === true)
+          throw new ApiError(400, 'A supervision escalation is answered for this run only.');
+        return supervision.answer(id(req), need.id, {
+          protocolVersion: 1,
+          commandId: typeof b.commandId === 'string' ? b.commandId : `answer.${identifier()}`,
+          answer: choice(b.resolution, ['go-ahead', 'declined'], 'decision') === 'go-ahead' ? 'continue' : 'stop',
+        });
+      }
       const admission = parseApprovalCommand(id(req), need.id, b);
       if (need.harness)
         return harness.bridge.resolve(
@@ -2618,6 +2800,11 @@ export async function createApp(options: AppOptions) {
       for (const change of changes) results.push(await review(id(req), change.id, action));
       return { changes: results.map((r) => r.change) };
     }),
+  );
+  // P06: keep some of a change's hunks and undo the rest, as one recorded write.
+  app.post(
+    '/api/projects/:id/review/:changeId/partial',
+    route(async (req) => keepPartially(store, id(req), String(req.params.changeId), body(req))),
   );
   app.post(
     '/api/projects/:id/review/:changeId',
@@ -3205,7 +3392,7 @@ export async function createApp(options: AppOptions) {
   // The explicit native conversation routes. Claude Code's (H03) and OpenCode's kept session
   // (H04) take the same admission and the same thread projection, each under its own engine.
   const nativeSessionDependencies = (
-    engine: 'claude-code' | 'opencode',
+    engine: 'claude-code' | 'opencode' | 'cursor' | 'devin',
   ): ClaudeSessionRouteDependencies => ({
     authorize: async (req) => {
       store.state(String(req.params.id));
@@ -3216,7 +3403,7 @@ export async function createApp(options: AppOptions) {
         const state = store.state(projectId);
         const thread = state.conversations.find((item) => item.id === command.threadId);
         if (!thread) throw new ApiError(404, 'This thread was not found.');
-        const name = engine === 'claude-code' ? 'Claude Code' : 'OpenCode';
+        const name = { 'claude-code': 'Claude Code', opencode: 'OpenCode', cursor: 'Cursor', devin: 'Devin' }[engine];
         if (selectedEngine(store.settings, state.project, thread) !== engine)
           throw new ApiError(
             409,
@@ -3273,10 +3460,11 @@ export async function createApp(options: AppOptions) {
       const runId =
         req.params.runId && !req.path.endsWith('/fork')
           ? String(req.params.runId)
-          : (engine === 'claude-code' ? claudeSessionRunId : opencodeSessionRunId)(
-              projectId,
-              command.commandId,
-            );
+          : (engine === 'claude-code'
+              ? claudeSessionRunId
+              : engine === 'opencode'
+                ? opencodeSessionRunId
+                : acpSessionRunId(engine))(projectId, command.commandId);
       const progress = (kind: 'started' | 'delta' | 'ended', frame?: TransientPreview) =>
         store.emit('engine-text', {
           projectId,
@@ -3309,6 +3497,17 @@ export async function createApp(options: AppOptions) {
         signal: req.res ? connectionSignal(req.res) : undefined,
         onPreview: (frame) => progress('delta', frame),
         onActivity: (frame) => store.emit('engine-activity', frame),
+        // A kept ACP conversation's permission asks and plans go to a person as Needs (H05).
+        ...(engine === 'cursor' || engine === 'devin'
+          ? {
+              approvals: (ask: EngineAsk, signal: AbortSignal) =>
+                engineAsks.ask(
+                  { projectId, runId, threadId: input.threadId, requestId: input.requestId },
+                  ask,
+                  signal,
+                ),
+            }
+          : {}),
       };
     },
     recordResult: async (_req, command, result, input) => {
@@ -3382,7 +3581,28 @@ export async function createApp(options: AppOptions) {
     },
   });
   mountClaudeSessionRoutes(app, engines, nativeSessionDependencies('claude-code'));
+  // H03: the Console's read of a thread's open native conversation: its contract controls,
+  // whether it can resume, its reported model and its steering queue.
+  mountThreadSessionRoute(app, {
+    authorize: async (req) => {
+      store.state(String(req.params.id));
+    },
+    lineage: async (projectId, threadId, mode) => {
+      const thread = store.state(projectId).conversations.find((item) => item.id === threadId);
+      if (!thread) throw new ApiError(404, 'This thread was not found.');
+      const open = (thread.lineages ?? [])
+        .filter((lineage) => !lineage.retired && (!mode || lineage.mode === mode))
+        .sort((a, b) => b.generation - a.generation)[0];
+      return open?.runId ?? null;
+    },
+    drivers: {
+      claude: () => engines.nativeSessions as never,
+      opencode: () => engines.opencodeSessions as never,
+    },
+  });
   mountOpenCodeSessionRoutes(app, engines, nativeSessionDependencies('opencode'));
+  mountAcpSessionRoutes(app, engines, 'cursor', nativeSessionDependencies('cursor'));
+  mountAcpSessionRoutes(app, engines, 'devin', nativeSessionDependencies('devin'));
   /**
    * The digest the task route would give this message's own task command. A message too long
    * for a task description has no valid command at all, so it has no receipt to trust either
@@ -4109,6 +4329,11 @@ export async function createApp(options: AppOptions) {
         const { retiring, route, carried, reason } = await updateDecision(projectId, state, thread);
         return { retiring: retiring.length, carried, route, ...(reason ? { reason } : {}) };
       }),
+    // H03: the thread's open lineages, where a message queued behind a running answer waits.
+    openRuns: async (projectId, threadId) =>
+      (store.state(projectId).conversations.find((item) => item.id === threadId)?.lineages ?? [])
+        .filter((lineage) => !lineage.retired)
+        .map((lineage) => lineage.runId),
     locate: (projectId, threadId, commandId) =>
       store.locked(async () => {
         const driver = engines.nativeSessions;
@@ -4467,7 +4692,10 @@ export async function createApp(options: AppOptions) {
       // The turn id is fixed before the run so the native worker can mark the
       // turn verified once the runtime reports its engine.
       const turnId = identifier('U');
-      const resolvedChoice = nativeChoice(engine, projectId, conversation, { mode: runMode, text });
+      // A profile that decides this run supplies its own exact model (H09).
+      const resolvedChoice: RunChoice = agentProfiles.applies(projectId, task.id, conversation)
+        ? {}
+        : nativeChoice(engine, projectId, conversation, { mode: runMode, text });
       // A member whose model Nectovia chose runs it as an automatic selection, so the run's
       // record says who chose it; a person's own pick stays theirs.
       const teamMember = team
@@ -4500,14 +4728,15 @@ export async function createApp(options: AppOptions) {
         text: wake ? 'Picked up a message from the team.' : 'Preparing a proposal.',
         at: now(),
         sources,
-        route: engine,
+        // The route the run was admitted on: a profile may have named another (H09).
+        route: storedSession.route ?? engine,
         ...(attempt ? { attempt } : {}),
         // The run's own attribution from admission, so the holding line names the
         // model it was sent to, as a request, until the runtime reports one.
         ...(storedSession.origin ? { origin: structuredClone(storedSession.origin) } : {}),
         helper: {
-          engine,
-          model: choice.model ?? null,
+          engine: storedSession.route ?? engine,
+          model: storedSession.agent?.requestedModel ?? choice.model ?? null,
           version: null,
           verified: false,
         },
@@ -5289,6 +5518,8 @@ export async function createApp(options: AppOptions) {
     // announce a settled session and schedule a delivery on the way out.
     deliveryClosed = true;
     store.off('change', deliverFor);
+    store.off('change', superviseOnChange);
+    await supervision.close();
     await Promise.allSettled([...deliveries]);
     await readyScheduler.close();
     await automationScheduler.close();
@@ -5304,7 +5535,10 @@ export async function createApp(options: AppOptions) {
     await nativeWork.close();
     // The ChatGPT app-server kept between requests goes with the service.
     await closeWarmCodex();
+    if (options.codexIntegration) await options.codexIntegration.closeWarm();
   };
+  // Every route and the verifier exist now: a Diomedes loop resumed at startup may continue.
+  harness.loop.open();
   // Last, once every route and service exists: a claim a restart interrupted is settled or
   // replayed through `admitWork` here, before the first request is served.
   await readyScheduler.init();

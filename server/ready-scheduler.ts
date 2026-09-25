@@ -41,6 +41,8 @@ import {
 import type { ProjectState, Route, Task } from '../shared/types.js';
 import { ApiError } from './paths.js';
 import { HOME_REFUSES_WORK, identifier, jsonWrite, now, readJson, type Store } from './store.js';
+import { assertReadable } from './migrations/framework.js';
+import { READY_QUEUE } from './migrations/registry.js';
 import { parseWorkCommand } from './work-admission.js';
 
 export interface ReadySchedulerDeps {
@@ -94,6 +96,8 @@ export class ReadyScheduler {
   /** Reads the global pause, settles what a restart interrupted, and starts listening. */
   async init() {
     const saved = await readJson<unknown>(this.globalPath, () => ({ version: 1, paused: null }));
+    // A newer file is refused by name before its shape is judged (H21).
+    assertReadable(READY_QUEUE, saved);
     const parsed = globalFileSchema.safeParse(saved);
     if (!parsed.success)
       throw new Error('The saved Ready queue pause is unreadable. Nothing was rewritten.');

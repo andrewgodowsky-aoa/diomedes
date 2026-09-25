@@ -46,6 +46,8 @@ export interface MessageCommand {
   sources: { path: string; sha: string }[];
   /** Absent means the selected documents only. Never saved; it binds this one message. */
   readAccess?: 'selected' | 'project';
+  /** H03: wait behind a running answer instead of being refused as busy. Not part of the binding. */
+  queued?: true;
 }
 /** What one request lends the sequence: when to stop, and when the response has ended. */
 export interface RequestContext {
@@ -170,7 +172,12 @@ export interface ConversationDriver {
     projectId: string,
     runId: string,
     commandId: string,
-  ): Promise<{ state: 'requested' | 'idle' | 'superseded' }>;
+  ): Promise<{ state: 'requested' | 'idle' | 'superseded'; stop?: 'interrupted' | 'killed' | 'withdrawn' }>;
+  /**
+   * H03: withdraws a message still waiting behind a running answer on this run, and touches
+   * nothing else: true when one was waiting and is now withdrawn. A driver with no queue omits it.
+   */
+  withdraw?(projectId: string, runId: string, commandId: string): Promise<boolean>;
 }
 
 /** What the host supplies. Every method that touches the Store takes and releases its own lock. */
@@ -206,6 +213,8 @@ export interface InteractionHost {
    */
   answerFormatPreview(projectId: string, threadId: string): Promise<ConversationUpdatePreview>;
   locate(projectId: string, threadId: string, commandId: string): Promise<LocatedMessage | null>;
+  /** H03: the runs of the thread's open lineages, newest last. A read. */
+  openRuns?(projectId: string, threadId: string): Promise<string[]>;
   /** Idempotent transcript projection of a committed answer. */
   project(
     resolved: ResolvedMessage,
@@ -344,14 +353,14 @@ export class InteractionTurns {
   }
 
   /** One turn on the route the host resolved. Nothing else chooses a driver. */
-  private turn(resolved: ResolvedMessage) {
+  private turn(resolved: ResolvedMessage, queued = false) {
     const route = resolved.route ?? 'claude-code';
     if (isModelApiRoute(route)) {
       if (resolved.action === 'fork')
         throw new ApiError(409, 'This conversation route does not support forking.');
       return this.engines.modelSession(route, resolved.action, resolved.runId, resolved.input);
     }
-    return this.engines.claudeSession(resolved.action, resolved.runId, resolved.input);
+    return this.engines.claudeSession(resolved.action, resolved.runId, resolved.input, undefined, { queued });
   }
 
   async message(
@@ -387,7 +396,7 @@ export class InteractionTurns {
       };
     let result;
     try {
-      result = await this.turn(resolved);
+      result = await this.turn(resolved, command.queued === true);
     } catch (error) {
       // A guard that refuses a NEW message is what triggers the next generation. It is never
       // bypassed, it never fires for a replay, and it is answered at most once per message.
@@ -589,12 +598,21 @@ export class InteractionTurns {
     commandId: string,
   ): Promise<InterruptResponse> {
     const located = await this.host.locate(projectId, threadId, commandId);
-    if (!located) throw new ApiError(404, 'This message was not found.');
+    if (!located) {
+      // H03: a message queued behind a running answer has no recorded turn yet. Stop withdraws
+      // it where it waits; any other unrecorded command is still not found.
+      for (const runId of (await this.host.openRuns?.(projectId, threadId)) ?? []) {
+        const driver = this.driver(runId);
+        if (await driver.withdraw?.(projectId, runId, commandId))
+          return { commandId, runId, state: 'requested', stop: 'withdrawn' };
+      }
+      throw new ApiError(404, 'This message was not found.');
+    }
     const driver = this.driver(located.runId);
     const turn = await driver.turnResult(projectId, located.runId, commandId);
     if (turn) return { commandId, runId: located.runId, state: 'settled' };
     const ack = await driver.interruptCommand(projectId, located.runId, commandId);
-    return { commandId, runId: located.runId, state: ack.state };
+    return { commandId, runId: located.runId, state: ack.state, ...(ack.stop ? { stop: ack.stop } : {}) };
   }
 
   private async read(

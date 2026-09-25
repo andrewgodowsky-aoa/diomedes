@@ -114,7 +114,8 @@ export function contractChecks(contract: AdapterRouteContract): ConformanceCheck
       .every(command => contract.commands[command].support === 'native') &&
     contract.commands.retry.support === 'host' &&
     contract.commands.status.support === 'host' &&
-    contract.commands.steer.support === 'unsupported' &&
+    // H03: its steering is the host's queue, never a claimed native channel.
+    contract.commands.steer.support === 'host' &&
     contract.commands.reconcile.support === 'unsupported';
   if (contract.routeId === 'claude-code-session')
     checks.push(check(
@@ -145,11 +146,41 @@ export function contractChecks(contract: AdapterRouteContract): ConformanceCheck
       'native-session-run-backing', openCodeRunBacked,
       'The opt-in OpenCode session profile must match the versioned RunService lifecycle integration; live provider acceptance is separate.',
     ));
+  // The kept ACP conversations (H05) are driven by the same RunService lifecycle.
+  // No steering and no fork are claimed; restart reconciliation is the host's.
+  const ACP_SESSIONS: Record<string, { engine: string; version: string }> = {
+    'cursor-session': { engine: 'cursor', version: '2026.08.11' },
+    'devin-session': { engine: 'devin', version: '3000.10.23' },
+  };
+  const acpProfile = ACP_SESSIONS[contract.routeId];
+  const acpRunBacked =
+    acpProfile !== undefined &&
+    contract.mode === 'external-session' &&
+    contract.engine.id === acpProfile.engine &&
+    contract.engine.version === acpProfile.version &&
+    contract.engine.protocolVersion === 'acp/1' &&
+    contract.testedWith === acpProfile.version &&
+    contract.authentication === 'native-sign-in' &&
+    contract.models.source === 'runtime-reported' &&
+    contract.streaming.transientPreview === 'text-delta' &&
+    contract.streaming.durableEvents === 'run-record' &&
+    (['start', 'follow-up', 'interrupt', 'resume', 'close'] as const)
+      .every(command => contract.commands[command].support === 'native') &&
+    contract.commands.retry.support === 'host' &&
+    contract.commands.status.support === 'host' &&
+    contract.commands.reconcile.support === 'host' &&
+    contract.commands.steer.support === 'unsupported' &&
+    contract.commands.fork.support === 'unsupported';
+  if (acpProfile)
+    checks.push(check(
+      'native-session-run-backing', acpRunBacked,
+      'The opt-in ACP session profile must match the versioned RunService lifecycle integration; live provider acceptance is separate.',
+    ));
   checks.push(
     check(
       'streaming-matches-mode',
       contract.streaming.durableEvents === 'run-record'
-        ? RUN_DRIVEN_MODES.includes(contract.mode) || nativeRunBacked || openCodeRunBacked
+        ? RUN_DRIVEN_MODES.includes(contract.mode) || nativeRunBacked || openCodeRunBacked || acpRunBacked
         : contract.mode !== 'harness-agent',
       contract.mode === 'harness-agent'
         ? 'Harness routes persist through the run record.'
