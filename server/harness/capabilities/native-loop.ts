@@ -372,9 +372,14 @@ const text = (value: Json | undefined, key: string): string | null => {
  * propose the report, then claim it is done. Not a model: every step it drives
  * is an application action, and no model is ever named for it.
  */
-export function loopFixtureAdapter(sources: readonly string[], team = false): ModelAdapter {
+export function loopFixtureAdapter(sources: readonly string[], team = false, goal = ''): ModelAdapter {
   const first = sources[0] ?? 'README.md';
   const second = sources[1] ?? first;
+  // "have a helper write <file>" (or propose) in the goal: the helper changes that file in its sandbox.
+  const helperChange = goal.match(/\bhave a helper (write|propose) ([\w./-]+\.[A-Za-z0-9]{1,8})/);
+  const helperTask = helperChange
+    ? `Read ${second} and ${helperChange[1]} ${helperChange[2]} with what it lists.`
+    : `Read ${second} and say in one line what it lists.`;
   const rest = sources.slice(1, 4);
   /**
    * H14's lead script, when workers are offered: read the first file, hand each
@@ -427,7 +432,7 @@ export function loopFixtureAdapter(sources: readonly string[], team = false): Mo
       if (offered.has(ASSIGN_TOOL)) return teamScript(offered, outputs);
       const plan: { name: string; input: Json }[] = [{ name: 'read_project_file', input: { path: first } }];
       if (offered.has('delegate') && second !== first)
-        plan.push({ name: 'delegate', input: { task: `Read ${second} and say in one line what it lists.` } });
+        plan.push({ name: 'delegate', input: { task: helperTask } });
       if (outputs.length < plan.length) return { response: { type: 'tool', ...plan[outputs.length] } };
       if (outputs.length === plan.length) {
         const lines = [`# Loop report`, ''];
@@ -1102,7 +1107,7 @@ export function createLoopProcedure(deps: { store: Store; runs: RunService; tool
             purpose: 'loop',
           },
           stop.signal,
-          () => loopFixtureAdapter(input.sources, Boolean(input.team)),
+          () => loopFixtureAdapter(input.sources, Boolean(input.team), input.goal),
         );
         await new NativeLoop(runs, adapter, tools, {
           maxTurns: input.maxTurns,

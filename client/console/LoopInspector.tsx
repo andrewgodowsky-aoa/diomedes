@@ -13,6 +13,8 @@ import type {
 import { displayName } from '../attribution-display';
 import { AGENT_NAME } from '../../shared/agent-name';
 import { api } from '../api';
+import type { ChangeSetView } from '../../shared/sandbox';
+import { ChangeSetReview } from './ChangeSetReview';
 import './verification.css';
 import './loop-inspector.css';
 
@@ -29,6 +31,8 @@ import './loop-inspector.css';
 interface LoopRead {
   view: LoopView;
   outcome: LoopOutcome;
+  /** What each sandboxed delegate returned (shared/sandbox.ts). */
+  changeSets?: ChangeSetView[];
 }
 
 /** The outcome's dot, in H17's four-state colours: accent only for Verified. */
@@ -101,7 +105,7 @@ function Turn({ turn }: { turn: LoopTurnView }) {
   );
 }
 
-function Delegation({ item }: { item: LoopDelegationView }) {
+function Delegation({ item, projectId, changeSet }: { item: LoopDelegationView; projectId: string; changeSet: ChangeSetView | null }) {
   const child = item.child;
   const answered = models(child?.models ?? []);
   return (
@@ -124,6 +128,7 @@ function Delegation({ item }: { item: LoopDelegationView }) {
           {child ? ` · used ${child.used.modelCalls} model, ${child.used.toolCalls} tool` : ''}
           {answered ? ` · ${answered}` : ''}
         </span>
+        {changeSet && <ChangeSetReview projectId={projectId} changeSet={changeSet} />}
       </span>
     </li>
   );
@@ -215,7 +220,12 @@ export function LoopInspector({ projectId, runId, revision }: { projectId: strin
           <h3>Delegation</h3>
           <ol className="loop-turns">
             {view.delegations.map((item) => (
-              <Delegation key={item.childRunId} item={item} />
+              <Delegation
+                key={item.childRunId}
+                item={item}
+                projectId={projectId}
+                changeSet={read.changeSets?.find((set) => set.childRunId === item.childRunId) ?? null}
+              />
             ))}
           </ol>
         </>
