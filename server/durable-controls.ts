@@ -144,6 +144,11 @@ export interface WorkControlDriver {
   fork?(ctx: ContinueContext): Promise<StartAnswer>;
   /** Effects the route knows may have happened for this run and are not confirmed. */
   uncertainEffects?(projectId: string, session: Session): readonly string[];
+  /**
+   * What a run a Resume already started records about who continued it, for the receipt written
+   * after a restart; without it the receipt cannot know and credits the route's declaration.
+   */
+  recorded?(session: Session): Pick<StartAnswer, 'performedBy' | 'support' | 'nativeThreadId'>;
 }
 
 export interface DurableControlsDeps {
@@ -278,7 +283,8 @@ export class DurableControls {
       throw new ApiError(409, 'This command already names a different request.', {
         code: 'control_command_conflict',
       });
-    if ((state.controlReceipts ?? []).length >= MAX_CONTROL_RECEIPTS)
+    // Stop is never refused for capacity: a full receipt log must not keep a run running.
+    if (request.control !== 'stop' && (state.controlReceipts ?? []).length >= MAX_CONTROL_RECEIPTS)
       throw new ApiError(409, 'This project has reached its saved control limit.', {
         code: 'control_receipt_capacity',
         limit: MAX_CONTROL_RECEIPTS,
@@ -516,10 +522,17 @@ export class DurableControls {
           ? 'applied'
           : 'refused';
     const profile = target ? this.profile(projectId, workRouteOf(target), target) : null;
-    const performer: ControlPerformer =
-      request.scope === 'generation' && profile?.engine
-        ? { kind: 'engine', engine: profile.engine.id, version: profile.engine.version }
-        : { kind: 'diomedes' };
+    // The engine is credited only where its contract says it interrupts the request itself and
+    // the interrupt was acknowledged; an HTTP abort or a process kill is Diomedes' own act.
+    const engineInterrupted =
+      request.scope === 'generation' &&
+      stop.acknowledged &&
+      Boolean(profile?.engine) &&
+      target !== null &&
+      this.contract(projectId, workRouteOf(target), target)?.commands.interrupt.support === 'native';
+    const performer: ControlPerformer = engineInterrupted
+      ? { kind: 'engine', engine: profile!.engine!.id, version: profile!.engine!.version }
+      : { kind: 'diomedes' };
     if (outcome === 'refused')
       return refused('nothing-to-stop', 'Nothing was running or queued to stop.', {
         result: { stop },
@@ -529,9 +542,11 @@ export class DurableControls {
       outcome,
       detail: stop.acknowledged
         ? `Stopped ${request.scope === 'generation' ? 'the request' : request.scope === 'task' ? 'the task' : 'the queued follow-ups'}.${cancelledSentence}`
-        : `The stop was sent and not confirmed.${cancelledSentence}`,
+        : stop.uncertainEffects.length
+          ? `The stop was sent and not confirmed.${cancelledSentence}`
+          : `Nothing was running.${cancelledSentence}`,
       performedBy: performer,
-      support: request.scope === 'generation' ? (profile?.engine ? 'native' : 'host') : 'host',
+      support: engineInterrupted ? 'native' : 'host',
       result: { stop },
       uncertainEffects: stop.uncertainEffects,
     };
@@ -571,13 +586,53 @@ export class DurableControls {
     return effects;
   }
 
-  /** The attempt a run is: 1 for an original, n + 1 for a retry of attempt n. */
-  private attemptOf(projectId: string, sessionId: string): number {
-    const receipt = (this.store.state(projectId).controlReceipts ?? []).find(
+  /**
+   * The runs of one lineage: its original (followed back through Resume and Retry receipts) and
+   * every run a Resume or Retry of it, or of those, started.
+   */
+  private lineageOf(projectId: string, session: Session): Session[] {
+    const state = this.store.state(projectId);
+    const continued = (state.controlReceipts ?? []).filter(
       (item) =>
-        item.control === 'retry' && item.result.sessionId === sessionId && item.lineage?.attempt,
+        (item.control === 'retry' || item.control === 'resume') &&
+        item.outcome === 'applied' &&
+        item.result.sessionId &&
+        item.lineage?.originSessionId,
     );
-    return receipt?.lineage?.attempt ?? 1;
+    let root = session.id;
+    for (const seen = new Set<string>([root]); ; ) {
+      const parent = continued.find((item) => item.result.sessionId === root)?.lineage?.originSessionId;
+      if (!parent || seen.has(parent)) break;
+      seen.add(parent);
+      root = parent;
+    }
+    const ids = new Set<string>([root]);
+    for (let grew = true; grew; ) {
+      grew = false;
+      for (const item of continued)
+        if (ids.has(item.lineage!.originSessionId) && !ids.has(item.result.sessionId!)) {
+          ids.add(item.result.sessionId!);
+          grew = true;
+        }
+    }
+    ids.add(session.id);
+    return state.sessions.filter((item) => ids.has(item.id));
+  }
+
+  /** The next attempt number in a run's lineage: one more than any attempt it has reached. */
+  private attemptOf(projectId: string, session: Session): number {
+    const ids = new Set(this.lineageOf(projectId, session).map((item) => item.id));
+    let attempt = 1;
+    for (const item of this.store.state(projectId).controlReceipts ?? [])
+      if (
+        item.control === 'retry' &&
+        item.outcome === 'applied' &&
+        item.result.sessionId &&
+        ids.has(item.result.sessionId) &&
+        item.lineage?.attempt
+      )
+        attempt = Math.max(attempt, item.lineage.attempt);
+    return attempt;
   }
 
   private consented(projectId: string, taskId: string, route: string) {
@@ -702,7 +757,7 @@ export class DurableControls {
       kind: control,
       originTaskId: task.id,
       originSessionId: session.id,
-      ...(control === 'retry' ? { attempt: this.attemptOf(projectId, session.id) + 1 } : {}),
+      ...(control === 'retry' ? { attempt: this.attemptOf(projectId, session) + 1 } : {}),
     };
     const verb = control === 'resume' ? 'Resumed' : 'Retried';
     const started = (
@@ -740,14 +795,31 @@ export class DurableControls {
     const already = this.store
       .state(projectId)
       .sessions.find((item) => item.receipt?.commandId === workCommandId);
-    if (already) return started(already.id, `${verb}; the run it started was already recorded.`);
+    // Only a run this control could have started counts; any other Work start that happens to
+    // carry the derived id is another request, never evidence that this one was performed.
+    if (already && (already.taskId !== task.id || workRouteOf(already) !== workRouteOf(session)))
+      throw new ApiError(409, 'This command already names a different request.', {
+        code: 'control_command_conflict',
+      });
+    if (already)
+      return started(
+        already.id,
+        `${verb}; the run it started was already recorded.`,
+        [],
+        control === 'resume' ? (driver?.recorded?.(already) ?? {}) : {},
+      );
     const inputs = session.inputs;
     if (!inputs)
       return refused(
         'inputs-unrecorded',
         `This run was recorded before its inputs were kept, so it cannot be ${control === 'resume' ? 'resumed' : 'retried'} with the same ones. Start the task again instead.`,
       );
-    const effects = await this.uncertainEffects(projectId, session);
+    // Every run of this lineage counts: retrying an earlier attempt re-sends the same inputs,
+    // so an effect a later attempt may already have had blocks it just the same.
+    const effects: string[] = [];
+    for (const member of this.lineageOf(projectId, session))
+      for (const effect of await this.uncertainEffects(projectId, member))
+        if (!effects.includes(effect)) effects.push(effect);
     if (effects.length)
       return refused(
         'uncertain-effects',
