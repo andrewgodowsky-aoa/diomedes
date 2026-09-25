@@ -42,6 +42,8 @@ interface LedgerProps {
   onBoard(): void;
   onTeam(): void;
   onReviewNeed(need: Need): void;
+  /** H13: start a work loop run on this thread's task. */
+  onLoopRun?(): void;
 }
 
 /**
@@ -60,6 +62,7 @@ export function Ledger({
   onBoard,
   onTeam,
   onReviewNeed,
+  onLoopRun,
 }: LedgerProps) {
   const projection = (item: Task) => taskEvidence(item, state.sessions, state.needs, state.changes);
   const open = state.tasks
@@ -112,6 +115,11 @@ export function Ledger({
             <button type="button" onClick={onTeam}>
               Team
             </button>
+            {onLoopRun && (
+              <button type="button" onClick={onLoopRun}>
+                Loop run
+              </button>
+            )}
           </div>
           {focus.session ? (
             <div className="m">
