@@ -45,6 +45,7 @@ import {
 import { HomeHistorySharing } from './HomeHistorySharing';
 import { JobCapWarning } from './JobCapWarning';
 import { ThreadMenu } from './ThreadMenu';
+import { NativeSessionControls } from './NativeSessionControls';
 import { readRecordedArtifacts } from './artifact-evidence';
 import { stepLiveReply, type LiveBinding, type LiveEvent, type LiveReply } from './live-reply';
 import { saveArtifact } from './artifact-save';
@@ -109,6 +110,9 @@ const refusedForHistory = (error: unknown) =>
 /** What an interrupt acknowledgement that cannot confirm a stop is told as. */
 const STOP_UNCONFIRMED =
   'Stop was not confirmed. Sending the message again checks what happened.';
+/** H03: a Stop the engine did not honour in time, so its process was ended. */
+const STOP_FORCED =
+  'Claude Code did not stop in time, so its process was ended. Your next message starts a new session.';
 
 /** The message a conversation may still be owed an answer for. Unreadable storage reads as none. */
 function retained(found: Binding): PendingMessage | null {
@@ -646,6 +650,7 @@ export function DiomedesHome(props: DiomedesHomeProps) {
       (ack) => {
         if (turn.current === mine && ack.state !== 'requested' && ack.state !== 'settled')
           setNotice(STOP_UNCONFIRMED);
+        else if (turn.current === mine && ack.stop === 'killed') setNotice(STOP_FORCED);
       },
       () => {
         if (turn.current === mine) setNotice(STOP_UNCONFIRMED);
@@ -732,6 +737,17 @@ export function DiomedesHome(props: DiomedesHomeProps) {
     }
   };
 
+  /** H03: a queued message was answered; its turns are read again. Nothing else on screen moves. */
+  const reread = async (found: Binding) => {
+    const visit = turn.current;
+    try {
+      const conversation = await thread(found);
+      if (turn.current === visit && conversation) setTurns(conversation.turns);
+    } catch (error) {
+      if (turn.current === visit) setNotice(words(error));
+    }
+  };
+
   // A refusal for want of history already says the line's sentence, with its button, so the line
   // steps aside while it is up.
   const refusalShown = notice !== null && notice === refusal;
@@ -801,6 +817,17 @@ export function DiomedesHome(props: DiomedesHomeProps) {
           ) : undefined
         }
         art={props.scheme === 'nectovia' ? <HomeArt /> : undefined}
+        session={
+          binding ? (
+            <NativeSessionControls
+              projectId={binding.projectId}
+              threadId={binding.threadId}
+              mode={modeFor(restriction)}
+              answering={pending}
+              onAnswered={() => void reread(binding)}
+            />
+          ) : undefined
+        }
         menu={
           binding ? (
             <ThreadMenu

@@ -55,6 +55,10 @@ export interface MessageRequest {
   sources: { path: string; sha: string }[];
   consent: true;
   /**
+   * H03: sent while an answer runs, to wait behind it (`SessionControls.steer === 'queued'`).
+   */
+  queued?: true;
+  /**
    * What an Ask or Plan message may read from the project. Absent means the selected
    * documents only; `project` lets the route look through the folder for this one message.
    */
@@ -84,6 +88,12 @@ export interface InterruptResponse {
   commandId: string;
   runId: string | null;
   state: InterruptState;
+  /**
+   * H03, where the driver can say it: `interrupted` when the turn stopped at its own boundary
+   * and the session stays live, `killed` when its process had to be ended after the grace,
+   * `withdrawn` when the message was still waiting behind another answer and was never sent.
+   */
+  stop?: 'interrupted' | 'killed' | 'withdrawn';
 }
 
 /**

@@ -77,6 +77,28 @@ export interface AcpProfile {
    * cleanup failure — a busy process tree can die moments after the check.
    */
   readonly verifyTerminatedMs?: number;
+  /**
+   * The agent's own plan-approval request, if it has one (H05): Cursor's
+   * `cursor/create_plan`. With a host that asks a person, it becomes a Need;
+   * `planAccepted` is the reply body for a go-ahead. Without one it is declined.
+   */
+  readonly planMethod?: string;
+  readonly planAccepted?: (params: unknown) => Json;
+}
+
+/**
+ * How a person's Stop ended an ACP turn (H05): the agent answered its
+ * `session/cancel` within the bounded wait (`acknowledged`), or it did not and
+ * the owned process tree was ended (`killed`). A Stop is always followed by
+ * process termination on this transport; what differs is whether the agent
+ * itself confirmed the cancellation first.
+ */
+export type AcpStopOutcome = 'acknowledged' | 'killed';
+
+/** A reply the host chose for a server-to-client request, and whether the turn must stop. */
+export interface AcpAnswer {
+  readonly result: Json;
+  readonly stop?: EngineError;
 }
 
 export interface AcpClientOptions {
@@ -100,6 +122,28 @@ export interface AcpClientOptions {
    * every request is declined on the text route. It may throw to stop the turn.
    */
   readonly permit?: (method: string, params: unknown) => unknown;
+  /**
+   * A request a person must answer (H05): a promise of the reply, or undefined
+   * when this request is not one a person is asked about (it is then declined).
+   * While it is pending the turn deadline is paused; the asker bounds the wait.
+   */
+  readonly ask?: (method: string, params: unknown) => Promise<AcpAnswer> | undefined;
+  /**
+   * With this, a Stop sends `session/cancel` and waits this long for the agent
+   * to end the running prompt before the turn fails and the process is ended.
+   * Without it, Stop fails the turn at once (the single-turn text route).
+   */
+  readonly cancelWaitMs?: number;
+}
+
+/** A refusal from a soft request: the mapped failure plus the agent's own JSON-RPC code. */
+export class AcpRpcError extends Error {
+  constructor(
+    readonly failure: EngineError,
+    readonly code: unknown,
+  ) {
+    super(failure.message);
+  }
 }
 
 const protocolError = (profile: AcpProfile, detail: string) =>
@@ -134,18 +178,67 @@ export class AcpClient {
   private timer: ReturnType<typeof setTimeout>;
   private pending = new Map<
     number,
-    { resolve: (value: Json) => void; reject: (error: EngineError) => void }
+    { resolve: (value: Json) => void; reject: (error: EngineError | AcpRpcError) => void; soft?: boolean }
   >();
   private replies: Promise<void>[] = [];
   sessionId?: string;
+  /** What `initialize` advertised: whether `session/load` may be used (H05). */
+  loadSession = false;
+  /** Set while `session/load` replays the saved conversation: those frames are history, not this turn. */
+  replaying = false;
+  /** How a person's Stop ended the turn; unset when no Stop reached a running prompt. */
+  stopOutcome?: AcpStopOutcome;
+  /** The id of the running `session/prompt`, while one is running. */
+  private promptId?: number;
+  private cancelled?: Promise<void>;
+  private settleCancel?: () => void;
+  /** The phase deadline last armed, so it can be re-armed after a person answers. */
+  private armed?: { ms: number; detail: string };
+  private asking = 0;
   /**
    * A deadline the host imposed is not a person pressing stop, and the abort's
    * reason says which it was. The two ACP routes reach this listener rather
    * than `EngineProcess`, so without it they would still report a connection
    * test that ran out of time as the customer's own cancellation.
    */
-  private readonly abort = () =>
-    this.fail(abortFailure(this.options.signal?.reason, acpTimeoutDetail(this.options.profile)));
+  private readonly abort = () => {
+    const failure = abortFailure(this.options.signal?.reason, acpTimeoutDetail(this.options.profile));
+    const wait = this.options.cancelWaitMs;
+    // A person's Stop on a running prompt (H05): ask the agent to cancel it, give it a bounded
+    // wait to answer, and only then fail the turn. Termination follows in close() either way.
+    if (
+      wait !== undefined &&
+      failure.code === 'CANCELLED' &&
+      this.sessionId &&
+      this.promptId !== undefined &&
+      this.pending.has(this.promptId) &&
+      !this.ended &&
+      !this.failure
+    ) {
+      this.cancelled = new Promise<void>((resolve) => {
+        const timer = setTimeout(() => {
+          this.stopOutcome ??= 'killed';
+          resolve();
+        }, wait);
+        this.settleCancel = () => {
+          clearTimeout(timer);
+          resolve();
+        };
+      }).then(() => this.fail(failure));
+      this.replies.push(
+        this.write({
+          jsonrpc: '2.0',
+          method: 'session/cancel',
+          params: { sessionId: this.sessionId },
+        }).catch(() => {
+          this.stopOutcome ??= 'killed';
+          this.settleCancel?.();
+        }),
+      );
+      return;
+    }
+    this.fail(failure);
+  };
 
   constructor(private readonly options: AcpClientOptions) {
     const { profile, signal } = options;
@@ -215,6 +308,11 @@ export class AcpClient {
   }
 
   private fail(error: EngineError) {
+    if (this.cancelled && !this.failure) {
+      // Anything that ends the turn while a Stop waits for its answer ends that wait too.
+      this.stopOutcome ??= 'killed';
+      this.settleCancel?.();
+    }
     this.failure ??= error;
     for (const pending of this.pending.values()) pending.reject(this.failure);
     this.pending.clear();
@@ -303,7 +401,12 @@ export class AcpClient {
           throw protocolError(profile, 'returned an invalid JSON-RPC envelope.');
         if (typeof frame.method === 'string' && 'id' in frame) {
           const allowed = this.failure ? undefined : this.options.permit?.(frame.method, frame.params);
-          if (allowed === undefined) this.decline(frame);
+          const asked =
+            allowed === undefined && !this.failure && !this.cancelled
+              ? this.options.ask?.(frame.method, frame.params)
+              : undefined;
+          if (asked) this.answerLater(frame, asked);
+          else if (allowed === undefined) this.decline(frame);
           else
             this.replies.push(
               this.write({ jsonrpc: '2.0', id: frame.id, result: allowed }).catch(() =>
@@ -312,7 +415,8 @@ export class AcpClient {
             );
           continue;
         }
-        if (this.failure) continue; // Drop every late result and delta after abort/failure.
+        if (this.failure || (this.cancelled && typeof frame.method === 'string'))
+          continue; // Drop every late result and delta after abort/failure or a Stop.
         if (typeof frame.method === 'string') {
           if (frame.method === 'session/update') this.options.onUpdate(record(frame.params));
           else if (!profile.ignoreNotification?.(frame.method))
@@ -328,10 +432,20 @@ export class AcpClient {
             throw protocolError(profile, 'returned an unmatched response.');
           this.pending.delete(frame.id as number);
           if ('error' in frame) {
+            if (pending.soft) {
+              // A soft request's refusal is the caller's to judge (session/load of a lost session).
+              pending.reject(new AcpRpcError(profile.rpcFailure(frame.error), record(frame.error).code));
+              continue;
+            }
             const error = profile.rpcFailure(frame.error);
             pending.reject(error);
             this.fail(error);
           } else {
+            if (frame.id === this.promptId && this.cancelled) {
+              if (record(frame.result).stopReason === 'cancelled') this.stopOutcome ??= 'acknowledged';
+              else this.stopOutcome ??= 'killed';
+              this.settleCancel?.();
+            }
             pending.resolve(record(frame.result));
           }
         }
@@ -353,11 +467,47 @@ export class AcpClient {
       );
   }
 
-  async request(method: string, params: Json): Promise<Json> {
+  /**
+   * A server-to-client request a person answers (H05). The turn deadline is paused while the
+   * question is open and re-armed when it is answered; the asker bounds the wait. The reply is
+   * flushed before close like every other reply, and an answer that says stop ends the turn.
+   */
+  private answerLater(frame: Json, asked: Promise<AcpAnswer>) {
+    const { profile } = this.options;
+    this.asking += 1;
+    clearTimeout(this.timer);
+    this.replies.push(
+      asked
+        .catch(
+          (): AcpAnswer => ({
+            result: { outcome: { outcome: 'cancelled' } },
+            stop: new EngineError('CANCELLED', `${profile.name}'s request could not be answered.`, true),
+          }),
+        )
+        .then(async (answer) => {
+          this.asking -= 1;
+          if (!this.ended)
+            await this.write({ jsonrpc: '2.0', id: frame.id, result: answer.result }).catch(() =>
+              this.fail(protocolError(profile, 'did not accept a protocol reply.')),
+            );
+          if (answer.stop) this.fail(answer.stop);
+          else if (this.asking === 0 && this.armed && !this.failure)
+            this.arm(this.armed.ms, this.armed.detail);
+        }),
+    );
+  }
+
+  /** Whether a question to a person is waiting for its answer now. */
+  get waitingForPerson(): boolean {
+    return this.asking > 0;
+  }
+
+  async request(method: string, params: Json, options: { soft?: boolean } = {}): Promise<Json> {
     this.assertActive();
     const id = ++this.nextId;
+    if (method === 'session/prompt') this.promptId = id;
     const result = new Promise<Json>((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
+      this.pending.set(id, { resolve, reject, soft: options.soft });
     });
     void this.write({ jsonrpc: '2.0', id, method, params }).catch(() =>
       this.fail(protocolError(this.options.profile, 'could not accept a request.')),
@@ -370,6 +520,7 @@ export class AcpClient {
   /** Rearm the process-wide timer with a phase-specific deadline and message. */
   arm(timeoutMs: number, detail: string) {
     this.assertActive();
+    this.armed = { ms: timeoutMs, detail };
     clearTimeout(this.timer);
     this.timer = setTimeout(
       () => this.fail(new EngineError('TIMEOUT', detail, true)),
@@ -388,13 +539,15 @@ export class AcpClient {
     const { profile } = this.options;
     clearTimeout(this.timer);
     try {
+      // A Stop that is waiting for the agent's answer finishes waiting first (bounded).
+      await this.cancelled;
       let flushed = 0;
       while (flushed < this.replies.length) {
         const replies = this.replies.slice(flushed);
         flushed = this.replies.length;
         await Promise.all(replies);
       }
-      if ((primary || this.failure) && this.sessionId && !this.ended) {
+      if ((primary || this.failure) && this.sessionId && !this.ended && !this.cancelled) {
         try {
           await this.write({
             jsonrpc: '2.0',
@@ -455,7 +608,42 @@ export interface AcpSessionOptions {
   readonly kill?: (child: ChildProcessWithoutNullStreams) => Promise<void>;
   /** A read turn's permission answers (`AcpClientOptions.permit`). */
   readonly permit?: AcpClientOptions['permit'];
+  /** A kept conversation's session (H05); absent for the single-turn text route. */
+  readonly keep?: AcpKeep;
 }
+
+/**
+ * How the ACP session of a kept conversation was reached on this turn (H05).
+ * `loaded`: `session/load` continued the saved session. `started`: no saved
+ * session yet. `load-unsupported`: the agent does not advertise `loadSession`,
+ * so a fresh session was started and the earlier turns were not carried.
+ * `restarted-fresh`: the agent answered that it no longer has the saved session.
+ */
+export type AcpOpenOrigin = 'started' | 'loaded' | 'load-unsupported' | 'restarted-fresh';
+
+/**
+ * A kept conversation's per-turn session (H05). Each turn is still one owned
+ * process, but its private root is the conversation's own and survives the
+ * turn, so the agent's session store is there for the next `session/load`.
+ */
+export interface AcpKeep {
+  /** The conversation's private root; created if missing and never removed by a turn. */
+  readonly root: string;
+  /** The saved ACP session id to continue, if one was confirmed. */
+  readonly resume?: string;
+  readonly ask?: AcpClientOptions['ask'];
+  readonly cancelWaitMs: number;
+  /** Filled in as the turn goes: what the agent advertised, the session reached and how a Stop ended. */
+  readonly facts: {
+    loadSession?: boolean;
+    sessionId?: string;
+    origin?: AcpOpenOrigin;
+    stop?: AcpStopOutcome;
+  };
+}
+
+/** ACP's own `resource_not_found` code: the agent no longer has that session. */
+const ACP_RESOURCE_NOT_FOUND = -32002;
 
 /**
  * The session lifecycle every ACP route shares: private root, spawned client,
@@ -469,7 +657,10 @@ export async function acpSession<T>(
   options: AcpSessionOptions,
   run: (rpc: AcpClient, created: Json) => Promise<T>,
 ): Promise<T> {
-  const root = await fs.mkdtemp(path.join(options.rootParent, options.rootPrefix));
+  const keep = options.keep;
+  const root = keep
+    ? (await fs.mkdir(keep.root, { recursive: true }), keep.root)
+    : await fs.mkdtemp(path.join(options.rootParent, options.rootPrefix));
   let rpc: AcpClient | undefined;
   let primary: unknown;
   try {
@@ -485,6 +676,7 @@ export async function acpSession<T>(
       onUpdate: (params) => options.onUpdate(params, rpc!),
       kill: options.kill,
       permit: options.permit,
+      ...(keep ? { ask: keep.ask, cancelWaitMs: keep.cancelWaitMs } : {}),
     });
     const initialized = await rpc.request('initialize', {
       protocolVersion: 1,
@@ -496,15 +688,45 @@ export async function acpSession<T>(
     });
     if (initialized.protocolVersion !== 1)
       throw protocolError(options.profile, 'reported an unsupported ACP version.');
+    rpc.loadSession = record(initialized.agentCapabilities).loadSession === true;
+    if (keep) keep.facts.loadSession = rpc.loadSession;
     await options.authenticate?.(rpc);
-    const created = await rpc.request('session/new', {
-      cwd: prepared.workspace,
-      mcpServers: [],
-    });
-    const sessionId = text(created.sessionId);
-    if (!sessionId || sessionId.length > 256)
-      throw protocolError(options.profile, 'did not return a session id.');
-    rpc.sessionId = sessionId;
+    let created: Json | undefined;
+    if (keep?.resume && rpc.loadSession) {
+      // Continue the saved session. Its history is replayed as session/update frames before
+      // the reply; they are the earlier turns, not this one, and are not read as an answer.
+      rpc.sessionId = keep.resume;
+      rpc.replaying = true;
+      try {
+        created = await rpc.request(
+          'session/load',
+          { sessionId: keep.resume, cwd: prepared.workspace, mcpServers: [] },
+          { soft: true },
+        );
+        keep.facts.origin = 'loaded';
+      } catch (error) {
+        if (!(error instanceof AcpRpcError)) throw error;
+        // Only the agent's own "no such session" starts fresh; any other refusal is a failure.
+        if (error.code !== ACP_RESOURCE_NOT_FOUND) throw error.failure;
+        keep.facts.origin = 'restarted-fresh';
+        rpc.sessionId = undefined;
+      } finally {
+        rpc.replaying = false;
+      }
+    }
+    if (!created) {
+      created = await rpc.request('session/new', {
+        cwd: prepared.workspace,
+        mcpServers: [],
+      });
+      const sessionId = text(created.sessionId);
+      if (!sessionId || sessionId.length > 256)
+        throw protocolError(options.profile, 'did not return a session id.');
+      rpc.sessionId = sessionId;
+      if (keep)
+        keep.facts.origin ??= keep.resume ? 'load-unsupported' : 'started';
+    }
+    if (keep) keep.facts.sessionId = rpc.sessionId;
     await options.ready?.(rpc, created);
     return await run(rpc, created);
   } catch (error) {
@@ -513,17 +735,23 @@ export async function acpSession<T>(
   } finally {
     // If native stop is uncertain, retain the private directory rather than
     // deleting configuration from underneath a possibly live process.
-    await rpc?.close(primary);
     try {
-      await fs.rm(root, {
-        recursive: true,
-        force: true,
-        maxRetries: 5,
-        retryDelay: 100,
-      });
-    } catch {
-      throw cleanupFailed(primary);
+      await rpc?.close(primary);
+    } finally {
+      if (keep && rpc?.stopOutcome) keep.facts.stop = rpc.stopOutcome;
     }
+    // A kept conversation's root holds the agent's session store; the conversation removes it.
+    if (!keep)
+      try {
+        await fs.rm(root, {
+          recursive: true,
+          force: true,
+          maxRetries: 5,
+          retryDelay: 100,
+        });
+      } catch {
+        throw cleanupFailed(primary);
+      }
   }
 }
 
@@ -572,7 +800,22 @@ export interface AcpTurnPolicy {
    * e.g. Devin's ask-mode confirmation arriving as a config option.
    */
   readonly onConfigUpdate?: (options: Json[]) => void;
+  /**
+   * Whether the agent's `plan` (its to-do list) is tolerated now: true once a
+   * person approved its plan on a kept conversation (H05). A plan touches nothing.
+   */
+  readonly plans?: () => boolean;
 }
+
+/** The frames `session/load` replays as the saved conversation's history (H05). */
+const ACP_HISTORY_UPDATES = [
+  'user_message_chunk',
+  'agent_message_chunk',
+  'agent_thought_chunk',
+  'tool_call',
+  'tool_call_update',
+  'plan',
+];
 
 /**
  * One `session/update` frame against the running turn. Shared policy: tool,
@@ -590,6 +833,17 @@ export function acpSessionUpdate(
 ): void {
   const update = record(params.update),
     kind = text(update.sessionUpdate);
+  if (rpc.replaying && ACP_HISTORY_UPDATES.includes(kind)) {
+    // History of the loaded session, replayed before session/load answers: already recorded.
+    if (params.sessionId !== rpc.sessionId)
+      throw protocolError(profile, 'reported a different session.');
+    return;
+  }
+  if (kind === 'plan' && policy.plans?.()) {
+    if (params.sessionId !== rpc.sessionId)
+      throw protocolError(profile, 'reported a different session.');
+    return;
+  }
   if (policy.reads && (kind === 'tool_call' || kind === 'tool_call_update' || kind === 'plan')) {
     if (rpc.sessionId && params.sessionId !== rpc.sessionId)
       throw protocolError(profile, 'reported a different session.');
@@ -703,6 +957,8 @@ export function acpReadTurn(
   profile: AcpProfile,
   scope: ReadScope,
   sink: TextRequest['onToolActivity'],
+  /** Calls a person allowed once on a kept conversation (H05); fetch without web access needs one. */
+  approved?: ReadonlySet<string>,
 ): { reads: (update: Json) => void; permit: (method: string, params: unknown) => unknown } {
   const calls = new Map<string, { kind: string; started: boolean; finished: boolean }>();
   const refuse = (why: string) =>
@@ -718,7 +974,8 @@ export function acpReadTurn(
     const known = calls.get(id);
     const kind = text(call.kind) || known?.kind || '';
     if (!ACP_READ_KINDS.includes(kind)) throw refuse(`reported a ${kind || 'unnamed'} tool call`);
-    if (kind === 'fetch' && !scope.web) throw refuse('tried to reach the web without web access');
+    if (kind === 'fetch' && !scope.web && !approved?.has(id))
+      throw refuse('tried to reach the web without web access');
     const locations = Array.isArray(call.locations) ? call.locations.map(record) : [];
     const input = record(call.rawInput);
     const paths = [
@@ -799,7 +1056,7 @@ export function acpReadTurn(
 // --- the known ACP agents --------------------------------------------------------------------
 
 /** A permission-ask decline reply: pick a reject option when the agent offers one. */
-const rejectOutcome = (params: unknown) => {
+export const acpRejectOutcome = (params: unknown) => {
   const options = record(params).options;
   const reject = Array.isArray(options)
     ? options
@@ -864,7 +1121,7 @@ export const CURSOR_ACP_PROFILE: AcpProfile = {
     'Cursor needs native sign-in. Run agent login, then recheck.',
   ),
   declineResult: (method, params) => {
-    if (method === 'session/request_permission') return rejectOutcome(params);
+    if (method === 'session/request_permission') return acpRejectOutcome(params);
     if (method === 'cursor/ask_question')
       return {
         outcome: {
@@ -885,6 +1142,9 @@ export const CURSOR_ACP_PROFILE: AcpProfile = {
     ['session/request_permission', 'cursor/ask_question', 'cursor/create_plan'].includes(method)
       ? method
       : null,
+  // H05: the go-ahead body mirrors the observed decline body's shape. Not captured live.
+  planMethod: 'cursor/create_plan',
+  planAccepted: () => ({ outcome: { outcome: 'accepted' } }),
 };
 
 /**
@@ -904,7 +1164,7 @@ export const DEVIN_ACP_PROFILE: AcpProfile = {
     'Devin sign-in did not complete. Use Sign in to open the Devin browser flow, then recheck.',
   ),
   declineResult: (method, params) =>
-    method === 'session/request_permission' ? rejectOutcome(params) : undefined,
+    method === 'session/request_permission' ? acpRejectOutcome(params) : undefined,
   declineLabel: (method) => (method === 'session/request_permission' ? method : null),
   ignoreNotification: (method) => /^(_?cognition\.ai|devin)[/.]/.test(method),
   endStdin: true,

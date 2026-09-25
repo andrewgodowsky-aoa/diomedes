@@ -659,7 +659,19 @@ export class ClaudeAdapter implements TextEngineAdapter {
       workingDirectory,
     );
     try {
-      await this.initialize(process.child);
+      try {
+        await this.initialize(process.child);
+      } catch (error) {
+        // H03: Claude Code that exits instead of opening a saved session could not resume it
+        // (it may no longer hold that session). Said as that, never as a new session.
+        if (options.restore && !options.fork && error instanceof EngineError && error.code === 'PROCESS_EXITED')
+          throw new EngineError(
+            'RESUME_FAILED',
+            'Claude Code could not resume the saved session; it exited instead of opening it.',
+            true,
+          );
+        throw error;
+      }
       return new ClaudeNativeSession(
         process,
         prepared.checkpoint,
