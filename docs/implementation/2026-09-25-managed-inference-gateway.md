@@ -142,7 +142,7 @@ price, an endpoint or a credential.
 
 | provider | region | model | endpoint | rate card (µUSD / M: in, cache read, cache write, out) | max output | credential |
 | --- | --- | --- | --- | --- | --- | --- |
-| `aws-bedrock` | `us` | `us.openai.gpt-6-luna` | `https://bedrock-runtime.us-east-1.amazonaws.com/openai/v1/responses` | `aws-bedrock-gpt-6-luna-us-2026-09-25.1`: 110,000 / 11,000 / 137,500 / 550,000 | 32,000 | Worker secret `BEDROCK_API_KEY` (a Bedrock long-term API key, sent as `Authorization: Bearer`) |
+| `aws-bedrock` | `us` | `us.openai.gpt-6-luna` | `https://bedrock-runtime.us-east-1.amazonaws.com/openai/v1/responses` | `aws-bedrock-gpt-6-luna-us-2026-09-25.1`: 110,000 / 11,000 / 137,500 / 550,000 | 16,000 | Worker secret `BEDROCK_API_KEY` (a Bedrock long-term API key, sent as `Authorization: Bearer`) |
 
 The credential is read from the Worker environment at call time and is never logged, returned,
 stored in Postgres or put in an error. The faux cloud uses a scripted provider (below) unless the
