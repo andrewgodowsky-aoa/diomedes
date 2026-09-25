@@ -302,13 +302,10 @@ export class StreamRuleService {
   // --- tool intents, at admission ------------------------------------------------------
 
   private async facts(step: StepIntent, effect: Parameters<HarnessHook>[0]['effect']): Promise<ToolFacts> {
-    // A read declares no targets (H12 records targets only for effects); judge the paths it names.
+    // A read's effect record names no targets (only effects on the world declare them), so judge
+    // what its own input names, as for a tool with no effect record.
     if (effect)
-      return {
-        tool: effect.tool,
-        effectClass: effect.effectClass,
-        targets: effect.targets.length ? effect.targets : pathsIn(step.input),
-      };
+      return { tool: effect.tool, effectClass: effect.effectClass, targets: effect.targets.length ? effect.targets : pathsIn(step.input) };
     const name = step.name ?? step.stepId;
     if (!this.deps.tools.has(name)) return { tool: name, effectClass: null, targets: pathsIn(step.input) };
     const tool = this.deps.tools.get(name);
