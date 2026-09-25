@@ -130,6 +130,7 @@ export default defineConfig({
     'h14-team-ui.spec.ts',
     'h15-supervision.spec.ts',
     'h16-stream-triggers.spec.ts',
+    'h16-console.spec.ts',
     'review-diffs-ui.spec.ts',
     'guidance-maintenance-ui.spec.ts',
     'cd05-zoom-motion.spec.ts',
