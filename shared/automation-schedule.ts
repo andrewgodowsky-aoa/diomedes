@@ -233,6 +233,16 @@ const localDate = (timezone: string, ms: number) => {
   return Date.UTC(wall.year, wall.month - 1, wall.day);
 };
 
+/**
+ * One slot per instant. A calendar day a zone skipped whole (Pacific/Apia,
+ * 30 December 2011) resolves to the next day's instant; the day that exists
+ * keeps it, so a slot is never both run and recorded as missed.
+ */
+function pushSlot(out: ScheduleSlot[], slot: ScheduleSlot) {
+  if (out.at(-1)?.ms === slot.ms) out[out.length - 1] = slot;
+  else out.push(slot);
+}
+
 /** Every slot after `afterMs` up to and including `untilMs`, oldest first. */
 export function slotsBetween(
   schedule: AutomationSchedule,
@@ -245,7 +255,7 @@ export function slotsBetween(
   const last = localDate(schedule.timezone, untilMs) + DAY;
   for (let date = localDate(schedule.timezone, afterMs) - DAY; date <= last; date += DAY) {
     const slot = slotOn(schedule, date);
-    if (slot && slot.ms > afterMs && slot.ms <= untilMs) out.push(slot);
+    if (slot && slot.ms > afterMs && slot.ms <= untilMs) pushSlot(out, slot);
     if (out.length >= limit) break;
   }
   return out;
@@ -260,7 +270,7 @@ export function nextSlots(schedule: AutomationSchedule, afterMs: number, count: 
     date += DAY, guard += 1
   ) {
     const slot = slotOn(schedule, date);
-    if (slot && slot.ms > afterMs) out.push(slot);
+    if (slot && slot.ms > afterMs) pushSlot(out, slot);
   }
   return out;
 }

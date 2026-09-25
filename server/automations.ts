@@ -1443,9 +1443,9 @@ export class AutomationService {
                 definition,
                 slot,
                 'missed_host_off',
-                `Diomedes was not running on this computer at ${slotText(revision.schedule, slot)} (it was off, asleep or closed), so this run did not start${
-                  seen ? `. This computer was last seen ${localText(revision.schedule.timezone, Date.parse(seen))}` : ''
-                }.`,
+                `Diomedes was not running on this computer at ${slotText(revision.schedule, slot)} (it was off, asleep or closed), so this run did not start.${
+                  seen ? ` This computer was last seen ${localText(revision.schedule.timezone, Date.parse(seen)).replace(/\.$/, '')}.` : ''
+                }`,
               );
               missedIds.push(occurrence.id);
               recorded += 1;
@@ -1614,6 +1614,16 @@ export class AutomationService {
     this.known(organizationId, automationId);
     this.configuration.assertMayConfigure(organizationId);
     const person = this.workspaces.currentPerson().id;
+    // Slots already due are settled under the schedule as it stands before this
+    // act changes it (the caller holds the store lock, as a pass does), so a slot
+    // that fell due since the last pass is admitted or recorded, never lost.
+    try {
+      await this.beat();
+      await this.schedulePass();
+    } catch (error) {
+      // A pass that fails never blocks a person's act; the scheduler's next pass tries again.
+      console.warn('An automation schedule pass failed:', error);
+    }
     const current = this.definition(organization);
     if (body.expectedGeneration !== current.generation)
       throw refuse(

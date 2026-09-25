@@ -19,7 +19,7 @@ import {
   migrateRecord,
   type DurableFamily,
 } from '../server/migrations/framework.js';
-import { backupPath, openVersionedFile } from '../server/migrations/files.js';
+import { backupPath, commitMigration, openVersionedFile } from '../server/migrations/files.js';
 import {
   AUTOMATION_DEFINITIONS,
   AUTOMATION_OCCURRENCES,
@@ -380,5 +380,69 @@ describe('readers wired through the framework', () => {
     const scheduler = new ReadyScheduler({ store, admit: async () => undefined, running: () => false });
     await expect(scheduler.init()).rejects.toThrow(/Ready queue pause was written by a newer Diomedes/);
     expect(await fs.readFile(file, 'utf8')).toBe(text);
+  });
+});
+
+describe('independent review (review-e): migrations keep what they promise', () => {
+  const file = () => path.join(root, 'three.json');
+
+  test('the backup holds the original bytes, even when they are not valid UTF-8', async () => {
+    const bytes = Buffer.concat([
+      Buffer.from('{"v": 1, "legacy": "caf'),
+      Buffer.from([0xff, 0xfe]),
+      Buffer.from('"}'),
+    ]);
+    await fs.writeFile(file(), bytes);
+    const opened = await openVersionedFile(THREE, file());
+    expect(opened!.backup).not.toBeNull();
+    expect((await fs.readFile(opened!.backup!)).equals(bytes)).toBe(true);
+    expect(opened!.backup).toBe(backupPath(file(), 1, bytes));
+  });
+
+  test('a file that changed while it was being carried forward is not overwritten', async () => {
+    const stale = JSON.stringify({ v: 1, legacy: 'what was read' });
+    const newer = JSON.stringify({ v: 1, legacy: 'what another writer put there since' });
+    await fs.writeFile(file(), newer);
+    const migrated = migrateRecord(THREE, JSON.parse(stale));
+    await expect(commitMigration(THREE, file(), stale, migrated as never)).rejects.toThrow(/changed while/);
+    expect(await fs.readFile(file(), 'utf8')).toBe(newer);
+  });
+
+  test('a prepared write from a newer Diomedes stops recovery with the project and the journal untouched', async () => {
+    const data = path.join(root, 'data');
+    const store = new Store(data, path.join(root, 'projects'));
+    await store.init();
+    const project = await store.createProject('Journal');
+    const stateFile = path.join(data, 'projects', project.id, 'state.json');
+    const onDisk = await fs.readFile(stateFile, 'utf8');
+    const pending = path.join(data, 'pending');
+    await fs.mkdir(pending, { recursive: true });
+    const journal = JSON.stringify({
+      id: 'j1',
+      projectId: project.id,
+      writes: [],
+      state: { ...JSON.parse(onDisk), schemaVersion: 2, futureField: true },
+    });
+    await fs.writeFile(path.join(pending, 'j1.json'), journal);
+    await expect(new Store(data, path.join(root, 'projects')).init()).rejects.toThrow(/newer Diomedes \(version 2\)/);
+    expect(await fs.readFile(stateFile, 'utf8')).toBe(onDisk);
+    expect(await fs.readFile(path.join(pending, 'j1.json'), 'utf8')).toBe(journal);
+  });
+
+  test('a prepared write at this version never carries its file version into memory', async () => {
+    const data = path.join(root, 'data');
+    const store = new Store(data, path.join(root, 'projects'));
+    await store.init();
+    const project = await store.createProject('Journal');
+    const stateFile = path.join(data, 'projects', project.id, 'state.json');
+    const pending = path.join(data, 'pending');
+    await fs.mkdir(pending, { recursive: true });
+    await fs.writeFile(
+      path.join(pending, 'j1.json'),
+      JSON.stringify({ id: 'j1', projectId: project.id, writes: [], state: JSON.parse(await fs.readFile(stateFile, 'utf8')) }),
+    );
+    const reopened = new Store(data, path.join(root, 'projects'));
+    await reopened.init();
+    expect((reopened.state(project.id) as { schemaVersion?: unknown }).schemaVersion).toBeUndefined();
   });
 });

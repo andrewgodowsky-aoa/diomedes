@@ -143,8 +143,18 @@ test.afterAll(async ({ request }) => {
 /** The thread's session carries the recorded delivery; everything else is the server's. */
 async function withRecordedRun(page: Page) {
   await page.route(`**/api/projects/${projectId}/state`, async (route) => {
-    const response = await route.fetch();
-    const state = (await response.json()) as ProjectState;
+    // A /state poll still in this handler as the test ends has its fetched body disposed with the
+    // context (the same race tests/field.spec.ts C07 records). Only that case is let go, and only
+    // once the page is closed; any other failure still fails the test.
+    let response: Awaited<ReturnType<typeof route.fetch>>;
+    let state: ProjectState;
+    try {
+      response = await route.fetch();
+      state = (await response.json()) as ProjectState;
+    } catch (error) {
+      if (page.isClosed() || /disposed|has been closed/.test(String(error))) return;
+      throw error;
+    }
     const session = {
       id: 'S-h11-inspector',
       taskId: 'T-h11-inspector',

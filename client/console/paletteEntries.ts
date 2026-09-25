@@ -53,6 +53,8 @@ export interface PaletteHandlers {
   launchSkill(skill: PackSkill): void | Promise<void>;
   /** Turn the Small Business pack on for this project. A person's decision; it grants nothing. */
   turnOnSkills(): void | Promise<void>;
+  /** Open a playbook to read it; its body loads only then (P04). */
+  readSkill?(skill: PackSkill): void;
 }
 
 export interface PaletteContext {
@@ -327,7 +329,12 @@ function skillEntries(ctx: PaletteContext): PaletteEntry[] {
     sub: `${SKILL_MODE[skill.mode]}, ${skill.value}`,
     search: skill.triggers.join(' '),
     point: '',
-    actions: [{ label: 'Use', light: true, run: () => void ctx.handlers.launchSkill(skill) }],
+    actions: [
+      { label: 'Use', light: true, run: () => void ctx.handlers.launchSkill(skill) },
+      ...(ctx.handlers.readSkill
+        ? [{ label: 'Read', light: true, run: () => ctx.handlers.readSkill!(skill) }]
+        : []),
+    ],
   }));
 }
 

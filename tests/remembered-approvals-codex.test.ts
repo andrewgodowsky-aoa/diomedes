@@ -24,6 +24,7 @@ import {
 } from '../server/trust/scope-grants.js';
 import {
   patternDigest,
+  patternGrantDigest,
   patternForProposal,
   validateRememberedApprovals,
 } from '../server/trust/remembered-approvals.js';
@@ -639,5 +640,69 @@ describe('the ChatGPT account a Codex task scope was confirmed for', () => {
     const forged = structuredClone(state());
     forged.scopeGrants![0].confirmedAccountRoute = 'someone-else';
     expect(() => validateScopeGrants(forged)).toThrow(/incompatible/);
+  });
+});
+
+describe('independent review (review-e): a declined proposal is not the account a scope is confirmed for', () => {
+  test('a scope confirmed after a declined proposal on another account never covers that account', async () => {
+    menuProposal();
+    const declined = await propose();
+    await decide(declined, 'declined');
+    // Codex now runs under another ChatGPT account; the person confirms the task scope.
+    account = ACCOUNT_B;
+    const issued = await project<ScopeGrantRecord>('/permissions/grants', 'POST', scopeBody());
+    expect(issued.status).toBe(200);
+    expect(issued.data.confirmedAccountRoute).not.toBe(ACCOUNT_A);
+    account = ACCOUNT_A;
+    menuProposal();
+    const back = await propose();
+    expect(back.authorization).toBeUndefined();
+    expect(back.state).toBe('open');
+  });
+});
+
+describe('independent review (review-e): evidence names the grant that covers its files', () => {
+  test('covered evidence re-pointed at a grant for another file cannot authorize', async () => {
+    proposal = [{ path: 'Specials.md', text: 'Soup of the day.\n' }];
+    const specials = await propose();
+    await remember((await decide(specials)).id);
+    const first = await approveMenu();
+    await remember(first.id);
+    menuProposal();
+    const covered = current(await propose());
+    expect(covered.authorization?.kind).toBe('remembered-approval');
+    const forged = structuredClone(state());
+    const other = forged.rememberedApprovals!.grants.find(
+      (record) => record.grant.id !== (covered.authorization as { grantId: string }).grantId,
+    )!;
+    const need = forged.needs.find((item) => item.id === covered.id)!;
+    const evidence = {
+      ...(need.authorization as unknown as Record<string, unknown>),
+      grantId: other.grant.id,
+      grantDigest: patternGrantDigest(other),
+      patternDigest: other.grant.patternDigest,
+      acceptedAt: other.grant.createdAt,
+    };
+    need.authorization = evidence as never;
+    for (const entry of forged.history)
+      if (JSON.stringify(entry.authorization) === JSON.stringify(covered.authorization))
+        entry.authorization = structuredClone(evidence) as never;
+    expect(() => validateApprovalReceipts(forged)).toThrow();
+  });
+});
+
+describe('independent review (review-e): a team member or another route never carries Codex evidence', () => {
+  test('covered evidence on a team member’s session or a non-Codex session is refused on load', async () => {
+    const first = await approveMenu();
+    await remember(first.id);
+    menuProposal();
+    const covered = current(await propose());
+    expect(covered.authorization?.kind).toBe('remembered-approval');
+    const asMember = structuredClone(state());
+    asMember.sessions.find((item) => item.id === covered.sessionId)!.slotId = 'S-member';
+    expect(() => validateApprovalReceipts(asMember)).toThrow();
+    const otherRoute = structuredClone(state());
+    otherRoute.sessions.find((item) => item.id === covered.sessionId)!.route = 'claude-code' as never;
+    expect(() => validateApprovalReceipts(otherRoute)).toThrow();
   });
 });

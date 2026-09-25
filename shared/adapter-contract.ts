@@ -122,6 +122,13 @@ export const RUN_EVENT_TYPES = [
   'command.accepted',
   'control.applied',
   'control.rejected',
+  // H12 mediated effects: an effect intent and the outcome recorded against it.
+  'effect.intended',
+  'effect.applied',
+  'effect.failed',
+  'effect.uncertain',
+  'effect.abandoned',
+  'effect.reconciled',
 ] as const;
 export type RunEventType = (typeof RUN_EVENT_TYPES)[number];
 

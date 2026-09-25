@@ -144,12 +144,19 @@ const grantRecordSchema = z.strictObject({
 
 /**
  * The ChatGPT account a scope confirmed now is for: the one this task's latest
- * Codex proposal was prepared under, else the project's latest, else none seen.
+ * waiting or approved Codex proposal was prepared under, else the project's
+ * latest, else none seen.
  * Read from what the runtime reported, never from the request.
  */
 function accountRouteSeen(state: ProjectState, taskId: string): string {
+  // A proposal the person declined, or one that expired, is not a basis for
+  // granting: only a waiting or approved one says which account the person
+  // was working with.
   const prepared = state.needs.filter(
-    (need) => need.connection?.engine === 'codex' && !need.harness,
+    (need) =>
+      need.connection?.engine === 'codex' &&
+      !need.harness &&
+      (need.state === 'open' || need.state === 'go-ahead'),
   );
   return (
     prepared.filter((need) => need.taskId === taskId).at(-1)?.connection?.accountRoute ??

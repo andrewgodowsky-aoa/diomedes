@@ -46,6 +46,13 @@ import {
   sha256,
 } from './pack-catalogue.js';
 import { absent, ApiError, isContained, safeAbsolute } from './paths.js';
+import {
+  bodiesFromManifest,
+  builtinBodies,
+  indexFor,
+  PackContributions,
+  registerIndex,
+} from './pack-contributions.js';
 import { durableWrite, identifier, jsonWrite, now, type Store } from './store.js';
 import { MigrationRefusal, migrateRecord } from './migrations/framework.js';
 import { PACK_STORE } from './migrations/registry.js';
@@ -177,8 +184,27 @@ export class PackLifecycle {
   private catalogueCache: Promise<PackManifest[]> | null = null;
   private readonly clock: () => string;
 
+  /**
+   * P04: the Project-level contribution index and the on-demand loader. A
+   * built-in pack's bodies come from this build; an installed pack's from its
+   * verified manifest at the exact version a run pinned.
+   */
+  readonly contributions: PackContributions;
+
   constructor(private readonly options: PackLifecycleOptions) {
     this.clock = options.clock ?? now;
+    const fromStore = async (id: string, version: string | null) => {
+      if (isCapabilityPackId(id)) return builtinBodies(id, version);
+      const manifest =
+        version === null ? await this.currentManifest(id) : await this.verifiedManifest(id, version);
+      return manifest ? bodiesFromManifest(manifest) : null;
+    };
+    this.contributions = new PackContributions({
+      store: options.store,
+      bodies: (id, version) => fromStore(id, version),
+      current: (id) => fromStore(id, null),
+      clock: this.clock,
+    });
   }
 
   private get storePath() {
@@ -398,6 +424,21 @@ export class PackLifecycle {
       if (manifest) found.push(manifest);
     }
     return found;
+  }
+
+  /**
+   * One installed version's manifest, verified against its digest, or null.
+   * P04 reads a pinned version's bodies through this, so a rollback that kept
+   * the version on disk still serves a run that pinned it.
+   */
+  async verifiedManifest(id: string, version: string): Promise<PackManifest | null> {
+    const manifest = await this.manifestOf(id, version);
+    return manifest instanceof Error ? null : manifest;
+  }
+
+  /** The current installed version's verified manifest, or null. */
+  async currentManifest(id: string): Promise<PackManifest | null> {
+    return this.current(id);
   }
 
   async isInstalled(id: string) {
@@ -849,10 +890,19 @@ export class PackLifecycle {
       );
   }
 
-  private async noteProjects(id: string, sentence: string) {
+  private async noteProjects(id: string, sentence: string, manifest?: PackManifest) {
     for (const project of await this.projectsWith(id)) {
       const state = this.options.store.state(project.id);
-      this.options.store.addEntry(state, { kind: 'pack', sentence });
+      const entry = this.options.store.addEntry(state, { kind: 'pack', sentence });
+      // P04: new runs see the version now current; a run already admitted keeps its pin.
+      if (manifest && !isCapabilityPackId(id))
+        registerIndex(
+          this.options.store,
+          state,
+          indexFor(bodiesFromManifest(manifest), this.clock()),
+          `Registered for ${manifest.version}. Runs admitted before this keep the version they pinned.`,
+          entry,
+        );
       await this.options.store.persist(state);
     }
   }
@@ -885,6 +935,7 @@ export class PackLifecycle {
       await this.noteProjects(
         packId,
         `You updated ${manifest.name} from ${from} to ${manifest.version} while it was on in this project. It adds no permission.`,
+        manifest,
       );
       return { updated: packId, from, to: manifest.version };
     });
@@ -930,6 +981,7 @@ export class PackLifecycle {
       await this.noteProjects(
         packId,
         `You rolled ${manifest.name} back from ${from} to ${target} while it was on in this project. It adds no permission.`,
+        manifest,
       );
       return { rolledBack: packId, from, to: target };
     });
@@ -1050,7 +1102,15 @@ export class PackLifecycle {
         projectId,
         manifest.id,
       );
-    else await recordPackActivation(this.options.store, projectId, manifest, next, now());
+    else {
+      const at = now();
+      // P04: an installed pack registers its contribution index as it turns on, never its bodies.
+      const index =
+        next === 'active' && 'contributions' in manifest
+          ? indexFor(bodiesFromManifest(manifest as PackManifest), at)
+          : undefined;
+      await recordPackActivation(this.options.store, projectId, manifest, next, at, index);
+    }
     if ((this.options.store.state(projectId).project.packs ?? []).length === before) return;
     await this.append({
       opId: identifier('pk'),
