@@ -98,6 +98,7 @@ export default defineConfig({
     'home-history-sharing.spec.ts',
     'home-route-ownership.review-20260921.spec.ts',
     'app-updates-ui.spec.ts',
+    'release-notes-ui.spec.ts',
     'workspace-ui.spec.ts',
     'configuration-ui.spec.ts',
     'file-imports-ui.spec.ts',

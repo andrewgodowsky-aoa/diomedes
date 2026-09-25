@@ -243,6 +243,8 @@ import {
 } from '../shared/tier-map.js';
 import { projectedTurnIds, turnIdentityText } from '../shared/conversation-turn-id.js';
 import { AppUpdateService, mountAppUpdateRoutes, type UpdateTransport } from './app-updates.js';
+import { parseStableVersion } from '../shared/app-updates.js';
+import { RELEASE_NOTES_SEEN_LIMIT } from '../shared/release-notes.js';
 import { EngineInstaller } from './engines/install.js';
 import { NativeLogin } from './engines/login.js';
 import { changeCloudSharing, cloudSharing, requireCloudSharing, sharesHistory } from './cloud-sharing.js';
@@ -606,6 +608,15 @@ function validateSettings(current: Settings, body: unknown): Settings {
       )
         throw new ApiError(400, 'Invalid first-use settings.');
       result.seen.firstUse = value.firstUse;
+    }
+    if (value.releaseNotes !== undefined) {
+      if (
+        !Array.isArray(value.releaseNotes) ||
+        value.releaseNotes.length > RELEASE_NOTES_SEEN_LIMIT ||
+        value.releaseNotes.some((item) => parseStableVersion(item) !== item)
+      )
+        throw new ApiError(400, 'Invalid release-notes settings.');
+      result.seen.releaseNotes = value.releaseNotes as string[];
     }
     if (value.guidedDescriptors !== undefined) {
       const entries = plain(value.guidedDescriptors);

@@ -85,6 +85,12 @@ export interface Settings {
     onlineServiceNotice: boolean;
     guidedDescriptors: Record<string, number>;
     firstUse: string[];
+    /**
+     * Versions whose "What's new" notice the person has dismissed, so each
+     * version's notice is offered once. Missing on settings written before
+     * 2026-09-25, which reads as none dismissed.
+     */
+    releaseNotes?: string[];
   };
   openProjects: string[];
   /**

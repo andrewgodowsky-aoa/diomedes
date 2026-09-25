@@ -1,0 +1,94 @@
+/* Settings > What's new, the update card's offered notes and the post-update
+   notice. Each release is a `.service` block, the Engines screen's own row, so
+   typography, rules and spacing come from the shared Console system; this
+   sheet adds only the disclosure and the list. */
+.whats-new {
+  margin-top: 0;
+  min-width: 0;
+}
+
+.whats-new .release-entry {
+  min-width: 0;
+}
+
+.whats-new summary {
+  list-style: none;
+  cursor: pointer;
+  min-width: 0;
+  margin-bottom: 0;
+}
+.whats-new summary::-webkit-details-marker {
+  display: none;
+}
+
+/* The disclosure's own chevron, drawn before the version. It turns when the
+   entry opens; the Console's reduced-motion rules remove the turn's motion. */
+.whats-new summary h3 {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+  min-width: 0;
+}
+.whats-new summary h3::before {
+  content: '';
+  flex: none;
+  width: 0.45em;
+  height: 0.45em;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: translateY(-0.1em) rotate(-45deg);
+  transition: transform var(--dm-t-quick) var(--dm-ease);
+}
+.whats-new details[open] > summary h3::before {
+  transform: translateY(-0.2em) rotate(45deg);
+}
+
+/* Version strings and dates are machine strings in a flex row (decision 5). */
+.whats-new .release-version,
+.whats-new .release-meta {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.release-notes-body {
+  min-width: 0;
+  max-width: 70ch;
+}
+.release-notes-body .release-headline {
+  margin: 12px 0;
+}
+.release-notes-body .release-section h4 {
+  margin: 16px 0 6px;
+  font: 600 var(--dm-type-caption) / 1.5 var(--dm-font-ui);
+  color: var(--dm-text-3);
+}
+.release-notes-body ul {
+  margin: 0;
+  padding-inline-start: 1.25em;
+}
+.release-notes-body li {
+  margin: 6px 0;
+  overflow-wrap: anywhere;
+}
+
+/* The update card's notes: a release body is prose of unknown length, so it
+   scrolls inside its own box rather than pushing the Download button away. */
+.app-updates .offered-notes {
+  min-width: 0;
+  max-height: 40vh;
+  overflow: auto;
+  border-top: 1px solid var(--dm-rule-2);
+  padding-top: 8px;
+}
+.app-updates .offered-notes .release-text {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+}
+
+.release-notice > span:nth-child(2) {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
