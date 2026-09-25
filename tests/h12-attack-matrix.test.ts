@@ -5,7 +5,7 @@
  * Everything is local: temporary folders, synthetic runs, no network. Cases
  * that need a Windows filesystem feature (junctions) run on Windows CI only.
  */
-import { afterEach, beforeEach, describe, expect, test } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -183,6 +183,30 @@ describe('write_file: time-of-check to time-of-use', () => {
     expect((await fs.readdir(path.join(root, 'docs'))).filter((name) => name.endsWith('.tmp'))).toEqual([]);
   });
 
+  test('a landed file that is not the one written leaves the write uncertain, never retried on a guess', async () => {
+    const rename = fs.rename.bind(fs);
+    const target = path.join(root, 'docs', 'a.md');
+    const spy = vi.spyOn(fs, 'rename').mockImplementation(async (from, to) => {
+      await rename(from, to);
+      if (to !== target) return;
+      // Someone replaces the file in the instant after the rename.
+      await fs.writeFile(`${to}.other`, 'someone else');
+      await rename(`${to}.other`, to);
+    });
+    try {
+      await expect(write({ path: 'docs/a.md', text: 'hello' })).rejects.toMatchObject({ code: 'path_changed' });
+    } finally {
+      spy.mockRestore();
+    }
+    const [written] = (await service.get('r')).steps;
+    expect(written.state).toBe('reconcile_required');
+    expect(written.effects!.at(-1)).toMatchObject({ tool: 'write_file', targets: ['docs/a.md'], status: 'uncertain' });
+    await expect(
+      tools.dispatch(service, { runId: 'r', owner: 'host', principal, stepId: written.intent.stepId, name: 'write_file', input: { path: 'docs/a.md', text: 'hello' } }),
+    ).rejects.toMatchObject({ code: 'effect_uncertain' });
+    expect(await fs.readFile(path.join(root, 'docs', 'a.md'), 'utf8')).toBe('someone else');
+  });
+
   test('a folder swapped for a link between check and use is refused, and nothing lands outside', async () => {
     beforeCommit = async () => {
       await fs.rename(path.join(root, 'docs'), path.join(root, 'docs-moved'));
@@ -339,7 +363,7 @@ describe('containedSpawn: minimal environment, bounded output, process-tree clea
       if (!hadAnthropic) delete process.env.ANTHROPIC_API_KEY;
     }
   });
-  test.each([['GITHUB_TOKEN'], ['AWS_SECRET_ACCESS_KEY'], ['NPM_AUTH'], ['DB_PASSWORD'], ['OPENAI_API_KEY'], ['Cookie']])(
+  test.each([['GITHUB_TOKEN'], ['AWS_SECRET_ACCESS_KEY'], ['NPM_AUTH'], ['DB_PASSWORD'], ['OPENAI_API_KEY'], ['Cookie'], ['STRIPE_KEY'], ['SIGNING_KEYS'], ['KEY']])(
     'an explicit %s is refused with spawn_env_refused',
     async (name) => {
       await expect(containedSpawn(root, '.', node, ['-e', ''], { timeoutMs: 5_000, env: { [name]: 'x' } })).rejects.toMatchObject({

@@ -381,6 +381,18 @@ describe('(d) instruction drift', () => {
         .forbids,
     ).toBe('pkg/dist/');
   });
+  test('a prohibition with an exception, or a clause that names what to do instead, forbids only what it names', () => {
+    // "Outside `src/`" permits src/; it never forbids it.
+    expect(machineRules('- Do not edit files outside `src/`.', file, '')).toEqual([]);
+    expect(machineRules('Never touch anything except `docs/`', file, '')).toEqual([]);
+    // Only the first clause is the prohibition; the next one says where to work instead.
+    expect(
+      machineRules('Never modify `gen/a.ts`; change `src/b.ts` instead.', file, '').map((rule) => rule.forbids),
+    ).toEqual(['gen/a.ts']);
+    expect(
+      machineRules('Do not edit `dist/`. Edit `src/` and rebuild.', file, '').map((rule) => rule.forbids),
+    ).toEqual(['dist/']);
+  });
   const rules = machineRules(
     '- Do not edit `generated/`\n- Never change `config/prod.json`',
     file,

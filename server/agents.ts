@@ -40,6 +40,7 @@ import {
 } from '../shared/agent-profiles.js';
 import type { Mode, ProjectState } from '../shared/types.js';
 import { payloadDigest } from './command-admission.js';
+import { profileDigest } from './agent-profiles.js';
 import { ApiError } from './paths.js';
 
 const definitionSchema = z.strictObject({
@@ -355,7 +356,9 @@ export function validateAgentResolutions(state: ProjectState) {
       (snapshot.profile !== undefined &&
         (snapshot.profile.engine !== snapshot.routeId ||
           snapshot.profile.model !== snapshot.requestedModel ||
-          (snapshot.profile.fallback !== null && snapshot.profile.fallbackPolicy !== 'on')))
+          (snapshot.profile.fallback !== null && snapshot.profile.fallbackPolicy !== 'on') ||
+          // The pin is held to its own digest, so no pinned field can be swapped on disk.
+          snapshot.profile.digest !== profileDigest(snapshot.profile as never)))
     )
       fail();
   }

@@ -344,3 +344,85 @@ describe('routing preferences and fallback', () => {
     expect(threadChoosesItsOwnModel({ requested: { model: null, effort: null, agent: 'auto' } } as any)).toBe(false);
   });
 });
+
+describe('independent review (review-e): what a list may not change', () => {
+  test('a project list never replaces an Agent the thread chose for itself', async () => {
+    const listed = await profile({ name: 'Listed', agentId: undefined });
+    await request(`/projects/${projectId}/agent-routing`, 'PUT', { order: [listed.profileId] });
+    await request(`/projects/${projectId}/threads/${threadId}`, 'PUT', {
+      requested: { model: null, effort: null, agent: 'diomedes.reviewer' },
+    });
+    expect((await start()).status).toBe(200);
+    const session = (await settled()).sessions.at(-1)!;
+    // The Reviewer's ceiling is the person's choice; a list chooses intelligence, never authority.
+    expect(session.agent?.agentId).toBe('diomedes.reviewer');
+    expect(session.agent?.profile).toBeUndefined();
+  });
+
+  test('a Work start that names its Agent is not overridden by a project list', async () => {
+    const listed = await profile({ name: 'Listed', agentId: undefined });
+    await request(`/projects/${projectId}/agent-routing`, 'PUT', { order: [listed.profileId] });
+    const started = await request<Session>(`/projects/${projectId}/work/start`, 'POST', {
+      protocolVersion: 1,
+      commandId: crypto.randomUUID(),
+      taskId,
+      threadId,
+      route: 'codex',
+      consent: true,
+      sources: [],
+      agentId: 'diomedes.reviewer',
+    });
+    expect(started.status).toBe(200);
+    const session = (await settled()).sessions.at(-1)!;
+    expect(session.agent?.agentId).toBe('diomedes.reviewer');
+    expect(session.agent?.profile).toBeUndefined();
+  });
+
+  test('a profiles file that cannot be read refuses the run instead of falling open', async () => {
+    const offline = await profile({ name: 'OpenCode writer', engine: 'opencode', model: 'glm-9' });
+    await request(`/projects/${projectId}/agent-routing`, 'PUT', { order: [offline.profileId] });
+    expect((await start()).status).toBe(409);
+    await close();
+    const file = path.join(root, 'data', 'agent-profiles.json');
+    const damaged = (await fs.readFile(file, 'utf8')).slice(0, 40);
+    await fs.writeFile(file, damaged);
+    await launch();
+    const refused = await start();
+    expect(refused.status).toBe(409);
+    expect((refused.data as any).code).toBe('profiles_unreadable');
+    expect(generate).not.toHaveBeenCalled();
+    // The damaged file is left for the person to inspect.
+    expect(await fs.readFile(file, 'utf8')).toBe(damaged);
+  });
+
+  test('an edit while the run is in flight never reaches the dispatch it was admitted for', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    generate = vi.fn(async (input) => {
+      await gate;
+      return proposal(input.model ?? 'runtime-default');
+    });
+    const chosen = await profile();
+    await request(`/projects/${projectId}/threads/${threadId}`, 'PUT', {
+      requested: { model: null, effort: null, profile: chosen.profileId },
+    });
+    expect((await start()).status).toBe(200);
+    const edited = await request(`/agent-profiles/${chosen.profileId}`, 'PUT', {
+      expectedRevision: 1,
+      name: 'Careful writer',
+      engine: 'codex',
+      model: 'gpt-5.5',
+      effort: 'low',
+      agentId: 'diomedes.builder',
+      rules: ['Use American spelling.'],
+    });
+    expect(edited.status).toBe(200);
+    release();
+    await settled();
+    const sent = generate.mock.calls[0][0];
+    expect(sent.model).toBe('gpt-6-astra');
+    expect(sent.effort).toBe('xhigh');
+    expect(sent.prompt).toContain('Keep British spelling.');
+    expect(sent.prompt).not.toContain('Use American spelling.');
+  });
+});

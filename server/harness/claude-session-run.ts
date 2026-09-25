@@ -67,7 +67,7 @@ export interface SessionCheckpointFacts {
  * steering are not.
  */
 export interface NativeSessionProfile<C extends SessionCheckpointFacts> {
-  engine: 'claude-code' | 'opencode';
+  engine: 'claude-code' | 'opencode' | 'cursor' | 'devin';
   label: string;
   capability: CapabilityManifest;
   /** Validates a saved checkpoint for this engine and returns its payload. Throws `invalid_checkpoint`. */
@@ -78,6 +78,17 @@ export interface NativeSessionProfile<C extends SessionCheckpointFacts> {
    * with the route contract's `steer` answer.
    */
   steering: 'queue' | 'none';
+  /**
+   * What a restart makes of a checkpoint whose turn was running (H05). Without it
+   * the run stays parked for reconciliation, as before. With it, the driver
+   * reconciles the run from its durable record at startup: `resume` keeps the
+   * returned checkpoint for an explicit resume and records the interrupted turn as
+   * not completed; `refuse` ends the run with the sentence given. Never resends.
+   */
+  recoverInterrupted?(
+    checkpoint: C,
+    interruptedRequestId: string | null,
+  ): { resume: C } | { refuse: string };
   /**
    * Open a missing connection before the turn is recorded, and confirm a live one still has its
    * native session. A refusal found there (a fork the engine cannot make, a session it no longer
@@ -91,7 +102,9 @@ export const CLAUDE_SESSION_PROFILE: NativeSessionProfile<ClaudeSessionCheckpoin
   label: 'Claude',
   capability: CLAUDE_SESSION_CAPABILITY,
   parseCheckpoint: (value) => claudeCheckpointSchema.parse(validateClaudeNativeCheckpoint(value).payload),
-  steering: 'none',
+  // H03: a message sent while Claude Code answers is held and sent as the next turn of the same
+  // live session. Mid-turn stdin injection is not proven for this build, so it is never claimed.
+  steering: 'queue',
 };
 export interface ClaudeSessionAdmission {
   location: string;
@@ -101,13 +114,26 @@ export interface ClaudeSessionAdmission {
 }
 export type ClaudeConversation = Pick<
   ClaudeNativeSession,
-  'turn' | 'interrupt' | 'close' | 'checkpoint' | 'nativeSession'
+  'turn' | 'interrupt' | 'stop' | 'close' | 'checkpoint' | 'nativeSession'
 >;
-/** One held steering message and what has happened to it so far. */
+/**
+ * One held steering message and what has happened to it so far. A message a caller is waiting
+ * on (H03: a conversation message sent with `queued`) also carries its whole turn, sent as it
+ * is once its place comes, and the caller's promise, settled with that turn's own result. A
+ * message sent through `steer` (H08) may instead carry `onDelivered`, which shows it and its
+ * answer in the conversation. The two never share an entry: a whole queued turn is projected by
+ * the caller that waits on it.
+ */
 type SteerEntry = {
   commandId: string;
   text: string;
   ack: SteeringAck;
+  turn?: ClaudeSessionTurn<any>;
+  intent?: string;
+  promise?: Promise<ClaudeSessionTurnResult>;
+  settle?: { resolve(result: ClaudeSessionTurnResult): void; reject(error: unknown): void };
+  /** Set once the drain has handed this entry's turn to `request`, which must not join it. */
+  sending?: boolean;
   /** Shows a sent message and its answer where the person reads the conversation. */
   onDelivered?: SteerOptions['onDelivered'];
 };
@@ -125,11 +151,19 @@ const STEER_HISTORY = 16;
 export interface NativeConversation<C extends SessionCheckpointFacts> {
   turn(input: TextRequest): Promise<TextResponse>;
   interrupt(): Promise<void>;
+  /**
+   * A person's Stop with escalation (H03): interrupt, wait at most `graceMs` for the turn's own
+   * boundary, then end the process. Says which happened. A transport without it is stopped by
+   * aborting its turn's signal.
+   */
+  stop?(graceMs: number): Promise<'interrupted' | 'killed'>;
   close(reason?: unknown): Promise<void>;
   readonly checkpoint: C;
   readonly nativeSession: NativeSessionRef | null;
   /** Set by a transport that can report how it reached its session (a resume that started fresh). */
   readonly continuity?: { origin: string; detail: string | null };
+  /** True where every turn may reach its session differently, so each turn reports it (H05). */
+  readonly continuityPerTurn?: boolean;
   /** Set by a transport that can confirm, sending nothing, that its native session still exists. */
   verify?(): Promise<void>;
 }
@@ -152,6 +186,12 @@ export interface ClaudeSessionTurn<C extends SessionCheckpointFacts = ClaudeSess
   runId: string;
   sourceRunId?: string;
   input: TextRequest;
+  /**
+   * H03: when a turn is already running on this run, wait behind it (`profile.steering`) instead
+   * of being refused as busy. The wait is shown in `status` and ends with this turn's own result,
+   * or with a refusal saying why it was not sent.
+   */
+  queued?: boolean;
   admit(signal?: AbortSignal): Promise<ClaudeSessionAdmission>;
   open(
     admission: ClaudeSessionAdmission,
@@ -190,6 +230,23 @@ export interface ClaudeSessionTurnResult {
    * fresh native session. Absent on every other turn and on every Claude turn.
    */
   continuity?: { origin: string; detail: string };
+  /**
+   * H03: set when a person's Stop ended this turn at its own boundary, the session idle and
+   * still resumable. A Stop that had to end the process fails the turn as `STOP_FORCED` instead.
+   */
+  stop?: 'interrupted';
+}
+/**
+ * H03: whether a native conversation can take its next message, read from its durable record
+ * after a restart as much as during a visit. `live`: its process is running here. `resumable`:
+ * the next message resumes the saved native session. `new`: nothing was saved yet, so the next
+ * message starts one. `start-again`: the record says the session cannot be resumed, and why.
+ * `cursor` is the run event sequence the read was made at.
+ */
+export interface SessionContinuity {
+  state: 'live' | 'resumable' | 'new' | 'start-again';
+  detail: string;
+  cursor: number;
 }
 /**
  * What happened to one conversation message after its answer, in the order it can happen.
@@ -216,6 +273,8 @@ export const claudeSessionRunId = (projectId: string, commandId: string) =>
 const stepKey = (prefix: string, commandId: string) =>
   `${prefix}:${digest(commandId).slice(0, 40)}`;
 const PHASE_PREFIX = 'phase.';
+/** The startup reconciliation step that keeps a restart-interrupted session resumable (H05). */
+const RECOVER_PREFIX = 'recover:';
 /** A `transform` step charges neither the model nor the tool counter, and costs no units. */
 const phaseDefinition = (phase: InteractionPhase): StepDefinition => ({
   id: stepKey(`${PHASE_PREFIX}${phase.phase}`, phase.sourceMessageId),
@@ -277,6 +336,10 @@ export class ClaudeSessionRuns<C extends SessionCheckpointFacts = ClaudeSessionC
       controller: AbortController;
       promise: Promise<ClaudeSessionTurnResult>;
       request: ClaudeSessionTurn<C>;
+      /** Set when a person's Stop reached this turn (H03), so its result says it was stopped. */
+      stopRequested?: boolean;
+      /** The one stop in progress for this turn: a Stop press and a dropped caller share it. */
+      stopping?: Promise<'interrupted' | 'killed' | undefined>;
     }
   >();
   /** Messages held while a turn runs, per run, in the order they were sent (`profile.steering`). */
@@ -285,10 +348,13 @@ export class ClaudeSessionRuns<C extends SessionCheckpointFacts = ClaudeSessionC
   private readonly closing = new Set<Promise<void>>();
   private readonly cleanupFailures: unknown[] = [];
   private readonly lifetimeMs: number;
+  /** How long a Stop waits for the turn's own boundary before the process is ended (H03). */
+  private readonly stopGraceMs: number;
   constructor(
     private readonly runs: RunService,
-    options: { connectionLifetimeMs?: number; profile?: NativeSessionProfile<C> } = {},
+    options: { connectionLifetimeMs?: number; profile?: NativeSessionProfile<C>; stopGraceMs?: number } = {},
   ) {
+    this.stopGraceMs = options.stopGraceMs ?? 5000;
     this.profile = options.profile ?? (CLAUDE_SESSION_PROFILE as unknown as NativeSessionProfile<C>);
     this.owner = `${this.profile.engine === 'claude-code' ? 'claude' : this.profile.engine}-session-${randomUUID()}`;
     const lifetime = options.connectionLifetimeMs ?? 30 * 60_000;
@@ -355,7 +421,11 @@ export class ClaudeSessionRuns<C extends SessionCheckpointFacts = ClaudeSessionC
   private checkpoint(run: HarnessRun): C | undefined {
     const saved = [...run.steps]
       .reverse()
-      .find((step) => step.intent.kind === 'model' && step.nativeCheckpoint)?.nativeCheckpoint;
+      .find(
+        (step) =>
+          (step.intent.kind === 'model' || step.intent.stepId.startsWith(RECOVER_PREFIX)) &&
+          step.nativeCheckpoint,
+      )?.nativeCheckpoint;
     return saved ? this.profile.parseCheckpoint(saved) : undefined;
   }
   async status(projectId: string, runId: string) {
@@ -382,7 +452,36 @@ export class ClaudeSessionRuns<C extends SessionCheckpointFacts = ClaudeSessionC
       ...(this.profile.steering === 'queue'
         ? { steering: (this.steers.get(runId) ?? []).map((entry) => structuredClone(entry.ack)) }
         : {}),
+      busy: this.active.has(runId),
+      continuity: this.continuityOf(run, checkpoint),
     };
+  }
+  /**
+   * H03: whether this conversation's next message can reach its native session, from the
+   * durable record alone apart from `live`. A turn whose outcome is unknown (a restart while it
+   * ran, a Stop that had to end the process, a resume the engine refused) is never resumed, and
+   * the answer says so instead of leaving the conversation looking as if it were still running.
+   */
+  private continuityOf(run: HarnessRun, checkpoint: C | undefined): SessionContinuity {
+    const cursor = run.lastSeq;
+    const name = this.profile.engine === 'claude-code' ? 'Claude Code' : this.profile.label;
+    if (this.connections.has(run.id))
+      return { state: 'live', detail: `${name} is running this conversation now; the next message goes to the same session.`, cursor };
+    const unfinished = [...run.steps].reverse().find((step) => step.intent.kind === 'model' && step.state !== 'succeeded');
+    if (terminal(run) || (checkpoint && checkpoint.state !== 'idle') || unfinished) {
+      const restarted = run.events.some((event) => event.type === 'step.reconcile_required' && event.attributes.why === 'exclusive host startup');
+      const reason = unfinished?.error?.message
+        ? unfinished.error.message
+        : restarted
+          ? `Diomedes stopped while ${name} was answering, so that answer's outcome is unknown.`
+          : run.state === 'cancelled'
+            ? 'This conversation was cancelled.'
+            : `The last ${name} turn did not finish, so its outcome is unknown.`;
+      return { state: 'start-again', detail: `Couldn't resume. ${reason} The next message starts a new session.`, cursor };
+    }
+    if (checkpoint?.nativeSessionId)
+      return { state: 'resumable', detail: `Not running now. The next message resumes the saved ${name} session.`, cursor };
+    return { state: 'new', detail: `The next message starts a ${name} session.`, cursor };
   }
   request(request: ClaudeSessionTurn<C>): Promise<ClaudeSessionTurnResult> {
     if (this.closed)
@@ -398,10 +497,25 @@ export class ClaudeSessionRuns<C extends SessionCheckpointFacts = ClaudeSessionC
       sourceRunId: request.sourceRunId ?? null,
       binding: request.input.binding ?? null,
     });
+    // A queued message asked for again joins its own wait, and never a second copy of it.
+    const held = (this.steers.get(request.runId) ?? []).find(
+      (entry) => entry.promise && !entry.sending && entry.commandId === request.input.requestId,
+    );
+    if (held?.promise && (held.ack.state === 'pending' || held.intent === intent)) {
+      if (held.intent !== intent)
+        return Promise.reject(
+          new HarnessError(
+            'intent_mismatch',
+            'This command was already used for a different message. Send this one as a new message.',
+          ),
+        );
+      return held.promise;
+    }
     const pending = this.active.get(request.runId);
     if (pending) {
       if (pending.commandId === request.input.requestId && pending.intent === intent)
         return pending.promise;
+      if (request.queued && this.profile.steering === 'queue') return this.queue(request, intent);
       return Promise.reject(
         new EngineError('SESSION_BUSY', 'This conversation already has a turn in progress.'),
       );
@@ -420,28 +534,29 @@ export class ClaudeSessionRuns<C extends SessionCheckpointFacts = ClaudeSessionC
       this.forkLocks.add(request.sourceRunId);
     }
     const controller = new AbortController();
-    const admitted = {
-      ...request,
-      input: {
-        ...request.input,
-        signal: AbortSignal.any([
-          controller.signal,
-          ...(request.input.signal ? [request.input.signal] : []),
-        ]),
-      },
-    };
+    // H03: the caller going away (a Console Stop ends its own request first) is a Stop, not a
+    // shutdown: it goes through the same graceful interrupt and bounded escalation as the Stop
+    // route. Only this driver's own controller (shutdown, or a transport that cannot stop
+    // gracefully) aborts the turn outright.
+    const admitted = { ...request, input: { ...request.input, signal: controller.signal } };
+    const caller = request.input.signal;
     const promise = this.drive(admitted).finally(() => {
+      caller?.removeEventListener('abort', gone);
       controller.abort();
       this.active.delete(request.runId);
       if (request.sourceRunId) this.forkLocks.delete(request.sourceRunId);
     });
-    this.active.set(request.runId, {
+    const entry = {
       commandId: request.input.requestId,
       intent,
       controller,
       promise,
       request,
-    });
+    };
+    this.active.set(request.runId, entry);
+    const gone = () => void this.stopActive(request.runId, entry).catch(() => undefined);
+    if (caller?.aborted) controller.abort();
+    else caller?.addEventListener('abort', gone, { once: true });
     return promise;
   }
   /** The person's text and the first phase, from a committed answer. Pure; nothing is written here. */
@@ -1095,11 +1210,13 @@ export class ClaudeSessionRuns<C extends SessionCheckpointFacts = ClaudeSessionC
               runId,
               response: result,
               interrupted,
+              ...(interrupted && this.active.get(runId)?.stopRequested ? { stop: 'interrupted' as const } : {}),
               nativeSession: connection.session.nativeSession,
               // What this first turn carried, as evidence on the run: the run and the count only.
               ...(carried ? { carried: { from: carried.from, messages: carried.messages } } : {}),
               // A resume the engine could not honour, said on the turn it happened, and saved with it.
-              ...(opened && connection.session.continuity?.detail
+              ...((opened || connection.session.continuityPerTurn) &&
+              connection.session.continuity?.detail
                 ? {
                     continuity: {
                       origin: connection.session.continuity.origin,
@@ -1150,14 +1267,60 @@ export class ClaudeSessionRuns<C extends SessionCheckpointFacts = ClaudeSessionC
     projectId: string,
     runId: string,
     commandId: string,
-  ): Promise<{ state: 'requested' | 'idle' | 'superseded' }> {
+  ): Promise<{ state: 'requested' | 'idle' | 'superseded'; stop?: 'interrupted' | 'killed' | 'withdrawn' }> {
     await this.get(projectId, runId);
+    // H03: a message still waiting behind a running turn is withdrawn; nothing was sent.
+    if (await this.withdraw(projectId, runId, commandId)) return { state: 'requested', stop: 'withdrawn' };
     const active = this.active.get(runId);
     if (!active) return { state: 'idle' };
     if (active.commandId !== commandId) return { state: 'superseded' };
-    active.controller.abort();
-    await active.promise.catch(() => undefined);
-    return { state: 'requested' };
+    const stop = await this.stopActive(runId, active);
+    return { state: 'requested', ...(stop ? { stop } : {}) };
+  }
+  /** H03: withdraws a message still waiting behind a running turn, and nothing else. */
+  async withdraw(projectId: string, runId: string, commandId: string): Promise<boolean> {
+    try {
+      await this.get(projectId, runId);
+    } catch (error) {
+      // A lineage whose run was never started holds nothing.
+      if (error instanceof HarnessError && error.code === 'unknown_run') return false;
+      throw error;
+    }
+    const held = (this.steers.get(runId) ?? []).find(
+      (entry) => entry.commandId === commandId && entry.ack.state === 'pending' && !entry.sending,
+    );
+    if (!held) return false;
+    this.settleSteer(runId, held, 'cancelled', 'Withdrawn by Stop before it was sent.');
+    return true;
+  }
+  /**
+   * H03: stops one active turn once, however many ways it is asked. A transport that can stop
+   * gracefully is asked to within the grace, and ends its process itself when that does not
+   * work, saying which happened. Any other transport, or a turn not dispatched yet, is aborted.
+   */
+  private stopActive(
+    runId: string,
+    active: {
+      controller: AbortController;
+      promise: Promise<ClaudeSessionTurnResult>;
+      stopRequested?: boolean;
+      stopping?: Promise<'interrupted' | 'killed' | undefined>;
+    },
+  ): Promise<'interrupted' | 'killed' | undefined> {
+    active.stopRequested = true;
+    active.stopping ??= (async () => {
+      const session = this.connections.get(runId)?.session;
+      let stop: 'interrupted' | 'killed' | undefined;
+      if (session?.stop)
+        stop = await session.stop(this.stopGraceMs).catch((error: unknown) => {
+          if (error instanceof EngineError && error.code === 'SESSION_IDLE') return undefined;
+          throw error;
+        });
+      if (!stop) active.controller.abort();
+      await active.promise.catch(() => undefined);
+      return stop;
+    })();
+    return active.stopping;
   }
   async control(
     projectId: string,
@@ -1274,24 +1437,75 @@ export class ClaudeSessionRuns<C extends SessionCheckpointFacts = ClaudeSessionC
     };
     queue.push(entry);
     this.steers.set(runId, queue.slice(-STEER_HISTORY - STEER_QUEUE_LIMIT));
-    // One drain per run. It stops being the drain in the same synchronous step that finds
-    // nothing left to send, so a message pushed here is either seen by it or starts a new one.
-    if (!this.draining.has(runId)) {
-      this.draining.add(runId);
-      const base = active.request;
-      void active.promise.then(
-        (result) => {
-          if (!result.interrupted) return this.sendSteers(runId, base);
-          this.cancelSteers(runId, 'The answer it was waiting for was stopped, so this message was not sent.');
-          this.draining.delete(runId);
-        },
-        () => {
-          this.cancelSteers(runId, 'The answer it was waiting for did not finish, so this message was not sent.');
-          this.draining.delete(runId);
-        },
-      );
-    }
+    this.drain(runId, active);
     return structuredClone(entry.ack);
+  }
+  /**
+   * H03: a whole turn that waits behind the running one, for a caller that waits on its answer
+   * (a conversation message sent with `queued`). It is held in the same queue `steer` uses, is
+   * sent exactly as it was admitted once its place comes, and settles with its own result. If
+   * the turn ahead of it is stopped or fails it is refused with that reason, and nothing is sent.
+   */
+  private queue(request: ClaudeSessionTurn<C>, intent: string): Promise<ClaudeSessionTurnResult> {
+    const runId = request.runId;
+    const active = this.active.get(runId)!;
+    const queue = this.steers.get(runId) ?? [];
+    if (queue.filter((entry) => entry.ack.state === 'pending').length >= STEER_QUEUE_LIMIT)
+      return Promise.reject(
+        new EngineError('STEER_QUEUE_FULL', `${STEER_QUEUE_LIMIT} messages are already waiting for this answer to finish.`),
+      );
+    let settle!: SteerEntry['settle'];
+    const promise = new Promise<ClaudeSessionTurnResult>((resolve, reject) => {
+      settle = { resolve, reject };
+    });
+    const entry: SteerEntry = {
+      commandId: request.input.requestId,
+      text: request.input.prompt,
+      ack: steeringAckSchema.parse({
+        commandId: request.input.requestId,
+        state: 'pending',
+        nativeSession: null,
+        at: new Date().toISOString(),
+        detail: 'Waiting for the current answer to finish; it will be sent next, as its own message.',
+      }),
+      turn: request,
+      intent,
+      promise,
+      settle,
+    };
+    queue.push(entry);
+    this.steers.set(runId, queue.slice(-STEER_HISTORY - STEER_QUEUE_LIMIT));
+    // The caller going away while it waits withdraws the message; nothing was sent.
+    request.input.signal?.addEventListener(
+      'abort',
+      () => {
+        if (entry.ack.state === 'pending' && !entry.sending)
+          this.settleSteer(runId, entry, 'cancelled', 'Withdrawn before it was sent.');
+      },
+      { once: true },
+    );
+    this.drain(runId, active);
+    return promise;
+  }
+  /**
+   * One drain per run. It stops being the drain in the same synchronous step that finds nothing
+   * left to send, so a message pushed here is either seen by it or starts a new one.
+   */
+  private drain(runId: string, active: { promise: Promise<ClaudeSessionTurnResult>; request: ClaudeSessionTurn<C> }) {
+    if (this.draining.has(runId)) return;
+    this.draining.add(runId);
+    const base = active.request;
+    void active.promise.then(
+      (result) => {
+        if (!result.interrupted) return this.sendSteers(runId, base);
+        this.cancelSteers(runId, 'The answer it was waiting for was stopped, so this message was not sent.');
+        this.draining.delete(runId);
+      },
+      () => {
+        this.cancelSteers(runId, 'The answer it was waiting for did not finish, so this message was not sent.');
+        this.draining.delete(runId);
+      },
+    );
   }
   /** What happened to the messages sent while this conversation was answering. A read. */
   async steering(projectId: string, runId: string): Promise<SteeringAck[]> {
@@ -1299,7 +1513,17 @@ export class ClaudeSessionRuns<C extends SessionCheckpointFacts = ClaudeSessionC
     return (this.steers.get(runId) ?? []).map((entry) => structuredClone(entry.ack));
   }
   private readonly draining = new Set<string>();
-  private settleSteer(runId: string, entry: SteerEntry, state: SteeringAck['state'], detail: string, nativeSession: NativeSessionRef | null = null) {
+  private settleSteer(
+    runId: string,
+    entry: SteerEntry,
+    state: SteeringAck['state'],
+    detail: string,
+    nativeSession: NativeSessionRef | null = null,
+    error?: unknown,
+  ) {
+    // A caller waiting on this message hears a refusal in the same words the queue shows.
+    if (entry.settle && (state === 'cancelled' || state === 'rejected'))
+      entry.settle.reject(error ?? new EngineError('STEER_CANCELLED', detail));
     entry.ack = steeringAckSchema.parse({
       commandId: entry.commandId,
       state,
@@ -1319,6 +1543,36 @@ export class ClaudeSessionRuns<C extends SessionCheckpointFacts = ClaudeSessionC
     for (;;) {
       const entry = (this.steers.get(runId) ?? []).find((item) => item.ack.state === 'pending');
       if (!entry || this.closed) {
+        this.draining.delete(runId);
+        break;
+      }
+      if (entry.turn) {
+        // A whole queued turn goes as it was admitted, and its caller gets its own result.
+        entry.sending = true;
+        entry.ack = steeringAckSchema.parse({ ...entry.ack, at: new Date().toISOString(), detail: 'Being sent now.' });
+        try {
+          const result = await this.request({ ...entry.turn, queued: false });
+          const settle = entry.settle!;
+          entry.settle = undefined;
+          if (result.nativeSession)
+            this.settleSteer(
+              runId,
+              entry,
+              'delivered',
+              result.interrupted
+                ? 'Sent once the answer before it finished, then stopped before it was answered.'
+                : 'Sent as the next message once the answer it waited for finished.',
+              result.nativeSession,
+            );
+          else this.settleSteer(runId, entry, 'cancelled', 'This message was stopped before it was sent.');
+          settle.resolve(result);
+          if (!result.interrupted) continue;
+          this.cancelSteers(runId, 'The message before this one was stopped, so this message was not sent.');
+        } catch (error) {
+          const reason = error instanceof EngineError || error instanceof HarnessError ? error.message : 'It could not be sent.';
+          this.settleSteer(runId, entry, 'rejected', reason.slice(0, 2000), null, error);
+          this.cancelSteers(runId, 'The message before this one could not be sent, so this message was not sent.');
+        }
         this.draining.delete(runId);
         break;
       }
@@ -1369,8 +1623,60 @@ export class ClaudeSessionRuns<C extends SessionCheckpointFacts = ClaudeSessionC
     if (this.closed) this.cancelSteers(runId, 'Diomedes closed before this message was sent.');
   }
   async recover(run: HarnessRun) {
-    if (run.capabilityId === this.profile.capability.id && !terminal(run))
-      await this.runs.recover(run.id, localHarnessPrincipal(run.projectId));
+    if (run.capabilityId !== this.profile.capability.id || terminal(run)) return;
+    const principal = localHarnessPrincipal(run.projectId);
+    await this.runs.recover(run.id, principal);
+    const decide = this.profile.recoverInterrupted;
+    if (!decide) return;
+    // Reconciled from the durable record alone (the H01 rule): the saved checkpoint and the
+    // event cursor. Nothing is asked of the provider here and nothing is resent.
+    const recovered = await this.runs.get(run.id);
+    const saved = this.checkpoint(recovered);
+    if (recovered.state !== 'reconcile_required' || saved?.state !== 'busy') return;
+    const interrupted = recovered.steps.find(
+      (step) => step.state === 'reconcile_required' && step.intent.stepId.startsWith('turn:'),
+    );
+    const requestId = (interrupted?.intent.input as { requestId?: unknown } | undefined)?.requestId;
+    const decision = decide(saved, typeof requestId === 'string' ? requestId : null);
+    if ('refuse' in decision) {
+      await this.runs.cancel(run.id, decision.refuse, principal);
+      return;
+    }
+    const { afterSeq } = await this.runs.reconcileInterrupted(
+      run.id,
+      principal,
+      'Diomedes restarted during this turn. Its answer was not recorded and it was not resent.',
+    );
+    await this.runs.claim(run.id, this.owner, 60_000);
+    await this.runs.step(
+      run.id,
+      this.owner,
+      {
+        id: `${RECOVER_PREFIX}${afterSeq}`,
+        version: '1',
+        kind: 'tool',
+        effect: 'read',
+        name: `${this.profile.label} restart reconciliation`,
+        input: {
+          afterSeq,
+          interruptedRequestId: typeof requestId === 'string' ? requestId : null,
+          nativeSessionId: saved.nativeSessionId,
+        },
+        destination: 'local',
+        cost: 0,
+        maxAttempts: 1,
+      },
+      async (context) => {
+        await context.saveNativeCheckpoint!({
+          v: 1,
+          providerId: this.profile.engine,
+          payload: decision.resume as unknown as Json,
+        });
+        return { resumable: true, afterSeq };
+      },
+      principal,
+    );
+    await this.park(run.id, run.projectId, `recovered.${afterSeq}`);
   }
   async closeAll() {
     this.closed = true;

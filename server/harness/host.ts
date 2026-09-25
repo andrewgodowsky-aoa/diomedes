@@ -11,6 +11,7 @@ import { HarnessError } from './policy.js';
 import { HarnessBridge, localHarnessPrincipal } from './bridge.js';
 import { ScriptedModelAdapter } from './fixture-adapter.js';
 import {
+  CHILD_CAPABILITIES,
   NATIVE_LOOP,
   NATIVE_LOOP_DELEGATE,
   createLoopProcedure,
@@ -36,6 +37,11 @@ import {
   OPENCODE_SESSION_PROFILE,
   validateNativeCheckpoint,
 } from './opencode-session-run.js';
+import {
+  ACP_SESSION_CAPABILITY_IDS,
+  CURSOR_SESSION_PROFILE,
+  DEVIN_SESSION_PROFILE,
+} from './acp-session-run.js';
 import { MODEL_SESSION_CAPABILITIES, ModelSessionRuns, modelApiDispatchAuthorizer } from './model-session-run.js';
 import { AWS_BEDROCK_ROUTE } from '../engines/aws-bedrock.js';
 import { isModelApiRoute } from '../../shared/model-api.js';
@@ -405,7 +411,12 @@ export function createHarnessHost({
   let textRoute: TextRouteRuntime;
   const textAuthorize = textDispatchAuthorizer(
     () => store.settings.services,
-    [ENGINE_TEXT_TURN.id, CLAUDE_SESSION_CAPABILITY.id, OPENCODE_SESSION_CAPABILITY.id],
+    [
+      ENGINE_TEXT_TURN.id,
+      CLAUDE_SESSION_CAPABILITY.id,
+      OPENCODE_SESSION_CAPABILITY.id,
+      ...ACP_SESSION_CAPABILITY_IDS,
+    ],
   );
   // Model-API conversation runs: the route must be on and the run's account route still selected.
   const modelAuthorize = modelApiDispatchAuthorizer(() => store.settings.services);
@@ -413,7 +424,7 @@ export function createHarnessHost({
     (MODEL_SESSION_CAPABILITIES as readonly string[]).includes(capabilityId);
   // H13 loop runs and their delegates: the admitted route must be on and still selected.
   const loopAuthorize = loopEgressAuthorizer(() => store.settings.services);
-  const loopRun = (capabilityId: string) => capabilityId === NATIVE_LOOP.id || capabilityId === NATIVE_LOOP_DELEGATE.id;
+  const loopRun = (capabilityId: string) => capabilityId === NATIVE_LOOP.id || CHILD_CAPABILITIES.includes(capabilityId);
   const runs: HostRunService = new HostRunService(files, {
     clock: Date.now,
     policyVersion: HARNESS_POLICY_VERSION,
@@ -424,7 +435,8 @@ export function createHarnessHost({
       if (
         run.capabilityId === ENGINE_TEXT_TURN.id ||
         run.capabilityId === CLAUDE_SESSION_CAPABILITY.id ||
-        run.capabilityId === OPENCODE_SESSION_CAPABILITY.id
+        run.capabilityId === OPENCODE_SESSION_CAPABILITY.id ||
+        ACP_SESSION_CAPABILITY_IDS.includes(run.capabilityId)
       )
         return textAuthorize(run, intent, phase);
       if (modelRun(run.capabilityId)) return modelAuthorize(run, intent, phase);
@@ -473,6 +485,20 @@ export function createHarnessHost({
       }),
     (projectId) => sharesHistory(cloudSharing(store.state(projectId)), 'opencode'),
   );
+  // The kept ACP conversations (H05): the same driver, under each agent's own profile and grant.
+  const acpSessions = (profile: typeof CURSOR_SESSION_PROFILE) => {
+    const driver = new ClaudeSessionRuns(runs, { profile });
+    driver.setSharingPolicy(
+      (projectId, documents, prior) =>
+        requireCloudSharing(store.state(projectId), profile.engine, documents, prior, {
+          home: store.isHomeProject(projectId),
+        }),
+      (projectId) => sharesHistory(cloudSharing(store.state(projectId)), profile.engine),
+    );
+    return driver;
+  };
+  const cursorSessions = acpSessions(CURSOR_SESSION_PROFILE);
+  const devinSessions = acpSessions(DEVIN_SESSION_PROFILE);
   claudeSessions.setSharingPolicy(
     (projectId, documents, prior) =>
       requireCloudSharing(store.state(projectId), 'claude-code', documents, prior, {
@@ -580,6 +606,8 @@ export function createHarnessHost({
     claudeSessions,
     modelSessions,
     opencodeSessions,
+    cursorSessions,
+    devinSessions,
     /** Host-only until authenticated client admission is supplied by Trust.
      * Reuses the same command parser, collision check, receipt and Store lock. */
     startCodexReport(
@@ -666,7 +694,8 @@ export function createHarnessHost({
             (run) =>
               run.capabilityId !== CLAUDE_SESSION_CAPABILITY.id &&
               run.capabilityId !== OPENCODE_SESSION_CAPABILITY.id &&
-              run.capabilityId !== NATIVE_LOOP_DELEGATE.id &&
+              !ACP_SESSION_CAPABILITY_IDS.includes(run.capabilityId) &&
+              !CHILD_CAPABILITIES.includes(run.capabilityId) &&
               !modelRun(run.capabilityId),
           ),
         );
@@ -675,6 +704,8 @@ export function createHarnessHost({
         for (const run of saved) await textRoute.recover(run.id, run);
         for (const run of saved) await claudeSessions.recover(run);
         for (const run of saved) await opencodeSessions.recover(run);
+        for (const run of saved) await cursorSessions.recover(run);
+        for (const run of saved) await devinSessions.recover(run);
         for (const run of saved) await modelSessions.recover(run);
       }
       // A host run has no Session and no Task, so the bridge has nothing to
@@ -689,6 +720,8 @@ export function createHarnessHost({
       observers.clear();
       await claudeSessions.closeAll();
       await opencodeSessions.closeAll();
+      await cursorSessions.closeAll();
+      await devinSessions.closeAll();
       await modelSessions.closeAll();
       await bridge.close();
     },

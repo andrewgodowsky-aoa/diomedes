@@ -2333,3 +2333,45 @@ html[data-motion='reduced'] .console .modes .ind b {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+/* P04: a pack playbook opened to read. The body loads only when the panel
+   opens; the metadata names the version and digest it was read at. Verbatim
+   playbook text takes the shared code role, and the digest truncates where it
+   is written (decision 5). */
+.console .playbook-panel {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.console .playbook-meta {
+  display: flex;
+  gap: 12px;
+  min-width: 0;
+  margin: 0;
+  font: 400 var(--dm-type-meta) / 1.5 var(--mono);
+  color: var(--t3);
+}
+.console .playbook-digest {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.console .playbook-problem {
+  margin: 0;
+  color: var(--t2);
+}
+.console .playbook-body {
+  margin: 0;
+  padding: 10px 12px;
+  max-height: 420px;
+  overflow: auto;
+  min-width: 0;
+  background: var(--chrome);
+  border: 1px solid var(--hair);
+  border-radius: var(--r);
+  font: 400 var(--dm-type-code) / 1.55 var(--mono);
+  color: var(--t2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

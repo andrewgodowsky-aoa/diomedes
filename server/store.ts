@@ -1396,7 +1396,15 @@ export class Store extends EventEmitter {
         last.actor === 'you' &&
         last.files.length === 1 &&
         last.files[0].path === checked[0].path &&
-        Date.now() - Date.parse(last.time) < 600000
+        Date.now() - Date.parse(last.time) < 600000 &&
+        // A version a message carried stays a version History can open (P05 identity).
+        !state.conversations.some((thread) =>
+          thread.turns.some((turn) =>
+            turn.sourceVersions?.some(
+              (item) => item.path === last.files[0].path && item.sha === last.files[0].after,
+            ),
+          ),
+        )
       )
         entry = last;
     }
@@ -1545,6 +1553,11 @@ export class Store extends EventEmitter {
     const pending = path.join(this.dataDir, 'pending');
     for (const name of (await fs.readdir(pending)).filter((n) => n.endsWith('.json')).sort()) {
       const journal = JSON.parse(await fs.readFile(path.join(pending, name), 'utf8')) as Journal;
+      // A prepared write carries a whole project record, so it is held to the same
+      // version check as state.json: a newer one stops recovery with nothing written,
+      // and the file's version never enters the record in memory (H21).
+      assertReadable(PROJECT_STATE, journal.state);
+      delete (journal.state as { schemaVersion?: unknown }).schemaVersion;
       const currentState = this.state(journal.projectId);
       validateTaskReceipts(journal.state);
       validateWorkReceipts(journal.state);
@@ -1673,6 +1686,8 @@ export class Store extends EventEmitter {
             op: !unreadable && (file.binary ? actualBytes : actual) === null ? 'deleted' : 'modified',
             recorded: !unreadable,
             reason: unreadable,
+            // Bytes preserved as bytes are described, never decoded or restored as text.
+            ...(file.binary ? { binary: true as const } : {}),
           });
           if (approval) {
             const change = journal.state.changes.find((item) => item.entryId === approval.execution?.eventId && item.path === file.path);

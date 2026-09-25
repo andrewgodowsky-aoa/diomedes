@@ -360,6 +360,61 @@ describe('the ask route', () => {
     expect(generate.mock.calls[1][0].instructions).not.toContain('PLAYBOOK');
   });
 
+  test('P04: the chosen playbook loads on demand, and History names its pack version and digest', async () => {
+    const { api, generate, projectId, threadId } = await fixture();
+    const target = `/projects/${projectId}`;
+    // Off: no index, and a panel cannot open anything from the pack.
+    expect((await api(`${target}/packs/contributions`)).data.indexes).toEqual([]);
+    const closed = await api(`${target}/packs/${PACK}/contributions/workflow/cash-flow-snapshot/open`, 'POST', {});
+    expect(closed.status).toBe(409);
+    expect(closed.data.code).toBe('pack_inactive');
+
+    await api(`${target}/packs/${PACK}/activate`, 'POST', {});
+    const listing = (await api(`${target}/packs/contributions`)).data;
+    expect(listing.indexes.map((index: { packId: string }) => index.packId)).toEqual([PACK]);
+    expect(listing.loaded).toEqual([]);
+    const budget = listing.budgets[0];
+    expect(budget.indexBytes).toBeLessThan(budget.bodyBytes / 4);
+
+    const answer = await api(`${target}/ask`, 'POST', {
+      text: 'Show me a cash flow snapshot for the next four weeks.',
+      mode: 'ask',
+      route: 'claude-code',
+      threadId,
+      consent: true,
+      skill: 'cash-flow-snapshot',
+    });
+    expect(answer.status).toBe(200);
+    const state: ProjectState = (await api(`${target}/state`)).data;
+    const mine = state.conversations.find((c) => c.id === threadId)!.turns.find((turn) => turn.role === 'you')!;
+    const load = state.history.find((entry) => entry.contribution?.outcome === 'loaded')!;
+    expect(load.actor).toBe('diomedes');
+    expect(load.contribution).toMatchObject({
+      packId: PACK,
+      packVersion: '0.1.0',
+      kind: 'workflow',
+      contributionId: 'cash-flow-snapshot',
+      reason: 'chosen',
+      runKey: mine.id,
+      digest: mine.skill!.digest,
+    });
+    expect(load.sentence).toContain(`(${mine.skill!.digest!.slice(7, 19)}) because you chose it`);
+    // The body sent is the body whose digest was checked.
+    expect(generate.mock.calls[0][0].instructions).toContain('Playbook: Cash flow snapshot (cash-flow-snapshot, version 0.1.0)');
+
+    // A person opening the playbook panel loads it for reading, and that is recorded too.
+    const opened = await api(`${target}/packs/${PACK}/contributions/workflow/cash-flow-snapshot/open`, 'POST', {});
+    expect(opened.status).toBe(200);
+    expect(opened.data).toMatchObject({ packVersion: '0.1.0', digest: mine.skill!.digest });
+    expect(opened.data.body).toContain('Steps:');
+
+    await api(`${target}/packs/${PACK}/deactivate`, 'POST', {});
+    const after = (await api(`${target}/packs/contributions`)).data;
+    expect(after.indexes).toEqual([]);
+    expect(after.loaded).toEqual([]);
+    expect(after.records.at(-1)).toMatchObject({ outcome: 'unloaded', packId: PACK });
+  });
+
   test('refuses a skill in Build, and Build proposals are parsed exactly as before with the pack on', async () => {
     const { api, generate, projectId, threadId } = await fixture();
     await api(`/projects/${projectId}/packs/${PACK}/activate`, 'POST', {});
@@ -429,6 +484,21 @@ describe('launching a skill from the Console', () => {
     expect(cash.actions.map((action) => action.label)).toEqual(['Use']);
     cash.actions[0].run();
     expect(h.launchSkill).toHaveBeenCalledWith(skill('cash-flow-snapshot'));
+  });
+
+  test('P04: where the Console can open a playbook, each row also offers Read; off offers none', () => {
+    const h = { ...handlers(), readSkill: vi.fn() };
+    const rows = buildEntries(context({ active: true, name: 'Small Business', list: SKILLS }, h)).filter(
+      (row) => row.group === 'Skills',
+    );
+    const cash = rows.find((row) => row.id === 'skill:cash-flow-snapshot')!;
+    expect(cash.actions.map((action) => action.label)).toEqual(['Use', 'Read']);
+    cash.actions[1].run();
+    expect(h.readSkill).toHaveBeenCalledWith(skill('cash-flow-snapshot'));
+    const off = buildEntries(context({ active: false, name: 'Small Business', list: SKILLS }, h)).filter(
+      (row) => row.group === 'Skills',
+    );
+    expect(off.flatMap((row) => row.actions.map((action) => action.label))).toEqual(['Turn on']);
   });
 
   test('the palette renders the Skills group, and the composer names the playbook and fills the box', () => {

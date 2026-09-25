@@ -134,13 +134,17 @@ describe('selective retrieval', () => {
     expect(boundedHistory([carried, own]).messages).toEqual(selected.messages);
   });
 
-  test('when the newest messages alone pass the character bound, the oldest part is cut, never the newest', () => {
+  test('when the newest messages alone pass the character bound, the oldest are left out and summarised, never the newest', () => {
+    // Review C (RC-H18-1): these used to be recorded as included while the cut removed most of
+    // the first one; now a message that does not fit is omitted and summarised, and nothing is cut.
     const long = (tag: string) => `${tag}${'x'.repeat(9_990)}`;
     const own = run([turn('1', long('first'), 'ok'), turn('2', long('second'), 'ok'), turn('3', long('third'), 'ok')]);
     const selected = selectHistory({ own, message: 'next' });
-    expect(selected.text).toBe(boundedHistory([own]).text);
-    expect(selected.selection!.cutChars).toBeGreaterThan(0);
-    expect(selected.selection!.omitted).toEqual([]);
+    expect(selected.selection!.cutChars).toBe(0);
+    expect(selected.selection!.omitted.map((item) => item.index)).toEqual([1]);
+    expect(selected.compaction!.turns.map((item) => item.index)).toEqual([1]);
+    expect(selected.text).toContain(`Person: ${long('second')}`);
+    expect(selected.text).toContain(`Person: ${long('third')}`);
     expect(selected.text.endsWith('Diomedes: ok')).toBe(true);
   });
 
