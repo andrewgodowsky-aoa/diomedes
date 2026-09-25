@@ -156,7 +156,7 @@ test('a project rule written in the editor holds the loop run started from the t
   await expect(row.locator('.trigger-rule-match')).toHaveText(
     'A proposed propose_write call on Harness report.md · Only Write the linen report',
   );
-  await expect(row.locator('.trigger-rule-decision')).toHaveText('Governs · Governs trigger:reports-read-first.');
+  await expect(row.locator('.trigger-rule-decision')).toHaveText('Governs · Governs trigger:reports-read-first on Nectovia work loop runs.');
   await expect(page.locator('#scrThread').getByRole('button', { name: /^Trigger rules ·/ })).toContainText(
     '1 watches this task · 1 project · 0 organization',
   );
@@ -252,7 +252,7 @@ test('an organization rule written in Settings cannot be loosened by a project r
   await openThread(page, 'Summarise the linen order');
   const rules = await openRules(page);
   const inherited = rules.getByRole('region', { name: 'Organization rules' }).locator('.trigger-rule[data-rule="reports-held"]');
-  await expect(inherited.locator('.trigger-rule-decision')).toHaveText('Governs · Governs trigger:reports-held.');
+  await expect(inherited.locator('.trigger-rule-decision')).toHaveText('Governs · Governs trigger:reports-held on Nectovia work loop runs.');
   await expect(inherited.getByRole('button')).toHaveCount(0);
 
   await rules.getByRole('button', { name: 'Add a rule' }).click();

@@ -25,6 +25,8 @@ export interface StreamRulesView {
   readonly resolution: StreamRuleResolution | null;
   /** The runs rules watch. Today only the agent's own work loop runs (`diomedes-loop`). */
   readonly watches?: readonly string[];
+  /** A stored layer that cannot run (edited by hand): which rule and why. Its runs fail closed until it is fixed. */
+  readonly unreadable?: readonly { authority: StreamRuleAuthority; ruleId: string | null; message: string }[];
 }
 
 export const EFFECT_CLASSES: readonly { id: ToolEffectClass; label: string }[] = [

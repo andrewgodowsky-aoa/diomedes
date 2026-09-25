@@ -182,6 +182,11 @@ export function TriggerRules({
   return (
     <div className="trigger-rules" data-authority={authority}>
       <p className="trigger-rules-reach">{watchesSentence(view?.watches)}</p>
+      {view?.unreadable?.map((item) => (
+        <p key={item.authority} className="trigger-rules-error" role="alert">
+          {item.message}
+        </p>
+      ))}
       {authority === 'project' && view && view.organization.length > 0 && (
         <section className="trigger-rules-layer" aria-label="Organization rules">
           <div className="trigger-rules-layer-head">Organization rules · written in Settings, for every project</div>

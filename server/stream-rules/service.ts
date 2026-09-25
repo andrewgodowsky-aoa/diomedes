@@ -41,6 +41,7 @@ import {
   type StreamTriggerFiring,
   type StreamTriggerMatch,
 } from '../../shared/stream-rules.js';
+import { AGENT_NAME } from '../../shared/agent-name.js';
 import { ApiError, relativeName } from '../paths.js';
 import { identifier, now, type Store } from '../store.js';
 import { digest, HarnessError } from '../harness/policy.js';
@@ -86,6 +87,35 @@ export function ruleChanges(before: readonly StreamRule[], after: readonly Strea
   }
   for (const rule of before) if (!after.some((item) => item.id === rule.id)) changes.push(`removed ${rule.id}`);
   return changes;
+}
+
+/** Which stored rule cannot run, and why, in the words the rules API would have refused it with. */
+export interface UnreadableStreamRules {
+  readonly authority: StreamRuleAuthority;
+  /** The rule's id when it has a readable one; null when the layer as a whole is refused. */
+  readonly ruleId: string | null;
+  readonly message: string;
+}
+
+/** One authority's stored rules, held to the rules API's own schema, or why they cannot run. */
+function readLayer(
+  authority: StreamRuleAuthority,
+  stored: unknown,
+): { rules: AuthoredStreamRule[] } | { problem: UnreadableStreamRules } {
+  const parsed = streamRuleSetSchema.safeParse({ protocolVersion: 1, rules: stored ?? [] });
+  if (parsed.success) return { rules: parsed.data.rules.map((rule) => ({ rule, authority })) };
+  const issue = parsed.error.issues[0];
+  const index = issue?.path[0] === 'rules' && typeof issue.path[1] === 'number' ? issue.path[1] : null;
+  const raw = index === null || !Array.isArray(stored) ? null : (stored[index] as { id?: unknown } | null);
+  const ruleId = typeof raw?.id === 'string' ? raw.id.slice(0, 64) : null;
+  const which = `${authority === 'organization' ? 'An organization' : 'A project'} trigger rule${ruleId ? ` (${ruleId})` : ''}`;
+  return {
+    problem: {
+      authority,
+      ruleId,
+      message: `${which} on disk is not one ${AGENT_NAME} can run: ${issue?.message ?? 'it is not in the expected shape.'} Fix or remove it through the rules API; until then no run it would watch goes ahead.`,
+    },
+  };
 }
 
 /** The declaration that fired: its exact bytes' digest, never just its id. */
@@ -193,11 +223,17 @@ export class StreamRuleService {
 
   // --- the rules -----------------------------------------------------------------
 
+  /**
+   * The rules at both authorities, each layer re-validated as a whole: a file edited by hand
+   * is held to the same schema, grammar and budget as a write through the rules API. A layer
+   * that fails is refused, never trimmed — dropping a rule would silently loosen what someone
+   * wrote — so everything that reads the rules fails closed (review G, finding 7).
+   */
   private authored(state: Pick<ProjectState, 'streamTriggerRules'>): AuthoredStreamRule[] {
-    return [
-      ...(this.store.settings.streamTriggerRules ?? []).map((rule) => ({ rule, authority: 'organization' as const })),
-      ...(state.streamTriggerRules ?? []).map((rule) => ({ rule, authority: 'project' as const })),
-    ];
+    const layers = [readLayer('organization', this.store.settings.streamTriggerRules), readLayer('project', state.streamTriggerRules)];
+    const problem = layers.find((layer) => 'problem' in layer);
+    if (problem && 'problem' in problem) throw new HarnessError('stream_rules_unreadable', problem.problem.message);
+    return layers.flatMap((layer) => ('rules' in layer ? layer.rules : []));
   }
 
   /** Which rules watch a run of this task in this project, and why the others do not. */
@@ -205,16 +241,24 @@ export class StreamRuleService {
     return resolveStreamRules(this.authored(this.store.state(projectId)), taskId);
   }
 
-  /** The rules at both authorities, and how they resolve for a task (or for none). */
+  /**
+   * The rules at both authorities, and how they resolve for a task (or for none). A layer on
+   * disk that cannot run is listed as stored, with `unreadable` saying which rule and why and
+   * no resolution, so the person can see what to fix.
+   */
   list(projectId: string | null, taskId: string | null = null) {
     const organization = structuredClone(this.store.settings.streamTriggerRules ?? []);
-    if (projectId === null) return { organization, project: [], resolution: null, watches: WATCHED_RUNS };
-    const state = this.store.state(projectId);
+    const state = projectId === null ? null : this.store.state(projectId);
+    const unreadable = [
+      readLayer('organization', organization),
+      ...(state ? [readLayer('project', state.streamTriggerRules)] : []),
+    ].flatMap((layer) => ('problem' in layer ? [layer.problem] : []));
+    const view = { organization, watches: WATCHED_RUNS, ...(unreadable.length ? { unreadable } : {}) };
+    if (state === null) return { ...view, project: [], resolution: null };
     return {
-      organization,
+      ...view,
       project: structuredClone(state.streamTriggerRules ?? []),
-      resolution: resolveStreamRules(this.authored(state), taskId),
-      watches: WATCHED_RUNS,
+      resolution: unreadable.length ? null : resolveStreamRules(this.authored(state), taskId),
     };
   }
 
@@ -241,7 +285,12 @@ export class StreamRuleService {
     }
     if (authority === 'project') {
       const state = this.store.state(projectId!);
-      const organization = this.authored({ streamTriggerRules: [] });
+      // The organization's rules decide what a project rule may loosen, so a project write
+      // waits until they can be read.
+      const read = readLayer('organization', this.store.settings.streamTriggerRules);
+      if ('problem' in read)
+        throw new ApiError(409, read.problem.message, { code: 'stream_rules_unreadable' });
+      const organization = read.rules;
       for (const item of layer) {
         const decision = resolveStreamRules([...organization, item], item.rule.taskId ?? null).decisions.find(
           (entry) => entry.authority === 'project' && entry.ruleId === item.rule.id,
