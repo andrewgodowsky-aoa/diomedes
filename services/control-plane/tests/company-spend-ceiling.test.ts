@@ -12,9 +12,9 @@
  */
 import { describe, expect, it } from 'vitest';
 import { micro, type RateSnapshot } from '../../../shared/managed-usage.js';
-import { FundingError, FundingService, type FundingRepository, type FundingTransaction } from '../src/funding.js';
-import { emptyFundingState, StateFundingTransaction } from '../src/faux/funding-state.js';
+import { FundingError, FundingService } from '../src/funding.js';
 import { FundingMemoryRepository } from './support/funding-memory.js';
+import { InterleavingFundingRepository } from './support/interleaving-funding.js';
 
 // $1 per million of every token kind: 1,000 input tokens cost exactly 1,000 micro-USD.
 const RATE: RateSnapshot = {
@@ -105,50 +105,6 @@ describe('the company spend ceiling in FundingService.reserve', () => {
     expect(await refusal(reserve(service, A, 'a_1', 0))).toMatchObject({ code: 'company_ceiling' });
   });
 });
-
-/**
- * Transactions that interleave one repository call at a time over one shared
- * ledger, so two reservations for different organizations both read the
- * company total before either writes, unless a lock keeps them apart. Each
- * lock is a real mutex released only when its transaction ends.
- */
-class InterleavingFundingRepository implements FundingRepository {
-  private readonly state = emptyFundingState();
-  private readonly locks = new Map<string, Promise<void>>();
-  constructor(private readonly options: { companyLock: boolean }) {}
-
-  private async acquire(key: string): Promise<() => void> {
-    const prior = this.locks.get(key) ?? Promise.resolve();
-    let release!: () => void;
-    const mine = new Promise<void>((resolve) => { release = resolve; });
-    this.locks.set(key, prior.then(() => mine));
-    await prior;
-    return release;
-  }
-
-  async transaction<T>(action: (tx: FundingTransaction) => Promise<T>): Promise<T> {
-    const held: (() => void)[] = [];
-    const inner = new StateFundingTransaction(this.state);
-    const tx = new Proxy(inner, {
-      get: (target, name) => {
-        const value = Reflect.get(target, name);
-        if (typeof value !== 'function') return value;
-        return async (...args: unknown[]) => {
-          // Let the other transaction take a step first.
-          await new Promise((resolve) => setTimeout(resolve, 0));
-          if (name === 'lockOrganization') { held.push(await this.acquire(`organization:${String(args[0])}:${String(args[1])}`)); return undefined; }
-          if (name === 'lockCompany') { if (this.options.companyLock) held.push(await this.acquire('company')); return undefined; }
-          return (value as (...parameters: unknown[]) => unknown).apply(target, args);
-        };
-      },
-    });
-    try {
-      return await action(tx);
-    } finally {
-      for (const release of held) release();
-    }
-  }
-}
 
 describe('two reservations near the company ceiling at once', () => {
   async function race(companyLock: boolean) {

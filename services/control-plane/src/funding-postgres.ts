@@ -223,6 +223,13 @@ export class PostgresFundingTransaction implements FundingTransaction {
       [tenantId, rootJobId]);
     return money(row?.used);
   }
+  /** Exactly one row moved, or this caller does not send. An unknown count is not a claim. */
+  async claimDispatch(tenantId: string, attemptId: string, at: string) {
+    const result = await this.client.query(
+      "UPDATE control_plane.funding_reservations SET dispatched_at=$3 WHERE tenant_id=$1 AND reservation_id=$2 AND state='pending' AND dispatched_at IS NULL",
+      [tenantId, attemptId, at]);
+    return result.rowCount === 1;
+  }
   /** A key of its own: no organization's lock can collide with it. */
   async lockCompany() {
     await this.client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [JSON.stringify(['funding-company'])]);

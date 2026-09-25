@@ -80,6 +80,12 @@ export class StateFundingTransaction implements FundingTransaction {
     });
     return sum([...held, ...settled]);
   }
+  async claimDispatch(tenantId: string, attemptId: string, at: string) {
+    const index = this.state.attempts.findIndex((row) => row.tenantId === tenantId && row.id === attemptId && row.state === 'pending' && row.dispatchedAt === null);
+    if (index < 0) return false;
+    this.state.attempts[index] = { ...this.state.attempts[index], dispatchedAt: at };
+    return true;
+  }
   async lockCompany() {}
   async companySpend() {
     const held = this.state.attempts.filter((row) => row.state === 'pending' || row.state === 'uncertain' || row.state === 'written-off');

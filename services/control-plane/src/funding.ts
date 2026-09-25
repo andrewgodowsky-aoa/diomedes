@@ -9,12 +9,15 @@
  * The protocol, per paid attempt:
  *
  *   reserve (txn) -> markDispatched (txn) -> provider call, no txn open ->
- *   settle | markUncertain | cancel (txn)
+ *   settle | markUncertain | cancel | releaseRefused (txn)
  *
  * No method calls a provider, and no method retries a transaction. A caller
  * that sees a failed COMMIT may repeat the same call with the same attempt id:
  * every write is idempotent by its key, so the retry either finds the landed
- * row or writes it once.
+ * row or writes it once. The one exception is markDispatched, which is
+ * exclusive: only the caller whose conditional update moved the attempt may
+ * send, and a retry after an unknown COMMIT gets `attempt_in_flight` and must
+ * not send.
  *
  * Funding writes are server-to-server seams for the runtime and the verified
  * billing path. None of them is reachable from `worker.ts`; the only HTTP
@@ -153,6 +156,11 @@ export interface FundingTransaction {
   jobUsed(tenantId: string, rootJobId: string): Promise<MicroUsd>;
   lastReceipt(tenantId: string, organizationId: string, periodId: string): Promise<UsageReceipt | null>;
   /**
+   * The conditional dispatch update: set the dispatch time only on a pending
+   * attempt that has none. True only when exactly one row moved.
+   */
+  claimDispatch(tenantId: string, attemptId: string, at: string): Promise<boolean>;
+  /**
    * Serializes every reservation checked against the company spend ceiling,
    * across every tenant and organization, until this transaction ends. Always
    * the last lock a transaction takes, so it cannot deadlock with the
@@ -182,6 +190,8 @@ export type SettleResult =
   | { outcome: 'held'; attempt: FundedAttempt; reason: string };
 
 const idPattern = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+/** Provider refusals that bill nothing, so a sent hold may be released on them. */
+export const RELEASABLE_REFUSALS: readonly number[] = Object.freeze([400, 401, 403, 404, 413, 422, 429]);
 const periodPattern = /^(\d{4})-(0[1-9]|1[0-2])$/;
 
 function requireId(value: unknown, field: string): string {
@@ -462,16 +472,49 @@ export class FundingService {
    * Commit that the request is about to leave. The caller sends only after
    * this commits; if it fails, the caller does not send, and restart recovery
    * still treats the attempt as possibly sent.
+   *
+   * Exclusive: a conditional update moves the attempt from pending with no
+   * dispatch time, and only the caller whose update moved it may send. Every
+   * other caller for the attempt, in any isolate or process, gets 409
+   * `attempt_in_flight` and sends nothing.
    */
   async markDispatched(ref: AttemptRef): Promise<FundedAttempt> {
+    const at = this.at();
     return this.repository.transaction(async (tx) => {
       const attempt = await this.lockedAttempt(tx, ref);
       if (attempt.state !== 'pending')
         throw new FundingError(409, `A ${attempt.state} attempt cannot be sent.`, 'invalid_transition');
-      if (attempt.dispatchedAt !== null) return attempt;
-      const sent = { ...attempt, dispatchedAt: this.at() };
-      await tx.saveAttempt(sent);
-      return sent;
+      if (!(await tx.claimDispatch(attempt.tenantId, attempt.id, at)))
+        throw new FundingError(409, 'That request is already being answered.', 'attempt_in_flight');
+      return { ...attempt, dispatchedAt: at };
+    });
+  }
+
+  /**
+   * Release a sent hold the provider refused before any output: the one case
+   * a dispatched hold may be released. Only for a refusal status the provider
+   * does not bill (400, 401, 403, 404, 413, 422 or 429), and only when the
+   * caller received nothing but the error body. The status and the provider's
+   * request id are recorded on the attempt as the evidence. Every other
+   * failure after dispatch stays uncertain.
+   */
+  async releaseRefused(ref: AttemptRef & { providerStatus: number; providerRequestId: string | null }): Promise<FundedAttempt> {
+    const status = ref.providerStatus;
+    if (!RELEASABLE_REFUSALS.includes(status))
+      throw new FundingError(422, 'Only a provider refusal of 400, 401, 403, 404, 413, 422 or 429 releases a sent hold.', 'release_not_allowed');
+    const requestId = ref.providerRequestId === null ? null : requireId(ref.providerRequestId, 'provider request id');
+    return this.repository.transaction(async (tx) => {
+      const attempt = await this.lockedAttempt(tx, ref);
+      if (attempt.state === 'released') return attempt;
+      if (attempt.state !== 'pending')
+        throw new FundingError(409, `A ${attempt.state} attempt cannot be released.`, 'invalid_transition');
+      if (attempt.dispatchedAt === null)
+        throw new FundingError(409, 'That request was never sent; release it as unsent.', 'not_dispatched');
+      // uncertain_reason is the attempt's one free-text column; writeOff records its evidence there too.
+      const released = { ...this.move(attempt, 'release'), resolvedAt: this.at(),
+        uncertainReason: `Released: the provider refused it with HTTP ${status} before any output (provider request ${requestId ?? 'not given'}).` };
+      await tx.saveAttempt(released);
+      return released;
     });
   }
 
