@@ -10,13 +10,23 @@ import type { Store } from '../server/store';
 import type { CloudSharingPolicy, Project, ProjectState } from '../shared/types';
 import { AWS_CONNECT_BODY, AWS_TEST_KEY, awsTransport, seen } from './fixtures/scripted-home-luna';
 import { AWS_LUNA_MODEL } from '../server/engines/aws-bedrock';
+import { FAUX_SCRIPTED_CREDENTIAL } from '../services/control-plane/src/managed-providers';
 import { shareAfter } from './fixtures/cloud-sharing-grant';
+import { gateway, nectoviaAccounts } from './fixtures/nectovia-home';
 
-// The Diomedes page on AWS Bedrock (Luna), end to end in a real browser and with no Claude
-// installed at all: the engine service discovers nothing, so there is no login to fall back
-// to. The conversation still runs on the real Store, Runtime, interaction service and
-// model-session driver; only the HTTPS call the provider boundary makes is scripted. It never
-// reaches AWS and never spends money. It serves the built bundle, so it refuses a stale one.
+// The Diomedes page on GPT-6 Luna, end to end in a real browser and with no Claude installed at
+// all: the engine service discovers nothing, so there is no login to fall back to. A Diomedes
+// conversation answers on Nectovia, the company-managed route: the Business owner the app signs
+// in at start (test mode) sends through the real account service and its real managed gateway,
+// and the scripted provider answers behind the gateway. The customer connects nothing. The
+// conversation still runs on the real Store, Runtime, interaction service and model-session
+// driver; only the HTTPS call the provider boundary makes is scripted. It never reaches AWS and
+// never spends money. It serves the built bundle, so it refuses a stale one.
+//
+// The owner's own AWS Bedrock route stays reachable for the cases that are about it: this app is
+// launched as the owner's (ownerRoutes, what DIOMEDES_OWNER_ROUTES=1 turns on), AWS is connected
+// as the owner would connect it, and a case that needs it routes Home there by the person's own
+// choice, then puts Nectovia back.
 test.describe.configure({ mode: 'serial' });
 
 const port = Number(process.env.DIOMEDES_LUNA_UI_PORT ?? 47640);
@@ -81,6 +91,14 @@ const answers = (page: Page) => page.locator('.turn.dio .body');
 // 2026-09-23). The locator stays so each test can say it is absent.
 const routeControl = (page: Page) => page.getByRole('combobox', { name: 'Route' });
 const styleControl = (page: Page) => page.getByRole('combobox', { name: 'Style' });
+/** What the caption names a Nectovia conversation by: the route and the model its policy publishes. */
+const NECTOVIA_CAPTION = 'Nectovia (GPT-6 Luna)';
+/** The person routes the Home conversation: a choice the provisioner keeps. */
+async function routeHome(engine: string) {
+  const bound = await home();
+  expect(bound).not.toBeNull();
+  await api(`/projects/${bound!.projectId}/threads/${bound!.threadId}`, 'PUT', { engine });
+}
 const strip = (page: Page) =>
   page.getByRole('group', { name: 'A message that was not confirmed' });
 /** A message send is a POST to the collection; an interrupt POST ends in /interrupt. */
@@ -143,6 +161,7 @@ test.beforeAll(async () => {
   await fs.mkdir(results, { recursive: true });
   const root = await fs.mkdtemp(path.join(results, 'home-luna-'));
   dataRoot = root;
+  const { accounts } = await nectoviaAccounts(awsTransport);
   application = await createApp({
     dataDir: path.join(root, 'data'),
     projectRoot: path.join(root, 'projects'),
@@ -161,7 +180,12 @@ test.beforeAll(async () => {
     }),
     reviewerAdapter: null,
     secretBox: testOnlySecretBox(),
+    // The owner's AWS route calls the scripted provider directly; Nectovia reaches it only
+    // through the managed gateway, on the account service's own transport.
     modelApiTransport: awsTransport,
+    accounts,
+    // This spec only: the owner's provider routes, for the cases that choose AWS.
+    ownerRoutes: true,
   });
   const dist = path.resolve('dist');
   await fs.access(path.join(dist, 'index.html'));
@@ -175,8 +199,9 @@ test.beforeAll(async () => {
     server!.once('listening', resolve);
     server!.once('error', reject);
   });
-  // AWS is connected and spend-approved the way a person would do it in AI setup. Nothing but
-  // the transport is faked.
+  // The owner's AWS route is connected and spend-approved the way the owner would do it in AI
+  // setup, for the cases that choose it. Nectovia needs none of this. Nothing but the transport
+  // is faked.
   await api('/ai/model-api/aws-bedrock', 'PUT', AWS_CONNECT_BODY);
   await api('/ai/model-api/aws-bedrock/spend-limit', 'PUT', { capUsd: 1, consent: true });
   await api('/settings', 'PUT', {
@@ -204,30 +229,44 @@ test.afterEach(() => {
   expect(pageErrors, 'The interface must not throw uncaught browser errors').toEqual([]);
 });
 
-test('the home conversation opens on AWS Bedrock (Luna) and answers with no Claude login', async ({
+test('the home conversation opens on Nectovia (GPT-6 Luna) and answers with nothing connected and no Claude login', async ({
   page,
 }) => {
   await open(page);
   // The caption names the default a first send takes, before any thread exists to read.
-  await expect(page.locator('.instr')).toContainText('AWS Bedrock (Luna)');
+  await expect(page.locator('.instr')).toContainText(NECTOVIA_CAPTION);
   // And there is nothing to choose yet: the control needs a concrete thread to write to.
   await expect(routeControl(page)).toHaveCount(0);
 
   const callsBefore = seen.length;
+  const gatewayBefore = gateway.length;
   await say(page, 'Good morning');
   await expect(answers(page).last()).toHaveText('You said: Good morning');
   await expect(composer(page)).toHaveValue('');
 
-  // The provisioner pinned the new thread to the default, and the provider boundary really was
-  // AWS's: the guarded transport attached the saved credential, the approved endpoint and the
-  // Luna model, and the call carried the conversation's tools.
+  // The provisioner pinned the new thread to the default, and the call went to Nectovia's
+  // managed gateway as the signed-in business's job, under its admission.
   const bound = await home();
   expect(bound).not.toBeNull();
   const thread = await homeThread();
-  expect(thread?.engine).toBe('aws-bedrock');
+  expect(thread?.engine).toBe('nectovia');
+  expect(gateway.length).toBeGreaterThan(gatewayBefore);
+  const managed = gateway.at(-1)!;
+  expect(new URL(managed.url).pathname).toBe('/managed/v1/responses');
+  expect(managed.headers).toMatchObject({
+    'x-nectovia-organization': expect.stringMatching(/\S/),
+    'x-nectovia-admission': expect.stringMatching(/\S/),
+    'x-nectovia-job': expect.stringMatching(/\S/),
+    'x-nectovia-attempt': expect.stringMatching(/^exp-/),
+    'x-nectovia-usage-class': 'included-chat',
+  });
+  // Behind the gateway, the provider boundary is the company's: its registry's endpoint, its
+  // key, the Luna model the policy publishes, and the conversation's tools. Never the key the
+  // owner saved on this computer.
   const call = seen.slice(callsBefore).at(-1)!;
   expect(call.url).toBe('https://bedrock-runtime.us-east-1.amazonaws.com/openai/v1/responses');
-  expect(call.authorization).toBe(`Bearer ${AWS_TEST_KEY}`);
+  expect(call.authorization).toBe(`Bearer ${FAUX_SCRIPTED_CREDENTIAL}`);
+  expect(call.authorization).not.toBe(`Bearer ${AWS_TEST_KEY}`);
   expect(call.body.model).toBe(AWS_LUNA_MODEL);
   expect(Array.isArray(call.body.tools)).toBe(true);
   expect(call.body.store).toBe(false);
@@ -237,7 +276,7 @@ test('the home conversation opens on AWS Bedrock (Luna) and answers with no Clau
   await expect(styleControl(page).locator('option')).toHaveText(['Default', 'Efficient', 'Focused', 'Thorough']);
 });
 
-test('a project scope conversation is provisioned on AWS Bedrock too', async ({ page }) => {
+test('a project scope conversation is provisioned on Nectovia too', async ({ page }) => {
   const project = await api<Project>('/projects', 'POST', { name: 'Linen service' });
   await open(page);
   await page.getByRole('combobox', { name: 'In' }).selectOption({ label: 'Linen service' });
@@ -245,17 +284,19 @@ test('a project scope conversation is provisioned on AWS Bedrock too', async ({ 
   await expect(answers(page).last()).toHaveText('You said: About this project');
   const state = await api<ProjectState>(`/projects/${project.id}/state`);
   const thread = state.conversations.find((item) => item.name === 'Diomedes');
-  expect(thread?.engine).toBe('aws-bedrock');
+  expect(thread?.engine).toBe('nectovia');
   // There is no Route control on any scope; the caption names the route without a tier.
   await expect(routeControl(page)).toHaveCount(0);
-  await expect(page.locator('.instr')).toContainText('AWS Bedrock (Luna)');
+  await expect(page.locator('.instr')).toContainText(NECTOVIA_CAPTION);
 });
 
-test('AWS that is on but not configured refuses by name, and nothing falls back', async ({
+test('the owner\'s AWS route, chosen but not configured, refuses by name, and nothing falls back', async ({
   page,
 }) => {
-  // The services map is replaced whole, so the account route and model keys are dropped inside
-  // the full map and the full map is put back afterwards.
+  // An owner route: the person chooses AWS Bedrock for Home. The services map is replaced whole,
+  // so the account route and model keys are dropped inside the full map and the full map is put
+  // back afterwards.
+  await routeHome('aws-bedrock');
   const { services } = await api<{ services: Record<string, boolean | string> }>('/settings');
   const narrowed = { ...services };
   delete narrowed['aws-bedrockAccountRoute'];
@@ -264,18 +305,22 @@ test('AWS that is on but not configured refuses by name, and nothing falls back'
   try {
     await open(page);
     const callsBefore = seen.length;
+    const gatewayBefore = gateway.length;
     await say(page, 'Are you there?');
     await expect(page.getByRole('alert')).toHaveText(
       'Connect AWS Bedrock (GPT-6 Luna) and choose its model in AI setup first.',
     );
     await expect(composer(page)).toHaveValue('Are you there?');
     await expect(page.locator('.dio-card')).toHaveCount(0);
-    // The refusal happened in admission: no provider call was ever attempted, and the caption
-    // still names the route the thread is actually on rather than a fallback it did not take.
+    // The refusal happened in admission: no provider call was ever attempted, neither on AWS
+    // nor through Nectovia, and the caption still names the route the thread is actually on
+    // rather than a fallback it did not take.
     expect(seen.length).toBe(callsBefore);
+    expect(gateway.length).toBe(gatewayBefore);
     await expect(page.locator('.instr')).toContainText('AWS Bedrock (Luna)');
   } finally {
     await api('/settings', 'PUT', { services });
+    await routeHome('nectovia');
   }
 });
 
@@ -300,8 +345,8 @@ test('a pin saved before choices were marked is re-pinned to the default on the 
   await say(page, 'Still here after the upgrade');
   await expect(answers(page).last()).toHaveText('You said: Still here after the upgrade');
   const thread = await homeThread();
-  expect(thread?.engine).toBe('aws-bedrock');
-  await expect(page.locator('.instr')).toContainText('AWS Bedrock (Luna)');
+  expect(thread?.engine).toBe('nectovia');
+  await expect(page.locator('.instr')).toContainText(NECTOVIA_CAPTION);
 });
 
 test('a route the person chose is kept, and its refusal names it', async ({ page }) => {
@@ -315,18 +360,20 @@ test('a route the person chose is kept, and its refusal names it', async ({ page
     await open(page);
     await expect(page.locator('.instr')).toContainText('Claude Code');
     const callsBefore = seen.length;
+    const gatewayBefore = gateway.length;
     await say(page, 'On the route I chose');
     // The provisioner kept the choice, the send refused on it by name, and nothing was
-    // silently retargeted to the AWS route that would have answered.
+    // silently retargeted to the Nectovia route that would have answered.
     await expect(page.getByRole('alert')).toHaveText(
       'Turn Claude Code on in Settings before sending.',
     );
     await expect(composer(page)).toHaveValue('On the route I chose');
     expect(seen.length).toBe(callsBefore);
+    expect(gateway.length).toBe(gatewayBefore);
     expect((await homeThread())?.engine).toBe('claude-code');
   } finally {
     await api(`/projects/${bound!.projectId}/threads/${bound!.threadId}`, 'PUT', {
-      engine: 'aws-bedrock',
+      engine: 'nectovia',
     });
   }
 });
@@ -754,20 +801,23 @@ test('a tier change that starts the conversation fresh says so in the thread', a
   const notes = page.locator('.turn.dio').filter({ hasText: 'started this conversation fresh' });
   await expect(notes).toHaveCount(0);
 
-  // Efficient runs at another level than the conversation was opened at, so the next message
-  // starts it fresh. The choice is saved before anything is sent under it.
+  // On Nectovia no tier runs as Efficient, at low effort. Focused runs at another level than the
+  // conversation was opened at, so the next message starts it fresh. The choice is saved before
+  // anything is sent under it.
   const saved = page.waitForResponse(
     (response) =>
       response.request().method() === 'PUT' && /\/threads\/[^/]+$/.test(new URL(response.url()).pathname),
   );
-  await styleControl(page).selectOption({ label: 'Efficient' });
+  await styleControl(page).selectOption({ label: 'Focused' });
   expect((await saved).ok()).toBe(true);
   await say(page, 'And the invoice?');
   await expect(answers(page).last()).toHaveText('You said: And the invoice?');
+  // The gateway was told the tier the message ran under.
+  expect(gateway.at(-1)!.headers['x-nectovia-tier']).toBe('focused');
 
   // One note, in plain words, naming the tier, between the exchange it ended and the next.
   const note =
-    "Nectovia started this conversation fresh because this conversation moved to the Efficient tier. Your earlier messages are still here, but it won't remember them.";
+    "Nectovia started this conversation fresh because this conversation moved to the Focused tier. Your earlier messages are still here, but it won't remember them.";
   await expect(notes).toHaveCount(1);
   await expect(notes.locator('.body')).toHaveText(note);
   await expect(page.locator('.transcript .turn .body')).toHaveText([
@@ -860,7 +910,7 @@ test('"Update this conversation" moves a conversation opened before this build, 
   await page.getByRole('menuitem', { name: 'Update this conversation' }).click();
   const dialog = page.getByRole('alertdialog', { name: 'Update this conversation?' });
   await expect(dialog).toContainText(
-    'History sharing is on for AWS Bedrock, so Nectovia will carry over your most recent messages.',
+    'History sharing is on for Nectovia, so Nectovia will carry over your most recent messages.',
   );
 
   // The first answer is lost on the way back, after the server carried the update out.
@@ -923,7 +973,7 @@ test('"Update this conversation" moves a conversation opened before this build, 
     (item) => item.id === opened.id,
   )!;
   expect(after.lineages).toEqual([
-    expect.objectContaining({ runId: lineage.runId, retired: 'format-change', carry: { route: 'aws-bedrock' } }),
+    expect.objectContaining({ runId: lineage.runId, retired: 'format-change', carry: { route: 'nectovia' } }),
     expect.objectContaining({ mode: 'auto', generation: 2, carriedFrom: lineage.runId }),
   ]);
   const sent = JSON.stringify(seen.slice(callsBefore).at(-1)!.body.input);
@@ -948,7 +998,7 @@ test('with history sharing off, the update says the conversation won\'t be remem
   await page.getByRole('menuitem', { name: 'Update this conversation' }).click();
   const dialog = page.getByRole('alertdialog', { name: 'Update this conversation?' });
   await expect(dialog).toContainText(
-    "History sharing is off for AWS Bedrock, so your earlier messages stay on screen but Nectovia won't remember them. Updating doesn't turn sharing on.",
+    "History sharing is off for Nectovia, so your earlier messages stay on screen but Nectovia won't remember them. Updating doesn't turn sharing on.",
   );
   const posted = page.waitForResponse(updatePost);
   await dialog.getByRole('button', { name: 'Update', exact: true }).click();
@@ -1001,7 +1051,7 @@ test('an update the server refuses says why in the confirmation, which stays ope
   await page.getByRole('menuitem', { name: 'Update this conversation' }).click();
   const dialog = page.getByRole('alertdialog', { name: 'Update this conversation?' });
   await expect(dialog).toContainText(
-    'History sharing is on for AWS Bedrock, so Nectovia will carry over your most recent messages.',
+    'History sharing is on for Nectovia, so Nectovia will carry over your most recent messages.',
   );
   const posted = page.waitForResponse(updatePost);
   await dialog.getByRole('button', { name: 'Update', exact: true }).click();
