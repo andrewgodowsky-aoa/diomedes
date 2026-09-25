@@ -170,7 +170,550 @@ Still open: which change in `App.tsx` makes the two writes safe to cross (for ex
 `openInBook` waiting for the `lastPage` patch, or `navigate` skipping the patch while a guarded
 write is in flight), carried under its own work order rather than as a test change.
 
+### O11. Automations Milestone A: the defaults Run once was built on
+
+Raised 2026-09-24 by `docs/implementation/2026-09-24-automations-a.md` §4. Andrew's D1–D4 are
+settled (R9); these are the lane's own conservative choices, each in force until answered.
+
+1. An occurrence file from another version: refuse it for that organization only (409
+   `automation_record_unreadable`) and leave it untouched, or stop the app as `configuration.ts`
+   does? Default: refuse for that organization only.
+2. Should the 4 MB source cap of the per-run path also bound the configured sources? Default: yes.
+3. The saved draft's History entry now reads `actor: 'diomedes'` with the procedure's application
+   origin and the writer's generic "Diomedes changed 1 file"; the richer "drafted … for your review"
+   sentence is not kept. Keep that? Default: yes.
+4. A setup that asks for a reviewer first (`person-after-reviewer`) runs no reviewer in this build,
+   and the detail says so. Build the reviewer step, or keep saying so? Default: keep saying so.
+5. List the brief only once its organization has a configuration revision or an occurrence?
+   Default: yes; before that the list is empty.
+6. Label precedence: Running, Needs approval and Needs investigation first, then Setup incomplete,
+   Waiting for data, Manual; a cleanly stopped run and a busy-project refusal rest as Manual.
+   Default: as stated.
+7. Budget 9 units and 9 tool calls, 0 model calls, so a crash-replayed save is affordable.
+   Default: as stated.
+8. Reads take the store lock, so an `admitting` occurrence is never seen half-way. Default: yes.
+9. Automations sits first in the Console's and the home's Nectovia group, and the home's "Not ready
+   yet" group is gone. Default: as stated.
+
+### O12. Automations Milestone B: schedule defaults, including one that differs from the specification
+
+Raised 2026-09-24 by `docs/implementation/2026-09-24-automations-b.md` §3.
+
+1. **A local time that does not exist** (clocks go forward): run at the moment the clocks jump, and
+   say so on the occurrence, or skip it and record the omission, as the specification's §6 proposed?
+   Default taken: **run at the jump**. This differs from the specification; skipping is a one-line
+   change.
+2. A repeated local time (clocks go back) runs once, at its first occurrence. Default: as stated
+   (matches the specification).
+3. Missed runs: record every one; only the most recent may catch up, within 2 hours of its time
+   (choices never, 1, 2 or 4 hours); a backlog never runs. Default: as stated.
+4. "On time" means within 2 minutes of the slot; later is a catch-up and says so. Default: as
+   stated.
+5. The scheduler passes every 30 seconds, and the heartbeat reads unknown after 5 minutes.
+   Default: as stated.
+6. Turning a schedule on is a separate, recorded act by an owner or admin, never a side effect of
+   saving, a setup answer, pack activation, configuration change, restart or rollback. Default: yes.
+7. Who may pause: owners and admins only, or any member (pausing only stops future runs)? Default:
+   owners and admins.
+8. Resume is a fresh grant by whoever resumes, checked now; slots during the pause never run.
+   Default: yes.
+9. Editing a schedule that is on keeps it on under the original enable grant from the next slot.
+   Default: yes.
+10. A changed setup blocks the schedule (`configuration_changed`) until it is turned on again,
+    rather than following the newly active setup. Default: block.
+11. The person who turned a schedule on must be the one signed in on this computer, and a removed or
+    demoted enabler blocks it. Default: yes.
+12. A procedure with any model call or no finite budget never starts on a schedule. Default: yes.
+13. A due slot while the output project is busy is skipped and recorded, never queued. Default: yes.
+14. Paused slots are recorded as "Skipped — paused" and raise no attention. Default: yes.
+15. Run once stays available while the schedule is paused. Default: yes.
+16. Missed-run attention stays until someone has seen it; other items clear on the next clean run
+    or when the schedule is turned on again. Default: as stated.
+17. Only daily and weekly calendar schedules, one time a day; no intervals and no cron text.
+    Default: as stated.
+18. The occurrence file moves to version 2, and a Milestone A build refuses it rather than
+    misreading it. Default: yes.
+
+### O13. Ready queue: consent, limits and whose tasks it starts
+
+Raised 2026-09-24 by `docs/implementation/2026-09-24-h07-ready-scheduling.md` and its review
+(`2026-09-24-review-batch1-a.md`).
+
+1. Automatic start is off for every project until the person turns it on. Default: off.
+2. Limits of 1 run per project and 2 across projects, with manual runs counted, as constants: should
+   they become settings? Default: constants.
+3. May a person give a standing, per-project, per-engine consent so the queue can send a
+   never-confirmed Ready task to a service route? Default: no. A service-route task starts on its
+   own only as an exact re-send of a request the person already confirmed (same documents and
+   thread); anything else is held for the person's Start.
+4. A stopped, failed or finished task is not restarted unless the person reopens it. Default: as
+   stated.
+5. A refused claim holds the task for the person's own Start until it re-enters Ready. Default: yes.
+6. An automatic start sends only the task's own default document, or none. Default: as stated.
+7. The queue starts any Ready task, including those whose owner is "you", as the Board's Start does.
+   Default: keep; revisit if owners come to mean "who does it".
+8. A project whose Board policy is *Confirm each start* may still turn automatic start on; the
+   switch is itself the opt-in. Default: keep, and say nothing more on the Board.
+
+### O14. Remembered approvals: the offer, the pattern and what always asks
+
+Raised 2026-09-24 by `docs/implementation/2026-09-24-remembered-approvals.md` and its review
+(`2026-09-24-review-batch1-a.md`). D5 itself is Andrew's (2026-09-24); these are its details.
+
+1. The offer threshold is 3, a product constant with a host override, not a person's setting.
+   Default: 3.
+2. A decline of the same item restarts its count ("keeps giving" read as consecutive). Default: yes.
+3. An offer is made once per item per project, ever; a declined offer and an accepted one whose
+   grant was later revoked do not return, and route 1 is how the person asks again. Default: yes.
+4. "Go ahead and remember in this project" remembers only an approval just given, within 15 minutes
+   of the click. Default: 15 minutes.
+5. The button reads **Go ahead and remember in this project**, pairing with the existing **Go
+   ahead**. Default: as stated.
+6. A restart does not end a remembered approval (unlike a task scope's host lease). Default: yes.
+7. Always asks: money, destruction and access words anywhere in the procedure, tool or permission
+   name (stems and run-together names included), credential and key files, and anything the
+   classifier cannot read; only a recorded local write and a send to named recipients are
+   rememberable. Default: as stated.
+8. A saved grant that a stricter classifier later calls always-asks fails project load. Default:
+   keep fail-closed; if the lists grow, consider marking such a grant inactive instead.
+9. A new rememberable permission joins the allowlist only with its own review. Default: yes.
+
+### O15. Remembered approvals for Codex proposals, and the ChatGPT account of a task scope
+
+Raised 2026-09-24 by `docs/implementation/2026-09-24-d5-codex-proposals.md`.
+
+1. A Codex proposal's pattern is its exact set of files, created or updated and never removed, on
+   one ChatGPT account; Build and Fix are the same procedure, and a team member's run is never
+   covered. Default: as stated.
+2. The Codex connection being on is the live authority a Codex grant rests on; turning it off asks
+   again. Default: yes.
+3. A task scope decides before a remembered approval. Default: yes.
+4. A task scope's account is the one Diomedes last saw Codex prepare a proposal under in that task
+   (else the project) when the scope was confirmed; stale knowledge can only cause an extra ask.
+   Default: as stated.
+5. An account the runtime did not report counts as "not the same account", except that a scope
+   confirmed with no account seen still covers a proposal whose account was also not reported.
+   Default: as stated.
+
+### O16. Durable controls: confirmation, uncertain effects and receipts
+
+Raised 2026-09-24 by `docs/implementation/2026-09-24-h08-durable-controls.md`.
+
+1. Resume and Retry ask once before they send; Stop and Fork act on the press. This is "whether a
+   click runs an action or selects it", which is Andrew's. Should Resume and Retry keep asking?
+   Default: yes.
+2. May a person acknowledge an uncertain effect and retry anyway, and what must the acknowledgment
+   record? Default: no override; the person checks History and starts new work.
+3. Resume refuses a widened thread permission; Retry runs under the thread's current permission.
+   Default: as stated.
+4. A fork starts at *Show me first*, starts no run, and copies the origin thread's route, model,
+   Agent choice and mode. Default: as stated.
+5. A host steer is not Steer: where a route only holds a message, the Console offers Queue and says
+   so. Default: yes.
+6. Receipts are never evicted; a project at 2048 receipts refuses new controls. Default: yes.
+7. The Console's plain Stop goes through the control route (same effect plus a receipt). Default:
+   yes.
+8. Possible provider charging is not an uncertain effect for Retry; Retry's confirmation names it.
+   Default: yes.
+9. The control fixture is test-mode only and is not a route contract. Default: yes.
+
+### O17. Codex kept threads and native controls
+
+Raised 2026-09-24 by `docs/implementation/2026-09-24-h02-codex-controls.md`.
+
+1. May Diomedes keep a Codex Work run's thread (`ephemeral: false`), which writes its transcript,
+   including the selected documents' text, into the person's own Codex history, whenever the
+   installed Codex offers resume or fork? Default: yes, and only then. (H04's kept OpenCode session
+   likewise keeps its session in the person's OpenCode history.)
+2. A native Fork makes the Codex branch and the new task and starts no run; the fork task's first
+   Start continues the branch. Default: yes.
+3. Where Codex cannot continue a thread, Resume is offered as a labelled fresh start by Diomedes
+   rather than withheld. Default: offered and labelled.
+4. Steer is offered only while the run is working and its Codex answered `turn/steer`. Default: yes.
+5. A Resume waits up to 45 seconds, under the store lock, to learn whether Codex continued the
+   thread before it writes its receipt. Default: 45 seconds.
+
+### O18. Should a queued steering message carry the same per-message consent as a turn?
+
+Raised 2026-09-24 by `docs/implementation/2026-09-24-review-batch1-b.md` (H04). A message queued
+into an OpenCode kept session re-checks cloud sharing when it is sent, and Settings and the account
+route are re-read at admission, but it asks for no separate per-message `consent: true`. The
+review proposes yes (the steer carries consent and re-runs the turn's cloud-sharing check). Default
+in the code today: no separate consent.
+
+### O19. Should OpenCode's kept session become a Console conversation route?
+
+Raised 2026-09-24 by `docs/implementation/2026-09-24-h04-opencode-sessions.md`. CD-01 Decision 5
+names Claude Code and the model-API routes as the only Console conversation drivers; admitting
+OpenCode amends it. The kept session is built and its API exposes exactly the controls its contract
+declares. Proposal: allow it, with the Console offering exactly `sessionControls(contract)`.
+Default: not wired; no Console screen offers OpenCode session controls.
+
+### O20. Agent profiles: fallback and precedence
+
+Raised 2026-09-24 by `docs/implementation/2026-09-24-h09-agent-profiles.md`.
+
+1. Fallback to the next profile is off by default and is restated on every save; omitting the flag
+   turns it off. Default: off.
+2. A thread's own model pin or WorkStyle outranks a project or task list, and the tier map is
+   untouched (no profile gives Thorough a model). Default: as stated.
+3. A thread's explicit profile pick uses the project's or task's fallback policy for the rest of
+   the list. Default: yes.
+4. Profiles are person-level; routing lists are per project and live with configuration, not
+   project state. Default: as stated.
+5. Retry and Resume re-resolve a profile and pin what they resolved then. Default: yes.
+6. A profile pick counts as `manual` model selection and a routing-list pick as `automatic`.
+   Default: as stated.
+
+### O21. Instruction files: kind order and discovery limits
+
+Raised 2026-09-24 by `docs/implementation/2026-09-24-h11-nested-rules-delivery.md`.
+
+1. In one folder, AGENTS.md takes precedence over CLAUDE.md (the pack manifest's order). It changes
+   ordering only, never authority. Default: AGENTS.md first.
+2. Nested discovery stops at 6 folders deep, 2000 folders visited and 32 nested files, and a file
+   past a bound is neither discovered nor recorded as skipped. Should bound hits be recorded, and are
+   the bounds right? Default: the bounds above, unrecorded.
+3. Filenames match exactly (`agents.md` is not found on a case-sensitive disk), discovery refreshes
+   on activation and when the packs list is read rather than at every run start, and scope comes
+   from a run's selected documents only. Default: as stated.
+
+### O22. Mediated effects: idempotent recovery and reconciliation
+
+Raised 2026-09-24 by `docs/implementation/2026-09-24-h12-mediated-effects.md`.
+
+1. Any interrupted write is uncertain, idempotent ones included, so it waits for reconciliation
+   instead of retrying on its own. May an interrupted idempotent write whose sink dedupes by key
+   retry without a reconciliation step? Default: no.
+2. Only a definite reconciler answer settles an effect; `write_file` answers applied only on an
+   exact text match, never not-applied. Default: as stated.
+3. Where and how does a person mark an uncertain effect applied or not applied, and what evidence
+   must they give? Default: no route or Console surface yet; `reconcileEffect` is host API only.
+4. Team tools keep `permission: null`; team membership is their gate. Default: yes.
+5. The contained `write_file` tool is offered to no route (model-API turns stay read-only).
+   Default: not offered.
+6. Read tools skip the NFC and case-collision refusals; the private-name checks still fold case and
+   compatibility forms. Default: as stated.
+
+### O23. Where a person starts a Diomedes work loop
+
+Raised 2026-09-24 by `docs/implementation/2026-09-24-h13-native-loop.md`. Andrew answered its
+other three items (the finish, delegation and attribution) on 2026-09-24, and they are now R11.
+
+Where does a person start a loop: the Diomedes page's escalation (CD-04), a thread action, or
+elsewhere? The same question now covers an H14 lead with workers (O36). Default: no Console start
+control; only `POST /api/projects/:id/loop/start`.
+
+### O25. Should a declared project command run as a verification check, and under which grant?
+
+Raised 2026-09-24 by `docs/implementation/2026-09-24-h17-verified-completion.md`. There is no
+mediated, Trust-authorized command-execution path, so a declared `command` check is recorded and
+reported as not run (*incomplete*), and a task that declares one can never read Verified. Default:
+declared, never run.
+
+### O26. Context selection: carried history, bounds and pinning
+
+Raised 2026-09-24 by `docs/implementation/2026-09-24-h18-context-accounting.md`.
+
+1. History carried from a retired lineage keeps giving way first and is not summarised (the existing
+   rule for "Update this conversation"). Default: not summarised.
+2. The history bounds stay 12 messages and 24,000 characters; H18 changes what fills them, not their
+   size. Default: unchanged.
+3. Only a lineage's opening message is pinned; should a person be able to pin a message? Default:
+   no pin control.
+
+### O27. Versioned records: newer files, backups and the automation host
+
+Raised 2026-09-24 by `docs/implementation/2026-09-24-h21-migrations-perf.md`.
+
+1. A newer settings or project file stops the local service and is left untouched. Default: stop.
+2. Project state is stamped `schemaVersion: 1` from now on. Default: yes.
+3. A migration's backup sits beside the file and is never deleted automatically. Default: yes.
+4. Automation occurrence files migrate when opened, not on the next write. Default: yes.
+5. An unreadable or newer `automation-host.json` is replaced today; should a version above 1 be
+   refused instead, which changes scheduler start-up? Default: replaced, as today.
+
+### O28. Pack lifecycle defaults and outward capability requests
+
+Raised 2026-09-24 by `docs/implementation/2026-09-24-p01-p03-pack-lifecycle.md` and its review
+(`2026-09-24-review-batch1-b.md`).
+
+1. Software Engineering and Small Business count as installed by Diomedes, the `diomedes`
+   namespace and publisher name are reserved, and they can be uninstalled only while no project has
+   them on. Default: as stated.
+2. Turning on a pack whose dependency is off asks rather than refusing or turning it on silently;
+   turning off or uninstalling something in use refuses and names the user. Default: as stated.
+3. Rollback steps back one version at a time and restores no permission. Default: yes.
+4. Outward capability requests are refused by a denylist of name prefixes (`email-customers`,
+   `upload-files` and `wire-money` pass it). Should an allowlist drawn from Trust's capability
+   vocabulary replace it? Default: the denylist stays; a request is still never a grant.
+5. A damaged pack with no recorded dependencies blocks uninstalling any other pack until it is
+   repaired or removed. Default: yes.
+
+### O29. Which H-number names which harness lane
+
+Raised 2026-09-24 by the H07 and H13 records. `docs/harness/HARNESS_INTEGRATION_MAP.md` uses H07
+for execution teleportation and titles H13 "Queues and budgets", while Linear DIO-12, DIO-18, the
+unified package and roadmap §4 use H07 for Ready scheduling and H13 for the native loop. Default:
+the records and this roadmap follow Linear; the map is not yet changed.
+
+### O30. Files: restoring binary versions and opening a file externally
+
+Raised 2026-09-24 by `docs/implementation/2026-09-24-p05-files-attachments.md`. Restoring a
+picture, PDF or workbook from History is refused in words (its versions stay kept and viewable),
+and the desktop shell gained no open-externally hand-off, so a PDF is described, not opened.
+Default: both not built; each is a candidate follow-up.
+
+### O32. Should a same-version byte change in a bound executable move its binding revision?
+
+Raised 2026-09-24 by `docs/implementation/2026-09-24-audit-server-fixes.md` (DIO-86). The binding
+now records the SHA of the bytes on disk and its revision key moves with them, but the semantic
+`revision` counter does not: a same-path change is followed as the installation updating itself, so
+a verification receipt survives a byte change without a version change. Default: keep that
+contract.
+
+### O33. Inventory: permissions, tenant labels and mounting
+
+Raised 2026-09-24 by `docs/implementation/2026-09-24-inventory-auth.md` (DIO-95).
+
+1. View and status need `inventory:view`; receive, use and transfer need `inventory:record`; adjust
+   needs `inventory:adjust`; a count needs `inventory:count`; a correction adds `inventory:adjust`;
+   `inventory:approve` is unused. Default: as stated.
+2. Inventory scope ids admit no `:`, so the local tenant `org:<id>` maps to `org.<id>` and any other
+   non-conforming tenant reads as unavailable. Widen the inventory id grammar, or adopt the mapping
+   in the MI00 contract? Default: the mapping.
+3. Inventory stays unmounted from the app until someone decides to ship an inventory surface.
+   Default: unmounted.
+4. The session token is mandatory for inventory even in the standalone development browser service,
+   which therefore cannot serve it. Default: mandatory.
+
+### O34. May a status line name the agent while ChatGPT writes?
+
+Raised 2026-09-24 by `docs/implementation/2026-09-24-independent-reviews.md` (R36-4).
+`server/native-work.ts` logs "Nectovia is writing the proposal." during a direct ChatGPT proposal
+run, following `shared/agent-name.ts` ("lines about what the agent is doing name it, never the model
+or route serving it"), while decision 8 says direct-agent work is never casually described as
+Diomedes reasoning. The run's recorded origin is truthful either way. If decision 8 wins, the line
+becomes `${routeDisplayName(run.engine)} is writing the proposal.` Default: unchanged.
+
+### O35. Guidance maintenance: what signs a revision, and when Diomedes proposes one
+
+Raised 2026-09-24 by `docs/implementation/2026-09-24-h10-guidance.md` (DIO-15, PR #111, in batch 6).
+
+1. "Signed" means a SHA-256 digest chain, not an HMAC. There is no persisted local key to sign
+   with, so the chain detects an edited, dropped or reordered revision but cannot stop someone who
+   can write `state.json` from recomputing it. An HMAC needs a key-custody decision. Default: the
+   digest chain.
+2. A proposal needs 3 distinct occurrences of the same correction, for every kind, as a product
+   constant. Default: 3.
+3. A decline holds until a new piece of evidence arrives, and rolling back an applied proposal
+   counts as declining its evidence. Default: as stated.
+4. Rollback restores the text from before the named revision. Default: as stated.
+5. A revision that would flag any run whose write the person kept reads *worse*, however many
+   corrected runs it would also catch. Default: *worse* wins.
+6. Sample runs are not evidence. Default: as stated.
+7. Only an existing, loaded instruction file is revised, by appending one line. No file is created
+   and no existing line is edited. Default: as stated.
+
+### O36. Lead and workers: limits, failure and reuse
+
+Raised 2026-09-24 by `docs/implementation/2026-09-24-h14-teams.md` (DIO-19, PR #112, in batch 6).
+Andrew's 2026-09-24 decisions answer part of this (R11, R13). A worker is a Diomedes-dispatched
+helper, so it will work in a sandbox and hand back a change set once the sandbox exists. Until
+then it stays read-only as built. What is still open:
+
+1. **Limits.** H14 was built with depth 1, at most 3 workers at once and at most 6 per lead run.
+   Andrew's H13 limits are depth at most 2 and at most 4 delegates per run, in parallel. Do the H13
+   limits govern H14's workers? If they do, 6 per run is above the limit. Default: the build's
+   numbers stand until the delegate-sandbox slice reconciles them.
+2. **Budget.** A worker gets its own budget: 4 turns, reported tokens not limited, 5 minutes. The
+   ceilings are 8 turns, 400,000 tokens and 30 minutes. An advisor gets 3 turns and 2 minutes, and
+   2 questions per lead. R11 says a delegate's budget is carved from its parent's remaining budget,
+   and these budgets are not carved from the lead's yet. Review D's patch B names the same gap for
+   H13. Default: as built.
+3. A worker that fails or dies stops its lead, and the person retries through H08. A worker stopped
+   by its own budget does not stop its lead. Should a lead ever carry on with a partial outcome?
+   Default: it stops.
+4. The default Agents are `diomedes.general` for a worker and `diomedes.architect` for an advisor,
+   and an advisor must have a `review` ceiling. Default: as stated.
+5. A retry reuses a finished worker's answer when the role, task and scope match exactly, without
+   re-reading the files. Default: as stated.
+
+### O37. Pack contributions on demand: refusal, reading and model choice
+
+Raised 2026-09-24 by `docs/implementation/2026-09-24-p04-on-demand-contributions.md` (DIO-30,
+PR #114, in batch 6).
+
+1. A built-in pack whose content changed without a version change is refused at load, not
+   silently re-indexed. Default: refused. Changing a playbook therefore needs a version bump.
+2. A person opening a playbook to read it is recorded as a load, with the reason `opened`.
+   Default: recorded.
+3. In Ask and Plan on model-API routes, the model may choose a playbook from the index. Andrew may
+   prefer that only the person chooses. That is a one-line change, and the index route remains.
+   Default: the model may choose.
+
+### O38. Should project threads on Claude Code run on the native session?
+
+Raised 2026-09-24 by `docs/implementation/2026-09-24-h03-claude-live-controls.md` (DIO-8, PR #92,
+on main through batch 5, PR #107). H03's controls (queued steering, Stop with escalation, restart
+reconciliation) ship only on the Diomedes page. Project threads on Claude Code (Ask, Plan,
+Automatic) still use the single-turn direct path. Moving them would change how a thread's route is
+chosen (`planThreadSend`). Default: not moved.
+
+### O39. Kept Cursor and Devin conversations: a Console route, and when their folder is removed
+
+Raised 2026-09-24 by `docs/implementation/2026-09-24-h05-cursor-acp-sessions.md` (PR #90, on main
+through batch 5, PR #107).
+
+1. Should the kept Cursor and Devin conversations become Console conversation routes? That would
+   amend CD-01 Decision 5, as O19 would for OpenCode. Default: an API route only.
+2. When should a kept conversation's private engine folder be removed? The resume needs it, and
+   deletion is designed, never a blunt switch (decision 10). Default: never removed automatically.
+
+Also recorded as defaults: only `fetch` and `think` asks and plan approvals reach a person, and
+anything that would write, execute or switch mode stays declined. A declined question lets the
+turn continue. An expired or cancelled one stops it.
+
+### O40. Should a Codex Resume wait for Codex while it holds the service lock?
+
+Raised 2026-09-24 by review C (`docs/implementation/2026-09-24-review-c.md`, RC-H02-1, PR #109, in
+batch 6). H02's default 5 has a Resume wait up to 45 seconds for its run to open a Codex thread.
+The wait happens under `store.locked`, which serialises the whole service. So a slow Codex start
+also holds up Stop and every read in every project. Fork has no overall bound. Review C proposes
+releasing the lock around the engine call. The interim option is to drop the wait and have the
+receipt say what Diomedes started. Also open: whether Queue with `waitsFor` cancellation should be
+exempt from H08's 2048-receipt limit, as Stop now is. Default: unchanged; the proposed patch is
+recorded, not applied.
+
+### O41. May a new run start while a supervision escalation is open?
+
+Raised 2026-09-24 by review D (`docs/implementation/2026-09-24-review-d.md`, patch A, PR #110, in
+batch 6). `WorkService.start` refuses a start only while a run is live. A person's Start on a task
+waiting on a supervision escalation therefore succeeds and detaches the question, and that run's
+drift is only noted. R12 item 6 (one escalation per task and issue) does not decide this. Proposed
+default: refuse the start (409 `supervision_escalation_open`) until the person answers. Today the
+start is admitted.
+
+### O42. Review E's decisions to revisit
+
+Raised 2026-09-24 by review E (`docs/implementation/2026-09-24-review-e.md`, PR #113, in batch 6).
+
+1. **D5 task-scope account.** A task scope confirmed with no proposal waiting still binds the
+   account of an earlier approved proposal (the open half of D5-1). Should it bind only a waiting
+   proposal's account, and otherwise record "no account seen"? That would change O15's default.
+2. **D5 always-ask list.** Only SVG, HTML and XML count as able to run code when opened. Should
+   scripts, CI workflows, `package.json` and instruction files (`AGENTS.md`, `CLAUDE.md`) always
+   ask as well?
+3. **Automations B default 16.** Its section 3 says attention items clear when the schedule is
+   turned on again. The code clears only `blocked` items, which is the safer behaviour. One of the
+   two needs correcting.
+4. **P06 version comments.** A version comment rides with a task's revision by path, even when
+   someone else wrote the version. Should it ride only with versions the task's own changes
+   produced?
+
+Default: each stays as built.
+
 ## Resolved
+
+### R13. How a helper Diomedes dispatches works (team mode)
+
+**Settled 2026-09-24 by Andrew (`docs/reference/DECISIONS_2026-09-24.md`, "Team mode, in
+general").** These rules cover every helper or sub-agent Diomedes dispatches, not only H13
+delegates. His direction was to take the options that give broad function and safety without
+hampering agents while they work, especially in team mode.
+
+- **Sandbox by default.** Delegated work runs in an isolated working copy under H12 containment
+  and hands back a recorded change set. Direct writes to the project belong to the parent or a
+  person, never to the helper.
+- **No authority widening.** A helper's authority is the intersection of its parent's grant and
+  its declared scope (decision 7). A helper's action is attributed to its own engine and model
+  (decision 8).
+- **Do not hamper.** The sandbox replaces "read-only" as the safety mechanism. Letting a helper do
+  the work somewhere safe is preferred over refusing the work.
+
+Not built yet. H13 delegates and H14 workers are read-only in source today. The sandbox is H13's
+next slice, in progress on `feature/h13-delegate-sandboxes` and not landed. H14's limits and budgets
+are still O36.
+
+### R12. Supervision: thresholds, corrections, scope and escalation (raised as O24)
+
+**Settled 2026-09-24 by Andrew (`docs/reference/DECISIONS_2026-09-24.md`, H15).** Items 1 to 4 and
+6 to 8 accept H15's defaults. Item 5 answers the question the lane left open.
+
+1. **Thresholds.** Identical calls in a row: 3 / 4 / 6 (note / correct / pause). The same
+   observation for different inputs: 4 / 5 / 8. Budget: noted at 80 percent used, critical at 90
+   percent or more used with a projected overrun. A project may tighten these but never loosen them.
+   No project setting for tightening exists yet.
+2. **Correction bounds.** Scope 1, no-progress 2, budget 1, instruction 1 and verification 1, all
+   capped at `CORRECTION_LIMITS.maxAttempts` (3).
+3. **Scope** is folder-level, as proposed.
+4. **Out-of-scope writes.** An unapproved recorded write outside scope, or into a forbidden path,
+   pauses the run at once. Reads and proposals are only noted.
+5. **Queued corrections.** On a route that cannot steer, a queued correction may start the next run
+   without a person. It shares the origin run's correction bound. It runs through ordinary
+   admission, with a permission never wider than the origin run's. It is labelled as a supervision
+   correction in the thread and in History. A pause or a Stop cancels it. Once the bound is spent,
+   the next drift escalates to a person as a Need. This is how H15 was built.
+6. **Escalations** are raised once per task and issue. Review D narrowed "continue" to
+   acknowledge the issue only for the run it resumed (PR #110). Whether a new run may start while
+   an escalation is open is still O41.
+7. **Supervision is always on**, in every project. No setting turns it off or widens it.
+8. **Instruction drift** reads only backticked paths after an explicit prohibition. Review D fixed
+   the reading of a prohibition that carries an exception.
+
+### R11. The Diomedes work loop: finish, delegation and attribution (raised as O23 items 1–3)
+
+**Settled 2026-09-24 by Andrew (`docs/reference/DECISIONS_2026-09-24.md`, H13).**
+
+1. **Accepted.** A finish that is not Verified leaves the task in Review (`waiting ·
+   changes-ready`), also when no checks are declared. The agent is not stopped. It finishes, and a
+   person or a verifier moves the task to done.
+2. **Changed: delegates will work in sandboxes, not read-only.**
+   - Every delegate runs in its own sandbox: an isolated working copy of its scope in the parent
+     run's area. Every write and spawn goes through H12's containment funnel, rooted at that copy.
+   - Its changes come back to the parent as a recorded change set, with P06's readable diff and
+     per-change keep. The parent may apply changes inside its own grant, through the one recorded
+     write path and attributed truthfully. Anything else waits for a person as ordinary review.
+   - A delegate's grant is the intersection of the parent's grant and the handoff's declared scope.
+   - Limits: depth at most 2, at most 4 delegates per run, and delegates may run in parallel.
+   - A delegate's budget is carved from the parent's remaining budget, never added on top of it.
+     Stop still cancels the whole tree.
+   - Delegate routes come from the project's H09 Agent profiles. The person, or the profile's
+     default, fixes which routes are allowed at start. The model picks among them and writes each
+     sub-task, but never chooses who pays.
+   - Until the sandbox exists, delegates stay read-only, one level deep, at most 2 per run, as
+     built. The sandbox and the change-set return are H13's next slice, in progress on
+     `feature/h13-delegate-sandboxes` and not landed.
+   - Carving the budget needs what review D's patch B names: charging a delegate's spend to the
+     parent's job cap. That is not built.
+3. **Accepted.** The loop's own steps are attributed to Diomedes as native supervisor. Model steps
+   are attributed to the runtime-reported model, and a fixture route names no model.
+
+Item 4, where a person starts a loop, is still open as O23.
+
+### R10. Readable diffs of recorded versions are Core (raised as O31)
+
+**Settled 2026-09-24 by Andrew (`docs/reference/DECISIONS_2026-09-24.md`, P06).** Three things P06
+built are Core, as the lane built them: readable diffs of recorded versions, keep per change, and
+review comments. The rule behind this is decisions 12 and 13. A restaurant's spreadsheet export
+and a contract draft need a readable diff as much as source code does. The Software Engineering
+pack still owns the IDE-grade layer on the same surface: Git, syntax highlighting, unified and
+split code views, and LSP. For recorded versions only, this replaces the 2026-09-10 product note,
+which put "unified and split diffs" in the pack. Decision 13 in `AGENTS.md` and
+`docs/reference/STANDING_DECISIONS.md` now says so. P06 is implemented in source and was reviewed
+by review E. It is not released.
+
+### R9. How Run once executes, what it may save, what a missing source does, and where Automations lives
+
+**Settled 2026-09-24 by Andrew (Automations Milestone A work order, D1–D4), now in the code on
+main.** Run once is a deterministic `weekly-brief` harness capability run by RunService with no
+model call (D1). Saving the draft keeps today's authority — `approval: false`,
+`write-project-file`, the pinned destination only, saved for review (D2). A missing configured
+source stops the run before writing, shown as Waiting for data (D3). Automations sits in the
+Console's Nectovia group, and the home row opens the output project on it or says why (D4).
+`server/harness/capabilities/weekly-brief.ts`, `server/automations.ts`,
+`client/console/AutomationsPage.tsx`; record `docs/implementation/2026-09-24-automations-a.md`.
+The lane's own defaults are O11.
 
 ### R8. Which web search an Ask or Plan turn on a model-API route may use (raised as O10)
 

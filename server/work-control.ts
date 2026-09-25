@@ -260,10 +260,21 @@ export class WorkControl {
     if (!parsed.success) throw new ApiError(400, 'Choose what to stop, and for which task.');
     const { scope, taskId } = parsed.data;
     const task = this.task(projectId, taskId);
+    // A named run must be this task's: a Stop never reaches another task's run.
+    if (
+      parsed.data.sessionId &&
+      !this.store
+        .state(projectId)
+        .sessions.some((item) => item.id === parsed.data.sessionId && item.taskId === task.id)
+    )
+      throw new ApiError(404, 'This run was not found for this task.');
     const live = this.deps.native.liveRun(projectId);
     // Said on every receipt for a Stop that reached a dispatched request, and
-    // omitted when there was none. No scope can make it untrue.
-    const wasLive = live?.taskId === task.id;
+    // omitted when there was none. No scope can make it untrue. A Stop that
+    // names a settled run of the task reached nothing, whatever else is live.
+    const wasLive =
+      live?.taskId === task.id &&
+      (!parsed.data.sessionId || live.sessionId === parsed.data.sessionId);
     const sessionId =
       parsed.data.sessionId ??
       (wasLive ? live!.sessionId : null) ??

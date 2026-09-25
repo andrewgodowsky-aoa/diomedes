@@ -103,11 +103,60 @@ function decode(text: string): string {
     return ENTITIES[name.toLowerCase()] ?? whole;
   });
 }
-const attribute = (tag: string, name: string) =>
-  new RegExp(`\\s${name}="([^"]*)"`).exec(tag)?.[1] ?? null;
+/** The value of `name="…"` after whitespace in a tag, by forward scans only. */
+function attribute(tag: string, name: string): string | null {
+  const key = `${name}="`;
+  for (let at = tag.indexOf(key); at >= 0; at = tag.indexOf(key, at + 1)) {
+    if (at === 0 || !/\s/.test(tag[at - 1]!)) continue;
+    const end = tag.indexOf('"', at + key.length);
+    return end < 0 ? null : tag.slice(at + key.length, end);
+  }
+  return null;
+}
+/**
+ * Every `<name …>body</name>` or `<name …/>` in `text`, in order, found with
+ * forward `indexOf` scans only. A lazy regular expression rescans to the end
+ * for every unclosed tag, so a small crafted part would hold the store lock
+ * for minutes; this is linear in the part. `body` is null for a self-closed tag.
+ */
+function* elements(text: string, name: string): Generator<{ attrs: string; body: string | null }> {
+  const open = `<${name}`;
+  const close = `</${name}>`;
+  let at = 0;
+  let closable = true;
+  for (;;) {
+    const start = text.indexOf(open, at);
+    if (start < 0) return;
+    const after = start + open.length;
+    // `<c` must not match `<col`; a name ends at anything but a name character.
+    if (/[\w:.-]/.test(text[after] ?? '')) {
+      at = after;
+      continue;
+    }
+    const end = text.indexOf('>', after);
+    if (end < 0) return;
+    if (text[end - 1] === '/') {
+      yield { attrs: text.slice(after, end - 1), body: null };
+      at = end + 1;
+      continue;
+    }
+    const attrs = text.slice(after, end);
+    if (closable) {
+      const finish = text.indexOf(close, end + 1);
+      if (finish >= 0) {
+        yield { attrs, body: text.slice(end + 1, finish) };
+        at = finish + close.length;
+        continue;
+      }
+      // No close tag follows, so none of the later open tags can close either.
+      closable = false;
+    }
+    at = end + 1;
+  }
+}
 /** All `<t>` text inside a fragment, joined: a rich string is several runs. */
 const texts = (fragment: string) =>
-  [...fragment.matchAll(/<t(?:\s[^>]*)?>([\s\S]*?)<\/t>/g)].map((match) => decode(match[1]!)).join('');
+  [...elements(fragment, 't')].map((item) => decode(item.body ?? '')).join('');
 
 function column(reference: string | null, fallback: number): number {
   const letters = reference ? /^([A-Z]+)/.exec(reference)?.[1] : undefined;
@@ -121,14 +170,14 @@ export function readFirstSheet(bytes: Buffer, { offset = 0, limit = TABLE_PAGE_R
   const all = entries(bytes);
   const workbook = part(bytes, all, 'xl/workbook.xml');
   if (!workbook) throw new WorkbookUnreadable('This archive is not a workbook.');
-  const sheetTags = [...workbook.matchAll(/<sheet\s[^>]*\/?>/g)].map((match) => match[0]);
+  const sheetTags = [...elements(workbook, 'sheet')].map((item) => item.attrs);
   if (!sheetTags.length) throw new WorkbookUnreadable('The workbook lists no sheets.');
   const sheets = sheetTags.map((tag) => decode(attribute(tag, 'name') ?? 'Sheet'));
   const relation = attribute(sheetTags[0]!, 'r:id');
   const rels = part(bytes, all, 'xl/_rels/workbook.xml.rels') ?? '';
   let target: string | null = null;
-  for (const match of rels.matchAll(/<Relationship\s[^>]*\/?>/g))
-    if (attribute(match[0], 'Id') === relation) target = attribute(match[0], 'Target');
+  for (const item of elements(rels, 'Relationship'))
+    if (attribute(item.attrs, 'Id') === relation) target = attribute(item.attrs, 'Target');
   const sheetPath = target
     ? target.startsWith('/')
       ? target.slice(1)
@@ -136,19 +185,19 @@ export function readFirstSheet(bytes: Buffer, { offset = 0, limit = TABLE_PAGE_R
     : 'xl/worksheets/sheet1.xml';
   const sheet = part(bytes, all, sheetPath);
   if (sheet === null) throw new WorkbookUnreadable('The first sheet is missing from the workbook.');
-  const shared = [...(part(bytes, all, 'xl/sharedStrings.xml') ?? '').matchAll(/<si>([\s\S]*?)<\/si>/g)].map(
-    (match) => texts(match[1]!),
+  const shared = [...elements(part(bytes, all, 'xl/sharedStrings.xml') ?? '', 'si')].map((item) =>
+    texts(item.body ?? ''),
   );
   const rows: string[][] = [];
   let total = 0;
   let columns = 0;
   let clipped = false;
-  for (const rowMatch of sheet.matchAll(/<row\b[^>]*>([\s\S]*?)<\/row>|<row\b[^>]*\/>/g)) {
+  for (const row of elements(sheet, 'row')) {
     const cells: string[] = [];
     let next = 0;
-    for (const cell of (rowMatch[1] ?? '').matchAll(/<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
-      const attrs = cell[1]!;
-      const body = cell[2] ?? '';
+    for (const cell of elements(row.body ?? '', 'c')) {
+      const attrs = cell.attrs;
+      const body = cell.body ?? '';
       const at = column(attribute(attrs, 'r'), next);
       next = at + 1;
       if (at >= TABLE_MAX_COLUMNS) {
@@ -156,7 +205,9 @@ export function readFirstSheet(bytes: Buffer, { offset = 0, limit = TABLE_PAGE_R
         continue;
       }
       const type = attribute(attrs, 't');
-      const raw = /<v>([\s\S]*?)<\/v>/.exec(body)?.[1];
+      const valueAt = body.indexOf('<v>');
+      const valueEnd = valueAt < 0 ? -1 : body.indexOf('</v>', valueAt + 3);
+      const raw = valueEnd < 0 ? undefined : body.slice(valueAt + 3, valueEnd);
       let value =
         type === 's'
           ? (shared[Number(raw)] ?? '')

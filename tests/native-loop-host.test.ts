@@ -275,6 +275,27 @@ describe('stop and restart', () => {
     expect(calls).toEqual([`delegate:${childId}`]);
   });
 
+  test('a delegate whose route cannot open is failed with the reason, never left running with nobody driving it', async () => {
+    await close();
+    const routes = stubRoutes('answer');
+    await open({
+      ...routes,
+      adapter: async (route, call, stop) => {
+        if (call.purpose === 'delegate') throw new Error('The route could not be opened.');
+        return routes.adapter(route, call, stop);
+      },
+    });
+    await vertexOn();
+    expect((await shareWithVertex()).status).toBe(200);
+    const started = await start({ delegate: { route: 'google-vertex' }, consent: true });
+    await approve(started.session.id);
+    await untilRun(started.runId, 'completed');
+    const child = await host().get(projectId, `${started.runId}-d1`);
+    expect(child.state).toBe('failed');
+    const { data } = await loop(started.runId);
+    expect(data.view.delegations[0].child?.state).toBe('failed');
+  });
+
   test('restart while waiting for approval: the reopened host resumes the loop from its record', async () => {
     const started = await start({ delegate: { route: 'native-fixture' } });
     const need = await openNeed(started.session.id);

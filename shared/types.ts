@@ -662,6 +662,8 @@ export interface ProjectState {
   supervision?: import('./supervision.js').SupervisionRecord[];
   /** P06 review comments on changes and file versions. Absent until the first one. */
   reviewComments?: import('./review-comments.js').ReviewComment[];
+  /** H10 guidance maintenance: the signed revision chain and declines. Absent until the first. */
+  guidance?: import('./guidance.js').GuidanceLedger;
   /** P07 Software Engineering pack: declared commands, their runs and worktrees. Absent until first used. */
   softwarePack?: import('./software-pack.js').SoftwarePackRecord;
 }

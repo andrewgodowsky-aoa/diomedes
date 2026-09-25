@@ -62,7 +62,7 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
   emit({ type: 'stream_event', session_id: session, event: { delta: { type: 'text_delta', text: 'Answer' } } });
   if (words.includes('[hang]')) { open = 'hang'; return; }
   if (words.includes('[stuck]')) { open = 'stuck'; return; }
-  if (words.includes('[slow]')) return setTimeout(() => result('Answer to ' + words), 300);
+  if (words.includes('[slow]')) return setTimeout(() => result('Answer to ' + words), 1500);
   result('Answer to ' + words);
 });`;
 
@@ -104,7 +104,9 @@ async function world() {
   });
   const store = path.join(root, 'runs');
   /** A Diomedes process: its own RunService and driver over the one durable run store. */
-  const boot = async (recover = false) => {
+  // A generous grace by default, so a slow machine never turns a graceful stop into a kill;
+  // the forced-stop test passes its own short one.
+  const boot = async (recover = false, stopGraceMs = 5000) => {
     const settings = { 'claude-code': true, 'claude-codeAccountRoute': base.accountRoute };
     const authorize = textDispatchAuthorizer(() => settings, [CLAUDE_SESSION_CAPABILITY.id]);
     const runs: RunService = new RunService(new FileRunStore(store), {
@@ -112,7 +114,7 @@ async function world() {
       authorizeEgress: async (runId, intent, _principal, phase) =>
         authorize(await runs.get(runId), intent, phase),
     });
-    const driver = new ClaudeSessionRuns(runs, { stopGraceMs: 400 });
+    const driver = new ClaudeSessionRuns(runs, { stopGraceMs });
     driver.setSharingPolicy(() => {});
     drivers.push(driver);
     // Exclusive host startup, as `host.ts` runs it for every saved native conversation.
@@ -143,7 +145,15 @@ async function world() {
       .trim()
       .split('\n')
       .map((line) => JSON.parse(line) as { pid: number; session?: string; resumed?: string; turn?: string });
-  return { boot, turn, launches, lines };
+    /** Waits until the scripted Claude Code has received these words as a turn: dispatched, not just admitted. */
+  const received = async (words: string) => {
+    for (let i = 0; i < 400; i++) {
+      if ((await lines().catch(() => [])).some((line) => line.turn === words)) return;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    throw new Error(`The fixture never received ${words}.`);
+  };
+  return { boot, turn, launches, lines, received };
 }
 
 const settle = <T>(promise: Promise<T>) =>
@@ -176,7 +186,7 @@ describe('H03 Claude Code live controls over a fixture stream-json process', () 
     const driver = await w.boot();
     await driver.request(w.turn('start', 'one', 'first'));
     const running = driver.request(w.turn('follow-up', 'two', 'long [slow]'));
-    await tick(50);
+    await w.received('long [slow]');
     // Without `queued` a second message is still refused as busy: nothing waits by accident.
     await expect(driver.request(w.turn('follow-up', 'three', 'refused'))).rejects.toMatchObject({
       code: 'SESSION_BUSY',
@@ -209,7 +219,7 @@ describe('H03 Claude Code live controls over a fixture stream-json process', () 
     const driver = await w.boot();
     await driver.request(w.turn('start', 'one', 'first'));
     const running = driver.request(w.turn('follow-up', 'two', 'long [slow]'));
-    await tick(50);
+    await w.received('long [slow]');
     const queued = driver.request(w.turn('follow-up', 'three', 'queued turn', { queued: true }));
     const projected: { requestId: string; prompt: string; text: string | undefined }[] = [];
     const ack = await driver.steer('p', 'claude-run', 'four', 'steered message', {
@@ -221,7 +231,7 @@ describe('H03 Claude Code live controls over a fixture stream-json process', () 
     expect((await running).response?.text).toBe('Answer to long [slow]');
     // The queued turn's caller gets its own answer, never the steered message's.
     expect((await queued).response?.text).toBe('Answer to queued turn');
-    for (let i = 0; i < 40 && projected.length === 0; i += 1) await tick(50);
+    for (let i = 0; i < 200 && projected.length === 0; i += 1) await tick(50);
     // H08's projection fired once, for the steered message only, before it read delivered.
     expect(projected).toEqual([
       { requestId: 'four', prompt: 'steered message', text: 'Answer to steered message' },
@@ -245,7 +255,7 @@ describe('H03 Claude Code live controls over a fixture stream-json process', () 
     const driver = await w.boot();
     await driver.request(w.turn('start', 'one', 'first'));
     const running = settle(driver.request(w.turn('follow-up', 'two', 'wait [hang]')));
-    await tick();
+    await w.received('wait [hang]');
     const withdrawn = settle(driver.request(w.turn('follow-up', 'three', 'withdraw me', { queued: true })));
     const dropped = settle(driver.request(w.turn('follow-up', 'four', 'drop me', { queued: true })));
     expect(await driver.interruptCommand('p', 'claude-run', 'three')).toEqual({ state: 'requested', stop: 'withdrawn' });
@@ -262,7 +272,7 @@ describe('H03 Claude Code live controls over a fixture stream-json process', () 
     const driver = await w.boot();
     await driver.request(w.turn('start', 'one', 'first'));
     const running = driver.request(w.turn('follow-up', 'two', 'wait [hang]'));
-    await tick();
+    await w.received('wait [hang]');
     expect(await driver.interruptCommand('p', 'claude-run', 'two')).toEqual({ state: 'requested', stop: 'interrupted' });
     expect(await running).toMatchObject({ interrupted: true, stop: 'interrupted' });
     expect(await driver.turnResult('p', 'claude-run', 'two')).toEqual({ answered: false, interrupted: true });
@@ -278,7 +288,7 @@ describe('H03 Claude Code live controls over a fixture stream-json process', () 
     const caller = new AbortController();
     const base = w.turn('follow-up', 'two', 'wait [hang]');
     const running = driver.request({ ...base, input: { ...base.input, signal: caller.signal } });
-    await tick();
+    await w.received('wait [hang]');
     caller.abort();
     expect(await running).toMatchObject({ interrupted: true, stop: 'interrupted' });
     // A Stop pressed after the caller left joins the same stop and asks for nothing more.
@@ -290,10 +300,10 @@ describe('H03 Claude Code live controls over a fixture stream-json process', () 
 
   it('a Stop the turn ignores ends the process after the grace, records why, and never resumes it', async () => {
     const w = await world();
-    const driver = await w.boot();
+    const driver = await w.boot(false, 400);
     await driver.request(w.turn('start', 'one', 'first'));
     const running = settle(driver.request(w.turn('follow-up', 'two', 'wait [stuck]')));
-    await tick();
+    await w.received('wait [stuck]');
     const started = Date.now();
     expect(await driver.interruptCommand('p', 'claude-run', 'two')).toEqual({ state: 'requested', stop: 'killed' });
     expect(Date.now() - started).toBeGreaterThanOrEqual(350);
@@ -334,7 +344,7 @@ describe('H03 Claude Code live controls over a fixture stream-json process', () 
     const first = await w.boot();
     await first.request(w.turn('start', 'one', 'first'));
     void settle(first.request(w.turn('follow-up', 'two', 'wait [stuck]')));
-    await tick();
+    await w.received('wait [stuck]');
     expect((await first.status('p', 'claude-run')).busy).toBe(true);
     // The old process's driver is gone without finishing: a crash, as the record sees it.
     const second = await w.boot(true);

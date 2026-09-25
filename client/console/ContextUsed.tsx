@@ -2,6 +2,7 @@ import { useState } from 'react';
 import {
   CONTEXT_SECTION_LABELS,
   formatTokens,
+  summarisedCount,
   type ContextAccount,
 } from '../../shared/context-accounting';
 
@@ -29,6 +30,9 @@ export function ContextUsed({ account }: { account: ContextAccount }) {
   const history = account.history;
   const compaction = account.compaction;
   const prefix = account.stablePrefix;
+  // The summary lists the first omitted messages it has room for, in order; the rest are only counted.
+  const ownOmitted = (history?.omitted ?? []).filter((item) => !item.carried).map((item) => item.index);
+  const listed = compaction ? summarisedCount(compaction) : 0;
 
   return (
     <div className="context-used">
@@ -43,7 +47,7 @@ export function ContextUsed({ account }: { account: ContextAccount }) {
           ~{formatTokens(account.estimatedTokens)} estimated
           {reported !== null ? ` · ${formatTokens(reported)} reported` : ''}
           {provider && provider.cacheReadTokens > 0 ? ` · ${formatTokens(provider.cacheReadTokens)} cached` : ''}
-          {compaction ? ` · ${compaction.turns.length} summarised` : ''}
+          {compaction ? ` · ${summarisedCount(compaction)} summarised` : ''}
         </span>
       </button>
       {open && (
@@ -105,7 +109,8 @@ export function ContextUsed({ account }: { account: ContextAccount }) {
               <>
                 <dt>Left out</dt>
                 <dd>
-                  {plural(history.omitted.filter((item) => !item.carried).map((item) => item.index), 'summarised')}
+                  {plural(ownOmitted.slice(0, listed), 'summarised')}
+                  {plural(ownOmitted.slice(listed), 'left out without a line in the summary')}
                   {plural(history.omitted.filter((item) => item.carried).map((item) => item.index), 'from before the update, not summarised')}
                 </dd>
               </>

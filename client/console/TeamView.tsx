@@ -13,6 +13,7 @@ import type { TeamProps } from './types';
 import type { NewTeamMember, TeamRoutesView } from '../../shared/team-routes';
 import { WORK_STYLE_LABELS, WORK_STYLES } from '../../shared/work-style';
 import './team.css';
+import { LeadWorkers } from './LeadWorkers';
 
 const KIND_WORDS = new Set([
   'read',
@@ -421,6 +422,7 @@ export function TeamView({
           ))}
         </div>
       )}
+      <LeadWorkers projectId={project.id} revision={state} />
       <div className="teamcompose">
         <form
           className="composer"

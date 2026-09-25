@@ -387,6 +387,41 @@ describe('P06 review comments', () => {
   });
 });
 
+describe('independent review (review-e): comments stay on the line they were written about', () => {
+  let queued: QueueFollowUpRequest[];
+  const comments = () =>
+    new ReviewComments(store, async (_projectId, request) => {
+      queued.push(request);
+      return { id: `F${queued.length}`, ...request } as unknown as FollowUpCommand;
+    });
+  beforeEach(() => {
+    queued = [];
+  });
+
+  test('a change whose run is still writing it takes no comments yet, as partial keep refuses it', async () => {
+    const change = await seedRun('working');
+    const service = comments();
+    await expect(
+      store.locked(() =>
+        service.add(id, { target: { kind: 'change', changeId: change.id }, side: 'new', line: 3, text: 'Soup should be $9.' }),
+      ),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(store.state(id).reviewComments ?? []).toEqual([]);
+  });
+
+  test('a comment chosen twice is sent once', async () => {
+    const change = await seedRun();
+    const service = comments();
+    const first = await store.locked(() =>
+      service.add(id, { target: { kind: 'change', changeId: change.id }, side: 'new', line: 3, text: 'Soup should be $9.' }),
+    );
+    const body = { protocolVersion: 1, commandId: 'cmd-dup', taskId: 'T1', route: 'codex' };
+    await store.locked(() => service.revise(id, { ...body, commentIds: [first.id, first.id] }));
+    expect(queued).toHaveLength(1);
+    expect(queued[0]!.text.split('Soup should be $9.').length - 1).toBe(1);
+  });
+});
+
 describe('P06 diffs between History versions', () => {
   test('two recorded versions compare by identity; an unrecorded one is refused', async () => {
     await seedRun();

@@ -58,6 +58,7 @@ import { ApiError, absent, relativeName, safeAbsolute } from './paths.js';
 import { mountPackRoutes } from './pack-routes.js';
 import { SoftwarePackService } from './software-pack/service.js';
 import { mountSoftwarePackRoutes } from './software-pack/routes.js';
+import { playbookAccess } from './harness/capabilities/pack-playbooks.js';
 import {
   defaults,
   findTasks,
@@ -146,6 +147,7 @@ import {
 import { SupervisionService } from './supervision/service.js';
 import { keepPartially } from './change-review/partial-keep.js';
 import { documentDiff, ReviewComments } from './review-comments.js';
+import { mountGuidanceRoutes } from './guidance.js';
 import { ReadyScheduler } from './ready-scheduler.js';
 import { DesktopConnections } from './connections/desktop.js';
 import { toastConnector } from './connections/fixture.js';
@@ -1173,7 +1175,8 @@ export async function createApp(options: AppOptions) {
   mountVerificationRoutes(app, store, verification);
   // H13: the Diomedes work loop's finish gate runs the task's declared checks through H17's verifier.
   harness.loop.attachVerification(verification);
-  mountNativeLoopRoutes(app, store, harness, verification);
+  // H14: team roles resolve their H09 profiles and Agents at admission; H08 retries a loop.
+  const loopRoutes = mountNativeLoopRoutes(app, store, harness, verification, { profiles: agentProfiles, agents });
   mountWorkspaceRoutes(app, store, workspaces, configuration, automations);
   mountAutomationRoutes(app, store, automations);
   mountThemeRoutes(app, store, themes, customization);
@@ -1980,7 +1983,9 @@ export async function createApp(options: AppOptions) {
    * Capability packs: per-project activation and the installation-wide
    * lifecycle (`server/pack-routes.ts`). Activation is not authorization.
    */
-  mountPackRoutes(app, { store, route, body });
+  const packLifecycle = mountPackRoutes(app, { store, route, body });
+  // H10: guidance proposals from evidence, signed instruction revisions and rollback.
+  mountGuidanceRoutes(app, { store, route, body });
   mountSoftwarePackRoutes(app, { service: softwarePack, route, body });
   /**
    * Read one discovered instruction file, as Diomedes read it.
@@ -2367,6 +2372,7 @@ export async function createApp(options: AppOptions) {
           projectId,
           taskId,
           state.conversations.find((c) => c.id === threadId),
+          command?.request.agentId ?? null,
         )
           ? undefined
           : nativeChoice(
@@ -2451,14 +2457,19 @@ export async function createApp(options: AppOptions) {
       );
     },
     contractFor: (projectId, workRoute, session) =>
-      workRoute === 'sample' && controlFixtureProjects.has(projectId)
+      session?.engine.name === NATIVE_LOOP_ENGINE
+        ? loopRoutes.contract
+        : workRoute === 'sample' && controlFixtureProjects.has(projectId)
         ? CONTROL_FIXTURE_CONTRACT
         : workRoute === 'codex'
           ? codexControls.contract(session)
           : defaultWorkContract(workRoute),
     // H12: a harness run's uncertain tool effects block Retry and Resume too.
     harnessEffects: (projectId, session) => harness.bridge.uncertainEffects(projectId, session.id),
+    // H14: a loop on the fixture route is still available to retry; every other route as before.
+    routeAvailable: (route) => isRoute(route) || route === 'native-fixture',
   });
+  durableControls.registerDriver(loopRoutes.contract.routeId, loopRoutes.retryDriver);
   durableControls.registerDriver(CONTROL_FIXTURE_ROUTE, controlFixtureDriver(work));
   // H02: the Codex route's steer, resume and fork, offered only where the Codex that
   // served a run advertised them (`codexControls.contract`).
@@ -4267,6 +4278,10 @@ export async function createApp(options: AppOptions) {
             ...(carrying ? { carriedFrom: carrying } : {}),
             accountRoute,
             ...readScope,
+            // P04: on a model-API route, the pack playbooks this message may load, index only.
+            ...(modelRoute
+              ? await playbookAccess(packLifecycle.contributions, state, command.commandId, command.mode)
+              : {}),
             signal: options.signal,
             onPreview: (frame: TransientPreview) =>
               progress('delta', { ...frame, text: gate(frame.text) }),
@@ -4701,7 +4716,7 @@ export async function createApp(options: AppOptions) {
       // turn verified once the runtime reports its engine.
       const turnId = identifier('U');
       // A profile that decides this run supplies its own exact model (H09).
-      const resolvedChoice: RunChoice = agentProfiles.applies(projectId, task.id, conversation)
+      const resolvedChoice: RunChoice = !team && agentProfiles.applies(projectId, task.id, conversation)
         ? {}
         : nativeChoice(engine, projectId, conversation, { mode: runMode, text });
       // A member whose model Nectovia chose runs it as an automatic selection, so the run's
@@ -4911,6 +4926,18 @@ export async function createApp(options: AppOptions) {
       const prepared = await store.locked(async () => {
         const state = store.state(projectId);
         requireCloudSharing(state, serviceRoute, sources);
+        // P04: the playbook's body loads for this request only, through its own pin, checked
+        // against the digest this project registered when it turned the pack on, and recorded
+        // against the turn. First, so a refusal leaves nothing else of this send behind.
+        const youTurnId = identifier('U');
+        const playbook =
+          skillId === undefined
+            ? undefined
+            : await packLifecycle.contributions.load(
+                await packLifecycle.contributions.admit(state, youTurnId),
+                { packId: 'diomedes.small-business', kind: 'workflow', id: skillId },
+                { reason: 'chosen', state },
+              );
         let conversation =
           threadId !== undefined
             ? state.conversations.find((c) => c.id === threadId)!
@@ -4971,9 +4998,10 @@ export async function createApp(options: AppOptions) {
                 skillId,
                 mode,
                 budgetBytes: instructionSectionBudget(documentBytes),
+                loaded: playbook,
               });
         const youTurn: Turn = {
-          id: identifier('U'),
+          id: youTurnId,
           role: 'you',
           mode,
           text,
