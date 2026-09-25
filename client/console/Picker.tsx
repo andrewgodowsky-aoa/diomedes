@@ -356,7 +356,7 @@ export function Picker({
                     aria-checked={route === 'aws-bedrock'}
                     onClick={() => choose(null, 'aws-bedrock')}
                   >
-                    <span>GPT-5.6 Luna</span>
+                    <span>GPT-6 Luna</span>
                     <span className="id">{aws.connection.model}</span>
                     <small>Within the spend limit set in Settings</small>
                   </button>

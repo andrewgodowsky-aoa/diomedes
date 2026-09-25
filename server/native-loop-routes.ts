@@ -19,7 +19,7 @@ import { createHash } from 'node:crypto';
 import type { Express, NextFunction, Request, Response } from 'express';
 import { z } from 'zod';
 import type { Json } from '../shared/harness.js';
-import { isModelApiRoute, MODEL_API_NAMES, MODEL_API_ROUTES } from '../shared/model-api.js';
+import { isModelApiRoute, MODEL_API_NAMES, MODEL_API_PROVIDERS } from '../shared/model-api.js';
 import {
   LOOP_LIMITS,
   NATIVE_LOOP_CAPABILITY,
@@ -434,7 +434,8 @@ export function mountNativeLoopRoutes(
           reason: null,
         },
       ];
-      for (const route of MODEL_API_ROUTES) {
+      // Loops run on the owner's provider routes; the Nectovia route answers conversations.
+      for (const route of MODEL_API_PROVIDERS) {
         const offer = { route, label: MODEL_API_NAMES[route], sends: true };
         if (services()[route] !== true) {
           routes.push({ ...offer, admitted: false, model: null, reason: 'Turn the selected route on in Settings before using it.' });

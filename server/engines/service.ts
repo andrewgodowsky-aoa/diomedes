@@ -66,6 +66,7 @@ import {
   ModelApiError,
   WORK_LIMITS,
   awsAccountRoute,
+  AwsConnectionRetired,
   respondOnce,
   type AwsConnection,
   type AwsConnections,
@@ -2576,7 +2577,13 @@ async function modelApiRoute(api: ModelApiServices, route: ModelApiRoute, work: 
     new EngineError('RUNTIME_UNAVAILABLE', 'This model-API route is not available in this process.', true);
   switch (route) {
     case AWS_BEDROCK_ROUTE: {
-      const connection: AwsConnection | null = await api.connections.read();
+      // A connection saved for a retired model is refused with the reconnect sentence; nothing is
+      // sent on it and nothing moves it to the current model.
+      const connection: AwsConnection | null = await api.connections.read().catch((error: unknown) => {
+        if (error instanceof AwsConnectionRetired)
+          throw new EngineError('ROUTE_REFUSED', `${error.message} Nothing was sent.`, true);
+        throw error;
+      });
       if (!connection) return { connected: false, route, names };
       return {
         connected: true,
