@@ -71,6 +71,8 @@ export interface HistoryTurnRef {
 export interface HistoryIncluded extends HistoryTurnRef {
   /** Why it is in: among the newest, the conversation's opening message, or relevant to this one. */
   reason: 'recent' | 'pinned' | 'relevant' | 'fits';
+  /** Only its end is in the text: the history's character cut reached into it (`cutChars`). */
+  truncated?: true;
   /** The lexical relevance score it was ranked by, when it was ranked. */
   score?: number;
 }
@@ -109,7 +111,12 @@ export interface CompactionRecord {
   turns: (HistoryTurnRef & { promptSha: string | null; answerSha: string | null })[];
   text: string;
   bytes: number;
+  /** How many of `turns` have a line in `text`; the rest are only counted there. Absent on records before 2026-09-24 review C. */
+  listed?: number;
 }
+
+/** How many messages a compaction's text actually has a line for (older records listed them all). */
+export const summarisedCount = (compaction: CompactionRecord) => compaction.listed ?? compaction.turns.length;
 
 /** What the provider reported across one turn's model calls, summed. */
 export interface ProviderContextUsage {

@@ -41,6 +41,7 @@ import { NativeAgent, type ModelAdapter } from './native-agent.js';
 import { digest, HarnessError } from './policy.js';
 import { RunService, Suspended, type StepContext, type StepDefinition } from './run-service.js';
 import { ToolRegistry } from './tools.js';
+import { PLAYBOOK_TOOL, registerPlaybookTool } from './capabilities/pack-playbooks.js';
 import { TEAM_TOOL_NAMES } from '../../shared/team-routes.js';
 import { contextMessage } from '../engines/contract.js';
 import { carriedRun } from './conversation-history.js';
@@ -805,6 +806,9 @@ export class ModelSessionRuns {
         const offered = sourceTools(input.documents);
         const reads = input.readScope ? readScopeTools(input.readScope, { stop, deps: request.readTools }) : null;
         for (const tool of reads?.tools ?? []) offered.register(tool);
+        // P04: the pack playbooks this message was admitted with, as an index; bodies load on demand.
+        if (input.playbooks) registerPlaybookTool(offered, input.playbooks);
+        const extraTools = [...(reads?.names ?? []), ...(input.playbooks ? [PLAYBOOK_TOOL] : [])];
         const registry = narrated(offered, (phase, summary, tool) => {
           if (!preview) return;
           const current = announced as { callId: string; tool: string } | null;
@@ -821,8 +825,8 @@ export class ModelSessionRuns {
             projectId: input.projectId,
             tenantId: principal.tenantId,
             principal,
-            capability: reads
-              ? { ...MODEL_TURN_CAPABILITY, tools: [...SOURCE_TOOLS, ...reads.names] }
+            capability: extraTools.length
+              ? { ...MODEL_TURN_CAPABILITY, tools: [...SOURCE_TOOLS, ...extraTools] }
               : MODEL_TURN_CAPABILITY,
             tools: registry,
             input: {
@@ -841,6 +845,8 @@ export class ModelSessionRuns {
               sources: input.documents.map((doc) => ({ path: doc.path, sha256: sourceSha(doc.text) })),
               // What this turn could read, as evidence. Never a path or a connector's command.
               ...(input.readScope ? { read: readScopeRecord(input.readScope) } : {}),
+              // Which playbooks were offered as an index (P04). Loads are recorded on the Project.
+              ...(input.playbooks ? { playbooks: [...input.playbooks.ids] } : {}),
               // Which earlier messages went, which were summarised and the summary itself, when the
               // history passed its budget (H18). The summarised messages stay in the conversation run.
               ...(history.selection

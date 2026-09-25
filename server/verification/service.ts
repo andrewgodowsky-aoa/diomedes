@@ -22,7 +22,6 @@
  */
 import { randomUUID } from 'node:crypto';
 import {
-  VERIFICATION_MAX_BOUND_FILES,
   VERIFICATION_PROTOCOL_VERSION,
   acceptanceDeclarationInputSchema,
   canonicalChecks,
@@ -257,7 +256,8 @@ export class VerificationService {
       const bound = new Map<string, string | null>();
       for (const result of prepared.results)
         for (const file of result.evidence)
-          if (!bound.has(file.path) && bound.size < VERIFICATION_MAX_BOUND_FILES) bound.set(file.path, file.sha);
+          // Every judged file is bound: an unbound one could change unseen under a Verified result.
+          if (!bound.has(file.path)) bound.set(file.path, file.sha);
       const record: VerificationRecord = {
         protocolVersion: VERIFICATION_PROTOCOL_VERSION,
         id: `V${randomUUID().replaceAll('-', '').slice(0, 12)}`,

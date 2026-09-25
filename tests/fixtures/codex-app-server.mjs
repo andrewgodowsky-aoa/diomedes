@@ -189,6 +189,13 @@ process.stdin.on('data', (chunk) => {
     if (typeof message.method !== 'string' || message.id === undefined) continue;
     const params = message.params ?? {};
     log({ method: message.method, params });
+    const probe = Object.keys(params).length === 0;
+    const failure = (probe ? control().probeErrors : control().errors)?.[message.method];
+    if (failure === 'exit') process.exit(1);
+    if (failure) {
+      refuse(message.id, failure.message, failure.code);
+      continue;
+    }
     const capability = CAPABILITY_OF[message.method];
     const handler = handlers[message.method];
     if (!handler || (capability && !has(capability))) {

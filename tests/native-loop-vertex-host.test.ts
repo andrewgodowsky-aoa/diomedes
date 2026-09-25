@@ -48,9 +48,15 @@ const declared = (body: Item) =>
     .map((tool) => tool.name)
     .sort();
 /** Plan, then try a file the project does not share, then read the menu, propose the report, finish. */
+let delegating = false;
 const script = (body: Item): Item[] => {
   if (!declared(body).length) return frames([{ text: '1. Read the menu.\n2. Write the report.\n3. Summarise.' }]);
   const answered = (JSON.stringify(body.contents).match(/functionResponse/g) ?? []).length;
+  // Or: hand the unshared file to a local delegate, then finish.
+  if (delegating)
+    return answered === 0
+      ? frames([{ functionCall: { name: 'delegate', args: { task: 'Read secret.md and say in one line what it lists.' } }, thoughtSignature: 'sig-d' }])
+      : frames([{ text: 'Done.' }]);
   if (answered === 0) return frames([{ functionCall: { name: 'read_project_file', args: { path: 'secret.md' } }, thoughtSignature: 'sig-1' }]);
   if (answered === 1) return frames([{ functionCall: { name: 'read_project_file', args: { path: 'menu.md' } }, thoughtSignature: 'sig-2' }]);
   if (answered === 2)
@@ -94,6 +100,7 @@ beforeEach(async () => {
   );
   seen = [];
   mints = 0;
+  delegating = false;
   service = new EngineService(path.join(root, 'engines'), { discover: async () => [] });
   const dataDir = path.join(root, 'data');
   app = await createApp({
@@ -214,5 +221,25 @@ describe('a Diomedes loop on Google Vertex AI through the real host', () => {
     expect(holds.map((hold) => hold.state)).toEqual(Array(5).fill('settled'));
     expect(mints).toBe(2);
     expect(view.connection!.accountRoute).toBeTruthy();
+  });
+
+  test('a local delegate under a Google parent reads only what the project shares with Google, so nothing unshared reaches it', async () => {
+    delegating = true;
+    await api<VertexConnectionView>('/ai/model-api/google-vertex', 'PUT', { projectId: PROJECT, location: 'global', model: 'gemini-3.8-flash', consent: true });
+    await api('/ai/model-api/google-vertex/spend-limit', 'PUT', { capUsd: 1, consent: true });
+    const started = await api<{ runId: string; session: Session }>(`/projects/${project.id}/loop/start`, 'POST', {
+      protocolVersion: 1,
+      commandId: 'vertex-delegate-1',
+      taskId,
+      goal: 'Summarise the files.',
+      route: 'google-vertex',
+      consent: true,
+      sources: ['menu.md'],
+      delegate: { route: 'native-fixture' },
+    });
+    await vi.waitFor(async () => expect((await host().get(project.id, started.runId)).state).toBe('completed'), { timeout: 15_000 });
+    const sent = JSON.stringify(seen.map((request) => request.body));
+    expect(sent).toContain('secret.md could not be read');
+    expect(sent).not.toContain('Payroll');
   });
 });

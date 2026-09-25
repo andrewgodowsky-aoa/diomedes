@@ -50,7 +50,7 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
   emit({ type: 'system', subtype: 'init', session_id: session, model: 'claude-sonnet-4-6', tools: [], mcp_servers: [] });
   if (words.includes('[hang]')) { open = 'hang'; return; }
   if (words.includes('[stuck]')) { open = 'stuck'; return; }
-  if (words.includes('[slow]')) return setTimeout(() => result('Answer to ' + words), 400);
+  if (words.includes('[slow]')) return setTimeout(() => result('Answer to ' + words), 2000);
   result('Answer to ' + words);
 });`;
 
@@ -111,7 +111,7 @@ const turns = async () =>
     .split('\n')
     .map((line) => JSON.parse(line) as { pid: number; turn: string; resumed: string });
 const until = async (check: () => Promise<boolean>) => {
-  for (let i = 0; i < 100; i++) {
+  for (let i = 0; i < 400; i++) {
     if (await check()) return;
     await new Promise((resolve) => setTimeout(resolve, 30));
   }
@@ -236,7 +236,8 @@ describe('H03: a Console thread on Claude Code', () => {
   test('a message sent while an answer runs is queued, shown as queued, and answered next in the same process', async () => {
     await send('m-one', 'Good morning');
     const running = send('m-two', 'Plan the week [slow]');
-    await until(async () => (await view()).busy);
+    // Queued behind a turn Claude Code has received, so a slow machine cannot finish it first.
+    await until(async () => (await turns().catch(() => [])).some((line) => line.turn === 'Plan the week [slow]'));
     // Without the flag a second message is refused, as before.
     const refused = await request(messages(), 'POST', message('m-three', 'Not queued'));
     expect(refused.status).toBe(409);
