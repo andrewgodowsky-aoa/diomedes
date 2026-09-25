@@ -287,3 +287,13 @@ describe('bounded, durable, and removed with its tree', () => {
     expect(await sandboxes.list(projectId)).toEqual([]);
   });
 });
+
+describe('a sandbox starts no process of its own', () => {
+  test('child_process appears in no sandbox module; spawning goes through containedSpawn', async () => {
+    const dir = path.join(process.cwd(), 'server', 'sandbox');
+    for (const name of (await fs.readdir(dir)).filter((item) => item.endsWith('.ts'))) {
+      const text = await fs.readFile(path.join(dir, name), 'utf8');
+      expect(/from ['"]node:child_process['"]|require\(['"](node:)?child_process['"]\)/.test(text), name).toBe(false);
+    }
+  });
+});
