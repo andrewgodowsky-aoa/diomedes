@@ -615,6 +615,33 @@ Default: each stays as built.
 
 ## Resolved
 
+### R14. Task priority: order, due dates, labels and who edits (raised by OS-DISC-01 section 5)
+
+**Settled 2026-09-25 by Andrew (OS01 prompt rev 2, `docs/product/PROMPT_OS01-task-priority-2026-09-25.md`;
+ADR rev 5 D7).** The discovery report asked how priority should order work. Answers:
+
+- **Fairness.** Priority applies inside each project's fair turn in the ready queue. Least-recently-served
+  project order, consent holds and limits are unchanged, and there is no cross-project override.
+  Every other actionable work list sorts by the one comparator:
+  `priority → due (dated first) → readyAt → scoped id`. Plan steps, History, conversation turns and
+  messages keep their own order.
+- **Due date.** A plain calendar date, `YYYY-MM-DD`, stored as entered and compared as a string.
+  There is no organization timezone on main. OS01 computes no overdue or today; a later lane that
+  shows them picks the zone.
+- **Undated tasks** sort after dated ones at the same priority.
+- **Labels** are 1 Do first, 2 Today, 3 This week, 4 When you can, 5 Backlog. They are words only
+  and never auto-decay. Packs and organizations may override them later.
+- **Planning revision.** Only priority and due edits bump it, so a state move never makes a
+  person's priority edit fail.
+- **Attribution.** `priorityMoves.by` records `'you'` for the Console control and for a
+  conversational edit the person asked for (its receipt names the turn). It records `'diomedes'`
+  for team tools or anything Diomedes initiates.
+- **The control.** Choosing a level saves at once, with "Saving…" and then the result or a
+  conflict message, and no confirmation step. The due date is edited in the same control.
+- **Permission.** None until OS04 adds `task:prioritize`; the local Console user may edit.
+
+Not built yet. OS01 is package node 23c/24c, Linear DIO-110.
+
 ### R13. How a helper Diomedes dispatches works (team mode)
 
 **Settled 2026-09-24 by Andrew (`docs/reference/DECISIONS_2026-09-24.md`, "Team mode, in
