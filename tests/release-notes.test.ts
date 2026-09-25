@@ -68,7 +68,7 @@ describe('the committed releases.json', () => {
     expect(first.platforms).toEqual(['windows', 'macos']);
     expect(publishedRelease(COMMITTED, '0.2.0')).toEqual(first);
     expect(publishedReleases(COMMITTED).some((r) => r.channel !== 'stable')).toBe(false);
-    expect(first.sections.map((s) => s.title)).toEqual(['New', 'Fixed', 'Known limits']);
+    expect(first.sections.map((s) => s.title)).toEqual(['New', 'Fixed', 'Updating', 'Known limits']);
   });
 
   it('names no internal work-item codes in anything a person reads', () => {

@@ -113,6 +113,13 @@ describe('the frozen 0.1.11 updater', () => {
   });
 });
 
+/** A fresh data folder under test-results, which a clean checkout does not have yet. */
+async function updaterDataDir() {
+  const root = path.join(process.cwd(), 'test-results');
+  await fs.mkdir(root, { recursive: true });
+  return fs.mkdtemp(path.join(root, 'updater-compat-'));
+}
+
 describe('a macOS updater', () => {
   it('picks the disk image, with its own digest', () => {
     const parsed = selectReleaseAsset(latestRelease(), 'darwin');
@@ -135,7 +142,7 @@ describe('a macOS updater', () => {
   });
 
   it('checks on macOS, and sends a person to the release page instead of downloading', async () => {
-    const dataDir = await fs.mkdtemp(path.join(process.cwd(), 'test-results', 'updater-compat-'));
+    const dataDir = await updaterDataDir();
     let downloads = 0;
     const service = new AppUpdateService({
       currentVersion: '0.1.11',
@@ -162,7 +169,7 @@ describe('a macOS updater', () => {
   });
 
   it('leaves a Windows copy downloading and verifying the installer by its digest', async () => {
-    const dataDir = await fs.mkdtemp(path.join(process.cwd(), 'test-results', 'updater-compat-'));
+    const dataDir = await updaterDataDir();
     const release = latestRelease();
     const service = new AppUpdateService({
       currentVersion: '0.1.11',
