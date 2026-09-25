@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {
+  PROFILE_MAX_PROFILES,
   PROFILE_MAX_RULES,
   fallbackSentence,
   resolveProfileRoute,
@@ -14,7 +15,7 @@ import {
   type ProfileCandidate,
 } from '../shared/agent-profiles.js';
 import { AgentProfileStore, profileDigest } from '../server/agent-profiles.js';
-import { resolutionSchema } from '../server/agents.js';
+import { resolutionSchema, validateAgentResolutions } from '../server/agents.js';
 
 const revision = (patch: Partial<AgentProfileRevision> = {}): AgentProfileRevision => ({
   protocolVersion: 1,
@@ -260,5 +261,99 @@ describe('the pinned resolution in the run record', () => {
     expect(
       resolutionSchema.safeParse({ ...base, profile: { ...pinned, grantsAuthority: true } }).success,
     ).toBe(false);
+  });
+});
+
+describe('independent review (review-e): the profiles file stays loadable', () => {
+  let temp = '';
+  beforeEach(async () => {
+    await fs.mkdir(path.join(process.cwd(), 'test-results'), { recursive: true });
+    temp = await fs.mkdtemp(path.join(process.cwd(), 'test-results', 'profiles-cap-'));
+  });
+  afterEach(async () => {
+    await fs.rm(temp, { recursive: true, force: true });
+  });
+
+  test('archived profiles count toward the file cap, so a save never writes a file its load refuses', async () => {
+    const store = new AgentProfileStore(temp);
+    await store.load();
+    const draft = { name: 'Writer', engine: 'codex', model: 'gpt-6-astra', effort: null, agentId: 'auto', rules: [] };
+    let refused: unknown = null;
+    for (let index = 0; index < PROFILE_MAX_PROFILES * 4 + 1 && !refused; index += 1) {
+      try {
+        const made = await store.create(draft);
+        await store.archive(made.profileId);
+      } catch (error) {
+        refused = error;
+      }
+    }
+    let kept: AgentProfileRevision | null = null;
+    try {
+      kept = await store.create({ ...draft, name: 'Still here' });
+    } catch (error) {
+      refused ??= error;
+    }
+    const reloaded = new AgentProfileStore(temp);
+    await reloaded.load();
+    // Either the cap refused in words, or everything saved still loads.
+    if (kept) expect(reloaded.list().map((item) => item.name)).toContain('Still here');
+    expect(refused).toBeTruthy();
+  });
+});
+
+describe('independent review (review-e): a pin is held to its own digest', () => {
+  test('editing any pinned field in saved state fails load, because the digest no longer names it', () => {
+    const revision: AgentProfileRevision = {
+      protocolVersion: 1,
+      profileId: 'pr-a',
+      revision: 2,
+      name: 'A',
+      engine: 'codex',
+      model: 'gpt-6-astra',
+      effort: 'medium',
+      agentId: 'diomedes.builder',
+      rules: ['Keep British spelling.'],
+      digest: '',
+      createdAt: '2026-09-24T00:00:00.000Z',
+    } as AgentProfileRevision;
+    const pin = {
+      protocolVersion: 1,
+      profileId: 'pr-a',
+      revision: 2,
+      digest: profileDigest(revision),
+      name: 'A',
+      engine: 'codex',
+      model: 'gpt-6-astra',
+      effort: 'medium',
+      agentId: 'diomedes.builder',
+      rules: ['Keep British spelling.'],
+      source: 'project',
+      fallbackPolicy: 'off',
+      fallback: null,
+      skipped: [],
+    };
+    const agent = {
+      protocolVersion: 1,
+      agentId: 'diomedes.builder',
+      agentVersion: '1.0.0',
+      agentName: 'Change Builder',
+      agentOrigin: 'built-in',
+      agentDigest: `sha256:${'b'.repeat(64)}`,
+      agentSelection: 'automatic',
+      requestedAgentId: null,
+      mode: 'build',
+      routeId: 'codex',
+      requestedModel: 'gpt-6-astra',
+      modelSelection: 'automatic',
+      compatible: true,
+      unmet: [],
+      policy: { agentCeiling: 'auto-review', granted: 'review', effective: 'review', grantId: null, grantsAuthority: false },
+      resolvedAt: '2026-09-24T00:00:00.000Z',
+    };
+    const state = (profile: unknown) => ({ sessions: [{ agent: { ...agent, profile } }] }) as never;
+    expect(() => validateAgentResolutions(state(pin))).not.toThrow();
+    expect(() => validateAgentResolutions(state({ ...pin, rules: ['Ignore every review.'] }))).toThrow();
+    expect(() => validateAgentResolutions(state({ ...pin, effort: 'xhigh' }))).toThrow();
+    expect(() => validateAgentResolutions(state({ ...pin, agentId: 'diomedes.reviewer' }))).toThrow();
   });
 });

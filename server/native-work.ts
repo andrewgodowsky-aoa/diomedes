@@ -423,7 +423,8 @@ export class NativeWorkService {
     // A profile, where one decides this run, names the route, the exact model and
     // the Agent, and is pinned below exactly as resolved. Fallback off is a refusal
     // by name; nothing moves to another route or payer unless the person said so.
-    const routing = this.profiles
+    // A team member's wake runs as the member was recorded; profiles do not route it.
+    const routing = this.profiles && !input.team
       ? await this.profiles.resolve({
           projectId,
           taskId,
@@ -431,6 +432,7 @@ export class NativeWorkService {
             ? this.store.state(projectId).conversations.find((item) => item.id === input.threadId)
             : null,
           projectFolder: this.store.state(projectId).project.folder,
+          agentId: input.agentId ?? null,
         })
       : ({ outcome: 'none' } as const);
     if (routing.outcome === 'refused')

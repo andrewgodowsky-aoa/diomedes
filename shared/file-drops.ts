@@ -149,10 +149,43 @@ export function sniffBytes(bytes: Uint8Array): SniffedKind | null {
   return 'text';
 }
 
-/** Width and height from a GIF's logical screen descriptor. */
+/**
+ * The canvas a GIF needs: its logical screen, grown to the furthest edge of any
+ * frame. Browsers enlarge the canvas to a frame that overruns the screen, so the
+ * screen alone would let a 1×1 GIF past the pixel limit.
+ */
 export function gifSize(bytes: Uint8Array): { width: number; height: number } | null {
-  if (bytes.length < 10) return null;
-  return { width: bytes[6]! | (bytes[7]! << 8), height: bytes[8]! | (bytes[9]! << 8) };
+  if (bytes.length < 13) return null;
+  let width = bytes[6]! | (bytes[7]! << 8);
+  let height = bytes[8]! | (bytes[9]! << 8);
+  const table = (flags: number) => (flags & 0x80 ? 3 * (1 << ((flags & 0x07) + 1)) : 0);
+  let at = 13 + table(bytes[10]!);
+  const skipBlocks = () => {
+    while (at < bytes.length) {
+      const size = bytes[at]!;
+      at += 1 + size;
+      if (size === 0) return;
+    }
+  };
+  while (at < bytes.length) {
+    const marker = bytes[at]!;
+    if (marker === 0x3b) break;
+    if (marker === 0x21) {
+      at += 2;
+      skipBlocks();
+    } else if (marker === 0x2c) {
+      if (at + 10 > bytes.length) break;
+      const left = bytes[at + 1]! | (bytes[at + 2]! << 8);
+      const top = bytes[at + 3]! | (bytes[at + 4]! << 8);
+      const frameWidth = bytes[at + 5]! | (bytes[at + 6]! << 8);
+      const frameHeight = bytes[at + 7]! | (bytes[at + 8]! << 8);
+      width = Math.max(width, left + frameWidth);
+      height = Math.max(height, top + frameHeight);
+      at += 10 + table(bytes[at + 9]!) + 1;
+      skipBlocks();
+    } else break;
+  }
+  return { width, height };
 }
 
 /** The refusal for a name and its bytes, or null when they agree and are accepted. */
