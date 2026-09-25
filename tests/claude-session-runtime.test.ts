@@ -552,6 +552,17 @@ test('terminal close can clean up a completed run without creating another durab
   await f.driver.closeAll();
 });
 
+test('a lifetime that ends mid-turn lets the turn finish, then closes the connection', async () => {
+  const f = await runtime({ connectionLifetimeMs: 50 });
+  // The turn outlasts the lifetime, as a slow machine or a long answer does.
+  f.during(() => new Promise((resolve) => setTimeout(resolve, 150)));
+  const answer = await f.driver.request(f.request('start', 'one'));
+  expect(answer.response?.text).toBe('answer');
+  await vi.waitFor(() => expect(f.counters().closed).toBe(1), { timeout: 1500, interval: 20 });
+  expect((await f.driver.status('p', 'native')).connected).toBe(false);
+  await f.driver.closeAll();
+});
+
 test('owned lifetime timer closes an idle connection while leaving known metadata resumable', async () => {
   const f = await runtime({ connectionLifetimeMs: 200 });
   await f.driver.request(f.request('start', 'one'));
