@@ -56,6 +56,8 @@ import type {
 import type { ConversationUpdateNotCarried } from '../shared/conversation.js';
 import { ApiError, absent, relativeName, safeAbsolute } from './paths.js';
 import { mountPackRoutes } from './pack-routes.js';
+import { SoftwarePackService } from './software-pack/service.js';
+import { mountSoftwarePackRoutes } from './software-pack/routes.js';
 import { playbookAccess } from './harness/capabilities/pack-playbooks.js';
 import {
   defaults,
@@ -69,6 +71,13 @@ import {
 } from './store.js';
 import { buildSupportBundle, renderSupportBundle } from './support-bundle.js';
 import { currentBuildIdentity } from './build-identity.js';
+import {
+  currentUpdateNotice,
+  markUpdateNoticeSeen,
+  reconcileAfterUpdate,
+  type BuildStamp,
+  type ReconcilePolicy,
+} from './update-reconcile.js';
 import { WorkService } from './work.js';
 import { NativeWorkService, type NativeGenerator } from './native-work.js';
 import { ChangeReviewService } from './change-review/service.js';
@@ -143,6 +152,7 @@ import {
   controlFixtureDriver,
 } from './durable-controls-fixture.js';
 import { SupervisionService } from './supervision/service.js';
+import { triggerViews } from '../shared/stream-rules.js';
 import { keepPartially } from './change-review/partial-keep.js';
 import { documentDiff, ReviewComments } from './review-comments.js';
 import { mountGuidanceRoutes } from './guidance.js';
@@ -243,6 +253,8 @@ import {
 } from '../shared/tier-map.js';
 import { projectedTurnIds, turnIdentityText } from '../shared/conversation-turn-id.js';
 import { AppUpdateService, mountAppUpdateRoutes, type UpdateTransport } from './app-updates.js';
+import { parseStableVersion } from '../shared/app-updates.js';
+import { RELEASE_NOTES_SEEN_LIMIT } from '../shared/release-notes.js';
 import { EngineInstaller } from './engines/install.js';
 import { NativeLogin } from './engines/login.js';
 import { changeCloudSharing, cloudSharing, requireCloudSharing, sharesHistory } from './cloud-sharing.js';
@@ -303,6 +315,16 @@ interface AppOptions {
   };
   /** H13: tests replace the Diomedes loop's model-API routes here. Production uses the engine service. */
   loopModelRoutes?: import('./harness/capabilities/native-loop.js').LoopModelRoutes;
+  /**
+   * The first launch of a new build (server/update-reconcile.ts). `build` is
+   * the running build, read from its build record when omitted; tests pass an
+   * older or newer one. The desktop shell passes `clearRendererCache`.
+   */
+  updateReconcile?: {
+    build?: BuildStamp;
+    clearRendererCache?: () => Promise<void>;
+    policy?: ReconcilePolicy;
+  };
   /** The automation scheduler's clock and pass interval. Tests inject both; null runs no timer. */
   automationClock?: () => number;
   automationTickMs?: number | null;
@@ -607,6 +629,15 @@ function validateSettings(current: Settings, body: unknown): Settings {
         throw new ApiError(400, 'Invalid first-use settings.');
       result.seen.firstUse = value.firstUse;
     }
+    if (value.releaseNotes !== undefined) {
+      if (
+        !Array.isArray(value.releaseNotes) ||
+        value.releaseNotes.length > RELEASE_NOTES_SEEN_LIMIT ||
+        value.releaseNotes.some((item) => parseStableVersion(item) !== item)
+      )
+        throw new ApiError(400, 'Invalid release-notes settings.');
+      result.seen.releaseNotes = value.releaseNotes as string[];
+    }
     if (value.guidedDescriptors !== undefined) {
       const entries = plain(value.guidedDescriptors);
       result.seen.guidedDescriptors = {};
@@ -634,6 +665,16 @@ export async function createApp(options: AppOptions) {
     throw new Error('The desktop local-service token is invalid.');
   const store = new Store(path.resolve(options.dataDir), options.projectRoot, options.secretBox ?? null);
   await store.init();
+  // Before anything reads a setting: an update carries never-chosen values to
+  // this build's defaults and records what it did. A no-op on every other launch.
+  const running = currentBuildIdentity(packageInfo.version);
+  const reconciled = await reconcileAfterUpdate({
+    dataDir: store.dataDir,
+    build: options.updateReconcile?.build ?? { version: running.version, buildId: running.buildId },
+    clearRendererCache: options.updateReconcile?.clearRendererCache,
+    policy: options.updateReconcile?.policy,
+  });
+  if (reconciled.settingsChanged) await store.reloadSettings();
   // Automatic Change Review: deterministic per-run evidence. Constructed before
   // the work services so every run can capture its baseline from the start.
   const changeReview = new ChangeReviewService(store);
@@ -1156,6 +1197,8 @@ export async function createApp(options: AppOptions) {
   });
   mountAgentProfileRoutes(app, store, agentProfiles);
   mountPermissionRoutes(app, store, nativeWork, harness.bridge);
+  // P07: the Software Engineering pack's repository slice, on the host's RunService.
+  const softwarePack = new SoftwarePackService(store, harness.runs);
   const verification = new VerificationService(
     store,
     options.verificationReviewer !== undefined
@@ -1163,7 +1206,10 @@ export async function createApp(options: AppOptions) {
       : reviewerAdapter
         ? codexVerificationReviewer()
         : null,
-    { reviewTimeoutMs: options.verificationReviewTimeoutMs },
+    {
+      reviewTimeoutMs: options.verificationReviewTimeoutMs,
+      commandEvidence: (projectId, command, notBefore) => softwarePack.commandEvidence(projectId, command, notBefore),
+    },
   );
   mountVerificationRoutes(app, store, verification);
   // H13: the Diomedes work loop's finish gate runs the task's declared checks through H17's verifier.
@@ -1440,6 +1486,22 @@ export async function createApp(options: AppOptions) {
   app.get(
     '/api/settings',
     route(async (_req, res) => withSettingsTag(res, store.settings)),
+  );
+  // The one quiet line after an update, until the person dismisses it. The
+  // record behind it is append-only evidence and is never changed by this.
+  app.get(
+    '/api/update-notice',
+    route(async () => ({ notice: await currentUpdateNotice(store.dataDir) }), false),
+  );
+  app.post(
+    '/api/update-notice/seen',
+    route(async (req) => {
+      const noticeId = plain(req.body).id;
+      if (typeof noticeId !== 'string' || !/^[A-Za-z0-9._-]{1,200}$/.test(noticeId))
+        throw new ApiError(400, 'That is not an update notice.');
+      await markUpdateNoticeSeen(store.dataDir, noticeId);
+      return { ok: true };
+    }, false),
   );
   app.put(
     '/api/settings',
@@ -1979,6 +2041,7 @@ export async function createApp(options: AppOptions) {
   const packLifecycle = mountPackRoutes(app, { store, route, body });
   // H10: guidance proposals from evidence, signed instruction revisions and rollback.
   mountGuidanceRoutes(app, { store, route, body });
+  mountSoftwarePackRoutes(app, { service: softwarePack, route, body });
   /**
    * Read one discovered instruction file, as Diomedes read it.
    *
@@ -2279,6 +2342,8 @@ export async function createApp(options: AppOptions) {
      * passes none and the two Work paths run exactly as they did.
      */
     commit?: <T>(step: () => Promise<T>) => Promise<T>,
+    /** H15 decision 5: a supervision correction's permission, never wider than its origin run's. */
+    ceiling?: { permission: ThreadPermission },
   ) => {
     refuseHomeWork(projectId);
     if (isUpdateClosing())
@@ -2308,6 +2373,7 @@ export async function createApp(options: AppOptions) {
       if (!thread) throw new ApiError(404, 'This thread was not found.');
       threadPermission = thread.permission ?? 'show-first';
     }
+    if (ceiling?.permission === 'show-first') threadPermission = 'show-first';
     // The thread's tier, when one applies, decides the route Build runs on; a tier whose
     // route is not ready is refused here by name, never moved to the recorded route.
     const selectedRoute =
@@ -2402,7 +2468,7 @@ export async function createApp(options: AppOptions) {
   const workControl = new WorkControl({
     store,
     native: nativeWork,
-    admit: (projectId, command) => admitWork(projectId, command, listeningPort),
+    admit: (projectId, command, ceiling) => admitWork(projectId, command, listeningPort, undefined, ceiling),
     stopSession: (projectId, sessionId, by) => {
       const service = serviceFor(projectId, sessionId);
       if (service === nativeWork) return nativeWork.stop(projectId, sessionId, by);
@@ -2481,6 +2547,10 @@ export async function createApp(options: AppOptions) {
   });
   const superviseOnChange = (projectId: string) => supervision.schedule(projectId);
   store.on('change', superviseOnChange);
+  // H16: a stream-time rule's steer or stop is answered by supervision on its ladder, at once.
+  harness.streamRules.attachSupervision({
+    evaluate: (projectId, sessionId) => store.locked(() => supervision.evaluate(projectId, sessionId)),
+  });
   /**
    * The one trigger. A session reaching a terminal state and a task becoming
    * done both end in a durable write, and `persist` announces that write, so
@@ -2634,12 +2704,39 @@ export async function createApp(options: AppOptions) {
     );
   app.get(
     '/api/projects/:id/supervision',
-    route(async (req) => ({
-      records: supervision.list(
-        id(req),
-        typeof req.query.sessionId === 'string' ? req.query.sessionId : undefined,
-      ),
-    })),
+    route(async (req) => {
+      const sessionId = typeof req.query.sessionId === 'string' ? req.query.sessionId : undefined;
+      const records = supervision.list(id(req), sessionId);
+      return {
+        records,
+        // H16: the run's stream-time rule firings and what became of each.
+        triggers: triggerViews(
+          harness.streamRules.firings(id(req), sessionId),
+          records,
+          store.state(id(req)).needs,
+        ),
+      };
+    }),
+  );
+  /**
+   * H16 stream-time trigger rules: the installation's (organization authority) and a
+   * project's. Written by the local person; a project rule that would loosen one written
+   * for everybody, or two rules of one authority that contradict, are refused.
+   */
+  app.get('/api/stream-rules', route(async () => harness.streamRules.list(null)));
+  app.put(
+    '/api/stream-rules',
+    route(async (req) => harness.streamRules.setRules('organization', null, body(req))),
+  );
+  app.get(
+    '/api/projects/:id/stream-rules',
+    route(async (req) =>
+      harness.streamRules.list(id(req), typeof req.query.taskId === 'string' ? req.query.taskId : null),
+    ),
+  );
+  app.put(
+    '/api/projects/:id/stream-rules',
+    route(async (req) => harness.streamRules.setRules('project', id(req), body(req))),
   );
   app.post(
     '/api/projects/:id/supervision/evaluate',
@@ -2736,6 +2833,18 @@ export async function createApp(options: AppOptions) {
           choice(b.resolution, ['go-ahead', 'declined'], 'decision'),
           b.allowForTask === true,
         );
+      // A sandbox's change set: go ahead keeps every waiting change, decline discards them.
+      if (need.changeSet) {
+        if (b.allowForTask === true)
+          throw new ApiError(400, 'A change set is decided change by change, never for the whole task.');
+        await harness.loop.changeSets.resolveNeed(
+          id(req),
+          need,
+          choice(b.resolution, ['go-ahead', 'declined'], 'decision'),
+          typeof b.commandId === 'string' ? b.commandId : `need.${need.id}`,
+        );
+        return store.state(id(req)).needs.find((item) => item.id === need.id);
+      }
       // A supervision escalation is answered only by a person, never for the whole task.
       if (need.supervision) {
         if (b.allowForTask === true)
@@ -5538,6 +5647,7 @@ export async function createApp(options: AppOptions) {
   app.locals.readyScheduler = readyScheduler;
   app.locals.automationScheduler = automationScheduler;
   app.locals.automations = automations;
+  app.locals.softwarePack = softwarePack;
   app.locals.close = async () => {
     // A window closed on the way out must not start a check against services
     // that are already shutting down.
@@ -5555,6 +5665,8 @@ export async function createApp(options: AppOptions) {
     // the remaining services' close persists can settle, or a late record
     // write can race removal of the data dir.
     await changeReview.close();
+    // A declared command already approved finishes and is recorded before the run store closes.
+    await softwarePack.settled();
     engines.close();
     await login.close();
     await connections.close();

@@ -39,7 +39,7 @@ const config: TeamConfig = {
   scope: ['a.md', 'b.md'],
   worker: { ...role, budget: { turns: 4, tokens: null, wallMs: null } },
   advisor: null,
-  limits: { depth: 1, concurrentWorkers: 3, workersPerRun: 6, advicePerRun: 2 },
+  limits: { depth: 1, concurrentWorkers: 3, workersPerRun: 4, advicePerRun: 2 },
 };
 const at = '2026-09-24T00:00:00.000Z';
 const opened = (leadRunId: string, handoffId: string, childRunId: string, task: string, extra: Partial<HandoffEvent> = {}): HandoffEvent =>

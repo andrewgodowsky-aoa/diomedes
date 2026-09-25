@@ -49,6 +49,7 @@ import {
 import { MAX_WORK_RECEIPTS, validateWorkReceipts, type WorkAdmission } from './work-admission.js';
 import { assertReadable } from './migrations/framework.js';
 import { PROJECT_STATE, SETTINGS } from './migrations/registry.js';
+import { recordChosenSettings } from './update-reconcile.js';
 import {
   actionDigest,
   contentHash,
@@ -255,6 +256,9 @@ export const defaults = (): Settings => ({
   // these defaults to decide whether a settings key exists at all.
   home: null,
   services: { codex: false },
+  // H16: listed so a client echoing the whole settings object back is accepted. Like `home`,
+  // `validateSettings` never reads it, so only the stream-rules route writes these rules.
+  streamTriggerRules: [],
 });
 
 /**
@@ -1099,8 +1103,18 @@ export class Store extends EventEmitter {
     });
   }
   async saveSettings(input: Settings) {
+    const previous = this.settings;
     this.settings = structuredClone(input);
     await jsonWrite(path.join(this.dataDir, 'settings.json'), this.settings);
+    // A tracked setting this save changed is now the person's choice, and the
+    // first launch of the next build keeps it (server/update-reconcile.ts).
+    await recordChosenSettings(this.dataDir, previous, this.settings);
+    this.emit('settings', this.settings);
+    return this.settings;
+  }
+  /** Reads `settings.json` again, after the update reconcile rewrote it. */
+  async reloadSettings() {
+    this.settings = await readSettings(path.join(this.dataDir, 'settings.json'));
     this.emit('settings', this.settings);
     return this.settings;
   }

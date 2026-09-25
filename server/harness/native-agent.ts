@@ -39,13 +39,22 @@ export interface ModelAdapter {
    */
   contract: AdapterRouteContract;
   capabilities(): AdapterCapabilities;
-  complete(request: ModelRequest, signal: AbortSignal): Promise<ModelResult>;
+  /**
+   * `stream`, when given, receives the answer's text as it is produced (H16
+   * stream-time rules). It observes only: nothing it does changes the answer.
+   */
+  complete(request: ModelRequest, signal: AbortSignal, stream?: ModelStreamSink): Promise<ModelResult>;
   /** Trusted context assembly runs in a durable pure step before final model authorization. */
   prepare?(request: ModelRequest, signal: AbortSignal): Promise<ModelRequest>;
   /** May refuse a stale prepared context; must not alter its already frozen bytes. */
   validatePrepared?(request: ModelRequest): Promise<void>;
   /** After-output inspection is supported for final text, never stream-time interception. */
   inspect?(request: ModelRequest, text: string, signal: AbortSignal): Promise<ModelInspection>;
+}
+
+/** Where a model step's streamed text goes while it is produced. */
+export interface ModelStreamSink {
+  onDelta(text: string): void;
 }
 
 export interface ModelInspection {

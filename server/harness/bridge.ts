@@ -15,7 +15,7 @@ import { FIXTURE_ENGINE, harnessWrites, identifyHarnessApproval } from './approv
 import { FORMAT_REPORT } from './capabilities/format-report.js';
 import { NativeAgent, type ModelAdapter } from './native-agent.js';
 import { digest, HarnessError, validatePrincipal } from './policy.js';
-import { needFromWaitingStep, presentRun, sessionOriginFromRun } from './present.js';
+import { heldBy, needFromWaitingStep, presentRun, sessionOriginFromRun } from './present.js';
 import { RunService, Suspended, uncertainEffectsOf, type HarnessHook } from './run-service.js';
 import type { ToolRegistry } from './tools.js';
 import {
@@ -361,7 +361,8 @@ export class HarnessBridge {
         state.needs.push(need);
         // A remembered approval (D5) may cover this exact step. The Need is
         // still created and kept: it is the record the grant is evidenced on.
-        const candidate = await this.candidate(run, need);
+        // H16: a rule held this step for a person, so no remembered approval answers it.
+        const candidate = heldBy(run, step) ? null : await this.candidate(run, need);
         const grant = candidate && this.store.scopeGrants.remembered.cover(run.projectId, need, candidate);
         if (grant) {
           covered = need;
@@ -377,7 +378,8 @@ export class HarnessBridge {
     }
     if (['completed', 'failed', 'cancelled'].includes(run.state))
       for (const need of state.needs.filter(
-        (item) => item.sessionId === session.id && item.state === 'open',
+        // A sandbox's change set waits for its person after its run ends (shared/sandbox.ts).
+        (item) => item.sessionId === session.id && item.state === 'open' && !item.changeSet,
       )) {
         need.state = 'expired';
         need.decidedAt = now();

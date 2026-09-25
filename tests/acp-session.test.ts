@@ -29,15 +29,25 @@ afterEach(async () => {
 type Engine = 'cursor' | 'devin';
 const VERSIONS = { cursor: '2026.08.11', devin: '3000.10.23' } as const;
 
-async function fixture(engine: Engine = 'cursor') {
+/** `written` receives every line Diomedes writes to the agent's stdin, when a test reads them. */
+async function fixture(engine: Engine = 'cursor', written?: string[]) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), `diomedes acp ${engine} `));
   roots.push(root);
   const env: Record<string, string> = { ACP_FIXTURE_LOG: path.join(root, 'methods.log') };
-  const launch = (_file: string, _args: string[], options: Parameters<typeof spawn>[2]) =>
-    spawn(process.execPath, [FIXTURE], {
+  const launch = (_file: string, _args: string[], options: Parameters<typeof spawn>[2]) => {
+    const child = spawn(process.execPath, [FIXTURE], {
       ...options,
       env: { ...options.env, ...env },
     }) as ChildProcessWithoutNullStreams;
+    if (written) {
+      const write = child.stdin.write.bind(child.stdin) as (...args: unknown[]) => boolean;
+      child.stdin.write = ((chunk: unknown, ...rest: unknown[]) => {
+        written.push(String(chunk));
+        return write(chunk, ...rest);
+      }) as typeof child.stdin.write;
+    }
+    return child;
+  };
   const capture = async (options: { args: string[] }) =>
     options.args.includes('--version')
       ? { code: 0, stdout: engine === 'cursor' ? '2026.08.11-e8db854' : 'devin 3000.10.23' }
@@ -338,5 +348,114 @@ describe('kept ACP conversation — questions for a person (Cursor)', () => {
     const error = await failure(running);
     expect(error.code).toBe('CANCELLED');
     expect(signalled!.aborted).toBe(true);
+  });
+});
+
+/**
+ * Review F (2026-09-24): an independent review of H05 found these. Each was red on main at
+ * 4395331 and is green with its fix; the record is docs/implementation/2026-09-24-review-f.md.
+ */
+describe('kept ACP conversation — review F: a question is a person\'s, for one call, in a live turn', () => {
+  const readScope = (root: string) => ({ root, web: false, access: 'selected' as const, files: [] });
+
+  it('a go-ahead for one fetch is not re-granted when the agent asks again with the same call id', async () => {
+    const f = await fixture('cursor');
+    const asked: EngineAsk[] = [];
+    const answers: EngineAskAnswer[] = ['go-ahead', 'declined'];
+    const scoped = { ...input('cursor', 'open'), readScope: readScope(f.root) };
+    const session = await f.adapter.openSession(scoped, { observedVersion: VERSIONS.cursor, onCheckpoint: async () => {} });
+    const answer = await session.turn({
+      ...input('cursor', 'r1', 'fetchtwice'),
+      readScope: readScope(f.root),
+      approvals: async (ask) => {
+        asked.push(ask);
+        return answers.shift() ?? 'declined';
+      },
+    });
+    // The second ask names another address: a person is asked again, and here says no.
+    expect(asked.map((ask) => ask.title)).toEqual(['Open https://example.com/a', 'Open https://elsewhere.example/b']);
+    expect(answer.text).toBe('first allow second reject');
+  });
+
+  it('a question nobody answers tells the agent it was cancelled, and never selects an allow option', async () => {
+    const written: string[] = [];
+    const f = await fixture('cursor', written);
+    const scoped = { ...input('cursor', 'open'), readScope: readScope(f.root) };
+    const session = await f.adapter.openSession(scoped, { observedVersion: VERSIONS.cursor, onCheckpoint: async () => {} });
+    for (const answer of ['expired', 'cancelled'] as const) {
+      const error = await failure(
+        session.turn({
+          ...input('cursor', `r-${answer}`, 'please fetch'),
+          readScope: readScope(f.root),
+          approvals: async () => answer,
+        }),
+      );
+      expect(error.code).toBe(answer === 'expired' ? 'APPROVAL_EXPIRED' : 'CANCELLED');
+    }
+    // What Diomedes answered each question with (the replies: an id and a result, no method).
+    const sent = written
+      .flatMap((chunk) => chunk.split('\n'))
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as { method?: string; result?: unknown; id?: number })
+      .filter((frame) => frame.method === undefined && frame.id !== undefined && frame.id >= 1000)
+      .map((frame) => frame.result);
+    expect(sent).toEqual([{ outcome: { outcome: 'cancelled' } }, { outcome: { outcome: 'cancelled' } }]);
+  });
+
+  it('a saved session is continued only on the engine, scope and version it was saved with', async () => {
+    const f = await fixture('cursor');
+    const first = await f.open();
+    await first.turn(input('cursor', 'r1', 'first'));
+    const saved = first.checkpoint;
+    await expect(f.open({ ...saved, engine: 'devin' })).rejects.toMatchObject({ code: 'SESSION_MISMATCH' });
+    await expect(f.open({ ...saved, scopeDigest: 'another scope' })).rejects.toMatchObject({ code: 'SESSION_MISMATCH' });
+    await expect(f.open({ ...saved, cliVersion: '2026.01.01' })).rejects.toMatchObject({
+      code: 'SESSION_MISMATCH',
+      message: expect.stringMatching(/saved by Cursor 2026\.01\.01; 2026\.08\.11 is installed now/),
+    });
+    await expect(f.open({ ...saved, state: 'busy' })).rejects.toMatchObject({ code: 'RECONCILE_REQUIRED' });
+  });
+
+  it('an agent that dies while a question is open ends the turn and the question with it', async () => {
+    const f = await fixture('cursor');
+    let signalled: AbortSignal | undefined;
+    const session = await f.open();
+    const started = Date.now();
+    const error = await failure(
+      session.turn({
+        ...input('cursor', 'r1', 'crashask'),
+        // A person who has not answered yet: only the turn ending settles this question.
+        approvals: (_ask, signal) =>
+          new Promise<EngineAskAnswer>((resolve) => {
+            signalled = signal;
+            signal.addEventListener('abort', () => resolve('cancelled'), { once: true });
+            setTimeout(() => resolve('expired'), 8_000);
+          }),
+      }),
+    );
+    expect(Date.now() - started).toBeLessThan(5_000);
+    expect(signalled!.aborted).toBe(true);
+    expect(error.code).not.toBe('APPROVAL_EXPIRED');
+  }, 15_000);
+
+  it('a Stop while a question is open, which the agent acknowledges, is recorded as acknowledged', async () => {
+    const f = await fixture('cursor');
+    let signalled: AbortSignal | undefined;
+    const session = await f.open();
+    const running = session.turn({
+      ...input('cursor', 'r1', 'make a plan'),
+      approvals: (_ask, signal) =>
+        new Promise<EngineAskAnswer>((resolve) => {
+          signalled = signal;
+          signal.addEventListener('abort', () => resolve('cancelled'), { once: true });
+        }),
+    });
+    await expect.poll(() => signalled !== undefined).toBe(true);
+    await session.interrupt();
+    const error = await failure(running);
+    expect(error.code).toBe('CANCELLED');
+    expect(await f.methods()).toContain('session/cancel');
+    expect(error.stopOutcome).toBe('acknowledged');
+    expect(session.checkpoint).toMatchObject({ state: 'idle', lastStop: 'acknowledged' });
   });
 });

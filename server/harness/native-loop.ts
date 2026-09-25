@@ -68,6 +68,7 @@ import {
   type LoopPlanRecord,
   type LoopStopRecord,
 } from '../../shared/native-loop.js';
+import { DELEGATION_LIMITS, SANDBOX_LIMITS, carveBudget } from '../../shared/sandbox.js';
 import { accountContext, reconcileContext } from './context-assembly.js';
 import { isScriptedAdapter, validatePrepared, validResponse, type ModelAdapter } from './native-agent.js';
 import { canonical, copy, HarnessError, units } from './policy.js';
@@ -109,6 +110,8 @@ export interface DelegationRequest {
   readonly budget: HarnessBudget;
   readonly maxTurns: number;
   readonly signal: AbortSignal;
+  /** The scope the child's sandbox holds: the handoff's declared files inside the parent's scope. */
+  readonly scope: readonly string[] | null;
 }
 
 /** Where a bounded sub-task goes. The route is the person's choice, pinned at admission. */
@@ -119,6 +122,8 @@ export interface LoopDelegationPort {
     envelope: HandoffEnvelope | null;
     refusal: string | null;
   };
+  /** The child's scope: what the handoff declares, held inside the parent's; what fell outside is named. */
+  scope?(input: { parent: HarnessRun; files: readonly string[] | null }): { scope: readonly string[] | null; outside: readonly string[] };
   /** Start or resume the child through its own admission and wait for it. Idempotent by child id. */
   run(request: DelegationRequest): Promise<LoopDelegateResult>;
 }
@@ -182,15 +187,38 @@ export interface NativeLoopOptions {
   readonly route: string;
   readonly model: string | null;
   readonly sources?: readonly string[];
+  /**
+   * H16: stream-time rules. Each model step attempt opens a watch the adapter's
+   * streamed text is handed to; the step does not return until every firing is
+   * recorded and handed on, so none is missed by the tool the answer proposes.
+   */
+  readonly stream?: {
+    watch(runId: string, stepId: string, attempt: number): Promise<{
+      onDelta(text: string): void;
+      end(finalText: string | null): Promise<void>;
+    } | null>;
+  } | null;
 }
 
 export type LoopResult =
   | { readonly kind: 'finished'; readonly claim: string }
   | { readonly kind: 'stopped'; readonly reason: 'turn-limit' | 'budget' | 'worker' };
 
-const delegateSchema = z.strictObject({
+const delegatedTask = z.strictObject({
   task: z.string().trim().min(1).max(LOOP_LIMITS.taskChars),
+  /** The files and folders its sandbox copy holds. Absent: this run's whole scope. */
+  files: z.array(z.string().trim().min(1).max(400)).min(1).max(SANDBOX_LIMITS.scopeEntries).optional(),
 });
+/** One object, so every provider's tool-schema rules accept it: one task, or several in `tasks`. */
+const delegateSchema = z
+  .strictObject({
+    task: delegatedTask.shape.task.optional(),
+    files: delegatedTask.shape.files,
+    tasks: z.array(delegatedTask).min(1).max(LOOP_LIMITS.delegationsPerRun).optional(),
+  })
+  .refine((value) => (value.task === undefined) !== (value.tasks === undefined) && !(value.tasks && value.files), {
+    message: 'Give one task (with its files), or several in tasks.',
+  });
 
 const assignSchema = z.strictObject({
   tasks: z
@@ -281,7 +309,7 @@ export class NativeLoop {
       tools.push({
         name: DELEGATE_TOOL,
         version: 'v1',
-        description: `Hand one bounded sub-task to another worker on ${this.options.delegation.route}. It reads project files only, has its own small budget, and its answer comes back to you as a tool result. At most ${LOOP_LIMITS.delegationsPerRun} per run.`,
+        description: `Hand a bounded sub-task to a helper on ${this.options.delegation.route}, or several at once in tasks, which run at the same time. Each works in its own copy of the files you name (files; all you may use when absent), may change them there, and never changes the project: its answer and the changes it made come back to you, and changes outside what you may apply wait for a person. Its budget is carved from yours. At most ${LOOP_LIMITS.delegationsPerRun} per run.`,
         effect: 'idempotent',
         permission: null,
         approval: false,
@@ -382,9 +410,25 @@ export class NativeLoop {
           ? z.json().parse({ provider: this.adapter.id, request: effective })
           : z.json().parse({ provider: this.adapter.id, messages, tools }),
       },
-      async ({ signal, reportOrigin }) => {
+      async ({ signal, reportOrigin, attempt }) => {
         await this.adapter.validatePrepared?.(copy(effective));
-        const result = await this.adapter.complete(copy(effective), signal);
+        const watch = (await this.options.stream?.watch(runId, `model:${key}`, attempt)) ?? null;
+        let result: Awaited<ReturnType<ModelAdapter['complete']>>;
+        try {
+          result = await this.adapter.complete(
+            copy(effective),
+            signal,
+            watch ? { onDelta: (text) => watch.onDelta(text) } : undefined,
+          );
+        } catch (error) {
+          await watch?.end(null).catch(() => undefined);
+          throw error;
+        }
+        if (watch) {
+          await watch.end(result?.response?.type === 'final' ? result.response.text : null);
+          // A rule may have stopped the run while it streamed; nothing it said is then acted on.
+          signal.throwIfAborted();
+        }
         if (!result || !validResponse(result.response))
           throw new HarnessError('invalid_model_response', 'Invalid model response schema.');
         if (reportOrigin)
@@ -533,7 +577,7 @@ export class NativeLoop {
         }
         messages.push({ role: 'assistant', tool: response.name, input: response.input });
         const observation = await this.act(runId, owner, principal, turn, response, bindings, delegations);
-        if (observation.action === 'delegate') delegations += 1;
+        if (observation.action === 'delegate') delegations += observation.started ?? 1;
         messages.push({ role: 'tool', name: response.name, output: observation.feedback });
       }
       await this.stop(runId, owner, principal, 'turn-limit', `turn limit reached (${maxTurns} of ${maxTurns} turns)`, maxTurns, reconciled);
@@ -671,11 +715,19 @@ export class NativeLoop {
       return refuse(
         `That asks for ${assignments.length} workers at once; a lead may run at most ${team.concurrentWorkers} at the same time.`,
       );
-    const recorded = (await this.runtime.get(runId)).steps.some((step) => step.intent.stepId === `team:${turn}`);
+    const current = await this.runtime.get(runId);
+    const recorded = current.steps.some((step) => step.intent.stepId === `team:${turn}`);
     const { workers } = await this.teamCounts(runId);
     if (!recorded && workers + assignments.length > team.workersPerRun)
       return refuse(
         `This run has started ${workers} of its ${team.workersPerRun} workers, so ${assignments.length} more would pass its limit.`,
+      );
+    // Workers' budgets are carved from what the lead has left, never added on top of it.
+    const asked = assignments.reduce((sum, item) => sum + 2 * (item.turns ?? team.turnCeiling), 0);
+    const left = current.budget.units - current.used.units - DELEGATION_LIMITS.reserveUnits;
+    if (!recorded && asked > left)
+      return refuse(
+        `These workers would be carved ${asked} units, and this run has ${Math.max(0, left)} to spare after keeping ${DELEGATION_LIMITS.reserveUnits} for itself.`,
       );
     const opened = await this.runtime.step<TeamOpenedRecord>(
       runId,
@@ -705,11 +757,12 @@ export class NativeLoop {
       owner,
       {
         id: `workers:${turn}`,
-        version: 'v1',
+        version: 'v2',
         kind: 'tool',
         effect: 'idempotent',
         name: ASSIGN_TOOL,
-        cost: 1,
+        // The workers' carve is spent here; a reused answer costs nothing.
+        cost: Math.max(1, opened.assignments.reduce((sum, item) => sum + (item.childRunId && item.budget ? 2 * item.budget.turns : 0), 0)),
         destination: 'local',
         origin: supervisorOrigin(),
         input: z.json().parse({
@@ -773,20 +826,24 @@ export class NativeLoop {
     if (!team?.advisor) return refuse('No advisor is offered on this run.');
     const parsed = adviseSchema.safeParse(response.input);
     if (!parsed.success) return refuse('Ask the advisor one short question.');
-    const recorded = (await this.runtime.get(runId)).steps.some((step) => step.intent.stepId === `advise:${turn}`);
+    const current = await this.runtime.get(runId);
+    const recorded = current.steps.some((step) => step.intent.stepId === `advise:${turn}`);
     if (!recorded && (await this.teamCounts(runId)).advice >= team.advicePerRun)
       return refuse(`This run already asked its advisor ${team.advicePerRun} times, which is as many as one lead may.`);
+    const carve = 2 * TEAM_LIMITS.advisor.turns;
+    if (!recorded && carve > current.budget.units - current.used.units - DELEGATION_LIMITS.reserveUnits)
+      return refuse(`The advisor would be carved ${carve} units, more than this run has to spare.`);
     const question = parsed.data.question;
     const result = await this.runtime.step<WorkerResult>(
       runId,
       owner,
       {
         id: `advise:${turn}`,
-        version: 'v1',
+        version: 'v2',
         kind: 'tool',
         effect: 'idempotent',
         name: ADVISE_TOOL,
-        cost: 1,
+        cost: carve,
         destination: 'local',
         origin: supervisorOrigin(),
         input: z.json().parse({ turn, question }),
@@ -824,7 +881,7 @@ export class NativeLoop {
     response: Extract<ModelResponse, { type: 'tool' }>,
     bindings: readonly LoopToolBinding[],
     delegations: number,
-  ): Promise<{ action: LoopObservationRecord['action']; feedback: Json }> {
+  ): Promise<{ action: LoopObservationRecord['action']; feedback: Json; started?: number }> {
     const observe = async (record: Omit<LoopObservationRecord, 'v' | 'turn'>, feedback: Json) => {
       await this.runtime.step(
         runId,
@@ -855,95 +912,145 @@ export class NativeLoop {
     if (response.name === DELEGATE_TOOL) {
       const delegation = this.options.delegation;
       if (!delegation) return refuse('Delegation is not offered on this run.');
-      if (delegations >= LOOP_LIMITS.delegationsPerRun)
-        return refuse(`This run already handed off ${LOOP_LIMITS.delegationsPerRun} sub-tasks, which is as many as one loop may.`);
       const parsed = delegateSchema.safeParse(response.input);
-      if (!parsed.success) return refuse('The sub-task needs one short task description.');
-      const task = parsed.data.task;
-      const childRunId = `${runId}-d${turn}`;
-      const budget = delegateBudget();
+      if (!parsed.success) return refuse('Each sub-task needs one short task description, and optionally the files it works on.');
+      const tasks = parsed.data.tasks ?? [{ task: parsed.data.task!, files: parsed.data.files }];
+      const recorded = (await this.runtime.get(runId)).steps.some((step) => step.intent.stepId === `handoff:${turn}`);
+      if (!recorded && delegations + tasks.length > LOOP_LIMITS.delegationsPerRun)
+        return refuse(
+          delegations >= LOOP_LIMITS.delegationsPerRun
+            ? `This run already handed off ${LOOP_LIMITS.delegationsPerRun} sub-tasks, which is as many as one loop may.`
+            : `This run has handed off ${delegations} of its ${LOOP_LIMITS.delegationsPerRun} sub-tasks, so ${tasks.length} more would pass its limit.`,
+        );
+      const planned = tasks.map((item, index) => ({
+        childRunId: index === 0 ? `${runId}-d${turn}` : `${runId}-d${turn}-${index}`,
+        task: item.task,
+        files: item.files ?? null,
+      }));
       const handoff = await this.runtime.step<LoopHandoffRecord>(
         runId,
         owner,
         {
           id: `handoff:${turn}`,
-          version: 'v1',
+          version: 'v2',
           kind: 'transform',
           effect: 'pure',
           name: 'open_handoff',
           origin: supervisorOrigin(),
-          input: z.json().parse({ turn, route: delegation.route, childRunId, task, budget }),
+          input: z.json().parse({ turn, route: delegation.route, tasks: planned }),
         },
         async () => {
-          const opened = delegation.open({
-            parent: await this.runtime.get(runId),
-            turn,
-            childRunId,
-            task,
-            siblings: delegations,
+          const parent = await this.runtime.get(runId);
+          // Carved from what this run has left, never added on top of it.
+          const carved = carveBudget(parent, planned.length);
+          const none = { units: 0, modelCalls: 0, toolCalls: 0, wallMs: null };
+          const items = planned.map((item, index) => {
+            const base = { route: delegation.route, childRunId: item.childRunId, task: item.task, budget: carved.budget ?? none };
+            if (!carved.budget) return { ...base, envelope: null, refusal: carved.refusal, scope: null };
+            const scoped = delegation.scope?.({ parent, files: item.files }) ?? { scope: item.files, outside: [] };
+            if (scoped.outside.length)
+              return {
+                ...base,
+                envelope: null,
+                refusal: `${scoped.outside.join(', ')} ${scoped.outside.length === 1 ? 'is' : 'are'} outside what this run may hand on, so the sub-task was not started.`,
+                scope: scoped.scope,
+              };
+            const opened = delegation.open({ parent, turn, childRunId: item.childRunId, task: item.task, siblings: delegations + index });
+            return { ...base, envelope: opened.envelope, refusal: opened.refusal, scope: scoped.scope };
           });
-          return z.json().parse({
-            v: 1,
-            turn,
-            envelope: opened.envelope,
-            refusal: opened.refusal,
-            route: delegation.route,
-            childRunId,
-            task,
-            budget,
-          }) as unknown as LoopHandoffRecord;
+          const [first, ...rest] = items;
+          return z.json().parse({ v: 1, turn, ...first, ...(rest.length ? { parallel: rest } : {}) }) as unknown as LoopHandoffRecord;
         },
         principal,
       );
-      if (!handoff.envelope) return refuse(handoff.refusal ?? 'The handoff could not be opened.');
-      const envelope = handoff.envelope;
-      const result = await this.runtime.step<LoopDelegateResult>(
+      const opened = [handoff, ...(handoff.parallel ?? [])];
+      const runnable = opened.filter((item) => item.envelope);
+      if (!runnable.length) return refuse(opened.map((item) => item.refusal ?? 'The handoff could not be opened.').join(' '));
+      const budget = runnable[0].budget;
+      const results = await this.runtime.step<LoopDelegateResult>(
         runId,
         owner,
         {
           id: `delegate:${turn}`,
-          version: 'v1',
+          version: 'v2',
           kind: 'tool',
           effect: 'idempotent',
           name: DELEGATE_TOOL,
-          cost: 1,
+          // The carve is spent here, so the children's budgets come out of this run's.
+          cost: budget.units * runnable.length,
           destination: 'local',
           origin: supervisorOrigin(),
-          input: z.json().parse({ handoffId: envelope.id, childRunId, route: delegation.route, task, budget }),
+          input: z.json().parse({
+            route: delegation.route,
+            budget,
+            handoffs: runnable.map((item) => ({ handoffId: item.envelope!.id, childRunId: item.childRunId, task: item.task, scope: item.scope ?? null })),
+          }),
         },
-        async ({ signal }) =>
-          z.json().parse(
-            await delegation.run({
-              parent: await this.runtime.get(runId),
-              stepId: `delegate:${turn}`,
-              childRunId,
-              envelope,
-              task,
-              budget,
-              maxTurns: LOOP_LIMITS.delegateTurns,
-              signal,
-            }),
-          ) as unknown as LoopDelegateResult,
+        async ({ signal }) => {
+          const parent = await this.runtime.get(runId);
+          const all = await Promise.all(
+            runnable.map((item) =>
+              delegation.run({
+                parent,
+                stepId: `delegate:${turn}`,
+                childRunId: item.childRunId,
+                envelope: item.envelope!,
+                task: item.task,
+                budget: item.budget,
+                maxTurns: Math.min(LOOP_LIMITS.delegateTurns, item.budget.modelCalls),
+                signal,
+                scope: item.scope ?? null,
+              }),
+            ),
+          );
+          const [first, ...rest] = all;
+          return z.json().parse({ ...first, ...(rest.length ? { parallel: rest } : {}) }) as unknown as LoopDelegateResult;
+        },
         principal,
       );
-      const feedback: Json = {
+      const every = [results, ...(results.parallel ?? [])];
+      const described = (result: Omit<LoopDelegateResult, 'parallel'>) => ({
         state: result.state,
         answer: result.text,
         ...(result.reason ? { reason: result.reason } : {}),
+        ...(result.changeSet
+          ? {
+              changes: {
+                applied: [...result.changeSet.applied],
+                waitingForAPerson: [...result.changeSet.waiting],
+                conflicts: [...result.changeSet.conflicts],
+              },
+            }
+          : {}),
+      });
+      const feedback: Json =
+        opened.length === 1
+          ? described(results)
+          : {
+              delegates: opened.map((item) => {
+                const result = every.find((entry) => entry.childRunId === item.childRunId);
+                return { task: item.task, ...(result ? described(result) : { state: 'refused', answer: null, reason: item.refusal }) };
+              }),
+            };
+      const finished = every.filter((result) => result.state === 'completed').length;
+      return {
+        ...(await observe(
+          {
+            action: 'delegate',
+            tool: DELEGATE_TOOL,
+            ok: finished === every.length && runnable.length === opened.length,
+            ...excerpt(feedback),
+            detail:
+              opened.length === 1
+                ? results.state === 'completed'
+                  ? 'The sub-task finished.'
+                  : `The sub-task ended ${results.state}${results.reason ? `: ${results.reason}` : '.'}`
+                : `${finished} of ${opened.length} sub-tasks finished.`,
+          },
+          feedback,
+        )),
+        started: runnable.length,
       };
-      return observe(
-        {
-          action: 'delegate',
-          tool: DELEGATE_TOOL,
-          ok: result.state === 'completed',
-          ...excerpt(feedback),
-          detail:
-            result.state === 'completed'
-              ? 'The sub-task finished.'
-              : `The sub-task ended ${result.state}${result.reason ? `: ${result.reason}` : '.'}`,
-        },
-        feedback,
-      );
     }
 
     const binding = bindings.find((item) => item.name === response.name);

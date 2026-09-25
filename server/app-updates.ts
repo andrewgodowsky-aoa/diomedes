@@ -19,8 +19,11 @@ import {
   selectReleaseAsset,
   type UpdateCheckOutcome,
   type UpdateInstallArtifact,
+  type UpdateReleaseNotes,
   type UpdateStatusSnapshot,
 } from '../shared/app-updates.js';
+import { notesFromReleaseBody, publishedRelease } from '../shared/release-notes.js';
+import bundledReleaseNotes from '../resources/release-notes/releases.json' with { type: 'json' };
 
 const CHECK_TIMEOUT_MS = 15_000;
 const DOWNLOAD_TIMEOUT_MS = 10 * 60_000;
@@ -58,6 +61,8 @@ export interface AppUpdateOptions {
   transport?: Partial<UpdateTransport>;
   /** Milliseconds for the progress throttle. Tests replace it; production reads Date.now. */
   clock?: () => number;
+  /** The release-notes file to consult. Tests replace it; production uses the bundled one. */
+  releaseNotes?: unknown;
 }
 
 /** A running download's progress is recorded no sooner than this after the last record... */
@@ -94,6 +99,7 @@ interface VerifiedRecord {
   version: string;
   tag: string;
   notesUrl: string;
+  notes: UpdateReleaseNotes | null;
   assetName: string;
   assetUrl: string;
   assetSize: number;
@@ -357,6 +363,7 @@ export class AppUpdateService {
   private downloading: Promise<{ downloaded: boolean; version: string }> | null = null;
   private installing: Promise<{ launched: boolean; version: string }> | null = null;
   private readonly clock: () => number;
+  private readonly releaseNotes: unknown;
   /** What the running download has said about itself, throttled; null when none is running. */
   private progress: { transferred: number; total: number | null } | null = null;
   /** Changes when a download ends, so a report that arrives after it is ignored. */
@@ -374,6 +381,7 @@ export class AppUpdateService {
     this.installed = options.installed ?? false;
     this.isBusy = options.isBusy;
     this.clock = options.clock ?? Date.now;
+    this.releaseNotes = options.releaseNotes ?? bundledReleaseNotes;
     this.transport = {
       fetchRelease: options.transport?.fetchRelease ?? ((signal) => productionFetchRelease(signal)),
       downloadAsset:
@@ -429,6 +437,7 @@ export class AppUpdateService {
         latestVersion: this.record?.version ?? null,
         notesUrl: this.record?.notesUrl ?? null,
         detail: this.detail,
+        notes: this.record?.notes ?? null,
       },
       download: {
         ready: this.record?.stagedSha256 !== null && this.record?.stagedSha256 !== undefined,
@@ -522,6 +531,7 @@ export class AppUpdateService {
         version: parsed.version,
         tag: parsed.tag,
         notesUrl: parsed.notesUrl,
+        notes: this.offeredNotes(parsed.version, payload),
         assetName: parsed.asset.name,
         assetUrl: parsed.asset.url,
         assetSize: parsed.asset.size,
@@ -561,7 +571,22 @@ export class AppUpdateService {
       latestVersion: this.record?.version ?? null,
       notesUrl: this.record?.notesUrl ?? null,
       detail,
+      notes: this.record?.notes ?? null,
     };
+  }
+
+  /**
+   * The offered release's notes: the bundled file's entry when it already
+   * knows that version, else the person-facing part of the release body the
+   * check just read. Nothing further is fetched for them.
+   */
+  private offeredNotes(version: string, payload: unknown): UpdateReleaseNotes | null {
+    const bundled = publishedRelease(this.releaseNotes, version);
+    if (bundled) return { source: 'bundled', release: bundled };
+    const body =
+      payload && typeof payload === 'object' ? (payload as { body?: unknown }).body : undefined;
+    const text = notesFromReleaseBody(body);
+    return text ? { source: 'release-page', text } : null;
   }
 
   download(

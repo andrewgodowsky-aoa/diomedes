@@ -1,0 +1,49 @@
+/* A sandbox's change set inside a loop or Team row (ChangeSetReview.tsx), in the loop
+   inspector's language: a hairline, caption title, mono paths that wrap where they are
+   written (decision 5). No column rule is touched (decision 6). */
+.console .cs-review {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  margin-top: 4px;
+  padding-left: 10px;
+  border-left: 1px solid var(--hair);
+}
+.console .cs-entries {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  padding-left: 0;
+  list-style: none;
+}
+.console .cs-entry {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.console .cs-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  min-width: 0;
+}
+.console .cs-path {
+  min-width: 0;
+  color: var(--t1);
+  overflow-wrap: anywhere;
+}
+.console .cs-op {
+  color: var(--t3);
+  font-size: var(--dm-type-meta);
+}
+.console .cs-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.console .cs-reason,
+.console .cs-dropped {
+  overflow-wrap: anywhere;
+}

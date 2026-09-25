@@ -28,6 +28,8 @@ export const DRIFT_CODES = [
   'budget-burn',
   'instruction-drift',
   'verification-regression',
+  // H16: a stream-time rule asked for a steer or a stop; the firing is the evidence.
+  'rule-trigger',
 ] as const;
 export type DriftCode = (typeof DRIFT_CODES)[number];
 
@@ -37,6 +39,7 @@ export const DRIFT_LABELS: Readonly<Record<DriftCode, string>> = Object.freeze({
   'budget-burn': 'Budget burn',
   'instruction-drift': 'Instruction drift',
   'verification-regression': 'Verification regression',
+  'rule-trigger': 'Rule trigger',
 });
 
 /** `info` is noted, `warning` asks the run to correct, `critical` pauses and asks you. */
@@ -169,6 +172,11 @@ export interface DriftInput {
   readonly plan: { readonly done: number; readonly total: number } | null;
   readonly rules: readonly DriftRule[];
   readonly verification: DriftVerificationInput | null;
+  /**
+   * H16: the run's stream-time rule firings that asked supervision to steer or
+   * stop. Absent where the caller reads none.
+   */
+  readonly triggers?: readonly import('./stream-rules.js').StreamTriggerFiring[];
 }
 
 // --- thresholds -----------------------------------------------------------------
