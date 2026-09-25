@@ -130,6 +130,7 @@ export default defineConfig({
     'review-diffs-ui.spec.ts',
     'guidance-maintenance-ui.spec.ts',
     'cd05-zoom-motion.spec.ts',
+    'p04-pack-panel.spec.ts',
   ],
   fullyParallel: false,
   workers: 1,

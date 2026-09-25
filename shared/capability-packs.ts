@@ -630,6 +630,8 @@ export interface SkillUse {
   readonly name: string;
   /** Bytes of playbook placed in the request; 0 on the no-engine sample route. */
   readonly bytes: number;
+  /** P04: the digest of the playbook body that was loaded and checked. Absent before 2026-09-24. */
+  readonly digest?: string;
 }
 
 /*
