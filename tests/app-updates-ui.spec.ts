@@ -202,6 +202,12 @@ test('Settings > App updates checks, downloads, verifies and hands off', async (
   await expect(
     page.locator('.app-updates').getByRole('link', { name: 'Release notes' }),
   ).toBeVisible();
+  // The offered release's notes are readable before anything is downloaded.
+  // This build's bundled file does not know the fixture version, so they come
+  // from the release body, drawn as text.
+  await expect(page.getByRole('region', { name: `What's new in ${NEXT}` })).toContainText(
+    `Notes for ${NEXT}.`,
+  );
 
   await page.getByRole('button', { name: 'Download', exact: true }).click();
   await expect(page.locator('.app-updates')).toContainText(ASSET);
