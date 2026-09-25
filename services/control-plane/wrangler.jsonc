@@ -13,7 +13,17 @@
   },
   "dev": { "ip": "127.0.0.1", "port": 8791, "local_protocol": "http" },
   // Refuses until exact authorized provider metadata, origins and secrets exist.
-  "vars": { "ENVIRONMENT": "staging", "ALLOWED_ORIGINS": "", "WORKOS_CLIENT_ID": "", "WORKOS_ISSUER": "", "WORKOS_TOKEN_AUDIENCE": "" },
+  // The two MANAGED_* values are the owner's testing limits of 2026-09-25: $100 in provider cost
+  // for all staging testing, for all time, and short answers. Raise them only on his word.
+  "vars": {
+    "ENVIRONMENT": "staging",
+    "ALLOWED_ORIGINS": "",
+    "WORKOS_CLIENT_ID": "",
+    "WORKOS_ISSUER": "",
+    "WORKOS_TOKEN_AUDIENCE": "",
+    "MANAGED_SPEND_CEILING_MICRO_USD": "100000000",
+    "MANAGED_MAX_OUTPUT_TOKENS": "2000"
+  },
   // Managed inference (/managed/v1/*, contract nectovia-managed/1) reads one more secret at call
   // time: BEDROCK_API_KEY, a Bedrock long-term API key for the company's AWS account, sent only to
   // the endpoint in src/managed-providers.ts. The owner sets it; it is never written here. Until it
@@ -29,6 +39,6 @@
   // - MANAGED_MAX_OUTPUT_TOKENS: lowers the registry's per-route output cap (16,000), never
   //   raises it. Larger requests are clamped silently and the clamp is named in the response
   //   header X-Nectovia-Max-Output. Testing runs with 2000.
-  // Neither is set in "vars" here: the owner sets them per environment.
+  // Both are set in "vars" above for staging. A production environment sets its own.
   "secrets": { "required": ["DATABASE_URL", "WORKOS_API_KEY"] }
 }
