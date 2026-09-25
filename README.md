@@ -1,5 +1,7 @@
 # Diomedes
 
+**License:** Nectovia is source-available, not open source. Copyright © 2026 Diomedes Systems LLC. All rights reserved. See `LICENSE`.
+
 Diomedes is a Windows desktop application for working on a project with an AI helper
 without giving it the run of your computer. It keeps the project's documents, plans,
 tasks, conversations, approvals and file history in one place. A helper can propose a
