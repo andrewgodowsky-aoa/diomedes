@@ -429,6 +429,14 @@ if (!app.requestSingleInstanceLock()) {
         updateOverrides: updates,
         secretBox,
         loopbackToken,
+        // The first launch of a new build clears the renderer's HTTP and code
+        // caches once, before any window loads. Storage is not touched.
+        updateReconcile: {
+          clearRendererCache: async () => {
+            await session.defaultSession.clearCache();
+            await session.defaultSession.clearCodeCaches({});
+          },
+        },
       });
       serveClient(service, path.join(root, 'dist'));
       server.on('request', service);

@@ -46,8 +46,11 @@ export const TEAM_LIMITS = Object.freeze({
   depth: 1,
   /** How many workers one `assign_workers` call may run at the same time. */
   concurrentWorkers: 3,
-  /** How many workers one lead run may start in all, retries included. */
-  workersPerRun: 6,
+  /**
+   * How many workers one lead run may start in all, retries included. Four, as for any
+   * run's delegates (Andrew, 2026-09-24; shared/sandbox.ts DELEGATION_LIMITS.perRun).
+   */
+  workersPerRun: 4,
   /** How many times one lead run may ask its advisor. */
   advicePerRun: 2,
   /** The most files one worker's scope may name. */
@@ -269,6 +272,8 @@ export interface WorkerResult {
   readonly reason: string | null;
   readonly models: readonly LoopModel[];
   readonly reusedFrom: string | null;
+  /** A worker's sandbox change set, and what became of it (shared/sandbox.ts). */
+  readonly changeSet?: import('./sandbox.js').ChangeSetSummary | null;
 }
 
 export type HandoffOutcome = 'running' | 'completed' | 'stopped' | 'failed' | 'died' | 'refused';

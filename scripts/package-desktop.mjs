@@ -6,6 +6,7 @@ import { packager } from '@electron/packager';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { buildDesktopAuth } from './build-desktop-auth.mjs';
+import { checkReleaseVersion } from './packaged-release-check.mjs';
 
 // Export the same entry point for offline packaging-boundary tests. Invoking
 // this script runs it once for the host target, unless `--platform`/`--arch`
@@ -16,6 +17,13 @@ export async function packageDesktop(options = {}, dependencies = {}) {
   const packageApp = dependencies.packager ?? packager;
   const git = dependencies.git ?? execFileSync;
   const manifest = JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8'));
+  // A release package is refused when its app files changed since its version
+  // was tagged (Phase 0 of the update-refresh work). Everyday packaging for a
+  // smoke run is not a release and is not checked.
+  if (options.release === true) {
+    const verdict = await checkReleaseVersion({ root, version: manifest.version });
+    if (!verdict.ok) throw new Error(verdict.message);
+  }
   const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
   const hostPlatform = options.hostPlatform ?? process.platform;
   const platform = options.platform ?? process.env.DIOMEDES_DESKTOP_PLATFORM ?? hostPlatform;
@@ -307,6 +315,11 @@ export async function packageDesktop(options = {}, dependencies = {}) {
 export function targetFromArgs(args) {
   const target = {};
   for (let i = 0; i < args.length; i++) {
+    // `--release` packages a release, which must pass the version-bump guard.
+    if (args[i] === '--release') {
+      target.release = true;
+      continue;
+    }
     const [flag, inline] = args[i].split(/=(.*)/s, 2);
     if (flag !== '--platform' && flag !== '--arch') throw new Error(`Unknown argument: ${flag}`);
     const value = inline ?? args[++i];

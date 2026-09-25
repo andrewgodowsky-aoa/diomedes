@@ -35,14 +35,26 @@ interface Compiled {
 function compile(rule: StreamRule, index: number): Compiled | null {
   const match = rule.match;
   if (match.kind === 'text') {
-    const folded = match.caseSensitive === true;
-    const needle = folded ? match.phrase : match.phrase.toLowerCase();
+    const needle = match.phrase;
+    if (match.caseSensitive === true)
+      return {
+        index,
+        window: needle.length,
+        find(hay, from) {
+          const at = hay.indexOf(needle, from);
+          return at === -1 ? null : { at, length: needle.length };
+        },
+      };
+    // Folded by the regex engine, one code unit for one, so offsets are the text's own:
+    // `toLowerCase` can lengthen a string (İ becomes two), which moved every later span.
+    const expression = new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
     return {
       index,
       window: needle.length,
       find(hay, from) {
-        const at = (folded ? hay : hay.toLowerCase()).indexOf(needle, from);
-        return at === -1 ? null : { at, length: needle.length };
+        expression.lastIndex = from;
+        const found = expression.exec(hay);
+        return found ? { at: found.index, length: found[0].length } : null;
       },
     };
   }

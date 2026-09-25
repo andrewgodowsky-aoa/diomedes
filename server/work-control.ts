@@ -21,7 +21,7 @@
 import { ApiError } from './paths.js';
 import { identifier, now, type Store } from './store.js';
 import { ROUTES } from '../shared/engines.js';
-import type { Route, Session, Task } from '../shared/types.js';
+import type { Route, Session, Task, ThreadPermission } from '../shared/types.js';
 import {
   MAX_FOLLOW_UPS_PER_TASK,
   WORK_CONTROL_CONTRACT_VERSION,
@@ -63,7 +63,15 @@ export interface WorkControlDeps {
    * The Work start route's own admission path, called with the store lock held.
    * Delivery uses exactly this; it never re-implements a single check.
    */
-  admit(projectId: string, command: Record<string, unknown>): Promise<unknown>;
+  admit(
+    projectId: string,
+    command: Record<string, unknown>,
+    /**
+     * H15 decision 5: a supervision correction runs with a permission never wider than the
+     * run it corrects. Absent for a person's own follow-up, which takes the thread's.
+     */
+    ceiling?: { permission: ThreadPermission },
+  ): Promise<unknown>;
   /**
    * Ends a session the way the existing Stop route does, for every kind of
    * session the host can hold — native, sample or harness.
@@ -286,6 +294,16 @@ export class WorkControl {
     const cancelledFollowUpIds: string[] = [];
     if (scope === 'generation') {
       acknowledged = sessionId ? this.deps.native.interrupt(projectId, sessionId) : false;
+      // H15 decision 5: any Stop cancels a correction supervision queued, so stopping the
+      // generation never lets supervision start the next run. A person's own follow-ups stay.
+      for (const item of queuedFollowUps(this.store.state(projectId).followUps, task.id)) {
+        if (item.queuedBy !== 'diomedes-supervision') continue;
+        const mutable = item as Mutable<FollowUpCommand>;
+        mutable.state = 'cancelled';
+        mutable.cancelledAt = now();
+        mutable.cancelledBy = 'stop:generation';
+        cancelledFollowUpIds.push(item.id);
+      }
     } else {
       if (scope === 'task' && sessionId) {
         const session = this.store
@@ -423,9 +441,16 @@ export class WorkControl {
       threadId,
       ...(item.agentId ? { agentId: item.agentId } : {}),
     };
+    // A correction runs under the permission of the run it corrects, never a wider one.
+    const origin =
+      item.queuedBy === 'diomedes-supervision'
+        ? state.sessions.find((entry) => entry.id === item.queuedDuringSessionId)
+        : undefined;
+    const ceiling =
+      item.queuedBy === 'diomedes-supervision' ? { permission: origin?.permission ?? 'show-first' } : undefined;
     let session: unknown;
     try {
-      session = await this.deps.admit(projectId, command);
+      session = await this.deps.admit(projectId, command, ceiling);
     } catch (error) {
       // A refusal from the ordinary start path is the rejected reason, verbatim.
       // Delivery never grants: an expired scope, a service turned off or a

@@ -218,7 +218,8 @@ describe('the weekly brief capability', () => {
       manifests.push(manifest(2, ['exports/south.csv'], 'South brief'));
     });
     const run = await settled('R-brief-pinned');
-    expect(run.state).toBe('completed');
+    // The failure travels with the state, so a red run says why it failed.
+    expect({ state: run.state, failure: run.failure }).toEqual({ state: 'completed', failure: null });
     const text = await draft();
     expect(text).toContain('# North brief');
     expect(text).toContain('North,4');

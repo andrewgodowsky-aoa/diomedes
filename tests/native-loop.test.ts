@@ -13,7 +13,7 @@ import { z } from 'zod';
 import type { CapabilityManifest, HarnessBudget, HarnessPrincipal, HarnessRun, ModelRequest, ModelResult } from '../shared/harness.js';
 import { FileRunStore, RunService, Suspended, ToolRegistry, type ModelAdapter } from '../server/harness/index.js';
 import { routeContractFor } from '../server/harness/route-contract.js';
-import { NativeLoop, delegateBudget, type LoopDelegationPort, type LoopToolBinding } from '../server/harness/native-loop.js';
+import { NativeLoop, type LoopDelegationPort, type LoopToolBinding } from '../server/harness/native-loop.js';
 import { streamChecks } from '../server/harness/conformance.js';
 import { loopOutcome, loopView, parsePlan, type LoopDelegateResult } from '../shared/native-loop.js';
 import { openHandoff } from '../shared/handoff.js';
@@ -481,13 +481,13 @@ describe('approval, replay and restart', () => {
   });
 });
 
-describe('delegation, one level, with its own budget', () => {
+describe('delegation: carved budgets, four per run, several at once', () => {
   function port(runs: RunService, log: string[], behaviour: 'answer' | 'hang'): LoopDelegationPort {
     return {
       route: 'native-fixture',
-      open: ({ parent, turn, task, siblings }) => {
+      open: ({ parent, childRunId, task, siblings }) => {
         const opened = openHandoff({
-          id: `${parent.id}-h${turn}`,
+          id: `${parent.id}-h${childRunId.slice(`${parent.id}-d`.length)}`,
           tenantId: null,
           from: { agentId: 'loop', agentVersion: '1', agentDigest: 'sha256:a', produces: ['plan.markdown'] },
           to: { agentId: 'child', agentVersion: '1', agentDigest: 'sha256:b', accepts: ['plan.markdown'] },
@@ -539,22 +539,25 @@ describe('delegation, one level, with its own budget', () => {
     };
   }
 
-  test('a handoff record, a child with its own budget, and the answer observed by the parent', async () => {
+  test('a handoff record, a child with a budget carved from the parent’s, and the answer observed by the parent', async () => {
     const { runs } = await setup();
     const tools = registry([]);
     await start(runs, 'loop-7', BUDGET, tools);
     const log: string[] = [];
+    const again = () => ({ type: 'tool' as const, name: 'delegate', input: { task: 'Again.' } });
     const adapter = scripted([
       (request) => {
         expect(request.tools.map((tool) => tool.name)).toContain('delegate');
         return { type: 'tool', name: 'delegate', input: { task: 'Read delivery.md.' } };
       },
-      () => ({ type: 'tool', name: 'delegate', input: { task: 'Again.' } }),
-      () => ({ type: 'tool', name: 'delegate', input: { task: 'A third time.' } }),
+      again,
+      again,
+      again,
+      () => ({ type: 'tool', name: 'delegate', input: { task: 'A fifth time.' } }),
       (request) => ({ type: 'final', text: `Helper said: ${JSON.stringify(request.messages.at(-1)?.output)}` }),
     ]);
     await new NativeLoop(runs, adapter, tools, {
-      maxTurns: 6,
+      maxTurns: 7,
       instructions: '',
       bindings,
       delegation: port(runs, log, 'answer'),
@@ -562,24 +565,87 @@ describe('delegation, one level, with its own budget', () => {
       model: null,
     }).run('loop-7', 'host', 'Delegate the reading.', principal);
     const run = await runs.get('loop-7');
-    const children = await Promise.all(['loop-7-d0', 'loop-7-d1'].map((id) => runs.get(id)));
+    const ids = ['loop-7-d0', 'loop-7-d1', 'loop-7-d2', 'loop-7-d3'];
+    const children = await Promise.all(ids.map((id) => runs.get(id)));
     const view = loopView(run, children);
-    expect(view.delegations.map((item) => [item.turn, item.handoffId, item.childRunId, item.child?.state])).toEqual([
-      [0, 'loop-7-h0', 'loop-7-d0', 'completed'],
-      [1, 'loop-7-h1', 'loop-7-d1', 'completed'],
-    ]);
-    // The child's budget is fixed and small, never taken from the model's request.
-    expect(view.delegations[0].budget).toEqual(delegateBudget());
-    expect(children[0].budget).toEqual(delegateBudget());
-    // A third handoff is refused: at most two per run.
-    expect(view.turns[2]).toMatchObject({ decision: 'refused' });
-    expect(view.turns[2].observation?.detail).toMatch(/at most|as many as one loop may/);
+    expect(view.delegations.map((item) => [item.turn, item.handoffId, item.childRunId, item.child?.state])).toEqual(
+      ids.map((id, turn) => [turn, `loop-7-h${turn}`, id, 'completed']),
+    );
+    // Andrew, 2026-09-24: each child's budget is carved from what the parent has left, never
+    // added on top, and the parent spends it: seven model calls and four carves of eight units.
+    expect(view.delegations[0].budget).toEqual({ units: 8, modelCalls: 4, toolCalls: 4, wallMs: null });
+    expect(children[0].budget).toEqual(view.delegations[0].budget);
+    expect(run.used.units).toBe(7 + 4 * 8);
+    expect(run.used.units).toBeLessThanOrEqual(run.budget.units);
+    // A fifth handoff is refused: at most four per run.
+    expect(view.turns[4]).toMatchObject({ decision: 'refused' });
+    expect(view.turns[4].observation?.detail).toMatch(/as many as one loop may/);
     expect(view.turns[0].observation).toMatchObject({ action: 'delegate', ok: true });
     expect(view.turns[0].observation?.excerpt).toContain('94 napkins');
     const handoff = run.steps.find((step) => step.intent.stepId === 'handoff:0')!;
     expect(handoff.origin?.mode).toBe('supervisor');
     expect((handoff.output as { envelope: { from: { agentId: string }; depth: number } }).envelope).toMatchObject({ from: { agentId: 'loop' }, depth: 0 });
-    expect(log).toEqual(['start loop-7-d0', 'start loop-7-d1']);
+    expect(log).toEqual(ids.map((id) => `start ${id}`));
+  });
+
+  test('sub-tasks asked for together run at the same time, each carved an equal share', async () => {
+    const { runs } = await setup();
+    const tools = registry([]);
+    await start(runs, 'loop-9', BUDGET, tools);
+    const log: string[] = [];
+    const adapter = scripted([
+      () => ({ type: 'tool', name: 'delegate', input: { tasks: [{ task: 'Read a.md.' }, { task: 'Read b.md.' }, { task: 'Read c.md.' }] } }),
+      () => ({ type: 'tool', name: 'delegate', input: { tasks: [{ task: 'One more.' }, { task: 'And another.' }] } }),
+      () => ({ type: 'final', text: 'Done.' }),
+    ]);
+    await new NativeLoop(runs, adapter, tools, {
+      maxTurns: 4,
+      instructions: '',
+      bindings,
+      delegation: port(runs, log, 'answer'),
+      route: 'native-fixture',
+      model: null,
+    }).run('loop-9', 'host', 'Delegate three readings.', principal);
+    const run = await runs.get('loop-9');
+    const ids = ['loop-9-d0', 'loop-9-d0-1', 'loop-9-d0-2'];
+    const view = loopView(run, await Promise.all(ids.map((id) => runs.get(id))));
+    expect(view.delegations.map((item) => [item.childRunId, item.handoffId, item.child?.state, item.result?.state])).toEqual([
+      ['loop-9-d0', 'loop-9-h0', 'completed', 'completed'],
+      ['loop-9-d0-1', 'loop-9-h0-1', 'completed', 'completed'],
+      ['loop-9-d0-2', 'loop-9-h0-2', 'completed', 'completed'],
+    ]);
+    // One delegate step started all three; together they cost three shares of what was left.
+    expect(run.steps.filter((step) => step.intent.stepId.startsWith('delegate:'))).toHaveLength(1);
+    expect(run.steps.find((step) => step.intent.stepId === 'delegate:0')!.intent.cost).toBe(3 * 8);
+    expect(view.turns[0].observation?.detail).toBe('3 of 3 sub-tasks finished.');
+    // Two more would make five: refused before anything starts.
+    expect(view.turns[1]).toMatchObject({ decision: 'refused' });
+    expect(view.turns[1].observation?.detail).toMatch(/handed off 3 of its 4 sub-tasks, so 2 more would pass its limit/);
+    expect(log).toHaveLength(3);
+  });
+
+  test('a carve the parent cannot afford is refused, and nothing starts', async () => {
+    const { runs } = await setup();
+    const tools = registry([]);
+    await start(runs, 'loop-10', { units: 6, modelCalls: 5, toolCalls: 5, wallMs: null }, tools);
+    const log: string[] = [];
+    const adapter = scripted([
+      () => ({ type: 'tool', name: 'delegate', input: { tasks: [{ task: 'Read a.md.' }, { task: 'Read b.md.' }] } }),
+      () => ({ type: 'final', text: 'Done alone.' }),
+    ]);
+    await new NativeLoop(runs, adapter, tools, {
+      maxTurns: 2,
+      instructions: '',
+      bindings,
+      delegation: port(runs, log, 'answer'),
+      route: 'native-fixture',
+      model: null,
+    }).run('loop-10', 'host', 'Delegate two readings.', principal);
+    const view = loopView(await runs.get('loop-10'));
+    expect(view.turns[0]).toMatchObject({ decision: 'delegate', observation: { action: 'refused' } });
+    expect(view.turns[0].observation?.detail).toMatch(/4 of its 6 units left, which is not enough to carve 2 sub-tasks/);
+    expect(log).toEqual([]);
+    expect(view.finish?.claim).toBe('Done alone.');
   });
 
   test('stopping the parent stops the child it is waiting for', async () => {

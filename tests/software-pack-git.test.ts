@@ -7,6 +7,7 @@ import path from 'node:path';
 import {
   fileAtHead,
   fingerprint,
+  git,
   newFileDiff,
   parseLog,
   parseStatusV2,
@@ -283,5 +284,24 @@ describe('a declared command is plain words, never a shell line', () => {
     expect(parseCommandLine(42)).toMatchObject({ ok: false, code: 'command_empty' });
     expect(parseCommandLine('a '.repeat(40))).toMatchObject({ ok: false, code: 'command_too_long' });
     expect(parseCommandLine('x'.repeat(501))).toMatchObject({ ok: false, code: 'command_too_long' });
+  });
+});
+
+describe('hooks', () => {
+  test('a hook the repository tracks never runs, whatever folder it sits in', async () => {
+    const root = await repository();
+    // A repository that ships a hook in the folder a relative hooks path would name, and in
+    // Git's own default place for good measure.
+    for (const folder of ['.diomedes-no-hooks', '.githooks']) {
+      await fs.mkdir(path.join(root, folder), { recursive: true });
+      await fs.writeFile(path.join(root, folder, 'post-checkout'), '#!/bin/sh\necho ran > hook-ran.txt\n', { mode: 0o755 });
+    }
+    run(root, 'add', '.');
+    run(root, 'update-index', '--chmod=+x', '.diomedes-no-hooks/post-checkout', '.githooks/post-checkout');
+    run(root, 'commit', '-q', '-m', 'Ship hooks');
+    const added = await git(root, ['worktree', 'add', '-b', 'task-hooks', `${WORKTREE_FOLDER}/task-hooks`, 'HEAD'], { timeoutMs: 90_000 });
+    expect(added.code, added.stderr).toBe(0);
+    await expect(fs.access(path.join(root, WORKTREE_FOLDER, 'task-hooks', 'hook-ran.txt'))).rejects.toThrow();
+    await expect(fs.access(path.join(root, 'hook-ran.txt'))).rejects.toThrow();
   });
 });

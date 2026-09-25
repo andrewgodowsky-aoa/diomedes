@@ -85,6 +85,12 @@ export interface Settings {
     onlineServiceNotice: boolean;
     guidedDescriptors: Record<string, number>;
     firstUse: string[];
+    /**
+     * Versions whose "What's new" notice the person has dismissed, so each
+     * version's notice is offered once. Missing on settings written before
+     * 2026-09-25, which reads as none dismissed.
+     */
+    releaseNotes?: string[];
   };
   openProjects: string[];
   /**
@@ -269,6 +275,12 @@ export interface Need {
    * approval or a reviewer (shared/supervision.ts).
    */
   supervision?: import('./supervision.js').SupervisionNeedRef;
+  /**
+   * H13/H14 sandboxes: this Need holds the entries of a delegate's or worker's change set that
+   * its parent may not apply itself (shared/sandbox.ts). A person keeps or discards each one;
+   * nothing is written until they do, and it never expires with the run that raised it.
+   */
+  changeSet?: { readonly protocolVersion: 1; readonly changeSetId: string; readonly indexes: readonly number[] };
 }
 /**
  * One proposed file's content check. An `.svg`, or an `.xml` that is SVG,

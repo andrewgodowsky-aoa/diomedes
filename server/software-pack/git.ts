@@ -38,6 +38,13 @@ import { containedSpawn } from '../harness/containment.js';
 import { HarnessError } from '../harness/policy.js';
 import { relativeName } from '../paths.js';
 
+/**
+ * An inert hooks location. A relative `core.hooksPath` resolves inside the working tree,
+ * so a repository could ship an executable hook there and have Git run it on checkout.
+ * The null device names nothing Git can run a hook from (as `change-review/git.ts` does).
+ */
+const NO_HOOKS = process.platform === 'win32' ? 'NUL' : '/dev/null';
+
 /** Settings every git call carries, ahead of its own arguments. */
 const PINNED = [
   '-c',
@@ -47,7 +54,7 @@ const PINNED = [
   '-c',
   'color.ui=false',
   '-c',
-  'core.hooksPath=.diomedes-no-hooks',
+  `core.hooksPath=${NO_HOOKS}`,
   '-c',
   'advice.detachedHead=false',
   '--no-pager',

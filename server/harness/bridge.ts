@@ -378,7 +378,8 @@ export class HarnessBridge {
     }
     if (['completed', 'failed', 'cancelled'].includes(run.state))
       for (const need of state.needs.filter(
-        (item) => item.sessionId === session.id && item.state === 'open',
+        // A sandbox's change set waits for its person after its run ends (shared/sandbox.ts).
+        (item) => item.sessionId === session.id && item.state === 'open' && !item.changeSet,
       )) {
         need.state = 'expired';
         need.decidedAt = now();

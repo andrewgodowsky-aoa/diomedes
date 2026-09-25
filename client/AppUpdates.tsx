@@ -5,6 +5,7 @@ import { readUpdateStatus } from './use-update-status';
 import { Button } from './components';
 import { SegmentBar } from './console/SegmentBar';
 import { updateBar, type UpdateRequest } from './update-progress';
+import { ReleaseNotesBody } from './ReleaseNotesBody';
 import './app-updates.css';
 
 type Phase = 'loading' | 'ready' | 'checking' | 'downloading' | 'installing' | 'launched';
@@ -149,6 +150,23 @@ export function AppUpdates() {
           {outcome === 'available' && (
             <section className="block">
               <h3>Version {status.check.latestVersion} is available</h3>
+              {/* The offered release's own notes, read before anything is
+                  downloaded: the bundled file's entry when this build knows
+                  the version, else the release page's text, drawn as text. */}
+              {status.check.notes && (
+                <div
+                  className="offered-notes"
+                  role="region"
+                  aria-label={`What's new in ${status.check.latestVersion}`}
+                  tabIndex={0}
+                >
+                  {status.check.notes.source === 'bundled' ? (
+                    <ReleaseNotesBody release={status.check.notes.release} />
+                  ) : (
+                    <p className="prose release-text">{status.check.notes.text}</p>
+                  )}
+                </div>
+              )}
               {status.check.notesUrl && (
                 <p className="prose notes-row">
                   <a href={status.check.notesUrl} target="_blank" rel="noreferrer">

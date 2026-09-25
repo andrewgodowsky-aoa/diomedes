@@ -203,7 +203,10 @@ test('D01: a saved theme applies without remounting the app or losing a draft', 
   // dataset.package is the pack's base scheme, never its own id: the desktop
   // titlebar is keyed by scheme id and must always resolve.
   await expect(page.locator('html')).toHaveAttribute('data-package', 'graphite');
-  await expect(page.locator('html')).toHaveAttribute('data-density', 'technical');
+  // Density sets the reading measure, which the running build owns: a skin's
+  // value is superseded rather than written onto the root
+  // (shared/appearance-structure.ts), so an update's layout changes show.
+  await expect(page.locator('html')).not.toHaveAttribute('data-density', /./);
   await expect(page.locator('html')).toHaveAttribute('data-color-scheme', 'dark');
   expect(await rootVar(page, '--surface')).toBe('#140a1e');
   expect(await rootVar(page, '--r')).toBe('10px');

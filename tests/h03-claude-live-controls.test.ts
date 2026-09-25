@@ -82,7 +82,7 @@ const base: TextRequest = {
   accountRoute: 'claude-code:claude.ai',
 };
 
-async function world(stopGraceMs = 400) {
+async function world() {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'h03-claude-'));
   roots.push(root);
   const script = path.join(root, 'claude.mjs');
@@ -393,7 +393,7 @@ describe('H03 review F: Stop tells the truth about what it stopped', () => {
     const driver = await w.boot();
     await driver.request(w.turn('start', 'one', 'first'));
     const running = driver.request(w.turn('follow-up', 'two', 'long [slow]'));
-    await tick(50);
+    await w.received('long [slow]');
     const projected: string[] = [];
     await driver.steer('p', 'claude-run', 'four', 'steered [hang]', {
       onDelivered: async (result) => {
@@ -401,7 +401,7 @@ describe('H03 review F: Stop tells the truth about what it stopped', () => {
       },
     });
     await running;
-    for (let i = 0; i < 40 && !(await w.lines()).some((line) => line.turn === 'steered [hang]'); i += 1) await tick(50);
+    await w.received('steered [hang]');
     // It was sent and is being answered, so a Stop interrupts it rather than withdrawing it.
     expect(await driver.interruptCommand('p', 'claude-run', 'four')).toEqual({ state: 'requested', stop: 'interrupted' });
     const status = await driver.status('p', 'claude-run');
@@ -418,10 +418,10 @@ describe('H03 review F: Stop tells the truth about what it stopped', () => {
     const driver = await w.boot();
     await driver.request(w.turn('start', 'one', 'first'));
     const running = driver.request(w.turn('follow-up', 'two', 'long [slow]'));
-    await tick(50);
+    await w.received('long [slow]');
     const queued = settle(driver.request(w.turn('follow-up', 'three', 'queued [hang]', { queued: true })));
     await running;
-    for (let i = 0; i < 40 && !(await w.lines()).some((line) => line.turn === 'queued [hang]'); i += 1) await tick(50);
+    await w.received('queued [hang]');
     await driver.closeAll().catch(() => undefined);
     const outcome = await queued;
     expect(outcome.error).toBeDefined();
@@ -432,7 +432,8 @@ describe('H03 review F: Stop tells the truth about what it stopped', () => {
     const w = await world();
     const driver = await w.boot();
     await driver.request(w.turn('start', 'one', 'first'));
-    accountDelay.ms = 500;
+    // Long enough that the Stop below lands while the account is still being checked.
+    accountDelay.ms = 2_000;
     const running = settle(driver.request(w.turn('follow-up', 'two', 'never sent')));
     await tick(100);
     const stop = await driver.interruptCommand('p', 'claude-run', 'two');
@@ -454,7 +455,7 @@ describe('H03 review F: Stop tells the truth about what it stopped', () => {
     const driver = await w.boot();
     await driver.request(w.turn('start', 'one', 'first'));
     const running = settle(driver.request(w.turn('follow-up', 'two', 'wait [hang]')));
-    await tick();
+    await w.received('wait [hang]');
     const waiting = Array.from({ length: 8 }, (_, i) =>
       settle(driver.request(w.turn('follow-up', `q${i}`, `queued ${i}`, { queued: true }))),
     );
@@ -476,11 +477,11 @@ describe('H03 review F: Stop tells the truth about what it stopped', () => {
 
   it('a Stop Claude Code never acknowledges is recorded as forced, whatever the grace', async () => {
     // The interrupt's own acknowledgement timeout (5 s) ends the process too; it must say so.
-    const w = await world(5500);
-    const driver = await w.boot();
+    const w = await world();
+    const driver = await w.boot(false, 5500);
     await driver.request(w.turn('start', 'one', 'first'));
     const running = settle(driver.request(w.turn('follow-up', 'two', 'wait [deaf]')));
-    await tick();
+    await w.received('wait [deaf]');
     expect(await driver.interruptCommand('p', 'claude-run', 'two')).toEqual({ state: 'requested', stop: 'killed' });
     expect((await running).error).toMatchObject({ code: 'STOP_FORCED' });
     const status = await driver.status('p', 'claude-run');
