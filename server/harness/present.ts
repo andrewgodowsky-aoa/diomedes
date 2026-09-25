@@ -151,15 +151,38 @@ export function needFromWaitingStep(
         : step.intent.effect === 'idempotent'
           ? 'This makes a change that is safe to repeat. Diomedes records it.'
           : 'This only reads. Nothing changes.';
+  const held = heldBy(run, step);
   return {
     runId: run.id,
     intentHash: step.intentHash,
     ...(step.origin === undefined ? {} : { origin: step.origin }),
     what: `Go ahead with ${describeIntent(step)}?`,
-    why: 'This step asks for your OK before it runs. Nothing happens until you say go ahead, and your OK covers exactly this step and nothing else.',
+    why: held
+      ? `A rule held this before it ran: ${held.reason} Nothing happens until you say go ahead, and your OK covers exactly this step and nothing else.`
+      : 'This step asks for your OK before it runs. Nothing happens until you say go ahead, and your OK covers exactly this step and nothing else.',
     consequence,
     files,
   };
+}
+
+/**
+ * H16: the stream-time rule hold on this exact waiting intent, from the run's
+ * own event log, or null. A held step is answered by a person every time.
+ */
+export function heldBy(run: HarnessRun, step: StepRecord): { reason: string; refs: string[] } | null {
+  const event = [...run.events]
+    .reverse()
+    .find(
+      (item) =>
+        item.type === 'step.held' &&
+        item.stepId === step.intent.stepId &&
+        item.attributes.intentHash === step.intentHash,
+    );
+  if (!event) return null;
+  const refs = Array.isArray(event.attributes.refs)
+    ? event.attributes.refs.filter((ref): ref is string => typeof ref === 'string')
+    : [];
+  return { reason: typeof event.attributes.reason === 'string' ? event.attributes.reason : '', refs };
 }
 
 /**
