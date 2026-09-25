@@ -64,6 +64,30 @@ export interface StreamWatch {
   end(finalText: string | null): Promise<void>;
 }
 
+/**
+ * The runs trigger rules watch: Diomedes loop runs, where Diomedes owns the model stream and
+ * tool admission. External engines run their own tools and are not watched.
+ */
+export const WATCHED_RUNS: readonly string[] = Object.freeze(['diomedes-loop']);
+
+/** What a rule write changed, in words, in the order the rules are written; removals last. */
+export function ruleChanges(before: readonly StreamRule[], after: readonly StreamRule[]): string[] {
+  const earlier = new Map(before.map((rule) => [rule.id, rule]));
+  const changes: string[] = [];
+  for (const rule of after) {
+    const previous = earlier.get(rule.id);
+    if (!previous) changes.push(`added ${rule.id} v${rule.version}`);
+    else if (digest(previous) !== digest(rule))
+      changes.push(
+        previous.enabled !== rule.enabled && digest({ ...previous, enabled: rule.enabled, version: rule.version }) === digest(rule)
+          ? `turned ${rule.enabled ? 'on' : 'off'} ${rule.id} v${rule.version}`
+          : `changed ${rule.id} v${rule.version}`,
+      );
+  }
+  for (const rule of before) if (!after.some((item) => item.id === rule.id)) changes.push(`removed ${rule.id}`);
+  return changes;
+}
+
 /** The declaration that fired: its exact bytes' digest, never just its id. */
 export const ruleDigest = (rule: StreamRule) => digest(rule);
 
@@ -184,12 +208,13 @@ export class StreamRuleService {
   /** The rules at both authorities, and how they resolve for a task (or for none). */
   list(projectId: string | null, taskId: string | null = null) {
     const organization = structuredClone(this.store.settings.streamTriggerRules ?? []);
-    if (projectId === null) return { organization, project: [], resolution: null };
+    if (projectId === null) return { organization, project: [], resolution: null, watches: WATCHED_RUNS };
     const state = this.store.state(projectId);
     return {
       organization,
       project: structuredClone(state.streamTriggerRules ?? []),
       resolution: resolveStreamRules(this.authored(state), taskId),
+      watches: WATCHED_RUNS,
     };
   }
 
@@ -224,7 +249,15 @@ export class StreamRuleService {
         if (decision?.outcome === 'blocked')
           throw new ApiError(409, `${item.rule.id}: ${decision.reason}`, { code: 'stream_rule_loosens' });
       }
+      const changes = ruleChanges(state.streamTriggerRules ?? [], rules);
       state.streamTriggerRules = structuredClone(rules);
+      // A project's rules are its configuration, recorded like turning a pack on: the local
+      // person's decision, only when it changed something (decision 8).
+      if (changes.length)
+        this.store.addEntry(state, {
+          kind: 'rules',
+          sentence: `You changed this project's trigger rules: ${changes.join(', ')}. A rule grants nothing.`,
+        });
       await this.store.persist(state);
       return this.list(projectId);
     }
