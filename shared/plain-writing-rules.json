@@ -1,0 +1,75 @@
+{
+  "version": "2026-09-25.1",
+  "about": "Nectovia's plain-writing rules: the one list the checker reads (shared/plain-writing.ts). Seeded from the website's copy gate (diomedes-site scripts/copy-rules.mjs BANNED and scripts/check-copy.mjs voice rules). To add a phrase, add it to stockPhrases in lower case and bump the version. A person can also add phrases for their own installation in Settings; those are kept in settings, not here.",
+  "fillerOpeners": [
+    "great question",
+    "good question",
+    "what a great question",
+    "thanks for asking",
+    "certainly",
+    "absolutely",
+    "of course",
+    "sure",
+    "i'd be happy to",
+    "i would be happy to",
+    "i'm happy to",
+    "i am happy to",
+    "happy to help"
+  ],
+  "closingOffers": [
+    "let me know if you'd like",
+    "let me know if you would like",
+    "let me know if you want",
+    "let me know if you need anything",
+    "let me know if there's anything",
+    "let me know if there is anything",
+    "feel free to",
+    "hope this helps",
+    "i hope this helps",
+    "don't hesitate to",
+    "do not hesitate to",
+    "if you have any questions",
+    "if you have any other questions",
+    "if you have any further questions",
+    "would you like me to",
+    "if you'd like, i can",
+    "if you would like, i can"
+  ],
+  "contrastPatterns": [
+    { "id": "its-not-x-its-y", "re": "\\b(?:it|this|that)(?:'s|’s| is) not (?:just |only |merely )?[^.!?\\n]{1,80}[.;]\\s+(?:it|this|that)(?:'s|’s| is)\\b", "what": "contrast framing \"It's not X. It's Y.\"" },
+    { "id": "isnt-x-its-y", "re": "\\bisn(?:'|’)t [^.!?\\n]{1,60}[.;]\\s+it(?:'|’)?s\\b", "what": "contrast framing \"isn't X. It's Y.\"" },
+    { "id": "not-just-x-but-y", "re": "\\bnot (?:just|only|merely|simply) [^.!?\\n]{1,60}?,? but (?:also )?\\b", "what": "contrast framing \"not just X but Y\"" },
+    { "id": "comma-not-just", "re": ",\\s+not (?:just|merely|simply)\\b", "what": "contrast framing \", not just\"" }
+  ],
+  "contrastNote": "A plain correction such as \"Friday, not Thursday\" is left alone on purpose: the site bans every \", not\", but in an answer about a business that form is usually the fact the reader needs. Add a pattern here to ban it.",
+  "hedges": {
+    "adverbs": ["possibly", "perhaps", "potentially", "arguably", "somewhat", "presumably", "conceivably", "probably", "maybe", "likely"],
+    "modals": ["might", "may", "could"],
+    "phrases": ["it seems", "it appears", "to some extent", "in some cases", "i think", "i believe"],
+    "note": "A sentence is flagged when it holds two or more hedges and at least one is an adverb or phrase. Two modals alone (\"you may want to check whether it could be late\") are ordinary English. \"May\" counts only in lower case, so the month is never a hedge."
+  },
+  "stockPhrases": [
+    "delve", "robust", "seamless", "seamlessly", "leverage", "empower", "elevate", "streamline",
+    "unleash", "cutting-edge", "state-of-the-art", "best-in-class", "world-class", "game-changer",
+    "game-changing", "revolutionary", "revolutionize", "synergy", "holistic", "frictionless",
+    "turnkey", "battle-tested", "blazing", "supercharge", "harness the power", "tapestry",
+    "testament", "deep dive", "dive in", "unlock", "effortless", "magical", "next-generation",
+    "ai-powered", "powered by ai", "future of work", "transform your business",
+    "whether you're", "in today's", "in a world where", "imagine a", "it's not just",
+    "not just a", "at its core", "at the end of the day", "in essence", "ultimately",
+    "it's worth noting", "we're excited", "here's the thing", "game changer",
+    "it's important to note", "it is important to note", "rest assured",
+    "i hope this email finds you well", "i hope this message finds you well"
+  ],
+  "stockPhrasesExcluded": {
+    "journey": "an ordinary word for a trip or a delivery route in a business answer",
+    "landscape": "a landscaping business uses it for its own work",
+    "navigate": "ordinary instructions (\"navigate to Settings\")",
+    "ecosystem": "a garden centre or a pond business means it literally",
+    "let's": "a drafted message from the owner to a customer may fairly say \"Let's meet Tuesday\""
+  },
+  "stockPhrasesAdded": [
+    "it's important to note", "it is important to note", "rest assured",
+    "i hope this email finds you well", "i hope this message finds you well"
+  ]
+}

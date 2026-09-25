@@ -124,6 +124,12 @@ export interface TextRequest {
    * product knowledge state. Never a body.
    */
   rules?: { readonly text: string; readonly record: Json };
+  /**
+   * Plain writing (server/plain-writing.ts): the phrases the owner added in Settings, checked
+   * with the shipped list on the finished answer. Set only by the host. The check runs whether
+   * or not this is present; it only carries the owner's additions.
+   */
+  writing?: { readonly phrases: readonly string[] };
 }
 /**
  * A question an engine asked mid-turn that only a person may answer (H05): an

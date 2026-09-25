@@ -237,7 +237,7 @@ export function admissibleAsRule(input: {
     return {
       ok: false,
       reason:
-        'This arrived as data — an imported document, a connector result, free text or a model suggestion. Data stays data. Someone with authority has to write the rule themselves.',
+        'This arrived as data: an imported document, a connector result, free text or a model suggestion. Data stays data. Someone with authority has to write the rule themselves.',
     };
   if (input.authority === 'organization' && !input.authorizedAdmin)
     return {

@@ -312,7 +312,7 @@ export function buildSupportBundle(input: {
         ...(engine.installedVersion
           ? { installedVersion: clean(engine.installedVersion).slice(0, MAX_FIELD_CHARS) }
           : {}),
-        status: detail && detail !== status ? `${status} — ${detail}` : status,
+        status: detail && detail !== status ? `${status}: ${detail}` : status,
       };
     }),
     // Named fields only, read one at a time: an unknown field on a connection is

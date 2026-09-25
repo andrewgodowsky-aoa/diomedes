@@ -191,7 +191,7 @@ test('finds the manual brief, runs it once, follows its records, sees missing da
   await expect(screen(page).getByRole('heading', { name: 'Automations', level: 1 })).toBeVisible();
 
   // 2. Manual, not scheduled, and a recorded weekly answer that stays inactive.
-  await expect(row(page)).toContainText('Manual — not scheduled');
+  await expect(row(page)).toContainText('Manual, not scheduled');
   await expect(row(page)).toContainText('recorded but stays inactive');
   await expect(screen(page).getByLabel('Summary')).toContainText('Configured');
   await expect(screen(page)).toContainText('local development');
@@ -304,7 +304,7 @@ test('an owner turns a schedule on, sees the next run, the due slot starts on it
   // One clean manual run first, so the last run no longer reads Waiting for data.
   await row(page).getByRole('button', { name: 'Run once' }).click();
   await expect(row(page)).toContainText('Draft saved for review', { timeout: 30_000 });
-  await expect(row(page).locator('.auto-state')).toHaveText('Manual — not scheduled');
+  await expect(row(page).locator('.auto-state')).toHaveText('Manual, not scheduled');
   const tasksBefore = (await api<{ tasks: unknown[] }>(`/projects/${project.id}/state`)).tasks.length;
   const schedule = row(page).getByRole('region', { name: 'Schedule' });
   await expect(schedule).toContainText('Off. It runs only when someone presses Run once.');
@@ -319,7 +319,7 @@ test('an owner turns a schedule on, sees the next run, the due slot starts on it
   await expect(form.locator('.auto-preview')).toContainText('Would run');
   await form.getByRole('button', { name: 'Save schedule' }).click();
   await expect(screen(page).locator('.auto-announce')).toContainText('It is not on until someone turns it on');
-  await expect(row(page)).toContainText('Manual — not scheduled');
+  await expect(row(page)).toContainText('Manual, not scheduled');
   await expect(schedule).toContainText('Every Monday at 8:00 a.m. America/New_York');
 
   // Turn on: Scheduled, with the next run the host computed.
@@ -358,7 +358,7 @@ test('an owner turns a schedule on, sees the next run, the due slot starts on it
   await scheduler().tick();
   await screen(page).getByRole('button', { name: 'Refresh' }).click();
   await expect(row(page).locator('.auto-occurrence[data-trigger="schedule"]').first()).toContainText(
-    'Skipped — paused',
+    'Skipped: paused',
   );
   expect((await api<{ tasks: unknown[] }>(`/projects/${project.id}/state`)).tasks.length).toBe(tasksBefore + 1);
   await page.screenshot({ path: 'test-results/automations-paused.png' });

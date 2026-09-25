@@ -287,7 +287,7 @@ export function runRules(input: RuleInput): RuleOutput {
       flag(
         'executable-bit-set',
         'attention',
-        `A file became executable: ${escapeVisible(change.path)} — its Git mode changed ${before} → ${after}.`,
+        `A file became executable: ${escapeVisible(change.path)}. Its Git mode changed ${before} → ${after}.`,
         paths,
         evidence,
       );
@@ -295,7 +295,7 @@ export function runRules(input: RuleInput): RuleOutput {
       flag(
         'executable-bit-cleared',
         'info',
-        `A file lost its executable bit: ${escapeVisible(change.path)} — Git mode ${before} → ${after}.`,
+        `A file lost its executable bit: ${escapeVisible(change.path)}. Git mode ${before} → ${after}.`,
         paths,
         evidence,
       );
@@ -533,29 +533,29 @@ function structuredFlagPolicy(
       if (field.addedTotal > 0 && field.removedTotal === 0)
         return {
           severity: 'attention',
-          text: `${field.label} expanded — ${deltaText}. Access to ${escapeVisible(record)} grew.`,
+          text: `${field.label} expanded: ${deltaText}. Access to ${escapeVisible(record)} grew.`,
         };
       if (field.removedTotal > 0 && field.addedTotal === 0)
         return {
           severity: 'attention',
-          text: `${field.label} narrowed — ${deltaText}. Access to ${escapeVisible(record)} shrank.`,
+          text: `${field.label} narrowed: ${deltaText}. Access to ${escapeVisible(record)} shrank.`,
         };
       return {
         severity: 'attention',
-        text: `${field.label} changed — ${deltaText}. Access to ${escapeVisible(record)} changed.`,
+        text: `${field.label} changed: ${deltaText}. Access to ${escapeVisible(record)} changed.`,
       };
     }
     case 'recipient-list-changed':
       return {
         severity: 'attention',
-        text: `${field.label} changed — ${deltaText || 'the list changed'}. Who receives ${escapeVisible(record)} changed.`,
+        text: `${field.label} changed: ${deltaText || 'the list changed'}. Who receives ${escapeVisible(record)} changed.`,
       };
     case 'connector-changed':
       return {
         severity: 'attention',
         text:
           field.kind === 'collection'
-            ? `${field.label} changed — ${deltaText}. What feeds ${escapeVisible(record)} changed.`
+            ? `${field.label} changed: ${deltaText}. What feeds ${escapeVisible(record)} changed.`
             : `${field.label} changed: ${scalar}. Where ${escapeVisible(record)} goes changed.`,
       };
     case 'automation-toggled':
@@ -566,7 +566,7 @@ function structuredFlagPolicy(
     case 'credential-changed':
       return {
         severity: 'attention',
-        text: `${field.label} changed — the value is recorded, never shown.`,
+        text: `${field.label} changed. The value is recorded, never shown.`,
       };
     default:
       return { severity: 'info', text: `${field.label} changed in ${escapeVisible(record)}.` };

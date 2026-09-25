@@ -56,6 +56,10 @@ import {
 import type { ProductKnowledgeBundle, ProductKnowledgeReceipt } from '../../shared/readiness.js';
 import type { GoverningRecord } from '../../shared/rule-authority.js';
 import { instructionRules } from '../capability-packs.js';
+import { PLAIN_WRITING_VERSION, WRITING_STANDARD } from '../../shared/plain-writing.js';
+import { createHash } from 'node:crypto';
+
+const STANDARD_SHA = createHash('sha256').update(WRITING_STANDARD, 'utf8').digest('hex');
 import { ApiError, projectFile, readTextOrNull } from '../paths.js';
 import { assembleContext } from '../rules.js';
 import { hash, now } from '../store.js';
@@ -122,6 +126,16 @@ export interface AssembledInstructions {
   readonly governing: readonly GoverningRecord[];
   /** Prepared/omitted only. A caller may mark sent after a provider response. */
   readonly productKnowledge: ProductKnowledgeReceipt;
+  /** Whether the writing standard (shared/plain-writing.ts) went, at which version. */
+  readonly writing: WritingStandardReceipt;
+}
+
+/** The writing standard's part of a delivery: which version went, or that it did not fit. */
+export interface WritingStandardReceipt {
+  readonly version: string;
+  readonly sha256: string;
+  readonly bytes: number;
+  readonly state: 'sent' | 'omitted';
 }
 
 /**
@@ -239,19 +253,32 @@ export async function assembleInstructions(input: {
     buildVersion: packageInfo.version,
     now: at,
   });
+  // The writing standard comes first and is weighed first: it is the product's own rule for how
+  // anything a person reads is written, it is the same small text on every call, and it must not
+  // be the part left out when the documents leave little room.
+  const standardBytes = Buffer.byteLength(WRITING_STANDARD);
+  const writing: WritingStandardReceipt =
+    standardBytes <= input.budgetBytes
+      ? { version: PLAIN_WRITING_VERSION, sha256: STANDARD_SHA, bytes: standardBytes, state: 'sent' }
+      : { version: PLAIN_WRITING_VERSION, sha256: STANDARD_SHA, bytes: 0, state: 'omitted' };
+  const afterWriting = Math.max(0, input.budgetBytes - writing.bytes - (writing.bytes ? 1 : 0));
   const product = assembleProductKnowledgeInstructions({
     knowledge,
     routeId: input.routeId,
-    budgetBytes: input.budgetBytes,
+    budgetBytes: afterWriting,
     at,
   });
-  const remaining = Math.max(0, input.budgetBytes - product.receipt.bytes);
+  const remaining = Math.max(0, afterWriting - product.receipt.bytes);
   const combine = (
-    project: Omit<AssembledInstructions, 'productKnowledge'>,
+    project: Omit<AssembledInstructions, 'productKnowledge' | 'writing'>,
   ): AssembledInstructions => ({
     ...project,
-    section: [product.section, project.section].filter((value): value is string => Boolean(value)).join('\n') || null,
+    section:
+      [writing.state === 'sent' ? WRITING_STANDARD : null, product.section, project.section]
+        .filter((value): value is string => Boolean(value))
+        .join('\n') || null,
     productKnowledge: product.receipt,
+    writing,
   });
   const allowed = input.allowedDocuments === undefined
     ? null
@@ -315,7 +342,7 @@ export async function assembleInstructions(input: {
     (record) =>
       record.state === 'loaded' && record.ruleId && (allowed === null || allowed.has(record.path)),
   );
-  const unscoped = (): Omit<AssembledInstructions, 'productKnowledge'> => ({
+  const unscoped = (): Omit<AssembledInstructions, 'productKnowledge' | 'writing'> => ({
     section: null,
     delivery: reachable
       ? {
@@ -380,7 +407,7 @@ export async function assembleInstructions(input: {
     Buffer.byteLength(LEFT_OUT_HEAD) +
     4;
   // Joined to the shipped product knowledge by one newline.
-  const room = Math.max(0, remaining - (product.section ? 1 : 0));
+  const room = Math.max(0, remaining - (product.section || writing.state === 'sent' ? 1 : 0));
   let pending = applied.reduce((sum, rule) => sum + leftOutReserve(records.get(rule.id)!.path), 0);
 
   const files: DeliveredInstructionFile[] = [];
@@ -485,6 +512,7 @@ export function ruleDeliveryRecord(assembled: AssembledInstructions, text: strin
       state: assembled.productKnowledge.state,
       bundleSha256: assembled.productKnowledge.bundleSha256,
     },
+    writing: { ...assembled.writing },
   };
 }
 

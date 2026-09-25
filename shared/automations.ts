@@ -12,7 +12,7 @@
  * facts, so the same records always read the same way, and a label is never a
  * second lifecycle beside the run's own. In particular nothing here can say an
  * automation runs on its own: the only trigger is `manual`, and the resting
- * label is "Manual — not scheduled" until a scheduler exists (Milestone B).
+ * label is "Manual, not scheduled" until a scheduler exists (Milestone B).
  *
  * Field names below are frozen for Milestone A (slice A0,
  * docs/implementation/2026-09-24-automations-a.md).
@@ -229,14 +229,14 @@ export interface HostRecord {
  * the reason a recorded occurrence carries; none is a new run state.
  */
 export const SCHEDULE_OUTCOME: Readonly<Record<string, string>> = Object.freeze({
-  missed_host_off: 'Missed — computer was off',
-  project_busy: 'Skipped — previous run still active',
-  schedule_paused: 'Skipped — paused',
-  schedule_authority_lost: 'Blocked — the person who turned it on lost access',
-  schedule_owner_not_signed_in: 'Blocked — someone else is signed in on this computer',
-  configuration_changed: 'Blocked — the setup changed',
-  assigned_to_another_computer: 'Blocked — assigned to another computer',
-  schedule_budget_unbounded: 'Blocked — no hard spending bound',
+  missed_host_off: 'Missed: computer was off',
+  project_busy: 'Skipped: previous run still active',
+  schedule_paused: 'Skipped: paused',
+  schedule_authority_lost: 'Blocked: the person who turned it on lost access',
+  schedule_owner_not_signed_in: 'Blocked: someone else is signed in on this computer',
+  configuration_changed: 'Blocked: the setup changed',
+  assigned_to_another_computer: 'Blocked: assigned to another computer',
+  schedule_budget_unbounded: 'Blocked: no hard spending bound',
 });
 
 /** Codes that stop every slot until an owner or admin acts. */
@@ -330,7 +330,7 @@ export type AutomationLabel =
   | 'waiting-for-computer';
 
 export const AUTOMATION_LABEL_TEXT: Readonly<Record<AutomationLabel, string>> = Object.freeze({
-  manual: 'Manual — not scheduled',
+  manual: 'Manual, not scheduled',
   running: 'Running',
   'needs-approval': 'Needs approval',
   'waiting-for-data': 'Waiting for data',
@@ -487,7 +487,7 @@ export interface OccurrenceView {
   readonly resultText: string | null;
   /** Refused occurrences say what to do next. */
   readonly next: string | null;
-  /** A scheduled slot that did not start, in words: "Missed — computer was off". */
+  /** A scheduled slot that did not start, in words: "Missed: computer was off". */
   readonly note: string | null;
   /** The slot in the schedule's own local time, for a scheduled occurrence. */
   readonly slotText: string | null;

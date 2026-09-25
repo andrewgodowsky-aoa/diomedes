@@ -57,7 +57,7 @@ const CHECK_STATE_TEXT: Record<ReviewCheck['state'], string> = {
 function checkSentence(check: ReviewCheck, index: number): ReviewSentence {
   const state = CHECK_STATE_TEXT[check.state];
   let text = `${state} · ${check.label}`;
-  if (check.detail) text += ` — ${escapeVisible(check.detail)}`;
+  if (check.detail) text += `: ${escapeVisible(check.detail)}`;
   if (check.reason && check.state !== 'passed') text += ` (${escapeVisible(check.reason)})`;
   // The check's own inputs are its evidence; a not-run check cites itself —
   // the stored record that says nothing ran.

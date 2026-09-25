@@ -235,7 +235,7 @@ afterEach(async () => {
 describe('turning a schedule on is an explicit, recorded act (A01)', () => {
   test('a recorded weekly answer never runs, and nothing starts until an owner turns a schedule on', async () => {
     const before = await view();
-    expect(before.status.text).toBe('Manual — not scheduled');
+    expect(before.status.text).toBe('Manual, not scheduled');
     expect(before.scheduleRecorded).toMatch(/recorded but stays inactive/);
     expect(before.schedule.state).toBe('off');
     clock = Date.parse('2026-09-28T12:00:30Z');
@@ -247,7 +247,7 @@ describe('turning a schedule on is an explicit, recorded act (A01)', () => {
     await scheduler.tick();
     expect(await scheduled()).toEqual([]);
     const saved = await view();
-    expect(saved.status.text).toBe('Manual — not scheduled');
+    expect(saved.status.text).toBe('Manual, not scheduled');
     expect(saved.schedule.text).toBe('Every Monday at 8:00 a.m. America/New_York');
     expect((await request<AutomationList>(`${base()}/automations`)).data.summary.scheduled).toBe(0);
   });
@@ -408,7 +408,7 @@ describe('missed work and this computer (OPS-09)', () => {
     expect((after[3]!.trigger as ScheduleTrigger).late).toBe(true);
     await settle(after[3]!);
     const shown = await detail();
-    const missed = shown.occurrences.filter((item) => item.note === 'Missed — computer was off');
+    const missed = shown.occurrences.filter((item) => item.note === 'Missed: computer was off');
     expect(missed).toHaveLength(2);
     expect(missed[0]!.occurrence.admission).toMatchObject({ code: 'missed_host_off' });
     expect((missed[0]!.occurrence.admission as { reason: string }).reason).toMatch(
@@ -443,7 +443,7 @@ describe('missed work and this computer (OPS-09)', () => {
     expect(shown.attention[0]).toMatchObject({ kind: 'missed', count: 4, title: 'Missed while this computer was off' });
     // Nothing ran, so there is no last result; the missed slots are in the runs list.
     expect(shown.lastResult).toBeNull();
-    expect((await detail()).occurrences[0]!.note).toBe('Missed — computer was off');
+    expect((await detail()).occurrences[0]!.note).toBe('Missed: computer was off');
     // A second outage while the first is unread joins it rather than repeating.
     await stop();
     clock = Date.parse('2026-10-03T16:00:00Z');
@@ -559,7 +559,7 @@ describe('pause, resume, turn off, and restart (A10, A12)', () => {
     await scheduler.tick();
     let [skipped] = await scheduled();
     expect(skipped!.admission).toMatchObject({ state: 'refused', code: 'schedule_paused' });
-    expect((await detail()).occurrences[0]!.note).toBe('Skipped — paused');
+    expect((await detail()).occurrences[0]!.note).toBe('Skipped: paused');
     // A paused slot raises nothing: the person chose it.
     expect((await view()).attention).toEqual([]);
     clock = Date.parse('2026-09-28T13:00:00Z');
@@ -608,7 +608,7 @@ describe('pause, resume, turn off, and restart (A10, A12)', () => {
     await launch();
     shown = await view();
     expect(shown.schedule.state).toBe('off');
-    expect(shown.status.text).toBe('Manual — not scheduled');
+    expect(shown.status.text).toBe('Manual, not scheduled');
     const count = (await scheduled()).length;
     await scheduler.tick();
     expect((await scheduled()).length).toBe(count);
@@ -641,7 +641,7 @@ describe('overlap, revalidation and budget at fire time', () => {
     const [skipped] = await scheduled();
     expect(skipped!.admission).toMatchObject({ state: 'refused', code: 'project_busy' });
     const shown = await detail();
-    expect(shown.occurrences[0]!.note).toBe('Skipped — previous run still active');
+    expect(shown.occurrences[0]!.note).toBe('Skipped: previous run still active');
     expect(shown.automation.attention.map((item) => item.kind)).toEqual(['skipped']);
   });
 
@@ -844,7 +844,7 @@ describe('independent review (review-e): every slot is accounted for, with the t
     await scheduler.tick();
     clock = Date.parse('2026-09-30T14:30:00Z');
     await scheduler.tick();
-    const missed = (await detail()).occurrences.filter((item) => item.note === 'Missed — computer was off');
+    const missed = (await detail()).occurrences.filter((item) => item.note === 'Missed: computer was off');
     expect(missed.length).toBeGreaterThan(0);
     const reason = (missed[0]!.occurrence.admission as { reason: string }).reason;
     expect(reason).toMatch(/last seen Mon 28 Sep 2026, 9:30 p\.m\.$/);

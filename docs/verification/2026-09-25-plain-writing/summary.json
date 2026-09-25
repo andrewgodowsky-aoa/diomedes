@@ -1,0 +1,1037 @@
+{
+  "summary": {
+    "outputs": 30,
+    "skipped": [],
+    "standardBytes": 1197,
+    "standardTokensApprox": 299,
+    "before": {
+      "outputsWithHits": 30,
+      "hits": 161,
+      "byRule": {
+        "em-dash": 161
+      }
+    },
+    "beforeCodeFixOnly": {
+      "outputsWithHits": 1,
+      "hits": 1
+    },
+    "after": {
+      "outputsWithHits": 20,
+      "hits": 122,
+      "byRule": {
+        "em-dash": 121,
+        "stock-phrase": 1
+      }
+    },
+    "repaired": {
+      "outputsWithHits": 0,
+      "hits": 0,
+      "byRule": {},
+      "codeFixes": 116
+    },
+    "rewrite": {
+      "calls": 1,
+      "sentencesAsked": 1,
+      "accepted": 1,
+      "keptReasons": {},
+      "inputTokens": 29875,
+      "outputTokens": 106,
+      "productPromptBytes": 747,
+      "productReplyBytes": 301,
+      "costUsd": 0.021242999999999998
+    },
+    "answerCostUsd": {
+      "before": 4.279422,
+      "after": 4.2778637999999996
+    },
+    "answerChars": {
+      "before": 67878,
+      "after": 59699
+    }
+  },
+  "rows": [
+    {
+      "id": "brandt-and-rowe-remodeling-1",
+      "mode": "ask",
+      "before": {
+        "hits": 6,
+        "rules": {
+          "em-dash": 6
+        },
+        "chars": 2142,
+        "in": 142854,
+        "cost": 0.1067956
+      },
+      "after": {
+        "hits": 1,
+        "rules": {
+          "em-dash": 1
+        },
+        "chars": 1784,
+        "in": 269660,
+        "cost": 0.16997679999999998
+      },
+      "beforeCodeOnly": {
+        "hits": 0
+      },
+      "repaired": {
+        "hits": 0,
+        "rules": {},
+        "fixed": 1,
+        "rewrite": null,
+        "call": null
+      }
+    },
+    {
+      "id": "brandt-and-rowe-remodeling-2",
+      "mode": "ask",
+      "before": {
+        "hits": 16,
+        "rules": {
+          "em-dash": 16
+        },
+        "chars": 5064,
+        "in": 386807,
+        "cost": 0.3263306
+      },
+      "after": {
+        "hits": 3,
+        "rules": {
+          "em-dash": 3
+        },
+        "chars": 3493,
+        "in": 309070,
+        "cost": 0.3017742
+      },
+      "beforeCodeOnly": {
+        "hits": 0
+      },
+      "repaired": {
+        "hits": 0,
+        "rules": {},
+        "fixed": 3,
+        "rewrite": null,
+        "call": null
+      }
+    },
+    {
+      "id": "brandt-and-rowe-remodeling-3",
+      "mode": "auto",
+      "before": {
+        "hits": 2,
+        "rules": {
+          "em-dash": 2
+        },
+        "chars": 1784,
+        "in": 142086,
+        "cost": 0.09689600000000001
+      },
+      "after": {
+        "hits": 0,
+        "rules": {},
+        "chars": 1631,
+        "in": 289096,
+        "cost": 0.138382
+      },
+      "beforeCodeOnly": {
+        "hits": 0
+      },
+      "repaired": {
+        "hits": 0,
+        "rules": {},
+        "fixed": 0,
+        "rewrite": null,
+        "call": null
+      }
+    },
+    {
+      "id": "brandt-and-rowe-remodeling-4",
+      "mode": "ask",
+      "before": {
+        "hits": 3,
+        "rules": {
+          "em-dash": 3
+        },
+        "chars": 974,
+        "in": 139572,
+        "cost": 0.0727184
+      },
+      "after": {
+        "hits": 0,
+        "rules": {},
+        "chars": 973,
+        "in": 175088,
+        "cost": 0.0769294
+      },
+      "beforeCodeOnly": {
+        "hits": 0
+      },
+      "repaired": {
+        "hits": 0,
+        "rules": {},
+        "fixed": 0,
+        "rewrite": null,
+        "call": null
+      }
+    },
+    {
+      "id": "brandt-and-rowe-remodeling-5",
+      "mode": "plan",
+      "before": {
+        "hits": 11,
+        "rules": {
+          "em-dash": 11
+        },
+        "chars": 3010,
+        "in": 142085,
+        "cost": 0.1180148
+      },
+      "after": {
+        "hits": 5,
+        "rules": {
+          "em-dash": 4,
+          "stock-phrase": 1
+        },
+        "chars": 2876,
+        "in": 144059,
+        "cost": 0.1275388
+      },
+      "beforeCodeOnly": {
+        "hits": 0
+      },
+      "repaired": {
+        "hits": 0,
+        "rules": {},
+        "fixed": 4,
+        "rewrite": {
+          "asked": 1,
+          "accepted": 1,
+          "kept": []
+        },
+        "call": {
+          "cost": 0.021242999999999998,
+          "usage": {
+            "input_tokens": 2,
+            "cache_creation_input_tokens": 3738,
+            "cache_read_input_tokens": 26135,
+            "output_tokens": 106,
+            "output_tokens_details": {
+              "thinking_tokens": 0
+            },
+            "server_tool_use": {
+              "web_search_requests": 0,
+              "web_fetch_requests": 0
+            },
+            "service_tier": "standard",
+            "cache_creation": {
+              "ephemeral_1h_input_tokens": 3738,
+              "ephemeral_5m_input_tokens": 0
+            },
+            "inference_geo": "not_available",
+            "iterations": [
+              {
+                "input_tokens": 2,
+                "output_tokens": 106,
+                "cache_read_input_tokens": 26135,
+                "cache_creation_input_tokens": 3738,
+                "cache_creation": {
+                  "ephemeral_5m_input_tokens": 0,
+                  "ephemeral_1h_input_tokens": 3738
+                },
+                "type": "message"
+              }
+            ],
+            "speed": "standard"
+          },
+          "error": false,
+          "promptBytes": 747,
+          "replyBytes": 301
+        }
+      }
+    },
+    {
+      "id": "brandt-and-rowe-remodeling-6",
+      "mode": "ask",
+      "before": {
+        "hits": 7,
+        "rules": {
+          "em-dash": 7
+        },
+        "chars": 3338,
+        "in": 186070,
+        "cost": 0.1495202
+      },
+      "after": {
+        "hits": 14,
+        "rules": {
+          "em-dash": 14
+        },
+        "chars": 2471,
+        "in": 188383,
+        "cost": 0.15309499999999998
+      },
+      "beforeCodeOnly": {
+        "hits": 0
+      },
+      "repaired": {
+        "hits": 0,
+        "rules": {},
+        "fixed": 14,
+        "rewrite": null,
+        "call": null
+      }
+    },
+    {
+      "id": "juniper-street-bakery-1",
+      "mode": "ask",
+      "before": {
+        "hits": 2,
+        "rules": {
+          "em-dash": 2
+        },
+        "chars": 1098,
+        "in": 103214,
+        "cost": 0.0844924
+      },
+      "after": {
+        "hits": 1,
+        "rules": {
+          "em-dash": 1
+        },
+        "chars": 1105,
+        "in": 104502,
+        "cost": 0.092944
+      },
+      "beforeCodeOnly": {
+        "hits": 0
+      },
+      "repaired": {
+        "hits": 0,
+        "rules": {},
+        "fixed": 1,
+        "rewrite": null,
+        "call": null
+      }
+    },
+    {
+      "id": "juniper-street-bakery-2",
+      "mode": "ask",
+      "before": {
+        "hits": 7,
+        "rules": {
+          "em-dash": 7
+        },
+        "chars": 2441,
+        "in": 104734,
+        "cost": 0.0894992
+      },
+      "after": {
+        "hits": 0,
+        "rules": {},
+        "chars": 2396,
+        "in": 147952,
+        "cost": 0.12650060000000002
+      },
+      "beforeCodeOnly": {
+        "hits": 0
+      },
+      "repaired": {
+        "hits": 0,
+        "rules": {},
+        "fixed": 0,
+        "rewrite": null,
+        "call": null
+      }
+    },
+    {
+      "id": "juniper-street-bakery-3",
+      "mode": "ask",
+      "before": {
+        "hits": 6,
+        "rules": {
+          "em-dash": 6
+        },
+        "chars": 1390,
+        "in": 137722,
+        "cost": 0.07042280000000001
+      },
+      "after": {
+        "hits": 1,
+        "rules": {
+          "em-dash": 1
+        },
+        "chars": 1171,
+        "in": 140668,
+        "cost": 0.0752708
+      },
+      "beforeCodeOnly": {
+        "hits": 0
+      },
+      "repaired": {
+        "hits": 0,
+        "rules": {},
+        "fixed": 1,
+        "rewrite": null,
+        "call": null
+      }
+    },
+    {
+      "id": "juniper-street-bakery-4",
+      "mode": "ask",
+      "before": {
+        "hits": 3,
+        "rules": {
+          "em-dash": 3
+        },
+        "chars": 2022,
+        "in": 189915,
+        "cost": 0.1751702
+      },
+      "after": {
+        "hits": 4,
+        "rules": {
+          "em-dash": 4
+        },
+        "chars": 1960,
+        "in": 229485,
+        "cost": 0.1511116
+      },
+      "beforeCodeOnly": {
+        "hits": 0
+      },
+      "repaired": {
+        "hits": 0,
+        "rules": {},
+        "fixed": 4,
+        "rewrite": null,
+        "call": null
+      }
+    },
+    {
+      "id": "juniper-street-bakery-5",
+      "mode": "plan",
+      "before": {
+        "hits": 9,
+        "rules": {
+          "em-dash": 9
+        },
+        "chars": 3758,
+        "in": 136530,
+        "cost": 0.1079386
+      },
+      "after": {
+        "hits": 5,
+        "rules": {
+          "em-dash": 5
+        },
+        "chars": 3502,
+        "in": 102092,
+        "cost": 0.0912834
+      },
+      "beforeCodeOnly": {
+        "hits": 0
+      },
+      "repaired": {
+        "hits": 0,
+        "rules": {},
+        "fixed": 5,
+        "rewrite": null,
+        "call": null
+      }
+    },
+    {
+      "id": "juniper-street-bakery-6",
+      "mode": "auto",
+      "before": {
+        "hits": 2,
+        "rules": {
+          "em-dash": 2
+        },
+        "chars": 1803,
+        "in": 103073,
+        "cost": 0.0954798
+      },
+      "after": {
+        "hits": 0,
+        "rules": {},
+        "chars": 1489,
+        "in": 140392,
+        "cost": 0.09862939999999999
+      },
+      "beforeCodeOnly": {
+        "hits": 0
+      },
+      "repaired": {
+        "hits": 0,
+        "rules": {},
+        "fixed": 0,
+        "rewrite": null,
+        "call": null
+      }
+    },
+    {
+      "id": "kestrel-row-auto-1",
+      "mode": "ask",
+      "before": {
+        "hits": 1,
+        "rules": {
+          "em-dash": 1
+        },
+        "chars": 1749,
+        "in": 150822,
+        "cost": 0.1366196
+      },
+      "after": {
+        "hits": 5,
+        "rules": {
+          "em-dash": 5
+        },
+        "chars": 1205,
+        "in": 152202,
+        "cost": 0.1289092
+      },
+      "beforeCodeOnly": {
+        "hits": 0
+      },
+      "repaired": {
+        "hits": 0,
+        "rules": {},
+        "fixed": 5,
+        "rewrite": null,
+        "call": null
+      }
+    },
+    {
+      "id": "kestrel-row-auto-2",
+      "mode": "ask",
+      "before": {
+        "hits": 5,
+        "rules": {
+          "em-dash": 5
+        },
+        "chars": 958,
+        "in": 149088,
+        "cost": 0.10062040000000001
+      },
+      "after": {
+        "hits": 0,
+        "rules": {},
+        "chars": 1033,
+        "in": 228688,
+        "cost": 0.12098719999999999
+      },
+      "beforeCodeOnly": {
+        "hits": 0
+      },
+      "repaired": {
+        "hits": 0,
+        "rules": {},
+        "fixed": 0,
+        "rewrite": null,
+        "call": null
+      }
+    },
+    {
+      "id": "kestrel-row-auto-3",
+      "mode": "ask",
+      "before": {
+        "hits": 5,
+        "rules": {
+          "em-dash": 5
+        },
+        "chars": 1275,
+        "in": 106875,
+        "cost": 0.08932280000000001
+      },
+      "after": {
+        "hits": 5,
+        "rules": {
+          "em-dash": 5
+        },
+        "chars": 1036,
+        "in": 149224,
+        "cost": 0.09294179999999999
+      },
+      "beforeCodeOnly": {
+        "hits": 0
+      },
+      "repaired": {
+        "hits": 0,
+        "rules": {},
+        "fixed": 5,
+        "rewrite": null,
+        "call": null
+      }
+    },
+    {
+      "id": "kestrel-row-auto-4",
+      "mode": "plan",
+      "before": {
+        "hits": 8,
+        "rules": {
+          "em-dash": 8
+        },
+        "chars": 3787,
+        "in": 149442,
+        "cost": 0.1663712
+      },
+      "after": {
+        "hits": 7,
+        "rules": {
+          "em-dash": 7
+        },
+        "chars": 2976,
+        "in": 150581,
+        "cost": 0.1668506
+      },
+      "beforeCodeOnly": {
+        "hits": 0
+      },
+      "repaired": {
+        "hits": 0,
+        "rules": {},
+        "fixed": 6,
+        "rewrite": null,
+        "call": null
+      }
+    },
+    {
+      "id": "kestrel-row-auto-5",
+      "mode": "ask",
+      "before": {
+        "hits": 3,
+        "rules": {
+          "em-dash": 3
+        },
+        "chars": 1715,
+        "in": 151520,
+        "cost": 0.1172646
+      },
+      "after": {
+        "hits": 2,
+        "rules": {
+          "em-dash": 2
+        },
+        "chars": 967,
+        "in": 155203,
+        "cost": 0.1358816
+      },
+      "beforeCodeOnly": {
+        "hits": 0
+      },
+      "repaired": {
+        "hits": 0,
+        "rules": {},
+        "fixed": 2,
+        "rewrite": null,
+        "call": null
+      }
+    },
+    {
+      "id": "kestrel-row-auto-6",
+      "mode": "ask",
+      "before": {
+        "hits": 6,
+        "rules": {
+          "em-dash": 6
+        },
+        "chars": 2329,
+        "in": 153105,
+        "cost": 0.1740038
+      },
+      "after": {
+        "hits": 31,
+        "rules": {
+          "em-dash": 31
+        },
+        "chars": 4619,
+        "in": 200945,
+        "cost": 0.18727639999999998
+      },
+      "beforeCodeOnly": {
+        "hits": 0
+      },
+      "repaired": {
+        "hits": 0,
+        "rules": {},
+        "fixed": 31,
+        "rewrite": null,
+        "call": null
+      }
+    },
+    {
+      "id": "larch-and-lantern-wine-1",
+      "mode": "ask",
+      "before": {
+        "hits": 3,
+        "rules": {
+          "em-dash": 3
+        },
+        "chars": 2125,
+        "in": 156485,
+        "cost": 0.2455566
+      },
+      "after": {
+        "hits": 2,
+        "rules": {
+          "em-dash": 2
+        },
+        "chars": 2938,
+        "in": 159593,
+        "cost": 0.2651746
+      },
+      "beforeCodeOnly": {
+        "hits": 1
+      },
+      "repaired": {
+        "hits": 0,
+        "rules": {},
+        "fixed": 2,
+        "rewrite": null,
+        "call": null
+      }
+    },
+    {
+      "id": "larch-and-lantern-wine-2",
+      "mode": "ask",
+      "before": {
+        "hits": 8,
+        "rules": {
+          "em-dash": 8
+        },
+        "chars": 2501,
+        "in": 252606,
+        "cost": 0.243797
+      },
+      "after": {
+        "hits": 4,
+        "rules": {
+          "em-dash": 4
+        },
+        "chars": 2341,
+        "in": 149380,
+        "cost": 0.17578519999999997
+      },
+      "beforeCodeOnly": {
+        "hits": 0
+      },
+      "repaired": {
+        "hits": 0,
+        "rules": {},
+        "fixed": 3,
+        "rewrite": null,
+        "call": null
+      }
+    },
+    {
+      "id": "larch-and-lantern-wine-3",
+      "mode": "ask",
+      "before": {
+        "hits": 3,
+        "rules": {
+          "em-dash": 3
+        },
+        "chars": 2650,
+        "in": 390669,
+        "cost": 0.25207019999999997
+      },
+      "after": {
+        "hits": 2,
+        "rules": {
+          "em-dash": 2
+        },
+        "chars": 1741,
+        "in": 280821,
+        "cost": 0.16804799999999998
+      },
+      "beforeCodeOnly": {
+        "hits": 0
+      },
+      "repaired": {
+        "hits": 0,
+        "rules": {},
+        "fixed": 2,
+        "rewrite": null,
+        "call": null
+      }
+    },
+    {
+      "id": "larch-and-lantern-wine-4",
+      "mode": "ask",
+      "before": {
+        "hits": 4,
+        "rules": {
+          "em-dash": 4
+        },
+        "chars": 1475,
+        "in": 106708,
+        "cost": 0.08243840000000001
+      },
+      "after": {
+        "hits": 11,
+        "rules": {
+          "em-dash": 11
+        },
+        "chars": 1181,
+        "in": 148754,
+        "cost": 0.0938568
+      },
+      "beforeCodeOnly": {
+        "hits": 0
+      },
+      "repaired": {
+        "hits": 0,
+        "rules": {},
+        "fixed": 9,
+        "rewrite": null,
+        "call": null
+      }
+    },
+    {
+      "id": "larch-and-lantern-wine-5",
+      "mode": "plan",
+      "before": {
+        "hits": 17,
+        "rules": {
+          "em-dash": 17
+        },
+        "chars": 5461,
+        "in": 328659,
+        "cost": 0.37727580000000005
+      },
+      "after": {
+        "hits": 9,
+        "rules": {
+          "em-dash": 9
+        },
+        "chars": 5955,
+        "in": 277282,
+        "cost": 0.372739
+      },
+      "beforeCodeOnly": {
+        "hits": 0
+      },
+      "repaired": {
+        "hits": 0,
+        "rules": {},
+        "fixed": 9,
+        "rewrite": null,
+        "call": null
+      }
+    },
+    {
+      "id": "larch-and-lantern-wine-6",
+      "mode": "ask",
+      "before": {
+        "hits": 1,
+        "rules": {
+          "em-dash": 1
+        },
+        "chars": 1274,
+        "in": 113819,
+        "cost": 0.1814966
+      },
+      "after": {
+        "hits": 0,
+        "rules": {},
+        "chars": 924,
+        "in": 160356,
+        "cost": 0.16613699999999998
+      },
+      "beforeCodeOnly": {
+        "hits": 0
+      },
+      "repaired": {
+        "hits": 0,
+        "rules": {},
+        "fixed": 0,
+        "rewrite": null,
+        "call": null
+      }
+    },
+    {
+      "id": "quarry-hill-cabinetworks-1",
+      "mode": "ask",
+      "before": {
+        "hits": 3,
+        "rules": {
+          "em-dash": 3
+        },
+        "chars": 909,
+        "in": 176134,
+        "cost": 0.1151886
+      },
+      "after": {
+        "hits": 0,
+        "rules": {},
+        "chars": 495,
+        "in": 140891,
+        "cost": 0.103799
+      },
+      "beforeCodeOnly": {
+        "hits": 0
+      },
+      "repaired": {
+        "hits": 0,
+        "rules": {},
+        "fixed": 0,
+        "rewrite": null,
+        "call": null
+      }
+    },
+    {
+      "id": "quarry-hill-cabinetworks-2",
+      "mode": "ask",
+      "before": {
+        "hits": 1,
+        "rules": {
+          "em-dash": 1
+        },
+        "chars": 1626,
+        "in": 102526,
+        "cost": 0.0627306
+      },
+      "after": {
+        "hits": 0,
+        "rules": {},
+        "chars": 936,
+        "in": 139833,
+        "cost": 0.067477
+      },
+      "beforeCodeOnly": {
+        "hits": 0
+      },
+      "repaired": {
+        "hits": 0,
+        "rules": {},
+        "fixed": 0,
+        "rewrite": null,
+        "call": null
+      }
+    },
+    {
+      "id": "quarry-hill-cabinetworks-3",
+      "mode": "ask",
+      "before": {
+        "hits": 3,
+        "rules": {
+          "em-dash": 3
+        },
+        "chars": 1113,
+        "in": 138024,
+        "cost": 0.071585
+      },
+      "after": {
+        "hits": 2,
+        "rules": {
+          "em-dash": 2
+        },
+        "chars": 876,
+        "in": 174690,
+        "cost": 0.0775624
+      },
+      "beforeCodeOnly": {
+        "hits": 0
+      },
+      "repaired": {
+        "hits": 0,
+        "rules": {},
+        "fixed": 2,
+        "rewrite": null,
+        "call": null
+      }
+    },
+    {
+      "id": "quarry-hill-cabinetworks-4",
+      "mode": "ask",
+      "before": {
+        "hits": 2,
+        "rules": {
+          "em-dash": 2
+        },
+        "chars": 2429,
+        "in": 180537,
+        "cost": 0.1313088
+      },
+      "after": {
+        "hits": 0,
+        "rules": {},
+        "chars": 2215,
+        "in": 143650,
+        "cost": 0.133352
+      },
+      "beforeCodeOnly": {
+        "hits": 0
+      },
+      "repaired": {
+        "hits": 0,
+        "rules": {},
+        "fixed": 0,
+        "rewrite": null,
+        "call": null
+      }
+    },
+    {
+      "id": "quarry-hill-cabinetworks-5",
+      "mode": "plan",
+      "before": {
+        "hits": 12,
+        "rules": {
+          "em-dash": 12
+        },
+        "chars": 3230,
+        "in": 102763,
+        "cost": 0.10327599999999999
+      },
+      "after": {
+        "hits": 8,
+        "rules": {
+          "em-dash": 8
+        },
+        "chars": 1786,
+        "in": 104249,
+        "cost": 0.1022972
+      },
+      "beforeCodeOnly": {
+        "hits": 0
+      },
+      "repaired": {
+        "hits": 0,
+        "rules": {},
+        "fixed": 7,
+        "rewrite": null,
+        "call": null
+      }
+    },
+    {
+      "id": "quarry-hill-cabinetworks-6",
+      "mode": "auto",
+      "before": {
+        "hits": 2,
+        "rules": {
+          "em-dash": 2
+        },
+        "chars": 2448,
+        "in": 180361,
+        "cost": 0.13521740000000002
+      },
+      "after": {
+        "hits": 0,
+        "rules": {},
+        "chars": 1624,
+        "in": 143272,
+        "cost": 0.1153528
+      },
+      "beforeCodeOnly": {
+        "hits": 0
+      },
+      "repaired": {
+        "hits": 0,
+        "rules": {},
+        "fixed": 0,
+        "rewrite": null,
+        "call": null
+      }
+    }
+  ]
+}
