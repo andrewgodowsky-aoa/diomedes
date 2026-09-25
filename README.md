@@ -1,14 +1,16 @@
-# Diomedes
+# Nectovia
 
 **License:** Nectovia is source-available, not open source. Copyright © 2026 Diomedes Systems LLC. All rights reserved. See `LICENSE`.
 
-Diomedes is a Windows desktop application for working on a project with an AI helper
+**Names:** Nectovia is the product: the desktop app, its agent and its services. Diomedes Systems LLC is the company that makes it and owns this code. The repository, the `diomedes` package, the release files (`Diomedes-Experimental-*`), the program file, the install and data folders (`%APPDATA%\Diomedes`, `Documents\Diomedes`), the `DIOMEDES_*` variables and the helper scripts keep the product's former name so an existing install keeps finding its data. Those are identifiers, not the product's name.
+
+Nectovia is a desktop application for Windows and Apple silicon Macs, for working on a project with an AI helper
 without giving it the run of your computer. It keeps the project's documents, plans,
 tasks, conversations, approvals and file history in one place. A helper can propose a
-change; Diomedes shows the exact before and after and writes nothing until you say go
+change; Nectovia shows the exact before and after and writes nothing until you say go
 ahead. Every write is recorded and reversible.
 
-Diomedes has no model of its own. It works through routes you configure: an AI tool
+Nectovia has no model of its own. It works through routes you configure: an AI tool
 you already installed and signed in to, driven through an adapter, or the optional
 direct AWS Bedrock (GPT-5.6 Luna) route on your own AWS account. Your account, your
 allowance, your bill.
@@ -20,7 +22,7 @@ work run without it, without signing in and without network access
 conversation needs connectivity. What a task sends leaves through the route it uses:
 the AI tool you signed in to, or your own AWS account.
 
-Made by Diomedes Systems LLC. This source tree is Diomedes 0.2.0;
+Made by Diomedes Systems LLC. This source tree is Nectovia 0.2.0;
 `package.json` holds that number and `tests/engine-routes.test.ts` fails if this file
 disagrees with it.
 
@@ -48,7 +50,7 @@ Windows 11 x64. No Node, npm, Git or developer tool is needed for this path.
 2. Check the file before running it. In PowerShell, in the download folder:
    `Get-FileHash .\Diomedes-Experimental-*-unsigned-setup.exe -Algorithm SHA256`, and
    compare the result with the matching line in `SHA256SUMS.txt`.
-3. Run the installer and open **Diomedes** from the Start menu. It installs for the
+3. Run the installer and open **Nectovia** from the Start menu. It installs for the
    current user only: no administrator rights and no automatic launch.
    Uninstalling removes its own files, its two current-user registry keys and its
    shortcut; your projects and history stay where they are.
@@ -72,15 +74,15 @@ exists; the app does not install it itself.
 A portable archive is published beside the installer. Extract the whole folder and run
 `Diomedes.exe` from inside it; the bare executable is not the application.
 
-## The AI routes Diomedes can drive
+## The AI routes Nectovia can drive
 
-You install the tool and sign in to it yourself; Diomedes uses that installation and
+You install the tool and sign in to it yourself; Nectovia uses that installation and
 that sign-in. Five adapters are **in source**, each accepting exactly one account route.
 Holding a different account with the same tool is not the same as being signed out, and
 `shared/engines.ts` (`AccountRouteIssue`) is the contract a route says that with. Claude
 Code and oh-my-pi report an account of a kind their route does not accept as exactly
 that. Cursor and Devin accept one route each. The OpenCode route is OpenCode Go only:
-when no OpenCode Go account with a usable model is connected, Diomedes says so and names
+when no OpenCode Go account with a usable model is connected, Nectovia says so and names
 the route rather than telling you to sign in again.
 
 | Tool | Account route the adapter accepts | What a task through it can do | Reviewed version |
@@ -91,7 +93,7 @@ the route rather than telling you to sign in again.
 | Cursor | Cursor account, signed in through the Cursor CLI | Text and reviewed proposals. Ask mode. A tool event stops the request. | 2026.08.11 |
 | Devin | Devin account, signed in through its browser flow | Text and reviewed proposals. Ask mode. A tool event stops the request. | 3000.10.23 |
 
-These are text routes. The tool answers with text and Diomedes's own writer turns that
+These are text routes. The tool answers with text and Nectovia's own writer turns that
 text into a proposal you approve or reject. None of them is that tool's own coding
 experience: its tools are disabled or denied, and a tool event stops the request instead
 of running it. These are configuration controls, not an operating-system sandbox. The
@@ -112,22 +114,22 @@ is the whole point of the list:
 - **Not checked** — nothing has been looked for yet. Discovery runs only when you ask.
 - **Not found** — no installation of that tool was found.
 - **Found, failed its integrity check** — an installation is there and its bytes are not
-  the ones Diomedes recorded for it. It is never launched.
+  the ones Nectovia recorded for it. It is never launched.
 - **Found, needs repair** — the copy you chose has gone, has changed since you chose it,
-  or no longer passes its checks. Diomedes does not move to another copy on its own; it
+  or no longer passes its checks. Nectovia does not move to another copy on its own; it
   offers to repair with a compatible copy of its own.
 - **Found, unsupported version** — an installation was found and its version is not the
   reviewed one above. The adapter refuses rather than guessing.
 - **Sign in required** — found, reviewed version, and the tool reports no account.
 - **An account this route does not accept** — the tool answered with an account of
-  another kind. That is not being signed out, and Diomedes does not switch to it.
+  another kind. That is not being signed out, and Nectovia does not switch to it.
 - **No models listed** — the account answered and offered nothing this route can use.
 - **Ready** — found, reviewed version, signed in on this route, at least one model
   offered, and checked within the last five minutes.
 
 Only **Ready** can send a request, and the same checks run again when one is dispatched.
 
-**Ready is not tested.** A connection test is one small request Diomedes offers to send
+**Ready is not tested.** A connection test is one small request Nectovia offers to send
 through the exact connection in front of you; the control says **Test this connection**
 and nothing is sent unless you say yes. It goes to the account that route is signed in
 to, may spend that account's allowance, and is never retried: a request whose outcome is
@@ -139,20 +141,20 @@ happened, not an authority for what may happen. A request is admitted by the che
 above, which need no receipt, so **can send** and **was tested** are two different
 answers, and this list tells you which one you have.
 
-**What is reused and what is not.** Diomedes reuses the installation you have and the
+**What is reused and what is not.** Nectovia reuses the installation you have and the
 sign-in that tool already holds, in the place that tool keeps it. It does not carry over
 your plugins, MCP servers, instruction files or custom configuration: each route runs in
-its own directory with configuration Diomedes wrote. A launched tool receives a short
+its own directory with configuration Nectovia wrote. A launched tool receives a short
 allowlist of environment variables (`server/engines/process.ts`), so provider keys,
 proxy settings and other custom variables do not reach it. The per-route lists are in
 `shared/engine-routes.ts`.
 
-**Signing in** happens in the tool, never in Diomedes. Claude Code, OpenCode and Cursor
+**Signing in** happens in the tool, never in Nectovia. Claude Code, OpenCode and Cursor
 open their own sign-in in a console window; Devin opens its browser flow; oh-my-pi opens
-the separate profile folder where you write an OpenAI API key yourself, which Diomedes
+the separate profile folder where you write an OpenAI API key yourself, which Nectovia
 does not read.
 
-**Billing** falls on the account each route is signed in to. Diomedes never substitutes
+**Billing** falls on the account each route is signed in to. Nectovia never substitutes
 a provider or a model, and it cannot see what an account has left unless the provider
 reports it. The OpenCode route is pinned to OpenCode Go; OpenCode documents an
 account-side "Use balance" setting that can continue usage from Zen balance once Go
@@ -160,7 +162,7 @@ limits are reached, so that pin alone does not decide what you are charged. The
 oh-my-pi route spends an OpenAI API key, which is API billing and not a ChatGPT
 subscription.
 
-**Guided installation** is offered for Claude Code, OpenCode and oh-my-pi: Diomedes
+**Guided installation** is offered for Claude Code, OpenCode and oh-my-pi: Nectovia
 downloads one pinned official release into its own folder, checks its SHA-256 before
 anything runs it, and installs for the current user only, with no elevation and no PATH
 change. It never overwrites, downgrades or removes an installation you already have.
@@ -199,7 +201,7 @@ ported into the Console page by page.
 
 **The Workbook** shows one page at a time: Home, Ask, Plan, Work, Review, Tasks, Documents
 and History, with a rail down the left. It has two detail levels, Guided and Standard.
-Guided explains more and hides helpers Diomedes cannot actually run. Home is a single
+Guided explains more and hides helpers Nectovia cannot actually run. Home is a single
 column: "What do you want to do?" with four intents (Ask a question, Get something
 done, Make a plan, Look over what changed), a line saying whether a helper is switched
 on, recent threads, and "Changed today" grouped one row per task.
@@ -233,32 +235,32 @@ only ever applied to the exact files and text shown in it.
 ## The team
 
 A team is a leader and some members working on one project, each in its own thread,
-talking to each other through Diomedes rather than through each other's tool settings.
-The team service lives in `server/team/` and is Diomedes' own code; the tool names and
+talking to each other through Nectovia rather than through each other's tool settings.
+The team service lives in `server/team/` and is Nectovia's own code; the tool names and
 mailbox semantics follow iOfficeAI/AionCore v0.2.1 `crates/aionui-team` (Apache-2.0) and
 are reimplemented here. No AionCore or AionUi process is installed, linked or launched.
 
 How it works:
 
-- Diomedes serves an MCP endpoint on loopback at `POST /mcp/team/:projectId`. Non-
+- Nectovia serves an MCP endpoint on loopback at `POST /mcp/team/:projectId`. Non-
   loopback connections are refused. Each member authenticates with its own bearer token
   and an `X-Slot-Id` header; the token is issued once, when the member is added.
 - Thirteen tools are exposed: `team_members`, `team_send_message`, `team_read_messages`,
   `team_task_create`, `team_task_update`, `team_task_list`, `team_list_assistants`,
   `team_describe_assistant`, `team_spawn_agent`, `team_rename_agent`,
   `team_interrupt_agent`, `team_shutdown_agent`, `team_clear_agent_context`.
-- The board is the Diomedes task list. There is no second, hidden list: a task a member
+- The board is the Nectovia task list. There is no second, hidden list: a task a member
   creates is a task you can see on Tasks and on the Console's Board, attributed to the
   member that made it.
-- The mailbox is Diomedes'. A message addressed to a member is delivered by Diomedes,
+- The mailbox is Nectovia's. A message addressed to a member is delivered by Nectovia,
   counted as unread on the roster, and rendered into the wake text as
   `From <sender>: <content>`.
 - **A member wakes on its mail.** When the owner or another member sends to an idle
-  member, Diomedes starts that member's run itself. Automatic wakes are capped at five
+  member, Nectovia starts that member's run itself. Automatic wakes are capped at five
   per member per ten minutes; going over that parks the member as waiting and records a
   History entry instead. The Console also has an explicit Start for a member with waiting
   mail, which works regardless of the cap.
-- A run is a normal Diomedes Work run. It cannot write files. Anything it proposes
+- A run is a normal Nectovia Work run. It cannot write files. Anything it proposes
   arrives as a proposal that waits for your approval, and the member's role instructions
   tell it to describe changes as proposals and not to mark a task done while an approval
   is open.
@@ -266,7 +268,7 @@ How it works:
 What is *not* proven or not there:
 
 - The team's tool inventory is the model's own report, not a protocol-level guarantee
-  that the host exposes nothing else. There is no pre-execution veto: Diomedes rejects a
+  that the host exposes nothing else. There is no pre-execution veto: Nectovia rejects a
   foreign tool result when it is reported, which detects a violation after the fact. See
   `QUESTIONS.md`.
 - A member can be added on several engines, but starting one returns "This helper cannot
@@ -274,7 +276,7 @@ What is *not* proven or not there:
   above are not wired into a team run.
 - `team_spawn_agent`, `team_describe_assistant` and `team_clear_agent_context` are
   registered and answer "not available in this version"; `team_list_assistants` returns
-  an empty list. Diomedes never spawns a process for a helper — you add a member
+  an empty list. Nectovia never spawns a process for a helper — you add a member
   yourself, on the Console.
 - The model's own report lands in the session log for that run, not as a turn in the
   thread. The thread turn says a message from the team was picked up.
@@ -309,7 +311,7 @@ the chip opens Settings at the helpers section.
 
 Nothing calls an undocumented endpoint and no number is guessed. A helper that reports
 nothing gets one plain sentence instead, which is what the five adapter routes above do
-today: their remaining allowance is not reported to Diomedes.
+today: their remaining allowance is not reported to Nectovia.
 
 ## First use
 
@@ -332,7 +334,7 @@ in this browser profile and recovered when you reopen the document.
 
 ## Run from source (development)
 
-This section is for working on Diomedes, not for using it. Node 22.12 or later, on
+This section is for working on Nectovia, not for using it. Node 22.12 or later, on
 Windows. From this directory:
 
 ```powershell
@@ -406,7 +408,7 @@ usage and are not part of `npm test`:
 - `node scripts/approval-desktop-smoke.mjs` — one real run through the packaged approval
   flow, using its own project and profile. Verifies a lost approval response, decision
   receipt, restart, replay and byte-exact restore.
-- `npm run smoke:team-codex` — a real team session against a running Diomedes service.
+- `npm run smoke:team-codex` — a real team session against a running Nectovia service.
   Set `DIOMEDES_API` to override the default `http://127.0.0.1:47631/api`.
 
 `npm run probe:team` exercises the team MCP endpoint with a probe member and spends
@@ -444,7 +446,7 @@ junctions are rejected.
 
 ## What is not in it
 
-- **A model of its own.** Diomedes ships adapters, not engines. Without an AI tool you
+- **A model of its own.** Nectovia ships adapters, not engines. Without an AI tool you
   installed and signed in to, only the labelled sample work runs.
 - **Full native tool behaviour.** The five routes are text routes; their tools, plugins
   and MCP servers are off, and configuration controls are not an operating-system

@@ -77,8 +77,9 @@ describe('README', () => {
   const readme = read('README.md');
 
   it('states this application version and no other', () => {
-    expect(readme).toContain(`Diomedes ${packageVersion}`);
-    const claimed = [...readme.matchAll(/(?:Diomedes|[Vv]ersion)\s+v?(\d+\.\d+\.\d+)/g)].map(
+    // The README names the product, Nectovia; Diomedes Systems LLC is the company.
+    expect(readme).toContain(`Nectovia ${packageVersion}`);
+    const claimed = [...readme.matchAll(/(?:Nectovia|Diomedes|[Vv]ersion)\s+v?(\d+\.\d+\.\d+)/g)].map(
       (match) => match[1],
     );
     expect(claimed.length).toBeGreaterThan(0);
