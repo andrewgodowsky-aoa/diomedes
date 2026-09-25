@@ -115,7 +115,7 @@ import type { ReadToolDeps } from '../harness/capabilities/read-scope-tools.js';
 import type { ConnectionSecrets } from '../connection-secrets.js';
 import type { SpendExposure } from '../spend-exposure.js';
 import type { ModelApiRoute } from '../../shared/model-api.js';
-import type { AgentGatePort, AgentWork } from '../accounts/agent-gate.js';
+import type { AdmittedAgentWork, AgentGatePort, AgentWork } from '../accounts/agent-gate.js';
 
 function recordShimError(error: unknown): boolean {
   return (
@@ -1994,15 +1994,19 @@ export class EngineService {
    * The Agent check for one admission. The host's own connection test (the fixed one-word prompt in
    * the host test project) proves a route works and is not Agent work; everything else is.
    */
-  private async admitAgent(input: { projectId?: string; prompt?: string }, agent?: Pick<AgentWork, 'surface' | 'rootJobId'>) {
+  private async admitAgent(
+    input: { projectId?: string; prompt?: string },
+    agent?: Pick<AgentWork, 'surface' | 'rootJobId' | 'routeKind'>,
+  ): Promise<AdmittedAgentWork | null> {
     const gate = this.agentGate;
-    if (!gate) return;
-    if (input.projectId === HOST_TEST_PROJECT && input.prompt === TEST_PROMPT) return;
-    await gate.check({
+    if (!gate) return null;
+    if (input.projectId === HOST_TEST_PROJECT && input.prompt === TEST_PROMPT) return null;
+    return gate.check({
       phase: 'admit',
       surface: agent?.surface ?? 'other',
       projectId: input.projectId ?? null,
       rootJobId: agent?.rootJobId ?? null,
+      routeKind: agent?.routeKind ?? 'byo',
     });
   }
   private async openModelApi(admission: ModelSessionAdmission): Promise<{ handle: ConnectedRoute; secret: string }> {
