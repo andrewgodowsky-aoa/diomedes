@@ -391,6 +391,8 @@ export function mountNativeLoopRoutes(
     const saved = store.state(projectId).sessions.find((item) => item.id === session.id);
     if (saved) {
       if (instructions.delivery) saved.instructions = instructions.delivery;
+      // What shipped product knowledge went with it, as a Work run records it (native-work.ts).
+      saved.productKnowledge = instructions.productKnowledge;
       // H08: what this loop was asked, kept so a Retry can ask for exactly the same thing.
       saved.inputs = { instruction: body.goal, sources, agentId: null, mode: 'build' };
       await store.persist(store.state(projectId));

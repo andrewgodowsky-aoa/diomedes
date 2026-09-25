@@ -259,7 +259,12 @@ import { RELEASE_NOTES_SEEN_LIMIT } from '../shared/release-notes.js';
 import { EngineInstaller } from './engines/install.js';
 import { NativeLogin } from './engines/login.js';
 import { changeCloudSharing, cloudSharing, requireCloudSharing, sharesHistory } from './cloud-sharing.js';
-import { assembleSkillSection, instructionSectionBudget } from './harness/instruction-delivery.js';
+import {
+  assembleInstructions,
+  assembleSkillSection,
+  instructionSectionBudget,
+  messageRules,
+} from './harness/instruction-delivery.js';
 
 interface AppOptions {
   dataDir: string;
@@ -3587,6 +3592,15 @@ export async function createApp(options: AppOptions) {
           128_000
         )
           throw new ApiError(413, 'Choose less than 128 KB of source text for this request.');
+        // The rule path's section for this message, as the conversation route sends it: per
+        // message, beside the session's fixed instructions (TextRequest.rules).
+        const rules = await messageRules({
+          state,
+          routeId: engine,
+          sourceBytes: documents.reduce((bytes, document) => bytes + Buffer.byteLength(document.text), 0),
+          workPaths: documents.map((document) => document.path),
+          allowedDocuments: cloudSharing(state).documents,
+        });
         return {
           projectId,
           threadId: thread.id,
@@ -3594,6 +3608,7 @@ export async function createApp(options: AppOptions) {
           prompt: command.text,
           documents,
           instructions: MODES[command.mode].instructions,
+          ...(rules ? { rules } : {}),
           model: selection.model,
           accountRoute,
           ...(await readScopeFor(projectId, command.mode, {
@@ -4184,6 +4199,17 @@ export async function createApp(options: AppOptions) {
             documents,
           })),
         };
+        // The rule path's section for this message: shipped product knowledge and the project's
+        // instruction files that govern the chosen documents (H11 scope). Per message, outside
+        // the lineage's recorded text, so an open conversation gets today's rules without
+        // retiring (TextRequest.rules).
+        const rules = await messageRules({
+          state,
+          routeId: modelRoute ? conversationRoute : 'claude-code',
+          sourceBytes: documents.reduce((bytes, document) => bytes + Buffer.byteLength(document.text), 0),
+          workPaths: documents.map((document) => document.path),
+          allowedDocuments: cloudSharing(state).documents,
+        });
         // One current lineage per mode. Retiring one and admitting its replacement are a single
         // mutation, and the next generation counts every entry the thread ever had.
         let current: ConversationLineage | undefined = lineages
@@ -4400,6 +4426,7 @@ export async function createApp(options: AppOptions) {
             ...request,
             instructions,
             documents,
+            ...(rules ? { rules } : {}),
             model: selection.model as string,
             ...(modelRoute && selection.effort ? { effort: selection.effort } : {}),
             ...(carrying ? { carriedFrom: carrying } : {}),
@@ -5159,9 +5186,31 @@ export async function createApp(options: AppOptions) {
       // here only on the sample route; everywhere else native work writes their proposal, which
       // is strict JSON and is sent its mode's text alone (server/native-work.ts).
       const modeInstructions = mode === 'ask' || mode === 'plan' ? answerInstructions(mode) : MODES[mode].instructions;
-      const instructionsForRequest = prepared.skill
-        ? `${modeInstructions}\n\n${prepared.skill.section}`
-        : modeInstructions;
+      // Then the rule path's section, as a Work run sends it: shipped product knowledge and the
+      // project's instruction files that govern the chosen documents. One request, no lineage,
+      // so it rides in the instruction channel itself and the text route records it with the
+      // run's intent. The sample route sends nothing anywhere, so nothing is assembled for it.
+      const requestRules =
+        serviceRoute === 'sample'
+          ? null
+          : (
+              await assembleInstructions({
+                state: store.state(projectId),
+                routeId: serviceRoute,
+                agentRole: `Diomedes ${mode} answer`,
+                budgetBytes: instructionSectionBudget(
+                  prepared.documents.reduce((bytes, doc) => bytes + Buffer.byteLength(doc.text), 0) +
+                    (prepared.skill ? Buffer.byteLength(prepared.skill.section) : 0),
+                ),
+                allowedDocuments: cloudSharing(store.state(projectId)).documents,
+                workPaths: prepared.documents.map((doc) => doc.path),
+              })
+            ).section;
+      const instructionsForRequest = [
+        modeInstructions,
+        ...(prepared.skill ? [prepared.skill.section] : []),
+        ...(requestRules ? [requestRules] : []),
+      ].join('\n\n');
       let answer: string;
       let helper: NonNullable<Turn['helper']>;
       const runChoice =
@@ -5566,8 +5615,24 @@ export async function createApp(options: AppOptions) {
           ? await nextModelInstructions(projectId, thread, draft.mode, { route, model, effort: styled?.effort })
           : MODES[draft.mode].instructions;
       const history = thread.turns.reduce((bytes, turn) => bytes + Buffer.byteLength(turn.text), 0);
+      // A conversation message also carries the rule path's section (TextRequest.rules).
+      const rules =
+        draft.mode === 'ask' || draft.mode === 'plan' || draft.mode === 'auto'
+          ? await messageRules({
+              state,
+              routeId: route,
+              sourceBytes,
+              workPaths: draft.sources.map((source) => relativeName(source.path)),
+              allowedDocuments: cloudSharing(state).documents,
+            })
+          : undefined;
       return meteredPlan(threadId, route, model, {
-        inputBytes: Buffer.byteLength(instructions) + Buffer.byteLength(draft.text) + sourceBytes + history,
+        inputBytes:
+          Buffer.byteLength(instructions) +
+          (rules ? Buffer.byteLength(rules.text) : 0) +
+          Buffer.byteLength(draft.text) +
+          sourceBytes +
+          history,
         messages: thread.turns.length + 1,
         maxOutputTokensPerStep: CONVERSATION_LIMITS.maxOutputTokens,
         maxSteps: MODEL_TURN_CAPABILITY.maxTurns,

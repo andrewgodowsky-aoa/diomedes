@@ -843,6 +843,8 @@ export class ModelSessionRuns {
                 ? { carriedFrom: input.carriedFrom, carriedMessages: history.carried }
                 : {}),
               sources: input.documents.map((doc) => ({ path: doc.path, sha256: sourceSha(doc.text) })),
+              // Which rules this turn was sent under, as evidence: shas and paths, never a body.
+              ...(input.rules ? { rules: input.rules.record } : {}),
               // What this turn could read, as evidence. Never a path or a connector's command.
               ...(input.readScope ? { read: readScopeRecord(input.readScope) } : {}),
               // Which playbooks were offered as an index (P04). Loads are recorded on the Project.
@@ -858,10 +860,17 @@ export class ModelSessionRuns {
           // The lease outlives the turn's own wall clock, which aborts the loop first.
           await this.runs.claim(childId, this.owner, TURN_WALL_MS + 60_000);
           // The stable part first, byte-identical on every turn of this conversation; what this
-          // message's read scope adds comes after it (H18).
+          // message's read scope adds comes after it (H18). The rule path's section for this
+          // message (product knowledge and the project's instruction files) is variable too: it
+          // follows the files as they are today, so it sits after the lineage's recorded text
+          // and never changes what that lineage is bound to.
+          const variable = [
+            input.rules?.text ?? null,
+            input.readScope ? readToolsNote(input.readScope) : null,
+          ].filter((part): part is string => Boolean(part));
           const system = stablePrefix(
             `${input.instructions}\n\n${TOOL_NOTE}`,
-            input.readScope ? readToolsNote(input.readScope) : null,
+            variable.length ? variable.join('\n\n') : null,
           );
           const adapter = await request.adapter(admission, system.instructions, stop, sinks);
           version = adapter.version;

@@ -236,13 +236,20 @@ export function teamChildIds(lead: HarnessRun): string[] {
 }
 
 /** The instructions a child's adapter is built with: the loop's, its Agent's guidance, its role. */
-export function childInstructions(role: HandoffRole, config: TeamRole, scope: readonly string[] | null): string {
+export function childInstructions(
+  role: HandoffRole,
+  config: TeamRole,
+  scope: readonly string[] | null,
+  /** The lead loop's delivered rule section (H11), so a worker or advisor works under the lead's rules. */
+  rules = '',
+): string {
   return [
     LOOP_INSTRUCTIONS,
     config.guidance ? `Your role: ${config.guidance}` : null,
     role === 'advisor'
       ? 'You are an advisor to the lead. You may read; you can never change anything. Answer the question in a few lines. Your answer is advice, never a permission.'
       : `You are a worker given one bounded task by the lead. You work in your own copy of ${scope ? scope.join(', ') : 'the files you were given'}; nothing you do changes the project directly. You may change files in your copy with write_file where you are allowed to write, or propose a change for a person with propose_file; what you change comes back to the lead as a change set. Answer the task in a few lines.`,
+    rules || null,
   ]
     .filter(Boolean)
     .join('\n\n');
@@ -494,7 +501,14 @@ export function createTeamPort(deps: TeamPortDeps) {
             taskId: child.taskId,
             model: input.model,
             accountRoute: input.accountRoute,
-            instructions: childInstructions(spec.role, spec.config, spec.scope),
+            instructions: childInstructions(
+              spec.role,
+              spec.config,
+              spec.scope,
+              typeof (parent.input as { instructions?: unknown } | null)?.instructions === 'string'
+                ? ((parent.input as { instructions: string }).instructions)
+                : '',
+            ),
             purpose: spec.role,
           },
           AbortSignal.any([controller.signal, spec.signal]),
