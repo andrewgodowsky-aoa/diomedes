@@ -395,42 +395,14 @@ Raised 2026-09-24 by `docs/implementation/2026-09-24-h12-mediated-effects.md`.
 6. Read tools skip the NFC and case-collision refusals; the private-name checks still fold case and
    compatibility forms. Default: as stated.
 
-### O23. The Diomedes work loop: finish, delegation and where it starts
+### O23. Where a person starts a Diomedes work loop
 
-Raised 2026-09-24 by `docs/implementation/2026-09-24-h13-native-loop.md`.
+Raised 2026-09-24 by `docs/implementation/2026-09-24-h13-native-loop.md`. Andrew answered its
+other three items (the finish, delegation and attribution) on 2026-09-24, and they are now R11.
 
-1. A loop finish that is not Verified leaves the task in Review, also when no checks are declared;
-   the person can still move it to done. Default: as stated.
-2. The person chooses the delegate route at start; the model decides only whether and what to hand
-   off. A delegate is read-only, one level deep, at most 2 per run, with 4 model and 4 tool calls.
-   Default: as stated.
-3. The loop's own steps are attributed to Diomedes as native supervisor, model steps to the
-   runtime-reported model, and the fixture route names no model. Default: as stated.
-4. Where does a person start a loop: the Diomedes page's escalation (CD-04), a thread action, or
-   elsewhere? Default: no Console start control; only `POST /api/projects/:id/loop/start`.
-
-### O24. Supervision: thresholds and queued corrections
-
-Raised 2026-09-24 by `docs/implementation/2026-09-24-h15-drift.md`.
-
-1. Thresholds: identical calls in a row 3 / 4 / 6 (note / correct / pause); the same observation for
-   different inputs 4 / 5 / 8; budget noted at 80 percent used; pace projected once a plan step is
-   done, critical at 90 percent with a projected overrun. Should a project be able to tighten (never
-   loosen) them? Default: these values, no project setting.
-2. Corrections per detector per run: scope 1, no-progress 2, budget 1, instruction 1, verification
-   1, never above 3. Default: as stated.
-3. Scope is folder-level: a selected source's folder is the run's scope, a root source puts the whole
-   project in scope, and a task with no source has only "outside the project" to judge. Default: as
-   stated.
-4. An unapproved recorded write outside scope, or into a forbidden path, pauses at once; reads and
-   proposals are noted. Default: as stated.
-5. On a route that cannot steer, may a supervision correction start the next run, or should it wait
-   for a person? Default: it starts the next run through Queue, bounded with the origin run and
-   cancelled by a pause.
-6. An escalation is raised once per task and issue, and "continue" acknowledges that issue for the
-   resumed lineage. Default: yes.
-7. Supervision is on for every project, with no setting to turn it off. Default: always on.
-8. Instruction drift reads only backticked paths after an explicit prohibition. Default: yes.
+Where does a person start a loop: the Diomedes page's escalation (CD-04), a thread action, or
+elsewhere? The same question now covers an H14 lead with workers (O36). Default: no Console start
+control; only `POST /api/projects/:id/loop/start`.
 
 ### O25. Should a declared project command run as a verification check, and under which grant?
 
@@ -492,15 +464,6 @@ picture, PDF or workbook from History is refused in words (its versions stay kep
 and the desktop shell gained no open-externally hand-off, so a PDF is described, not opened.
 Default: both not built; each is a candidate follow-up.
 
-### O31. Are readable diffs of recorded versions Core, or the Software Engineering pack?
-
-Raised 2026-09-24 by `docs/implementation/2026-09-24-p06-diffs-review.md`. The 2026-09-10 product
-note put "unified and split diffs" in the Software Engineering pack; DIO-32 asked for diffs as the
-general Files surface. Default: readable diffs of recorded text versions are Core ("history and
-version inspection" in decision 13), with no Git and no highlighting; the pack keeps Git-backed and
-highlighted comparison. Decision 13's wording in `AGENTS.md` is left as it is until this is
-answered.
-
 ### O32. Should a same-version byte change in a bound executable move its binding revision?
 
 Raised 2026-09-24 by `docs/implementation/2026-09-24-audit-server-fixes.md` (DIO-86). The binding
@@ -533,7 +496,212 @@ or route serving it"), while decision 8 says direct-agent work is never casually
 Diomedes reasoning. The run's recorded origin is truthful either way. If decision 8 wins, the line
 becomes `${routeDisplayName(run.engine)} is writing the proposal.` Default: unchanged.
 
+### O35. Guidance maintenance: what signs a revision, and when Diomedes proposes one
+
+Raised 2026-09-24 by `docs/implementation/2026-09-24-h10-guidance.md` (DIO-15, PR #111, in batch 6).
+
+1. "Signed" means a SHA-256 digest chain, not an HMAC. There is no persisted local key to sign
+   with, so the chain detects an edited, dropped or reordered revision but cannot stop someone who
+   can write `state.json` from recomputing it. An HMAC needs a key-custody decision. Default: the
+   digest chain.
+2. A proposal needs 3 distinct occurrences of the same correction, for every kind, as a product
+   constant. Default: 3.
+3. A decline holds until a new piece of evidence arrives, and rolling back an applied proposal
+   counts as declining its evidence. Default: as stated.
+4. Rollback restores the text from before the named revision. Default: as stated.
+5. A revision that would flag any run whose write the person kept reads *worse*, however many
+   corrected runs it would also catch. Default: *worse* wins.
+6. Sample runs are not evidence. Default: as stated.
+7. Only an existing, loaded instruction file is revised, by appending one line. No file is created
+   and no existing line is edited. Default: as stated.
+
+### O36. Lead and workers: limits, failure and reuse
+
+Raised 2026-09-24 by `docs/implementation/2026-09-24-h14-teams.md` (DIO-19, PR #112, in batch 6).
+Andrew's 2026-09-24 decisions answer part of this (R11, R13). A worker is a Diomedes-dispatched
+helper, so it will work in a sandbox and hand back a change set once the sandbox exists. Until
+then it stays read-only as built. What is still open:
+
+1. **Limits.** H14 was built with depth 1, at most 3 workers at once and at most 6 per lead run.
+   Andrew's H13 limits are depth at most 2 and at most 4 delegates per run, in parallel. Do the H13
+   limits govern H14's workers? If they do, 6 per run is above the limit. Default: the build's
+   numbers stand until the delegate-sandbox slice reconciles them.
+2. **Budget.** A worker gets its own budget: 4 turns, reported tokens not limited, 5 minutes. The
+   ceilings are 8 turns, 400,000 tokens and 30 minutes. An advisor gets 3 turns and 2 minutes, and
+   2 questions per lead. R11 says a delegate's budget is carved from its parent's remaining budget,
+   and these budgets are not carved from the lead's yet. Review D's patch B names the same gap for
+   H13. Default: as built.
+3. A worker that fails or dies stops its lead, and the person retries through H08. A worker stopped
+   by its own budget does not stop its lead. Should a lead ever carry on with a partial outcome?
+   Default: it stops.
+4. The default Agents are `diomedes.general` for a worker and `diomedes.architect` for an advisor,
+   and an advisor must have a `review` ceiling. Default: as stated.
+5. A retry reuses a finished worker's answer when the role, task and scope match exactly, without
+   re-reading the files. Default: as stated.
+
+### O37. Pack contributions on demand: refusal, reading and model choice
+
+Raised 2026-09-24 by `docs/implementation/2026-09-24-p04-on-demand-contributions.md` (DIO-30,
+PR #114, in batch 6).
+
+1. A built-in pack whose content changed without a version change is refused at load, not
+   silently re-indexed. Default: refused. Changing a playbook therefore needs a version bump.
+2. A person opening a playbook to read it is recorded as a load, with the reason `opened`.
+   Default: recorded.
+3. In Ask and Plan on model-API routes, the model may choose a playbook from the index. Andrew may
+   prefer that only the person chooses. That is a one-line change, and the index route remains.
+   Default: the model may choose.
+
+### O38. Should project threads on Claude Code run on the native session?
+
+Raised 2026-09-24 by `docs/implementation/2026-09-24-h03-claude-live-controls.md` (DIO-8, PR #92,
+on main through batch 5, PR #107). H03's controls (queued steering, Stop with escalation, restart
+reconciliation) ship only on the Diomedes page. Project threads on Claude Code (Ask, Plan,
+Automatic) still use the single-turn direct path. Moving them would change how a thread's route is
+chosen (`planThreadSend`). Default: not moved.
+
+### O39. Kept Cursor and Devin conversations: a Console route, and when their folder is removed
+
+Raised 2026-09-24 by `docs/implementation/2026-09-24-h05-cursor-acp-sessions.md` (PR #90, on main
+through batch 5, PR #107).
+
+1. Should the kept Cursor and Devin conversations become Console conversation routes? That would
+   amend CD-01 Decision 5, as O19 would for OpenCode. Default: an API route only.
+2. When should a kept conversation's private engine folder be removed? The resume needs it, and
+   deletion is designed, never a blunt switch (decision 10). Default: never removed automatically.
+
+Also recorded as defaults: only `fetch` and `think` asks and plan approvals reach a person, and
+anything that would write, execute or switch mode stays declined. A declined question lets the
+turn continue. An expired or cancelled one stops it.
+
+### O40. Should a Codex Resume wait for Codex while it holds the service lock?
+
+Raised 2026-09-24 by review C (`docs/implementation/2026-09-24-review-c.md`, RC-H02-1, PR #109, in
+batch 6). H02's default 5 has a Resume wait up to 45 seconds for its run to open a Codex thread.
+The wait happens under `store.locked`, which serialises the whole service. So a slow Codex start
+also holds up Stop and every read in every project. Fork has no overall bound. Review C proposes
+releasing the lock around the engine call. The interim option is to drop the wait and have the
+receipt say what Diomedes started. Also open: whether Queue with `waitsFor` cancellation should be
+exempt from H08's 2048-receipt limit, as Stop now is. Default: unchanged; the proposed patch is
+recorded, not applied.
+
+### O41. May a new run start while a supervision escalation is open?
+
+Raised 2026-09-24 by review D (`docs/implementation/2026-09-24-review-d.md`, patch A, PR #110, in
+batch 6). `WorkService.start` refuses a start only while a run is live. A person's Start on a task
+waiting on a supervision escalation therefore succeeds and detaches the question, and that run's
+drift is only noted. R12 item 6 (one escalation per task and issue) does not decide this. Proposed
+default: refuse the start (409 `supervision_escalation_open`) until the person answers. Today the
+start is admitted.
+
+### O42. Review E's decisions to revisit
+
+Raised 2026-09-24 by review E (`docs/implementation/2026-09-24-review-e.md`, PR #113, in batch 6).
+
+1. **D5 task-scope account.** A task scope confirmed with no proposal waiting still binds the
+   account of an earlier approved proposal (the open half of D5-1). Should it bind only a waiting
+   proposal's account, and otherwise record "no account seen"? That would change O15's default.
+2. **D5 always-ask list.** Only SVG, HTML and XML count as able to run code when opened. Should
+   scripts, CI workflows, `package.json` and instruction files (`AGENTS.md`, `CLAUDE.md`) always
+   ask as well?
+3. **Automations B default 16.** Its section 3 says attention items clear when the schedule is
+   turned on again. The code clears only `blocked` items, which is the safer behaviour. One of the
+   two needs correcting.
+4. **P06 version comments.** A version comment rides with a task's revision by path, even when
+   someone else wrote the version. Should it ride only with versions the task's own changes
+   produced?
+
+Default: each stays as built.
+
 ## Resolved
+
+### R13. How a helper Diomedes dispatches works (team mode)
+
+**Settled 2026-09-24 by Andrew (`docs/reference/DECISIONS_2026-09-24.md`, "Team mode, in
+general").** These rules cover every helper or sub-agent Diomedes dispatches, not only H13
+delegates. His direction was to take the options that give broad function and safety without
+hampering agents while they work, especially in team mode.
+
+- **Sandbox by default.** Delegated work runs in an isolated working copy under H12 containment
+  and hands back a recorded change set. Direct writes to the project belong to the parent or a
+  person, never to the helper.
+- **No authority widening.** A helper's authority is the intersection of its parent's grant and
+  its declared scope (decision 7). A helper's action is attributed to its own engine and model
+  (decision 8).
+- **Do not hamper.** The sandbox replaces "read-only" as the safety mechanism. Letting a helper do
+  the work somewhere safe is preferred over refusing the work.
+
+Not built yet. H13 delegates and H14 workers are read-only in source today. The sandbox is H13's
+next slice, in progress on `feature/h13-delegate-sandboxes` and not landed. H14's limits and budgets
+are still O36.
+
+### R12. Supervision: thresholds, corrections, scope and escalation (raised as O24)
+
+**Settled 2026-09-24 by Andrew (`docs/reference/DECISIONS_2026-09-24.md`, H15).** Items 1 to 4 and
+6 to 8 accept H15's defaults. Item 5 answers the question the lane left open.
+
+1. **Thresholds.** Identical calls in a row: 3 / 4 / 6 (note / correct / pause). The same
+   observation for different inputs: 4 / 5 / 8. Budget: noted at 80 percent used, critical at 90
+   percent or more used with a projected overrun. A project may tighten these but never loosen them.
+   No project setting for tightening exists yet.
+2. **Correction bounds.** Scope 1, no-progress 2, budget 1, instruction 1 and verification 1, all
+   capped at `CORRECTION_LIMITS.maxAttempts` (3).
+3. **Scope** is folder-level, as proposed.
+4. **Out-of-scope writes.** An unapproved recorded write outside scope, or into a forbidden path,
+   pauses the run at once. Reads and proposals are only noted.
+5. **Queued corrections.** On a route that cannot steer, a queued correction may start the next run
+   without a person. It shares the origin run's correction bound. It runs through ordinary
+   admission, with a permission never wider than the origin run's. It is labelled as a supervision
+   correction in the thread and in History. A pause or a Stop cancels it. Once the bound is spent,
+   the next drift escalates to a person as a Need. This is how H15 was built.
+6. **Escalations** are raised once per task and issue. Review D narrowed "continue" to
+   acknowledge the issue only for the run it resumed (PR #110). Whether a new run may start while
+   an escalation is open is still O41.
+7. **Supervision is always on**, in every project. No setting turns it off or widens it.
+8. **Instruction drift** reads only backticked paths after an explicit prohibition. Review D fixed
+   the reading of a prohibition that carries an exception.
+
+### R11. The Diomedes work loop: finish, delegation and attribution (raised as O23 items 1–3)
+
+**Settled 2026-09-24 by Andrew (`docs/reference/DECISIONS_2026-09-24.md`, H13).**
+
+1. **Accepted.** A finish that is not Verified leaves the task in Review (`waiting ·
+   changes-ready`), also when no checks are declared. The agent is not stopped. It finishes, and a
+   person or a verifier moves the task to done.
+2. **Changed: delegates will work in sandboxes, not read-only.**
+   - Every delegate runs in its own sandbox: an isolated working copy of its scope in the parent
+     run's area. Every write and spawn goes through H12's containment funnel, rooted at that copy.
+   - Its changes come back to the parent as a recorded change set, with P06's readable diff and
+     per-change keep. The parent may apply changes inside its own grant, through the one recorded
+     write path and attributed truthfully. Anything else waits for a person as ordinary review.
+   - A delegate's grant is the intersection of the parent's grant and the handoff's declared scope.
+   - Limits: depth at most 2, at most 4 delegates per run, and delegates may run in parallel.
+   - A delegate's budget is carved from the parent's remaining budget, never added on top of it.
+     Stop still cancels the whole tree.
+   - Delegate routes come from the project's H09 Agent profiles. The person, or the profile's
+     default, fixes which routes are allowed at start. The model picks among them and writes each
+     sub-task, but never chooses who pays.
+   - Until the sandbox exists, delegates stay read-only, one level deep, at most 2 per run, as
+     built. The sandbox and the change-set return are H13's next slice, in progress on
+     `feature/h13-delegate-sandboxes` and not landed.
+   - Carving the budget needs what review D's patch B names: charging a delegate's spend to the
+     parent's job cap. That is not built.
+3. **Accepted.** The loop's own steps are attributed to Diomedes as native supervisor. Model steps
+   are attributed to the runtime-reported model, and a fixture route names no model.
+
+Item 4, where a person starts a loop, is still open as O23.
+
+### R10. Readable diffs of recorded versions are Core (raised as O31)
+
+**Settled 2026-09-24 by Andrew (`docs/reference/DECISIONS_2026-09-24.md`, P06).** Three things P06
+built are Core, as the lane built them: readable diffs of recorded versions, keep per change, and
+review comments. The rule behind this is decisions 12 and 13. A restaurant's spreadsheet export
+and a contract draft need a readable diff as much as source code does. The Software Engineering
+pack still owns the IDE-grade layer on the same surface: Git, syntax highlighting, unified and
+split code views, and LSP. For recorded versions only, this replaces the 2026-09-10 product note,
+which put "unified and split diffs" in the pack. Decision 13 in `AGENTS.md` and
+`docs/reference/STANDING_DECISIONS.md` now says so. P06 is implemented in source and was reviewed
+by review E. It is not released.
 
 ### R9. How Run once executes, what it may save, what a missing source does, and where Automations lives
 
