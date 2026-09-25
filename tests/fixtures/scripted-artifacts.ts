@@ -349,13 +349,15 @@ export function artifactAnswer(prompt: string): string {
     .replaceAll('{{READ}}', probes.read);
 }
 
-// ---- the home conversation: AWS Bedrock (Luna) at its provider boundary ---------------------
+// ---- the home conversation: GPT-6 Luna at its provider boundary ----------------------------
 
 type Item = Record<string, unknown>;
 let lunaCalls = 0;
 
 /**
- * The `modelApiTransport` createApp takes, answering the Diomedes conversation by the same script.
+ * The provider transport answering the Diomedes conversation by the same script. The spec gives
+ * it to Nectovia's managed gateway (tests/fixtures/nectovia-home.ts), which calls it where it
+ * would call Bedrock.
  * It has the envelope tests/fixtures/scripted-home-luna.ts sends, streamed the same way (that
  * file's respond() speaks `scripted` and is not parameterised). Nothing here reaches AWS or
  * spends money.
