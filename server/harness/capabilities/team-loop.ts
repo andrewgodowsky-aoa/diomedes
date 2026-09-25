@@ -92,6 +92,15 @@ export const TEAM_ADVISOR: CapabilityManifest = {
 };
 
 /**
+ * Every route a child's reads can reach: its own, and its lead's, because the child's answer goes
+ * back to the lead. A cloud route in either place must have been granted what the child reads.
+ */
+export function childReadRoutes(lead: Pick<HarnessRun, 'input'>, childRoute: string): string[] {
+  const leadRoute = (lead.input as { route?: unknown } | null)?.route;
+  return typeof leadRoute === 'string' && leadRoute !== childRoute ? [childRoute, leadRoute] : [childRoute];
+}
+
+/**
  * The advisor's rule, checked where its registry is built: every tool it holds
  * only reads, needs no permission and asks for no approval. A registry that
  * breaks it is refused before the run starts, so an advisor can never be handed
@@ -190,7 +199,8 @@ export interface TeamPortDeps {
   admit(route: string, input: { projectId: string; model: string | null; accountRoute: string | null }): Promise<{ model: string | null; accountRoute: string | null }>;
   adapterFor(route: string, request: TeamRouteRequest, stop: AbortSignal, script: () => ModelAdapter): Promise<ModelAdapter>;
   heartbeat(runId: string, owner: string): () => void;
-  registry(projectId: string, route: string, scope: readonly string[] | null): ToolRegistry;
+  /** Bound to every route the child's reads can reach: its own, and its lead's, which receives its answer. */
+  registry(projectId: string, routes: readonly string[], scope: readonly string[] | null): ToolRegistry;
 }
 
 /** Every child a lead started, from its own recorded steps: its workers and its advisor. */
@@ -348,7 +358,7 @@ export function createTeamPort(deps: TeamPortDeps) {
       ...parent.principal,
       capabilities: childCapabilities(parent.principal.capabilities, spec.config.agent.ceiling),
     };
-    const registry = deps.registry(parent.projectId, spec.config.route, spec.scope);
+    const registry = deps.registry(parent.projectId, childReadRoutes(parent, spec.config.route), spec.scope);
     if (spec.role === 'advisor') assertReadOnly(registry);
     let child = await get(spec.childRunId);
     if (!child) {

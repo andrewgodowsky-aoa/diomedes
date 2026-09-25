@@ -266,6 +266,25 @@ describe('a lead with workers and an advisor on the fixture route', () => {
     expect(listed.files).toEqual(['delivery.md']);
   });
 
+  test('scope: a worker under a cloud lead reads only what the project shares with the lead’s route', async () => {
+    const { delegateRegistry } = await import('../server/harness/capabilities/native-loop.js');
+    const { childReadRoutes } = await import('../server/harness/capabilities/team-loop.js');
+    // The worker's answer goes back to its lead, so a local worker under a Google lead is bound to both.
+    const routes = childReadRoutes({ input: { route: 'google-vertex' } } as never, 'native-fixture');
+    expect(routes).toEqual(['native-fixture', 'google-vertex']);
+    expect(childReadRoutes({ input: { route: 'native-fixture' } } as never, 'native-fixture')).toEqual(['native-fixture']);
+    await vertexOn(['delivery.md']);
+    const registry = delegateRegistry(store(), projectId, routes, null);
+    const read = registry.get('read_project_file');
+    expect(await read.execute({ input: { path: 'order.md' } } as never)).toEqual({
+      path: 'order.md',
+      refused: 'This file is not shared with google-vertex, so it was not read.',
+    });
+    expect(((await read.execute({ input: { path: 'delivery.md' } } as never)) as { found: boolean }).found).toBe(true);
+    const listed = (await registry.get('list_project_files').execute({ input: {} } as never)) as { files: string[] };
+    expect(listed.files).toEqual(['delivery.md']);
+  });
+
   test('admission: an advisor must be an Agent that never writes, and a budget above the ceiling is refused', async () => {
     const advisor = await call<{ error: string; code: string }>(
       '/loop/start',
