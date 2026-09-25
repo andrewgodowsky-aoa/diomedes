@@ -1,5 +1,5 @@
 import type { EngineModel } from './types.js';
-import { MODEL_API_ROUTES } from './model-api.js';
+import { MODEL_API_PROVIDERS } from './model-api.js';
 import { routeDisplayName } from './engines.js';
 import { resolveWorkStyle, WORK_STYLES, type WorkStyle } from './work-style.js';
 import { resolveTier, type OwnerPin, type TierMap } from './tier-map.js';
@@ -13,12 +13,13 @@ import { resolveTier, type OwnerPin, type TierMap } from './tier-map.js';
  * - `mcp`: the engine connects to the loopback team MCP service itself, with the
  *   member's bearer token leased into its environment (Codex, Claude Code).
  * - `host`: the host runs the team tools inside its own tool loop and hands the
- *   model only their descriptors (the model-API routes).
+ *   model only their descriptors (the model-API provider routes). Nectovia
+ *   answers the conversation and carries no team member yet.
  *
  * A route not listed here cannot carry the tools today, and is refused by name
  * rather than silently swapped for one that can.
  */
-export const TEAM_ROUTES = ['codex', 'claude-code', ...MODEL_API_ROUTES] as const;
+export const TEAM_ROUTES = ['codex', 'claude-code', ...MODEL_API_PROVIDERS] as const;
 export type TeamRoute = (typeof TEAM_ROUTES)[number];
 export const TEAM_CARRIAGE: Record<TeamRoute, 'mcp' | 'host'> = {
   codex: 'mcp',

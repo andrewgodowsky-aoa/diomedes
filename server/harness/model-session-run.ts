@@ -26,6 +26,7 @@ import type { RawToolActivity } from '../../shared/adapter-contract.js';
 import type { CapabilityManifest, HarnessPrincipal, HarnessRun, Json } from '../../shared/harness.js';
 import type { TextRequest, TextResponse } from '../engines/contract.js';
 import type { StreamSinks } from '../engines/model-api-core.js';
+import type { ManagedAdmission } from '../engines/nectovia.js';
 import { EngineError } from '../engines/process.js';
 import { localHarnessPrincipal } from './bridge.js';
 import type { InteractionPhase } from './claude-session-run.js';
@@ -127,6 +128,12 @@ export interface ModelSessionAdmission {
   revision: number;
   model: string;
   accountRoute: string;
+  /**
+   * Set on the Nectovia route: the Agent admission, business, tier, usage class and policy
+   * revision every call of this message is metered under at the gateway. Persisted with the
+   * admission step, so the calls it admits carry exactly what was admitted.
+   */
+  managed?: ManagedAdmission;
 }
 export interface ModelSessionTurn {
   mode: 'start' | 'follow-up' | 'resume';

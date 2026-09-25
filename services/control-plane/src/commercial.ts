@@ -37,7 +37,7 @@ import {
   type StaffPermission,
   type StaffRole,
 } from '../../../shared/access.js';
-import { MODEL_API_ROUTES } from '../../../shared/model-api.js';
+import { MODEL_API_PROVIDERS as MODEL_API_ROUTES } from '../../../shared/model-api.js';
 import { CREDIT_MICRO_USD, creditAmount, periodIdFor, publishedMonthlyGrant, type UsageState } from '../../../shared/managed-usage.js';
 import type { EntitlementView, Membership, Organization, Person } from '../../../shared/workspaces.js';
 import { decideAgentAdmission, snapshotFromView, type AgentAdmissionDecision } from '../contract/contract.js';
