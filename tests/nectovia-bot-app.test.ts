@@ -20,7 +20,7 @@ import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createApp } from '../server/app';
 import { EngineService } from '../server/engines/service';
-import { NECTOVIA_SIGN_IN } from '../server/engines/nectovia';
+import { NECTOVIA_SIGN_IN, NECTOVIA_UNAVAILABLE } from '../server/engines/nectovia';
 import { testOnlySecretBox } from '../server/connection-secrets';
 import { ControlPlaneClient } from '../server/accounts/client';
 import type { AccountBackend } from '../server/accounts/backend';
@@ -51,12 +51,19 @@ let server: Server | undefined;
 let base: string;
 let gateway: GatewayCall[];
 let awsCalls: number;
+/** A scripted refusal the gateway answers with instead of an answer, when set. */
+let refuseWith: { status: number; code: string; message: string } | null;
 
 /** The managed gateway double: one streamed answer per call, echoing the attempt it was given. */
 async function managed(request: Request): Promise<Response> {
   const body = (await request.json()) as Item;
   gateway.push({ url: request.url, headers: Object.fromEntries(request.headers.entries()), body });
   const n = gateway.length;
+  if (refuseWith)
+    return new Response(JSON.stringify({ error: { code: refuseWith.code, message: refuseWith.message } }), {
+      status: refuseWith.status,
+      headers: { 'content-type': 'application/json' },
+    });
   return sseResponse(
     responsesEvents({
       id: `resp_gw_${n}`,
@@ -149,6 +156,7 @@ beforeEach(async () => {
   root = await fs.mkdtemp(path.join(os.tmpdir(), 'diomedes-nectovia-bot-'));
   gateway = [];
   awsCalls = 0;
+  refuseWith = null;
   cloud = await createFauxCloud({ file: null, passwordIterations: 1_000 });
   await seedDemo(cloud);
   // The Routing role qualifies GPT-6 Luna and publishes it for Efficient and Focused. Thorough
@@ -266,6 +274,31 @@ describe('the Nectovia bot', () => {
     expect(await homeThread(binding)).toMatchObject({ engine: 'nectovia' });
   });
 
+  test.each([
+    [402, 'insufficient_allowance', "This business has used this month's 1,000 credits.", "This business has used this month's 1,000 credits."],
+    [503, 'route_unavailable', 'Upstream route is down.', NECTOVIA_UNAVAILABLE],
+    [429, 'provider_busy', 'Slow down.', "Nectovia's model service is busy. Nothing was charged. Try again in a minute."],
+  ])('a gateway %i %s reaches the conversation in plain words, with the local hold released', async (status, code, said, words) => {
+    await signIn(DEMO_ACCOUNTS.owner.email);
+    const binding = await home();
+    refuseWith = { status, code, message: said };
+    const refused = await say(binding, `m-${code}`, 'How many loaves are on order?');
+    const body = (await refused.json()) as { error: string; code: string };
+    expect(refused.status).toBe(409);
+    expect(body).toMatchObject({ code: 'ROUTE_REFUSED', error: words });
+    expect(body.error).not.toMatch(/AWS|Bedrock|connect/i);
+    // One call, no retry under the SDK, and nothing sent anywhere else.
+    expect(gateway).toHaveLength(1);
+    expect(awsCalls).toBe(0);
+    // The local guard released its hold: a refusal is known not to have been charged.
+    const ledgers = (await fs.readdir(path.join(root, 'data', 'spend-exposure'))).filter((name) => name.startsWith('nectovia-'));
+    expect(ledgers).toHaveLength(1);
+    const ledger = JSON.parse(await fs.readFile(path.join(root, 'data', 'spend-exposure', ledgers[0]), 'utf8')) as {
+      reservations: { state: string }[];
+    };
+    expect(ledger.reservations.map((hold) => hold.state)).toEqual(['released']);
+  });
+
   test('a Free person is refused with the service’s sentence before any gateway call', async () => {
     await signIn(DEMO_ACCOUNTS.free.email);
     const binding = await home();
@@ -295,7 +328,9 @@ describe('the Nectovia bot', () => {
     await api('/account/sign-out', 'POST');
     const refused = await say(binding, 'm-out', 'How many loaves are on order?');
     expect(refused.status).toBe(401);
-    expect(await refused.json()).toMatchObject({ code: 'sign_in_required' });
+    // With accounts on, the host's sign-in guard answers every route first, in its own words; the
+    // app's account gate then shows the sign-in.
+    expect(await refused.json()).toMatchObject({ code: 'sign_in_required', error: 'Sign in to use Nectovia.' });
     expect(gateway).toHaveLength(0);
   });
 

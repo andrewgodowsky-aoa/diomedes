@@ -299,7 +299,7 @@ test('a message the server refuses stays in the box', async ({ page }) => {
     await say(page, 'Are you there?');
     // The refusal names the route the conversation is on, never a fallback it did not take.
     await expect(page.getByRole('alert')).toHaveText(
-      'Turn AWS Bedrock (GPT-5.6 Luna) on in Settings before sending.',
+      'Turn AWS Bedrock (GPT-6 Luna) on in Settings before sending.',
     );
     await expect(composer(page)).toHaveValue('Are you there?');
     await expect(page.locator('.dio-card')).toHaveCount(0);

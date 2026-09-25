@@ -266,7 +266,7 @@ test('AWS that is on but not configured refuses by name, and nothing falls back'
     const callsBefore = seen.length;
     await say(page, 'Are you there?');
     await expect(page.getByRole('alert')).toHaveText(
-      'Connect AWS Bedrock (GPT-5.6 Luna) and choose its model in AI setup first.',
+      'Connect AWS Bedrock (GPT-6 Luna) and choose its model in AI setup first.',
     );
     await expect(composer(page)).toHaveValue('Are you there?');
     await expect(page.locator('.dio-card')).toHaveCount(0);
