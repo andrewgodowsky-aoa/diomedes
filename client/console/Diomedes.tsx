@@ -64,6 +64,8 @@ export interface DiomedesPageProps {
    * never a route (owner decision 2026-09-23).
    */
   route: Route;
+  /** The model the route answers on, as its owner names it, for the caption (Nectovia's published label). */
+  routeModel?: string | null;
   /**
    * The thread's WorkStyle, null to follow the Settings default, or undefined while there is no
    * thread to write a choice to (the Style control is then not shown).
@@ -84,6 +86,8 @@ export interface DiomedesPageProps {
   notice: string | null;
   /** True when the notice is a refusal that sharing earlier messages answers: it carries the button. */
   noticeSharesHistory?: boolean;
+  /** Signing in answers the notice: it carries a Sign in button that opens the sign-in. */
+  onNoticeSignIn?: (() => void) | null;
   /**
    * One plain line near the composer while this conversation's earlier messages are not shared
    * with the route its next message takes, or null. Information, not a failure.
@@ -146,8 +150,10 @@ const POINT_FOR: Record<DiomedesResult['state'], string> = {
  * A conversation route as a person reads it. The name is the route's own: the caption never
  * substitutes another engine for the one the thread is actually on.
  */
-export function routeName(route: Route): string {
+export function routeName(route: Route, model?: string | null): string {
   if (route === 'aws-bedrock') return `${routeDisplayName(route)} (Luna)`;
+  // Nectovia's model is the one the account service publishes, named as it names it.
+  if (route === 'nectovia' && model) return `${routeDisplayName(route)} (${model})`;
   return routeDisplayName(route);
 }
 
@@ -178,6 +184,7 @@ export function Diomedes({
   onSend,
   onStop,
   route,
+  routeModel = null,
   workStyle,
   onWorkStyle,
   unavailable,
@@ -189,6 +196,7 @@ export function Diomedes({
   onDiscard,
   notice,
   noticeSharesHistory = false,
+  onNoticeSignIn = null,
   history = null,
   onShareHistory,
   onReadAgain,
@@ -271,7 +279,7 @@ export function Diomedes({
               <span>{instrumentLine(scopeId, projects, restriction)}</span>
               {/* A tier decides the route and the model (owner decision 2026-09-23), so a
                   thread on a tier is named by its tier; the route shows only without one. */}
-              <span className="dio-route">{workStyle ? WORK_STYLE_LABELS[workStyle] : routeName(route)}</span>
+              <span className="dio-route">{workStyle ? WORK_STYLE_LABELS[workStyle] : routeName(route, routeModel)}</span>
             </div>
 
             <div className="transcript">
@@ -344,6 +352,11 @@ export function Diomedes({
                   {noticeSharesHistory && onShareHistory && (
                     <button type="button" className="send" onClick={onShareHistory}>
                       {SHARE_HISTORY}
+                    </button>
+                  )}
+                  {onNoticeSignIn && (
+                    <button type="button" className="send" onClick={onNoticeSignIn}>
+                      Sign in
                     </button>
                   )}
                 </p>

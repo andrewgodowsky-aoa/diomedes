@@ -32,6 +32,8 @@ import { mintCommandId } from '../work-start';
 import type { JobTier } from '../../shared/job-caps';
 import type { MessageResult } from '../../shared/conversation';
 import { CONVERSATION_DEFAULT_ROUTE } from '../../shared/engines';
+import { NECTOVIA_ROUTE, type NectoviaRouteView } from '../../shared/model-api';
+import { SIGN_IN_REQUIRED_EVENT } from '../AccountGate';
 import type { Conversation, Project, ProjectState, Route, Turn } from '../../shared/types';
 import type { WorkStyle } from '../../shared/work-style';
 import { Diomedes } from './Diomedes';
@@ -99,6 +101,10 @@ export interface DiomedesHomeProps {
 
 const words = (error: unknown) =>
   error instanceof Error ? error.message : 'Nectovia could not complete that.';
+
+/** A send the host refused because nobody is signed in: signing in answers it. */
+const refusedForSignIn = (error: unknown) =>
+  error instanceof ApiError && error.status === 401 && error.data?.code === 'sign_in_required';
 
 /**
  * A send the host refused under Cloud sharing. From All projects, whose typed messages carry no
@@ -184,6 +190,10 @@ export function DiomedesHome(props: DiomedesHomeProps) {
   const [sharingOpen, setSharingOpen] = useState(false);
   // The notice on screen when it is a refusal for want of history, so it carries the line's button.
   const [refusal, setRefusal] = useState<string | null>(null);
+  // The notice on screen when signing in answers it, so it carries a Sign in button.
+  const [signInRefusal, setSignInRefusal] = useState<string | null>(null);
+  // The Nectovia route as the host sees it: the published model the caption names.
+  const [nectovia, setNectovia] = useState<NectoviaRouteView | null>(null);
   // The route the next message takes, by the host's rules, and the one the line and the refusal
   // name. A refusal reads it after the provisioner may have moved the thread, so it is a ref too.
   const next = nextRoute({
@@ -215,6 +225,18 @@ export function DiomedesHome(props: DiomedesHomeProps) {
   const dropLive = useCallback(() => {
     liveBinding.current = null;
     setLive(null);
+  }, []);
+  // The caption names the model the account service publishes; a failed read names the route alone.
+  useEffect(() => {
+    let current = true;
+    void api<NectoviaRouteView>('/ai/nectovia')
+      .then((view) => {
+        if (current) setNectovia(view);
+      })
+      .catch(() => undefined);
+    return () => {
+      current = false;
+    };
   }, []);
   useEffect(() => {
     const es = new EventSource('/api/events');
@@ -491,7 +513,10 @@ export function DiomedesHome(props: DiomedesHomeProps) {
         setRefusal(sentence);
         setNotice(sentence);
         setSharingReads((n) => n + 1);
-      } else setNotice(words(error));
+      } else {
+        setNotice(words(error));
+        if (refusedForSignIn(error)) setSignInRefusal(words(error));
+      }
       // A refusal after an uncertain attempt may be about the retry, not the original, and the
       // saved message is kept for exactly that case. It is shown with its own words so it can
       // be sent again or given up, never silently turned back into a draft.
@@ -748,6 +773,7 @@ export function DiomedesHome(props: DiomedesHomeProps) {
   // A refusal for want of history already says the line's sentence, with its button, so the line
   // steps aside while it is up.
   const refusalShown = notice !== null && notice === refusal;
+  const signInShown = notice !== null && notice === signInRefusal;
   const line =
     homeProject !== null && !refusalShown
       ? historyLine({ policy: sharing, route: next, turns })
@@ -782,6 +808,7 @@ export function DiomedesHome(props: DiomedesHomeProps) {
         onSend={send}
         onStop={stopDelivery}
         route={effective}
+        routeModel={effective === NECTOVIA_ROUTE ? (nectovia?.tiers?.efficient?.label ?? null) : null}
         workStyle={binding !== null ? workStyle : undefined}
         onWorkStyle={pickStyle}
         unavailable={unavailable}
@@ -793,6 +820,7 @@ export function DiomedesHome(props: DiomedesHomeProps) {
         onDiscard={discard}
         notice={notice}
         noticeSharesHistory={refusalShown}
+        onNoticeSignIn={signInShown ? () => window.dispatchEvent(new Event(SIGN_IN_REQUIRED_EVENT)) : null}
         history={line}
         onShareHistory={openSharing}
         onReadAgain={unread ? () => void load(scopeId) : null}

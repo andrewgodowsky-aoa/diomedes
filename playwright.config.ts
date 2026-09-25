@@ -179,6 +179,9 @@ export default defineConfig({
       // per test with `X-Diomedes-Entitlement-Fixture`. Both the env var and the
       // header are inert without `DIOMEDES_TEST_MODE=1`.
       DIOMEDES_ENTITLEMENT_FIXTURE: 'paid',
+      // The owner's provider routes and tier map in AI setup: the specs that drive those cards
+      // run as the owner. A launch-time flag, read once by the service; customers never see them.
+      DIOMEDES_OWNER_ROUTES: '1',
       CODEX_HOME: codexHome,
     },
     stdout: 'pipe',
