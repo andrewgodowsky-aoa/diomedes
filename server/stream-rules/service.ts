@@ -24,7 +24,8 @@
  * Model output and tool input are never changed. Every firing is appended to
  * `ProjectState.streamTriggerFirings` and never rewritten (decision 10).
  */
-import type { Json, StepIntent, ToolEffectClass } from '../../shared/harness.js';
+import type { HarnessRun, Json, StepIntent, ToolEffectClass } from '../../shared/harness.js';
+import { TEAM_WORK_CAPABILITY } from '../harness/model-session-run.js';
 import type { ProjectState, Settings } from '../../shared/types.js';
 import {
   constrainsOf,
@@ -33,6 +34,7 @@ import {
   resolveStreamRules,
   STREAM_RULE_LIMITS,
   streamRuleSetSchema,
+  STREAM_RULE_WATCHES,
   TRIGGER_ACTOR,
   type AuthoredStreamRule,
   type StreamRule,
@@ -66,10 +68,11 @@ export interface StreamWatch {
 }
 
 /**
- * The runs trigger rules watch: Diomedes loop runs, where Diomedes owns the model stream and
- * tool admission. External engines run their own tools and are not watched.
+ * The runs trigger rules watch: work loop runs, where Nectovia owns the model stream and tool
+ * admission, and Work on an external engine, whose text streams back through Nectovia
+ * (`work-watch.ts`). An external engine runs its own tools, and those are not watched.
  */
-export const WATCHED_RUNS: readonly string[] = Object.freeze(['diomedes-loop']);
+export const WATCHED_RUNS: readonly string[] = STREAM_RULE_WATCHES;
 
 /** What a rule write changed, in words, in the order the rules are written; removals last. */
 export function ruleChanges(before: readonly StreamRule[], after: readonly StreamRule[]): string[] {
@@ -117,6 +120,9 @@ function readLayer(
     },
   };
 }
+
+/** Runs whose tool intents answer to a Work Session named by their command id. */
+const TEAM_WORK_RUNS = TEAM_WORK_CAPABILITY.id;
 
 /** The declaration that fired: its exact bytes' digest, never just its id. */
 export const ruleDigest = (rule: StreamRule) => digest(rule);
@@ -393,6 +399,7 @@ export class StreamRuleService {
    */
   private async owner(runId: string) {
     const run = await this.deps.runs.get(runId).catch(() => null);
+    if (run && !run.taskId && run.capabilityId === TEAM_WORK_RUNS) return this.workOwner(run);
     if (!run?.taskId) return null;
     let sessionId = run.sessionId;
     let parent = run;
@@ -414,6 +421,25 @@ export class StreamRuleService {
     }
     if (!state.sessions.some((session) => session.id === sessionId)) return null;
     return { run, state, ref: { id: run.id, sessionId, taskId: run.taskId } };
+  }
+
+  /**
+   * A model-API team member's Work turn runs the team tools itself, through RunService, under
+   * a run that names no Session: its command id is the Work run's Session, which carries the
+   * task. Its tool intents answer to that Session's rules like a loop's.
+   */
+  private workOwner(run: HarnessRun) {
+    const sessionId = (run.input as { commandId?: unknown } | null)?.commandId;
+    if (typeof sessionId !== 'string') return null;
+    let state: ProjectState;
+    try {
+      state = this.store.state(run.projectId);
+    } catch {
+      return null;
+    }
+    const session = state.sessions.find((item) => item.id === sessionId);
+    if (!session?.taskId) return null;
+    return { run: { ...run, taskId: session.taskId }, state, ref: { id: run.id, sessionId, taskId: session.taskId } };
   }
 
   // --- tool intents, at admission ------------------------------------------------------
@@ -494,8 +520,51 @@ export class StreamRuleService {
   async watch(runId: string, stepId: string, attempt: number): Promise<StreamWatch | null> {
     const owner = await this.owner(runId);
     if (!owner) return null;
-    const { run, state, ref } = owner;
-    const active = resolveStreamRules(this.authored(state), run.taskId).active.filter(
+    return this.open(
+      owner.run.projectId,
+      owner.state,
+      owner.ref,
+      stepId,
+      attempt,
+      async () => (await this.deps.runs.get(runId)).state === 'cancelled',
+    );
+  }
+
+  /**
+   * A watch for one Work request on an external engine (Codex, Claude Code, OpenCode, the ACP
+   * routes, model-API routes), or null when no text rule watches it. The Work run's Session is
+   * the owner; `where` names the run and step the text streamed in, as the route records it.
+   * `stopped` says whether the Work request was already stopped, as supervision's H08 Stop does.
+   */
+  async watchWork(
+    projectId: string,
+    sessionId: string,
+    where: { runId: string; stepId: string },
+    stopped: () => boolean,
+  ): Promise<StreamWatch | null> {
+    let state: ProjectState;
+    try {
+      state = this.store.state(projectId);
+    } catch {
+      return null;
+    }
+    const session = state.sessions.find((item) => item.id === sessionId);
+    if (!session?.taskId) return null;
+    return this.open(projectId, state, { id: where.runId, sessionId, taskId: session.taskId }, where.stepId, 1, async () =>
+      stopped(),
+    );
+  }
+
+  private open(
+    projectId: string,
+    state: ProjectState,
+    ref: { id: string; sessionId: string; taskId: string },
+    stepId: string,
+    attempt: number,
+    stopped: () => Promise<boolean>,
+  ): StreamWatch | null {
+    const run = { projectId };
+    const active = resolveStreamRules(this.authored(state), ref.taskId).active.filter(
       (item) => item.rule.match.kind !== 'tool',
     );
     if (!active.length) return null;
@@ -510,7 +579,7 @@ export class StreamRuleService {
           await this.handOff(run.projectId, ref.sessionId, created);
           // Supervision may not pause the run (an escalation for this rule is already open on
           // the task). A stop rule still never lets the run act on what it streamed.
-          if (pending.intervention === 'stop' && (await this.deps.runs.get(runId)).state !== 'cancelled')
+          if (pending.intervention === 'stop' && !(await stopped()))
             throw new HarnessError('trigger_stopped', `A rule stopped this run: ${pending.rule.text}`);
         })
         .catch((error: unknown) => {

@@ -33,6 +33,7 @@
  *    `screenForInstructionText` at discovery and shown to the person there.
  */
 import type { ProjectState } from '../../shared/types.js';
+import type { Json } from '../../shared/harness.js';
 import packageInfo from '../../package.json' with { type: 'json' };
 import {
   activeInstructionFiles,
@@ -55,6 +56,10 @@ import {
 import type { ProductKnowledgeBundle, ProductKnowledgeReceipt } from '../../shared/readiness.js';
 import type { GoverningRecord } from '../../shared/rule-authority.js';
 import { instructionRules } from '../capability-packs.js';
+import { PLAIN_WRITING_VERSION, WRITING_STANDARD } from '../../shared/plain-writing.js';
+import { createHash } from 'node:crypto';
+
+const STANDARD_SHA = createHash('sha256').update(WRITING_STANDARD, 'utf8').digest('hex');
 import { ApiError, projectFile, readTextOrNull } from '../paths.js';
 import { assembleContext } from '../rules.js';
 import { hash, now } from '../store.js';
@@ -121,6 +126,16 @@ export interface AssembledInstructions {
   readonly governing: readonly GoverningRecord[];
   /** Prepared/omitted only. A caller may mark sent after a provider response. */
   readonly productKnowledge: ProductKnowledgeReceipt;
+  /** Whether the writing standard (shared/plain-writing.ts) went, at which version. */
+  readonly writing: WritingStandardReceipt;
+}
+
+/** The writing standard's part of a delivery: which version went, or that it did not fit. */
+export interface WritingStandardReceipt {
+  readonly version: string;
+  readonly sha256: string;
+  readonly bytes: number;
+  readonly state: 'sent' | 'omitted';
 }
 
 /**
@@ -238,19 +253,32 @@ export async function assembleInstructions(input: {
     buildVersion: packageInfo.version,
     now: at,
   });
+  // The writing standard comes first and is weighed first: it is the product's own rule for how
+  // anything a person reads is written, it is the same small text on every call, and it must not
+  // be the part left out when the documents leave little room.
+  const standardBytes = Buffer.byteLength(WRITING_STANDARD);
+  const writing: WritingStandardReceipt =
+    standardBytes <= input.budgetBytes
+      ? { version: PLAIN_WRITING_VERSION, sha256: STANDARD_SHA, bytes: standardBytes, state: 'sent' }
+      : { version: PLAIN_WRITING_VERSION, sha256: STANDARD_SHA, bytes: 0, state: 'omitted' };
+  const afterWriting = Math.max(0, input.budgetBytes - writing.bytes - (writing.bytes ? 1 : 0));
   const product = assembleProductKnowledgeInstructions({
     knowledge,
     routeId: input.routeId,
-    budgetBytes: input.budgetBytes,
+    budgetBytes: afterWriting,
     at,
   });
-  const remaining = Math.max(0, input.budgetBytes - product.receipt.bytes);
+  const remaining = Math.max(0, afterWriting - product.receipt.bytes);
   const combine = (
-    project: Omit<AssembledInstructions, 'productKnowledge'>,
+    project: Omit<AssembledInstructions, 'productKnowledge' | 'writing'>,
   ): AssembledInstructions => ({
     ...project,
-    section: [product.section, project.section].filter((value): value is string => Boolean(value)).join('\n') || null,
+    section:
+      [writing.state === 'sent' ? WRITING_STANDARD : null, product.section, project.section]
+        .filter((value): value is string => Boolean(value))
+        .join('\n') || null,
     productKnowledge: product.receipt,
+    writing,
   });
   const allowed = input.allowedDocuments === undefined
     ? null
@@ -314,7 +342,7 @@ export async function assembleInstructions(input: {
     (record) =>
       record.state === 'loaded' && record.ruleId && (allowed === null || allowed.has(record.path)),
   );
-  const unscoped = (): Omit<AssembledInstructions, 'productKnowledge'> => ({
+  const unscoped = (): Omit<AssembledInstructions, 'productKnowledge' | 'writing'> => ({
     section: null,
     delivery: reachable
       ? {
@@ -379,7 +407,7 @@ export async function assembleInstructions(input: {
     Buffer.byteLength(LEFT_OUT_HEAD) +
     4;
   // Joined to the shipped product knowledge by one newline.
-  const room = Math.max(0, remaining - (product.section ? 1 : 0));
+  const room = Math.max(0, remaining - (product.section || writing.state === 'sent' ? 1 : 0));
   let pending = applied.reduce((sum, rule) => sum + leftOutReserve(records.get(rule.id)!.path), 0);
 
   const files: DeliveredInstructionFile[] = [];
@@ -458,6 +486,62 @@ export function deliverySentence(delivery: InstructionDelivery): string {
     ? `Diomedes sent project instructions to ${delivery.routeId}: ${named(sent)}.`
     : `Diomedes sent no project instructions to ${delivery.routeId}.`;
   return omitted.length ? `${first} Left out whole: ${named(omitted)}.` : first;
+}
+
+/**
+ * What a conversation turn records about the rules it was sent under: the sha-256 of the exact
+ * section, each instruction file's path, sha and state, and the product knowledge state. Never a
+ * body. A turn has no Session, so this rides on the turn's own run or step input instead.
+ */
+export function ruleDeliveryRecord(assembled: AssembledInstructions, text: string): Json {
+  return {
+    sha256: hash(text),
+    bytes: Buffer.byteLength(text),
+    revision: assembled.delivery?.revision ?? 'none',
+    files: (assembled.delivery?.files ?? []).map((file) => ({
+      path: file.path,
+      sha: file.sha,
+      state: file.state,
+      ...(file.exclusion ? { exclusion: file.exclusion } : {}),
+    })),
+    excluded: (assembled.delivery?.excluded ?? []).map((file) => ({
+      path: file.path,
+      exclusion: file.exclusion,
+    })),
+    productKnowledge: {
+      state: assembled.productKnowledge.state,
+      bundleSha256: assembled.productKnowledge.bundleSha256,
+    },
+    writing: { ...assembled.writing },
+  };
+}
+
+/**
+ * The rules one conversation message travels with (`TextRequest.rules`), or undefined when the
+ * rule path has nothing to deliver. The same `assembleInstructions` every Work run and loop run
+ * uses, so a message and a run of the same project are sent the same rules.
+ */
+export async function messageRules(input: {
+  state: ProjectState;
+  routeId: string;
+  /** The bytes the message's selected documents already take. */
+  sourceBytes: number;
+  /** The documents the message selected: nested instruction files govern only inside them. */
+  workPaths: readonly string[];
+  allowedDocuments?: readonly string[];
+  productKnowledge?: ProductKnowledgeBundle;
+}): Promise<{ text: string; record: Json } | undefined> {
+  const assembled = await assembleInstructions({
+    state: input.state,
+    routeId: input.routeId,
+    agentRole: 'Diomedes conversation answer',
+    budgetBytes: instructionSectionBudget(input.sourceBytes),
+    ...(input.allowedDocuments === undefined ? {} : { allowedDocuments: input.allowedDocuments }),
+    workPaths: input.workPaths,
+    ...(input.productKnowledge ? { productKnowledge: input.productKnowledge } : {}),
+  });
+  if (!assembled.section) return undefined;
+  return { text: assembled.section, record: ruleDeliveryRecord(assembled, assembled.section) };
 }
 
 /** The one paragraph above every playbook: what it is, and the four things it can never change. */

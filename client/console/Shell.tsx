@@ -128,6 +128,7 @@ import {
 import type { ReadConnectorsView } from '../../shared/read-connectors';
 import { skillConnectorNote } from './skill-connectors';
 import { TextSizeMenuItems } from './TextSizeMenu';
+import { AccountMenu } from './AccountMenu';
 import { PlaybookPanel } from './PlaybookPanel';
 import type { LoadedContribution } from '../../shared/pack-contributions';
 
@@ -1946,6 +1947,7 @@ export function Shell({
           <button type="button" onClick={onOpenSettings}>
             Settings
           </button>
+          <AccountMenu />
           {!conversation && (
             <button type="button" onClick={() => setCloudSharingOpen(true)}>
               Cloud sharing

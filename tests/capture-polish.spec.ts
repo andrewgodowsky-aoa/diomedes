@@ -66,7 +66,7 @@ const POS_SUMMARY = [
 
 /** The label a compiled setup gives its output: the output's name, then the setup's sentence. */
 const OUTPUT_LABEL =
-  'Weekly operations brief — Produce a recurring report: A Monday note on last week: sales, margin, what changed, and what to watch';
+  'Weekly operations brief (Produce a recurring report): A Monday note on last week: sales, margin, what changed, and what to watch';
 
 /** The brief exactly as the deterministic composer writes it from the POS export above. */
 function bakeryBrief(): string {

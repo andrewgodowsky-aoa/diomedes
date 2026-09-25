@@ -951,7 +951,7 @@ function summarise(proposal: ConfigurationProposal): Map<string, Row> {
     // The route ids stay as they are: they name real engines a person sees in
     // Settings. The policy beside them does not, because it is our word for
     // what somebody answered about their own information.
-    `${proposal.modelPolicy.routes.join(', ')} — ${PROCESSING_TEXT[proposal.modelPolicy.processing]}`,
+    `${proposal.modelPolicy.routes.join(', ')}: ${PROCESSING_TEXT[proposal.modelPolicy.processing]}`,
     proposal.modelPolicy.provenance,
   );
   set(

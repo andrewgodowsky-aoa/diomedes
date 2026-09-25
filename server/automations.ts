@@ -809,7 +809,7 @@ export class AutomationService {
       trigger:
         definition.control.state !== 'off' && schedule.text
           ? { kind: 'schedule', text: schedule.text }
-          : { kind: 'manual', text: 'Manual — not scheduled' },
+          : { kind: 'manual', text: 'Manual, not scheduled' },
       scheduleRecorded: definition.control.state === 'off' ? recorded : null,
       project: setup.target.ready
         ? { id: setup.target.projectId, name: setup.target.projectName }

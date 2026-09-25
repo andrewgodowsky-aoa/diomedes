@@ -1141,7 +1141,7 @@ const valueOf = (record: ProspectDiscoveryRecord, id: string) =>
   currentFact(record, id).value ?? 'Unknown';
 const listLine = (record: ProspectDiscoveryRecord, id: string) => {
   const item = currentFact(record, id);
-  return `- ${item.value ?? 'Unknown'} — ${provenanceText(item.provenance)}`;
+  return `- ${item.value ?? 'Unknown'} (${provenanceText(item.provenance)})`;
 };
 
 export function renderDiscoveryExport(record: ProspectDiscoveryRecord): DiscoveryArtifact {
@@ -1149,7 +1149,7 @@ export function renderDiscoveryExport(record: ProspectDiscoveryRecord): Discover
   const hypothesis = currentFact(record, record.hypothesisFactId);
   const outcome = record.hypothesisOutcomes.at(-1)!;
   const lines = [
-    `# Discovery — ${prospectName}`,
+    `# Discovery: ${prospectName}`,
     '',
     `Route: ${DISCOVERY_ROUTE_LABEL}`,
     `Stage: ${record.stage}`,
@@ -1174,18 +1174,18 @@ export function renderDiscoveryExport(record: ProspectDiscoveryRecord): Discover
   lines.push(
     '',
     '## Demo hypothesis',
-    `${hypothesis.value ?? 'Unknown'} — ${provenanceText(hypothesis.provenance)}`,
+    `${hypothesis.value ?? 'Unknown'} (${provenanceText(hypothesis.provenance)})`,
     `Outcome: ${outcome.outcome === 'not-a-weak-point' ? 'Not a weak point' : outcome.outcome === 'confirmed' ? 'Confirmed' : 'Unknown'} (checked ${outcome.checkedAt})`,
     '',
     '## Active facts',
     ...activeDiscoveryFacts(record).map(
-      (item) => `- ${item.label}: ${item.value ?? 'Unknown'} — ${provenanceText(item.provenance)}`,
+      (item) => `- ${item.label}: ${item.value ?? 'Unknown'} (${provenanceText(item.provenance)})`,
     ),
     '',
     '## Fact history',
     ...record.facts.map(
       (item) =>
-        `- ${item.recordedAt} · ${item.label}: ${item.value ?? 'Unknown'} — ${provenanceText(item.provenance)}${item.replacesFactId ? ` · corrected ${item.replacesFactId}` : ''}`,
+        `- ${item.recordedAt} · ${item.label}: ${item.value ?? 'Unknown'} (${provenanceText(item.provenance)})${item.replacesFactId ? ` · corrected ${item.replacesFactId}` : ''}`,
     ),
     '',
   );

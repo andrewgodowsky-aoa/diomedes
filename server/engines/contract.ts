@@ -107,6 +107,29 @@ export interface TextRequest {
    * model; absent means every such question is declined, as on the text route.
    */
   approvals?: (ask: EngineAsk, signal: AbortSignal) => Promise<EngineAskAnswer>;
+  /**
+   * The rule path's section for this one message (`assembleInstructions` in
+   * server/harness/instruction-delivery.ts): shipped product knowledge and the project's
+   * instruction files that govern it. Set only by the host, never from a client or a model.
+   *
+   * It is kept apart from `instructions` on purpose. A conversation's `instructions` are
+   * bound to its lineage and a native session's digest (lineage-continuity.ts), so a rule
+   * folded into them would either never reach an open conversation or retire it whenever an
+   * instruction file changed. Instead it travels per message: a Diomedes-owned route puts
+   * it in the system text after the stable prefix (model-session-run.ts), and a native
+   * session, whose system prompt is fixed for the life of the session, receives it as the
+   * `rules` field of the message `contextMessage` builds, apart from the documents.
+   * `record` is what the driver writes on the turn as evidence (`ruleDeliveryRecord`):
+   * the sha-256 of the text sent, each instruction file's path, sha and state, and the
+   * product knowledge state. Never a body.
+   */
+  rules?: { readonly text: string; readonly record: Json };
+  /**
+   * Plain writing (server/plain-writing.ts): the phrases the owner added in Settings, checked
+   * with the shipped list on the finished answer. Set only by the host. The check runs whether
+   * or not this is present; it only carries the owner's additions.
+   */
+  writing?: { readonly phrases: readonly string[] };
 }
 /**
  * A question an engine asked mid-turn that only a person may answer (H05): an
@@ -173,9 +196,16 @@ export interface PersistentTextAdapter<C> extends TextEngineAdapter {
     readonly nativeSession: NativeSessionRef | null;
   }>;
 }
-/** Instructions remain distinct from selected, untrusted document data. */
+/**
+ * Instructions remain distinct from selected, untrusted document data. The host's rule section,
+ * when a message carries one, is its own field ahead of the request, never inside a document.
+ */
 export function contextMessage(input: TextRequest): string {
-  const text = JSON.stringify({ request: input.prompt, documents: input.documents });
+  const text = JSON.stringify(
+    input.rules
+      ? { rules: input.rules.text, request: input.prompt, documents: input.documents }
+      : { request: input.prompt, documents: input.documents },
+  );
   if (Buffer.byteLength(text) + Buffer.byteLength(input.instructions) > 160_000)
     throw new Error('Select less than 160 KB of context.');
   return text;

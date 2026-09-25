@@ -28,6 +28,7 @@ import type { EverythingItem } from './console/Everything';
 import type { ShellView } from './console/types';
 import type { WorkspaceView } from '../shared/workspaces';
 import { TopStrip } from './console/TopStrip';
+import { OPEN_SETTINGS_EVENT } from './AccountGate';
 import { DesignCenter } from './console/DesignCenter';
 import { Setup } from './Setup';
 import { SettingsPage } from './Settings';
@@ -55,6 +56,15 @@ function keptPlace(): string | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * What follows the version in "Updated to 0.2.0: 1 setting moved to new defaults." A notice
+ * written before plain writing put " — " there instead of ": ".
+ */
+function updateNoticeNote(text: string | undefined): string | undefined {
+  const at = text ? /: | — /.exec(text) : null;
+  return at ? text!.slice(at.index + at[0].length) : undefined;
 }
 
 export function App() {
@@ -489,6 +499,21 @@ export function App() {
       setShowSettings(true);
       if (helpers) setHelpersRequest((n) => n + 1);
     });
+  // The account menu asks for Settings, Account from either strip.
+  const openSettingsRef = useRef<(section: string) => void>(() => {});
+  openSettingsRef.current = (section) =>
+    leaveEditor(() => {
+      setSectionRequest((last) => ({ section, n: (last?.n ?? 0) + 1 }));
+      setShowSettings(true);
+    });
+  useEffect(() => {
+    const open = (event: Event) => {
+      const section = (event as CustomEvent<unknown>).detail;
+      if (typeof section === 'string') openSettingsRef.current(section);
+    };
+    window.addEventListener(OPEN_SETTINGS_EVENT, open);
+    return () => window.removeEventListener(OPEN_SETTINGS_EVENT, open);
+  }, []);
   // Going back into Settings abandons the handover too: the person is back at
   // the screen that made the offer, where they can make it again.
   useEffect(() => {
@@ -959,7 +984,7 @@ export function App() {
       !appearanceNotice ? (
         <ReleaseNotice
           release={releaseNotice}
-          note={updateNotice?.text.split(' — ')[1]}
+          note={updateNoticeNote(updateNotice?.text)}
           onRead={() => {
             settleReleaseNotice(releaseNotice.version);
             if (updateNotice) {

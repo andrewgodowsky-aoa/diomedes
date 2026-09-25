@@ -104,16 +104,30 @@ export interface Person {
 }
 
 /**
- * What this installation may truthfully say about paid readiness: nothing.
+ * What a business holds, as the account service last answered it.
  *
- * Entitlement is separate from identity and from runtime permission, and this
- * build has no entitlement service, so the only honest answer is `none` with
- * the reason. It is computed, never stored, so no record can drift into
- * claiming a plan that was never bought.
+ * Entitlement is separate from identity and from runtime permission. The only
+ * producer of an active view is the account service (`source:
+ * 'account-service'`), read through the signed-in session; with no service,
+ * or none signed in, the honest answer is `none` with the reason. It is
+ * computed from the service's answer and never stored locally, so no local
+ * record can drift into claiming a plan that was never bought.
  */
 export interface EntitlementView {
-  plan: 'none';
-  managedInference: false;
+  /** The plan the current grant was issued from, or 'none'. */
+  plan: string;
+  planLabel: string | null;
+  state: 'none' | 'active' | 'expired' | 'revoked' | 'unknown';
+  /** Feature ids from `shared/access.ts`, e.g. 'nectovia-agent'. */
+  features: readonly string[];
+  /** The Nectovia Agent is included. A connected route never sets this. */
+  agent: boolean;
+  /** Diomedes-funded model calls are included. Funding itself is the funding service's. */
+  managedInference: boolean;
+  validFrom: string | null;
+  validUntil: string | null;
+  revision: number;
+  source: 'none' | 'account-service';
   reason: string;
 }
 
@@ -122,8 +136,23 @@ export interface EntitlementView {
 export const NO_ENTITLEMENT_REASON =
   'This installation has no entitlement service. Managed access, included usage and billing are not available here, and no local record can grant them.';
 
+export const NO_ENTITLEMENT_VIEW: EntitlementView = Object.freeze({
+  plan: 'none',
+  planLabel: null,
+  state: 'none',
+  features: Object.freeze([]) as readonly string[],
+  agent: false,
+  managedInference: false,
+  validFrom: null,
+  validUntil: null,
+  revision: 0,
+  source: 'none',
+  reason: NO_ENTITLEMENT_REASON,
+});
+
+/** The answer with no account service behind it. A signed-in session answers instead. */
 export function entitlementFor(_organizationId: string): EntitlementView {
-  return { plan: 'none', managedInference: false, reason: NO_ENTITLEMENT_REASON };
+  return { ...NO_ENTITLEMENT_VIEW };
 }
 
 export const HOSTED_BUSINESS_UNAVAILABLE_REASON =
@@ -155,7 +184,11 @@ export function canConfigureOrganization(membership: Membership | undefined | nu
   return isActiveMember(membership) && membership!.role !== 'member';
 }
 
-/** Only an owner administers membership: roles, invitations and revocation. */
+/**
+ * Only an owner administers membership in full: roles, invitations and
+ * revocation. A Manager's narrower power (invite and remove Employees) is
+ * `canInviteRole` / `canChangeMember` in `shared/access.ts`.
+ */
 export function canAdministerMembers(membership: Membership | undefined | null): boolean {
   return isActiveMember(membership) && membership!.role === 'owner';
 }

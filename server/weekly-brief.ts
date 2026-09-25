@@ -229,7 +229,8 @@ export function renderBrief(draft: Omit<BriefDraft, 'markdown'>): string {
   }
   lines.push('## Sources', '');
   for (const source of draft.sources)
-    lines.push(`- [${source.id}] ${source.label} — ${source.path} (SHA-256: ${source.sha})`);
+    // No dash between the label and the path: the brief is prose a person forwards (plain writing).
+    lines.push(`- [${source.id}] ${source.label} (${source.path}, SHA-256: ${source.sha})`);
   lines.push('');
   return `${lines.join('\n')}\n`;
 }

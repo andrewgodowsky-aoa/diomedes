@@ -20,6 +20,29 @@ directory. Keep the repository checkout; do not copy this folder in isolation.
 Normal tests block HTTP and use a clearly labeled test-only in-memory adapter.
 The PostgreSQL integration suite is opt-in and its skipped count is explicit.
 
+## Customer access, staff operations and the faux cloud
+
+Added 2026-09-25. Access is separate from inference payment: a feature grant
+(`src/commercial.ts`, migration 005) says what a business may use, including the
+Nectovia Agent; funding stays in `src/funding.ts`. New routes, all behind the
+same bearer, origin and query rules:
+
+- Customer: GET /account/organizations/:id/roster, POST
+  /account/organizations/:id/invitation-codes (and .../:codeId/revoke), POST
+  /account/invitation-codes/redeem, GET /account/organizations/:id/access, POST
+  /account/organizations/:id/agent-admissions, GET /account/routing-policy.
+- Staff (the Operations app): GET /ops/me, GET /ops/customers(?q), GET
+  /ops/customers/:id, POST .../grants, POST .../grants/:id/revoke, POST
+  .../funding, GET /ops/routing, POST /ops/routes, POST
+  /ops/routing/preview|publish|rollback, GET|POST /ops/staff, PATCH
+  /ops/staff/:id, GET /ops/people(?q), GET /ops/audit(?organizationId&limit).
+
+The **faux cloud** (`src/faux/`) runs this same handler over a JSON store and
+local passwords in place of Neon and WorkOS; nothing else differs. `npm run
+faux-cloud` serves it on 127.0.0.1:8795 with demo accounts (password
+`nectovia-demo`), and the desktop app hosts it itself when nothing answers
+there. Faux data only: none of its people, businesses or grants exist.
+
 ## Entry and configuration
 
 `src/worker.ts` is the actual Fetch entry. Existing route shapes are retained:

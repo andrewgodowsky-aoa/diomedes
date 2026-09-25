@@ -23,6 +23,7 @@ const env = {
   DIOMEDES_DATA_DIR: path.join(root, 'data'),
   DIOMEDES_PROJECTS_DIR: path.join(root, 'projects'),
   DIOMEDES_TEST_MODE: '1',
+  DIOMEDES_TEST_ACCOUNT: 'owner@juniper.test',
   CODEX_HOME: path.join(root, 'synthetic-codex'),
 };
 delete env.ELECTRON_RUN_AS_NODE;

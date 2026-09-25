@@ -12,7 +12,8 @@
     "dev": "wrangler dev --local --ip 127.0.0.1 --port 8791",
     "types": "wrangler types worker-configuration.d.ts --include-runtime=false --strict-vars=false && node scripts/scope-binding-types.mjs",
     "migrate": "tsx scripts/migrate.ts",
-    "test:runtime": "node scripts/runtime-smoke.mjs"
+    "test:runtime": "node scripts/runtime-smoke.mjs",
+    "faux-cloud": "tsx scripts/faux-cloud.ts"
   },
   "dependencies": {
     "@neondatabase/serverless": "1.1.0",

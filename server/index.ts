@@ -21,7 +21,8 @@ await safeAbsolute(dataDir);
 await fs.mkdir(dataDir, { recursive: true });
 const { release } = await claimDataFolder(dataDir, { port });
 try {
-  const app = await createApp({ dataDir, projectRoot, port, clientPort });
+  // Customer accounts are on: every route needs a signed-in person (server/accounts/).
+  const app = await createApp({ dataDir, projectRoot, port, clientPort, accounts: {} });
   if (process.argv.includes('--production')) {
     const dist = path.join(root, 'dist');
     await fs.access(path.join(dist, 'index.html'));

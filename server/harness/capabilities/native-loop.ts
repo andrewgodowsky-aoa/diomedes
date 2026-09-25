@@ -88,7 +88,13 @@ const NESTED_OUTPUT = z.strictObject({
 }) as unknown as z.ZodType<Json>;
 
 /** What a delegate is told about where it works. */
-export function delegateInstructions(depth: number, scope: readonly string[] | null, canWrite: boolean): string {
+export function delegateInstructions(
+  depth: number,
+  scope: readonly string[] | null,
+  canWrite: boolean,
+  /** The loop's delivered rule section (H11), so a helper works under the rules its loop does. */
+  rules = '',
+): string {
   return [
     LOOP_INSTRUCTIONS,
     'You are a helper given one bounded sub-task. Answer it in a few lines.',
@@ -97,6 +103,7 @@ export function delegateInstructions(depth: number, scope: readonly string[] | n
       ? 'You may change files in your copy with write_file, or propose a change for a person with propose_file. What you change comes back to the loop that handed you this task as a change set.'
       : 'You may read your copy; you cannot change anything.',
     depth < LOOP_LIMITS.delegationDepth ? 'You may hand one smaller part to a helper of your own with delegate; it cannot hand work on.' : null,
+    rules || null,
   ]
     .filter(Boolean)
     .join('\n\n');
@@ -809,6 +816,21 @@ export function createLoopProcedure(deps: {
    * for a delegate of the loop, into its parent's copy for a delegate's own.
    * Idempotent by child id, so a replay resumes the child and settles once.
    */
+  /**
+   * The rule section the loop at the root of this tree was admitted with (its `instructions`),
+   * found by walking up the parent runs. A helper is sent the rules its loop is sent.
+   */
+  const loopRules = async (run: HarnessRun): Promise<string> => {
+    let current: HarnessRun | null = run;
+    for (let hops = 0; current && hops < 8; hops++) {
+      const input = current.input as { kind?: unknown; instructions?: unknown } | null;
+      if (input?.kind === 'diomedes-loop') return typeof input.instructions === 'string' ? input.instructions : '';
+      const parentId: string | null = current.parentRunId;
+      current = parentId ? await runs.get(parentId).catch(() => null) : null;
+    }
+    return '';
+  };
+
   const driveDelegate = async (spec: DelegateSpec): Promise<LoopDelegateResult> => {
     const { parent } = spec;
     const root = await rootOf(parent);
@@ -898,7 +920,7 @@ export function createLoopProcedure(deps: {
             taskId: child.taskId,
             model: input.model,
             accountRoute: input.accountRoute,
-            instructions: delegateInstructions(spec.depth, spec.scope, canWrite),
+            instructions: delegateInstructions(spec.depth, spec.scope, canWrite, await loopRules(spec.parent)),
             purpose: 'delegate',
           },
           AbortSignal.any([controller.signal, spec.signal]),

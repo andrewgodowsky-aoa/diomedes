@@ -9,6 +9,8 @@ export const ACCOUNT_FOUNDATION_VERSION = 1 as const;
 export const ACCOUNT_WORKSPACE_LIMIT = 100;
 export const ORGANIZATION_MEMBER_LIMIT = 1000;
 export const CLOUD_WORKSPACE_PAGE_SIZE = 25;
+/** Outstanding invitation codes listed per organization. */
+export const CODE_INVITATION_PAGE = 50;
 export const accountId = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/);
 const time = z.iso.datetime();
 const epoch = z
@@ -30,6 +32,11 @@ export interface VerifiedIdentity {
   sessionId: string;
   displayName: string;
   emailVerified: boolean;
+  /**
+   * The provider's verified email, when it states one. Only an email-bound
+   * invitation code reads it; an email never creates a subject or membership.
+   */
+  email?: string | null;
   issuedAt: string;
   expiresAt: string;
   verifiedAt: string;
@@ -44,10 +51,21 @@ export const verifiedIdentitySchema = z.strictObject({
   sessionId: accountId,
   displayName: label,
   emailVerified: z.boolean(),
+  email: z.email().max(320).nullable().optional(),
   issuedAt: time,
   expiresAt: time,
   verifiedAt: time,
 });
+
+/**
+ * Who a subject is, for staff reading a customer record and for an inviter
+ * naming who they invited. A lookup, never authority: nothing here admits,
+ * maps or grants. The WorkOS directory is not wired yet and answers null.
+ */
+export interface IdentityDirectory {
+  lookup(issuer: string, subject: string): Promise<{ email: string | null; name: string | null } | null>;
+}
+export const NO_IDENTITY_DIRECTORY: IdentityDirectory = { lookup: async () => null };
 
 // Reuse the PB-01 records. Hosted provenance is required in this account store;
 // no migration reads the local fixture registry or copies its grants/credit.
@@ -108,6 +126,27 @@ const invitation = z.strictObject({
   redeemedAt: time.nullable(),
   redeemedBy: accountId.nullable(),
 });
+/**
+ * A single-use invitation code, for inviting someone who may not have an
+ * account yet. Stored only as a hash. `email`, when set, binds redemption to a
+ * provider-verified email; otherwise the code is a bearer secret the inviter
+ * hands over. Either way the role is capped by the inviter's own authority and
+ * the inviter's membership generation is pinned, so a demoted or removed
+ * inviter's outstanding codes stop working.
+ */
+const codeInvitation = z.strictObject({
+  codeHash: z.string().regex(/^[a-f0-9]{64}$/),
+  organizationId: accountId,
+  role,
+  email: z.email().max(320).nullable(),
+  invitedBy: accountId,
+  inviterGeneration: epoch,
+  createdAt: time,
+  expiresAt: time,
+  redeemedAt: time.nullable(),
+  redeemedBy: accountId.nullable(),
+  revokedAt: time.nullable(),
+});
 const event = z.strictObject({
   id: accountId,
   at: time,
@@ -119,6 +158,8 @@ const event = z.strictObject({
     'joined',
     'membership-changed',
     'session-revoked',
+    'invitation-code-created',
+    'invitation-code-revoked',
   ]),
   targetId: accountId,
 });
@@ -133,6 +174,7 @@ export const accountStateSchema = z
     memberships: z.array(z.strictObject({ record: membership, generation: epoch })).max(100_000),
     sessions: z.array(session).max(100_000),
     invitations: z.array(invitation).max(100_000),
+    codeInvitations: z.array(codeInvitation).max(100_000).default([]),
     events: z.array(event).max(100_000),
   })
   .superRefine((state, context) => {
@@ -191,6 +233,13 @@ export const accountStateSchema = z
       if (row.redeemedBy !== null && !people.has(row.redeemedBy)) fail();
       if (Date.parse(row.expiresAt) <= Date.parse(row.createdAt)) fail();
     }
+    unique(state.codeInvitations, (row) => row.codeHash);
+    for (const row of state.codeInvitations) {
+      if (!people.has(row.invitedBy) || !orgs.has(row.organizationId)) fail();
+      if ((row.redeemedAt === null) !== (row.redeemedBy === null)) fail();
+      if (row.redeemedBy !== null && !people.has(row.redeemedBy)) fail();
+      if (Date.parse(row.expiresAt) <= Date.parse(row.createdAt)) fail();
+    }
     for (const row of state.events)
       if (
         !people.has(row.actorPersonId) ||
@@ -209,6 +258,7 @@ export const emptyAccountState = (): AccountState => ({
   memberships: [],
   sessions: [],
   invitations: [],
+  codeInvitations: [],
   events: [],
 });
 
@@ -235,9 +285,10 @@ export type SessionRecord = AccountState['sessions'][number];
 export type OrganizationRow = AccountState['organizations'][number];
 export type MembershipRow = AccountState['memberships'][number];
 export type InvitationRecord = AccountState['invitations'][number];
+export type CodeInvitationRecord = AccountState['codeInvitations'][number];
 export type AccountEvent = AccountState['events'][number];
 export interface WorkspaceRow { organization: OrganizationRow; membership: MembershipRow }
-export const recordSchemas = { person, subject, organization, membership, session, invitation, event };
+export const recordSchemas = { person, subject, organization, membership, session, invitation, codeInvitation, event };
 
 /** Methods are database/local-state operations only, never provider calls. */
 export interface AccountTransaction {
@@ -260,6 +311,12 @@ export interface AccountTransaction {
   saveMembership(row: MembershipRow): Promise<void>;
   invitation(hash: string): Promise<InvitationRecord | undefined>;
   saveInvitation(record: InvitationRecord): Promise<void>;
+  codeInvitation(hash: string): Promise<CodeInvitationRecord | undefined>;
+  saveCodeInvitation(record: CodeInvitationRecord): Promise<void>;
+  /** Outstanding (unredeemed, unrevoked, unexpired at `at`) codes, newest first, bounded. */
+  openCodeInvitations(organizationId: string, at: string): Promise<CodeInvitationRecord[]>;
+  /** Every membership row of one organization, any state, with each person's display record. Bounded. */
+  roster(organizationId: string): Promise<{ membership: MembershipRow; person: AccountState['persons'][number] }[]>;
   event(record: AccountEvent): Promise<void>;
 }
 export interface AccountRepository {

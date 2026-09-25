@@ -140,12 +140,12 @@ describe('review-g finding 8: a rule that applies says which runs it watches', (
       watches: string[];
       resolution: { decisions: { ruleId: string; outcome: string; reason: string }[] };
     }>(`/stream-rules?taskId=${taskId}`);
-    expect(listed.data.watches).toEqual(['diomedes-loop']);
+    expect(listed.data.watches).toEqual(['diomedes-loop', 'external-work']);
     expect(listed.data.resolution.decisions).toEqual([
       expect.objectContaining({
         ruleId: 'writes-held',
         outcome: 'applied',
-        reason: 'Governs trigger:writes-held on Nectovia work loop runs.',
+        reason: 'Governs trigger:writes-held on the tool calls Nectovia runs itself.',
       }),
     ]);
   });

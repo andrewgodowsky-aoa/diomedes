@@ -18,7 +18,7 @@ if (path.basename(executablePath) !== 'nectovia.exe' || !process.argv[3]) throw 
 await fs.mkdir(path.dirname(root), { recursive: true }); await fs.mkdir(root);
 const env = { ...process.env, DIOMEDES_DESKTOP_PROFILE: path.join(root, 'profile'),
   DIOMEDES_DATA_DIR: path.join(root, 'data'), DIOMEDES_PROJECTS_DIR: path.join(root, 'projects'),
-  DIOMEDES_TEST_MODE: '1', CODEX_HOME: path.join(root, 'synthetic-codex') };
+  DIOMEDES_TEST_MODE: '1', DIOMEDES_TEST_ACCOUNT: 'owner@juniper.test', CODEX_HOME: path.join(root, 'synthetic-codex') };
 delete env.ELECTRON_RUN_AS_NODE;
 await fs.mkdir(env.CODEX_HOME);
 const proof = { startedAt: new Date().toISOString(), executablePath, root, checks: [], errors: [], passed: false };

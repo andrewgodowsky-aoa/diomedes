@@ -23,7 +23,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import type { RawToolActivity } from '../../shared/adapter-contract.js';
-import type { CapabilityManifest, HarnessRun, Json } from '../../shared/harness.js';
+import type { CapabilityManifest, HarnessPrincipal, HarnessRun, Json } from '../../shared/harness.js';
 import type { TextRequest, TextResponse } from '../engines/contract.js';
 import type { StreamSinks } from '../engines/model-api-core.js';
 import { EngineError } from '../engines/process.js';
@@ -38,6 +38,7 @@ import {
   type ReadToolDeps,
 } from './capabilities/read-scope-tools.js';
 import { NativeAgent, type ModelAdapter } from './native-agent.js';
+import { REWRITE_INSTRUCTIONS, repairWriting } from '../plain-writing.js';
 import { digest, HarnessError } from './policy.js';
 import { RunService, Suspended, type StepContext, type StepDefinition } from './run-service.js';
 import { ToolRegistry } from './tools.js';
@@ -169,6 +170,8 @@ export interface ModelSessionTurnResult {
   answerText?: string;
   /** H18: what went into this turn's context and what the provider reported about it. */
   context?: ContextAccount;
+  /** Plain writing: what the check found and what was repaired (server/plain-writing.ts). */
+  writing?: Json;
 }
 
 /** The history this turn is given, and how it was chosen when it passed its budget. */
@@ -818,6 +821,9 @@ export class ModelSessionRuns {
         });
         let text: string;
         let version: string;
+        // The one plain-writing rewrite, if it is needed: the same admitted route and model as the
+        // answer, with a short instruction of its own and no preview.
+        let rewriter: (() => Promise<ModelAdapter>) | null = null;
         let account: ContextAccount | undefined;
         try {
           await this.runs.start({
@@ -843,6 +849,8 @@ export class ModelSessionRuns {
                 ? { carriedFrom: input.carriedFrom, carriedMessages: history.carried }
                 : {}),
               sources: input.documents.map((doc) => ({ path: doc.path, sha256: sourceSha(doc.text) })),
+              // Which rules this turn was sent under, as evidence: shas and paths, never a body.
+              ...(input.rules ? { rules: input.rules.record } : {}),
               // What this turn could read, as evidence. Never a path or a connector's command.
               ...(input.readScope ? { read: readScopeRecord(input.readScope) } : {}),
               // Which playbooks were offered as an index (P04). Loads are recorded on the Project.
@@ -858,13 +866,21 @@ export class ModelSessionRuns {
           // The lease outlives the turn's own wall clock, which aborts the loop first.
           await this.runs.claim(childId, this.owner, TURN_WALL_MS + 60_000);
           // The stable part first, byte-identical on every turn of this conversation; what this
-          // message's read scope adds comes after it (H18).
+          // message's read scope adds comes after it (H18). The rule path's section for this
+          // message (product knowledge and the project's instruction files) is variable too: it
+          // follows the files as they are today, so it sits after the lineage's recorded text
+          // and never changes what that lineage is bound to.
+          const variable = [
+            input.rules?.text ?? null,
+            input.readScope ? readToolsNote(input.readScope) : null,
+          ].filter((part): part is string => Boolean(part));
           const system = stablePrefix(
             `${input.instructions}\n\n${TOOL_NOTE}`,
-            input.readScope ? readToolsNote(input.readScope) : null,
+            variable.length ? variable.join('\n\n') : null,
           );
           const adapter = await request.adapter(admission, system.instructions, stop, sinks);
           version = adapter.version;
+          rewriter = () => request.adapter(admission, REWRITE_INSTRUCTIONS, stop);
           const check = () => this.sharingPolicy(
             input.projectId,
             input.documents.map((doc) => doc.path),
@@ -918,8 +934,18 @@ export class ModelSessionRuns {
           model: { requested: input.model, reported, source: reported ? 'runtime' : 'not-recorded' },
           accountRoute: input.accountRoute,
         });
+        // Plain writing, inside the step, so the committed answer, a replay and the history the
+        // next message is sent all read the same text (server/plain-writing.ts).
+        const writing = await this.writingPass(input, text, rewriter, {
+          conversationRunId: runId,
+          childId,
+          route,
+          principal,
+        });
+        text = writing.text;
         return {
           runId,
+          writing: writing.record as unknown as Json,
           response: {
             text,
             model: reported ?? input.model,
@@ -946,6 +972,55 @@ export class ModelSessionRuns {
     await this.writeSteps(runId, input.projectId, this.artifacts(request, runId, decided.result));
     await this.park(runId, input.projectId, input.requestId);
     return decided.result;
+  }
+
+  /**
+   * Check a finished answer, fix in code what is unambiguous, and ask the answer's own route once
+   * about the sentences still flagged. The rewrite is its own small run beside the turn's child
+   * run (one model call, no tools), on the same admitted connection, so it reserves against the
+   * same approved spend cap and adds no route, key or consent.
+   */
+  private writingPass(
+    input: TextRequest,
+    text: string,
+    adapter: (() => Promise<ModelAdapter>) | null,
+    where: { conversationRunId: string; childId: string; route: string; principal: HarnessPrincipal },
+  ) {
+    return repairWriting({
+      text,
+      options: {
+        userTexts: [input.prompt, ...input.documents.map((doc) => doc.text)],
+        ownerPhrases: input.writing?.phrases ?? [],
+      },
+      rewrite: adapter
+        ? async (prompt) => {
+            const repairId = `${where.childId}-writing`;
+            const registry = sourceTools([]);
+            await this.runs.start({
+              id: repairId,
+              projectId: input.projectId,
+              tenantId: where.principal.tenantId,
+              principal: where.principal,
+              capability: MODEL_TURN_CAPABILITY,
+              tools: registry,
+              input: {
+                engine: where.route,
+                route: where.route,
+                accountRoute: input.accountRoute,
+                model: input.model,
+                conversationRunId: where.conversationRunId,
+                commandId: input.requestId,
+                purpose: 'plain-writing-repair',
+              },
+              budget: { units: 2, modelCalls: 1, toolCalls: 0, wallMs: 60_000 },
+            });
+            await this.runs.claim(repairId, this.owner, 120_000);
+            return new NativeAgent(this.runs, await adapter(), registry).run(repairId, this.owner, prompt, where.principal, {
+              maxTurns: 1,
+            });
+          }
+        : undefined,
+    });
   }
 
   /**

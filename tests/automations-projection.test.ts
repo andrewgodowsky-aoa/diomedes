@@ -101,7 +101,7 @@ describe('automationLabel', () => {
 
   test('the resting label says manual and not scheduled, in those words', () => {
     expect(automationLabel({ trigger: 'manual', setup: ready, latest: null }).text).toBe(
-      'Manual — not scheduled',
+      'Manual, not scheduled',
     );
   });
 

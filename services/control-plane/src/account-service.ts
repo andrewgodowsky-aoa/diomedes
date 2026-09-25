@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { canAdministerMembers, entitlementFor } from '../../../shared/workspaces.js';
+import { canAdministerMembers, entitlementFor, type MemberRole } from '../../../shared/workspaces.js';
+import { canChangeMember, canInviteRole, ROLE_CAPABILITIES } from '../../../shared/access.js';
 import { assertMembership, verifySubject } from '../contract/contract.js';
 import { AccountError } from './errors.js';
 import { base64url, digest } from './crypto.js';
@@ -14,6 +15,22 @@ export const invitationInput = z.strictObject({
 });
 export const changeInput = z.strictObject({ role: z.enum(['owner', 'admin', 'member']), state: z.enum(['active', 'revoked']) });
 export const acceptanceInput = z.strictObject({ token: z.string().regex(/^[A-Za-z0-9_-]{43}$/) });
+export const codeInvitationInput = z.strictObject({
+  role: z.enum(['owner', 'admin', 'member']),
+  email: z.email().max(320).nullable().optional(),
+  ttlMs: z.number().int().min(60_000).max(7 * 24 * 60 * 60 * 1000),
+});
+/** Sixteen Crockford base-32 characters in four groups: 80 bits, typed by a person. */
+export const INVITATION_CODE = /^[0-9A-HJKMNP-TV-Z]{4}(-[0-9A-HJKMNP-TV-Z]{4}){3}$/;
+export const redeemCodeInput = z.strictObject({ code: z.string().trim().toUpperCase().regex(INVITATION_CODE) });
+const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+function invitationCode(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  const chars = Array.from(bytes, (byte) => CROCKFORD[byte & 31]);
+  return [0, 4, 8, 12].map((at) => chars.slice(at, at + 4).join('')).join('-');
+}
+/** A code's public id: enough of its hash to name it, never enough to redeem it. */
+export const codeId = (hash: string) => hash.slice(0, 16);
 const id = (kind: string) => `${kind}_${crypto.randomUUID()}`;
 
 /**
@@ -84,6 +101,22 @@ export class AccountService {
     const found = await this.member(tx, personId, organizationId);
     if (!canAdministerMembers(found.member.record))
       throw new AccountError(403, 'An active organization owner must administer membership.');
+    return found;
+  }
+  /** An owner invites anyone; a Manager invites Employees only (Andrew, 2026-09-25). */
+  private async inviter(tx: AccountTransaction, personId: string, organizationId: string, role: MemberRole) {
+    const found = await this.member(tx, personId, organizationId);
+    if (!canInviteRole(found.member.record.role, found.member.record.state === 'active', role))
+      throw new AccountError(403, found.member.record.role === 'admin'
+        ? 'A Manager can invite Employees. Ask the Business owner to invite a Manager or owner.'
+        : 'Only the Business owner or a Manager can invite people.');
+    return found;
+  }
+  /** Owners and Managers read the full roster and outstanding codes. */
+  private async manager(tx: AccountTransaction, personId: string, organizationId: string) {
+    const found = await this.member(tx, personId, organizationId);
+    if (ROLE_CAPABILITIES[found.member.record.role].managePeople === 'nobody')
+      throw new AccountError(403, 'Only the Business owner or a Manager can manage people.');
     return found;
   }
   private async event(tx: AccountTransaction, actorPersonId: string, organizationId: string | null, kind: AccountEvent['kind'], targetId: string) {
@@ -158,7 +191,7 @@ export class AccountService {
     const invitationToken = base64url(crypto.getRandomValues(new Uint8Array(32)));
     const tokenHash = await digest(invitationToken);
     return this.act(token, async (tx, actor, proof) => {
-      const { member } = await this.owner(tx, actor.person.id, organizationId);
+      const { member } = await this.inviter(tx, actor.person.id, organizationId, parsed.data.role);
       const expiresAt = new Date(this.now() + parsed.data.ttlMs).toISOString();
       await tx.saveInvitation({ tokenHash, organizationId, issuer: proof.issuer, subject: parsed.data.subject,
         role: parsed.data.role, invitedBy: actor.person.id, inviterGeneration: member.generation,
@@ -178,7 +211,7 @@ export class AccountService {
         throw new AccountError(403, 'The invitation is unavailable to this recipient or workspace.');
       if (invitation.redeemedAt !== null) throw new AccountError(409, 'This invitation has already been used.');
       if (Date.parse(invitation.expiresAt) <= this.now()) throw new AccountError(410, 'This invitation expired.');
-      const { member: inviter } = await this.owner(tx, invitation.invitedBy, organizationId);
+      const { member: inviter } = await this.inviter(tx, invitation.invitedBy, organizationId, invitation.role);
       if (inviter.generation !== invitation.inviterGeneration) throw new AccountError(403, 'The invitation authority changed.');
       const previous = await tx.member(organizationId, actor.person.id);
       if (previous?.record.state === 'active') throw new AccountError(409, 'This person is already a member.');
@@ -199,9 +232,14 @@ export class AccountService {
     const parsed = changeInput.safeParse(input);
     if (!parsed.success) throw new AccountError(422, 'A valid membership change is required.');
     return this.act(token, async (tx, actor) => {
-      const { org } = await this.owner(tx, actor.person.id, organizationId);
+      const { org, member: self } = await this.member(tx, actor.person.id, organizationId);
       const target = await tx.member(organizationId, personId);
       if (!target) throw new AccountError(403, 'The membership is unavailable.');
+      if (!canChangeMember({ actor: self.record.role, actorActive: self.record.state === 'active', actorPersonId: actor.person.id,
+        target: target.record.role, targetPersonId: personId, change: parsed.data }))
+        throw new AccountError(403, self.record.role === 'admin'
+          ? 'A Manager can remove Employees. Ask the Business owner to change roles or remove a Manager.'
+          : 'An active organization owner must administer membership.');
       if (target.record.role === 'owner' && target.record.state === 'active' &&
           (parsed.data.role !== 'owner' || parsed.data.state !== 'active') && !(await tx.hasOtherActiveOwner(organizationId, personId)))
         throw new AccountError(409, 'Transfer ownership before removing the final owner.');
@@ -209,11 +247,99 @@ export class AccountService {
         throw new AccountError(409, 'Invite this person again; a role edit cannot restore revoked membership.');
       const row: MembershipRow = { generation: target.generation + 1, record: { ...target.record,
         ...parsed.data, revokedAt: parsed.data.state === 'revoked' ? this.at() : null,
-        revokedReason: parsed.data.state === 'revoked' ? 'Revoked by organization owner.' : null } };
+        revokedReason: parsed.data.state === 'revoked' ? (self.record.role === 'owner' ? 'Revoked by organization owner.' : 'Removed by a Manager.') : null } };
       await tx.saveMembership(row);
       await tx.saveOrganization({ ...org, generation: org.generation + 1 });
       await this.event(tx, actor.person.id, organizationId, 'membership-changed', personId);
       return row.record;
+    });
+  }
+  /**
+   * A single-use code for someone who may not have an account yet. The code is
+   * returned once and stored only as a hash. The role is capped by the
+   * inviter's own authority, and the inviter's generation is pinned so that a
+   * later demotion or removal voids every code they issued.
+   */
+  async createInvitationCode(token: string, organizationId: string, input: z.infer<typeof codeInvitationInput>) {
+    const parsed = codeInvitationInput.safeParse(input);
+    if (!parsed.success) throw new AccountError(422, 'A role and an invitation lifetime of one minute to seven days are required.');
+    const code = invitationCode();
+    const codeHash = await digest(code);
+    return this.act(token, async (tx, actor) => {
+      const { member } = await this.inviter(tx, actor.person.id, organizationId, parsed.data.role);
+      const expiresAt = new Date(this.now() + parsed.data.ttlMs).toISOString();
+      await tx.saveCodeInvitation({ codeHash, organizationId, role: parsed.data.role, email: parsed.data.email?.toLowerCase() ?? null,
+        invitedBy: actor.person.id, inviterGeneration: member.generation, createdAt: this.at(), expiresAt,
+        redeemedAt: null, redeemedBy: null, revokedAt: null });
+      await this.event(tx, actor.person.id, organizationId, 'invitation-code-created', codeId(codeHash));
+      return { id: codeId(codeHash), code, organizationId, role: parsed.data.role, email: parsed.data.email?.toLowerCase() ?? null, expiresAt };
+    });
+  }
+  async redeemInvitationCode(token: string, rawCode: string) {
+    const parsed = redeemCodeInput.safeParse({ code: rawCode });
+    if (!parsed.success) throw new AccountError(403, 'That invitation code is not valid.');
+    const hash = await digest(parsed.data.code);
+    return this.act(token, async (tx, actor, proof) => {
+      const found = await tx.codeInvitation(hash);
+      if (!found) throw new AccountError(403, 'That invitation code is not valid.');
+      const org = await tx.organization(found.organizationId, true);
+      // Re-read under the organization lock, so two redemptions of one code serialize.
+      const invitation = await tx.codeInvitation(hash);
+      if (!org || !invitation) throw new AccountError(403, 'That invitation code is not valid.');
+      if (invitation.revokedAt !== null) throw new AccountError(410, 'That invitation was withdrawn.');
+      if (invitation.redeemedAt !== null) throw new AccountError(409, 'That invitation code has already been used.');
+      if (Date.parse(invitation.expiresAt) <= this.now()) throw new AccountError(410, 'That invitation code expired. Ask for a new one.');
+      if (invitation.email !== null && (proof.email ?? '').toLowerCase() !== invitation.email)
+        throw new AccountError(403, 'This invitation is for a different email address.');
+      const { member: inviter } = await this.inviter(tx, invitation.invitedBy, org.record.id, invitation.role);
+      if (inviter.generation !== invitation.inviterGeneration) throw new AccountError(403, 'The person who sent this invitation no longer has that authority.');
+      const previous = await tx.member(org.record.id, actor.person.id);
+      if (previous?.record.state === 'active') throw new AccountError(409, 'You are already a member of this business.');
+      if ((await tx.members(org.record.id)).length >= ORGANIZATION_MEMBER_LIMIT)
+        throw new AccountError(409, 'The workspace has reached its active member limit.');
+      await this.requireWorkspaceCapacity(tx, actor.person.id);
+      const row: MembershipRow = { generation: previous ? previous.generation + 1 : 0, record: { v: 1,
+        organizationId: org.record.id, personId: actor.person.id, role: invitation.role, state: 'active', invitedAt: invitation.createdAt,
+        joinedAt: this.at(), revokedAt: null, revokedReason: null } };
+      await tx.saveMembership(row);
+      await tx.saveOrganization({ ...org, generation: org.generation + 1 });
+      await tx.saveCodeInvitation({ ...invitation, redeemedAt: this.at(), redeemedBy: actor.person.id });
+      await this.event(tx, actor.person.id, org.record.id, 'joined', actor.person.id);
+      return { organization: org.record, membership: row.record };
+    });
+  }
+  async revokeInvitationCode(token: string, organizationId: string, id: string) {
+    if (!/^[a-f0-9]{16}$/.test(id)) throw new AccountError(404, 'That invitation was not found.');
+    return this.act(token, async (tx, actor) => {
+      const { member } = await this.manager(tx, actor.person.id, organizationId);
+      const open = await tx.openCodeInvitations(organizationId, this.at());
+      const invitation = open.find((row) => codeId(row.codeHash) === id);
+      if (!invitation) throw new AccountError(404, 'That invitation was not found or is no longer open.');
+      if (!canInviteRole(member.record.role, true, invitation.role))
+        throw new AccountError(403, 'Only the Business owner can withdraw this invitation.');
+      await tx.saveCodeInvitation({ ...invitation, revokedAt: this.at() });
+      await this.event(tx, actor.person.id, organizationId, 'invitation-code-revoked', id);
+    });
+  }
+  /**
+   * Everyone in the business. Every active member sees who is on the team and
+   * their role; only an owner or Manager also sees removed members and the
+   * outstanding invitation codes (never the codes themselves).
+   */
+  async roster(token: string, organizationId: string) {
+    return this.act(token, async (tx, actor) => {
+      const { member } = await this.member(tx, actor.person.id, organizationId);
+      const managing = ROLE_CAPABILITIES[member.record.role].managePeople !== 'nobody';
+      const rows = await tx.roster(organizationId);
+      const people = rows
+        .filter((row) => managing || row.membership.record.state === 'active')
+        .map((row) => ({ personId: row.person.id, name: row.person.name, role: row.membership.record.role,
+          state: row.membership.record.state, joinedAt: row.membership.record.joinedAt, revokedAt: row.membership.record.revokedAt }));
+      const invitations = managing
+        ? (await tx.openCodeInvitations(organizationId, this.at())).map((row) => ({ id: codeId(row.codeHash), role: row.role,
+            email: row.email, createdAt: row.createdAt, expiresAt: row.expiresAt, invitedBy: row.invitedBy }))
+        : null;
+      return { organizationId, you: { personId: actor.person.id, role: member.record.role }, people, invitations };
     });
   }
   revokeLocalSession(token: string): Promise<void> {

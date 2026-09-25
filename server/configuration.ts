@@ -367,7 +367,7 @@ export class ConfigurationService {
     if (refusals.length > 0)
       throw refuse(
         400,
-        `This setup cannot be staged: ${refusals.map((item) => `${item.field} — ${item.message}`).join(' ')}`,
+        `This setup cannot be staged: ${refusals.map((item) => `${item.field}: ${item.message}`).join(' ')}`,
         'unsafe_candidate',
         { fields: refusals.map((item) => item.field) },
       );

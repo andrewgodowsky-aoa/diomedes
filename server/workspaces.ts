@@ -23,6 +23,13 @@
  *    into the intake proposing who should approve things. Revoking a membership
  *    bumps the tenant's Trust identity generation, so references minted under it
  *    stop resolving at their next check rather than at some later cleanup.
+ *
+ * With customer accounts on (server/accounts/), the signed-in person is the
+ * current person, and their businesses are mirrored here from the account
+ * service so access profiles, outputs and setup keep working unchanged. The
+ * service stays the authority: a mirrored membership changes only when the
+ * service says so, a business's people are managed in Settings, Account, and
+ * its entitlement is the service's last answer, never a local record.
  */
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
@@ -64,6 +71,7 @@ import {
   type WorkerProfile,
 } from '../shared/business-access.js';
 import {
+  NO_ENTITLEMENT_VIEW,
   HOSTED_BUSINESS_UNAVAILABLE_REASON,
   MEMBER_ROLES,
   PERSONAL,
@@ -77,6 +85,8 @@ import {
   legacyBusinessPreference,
   resolveBriefTarget,
   type BriefTarget,
+  type EntitlementView,
+  type IdentitySource,
   type Invitation,
   type MemberRole,
   type Membership,
@@ -91,6 +101,18 @@ import { payloadDigest } from './command-admission.js';
 import { ApiError } from './paths.js';
 import { jsonWrite, readJson, type Store } from './store.js';
 import { revokeTenant, trustBackendInstalled } from './trust/index.js';
+import type { AccountProjection } from './accounts/session.js';
+
+/** What the workspace registry needs from the signed-in account (server/accounts/session.ts). */
+export interface WorkspaceAccountBridge {
+  /** The service's last answer for one business, or null when it knows nothing of it. */
+  entitlement(organizationId: string): EntitlementView | null;
+  /** Create a business in the account service; the caller mirrors the answer. */
+  createOrganization(name: string): Promise<{ organizationId: string; projection: AccountProjection }>;
+}
+
+const MANAGED_IN_ACCOUNT =
+  'People in this business are managed in Settings, under Account. Invitations and removals there reach every device.';
 
 interface Registry {
   v: typeof WORKSPACE_CONTRACT_VERSION;
@@ -99,6 +121,8 @@ interface Registry {
   invitations: Invitation[];
   /** Where each organization's work is written, keyed by organization id. */
   outputs: Record<string, OutputBinding>;
+  /** Organizations mirrored from the account service. Their membership is the service's. */
+  accountOrganizations: string[];
   access: {
     resources: AuthorizationResource[];
     profiles: AccessProfile[];
@@ -115,6 +139,7 @@ const emptyRegistry = (): Registry => ({
   memberships: [],
   invitations: [],
   outputs: {},
+  accountOrganizations: [],
   access: {
     resources: [],
     profiles: [],
@@ -151,6 +176,9 @@ const refuse = (status: number, message: string, code: string) =>
 export class WorkspaceService {
   private registry: Registry = emptyRegistry();
   private person: Person | null = null;
+  /** The signed-in account's person, when customer accounts are on and someone is signed in. */
+  private accountPerson: Person | null = null;
+  private accounts: WorkspaceAccountBridge | null = null;
   private readonly setups = new Map<string, BusinessSetup>();
 
   constructor(private readonly store: Store) {}
@@ -174,6 +202,7 @@ export class WorkspaceService {
     this.registry.memberships ??= [];
     this.registry.invitations ??= [];
     this.registry.outputs ??= {};
+    this.registry.accountOrganizations ??= [];
     this.registry.access ??= emptyRegistry().access;
     this.registry.access.resources ??= [];
     this.registry.access.profiles ??= [];
@@ -216,8 +245,133 @@ export class WorkspaceService {
   }
 
   currentPerson(): Person {
+    if (this.accountPerson) return this.accountPerson;
     if (!this.person) throw new Error('The workspace service was used before init().');
     return this.person;
+  }
+
+  // --- customer accounts ------------------------------------------------------
+
+  connectAccounts(bridge: WorkspaceAccountBridge) {
+    this.accounts = bridge;
+  }
+
+  private accountBacked(organizationId: string): boolean {
+    return this.registry.accountOrganizations.includes(organizationId);
+  }
+
+  /**
+   * Mirror what the account service says about the signed-in person. The caller
+   * holds the store lock. Null means nobody is signed in: the local person
+   * returns, and every mirrored business reads as someone else's.
+   */
+  async project(projection: AccountProjection | null): Promise<void> {
+    if (!projection) {
+      this.accountPerson = null;
+      return;
+    }
+    // The faux service is a test fixture and is labelled as one; only the deployed service is hosted.
+    const source: IdentitySource = projection.backend === 'cloud' ? 'hosted' : 'development-fixture';
+    const person: Person = {
+      v: WORKSPACE_CONTRACT_VERSION,
+      id: projection.person.id,
+      name: projection.person.name,
+      assurance: source,
+      createdAt: projection.person.createdAt,
+    };
+    this.accountPerson = person;
+    const listed = new Set<string>();
+    const ended: string[] = [];
+    const endLocal = (membership: Membership, next: Pick<Membership, 'state' | 'revokedAt' | 'revokedReason'>) => {
+      const organization = this.organization(membership.organizationId);
+      const wasActive = membership.state === 'active';
+      Object.assign(membership, next);
+      if (!wasActive) return;
+      for (let index = 0; index < this.registry.access.assignments.length; index += 1) {
+        const assignment = this.registry.access.assignments[index]!;
+        if (assignment.organizationId !== membership.organizationId || assignment.personId !== person.id || assignment.revokedAt !== null) continue;
+        this.registry.access.assignments[index] = {
+          ...assignment,
+          revision: assignment.revision + 1,
+          revokedAt: next.revokedAt ?? now(),
+          revokedBy: 'account-service',
+        };
+      }
+      this.bumpOrganizationGeneration(membership.organizationId);
+      this.bumpPrincipalGeneration(membership.organizationId, person.id);
+      if (organization) ended.push(organization.tenantId);
+    };
+    for (const { organization, membership } of projection.organizations) {
+      listed.add(organization.id);
+      const existing = this.organization(organization.id);
+      const record: Organization = {
+        v: WORKSPACE_CONTRACT_VERSION,
+        id: organization.id,
+        name: organization.name,
+        industry: existing?.industry ?? organization.industry ?? null,
+        tenantId: organization.tenantId,
+        identitySource: source,
+        createdAt: organization.createdAt,
+        createdBy: organization.createdBy,
+      };
+      if (existing) Object.assign(existing, record);
+      else this.registry.organizations.push(record);
+      const local = this.membershipOf(organization.id, person.id);
+      const next: Membership = { ...membership, v: WORKSPACE_CONTRACT_VERSION, personId: person.id };
+      if (!local) {
+        this.registry.memberships.push(next);
+        continue;
+      }
+      if (local.state === 'active' && next.state !== 'active') {
+        endLocal(local, next);
+        local.role = next.role;
+        continue;
+      }
+      if (local.role !== next.role || local.state !== next.state) {
+        this.bumpOrganizationGeneration(organization.id);
+        this.bumpPrincipalGeneration(organization.id, person.id);
+      }
+      Object.assign(local, next);
+    }
+    // A mirrored business the service no longer lists for this person is one they left.
+    for (const membership of this.registry.memberships) {
+      if (membership.personId !== person.id || membership.state !== 'active') continue;
+      if (!this.accountBacked(membership.organizationId) || listed.has(membership.organizationId)) continue;
+      endLocal(membership, {
+        state: 'revoked',
+        revokedAt: now(),
+        revokedReason: 'The account service no longer lists you in this business.',
+      });
+    }
+    this.registry.accountOrganizations = [...new Set([...this.registry.accountOrganizations, ...listed])];
+    this.ensureAccessFoundations();
+    await this.saveRegistry();
+    for (const tenant of ended) await revokeTenant(tenant, 'A membership in this organization was revoked.');
+    if (projection.reason === 'sign-in') await this.chooseAfterSignIn();
+    else await this.reconcileActive();
+  }
+
+  /**
+   * A sign-in opens the person's business, preferring one whose plan includes
+   * the Agent. Someone who belongs to no business works in Personal.
+   */
+  private async chooseAfterSignIn() {
+    if (this.active().kind === 'business') return;
+    const person = this.currentPerson();
+    const mine = this.registry.memberships.filter(
+      (membership) => membership.personId === person.id && membership.state === 'active' && this.accountBacked(membership.organizationId),
+    );
+    const pick = mine.find((membership) => this.entitlementFor(membership.organizationId).agent) ?? mine[0];
+    await this.store.saveSettings({
+      ...this.store.settings,
+      activeWorkspace: pick ? { kind: 'business', organizationId: pick.organizationId } : PERSONAL,
+    });
+  }
+
+  private entitlementFor(organizationId: string): EntitlementView {
+    if (this.accounts && this.accountBacked(organizationId))
+      return this.accounts.entitlement(organizationId) ?? { ...NO_ENTITLEMENT_VIEW, state: 'unknown', reason: 'Sign in to read this business\'s plan.' };
+    return entitlementFor(organizationId);
   }
 
   private async saveRegistry() {
@@ -519,6 +673,21 @@ export class WorkspaceService {
         'This installation already holds the maximum number of business workspaces.',
         'too_many_organizations',
       );
+    if (this.accounts && this.accountPerson) {
+      // Signed in: the business is created in the account service, then mirrored.
+      const created = await this.accounts.createOrganization(name);
+      await this.project(created.projection);
+      const mirrored = this.organization(created.organizationId);
+      if (mirrored && industry) {
+        mirrored.industry = industry;
+        await this.saveRegistry();
+      }
+      await this.store.saveSettings({
+        ...this.store.settings,
+        activeWorkspace: { kind: 'business', organizationId: created.organizationId },
+      });
+      return this.view();
+    }
     const person = this.currentPerson();
     const id = `org_${token(8)}`;
     const at = now();
@@ -560,6 +729,7 @@ export class WorkspaceService {
     const organization = this.organization(organizationId);
     if (!organization)
       throw refuse(404, 'That business workspace does not exist here.', 'unknown_organization');
+    if (this.accountBacked(organizationId)) throw refuse(409, MANAGED_IN_ACCOUNT, 'managed_in_account');
     if (!canAdministerMembers(this.membershipOf(organizationId)))
       throw refuse(403, 'Only an owner can invite people to this workspace.', 'not_owner');
     if (!MEMBER_ROLES.includes(role))
@@ -655,6 +825,7 @@ export class WorkspaceService {
     const organization = this.organization(organizationId);
     if (!organization)
       throw refuse(404, 'That business workspace does not exist here.', 'unknown_organization');
+    if (this.accountBacked(organizationId)) throw refuse(409, MANAGED_IN_ACCOUNT, 'managed_in_account');
     if (!canAdministerMembers(this.membershipOf(organizationId)))
       throw refuse(403, 'Only an owner can remove access to this workspace.', 'not_owner');
     const membership = this.membershipOf(organizationId, personId);
@@ -990,7 +1161,7 @@ export class WorkspaceService {
   /** What this installation may truthfully say about this company's plan. */
   entitlementOf(organizationId: string) {
     this.mine(organizationId);
-    return entitlementFor(organizationId);
+    return this.entitlementFor(organizationId);
   }
 
   // --- organization access profiles -----------------------------------------
@@ -1585,14 +1756,14 @@ export class WorkspaceService {
       organizations.push({
         organization,
         membership,
-        ...(canAdministerMembers(membership)
+        ...(canAdministerMembers(membership) && !this.accountBacked(organization.id)
           ? {
               members: this.registry.memberships
                 .filter((item) => item.organizationId === organization.id)
                 .map((item) => ({ personId: item.personId, role: item.role, state: item.state })),
             }
           : {}),
-        entitlement: entitlementFor(organization.id),
+        entitlement: this.entitlementFor(organization.id),
         output: this.registry.outputs[organization.id] ?? null,
         setup: {
           state: setup?.state ?? 'not-started',

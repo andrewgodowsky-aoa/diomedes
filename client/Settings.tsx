@@ -21,6 +21,7 @@ import { AIConnections } from './AISetup';
 import { CodexSetup } from './CodexSetup';
 import { ReadConnectors } from './ReadConnectors';
 import { AgentProfiles } from './console/AgentProfiles';
+import { AccountSettings } from './AccountSettings';
 import { TriggerRules } from './console/TriggerRules';
 import { isExternalEngine } from '../shared/engines';
 import { SCHEMES, schemeId } from './console/schemes';
@@ -227,6 +228,7 @@ export function SettingsPage({
     setSection(known);
   }, [requested, requestCount, helpersSection]);
   const sections = [
+    'Account',
     'Interface detail',
     helpersSection,
     'Permissions',
@@ -259,6 +261,7 @@ export function SettingsPage({
         </header>
         <div className="workbook-layout">
           <div className="reading">
+            {section === 'Account' && <AccountSettings />}
             {section === 'Agent profiles' && <AgentProfiles />}
             {section === 'Interface detail' && (
               <>

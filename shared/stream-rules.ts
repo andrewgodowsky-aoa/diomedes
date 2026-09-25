@@ -43,7 +43,19 @@ export const STREAM_RULES_CONTRACT_VERSION = 1 as const;
  * The runs a rule that applies actually watches, as a resolution says it (review G, finding
  * 8): "applied" never claims more reach than the evaluator has.
  */
-export const STREAM_RULE_REACH = `${AGENT_NAME} work loop runs`;
+export const STREAM_RULE_REACH = Object.freeze({
+  /** Text and pattern rules read what the model writes. */
+  text: `what the model writes in ${AGENT_NAME} work loop runs and in task work on every engine`,
+  /** Tool rules judge the tool calls Nectovia admits; an external engine runs its own. */
+  tool: `the tool calls ${AGENT_NAME} runs itself`,
+});
+
+/**
+ * The runs trigger rules watch, as the rules read returns them: work loop runs (text and the
+ * tool calls the loop proposes) and Work on an external engine (its text; the model-API team
+ * tools Nectovia runs for it).
+ */
+export const STREAM_RULE_WATCHES = Object.freeze(['diomedes-loop', 'external-work'] as const);
 
 /** Weakest first. The order is the strictness order a firing is judged by. */
 export const STREAM_INTERVENTIONS = ['annotate', 'steer', 'hold', 'stop'] as const;
@@ -408,7 +420,7 @@ export function resolveStreamRules(
         ? `${decision.reason} Evaluated anyway, so the conflict never loosens anything.`
         : decision.outcome === 'applied'
           ? // Where it governs, said once per rule; what else is not watched is said once per screen.
-            `Governs ${decision.rule.constrains} on ${STREAM_RULE_REACH}.`
+            `Governs ${decision.rule.constrains} on ${STREAM_RULE_REACH[item.rule.match.kind === 'tool' ? 'tool' : 'text']}.`
           : decision.reason.replace(/(organization|project):([a-z0-9-]+)/g, '$2 ($1)'),
     });
   }

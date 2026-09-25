@@ -43,7 +43,7 @@ import type {
 const ACCOUNT_A = `openai:chatgpt:${'a'.repeat(64)}`;
 const ACCOUNT_B = `openai:chatgpt:${'b'.repeat(64)}`;
 const MENU = 'Fall menu.md';
-const ATTRIBUTION = /^Ran under a remembered approval — you, since \d{1,2} [A-Z][a-z]+ \d{4}\.$/;
+const ATTRIBUTION = /^Ran under a remembered approval: you, since \d{1,2} [A-Z][a-z]+ \d{4}\.$/;
 const headers = { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' };
 
 let root: string, url: string, projectId: string, taskId: string;

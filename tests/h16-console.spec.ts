@@ -132,7 +132,7 @@ test('a project rule written in the editor holds the loop run started from the t
   const rules = await openRules(page);
   // Which runs rules watch is said once, plainly.
   await expect(rules.locator('.trigger-rules-reach')).toHaveText(
-    `Trigger rules watch ${AGENT_NAME} work loop runs only. Runs on Codex, Claude Code, OpenCode and other external engines use their own tools and are not watched.`,
+    `Text rules watch what the model writes, on ${AGENT_NAME} work loop runs and on task work on every engine; on Claude Code, OpenCode and the ACP engines they read it after secrets are removed, so a rule looking for a secret may not fire there. Tool rules watch the tool calls ${AGENT_NAME} runs itself. Codex, Claude Code, OpenCode and other external engines run their own tools, and those are not watched.`,
   );
   await expect(page.locator('#scrThread .trigger-rules-reach')).toHaveCount(1);
   await rules.getByRole('button', { name: 'Add a rule' }).click();
@@ -156,7 +156,7 @@ test('a project rule written in the editor holds the loop run started from the t
   await expect(row.locator('.trigger-rule-match')).toHaveText(
     'A proposed propose_write call on Harness report.md · Only Write the linen report',
   );
-  await expect(row.locator('.trigger-rule-decision')).toHaveText('Governs · Governs trigger:reports-read-first on Nectovia work loop runs.');
+  await expect(row.locator('.trigger-rule-decision')).toHaveText('Governs · Governs trigger:reports-read-first on the tool calls Nectovia runs itself.');
   await expect(page.locator('#scrThread').getByRole('button', { name: /^Trigger rules ·/ })).toContainText(
     '1 watches this task · 1 project · 0 organization',
   );
@@ -210,7 +210,7 @@ test('an organization rule written in Settings cannot be loosened by a project r
   await page.getByRole('navigation', { name: 'Settings' }).getByRole('button', { name: 'Rules', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Rules', exact: true, level: 1 })).toBeVisible();
   const organization = page.locator('.trigger-rules[data-authority="organization"]');
-  await expect(organization.locator('.trigger-rules-reach')).toContainText(`Trigger rules watch ${AGENT_NAME} work loop runs only.`);
+  await expect(organization.locator('.trigger-rules-reach')).toContainText(`Text rules watch what the model writes, on ${AGENT_NAME} work loop runs and on task work on every engine;`);
 
   // A pattern outside the bounded grammar: the server refuses it, and the form says so verbatim.
   await organization.getByRole('button', { name: 'Add a rule' }).click();
@@ -252,7 +252,7 @@ test('an organization rule written in Settings cannot be loosened by a project r
   await openThread(page, 'Summarise the linen order');
   const rules = await openRules(page);
   const inherited = rules.getByRole('region', { name: 'Organization rules' }).locator('.trigger-rule[data-rule="reports-held"]');
-  await expect(inherited.locator('.trigger-rule-decision')).toHaveText('Governs · Governs trigger:reports-held on Nectovia work loop runs.');
+  await expect(inherited.locator('.trigger-rule-decision')).toHaveText('Governs · Governs trigger:reports-held on the tool calls Nectovia runs itself.');
   await expect(inherited.getByRole('button')).toHaveCount(0);
 
   await rules.getByRole('button', { name: 'Add a rule' }).click();

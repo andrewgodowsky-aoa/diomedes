@@ -2,6 +2,12 @@ import { parseApprovalCommand } from './approval-admission.js';
 import { taskDocumentProblem } from '../shared/task-sources.js';
 import { mountPermissionRoutes } from './permission-routes.js';
 import { WorkspaceService } from './workspaces.js';
+import { AccountAgentGate } from './accounts/agent-gate.js';
+import { resolveAccountBackend, type AccountBackend } from './accounts/backend.js';
+import { mountAccountSessionRoutes } from './accounts/routes.js';
+import { AccountSessionService } from './accounts/session.js';
+import { FAUX_DEMO_PASSWORD } from '../services/control-plane/src/faux/seed.js';
+import { ACCOUNT_VIEW_VERSION, type AccountsOffView } from '../shared/accounts.js';
 import { mountWorkspaceRoutes } from './workspace-routes.js';
 import { mountAutomationRoutes } from './automation-routes.js';
 import { AutomationOccurrences, AutomationService } from './automations.js';
@@ -125,6 +131,7 @@ import { teamToolRegistry } from './team/tools.js';
 import type { UsageSnapshot } from '../shared/types.js';
 import { mountTeamRoutes } from './team/routes.js';
 import { createHarnessHost } from './harness/host.js';
+import { watchedGenerator } from './stream-rules/work-watch.js';
 import { mountHarnessRoutes } from './harness/routes.js';
 import { localHarnessPrincipal } from './harness/bridge.js';
 import { TEXT_DISPATCH_STEP, textRunId } from './harness/text-route.js';
@@ -211,6 +218,7 @@ import {
   type RetirementCause,
 } from './lineage-continuity.js';
 import { answerInstructions } from './answer-format.js';
+import { repairWriting, type PlainWritingRecord } from './plain-writing.js';
 import { AGENT_NAME } from '../shared/agent-name.js';
 import { admitInteraction } from './interaction-admission.js';
 import {
@@ -259,7 +267,12 @@ import { EngineInstaller } from './engines/install.js';
 import { NativeLogin } from './engines/login.js';
 import { CodexSetup } from './codex-setup.js';
 import { changeCloudSharing, cloudSharing, requireCloudSharing, sharesHistory } from './cloud-sharing.js';
-import { assembleSkillSection, instructionSectionBudget } from './harness/instruction-delivery.js';
+import {
+  assembleInstructions,
+  assembleSkillSection,
+  instructionSectionBudget,
+  messageRules,
+} from './harness/instruction-delivery.js';
 
 interface AppOptions {
   dataDir: string;
@@ -305,6 +318,13 @@ interface AppOptions {
    * safeStorage; without it no credential can be saved and setup says so.
    */
   secretBox?: SecretBox | null;
+  /**
+   * Customer accounts (server/accounts/). The desktop app and the local service turn them on:
+   * every /api route then needs a signed-in person, and the Nectovia Agent admits work only for
+   * a business whose plan includes it. Unset, as embedded tests leave it, nothing changes.
+   * `DIOMEDES_TEST_ACCOUNT` signs one demo account in at start, in test mode only.
+   */
+  accounts?: { env?: NodeJS.ProcessEnv; backend?: AccountBackend } | null;
   /** Tests replace the network below the SDK here. Production leaves it unset. */
   modelApiTransport?: typeof globalThis.fetch;
   updateOverrides?: {
@@ -434,6 +454,16 @@ function validateSettings(current: Settings, body: unknown): Settings {
   // reads `supplied.activeWorkspace` or `supplied.home`.
   if (supplied.version !== undefined && supplied.version !== 1)
     throw new ApiError(400, 'This settings version is unsupported.');
+  if (supplied.plainWritingPhrases !== undefined) {
+    const phrases = supplied.plainWritingPhrases;
+    if (
+      !Array.isArray(phrases) ||
+      phrases.length > 200 ||
+      phrases.some((item) => typeof item !== 'string' || item.trim().length < 2 || item.trim().length > 80)
+    )
+      throw new ApiError(400, 'Add up to 200 phrases to avoid, each 2 to 80 characters.');
+    result.plainWritingPhrases = [...new Set(phrases.map((item: string) => item.trim().toLowerCase()))];
+  }
   if (supplied.detail !== undefined)
     result.detail = choice(supplied.detail, ['guided', 'standard', 'technical'], 'detail level');
   if (supplied.view !== undefined)
@@ -723,6 +753,29 @@ export async function createApp(options: AppOptions) {
   // creates is a labelled local fixture rather than a hosted organization.
   const workspaces = new WorkspaceService(store);
   await workspaces.init();
+  const accountSession = options.accounts
+    ? new AccountSessionService(
+        options.accounts.backend ??
+          (await resolveAccountBackend({ dataDir: store.dataDir, env: options.accounts.env })),
+        store.dataDir,
+        options.secretBox ?? null,
+      )
+    : null;
+  if (accountSession) {
+    workspaces.connectAccounts({
+      entitlement: (organizationId) => accountSession.entitlement(organizationId),
+      createOrganization: (name) => accountSession.createOrganization(name),
+    });
+    // Signing in and out reach the registry under the store lock. Creating a business from a
+    // locked workspace route mirrors its own answer, so this never nests inside that lock.
+    accountSession.onProjection((projection) => store.locked(() => workspaces.project(projection)));
+    await accountSession.init();
+    const env = options.accounts?.env ?? process.env;
+    const testAccount = env.DIOMEDES_TEST_MODE === '1' ? (env.DIOMEDES_TEST_ACCOUNT ?? '').trim() : '';
+    if (testAccount && !accountSession.signedIn())
+      await accountSession.signIn({ email: testAccount, password: FAUX_DEMO_PASSWORD, remember: false });
+    engines.agentGate = new AccountAgentGate(accountSession, workspaces);
+  }
   const discovery = new DiscoveryService(store, {
     // A new observation needs `verified`. A stored one whose approved file has
     // changed since reads `stale` and stays inspectable (DIO-84); `stale` is
@@ -853,8 +906,15 @@ export async function createApp(options: AppOptions) {
   );
   const nativeWork = new NativeWorkService(
     store,
+    // H16: trigger rules watch the text of Work on every route (server/stream-rules/work-watch.ts).
+    watchedGenerator(
     options.nativeGenerator ??
-      (async ({ team, onTeamToolCall, ...input }) => {
+      (async ({ team, onTeamToolCall, onStreamText, ...input }) => {
+        // An external text engine's preview frames carry the answer as it streams, secrets removed.
+        // The engine service builds and bounds them on every request; only the rule watch reads them.
+        const watchText = onStreamText
+          ? { onPreview: (frame: { text: string }) => onStreamText(frame.text) }
+          : {};
         // A request that names no project or route has no sharing scope to check, so it is
         // refused rather than sent unchecked.
         if (!input.projectId || !input.engine)
@@ -895,6 +955,8 @@ export async function createApp(options: AppOptions) {
           // Tool activity reaches the run card as on every external route. No preview sink:
           // a proposal is strict JSON, and the fenced preview channel fails the whole paid
           // call on one over-long frame, which a large proposal sent as one delta would be.
+          // For the same reason the H16 rule watch does not listen here: the answer is judged
+          // whole before it can become a proposal (work-watch.ts).
           return engines.generateModelApi(input.engine, {
             ...input,
             projectId: input.projectId,
@@ -906,8 +968,21 @@ export async function createApp(options: AppOptions) {
             onActivity: (frame) => store.emit('engine-activity', frame),
           });
         }
-        if (!isExternalEngine(input.engine))
-          return codexControls.ask({ ...input, ...(team ? { team, onTeamToolCall } : {}) });
+        if (!isExternalEngine(input.engine)) {
+          const { onDelta } = input;
+          return codexControls.ask({
+            ...input,
+            ...(team ? { team, onTeamToolCall } : {}),
+            ...(onStreamText
+              ? {
+                  onDelta: (text: string) => {
+                    onStreamText(text);
+                    onDelta?.(text);
+                  },
+                }
+              : {}),
+          });
+        }
         if (!input.projectId || !input.threadId || !input.requestId || !input.model)
           throw new ApiError(409, 'Select a model and thread before requesting work.');
         const accountRoute = input.accountRoute;
@@ -925,8 +1000,11 @@ export async function createApp(options: AppOptions) {
           ...(team ? { team: { ...team, onToolCall: onTeamToolCall } } : {}),
           // A work run's requestId is its session id, which is how its run card finds these.
           onActivity: (frame) => store.emit('engine-activity', frame),
+          ...watchText,
         });
       }),
+      () => harness.streamRules,
+    ),
     reviewer,
     agents,
     changeReview,
@@ -1015,7 +1093,11 @@ export async function createApp(options: AppOptions) {
     admit: async (route, input) => {
       if (!isModelApiRoute(route) || !input.model || !input.accountRoute)
         throw new ApiError(409, 'Connect this route and choose its model in AI setup first.');
-      const admission = await engines.admitModelApi(route, { model: input.model, accountRoute: input.accountRoute });
+      const admission = await engines.admitModelApi(
+        route,
+        { model: input.model, accountRoute: input.accountRoute, projectId: input.projectId },
+        { surface: 'loop', rootJobId: null },
+      );
       return { model: admission.model, accountRoute: admission.accountRoute };
     },
     adapter: (route, request, stop) => {
@@ -1161,6 +1243,11 @@ export async function createApp(options: AppOptions) {
     });
     next();
   });
+  if (accountSession) mountAccountSessionRoutes(app, accountSession);
+  else
+    app.get('/api/account', (_req, res) => {
+      res.json({ v: ACCOUNT_VIEW_VERSION, off: true } satisfies AccountsOffView);
+    });
   connections.mountRaw(app);
   app.use(express.json({ limit: '9mb' }));
   const teamService = mountTeamRoutes(app, store);
@@ -3578,6 +3665,15 @@ export async function createApp(options: AppOptions) {
           128_000
         )
           throw new ApiError(413, 'Choose less than 128 KB of source text for this request.');
+        // The rule path's section for this message, as the conversation route sends it: per
+        // message, beside the session's fixed instructions (TextRequest.rules).
+        const rules = await messageRules({
+          state,
+          routeId: engine,
+          sourceBytes: documents.reduce((bytes, document) => bytes + Buffer.byteLength(document.text), 0),
+          workPaths: documents.map((document) => document.path),
+          allowedDocuments: cloudSharing(state).documents,
+        });
         return {
           projectId,
           threadId: thread.id,
@@ -3585,6 +3681,8 @@ export async function createApp(options: AppOptions) {
           prompt: command.text,
           documents,
           instructions: MODES[command.mode].instructions,
+          ...(rules ? { rules } : {}),
+          writing: { phrases: store.settings.plainWritingPhrases ?? [] },
           model: selection.model,
           accountRoute,
           ...(await readScopeFor(projectId, command.mode, {
@@ -4175,6 +4273,17 @@ export async function createApp(options: AppOptions) {
             documents,
           })),
         };
+        // The rule path's section for this message: shipped product knowledge and the project's
+        // instruction files that govern the chosen documents (H11 scope). Per message, outside
+        // the lineage's recorded text, so an open conversation gets today's rules without
+        // retiring (TextRequest.rules).
+        const rules = await messageRules({
+          state,
+          routeId: modelRoute ? conversationRoute : 'claude-code',
+          sourceBytes: documents.reduce((bytes, document) => bytes + Buffer.byteLength(document.text), 0),
+          workPaths: documents.map((document) => document.path),
+          allowedDocuments: cloudSharing(state).documents,
+        });
         // One current lineage per mode. Retiring one and admitting its replacement are a single
         // mutation, and the next generation counts every entry the thread ever had.
         let current: ConversationLineage | undefined = lineages
@@ -4391,6 +4500,8 @@ export async function createApp(options: AppOptions) {
             ...request,
             instructions,
             documents,
+            ...(rules ? { rules } : {}),
+            writing: { phrases: store.settings.plainWritingPhrases ?? [] },
             model: selection.model as string,
             ...(modelRoute && selection.effort ? { effort: selection.effort } : {}),
             ...(carrying ? { carriedFrom: carrying } : {}),
@@ -5150,9 +5261,31 @@ export async function createApp(options: AppOptions) {
       // here only on the sample route; everywhere else native work writes their proposal, which
       // is strict JSON and is sent its mode's text alone (server/native-work.ts).
       const modeInstructions = mode === 'ask' || mode === 'plan' ? answerInstructions(mode) : MODES[mode].instructions;
-      const instructionsForRequest = prepared.skill
-        ? `${modeInstructions}\n\n${prepared.skill.section}`
-        : modeInstructions;
+      // Then the rule path's section, as a Work run sends it: shipped product knowledge and the
+      // project's instruction files that govern the chosen documents. One request, no lineage,
+      // so it rides in the instruction channel itself and the text route records it with the
+      // run's intent. The sample route sends nothing anywhere, so nothing is assembled for it.
+      const requestRules =
+        serviceRoute === 'sample'
+          ? null
+          : (
+              await assembleInstructions({
+                state: store.state(projectId),
+                routeId: serviceRoute,
+                agentRole: `Diomedes ${mode} answer`,
+                budgetBytes: instructionSectionBudget(
+                  prepared.documents.reduce((bytes, doc) => bytes + Buffer.byteLength(doc.text), 0) +
+                    (prepared.skill ? Buffer.byteLength(prepared.skill.section) : 0),
+                ),
+                allowedDocuments: cloudSharing(store.state(projectId)).documents,
+                workPaths: prepared.documents.map((doc) => doc.path),
+              })
+            ).section;
+      const instructionsForRequest = [
+        modeInstructions,
+        ...(prepared.skill ? [prepared.skill.section] : []),
+        ...(requestRules ? [requestRules] : []),
+      ].join('\n\n');
       let answer: string;
       let helper: NonNullable<Turn['helper']>;
       const runChoice =
@@ -5308,6 +5441,21 @@ export async function createApp(options: AppOptions) {
                 ? 'Started a clearly labelled sample fix. No AI service is involved.'
                 : 'Started clearly labelled sample work. No AI service is involved.';
       }
+      // Plain writing on the answer a person reads, and the plan it may become. One request with
+      // no run of its own to add a step to, so: check and fix in code, and keep the record on the
+      // turn (server/plain-writing.ts). The sample route's fixed text is checked by its tests.
+      let writing: PlainWritingRecord | undefined;
+      if (serviceRoute !== 'sample') {
+        const repaired = await repairWriting({
+          text: answer,
+          options: {
+            userTexts: [text, ...prepared.documents.map((doc) => doc.text)],
+            ownerPhrases: store.settings.plainWritingPhrases ?? [],
+          },
+        });
+        answer = repaired.text;
+        writing = repaired.record;
+      }
       return store.locked(async () => {
         let state = store.state(projectId);
         let document: string | undefined;
@@ -5383,6 +5531,7 @@ export async function createApp(options: AppOptions) {
           route: serviceRoute,
           ...(prepared.attempt ? { attempt: prepared.attempt } : {}),
           helper,
+          ...(writing ? { writing } : {}),
           origin:
             serviceRoute === 'sample'
               ? applicationOrigin()
@@ -5557,8 +5706,24 @@ export async function createApp(options: AppOptions) {
           ? await nextModelInstructions(projectId, thread, draft.mode, { route, model, effort: styled?.effort })
           : MODES[draft.mode].instructions;
       const history = thread.turns.reduce((bytes, turn) => bytes + Buffer.byteLength(turn.text), 0);
+      // A conversation message also carries the rule path's section (TextRequest.rules).
+      const rules =
+        draft.mode === 'ask' || draft.mode === 'plan' || draft.mode === 'auto'
+          ? await messageRules({
+              state,
+              routeId: route,
+              sourceBytes,
+              workPaths: draft.sources.map((source) => relativeName(source.path)),
+              allowedDocuments: cloudSharing(state).documents,
+            })
+          : undefined;
       return meteredPlan(threadId, route, model, {
-        inputBytes: Buffer.byteLength(instructions) + Buffer.byteLength(draft.text) + sourceBytes + history,
+        inputBytes:
+          Buffer.byteLength(instructions) +
+          (rules ? Buffer.byteLength(rules.text) : 0) +
+          Buffer.byteLength(draft.text) +
+          sourceBytes +
+          history,
         messages: thread.turns.length + 1,
         maxOutputTokensPerStep: CONVERSATION_LIMITS.maxOutputTokens,
         maxSteps: MODEL_TURN_CAPABILITY.maxTurns,
@@ -5601,6 +5766,12 @@ export async function createApp(options: AppOptions) {
       // A job stopped before a step that would pass its cap. Nothing of that step was sent; the
       // person chooses a higher tier or going over once, and the message is sent as a new job.
       res.status(402).json({ error: error.message, code: 'job_cap_reached', ambiguous: false });
+      return;
+    }
+    if (error instanceof EngineError && (error.code === 'AGENT_NOT_INCLUDED' || error.code === 'SIGN_IN_REQUIRED')) {
+      // Nothing was sent: the Agent was not admitted for this business, or nobody is signed in.
+      const signIn = error.code === 'SIGN_IN_REQUIRED';
+      res.status(signIn ? 401 : 403).json({ error: error.message, code: signIn ? 'sign_in_required' : error.code, ambiguous: false });
       return;
     }
     if (error instanceof EngineError) {
@@ -5665,6 +5836,7 @@ export async function createApp(options: AppOptions) {
   app.locals.automationScheduler = automationScheduler;
   app.locals.automations = automations;
   app.locals.softwarePack = softwarePack;
+  app.locals.accounts = accountSession;
   app.locals.close = async () => {
     // A window closed on the way out must not start a check against services
     // that are already shutting down.
@@ -5685,6 +5857,7 @@ export async function createApp(options: AppOptions) {
     // A declared command already approved finishes and is recorded before the run store closes.
     await softwarePack.settled();
     engines.close();
+    await accountSession?.backend.close();
     await login.close();
     await codexSetup.close();
     await connections.close();

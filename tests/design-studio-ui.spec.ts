@@ -12,6 +12,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import fsp from 'node:fs/promises';
 import type { Project, Settings } from '../shared/types';
+import type { WorkspaceRef, WorkspaceView } from '../shared/workspaces';
 import { reopenLastProject } from './fixtures/landing';
 
 test.describe.configure({ mode: 'serial' });
@@ -24,6 +25,7 @@ const DRAFT = 'A half-typed message that must survive the theme';
 const SHOTS = 'docs/verification/2026-09-17-design-center';
 
 let originalSettings: Settings | null = null;
+let originalWorkspace: WorkspaceRef | null = null;
 let projectId = '';
 let pageErrors: string[] = [];
 
@@ -81,6 +83,17 @@ test.afterEach(() => {
 });
 
 test.beforeAll(async ({ request }) => {
+  // The studio is proved in the personal scope, the local one design authoring
+  // grants (D14). The suite's account signs in to its business, so switch here
+  // and put that workspace back afterwards.
+  const workspace = await request.get('/api/workspace');
+  expect(workspace.ok()).toBe(true);
+  originalWorkspace = ((await workspace.json()) as WorkspaceView).active;
+  const personal = await request.post('/api/workspace/switch', {
+    headers: HEADERS,
+    data: { kind: 'personal' },
+  });
+  expect(personal.ok(), await personal.text()).toBe(true);
   const current = await request.get('/api/settings');
   expect(current.ok()).toBe(true);
   originalSettings = (await current.json()) as Settings;
@@ -131,6 +144,13 @@ test.afterAll(async ({ request }) => {
     data: JSON.parse(JSON.stringify(originalSettings)),
   });
   expect(restore.ok()).toBe(true);
+  if (originalWorkspace?.kind === 'business') {
+    const back = await request.post('/api/workspace/switch', {
+      headers: HEADERS,
+      data: { kind: 'business', organizationId: originalWorkspace.organizationId },
+    });
+    expect(back.ok(), await back.text()).toBe(true);
+  }
 });
 
 async function openConsole(page: Page) {

@@ -1,3 +1,4 @@
+import { repairWriting, type PlainWritingRecord } from './plain-writing.js';
 import fs from 'node:fs/promises';
 import { directOrigin } from '../shared/attribution.js';
 import { routeDisplayName } from '../shared/engines.js';
@@ -88,6 +89,11 @@ export type NativeGenerator = (input: {
   onTeamToolCall?: (tool: string) => void;
   /** Raw answer text as it streams. A proposal run only notes that writing began. */
   onDelta?: (text: string) => void;
+  /**
+   * H16: every piece of the answer as it streams, on every route, for the trigger-rule watch
+   * (`server/stream-rules/work-watch.ts`). Never shown or kept.
+   */
+  onStreamText?: (text: string) => void;
   /** Explicit model selection, passed in the `thread/start` config when set. */
   model?: string;
   /** Per-mode system text, used as `baseInstructions` by the Codex adapter. */
@@ -935,6 +941,28 @@ export class NativeWorkService {
             change.summary = run.redact(change.summary);
             if (change.text !== null) change.text = run.redact(change.text);
           }
+        }
+        // Plain writing on what a person reads: the summary and each prose file the proposal writes.
+        // Check and fix in code only; the proposal is one strict JSON reply, and a second call to
+        // rewrite part of it would be a second paid request the person did not ask for. The
+        // selected documents are the person's words, so their own dashes and phrases stay.
+        {
+          const options = {
+            userTexts: [run.instruction, ...run.sources.map((source) => source.text)],
+            ownerPhrases: this.store.settings.plainWritingPhrases ?? [],
+          };
+          const parts: { part: string; record: PlainWritingRecord }[] = [];
+          const summary = await repairWriting({ text: proposal.summary, options });
+          proposal.summary = summary.text;
+          if (summary.record.hits.length) parts.push({ part: 'summary', record: summary.record });
+          for (const change of proposal.changes) {
+            // Prose only, by extension: Markdown and plain text. A script or data file is code.
+            if (change.text === null || !/.(?:md|markdown|txt)$/i.test(change.path)) continue;
+            const file = await repairWriting({ text: change.text, options });
+            change.text = file.text;
+            if (file.record.hits.length) parts.push({ part: change.path, record: file.record });
+          }
+          session.writing = parts;
         }
         session.origin = this.originFor(run, state, requestedModel, session);
         if (run.turnId) {

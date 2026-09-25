@@ -23,7 +23,7 @@ export interface StreamRulesView {
   readonly organization: StreamRule[];
   readonly project: StreamRule[];
   readonly resolution: StreamRuleResolution | null;
-  /** The runs rules watch. Today only the agent's own work loop runs (`diomedes-loop`). */
+  /** The runs rules watch: work loop runs (`diomedes-loop`) and Work on an external engine (`external-work`). */
   readonly watches?: readonly string[];
   /** A stored layer that cannot run (edited by hand): which rule and why. Its runs fail closed until it is fixed. */
   readonly unreadable?: readonly { authority: StreamRuleAuthority; ruleId: string | null; message: string }[];
@@ -215,6 +215,8 @@ export function decisionLine(decision: StreamRuleDecision): string {
 /** The one sentence saying which runs rules watch, from the server's answer. */
 export function watchesSentence(watches: readonly string[] | undefined): string {
   const loop = !watches || watches.includes('diomedes-loop');
+  if (loop && watches?.includes('external-work'))
+    return `Text rules watch what the model writes, on ${AGENT_NAME} work loop runs and on task work on every engine; on Claude Code, OpenCode and the ACP engines they read it after secrets are removed, so a rule looking for a secret may not fire there. Tool rules watch the tool calls ${AGENT_NAME} runs itself. Codex, Claude Code, OpenCode and other external engines run their own tools, and those are not watched.`;
   return loop
     ? `Trigger rules watch ${AGENT_NAME} work loop runs only. Runs on Codex, Claude Code, OpenCode and other external engines use their own tools and are not watched.`
     : 'Trigger rules watch no runs in this build.';

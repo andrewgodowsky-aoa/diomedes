@@ -196,12 +196,18 @@ async function openThread(page: Page) {
     .click();
 }
 
+// The thread head carries more than one line (Trigger rules sits under this
+// one with the same styling), so find this line by what it says.
+function instructionsLine(page: Page) {
+  return page.getByRole('button', { name: /^Project instructions / });
+}
+
 test('H11-UI-01: the line opens the last run in precedence order, with scope, sha, size and reasons', async ({
   page,
 }) => {
   await withRecordedRun(page);
   await openThread(page);
-  const line = page.locator('.instructions-line');
+  const line = instructionsLine(page);
   await expect(line).toBeVisible();
   // Decision 14's wording, said once.
   await expect(line).toContainText('Project instructions loaded ·');
@@ -246,7 +252,7 @@ test('H11-UI-01: the line opens the last run in precedence order, with scope, sh
 test('H11-UI-02: Open in Files opens the instruction file in the Files pane', async ({ page }) => {
   await withRecordedRun(page);
   await openThread(page);
-  await page.locator('.instructions-line').click();
+  await instructionsLine(page).click();
   const row = page.getByRole('region', { name: 'Last run' }).locator('[data-path="pkg/api/AGENTS.md"]');
   await row.getByRole('button', { name: 'Open in Files', exact: true }).click();
   const files = page.getByRole('complementary', { name: 'Files' });
@@ -259,7 +265,7 @@ test('H11-UI-03: long paths truncate inside the panel instead of widening the pa
   await page.setViewportSize({ width: 900, height: 800 });
   await withRecordedRun(page);
   await openThread(page);
-  await page.locator('.instructions-line').click();
+  await instructionsLine(page).click();
   await expect(page.getByRole('region', { name: 'Last run' })).toBeVisible();
   const overflow = await page.evaluate(
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
@@ -283,7 +289,7 @@ test('H11-UI-04: turning the pack off keeps what the last run was sent inspectab
   try {
     await withRecordedRun(page);
     await openThread(page);
-    const line = page.locator('.instructions-line');
+    const line = instructionsLine(page);
     await expect(line).toBeVisible();
     // Nothing is loaded now, so the line does not say it is.
     await expect(line).not.toContainText('loaded');
