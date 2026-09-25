@@ -296,7 +296,8 @@ for (const [label, width, height] of [
       await openEngines(page);
       await holdsAt200(page, 'Settings > Engines');
       const names = await tabWalk(page, 'Settings > Engines', 40);
-      requireReached(names, 'Settings > Engines', ['Engines', 'Appearance']);
+      // Plain detail names the section "Helpers on this computer"; technical names it "Engines".
+      requireReached(names, 'Settings > Engines', [/^(?:Engines|Helpers on this computer)$/, 'Appearance']);
     });
 
     test('the screens landed alongside: Automations, Settings > Permissions and Rules', async ({ page }) => {

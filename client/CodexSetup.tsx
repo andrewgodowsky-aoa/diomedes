@@ -83,8 +83,8 @@ export function CodexSetup({
         subscription usage applies to Ask, Plan, and Work in projects.
       </p>
       <p className="caption">
-        Check connection reads installed tools, versions, account status and model lists, and
-        verifies the read-only boundary. It sends no model prompt.
+        Check connection looks at what is installed, which version it is and whether you are signed
+        in, and confirms it can only read. It starts no work, so it uses none of your plan.
       </p>
       <div className="actions">
         <Button
