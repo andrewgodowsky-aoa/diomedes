@@ -43,6 +43,27 @@ faux-cloud` serves it on 127.0.0.1:8795 with demo accounts (password
 `nectovia-demo`), and the desktop app hosts it itself when nothing answers
 there. Faux data only: none of its people, businesses or grants exist.
 
+The faux cloud serves the managed inference gateway (`/managed/v1/*`, contract
+`nectovia-managed/1`) with the Worker's own handler. A scripted provider answers
+it offline with exact usage; the placeholder key it holds stands in for the
+Worker secret `BEDROCK_API_KEY`. Bedrock is called for real only when
+`NECTOVIA_FAUX_BEDROCK_API_KEY` is set, which needs Andrew's spend approval
+first; with that key set and no readable `MANAGED_SPEND_CEILING_MICRO_USD`,
+the faux cloud refuses to start. Two optional spend settings are read from the environment under the
+Worker's own names (or `managed.settings` in code), whole numbers, blank meaning
+unset, anything unreadable refusing every managed call with 503
+`route_unavailable`:
+
+- `MANAGED_SPEND_CEILING_MICRO_USD`: the most the provider account may owe
+  across every business, for all time: settled provider cost plus every
+  pending, uncertain or written-off hold in full plus the new call's hold. A
+  call that would pass it is refused before any hold with 503
+  `route_unavailable`, "Nothing was charged." Here it counts this store's
+  ledger only, never the Worker's database, so the two do not share a total.
+- `MANAGED_MAX_OUTPUT_TOKENS`: lowers the registry's output cap (16,000),
+  never raises it. A larger request is clamped silently, and the response
+  names the clamp in `X-Nectovia-Max-Output`.
+
 ## Entry and configuration
 
 `src/worker.ts` is the actual Fetch entry. Existing route shapes are retained:

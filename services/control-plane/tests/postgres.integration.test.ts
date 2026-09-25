@@ -9,7 +9,7 @@ import { AccountService } from '../src/account-service.js';
 import { verifier, now } from './support/fixtures.js';
 import { FundingService } from '../src/funding.js';
 import { PostgresFundingRepository } from '../src/funding-postgres.js';
-import { creditAmount } from '../../../shared/managed-usage.js';
+import { creditAmount, micro } from '../../../shared/managed-usage.js';
 
 const connectionString = process.env.CP_TEST_DATABASE_URL;
 const enabled = Boolean(connectionString);
@@ -117,6 +117,21 @@ describe.skipIf(!enabled)('REAL PostgreSQL (explicit disposable database only)',
     expect(results.filter((item) => item.status === 'fulfilled')).toHaveLength(5);
     const state = await funding.projection(org.tenantId, org.id);
     expect(state.state === 'ready' && state.projection.pendingMicroUsd).toBe(creditAmount(450));
+  });
+  it('holds the company spend ceiling across organizations when their reservations race', async () => {
+    const a = await fundedOrganization('Ceiling race A');
+    const b = await fundedOrganization('Ceiling race B');
+    for (const { org, funding } of [a, b])
+      await funding.openJob({ tenantId: org.tenantId, organizationId: org.id, rootJobId: `job_ceiling_${org.id}`, runRef: `run_ceiling_${org.id}`, parentRunRef: null, tier: 'thorough', capMicroUsd: null });
+    // The suite shares one database, so the ceiling is set from what is already spent: room for one 10-credit hold, not two.
+    const spent = await new PostgresFundingRepository(factory).transaction((tx) => tx.companySpend());
+    const ceiling = micro(spent + 2 * creditAmount(10) - 1);
+    const reserve = ({ org, funding }: typeof a) => funding.reserve({ tenantId: org.tenantId, organizationId: org.id, attemptId: `attempt_ceiling_${org.id}`,
+      rootJobId: `job_ceiling_${org.id}`, parentAttemptId: null, kind: 'generation', route: 'aws-bedrock', requestDigest: `digest_ceiling_${org.id}`,
+      rateSnapshot: rate, maxMicroUsd: creditAmount(10), usageClass: 'metered-work', companyCeilingMicroUsd: ceiling });
+    const results = await Promise.allSettled([reserve(a), reserve(b)]);
+    expect(results.filter((item) => item.status === 'fulfilled')).toHaveLength(1);
+    expect((results.find((item) => item.status === 'rejected') as PromiseRejectedResult).reason).toMatchObject({ code: 'company_ceiling' });
   });
   it('keeps a sent hold across a restarted repository and settles it in its own period', async () => {
     const { org, funding } = await fundedOrganization('Funding restart');

@@ -9,6 +9,14 @@
  * Only the two seams differ from production: the repositories (a JSON file for
  * Neon) and the identity verifier (local passwords for WorkOS). Every account,
  * access, admission, routing and staff rule is the Worker's own code.
+ *
+ * The managed gateway (`/managed/v1/*`) is the Worker's own handler too. Its one
+ * extra seam is the provider transport: a scripted Responses stream with exact
+ * usage by default, so the desktop's loop runs offline. Bedrock is called for
+ * real only when `liveBedrockApiKey` is given (NECTOVIA_FAUX_BEDROCK_API_KEY,
+ * which needs Andrew's separate spend approval before it is ever set). The
+ * Worker's spend settings apply here too, through `managed.settings`, and a
+ * live key without a readable MANAGED_SPEND_CEILING_MICRO_USD refuses to start.
  */
 import { z } from 'zod';
 import type { Configuration } from '../config.js';
@@ -16,6 +24,8 @@ import { AccountService } from '../account-service.js';
 import { CommercialService } from '../commercial.js';
 import { AccountError } from '../errors.js';
 import { FundingService, UsageService } from '../funding.js';
+import { ManagedInferenceService, SPEND_SETTINGS, spendControls, type SpendSetting } from '../managed-inference.js';
+import { FAUX_SCRIPTED_CREDENTIAL, bedrockResponsesCaller, scriptedResponsesFetch } from '../managed-providers.js';
 import { createHandler } from '../worker.js';
 import { readBytes } from '../crypto.js';
 import {
@@ -39,6 +49,22 @@ export interface FauxCloudOptions {
   passwordIterations?: number;
   /** Exact origins allowed to call from a browser. Native clients send none. */
   allowedOrigins?: readonly string[];
+  /** The managed gateway's provider seam. Omitted: the scripted provider, with a placeholder key. */
+  managed?: {
+    /** The transport the Bedrock caller uses. Default: `scriptedResponsesFetch`. */
+    transport?: typeof globalThis.fetch;
+    /** What the gateway reads as BEDROCK_API_KEY. Null: no key is configured. */
+    credential?: string | null;
+    idleTimeoutMs?: number;
+    /**
+     * The Worker's two optional spend settings, read exactly as the Worker reads
+     * them: MANAGED_SPEND_CEILING_MICRO_USD and MANAGED_MAX_OUTPUT_TOKENS. The
+     * ceiling counts this store's ledger only, never the Worker's.
+     */
+    settings?: Partial<Record<SpendSetting, string | number>>;
+  };
+  /** An owner-approved live test only: the gateway calls Bedrock for real with this key. */
+  liveBedrockApiKey?: string | null;
 }
 
 export interface FauxCloud {
@@ -47,7 +73,12 @@ export interface FauxCloud {
   readonly accounts: AccountService;
   readonly commercial: CommercialService;
   readonly funding: FundingService;
+  readonly managed: ManagedInferenceService;
+  /** Which provider answers managed calls. */
+  readonly provider: 'scripted' | 'live';
   handle(request: Request): Promise<Response>;
+  /** Resolves once every managed settlement started so far has finished. */
+  idle(): Promise<void>;
 }
 
 async function jsonBody<T>(request: Request, schema: z.ZodType<T>): Promise<T> {
@@ -64,7 +95,23 @@ async function jsonBody<T>(request: Request, schema: z.ZodType<T>): Promise<T> {
   return parsed.data;
 }
 
+/** Why a faux cloud with a live Bedrock key refuses to start: the testing budget is a hard limit. */
+export const LIVE_WITHOUT_CEILING = 'The faux cloud will not call Bedrock without a spend ceiling. NECTOVIA_FAUX_BEDROCK_API_KEY is set, so also set ' +
+  'MANAGED_SPEND_CEILING_MICRO_USD to a whole number of micro-USD (100000000 is $100), or unset the key.';
+
+function readableCeiling(value: string | number | undefined): boolean {
+  try {
+    return spendControls({ MANAGED_SPEND_CEILING_MICRO_USD: value }).ceilingMicroUsd !== null;
+  } catch {
+    return false;
+  }
+}
+
 export async function createFauxCloud(options: FauxCloudOptions): Promise<FauxCloud> {
+  const live = typeof options.liveBedrockApiKey === 'string' && options.liveBedrockApiKey.length > 0;
+  const settings = options.managed?.settings ?? {};
+  // Refused before anything opens: a live key with no readable ceiling never starts.
+  if (live && !readableCeiling(settings.MANAGED_SPEND_CEILING_MICRO_USD)) throw new Error(LIVE_WITHOUT_CEILING);
   const now = options.now ?? Date.now;
   const store = await FauxCloudStore.open(options.file, new Date(now()).toISOString());
   const identity = new FauxIdentityProvider({ now, iterations: options.passwordIterations });
@@ -82,10 +129,25 @@ export async function createFauxCloud(options: FauxCloudOptions): Promise<FauxCl
     databaseUrl: 'faux://local-store',
     identity: { clientId: 'faux', issuer: FAUX_ISSUER, audience: 'faux', apiKey: 'faux' },
   };
+  const credential = live ? options.liveBedrockApiKey! : options.managed?.credential === undefined ? FAUX_SCRIPTED_CREDENTIAL : options.managed.credential;
+  // The environment the gateway reads its key and spend settings from, as the Worker's would be.
+  const managedEnv: Record<string, unknown> = {
+    ...Object.fromEntries(SPEND_SETTINGS.filter((name) => settings[name] !== undefined).map((name) => [name, settings[name]])),
+    ...(credential === null ? {} : { BEDROCK_API_KEY: credential }),
+  };
+  const managed = new ManagedInferenceService({
+    accounts,
+    commercial: store.commercial,
+    funding,
+    fundingReads: store.funding,
+    caller: bedrockResponsesCaller(options.managed?.transport ?? (live ? undefined : scriptedResponsesFetch({ now }))),
+    now,
+    idleTimeoutMs: options.managed?.idleTimeoutMs,
+  });
   const worker = createHandler(
     () => accounts,
     () => new UsageService(accounts, funding),
-    { configuration: () => config, createCommercial: () => commercial },
+    { configuration: () => config, createCommercial: () => commercial, createManaged: () => managed },
   );
 
   const headers = () => new Headers({ 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'X-Nectovia-Backend': 'faux' });
@@ -128,6 +190,9 @@ export async function createFauxCloud(options: FauxCloudOptions): Promise<FauxCl
     accounts,
     commercial,
     funding,
+    managed,
+    provider: live ? 'live' : 'scripted',
+    idle: () => managed.idle(),
     async handle(request: Request) {
       const { pathname } = new URL(request.url);
       try {
@@ -138,7 +203,7 @@ export async function createFauxCloud(options: FauxCloudOptions): Promise<FauxCl
         if (error instanceof AccountError) return json({ error: error.message }, error.status);
         return json({ error: 'The test account service failed. Try again.' }, 503);
       }
-      const response = await worker(request, {});
+      const response = await worker(request, managedEnv);
       response.headers.set('X-Nectovia-Backend', 'faux');
       return response;
     },

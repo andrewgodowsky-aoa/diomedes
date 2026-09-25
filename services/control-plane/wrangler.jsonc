@@ -14,5 +14,21 @@
   "dev": { "ip": "127.0.0.1", "port": 8791, "local_protocol": "http" },
   // Refuses until exact authorized provider metadata, origins and secrets exist.
   "vars": { "ENVIRONMENT": "staging", "ALLOWED_ORIGINS": "", "WORKOS_CLIENT_ID": "", "WORKOS_ISSUER": "", "WORKOS_TOKEN_AUDIENCE": "" },
+  // Managed inference (/managed/v1/*, contract nectovia-managed/1) reads one more secret at call
+  // time: BEDROCK_API_KEY, a Bedrock long-term API key for the company's AWS account, sent only to
+  // the endpoint in src/managed-providers.ts. The owner sets it; it is never written here. Until it
+  // is set, every managed call answers 503 route_unavailable and nothing is held or sent.
+  //
+  // Two optional spend settings are read at call time beside it (whole numbers; unset or blank is
+  // off; anything unreadable refuses every managed call with 503 route_unavailable):
+  // - MANAGED_SPEND_CEILING_MICRO_USD: the most the company's provider account may owe, all
+  //   tenants and organizations, for all time: settled provider cost plus every pending,
+  //   uncertain or written-off hold in full plus the new call's hold. A call that would pass it
+  //   is refused before any hold with 503 route_unavailable ("Nothing was charged"). It counts
+  //   this Worker's database only. Staging runs with 100000000 ($100). Production default: unset.
+  // - MANAGED_MAX_OUTPUT_TOKENS: lowers the registry's per-route output cap (16,000), never
+  //   raises it. Larger requests are clamped silently and the clamp is named in the response
+  //   header X-Nectovia-Max-Output. Testing runs with 2000.
+  // Neither is set in "vars" here: the owner sets them per environment.
   "secrets": { "required": ["DATABASE_URL", "WORKOS_API_KEY"] }
 }

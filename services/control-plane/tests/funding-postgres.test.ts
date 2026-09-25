@@ -5,7 +5,7 @@
  * replayed, and that stored money outside the safe range is refused.
  */
 import { describe, expect, it } from 'vitest';
-import { creditAmount } from '../../../shared/managed-usage.js';
+import { creditAmount, micro } from '../../../shared/managed-usage.js';
 import { FundingService } from '../src/funding.js';
 import { PostgresFundingRepository } from '../src/funding-postgres.js';
 import type { SqlClient } from '../src/postgres.js';
@@ -13,7 +13,7 @@ import type { SqlClient } from '../src/postgres.js';
 const at = '2026-09-10T12:00:00.000Z';
 const now = () => Date.parse(at);
 
-function recording(options: { failCommit?: boolean; money?: string } = {}) {
+function recording(options: { failCommit?: boolean; money?: string; companySpend?: string; attempt?: Record<string, unknown>; dispatchRows?: number | null } = {}) {
   const calls: { sql: string; values: unknown[] }[] = [];
   const client: SqlClient = {
     async connect() {},
@@ -28,6 +28,9 @@ function recording(options: { failCommit?: boolean; money?: string } = {}) {
         return { rows: [{ settled_monthly: '0', settled_topup: '0', pending_monthly: '0', uncertain_monthly: '0', correction_grants: '0', correction_withdrawals: '0' }], rowCount: 1 };
       if (sql.includes('AS purchased')) return { rows: [{ purchased: '0', held: '0', settled: '0' }], rowCount: 1 };
       if (sql.includes('AS used')) return { rows: [{ used: '0' }], rowCount: 1 };
+      if (sql.includes('AS company_spend')) return { rows: [{ company_spend: options.companySpend ?? '0' }], rowCount: 1 };
+      if (options.attempt && sql.includes('FROM control_plane.funding_reservations WHERE tenant_id=$1 AND reservation_id=$2')) return { rows: [options.attempt], rowCount: 1 };
+      if (sql.startsWith('UPDATE control_plane.funding_reservations SET dispatched_at')) return { rows: [], rowCount: options.dispatchRows === undefined ? 1 : options.dispatchRows };
       return { rows: [], rowCount: 0 };
     },
     async end() {},
@@ -78,6 +81,66 @@ describe('funding SQL adapter protocol', () => {
     const service = new FundingService(new PostgresFundingRepository(db.factory), { now });
     await expect(service.reserve(reserveInput)).rejects.toThrow(/safe whole number/);
     expect(db.calls.map((call) => call.sql)).toContain('ROLLBACK');
+  });
+
+  it('checks the company ceiling inside the reserving transaction: company lock, then the total, then the insert', async () => {
+    const db = recording({ companySpend: '100' });
+    const service = new FundingService(new PostgresFundingRepository(db.factory), { now });
+    await service.reserve({ ...reserveInput, companyCeilingMicroUsd: micro(100 + creditAmount(5)) });
+    const sql = db.calls.map((call) => call.sql);
+    const organizationLock = db.calls.findIndex((call) => call.sql.includes('pg_advisory_xact_lock') && call.values[0] === JSON.stringify(['funding', 't1', 'org_1']));
+    const companyLock = db.calls.findIndex((call) => call.sql.includes('pg_advisory_xact_lock') && call.values[0] === JSON.stringify(['funding-company']));
+    const total = sql.findIndex((item) => item.includes('AS company_spend'));
+    const insert = sql.findIndex((item) => item.startsWith('INSERT INTO control_plane.funding_reservations'));
+    expect(sql.filter((item) => item === 'BEGIN')).toHaveLength(1);
+    expect(sql.indexOf('BEGIN')).toBeLessThan(organizationLock);
+    expect(organizationLock).toBeLessThan(companyLock);
+    expect(companyLock).toBeLessThan(total);
+    expect(total).toBeLessThan(insert);
+    expect(insert).toBeLessThan(sql.indexOf('COMMIT'));
+    // Every tenant and organization counts: the total binds no tenant, organization or amount.
+    expect(db.calls[total].values).toEqual([]);
+    expect(sql[total]).not.toMatch(/tenant_id|organization_id/);
+  });
+
+  it('refuses past the company ceiling with no insert, and rolls back', async () => {
+    const db = recording({ companySpend: '101' });
+    const service = new FundingService(new PostgresFundingRepository(db.factory), { now });
+    await expect(service.reserve({ ...reserveInput, companyCeilingMicroUsd: micro(100 + creditAmount(5)) })).rejects.toMatchObject({ code: 'company_ceiling' });
+    const sql = db.calls.map((call) => call.sql);
+    expect(sql.some((item) => item.startsWith('INSERT INTO control_plane.funding_reservations'))).toBe(false);
+    expect(sql).toContain('ROLLBACK');
+  });
+
+  it('takes no company lock and reads no company total when no ceiling is set', async () => {
+    const db = recording();
+    await new FundingService(new PostgresFundingRepository(db.factory), { now }).reserve(reserveInput);
+    expect(db.calls.some((call) => call.values[0] === JSON.stringify(['funding-company']))).toBe(false);
+    expect(db.calls.some((call) => call.sql.includes('AS company_spend'))).toBe(false);
+  });
+
+  const pendingRow = {
+    tenant_id: 't1', reservation_id: 'attempt_1', organization_id: 'org_1', root_job_id: 'job_1', existing_parent_task_ref: null, period_id: '2026-09',
+    kind: 'generation', route: 'aws-bedrock', request_digest: 'digest_1', rate_snapshot: reserveInput.rateSnapshot, usage_class: 'metered-work',
+    rate_card_version: 'rate-card-2026-09-10.1', reserved_micro_usd: String(creditAmount(5)), monthly_hold_micro_usd: String(creditAmount(5)),
+    topup_hold_micro_usd: '0', state: 'pending', created_at: new Date(at), dispatched_at: null, resolved_at: null, uncertain_reason: null,
+  };
+
+  it('dispatches with one conditional update, and sends only when exactly one row moved', async () => {
+    const db = recording({ attempt: pendingRow });
+    const sent = await new FundingService(new PostgresFundingRepository(db.factory), { now }).markDispatched({ tenantId: 't1', organizationId: 'org_1', attemptId: 'attempt_1' });
+    expect(sent.dispatchedAt).toBe(at);
+    const update = db.calls.find((call) => call.sql.startsWith('UPDATE control_plane.funding_reservations SET dispatched_at'))!;
+    expect(update.sql).toContain("state='pending' AND dispatched_at IS NULL");
+    expect(update.values).toEqual(['t1', 'attempt_1', at]);
+    // The claim is the only write: no upsert that could overwrite another caller's dispatch.
+    expect(db.calls.some((call) => call.sql.startsWith('INSERT INTO control_plane.funding_reservations'))).toBe(false);
+    for (const rows of [0, 2, null]) {
+      const lost = recording({ attempt: pendingRow, dispatchRows: rows });
+      await expect(new FundingService(new PostgresFundingRepository(lost.factory), { now }).markDispatched({ tenantId: 't1', organizationId: 'org_1', attemptId: 'attempt_1' }))
+        .rejects.toMatchObject({ code: 'attempt_in_flight' });
+      expect(lost.calls.map((call) => call.sql)).toContain('ROLLBACK');
+    }
   });
 
   it('the projection is a read: it takes no lock and writes nothing', async () => {
