@@ -96,11 +96,25 @@ still names the old build. A settings folder with neither (a fixture, a hand-mad
 its provenance with a `schema` record and no notice. A fresh install records its build and says
 nothing.
 
-**What's new.** The in-app release-notes lane has not landed on this base or on `main`. There is
-no "What's new" component to integrate with, so this lane adds only its one line. When that lane
-lands, it should read `GET /api/update-notice` (or the record) and show one combined line rather
-than a second one (decision 4). The notice text lives in one function, `noticeText`, for that
-reason.
+**What's new.** The in-app release-notes lane is PR #124 (`feature/in-app-release-notes`). It is
+an open draft that has not landed on this base or on `main`, so there is nothing yet to integrate
+with. This lane adds only its own line.
+
+PR #124 also puts a post-update bar in the same notice slot: "Updated to X." with the release
+headline, **What's new** and **Dismiss**. It records the dismissal in `settings.seen.releaseNotes`.
+If both lanes land as they stand, the person sees two "Updated to X" lines, which decision 4
+forbids.
+
+Whichever lane lands second merges them into **one** bar:
+
+1. The text is `noticeText(record)`, which gives "Updated to X — N settings moved to new
+   defaults." When nothing moved, #124's headline follows "Updated to X.".
+2. The actions are #124's **What's new** and one **Dismiss**.
+3. A dismissal writes both `seen.releaseNotes` and `POST /api/update-notice/seen`.
+4. The trigger is this lane's update record, not the setup-date heuristic. The record knows the
+   install was updated, rather than inferring it from dates.
+
+The notice text lives in one function, `noticeText`, so that merge touches one place.
 
 ### Custom full-snapshot skins (cause 2, structural part only)
 
@@ -239,6 +253,8 @@ See the final report on the pull request for the counts from the run on the push
   it stays until the next update replaces it.
 - If a later lane changes `defaults()`, only visual settings follow automatically until D2 is
   decided.
+- Setup's own move to the Conversation view on first finish is a settings save, so it counts as a
+  choice and is kept. That matches what setup intends, but no person pressed a control for it.
 
 ---
 
