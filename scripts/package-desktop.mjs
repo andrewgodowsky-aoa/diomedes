@@ -7,6 +7,16 @@ import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { buildDesktopAuth } from './build-desktop-auth.mjs';
 
+// The three reviewed Windows x64 native-runtime files, by the SHA-256 every
+// release since 0.1.1 has shipped. scripts/release-support/acquire-native-runtime.mjs
+// checks a download against these same values.
+export const WINDOWS_NATIVE_RUNTIME_SHA256 = Object.freeze({
+  'codex.exe': 'a1cf6360ca71918d5466bc3a32d9f18b7044c9128756d1949e715d277b88c9b6',
+  'codex-command-runner.exe': '08b56828cca57c83d14f03eb9ec62c73a2cd6648248cc731ae8fedd5fa3ae566',
+  'codex-windows-sandbox-setup.exe':
+    '682cf7b351a871f3479b78fe3b7ea7348554de655bd98b0f322cef2d006a8d62',
+});
+
 // Export the same entry point for offline packaging-boundary tests. Invoking
 // this script runs it once for the host target, unless `--platform`/`--arch`
 // or DIOMEDES_DESKTOP_PLATFORM/ARCH name another supported one.
@@ -53,13 +63,23 @@ export async function packageDesktop(options = {}, dependencies = {}) {
         `Missing offline Electron archive ${archiveName}. Set DIOMEDES_ELECTRON_ZIP_DIR to its existing directory; nothing was downloaded.`,
       );
   }
-  if (
+  // On a Mac host the packager writes the ASAR integrity digest into the Electron
+  // Framework and then restores the ad-hoc signature Electron ships with, because
+  // Apple Silicon will not run a binary whose signature is invalid. That is not a
+  // Developer ID signature and adds no publisher, but it is still a signing step,
+  // so it runs only when the caller names it. The release workflow does
+  // (DIOMEDES_MAC_ADHOC_FRAMEWORK_RESIGN=accept); a plain `npm run package:mac`
+  // still refuses. Integrity stays on either way.
+  const adHocFrameworkResign =
+    (options.macAdHocFrameworkResign ?? process.env.DIOMEDES_MAC_ADHOC_FRAMEWORK_RESIGN) ===
+    'accept';
+  const restoresAdHocSignature =
     platform === 'darwin' &&
     hostPlatform === 'darwin' &&
-    Number(electronVersion.split('.')[0]) >= 41
-  )
+    Number(electronVersion.split('.')[0]) >= 41;
+  if (restoresAdHocSignature && !adHocFrameworkResign)
     throw new Error(
-      "macOS packaging is blocked pending review of the installed packager's automatic ad-hoc Framework signing for ASAR integrity. This work order authorizes no signing; do not disable integrity. Installed-engine discovery is unaffected.",
+      "macOS packaging is blocked pending review of the installed packager's automatic ad-hoc Framework signing for ASAR integrity. This work order authorizes no signing; do not disable integrity. Installed-engine discovery is unaffected. The release workflow accepts it explicitly with DIOMEDES_MAC_ADHOC_FRAMEWORK_RESIGN=accept.",
     );
   async function sourceSnapshot() {
     const files = [];
@@ -153,16 +173,7 @@ export async function packageDesktop(options = {}, dependencies = {}) {
     );
     const runtime = path.join(stage, 'native-runtime');
     await fs.mkdir(runtime);
-    const hashes =
-      platform === 'win32'
-        ? {
-            'codex.exe': 'a1cf6360ca71918d5466bc3a32d9f18b7044c9128756d1949e715d277b88c9b6',
-            'codex-command-runner.exe':
-              '08b56828cca57c83d14f03eb9ec62c73a2cd6648248cc731ae8fedd5fa3ae566',
-            'codex-windows-sandbox-setup.exe':
-              '682cf7b351a871f3479b78fe3b7ea7348554de655bd98b0f322cef2d006a8d62',
-          }
-        : {};
+    const hashes = platform === 'win32' ? { ...WINDOWS_NATIVE_RUNTIME_SHA256 } : {};
     for (const [name, expected] of Object.entries(hashes)) {
       const bytes = await fs.readFile(path.join(root, '.data/native-runtime', name));
       if (createHash('sha256').update(bytes).digest('hex') !== expected)
@@ -203,6 +214,12 @@ export async function packageDesktop(options = {}, dependencies = {}) {
                 'No reviewed macOS Codex runtime is bundled. Installed tools are discovered on that Mac; version, account and isolation checks still gate execution. Native Codex isolation remains Windows-only.',
             },
       signing: 'unsigned-experimental',
+      ...(restoresAdHocSignature
+        ? {
+            macFrameworkSignature:
+              'ad-hoc, restored by @electron/packager after the ASAR integrity digest; no Developer ID, not notarized',
+          }
+        : {}),
       builtAt: new Date().toISOString(),
     };
     await fs.writeFile(path.join(stage, 'BUILD_INFO.json'), JSON.stringify(buildInfo, null, 2));

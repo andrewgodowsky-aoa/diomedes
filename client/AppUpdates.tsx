@@ -171,7 +171,7 @@ export function AppUpdates() {
                     per-user installer preserves project and profile data.
                   </p>
                 </>
-              ) : (
+              ) : status.platform === 'darwin' ? null : (
                 <p className="caption">
                   Download checks the official asset's size and published SHA-256 before
                   installation.
@@ -205,7 +205,8 @@ export function AppUpdates() {
             <Button disabled={busy} onClick={() => void run('checking', '/updates/check')}>
               {phase === 'checking' ? 'Checking…' : 'Check for updates'}
             </Button>
-            {outcome === 'available' && !status.download.ready && (
+            {/* A Mac copy is offered the release page; only Windows stages an installer. */}
+            {outcome === 'available' && !status.download.ready && status.platform !== 'darwin' && (
               <Button disabled={busy} onClick={() => void run('downloading', '/updates/download')}>
                 {phase === 'downloading' ? 'Downloading…' : 'Download'}
               </Button>

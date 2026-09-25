@@ -16,7 +16,7 @@ import {
   isEmptyUpdateBody,
   parseOfficialAssetUrl,
   parseStableVersion,
-  selectWindowsAsset,
+  selectReleaseAsset,
   type UpdateCheckOutcome,
   type UpdateInstallArtifact,
   type UpdateStatusSnapshot,
@@ -482,7 +482,8 @@ export class AppUpdateService {
       }
       let parsed;
       try {
-        parsed = selectWindowsAsset(payload);
+        // macOS reads the disk image, every other platform the Windows installer.
+        parsed = selectReleaseAsset(payload, this.platform);
       } catch (error) {
         this.clearRecord();
         throw new ApiError(
@@ -505,7 +506,9 @@ export class AppUpdateService {
         this.clearRecord();
         return this.recordCheck(
           'no-release',
-          `Version ${parsed.version} has no Windows installer asset yet.`,
+          this.platform === 'darwin'
+            ? `Version ${parsed.version} has no macOS disk image yet.`
+            : `Version ${parsed.version} has no Windows installer asset yet.`,
         );
       }
       if (compareVersions(parsed.version, this.currentVersion) <= 0) {
@@ -531,7 +534,9 @@ export class AppUpdateService {
       this.generation += 1;
       return this.recordCheck(
         'available',
-        `Version ${parsed.version} is available. Download it to verify the installer.`,
+        this.platform === 'darwin'
+          ? `Version ${parsed.version} is available. Download it from the release page.`
+          : `Version ${parsed.version} is available. Download it to verify the installer.`,
       );
     } catch (error) {
       this.clearRecord();
@@ -609,6 +614,10 @@ export class AppUpdateService {
     const record = this.record;
     if (!record || this.outcome !== 'available')
       throw new ApiError(409, 'Check for updates first. No verified release is pending.');
+    // Download stages the Windows installer for close-and-install. A Mac copy is
+    // offered the disk image's release page instead, and never a Windows file.
+    if (this.platform === 'darwin')
+      throw new ApiError(409, 'On macOS, download the update from the release page.');
     if (this.isInstallAccepted())
       throw new ApiError(409, 'The app update is already accepted. Restart to finish it.');
     if (record.stagedSha256 && record.stagedPath)
