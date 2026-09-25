@@ -103,6 +103,42 @@ export const READY_QUEUE = family({
   reader: { file: 'server/ready-scheduler.ts', throughFramework: true },
 });
 
+/**
+ * The update reconcile's files (`server/update-reconcile.ts`). Each is read
+ * with `assertReadable`, so one written by a newer Diomedes is refused and left
+ * as it was. The provenance file's `settingsSchemaVersion` is not its format
+ * version: it says how far the settings steps have carried this install.
+ */
+export const LAST_BUILD = family({
+  id: 'last-build',
+  title: 'record of the last build that ran',
+  location: 'last-build.json',
+  versionField: 'version',
+  ...single,
+  unversioned: null,
+  reader: { file: 'server/update-reconcile.ts', throughFramework: true },
+});
+
+export const SETTINGS_PROVENANCE = family({
+  id: 'settings-provenance',
+  title: 'settings provenance',
+  location: 'settings-provenance.json',
+  versionField: 'version',
+  ...single,
+  unversioned: null,
+  reader: { file: 'server/update-reconcile.ts', throughFramework: true },
+});
+
+export const UPDATE_RECORD = family({
+  id: 'update-record',
+  title: 'update record',
+  location: 'update-reconcile/records/*.json',
+  versionField: 'version',
+  ...single,
+  unversioned: null,
+  reader: { file: 'server/update-reconcile.ts', throughFramework: true },
+});
+
 /** Families whose reader still checks its own version. Listed so nothing durable is unaccounted for. */
 const own = (id: string, title: string, location: string, versionField: string, file: string, note: string) =>
   family({
@@ -123,6 +159,9 @@ export const DURABLE_FAMILIES: readonly DurableFamily[] = Object.freeze([
   AUTOMATION_DEFINITIONS,
   PACK_STORE,
   READY_QUEUE,
+  LAST_BUILD,
+  SETTINGS_PROVENANCE,
+  UPDATE_RECORD,
   family({
     id: 'project-registry',
     title: 'project list',
@@ -149,6 +188,10 @@ export const DURABLE_FAMILIES: readonly DurableFamily[] = Object.freeze([
       note: 'Short-lived: recovery replays and removes it. Its embedded project record is checked by the same validators as state.json.',
     },
   }),
+  own('update-journal', 'update reconcile journal', 'update-reconcile/pending.json', 'version',
+    'server/update-reconcile.ts', 'Short-lived: the next launch finishes the plan it holds and removes it.'),
+  own('update-notices-seen', 'update notices seen', 'update-reconcile/notices-seen.json', 'version',
+    'server/update-reconcile.ts', 'A list of record ids; an unreadable one means nothing was seen.'),
   own('automation-host', 'automation host', 'workspaces/automation-host.json', 'v', 'server/automations.ts',
     'An unreadable host record is replaced by a new one; it holds only a host id and a heartbeat.'),
   own('job-caps', 'job caps', 'job-caps.json', 'v', 'server/job-caps.ts', 'Refuses any v other than 1.'),
