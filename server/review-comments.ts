@@ -131,6 +131,13 @@ export class ReviewComments {
     let hunk: number | null = null;
     if (wanted.kind === 'change') {
       const sides = await this.changeSides(projectId, wanted.changeId);
+      // A run still writing the change can rewrite the same entry under the same
+      // change id, which would move the line out from under the comment.
+      const session = sides.change.sessionId
+        ? state.sessions.find((item) => item.id === sides.change.sessionId)
+        : undefined;
+      if (session && ['queued', 'working', 'waiting'].includes(session.state))
+        throw new ApiError(409, 'The run that made this change is still working. Comment on it when it finishes.');
       target = { kind: 'change', changeId: sides.change.id, path: sides.change.path, sha: sides.sha };
       taskId = sides.change.taskId;
       lines = splitLines((side === 'old' ? sides.before : sides.after) ?? '');
@@ -204,7 +211,8 @@ export class ReviewComments {
       state.changes.filter((item) => item.taskId === task.id).map((item) => item.path),
     );
     const replay = (state.followUps ?? []).find((item) => item.commandId === commandId);
-    const comments = commentIds.map((commentId) => this.comment(projectId, commentId));
+    // A comment chosen twice is still one comment, sent once.
+    const comments = [...new Set(commentIds)].map((commentId) => this.comment(projectId, commentId));
     for (const comment of comments) {
       if (replay && comment.sent?.followUpId === replay.id) continue;
       if (comment.resolved) throw new ApiError(409, 'A resolved comment is not sent. Reopen it first.');

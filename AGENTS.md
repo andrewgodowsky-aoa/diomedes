@@ -119,8 +119,11 @@ Numbering is stable; tests and comments cite these by number. Full text and reas
     image, PDF and spreadsheet import, provider attachments) is still open. **Files are not inherently a software feature**, so Core carries the general file and
     artifact surface: the project folder and artifact model, ordinary preview, text and Markdown
     viewing, search, generated artifacts, history and version inspection, references into Threads, and
-    open-externally behaviour. The IDE-grade version of that **same** surface is supplied by the
-    Software Engineering Capability Pack on activation. It belongs inside the one Console, never as a
+    open-externally behaviour. Readable diffs of recorded versions, per-change keep and review
+    comments belong to that Core history and version inspection (Andrew, 2026-09-24;
+    `QUESTIONS.md` R10). The IDE-grade version of that **same** surface (Git, syntax highlighting,
+    unified and split code views, LSP) is supplied by the Software Engineering Capability Pack on
+    activation. It belongs inside the one Console, never as a
     second application surface, and it reuses the existing Project, `DocumentInfo`, `DocumentContent`
     and History primitives rather than creating a competing file authority. Anything beyond the
     recorded boundary (attachments, broader previews, code editing, Git, diffs, LSP) is still not

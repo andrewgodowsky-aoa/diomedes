@@ -30,6 +30,12 @@ export const messageBody = z.strictObject({
    * Absent means the selected documents only; `project` is the person's per-message choice.
    */
   readAccess: z.enum(['selected', 'project']).optional(),
+  /**
+   * H03: the person sent this while an answer is still running. On a route whose contract
+   * queues steering, it waits behind that answer and is sent next; elsewhere it is refused as
+   * busy, as any second message is.
+   */
+  queued: z.literal(true).optional(),
 });
 /**
  * The person's own choice to start what Diomedes proposed for one message. `consent` is the

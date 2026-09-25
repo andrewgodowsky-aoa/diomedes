@@ -56,6 +56,7 @@ import type {
 import type { ConversationUpdateNotCarried } from '../shared/conversation.js';
 import { ApiError, absent, relativeName, safeAbsolute } from './paths.js';
 import { mountPackRoutes } from './pack-routes.js';
+import { playbookAccess } from './harness/capabilities/pack-playbooks.js';
 import {
   defaults,
   findTasks,
@@ -145,6 +146,7 @@ import { SupervisionService } from './supervision/service.js';
 import { triggerViews } from '../shared/stream-rules.js';
 import { keepPartially } from './change-review/partial-keep.js';
 import { documentDiff, ReviewComments } from './review-comments.js';
+import { mountGuidanceRoutes } from './guidance.js';
 import { ReadyScheduler } from './ready-scheduler.js';
 import { DesktopConnections } from './connections/desktop.js';
 import { toastConnector } from './connections/fixture.js';
@@ -168,8 +170,11 @@ import { EngineService, HOST_TEST_PROJECT } from './engines/service.js';
 import {
   mountClaudeSessionRoutes,
   mountOpenCodeSessionRoutes,
+  mountThreadSessionRoute,
+  mountAcpSessionRoutes,
   type ClaudeSessionRouteDependencies,
 } from './engines/claude-session-routes.js';
+import type { EngineAsk } from './engines/contract.js';
 import { mountJevAdvisorRoutes } from './jev-advisor-routes.js';
 import type { JevAdvisor } from './harness/jev-advisor.js';
 import { loadApprovedReadServers, readScopeDigest, type ReadScope } from './engines/read-scope.js';
@@ -214,6 +219,8 @@ import {
 import { assertReplay, findCommand } from './command-admission.js';
 import { claudeSessionRunId } from './harness/claude-session-run.js';
 import { opencodeSessionRunId } from './harness/opencode-session-run.js';
+import { acpSessionRunId } from './harness/acp-session-run.js';
+import { EngineAskNeeds } from './engines/engine-asks.js';
 import { modelSessionRunId } from './harness/model-session-run.js';
 import { FileModelTranscripts } from './harness/model-transcripts.js';
 import { AWS_BEDROCK_ROUTE, AwsConnections } from './engines/aws-bedrock.js';
@@ -916,7 +923,11 @@ export async function createApp(options: AppOptions) {
   };
   engines.nativeSessions = harness.claudeSessions;
   engines.opencodeSessions = harness.opencodeSessions;
+  engines.cursorSessions = harness.cursorSessions;
+  engines.devinSessions = harness.devinSessions;
   engines.modelSessions = harness.modelSessions;
+  // A kept ACP conversation's mid-turn questions become Needs a person answers (H05).
+  const engineAsks = new EngineAskNeeds(store);
   const exposure = new SpendExposure(store.dataDir);
   await exposure.init();
   // Parent-job caps (owner decision 2026-09-23): each job's tier is its thread's WorkStyle, else
@@ -982,6 +993,7 @@ export async function createApp(options: AppOptions) {
     },
   });
   await harness.init();
+  await engineAsks.expireOpen();
   // Run once admits the brief through the harness above, so its occurrences
   // are settled only after the harness has recovered its runs.
   const automations = new AutomationService(
@@ -1157,7 +1169,8 @@ export async function createApp(options: AppOptions) {
   mountVerificationRoutes(app, store, verification);
   // H13: the Diomedes work loop's finish gate runs the task's declared checks through H17's verifier.
   harness.loop.attachVerification(verification);
-  mountNativeLoopRoutes(app, store, harness, verification);
+  // H14: team roles resolve their H09 profiles and Agents at admission; H08 retries a loop.
+  const loopRoutes = mountNativeLoopRoutes(app, store, harness, verification, { profiles: agentProfiles, agents });
   mountWorkspaceRoutes(app, store, workspaces, configuration, automations);
   mountAutomationRoutes(app, store, automations);
   mountThemeRoutes(app, store, themes, customization);
@@ -1964,7 +1977,9 @@ export async function createApp(options: AppOptions) {
    * Capability packs: per-project activation and the installation-wide
    * lifecycle (`server/pack-routes.ts`). Activation is not authorization.
    */
-  mountPackRoutes(app, { store, route, body });
+  const packLifecycle = mountPackRoutes(app, { store, route, body });
+  // H10: guidance proposals from evidence, signed instruction revisions and rollback.
+  mountGuidanceRoutes(app, { store, route, body });
   /**
    * Read one discovered instruction file, as Diomedes read it.
    *
@@ -2350,6 +2365,7 @@ export async function createApp(options: AppOptions) {
           projectId,
           taskId,
           state.conversations.find((c) => c.id === threadId),
+          command?.request.agentId ?? null,
         )
           ? undefined
           : nativeChoice(
@@ -2434,14 +2450,19 @@ export async function createApp(options: AppOptions) {
       );
     },
     contractFor: (projectId, workRoute, session) =>
-      workRoute === 'sample' && controlFixtureProjects.has(projectId)
+      session?.engine.name === NATIVE_LOOP_ENGINE
+        ? loopRoutes.contract
+        : workRoute === 'sample' && controlFixtureProjects.has(projectId)
         ? CONTROL_FIXTURE_CONTRACT
         : workRoute === 'codex'
           ? codexControls.contract(session)
           : defaultWorkContract(workRoute),
     // H12: a harness run's uncertain tool effects block Retry and Resume too.
     harnessEffects: (projectId, session) => harness.bridge.uncertainEffects(projectId, session.id),
+    // H14: a loop on the fixture route is still available to retry; every other route as before.
+    routeAvailable: (route) => isRoute(route) || route === 'native-fixture',
   });
+  durableControls.registerDriver(loopRoutes.contract.routeId, loopRoutes.retryDriver);
   durableControls.registerDriver(CONTROL_FIXTURE_ROUTE, controlFixtureDriver(work));
   // H02: the Codex route's steer, resume and fork, offered only where the Codex that
   // served a run advertised them (`codexControls.contract`).
@@ -2740,6 +2761,13 @@ export async function createApp(options: AppOptions) {
         throw new ApiError(400, 'Choose true or false for the task allowance.');
       const need = store.state(id(req)).needs.find((item) => item.id === req.params.needId);
       if (!need) throw new ApiError(404, 'This request was not found.');
+      if (need.engineAsk)
+        return engineAsks.resolve(
+          id(req),
+          need.id,
+          choice(b.resolution, ['go-ahead', 'declined'], 'decision'),
+          b.allowForTask === true,
+        );
       // A supervision escalation is answered only by a person, never for the whole task.
       if (need.supervision) {
         if (b.allowForTask === true)
@@ -3407,7 +3435,7 @@ export async function createApp(options: AppOptions) {
   // The explicit native conversation routes. Claude Code's (H03) and OpenCode's kept session
   // (H04) take the same admission and the same thread projection, each under its own engine.
   const nativeSessionDependencies = (
-    engine: 'claude-code' | 'opencode',
+    engine: 'claude-code' | 'opencode' | 'cursor' | 'devin',
   ): ClaudeSessionRouteDependencies => ({
     authorize: async (req) => {
       store.state(String(req.params.id));
@@ -3418,7 +3446,7 @@ export async function createApp(options: AppOptions) {
         const state = store.state(projectId);
         const thread = state.conversations.find((item) => item.id === command.threadId);
         if (!thread) throw new ApiError(404, 'This thread was not found.');
-        const name = engine === 'claude-code' ? 'Claude Code' : 'OpenCode';
+        const name = { 'claude-code': 'Claude Code', opencode: 'OpenCode', cursor: 'Cursor', devin: 'Devin' }[engine];
         if (selectedEngine(store.settings, state.project, thread) !== engine)
           throw new ApiError(
             409,
@@ -3475,10 +3503,11 @@ export async function createApp(options: AppOptions) {
       const runId =
         req.params.runId && !req.path.endsWith('/fork')
           ? String(req.params.runId)
-          : (engine === 'claude-code' ? claudeSessionRunId : opencodeSessionRunId)(
-              projectId,
-              command.commandId,
-            );
+          : (engine === 'claude-code'
+              ? claudeSessionRunId
+              : engine === 'opencode'
+                ? opencodeSessionRunId
+                : acpSessionRunId(engine))(projectId, command.commandId);
       const progress = (kind: 'started' | 'delta' | 'ended', frame?: TransientPreview) =>
         store.emit('engine-text', {
           projectId,
@@ -3511,6 +3540,17 @@ export async function createApp(options: AppOptions) {
         signal: req.res ? connectionSignal(req.res) : undefined,
         onPreview: (frame) => progress('delta', frame),
         onActivity: (frame) => store.emit('engine-activity', frame),
+        // A kept ACP conversation's permission asks and plans go to a person as Needs (H05).
+        ...(engine === 'cursor' || engine === 'devin'
+          ? {
+              approvals: (ask: EngineAsk, signal: AbortSignal) =>
+                engineAsks.ask(
+                  { projectId, runId, threadId: input.threadId, requestId: input.requestId },
+                  ask,
+                  signal,
+                ),
+            }
+          : {}),
       };
     },
     recordResult: async (_req, command, result, input) => {
@@ -3584,7 +3624,28 @@ export async function createApp(options: AppOptions) {
     },
   });
   mountClaudeSessionRoutes(app, engines, nativeSessionDependencies('claude-code'));
+  // H03: the Console's read of a thread's open native conversation: its contract controls,
+  // whether it can resume, its reported model and its steering queue.
+  mountThreadSessionRoute(app, {
+    authorize: async (req) => {
+      store.state(String(req.params.id));
+    },
+    lineage: async (projectId, threadId, mode) => {
+      const thread = store.state(projectId).conversations.find((item) => item.id === threadId);
+      if (!thread) throw new ApiError(404, 'This thread was not found.');
+      const open = (thread.lineages ?? [])
+        .filter((lineage) => !lineage.retired && (!mode || lineage.mode === mode))
+        .sort((a, b) => b.generation - a.generation)[0];
+      return open?.runId ?? null;
+    },
+    drivers: {
+      claude: () => engines.nativeSessions as never,
+      opencode: () => engines.opencodeSessions as never,
+    },
+  });
   mountOpenCodeSessionRoutes(app, engines, nativeSessionDependencies('opencode'));
+  mountAcpSessionRoutes(app, engines, 'cursor', nativeSessionDependencies('cursor'));
+  mountAcpSessionRoutes(app, engines, 'devin', nativeSessionDependencies('devin'));
   /**
    * The digest the task route would give this message's own task command. A message too long
    * for a task description has no valid command at all, so it has no receipt to trust either
@@ -4241,6 +4302,10 @@ export async function createApp(options: AppOptions) {
             ...(carrying ? { carriedFrom: carrying } : {}),
             accountRoute,
             ...readScope,
+            // P04: on a model-API route, the pack playbooks this message may load, index only.
+            ...(modelRoute
+              ? await playbookAccess(packLifecycle.contributions, state, command.commandId, command.mode)
+              : {}),
             signal: options.signal,
             onPreview: (frame: TransientPreview) =>
               progress('delta', { ...frame, text: gate(frame.text) }),
@@ -4311,6 +4376,11 @@ export async function createApp(options: AppOptions) {
         const { retiring, route, carried, reason } = await updateDecision(projectId, state, thread);
         return { retiring: retiring.length, carried, route, ...(reason ? { reason } : {}) };
       }),
+    // H03: the thread's open lineages, where a message queued behind a running answer waits.
+    openRuns: async (projectId, threadId) =>
+      (store.state(projectId).conversations.find((item) => item.id === threadId)?.lineages ?? [])
+        .filter((lineage) => !lineage.retired)
+        .map((lineage) => lineage.runId),
     locate: (projectId, threadId, commandId) =>
       store.locked(async () => {
         const driver = engines.nativeSessions;
@@ -4670,7 +4740,7 @@ export async function createApp(options: AppOptions) {
       // turn verified once the runtime reports its engine.
       const turnId = identifier('U');
       // A profile that decides this run supplies its own exact model (H09).
-      const resolvedChoice: RunChoice = agentProfiles.applies(projectId, task.id, conversation)
+      const resolvedChoice: RunChoice = !team && agentProfiles.applies(projectId, task.id, conversation)
         ? {}
         : nativeChoice(engine, projectId, conversation, { mode: runMode, text });
       // A member whose model Nectovia chose runs it as an automatic selection, so the run's
@@ -4880,6 +4950,18 @@ export async function createApp(options: AppOptions) {
       const prepared = await store.locked(async () => {
         const state = store.state(projectId);
         requireCloudSharing(state, serviceRoute, sources);
+        // P04: the playbook's body loads for this request only, through its own pin, checked
+        // against the digest this project registered when it turned the pack on, and recorded
+        // against the turn. First, so a refusal leaves nothing else of this send behind.
+        const youTurnId = identifier('U');
+        const playbook =
+          skillId === undefined
+            ? undefined
+            : await packLifecycle.contributions.load(
+                await packLifecycle.contributions.admit(state, youTurnId),
+                { packId: 'diomedes.small-business', kind: 'workflow', id: skillId },
+                { reason: 'chosen', state },
+              );
         let conversation =
           threadId !== undefined
             ? state.conversations.find((c) => c.id === threadId)!
@@ -4940,9 +5022,10 @@ export async function createApp(options: AppOptions) {
                 skillId,
                 mode,
                 budgetBytes: instructionSectionBudget(documentBytes),
+                loaded: playbook,
               });
         const youTurn: Turn = {
-          id: identifier('U'),
+          id: youTurnId,
           role: 'you',
           mode,
           text,

@@ -125,6 +125,8 @@ import {
 import type { ReadConnectorsView } from '../../shared/read-connectors';
 import { skillConnectorNote } from './skill-connectors';
 import { TextSizeMenuItems } from './TextSizeMenu';
+import { PlaybookPanel } from './PlaybookPanel';
+import type { LoadedContribution } from '../../shared/pack-contributions';
 
 interface ShellProps {
   projectId: string;
@@ -246,6 +248,10 @@ export function Shell({
   const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
   const [previewNeed, setPreviewNeed] = useState<Need | null>(null);
   const [permissionsOpen, setPermissionsOpen] = useState(false);
+  /** P04: the playbook a person opened to read; its body loads only when this is set. */
+  const [playbookOpen, setPlaybookOpen] = useState<{ skill: PackSkill; loaded: LoadedContribution } | null>(
+    null,
+  );
   const [cloudSharingOpen, setCloudSharingOpen] = useState(false);
   const [scopeGrants, setScopeGrants] = useState<ScopeGrantView[]>([]);
   const [sendTask, setSendTask] = useState<{
@@ -1120,6 +1126,18 @@ export function Shell({
       setSkillDraft((prev) => ({ skill, threadId: target.id, n: (prev?.n ?? 0) + 1 }));
     });
   }
+  /** P04: load one playbook's body for reading, once, in the click that opens it. */
+  async function readSkill(skill: PackSkill) {
+    await perform(async () => {
+      const loaded = await api<LoadedContribution>(
+        `/projects/${projectId}/packs/${SMALL_BUSINESS_PACK.id}/contributions/workflow/${skill.id}/open`,
+        'POST',
+        {},
+      );
+      setPlaybookOpen({ skill, loaded });
+      await load();
+    });
+  }
   async function turnOnSkills() {
     await perform(async () => {
       await api(`/projects/${projectId}/packs/${SMALL_BUSINESS_PACK.id}/activate`, 'POST', {});
@@ -1822,6 +1840,7 @@ export function Shell({
       openDocument,
       launchSkill: leavingEditor((skill: PackSkill) => void launchSkill(skill)),
       turnOnSkills: () => void turnOnSkills(),
+      readSkill: (skill: PackSkill) => void readSkill(skill),
     },
   };
   const paletteEntries = (query: string) => applyQuery(buildEntries(paletteCtx), query);
@@ -2460,6 +2479,13 @@ export function Shell({
             setSendTask(null);
             void dispatchTask(pending.task, pending.route, pending.sources);
           }}
+        />
+      )}
+      {playbookOpen && isPackActive(state.project.packs, SMALL_BUSINESS_PACK.id) && (
+        <PlaybookPanel
+          title={playbookOpen.skill.name}
+          loaded={playbookOpen.loaded}
+          onClose={() => setPlaybookOpen(null)}
         />
       )}
       {permissionsOpen && selected && (

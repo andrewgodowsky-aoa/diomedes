@@ -258,6 +258,20 @@ const ROWS: Row[] = [
     sentence: /2 declared checks passed/,
   },
   {
+    name: 'a record that ran no declared check verified nothing',
+    history: () => [wrote(), verified({ declaredChecks: 0, checks: [record().checks[0]] })],
+    state: 'not-verified',
+    rule: 'no-checks-declared',
+    sentence: /ran no declared check/,
+  },
+  {
+    name: 'a record missing a declared check’s result is not Verified on the others',
+    history: () => [wrote(), verified({ checks: [record().checks[0]] })],
+    state: 'uncertain',
+    rule: 'check-incomplete',
+    sentence: /has-menu/,
+  },
+  {
     name: 'a re-read of the same bytes (observed entry) does not disturb it',
     history: () => [wrote(), verified(), entry({ kind: 'observed', files: [{ before: A1, after: A1 }] })],
     state: 'verified',

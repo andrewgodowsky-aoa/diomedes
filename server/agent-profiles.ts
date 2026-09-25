@@ -149,6 +149,10 @@ export class AgentProfileStore {
   private queue: Promise<unknown> = Promise.resolve();
   /** Set when the file on disk could not be read, so a save never overwrites it. */
   private unreadable: string | null = null;
+  /** Why the file could not be read, or null. A list that cannot be read never falls open. */
+  get damaged(): string | null {
+    return this.unreadable;
+  }
   constructor(private readonly dataDir: string) {}
   get file() {
     return path.join(this.dataDir, 'agent-profiles.json');
@@ -204,6 +208,10 @@ export class AgentProfileStore {
     return this.write(() => {
       if (this.list().length >= PROFILE_MAX_PROFILES)
         throw refuse(`Keep to ${PROFILE_MAX_PROFILES} profiles.`);
+      // Deleted profiles are kept for the runs that used them, and the file's own
+      // bound counts them, so a save never writes a file its load would refuse.
+      if (this.data.profiles.length >= PROFILE_MAX_PROFILES * 4)
+        throw refuse(`Diomedes keeps ${PROFILE_MAX_PROFILES * 4} profiles, deleted ones included, and this is the limit.`);
       const profileId = `pr-${crypto.randomUUID().slice(0, 13)}`;
       const revision = this.revision(profileId, 1, draft);
       this.data.profiles.push({
@@ -379,9 +387,19 @@ export class AgentProfileService {
    * Whether a profile decides this run. Cheap and synchronous, so a caller can
    * skip its own route-default lookup that a profile would replace.
    */
-  applies(projectId: string, taskId: string | null, thread: Conversation | null | undefined): boolean {
+  applies(
+    projectId: string,
+    taskId: string | null,
+    thread: Conversation | null | undefined,
+    agentId?: string | null,
+  ): boolean {
     if (thread?.requested?.profile) return true;
     if (threadChoosesItsOwnModel(thread)) return false;
+    // An Agent the person chose sets the run's ceiling; a list chooses intelligence
+    // and never replaces who works (decision 7), so the list stays out of it.
+    const chosenAgent = agentId ?? thread?.requested?.agent ?? null;
+    if (chosenAgent && chosenAgent !== AUTO_AGENT) return false;
+    if (this.profiles.damaged) return true;
     return this.profiles.routing(projectId, taskId).order.length > 0;
   }
 
@@ -395,8 +413,14 @@ export class AgentProfileService {
     taskId: string | null;
     thread: Conversation | null | undefined;
     projectFolder: string | null;
+    agentId?: string | null;
   }): Promise<ProfileRouting> {
-    if (!this.applies(input.projectId, input.taskId, input.thread)) return { outcome: 'none' };
+    if (!this.applies(input.projectId, input.taskId, input.thread, input.agentId))
+      return { outcome: 'none' };
+    // Routing that cannot be read is not "no routing": the run is refused rather
+    // than sent to a route and payer the person's list may have ruled out.
+    if (this.profiles.damaged)
+      throw new ApiError(409, this.profiles.damaged, { code: 'profiles_unreadable' });
     const preference = this.profiles.routing(input.projectId, input.taskId);
     const pick = input.thread?.requested?.profile ?? null;
     return resolveProfileRoute({

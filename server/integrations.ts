@@ -643,6 +643,12 @@ export function unknownMethod(answer: ProtocolAnswer): boolean {
     /unknown variant|method not found|unknown method|unsupported method/i.test(answer.message)
   );
 }
+/** A refusal of the parameters (invalid request or params), which only a handler that exists gives. */
+const paramsRejected = (answer: ProtocolAnswer) => answer.code === -32600 || answer.code === -32602;
+/** Codex answered that it has no such thread: the one refusal a resume or fork may start fresh on. */
+export function threadGone(answer: ProtocolAnswer): boolean {
+  return /no rollout found|thread not found|unknown thread|no such thread/i.test(answer.message);
+}
 export async function probeCodexCapabilities(client: NativeRpc): Promise<CodexCapabilities> {
   const known = probedCapabilities.get(client);
   if (known) return known;
@@ -653,7 +659,9 @@ export async function probeCodexCapabilities(client: NativeRpc): Promise<CodexCa
       found[capability] = true;
     } catch (error) {
       const answer = protocolRejection(error);
-      if (!answer) throw error;
+      // Present only when the parameters were refused; absent only when the method was. An
+      // overloaded or internal error is neither, so it is not read as a capability either way.
+      if (!answer || (!unknownMethod(answer) && !paramsRejected(answer))) throw error;
       found[capability] = !unknownMethod(answer);
     }
   }
@@ -1333,15 +1341,21 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
                 approvalPolicy: threadStart.approvalPolicy,
                 approvalsReviewer: threadStart.approvalsReviewer,
                 modelProvider: threadStart.modelProvider,
+                environments: threadStart.environments,
+                runtimeWorkspaceRoots: threadStart.runtimeWorkspaceRoots,
+                selectedCapabilityRoots: threadStart.selectedCapabilityRoots,
+                dynamicTools: threadStart.dynamicTools,
+                allowProviderModelFallback: threadStart.allowProviderModelFallback,
                 config: threadStart.config,
                 baseInstructions: threadStart.baseInstructions,
               }),
             );
             origin = asked.origin;
           } catch (error) {
-            // Codex answered and refused (it no longer has the thread). A lost
-            // connection or a timeout is not an answer and fails the request.
-            if (!protocolRejection(error)) throw error;
+            // Codex answered that it no longer has the thread. Any other refusal, a
+            // lost connection or a timeout is not that answer and fails the request.
+            const answer = protocolRejection(error);
+            if (!answer || !threadGone(answer)) throw error;
             reason = 'Codex no longer has that thread';
           }
         }
@@ -1742,6 +1756,12 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
           state: 'refused',
           reason: 'This Codex build does not offer thread fork, so no fork was made.',
         };
+      // A branch is only ever continued through thread/resume.
+      if (!capabilities.resume)
+        return {
+          state: 'refused',
+          reason: 'This Codex build does not offer thread resume, so a fork could not be continued and none was made.',
+        };
       const effective = object(
         object(await client.request('config/read', { includeLayers: false })).config,
       );
@@ -1755,6 +1775,11 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
             approvalPolicy: 'never',
             approvalsReviewer: 'user',
             modelProvider: 'openai',
+            environments: [],
+            runtimeWorkspaceRoots: [],
+            selectedCapabilityRoots: [],
+            dynamicTools: [],
+            allowProviderModelFallback: false,
             config: {
               ...SAFE_CONFIG,
               mcp_servers: Object.fromEntries(
@@ -1764,7 +1789,8 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
           }),
         );
       } catch (error) {
-        if (!protocolRejection(error)) throw error;
+        const answer = protocolRejection(error);
+        if (!answer || !threadGone(answer)) throw error;
         return {
           state: 'refused',
           reason: `Codex did not accept a fork of thread ${input.threadId} (it may no longer have it), so no fork was made.`,

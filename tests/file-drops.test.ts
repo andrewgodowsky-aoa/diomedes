@@ -14,7 +14,8 @@ import {
   type DroppedFile,
 } from '../server/file-drops.js';
 import { createApp } from '../server/app.js';
-import { DROP_MAX_FILES, DROP_MAX_TEXT_BYTES } from '../shared/file-drops.js';
+import { DROP_MAX_FILES, DROP_MAX_TEXT_BYTES, gifSize } from '../shared/file-drops.js';
+import { readFirstSheet } from '../server/xlsx-preview.js';
 import {
   GIF_1X1,
   JPEG_1X1,
@@ -175,6 +176,16 @@ describe('drop and paste import through the one recorded write path', () => {
         actor: 'diomedes',
       }),
     ).rejects.toMatchObject({ status: 400 });
+    // Review-e: the approval path and a mixed text-and-bytes write are refused too.
+    await expect(
+      store.writeRecorded(projectId, [{ path: 'x.png', text: null, bytes: PNG_1X1, expected: null }], {
+        actor: 'you',
+        approvalId: 'N1',
+      }),
+    ).rejects.toThrow();
+    await expect(
+      store.writeRecorded(projectId, [{ path: 'x.png', text: 'text', bytes: PNG_1X1, expected: null }]),
+    ).rejects.toMatchObject({ status: 400, message: expect.stringContaining('Only your own import') });
   });
 
   test('a restore of a dropped picture is refused in words and the file stays', async () => {
@@ -210,6 +221,51 @@ describe('drop and paste import through the one recorded write path', () => {
     spy.mockRestore();
     expect(new Uint8Array((await reopened.currentBytes(projectId, 'Imports/second.gif'))!)).toEqual(GIF_1X1);
     expect(await fs.readdir(path.join(reopened.dataDir, 'pending'))).toEqual([]);
+  });
+});
+
+describe('independent review (review-e): recovery keeps a picture a picture', () => {
+  test('bytes that changed during an interrupted drop are recorded as binary, so History never reads them as text', async () => {
+    const other = Uint8Array.from(PNG_1X1);
+    other[other.length - 5] ^= 0xff;
+    const spy = vi
+      .spyOn(store as unknown as { applyWrite: () => Promise<void> }, 'applyWrite')
+      .mockImplementationOnce(async () => {
+        // Something else put other bytes at the same path before the write landed.
+        await fs.mkdir(path.join(folder, 'Imports'), { recursive: true });
+        await fs.writeFile(path.join(folder, 'Imports', 'photo.png'), other);
+        throw new Error('crash');
+      });
+    await expect(store.locked(() => dropFiles(store, projectId, [file('photo.png', PNG_1X1)], 'drop'))).rejects.toThrow('crash');
+    spy.mockRestore();
+    const outside = store.state(projectId).history.find((entry) => entry.kind === 'outside');
+    expect(outside?.files[0]).toMatchObject({ path: 'Imports/photo.png', after: bytesHash(other), binary: true });
+  });
+});
+
+describe('independent review (review-e): a version a message sent stays in History', () => {
+  test('a quick second edit does not fold away the version a turn referenced', async () => {
+    await store.locked(() => store.writeRecorded(projectId, [{ path: 'notes.md', text: 'A\n', expected: null }]));
+    // A message carries notes.md as it is now, exactly as the direct request path records it.
+    await store.locked(async () => {
+      const state = store.state(projectId);
+      const thread = state.conversations[0] ?? null;
+      const turn = { id: 'U-review', role: 'you', text: 'Use my notes', at: new Date().toISOString(), sourceVersions: [{ path: 'notes.md', sha: hash('A\n')! }] };
+      if (thread) thread.turns.push(turn as never);
+      else
+        state.conversations.push({ id: 'C-review', name: 'Review', turns: [turn], mode: 'ask' } as never);
+      await store.persist(state);
+    });
+    await store.locked(() => store.writeRecorded(projectId, [{ path: 'notes.md', text: 'B\n', expected: hash('A\n') }]));
+    const sent = await documentVersion(store, projectId, 'notes.md', hash('A\n'));
+    expect(sent).toMatchObject({ current: false, text: 'A\n', identity: { versionId: expect.stringMatching(/^v\d{4}$/) } });
+  });
+
+  test('without a reference, a quick second edit still folds into one entry as before', async () => {
+    await store.locked(() => store.writeRecorded(projectId, [{ path: 'notes.md', text: 'A\n', expected: null }]));
+    const before = store.state(projectId).history.length;
+    await store.locked(() => store.writeRecorded(projectId, [{ path: 'notes.md', text: 'B\n', expected: hash('A\n') }]));
+    expect(store.state(projectId).history.length).toBe(before);
   });
 });
 
@@ -360,6 +416,56 @@ test('production HTTP routes keep the client boundary and serve pictures with a 
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
+});
+
+describe('independent review (review-e): previews stay bounded', () => {
+  test('a GIF whose first frame is larger than its declared screen is held to the pixel limit', async () => {
+    const giant = Uint8Array.from(GIF_1X1);
+    const descriptor = giant.indexOf(0x2c);
+    // The frame, not the logical screen, is what a browser allocates.
+    giant.set([0xff, 0xff, 0xff, 0xff], descriptor + 5);
+    expect(gifSize(giant)).toEqual({ width: 65535, height: 65535 });
+    await expect(drop([file('huge.gif', giant)])).rejects.toMatchObject({
+      status: 413,
+      message: expect.stringContaining('megapixel limit'),
+    });
+  });
+
+  test('a small workbook of unclosed cells, rows or strings is read in linear time', async () => {
+    const started = performance.now();
+    const cells = readFirstSheet(
+      Buffer.from(buildXlsx(`<worksheet><sheetData><row r="1">${'<c>'.repeat(200_000)}</row></sheetData></worksheet>`)),
+    );
+    expect(cells.total).toBe(1);
+    readFirstSheet(Buffer.from(buildXlsx(`<worksheet><sheetData>${'<row>'.repeat(200_000)}</sheetData></worksheet>`)));
+    readFirstSheet(
+      Buffer.from(
+        buildXlsx('<worksheet><sheetData></sheetData></worksheet>', { shared: [] }),
+      ),
+    );
+    readFirstSheet(
+      Buffer.from(
+        buildXlsx(
+          `<worksheet><sheetData><row><c t="inlineStr"><is>${'<t>'.repeat(200_000)}</is></c></row></sheetData></worksheet>`,
+        ),
+      ),
+    );
+    readFirstSheet(
+      Buffer.from(
+        buildXlsx(`<worksheet><sheetData><row><c${' r="'.repeat(200_000)}>${'<v>'.repeat(200_000)}</c></row></sheetData></worksheet>`),
+      ),
+    );
+    expect(performance.now() - started).toBeLessThan(2_000);
+  });
+
+  test('a self-closed cell after an unclosed one still reads, as it did', () => {
+    const page = readFirstSheet(
+      Buffer.from(
+        buildXlsx('<worksheet><sheetData><row r="1"><c r="A1"><v>1</v></c><c r="B1"/><c r="C1"><v>3</v></c></row></sheetData></worksheet>'),
+      ),
+    );
+    expect(page.rows).toEqual([['1', '', '3']]);
+  });
 });
 
 describe('an XLSX workbook reads as a bounded first-sheet table, with no new dependency', () => {

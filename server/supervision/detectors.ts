@@ -340,6 +340,8 @@ export function detectBudgetBurn(
 const DIRECTIVE =
   /^\s*(?:[-*+]\s+|\d+[.)]\s+)?(?:do\s+not|don['’]t|never)\s+(?:edit|modify|change|write(?:\s+to)?|touch|delete|overwrite|commit\s+to)\b(.*)$/i;
 
+const EXCEPTION = /\b(?:outside|except|other\s+than|apart\s+from|besides|unless|instead)\b/i;
+
 /**
  * The machine-checkable lines of an instruction file: a sentence that begins
  * "Do not edit", "Never write to", "Don't modify" (and the like) and names one
@@ -357,7 +359,11 @@ export function machineRules(
   text.split(/\r?\n/).forEach((raw, index) => {
     const match = DIRECTIVE.exec(raw);
     if (!match) return;
-    for (const quoted of match[1].matchAll(/`([^`]+)`/g)) {
+    // Only the prohibition's own clause; the next one may say where to work instead.
+    const clause = match[1].split(/;|\s[—–]\s|\.(?=\s|$)/)[0];
+    // "Outside `src/`" or "except `docs/`" permits what it names: that is prose, not a rule.
+    if (EXCEPTION.test(clause)) return;
+    for (const quoted of clause.matchAll(/`([^`]+)`/g)) {
       const named = quoted[1].trim().replace(/^\.\/+/, '');
       if (!named || !insideProject(named) || named.includes('*')) continue;
       const forbids = scope ? `${clean(scope)}/${named}` : named;

@@ -233,7 +233,7 @@ export async function containedWrite(root: string, spelled: string, text: string
   await fs.rename(temp, found.absolute);
   const landed = await fs.lstat(found.absolute).catch(() => null);
   if (!landed || !sameEntry(landed, written))
-    throw refuse('path_changed', 'The file changed while it was being written; its outcome is not certain.');
+    throw new HarnessError('path_changed', 'The file changed while it was being written; its outcome is not certain.', true);
   return { relative: found.relative, bytes: bytes.byteLength };
 }
 
@@ -241,7 +241,7 @@ export async function containedWrite(root: string, spelled: string, text: string
 
 /** Environment names a child may inherit: the search path and the system folders only. */
 const INHERITED = ['PATH', 'Path', 'SYSTEMROOT', 'SystemRoot', 'WINDIR', 'windir', 'TEMP', 'TMP', 'TMPDIR', 'COMSPEC', 'ComSpec', 'PATHEXT', 'LANG'];
-const SECRETISH = /(TOKEN|SECRET|PASSW|PASSPHRASE|CREDENTIAL|API_?KEY|ACCESS_?KEY|PRIVATE|AUTH|COOKIE|SESSION)/i;
+const SECRETISH = /(TOKEN|SECRET|PASSW|PASSPHRASE|CREDENTIAL|API_?KEY|ACCESS_?KEY|PRIVATE|AUTH|COOKIE|SESSION|(^|_)KEYS?(_|$))/i;
 
 export function minimalEnvironment(extra: Record<string, string> = {}, source: NodeJS.ProcessEnv = process.env) {
   const env: Record<string, string> = {};
