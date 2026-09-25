@@ -27,6 +27,7 @@
  */
 import { z } from 'zod';
 import type { ToolEffectClass } from './harness.js';
+import { AGENT_NAME } from './agent-name.js';
 import {
   resolveRules,
   type RuleAuthority,
@@ -37,6 +38,12 @@ import {
 import { SUPERVISION_ACTOR, type SupervisionActor, type SupervisionRecord } from './supervision.js';
 
 export const STREAM_RULES_CONTRACT_VERSION = 1 as const;
+
+/**
+ * The runs a rule that applies actually watches, as a resolution says it (review G, finding
+ * 8): "applied" never claims more reach than the evaluator has.
+ */
+export const STREAM_RULE_REACH = `${AGENT_NAME} work loop runs`;
 
 /** Weakest first. The order is the strictness order a firing is judged by. */
 export const STREAM_INTERVENTIONS = ['annotate', 'steer', 'hold', 'stop'] as const;
@@ -68,6 +75,14 @@ export const STREAM_RULE_LIMITS = Object.freeze({
   window: 512,
   /** A chunk is evaluated in slices of at most this many characters. */
   slice: 1024,
+  /**
+   * The windows of one authority's unbounded patterns (`*`, `+`, `{m,}`, or a count above
+   * `longRepeat`), added up. Such a pattern rescans its whole window on every delta, so its
+   * cost grows with the window squared; the two authorities together stay within twice this.
+   */
+  unboundedWindow: 1024,
+  /** A counted repeat above this many is judged as an unbounded one. */
+  longRepeat: 32,
   /** Characters of the matched text kept on a firing. */
   excerpt: 120,
   /** Firings a project keeps. At the limit nothing new is recorded rather than anything forgotten. */
@@ -154,6 +169,43 @@ export function patternProblem(pattern: string): string | null {
     return 'This pattern is not a valid regular expression.';
   }
   return null;
+}
+
+/**
+ * Whether a pattern can scan far from one start: a `*`, `+` or `{m,}`, or a counted repeat
+ * above `STREAM_RULE_LIMITS.longRepeat`. Escaped characters and character classes are
+ * literal text, not repeats.
+ */
+export function patternUnbounded(pattern: string): boolean {
+  for (let index = 0; index < pattern.length; index++) {
+    const char = pattern[index];
+    if (char === '\\') {
+      index++;
+      continue;
+    }
+    if (char === '[') {
+      const close = pattern.indexOf(']', index + 1);
+      index = close === -1 ? pattern.length : close;
+      continue;
+    }
+    if (char === '*' || char === '+') return true;
+    if (char === '{') {
+      const counted = /^\{(\d+)(?:,(\d*))?\}/.exec(pattern.slice(index));
+      if (!counted) continue;
+      if (counted[2] === '') return true;
+      if (Number(counted[2] ?? counted[1]) > STREAM_RULE_LIMITS.longRepeat) return true;
+    }
+  }
+  return false;
+}
+
+/** The characters one authority's unbounded patterns watch, added up. */
+export function unboundedWindow(rules: readonly Pick<StreamRule, 'match'>[]): number {
+  return rules.reduce(
+    (sum, rule) =>
+      rule.match.kind === 'pattern' && patternUnbounded(rule.match.pattern) ? sum + rule.match.window : sum,
+    0,
+  );
 }
 
 const matchSchema = z.discriminatedUnion('kind', [
@@ -248,6 +300,12 @@ export const streamRuleSetSchema = z
     const ids = set.rules.map((rule) => rule.id);
     if (new Set(ids).size !== ids.length)
       ctx.addIssue({ code: 'custom', message: 'Each rule id appears once.' });
+    // An unbounded pattern rescans its whole window on every delta (review G, finding 6).
+    if (unboundedWindow(set.rules) > STREAM_RULE_LIMITS.unboundedWindow)
+      ctx.addIssue({
+        code: 'custom',
+        message: `Patterns with *, + or a long repeat may watch ${STREAM_RULE_LIMITS.unboundedWindow} characters in total; shorten a window or use a phrase.`,
+      });
   });
 
 /** A rule together with the authority it was written under. */
@@ -348,7 +406,10 @@ export function resolveStreamRules(
       outcome: evaluated ? 'applied' : decision.outcome,
       reason: tied.has(decision.rule.id)
         ? `${decision.reason} Evaluated anyway, so the conflict never loosens anything.`
-        : decision.reason.replace(/(organization|project):([a-z0-9-]+)/g, '$2 ($1)'),
+        : decision.outcome === 'applied'
+          ? // Where it governs, said once per rule; what else is not watched is said once per screen.
+            `Governs ${decision.rule.constrains} on ${STREAM_RULE_REACH}.`
+          : decision.reason.replace(/(organization|project):([a-z0-9-]+)/g, '$2 ($1)'),
     });
   }
   return {

@@ -112,7 +112,7 @@ describe('a rule and its resolution, in words', () => {
       ],
       'T1',
     );
-    expect(decisionLine(decisionFor(resolution, 'organization', 'reports-held')!)).toBe('Governs · Governs trigger:reports-held.');
+    expect(decisionLine(decisionFor(resolution, 'organization', 'reports-held')!)).toBe('Governs · Governs trigger:reports-held on Nectovia work loop runs.');
     expect(decisionLine(decisionFor(resolution, 'project', 'noted')!)).toBe(
       'Blocked · reports-held (organization) restricts trigger:reports-held with organization authority, and this cannot loosen it.',
     );
