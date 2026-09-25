@@ -170,12 +170,16 @@ export interface NativeConversation<C extends SessionCheckpointFacts> {
   /** Set by a transport that can confirm, sending nothing, that its native session still exists. */
   verify?(): Promise<void>;
 }
+const lifetimeReached = () =>
+  new EngineError('TIMEOUT', 'The native connection reached its lifetime limit.');
 type Connection = {
   session: NativeConversation<SessionCheckpointFacts>;
   writer?: StepContext['saveNativeCheckpoint'];
   timer?: ReturnType<typeof setTimeout>;
   detach?: () => void;
   closing?: Promise<void>;
+  /** The lifetime ended while a turn held the connection; it closes when that turn ends. */
+  expired?: boolean;
 };
 /** `ClaudeSessionOptions`, for any profile's checkpoint. */
 export interface NativeSessionOptions<C extends SessionCheckpointFacts> {
@@ -1150,11 +1154,12 @@ export class ClaudeSessionRuns<C extends SessionCheckpointFacts = ClaudeSessionC
             context.signal.addEventListener('abort', endOwned, { once: true });
             connection.detach = () => context.signal.removeEventListener('abort', endOwned);
             connection.timer = setTimeout(() => {
-              void this.dispose(
-                runId,
-                owned!,
-                new EngineError('TIMEOUT', 'The native connection reached its lifetime limit.'),
-              );
+              // A turn in flight holds the writer; closing under it would strand its checkpoint.
+              if (owned.writer) {
+                owned.expired = true;
+                return;
+              }
+              void this.dispose(runId, owned, lifetimeReached());
             }, this.lifetimeMs);
             connection.timer.unref();
           }
@@ -1233,6 +1238,7 @@ export class ClaudeSessionRuns<C extends SessionCheckpointFacts = ClaudeSessionC
             throw error;
           } finally {
             connection.writer = undefined;
+            if (connection.expired) void this.dispose(runId, connection, lifetimeReached());
           }
         },
         principal,

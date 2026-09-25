@@ -41,7 +41,10 @@ jobs:
       # suites spawn real child processes (the data-folder lock probe, the harness
       # host, approval crash recovery) and on a four-vCPU runner three workers plus
       # their children starved each other into timeouts that read as failures.
-      - run: node node_modules/vitest/vitest.mjs run --maxWorkers=2 --reporter=default --reporter=junit --outputFile=test-results/unit.xml
+      # The hosted Windows runner runs these suites several times slower than macOS, so tests
+      # that drive real sends and child processes met the 30-second default there and nowhere
+      # else. The per-test bound here is a hang guard that runner can meet; elsewhere it stays 30.
+      - run: node node_modules/vitest/vitest.mjs run --maxWorkers=2 --testTimeout=90000 --hookTimeout=90000 --reporter=default --reporter=junit --outputFile=test-results/unit.xml
         env:
           CODEX_HOME: ${{ runner.temp }}/diomedes-ci-codex
       # Packaging (npm run package:windows) requires separately staged pinned

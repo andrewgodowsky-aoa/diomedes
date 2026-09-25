@@ -95,10 +95,12 @@ function command(need: Need, resolution: 'go-ahead' | 'declined' = 'go-ahead'): 
     baseDigest: need.approval!.baseDigest,
   };
 }
+// Each wait ends on the run's own record; the bound is a hang guard a loaded Windows runner can meet.
+const SETTLE_MS = 45_000;
 async function openNeed(sessionId: string, which: (need: Need) => boolean = () => true) {
   await vi.waitFor(
     () => expect(state().needs.some((need) => need.sessionId === sessionId && need.state === 'open' && which(need))).toBe(true),
-    { timeout: 15_000 },
+    { timeout: SETTLE_MS },
   );
   return structuredClone(state().needs.find((need) => need.sessionId === sessionId && need.state === 'open' && which(need))!);
 }
@@ -107,7 +109,7 @@ async function answer(need: Need, resolution: 'go-ahead' | 'declined' = 'go-ahea
   expect(decided.status, JSON.stringify(decided.data)).toBe(200);
 }
 async function untilRun(runId: string, expected: HarnessRun['state']) {
-  await vi.waitFor(async () => expect((await host().get(projectId, runId)).state).toBe(expected), { timeout: 15_000 });
+  await vi.waitFor(async () => expect((await host().get(projectId, runId)).state).toBe(expected), { timeout: SETTLE_MS });
   await host().bridge.flush();
   return host().get(projectId, runId);
 }
@@ -256,7 +258,7 @@ describe('H16 stream-time triggers on the scripted loop route', () => {
     const started = await start({ delegate: { route: 'native-fixture' } });
     await vi.waitFor(
       async () => expect(['cancelled', 'waiting', 'completed', 'failed']).toContain((await host().get(projectId, started.runId)).state),
-      { timeout: 15_000 },
+      { timeout: SETTLE_MS },
     );
     await host().bridge.flush();
     const child = await host().get(projectId, `${started.runId}-d1`).catch(() => null);
@@ -310,7 +312,7 @@ describe('H16 stream-time triggers on the scripted loop route', () => {
         expect(['failed', 'cancelled']).toContain(current.state);
         return current;
       },
-      { timeout: 15_000 },
+      { timeout: SETTLE_MS },
     );
     expect(run.steps.some((step) => step.intent.stepId.startsWith('tool:'))).toBe(false);
     expect(run.failure?.message ?? run.cancelReason).toMatch(/A rule stopped this run: Rule no-summaries\./);
@@ -325,7 +327,7 @@ describe('H16 stream-time triggers on the scripted loop route', () => {
     const started = await start();
     await untilRun(started.runId, 'cancelled');
     await openNeed(started.session.id);
-    await vi.waitFor(() => expect((state().streamTriggerFirings ?? []).length).toBe(2), { timeout: 15_000 });
+    await vi.waitFor(() => expect((state().streamTriggerFirings ?? []).length).toBe(2), { timeout: SETTLE_MS });
     await store().locked(async () => undefined);
     const open = state().needs.filter((need) => need.sessionId === started.session.id && need.state === 'open');
     expect(open).toHaveLength(1);
@@ -344,7 +346,7 @@ describe('H16 stream-time triggers on the scripted loop route', () => {
     const started = await start({ team: { worker: {}, advisor: null } });
     await vi.waitFor(
       async () => expect(['cancelled', 'waiting', 'completed', 'failed']).toContain((await host().get(projectId, started.runId)).state),
-      { timeout: 15_000 },
+      { timeout: SETTLE_MS },
     );
     await host().bridge.flush();
     expect((await host().get(projectId, started.runId)).state).toBe('cancelled');
@@ -372,7 +374,7 @@ describe('H16 stream-time triggers on the scripted loop route', () => {
           expect(['failed', 'cancelled']).toContain(current.state);
           return current;
         },
-        { timeout: 15_000 },
+        { timeout: SETTLE_MS },
       );
       const read = run.steps.find((step) => step.intent.stepId === 'tool:0');
       expect(read?.state ?? 'never').not.toBe('succeeded');
@@ -481,7 +483,7 @@ describe('H16 holds and remembered approvals', () => {
       localHarnessPrincipal(projectId),
     );
     await vi.waitFor(() => expect(state().needs.some((need) => need.sessionId === session.id)).toBe(true), {
-      timeout: 15_000,
+      timeout: SETTLE_MS,
     });
     return structuredClone(state().needs.find((need) => need.sessionId === session.id)!);
   }
