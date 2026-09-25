@@ -101,11 +101,12 @@ test('the first launch of a new build says so in one line, once', async ({ page 
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto(baseURL);
 
-  const notice = page.locator('.update-notice');
-  await expect(notice).toHaveText(
-    new RegExp(`Updated to ${appVersion.replaceAll('.', '\\.')} — 1 setting moved to new defaults\\.`),
-  );
+  // Said once (decision 2): the release's own notice carries what the reconcile moved, and the
+  // reconcile's plain line stands alone only when this build has no notes.
+  const notice = page.locator('.release-notice, .update-notice');
   await expect(notice).toHaveCount(1);
+  await expect(notice).toContainText(`Updated to ${appVersion}`);
+  await expect(notice).toContainText('1 setting moved to new defaults.');
   // The never-chosen scheme moved to this build's default, and it is what is painted.
   await expect(page.locator('html')).toHaveAttribute('data-package', 'nectovia');
   // The chosen detail level was kept.
@@ -117,6 +118,6 @@ test('the first launch of a new build says so in one line, once', async ({ page 
   await page.reload();
   await expect(page.locator('html')).toHaveAttribute('data-package', 'nectovia');
   await expect(page.getByRole('button', { name: 'Settings', exact: true })).toBeVisible();
-  await expect(page.locator('.update-notice')).toHaveCount(0);
+  await expect(page.locator('.release-notice, .update-notice')).toHaveCount(0);
   expect(errors).toEqual([]);
 });
