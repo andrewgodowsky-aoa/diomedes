@@ -12,6 +12,8 @@ export class HarnessError extends Error {
   constructor(
     readonly code: string,
     message: string,
+    /** H12: the failure came after the effect may have landed, so its outcome is not known. */
+    readonly outcomeUnknown = false,
   ) {
     super(message);
     this.name = 'HarnessError';

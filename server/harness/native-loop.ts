@@ -645,31 +645,27 @@ export class NativeLoop {
     const run = await this.runtime.get(runId);
     const recorded = run.steps.find((step) => step.intent.stepId === `tool:${turn}`);
     const bound = recorded ? recorded.intent.input : await binding.bind(parsed.data, run);
-    const tool = this.tools.get(binding.name);
-    const input = this.tools.validate(binding.name, bound) as Json;
-    const output = await this.runtime.step<Json>(
+    // An input the registry's own contract refuses (its schema, its size limit) is an observation too.
+    try {
+      this.tools.validate(binding.name, bound);
+    } catch (error) {
+      if (error instanceof HarnessError && (error.code === 'tool_input_rejected' || error.code === 'tool_input_too_large'))
+        return refuse(error.message);
+      throw error;
+    }
+    // H12's one mediated path: the effect intent, its targets and its authority
+    // are recorded before the handler runs, and an interrupted write stays uncertain.
+    const output = await this.tools.dispatch<Json>(this.runtime, {
       runId,
       owner,
-      {
-        id: `tool:${turn}`,
-        version: tool.version,
-        kind: 'tool',
-        effect: tool.effect,
-        name: tool.name,
-        cost: tool.cost,
-        permission: tool.permission,
-        approval: tool.approval,
-        destination: tool.destination,
-        trustedInputRequired: tool.trustedInputRequired,
-        label: tool.label ?? null,
-        origin: applicationOrigin(),
-        input,
-      },
-      (context) => tool.execute({ ...context, input: context.input }),
       principal,
-    );
+      stepId: `tool:${turn}`,
+      name: binding.name,
+      input: bound,
+      origin: applicationOrigin(),
+    });
     return observe(
-      { action: 'tool', tool: tool.name, ok: true, ...excerpt(output), detail: null },
+      { action: 'tool', tool: binding.name, ok: true, ...excerpt(output), detail: null },
       output,
     );
   }
