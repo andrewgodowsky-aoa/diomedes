@@ -122,6 +122,14 @@ jobs:
         run: npm run package:windows
         env:
           DIOMEDES_ELECTRON_ZIP_DIR: ${{ runner.temp }}\electron-zips
+      # The release commits this stamp beside the version it describes
+      # (tests/build-identity.test.ts). Printed so it can be read back from the log.
+      - name: Build stamp
+        shell: pwsh
+        run: |
+          Write-Output '----- BEGIN evidence/windows-release/build-info.json -----'
+          Get-Content evidence/windows-release/build-info.json
+          Write-Output '----- END evidence/windows-release/build-info.json -----'
       - name: Gate 2 of 4, unit tests
         run: node node_modules/vitest/vitest.mjs run --maxWorkers=2 --reporter=default --reporter=json --outputFile.json=test-results/candidate/unit-results.json
       - name: Gate 4 of 4, browser tests

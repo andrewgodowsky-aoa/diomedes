@@ -1202,7 +1202,11 @@ test('Engine choices: the list comes from the engine, and the levels follow the 
     await page.request.get('/api/engines/claude-code/models')
   ).json();
   expect(none.models).toEqual([]);
-  expect(none.detail).toMatch(/Check|check|not checked|Not checked/);
+  // Which sentence depends on the machine: "Check connections" above runs real
+  // discovery, so a computer without Claude Code (a hosted Windows runner) has
+  // it recorded as not installed, and one never checked says so. Both say why
+  // there is no list; neither invents one.
+  expect(none.detail).toMatch(/Check|check|not checked|Not checked|Install this tool/);
 
   const on = await page.request.put('/api/settings', {
     headers: HEADERS,
