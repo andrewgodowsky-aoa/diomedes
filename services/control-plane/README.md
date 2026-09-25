@@ -43,6 +43,16 @@ faux-cloud` serves it on 127.0.0.1:8795 with demo accounts (password
 `nectovia-demo`), and the desktop app hosts it itself when nothing answers
 there. Faux data only: none of its people, businesses or grants exist.
 
+`npm run faux-cloud -- --identity workos-standin` swaps the passwords for a
+local WorkOS stand-in (`src/faux/workos-standin.ts`, under /workos): the AuthKit
+authorize (PKCE, loopback redirect, no login page; the person is the
+`login_hint` email), authenticate (code and rotating refresh), JWKS, user and
+session endpoints. The faux cloud then verifies with the Worker's own
+`WorkOSIdentityVerifier`, so the Operations app's company sign-in runs end to
+end on this computer. Its store is a separate file, and `POST
+/faux/bootstrap-admin {subject}` does what `npm run bootstrap-admin` does
+against Postgres.
+
 ## Entry and configuration
 
 `src/worker.ts` is the actual Fetch entry. Existing route shapes are retained:
@@ -82,7 +92,47 @@ logs. Missing/invalid config and unavailable storage return 503 without fallback
 `npm run dev` listens only on 127.0.0.1:8791. An authorized operator may place
 local secrets in ignored .dev.vars; none is supplied here. With no configuration,
 the local server correctly refuses requests. There is no fake-success dev flag.
-workers.dev, preview URLs and routes remain disabled in the prepared config.
+workers.dev and preview URLs stay disabled. The one route is the company
+account service, accounts.diomedes.net (a custom domain), which answers 503
+until the steps below are done.
+
+## Company staging: accounts.diomedes.net
+
+The Worker serves staging data at accounts.diomedes.net for the Diomedes
+Operations app and, later, Nectovia. `wrangler.jsonc` already names the host,
+the issuer (`https://api.workos.com`) and the audience
+(`https://accounts.diomedes.net`). What needs the owner's accounts:
+
+1. **WorkOS** (staging environment, AuthKit on). Add the redirect URI
+   `http://127.0.0.1:47319/callback`; WorkOS allows `http://127.0.0.1` for
+   native clients
+   (workos.com/docs/reference/authkit/authentication/get-authorization-url/pkce).
+   In the access-token JWT template
+   (workos.com/docs/authkit/jwt-templates), add
+   `"aud": "https://accounts.diomedes.net"`. `aud` is not one of the reserved
+   keys; if WorkOS refuses it anyway, stop. Do not remove the audience check. Put
+   the client ID (`client_...`, public) in `WORKOS_CLIENT_ID` above, and run
+   `npx wrangler secret put WORKOS_API_KEY` with the `sk_test_...` key. The
+   people who sign in need verified emails.
+2. **Neon** (project small-wave-81999606). Make a database `accounts_staging`,
+   then migrate it with the owner's direct (non-pooler) URL:
+   `CP_MIGRATION_TARGET=staging CP_STAGING_EXPECTED_HOST=<ep-....neon.tech>
+   CP_APPROVED_STAGING=yes CP_MIGRATION_DATABASE_URL=<owner URL> npm run
+   migrate`. Create the login `cp_runtime`, run `scripts/runtime-permissions.sql`
+   as the owner, and run `npx wrangler secret put DATABASE_URL` with
+   `postgresql://cp_runtime:<password>@<host>/accounts_staging?sslmode=require`.
+3. **Deploy.** Merging to main deploys through Workers Builds, and the vars ride
+   with the deploy. That is why the client ID lives in this file and not in the
+   dashboard.
+4. **First admin.** Build the company Operations app (`OPS_WORKOS_CLIENT_ID=client_...
+   npm run package:company` in diomedes-ops) and sign in once. It refuses you
+   and shows your WorkOS user id. Then, with the same pins as the migration,
+   run `npm run bootstrap-admin -- --subject user_...`. Sign in again as Admin
+   and add everyone else from the Staff tab; each person signs in once first.
+
+Funding writes stay with a separately reviewed role. On staging, a grant is
+issued but its month's included credits are not allocated, and a staff funding
+correction is refused, until that role exists.
 
 ## Transaction and schema boundary
 
