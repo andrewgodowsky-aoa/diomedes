@@ -14,6 +14,8 @@
  *   hold:         a started turn waits (for a steer, or for the process to end).
  *   forget:       thread ids this build no longer has (resume/fork refuse them).
  *   changes:      the proposal's changes array (default: none).
+ *   stream:       text a started turn streams first, in five-character deltas, before it
+ *                 completes or holds (H16's trigger-rule watch reads it).
  * Every request is appended to CODEX_FIXTURE_DIR/calls.jsonl for assertions.
  */
 import fs from 'node:fs';
@@ -157,7 +159,15 @@ const handlers = {
     save(thread);
     const turnId = `turn_${randomUUID().slice(0, 8)}`;
     active = { threadId: thread.id, turnId, steered: [] };
-    if (!control().hold) setTimeout(complete, 5);
+    const preamble = control().stream;
+    if (typeof preamble === 'string') {
+      // After the turn/start reply, as the app-server streams: the adapter registers the turn first.
+      setTimeout(() => {
+        for (let at = 0; at < preamble.length; at += 5)
+          notify('item/agentMessage/delta', { threadId: thread.id, turnId, delta: preamble.slice(at, at + 5) });
+        if (!control().hold) setTimeout(complete, 5);
+      }, 20);
+    } else if (!control().hold) setTimeout(complete, 5);
     return { turn: { id: turnId, status: 'inProgress' } };
   },
   'turn/steer': (params, id) => {

@@ -88,6 +88,11 @@ export type NativeGenerator = (input: {
   onTeamToolCall?: (tool: string) => void;
   /** Raw answer text as it streams. A proposal run only notes that writing began. */
   onDelta?: (text: string) => void;
+  /**
+   * H16: every piece of the answer as it streams, on every route, for the trigger-rule watch
+   * (`server/stream-rules/work-watch.ts`). Never shown or kept.
+   */
+  onStreamText?: (text: string) => void;
   /** Explicit model selection, passed in the `thread/start` config when set. */
   model?: string;
   /** Per-mode system text, used as `baseInstructions` by the Codex adapter. */

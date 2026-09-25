@@ -125,6 +125,7 @@ import { teamToolRegistry } from './team/tools.js';
 import type { UsageSnapshot } from '../shared/types.js';
 import { mountTeamRoutes } from './team/routes.js';
 import { createHarnessHost } from './harness/host.js';
+import { watchedGenerator } from './stream-rules/work-watch.js';
 import { mountHarnessRoutes } from './harness/routes.js';
 import { localHarnessPrincipal } from './harness/bridge.js';
 import { TEXT_DISPATCH_STEP, textRunId } from './harness/text-route.js';
@@ -851,8 +852,15 @@ export async function createApp(options: AppOptions) {
   );
   const nativeWork = new NativeWorkService(
     store,
+    // H16: trigger rules watch the text of Work on every route (server/stream-rules/work-watch.ts).
+    watchedGenerator(
     options.nativeGenerator ??
-      (async ({ team, onTeamToolCall, ...input }) => {
+      (async ({ team, onTeamToolCall, onStreamText, ...input }) => {
+        // An external text engine's preview frames carry the answer as it streams, secrets removed.
+        // The engine service builds and bounds them on every request; only the rule watch reads them.
+        const watchText = onStreamText
+          ? { onPreview: (frame: { text: string }) => onStreamText(frame.text) }
+          : {};
         // A request that names no project or route has no sharing scope to check, so it is
         // refused rather than sent unchecked.
         if (!input.projectId || !input.engine)
@@ -893,6 +901,8 @@ export async function createApp(options: AppOptions) {
           // Tool activity reaches the run card as on every external route. No preview sink:
           // a proposal is strict JSON, and the fenced preview channel fails the whole paid
           // call on one over-long frame, which a large proposal sent as one delta would be.
+          // For the same reason the H16 rule watch does not listen here: the answer is judged
+          // whole before it can become a proposal (work-watch.ts).
           return engines.generateModelApi(input.engine, {
             ...input,
             projectId: input.projectId,
@@ -904,8 +914,21 @@ export async function createApp(options: AppOptions) {
             onActivity: (frame) => store.emit('engine-activity', frame),
           });
         }
-        if (!isExternalEngine(input.engine))
-          return codexControls.ask({ ...input, ...(team ? { team, onTeamToolCall } : {}) });
+        if (!isExternalEngine(input.engine)) {
+          const { onDelta } = input;
+          return codexControls.ask({
+            ...input,
+            ...(team ? { team, onTeamToolCall } : {}),
+            ...(onStreamText
+              ? {
+                  onDelta: (text: string) => {
+                    onStreamText(text);
+                    onDelta?.(text);
+                  },
+                }
+              : {}),
+          });
+        }
         if (!input.projectId || !input.threadId || !input.requestId || !input.model)
           throw new ApiError(409, 'Select a model and thread before requesting work.');
         const accountRoute = input.accountRoute;
@@ -923,8 +946,11 @@ export async function createApp(options: AppOptions) {
           ...(team ? { team: { ...team, onToolCall: onTeamToolCall } } : {}),
           // A work run's requestId is its session id, which is how its run card finds these.
           onActivity: (frame) => store.emit('engine-activity', frame),
+          ...watchText,
         });
       }),
+      () => harness.streamRules,
+    ),
     reviewer,
     agents,
     changeReview,

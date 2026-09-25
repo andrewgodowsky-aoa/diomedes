@@ -91,9 +91,9 @@ describe('H16 Console: the rules the editor reads and writes', () => {
 
   test('both rule reads say which runs rules watch: Diomedes loop runs only', async () => {
     const global = await call<{ watches: string[] }>('/stream-rules');
-    expect(global.data.watches).toEqual(['diomedes-loop']);
+    expect(global.data.watches).toEqual(['diomedes-loop', 'external-work']);
     const local = await project<{ watches: string[] }>(`/stream-rules?taskId=${taskId}`);
-    expect(local.data.watches).toEqual(['diomedes-loop']);
+    expect(local.data.watches).toEqual(['diomedes-loop', 'external-work']);
   });
 
   test("a project's rule write lands in its History as the person's, saying what changed; an unchanged or refused write records nothing", async () => {
