@@ -1,7 +1,14 @@
 param(
   [Parameter(Mandatory=$true)][string]$Installer,
   [Parameter(Mandatory=$true)][string]$ProofRoot,
-  [Parameter(Mandatory=$true)][string]$Payload
+  [Parameter(Mandatory=$true)][string]$Payload,
+  # What the installed copy is run with. 'connections' is the full Connections
+  # desktop/crash/restart smoke. 'launch' is scripts/packaged-launch-smoke.mjs:
+  # start the installed app on an isolated profile, /api/health from its window,
+  # 401 from outside it, quit cleanly. The release workflow uses 'launch' while
+  # the Connections event path is refused inside a packaged build (see
+  # docs/implementation/2026-09-25-release-pipeline.md).
+  [ValidateSet('connections', 'launch')][string]$RuntimeSmoke = 'connections'
 )
 # Installs, launches, repairs and uninstalls the exact installer in a new folder under this
 # checkout's test-results. The installer's registration is not per folder: it writes two fixed
@@ -100,10 +107,16 @@ try {
   $proof.payloadFileCount = $payloadFiles.Count
   $proof.checks += 'Installed all payload files with identical SHA-256; both current-user keys and the Start Menu shortcut name this installation'
   $runtimeProof = Join-Path $proofPath 'runtime-proof'
-  & node (Join-Path $PSScriptRoot 'connections-desktop-smoke.mjs') (Join-Path $installTarget 'app/Diomedes.exe') $runtimeProof
+  $smokeScript = if ($RuntimeSmoke -eq 'launch') { 'packaged-launch-smoke.mjs' } else { 'connections-desktop-smoke.mjs' }
+  & node (Join-Path $PSScriptRoot $smokeScript) (Join-Path $installTarget 'app/Diomedes.exe') $runtimeProof
   if ($LASTEXITCODE -ne 0) { throw ('Installed app smoke failed: ' + $LASTEXITCODE) }
   $proof.runtime = Join-Path $runtimeProof 'proof.json'
-  $proof.checks += 'Installed executable passed full Connections desktop/crash/restart smoke with isolated profile'
+  $proof.runtimeSmoke = $RuntimeSmoke
+  if ($RuntimeSmoke -eq 'launch') {
+    $proof.checks += 'Installed executable launched on an isolated profile, answered /api/health inside its window, refused the same request from outside it, and quit cleanly'
+  } else {
+    $proof.checks += 'Installed executable passed full Connections desktop/crash/restart smoke with isolated profile'
+  }
   $sentinel = Join-Path $installTarget 'app/user-retained.txt'
   [IO.File]::WriteAllText($sentinel, 'Unowned data must survive uninstall.')
   $profileMarker = Join-Path $runtimeProof 'profile/retained-profile-proof.txt'

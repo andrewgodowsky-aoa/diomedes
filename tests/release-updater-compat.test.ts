@@ -32,7 +32,8 @@ const assets = (await import(new URL('../scripts/write-release-assets.mjs', impo
   macLaunchOutcome: (proof: unknown, version: string) => { result: string };
 };
 const body = (await import(new URL('../scripts/release-support/release-body.mjs', import.meta.url).href)) as {
-  releaseBody: (input: Record<string, unknown>) => { body: string; source: string };
+  releaseNotes: (input: Record<string, unknown>) => { text: string; source: string };
+  releaseBody: (input: { version: string; readme: string }) => string;
   parseReleaseVersion: (value: string) => { base: string; candidate: number | null };
 };
 
@@ -251,41 +252,61 @@ describe('the public manifest and asset names', () => {
   });
 });
 
-describe('the release body', () => {
+describe('the release notes and body', () => {
   const releases = {
     schemaVersion: 1,
     releases: [
-      { version: '0.2.0', date: '2026-09-25', channel: 'draft', platforms: ['windows'], headline: 'Automations arrive.', sections: [{ title: 'What is new', items: ['Run once.'] }] },
+      {
+        version: '0.2.0',
+        date: '2026-09-25',
+        channel: 'draft',
+        platforms: ['windows'],
+        headline: 'Automations arrive.',
+        sections: [
+          { title: 'New', items: ['Run once.'] },
+          { title: 'Known limits', items: ['Unsigned and experimental.'] },
+        ],
+      },
       { version: '0.1.11', date: '2026-09-24', channel: 'stable', platforms: ['windows'], headline: 'Older.', sections: [] },
     ],
   };
 
-  it('reads releases.json first, for a candidate by its base version', () => {
-    const { body: text, source } = body.releaseBody({ version: '0.2.0-rc.1', commit: 'abc', releases, notes: 'WHAT IS NEW\n  x' });
+  it('draws a candidate from releases.json by its base version, in the README sections', () => {
+    const { text, source } = body.releaseNotes({ version: '0.2.0-rc.1', releases, notes: 'WHAT IS NEW\n  x' });
     expect(source).toBe('resources/release-notes/releases.json');
-    expect(text).toContain('Release candidate 1 of Nectovia 0.2.0');
-    expect(text).toContain('Automations arrive.');
-    expect(text).toContain('- Run once.');
+    expect(text).toBe('WHAT IS NEW\n  Automations arrive.\n\n  Run once.\n\nLIMITS\n  Unsigned and experimental.');
     expect(text).not.toContain('Older.');
-    expect(text).toContain('Built from commit abc');
   });
 
   it('falls back to the notes file when releases.json lacks the version or is absent', () => {
-    const { body: text, source } = body.releaseBody({ version: '0.2.0', commit: 'abc', releases: null, notes: 'WHAT IS NEW\r\n  x' });
+    const { text, source } = body.releaseNotes({ version: '0.2.0', releases: null, notes: 'WHAT IS NEW\r\n  x\r\n' });
     expect(source).toBe('docs/releases/notes/v0.2.0.txt');
-    expect(text).toContain('WHAT IS NEW\n  x');
-    expect(text).toContain('Nectovia 0.2.0, experimental Windows x64 build.');
+    expect(text).toBe('WHAT IS NEW\n  x');
   });
 
   it('refuses to publish with no notes at all, and refuses a version it cannot read', () => {
-    expect(() => body.releaseBody({ version: '0.2.0', commit: 'abc' })).toThrow('No release notes');
+    expect(() => body.releaseNotes({ version: '0.2.0' })).toThrow('No release notes');
     expect(() => body.parseReleaseVersion('0.2')).toThrow();
   });
 
-  it('has notes for this version', async () => {
+  it('is the README, which the update check reads from WHAT IS NEW on', async () => {
+    const { notesFromReleaseBody } = await import('../shared/release-notes.js');
+    const readme = 'Nectovia 0.2.0\r\nWHICH FILE\r\n  the installer\r\n\r\nWHAT IS NEW\r\n  Run once.\r\n';
+    const stable = body.releaseBody({ version: '0.2.0', readme });
+    expect(stable).toBe('Nectovia 0.2.0\nWHICH FILE\n  the installer\n\nWHAT IS NEW\n  Run once.\n');
+    expect(notesFromReleaseBody(stable)).toBe('WHAT IS NEW\n  Run once.');
+    const candidate = body.releaseBody({ version: '0.2.0-rc.1', readme });
+    expect(candidate.startsWith('RELEASE CANDIDATE 1 of 0.2.0.')).toBe(true);
+    expect(notesFromReleaseBody(candidate)).toBe('WHAT IS NEW\n  Run once.');
+    expect(() => body.releaseBody({ version: '0.2.0', readme: 'WHICH FILE\n  x' })).toThrow('WHAT IS NEW');
+  });
+
+  it('has notes for this version, and they are releases.json drawn as the README draws them', async () => {
     const pkg = JSON.parse(await fs.readFile(path.join(process.cwd(), 'package.json'), 'utf8')) as { version: string };
-    const notes = await fs.readFile(path.join(process.cwd(), `docs/releases/notes/v${pkg.version}.txt`), 'utf8');
-    expect(notes).toMatch(/^WHAT IS NEW$/m);
-    expect(notes).toMatch(/^LIMITS$/m);
+    const committed = await fs.readFile(path.join(process.cwd(), `docs/releases/notes/v${pkg.version}.txt`), 'utf8');
+    expect(committed).toMatch(/^WHAT IS NEW$/m);
+    const bundled = JSON.parse(await fs.readFile(path.join(process.cwd(), 'resources/release-notes/releases.json'), 'utf8'));
+    if (body.releaseNotes({ version: pkg.version, releases: bundled }).source.endsWith('releases.json'))
+      expect(committed.replace(/\r\n/g, '\n').trimEnd()).toBe(body.releaseNotes({ version: pkg.version, releases: bundled }).text);
   });
 });
