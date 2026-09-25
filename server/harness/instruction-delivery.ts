@@ -33,6 +33,7 @@
  *    `screenForInstructionText` at discovery and shown to the person there.
  */
 import type { ProjectState } from '../../shared/types.js';
+import type { Json } from '../../shared/harness.js';
 import packageInfo from '../../package.json' with { type: 'json' };
 import {
   activeInstructionFiles,
@@ -458,6 +459,61 @@ export function deliverySentence(delivery: InstructionDelivery): string {
     ? `Diomedes sent project instructions to ${delivery.routeId}: ${named(sent)}.`
     : `Diomedes sent no project instructions to ${delivery.routeId}.`;
   return omitted.length ? `${first} Left out whole: ${named(omitted)}.` : first;
+}
+
+/**
+ * What a conversation turn records about the rules it was sent under: the sha-256 of the exact
+ * section, each instruction file's path, sha and state, and the product knowledge state. Never a
+ * body. A turn has no Session, so this rides on the turn's own run or step input instead.
+ */
+export function ruleDeliveryRecord(assembled: AssembledInstructions, text: string): Json {
+  return {
+    sha256: hash(text),
+    bytes: Buffer.byteLength(text),
+    revision: assembled.delivery?.revision ?? 'none',
+    files: (assembled.delivery?.files ?? []).map((file) => ({
+      path: file.path,
+      sha: file.sha,
+      state: file.state,
+      ...(file.exclusion ? { exclusion: file.exclusion } : {}),
+    })),
+    excluded: (assembled.delivery?.excluded ?? []).map((file) => ({
+      path: file.path,
+      exclusion: file.exclusion,
+    })),
+    productKnowledge: {
+      state: assembled.productKnowledge.state,
+      bundleSha256: assembled.productKnowledge.bundleSha256,
+    },
+  };
+}
+
+/**
+ * The rules one conversation message travels with (`TextRequest.rules`), or undefined when the
+ * rule path has nothing to deliver. The same `assembleInstructions` every Work run and loop run
+ * uses, so a message and a run of the same project are sent the same rules.
+ */
+export async function messageRules(input: {
+  state: ProjectState;
+  routeId: string;
+  /** The bytes the message's selected documents already take. */
+  sourceBytes: number;
+  /** The documents the message selected: nested instruction files govern only inside them. */
+  workPaths: readonly string[];
+  allowedDocuments?: readonly string[];
+  productKnowledge?: ProductKnowledgeBundle;
+}): Promise<{ text: string; record: Json } | undefined> {
+  const assembled = await assembleInstructions({
+    state: input.state,
+    routeId: input.routeId,
+    agentRole: 'Diomedes conversation answer',
+    budgetBytes: instructionSectionBudget(input.sourceBytes),
+    ...(input.allowedDocuments === undefined ? {} : { allowedDocuments: input.allowedDocuments }),
+    workPaths: input.workPaths,
+    ...(input.productKnowledge ? { productKnowledge: input.productKnowledge } : {}),
+  });
+  if (!assembled.section) return undefined;
+  return { text: assembled.section, record: ruleDeliveryRecord(assembled, assembled.section) };
 }
 
 /** The one paragraph above every playbook: what it is, and the four things it can never change. */

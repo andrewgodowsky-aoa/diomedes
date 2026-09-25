@@ -972,6 +972,11 @@ export class ClaudeSessionRuns<C extends SessionCheckpointFacts = ClaudeSessionC
         mode: request.mode,
         sourceRunId: request.sourceRunId ?? null,
         ...(bound ? { binding: input.binding! } : {}),
+        // Which rules the message carried, as evidence (shas and paths, never a body). A turn
+        // saved before rules travelled keeps the shape it was saved with, as for `binding`.
+        ...(input.rules && !(unfinished && (unfinished.intent.input as { rules?: Json } | null)?.rules === undefined)
+          ? { rules: input.rules.record }
+          : {}),
       },
       destination: 'external',
       cost: 1,
