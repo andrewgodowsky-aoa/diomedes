@@ -77,6 +77,13 @@ export function mountInteractionRoutes(
         // with its own two choices, so it keeps the one shape every route gives it.
         if (error instanceof EngineError && error.code === 'JOB_CAP')
           next(new ApiError(402, error.message, { code: 'job_cap_reached' }));
+        // The Nectovia Agent was not admitted for this business, or nobody is signed in. Nothing was sent.
+        else if (error instanceof EngineError && (error.code === 'AGENT_NOT_INCLUDED' || error.code === 'SIGN_IN_REQUIRED'))
+          next(
+            error.code === 'SIGN_IN_REQUIRED'
+              ? new ApiError(401, error.message, { code: 'sign_in_required' })
+              : new ApiError(403, error.message, { code: error.code }),
+          );
         else if (error instanceof EngineError || error instanceof HarnessError)
           next(
             new ApiError(error.code === 'unknown_run' ? 404 : 409, error.message, {

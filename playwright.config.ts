@@ -170,6 +170,9 @@ export default defineConfig({
       DIOMEDES_DATA_DIR: path.join(runRoot, 'data'),
       DIOMEDES_PROJECTS_DIR: path.join(runRoot, 'projects'),
       DIOMEDES_TEST_MODE: '1',
+      // Customer accounts require sign-in. The suite signs in as the faux service's Business owner
+      // (Juniper Street Bakery, Business plan), so the Agent is included; test mode only.
+      DIOMEDES_TEST_ACCOUNT: 'owner@juniper.test',
       // A5 gates Design Center authoring on the customization capability. The
       // suite runs one dev server for every spec, so the launch profile is the
       // entitled one and the specs that need a different named state ask for it

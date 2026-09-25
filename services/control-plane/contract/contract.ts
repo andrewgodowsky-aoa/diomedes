@@ -237,6 +237,8 @@ export interface EntitlementSnapshot {
   /** Snapshot ordering. A newer revision wins; a stale one never re-grants. */
   readonly revision: number;
   readonly reason: string;
+  /** Feature ids the grant holds (`shared/access.ts`). Absent reads as none. */
+  readonly features?: readonly string[];
 }
 
 /** The honest answer of a build with no entitlement service. */
@@ -253,15 +255,28 @@ export const NO_ENTITLEMENT_SNAPSHOT: EntitlementSnapshot = Object.freeze({
 });
 
 /**
- * Adapt today's EntitlementView, which can only express absence, into the
- * snapshot vocabulary. It always produces `none`; an adapter that claimed
- * `active` from a record the service never issued would be the bug this
- * contract exists to prevent.
+ * Adapt an EntitlementView into the snapshot vocabulary. Only a view the
+ * account service produced may read as anything but `none`: an adapter that
+ * claimed `active` from a record the service never issued would be the bug
+ * this contract exists to prevent. A service view keeps its own state, and
+ * `snapshotAt` still decides what an `active` one means at a given moment.
  */
 export function snapshotFromView(view: EntitlementView, _at?: string): EntitlementSnapshot {
+  if (view.source !== 'account-service' || view.state === 'none')
+    return {
+      ...NO_ENTITLEMENT_SNAPSHOT,
+      reason: view.reason || NO_ENTITLEMENT_SNAPSHOT.reason,
+    };
   return {
-    ...NO_ENTITLEMENT_SNAPSHOT,
-    reason: view.reason || NO_ENTITLEMENT_SNAPSHOT.reason,
+    state: view.state,
+    planId: view.plan === 'none' ? null : view.plan,
+    planVersion: view.plan === 'none' ? null : `${view.plan}.${view.revision}`,
+    issuedAt: view.validFrom,
+    expiresAt: view.validUntil,
+    revokedAt: null,
+    revision: view.revision,
+    reason: view.reason,
+    features: [...view.features],
   };
 }
 
@@ -451,6 +466,83 @@ export function decideAdmission(view: AdmissionView): AdmissionDecision {
       'managed',
     );
   return { decided: 'admitted', payer: 'managed' };
+}
+
+// --- Nectovia Agent admission -------------------------------------------------------------
+
+/**
+ * Whether this person may start or continue Nectovia Agent work for this
+ * workspace. It answers one question — does the business hold the Agent — and
+ * nothing about the route, credential, payer or budget, which stay the route
+ * admission's and the funding service's. Keeping them apart is the point: a
+ * connected provider is not a purchase, and a customer who pays for the Agent
+ * keeps it when they bring their own compute.
+ *
+ * The order is membership → entitlement state → the feature itself. Unknown
+ * refuses: an entitlement that could not be read is never guessed as active.
+ */
+export interface AgentAdmissionView {
+  /** Personal work has no organization to hold the Agent. */
+  readonly workspace: 'personal' | 'business';
+  readonly member: boolean;
+  readonly entitlement: EntitlementSnapshot;
+  readonly at: string;
+}
+
+export type AgentAdmissionCode =
+  | 'personal_workspace'
+  | 'not_a_member'
+  | 'entitlement_unknown'
+  | 'entitlement_revoked'
+  | 'entitlement_expired'
+  | 'agent_not_included';
+
+export type AgentAdmissionDecision =
+  | {
+      readonly admitted: true;
+      readonly planId: string | null;
+      readonly revision: number;
+      readonly validUntil: string | null;
+    }
+  | { readonly admitted: false; readonly code: AgentAdmissionCode; readonly reason: string };
+
+/** The feature id, restated so this contract does not import the catalog. */
+export const AGENT_FEATURE_ID = 'nectovia-agent';
+
+export function decideAgentAdmission(view: AgentAdmissionView): AgentAdmissionDecision {
+  const refuse = (code: AgentAdmissionCode, reason: string): AgentAdmissionDecision => ({
+    admitted: false,
+    code,
+    reason,
+  });
+  if (view.workspace === 'personal')
+    return refuse(
+      'personal_workspace',
+      'The Nectovia Agent works for a business. Switch to a business workspace that includes it, or use your own AI tools directly.',
+    );
+  if (!view.member)
+    return refuse('not_a_member', 'No active membership binds this person to this business.');
+  const entitlement = snapshotAt(view.entitlement, view.at);
+  if (entitlement.state === 'unknown')
+    return refuse(
+      'entitlement_unknown',
+      'Nectovia could not confirm this business’s plan, so the Agent did not start. Check the connection and try again.',
+    );
+  if (entitlement.state === 'revoked')
+    return refuse('entitlement_revoked', 'This business’s Nectovia Agent access was withdrawn. Your files and history are unchanged.');
+  if (entitlement.state === 'expired')
+    return refuse('entitlement_expired', 'This business’s plan has ended, so the Nectovia Agent is not available. Your files and history are unchanged.');
+  if (entitlement.state !== 'active' || !(entitlement.features ?? []).includes(AGENT_FEATURE_ID))
+    return refuse(
+      'agent_not_included',
+      'The Nectovia Agent is part of a Business plan. You can still use your workspace and your own AI tools directly.',
+    );
+  return {
+    admitted: true,
+    planId: entitlement.planId,
+    revision: entitlement.revision,
+    validUntil: entitlement.expiresAt,
+  };
 }
 
 // --- host-only credential handle ---------------------------------------------------------

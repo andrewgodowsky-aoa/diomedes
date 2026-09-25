@@ -429,6 +429,8 @@ if (!app.requestSingleInstanceLock()) {
         updateOverrides: updates,
         secretBox,
         loopbackToken,
+        // Customer accounts: sign-in is required, and a kept sign-in is sealed by secretBox.
+        accounts: {},
         // The first launch of a new build clears the renderer's HTTP and code
         // caches once, before any window loads. Storage is not touched.
         updateReconcile: {

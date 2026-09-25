@@ -1,6 +1,6 @@
 import type { AccountState, AccountTransaction, VerifiedIdentity, SubjectMapping, SessionRecord,
-  OrganizationRow, MembershipRow, InvitationRecord, AccountEvent } from './domain.js';
-import { ACCOUNT_WORKSPACE_LIMIT, ORGANIZATION_MEMBER_LIMIT, CLOUD_WORKSPACE_PAGE_SIZE } from './domain.js';
+  OrganizationRow, MembershipRow, InvitationRecord, CodeInvitationRecord, AccountEvent } from './domain.js';
+import { ACCOUNT_WORKSPACE_LIMIT, ORGANIZATION_MEMBER_LIMIT, CLOUD_WORKSPACE_PAGE_SIZE, CODE_INVITATION_PAGE } from './domain.js';
 import { AccountError } from './errors.js';
 
 /**
@@ -56,6 +56,29 @@ export class StateTransaction implements AccountTransaction {
   async saveInvitation(row: InvitationRecord) {
     const index = this.state.invitations.findIndex((old) => old.tokenHash === row.tokenHash);
     if (index < 0) this.state.invitations.push(row); else this.state.invitations[index] = row;
+  }
+  async codeInvitation(hash: string) { return this.state.codeInvitations.find((row) => row.codeHash === hash); }
+  async saveCodeInvitation(row: CodeInvitationRecord) {
+    const index = this.state.codeInvitations.findIndex((old) => old.codeHash === row.codeHash);
+    if (index < 0) this.state.codeInvitations.push(row); else this.state.codeInvitations[index] = row;
+  }
+  async openCodeInvitations(organizationId: string, at: string) {
+    const now = Date.parse(at);
+    return this.state.codeInvitations
+      .filter((row) => row.organizationId === organizationId && row.redeemedAt === null && row.revokedAt === null && Date.parse(row.expiresAt) > now)
+      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0))
+      .slice(0, CODE_INVITATION_PAGE);
+  }
+  async roster(organizationId: string) {
+    return this.state.memberships
+      .filter((row) => row.record.organizationId === organizationId)
+      .sort((a, b) => (a.record.personId < b.record.personId ? -1 : a.record.personId > b.record.personId ? 1 : 0))
+      .slice(0, ORGANIZATION_MEMBER_LIMIT * 2)
+      .map((membership) => {
+        const person = this.state.persons.find((row) => row.id === membership.record.personId);
+        if (!person) throw new AccountError(503, 'Account storage is inconsistent.');
+        return { membership, person };
+      });
   }
   async event(row: AccountEvent) { this.state.events.push(row); }
 }

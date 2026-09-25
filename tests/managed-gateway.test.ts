@@ -22,7 +22,7 @@ import path from 'node:path';
 import { Store } from '../server/store.js';
 import { AllowanceLedger } from '../server/managed-usage.js';
 import { ManagedGateway, verifyAuthorization } from '../server/managed-gateway.js';
-import { NO_ENTITLEMENT_REASON, type EntitlementView } from '../shared/workspaces.js';
+import { NO_ENTITLEMENT_REASON, NO_ENTITLEMENT_VIEW, type EntitlementView } from '../shared/workspaces.js';
 import { approvedJobCap, dollars, type MicroUsd } from '../shared/managed-usage.js';
 
 const AT = '2026-09-10T09:00:00.000Z';
@@ -35,12 +35,8 @@ let root = '';
 let ledger: AllowanceLedger;
 
 /** An entitlement service that does not exist here, standing in as one that does. */
-const entitled: EntitlementView = {
-  plan: 'none',
-  managedInference: false,
-  reason: NO_ENTITLEMENT_REASON,
-};
-const paid = { ...entitled, managedInference: true } as unknown as EntitlementView;
+const entitled: EntitlementView = { ...NO_ENTITLEMENT_VIEW, reason: NO_ENTITLEMENT_REASON };
+const paid: EntitlementView = { ...entitled, managedInference: true };
 
 function gateway(options: {
   entitlement?: EntitlementView;

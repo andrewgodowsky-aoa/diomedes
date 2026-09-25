@@ -115,6 +115,7 @@ import type { ReadToolDeps } from '../harness/capabilities/read-scope-tools.js';
 import type { ConnectionSecrets } from '../connection-secrets.js';
 import type { SpendExposure } from '../spend-exposure.js';
 import type { ModelApiRoute } from '../../shared/model-api.js';
+import type { AgentGatePort, AgentWork } from '../accounts/agent-gate.js';
 
 function recordShimError(error: unknown): boolean {
   return (
@@ -426,6 +427,13 @@ export class EngineService {
    * connection's, and a step that would pass the job's cap is never started.
    */
   jobCaps?: JobCapsPort;
+  /**
+   * The Nectovia Agent's admission (server/accounts/agent-gate.ts). The app attaches it when this
+   * host signs people in. With it attached, every model-API admission (a conversation message, a
+   * Work or team turn, a work loop starting or resuming) asks whether the business the work is for
+   * includes the Agent. It runs before any model step, so a refusal is recorded as nothing sent.
+   */
+  agentGate?: AgentGatePort;
   constructor(
     readonly root: string,
     deps: Partial<EngineServiceDeps> = {},
@@ -1950,11 +1958,13 @@ export class EngineService {
    */
   async admitModelApi(
     route: ModelApiRoute,
-    input: Pick<TextRequest, 'model' | 'accountRoute'>,
+    input: Pick<TextRequest, 'model' | 'accountRoute'> & { projectId?: string; prompt?: string },
+    agent?: Pick<AgentWork, 'surface' | 'rootJobId'>,
   ): Promise<ModelSessionAdmission> {
     const api = this.modelApi;
     if (!api)
       throw new EngineError('RUNTIME_UNAVAILABLE', 'This model-API route is not available in this process.', true);
+    await this.admitAgent(input, agent);
     const handle = await modelApiRoute(api, route);
     const { short, long } = handle.names;
     if (!handle.connected) throw new EngineError('ROUTE_REFUSED', `Connect ${long} in AI setup before sending.`, true);
@@ -1979,6 +1989,21 @@ export class EngineService {
       model: input.model,
       accountRoute: handle.accountRoute,
     };
+  }
+  /**
+   * The Agent check for one admission. The host's own connection test (the fixed one-word prompt in
+   * the host test project) proves a route works and is not Agent work; everything else is.
+   */
+  private async admitAgent(input: { projectId?: string; prompt?: string }, agent?: Pick<AgentWork, 'surface' | 'rootJobId'>) {
+    const gate = this.agentGate;
+    if (!gate) return;
+    if (input.projectId === HOST_TEST_PROJECT && input.prompt === TEST_PROMPT) return;
+    await gate.check({
+      phase: 'admit',
+      surface: agent?.surface ?? 'other',
+      projectId: input.projectId ?? null,
+      rootJobId: agent?.rootJobId ?? null,
+    });
   }
   private async openModelApi(admission: ModelSessionAdmission): Promise<{ handle: ConnectedRoute; secret: string }> {
     const api = this.modelApi!;
@@ -2005,7 +2030,7 @@ export class EngineService {
         route,
         input,
         readTools: api.readTools,
-        admit: () => this.admitModelApi(route, input),
+        admit: () => this.admitModelApi(route, input, { surface: 'conversation', rootJobId: runId }),
         // The caller's channels, stamped with the turn step's identity and published only while
         // that exact attempt still owns its lease.
         activity:
@@ -2085,7 +2110,7 @@ export class EngineService {
         runId,
         intent,
         signal,
-        admit: () => this.admitModelApi(route, input),
+        admit: () => this.admitModelApi(route, input, { surface: 'work', rootJobId: runId }),
         send: async (context, admission) => {
           const { handle, secret } = await this.openModelApi(admission);
           const attemptSignal = AbortSignal.any([signal, context.signal]);
@@ -2216,7 +2241,7 @@ export class EngineService {
         route,
         input: { ...input, signal: AbortSignal.any([controller.signal, ...(input.signal ? [input.signal] : [])]) },
         registry,
-        admit: () => this.admitModelApi(route, input),
+        admit: () => this.admitModelApi(route, input, { surface: 'team', rootJobId: input.requestId }),
         adapter: async (admission, instructions, stop) => {
           const { handle, secret } = await this.openModelApi(admission);
           const adapter = handle.adapter({
@@ -2264,7 +2289,7 @@ export class EngineService {
   ): Promise<ModelAdapter> {
     const api = this.modelApi;
     if (!api) throw new EngineError('RUNTIME_UNAVAILABLE', 'The model-API runtime is not attached to this service.', true);
-    const admission = await this.admitModelApi(route, request);
+    const admission = await this.admitModelApi(route, request, { surface: 'loop', rootJobId: request.runId });
     const { handle, secret } = await this.openModelApi(admission);
     const adapter = handle.adapter({
       model: admission.model,

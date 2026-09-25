@@ -60,7 +60,7 @@ describe('versioned migration protocol', () => {
 });
 
 describe('versioned migration source files', () => {
-  const names = ['001_accounts.sql', '002_commercial.sql', '003_funded_jobs.sql', '004_usage_contract.sql'];
+  const names = ['001_accounts.sql', '002_commercial.sql', '003_funded_jobs.sql', '004_usage_contract.sql', '005_customer_access.sql'];
   const load = () => Promise.all(names.map(async (name, index) => {
     const sql = await readFile(new URL(`../migrations/${name}`, import.meta.url), 'utf8');
     return { version: index + 1, name, sql, sha256: createHash('sha256').update(sql).digest('hex') };
@@ -70,7 +70,7 @@ describe('versioned migration source files', () => {
     const files = await load();
     for (const file of files) expect(file.sql.includes(String.fromCharCode(13))).toBe(false);
     const db = database();
-    expect(await migrate(db.factory, files)).toEqual([1, 2, 3, 4]);
+    expect(await migrate(db.factory, files)).toEqual([1, 2, 3, 4, 5]);
   });
 
   it('003 extends the 002 funding seams without destroying data or granting public access', async () => {
@@ -94,5 +94,21 @@ describe('versioned migration source files', () => {
     expect(contract.sql).toContain("usage_class IN ('included-chat','metered-work','worker','automation')");
     expect(contract.sql).toContain("usage->>'contract' = 'nectovia-usage/1'");
     expect(contract.sql.trim().endsWith('REVOKE ALL ON ALL TABLES IN SCHEMA control_plane FROM PUBLIC;')).toBe(true);
+  });
+
+  it('005 keeps grants revoke-once, policy and audit append-only, and binds credits to a feature grant', async () => {
+    const [, , , , access] = await load();
+    expect(access.sql).not.toMatch(/\b(DROP\s+TABLE|DELETE\s+FROM|TRUNCATE|DROP\s+SCHEMA)\b/i);
+    for (const table of ['feature_grants', 'organization_access', 'invitation_codes', 'route_entries', 'tier_policies', 'operators', 'ops_audit', 'agent_admissions'])
+      expect(access.sql).toContain(`CREATE TABLE control_plane.${table}`);
+    // Monthly credits move from the Stripe-only grant table to the feature grant that funded them.
+    expect(access.sql).toContain('DROP CONSTRAINT credit_periods_tenant_id_source_grant_id_fkey');
+    expect(access.sql).toMatch(/REFERENCES control_plane\.feature_grants\(tenant_id,grant_id\)/);
+    expect(access.sql).toContain('CREATE TRIGGER feature_grant_tombstone');
+    expect(access.sql).toContain('CREATE TRIGGER tier_policy_append_only BEFORE UPDATE OR DELETE');
+    expect(access.sql).toContain('CREATE TRIGGER ops_audit_append_only BEFORE UPDATE OR DELETE');
+    // No credential column anywhere in the route registry.
+    expect(access.sql).not.toMatch(/secret|api_key|password|credential/i);
+    expect(access.sql.trim().endsWith('REVOKE ALL ON ALL FUNCTIONS IN SCHEMA control_plane FROM PUBLIC;')).toBe(true);
   });
 });

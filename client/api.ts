@@ -54,6 +54,9 @@ export async function api<T>(
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const payload = await response.json();
+  // The sign-in ended (signed out elsewhere, expired, or never began): the account gate takes over.
+  if (response.status === 401 && payload?.code === 'sign_in_required' && typeof window !== 'undefined')
+    window.dispatchEvent(new Event('nectovia:sign-in-required'));
   if (!response.ok)
     throw new ApiError(
       payload.error?.message ??
