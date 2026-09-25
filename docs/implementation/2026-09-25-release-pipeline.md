@@ -228,19 +228,96 @@ The first keeps the boundary exactly as it is and is the one proposed. Until one
 
 ## Proof runs
 
-Pending: proof run 7 (`0.2.0-rc.1`, draft, head 2bd8310) is in progress.
+All on `feature/release-pipeline`, dispatched with `version=0.2.0-rc.1`, `publish=draft`,
+`macos=attach-if-passing`. Only run 9 created a release.
+
+| Run | Head | Outcome |
+|---|---|---|
+| 1 (36080551976) | 365a522 | push-triggered; the dispatch was refused (a job-level `env` cannot read `runner`) |
+| 2 (36080584839) | 779260f | cancelled, superseded |
+| 3 (36081797151) | 620ab98 | Windows failed: CRLF fixture hash, and the unit gate ran before packaging |
+| 4 (36083334996) | 7499002 | Windows failed: engine-choices sentence on a hosted runner; the 0.2.0 build stamp was read from this run |
+| 5 (36085135989) | 3a54150 | Windows failed: negative smoke 401 (it asked from outside the window) |
+| 6 (36086603143) | de1e413 | Windows: negative smoke `ingress_refused` (the product fault above); macOS bundle signature did not verify |
+| 7 (36088356420) | 2bd8310 | Windows and macOS passed every step; the release job wrote the assets, then `gh release create` failed on the one-element PowerShell splat |
+| 8 (36089594230) | 792d9d6 | macOS passed; Windows unit gate failed twice on tests this lane does not touch: `native-loop.test.ts` (child run not seen within the 1 s poll), then on the re-run `h16-stream-triggers.test.ts` (30 s timeout) |
+| **9 (36092737965)** | **440c2a6** | **prepare, windows, macos and release all passed, including the draft and the digest check** |
+
+Run 9's head carries the integrator's `440c2a6`, which gives the parent-stop delegate test a 10 s
+poll on a loaded runner (assertions unchanged).
+
+Run 9, Windows job: gates 1 to 4 passed; native runtime from the v0.1.11 ZIP matched the pins;
+Electron archive matched both SHASUMS256 and `checksums.json`; package, installer, packaged
+desktop smoke, installer install/launch/repair/uninstall in a temporary folder with
+`-RuntimeSmoke launch`, and the candidate and capability records passed. The negative smoke ran
+and was recorded (not a gate). macOS job: package, ad-hoc bundle signature (`codesign --verify
+--deep --strict` passes), disk image (`hdiutil verify` passes), launch smoke from the mounted image
+and the publish check passed. Release job: assets, `gh release create --draft` at `440c2a6`, then
+every uploaded asset compared with GitHub's own `digest` and size; all matched.
+
+Draft `v0.2.0-rc.1`, "Diomedes 0.2.0-rc.1 (release candidate, experimental, unsigned)", target
+`440c2a6b79f2352c7597b44e1f16772bd0bbfafe`, release id `diomedes-0.2.0-windows-experimental-20260925-440c2a6b79f2`:
+
+| Asset | Bytes | SHA-256 (= GitHub digest) |
+|---|---:|---|
+| `Diomedes-Experimental-0.2.0-unsigned-setup.exe` | 268,958,688 | `37050ca78df029465fcb213679af4bed79507c6518acddfdd603acf6c0969b14` |
+| `Diomedes-Experimental-0.2.0-win32-x64.zip` | 269,531,874 | `c684aca6a7d73969b58384940baece627923dc706bdeca0f8778199da8aece14` |
+| `Diomedes-Experimental-0.2.0-mac-arm64.dmg` | 145,709,379 | `bad00e431410c8aadf5d67480489d3f73776a07dfc712e97cd332a109dee252c` |
+| `Start-Experimental.ps1` | 1,421 | `bd2a15aa19863714625590c022f32d9f2a513a5f15acace86c41f3ac2f944bff` |
+
+The README, `release-manifest.json` and `SHA256SUMS.txt` are attached as well and passed the same
+digest check. The draft is left in place, labelled as a release candidate in its title and in the
+first line of its body; a draft is never `latest`, and an `-rc.N` tag is not a stable version, so
+no installed copy is offered it. Delete it once 0.2.0 is published.
 
 ## Is macOS working?
 
-Pending proof run 7.
+Yes, as an unsigned-for-distribution Apple Silicon build. In runs 7 and 9 the app packaged on
+`macos-14`, took an ad-hoc whole-bundle signature that verifies (`codesign --verify --deep
+--strict`), was put in a UDZO disk image that `hdiutil verify` accepts, and launched from the
+mounted image: headless start, `/api/health` answered 200 with version 0.2.0 from inside the
+window, 401 from outside it, the startup record written, a clean quit, and the lock and port
+released. Gatekeeper does not accept it (no Developer ID, not notarized), which the notes say
+with the right-click Open instructions. It was tested on a GitHub-hosted macOS 14.8.9 arm64
+runner, not on a person's Mac. There is no Intel build. A Mac copy's update check points to the
+release page; it does not download.
 
 ## Gates
 
-Pending the final local run.
+Local, on `792d9d6` (the lane's last code commit), Linux container:
+
+- `npx tsc --noEmit`: passed.
+- vitest (`--maxWorkers=3`): 7,528 passed, 20 skipped, 0 failed; 425 files passed, 1 skipped.
+- `npx vite build`: passed.
+- Playwright `tests/ui.spec.ts tests/native-ui.spec.ts tests/field.spec.ts`: 36 passed.
+
+Hosted, run 9 on `440c2a6`: all four gates passed on `windows-latest` inside the release job.
+
+Main's own Windows unit gate (`build-test.yml`, `local-gates`) was red on the batch 8 and batch 9
+merges with a different harness timing test each time (`claude-session-runtime`, and on this
+branch `h03-claude-live-controls`, `native-loop`, `h16-stream-triggers`). The release workflow
+runs the same command, so a release run can fail on one of these; that is a fault in those tests
+on a loaded Windows runner, not in the packaged build, and the workflow does not retry or skip it.
 
 ## Publishing 0.2.0 (for the integrator)
 
-Pending proof run 7.
+1. On main, with every lane merged: add the `Updating` section to the 0.2.0 entry in
+   `resources/release-notes/releases.json` (see below), and regenerate
+   `docs/releases/notes/v0.2.0.txt` from it.
+2. Actions > Release > Run workflow on `main`: `version=0.2.0`, `publish=draft`,
+   `macos=attach-if-passing` (or `build-only` for Windows only). `prepare` refuses a version that
+   is not `package.json`'s, a tag or release that already exists, or missing notes.
+3. If a Windows unit test fails on runner timing, re-run the failed jobs once; the macOS result is
+   kept.
+4. Read the release job's summary: every asset's bytes and SHA-256, each equal to GitHub's digest.
+   Open the draft and check the title, the body (README, WHAT IS NEW onward) and seven assets
+   (six without the DMG).
+5. Publish the draft as a full release and mark it latest. This is the step installed 0.1.x copies
+   see; they select `Diomedes-Experimental-0.2.0-unsigned-setup.exe` and verify it against GitHub's
+   digest.
+6. Commit that run's `evidence/windows-release/build-info.json` and candidate record (artifact
+   `windows-proofs`) to main, as every release has.
+7. Delete the `v0.2.0-rc.1` draft.
 
 ## PILLAR IMPACT
 
@@ -264,7 +341,10 @@ No pillar's meaning changes.
 
 ## BUILD / PUBLICATION / DEPLOYMENT STATUS
 
-Pending proof run 7. Nothing is published.
+Built and proven: run 9 (36092737965) built 0.2.0 at `440c2a6` for Windows x64 and macOS arm64
+and created the draft `v0.2.0-rc.1` with every asset's digest checked. Nothing is published: the
+draft is not public, 0.1.11 is still the latest release, and no stable release was created by this
+lane. The lane's branch was merged to main as PR #122.
 
 ## Implemented versus recorded
 
@@ -274,11 +354,9 @@ that is not shipped.
 
 ## For Andrew and the integrator
 
-1. **macOS asset.** Andrew chose an ad-hoc whole-bundle signature (O43 option a). If the macOS
-   image is attached, the `releases.json` 0.2.0 entry's first LIMITS line ("The release is for
-   Windows x64 only; there is no macOS build.") must change first, in the in-app lane's file,
-   because the README and the body carry it. Developer ID and notarization (O10) remain the route
-   to a Mac download that opens without an override.
+1. **macOS asset.** Andrew chose an ad-hoc whole-bundle signature (O43 option a). The 0.2.0
+   notes on main now describe the Mac build and how to open it (`1d4aed6`). Developer ID and
+   notarization (O10) remain the route to a Mac download that opens without an override.
 2. **The `releases.json` 0.2.0 entry has no `Updating` section**, which every earlier entry has.
    What an installed 0.1.x sees (stable only, digest-verified, 0.1.7 and 0.1.8 get the fresh start)
    belongs there before 0.2.0 is promoted.
