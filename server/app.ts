@@ -856,7 +856,8 @@ export async function createApp(options: AppOptions) {
     watchedGenerator(
     options.nativeGenerator ??
       (async ({ team, onTeamToolCall, onStreamText, ...input }) => {
-        // The preview frames carry the answer as it streams, secrets removed; only the rule watch reads them.
+        // An external text engine's preview frames carry the answer as it streams, secrets removed.
+        // The engine service builds and bounds them on every request; only the rule watch reads them.
         const watchText = onStreamText
           ? { onPreview: (frame: { text: string }) => onStreamText(frame.text) }
           : {};
@@ -900,6 +901,8 @@ export async function createApp(options: AppOptions) {
           // Tool activity reaches the run card as on every external route. No preview sink:
           // a proposal is strict JSON, and the fenced preview channel fails the whole paid
           // call on one over-long frame, which a large proposal sent as one delta would be.
+          // For the same reason the H16 rule watch does not listen here: the answer is judged
+          // whole before it can become a proposal (work-watch.ts).
           return engines.generateModelApi(input.engine, {
             ...input,
             projectId: input.projectId,
@@ -909,7 +912,6 @@ export async function createApp(options: AppOptions) {
             instructions: input.instructions ?? '',
             accountRoute: input.accountRoute,
             onActivity: (frame) => store.emit('engine-activity', frame),
-            ...watchText,
           });
         }
         if (!isExternalEngine(input.engine)) {

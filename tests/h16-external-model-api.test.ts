@@ -5,8 +5,8 @@
  * provider's HTTP endpoint is a fake that streams its answer in four-character deltas.
  *
  * Proven:
- * - Work without a team: a phrase is matched while the answer streams, on the text route's
- *   run and dispatch step, and the proposal is made unchanged.
+ * - Work without a team: the answer is judged whole before it becomes a proposal, on the text
+ *   route's run and dispatch step, and the proposal is made unchanged.
  * - A team member's Work turn: Nectovia runs the team tools itself through RunService, so a
  *   tool rule holds a team tool call before it runs, and the member's run is paused for you;
  *   its answer does not stream, so a text rule judges it whole.
@@ -175,7 +175,7 @@ async function member(): Promise<TeamMember> {
 }
 
 describe('H16 trigger rules on model-API Work', () => {
-  test('Work without a team: a phrase is matched while the answer streams, on the text route’s run, and the proposal is unchanged', async () => {
+  test('Work without a team: the answer is judged whole before it becomes a proposal, on the text route’s run, and the proposal is unchanged', async () => {
     await open();
     await projectRules(rule('soup-note', { match: { kind: 'text', phrase: 'soup first' }, intervention: 'annotate' }));
     const taskId = (await request<{ id: string }>(`/projects/${projectId}/tasks`, 'POST', { name: 'Plan lunch' })).data.id;
@@ -195,7 +195,9 @@ describe('H16 trigger rules on model-API Work', () => {
       taskId,
       runId: textRunId(projectId, started.data.id),
       stepId: 'text:dispatch',
-      match: { kind: 'text', source: 'stream', start: at, end: at + 'soup first'.length, excerpt: 'soup first' },
+      // The fenced model-API preview channel is not listened to for Work (it fails a paid call on one
+      // over-long frame), so the whole answer is judged before the proposal.
+      match: { kind: 'text', source: 'final-text', start: at, end: at + 'soup first'.length, excerpt: 'soup first' },
       handling: 'recorded',
     });
     expect(state().needs.find((need) => need.state === 'open')!.files).toEqual(['plan.md']);

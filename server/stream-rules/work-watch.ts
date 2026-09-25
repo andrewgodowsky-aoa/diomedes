@@ -9,8 +9,10 @@
  * through Nectovia on its way to becoming a proposal:
  *
  * - the text is matched as it streams, piece by piece, as on a loop run. Codex hands its
- *   raw deltas over; the engine-service routes hand over their preview frames, which have
- *   already had secrets removed;
+ *   raw deltas over; the external text engines (Claude Code, OpenCode, the ACP routes) hand
+ *   over their preview frames, which have already had secrets removed. Model-API Work is not
+ *   listened to while it streams: its fenced preview channel would fail a paid call on one
+ *   over-long frame, so its answer is judged whole;
  * - a steer or a stop is handed to H15 supervision at once, which acts through H08 on the
  *   Work run: Steer where the route steers a running turn (Codex), otherwise Queue; Stop
  *   cancels the request mid-stream;

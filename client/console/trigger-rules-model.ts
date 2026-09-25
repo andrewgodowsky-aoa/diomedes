@@ -216,7 +216,7 @@ export function decisionLine(decision: StreamRuleDecision): string {
 export function watchesSentence(watches: readonly string[] | undefined): string {
   const loop = !watches || watches.includes('diomedes-loop');
   if (loop && watches?.includes('external-work'))
-    return `Text rules watch what the model writes, on ${AGENT_NAME} work loop runs and on task work on every engine; on external engines other than Codex they read it after secrets are removed, so a rule looking for a secret may not fire there. Tool rules watch the tool calls ${AGENT_NAME} runs itself. Codex, Claude Code, OpenCode and other external engines run their own tools, and those are not watched.`;
+    return `Text rules watch what the model writes, on ${AGENT_NAME} work loop runs and on task work on every engine; on Claude Code, OpenCode and the ACP engines they read it after secrets are removed, so a rule looking for a secret may not fire there. Tool rules watch the tool calls ${AGENT_NAME} runs itself. Codex, Claude Code, OpenCode and other external engines run their own tools, and those are not watched.`;
   return loop
     ? `Trigger rules watch ${AGENT_NAME} work loop runs only. Runs on Codex, Claude Code, OpenCode and other external engines use their own tools and are not watched.`
     : 'Trigger rules watch no runs in this build.';

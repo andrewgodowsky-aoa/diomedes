@@ -132,7 +132,7 @@ test('a project rule written in the editor holds the loop run started from the t
   const rules = await openRules(page);
   // Which runs rules watch is said once, plainly.
   await expect(rules.locator('.trigger-rules-reach')).toHaveText(
-    `Text rules watch what the model writes, on ${AGENT_NAME} work loop runs and on task work on every engine; on external engines other than Codex they read it after secrets are removed, so a rule looking for a secret may not fire there. Tool rules watch the tool calls ${AGENT_NAME} runs itself. Codex, Claude Code, OpenCode and other external engines run their own tools, and those are not watched.`,
+    `Text rules watch what the model writes, on ${AGENT_NAME} work loop runs and on task work on every engine; on Claude Code, OpenCode and the ACP engines they read it after secrets are removed, so a rule looking for a secret may not fire there. Tool rules watch the tool calls ${AGENT_NAME} runs itself. Codex, Claude Code, OpenCode and other external engines run their own tools, and those are not watched.`,
   );
   await expect(page.locator('#scrThread .trigger-rules-reach')).toHaveCount(1);
   await rules.getByRole('button', { name: 'Add a rule' }).click();
