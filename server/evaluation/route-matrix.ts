@@ -406,7 +406,12 @@ export function renderMatrixMarkdown(matrix: RouteMatrix): string {
     lines.push('Scenarios that failed:');
     for (const item of matrix.failedScenarios)
       lines.push(
-        `- \`${item.id}\`: ${item.error ?? item.assertions.map((assertion) => `${assertion.name} — ${assertion.detail}`).join('; ')}`,
+        `- \`${item.id}\`: ${
+          item.error ??
+          (item.assertions.length
+            ? item.assertions.map((assertion) => `${assertion.name} — ${assertion.detail}`).join('; ')
+            : 'its failed checks are the mismatches above.')
+        }`,
       );
   }
   if (matrix.orphanChecks.length) {
@@ -414,6 +419,22 @@ export function renderMatrixMarkdown(matrix: RouteMatrix): string {
     lines.push('Checks naming a route no contract advertises:');
     for (const check of matrix.orphanChecks) lines.push(`- \`${check.route}\` · ${check.capability}: ${check.detail}`);
   }
+  lines.push('');
+  lines.push('## What the cells not proven here need');
+  lines.push('');
+  const needs = new Map<string, string[]>();
+  for (const row of matrix.rows)
+    for (const capability of matrix.capabilities)
+      if (row.cells[capability].state === 'declared-not-proven') {
+        const need = row.cells[capability].reason.replace(/^Declared (native|host)\. /, '');
+        needs.set(need, [...(needs.get(need) ?? []), `\`${row.routeId}\` ${capability}`]);
+      }
+  if (!needs.size) lines.push('Every declared cell was proven in this run.');
+  for (const [need, cells] of needs) lines.push(`- ${need} (${cells.length}): ${cells.join(', ')}`);
+  lines.push('');
+  lines.push(
+    `This run was on ${matrix.environment.platform}. No route contract declares a capability as specific to one operating system, so no cell is derived as needing Windows; a platform difference would show here as a mismatch on the platform where it happens.`,
+  );
   lines.push('');
   lines.push('## Scenarios');
   lines.push('');
