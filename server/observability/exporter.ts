@@ -16,7 +16,7 @@
  * most three times, ahead of anything newer; three failures in a row pause export.
  */
 import type { Observation } from '../../shared/observability.js';
-import type { ObservationDenial, ObservationScope, ScopeRecheck } from './eligibility.js';
+import { isCalendarDay, type ObservationDenial, type ObservationScope, type ScopeRecheck } from './eligibility.js';
 import { encodeEvent, toWireEvent } from './wire.js';
 
 export type DropReason =
@@ -251,7 +251,12 @@ export class BoundedObservationExporter implements ObservationExporter {
       const bytes = Buffer.byteLength(text, 'utf8');
       // Dropped whole, never truncated: a cut event could end mid-value.
       if (bytes > this.limits.eventBytes) return this.drop('oversized');
-      if (this.queue.length >= this.limits.queueEvents || this.queuedBytes + bytes > this.limits.queueBytes)
+      // The caps count a batch waiting to be sent again: it is still held on this machine.
+      const waiting = this.waiting();
+      if (
+        this.queue.length + waiting.events >= this.limits.queueEvents ||
+        this.queuedBytes + waiting.bytes + bytes > this.limits.queueBytes
+      )
         return this.drop('queue-full');
       this.queue.push({ text, bytes, scope, enqueuedAt: this.clock() });
       this.queuedBytes += bytes;
@@ -301,15 +306,15 @@ export class BoundedObservationExporter implements ObservationExporter {
   }
 
   health(): ObservationHealth {
-    const waiting = this.inflight?.batch ?? [];
+    const waiting = this.waiting();
     return {
       state: this.state(),
       enqueued: this.enqueued,
       exported: this.exported,
       dropped: { ...this.dropped },
       denied: this.options.scopes.denials(),
-      queued: this.queue.length + waiting.length,
-      queuedBytes: this.queuedBytes + waiting.reduce((sum, item) => sum + item.bytes, 0),
+      queued: this.queue.length + waiting.events,
+      queuedBytes: this.queuedBytes + waiting.bytes,
       lastFailure: this.lastFailure,
     };
   }
@@ -348,7 +353,7 @@ export class BoundedObservationExporter implements ObservationExporter {
   private unfunded(): boolean {
     const gate = this.options.gate;
     if (!gate) return false;
-    if (!gate.fundedUntil || !/^\d{4}-\d{2}-\d{2}$/.test(gate.fundedUntil)) return true;
+    if (!gate.fundedUntil || !isCalendarDay(gate.fundedUntil)) return true;
     const end = Date.parse(`${gate.fundedUntil}T00:00:00.000Z`) + DAY_MS;
     return !(this.clock() < end);
   }
@@ -376,6 +381,8 @@ export class BoundedObservationExporter implements ObservationExporter {
     this.dropEnded();
     while (this.clock() - started < deadlineMs) {
       if (this.pausedUntil > this.clock()) break;
+      // A batch waiting for a retry ages like the queue: past the limit it is dropped, never sent late.
+      this.expire();
       let entry = this.inflight;
       if (entry) {
         if (this.clock() < entry.notBefore) break;
@@ -482,14 +489,28 @@ export class BoundedObservationExporter implements ObservationExporter {
     return batch;
   }
 
+  /** Past the age limit, whether queued or waiting to be sent again: dropped, never sent late. */
   private expire() {
     const now = this.clock();
+    const old = (item: Queued) => now - item.enqueuedAt > this.limits.maxAgeMs;
     const before = this.queue.length;
-    while (this.queue.length > 0 && now - this.queue[0].enqueuedAt > this.limits.maxAgeMs) {
+    while (this.queue.length > 0 && old(this.queue[0])) {
       const item = this.queue.shift() as Queued;
       this.queuedBytes -= item.bytes;
     }
     this.dropped.expired += before - this.queue.length;
+    if (this.inflight) {
+      const kept = this.inflight.batch.filter((item) => !old(item));
+      this.dropped.expired += this.inflight.batch.length - kept.length;
+      this.inflight.batch = kept;
+      if (kept.length === 0) this.inflight = null;
+    }
+  }
+
+  /** The batch held for a retry: counted against the queue's caps and in `health()`. */
+  private waiting(): { events: number; bytes: number } {
+    const batch = this.inflight?.batch ?? [];
+    return { events: batch.length, bytes: batch.reduce((sum, item) => sum + item.bytes, 0) };
   }
 
   private dropEnded() {

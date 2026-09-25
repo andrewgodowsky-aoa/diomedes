@@ -8,6 +8,7 @@ import {
   ABSENT_TELEMETRY_POLICY,
   OBSERVATION_OFF,
   decideObservationEligibility,
+  isCalendarDay,
   operatorConfigFromEnv,
   recheckScope,
   type EligibilityInput,
@@ -184,6 +185,13 @@ describe('operator configuration from the environment', () => {
       NECTOVIA_OBSERVATION_DAILY_EVENTS: '5000',
     }).posthog;
     expect(funded).toMatchObject({ fundedUntil: '2027-03-31', dailyEvents: 5000 });
+    // A funded-until that is not a calendar day reads as absent (PH-07 F-5): JavaScript would roll these over.
+    for (const day of ['2099-02-30', '2027-02-29', '2027-04-31', '2027-13-01', '2027-00-10', '2027-3-31'])
+      expect(
+        operatorConfigFromEnv({ ...base, NECTOVIA_POSTHOG_HOST: 'https://us.i.posthog.com', NECTOVIA_OBSERVATION_FUNDED_UNTIL: day }).posthog?.fundedUntil,
+        day,
+      ).toBeNull();
+    expect(isCalendarDay('2028-02-29')).toBe(true);
   });
 });
 
@@ -287,6 +295,49 @@ describe('scopes: bound by the admitted job, resolved from the run record', () =
     expect(scopes.size).toBe(1);
     scopes.bind({ admission: admission({ surface: 'conversation', organizationId: ORG_B }), rootJobId: 'lineage-1', route: 'aws-bedrock', connectionId: 'c', model: null });
     expect(scopes.size).toBe(0);
+  });
+
+  test('a refused admission ends every scope of that business, though its cached entitlement still reads active; a later admitted bind is live (PH-07 F-2)', () => {
+    const owners: Record<string, string> = { 'project-a': ORG_A, 'project-b': ORG_B };
+    const scopes = new ObservationScopes({
+      operator: operator({ internalOrganizations: new Set([ORG_A, ORG_B]) }),
+      backend: () => 'faux',
+      authority: {
+        personId: () => 'person_1',
+        activeOrganizationId: () => ORG_A,
+        // The cached answer has not caught up with the revocation.
+        entitlement: () => ({ agent: true, state: 'active' }),
+        organizationFor: (projectId) => (projectId ? (owners[projectId] ?? null) : ORG_A),
+      },
+      now: () => 1_000,
+    });
+    const bindFor = (organizationId: string, rootJobId: string, admissionId: string) => {
+      const decision = scopes.decide({
+        admission: admission({ surface: 'work', organizationId, admissionId }),
+        rootJobId,
+        route: 'aws-bedrock',
+        connectionId: 'conn-1',
+        model: null,
+      });
+      if (!decision.eligible) throw new Error(`expected eligible: ${decision.denial}`);
+      return decision.scope;
+    };
+    const a = bindFor(ORG_A, 'work-a', 'adm_a1');
+    const b = bindFor(ORG_B, 'work-b', 'adm_b1');
+    scopes.refused({ projectId: 'project-a' });
+    expect(scopes.recheck(a)).toEqual({ live: false, denial: 'admission-refused' });
+    expect(scopes.recheck(b)).toEqual({ live: true });
+    expect(scopes.resolve(run({ id: 'work-a', capabilityId: 'engine-text-turn' }))).toBeNull();
+    expect(scopes.resolve(run({ id: 'work-b', capabilityId: 'engine-text-turn' }))).not.toBeNull();
+    // Admitted again later: a new scope, live. The ended one stays ended.
+    const again = bindFor(ORG_A, 'work-a', 'adm_a2');
+    expect(scopes.recheck(again)).toEqual({ live: true });
+    expect(scopes.recheck(a).live).toBe(false);
+    // A project no business owns and Personal work end nothing.
+    scopes.refused({ projectId: 'project-personal' });
+    expect(scopes.recheck(again)).toEqual({ live: true });
+    expect(scopes.recheck(b)).toEqual({ live: true });
+    expect(scopes.denials()['admission-refused']).toBeGreaterThanOrEqual(1);
   });
 
   test('bounded: the oldest scope is forgotten first', () => {

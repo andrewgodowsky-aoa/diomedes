@@ -30,9 +30,13 @@ reached PostHog, no capture key exists anywhere but a test fixture, and no accou
   - Any other 4xx drops the batch as `rejected`.
   - Three failed sends in a row pause export for five minutes. The queue stays capped meanwhile.
   - A waiting retry is rechecked, so a scope that ended is dropped, not resent.
+  - A waiting retry ages with the queue: past one hour it is dropped as `expired`, never sent
+    late (PH-07 F-3).
+  - The event and byte caps count the waiting batch as well as the queue (PH-07 F-4).
 - **Gate.** Funding and the daily budget are checked at enqueue and at flush.
   - **Funding.** `fundedUntil` null, malformed or past means `disabled:funding`: the queue is
     cleared and nothing is kept for later. Funding lasts through the end of its last UTC day.
+    Malformed includes a date that is not on the calendar, such as `2099-02-30` (PH-07 F-5).
   - **Budget.** `dailyEvents` is counted at first send per UTC day. Zero, the default, means
     `disabled:budget` and everything drops as `budget`.
 - **Runtime.**
@@ -117,3 +121,10 @@ appears in any body:
   built, so a `nectovia` generation stays `gateway-pending`, with no late-cost event.
 - **Managed route kind.** Every admission is `byo` until the managed lane passes
   `routeKind: 'managed'` at its `admitModelApi` call sites.
+
+## PH-07 repairs
+
+The PH-07 review rejected this slice on F-1 (a tool span left as `scripted-step`, a PH-01 projector
+defect). F-3, F-4 and F-5 were in this slice's exporter and parser. All seven findings, their changes,
+the tests that prove each, and the counts after the repairs are recorded in the PH-01 record's
+"PH-07 repairs" section.

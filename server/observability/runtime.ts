@@ -50,7 +50,7 @@ export function createObservation(input: {
   readonly env: NodeJS.ProcessEnv;
   readonly build: string;
   readonly session: Pick<AccountSessionService, 'personId' | 'entitlement' | 'backend'>;
-  readonly workspaces: Pick<WorkspaceService, 'active'>;
+  readonly workspaces: Pick<WorkspaceService, 'active' | 'projectOwner'>;
 }): ObservationRuntime | null {
   if (input.options === null) return null;
   const operator = input.options?.operator ?? operatorConfigFromEnv(input.env);
@@ -64,17 +64,20 @@ export function createObservation(input: {
       ? new PostHogTransport({ host: posthog.host, captureKey: posthog.captureKey, fetch: input.options?.fetch })
       : new MemoryObservationSink());
   const { session, workspaces } = input;
+  const activeOrganizationId = () => {
+    const active = workspaces.active();
+    return active.kind === 'business' ? active.organizationId : null;
+  };
   const scopes = new ObservationScopes({
     operator,
     telemetry: input.options?.telemetry ?? ABSENT_TELEMETRY_POLICY,
     backend: () => session.backend.view().kind,
     authority: {
       personId: () => session.personId(),
-      activeOrganizationId: () => {
-        const active = workspaces.active();
-        return active.kind === 'business' ? active.organizationId : null;
-      },
+      activeOrganizationId,
       entitlement: (organizationId) => session.entitlement(organizationId),
+      // The Agent gate's own rule (agent-gate.ts `organizationFor`): the project's owner, else the active business.
+      organizationFor: (projectId) => (projectId ? workspaces.projectOwner(projectId)?.organizationId : null) ?? activeOrganizationId(),
     },
     now: input.options?.clock,
   });

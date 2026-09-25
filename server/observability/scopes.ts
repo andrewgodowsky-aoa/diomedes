@@ -3,7 +3,8 @@
  *
  * `bind` is the only way a scope comes into being. `EngineService.admitModelApi` calls it once
  * every admission check has passed, keyed by the surface and the job id that caller already
- * passes to the Agent gate. Every other caller only reads a scope or ends one.
+ * passes to the Agent gate, and calls `refused` when the gate refuses, which ends every scope of
+ * that business. Every other caller only reads a scope or ends one.
  *
  * A run resolves to a scope from what its own record says it is, never from what a request
  * claimed:
@@ -43,9 +44,15 @@ export interface ObservationBindInput {
   readonly model: string | null;
 }
 
-/** All `EngineService` holds: one call, after every admission check passed. */
+/** All `EngineService` holds: `bind` after every admission check passed, `refused` when the Agent gate refused. */
 export interface ObservationBinder {
   bind(input: ObservationBindInput): void;
+  refused(input: ObservationRefusalInput): void;
+}
+
+/** What `EngineService` knows of a refused admission: the project it was for, if any. */
+export interface ObservationRefusalInput {
+  readonly projectId: string | null;
 }
 
 export interface ResolvedScope {
@@ -83,6 +90,10 @@ export class ObservationScopes implements ObservationBinder {
   readonly operator: ObservationOperatorConfig;
   private readonly scopes = new Map<string, ObservationScope>();
   private readonly denied = new Map<ObservationDenial, number>();
+  /** Refused admissions per business. A scope bound before its business's latest refusal has ended. */
+  private readonly refusals = new Map<string, number>();
+  /** The refusal count each bound scope saw at bind. Weak, so a forgotten scope is not kept. */
+  private readonly generation = new WeakMap<ObservationScope, number>();
   private readonly telemetry: TelemetryPolicyPort;
   private readonly now: () => number;
   private readonly limit: number;
@@ -117,8 +128,25 @@ export class ObservationScopes implements ObservationBinder {
     }
     this.scopes.delete(decision.scope.bindKey);
     this.scopes.set(decision.scope.bindKey, decision.scope);
+    this.generation.set(decision.scope, this.refusals.get(decision.scope.organizationId) ?? 0);
     while (this.scopes.size > this.limit) this.scopes.delete(this.scopes.keys().next().value as string);
     return decision;
+  }
+
+  /**
+   * The Agent gate refused an admission (contract section 3: a revocation ends optional export at
+   * the next reload or the next admission, whichever comes first). Every scope of that business
+   * ends: no later event of its runs is projected, and the recheck drops whatever is queued or
+   * waiting for a retry at the next flush. A later admission the service admits binds anew.
+   * Personal work (no business) ends nothing.
+   */
+  refused(input: ObservationRefusalInput): void {
+    const authority = this.options.authority;
+    const organizationId = authority.organizationFor ? authority.organizationFor(input.projectId) : authority.activeOrganizationId();
+    if (!organizationId) return;
+    this.refusals.set(organizationId, (this.refusals.get(organizationId) ?? 0) + 1);
+    for (const [key, scope] of this.scopes) if (scope.organizationId === organizationId) this.scopes.delete(key);
+    this.count('admission-refused');
   }
 
   /** The bound scope for one run, or null: no observation of anything that has none. */
@@ -155,7 +183,11 @@ export class ObservationScopes implements ObservationBinder {
   recheck(scope: ObservationScope): ScopeRecheck {
     let result: ScopeRecheck;
     try {
-      result = recheckScope(scope, this.options.authority, this.operator, this.telemetry);
+      // Ended by a later refusal, even when the cached entitlement has not caught up yet.
+      result =
+        (this.generation.get(scope) ?? 0) < (this.refusals.get(scope.organizationId) ?? 0)
+          ? { live: false, denial: 'admission-refused' }
+          : recheckScope(scope, this.options.authority, this.operator, this.telemetry);
     } catch {
       result = { live: false, denial: 'account-service-unavailable' };
     }

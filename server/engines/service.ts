@@ -1967,7 +1967,14 @@ export class EngineService {
     const api = this.modelApi;
     if (!api)
       throw new EngineError('RUNTIME_UNAVAILABLE', 'This model-API route is not available in this process.', true);
-    const admitted = await this.admitAgent(input, agent);
+    const admitted = await this.admitAgent(input, agent).catch((error: unknown) => {
+      try {
+        this.observation?.refused({ projectId: input.projectId ?? null });
+      } catch {
+        // Observation never changes a refusal.
+      }
+      throw error;
+    });
     const handle = await modelApiRoute(api, route);
     const { short, long } = handle.names;
     if (!handle.connected) throw new EngineError('ROUTE_REFUSED', `Connect ${long} in AI setup before sending.`, true);

@@ -65,6 +65,13 @@ const HEX_KEY = /^[0-9a-f]{64,256}$/i;
 const CAPTURE_KEY = /^phc_[A-Za-z0-9]{16,128}$/;
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
+/** A real UTC calendar day, `YYYY-MM-DD`. `2099-02-30` parses in JavaScript (as 2 March), so it must round-trip. */
+export function isCalendarDay(value: string): boolean {
+  if (!DAY.test(value)) return false;
+  const parsed = Date.parse(`${value}T00:00:00.000Z`);
+  return Number.isFinite(parsed) && new Date(parsed).toISOString().slice(0, 10) === value;
+}
+
 function posthogFromEnv(env: NodeJS.ProcessEnv): PostHogOperatorConfig | null {
   const host = env.NECTOVIA_POSTHOG_HOST?.trim();
   const captureKey = env.NECTOVIA_POSTHOG_CAPTURE_KEY?.trim();
@@ -81,7 +88,7 @@ function posthogFromEnv(env: NodeJS.ProcessEnv): PostHogOperatorConfig | null {
   return {
     host: url.origin,
     captureKey,
-    fundedUntil: DAY.test(fundedUntil) && Number.isFinite(Date.parse(`${fundedUntil}T00:00:00Z`)) ? fundedUntil : null,
+    fundedUntil: isCalendarDay(fundedUntil) ? fundedUntil : null,
     dailyEvents: Number.isSafeInteger(daily) && daily > 0 ? Math.min(daily, 1_000_000) : 0,
   };
 }
@@ -144,7 +151,9 @@ export type ObservationDenial =
   | 'person-changed'
   | 'workspace-changed'
   | 'entitlement-inactive'
-  | 'no-longer-internal';
+  | 'no-longer-internal'
+  /** The account service refused a later admission for the business (contract section 3). */
+  | 'admission-refused';
 
 export interface ObservationScope {
   /** `osc_` + 24 hex of the admission id. */
@@ -249,6 +258,12 @@ export interface ObservationAuthorityPort {
   activeOrganizationId(): string | null;
   /** The account service's last answer for this business (cached; refreshed on sign-in and reload). */
   entitlement(organizationId: string): { readonly agent: boolean; readonly state: string } | null;
+  /**
+   * The business an admission for this project is asked for: the project's owner, else the active
+   * business, as `AccountAgentGate.organizationFor` decides. Null is Personal. Absent reads the
+   * active business.
+   */
+  organizationFor?(projectId: string | null): string | null;
 }
 
 export type ScopeRecheck = { readonly live: true } | { readonly live: false; readonly denial: ObservationDenial };

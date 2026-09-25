@@ -28,6 +28,8 @@ import type { ExposureReservation } from '../server/spend-exposure.js';
 import type { HarnessEvent, HarnessRun, StepRecord } from '../shared/harness.js';
 import { known, unknown, type GenerationObservation, type Observation } from '../shared/observability.js';
 import type { VerificationRecord, VerificationView } from '../shared/verification.js';
+import { applicationOrigin } from '../shared/attribution.js';
+import { supervisorOrigin } from '../shared/native-loop.js';
 
 const ENV = 'test';
 const KEY = new Uint8Array(32).fill(9);
@@ -128,6 +130,8 @@ const toolStep = (stepId: string, name: string, overrides: Partial<StepRecord> =
     attempt: 1,
     state: 'succeeded',
     output: { text: `${CANARY} file body` },
+    // What the host records on every registry dispatch (native-loop.ts, native-agent.ts).
+    origin: applicationOrigin(),
     leaseFence: 1,
     startedAt: null,
     endedAt: null,
@@ -436,7 +440,7 @@ describe('the projector over a loop with a delegate, a tool, and a verification'
           },
         ],
       }),
-      toolStep('tool:2', 'delegate'),
+      toolStep('tool:2', 'delegate', { origin: supervisorOrigin() }),
     ];
     const rootEvents = [
       event('run.created', -5),
@@ -539,7 +543,11 @@ describe('the projector over a loop with a delegate, a tool, and a verification'
       endedAt: T(6600),
       declaredChecks: 2,
       requestedBy: 'diomedes-loop',
-      checks: [{ outcome: 'passed' }, { outcome: 'passed' }, { outcome: 'failed', sentence: `${CANARY} evidence` }],
+      checks: [
+        { id: 'order', kind: 'file-exists', outcome: 'passed' },
+        { id: 'count', kind: 'text-contains', outcome: 'failed', sentence: `${CANARY} evidence` },
+        { id: 'outputs-intact', kind: 'outputs-intact', outcome: 'passed' },
+      ],
     } as unknown as VerificationRecord;
     projector.onVerification(record, { state: 'failed', rule: 'check-failed', sentence: `${CANARY}` } as unknown as VerificationView);
     const span = byEvent(exporter.wire(), '$ai_span').find((item) => item.properties.nectovia_span_kind === 'verification')!;
@@ -549,7 +557,8 @@ describe('the projector over a loop with a delegate, a tool, and a verification'
       nectovia_verification_state: 'failed',
       nectovia_verification_rule: 'check-failed',
       nectovia_checks_declared: 2,
-      nectovia_checks_passed: 2,
+      // The tallies count the declared checks only, so they add up to `declared` (PH-07 F-6).
+      nectovia_checks_passed: 1,
       nectovia_checks_failed: 1,
       nectovia_checks_incomplete: 0,
       nectovia_verification_requested_by: 'diomedes-loop',
@@ -652,6 +661,53 @@ describe('failed attempts, parking and the managed route', () => {
     const wire = h.exporter.wire();
     expect(byEvent(wire, '$ai_generation')).toHaveLength(0);
     expect(byEvent(wire, '$ai_span')[0].properties).toMatchObject({ nectovia_span_kind: 'scripted-step', $ai_span_name: 'scripted-step' });
+  });
+
+  test('host shapes: a registered tool with an application origin is a tool span; a model step reported as application is scripted (PH-07 F-1)', () => {
+    seq = 0;
+    const h = harness();
+    h.bind('conversation', 'lineage-1');
+    const scripted = modelStep('model:0', { intent: { ...modelStep('model:0').intent, name: 'native-fixture' }, origin: applicationOrigin() });
+    const direct = modelStep('model:1', { intent: { ...modelStep('model:1').intent, stepId: 'model:1' } });
+    const tool = toolStep('tool:0', 'read_project_file');
+    const unregistered = toolStep('tool:1', `${CANARY}_tool`);
+    const events = [
+      event('run.created', 1),
+      event('step.started', 10, 'model:0', 1),
+      event('step.succeeded', 20, 'model:0', 1),
+      event('step.started', 30, 'tool:0', 1),
+      event('step.succeeded', 40, 'tool:0', 1),
+      event('step.started', 50, 'tool:1', 1),
+      event('step.failed', 60, 'tool:1', 1),
+      event('step.started', 70, 'model:1', 1),
+      event('step.succeeded', 80, 'model:1', 1),
+    ];
+    h.projector.onRunSaved(
+      run({ id: 'turn-1', capabilityId: 'model-api-turn', input: { conversationRunId: 'lineage-1' }, steps: [scripted, tool, unregistered, direct], events, state: 'running' }),
+    );
+    const wire = h.exporter.wire();
+    expect(byEvent(wire, '$ai_span').map((item) => [item.properties.nectovia_span_kind, item.properties.$ai_span_name, item.properties.nectovia_step_state])).toEqual([
+      ['scripted-step', 'scripted-step', 'succeeded'],
+      ['tool', 'read_project_file', 'succeeded'],
+      ['tool', 'other', 'failed'],
+    ]);
+    expect(byEvent(wire, '$ai_generation').map((item) => item.properties.nectovia_step)).toEqual(['model']);
+    expect(encodeBatch(wire).toLowerCase()).not.toContain(CANARY.toLowerCase());
+  });
+
+  test('the plan call of a work loop is labelled model-plan; its act turns are model (PH-07 F-7)', () => {
+    seq = 0;
+    const h = harness();
+    h.bind('loop', 'loop-root');
+    const events = [
+      event('run.created', 1),
+      event('step.started', 10, 'model:plan', 1),
+      event('step.succeeded', 20, 'model:plan', 1),
+      event('step.started', 30, 'model:0', 1),
+      event('step.succeeded', 40, 'model:0', 1),
+    ];
+    h.projector.onRunSaved(run({ steps: [modelStep('model:plan'), modelStep('model:0')], events }));
+    expect(byEvent(h.exporter.wire(), '$ai_generation').map((item) => item.properties.nectovia_step)).toEqual(['model-plan', 'model']);
   });
 
   test('managed: the gateway’s settlement is the cost, so the desktop sends it as cost-pending', () => {

@@ -79,6 +79,8 @@ export interface ProjectorStats {
 }
 
 const ATTEMPT_END = new Set(['step.succeeded', 'step.failed', 'step.reconcile_required', 'step.cancelled', 'step.retry_wait']);
+/** A work loop's plan call: `NativeLoop` calls the model under the key `plan` before any act turn. */
+const LOOP_PLAN_STEP = 'model:plan';
 const RUN_END: Readonly<Record<string, TraceObservation['outcome']>> = Object.freeze({
   'run.completed': 'completed',
   'run.failed': 'failed',
@@ -225,7 +227,10 @@ export class ObservationProjector {
       const environment = link.scope.facts.environment;
       const traceId = traceIdFor(environment, link.traceRootRunId);
       const spanId = spanIdFor(environment, `verification|${verification.id}`);
-      const tally = (outcome: string) => verification.checks.filter((check) => check.outcome === outcome).length;
+      // The tallies count the person's declared checks, as `declared` does. The check every
+      // verification runs itself (`outputs-intact`) is reflected in the state and rule, not here.
+      const declaredResults = verification.checks.filter((check) => check.kind !== 'outputs-intact');
+      const tally = (outcome: string) => declaredResults.filter((check) => check.outcome === outcome).length;
       this.emit(
         {
           kind: 'span',
@@ -347,7 +352,13 @@ export class ObservationProjector {
     const capability = capabilityOf(run.capabilityId);
     const common = this.base(resolved.scope, capability, event.at, this.ids(resolved, `attempt|${spanId}|${event.seq}`, spanId, parentId));
     const failure = state === 'succeeded' ? unknown<string>('not-applicable') : errorCode(event.attributes.errorCode);
-    const scripted = step.origin?.mode === 'application' || isScriptedAdapter(step.intent.name ?? '');
+    // What the step is decides its span, never its origin alone. The host records every registered
+    // tool dispatch with an application origin (native-loop.ts, native-agent.ts), so a tool step is
+    // always a tool span under its allowlisted name. Only a model step a scripted adapter answered
+    // (its reported application origin, or the adapter's own id when a failed attempt reported
+    // none) is a scripted step, never a generation.
+    const scripted =
+      step.intent.kind === 'model' && (step.origin?.mode === 'application' || isScriptedAdapter(step.intent.name ?? ''));
 
     if (step.intent.kind === 'tool' || scripted) {
       const effect = step.effects?.find((item) => item.attempt === attempt);
@@ -399,7 +410,7 @@ export class ObservationProjector {
       {
         kind: 'generation',
         ...common,
-        step: dispatch ? 'text-dispatch' : 'model',
+        step: dispatch ? 'text-dispatch' : step.intent.stepId === LOOP_PLAN_STEP ? 'model-plan' : 'model',
         attempt,
         stepState: state,
         outcome: outcomeOf(state, output, match, managed, dispatch),

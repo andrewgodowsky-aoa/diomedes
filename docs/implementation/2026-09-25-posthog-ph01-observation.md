@@ -24,6 +24,9 @@ observed run produces PostHog-shaped events (`$ai_trace`, `$ai_generation`, `$ai
     - the organization is on the operator's internal list, on a declared company host;
     - or it is a customer with a metadata telemetry policy and customer export on. Neither exists
       in production, so every customer is refused `telemetry-policy-absent`.
+- **Where it ends on a refusal.** When the Agent gate refuses an admission, `admitModelApi` calls
+  `ObservationScopes.refused` with the project id and rethrows the same error. Every scope of that
+  business ends (PH-07 F-2; see "PH-07 repairs" below).
 - **What it reads.** The run record the RunService has just committed, received in `files.saved`
   and projected synchronously, plus the local spend ledger's in-memory holds. A projector failure
   is caught twice, inside the projector and in the host.
@@ -34,6 +37,7 @@ observed run produces PostHog-shaped events (`$ai_trace`, `$ai_generation`, `$ai
   not identifier-shaped.
 - **Rechecks.** Every event's scope is checked again at enqueue and immediately before its batch
   is sent. The check is:
+  - no refused admission for the business since the scope was bound;
   - the same person;
   - the same active workspace as at bind;
   - the cached entitlement still `agent && active`;
@@ -61,7 +65,7 @@ Minimal edits:
 
 | File | Edit |
 |---|---|
-| `server/engines/service.ts` | The scope-bind lines only: the import, the `observation?` field, `const admitted =`, and a try-wrapped `bind` before `return` |
+| `server/engines/service.ts` | The scope-bind lines only: the import, the `observation?` field, `const admitted =` (since PH-07 with a `.catch` that calls `refused` and rethrows), and a try-wrapped `bind` before `return` |
 | `server/harness/host.ts` | An optional `observation` hook, called from `files.saved` inside try/catch |
 | `server/harness/model-api-adapter.ts` | `exposureStepId` extracted; `attemptFor` uses it; no behaviour change |
 | `server/harness/run-service.ts` | An additive `errorCode` attribute on `step.<state>` events when the thrown error's `code` is an identifier |
@@ -206,8 +210,47 @@ output, a sub-task and a verification sentence.
 
 - Late cost (`nectovia_cost_reconciled`), retries, backoff, the circuit, the daily budget, funding
   and the HTTP transport. These are PH-02.
-- A full loop through `createApp` on a model-API route. The existing loop host tests use the
-  fixture route or replace `loopModelRoutes`, and neither reaches `admitModelApi`. The loop
-  mapping (generations, tool spans, the delegate child, verification, restart and dedupe) is
-  proven in `tests/observability-record.test.ts` over hand-built run records through the real
-  projector.
+- A full loop through `createApp` on a model-API route was not in PH-01's own tests. The PH-07
+  reviewer's `H1` (`tests/ph07-review.test.ts`) now runs one on `aws-bedrock` and is part of the
+  acceptance set.
+
+## PH-07 repairs
+
+The independent review (`docs/implementation/2026-09-25-posthog-ph07-review.md`, reproducers in
+`tests/ph07-review.test.ts`, cherry-picked unchanged onto this branch) found one P1, one P2 and five
+P3s. Each is repaired here; the reviewer's assertions are unchanged.
+
+| # | What was wrong | What changed | Proven by |
+|---|---|---|---|
+| F-1 (P1) | `projector.ts` treated any step with an application origin as a scripted adapter step. The host records an application origin on every registered tool dispatch (`native-loop.ts:1083`, `native-agent.ts:371`), so every real tool span left as `scripted-step` with its name lost. The record test's tool steps had no origin. | Only a `kind: 'model'` step is ever scripted: its reported application origin, or the scripted adapter's id when a failed attempt reported none. A tool step is always a `tool` span under its allowlisted name. The record test's tool steps now carry the origins the host records (`applicationOrigin()`, and `supervisorOrigin()` for `delegate`). | `H1`; record: "host shapes: a registered tool with an application origin is a tool span…" and the loop scenario |
+| F-2 (P2) | The Agent gate throws before `bind`, so a refusal from the account service never ended the earlier scope, and the recheck read a cached entitlement. A revoked business's queued events still left. | `admitModelApi` wraps its `admitAgent` call: on a throw it calls `observation.refused({ projectId })` in its own try/catch and rethrows the same error. `ObservationScopes.refused` resolves the business by the gate's rule (the project's owner, else the active business), deletes its scopes, and records a per-business refusal count. The recheck ends any scope bound before its business's latest refusal (`admission-refused`), so queued events and a waiting retry are dropped at the next flush (contract 4.6), later events of its runs are not projected, and a later admitted bind is live. Personal work ends nothing. | `A4`; eligibility: "a refused admission ends every scope of that business…" |
+| F-3 (P3) | A batch waiting for a retry was re-sent without an age check. | `expire()` ages the waiting batch with the queue, and runs before every send in `drain`. | `F1` |
+| F-4 (P3) | The event and byte caps counted the queue only, not the waiting batch. | Both caps count the waiting batch, as `health()` already did. | `F2` |
+| F-5 (P3) | `2099-02-30` passed the funded-until check (JavaScript rolls it to 2 March). | `isCalendarDay` (regex, then a round trip through `toISOString`) in both the environment parser and the exporter's gate. | `G2`; eligibility: the six impossible dates |
+| F-6 (P3) | `passed`, `failed` and `incomplete` counted the verifier's own `outputs-intact` check; `declared` counted only the person's. | The tallies count declared checks only, so they add up to `declared` when every declared check ran. `outputs-intact` still decides the state and rule. | `H1`'s check that the tallies add up to `declared`; record: the late verification span |
+| F-7 (P3) | A loop's plan call left as `nectovia_step: 'model'`. | `model:plan` leaves as `'model-plan'`, as contract 2.2 and `shared/observability.ts` name it. | record: "the plan call of a work loop is labelled model-plan…" |
+
+Contract 4.4's line "a scripted adapter step (`origin.mode === 'application'`) is a `scripted-step`
+span" is read as applying to model steps only, as the reviewer found it was meant.
+
+The `service.ts` change stays inside `admitModelApi`'s `const admitted =` line, which is the scope-bind
+area; `agent-gate.ts` and `session.ts` are unedited.
+
+**Tests after the repairs.** Each run was under its own heavy slot (`slot_muhl7kbu_36d7615f` for
+tsc and the first vitest run, `slot_muhl8r1e_44a69a84` for the second), released after use.
+
+```
+npx tsc --noEmit
+  exit 0
+npx vitest run tests/ph07-review.test.ts tests/observability-eligibility.test.ts tests/observability-record.test.ts \
+  tests/observability-exporter.test.ts tests/observability-posthog-transport.test.ts \
+  tests/observability-runtime.test.ts tests/observability-first-trace.test.ts --maxWorkers=2
+  7 files, 99 tests passed: ph07-review 17, eligibility 15, record 24, exporter 11,
+  posthog-transport 12, runtime 11, first-trace 9
+npx vitest run tests/harness.test.ts tests/harness-host.test.ts tests/harness-negative.test.ts \
+  tests/harness-provider-outcomes.test.ts tests/aws-model-adapter.test.ts tests/aws-conversation-seam.test.ts \
+  tests/h01-runtime-seam.test.ts tests/verification-service.test.ts tests/customer-accounts-app.test.ts \
+  tests/native-loop-host.test.ts tests/model-session-activity.test.ts tests/h16-external-model-api.test.ts \
+  tests/spend-exposure.test.ts tests/b00-control-plane-contract.test.ts tests/b00-h01-repair.test.ts --maxWorkers=2
+  15 files, 274 tests passed
+```
