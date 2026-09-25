@@ -30,7 +30,7 @@ The command requires network access to official GitHub raw content and Windows `
 - `0` reachable packages lack a discovered top-level license text.
 - `package-lock.json` SHA-256: `5291fbfd4a9e68c2d7ebad705226b7cc9c2c1de4403bbb7e46f52e8acfbc0e1d`.
 - The four font-specific license files were preserved byte-for-byte by this task; the collector only references them.
-- The root Apache License 2.0 text is embedded exactly in `THIRD_PARTY_NOTICES.md` so it reaches the packaged `licenses` directory without changing `scripts/package-desktop.mjs`.
+- The root `LICENSE` text (Apache License 2.0 when this was written; the interim all-rights-reserved notice since 2026-09-25) is embedded exactly in `THIRD_PARTY_NOTICES.md` so it reaches the packaged `licenses` directory without changing `scripts/package-desktop.mjs`.
 
 The inventory is conservative. It can include a reachable production dependency that Vite or esbuild removes during bundling. That is preferable to omitting a notice from the experimental artifact.
 
