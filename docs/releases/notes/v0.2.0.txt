@@ -1,23 +1,22 @@
 WHAT IS NEW
-  Rules that act while a task runs, helpers that work in their own copy, a Git
+  Rules that act while a task runs, a work loop you start from a task, a Git
   view for software projects, automations, a line-by-line review of every
   change, and updates that refresh your install. Now also on Apple silicon
   Macs.
 
-  Rule triggers. Write rules, for this installation or one project, that watch
-  a Diomedes loop run while it works: a phrase or pattern in what the model
-  writes, or a tool it is about to use on a file. A rule can note it, steer
-  the run back, hold the step for your go-ahead before it runs, or stop the
-  run. Project rules can add to organization rules but never loosen them.
-  Settings has a Rules section, a project has its own, and every time a rule
-  acts it shows in the run's Supervision section.
+  Rule triggers. Write rules in Settings > Rules for every project, or from
+  the Trigger rules line under Project instructions in a thread for one
+  project or one task. A rule watches what a Nectovia work loop run writes, or
+  the tool it is about to use on a file, and can note it, ask the run to
+  correct, hold the step for your go-ahead before it runs, or stop and ask
+  you. A project rule can add to or tighten a rule written for every project
+  but never loosen it, and the app shows the reason when it refuses one. Each
+  time a rule acts, it shows in the run's Supervision section.
 
-  A lead task can hand bounded pieces of work to up to three helpers at once
-  and ask a read-only advisor. Each helper works in its own copy of the files
-  it was given and hands back a set of changes you keep or discard, file by
-  file or part by part; nothing it does reaches the project until you say so.
-  The Team view shows each helper, its budget used, its result and whether it
-  was checked.
+  Start a Nectovia work loop run on a task with Loop run in the task's work
+  panel. It offers only the routes that are ready, asks before a route sends
+  anything off this computer, and opens the run so you can watch it plan, act
+  and check.
 
   Software projects get a Repository section at the top of Files when the
   Software Engineering pack is on: the branch, changed files with a readable
@@ -150,9 +149,9 @@ LIMITS
 
   Some parts are new and have not yet had an independent review: suggested
   edits to instruction files, playbook reading, the zoom and accessibility
-  fixes, helpers and their own copies, the Repository section, the update
-  refresh and the Rules screens. Rule triggers themselves were reviewed and
-  the problems found were fixed.
+  fixes, the Repository section, the update refresh, the Rules screens and
+  Loop run. Rule triggers themselves were reviewed and the problems found were
+  fixed.
 
   Automations run only the weekly brief, only while this computer is on, and
   tell you only inside the app: nothing is sent by push, email or phone.
@@ -166,10 +165,15 @@ LIMITS
   Files has no PDF viewer. Pictures and PDFs cannot be sent to an AI, and a
   binary file cannot be put back from an earlier version.
 
-  Rule triggers watch Diomedes loop runs only. Runs on Codex, Claude Code,
-  OpenCode and other outside tools are not watched, and a rule that steers
-  cannot yet reach a loop run: the correction is recorded and shown as not
-  sent.
+  Rule triggers watch Nectovia work loop runs only. Work on Codex, Claude
+  Code, OpenCode and other outside tools is not watched, and a rule that asks
+  a loop run to correct cannot reach it yet: the correction is recorded and
+  shown as not sent. Loop run is in the task's work panel, which the
+  Conversation view hides.
+
+  Helpers that take pieces of a loop run's work, each in its own copy of the
+  files, and a lead that runs a small team of them are built but cannot be
+  started from the app yet.
 
   The Console still has no History screen, no Make tasks from this plan and no
   Stop for a conversation.
