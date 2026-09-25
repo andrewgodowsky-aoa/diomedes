@@ -36,6 +36,7 @@ import { controlProfiles } from '../api';
 import { routeDisplayName } from '../../shared/engines';
 import { Composer } from './Composer';
 import { ProjectInstructions } from './ProjectInstructions';
+import { ProjectTriggerRules } from './ProjectTriggerRules';
 import { FollowUpQueue } from './FollowUpQueue';
 import { ControlReceiptLine, RunControls, StopReceiptLine } from './StopMenu';
 import { NeedBlock } from './Need';
@@ -97,6 +98,8 @@ interface ThreadViewProps {
   instructionFiles?: readonly InstructionFileRecord[];
   /** Opens a project file in the Files pane; the instruction inspector's "Open in Files". */
   onOpenInFiles?(path: string): void;
+  /** H16: the project's tasks, for a trigger rule limited to one. */
+  tasks?: readonly { id: string; name: string }[];
   /** The project's follow-up queue. The rows for this task are shown and driven here. */
   followUps?: FollowUpCommand[];
   /** The project's control receipts (H08). This task's are woven into the timeline. */
@@ -198,6 +201,7 @@ export function ThreadView({
   changes = [],
   instructionFiles = [],
   onOpenInFiles,
+  tasks = [],
   followUps = [],
   controlReceipts = [],
   onOpenTask,
@@ -583,6 +587,7 @@ export function ThreadView({
             onOpenInFiles={onOpenInFiles}
           />
         )}
+        {projectId && <ProjectTriggerRules projectId={projectId} taskId={task?.id ?? null} tasks={tasks} />}
         {menu}
       </div>
       <div className="col instr" aria-label="Thread instruments">

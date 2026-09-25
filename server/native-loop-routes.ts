@@ -19,12 +19,13 @@ import { createHash } from 'node:crypto';
 import type { Express, NextFunction, Request, Response } from 'express';
 import { z } from 'zod';
 import type { Json } from '../shared/harness.js';
-import { isModelApiRoute } from '../shared/model-api.js';
+import { isModelApiRoute, MODEL_API_NAMES, MODEL_API_ROUTES } from '../shared/model-api.js';
 import {
   LOOP_LIMITS,
   NATIVE_LOOP_CAPABILITY,
   loopOutcome,
   loopView,
+  type LoopRouteOffer,
   type LoopRunInput,
 } from '../shared/native-loop.js';
 import { ApiError, relativeName } from './paths.js';
@@ -407,6 +408,52 @@ export function mountNativeLoopRoutes(
           code: 'invalid_loop_command',
         });
       return store.locked(() => startLocked(projectId, parsed.data));
+    }),
+  );
+
+  /**
+   * The routes a Console start control may offer, each with the start route's own admission
+   * read now: on in Settings, then the route's connection, model, credential and spend cap.
+   * Consent and the project's sharing grant depend on what the person picks, so the start
+   * itself still asks for them. Read-only: nothing is admitted, sent or recorded.
+   */
+  app.get(
+    '/api/projects/:id/loop/routes',
+    handle(async (req) => {
+      const projectId = String(req.params.id);
+      store.state(projectId);
+      const routes: LoopRouteOffer[] = [
+        {
+          route: LOOP_FIXTURE_ROUTE,
+          label: 'Scripted demonstration (a fixed local script, no model)',
+          admitted: true,
+          sends: false,
+          model: null,
+          reason: null,
+        },
+      ];
+      for (const route of MODEL_API_ROUTES) {
+        const offer = { route, label: MODEL_API_NAMES[route], sends: true };
+        if (services()[route] !== true) {
+          routes.push({ ...offer, admitted: false, model: null, reason: 'Turn the selected route on in Settings before using it.' });
+          continue;
+        }
+        const model = typeof services()[`${route}Model`] === 'string' ? (services()[`${route}Model`] as string) : null;
+        const accountRoute =
+          typeof services()[`${route}AccountRoute`] === 'string' ? (services()[`${route}AccountRoute`] as string) : null;
+        try {
+          const admitted = await harness.loop.admit(route, { projectId, model, accountRoute });
+          routes.push({ ...offer, admitted: true, model: admitted.model, reason: null });
+        } catch (error) {
+          routes.push({
+            ...offer,
+            admitted: false,
+            model,
+            reason: harness.redact(error instanceof Error ? error.message : 'This route refused the loop.'),
+          });
+        }
+      }
+      return { routes };
     }),
   );
 

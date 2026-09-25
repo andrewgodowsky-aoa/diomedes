@@ -1,0 +1,217 @@
+/* H16 trigger rules. The same graphite rows, hairlines and mono metadata as
+   the Project instructions panel beside it, and the shared `.field` and
+   `.button` controls the Settings screens use, so it reads the same in Settings
+   and in a thread head. No `.col` rule (decision 6); every element that can
+   carry a rule id, pattern, path or reason gets `min-width: 0` and wraps where
+   it is written (decision 5). */
+.trigger-rules {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+.trigger-rules p {
+  margin: 0;
+}
+.trigger-rules-reach {
+  color: var(--t2);
+  overflow-wrap: anywhere;
+}
+.trigger-rules-layer {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.trigger-rules-layer-head {
+  font: 400 var(--dm-type-meta) / 1.5 var(--mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--t3);
+}
+.trigger-rules-empty {
+  color: var(--t3);
+}
+.trigger-rules-list {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+}
+.trigger-rule {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px 0;
+  border-top: 1px solid var(--hair);
+}
+.trigger-rule[data-enabled='false'] .trigger-rule-text {
+  color: var(--t3);
+}
+.trigger-rule-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  min-width: 0;
+}
+.trigger-rule-id {
+  min-width: 0;
+  font-family: var(--mono);
+  color: var(--t1);
+  overflow-wrap: anywhere;
+}
+.trigger-rule-intervention,
+.trigger-rule-off {
+  font: 400 var(--dm-type-meta) / 1.5 var(--mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--t3);
+}
+.trigger-rule-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-left: auto;
+}
+.trigger-rule-acts button,
+.trigger-rule-confirm button {
+  color: var(--t2);
+  white-space: nowrap;
+}
+.trigger-rule-acts button:hover:not(:disabled),
+.trigger-rule-confirm button:hover:not(:disabled) {
+  color: var(--light);
+}
+.trigger-rule-text,
+.trigger-rule-match,
+.trigger-rule-message,
+.trigger-rule-decision {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.trigger-rule-match,
+.trigger-rule-message {
+  color: var(--t2);
+}
+.trigger-rule-decision {
+  color: var(--t3);
+}
+.trigger-rule[data-outcome='blocked'] .trigger-rule-decision {
+  color: var(--attn);
+}
+.trigger-rule-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  min-width: 0;
+}
+.trigger-rule-confirm > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.trigger-rules-error {
+  color: var(--attn);
+  overflow-wrap: anywhere;
+}
+.trigger-rule-form {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 12px 0 0;
+  border-top: 1px solid var(--hair);
+  /* A popup-like panel may sit in a head whose text does not wrap. */
+  white-space: normal;
+}
+.trigger-rule-form .field {
+  margin-bottom: 12px;
+  min-width: 0;
+}
+.trigger-rule-form .field > span {
+  overflow-wrap: anywhere;
+}
+.trigger-rule-form .field input,
+.trigger-rule-form .field textarea,
+.trigger-rule-form .field select {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+.trigger-rule-kinds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  min-width: 0;
+  margin: 0 0 12px;
+  padding: 0;
+  border: 0;
+}
+.trigger-rule-kinds legend {
+  flex-basis: 100%;
+  padding: 0 0 6px;
+  color: var(--dm-text-2, var(--t2));
+}
+.trigger-rule-choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin-bottom: 8px;
+}
+.trigger-rule-choice input {
+  margin: 0;
+  align-self: center;
+}
+.trigger-rule-choice span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.trigger-rule-key {
+  margin: 0 0 12px;
+  min-width: 0;
+}
+.trigger-rule-key summary {
+  cursor: pointer;
+  color: var(--t2);
+  margin-bottom: 8px;
+}
+.trigger-rule-form-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+/* The loop start dialog borrows the rule form's rows. */
+.loop-start {
+  border-top: 0;
+  padding-top: 0;
+}
+.loop-start-task {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--t2);
+  margin-bottom: 12px;
+}
+.loop-start-refused {
+  margin: 0 0 12px;
+  min-width: 0;
+  color: var(--t2);
+}
+.loop-start-refused summary {
+  cursor: pointer;
+}
+.loop-start-refused ul {
+  margin: 8px 0 0;
+  padding-left: 18px;
+}
+.loop-start-refused li {
+  overflow-wrap: anywhere;
+}
+.loop-start-route {
+  color: var(--t1);
+}
+.trigger-rules-title {
+  margin-top: 32px;
+}
