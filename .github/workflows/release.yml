@@ -58,6 +58,12 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
+          # The version guard diffs against release tags, which a shallow clone lacks.
+          fetch-depth: 0
+      # The app files must not have changed since this version was tagged, and an
+      # untagged version must be ahead of the latest release (scripts/release-check.mjs).
+      - name: Version guard
+        run: node scripts/release-check.mjs
       - name: Check the version, the publish mode and that the tag is free
         id: check
         env:
@@ -429,7 +435,9 @@ jobs:
           $assets = @(Get-ChildItem "$env:RUNNER_TEMP/assets" -File | Where-Object { $_.Name -ne '.release-assets-owner.json' } | ForEach-Object { $_.FullName })
           $kind = if ($env:VERSION -match '-rc\.') { 'release candidate, ' } else { '' }
           $title = "Diomedes $env:VERSION (${kind}experimental, unsigned)"
-          $mode = if ($env:PUBLISH -eq 'prerelease') { @('--prerelease', '--latest=false') } else { @('--draft') }
+          # [string[]]: PowerShell unrolls a one-element array from an if, and splatting a
+          # string passes it one character at a time, which gh reads as asset names.
+          [string[]]$mode = if ($env:PUBLISH -eq 'prerelease') { @('--prerelease', '--latest=false') } else { @('--draft') }
           gh release create $env:TAG --repo $env:GITHUB_REPOSITORY --target $env:SHA --title $title --notes-file "$env:RUNNER_TEMP/body.md" @mode @assets
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Check every uploaded asset against GitHub's own digest
