@@ -3,6 +3,7 @@ import type { Session } from '../../shared/types';
 import { readBlock, type ReplySegment } from '../../shared/visual-spec';
 import { blocksOf, chartColumns, isVisualBlock, type ArtifactRecord } from './artifacts';
 import { InlineVisual, VisualBoundary, VisualNote, VisualPending } from './InlineVisual';
+import { splitCitations, type CitedSource } from '../../shared/citations';
 import {
   artifactKindOf,
   DRAWING,
@@ -44,6 +45,20 @@ export interface TurnBodyProps {
   openKey?: string | null;
   /** Feeds a `visual` block's live run-status card; without one the card says it is not available here. */
   session?: Session | null;
+  /** Reads a source tag such as `[imports-pos-weekly-summary-1]` as a reference to its file. */
+  cite?: Citations;
+}
+
+/**
+ * How a text reads its source tags (shared/citations.ts). `strict` leaves a bracket that does
+ * not resolve as the text it was, which is right for an answer; a brief brackets only ids, so it
+ * reads an unresolved one as its words instead.
+ */
+export interface Citations {
+  resolve(id: string): CitedSource | null;
+  strict: boolean;
+  /** Opens the source, the way the thread's own file references do. */
+  onOpen?(source: CitedSource): void;
 }
 
 /**
@@ -57,7 +72,15 @@ function visualSegment(block: CodeBlock, ordinal: number, preview: boolean): Rep
   return readBlock(block.source, ordinal);
 }
 
-export function TurnBody({ text, preview = false, artifactAt, onOpenArtifact, openKey, session = null }: TurnBodyProps) {
+export function TurnBody({
+  text,
+  preview = false,
+  artifactAt,
+  onOpenArtifact,
+  openKey,
+  session = null,
+  cite,
+}: TurnBodyProps) {
   const cut = preview ? gatePreview(text) : null;
   const blocks: TurnBlock[] = cut ? parseBlocks(cut.text) : blocksOf(text);
   let visuals = 0;
@@ -104,7 +127,7 @@ export function TurnBody({ text, preview = false, artifactAt, onOpenArtifact, op
         // away in the panel. A table stays readable in place with its chip under it.
         if (chip && block.type === 'code') return chip;
         return (
-          <BlockView key={index} block={block}>
+          <BlockView key={index} block={block} cite={cite}>
             {chip}
           </BlockView>
         );
@@ -119,41 +142,84 @@ export function TurnBody({ text, preview = false, artifactAt, onOpenArtifact, op
   );
 }
 
-function BlockView({ block, children }: { block: TurnBlock; children?: ReactNode }) {
+function BlockView({ block, children, cite }: { block: TurnBlock; children?: ReactNode; cite?: Citations }) {
   switch (block.type) {
     case 'paragraph':
-      return <p>{spans(block.text)}</p>;
+      return <p>{spans(block.text, cite)}</p>;
     case 'heading':
-      return <Heading level={block.level}>{spans(block.text)}</Heading>;
+      return <Heading level={block.level}>{spans(block.text, cite)}</Heading>;
     case 'list':
-      return <ListView list={block} />;
+      return <ListView list={block} cite={cite} />;
     case 'code':
       return <CodeView block={block} />;
     case 'table':
       return (
         <>
-          <TableView table={block} />
+          <TableView table={block} cite={cite} />
           {children}
         </>
       );
   }
 }
 
-/** Inline code, bold and italic, as elements holding text. Everything else is the text itself. */
-export function spans(text: string): ReactNode[] {
+/**
+ * Inline code, bold and italic, as elements holding text, with any source tag read as its
+ * reference when `cite` is given. Bold may hold italic and italic may hold bold. Everything else
+ * is the text itself; a tag inside inline code stays the characters that were written.
+ */
+export function spans(text: string, cite?: Citations): ReactNode[] {
   return inlineSpans(text).map((span, index) =>
     span.type === 'code' ? (
       <code className="art-inline-code" key={index}>
         {span.text}
       </code>
     ) : span.type === 'strong' ? (
-      <strong key={index}>{span.text}</strong>
+      <strong key={index}>{nested(span.text, 'strong', cite)}</strong>
     ) : span.type === 'em' ? (
-      <em key={index}>{span.text}</em>
+      <em key={index}>{nested(span.text, 'em', cite)}</em>
     ) : (
-      span.text
+      <Fragment key={index}>{cited(span.text, cite)}</Fragment>
     ),
   );
+}
+
+/** The inside of a bold or italic run: the other kind of emphasis may sit in it. */
+function nested(text: string, outer: 'strong' | 'em', cite?: Citations): ReactNode {
+  const inner = inlineSpans(text);
+  if (inner.length === 1 && inner[0].type === 'text') return cited(text, cite);
+  if (inner.some((span) => span.type === outer)) return cited(text, cite);
+  return spans(text, cite);
+}
+
+/** Plain text with its source tags as references. */
+function cited(text: string, cite?: Citations): ReactNode {
+  if (!cite || !text.includes('[')) return text;
+  return splitCitations(text, cite.resolve, cite.strict).map((part, index) => {
+    if (part.type === 'text') return <Fragment key={index}>{part.text}</Fragment>;
+    if (part.type === 'named')
+      return (
+        <span className="cite-named" key={index}>
+          {part.name}
+        </span>
+      );
+    const { source } = part;
+    const title = source.sha ? `${source.path} · ${source.sha}` : source.path;
+    return cite.onOpen ? (
+      <button
+        type="button"
+        className="ref-chip cite"
+        key={index}
+        title={title}
+        onClick={() => cite.onOpen?.(source)}
+      >
+        <span className="ref-name">{source.name}</span>
+      </button>
+    ) : (
+      <span className="ref-chip cite" key={index} title={title}>
+        <span className="ref-name">{source.name}</span>
+      </span>
+    );
+  });
 }
 
 /** A turn sits under the page's own h1 and the ledger's h2s, so its headings start at h3. */
@@ -165,12 +231,12 @@ function Heading({ level, children }: { level: HeadingBlock['level']; children: 
   return <h6 className={className}>{children}</h6>;
 }
 
-function ListView({ list }: { list: ListBlock }) {
+function ListView({ list, cite }: { list: ListBlock; cite?: Citations }) {
   const items = list.items.map((item, index) => (
     <li key={index}>
-      {spans(item.text)}
+      {spans(item.text, cite)}
       {item.children.map((child, at) => (
-        <ListView list={child} key={at} />
+        <ListView list={child} key={at} cite={cite} />
       ))}
     </li>
   ));
@@ -223,7 +289,7 @@ export function CodeView({ block }: { block: Pick<CodeBlock, 'lang' | 'source'> 
 }
 
 /** Columns that hold only numbers are set right-aligned in tabular figures. */
-export function TableView({ table, caption }: { table: TableBlock; caption?: string }) {
+export function TableView({ table, caption, cite }: { table: TableBlock; caption?: string; cite?: Citations }) {
   const numeric = new Set(chartColumns(table).numeric.map((column) => column.index));
   const align = (index: number) =>
     table.align[index] ?? (numeric.has(index) ? 'right' : undefined);
@@ -235,7 +301,7 @@ export function TableView({ table, caption }: { table: TableBlock; caption?: str
           <tr>
             {table.header.map((cell, index) => (
               <th key={index} scope="col" style={{ textAlign: align(index) }}>
-                {spans(cell)}
+                {spans(cell, cite)}
               </th>
             ))}
           </tr>
@@ -249,7 +315,7 @@ export function TableView({ table, caption }: { table: TableBlock; caption?: str
                   className={numeric.has(index) ? 'num' : undefined}
                   style={{ textAlign: align(index) }}
                 >
-                  {spans(cell)}
+                  {spans(cell, cite)}
                 </td>
               ))}
             </tr>

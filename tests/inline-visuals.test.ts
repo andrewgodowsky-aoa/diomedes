@@ -359,7 +359,7 @@ describe('a visual never throws, hangs or draws NaN, whatever finite numbers it 
   test('a chart is drawn at the width its host measured, with fewer labels where it is narrow', () => {
     const labels = Array.from({ length: 16 }, (_, at) => `d${at + 1}`);
     const spec = valid({ kind: 'bar', labels, series: [{ name: 's', values: labels.map((_, at) => at) }] });
-    const shownLabels = (out: string) => (out.match(/<text x="[\d.]+" y="232" text-anchor="middle">/g) ?? []).length;
+    const shownLabels = (out: string) => (out.match(/<text class="iv-x" x="[\d.]+" y="232" text-anchor="middle">/g) ?? []).length;
     const turn = html(spec);
     expect(turn).toContain('viewBox="0 0 640 240"');
     expect(shownLabels(turn)).toBe(8);

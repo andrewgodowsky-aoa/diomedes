@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { readableWords } from '../../shared/display-names';
 import type {
   ReadinessAxis,
   ReadinessAxisName,
@@ -33,8 +34,7 @@ const LOCAL_CAPABILITY_NAMES: Readonly<Record<string, string>> = {
 function capabilityName(id: string) {
   if (isExternalEngine(id)) return ENGINE_NAMES[id];
   if (LOCAL_CAPABILITY_NAMES[id]) return LOCAL_CAPABILITY_NAMES[id];
-  const words = id.replace(/[._-]+/g, ' ');
-  return words.charAt(0).toUpperCase() + words.slice(1);
+  return readableWords(id.replace(/\./g, ' '));
 }
 
 function duration(milliseconds: number) {

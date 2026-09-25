@@ -15,6 +15,7 @@ import { SegmentBar } from './SegmentBar';
 import { planGroups } from './progress-bars';
 import { VerificationBadge, verificationFor } from './Verification';
 import { taskDocumentProblem } from '../../shared/task-sources';
+import { readableFileName } from '../../shared/display-names';
 import type { ReadyItem, ReadyQueueView } from '../../shared/ready-queue';
 import {
   configureReadyQueue,
@@ -59,20 +60,29 @@ function pointClass(column: Column): string {
   return '';
 }
 
-function ageOf(task: Task): string {
-  const last = task.moves.filter((m) => !m.undone).at(-1)?.at ?? task.createdAt;
-  const at = Date.parse(last);
-  if (Number.isNaN(at)) return '';
-  const ms = Date.now() - at;
-  if (ms < 0) return 'now';
+/**
+ * How long ago a task last moved (or was added, if it never has): the short form a row prints,
+ * and the sentence its title and screen reader say, so a bare "24 m" is never left to guess at.
+ */
+export function ageOf(task: Pick<Task, 'moves' | 'createdAt'>, now = Date.now()): { short: string; title: string } {
+  const moved = task.moves.filter((m) => !m.undone).at(-1)?.at;
+  const verb = moved ? 'Last moved' : 'Added';
+  const at = Date.parse(moved ?? task.createdAt);
+  if (Number.isNaN(at)) return { short: '', title: '' };
+  const ms = now - at;
   const mins = Math.floor(ms / 60000);
-  if (mins < 1) return 'now';
-  if (mins < 60) return `${mins} m`;
+  if (ms < 0 || mins < 1) return { short: 'now', title: `${verb} just now` };
+  const plural = (count: number, unit: string) => `${count} ${unit}${count === 1 ? '' : 's'}`;
+  if (mins < 60) return { short: `${mins} m`, title: `${verb} ${plural(mins, 'minute')} ago` };
   const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours} h`;
+  if (hours < 24) return { short: `${hours} h`, title: `${verb} ${plural(hours, 'hour')} ago` };
   const days = Math.floor(hours / 24);
-  if (days < 7) return `${days} d`;
-  return new Date(at).toLocaleDateString('en-US', { weekday: 'short' }).toLowerCase();
+  if (days < 7) return { short: `${days} d`, title: `${verb} ${plural(days, 'day')} ago` };
+  const date = new Date(at);
+  return {
+    short: date.toLocaleDateString('en-US', { weekday: 'short' }).toLowerCase(),
+    title: `${verb} on ${date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}`,
+  };
 }
 
 export function BoardView({
@@ -356,7 +366,7 @@ export function BoardView({
           type="button"
           className={`mono link${compact ? ' on' : ''}`}
           aria-pressed={compact}
-          title="Compact rows: title, worker and age on one line"
+          title="Compact rows: a title of up to two lines, with its worker and age beside it"
           onClick={() => setCompact(!compact)}
         >
           compact
@@ -679,7 +689,7 @@ function TaskRow({
   queued: ReadyItem | null;
   worker: string;
   workerTitle: string | undefined;
-  age: string;
+  age: { short: string; title: string };
   focus: boolean;
   arrived: boolean;
   busy: boolean;
@@ -735,7 +745,15 @@ function TaskRow({
         data-task-point={task.id}
         {...(focus ? { 'data-focus-point': '' } : {})}
       />
-      <button type="button" className="t" title={task.name} onClick={() => onOpenThread(task)}>
+      {/* Two lines of the title show; hover and keyboard focus show all of it (board.css). */}
+      <button
+        type="button"
+        className="t"
+        title={task.name}
+        onClick={() => onOpenThread(task)}
+        // Focus opens a compact title to its whole length; keep all of it on screen.
+        onFocus={(event) => event.currentTarget.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })}
+      >
         {task.name}
       </button>
       <div className="m">
@@ -749,10 +767,18 @@ function TaskRow({
         <span className="mono" title={workerTitle}>
           {worker}
         </span>
-        <span className="mono age">{age}</span>
+        {age.short && (
+          <span className="mono age" title={age.title}>
+            <span className="art-sr">{age.title}</span>
+            <span aria-hidden="true">{age.short}</span>
+          </span>
+        )}
       </div>
+      {/* The document by its readable name; its path is the title and the receipt's detail. */}
       {task.sourceDocument && (
-        <div className="x" title={task.sourceDocument}>Default document: {task.sourceDocument}</div>
+        <div className="x doc" title={task.sourceDocument}>
+          Default document: {readableFileName(task.sourceDocument, { folder: true })}
+        </div>
       )}
       {(evidenceLine || focus || verification) && (
         <div className="x">
@@ -835,6 +861,12 @@ function TaskRow({
             <dd className="mono">{task.creationReceipt.commandId}</dd>
             <dt>History event</dt>
             <dd className="mono">{task.creationReceipt.eventId}</dd>
+            {task.sourceDocument && (
+              <>
+                <dt>Default document</dt>
+                <dd className="mono">{task.sourceDocument}</dd>
+              </>
+            )}
           </dl>
         </details>
       )}

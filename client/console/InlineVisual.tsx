@@ -1,4 +1,4 @@
-import { Component, type ReactNode } from 'react';
+import { Component, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import type { Session } from '../../shared/types';
 import type { UpdateStatusSnapshot } from '../../shared/app-updates';
 import type {
@@ -155,8 +155,46 @@ export function pieShares(values: readonly number[]): { total: number | null; sh
 
 const r1 = (n: number) => Math.round(n * 10) / 10;
 
-function short(label: string, max = 12): string {
-  return label.length > max ? `${label.slice(0, max - 1)}…` : label;
+/** An x-axis label is 11 px mono: about this many drawing units a character. */
+const LABEL_CHAR = 6.6;
+/** No x-axis label takes more lines than this; past it the last line is cut and says so. */
+const LABEL_LINES = 2;
+/** The height of one more label line, in drawing units. */
+const LABEL_LINE_H = 13;
+
+export interface AxisLabel {
+  /** What is drawn, one entry per line. */
+  lines: string[];
+  /** True when the lines do not hold the whole label: its full text is the hover title. */
+  cut: boolean;
+}
+
+/**
+ * An x-axis label fitted to `room` drawing units: whole when it fits, else wrapped on spaces over
+ * at most two lines, and only then cut, with an ellipsis and the whole label kept for hover. A
+ * label is never clipped bare.
+ */
+export function fitAxisLabel(label: string, room: number): AxisLabel {
+  const max = Math.max(4, Math.floor(room / LABEL_CHAR));
+  if (label.length <= max) return { lines: [label], cut: false };
+  const lines: string[] = [];
+  let line = '';
+  for (const word of label.split(/\s+/).filter(Boolean)) {
+    const next = line ? `${line} ${word}` : word;
+    if (next.length <= max) {
+      line = next;
+      continue;
+    }
+    if (line) lines.push(line);
+    line = word;
+  }
+  if (line) lines.push(line);
+  const fits = lines.length <= LABEL_LINES && lines.every((item) => item.length <= max);
+  if (fits) return { lines, cut: false };
+  const kept = lines.slice(0, LABEL_LINES).map((item) => (item.length > max ? item.slice(0, max) : item));
+  const last = kept[kept.length - 1];
+  kept[kept.length - 1] = `${last.slice(0, Math.max(1, max - 1)).trimEnd()}…`;
+  return { lines: kept, cut: true };
 }
 
 function DataTable({ spec }: { spec: ChartSpec }) {
@@ -205,13 +243,15 @@ function Frame({
   kind,
   title,
   children,
+  figureRef,
 }: {
   kind: string;
   title?: string;
   children: ReactNode;
+  figureRef?: RefObject<HTMLElement | null>;
 }) {
   return (
-    <figure className={`iv iv-${kind}`}>
+    <figure className={`iv iv-${kind}`} ref={figureRef}>
       {title && <figcaption className="iv-title">{title}</figcaption>}
       {children}
     </figure>
@@ -222,6 +262,33 @@ function Frame({
 const DRAW_W = 640;
 const H = 240;
 const M = { top: 12, right: 12, bottom: 28, left: 60 };
+
+/**
+ * The width a chart in a turn is laid out at, so its 11 px labels stay 11 px in a narrow column
+ * instead of shrinking with a 640-wide drawing. Off where the host gives a width (the panel) and
+ * before the first layout, when the chart is drawn 640 wide as before.
+ */
+function useFigureWidth(active: boolean): [RefObject<HTMLElement | null>, number | undefined] {
+  const ref = useRef<HTMLElement | null>(null);
+  const [width, setWidth] = useState<number | undefined>(undefined);
+  useEffect(() => {
+    const node = ref.current;
+    if (!active || !node) return;
+    const read = (value: number) => {
+      const next = Math.round(value);
+      if (next > 0) setWidth((now) => (now === next ? now : next));
+    };
+    read(node.getBoundingClientRect().width);
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver((entries) => {
+      const box = entries[0]?.contentRect;
+      if (box) read(box.width);
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [active]);
+  return [ref, width];
+}
 
 /** The drawing width: the host's measured width where it gave one, within reason. */
 function drawingWidth(width: number | undefined): number {
@@ -236,7 +303,8 @@ function CartesianChart({
   spec: Extract<ChartSpec, { kind: 'bar' | 'line' | 'area' }>;
   width?: number;
 }) {
-  const W = drawingWidth(width);
+  const [figureRef, measured] = useFigureWidth(width === undefined);
+  const W = drawingWidth(width ?? measured);
   const all = spec.series.flatMap((s) => s.values);
   const { min, max, ticks } = niceDomain(all);
   const plotW = W - M.left - M.right;
@@ -255,16 +323,27 @@ function CartesianChart({
   // Eight labels across the 640 drawing; fewer where the drawing is narrower,
   // so a label never runs into the next one.
   const labelEvery = Math.max(1, Math.ceil(n / Math.max(2, Math.min(8, Math.floor(plotW / 70)))));
+  // The room between two drawn labels' centres, less a gap, is what each label may take.
+  const step = spec.kind === 'bar' ? band : n === 1 ? plotW : plotW / (n - 1);
+  const room = Math.max(LABEL_CHAR * 4, step * labelEvery - 10);
+  const axis = spec.labels.map((label, i) => (i % labelEvery === 0 ? fitAxisLabel(label, room) : null));
+  const lineCount = Math.max(1, ...axis.map((item) => item?.lines.length ?? 1));
+  // A wrapped label adds its lines under the plot; the plot keeps its height.
+  const height = H + (lineCount - 1) * LABEL_LINE_H;
+  const labelX = (i: number, item: AxisLabel) => {
+    const half = (Math.max(...item.lines.map((line) => line.length)) * LABEL_CHAR) / 2;
+    return r1(Math.min(W - half - 2, Math.max(half + 2, xCenter(i))));
+  };
   const zero = y(Math.max(min, Math.min(0, max)));
   const tick = (v: number) => formatValue(v, spec.format, spec.currency, true);
 
   return (
-    <Frame kind={spec.kind} title={spec.title}>
+    <Frame kind={spec.kind} title={spec.title} figureRef={figureRef}>
       <svg
         className="iv-svg"
         role="img"
         aria-label={chartSummary(spec)}
-        viewBox={`0 0 ${W} ${H}`}
+        viewBox={`0 0 ${W} ${height}`}
         preserveAspectRatio="xMidYMid meet"
       >
         <g className="iv-grid" aria-hidden="true">
@@ -277,13 +356,21 @@ function CartesianChart({
             </g>
           ))}
           <line className="iv-zero" x1={M.left} x2={W - M.right} y1={zero} y2={zero} />
-          {spec.labels.map((label, i) =>
-            i % labelEvery === 0 ? (
-              <text key={i} x={xCenter(i)} y={H - 8} textAnchor="middle">
-                {short(label)}
+          {spec.labels.map((label, i) => {
+            const item = axis[i];
+            if (!item) return null;
+            const x = labelX(i, item);
+            return (
+              <text key={i} className="iv-x" x={x} y={H - 8} textAnchor="middle">
+                {item.lines.map((line, at) => (
+                  <tspan key={at} x={x} dy={at === 0 ? undefined : LABEL_LINE_H}>
+                    {line}
+                  </tspan>
+                ))}
+                {(item.cut || item.lines.length > 1) && <title>{label}</title>}
               </text>
-            ) : null,
-          )}
+            );
+          })}
         </g>
         {spec.series.map((s, si) => {
           if (spec.kind === 'bar') {

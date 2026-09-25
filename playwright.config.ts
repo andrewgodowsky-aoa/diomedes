@@ -137,6 +137,7 @@ export default defineConfig({
     'software-pack-ui.spec.ts',
     'p04-pack-panel.spec.ts',
     'update-notice.spec.ts',
+    'capture-polish.spec.ts',
   ],
   fullyParallel: false,
   workers: 1,

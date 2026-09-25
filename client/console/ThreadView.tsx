@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type {
   Change,
   Conversation,
@@ -52,7 +52,8 @@ import { toolRunning, type ToolLine } from './engine-activity';
 import { ToolActivityList } from './ToolActivity';
 import { resolvedDetail, threadStyle, useWorkStyleView } from './WorkStylePicker';
 import { WORK_STYLE_LABELS } from '../../shared/work-style';
-import { TurnBody } from './TurnBody';
+import { TurnBody, type Citations } from './TurnBody';
+import { resolveBySlug } from '../../shared/citations';
 import { VerificationBadge, VerificationPanel, verificationFor } from './Verification';
 import { sizeLabel } from './FilesPane';
 import { turnKeyOf, type ArtifactIndex, type ArtifactRecord } from './artifacts';
@@ -295,6 +296,18 @@ export function ThreadView({
   const stateWord = evidence?.column.toLowerCase() ?? '';
   const stateClass = stateWord === 'review' || stateWord === 'blocked' ? 'attn' : '';
 
+  // A source tag an answer quotes from a brief ([imports-pos-weekly-summary-1]) is the same file
+  // reference a message's own sources are; a bracket that names no recorded file stays as written.
+  const cite = useMemo<Citations | undefined>(() => {
+    if (!onOpenReference) return undefined;
+    const paths = [...new Set(history.flatMap((entry) => entry.files.map((file) => file.path)))];
+    return {
+      strict: true,
+      resolve: (id) => resolveBySlug(id, paths),
+      onOpen: (source) => onOpenReference({ path: source.path, sha: source.sha }),
+    };
+  }, [history, onOpenReference]);
+
   // Group turns into exchanges: a you-turn opens one, following Diomedes
   // turns join it, and a Diomedes turn with no preceding you-turn stands alone.
   const exchanges: Turn[][] = [];
@@ -409,6 +422,7 @@ export function ThreadView({
                     }
                     onOpenArtifact={onOpenArtifact}
                     openKey={openArtifactKey}
+                    cite={cite}
                   />
                 )}
               </div>
