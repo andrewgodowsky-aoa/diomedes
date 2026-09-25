@@ -2279,6 +2279,8 @@ export async function createApp(options: AppOptions) {
      * passes none and the two Work paths run exactly as they did.
      */
     commit?: <T>(step: () => Promise<T>) => Promise<T>,
+    /** H15 decision 5: a supervision correction's permission, never wider than its origin run's. */
+    ceiling?: { permission: ThreadPermission },
   ) => {
     refuseHomeWork(projectId);
     if (isUpdateClosing())
@@ -2308,6 +2310,7 @@ export async function createApp(options: AppOptions) {
       if (!thread) throw new ApiError(404, 'This thread was not found.');
       threadPermission = thread.permission ?? 'show-first';
     }
+    if (ceiling?.permission === 'show-first') threadPermission = 'show-first';
     // The thread's tier, when one applies, decides the route Build runs on; a tier whose
     // route is not ready is refused here by name, never moved to the recorded route.
     const selectedRoute =
@@ -2402,7 +2405,7 @@ export async function createApp(options: AppOptions) {
   const workControl = new WorkControl({
     store,
     native: nativeWork,
-    admit: (projectId, command) => admitWork(projectId, command, listeningPort),
+    admit: (projectId, command, ceiling) => admitWork(projectId, command, listeningPort, undefined, ceiling),
     stopSession: (projectId, sessionId, by) => {
       const service = serviceFor(projectId, sessionId);
       if (service === nativeWork) return nativeWork.stop(projectId, sessionId, by);
