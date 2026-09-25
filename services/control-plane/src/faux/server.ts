@@ -9,7 +9,7 @@ import fs from 'node:fs/promises';
 import http from 'node:http';
 import path from 'node:path';
 import os from 'node:os';
-import { createFauxCloud, FAUX_BACKEND_LABEL, type FauxCloud } from './cloud.js';
+import { createFauxCloud, FAUX_BACKEND_LABEL, type FauxCloud, type FauxCloudOptions } from './cloud.js';
 import { seedDemo, type SeedResult } from './seed.js';
 
 export const FAUX_CLOUD_PORT = 8795;
@@ -48,12 +48,16 @@ async function lock(file: string): Promise<() => Promise<void>> {
   throw new Error('The faux cloud store lock could not be taken.');
 }
 
+/** The managed gateway takes up to 2,000,000 bytes and refuses more itself, in its own words. */
+const MANAGED_REQUEST_LIMIT = 2_000_000 + 65_536;
+
 async function toRequest(req: http.IncomingMessage, port: number): Promise<Request> {
+  const limit = (req.url ?? '').startsWith('/managed/') ? MANAGED_REQUEST_LIMIT : 65_536;
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of req) {
     size += (chunk as Buffer).length;
-    if (size > 65_536) throw new RangeError('Request body too large.');
+    if (size > limit) throw new RangeError('Request body too large.');
     chunks.push(chunk as Buffer);
   }
   const headers = new Headers();
@@ -70,6 +74,32 @@ async function toRequest(req: http.IncomingMessage, port: number): Promise<Reque
   });
 }
 
+/**
+ * Stream a Fetch response to Node as it is produced, so a managed answer
+ * arrives token by token, and cancel it when the client leaves, so the gateway
+ * sees the disconnect and parks the attempt.
+ */
+async function pipe(response: Response, res: http.ServerResponse): Promise<void> {
+  if (!response.body) { res.end(); return; }
+  const reader = response.body.getReader();
+  const gone = () => { if (!res.writableFinished) void reader.cancel().catch(() => {}); };
+  res.once('close', gone);
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done || res.destroyed) break;
+      if (!res.write(value))
+        await new Promise<void>((resolve) => { res.once('drain', resolve); res.once('close', resolve); });
+    }
+    res.end();
+  } catch {
+    // The stream failed after its headers went out: end the response short, as the Worker would.
+    res.destroy();
+  } finally {
+    res.off('close', gone);
+  }
+}
+
 export interface RunningFauxCloud {
   cloud: FauxCloud;
   url: string;
@@ -78,18 +108,28 @@ export interface RunningFauxCloud {
   close(): Promise<void>;
 }
 
-/** Start a faux cloud listener on loopback. Seeds demo data into an empty store when asked. */
+/**
+ * Start a faux cloud listener on loopback. Seeds demo data into an empty store
+ * when asked. Managed calls are answered by the scripted provider unless
+ * NECTOVIA_FAUX_BEDROCK_API_KEY is set, which calls Bedrock for real and needs
+ * Andrew's separate spend approval before it is ever set.
+ */
 export async function startFauxCloud(options: {
   file?: string | null;
   port?: number;
   seed?: boolean;
   allowedOrigins?: readonly string[];
   passwordIterations?: number;
+  managed?: FauxCloudOptions['managed'];
+  liveBedrockApiKey?: string | null;
 }): Promise<RunningFauxCloud> {
   const file = options.file === undefined ? defaultFauxCloudFile() : options.file;
   const unlock = file ? await lock(file) : async () => {};
   try {
-    const cloud = await createFauxCloud({ file, allowedOrigins: options.allowedOrigins, passwordIterations: options.passwordIterations });
+    const liveBedrockApiKey = options.liveBedrockApiKey !== undefined ? options.liveBedrockApiKey
+      : process.env.NECTOVIA_FAUX_BEDROCK_API_KEY?.trim() || null;
+    const cloud = await createFauxCloud({ file, allowedOrigins: options.allowedOrigins, passwordIterations: options.passwordIterations,
+      managed: options.managed, liveBedrockApiKey });
     const seed = options.seed ? await seedDemo(cloud) : null;
     const port = options.port ?? FAUX_CLOUD_PORT;
     const server = http.createServer(async (req, res) => {
@@ -97,8 +137,9 @@ export async function startFauxCloud(options: {
         const response = await cloud.handle(await toRequest(req, port));
         res.statusCode = response.status;
         response.headers.forEach((value, key) => res.setHeader(key, value));
-        res.end(Buffer.from(await response.arrayBuffer()));
+        await pipe(response, res);
       } catch (error) {
+        if (res.headersSent) { res.destroy(); return; }
         res.statusCode = error instanceof RangeError ? 413 : 500;
         res.setHeader('content-type', 'application/json');
         res.end(JSON.stringify({ error: error instanceof RangeError ? 'The request is too large.' : 'The test account service failed.' }));
