@@ -2277,7 +2277,10 @@ export class EngineService {
       effort: 'medium',
       transport: api.transport,
     });
-    return { ...adapter, complete: (call, signal) => adapter.complete(call, AbortSignal.any([signal, stop])) };
+    return {
+      ...adapter,
+      complete: (call, signal, stream) => adapter.complete(call, AbortSignal.any([signal, stop]), stream),
+    };
   }
   close() {
     for (const controller of this.running.values()) controller.abort();

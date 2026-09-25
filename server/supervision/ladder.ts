@@ -46,6 +46,11 @@ export const DRIFT_LADDERS: Readonly<Record<DriftCode, DriftLadder>> = Object.fr
     entry: { info: 'note', warning: 'correct', critical: 'escalate' },
     maxCorrections: 1,
   },
+  // H16: a steer rule is a warning (corrected, twice at most, then escalated); a stop rule is critical.
+  'rule-trigger': {
+    entry: { info: 'note', warning: 'correct', critical: 'escalate' },
+    maxCorrections: 2,
+  },
 });
 
 /** The bound a detector's corrections run under: its own, capped by the harness limit. */
