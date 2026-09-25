@@ -43,6 +43,33 @@ export function sessionControls(contract: AdapterRouteContract): SessionControls
 }
 
 /**
+ * H03: `GET /api/projects/:id/threads/:threadId/native-session`. What a Console thread may offer
+ * for its open native conversation, and what the record says about it. `controls` is null where
+ * the thread's open lineage is not a native session. `continuity` is null until its run exists.
+ * `queued` is the host's steering queue (`controls.steer === 'queued'`), newest last, including
+ * what became of each message; it is held in memory and a restart empties it.
+ */
+export interface ThreadSessionView {
+  runId: string | null;
+  controls: SessionControls | null;
+  busy: boolean;
+  continuity: {
+    state: 'live' | 'resumable' | 'new' | 'start-again';
+    detail: string;
+    cursor: number;
+  } | null;
+  requestedModel: string | null;
+  /** The model the engine itself reported for this session: the attribution (decision 8). */
+  reportedModel: string | null;
+  queued: {
+    commandId: string;
+    state: 'pending' | 'delivered' | 'logged-only' | 'rejected' | 'cancelled';
+    detail: string;
+    at: string;
+  }[];
+}
+
+/**
  * Which of the six durable Work controls (H08, `shared/work-control.ts`) a run's
  * route offers, read from the same route contract as `sessionControls` plus the
  * drivers the host has wired to Work runs. Pure, so the server that enforces it
