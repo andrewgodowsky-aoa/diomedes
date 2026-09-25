@@ -23,6 +23,7 @@ import { digest, HarnessError } from './policy.js';
 import { RunService, Suspended, type StepContext, type StepDefinition } from './run-service.js';
 import { boundedHistory, carriedRun } from './conversation-history.js';
 import { artifactSteps, unrecordedArtifacts } from './artifact-steps.js';
+import { repairWriting } from '../plain-writing.js';
 
 /** A first prompt that carries an earlier conversation, laid out as the model-API driver lays out history. */
 export const carriedPrompt = (history: string, prompt: string) =>
@@ -237,6 +238,8 @@ export interface ClaudeSessionTurnResult {
    * fresh native session. Absent on every other turn and on every Claude turn.
    */
   continuity?: { origin: string; detail: string };
+  /** Plain writing: what the check found and what code fixed (server/plain-writing.ts). */
+  writing?: Json;
   /**
    * H03: set when a person's Stop ended this turn at its own boundary, the session idle and
    * still resumable. A Stop that had to end the process fails the turn as `STOP_FORCED` instead.
@@ -972,6 +975,11 @@ export class ClaudeSessionRuns<C extends SessionCheckpointFacts = ClaudeSessionC
         mode: request.mode,
         sourceRunId: request.sourceRunId ?? null,
         ...(bound ? { binding: input.binding! } : {}),
+        // Which rules the message carried, as evidence (shas and paths, never a body). A turn
+        // saved before rules travelled keeps the shape it was saved with, as for `binding`.
+        ...(input.rules && !(unfinished && (unfinished.intent.input as { rules?: Json } | null)?.rules === undefined)
+          ? { rules: input.rules.record }
+          : {}),
       },
       destination: 'external',
       cost: 1,
@@ -1203,6 +1211,21 @@ export class ClaudeSessionRuns<C extends SessionCheckpointFacts = ClaudeSessionC
               else throw error;
             }
             await preview?.finish();
+            // Plain writing, inside the step so a replay and the next message's history read the
+            // same text. Check and fix in code only: a rewrite here would be a second message in the
+            // engine's own session, which the person did not send (server/plain-writing.ts).
+            let writing: Json | undefined;
+            if (result) {
+              const repaired = await repairWriting({
+                text: result.text,
+                options: {
+                  userTexts: [input.prompt, ...input.documents.map((doc) => doc.text)],
+                  ownerPhrases: input.writing?.phrases ?? [],
+                },
+              });
+              result = { ...result, text: repaired.text };
+              writing = repaired.record as unknown as Json;
+            }
             context.reportOrigin?.({
               protocolVersion: 1,
               mode: 'direct',
@@ -1217,6 +1240,7 @@ export class ClaudeSessionRuns<C extends SessionCheckpointFacts = ClaudeSessionC
             return {
               runId,
               response: result,
+              ...(writing ? { writing } : {}),
               interrupted,
               ...(interrupted && this.active.get(runId)?.stopRequested ? { stop: 'interrupted' as const } : {}),
               nativeSession: connection.session.nativeSession,

@@ -126,6 +126,8 @@ export interface Settings {
   services?: Record<string, boolean | string>;
   /** H16 stream-time trigger rules for every project on this installation (organization authority). */
   streamTriggerRules?: import('./stream-rules.js').StreamRule[];
+  /** Plain writing: phrases the owner added to the shipped list (shared/plain-writing-rules.json). */
+  plainWritingPhrases?: string[];
 }
 export interface Project {
   ai?: { engine: Route; model: string | null };
@@ -361,6 +363,11 @@ export interface WorkReceipt {
 export interface Session {
   origin?: OriginSnapshot;
   /**
+   * Plain writing on the proposal a person reads: its summary and each prose file it writes
+   * (Markdown and plain text, never code). Absent before 2026-09-25 and on runs with no proposal.
+   */
+  writing?: { part: string; record: import('./plain-writing.js').PlainWritingRecord }[];
+  /**
    * The project instruction files this run put in front of the model, with the
    * sha of the bytes actually sent and anything left out whole. Absent on a
    * project that has no active pack or no discovered instruction file.
@@ -478,6 +485,8 @@ export interface Change {
 }
 export interface Turn {
   origin?: OriginSnapshot;
+  /** Plain writing: what the check found in this answer and what was repaired. Absent before 2026-09-25. */
+  writing?: import('./plain-writing.js').PlainWritingRecord;
   id: string;
   role: 'you' | 'assistant' | 'diomedes';
   mode: Mode;

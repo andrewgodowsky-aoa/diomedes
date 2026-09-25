@@ -414,7 +414,7 @@ describe('a business gets a brief it can read', () => {
       automations: { status: { text: string }; latest: { occurrence: { id: string } } }[];
     }>(`/workspace/organizations/${organizationId}/automations`);
     expect(listed.status).toBe(200);
-    expect(listed.data.automations[0]?.status.text).toBe('Manual — not scheduled');
+    expect(listed.data.automations[0]?.status.text).toBe('Manual, not scheduled');
     expect(listed.data.automations[0]?.latest.occurrence.id).toBe(legacy.occurrenceId);
 
     // The new route uses real imports, with arbitrary export names rather than

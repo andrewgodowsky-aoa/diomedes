@@ -58,6 +58,15 @@ function keptPlace(): string | null {
   }
 }
 
+/**
+ * What follows the version in "Updated to 0.2.0: 1 setting moved to new defaults." A notice
+ * written before plain writing put " — " there instead of ": ".
+ */
+function updateNoticeNote(text: string | undefined): string | undefined {
+  const at = text ? /: | — /.exec(text) : null;
+  return at ? text!.slice(at.index + at[0].length) : undefined;
+}
+
 export function App() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -975,7 +984,7 @@ export function App() {
       !appearanceNotice ? (
         <ReleaseNotice
           release={releaseNotice}
-          note={updateNotice?.text.split(' — ')[1]}
+          note={updateNoticeNote(updateNotice?.text)}
           onRead={() => {
             settleReleaseNotice(releaseNotice.version);
             if (updateNotice) {

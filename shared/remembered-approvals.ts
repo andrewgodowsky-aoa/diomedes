@@ -543,7 +543,7 @@ const day = (at: string) =>
  * approval and since when, so it never reads as a fresh click.
  */
 export function rememberedAttribution(grant: { acceptedBy: string; acceptedAt: string }): string {
-  return `Ran under a remembered approval — ${grant.acceptedBy}, since ${day(grant.acceptedAt)}.`;
+  return `Ran under a remembered approval: ${grant.acceptedBy}, since ${day(grant.acceptedAt)}.`;
 }
 
 /**

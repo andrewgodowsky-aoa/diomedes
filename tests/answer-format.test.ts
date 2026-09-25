@@ -186,9 +186,18 @@ describe('the ask route', () => {
     const ask = (mode: string, text: string) =>
       api(`/projects/${projectId}/ask`, 'POST', { text, mode, route: 'claude-code', threadId, consent: true });
     expect((await ask('ask', 'What is on the menu?')).status).toBe(200);
-    expect(generate.mock.calls.at(-1)![0].instructions).toBe(answerInstructions('ask'));
+    // The mode's text with the answer format first, then the rule path's section (shipped product
+    // knowledge here; this project has no instruction files).
+    const sent = (mode: 'ask' | 'plan') => {
+      const instructions = String(generate.mock.calls.at(-1)![0].instructions);
+      expect(instructions.startsWith(`${answerInstructions(mode)}
+
+`)).toBe(true);
+      expect(instructions).toContain('--- BEGIN DIOMEDES PRODUCT KNOWLEDGE ---');
+    };
+    sent('ask');
     expect((await ask('plan', 'Plan the week')).status).toBe(200);
-    expect(generate.mock.calls.at(-1)![0].instructions).toBe(answerInstructions('plan'));
+    sent('plan');
 
     const calls = generate.mock.calls.length;
     expect((await ask('build', 'Create a note')).status).toBe(200);

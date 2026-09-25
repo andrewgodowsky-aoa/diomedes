@@ -269,7 +269,7 @@ export const BUSINESS_QUESTIONS: readonly Question[] = Object.freeze([
       'Decides which processing routes are allowed. If this is unknown, the risky ones stay closed.',
     kind: 'choice',
     options: Object.freeze([
-      { id: 'no', label: 'No — keep it on this computer' },
+      { id: 'no', label: 'No, keep it on this computer' },
       { id: 'non-sensitive', label: 'Only material that is not sensitive' },
       { id: 'yes', label: 'Yes, under our normal supplier terms' },
     ]),
