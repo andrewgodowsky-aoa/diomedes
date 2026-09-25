@@ -8,7 +8,8 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 const buildScriptId = 'scripts/build-windows-installer.mjs';
 // Identifiers. An upgrade finds the earlier install, and the app its data, by these, so they
 // keep the name Diomedes that the product had until 2026-09-22. So do the install folder,
-// Diomedes.exe and the uninstaller's file name in the script below, and the asset name.
+// the uninstaller's file name in the script below, and the asset name. The app executable
+// is nectovia.exe; the owned legacy executable is removed during an upgrade.
 const productId = 'Diomedes.Experimental.8c27d61a-1919-4b12-9df7-20260909e001';
 const productRegistryKey = `Software\\Diomedes\\Experimental\\${productId}`;
 const uninstallRegistryKey = `Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${productId}`;
@@ -49,7 +50,7 @@ Options:
   --output-name NAME   Installer file name (must be a base name ending in .exe)
   --tool-cache PATH    Cache for the portable NSIS ZIP and extraction
   --no-download        Fail instead of downloading the pinned portable NSIS ZIP
-  --signed             Authenticode-sign Diomedes.exe and the installer through
+  --signed             Authenticode-sign nectovia.exe and the installer through
                        scripts/sign-windows.ps1 (Azure Artifact Signing; needs the
                        DIOMEDES_SIGN_* environment). Without it the build is unsigned
                        and says so.
@@ -337,7 +338,19 @@ FunctionEnd
 Section \"Install Nectovia experimental app\" SectionInstall
   SetShellVarContext current
   Call EnsureSafeInstallDir
+  ClearErrors
 ${installFiles}
+  IfErrors install_failed
+
+  ; Upgrade only after the new payload was copied into this verified owned directory.
+  IfFileExists \"$INSTDIR\\app\\Diomedes.exe\" 0 legacy_executable_removed
+  Delete \"$INSTDIR\\app\\Diomedes.exe\"
+  IfErrors 0 legacy_executable_removed
+install_failed:
+    MessageBox MB_OK|MB_ICONSTOP \"Close Nectovia before upgrading, then run this installer again.\" /SD IDOK
+    SetErrorLevel 3
+    Quit
+legacy_executable_removed:
 
   FileOpen $0 \"$INSTDIR\\${'${MARKER}'}\" w
   FileWrite $0 \"${'${PRODUCT_ID}'}\"
@@ -349,13 +362,13 @@ ${installFiles}
   Delete \"${'${LEGACY_SHORTCUT}'}\"
   RMDir \"${'${LEGACY_SHORTCUT_DIR}'}\"
   CreateDirectory \"${'${SHORTCUT_DIR}'}\"
-  CreateShortcut \"${'${SHORTCUT}'}\" \"$INSTDIR\\app\\Diomedes.exe\"
+  CreateShortcut \"${'${SHORTCUT}'}\" \"$INSTDIR\\app\\nectovia.exe\"
 
   WriteRegStr HKCU \"${'${PRODUCT_KEY}'}\" \"InstallDir\" \"$INSTDIR\"
   WriteRegStr HKCU \"${'${PRODUCT_KEY}'}\" \"ProductId\" \"${'${PRODUCT_ID}'}\"
   WriteRegStr HKCU \"${'${UNINSTALL_KEY}'}\" \"DisplayName\" \"${'${PRODUCT_NAME}'}\"
   WriteRegStr HKCU \"${'${UNINSTALL_KEY}'}\" \"DisplayVersion\" \"${'${APP_VERSION}'}\"
-  WriteRegStr HKCU \"${'${UNINSTALL_KEY}'}\" \"DisplayIcon\" \"$INSTDIR\\app\\Diomedes.exe\"
+  WriteRegStr HKCU \"${'${UNINSTALL_KEY}'}\" \"DisplayIcon\" \"$INSTDIR\\app\\nectovia.exe\"
   WriteRegStr HKCU \"${'${UNINSTALL_KEY}'}\" \"InstallLocation\" \"$INSTDIR\"
   WriteRegStr HKCU \"${'${UNINSTALL_KEY}'}\" \"UninstallString\" '\"$INSTDIR\\Uninstall Diomedes Experimental.exe\"'
   WriteRegDWORD HKCU \"${'${UNINSTALL_KEY}'}\" \"NoModify\" 1
@@ -510,8 +523,8 @@ async function main() {
   }
   const appStat = await fs.stat(appDir).catch(() => null);
   if (!appStat?.isDirectory()) throw new Error(`Packaged app directory is missing: ${appDir}`);
-  if (!(await exists(path.join(appDir, 'Diomedes.exe')))) {
-    throw new Error(`Packaged app does not contain Diomedes.exe: ${appDir}`);
+  if (!(await exists(path.join(appDir, 'nectovia.exe')))) {
+    throw new Error(`Packaged app does not contain nectovia.exe: ${appDir}`);
   }
   const outputPath = path.join(outDir, outputName);
   const manifestPath = `${outputPath}.json`;
@@ -522,7 +535,7 @@ async function main() {
     throw new Error(`NSIS tool cache must be outside the packaged app directory: ${toolCache}`);
   }
 
-  if (signed) await signFiles([path.join(appDir, 'Diomedes.exe')]);
+  if (signed) await signFiles([path.join(appDir, 'nectovia.exe')]);
   const payload = await collectPayload(appDir);
   if (payload.files.length === 0) throw new Error(`Packaged app is empty: ${appDir}`);
   const appTreeSha256 = payloadTreeSha256(payload);

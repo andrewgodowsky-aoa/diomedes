@@ -130,8 +130,8 @@ test.beforeEach(async ({ page }) => {
 async function openEngines(page: Page) {
   await page.goto('/');
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
-  await page.getByRole('button', { name: 'Engines', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Engines', exact: true, level: 1 })).toBeVisible();
+  await page.getByRole('button', { name: /^(Engines|Helpers on this computer)$/ }).click();
+  await expect(page.getByRole('heading', { name: /^(Engines|Helpers on this computer)$/, level: 1 })).toBeVisible();
   const card = page.getByRole('region', { name: 'Google Vertex AI' });
   await expect(card, 'the Vertex card is mounted in AI setup').toBeVisible();
   return card;

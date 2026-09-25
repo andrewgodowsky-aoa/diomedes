@@ -251,8 +251,8 @@ export async function packageDesktop(options = {}, dependencies = {}) {
       ...(platform === 'win32'
         ? {
             // What Windows shows for the running app (Task Manager, the file's details).
-            // The executable's name and the app's name above stay Diomedes: an upgrade and
-            // the app's data are found by them.
+            // Keep the package directory and Electron app identity stable for existing data.
+            executableName: 'nectovia',
             win32metadata: {
               ProductName: 'Nectovia',
               FileDescription: 'Nectovia desktop',

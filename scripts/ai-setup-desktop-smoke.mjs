@@ -9,7 +9,7 @@ const root = path.resolve('test-results', `ai-desktop-${Date.now()}`);
 const evidence = path.resolve('evidence/ai-setup');
 await fs.mkdir(root, { recursive: true });
 await fs.mkdir(evidence, { recursive: true });
-const executablePath = path.resolve('release/Diomedes-win32-x64/Diomedes.exe');
+const executablePath = path.resolve('release/Diomedes-win32-x64/nectovia.exe');
 const env = {
   ...process.env,
   DIOMEDES_DESKTOP_PROFILE: path.join(root, 'profile'),

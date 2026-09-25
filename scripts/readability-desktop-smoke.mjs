@@ -5,7 +5,7 @@ import { enterLastOpenProject, windowApi } from './smoke-window.mjs';
 
 const root = path.resolve('test-results', `desktop-readability-${Date.now()}`);
 await fs.mkdir(root, { recursive: true });
-const executablePath = path.resolve('release/Diomedes-win32-x64/Diomedes.exe');
+const executablePath = path.resolve('release/Diomedes-win32-x64/nectovia.exe');
 const env = {
   ...process.env,
   DIOMEDES_DESKTOP_PROFILE: path.join(root, 'profile'),

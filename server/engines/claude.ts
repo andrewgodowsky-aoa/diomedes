@@ -549,6 +549,9 @@ const signInRequired = () =>
     'provider-auth',
   );
 function sameModel(requested: string, reported: string) {
+  // Claude advertises context suffixes in the picker but may omit them in usage frames.
+  requested = requested.replace(/\[1m\]$/, '');
+  reported = reported.replace(/\[1m\]$/, '');
   return (
     requested === reported ||
     (['sonnet', 'opus', 'haiku'].includes(requested) && reported.startsWith(`claude-${requested}-`))
@@ -835,7 +838,7 @@ export class ClaudeAdapter implements TextEngineAdapter {
             const m = record(raw);
             if (
               typeof m.value !== 'string' ||
-              !/^[a-zA-Z0-9._:/-]{1,120}$/.test(m.value) ||
+              !/^[a-zA-Z0-9._:/-]{1,120}(?:\[1m\])?$/.test(m.value) ||
               m.value === 'default'
             )
               return [];

@@ -8,7 +8,7 @@ const fixture = await fs.mkdtemp(path.resolve('test-results/showcase-'));
 const env = { ...process.env, DIOMEDES_DESKTOP_PROFILE: path.join(fixture, 'profile'),
   DIOMEDES_DATA_DIR: path.join(fixture, 'data'), DIOMEDES_PROJECTS_DIR: path.join(fixture, 'projects') };
 delete env.ELECTRON_RUN_AS_NODE;
-const desktop = await electron.launch({ executablePath: path.resolve('release/Diomedes-win32-x64/Diomedes.exe'), env });
+const desktop = await electron.launch({ executablePath: path.resolve('release/Diomedes-win32-x64/nectovia.exe'), env });
 const captures = [];
 try {
   const page = await desktop.firstWindow();

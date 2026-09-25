@@ -27,7 +27,7 @@
   service's short-lived certificate.
 
 .EXAMPLE
-  pwsh scripts/sign-windows.ps1 -Path release\Diomedes-win32-x64\Diomedes.exe
+  pwsh scripts/sign-windows.ps1 -Path release\Diomedes-win32-x64\nectovia.exe
 
 .EXAMPLE
   pwsh scripts/sign-windows.ps1 -Path a.exe, b.exe -Description "Diomedes"

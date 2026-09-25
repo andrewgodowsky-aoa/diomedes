@@ -98,9 +98,9 @@ async function openEngines(page: Page) {
   await page.getByRole('button', { name: 'Settings', exact: true }).first().click();
   await page
     .getByRole('navigation', { name: 'Settings', exact: true })
-    .getByRole('button', { name: 'Engines', exact: true })
+    .getByRole('button', { name: /^(Engines|Helpers on this computer)$/ })
     .click();
-  await expect(page.getByRole('heading', { name: 'Engines', exact: true, level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^(Engines|Helpers on this computer)$/, level: 1 })).toBeVisible();
 }
 const rail = (page: Page) => page.getByRole('navigation', { name: 'Threads and views' });
 
@@ -296,7 +296,8 @@ for (const [label, width, height] of [
       await openEngines(page);
       await holdsAt200(page, 'Settings > Engines');
       const names = await tabWalk(page, 'Settings > Engines', 40);
-      requireReached(names, 'Settings > Engines', ['Engines', 'Appearance']);
+      // Plain detail names the section "Helpers on this computer"; technical names it "Engines".
+      requireReached(names, 'Settings > Engines', [/^(?:Engines|Helpers on this computer)$/, 'Appearance']);
     });
 
     test('the screens landed alongside: Automations, Settings > Permissions and Rules', async ({ page }) => {

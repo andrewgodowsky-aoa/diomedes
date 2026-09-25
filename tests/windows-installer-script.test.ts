@@ -15,7 +15,7 @@ const readText = (relative: string) =>
 
 const payload = {
   files: [
-    { absolutePath: 'C:\\build\\app\\Diomedes.exe', relativePath: 'Diomedes.exe' },
+    { absolutePath: 'C:\\build\\app\\nectovia.exe', relativePath: 'nectovia.exe' },
     {
       absolutePath: 'C:\\build\\app\\resources\\app.asar',
       relativePath: path.join('resources', 'app.asar'),
@@ -58,12 +58,12 @@ describe('the identifiers an upgrade finds the earlier install by', () => {
     );
   });
 
-  it('keeps the executable, the uninstaller and the release asset names', async () => {
+  it('renames the executable while keeping the uninstaller and release asset names', async () => {
     expect(unsigned).toContain('WriteUninstaller "$INSTDIR\\Uninstall Diomedes Experimental.exe"');
     expect(unsigned).toContain(
       `"UninstallString" '"$INSTDIR\\Uninstall Diomedes Experimental.exe"'`,
     );
-    expect(unsigned).toContain('"DisplayIcon" "$INSTDIR\\app\\Diomedes.exe"');
+    expect(unsigned).toContain('"DisplayIcon" "$INSTDIR\\app\\nectovia.exe"');
     const script = await readText('scripts/build-windows-installer.mjs');
     expect(script).toContain(
       "`Diomedes-Experimental-${manifest.version}-${signed ? 'setup' : 'unsigned-setup'}.exe`",
@@ -98,6 +98,7 @@ describe('what a person reads', () => {
       /^VIAddVersionKey \/LANG=1033 "LegalCopyright" "Copyright \(C\) 2026 Diomedes contributors"$/,
       // File names: the executable and the uninstaller.
       /^(File|Delete) "[^"]*Diomedes\.exe"$/,
+      /^IfFileExists "\$INSTDIR\\app\\Diomedes\.exe" 0 legacy_executable_removed$/,
       /Uninstall Diomedes Experimental\.exe/,
       /"\$INSTDIR\\app\\Diomedes\.exe"$/,
     ];
@@ -109,6 +110,19 @@ describe('what a person reads', () => {
 });
 
 describe('the Start Menu across the rename', () => {
+  it('removes only the legacy executable after checking ownership and copying the payload', () => {
+    const install = section('Install Nectovia experimental app');
+    const guard = install.indexOf('Call EnsureSafeInstallDir');
+    const copy = install.indexOf('File "C:\\build\\app\\nectovia.exe"');
+    const remove = install.indexOf('Delete "$INSTDIR\\app\\Diomedes.exe"');
+    const shortcut = install.indexOf('CreateShortcut');
+    expect(guard).toBeGreaterThan(0);
+    expect(copy).toBeGreaterThan(guard);
+    expect(remove).toBeGreaterThan(copy);
+    expect(shortcut).toBeGreaterThan(remove);
+    expect(install).toContain('IfErrors install_failed');
+    expect(install).toContain('IfFileExists "$INSTDIR\\app\\Diomedes.exe" 0 legacy_executable_removed');
+  });
   it('removes the entry an older install made before it adds the new one', () => {
     // The exact entry every installer before the rename created.
     expect(define('LEGACY_SHORTCUT')).toBe(

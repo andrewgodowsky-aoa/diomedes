@@ -16,7 +16,7 @@ const root = path.resolve('test-results', `autonomy-desktop-${Date.now()}`);
 const evidence = path.resolve('evidence/autonomy-workbench');
 await fs.mkdir(root, { recursive: true });
 await fs.mkdir(evidence, { recursive: true });
-const executablePath = path.resolve('release/Diomedes-win32-x64/Diomedes.exe');
+const executablePath = path.resolve('release/Diomedes-win32-x64/nectovia.exe');
 await checkPackagedRelease({ executablePath });
 const asarPath = path.join(path.dirname(executablePath), 'resources/app.asar');
 const env = {

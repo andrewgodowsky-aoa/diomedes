@@ -1,7 +1,7 @@
 param([Parameter(Mandatory=$true)][string]$Executable)
 $ErrorActionPreference = 'Stop'
 $exePath = (Resolve-Path -LiteralPath $Executable).Path
-if ([IO.Path]::GetFileName($exePath) -ne 'Diomedes.exe') { throw 'Choose the explicit packaged Diomedes.exe.' }
+if ([IO.Path]::GetFileName($exePath) -ne 'nectovia.exe') { throw 'Choose the explicit packaged nectovia.exe.' }
 $evaluationRoot = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) ('Diomedes Experimental Evaluations\' + [guid]::NewGuid().ToString('N'))
 [IO.Directory]::CreateDirectory($evaluationRoot) | Out-Null
 $startInfo = New-Object Diagnostics.ProcessStartInfo

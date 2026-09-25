@@ -44,7 +44,7 @@ const cite = { report: 'evidence/release-candidates/proof.json', reportSha256: '
 /** scripts/desktop-smoke.mjs writes this on its passing path, and only there. */
 const desktopProof = (overrides: Record<string, unknown> = {}) => ({
   checkedAt: '2026-09-20T04:36:45.944Z',
-  executablePath: String.raw`F:\wt\release\release\Diomedes-win32-x64\Diomedes.exe`,
+  executablePath: String.raw`F:\wt\release\release\Diomedes-win32-x64\nectovia.exe`,
   executableSha256: EXE_SHA,
   passed: true,
   startup: { version: VERSION, pid: 32092, url: 'http://127.0.0.1:62481', packaged: true },
@@ -81,7 +81,7 @@ const installerProof = (overrides: Record<string, unknown> = {}) => ({
 /** scripts/connections-desktop-smoke.mjs against the installed copy. */
 const runtimeProof = (overrides: Record<string, unknown> = {}) => ({
   startedAt: '2026-09-20T06:36:48.589Z',
-  executablePath: `${INSTALL_TARGET}\\app\\Diomedes.exe`,
+  executablePath: `${INSTALL_TARGET}\\app\\nectovia.exe`,
   root: INSTALL_TARGET.replace('installation', 'runtime-proof'),
   checks: [
     'Incomplete natural-language intent remains inactive and asks for threshold/service window',
@@ -172,7 +172,7 @@ describe('the installed runtime proof', () => {
     // Without this, a run against the build directory — or any other Diomedes
     // on the machine — would be recorded as the installed runtime.
     expect(() =>
-      readRuntime(runtimeProof({ executablePath: String.raw`F:\wt\release\release\Diomedes-win32-x64\Diomedes.exe` })),
+      readRuntime(runtimeProof({ executablePath: String.raw`F:\wt\release\release\Diomedes-win32-x64\nectovia.exe` })),
     ).toThrow(/not inside the installer proof's install target/);
   });
 

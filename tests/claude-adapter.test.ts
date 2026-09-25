@@ -21,7 +21,7 @@ const request: TextRequest = {
 };
 async function fixture(
   mode = 'ok',
-  deps: { account?: () => Promise<Record<string, unknown>>; missing?: boolean } = {},
+  deps: { account?: () => Promise<Record<string, unknown>>; missing?: boolean; models?: Record<string, unknown>[]; reportedModel?: string } = {},
 ) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'diomedes claude '));
   roots.push(root);
@@ -31,23 +31,25 @@ async function fixture(
     `import readline from 'node:readline';
 import fs from 'node:fs';
 const mode=${JSON.stringify(mode)}; const emit=x=>console.log(JSON.stringify(x));
+const models=${JSON.stringify(deps.models ?? [{ value: 'claude-test', displayName: 'Claude test', description: 'Fixture' }])};
+const reportedModel=${JSON.stringify(deps.reportedModel ?? 'claude-test')};
 readline.createInterface({input:process.stdin}).on('line',line=>{
  const m=JSON.parse(line);
  if(m.type==='control_request') {
   if(mode==='handshake') return console.log('{broken');
   if(mode==='init-auth') return emit({type:'control_response',response:{subtype:'error',request_id:m.request_id,error:'unauthorized'}});
-  return emit({type:'control_response',response:{subtype:'success',request_id:m.request_id,response:{models:[{value:'claude-test',displayName:'Claude test',description:'Fixture'}]}}});
+  return emit({type:'control_response',response:{subtype:'success',request_id:m.request_id,response:{models}}});
  }
  if(m.type==='user') {
   // Nothing at all comes back, so the turn is waiting at dispatch when the marker appears.
   if(mode==='dispatched') return fs.writeFileSync(${JSON.stringify(path.join(root, 'dispatched'))},'1');
-  emit({type:'system',subtype:'init',session_id:'native1',model:mode==='model'?'other':'claude-test',tools:mode==='tools'?['Bash']:[],mcp_servers:[]});
+  emit({type:'system',subtype:'init',session_id:'native1',model:mode==='model'?'other':reportedModel,tools:mode==='tools'?['Bash']:[],mcp_servers:[]});
   if(mode==='hang') return;
   if(mode==='streamed') return emit({type:'stream_event',event:{type:'content_block_delta',delta:{type:'text_delta',text:'Answer'}}});
   if(mode==='early-limit') return emit({type:'result',subtype:'error_during_execution',is_error:true,result:'',errors:['rate_limit_error'],session_id:'native1',modelUsage:{}});
   if(mode==='disk-quota') return emit({type:'result',subtype:'error_during_execution',is_error:true,result:'',errors:{message:'the temporary directory is over its disk quota'},session_id:'native1',modelUsage:{}});
   emit({type:'stream_event',event:{type:'content_block_delta',delta:{type:'text_delta',text:'Answer'}}});
-  emit({type:'result',subtype:mode==='limit'?'error_during_execution':'success',is_error:mode==='limit',result:'Answer',errors:mode==='limit'?['rate_limit_error']:[],session_id:'native1',modelUsage:{'claude-test':{}}});
+  emit({type:'result',subtype:mode==='limit'?'error_during_execution':'success',is_error:mode==='limit',result:'Answer',errors:mode==='limit'?['rate_limit_error']:[],session_id:'native1',modelUsage:{[reportedModel]:{}}});
  }
 });`,
   );
@@ -69,6 +71,23 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
 }
 const exists = (file: string) => fs.access(file).then(() => true).catch(() => false);
 describe('Claude Code structured text route', () => {
+  it('keeps the native Opus and Fable context choices alongside Sonnet and Haiku', async () => {
+    const slugs = ['default', 'opus[1m]', 'claude-fable-5-1[1m]', 'sonnet', 'haiku', 'opus[bad]', '--model=x', 'opus[1m];shell'];
+    const { adapter } = await fixture('ok', { models: slugs.map((value) => ({ value, displayName: value })) });
+    expect((await adapter.inspect()).models.map((model) => model.slug)).toEqual(['opus[1m]', 'claude-fable-5-1[1m]', 'sonnet', 'haiku']);
+  });
+  it.each([
+    ['opus[1m]', 'claude-opus-5-5'],
+    ['claude-fable-5-1[1m]', 'claude-fable-5-1'],
+  ])('accepts %s when the runtime reports its underlying model', async (model, reportedModel) => {
+    const { adapter, launches } = await fixture('ok', { reportedModel });
+    expect((await adapter.generate({ ...request, model })).model).toBe(reportedModel);
+    expect(launches[0]).toContain(model);
+  });
+  it('still rejects another model for a context-qualified choice', async () => {
+    const { adapter } = await fixture('ok', { reportedModel: 'claude-sonnet-5' });
+    await expect(adapter.generate({ ...request, model: 'opus[1m]' })).rejects.toMatchObject({ code: 'POLICY_MISMATCH' });
+  });
   it('retains subscription auth and disables customizations and tools without bare mode', () => {
     const args = claudeArguments();
     expect(args).toContain('--safe-mode');

@@ -8,6 +8,7 @@ import { AwsBedrockSetup } from './AwsBedrockSetup';
 import { AzureOpenAISetup, OpenRouterSetup } from './ProviderSetup';
 import { GoogleVertexSetup } from './VertexSetup';
 import { TierSetup } from './TierSetup';
+import { CodexSetup } from './CodexSetup';
 import {
   advanceSetup,
   continueChoice,
@@ -1193,6 +1194,7 @@ export default function AISetup({ settings, save, busy, onContinue, onBack }: AI
   return (
     <div className="ai-setup">
       <h1>Connect an AI service</h1>
+      <CodexSetup settings={settings} save={save} busy={busy} />
       <AIConnections
         settings={settings}
         save={save}

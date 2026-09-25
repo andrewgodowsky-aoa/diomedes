@@ -195,7 +195,7 @@ function Get-RestorePlan($Snapshot) {
   }
 
   $folder = $Snapshot.startMenu
-  $ownedExe = Join-Path $Snapshot.installTarget 'app\Diomedes.exe'
+  $ownedExe = Join-Path $Snapshot.installTarget 'app\nectovia.exe'
   $exists = Test-Path -LiteralPath $folder.path -PathType Container
   $current = @{}
   if ($exists) {

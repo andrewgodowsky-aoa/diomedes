@@ -30,10 +30,10 @@ $product = $SubKeyRoot + '\Product'
 $uninstall = $SubKeyRoot + '\Uninstall'
 $menu = Join-Path $Root 'Start Menu Folder'
 $link = Join-Path $menu 'Diomedes Experimental.lnk'
-$realExe = Join-Path $Root 'real\app\Diomedes.exe'
+$realExe = Join-Path $Root 'real\app\nectovia.exe'
 $otherExe = Join-Path $Root 'other\Other.exe'
 $target = Join-Path $Root 'proof\installation'
-$proofExe = Join-Path $target 'app\Diomedes.exe'
+$proofExe = Join-Path $target 'app\nectovia.exe'
 $copies = Join-Path $Root 'snapshot'
 foreach ($file in $realExe, $otherExe, $proofExe) { New-Item -ItemType File -Force -Path $file | Out-Null }
 

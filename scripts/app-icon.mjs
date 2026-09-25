@@ -1,5 +1,5 @@
 // Draws the Nectovia mark as the Windows app icon, desktop/diomedes.ico. The file keeps its
-// old name because scripts/package-desktop.mjs embeds it in Diomedes.exe by that name, and
+// old name because scripts/package-desktop.mjs embeds it in nectovia.exe by that name, and
 // the installer that scripts/build-windows-installer.mjs writes shows it for itself and its
 // uninstaller.
 //

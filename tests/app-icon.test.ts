@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { inflateSync } from 'node:zlib';
 import { expect, it } from 'vitest';
 
-// Diomedes.exe and its installer carry the Nectovia mark as their icon: scripts/app-icon.mjs
+// nectovia.exe and its installer carry the Nectovia mark as their icon: scripts/app-icon.mjs
 // draws it, desktop/diomedes.ico holds the drawing, scripts/package-desktop.mjs embeds it in
 // the executable and scripts/build-windows-installer.mjs in the installer and its uninstaller.
 // Entries are compared as decoded pixels, so a different zlib cannot fail the check.
@@ -113,7 +113,7 @@ it('keeps the committed icon identical to the drawing at every size', async () =
   expect(sizes).toEqual(appIcon.ICON_SIZES);
 });
 
-it('embeds the icon when packaging Diomedes.exe', async () => {
+it('embeds the icon when packaging nectovia.exe', async () => {
   const script = await readText('scripts/package-desktop.mjs');
   expect(script).toContain("path.join(root, 'desktop/diomedes.ico')");
   // The packager is called through an injectable name so tests can substitute it.
@@ -131,6 +131,6 @@ it('shows the icon on the installer and its uninstaller', () => {
   expect(nsi).toContain(`!define MUI_UNICON "${icon}"`);
   // MUI reads its icons when the first page is inserted, so both come before the pages.
   expect(nsi.indexOf('!define MUI_UNICON')).toBeLessThan(nsi.indexOf('!insertmacro MUI_PAGE_'));
-  // Installed apps shows the icon Diomedes.exe carries.
-  expect(nsi).toContain('"DisplayIcon" "$INSTDIR\\app\\Diomedes.exe"');
+  // Installed apps shows the icon nectovia.exe carries.
+  expect(nsi).toContain('"DisplayIcon" "$INSTDIR\\app\\nectovia.exe"');
 });
