@@ -50,7 +50,7 @@ export function chunkedStream(chunks: readonly Uint8Array[], options: { failAfte
   });
 }
 
-export async function readAll(stream: ReadableStream<Uint8Array> | null): Promise<Uint8Array> {
+export async function readAll(stream: ReadableStream<Uint8Array> | null): Promise<Uint8Array<ArrayBuffer>> {
   if (!stream) return new Uint8Array();
   const reader = stream.getReader();
   const parts: Uint8Array[] = [];
@@ -65,7 +65,7 @@ export async function readAll(stream: ReadableStream<Uint8Array> | null): Promis
   return out;
 }
 
-export function concat(parts: readonly Uint8Array[]): Uint8Array {
+export function concat(parts: readonly Uint8Array[]): Uint8Array<ArrayBuffer> {
   const out = new Uint8Array(parts.reduce((sum, part) => sum + part.byteLength, 0));
   let offset = 0;
   for (const part of parts) { out.set(part, offset); offset += part.byteLength; }

@@ -10,7 +10,46 @@
  * This module is not a general proxy. It forwards only the allowlisted body
  * below, only to the endpoint the resolved route's registry row names, and only
  * with the credential that row names.
+ *
+ * Nothing here reimplements the hold lifecycle: identity is AccountService's,
+ * entitlement and routing are the commercial records', and every hold moves
+ * through FundingService (openJob, reserve, markDispatched, settle,
+ * markUncertain, release).
  */
+import { inputTokenBound } from '../../../shared/job-caps.js';
+import {
+  approvedJobCap,
+  isJobTier,
+  isUsageClass,
+  micro,
+  periodIdFor,
+  publishedMonthlyGrant,
+  type JobTier,
+  type UsageClass,
+} from '../../../shared/managed-usage.js';
+import { decideAgentAdmission, snapshotFromView } from '../contract/contract.js';
+import type { AccountService } from './account-service.js';
+import {
+  entitlementFromGrants,
+  grantState,
+  type AdmissionRecord,
+  type CommercialRepository,
+  type FeatureGrant,
+  type RouteEntry,
+  type TierPolicy,
+} from './commercial.js';
+import { digest, readBytes } from './crypto.js';
+import { accountId, type AccountMembershipSnapshot } from './domain.js';
+import { AccountError } from './errors.js';
+import { FundingError, type AttemptRef, type FundingRepository, type FundingService } from './funding.js';
+import {
+  MANAGED_PROVIDERS,
+  credentialFor,
+  registryRow,
+  type ProviderCaller,
+  type ProviderEnv,
+  type ProviderRegistryRow,
+} from './managed-providers.js';
 
 // --- the request body allowlist (contract section 1) -----------------------------------------
 
@@ -230,4 +269,625 @@ export function canonicalJson(value: unknown): string {
     return `{${Object.keys(value).filter((key) => value[key] !== undefined).sort()
       .map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(',')}}`;
   return JSON.stringify(value);
+}
+
+// --- refusals ------------------------------------------------------------------------------
+
+/** Every non-2xx answer is `{ error: { code, message } }`, the message a sentence a customer can read. */
+export class ManagedError extends Error {
+  constructor(readonly status: number, readonly code: string, message: string, readonly headers: Readonly<Record<string, string>> = {}) {
+    super(message);
+    this.name = 'ManagedError';
+  }
+}
+
+export const ROUTE_UNAVAILABLE = 'Nectovia’s model service is not available right now.';
+const unavailable = () => new ManagedError(503, 'route_unavailable', ROUTE_UNAVAILABLE);
+/** The contract names these three funding refusals as 402, whatever status FundingService gives them. */
+const PAYMENT_REFUSALS: ReadonlySet<string> = new Set(['insufficient_allowance', 'cap_request_required', 'no_period']);
+
+export function managedHeaders(): Headers {
+  return new Headers({ 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer' });
+}
+
+/** The one place a refusal becomes a response. An unexpected failure says nothing about itself. */
+export function managedErrorResponse(error: unknown, headers: Headers = managedHeaders()): Response {
+  let refusal: ManagedError;
+  if (error instanceof ManagedError) refusal = error;
+  else if (error instanceof FundingError)
+    refusal = new ManagedError(PAYMENT_REFUSALS.has(error.code) ? 402 : error.status, error.code, error.message);
+  else {
+    console.error(JSON.stringify({ event: 'managed-gateway-unavailable' }));
+    refusal = new ManagedError(503, 'unavailable', 'Nectovia’s account service is unavailable. Try again shortly.', { 'Retry-After': '5' });
+  }
+  for (const [name, value] of Object.entries(refusal.headers)) headers.set(name, value);
+  return Response.json({ error: { code: refusal.code, message: refusal.message } }, { status: refusal.status, headers });
+}
+
+// --- headers (contract section 1) -------------------------------------------------------------
+
+const RUN_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+const BEARER = /^Bearer [A-Za-z0-9._~-]+$/;
+const REVISION = /^(0|[1-9][0-9]{0,14})$/;
+const isRunId = (value: string) => RUN_ID.test(value);
+const isAccountId = (value: string) => accountId.safeParse(value).success;
+const isBearer = (value: string) => value.length <= 16_391 && BEARER.test(value);
+
+function header(headers: Headers, name: string, valid: (value: string) => boolean): string {
+  const value = headers.get(name);
+  if (value === null || !valid(value)) throw new ManagedError(400, 'invalid_header', `The ${name} header is missing or not valid.`);
+  return value;
+}
+
+interface GatewayHeaders {
+  token: string;
+  organizationId: string;
+  admissionId: string;
+  jobId: string;
+  attemptId: string;
+  parentAttemptId: string | null;
+  tier: JobTier;
+  usageClass: UsageClass;
+  policyRevision: number;
+}
+
+function gatewayHeaders(headers: Headers): GatewayHeaders {
+  const token = header(headers, 'Authorization', isBearer).slice('Bearer '.length);
+  const organizationId = header(headers, 'X-Nectovia-Organization', isAccountId);
+  const admissionId = header(headers, 'X-Nectovia-Admission', isAccountId);
+  const jobId = header(headers, 'X-Nectovia-Job', isRunId);
+  const attemptId = header(headers, 'X-Nectovia-Attempt', isRunId);
+  const parentAttemptId = headers.has('X-Nectovia-Parent-Attempt') ? header(headers, 'X-Nectovia-Parent-Attempt', isRunId) : null;
+  const tier = header(headers, 'X-Nectovia-Tier', isJobTier) as JobTier;
+  const usageClass = header(headers, 'X-Nectovia-Usage-Class', isUsageClass) as UsageClass;
+  const revision = header(headers, 'X-Nectovia-Policy-Revision', (value) => REVISION.test(value) && Number.isSafeInteger(Number(value)));
+  return { token, organizationId, admissionId, jobId, attemptId, parentAttemptId, tier, usageClass, policyRevision: Number(revision) };
+}
+
+// --- the provider stream --------------------------------------------------------------------
+
+type Terminal = { type: string; response: Record<string, unknown> };
+type StreamOutcome = { kind: 'ended'; terminal: Terminal | null } | { kind: 'failed' } | { kind: 'cancelled' };
+
+const TERMINAL_TYPES: ReadonlySet<string> = new Set(['response.completed', 'response.incomplete', 'response.failed']);
+const TERMINAL_EVENT = /"type"\s*:\s*"response\.(?:completed|incomplete|failed)"/;
+const MAX_TAP_BYTES = 8_000_000;
+
+/**
+ * Reads the SSE text as it passes, for the one thing settlement needs: the
+ * last `response.completed`, `response.incomplete` or `response.failed` event.
+ * It never changes, delays or adds a byte; the stream is forwarded as it came.
+ */
+class TerminalTap {
+  terminal: Terminal | null = null;
+  private buffer = '';
+  private data: string[] = [];
+  private held = 0;
+  private broken = false;
+
+  push(text: string) {
+    if (this.broken || !text) return;
+    this.buffer += text;
+    let start = 0;
+    for (;;) {
+      const lf = this.buffer.indexOf('\n', start);
+      const cr = this.buffer.indexOf('\r', start);
+      if (lf < 0 && cr < 0) break;
+      let end: number;
+      let next: number;
+      if (cr >= 0 && (lf < 0 || cr < lf)) {
+        // A CR at the very end may be the first half of a CRLF still in flight.
+        if (cr === this.buffer.length - 1) break;
+        end = cr;
+        next = this.buffer[cr + 1] === '\n' ? cr + 2 : cr + 1;
+      } else {
+        end = lf;
+        next = lf + 1;
+      }
+      this.line(this.buffer.slice(start, end));
+      start = next;
+    }
+    this.buffer = this.buffer.slice(start);
+    if (this.buffer.length + this.held > MAX_TAP_BYTES) {
+      // An event this large is not one this tap can read. Settlement then finds no usage.
+      this.broken = true;
+      this.buffer = '';
+      this.data = [];
+      this.terminal = null;
+    }
+  }
+
+  end() {
+    if (this.broken) return;
+    if (this.buffer) this.line(this.buffer);
+    this.buffer = '';
+    this.line('');
+  }
+
+  private line(line: string) {
+    if (line === '') {
+      if (this.data.length) this.event(this.data.join('\n'));
+      this.data = [];
+      this.held = 0;
+      return;
+    }
+    if (line.startsWith('data:')) {
+      const value = line.slice(line.startsWith('data: ') ? 6 : 5);
+      this.data.push(value);
+      this.held += value.length;
+    }
+  }
+
+  private event(data: string) {
+    if (!TERMINAL_EVENT.test(data)) return;
+    try {
+      const value: unknown = JSON.parse(data);
+      if (isObject(value) && typeof value.type === 'string' && TERMINAL_TYPES.has(value.type) && isObject(value.response))
+        this.terminal = { type: value.type, response: value.response };
+    } catch {
+      // Not an event this tap can read; the stream itself is unaffected.
+    }
+  }
+}
+
+/** Responses usage in the `nectovia-usage/1` counts, mapped the way the desktop's AWS route maps it. */
+function responsesUsage(usage: Record<string, unknown>) {
+  const input = isObject(usage.input_tokens_details) ? usage.input_tokens_details : {};
+  const output = isObject(usage.output_tokens_details) ? usage.output_tokens_details : {};
+  return {
+    inputTokens: usage.input_tokens,
+    cacheReadTokens: input.cached_tokens ?? 0,
+    cacheWriteTokens: input.cache_write_tokens ?? 0,
+    outputTokens: usage.output_tokens,
+    reasoningTokens: output.reasoning_tokens ?? 0,
+  };
+}
+
+/** Settle for the first of a promise or a deadline; the deadline runs `onTimeout` and rejects. */
+function within<T>(promise: Promise<T>, ms: number, onTimeout: () => void): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      onTimeout();
+      reject(new Error('The provider went silent.'));
+    }, ms);
+  });
+  return Promise.race([promise, deadline]).finally(() => clearTimeout(timer));
+}
+
+const REFUSED = 'The model provider refused this request.';
+
+/** A provider's refusal sentence with the key taken out, at most 300 characters. A fragment of the key voids it. */
+export function scrubbed(text: string, secret: string): string {
+  const clean = text.split(secret).join('[redacted]');
+  const size = Math.min(12, secret.length);
+  for (let at = 0; at + size <= secret.length; at++) if (clean.includes(secret.slice(at, at + size))) return REFUSED;
+  const chars = Array.from(clean);
+  return chars.length > 300 ? chars.slice(0, 300).join('') : clean;
+}
+
+async function providerMessage(response: Response, credential: string): Promise<string> {
+  try {
+    const value: unknown = JSON.parse(new TextDecoder().decode(await readBytes(response, 65_536)));
+    if (isObject(value) && isObject(value.error) && typeof value.error.message === 'string' && value.error.message.trim())
+      return scrubbed(value.error.message, credential);
+  } catch {
+    // An unreadable refusal is still a refusal.
+  }
+  return REFUSED;
+}
+
+// --- the gateway (contract sections 2 and 3) -------------------------------------------------
+
+export const MANAGED_CONTRACT = 'nectovia-managed/1';
+export const MAX_REQUEST_BYTES = 2_000_000;
+/** v1 refuses long-context pricing rather than guessing it. */
+export const MAX_INPUT_TOKEN_BOUND = 272_000;
+export const ADMISSION_WINDOW_MS = 15 * 60_000;
+/** How long the provider may stay silent: before it answers, and between chunks. */
+export const DEFAULT_IDLE_TIMEOUT_MS = 120_000;
+const RELEASABLE_STATUSES: ReadonlySet<number> = new Set([400, 401, 403, 404, 413, 422, 429]);
+const TIER_LABEL: Readonly<Record<JobTier, string>> = { efficient: 'Efficient', focused: 'Focused', thorough: 'Thorough' };
+
+export interface ManagedContext {
+  waitUntil(promise: Promise<unknown>): void;
+}
+
+export interface ManagedInferenceOptions {
+  accounts: Pick<AccountService, 'membership'>;
+  commercial: CommercialRepository;
+  funding: FundingService;
+  /** Reads only: whether this month has a credit period, and one attempt with its settlement. */
+  fundingReads: FundingRepository;
+  caller: ProviderCaller;
+  registry?: readonly ProviderRegistryRow[];
+  now?: () => number;
+  idleTimeoutMs?: number;
+}
+
+/**
+ * Attempts between their reservation and the end of their provider call, in
+ * this isolate. FundingService.markDispatched is idempotent and does not say
+ * which caller moved the attempt, so two identical requests racing through
+ * reserve would both dispatch; this set stops that within one isolate.
+ */
+const IN_FLIGHT = new Set<string>();
+
+interface Dispatch {
+  ref: AttemptRef;
+  row: ProviderRegistryRow;
+  credential: string;
+  body: string;
+  headers: Headers;
+  ctx?: ManagedContext;
+  done(): void;
+}
+
+export class ManagedInferenceService {
+  private readonly now: () => number;
+  private readonly registry: readonly ProviderRegistryRow[];
+  private readonly idleTimeoutMs: number;
+  private readonly pending = new Set<Promise<void>>();
+
+  constructor(private readonly options: ManagedInferenceOptions) {
+    this.now = options.now ?? Date.now;
+    this.registry = options.registry ?? MANAGED_PROVIDERS;
+    this.idleTimeoutMs = options.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
+  }
+
+  private at() {
+    return new Date(this.now()).toISOString();
+  }
+
+  /** Resolves once every settlement started so far has finished. The faux cloud and tests wait on it. */
+  async idle(): Promise<void> {
+    while (this.pending.size) await Promise.all([...this.pending]);
+  }
+
+  /** `POST /managed/v1/responses`. Every refusal before dispatch sends nothing and holds nothing. */
+  async respond(request: Request, env: ProviderEnv, ctx?: ManagedContext): Promise<Response> {
+    const headers = managedHeaders();
+    const attempt = request.headers.get('x-nectovia-attempt');
+    if (attempt !== null && RUN_ID.test(attempt)) headers.set('X-Nectovia-Attempt', attempt);
+    try {
+      return await this.run(request, env, headers, ctx);
+    } catch (error) {
+      return managedErrorResponse(error, headers);
+    }
+  }
+
+  /** `GET /managed/v1/attempts/:attemptId`: one of the organization's attempts, and nobody else's. */
+  async attempt(request: Request, attemptId: string): Promise<Response> {
+    const headers = managedHeaders();
+    try {
+      const token = header(request.headers, 'Authorization', isBearer).slice('Bearer '.length);
+      const organizationId = header(request.headers, 'X-Nectovia-Organization', isAccountId);
+      const member = await this.member(token, organizationId);
+      const tenantId = member.organization.tenantId;
+      const found = RUN_ID.test(attemptId)
+        ? await this.options.fundingReads.transaction(async (tx) => ({
+            attempt: await tx.attempt(tenantId, attemptId),
+            settlement: await tx.settlement(tenantId, attemptId),
+          }))
+        : { attempt: undefined, settlement: undefined };
+      if (!found.attempt || found.attempt.organizationId !== organizationId)
+        throw new ManagedError(404, 'unknown_attempt', 'That attempt was not found for this business.');
+      const settled = found.settlement;
+      return Response.json({
+        attemptId,
+        state: found.attempt.state,
+        providerCostMicroUsd: settled?.providerCostMicroUsd ?? null,
+        allowanceDebitMicroUsd: settled?.allowanceDebitMicroUsd ?? null,
+        usage: settled
+          ? {
+              inputTokens: settled.usage.inputTokens,
+              cacheReadTokens: settled.usage.cacheReadTokens,
+              cacheWriteTokens: settled.usage.cacheWriteTokens,
+              outputTokens: settled.usage.outputTokens,
+              reasoningTokens: settled.usage.reasoningTokens,
+            }
+          : null,
+      }, { headers });
+    } catch (error) {
+      return managedErrorResponse(error, headers);
+    }
+  }
+
+  private async run(request: Request, env: ProviderEnv, headers: Headers, ctx?: ManagedContext): Promise<Response> {
+    // 1. Headers.
+    const h = gatewayHeaders(request.headers);
+    // 2. Membership.
+    const member = await this.member(h.token, h.organizationId);
+    const tenantId = member.organization.tenantId;
+    const at = this.at();
+    const state = await this.options.commercial.transaction(async (tx) => ({
+      admission: await tx.admission(tenantId, h.admissionId),
+      grants: await tx.grants(h.organizationId),
+      accessRevision: await tx.accessRevision(h.organizationId),
+      policy: await tx.policy(),
+      routes: await tx.routes(),
+    }));
+    // 3. The stored admission: evidence of intent, never a bearer credential.
+    this.checkAdmission(state.admission, member, h);
+    // 4. Entitlement, decided again from the current grants.
+    const view = entitlementFromGrants(state.grants, state.accessRevision, at);
+    const decision = decideAgentAdmission({ workspace: 'business', member: true, entitlement: snapshotFromView(view), at });
+    if (!decision.admitted) throw new ManagedError(403, 'agent_not_included', decision.reason);
+    // 5. The body.
+    const bytes = await this.readBody(request);
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
+    } catch {
+      throw new ManagedError(400, 'invalid_body', 'The request body is not valid JSON.');
+    }
+    const checked = validateResponsesBody(parsed);
+    if (!checked.ok) throw new ManagedError(400, checked.code, checked.message);
+    const body = checked.body;
+    // 6. The route.
+    const { entry, row, credential } = this.resolve(state.policy, state.routes, h, body, env);
+    headers.set('X-Nectovia-Route', entry.id);
+    headers.set('X-Nectovia-Model', entry.model);
+    headers.set('X-Nectovia-Rate-Card', row.rate.version);
+    const maxOutputTokens = body.max_output_tokens ?? row.maxOutputTokens;
+    if (maxOutputTokens > row.maxOutputTokens)
+      throw new ManagedError(400, 'invalid_body', `max_output_tokens can be at most ${row.maxOutputTokens.toLocaleString('en-US')} here.`);
+    // 7. The input bound.
+    const bound = inputTokenBound(bytes.byteLength, body.input.length);
+    if (bound > MAX_INPUT_TOKEN_BOUND)
+      throw new ManagedError(413, 'context_too_long', 'This conversation is too long for one request. Start a new one, or attach less.');
+    // 8. The job.
+    const ref: AttemptRef = { tenantId, organizationId: h.organizationId, attemptId: h.attemptId };
+    await this.options.funding.openJob({
+      tenantId, organizationId: h.organizationId, rootJobId: h.jobId, runRef: h.jobId, parentRunRef: null,
+      tier: h.tier, capMicroUsd: approvedJobCap(h.tier),
+    });
+    await this.ensurePeriod(tenantId, h.organizationId, state.grants);
+    // 9. The hold: the input bound at the input rate plus the output cap at the output rate, rounded up.
+    const maxMicroUsd = micro(Number(
+      (BigInt(bound) * BigInt(row.rate.inputMicroUsdPerMillion) + BigInt(maxOutputTokens) * BigInt(row.rate.outputMicroUsdPerMillion) + 999_999n) / 1_000_000n,
+    ));
+    const attempt = await this.options.funding.reserve({
+      ...ref, rootJobId: h.jobId, parentAttemptId: h.parentAttemptId, kind: 'generation', route: entry.id,
+      requestDigest: await digest(canonicalJson(parsed)), rateSnapshot: row.rate, maxMicroUsd, usageClass: h.usageClass,
+    });
+    // An identical reservation came back: this attempt has been here before. Only one that
+    // never left may go on; anything already sent is never sent again.
+    const key = `${tenantId}\n${h.attemptId}`;
+    if (attempt.state !== 'pending' || attempt.dispatchedAt !== null || IN_FLIGHT.has(key))
+      throw new ManagedError(409, 'attempt_replayed',
+        `Attempt ${h.attemptId} was already sent. Read its outcome at /managed/v1/attempts/${h.attemptId}, and retry under a new attempt id.`);
+    IN_FLIGHT.add(key);
+    // 10. Dispatch commits before anything leaves.
+    try {
+      await this.options.funding.markDispatched(ref);
+    } catch (error) {
+      IN_FLIGHT.delete(key);
+      throw error;
+    }
+    // 11. The call: the allowlisted body, with the route's model, store off, streaming,
+    // and the output cap the hold was priced at.
+    const forwarded = JSON.stringify({ ...body, model: entry.model, store: false, stream: true, max_output_tokens: maxOutputTokens });
+    return this.dispatch({ ref, row, credential, body: forwarded, headers, ctx, done: () => IN_FLIGHT.delete(key) });
+  }
+
+  private async member(token: string, organizationId: string): Promise<AccountMembershipSnapshot> {
+    try {
+      return await this.options.accounts.membership(token, organizationId);
+    } catch (error) {
+      if (error instanceof AccountError && error.status === 401)
+        throw new ManagedError(401, 'sign_in_required', 'Your Nectovia sign-in has ended. Sign in again to continue.');
+      if (error instanceof AccountError && error.status === 403)
+        throw new ManagedError(403, 'not_a_member', 'You are not an active member of this business.');
+      throw error;
+    }
+  }
+
+  private checkAdmission(record: AdmissionRecord | undefined, member: AccountMembershipSnapshot, h: GatewayHeaders) {
+    const now = this.now();
+    const at = record ? Date.parse(record.at) : Number.NaN;
+    const current = at <= now + 5_000 && now - at <= ADMISSION_WINDOW_MS;
+    if (!record || record.organizationId !== h.organizationId || record.tenantId !== member.organization.tenantId ||
+        record.personId !== member.person.id || record.decision !== 'admitted' || record.routeKind !== 'managed' || !current ||
+        (record.rootJobId !== null && record.rootJobId !== h.jobId))
+      throw new ManagedError(403, 'admission_invalid', 'This work has no current admission to Nectovia’s managed model service. Ask for admission again, then retry.');
+  }
+
+  private async readBody(request: Request): Promise<Uint8Array> {
+    try {
+      return await readBytes(request, MAX_REQUEST_BYTES);
+    } catch (error) {
+      if (error instanceof RangeError)
+        throw new ManagedError(413, 'request_too_large', `A request can be at most ${MAX_REQUEST_BYTES.toLocaleString('en-US')} bytes.`);
+      throw new ManagedError(400, 'invalid_body', 'A JSON request body is required.');
+    }
+  }
+
+  private resolve(policy: TierPolicy | undefined, routes: readonly RouteEntry[], h: GatewayHeaders, body: ResponsesBody, env: ProviderEnv) {
+    const changed = () => new ManagedError(409, 'policy_changed', 'Nectovia’s model routing has changed. Read the routing policy again, then retry.');
+    if (h.policyRevision !== (policy?.revision ?? 0)) throw changed();
+    const resolved = policy?.tiers[h.tier] ?? null;
+    if (!resolved) throw new ManagedError(409, 'tier_unrouted', `The ${TIER_LABEL[h.tier]} tier has no model right now.`);
+    const entry = routes.find((item) => item.id === resolved.entryId);
+    if (!entry || entry.status !== 'qualified' || entry.provider !== resolved.provider || entry.model !== resolved.model) throw unavailable();
+    if (body.model !== entry.model) throw changed();
+    const row = registryRow(entry, this.registry);
+    const credential = row ? credentialFor(row, env) : null;
+    if (!row || !credential) throw unavailable();
+    return { entry, row, credential };
+  }
+
+  /**
+   * This month's credit, allocated on the first call that needs it. Credit
+   * periods are otherwise written only when a grant is issued, for that month,
+   * so without this every business would stop on the first of the next month.
+   * The source is the current grant that would fund a month at issue time
+   * (included usage, on a plan with a published monthly grant), the one ending
+   * last; allocatePeriod is idempotent for it. A revoked or expired grant never
+   * gets here: step 4 has already refused.
+   */
+  private async ensurePeriod(tenantId: string, organizationId: string, grants: readonly FeatureGrant[]) {
+    const periodId = periodIdFor(this.at());
+    if (await this.options.fundingReads.transaction((tx) => tx.period(tenantId, organizationId, periodId))) return;
+    const when = this.now();
+    const source = grants
+      .filter((grant) => grantState(grant, when) === 'active' && grant.features.includes('managed-inference') &&
+        grant.planId !== null && publishedMonthlyGrant(grant.planId) !== null)
+      .sort((a, b) => Date.parse(b.validUntil) - Date.parse(a.validUntil) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))[0];
+    if (!source?.planId) return;
+    try {
+      await this.options.funding.allocatePeriod({ tenantId, organizationId, periodId, planId: source.planId, sourceGrantId: source.id });
+    } catch (error) {
+      // Another grant funded this month first: reserve against that one.
+      if (!(error instanceof FundingError && error.code === 'period_conflict')) throw error;
+    }
+  }
+
+  private async dispatch(call: Dispatch): Promise<Response> {
+    let finish!: () => void;
+    const finished = new Promise<void>((resolve) => { finish = resolve; });
+    const tracked: Promise<void> = finished.then(() => {
+      call.done();
+      this.pending.delete(tracked);
+    });
+    this.pending.add(tracked);
+    call.ctx?.waitUntil(tracked);
+
+    const abort = new AbortController();
+    let response: Response;
+    try {
+      response = await within(
+        this.options.caller({ row: call.row, credential: call.credential, body: call.body, signal: abort.signal }),
+        this.idleTimeoutMs,
+        () => abort.abort(),
+      );
+    } catch {
+      await this.park(call.ref, 'The provider call failed before it answered, by a network failure or a timeout. The provider may still have received it.');
+      finish();
+      throw unavailable();
+    }
+    if (response.status < 200 || response.status > 299) {
+      try {
+        return await this.refused(response, call);
+      } finally {
+        finish();
+      }
+    }
+    if (!response.body) {
+      await this.park(call.ref, 'The provider answered with no stream.');
+      finish();
+      throw unavailable();
+    }
+    const requestId = call.row.requestIdHeaders.map((name) => response.headers.get(name)).find((value) => value !== null && RUN_ID.test(value)) ?? null;
+    const stream = this.tap(response.body, abort, (outcome) => this.conclude(call.ref, outcome, requestId).finally(finish));
+    const type = response.headers.get('content-type');
+    call.headers.set('Content-Type', type && /^text\/event-stream\b/i.test(type) ? type : 'text/event-stream');
+    return new Response(stream, { status: 200, headers: call.headers });
+  }
+
+  /** A provider refusal before any byte reached the customer. Always throws the customer's answer. */
+  private async refused(response: Response, call: Dispatch): Promise<never> {
+    const status = response.status;
+    if (!RELEASABLE_STATUSES.has(status)) {
+      await response.body?.cancel().catch(() => {});
+      await this.park(call.ref, `The provider answered HTTP ${status} before any output, so it may have processed the request.`);
+      throw unavailable();
+    }
+    let detail: string | null = null;
+    if (status === 400 || status === 413 || status === 422) detail = await providerMessage(response, call.credential);
+    else await response.body?.cancel().catch(() => {});
+    await this.releaseRefused(call.ref, status);
+    if (status === 429) {
+      const retry = response.headers.get('retry-after');
+      throw new ManagedError(429, 'provider_busy', 'Nectovia’s model service is busy right now. Try again shortly.',
+        retry !== null && /^[\x20-\x7e]{1,64}$/.test(retry) ? { 'Retry-After': retry } : {});
+    }
+    // Never tell a customer our key failed.
+    if (status === 401 || status === 403 || status === 404) throw unavailable();
+    throw new ManagedError(400, 'provider_refused', detail ?? REFUSED);
+  }
+
+  /**
+   * Contract section 3 releases a hold the provider refused before any output.
+   * FundingService refuses to release once markDispatched has committed
+   * (`dispatched_hold`), and step 10 always commits it before the call, so the
+   * release is tried as written and, when refused, the hold is parked as
+   * uncertain for reconciliation: never released on a guess, never left pending.
+   */
+  private async releaseRefused(ref: AttemptRef, status: number) {
+    try {
+      await this.options.funding.release(ref);
+    } catch {
+      await this.park(ref, `The provider refused the request with HTTP ${status} before any output. The hold stays until provider records reconcile it.`);
+    }
+  }
+
+  /** The hold stays at its ceiling until provider reporting reconciles it. Never released, never retried. */
+  private async park(ref: AttemptRef, reason: string) {
+    try {
+      await this.options.funding.markUncertain({ ...ref, reason });
+    } catch {
+      // Left pending, the restart sweep still parks it. The attempt id is not a secret.
+      console.error(JSON.stringify({ event: 'managed-hold-unresolved', attemptId: ref.attemptId }));
+    }
+  }
+
+  private tap(body: ReadableStream<Uint8Array>, abort: AbortController, end: (outcome: StreamOutcome) => Promise<void>): ReadableStream<Uint8Array> {
+    const reader = body.getReader();
+    const decoder = new TextDecoder();
+    const events = new TerminalTap();
+    const idleTimeoutMs = this.idleTimeoutMs;
+    let concluded = false;
+    const conclude = (outcome: StreamOutcome) => {
+      if (concluded) return;
+      concluded = true;
+      void end(outcome);
+    };
+    return new ReadableStream<Uint8Array>({
+      async pull(controller) {
+        let part: ReadableStreamReadResult<Uint8Array>;
+        try {
+          part = await within(reader.read(), idleTimeoutMs, () => abort.abort());
+        } catch {
+          void reader.cancel().catch(() => {});
+          conclude({ kind: 'failed' });
+          try { controller.error(new Error('The model stream was interrupted.')); } catch { /* already closed */ }
+          return;
+        }
+        if (part.done) {
+          events.push(decoder.decode());
+          events.end();
+          try { controller.close(); } catch { /* the reader already left */ }
+          conclude({ kind: 'ended', terminal: events.terminal });
+          return;
+        }
+        try { controller.enqueue(part.value); } catch { /* the reader already left */ }
+        events.push(decoder.decode(part.value, { stream: true }));
+      },
+      cancel() {
+        conclude({ kind: 'cancelled' });
+        abort.abort();
+        return reader.cancel().catch(() => {});
+      },
+    });
+  }
+
+  private async conclude(ref: AttemptRef, outcome: StreamOutcome, requestId: string | null): Promise<void> {
+    if (outcome.kind === 'cancelled')
+      return this.park(ref, 'The client disconnected mid-stream. The provider may have finished and charged for it.');
+    if (outcome.kind === 'failed')
+      return this.park(ref, 'The provider stream failed after it started. Its usage is unknown until reconciled.');
+    const response = outcome.terminal?.response;
+    if (!response) return this.park(ref, 'The stream ended without a completed, incomplete or failed event, so its usage is unknown.');
+    const usage = response.usage;
+    if (!isObject(usage)) return this.park(ref, 'The provider reported no usage for this response.');
+    const receiptRef = typeof response.id === 'string' && RUN_ID.test(response.id) ? response.id : requestId;
+    if (!receiptRef) return this.park(ref, 'The provider named no response or request id to settle against.');
+    try {
+      // A report FundingService cannot price keeps the hold as uncertain, with its reason.
+      await this.options.funding.settle({ ...ref, receiptRef, usage: responsesUsage(usage), raw: usage, reconciledFrom: 'response' });
+    } catch {
+      await this.park(ref, 'Settlement from the provider’s usage did not complete. The hold stays until reconciliation.');
+    }
+  }
 }

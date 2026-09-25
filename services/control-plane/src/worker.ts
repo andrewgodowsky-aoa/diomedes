@@ -22,6 +22,8 @@ import {
 } from './commercial.js';
 import type { WorkerEnv } from '../worker-configuration.js';
 import { accountId } from './domain.js';
+import { ManagedError, ManagedInferenceService, managedErrorResponse, managedHeaders, type ManagedContext } from './managed-inference.js';
+import { bedrockResponsesCaller } from './managed-providers.js';
 
 async function body<T>(request: Request, schema: z.ZodType<T>): Promise<T> {
   if (request.headers.get('content-type')?.split(';')[0].trim().toLowerCase() !== 'application/json')
@@ -70,7 +72,11 @@ export interface HandlerOptions {
   /** Test and faux-cloud seam. The Worker entry always reads its own environment. */
   configuration?: (env: Record<string, unknown>) => Configuration;
   createCommercial?: (config: Configuration, accounts: AccountService) => CommercialService;
+  /** Test and faux-cloud seam for the managed gateway: the scripted provider instead of Bedrock. */
+  createManaged?: (config: Configuration, accounts: AccountService) => ManagedInferenceService;
 }
+
+const MANAGED_ATTEMPT = /^\/managed\/v1\/attempts\/([A-Za-z0-9][A-Za-z0-9._:-]{0,127})$/;
 
 /** Factory injection is only a test seam; no environment flag enables fake identity/storage. */
 export function createHandler(create: (config: Configuration) => AccountService = (config) =>
@@ -84,7 +90,50 @@ export function createHandler(create: (config: Configuration) => AccountService 
   const createCommercial = options.createCommercial ?? ((config: Configuration, accounts: AccountService) =>
     new CommercialService(accounts, new PostgresCommercialRepository(neonClientFactory(config.databaseUrl)),
       new FundingService(new PostgresFundingRepository(neonClientFactory(config.databaseUrl)))));
-  return async (request: Request, env: Record<string, unknown>): Promise<Response> => {
+  const createManaged = options.createManaged ?? ((config: Configuration, accounts: AccountService) => {
+    const funding = new PostgresFundingRepository(neonClientFactory(config.databaseUrl));
+    return new ManagedInferenceService({
+      accounts,
+      commercial: new PostgresCommercialRepository(neonClientFactory(config.databaseUrl)),
+      funding: new FundingService(funding),
+      fundingReads: funding,
+      caller: bedrockResponsesCaller(),
+    });
+  });
+
+  /**
+   * The managed gateway (contract nectovia-managed/1). Its own header rules, a
+   * 2,000,000-byte body, a streamed answer and the `{ error: { code, message } }`
+   * shape, so it is routed before the account API's bearer and body handling.
+   * The provider key is read from `env` by the gateway at call time.
+   */
+  async function managed(request: Request, env: Record<string, unknown>, ctx?: ManagedContext): Promise<Response> {
+    const headers = managedHeaders();
+    try {
+      const config = readConfiguration(env);
+      const origin = request.headers.get('origin');
+      if ((origin !== null && !config.origins.includes(origin)) ||
+          (origin === null && ['cross-site','same-site'].includes(request.headers.get('sec-fetch-site') ?? '')))
+        throw new ManagedError(403, 'origin_refused', 'This origin is not allowed.');
+      const url = new URL(request.url);
+      if (url.search) throw new ManagedError(400, 'invalid_request', 'The managed model service takes no query parameters.');
+      let match: RegExpExecArray | null;
+      if (url.pathname === '/managed/v1/responses') {
+        if (request.method !== 'POST') throw new ManagedError(405, 'method_not_allowed', 'Send this request as a POST.', { Allow: 'POST' });
+        return await createManaged(config, create(config)).respond(request, env, ctx);
+      }
+      if ((match = MANAGED_ATTEMPT.exec(url.pathname))) {
+        if (request.method !== 'GET') throw new ManagedError(405, 'method_not_allowed', 'Read an attempt with a GET.', { Allow: 'GET' });
+        return await createManaged(config, create(config)).attempt(request, match[1]);
+      }
+      throw new ManagedError(404, 'not_found', 'This managed model action was not found.');
+    } catch (error) {
+      return managedErrorResponse(error, headers);
+    }
+  }
+
+  return async (request: Request, env: Record<string, unknown>, ctx?: ManagedContext): Promise<Response> => {
+    if (new URL(request.url).pathname.startsWith('/managed/')) return managed(request, env, ctx);
     const headers = new Headers({ 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer', Vary: 'Origin' });
     const json = (value: unknown, status = 200) => Response.json(value, { status, headers });
     try {
@@ -186,7 +235,14 @@ export function createHandler(create: (config: Configuration) => AccountService 
   };
 }
 
+/**
+ * The Worker's bindings, plus the managed gateway's provider key: the secret
+ * BEDROCK_API_KEY, a Bedrock long-term API key set by the owner and read by the
+ * gateway at call time. It is never in wrangler.jsonc, a log, a response or a row.
+ */
+export type GatewayEnv = WorkerEnv & { BEDROCK_API_KEY?: string };
+
 const fetchHandler = createHandler();
 export default {
-  fetch(request: Request, env: WorkerEnv) { return fetchHandler(request, { ...env }); },
+  fetch(request: Request, env: GatewayEnv, ctx: ManagedContext) { return fetchHandler(request, { ...env }, ctx); },
 };
