@@ -51,7 +51,7 @@ export type AgentSurface = 'conversation' | 'work' | 'team' | 'loop' | 'automati
 export type AgentRouteKind = 'managed' | 'byo' | 'local' | 'external-engine';
 
 export type AgentDecision =
-  | { admitted: true; admissionId: string; organizationId: string; planId: string | null; policyRevision: number; validUntil: string }
+  | { admitted: true; admissionId: string; organizationId: string; personId: string; planId: string | null; policyRevision: number; validUntil: string }
   | { admitted: false; code: string; reason: string };
 
 const MAX_REMEMBERED = 12;
@@ -470,7 +470,8 @@ export class AccountSessionService {
     phase: 'admit' | 'dispatch';
   }): Promise<AgentDecision> {
     if (!this.current) return { admitted: false, code: SIGN_IN_REQUIRED, reason: 'Sign in to use the Nectovia Agent.' };
-    const key = `${this.current.personId}|${input.organizationId}|${input.surface}|${input.rootJobId ?? ''}`;
+    // The route kind is part of the key: a managed admission and a BYO one are different records.
+    const key = `${this.current.personId}|${input.organizationId}|${input.surface}|${input.routeKind}|${input.rootJobId ?? ''}`;
     const cached = this.admissions.get(key);
     if (input.phase === 'dispatch' && cached && cached.until > this.now()) return cached.decision;
     let answer;
@@ -503,6 +504,7 @@ export class AccountSessionService {
       admitted: true as const,
       admissionId: answer.admissionId,
       organizationId: input.organizationId,
+      personId: answer.pins.personId,
       planId: answer.pins.planId,
       policyRevision: answer.pins.policyRevision,
       validUntil: new Date(until).toISOString(),

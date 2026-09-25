@@ -23,7 +23,7 @@ import { SIGN_IN_REQUIRED } from '../../shared/accounts.js';
 import { AGENT_PERSONAL_REASON } from '../../shared/access.js';
 import { EngineError } from '../engines/process.js';
 import type { WorkspaceService } from '../workspaces.js';
-import type { AccountSessionService, AgentSurface } from './session.js';
+import type { AccountSessionService, AgentRouteKind, AgentSurface } from './session.js';
 
 export const AGENT_NOT_INCLUDED = 'AGENT_NOT_INCLUDED';
 export const AGENT_SIGN_IN_REQUIRED = 'SIGN_IN_REQUIRED';
@@ -34,11 +34,34 @@ export interface AgentWork {
   projectId: string | null;
   /** The run or job this call belongs to, so the service can pin the admission to it. */
   rootJobId: string | null;
+  /**
+   * Who pays for the call. `managed` is company-funded inference through the account service's
+   * gateway; everything else on this host runs on the business's own connection (`byo`).
+   * Absent means `byo`.
+   */
+  routeKind?: AgentRouteKind;
+}
+
+/**
+ * The decision an admitted piece of Agent work carries forward. The admission id is the
+ * control-plane record the managed gateway checks on every call, and what observation binds to;
+ * nothing here is a credential.
+ */
+export interface AdmittedAgentWork {
+  readonly admissionId: string;
+  readonly organizationId: string;
+  readonly personId: string;
+  readonly planId: string | null;
+  /** The routing tier policy revision the service admitted under. Not a telemetry policy. */
+  readonly policyRevision: number;
+  readonly routeKind: AgentRouteKind;
+  readonly surface: AgentSurface;
+  readonly validUntil: string;
 }
 
 export interface AgentGatePort {
-  /** Resolves when the Agent may make this call; throws an EngineError that sends nothing otherwise. */
-  check(work: AgentWork): Promise<void>;
+  /** Resolves with the admitted decision; throws an EngineError that sends nothing otherwise. */
+  check(work: AgentWork): Promise<AdmittedAgentWork>;
 }
 
 const JOB_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
@@ -57,19 +80,28 @@ export class AccountAgentGate implements AgentGatePort {
     return active.kind === 'business' ? active.organizationId : null;
   }
 
-  async check(work: AgentWork): Promise<void> {
+  async check(work: AgentWork): Promise<AdmittedAgentWork> {
     const organizationId = this.organizationFor(work.projectId);
     if (!organizationId) throw new EngineError(AGENT_NOT_INCLUDED, AGENT_PERSONAL_REASON, false);
+    const routeKind = work.routeKind ?? 'byo';
     const decision = await this.session.admitAgent({
       organizationId,
       surface: work.surface,
-      // Model-API routes here run on the business's own connection. Managed routes pin 'managed'
-      // when the company proxy carries them; nothing on this host is Diomedes-funded yet.
-      routeKind: 'byo',
+      routeKind,
       rootJobId: work.rootJobId && JOB_ID.test(work.rootJobId) ? work.rootJobId : null,
       phase: work.phase,
     });
-    if (decision.admitted) return;
+    if (decision.admitted)
+      return {
+        admissionId: decision.admissionId,
+        organizationId: decision.organizationId,
+        personId: decision.personId,
+        planId: decision.planId,
+        policyRevision: decision.policyRevision,
+        routeKind,
+        surface: work.surface,
+        validUntil: decision.validUntil,
+      };
     throw new EngineError(decision.code === SIGN_IN_REQUIRED ? AGENT_SIGN_IN_REQUIRED : AGENT_NOT_INCLUDED, decision.reason, false);
   }
 }
