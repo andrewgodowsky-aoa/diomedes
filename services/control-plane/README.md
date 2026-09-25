@@ -48,7 +48,8 @@ The faux cloud serves the managed inference gateway (`/managed/v1/*`, contract
 it offline with exact usage; the placeholder key it holds stands in for the
 Worker secret `BEDROCK_API_KEY`. Bedrock is called for real only when
 `NECTOVIA_FAUX_BEDROCK_API_KEY` is set, which needs Andrew's spend approval
-first. Two optional spend settings are read from the environment under the
+first; with that key set and no readable `MANAGED_SPEND_CEILING_MICRO_USD`,
+the faux cloud refuses to start. Two optional spend settings are read from the environment under the
 Worker's own names (or `managed.settings` in code), whole numbers, blank meaning
 unset, anything unreadable refusing every managed call with 503
 `route_unavailable`:

@@ -115,7 +115,8 @@ export interface RunningFauxCloud {
  * NECTOVIA_FAUX_BEDROCK_API_KEY is set, which calls Bedrock for real and needs
  * Andrew's separate spend approval before it is ever set. The Worker's spend
  * settings, MANAGED_SPEND_CEILING_MICRO_USD and MANAGED_MAX_OUTPUT_TOKENS, are
- * read from the environment under the same names; `managed.settings` wins.
+ * read from the environment under the same names; `managed.settings` wins. A
+ * live key without a readable ceiling refuses to start (createFauxCloud).
  */
 export async function startFauxCloud(options: {
   file?: string | null;
