@@ -14,7 +14,7 @@
  * Nothing here reimplements the hold lifecycle: identity is AccountService's,
  * entitlement and routing are the commercial records', and every hold moves
  * through FundingService (openJob, reserve, markDispatched, settle,
- * markUncertain, release).
+ * markUncertain, releaseRefused).
  */
 import { inputTokenBound } from '../../../shared/job-caps.js';
 import {
@@ -43,7 +43,7 @@ import {
 import { digest, readBytes } from './crypto.js';
 import { accountId, type AccountMembershipSnapshot } from './domain.js';
 import { AccountError } from './errors.js';
-import { FundingError, type AttemptRef, type FundingRepository, type FundingService } from './funding.js';
+import { FundingError, RELEASABLE_REFUSALS, type AttemptRef, type FundingRepository, type FundingService } from './funding.js';
 import {
   MANAGED_PROVIDERS,
   credentialFor,
@@ -549,7 +549,7 @@ export const MAX_INPUT_TOKEN_BOUND = 272_000;
 export const ADMISSION_WINDOW_MS = 15 * 60_000;
 /** How long the provider may stay silent: before it answers, and between chunks. */
 export const DEFAULT_IDLE_TIMEOUT_MS = 120_000;
-const RELEASABLE_STATUSES: ReadonlySet<number> = new Set([400, 401, 403, 404, 413, 422, 429]);
+const RELEASABLE_STATUSES: ReadonlySet<number> = new Set(RELEASABLE_REFUSALS);
 const TIER_LABEL: Readonly<Record<JobTier, string>> = { efficient: 'Efficient', focused: 'Focused', thorough: 'Thorough' };
 
 export interface ManagedContext {
@@ -568,14 +568,6 @@ export interface ManagedInferenceOptions {
   idleTimeoutMs?: number;
 }
 
-/**
- * Attempts between their reservation and the end of their provider call, in
- * this isolate. FundingService.markDispatched is idempotent and does not say
- * which caller moved the attempt, so two identical requests racing through
- * reserve would both dispatch; this set stops that within one isolate.
- */
-const IN_FLIGHT = new Set<string>();
-
 interface Dispatch {
   ref: AttemptRef;
   row: ProviderRegistryRow;
@@ -583,8 +575,9 @@ interface Dispatch {
   body: string;
   headers: Headers;
   ctx?: ManagedContext;
-  done(): void;
 }
+
+const inFlight = () => new ManagedError(409, 'attempt_in_flight', 'That request is already being answered.');
 
 export class ManagedInferenceService {
   private readonly now: () => number;
@@ -710,9 +703,12 @@ export class ManagedInferenceService {
       tier: h.tier, capMicroUsd: approvedJobCap(h.tier),
     });
     await this.ensurePeriod(tenantId, h.organizationId, state.grants);
-    // 9. The hold: the input bound at the input rate plus the output cap at the output rate, rounded up.
+    // 9. The hold: the input bound at the highest input-side rate (fresh input, cache write or
+    // cache read), so no mix of cache use can cost more than the hold, plus the output cap at
+    // the output rate, rounded up.
+    const inputRate = Math.max(row.rate.inputMicroUsdPerMillion, row.rate.cacheWriteMicroUsdPerMillion, row.rate.cacheReadMicroUsdPerMillion);
     const maxMicroUsd = micro(Number(
-      (BigInt(bound) * BigInt(row.rate.inputMicroUsdPerMillion) + BigInt(maxOutputTokens) * BigInt(row.rate.outputMicroUsdPerMillion) + 999_999n) / 1_000_000n,
+      (BigInt(bound) * BigInt(inputRate) + BigInt(maxOutputTokens) * BigInt(row.rate.outputMicroUsdPerMillion) + 999_999n) / 1_000_000n,
     ));
     // The company ceiling is checked inside the reserving transaction, so a refusal holds nothing.
     let attempt: FundedAttempt;
@@ -729,22 +725,22 @@ export class ManagedInferenceService {
     }
     // An identical reservation came back: this attempt has been here before. Only one that
     // never left may go on; anything already sent is never sent again.
-    const key = `${tenantId}\n${h.attemptId}`;
-    if (attempt.state !== 'pending' || attempt.dispatchedAt !== null || IN_FLIGHT.has(key))
+    if (attempt.state === 'pending' && attempt.dispatchedAt !== null) throw inFlight();
+    if (attempt.state !== 'pending')
       throw new ManagedError(409, 'attempt_replayed',
         `Attempt ${h.attemptId} was already sent. Read its outcome at /managed/v1/attempts/${h.attemptId}, and retry under a new attempt id.`);
-    IN_FLIGHT.add(key);
-    // 10. Dispatch commits before anything leaves.
+    // 10. Dispatch commits before anything leaves, and is exclusive: only the caller whose
+    // conditional update moved the attempt sends. Any other, in any isolate, gets attempt_in_flight.
     try {
       await this.options.funding.markDispatched(ref);
     } catch (error) {
-      IN_FLIGHT.delete(key);
+      if (error instanceof FundingError && error.code === 'attempt_in_flight') throw inFlight();
       throw error;
     }
     // 11. The call: the allowlisted body, with the route's model, store off, streaming,
     // and the output cap the hold was priced at.
     const forwarded = JSON.stringify({ ...body, model: entry.model, store: false, stream: true, max_output_tokens: maxOutputTokens });
-    return this.dispatch({ ref, row, credential, body: forwarded, headers, ctx, done: () => IN_FLIGHT.delete(key) });
+    return this.dispatch({ ref, row, credential, body: forwarded, headers, ctx });
   }
 
   private async member(token: string, organizationId: string): Promise<AccountMembershipSnapshot> {
@@ -823,7 +819,6 @@ export class ManagedInferenceService {
     let finish!: () => void;
     const finished = new Promise<void>((resolve) => { finish = resolve; });
     const tracked: Promise<void> = finished.then(() => {
-      call.done();
       this.pending.delete(tracked);
     });
     this.pending.add(tracked);
@@ -869,10 +864,12 @@ export class ManagedInferenceService {
       await this.park(call.ref, `The provider answered HTTP ${status} before any output, so it may have processed the request.`);
       throw unavailable();
     }
+    const requestId = call.row.requestIdHeaders.map((name) => response.headers.get(name)).find((value) => value !== null && RUN_ID.test(value)) ?? null;
+    // Nothing past the error body is read: the provider sent no output.
     let detail: string | null = null;
     if (status === 400 || status === 413 || status === 422) detail = await providerMessage(response, call.credential);
     else await response.body?.cancel().catch(() => {});
-    await this.releaseRefused(call.ref, status);
+    await this.releaseRefused(call.ref, status, requestId);
     if (status === 429) {
       const retry = response.headers.get('retry-after');
       throw new ManagedError(429, 'provider_busy', 'Nectovia’s model service is busy right now. Try again shortly.',
@@ -884,15 +881,15 @@ export class ManagedInferenceService {
   }
 
   /**
-   * Contract section 3 releases a hold the provider refused before any output.
-   * FundingService refuses to release once markDispatched has committed
-   * (`dispatched_hold`), and step 10 always commits it before the call, so the
-   * release is tried as written and, when refused, the hold is parked as
+   * Contract section 3 (revision 2): a hold the provider refused before any
+   * output, with a status it does not bill, is released through
+   * FundingService.releaseRefused, which records the status and the provider's
+   * request id as the evidence. If that release fails, the hold is parked as
    * uncertain for reconciliation: never released on a guess, never left pending.
    */
-  private async releaseRefused(ref: AttemptRef, status: number) {
+  private async releaseRefused(ref: AttemptRef, status: number, requestId: string | null) {
     try {
-      await this.options.funding.release(ref);
+      await this.options.funding.releaseRefused({ ...ref, providerStatus: status, providerRequestId: requestId });
     } catch {
       await this.park(ref, `The provider refused the request with HTTP ${status} before any output. The hold stays until provider records reconcile it.`);
     }

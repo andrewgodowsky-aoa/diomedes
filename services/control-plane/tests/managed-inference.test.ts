@@ -8,10 +8,13 @@ import { createOpenAI } from '@ai-sdk/openai';
 import { jsonSchema, stepCountIs, streamText, tool, type ModelMessage } from 'ai';
 import { createFauxCloud, type FauxCloud } from '../src/faux/cloud.js';
 import { DEMO_ACCOUNTS, FAUX_DEMO_PASSWORD, seedDemo, type DemoAccount } from '../src/faux/seed.js';
-import { MANAGED_PROVIDERS, scriptedResponsesFetch } from '../src/managed-providers.js';
+import { MANAGED_PROVIDERS, bedrockResponsesCaller, scriptedResponsesFetch } from '../src/managed-providers.js';
+import { FundingService } from '../src/funding.js';
+import { ManagedInferenceService } from '../src/managed-inference.js';
 import { creditAmount, usageCost, periodIdFor } from '../../../shared/managed-usage.js';
 import { inputTokenBound } from '../../../shared/job-caps.js';
 import { chunkedStream, concat, providerSpy, readAll, type ProviderRequest, type ProviderSpy } from './support/managed.js';
+import { InterleavingFundingRepository } from './support/interleaving-funding.js';
 
 const LUNA = MANAGED_PROVIDERS[0];
 const CANARY = 'ABSK-canary-7f3a9c2e5b1d-DO-NOT-LEAK';
@@ -319,7 +322,7 @@ describe('an entitled Business call', () => {
     });
   });
 
-  it('holds the input bound at the input rate plus the output cap at the output rate, rounded up, and forwards the cap when none is given', async () => {
+  it('holds the input bound at the highest input-side rate plus the output cap at the output rate, rounded up, and forwards the cap when none is given', async () => {
     const { token, admission } = await employee();
     const body = chatBody();
     delete (body as Record<string, unknown>).max_output_tokens;
@@ -328,9 +331,40 @@ describe('an entitled Business call', () => {
     expect(response.status).toBe(200);
     expect(spy.calls[0].body.max_output_tokens).toBe(16_000);
     const bound = inputTokenBound(new TextEncoder().encode(raw).byteLength, body.input.length);
-    const ceiling = Math.ceil((bound * 110_000 + 16_000 * 550_000) / 1_000_000);
+    // GPT-6 Luna: max(input 110,000, cache write 137,500, cache read 11,000) = 137,500.
+    const ceiling = Math.ceil((bound * 137_500 + 16_000 * 550_000) / 1_000_000);
     expect(attempts()[0].maxMicroUsd).toBe(ceiling);
     await readAll(response.body);
+  });
+
+  it('settles a call that is all cache writes within its hold', async () => {
+    const { token, admission } = await employee();
+    const raw = JSON.stringify(chatBody());
+    const bound = inputTokenBound(new TextEncoder().encode(raw).byteLength, chatBody().input.length);
+    // The worst case the hold must cover: every input token written to the cache, and the whole output cap used.
+    const usage = { input_tokens: bound, input_tokens_details: { cached_tokens: 0, cache_write_tokens: bound },
+      output_tokens: 4_096, output_tokens_details: { reasoning_tokens: 0 }, total_tokens: bound + 4_096 };
+    answer = async (request) => {
+      const text = new TextDecoder().decode(await readAll((await scriptedAnswer(request)).body));
+      const frames = text.split('\n\n').map((frame) => {
+        if (!frame.startsWith('event: response.completed')) return frame;
+        const [event, data] = frame.split('\n');
+        const payload = JSON.parse(data.slice('data: '.length));
+        payload.response.usage = usage;
+        return `${event}\ndata: ${JSON.stringify(payload)}`;
+      });
+      return new Response(frames.join('\n\n'), { status: 200, headers: { 'content-type': 'text/event-stream' } });
+    };
+    const response = await ask({ token, admission, rawBody: raw });
+    await readAll(response.body);
+    await cloud.idle();
+    const cost = usageCost(LUNA.rate, { inputTokens: bound, cacheReadTokens: 0, cacheWriteTokens: bound, outputTokens: 4_096, reasoningTokens: 0 });
+    const [attempt] = attempts();
+    expect(attempt).toMatchObject({ state: 'settled' });
+    expect(settlements()[0]).toMatchObject({ providerCostMicroUsd: cost, usage: { cacheWriteTokens: bound } });
+    expect(cost).toBeLessThanOrEqual(attempt.maxMicroUsd);
+    // Priced at the fresh-input rate, the hold would have been too small for this call.
+    expect(cost).toBeGreaterThan(Math.ceil((bound * 110_000 + 4_096 * 550_000) / 1_000_000));
   });
 
   it('carries the desktop’s own SDK loop offline: a tool call, its result, then the answer', async () => {
@@ -392,33 +426,78 @@ describe('replaying an attempt', () => {
     expect(attempts()).toHaveLength(1);
   });
 
-  it('sends once when the same attempt arrives twice at once', async () => {
+  it('sends once when the same attempt arrives twice at once, and answers the other attempt_in_flight', async () => {
     const { token, admission } = await employee();
     const responses = await Promise.all([ask({ token, admission }), ask({ token, admission })]);
     expect(responses.map((response) => response.status).sort()).toEqual([200, 409]);
-    await Promise.all(responses.map((response) => readAll(response.body)));
+    const lost = responses.find((response) => response.status === 409)!;
+    expect(await refusal(lost)).toEqual({ status: 409, code: 'attempt_in_flight', message: 'That request is already being answered.' });
+    await readAll(responses.find((response) => response.status === 200)!.body);
     expect(spy.calls).toHaveLength(1);
+  });
+
+  /**
+   * Two gateway instances, as two Worker isolates, over one funding store whose
+   * transactions interleave step by step with no organization lock: both reserve
+   * the attempt before either dispatches, so only the conditional dispatch
+   * update decides who sends.
+   */
+  async function isolatesRace(unconditionalDispatch: boolean) {
+    const { token, admission } = await employee();
+    const store = new InterleavingFundingRepository({ organizationLock: false, unconditionalDispatch });
+    const provider = providerSpy(scriptedAnswer);
+    const gateway = () => new ManagedInferenceService({
+      accounts: cloud.accounts, commercial: cloud.store.commercial, funding: new FundingService(store, { now }),
+      fundingReads: store, caller: bedrockResponsesCaller(provider.fetch), now,
+    });
+    const [first, second] = [gateway(), gateway()];
+    const env = { BEDROCK_API_KEY: CANARY };
+    // One call first, so the month's credit and the job exist before the race.
+    await readAll((await first.respond(askRequest({ token, admission, attempt: 'run-1:1' }), env)).body);
+    await first.idle();
+    const responses = await Promise.all([
+      first.respond(askRequest({ token, admission, attempt: 'run-1:2' }), env),
+      second.respond(askRequest({ token, admission, attempt: 'run-1:2' }), env),
+    ]);
+    const statuses = responses.map((response) => response.status).sort();
+    const refused = responses.find((response) => response.status === 409);
+    const code = refused ? (await refusal(refused)).code : null;
+    await Promise.all(responses.filter((response) => response.status === 200).map((response) => readAll(response.body)));
+    await Promise.all([first.idle(), second.idle()]);
+    return { statuses, code, raceCalls: provider.calls.length - 1 };
+  }
+
+  it('sends once when two gateway instances, as two Worker isolates, race the same attempt over one store', async () => {
+    expect(await isolatesRace(false)).toEqual({ statuses: [200, 409], code: 'attempt_in_flight', raceCalls: 1 });
+  });
+
+  it('would send twice with an unconditional dispatch update, so the case above has teeth', async () => {
+    expect(await isolatesRace(true)).toMatchObject({ statuses: [200, 200], raceCalls: 2 });
   });
 });
 
 // --- section 7: provider failures ------------------------------------------------------------------
 
 describe('provider failures', () => {
-  it('answers a 429 before any byte with provider_busy and its Retry-After, and leaves no hold pending', async () => {
+  it('answers a 429 before any byte with provider_busy and its Retry-After, releases the hold and restores the full credit', async () => {
     const { token, admission } = await employee();
-    answer = () => Response.json({ error: { message: 'Too many requests.' } }, { status: 429, headers: { 'retry-after': '7' } });
+    const owner = await signIn('owner');
+    const before = await available(owner);
+    answer = () => Response.json({ error: { message: 'Too many requests.' } }, { status: 429, headers: { 'retry-after': '7', 'x-amzn-requestid': 'req-429-evidence' } });
     const response = await ask({ token, admission });
     expect(response.headers.get('retry-after')).toBe('7');
     expect(await refusal(response)).toMatchObject({ status: 429, code: 'provider_busy' });
     expect(spy.calls).toHaveLength(1);
     await cloud.idle();
-    // Contract section 3 asks for funding.release here. FundingService refuses to release a
-    // dispatched hold (see the next test), so the gateway parks it for reconciliation instead.
-    expect(attempts()[0]).toMatchObject({ state: 'uncertain', uncertainReason: expect.stringContaining('HTTP 429') });
+    // Revision 2: FundingService.releaseRefused, with the status and the provider's request id as evidence.
+    expect(attempts()[0]).toMatchObject({ state: 'released', dispatchedAt: expect.any(String),
+      uncertainReason: 'Released: the provider refused it with HTTP 429 before any output (provider request req-429-evidence).' });
+    const after = await available(owner);
+    expect(after.availableMicroUsd).toBe(before.availableMicroUsd);
+    expect([after.pendingMicroUsd, after.uncertainMicroUsd]).toEqual([0, 0]);
   });
 
-  it('cannot release a hold once it is dispatched: FundingService.release refuses (the contract section 3 conflict)', async () => {
-    const owner = await signIn('owner');
+  it('releases a dispatched hold only through releaseRefused: a plain release still refuses', async () => {
     const tenantId = (await call('GET', `/ops/customers/${orgs.juniper}`, await signIn('staffSupport'))).body.organization.tenantId as string;
     const ref = { tenantId, organizationId: orgs.juniper, attemptId: 'probe:1' };
     await cloud.funding.openJob({ tenantId, organizationId: orgs.juniper, rootJobId: 'probe', runRef: 'probe', parentRunRef: null, tier: 'efficient', capMicroUsd: null });
@@ -426,7 +505,8 @@ describe('provider failures', () => {
       rateSnapshot: LUNA.rate, maxMicroUsd: creditAmount(1), usageClass: 'included-chat' });
     await cloud.funding.markDispatched(ref);
     await expect(cloud.funding.release(ref)).rejects.toMatchObject({ code: 'dispatched_hold' });
-    expect(owner).toBeTruthy();
+    await expect(cloud.funding.releaseRefused({ ...ref, providerStatus: 500, providerRequestId: null })).rejects.toMatchObject({ code: 'release_not_allowed' });
+    await expect(cloud.funding.releaseRefused({ ...ref, providerStatus: 403, providerRequestId: null })).resolves.toMatchObject({ state: 'released' });
   });
 
   it('leaves the attempt uncertain when the stream is cut after dispatch', async () => {
@@ -472,6 +552,8 @@ describe('provider failures', () => {
       expect(text).not.toContain(CANARY);
     }
     expect(spy.calls).toHaveLength(3);
+    await cloud.idle();
+    expect(attempts().map((row) => row.state)).toEqual(['released', 'released', 'released']);
   });
 
   it('passes a provider 400 through as provider_refused, scrubbed of the key and cut to 300 characters', async () => {
@@ -482,11 +564,14 @@ describe('provider failures', () => {
     expect(refused.message).not.toContain(CANARY);
     expect(refused.message.startsWith('Bad request for key [redacted]: zzz')).toBe(true);
     expect(Array.from(refused.message)).toHaveLength(300);
+    await cloud.idle();
+    expect(attempts()[0]).toMatchObject({ state: 'released', uncertainReason: expect.stringContaining('HTTP 400') });
+    expect(attempts()[0].uncertainReason).not.toContain(CANARY);
   });
 
   it('treats a 5xx or a network failure before any byte as uncertain, and tells the customer the service is unavailable', async () => {
     const { token, admission } = await employee();
-    answer = () => new Response('upstream exploded', { status: 502 });
+    answer = () => new Response('upstream exploded', { status: 502, headers: { 'x-amzn-requestid': 'req-502' } });
     expect(await refusal(await ask({ token, admission }))).toMatchObject({ status: 503, code: 'route_unavailable' });
     answer = () => { throw new TypeError('fetch failed'); };
     expect(await refusal(await ask({ token, admission, attempt: 'run-1:2' }))).toMatchObject({ status: 503, code: 'route_unavailable' });
@@ -701,10 +786,11 @@ describe('reading an attempt', () => {
 // --- the owner's spend controls ------------------------------------------------------------------
 
 const CEILING_REFUSAL = 'Nectovia’s model service isn’t available right now. Nothing was charged.';
-/** The hold the gateway prices for this request body: its input bound at the input rate plus the output cap at the output rate. */
+/** The hold the gateway prices for this request body: its input bound at the highest input-side rate plus the output cap at the output rate. */
 function holdFor(raw: string, items: number, maxOutputTokens: number) {
   const bound = inputTokenBound(new TextEncoder().encode(raw).byteLength, items);
-  return Math.ceil((bound * LUNA.rate.inputMicroUsdPerMillion + maxOutputTokens * LUNA.rate.outputMicroUsdPerMillion) / 1_000_000);
+  const inputRate = Math.max(LUNA.rate.inputMicroUsdPerMillion, LUNA.rate.cacheWriteMicroUsdPerMillion, LUNA.rate.cacheReadMicroUsdPerMillion);
+  return Math.ceil((bound * inputRate + maxOutputTokens * LUNA.rate.outputMicroUsdPerMillion) / 1_000_000);
 }
 /** The default chat call's hold: far above one settled scripted call (112 micro-USD). */
 const chatHold = () => holdFor(JSON.stringify(chatBody()), chatBody().input.length, 4_096);
