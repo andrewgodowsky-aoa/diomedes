@@ -127,7 +127,7 @@ export interface AcpClientOptions {
    * when this request is not one a person is asked about (it is then declined).
    * While it is pending the turn deadline is paused; the asker bounds the wait.
    */
-  readonly ask?: (method: string, params: unknown) => Promise<AcpAnswer> | undefined;
+  readonly ask?: (method: string, params: unknown, ended: AbortSignal) => Promise<AcpAnswer> | undefined;
   /**
    * With this, a Stop sends `session/cancel` and waits this long for the agent
    * to end the running prompt before the turn fails and the process is ended.
@@ -195,6 +195,8 @@ export class AcpClient {
   /** The phase deadline last armed, so it can be re-armed after a person answers. */
   private armed?: { ms: number; detail: string };
   private asking = 0;
+  /** Aborted once this turn cannot take an answer any more: a question still open then ends. */
+  private readonly asksEnded = new AbortController();
   /**
    * A deadline the host imposed is not a person pressing stop, and the abort's
    * reason says which it was. The two ACP routes reach this listener rather
@@ -308,6 +310,7 @@ export class AcpClient {
   }
 
   private fail(error: EngineError) {
+    this.asksEnded.abort();
     if (this.cancelled && !this.failure) {
       // Anything that ends the turn while a Stop waits for its answer ends that wait too.
       this.stopOutcome ??= 'killed';
@@ -403,7 +406,7 @@ export class AcpClient {
           const allowed = this.failure ? undefined : this.options.permit?.(frame.method, frame.params);
           const asked =
             allowed === undefined && !this.failure && !this.cancelled
-              ? this.options.ask?.(frame.method, frame.params)
+              ? this.options.ask?.(frame.method, frame.params, this.asksEnded.signal)
               : undefined;
           if (asked) this.answerLater(frame, asked);
           else if (allowed === undefined) this.decline(frame);
@@ -490,7 +493,10 @@ export class AcpClient {
             await this.write({ jsonrpc: '2.0', id: frame.id, result: answer.result }).catch(() =>
               this.fail(protocolError(profile, 'did not accept a protocol reply.')),
             );
-          if (answer.stop) this.fail(answer.stop);
+          // A question a Stop cancelled leaves the turn to the Stop, which is waiting for the
+          // agent to answer session/cancel; failing here would call an acknowledged Stop a kill.
+          if (answer.stop && !this.cancelled) this.fail(answer.stop);
+          else if (answer.stop) return;
           else if (this.asking === 0 && this.armed && !this.failure)
             this.arm(this.armed.ms, this.armed.detail);
         }),
@@ -541,6 +547,8 @@ export class AcpClient {
     try {
       // A Stop that is waiting for the agent's answer finishes waiting first (bounded).
       await this.cancelled;
+      // The turn is over: a question nobody answered belongs to it and ends with it.
+      this.asksEnded.abort();
       let flushed = 0;
       while (flushed < this.replies.length) {
         const replies = this.replies.slice(flushed);
@@ -957,8 +965,11 @@ export function acpReadTurn(
   profile: AcpProfile,
   scope: ReadScope,
   sink: TextRequest['onToolActivity'],
-  /** Calls a person allowed once on a kept conversation (H05); fetch without web access needs one. */
-  approved?: ReadonlySet<string>,
+  /**
+   * Calls a person allowed once on a kept conversation (H05), with the address they were shown;
+   * a fetch without web access needs one, at that address.
+   */
+  approved?: ReadonlyMap<string, string>,
 ): { reads: (update: Json) => void; permit: (method: string, params: unknown) => unknown } {
   const calls = new Map<string, { kind: string; started: boolean; finished: boolean }>();
   const refuse = (why: string) =>
@@ -974,10 +985,11 @@ export function acpReadTurn(
     const known = calls.get(id);
     const kind = text(call.kind) || known?.kind || '';
     if (!ACP_READ_KINDS.includes(kind)) throw refuse(`reported a ${kind || 'unnamed'} tool call`);
-    if (kind === 'fetch' && !scope.web && !approved?.has(id))
+    const input = record(call.rawInput);
+    const shown = approved?.get(id);
+    if (kind === 'fetch' && !scope.web && (shown === undefined || (text(input.url) && text(input.url) !== shown)))
       throw refuse('tried to reach the web without web access');
     const locations = Array.isArray(call.locations) ? call.locations.map(record) : [];
-    const input = record(call.rawInput);
     const paths = [
       ...locations.map((location) => text(location.path)),
       ...PATH_KEYS.map((key) => text(input[key])),
@@ -1038,7 +1050,9 @@ export function acpReadTurn(
     if (method !== 'session/request_permission') return undefined;
     const call = record(record(params).toolCall);
     try {
-      judge(call);
+      // A fetch without web access is a person's to allow, every time it is asked; an earlier
+      // go-ahead for the same call id never answers a new question.
+      if (judge(call).kind === 'fetch' && !scope.web) return undefined;
     } catch {
       return undefined;
     }

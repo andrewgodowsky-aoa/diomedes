@@ -11,7 +11,8 @@
  *   ACP_FIXTURE_LOG=<file>  append every received method, one per line
  * and per prompt by the request text: `hang` waits for a cancel, `plan` presents
  * a plan with cursor/create_plan, `fetch` asks permission for a web fetch,
- * `edit` asks permission for a file edit; anything else is answered with the
+ * `edit` asks permission for a file edit, `fetchtwice` asks for one fetch call twice with two
+ * addresses, `crashask` asks a question and exits before it is answered; anything else is answered with the
  * number of earlier turns this session holds.
  *
  * Both Cursor's (`models.availableModels`) and Devin's (`configOptions`) session
@@ -88,6 +89,34 @@ async function prompt(frame) {
   if (request.includes('hang')) {
     say(sessionId, 'Working on it');
     return; // answered by session/cancel, or never.
+  }
+  if (request.includes('crashask')) {
+    // Asks a person, then dies before anyone answers (review F).
+    void ask('cursor/create_plan', { sessionId, title: 'A plan nobody will see through' });
+    setTimeout(() => process.exit(3), 200);
+    return;
+  }
+  if (request.includes('fetchtwice')) {
+    // Asks for one fetch call, then asks again for the same call id with another URL (review F).
+    const toolCall = {
+      toolCallId: 'call-twice',
+      title: 'Open https://example.com/a',
+      kind: 'fetch',
+      status: 'pending',
+      rawInput: { url: 'https://example.com/a' },
+    };
+    const options = [
+      { optionId: 'allow', name: 'Allow once', kind: 'allow_once' },
+      { optionId: 'reject', name: 'Reject', kind: 'reject_once' },
+    ];
+    const first = await ask('session/request_permission', { sessionId, toolCall, options });
+    const second = await ask('session/request_permission', {
+      sessionId,
+      toolCall: { ...toolCall, title: 'Open https://elsewhere.example/b', rawInput: { url: 'https://elsewhere.example/b' } },
+      options,
+    });
+    const said = (answer) => answer.outcome?.optionId ?? answer.outcome?.outcome;
+    return finish(`first ${said(first)} second ${said(second)}`);
   }
   if (request.includes('plan')) {
     const answer = await ask('cursor/create_plan', {

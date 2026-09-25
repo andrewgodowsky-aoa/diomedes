@@ -124,8 +124,11 @@ export interface AcpTurnRunner {
 export interface AcpTurnKeep extends AcpKeep {
   /** Called once the session is reached and before the prompt is sent. */
   beforePrompt(): Promise<void>;
-  /** Tool calls a person approved on this turn: the read policy accepts exactly these. */
-  readonly approvedCalls: ReadonlySet<string>;
+  /**
+   * Tool calls a person approved on this turn, each with the address the person was shown: the
+   * read policy accepts exactly these, and only at that address.
+   */
+  readonly approvedCalls: ReadonlyMap<string, string>;
   /** Whether a person approved the agent's plan on this turn. */
   plans(): boolean;
 }
@@ -242,7 +245,7 @@ export class AcpNativeSession {
     const name = this.runner.profile.name;
     const signal = AbortSignal.any([controller.signal, ...(input.signal ? [input.signal] : [])]);
     const interrupted = this.saved.origin === 'recovered' && this.saved.interruptedRequestId !== null;
-    const approvedCalls = new Set<string>();
+    const approvedCalls = new Map<string, string>();
     let planApproved = false;
     const facts: AcpKeep['facts'] = {};
     let prompted = false;
@@ -254,9 +257,9 @@ export class AcpNativeSession {
       approvedCalls,
       plans: () => planApproved,
       ask: input.approvals
-        ? (method, params) =>
-            askPerson(this.runner, input, method, params, signal, {
-              approveCall: (id) => approvedCalls.add(id),
+        ? (method, params, ended) =>
+            askPerson(this.runner, input, method, params, AbortSignal.any([signal, ended]), {
+              approveCall: (id, url) => approvedCalls.set(id, url),
               approvePlan: () => {
                 planApproved = true;
               },
@@ -350,7 +353,7 @@ function askPerson(
   method: string,
   params: unknown,
   signal: AbortSignal,
-  approve: { approveCall(id: string): void; approvePlan(): void },
+  approve: { approveCall(id: string, url: string): void; approvePlan(): void },
 ): Promise<AcpAnswer> | undefined {
   const { profile } = runner;
   const approvals = input.approvals;
@@ -409,7 +412,7 @@ function askPerson(
   return ask(
     { kind: 'permission', engine: runner.engine, title, toolKind: kind },
     () => {
-      approve.approveCall(id);
+      approve.approveCall(id, url);
       return { outcome: { outcome: 'selected', optionId: allow.optionId } };
     },
     () => acpRejectOutcome(params),
