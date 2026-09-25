@@ -15,7 +15,8 @@
  * usage by default, so the desktop's loop runs offline. Bedrock is called for
  * real only when `liveBedrockApiKey` is given (NECTOVIA_FAUX_BEDROCK_API_KEY,
  * which needs Andrew's separate spend approval before it is ever set). The
- * Worker's spend settings apply here too, through `managed.settings`.
+ * Worker's spend settings apply here too, through `managed.settings`, and a
+ * live key without a readable MANAGED_SPEND_CEILING_MICRO_USD refuses to start.
  */
 import { z } from 'zod';
 import type { Configuration } from '../config.js';
@@ -23,7 +24,7 @@ import { AccountService } from '../account-service.js';
 import { CommercialService } from '../commercial.js';
 import { AccountError } from '../errors.js';
 import { FundingService, UsageService } from '../funding.js';
-import { ManagedInferenceService, SPEND_SETTINGS, type SpendSetting } from '../managed-inference.js';
+import { ManagedInferenceService, SPEND_SETTINGS, spendControls, type SpendSetting } from '../managed-inference.js';
 import { FAUX_SCRIPTED_CREDENTIAL, bedrockResponsesCaller, scriptedResponsesFetch } from '../managed-providers.js';
 import { createHandler } from '../worker.js';
 import { readBytes } from '../crypto.js';
@@ -94,7 +95,23 @@ async function jsonBody<T>(request: Request, schema: z.ZodType<T>): Promise<T> {
   return parsed.data;
 }
 
+/** Why a faux cloud with a live Bedrock key refuses to start: the testing budget is a hard limit. */
+export const LIVE_WITHOUT_CEILING = 'The faux cloud will not call Bedrock without a spend ceiling. NECTOVIA_FAUX_BEDROCK_API_KEY is set, so also set ' +
+  'MANAGED_SPEND_CEILING_MICRO_USD to a whole number of micro-USD (100000000 is $100), or unset the key.';
+
+function readableCeiling(value: string | number | undefined): boolean {
+  try {
+    return spendControls({ MANAGED_SPEND_CEILING_MICRO_USD: value }).ceilingMicroUsd !== null;
+  } catch {
+    return false;
+  }
+}
+
 export async function createFauxCloud(options: FauxCloudOptions): Promise<FauxCloud> {
+  const live = typeof options.liveBedrockApiKey === 'string' && options.liveBedrockApiKey.length > 0;
+  const settings = options.managed?.settings ?? {};
+  // Refused before anything opens: a live key with no readable ceiling never starts.
+  if (live && !readableCeiling(settings.MANAGED_SPEND_CEILING_MICRO_USD)) throw new Error(LIVE_WITHOUT_CEILING);
   const now = options.now ?? Date.now;
   const store = await FauxCloudStore.open(options.file, new Date(now()).toISOString());
   const identity = new FauxIdentityProvider({ now, iterations: options.passwordIterations });
@@ -112,10 +129,8 @@ export async function createFauxCloud(options: FauxCloudOptions): Promise<FauxCl
     databaseUrl: 'faux://local-store',
     identity: { clientId: 'faux', issuer: FAUX_ISSUER, audience: 'faux', apiKey: 'faux' },
   };
-  const live = typeof options.liveBedrockApiKey === 'string' && options.liveBedrockApiKey.length > 0;
   const credential = live ? options.liveBedrockApiKey! : options.managed?.credential === undefined ? FAUX_SCRIPTED_CREDENTIAL : options.managed.credential;
   // The environment the gateway reads its key and spend settings from, as the Worker's would be.
-  const settings = options.managed?.settings ?? {};
   const managedEnv: Record<string, unknown> = {
     ...Object.fromEntries(SPEND_SETTINGS.filter((name) => settings[name] !== undefined).map((name) => [name, settings[name]])),
     ...(credential === null ? {} : { BEDROCK_API_KEY: credential }),

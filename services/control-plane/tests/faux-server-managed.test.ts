@@ -7,6 +7,7 @@ import http from 'node:http';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DEMO_ACCOUNTS, FAUX_DEMO_PASSWORD } from '../src/faux/seed.js';
 import { startFauxCloud, type RunningFauxCloud } from '../src/faux/server.js';
+import { createFauxCloud, LIVE_WITHOUT_CEILING } from '../src/faux/cloud.js';
 import { MANAGED_PROVIDERS, scriptedResponsesFetch } from '../src/managed-providers.js';
 import { providerSpy, readAll } from './support/managed.js';
 
@@ -100,5 +101,22 @@ describe('the faux cloud server and the managed gateway', () => {
     expect((await json(response)).error.code).toBe('route_unavailable');
     expect(spy.calls).toHaveLength(0);
     warn.mockRestore();
+  });
+
+  it('refuses to start with a live Bedrock key and no readable spend ceiling, before anything opens', async () => {
+    // A placeholder, never a real key, and no managed call is made in live mode.
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.stubEnv('NECTOVIA_FAUX_BEDROCK_API_KEY', 'ABSK-placeholder-not-a-key');
+    for (const ceiling of ['', '  ', 'a hundred dollars', '-1']) {
+      vi.stubEnv('MANAGED_SPEND_CEILING_MICRO_USD', ceiling);
+      await expect(startFauxCloud({ file: null, port: 0 })).rejects.toThrow(LIVE_WITHOUT_CEILING);
+    }
+    await expect(createFauxCloud({ file: null, liveBedrockApiKey: 'ABSK-placeholder-not-a-key' })).rejects.toThrow(LIVE_WITHOUT_CEILING);
+    vi.stubEnv('MANAGED_SPEND_CEILING_MICRO_USD', '100000000');
+    running = await startFauxCloud({ file: null, port: 0 });
+    expect(running.cloud.provider).toBe('live');
+    // Without the key, no ceiling is needed: the scripted provider spends nothing.
+    await expect(createFauxCloud({ file: null })).resolves.toMatchObject({ provider: 'scripted' });
+    error.mockRestore();
   });
 });
