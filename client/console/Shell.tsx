@@ -81,6 +81,7 @@ import { SendConfirmation } from './SendConfirmation';
 import { JobCapWarning } from './JobCapWarning';
 import { beforeWake, estimateWake, setThreadTier, wakeOverCap, type CapChoice, type CapPrompt } from '../job-cap-gate';
 import { PermissionPanel } from './PermissionPanel';
+import { LoopStart } from './LoopStart';
 import { CloudSharing } from './CloudSharing';
 import { Ledger } from './Ledger';
 import { ThreadModelControls } from './WorkStylePicker';
@@ -250,6 +251,8 @@ export function Shell({
   const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
   const [previewNeed, setPreviewNeed] = useState<Need | null>(null);
   const [permissionsOpen, setPermissionsOpen] = useState(false);
+  // H13: the task a work loop run is being started on, from the thread's work panel.
+  const [loopTask, setLoopTask] = useState<Task | null>(null);
   /** P04: the playbook a person opened to read; its body loads only when this is set. */
   const [playbookOpen, setPlaybookOpen] = useState<{ skill: PackSkill; loaded: LoadedContribution } | null>(
     null,
@@ -2124,6 +2127,7 @@ export function Shell({
               changes={state.changes}
               instructionFiles={activeInstructionFiles(state.project.packs, state.instructionFiles)}
               onOpenInFiles={openDocument}
+              tasks={state.tasks.filter((item) => !item.deletedAt)}
               followUps={state.followUps ?? []}
               controlReceipts={state.controlReceipts ?? []}
               onOpenTask={(taskId) => {
@@ -2249,6 +2253,7 @@ export function Shell({
               running={selectedTask ? liveByTask(selectedTask.id) !== null : false}
               latest={latestTaskSession}
               openNeeds={waiting}
+              onLoopRun={selectedTask ? () => setLoopTask(selectedTask) : undefined}
               onBoard={() => setView('Board')}
               onTeam={() => setView('Team')}
               onReviewNeed={(need) => {
@@ -2507,6 +2512,18 @@ export function Shell({
           title={playbookOpen.skill.name}
           loaded={playbookOpen.loaded}
           onClose={() => setPlaybookOpen(null)}
+        />
+      )}
+      {loopTask && (
+        <LoopStart
+          key={`${projectId}:${loopTask.id}`}
+          projectId={projectId}
+          task={loopTask}
+          onClose={() => setLoopTask(null)}
+          onStarted={() => {
+            setLoopTask(null);
+            void load().catch(report);
+          }}
         />
       )}
       {permissionsOpen && selected && (

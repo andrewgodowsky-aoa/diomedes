@@ -564,3 +564,19 @@ export function parsePlan(text: string): { items: string[]; truncated: boolean }
   });
   return { items, truncated };
 }
+
+/**
+ * One route a Console start control may offer (`GET /api/projects/:id/loop/routes`): the
+ * scripted route or a model-API route, with the start route's own admission read now. A
+ * route that is not admitted carries the sentence the start would refuse it with.
+ */
+export interface LoopRouteOffer {
+  readonly route: string;
+  readonly label: string;
+  readonly admitted: boolean;
+  /** The goal and the files it reads leave this computer, so the start asks for consent. */
+  readonly sends: boolean;
+  /** The model the route would run, when it names one. */
+  readonly model: string | null;
+  readonly reason: string | null;
+}
