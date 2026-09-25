@@ -1,7 +1,50 @@
+import type { AccountWorkspaceView } from '../shared/accounts';
 import type { Settings } from '../shared/types';
 import { Brand, Button, detailDescriptions, titleCase } from './components';
-import { advanceSetup, hasUsableService } from '../shared/onboarding';
+import {
+  AGENT_READY_SENTENCE,
+  activeBusinessIncludesAgent,
+  advanceSetup,
+  hasUsableService,
+} from '../shared/onboarding';
 import AISetup from './AISetup';
+import { useAccount } from './AccountGate';
+
+/**
+ * What will answer once setup ends. A business that includes the Agent has it ready whether or
+ * not the person connected a tool of their own; the sample sentence is only for someone with
+ * neither.
+ */
+export function ReadyNote({
+  settings,
+  workspaces,
+}: {
+  settings: Settings;
+  workspaces: readonly AccountWorkspaceView[] | null;
+}) {
+  const agent = activeBusinessIncludesAgent(settings, workspaces);
+  const usable = hasUsableService(settings);
+  const engine =
+    typeof settings.services?.['defaultEngine'] === 'string'
+      ? (settings.services['defaultEngine'] as string)
+      : '';
+  return (
+    <>
+      {agent && <p className="prose">{AGENT_READY_SENTENCE}</p>}
+      {usable ? (
+        <p className="prose">
+          {titleCase(engine)} is your selected default. Nectovia checks its connection before
+          sending a request.
+        </p>
+      ) : agent ? null : (
+        <p className="prose">
+          {settings.onboarding.aiSkipped ? 'AI setup was skipped. ' : ''}No usable service is
+          connected, so Nectovia uses sample work on this computer.
+        </p>
+      )}
+    </>
+  );
+}
 
 export function Setup({
   settings,
@@ -12,6 +55,7 @@ export function Setup({
   save: (value: Settings) => Promise<void>;
   busy: boolean;
 }) {
+  const account = useAccount();
   const step = settings.onboarding.resumeAt;
   const order = ['welcome', 'q1', 'q2', 'q3', 'ai', 'ready', 'done'] as const;
   const index = (order as readonly string[]).indexOf(step);
@@ -21,11 +65,6 @@ export function Setup({
     await save(advanceSetup(settings, skip));
   }
   if (step === 'done') return null;
-  const usable = hasUsableService(settings);
-  const engine =
-    typeof settings.services?.['defaultEngine'] === 'string'
-      ? (settings.services['defaultEngine'] as string)
-      : '';
   return (
     <div className="setup">
       <header className="setup-top">
@@ -62,17 +101,7 @@ export function Setup({
               before Nectovia applies them. Your other approval preferences are in Settings, where you
               can also switch to the Architect view for the full workspace.
             </p>
-            {usable ? (
-              <p className="prose">
-                {titleCase(engine)} is your selected default. Nectovia checks its connection before
-                sending a request.
-              </p>
-            ) : (
-              <p className="prose">
-                {settings.onboarding.aiSkipped ? 'AI setup was skipped. ' : ''}No usable service is
-                connected, so Nectovia uses sample work on this computer.
-              </p>
-            )}
+            <ReadyNote settings={settings} workspaces={account?.state.workspaces ?? null} />
             <div className="actions">
               <Button tone="quiet" onClick={() => void update({ resumeAt: 'ai' })}>
                 Back
