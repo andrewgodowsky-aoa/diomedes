@@ -664,9 +664,11 @@ describe('delegation: carved budgets, four per run, several at once', () => {
     })
       .run('loop-8', 'host', 'Delegate.', principal)
       .catch((error: unknown) => error);
-    await expect.poll(async () => (await runs.get('loop-8-d0').catch(() => null))?.state).toBe('running');
+    // The child exists only after the parent's own run records are written (claim, model step,
+    // delegate step), which on a loaded Windows runner can take past expect.poll's one-second default.
+    await expect.poll(async () => (await runs.get('loop-8-d0').catch(() => null))?.state, { timeout: 10_000 }).toBe('running');
     await runs.cancel('loop-8', 'Stopped by the person.', principal);
-    await expect.poll(async () => (await runs.get('loop-8-d0')).state).toBe('cancelled');
+    await expect.poll(async () => (await runs.get('loop-8-d0')).state, { timeout: 10_000 }).toBe('cancelled');
     expect((await runs.get('loop-8-d0')).cancelReason).toBe('the loop that handed it this sub-task was stopped');
     expect(log).toContain('parent stopped');
     await running;
