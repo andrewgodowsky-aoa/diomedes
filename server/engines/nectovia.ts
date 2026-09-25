@@ -22,7 +22,8 @@
 import { createOpenAI } from '@ai-sdk/openai';
 import type { JobTier, UsageClass } from '../../shared/managed-usage.js';
 import { GPT6_LUNA, NECTOVIA_ROUTE } from '../../shared/model-api.js';
-import { WORK_STYLE_LABELS } from '../../shared/work-style.js';
+import type { TierResolution } from '../../shared/tier-map.js';
+import { classifyTask, WORK_STYLE_LABELS, type WorkStyle } from '../../shared/work-style.js';
 import { digest } from '../harness/policy.js';
 import type { ModelRateCard } from '../spend-exposure.js';
 import { AWS_BEDROCK_SDK } from './aws-bedrock.js';
@@ -362,3 +363,47 @@ export async function respondNectovia(
     );
   }
 }
+
+/**
+ * What a Nectovia conversation's tier runs on: the model the account service publishes for it
+ * now, at the tier's own level. Nothing on this computer picks the model, and the owner's tier
+ * map (which routes the owner's own provider routes) is never read. A tier the policy leaves
+ * unrouted is refused by name; so is every tier while nobody is signed in or the service has
+ * not answered. Pure: the caller reads the session.
+ */
+export function nectoviaTier(input: {
+  style: WorkStyle;
+  signedIn: boolean;
+  policy: NectoviaPolicy | null;
+  text?: string | null;
+}): TierResolution {
+  const { style } = input;
+  const kind = classifyTask(input.text);
+  const refuse = (reason: string): TierResolution => ({
+    outcome: 'refuse',
+    style,
+    route: NECTOVIA_ROUTE,
+    model: null,
+    reason,
+    ownerPin: false,
+    kind,
+  });
+  if (!input.signedIn) return refuse(NECTOVIA_SIGN_IN);
+  if (!input.policy) return refuse(NECTOVIA_UNAVAILABLE);
+  const published = input.policy.tiers[style];
+  if (!published) return refuse(`${tierName(style)} has no Nectovia model right now. Nothing was sent. Choose another tier.`);
+  return {
+    outcome: 'run',
+    style,
+    route: NECTOVIA_ROUTE,
+    model: published.model,
+    effort: NECTOVIA_EFFORT[style],
+    reason: `${tierName(style)}: ${published.label} on Nectovia.`,
+    ownerPin: false,
+    kind,
+  };
+}
+
+/** Build and Fix run through Work; the Nectovia Agent answers in the conversation. */
+export const NECTOVIA_WORK_REFUSED =
+  'The Nectovia Agent answers in the conversation. Build and Fix are not on it yet, so nothing was sent.';

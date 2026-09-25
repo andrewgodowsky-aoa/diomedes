@@ -2779,7 +2779,9 @@ async function modelApiRoute(api: ModelApiServices, route: ModelApiRoute, work: 
           throw new EngineError('ROUTE_REFUSED', 'This Nectovia call has no admission, so nothing was sent.', true);
         return work.managed;
       };
-      const transport = (given?: typeof globalThis.fetch) => given ?? account.fetch;
+      // The gateway is the account service's, so its own transport reaches it. A provider test
+      // transport (`modelApiTransport`) replaces the provider network, never the account service.
+      const transport = (given?: typeof globalThis.fetch) => account.fetch ?? given;
       return {
         connected: true,
         route,

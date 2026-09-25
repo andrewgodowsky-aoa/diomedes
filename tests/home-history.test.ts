@@ -153,7 +153,14 @@ describe('the line near the composer', () => {
 describe('the route the next message takes', () => {
   test('is the thread route without a tier, and the default before there is one', () => {
     expect(nextRoute({ engine: 'claude-code', workStyle: null })).toBe('claude-code');
-    expect(nextRoute({ engine: null, workStyle: null })).toBe('aws-bedrock');
+    // The default a first message takes is Nectovia's managed route (2026-09-25).
+    expect(nextRoute({ engine: null, workStyle: null })).toBe('nectovia');
+  });
+
+  test('stays on Nectovia whatever the tier: the published policy answers its tier, not the owner map', () => {
+    expect(nextRoute({ engine: 'nectovia', workStyle: 'focused' })).toBe('nectovia');
+    expect(nextRoute({ engine: null, workStyle: 'thorough' })).toBe('nectovia');
+    expect(nextRoute({ engine: 'nectovia', workStyle: null, services: { workStyle: 'focused' } })).toBe('nectovia');
   });
 
   test("is the tier's route when the thread has a tier", () => {

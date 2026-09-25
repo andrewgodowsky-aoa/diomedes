@@ -1,10 +1,12 @@
 /**
- * WorkStyle on the Diomedes conversation's default route, AWS Bedrock on Luna,
- * through the real app over HTTP with a fake AWS endpoint (the same harness as
- * home-luna-routing.test.ts). The route binds its reasoning level into a
- * lineage's saved context, so a style's level follows style and mode only, and
- * a style change that moves it starts the next lineage. A style that needs a
- * model the route does not offer is refused before anything is sent.
+ * WorkStyle on the Diomedes conversation routed to the owner's AWS Bedrock route
+ * on Luna (the person's choice: the default is now Nectovia's managed route, whose
+ * tiers tests/nectovia-bot-app.test.ts covers), through the real app over HTTP
+ * with a fake AWS endpoint (the same harness as home-luna-routing.test.ts). The
+ * route binds its reasoning level into a lineage's saved context, so a style's
+ * level follows style and mode only, and a style change that moves it starts the
+ * next lineage. A style that needs a model the route does not offer is refused
+ * before anything is sent.
  */
 import { afterEach, beforeEach, expect, test } from 'vitest';
 import fs from 'node:fs/promises';
@@ -181,7 +183,12 @@ afterEach(async () => {
 });
 
 type Binding = { projectId: string; threadId: string };
-const provisionHome = () => api<Binding>('/home/conversation', 'POST');
+/** Home, routed by the person to the owner's AWS route, where the owner's tier map applies. */
+const provisionHome = async () => {
+  const home = await api<Binding>('/home/conversation', 'POST');
+  await api(`/projects/${home.projectId}/threads/${home.threadId}`, 'PUT', { engine: 'aws-bedrock' });
+  return home;
+};
 const threadsOf = (projectId: string) => store().state(projectId).conversations;
 const homeThread = (home: Binding) =>
   threadsOf(home.projectId).find((thread) => thread.id === home.threadId)!;

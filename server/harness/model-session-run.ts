@@ -45,6 +45,7 @@ import { RunService, Suspended, type StepContext, type StepDefinition } from './
 import { ToolRegistry } from './tools.js';
 import { PLAYBOOK_TOOL, registerPlaybookTool } from './capabilities/pack-playbooks.js';
 import { TEAM_TOOL_NAMES } from '../../shared/team-routes.js';
+import { NECTOVIA_ROUTE } from '../../shared/model-api.js';
 import { contextMessage } from '../engines/contract.js';
 import { carriedRun } from './conversation-history.js';
 import { artifactSteps, unrecordedArtifacts } from './artifact-steps.js';
@@ -1164,7 +1165,14 @@ export class ModelSessionRuns {
  * computer (a page or a connector) is admitted only on a turn whose recorded
  * read scope allowed it and whose manifest names it.
  */
-export function modelApiDispatchAuthorizer(services: () => Record<string, unknown> | undefined) {
+export function modelApiDispatchAuthorizer(
+  services: () => Record<string, unknown> | undefined,
+  /**
+   * The Nectovia route's account for a project now: the business it belongs to while someone is
+   * signed in, else null. Nectovia has no switch in Settings; its run is authorized on this.
+   */
+  nectoviaAccount: (projectId: string) => string | null = () => null,
+) {
   return async (
     run: HarnessRun,
     intent: { destination: string; kind?: string; name?: string | null },
@@ -1185,6 +1193,19 @@ export function modelApiDispatchAuthorizer(services: () => Record<string, unknow
     }
     const input = run.input as { route?: unknown; accountRoute?: unknown } | null;
     const route = input?.route;
+    if (route === NECTOVIA_ROUTE) {
+      const current = nectoviaAccount(run.projectId);
+      if (current === null)
+        throw new HarnessError('egress_denied', 'Nobody is signed in to the Nectovia Agent on this computer now.');
+      if (input?.accountRoute !== current)
+        throw new HarnessError(
+          'egress_denied',
+          phase === 'result'
+            ? 'The business this conversation belongs to changed while this call was in flight. Its answer was not accepted.'
+            : 'This conversation was admitted for another business.',
+        );
+      return;
+    }
     const settings = services();
     if (typeof route !== 'string' || settings?.[route] !== true)
       throw new HarnessError('egress_denied', 'This model-API route is not switched on in Settings.');

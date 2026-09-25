@@ -1,13 +1,16 @@
 /**
  * The conversation default route, through the real app over HTTP: a provisioned
  * Home and a provisioned project conversation take the shared default, which is
- * the server-owned AWS Bedrock route on Luna. A route the person chose through
- * the thread update is marked `engineChoice: 'person'` and survives
- * provisioning and restart; a pin nobody chose is migrated once. An
- * unconfigured AWS refuses a send by name with nothing admitted, and a
- * configured fake AWS answers with no Claude adapter, no native sign-in and no
- * target project anywhere in the fixture. `close()` then `open()` over the same
- * data directory is a graceful restart.
+ * the company-managed Nectovia route (owner decision 2026-09-25: customers never
+ * connect a provider). A route the person chose through the thread update is
+ * marked `engineChoice: 'person'` and survives provisioning and restart; a pin
+ * nobody chose is migrated once. On this host without accounts the default
+ * refuses a send by asking the person to sign in, with nothing admitted. The
+ * owner's AWS Bedrock route, chosen by the person, still refuses by name when it
+ * is not configured and answers through a configured fake AWS with no Claude
+ * adapter, no native sign-in and no target project anywhere in the fixture.
+ * `close()` then `open()` over the same data directory is a graceful restart.
+ * (Nectovia answering through its gateway is tests/nectovia-bot-app.test.ts.)
  */
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import fs from 'node:fs/promises';
@@ -18,6 +21,7 @@ import type { AddressInfo } from 'node:net';
 import { createApp } from '../server/app';
 import { EngineService } from '../server/engines/service';
 import { AWS_BEDROCK_ROUTE, AWS_LUNA_MODEL } from '../server/engines/aws-bedrock';
+import { NECTOVIA_SIGN_IN } from '../server/engines/nectovia';
 import { testOnlySecretBox } from '../server/connection-secrets';
 import { identifier, now, type Store } from '../server/store';
 import { CONVERSATION_DEFAULT_ROUTE, isConversationRoute } from '../shared/engines';
@@ -224,15 +228,27 @@ const connect = () =>
   });
 const approveSpend = (capUsd = 1) =>
   api<AwsConnectionView>('/ai/model-api/aws-bedrock/spend-limit', 'PUT', { capUsd, consent: true });
+/** The person routes this conversation to the owner's AWS route: a choice provisioning keeps. */
+const onAws = async (binding: Binding) => {
+  const chosen = await api<Conversation>(`/projects/${binding.projectId}/threads/${binding.threadId}`, 'PUT', {
+    engine: AWS_BEDROCK_ROUTE,
+  });
+  expect(chosen).toMatchObject({ engine: AWS_BEDROCK_ROUTE, engineChoice: 'person' });
+  return binding;
+};
 
-test('the shared conversation default names the server-owned AWS Bedrock route', () => {
-  expect(CONVERSATION_DEFAULT_ROUTE).toBe(AWS_BEDROCK_ROUTE);
-  expect(AWS_BEDROCK_ROUTE).toBe('aws-bedrock');
+test('the shared conversation default names the company-managed Nectovia route', () => {
+  // Changed on 2026-09-25 (bot-mode item 4): every bot conversation answers on Nectovia's own
+  // route, which the account service pays for and meters, so a customer connects nothing. AWS
+  // Bedrock stays an owner route a person can still choose for a conversation.
+  expect(CONVERSATION_DEFAULT_ROUTE).toBe('nectovia');
+  expect(CONVERSATION_DEFAULT_ROUTE).not.toBe(AWS_BEDROCK_ROUTE);
 });
 
 test('the conversation route predicate admits Claude Code and model-API routes only', () => {
   expect(isConversationRoute('claude-code')).toBe(true);
   expect(isConversationRoute('aws-bedrock')).toBe(true);
+  expect(isConversationRoute('nectovia')).toBe(true);
   expect(isConversationRoute('sample')).toBe(false);
   expect(isConversationRoute('codex')).toBe(false);
   expect(isConversationRoute('opencode')).toBe(false);
@@ -243,7 +259,7 @@ test('the conversation route predicate admits Claude Code and model-API routes o
 test('a fresh home and a fresh project conversation are provisioned on the default route', async () => {
   const home = await provisionHome();
   expect(homeThread(home)).toMatchObject({
-    engine: 'aws-bedrock',
+    engine: 'nectovia',
     mode: 'auto',
     name: 'Diomedes',
   });
@@ -252,14 +268,31 @@ test('a fresh home and a fresh project conversation are provisioned on the defau
 
   const mine = await project('Linen service');
   const binding = await provisionProject(mine.id);
-  expect(byId(mine.id, binding.threadId)).toMatchObject({ engine: 'aws-bedrock', mode: 'auto' });
+  expect(byId(mine.id, binding.threadId)).toMatchObject({ engine: 'nectovia', mode: 'auto' });
   expect(byId(mine.id, binding.threadId).engineChoice).toBeUndefined();
   // The provisioned conversation route never touches the project's own Work route.
-  expect(store().state(mine.id).project.ai?.engine ?? null).not.toBe('aws-bedrock');
+  expect(store().state(mine.id).project.ai?.engine ?? null).not.toBe('nectovia');
+});
+
+test('on a host without accounts the default asks the person to sign in, and nothing is admitted, sent or recorded', async () => {
+  const home = await provisionHome();
+  const file = store().statePath(home.projectId);
+  const before = await fs.readFile(file);
+  const sent = await sendRaw(home, 'm-early', 'Good morning');
+  expect(sent.status).toBe(401);
+  expect(await sent.json()).toMatchObject({ code: 'sign_in_required', error: NECTOVIA_SIGN_IN });
+  expect(seen).toHaveLength(0);
+  expect(adapterCalls).toBe(0);
+  expect(loginCalls).toBe(0);
+  expect(nativeCalls).toBe(0);
+  const thread = homeThread(home);
+  expect(thread.turns).toEqual([]);
+  expect(thread.lineages ?? []).toEqual([]);
+  expect((await fs.readFile(file)).equals(before)).toBe(true);
 });
 
 test('unconfigured AWS is refused by name and nothing is admitted, sent or recorded', async () => {
-  const home = await provisionHome();
+  const home = await onAws(await provisionHome());
   const file = store().statePath(home.projectId);
   const before = await fs.readFile(file);
   const sent = await sendRaw(home, 'm-early', 'Good morning');
@@ -289,7 +322,7 @@ test('a bound home whose thread was never deliberately routed is re-pinned on th
 
   // The bound early return still migrates it, inside the same provision.
   expect(await provisionHome()).toEqual(home);
-  expect(homeThread(home)).toMatchObject({ engine: 'aws-bedrock' });
+  expect(homeThread(home)).toMatchObject({ engine: 'nectovia' });
   expect(homeThread(home).engineChoice).toBeUndefined();
 
   // The migration is once: a second provision finds the default and writes nothing.
@@ -303,7 +336,7 @@ test('a bound home whose thread was never deliberately routed is re-pinned on th
   // And the re-pin is durable, not a read-time view: a restart reads the same.
   await close();
   await open();
-  expect(homeThread(home).engine).toBe('aws-bedrock');
+  expect(homeThread(home).engine).toBe('nectovia');
 });
 
 test('an adopted pre-upgrade home thread is re-pinned to the default by the same provision', async () => {
@@ -331,7 +364,7 @@ test('an adopted pre-upgrade home thread is re-pinned to the default by the same
   const home = await provisionHome();
   expect(home).toEqual({ projectId: homeProject.id, threadId: thread.id });
   expect(homeThread(home)).toMatchObject({
-    engine: 'aws-bedrock',
+    engine: 'nectovia',
     mode: 'auto',
     name: 'Diomedes',
   });
@@ -401,7 +434,7 @@ test('an adopted home thread already on the default is bound without a redundant
     helper: null,
     permission: 'show-first',
     mode: 'auto',
-    engine: 'aws-bedrock',
+    engine: CONVERSATION_DEFAULT_ROUTE,
   };
   const state = store().state(homeProject.id);
   state.conversations.push(thread);
@@ -420,7 +453,7 @@ test('an adopted home thread already on the default is bound without a redundant
   }
   expect(threadsOf(homeProject.id)).toHaveLength(1);
   expect(homeThread({ projectId: homeProject.id, threadId: thread.id })).toMatchObject({
-    engine: 'aws-bedrock',
+    engine: CONVERSATION_DEFAULT_ROUTE,
   });
   expect(homeThread({ projectId: homeProject.id, threadId: thread.id }).engineChoice).toBeUndefined();
   expect(store().settings.home).toMatchObject({
@@ -479,10 +512,10 @@ test('reads provision and mutate nothing: the home read stays a read', async () 
   expect((await fs.readFile(stateFile)).equals(stateBefore)).toBe(true);
 });
 
-test('a send on the provisioned default reaches the model driver with no Claude anywhere', async () => {
+test('a send on the owner AWS route the person chose reaches the model driver with no Claude anywhere', async () => {
   await connect();
   await approveSpend();
-  const home = await provisionHome();
+  const home = await onAws(await provisionHome());
   const sent = await send(home, 'm-hello', 'Good morning');
   expect(sent.answerText).toBe('answer:Good morning');
   expect(sent.outcome).toEqual({ status: 'answered' });
@@ -504,7 +537,7 @@ test('a send on the provisioned default reaches the model driver with no Claude 
 test('a consequential proposal from home still needs an explicit target, and home is never one', async () => {
   await connect();
   await approveSpend();
-  const home = await provisionHome();
+  const home = await onAws(await provisionHome());
   const untargeted = await send(home, 'm-act', 'ACT order the usual');
   expect(untargeted.outcome).toMatchObject({ status: 'not-started', reason: 'needs-target' });
   const athome = await send(home, 'm-home', `TARGET ${home.projectId} order the usual`);
@@ -515,7 +548,7 @@ test('a consequential proposal from home still needs an explicit target, and hom
   expect(store().state(home.projectId).tasks).toEqual([]);
 });
 
-test('a project conversation answers on the default independent of the project Work route', async () => {
+test('a project conversation answers on the route the person chose, independent of the project Work route', async () => {
   await connect();
   await approveSpend();
   const mine = await project('Linen service');
@@ -527,7 +560,7 @@ test('a project conversation answers on the default independent of the project W
   state.project.ai = { engine: 'sample', model: null };
   await store().persist(state);
 
-  const binding = await provisionProject(mine.id);
+  const binding = await onAws(await provisionProject(mine.id));
   const sent = await send({ projectId: mine.id, threadId: binding.threadId }, 'm-p', 'Good morning');
   expect(sent.answerText).toBe('answer:Good morning');
   expect(sent.runId.startsWith('model-')).toBe(true);
@@ -541,7 +574,7 @@ test('a project conversation answers on the default independent of the project W
 test('a fresh Home sends typed messages with no grant, and no document or history without one', async () => {
   await connect();
   await approveSpend();
-  const home = await provisionHome();
+  const home = await onAws(await provisionHome());
   expect((await api<{ version: number }>(`/projects/${home.projectId}/cloud-sharing`)).version).toBe(0);
   const first = await send(home, 'm-first', 'Good morning');
   expect(first.answerText).toBe('answer:Good morning');
@@ -582,7 +615,7 @@ test('a fresh Home sends typed messages with no grant, and no document or histor
 test("Home's earlier messages go with a follow-up only while the page's grant covers this route", async () => {
   await connect();
   await approveSpend();
-  const home = await provisionHome();
+  const home = await onAws(await provisionHome());
   const sharingPath = `/projects/${home.projectId}/cloud-sharing`;
   const read = () => api<HomeSharing>(sharingPath);
   const write = (change: HomeSharingChange) => api<HomeSharing>(sharingPath, 'PUT', change);
