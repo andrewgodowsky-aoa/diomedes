@@ -19,12 +19,6 @@ export const UPDATE_API_URL = `https://api.github.com/repos/${UPDATE_OWNER}/${UP
  * `Diomedes-Experimental-<semver>-unsigned-setup.exe`.
  */
 export const UPDATE_ASSET_PATTERN = /^Diomedes-Experimental-(\d+\.\d+\.\d+)-unsigned-setup\.exe$/;
-/**
- * The macOS disk image a release may carry beside the Windows installer. Mirrors
- * scripts/write-release-assets.mjs releaseAssetNames. It can never match
- * UPDATE_ASSET_PATTERN, so a Windows copy still sees exactly one installer.
- */
-export const UPDATE_MAC_ASSET_PATTERN = /^Diomedes-Experimental-(\d+\.\d+\.\d+)-mac-arm64\.dmg$/;
 /** Hosts a verified download is allowed to resolve to after redirects. */
 export const UPDATE_DOWNLOAD_HOSTS = [
   'github.com',
@@ -36,16 +30,6 @@ export const UPDATE_MIN_ASSET_BYTES = 1024 * 1024;
 export const UPDATE_MAX_ASSET_BYTES = 500 * 1024 * 1024;
 /** Upper bound for one stable version component; keeps parsing exact. */
 export const UPDATE_MAX_VERSION_PART = 99999;
-/**
- * What the update card shows about an offered release before anything is
- * downloaded. The bundled release-notes file is preferred when it already
- * knows the version; otherwise the person-facing part of the GitHub release
- * body is carried as plain text. Either is drawn as text, never as markup.
- */
-export type UpdateReleaseNotes =
-  | { source: 'bundled'; release: import('./release-notes.js').ReleaseEntry }
-  | { source: 'release-page'; text: string };
-
 const VERSION_PATTERN = /^v?(\d+)\.(\d+)\.(\d+)$/;
 const DIGEST_PATTERN = /^sha256:([0-9a-fA-F]{64})$/;
 
@@ -129,10 +113,7 @@ export function compareVersions(a: string, b: string): number {
  * `https://github.com/<owner>/<repo>/releases/download/<tag>/<asset>`,
  * where the tag version matches the asset file name.
  */
-export function parseOfficialAssetUrl(
-  value: unknown,
-  pattern: RegExp = UPDATE_ASSET_PATTERN,
-): {
+export function parseOfficialAssetUrl(value: unknown): {
   tag: string;
   version: string;
   name: string;
@@ -154,7 +135,7 @@ export function parseOfficialAssetUrl(
   const name = safeDecode(match[2]);
   if (!tag || !name) return null;
   const version = parseStableVersion(tag);
-  const nameMatch = name.match(pattern);
+  const nameMatch = name.match(UPDATE_ASSET_PATTERN);
   if (!version || !nameMatch) return null;
   if (nameMatch[1] !== version) return null;
   return { tag: tag.trim(), version, name };
@@ -196,12 +177,16 @@ function exactNotesUrl(tag: string, htmlUrl: unknown): string {
   return UPDATE_RELEASES_URL;
 }
 
-function selectMatchingAsset(
-  payload: unknown,
-  pattern: RegExp,
-  file: 'installer' | 'disk image',
-): ParsedRelease {
-  const an = file === 'installer' ? 'an' : 'a';
+/**
+ * Read one fixed-channel GitHub latest-release payload. Returns the stable
+ * Windows asset when present, or null when no stable release qualifies.
+ * Throws on malformed metadata so the caller reports an explicit error
+ * instead of treating a broken feed as current. The expected digest must
+ * come from the selected asset's exact `digest` manifest field; release
+ * prose is never consulted. Duplicate installer entries or mismatched
+ * tag/name/digest/size fail closed.
+ */
+export function selectWindowsAsset(payload: unknown): ParsedRelease {
   if (!isRecord(payload)) throw new Error('The release channel returned an unexpected body.');
   const tag = payload.tag_name;
   if (typeof tag !== 'string' || !tag.trim())
@@ -224,24 +209,24 @@ function selectMatchingAsset(
   for (const entry of assets) {
     if (!isRecord(entry)) continue;
     if (typeof entry.name !== 'string') continue;
-    if (!pattern.test(entry.name)) continue;
-    // An entry with the asset's name must be fully verifiable; anything less
+    if (!UPDATE_ASSET_PATTERN.test(entry.name)) continue;
+    // An installer-named entry must be fully verifiable; anything less
     // fails closed instead of falling back to another row.
     if (typeof entry.browser_download_url !== 'string')
-      throw new Error(`The release channel returned ${an} ${file} without a download URL.`);
+      throw new Error('The release channel returned an installer without a download URL.');
     if (typeof entry.size !== 'number' || !Number.isSafeInteger(entry.size))
-      throw new Error(`The release channel returned ${an} ${file} without a valid size.`);
+      throw new Error('The release channel returned an installer without a valid size.');
     const digest = parseAssetDigest(entry.digest);
     if (!digest)
-      throw new Error(`The release channel returned ${an} ${file} without an exact asset digest.`);
-    const official = parseOfficialAssetUrl(entry.browser_download_url, pattern);
+      throw new Error('The release channel returned an installer without an exact asset digest.');
+    const official = parseOfficialAssetUrl(entry.browser_download_url);
     if (!official || official.name !== entry.name || official.version !== version)
-      throw new Error(`The ${file} entry does not match the official release channel.`);
+      throw new Error('The installer entry does not match the official release channel.');
     if (official.tag !== trimmedTag)
-      throw new Error(`The ${file} entry does not match the release tag.`);
+      throw new Error('The installer entry does not match the release tag.');
     if (entry.size < UPDATE_MIN_ASSET_BYTES || entry.size > UPDATE_MAX_ASSET_BYTES)
-      throw new Error(`The ${file} size is outside the supported bounds.`);
-    if (candidate) throw new Error(`The release channel returned duplicate ${file} entries.`);
+      throw new Error('The installer size is outside the supported bounds.');
+    if (candidate) throw new Error('The release channel returned duplicate installer entries.');
     candidate = { name: entry.name, url: entry.browser_download_url, size: entry.size, digest };
   }
   if (candidate) {
@@ -249,33 +234,6 @@ function selectMatchingAsset(
     release.publishedDigest = candidate.digest;
   }
   return release;
-}
-
-/**
- * Read one fixed-channel GitHub latest-release payload. Returns the stable
- * Windows asset when present, or null when no stable release qualifies.
- * Throws on malformed metadata so the caller reports an explicit error
- * instead of treating a broken feed as current. The expected digest must
- * come from the selected asset's exact `digest` manifest field; release
- * prose is never consulted. Duplicate installer entries or mismatched
- * tag/name/digest/size fail closed.
- */
-export function selectWindowsAsset(payload: unknown): ParsedRelease {
-  return selectMatchingAsset(payload, UPDATE_ASSET_PATTERN, 'installer');
-}
-
-/**
- * The same checks for the macOS disk image: exact name, official URL under this
- * tag, GitHub's `sha256:` digest, size bounds, one entry only. A release without
- * one is a release with no macOS asset, never a reason to offer the Windows file.
- */
-export function selectMacAsset(payload: unknown): ParsedRelease {
-  return selectMatchingAsset(payload, UPDATE_MAC_ASSET_PATTERN, 'disk image');
-}
-
-/** The asset an update check on this platform may offer: the disk image on macOS, the installer elsewhere. */
-export function selectReleaseAsset(payload: unknown, platform: string): ParsedRelease {
-  return platform === 'darwin' ? selectMacAsset(payload) : selectWindowsAsset(payload);
 }
 
 export interface UpdateStatusSnapshot {
@@ -297,11 +255,6 @@ export interface UpdateStatusSnapshot {
     latestVersion: string | null;
     notesUrl: string | null;
     detail: string | null;
-    /**
-     * The offered release's notes, present only while a newer release is on
-     * offer. Optional: a snapshot from before it existed has none.
-     */
-    notes?: UpdateReleaseNotes | null;
   };
   download: {
     ready: boolean;

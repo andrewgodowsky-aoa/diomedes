@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 //     --out <empty or script-owned output directory> \
 //     --tag v0.1.2 \
 //     --notes <text file: this build's UPDATES and LIMITS sections>
+//     [--mac-dmg <Diomedes-Experimental-<version>-mac-arm64.dmg> --mac-proof <launch smoke proof.json>]
 //
 // It refuses to proceed unless the installer's bytes hash to what the record
 // says and the payload's Diomedes.exe and app.asar hash to what the record says,
@@ -22,6 +23,7 @@ import { fileURLToPath } from 'node:url';
 //   Diomedes-Experimental-<version>-unsigned-setup.exe  copied, not rebuilt
 //   Start-Experimental.ps1                              isolated-profile launcher
 //   README.txt                                          plain-words guide
+//   Diomedes-Experimental-<version>-mac-arm64.dmg       only with --mac-dmg
 //   release-manifest.json                               public-safe: no local paths
 //   SHA256SUMS.txt                                      every asset above
 //
@@ -38,14 +40,36 @@ const root = fileURLToPath(new URL('..', import.meta.url));
 const CAPABILITY_RECORD = 'docs/reference/capability-record.json';
 
 /**
- * Both a stable `v<version>` tag and an experimental `v<version>-experimental.<n>`
- * tag are accepted, and the choice decides whether this release can ever update
- * anyone. The app parses a release's version out of its tag with an anchored
- * `^v?X.Y.Z$`, so a tag carrying `-experimental.<n>` does not parse at all and
- * the update check reports a malformed feed rather than offering the build.
- * Only a stable tag is an update source.
+ * A stable `v<version>` tag, an experimental `v<version>-experimental.<n>` tag and
+ * a release-candidate `v<version>-rc.<n>` tag are accepted, and the choice decides
+ * whether this release can ever update anyone. The app parses a release's version
+ * out of its tag with an anchored `^v?X.Y.Z$`, so a tag carrying a suffix does not
+ * parse at all and the update check reports a malformed feed rather than offering
+ * the build. Only a stable tag is an update source.
  */
-const TAG = /^v(\d+\.\d+\.\d+)(?:-experimental\.\d+)?$/;
+export const TAG = /^v(\d+\.\d+\.\d+)(?:-experimental\.\d+|-rc\.\d+)?$/;
+
+/**
+ * Every public file name one release carries. The Windows names are fixed by the
+ * installed updater (shared/app-updates.ts UPDATE_ASSET_PATTERN) and by every
+ * release since 0.1.1; the macOS name says its platform and architecture and
+ * cannot match the Windows installer pattern, so a Windows updater never sees two.
+ */
+export function releaseAssetNames(version) {
+  return {
+    zip: `Diomedes-Experimental-${version}-win32-x64.zip`,
+    installer: `Diomedes-Experimental-${version}-unsigned-setup.exe`,
+    macDmg: `Diomedes-Experimental-${version}-mac-arm64.dmg`,
+    launcher: 'Start-Experimental.ps1',
+    readme: 'README.txt',
+    manifest: 'release-manifest.json',
+    sums: 'SHA256SUMS.txt',
+  };
+}
+
+/** What a macOS disk image carries by way of a signature: Electron's ad-hoc one only. */
+export const MAC_SIGNING =
+  'ad-hoc only (no Developer ID signature, not notarized)';
 
 const sha256 = async (file) => createHash('sha256').update(await fs.readFile(file)).digest('hex');
 const run = (command, argv, options = {}) =>
@@ -164,6 +188,7 @@ export function releaseReadme({
   zipName,
   launcherName,
   notes,
+  mac = null,
 }) {
   // The capability record's release facts describe the newest named candidate
   // it saw. Printing them beside a different build would carry one build's
@@ -226,7 +251,16 @@ export function releaseReadme({
       : null,
   ].filter(Boolean);
 
-  return `Nectovia ${version} - Windows x64 experimental build (${tag})
+  const macFile = mac
+    ? `
+  ${mac.dmgName}
+    macOS on Apple Silicon (arm64). Open the disk image and drag Diomedes.app
+    to Applications. It is not signed with an Apple Developer ID and not
+    notarized, so macOS will refuse to open it until you allow it, and that
+    choice is yours. Its launch was checked on ${mac.testedOn}; no Mac
+    computer has run it.`
+    : '';
+  return `Nectovia ${version} - ${mac ? 'Windows x64 and macOS arm64' : 'Windows x64'} experimental build (${tag})
 Release ID: ${record.releaseId}
 Built from commit ${record.build.baseCommit} on ${record.build.builtAt}.
 ${testedLine}
@@ -240,7 +274,7 @@ WHICH FILE
   ${zipName}
     Portable. Extract the whole archive; it contains one folder. Run Diomedes.exe
     from inside that folder and keep every file beside it. The bare executable is
-    not the application and will not start alone.
+    not the application and will not start alone.${macFile}
 
 CHECK THE FILE FIRST
   In PowerShell:  Get-FileHash .\\${installerName} -Algorithm SHA256
@@ -284,6 +318,84 @@ ${notes}
 `;
 }
 
+/**
+ * The public manifest. Pure: given the record, the measured assets and the facts
+ * this run established, it returns the object written as release-manifest.json.
+ * The Windows fields keep the shape every release since schema 2 has published;
+ * a macOS image is one more `artifacts` entry, named by its own `kind` and
+ * `platform`, and the top-level `platform` still describes the Windows build.
+ */
+export function releaseManifest({ record, tag, artifacts, support, generatedAt }) {
+  const mac = artifacts.find((entry) => entry.kind === 'macos-disk-image');
+  return {
+    schemaVersion: 2,
+    product: record.product,
+    releaseId: record.releaseId,
+    tag,
+    appVersion: record.appVersion,
+    channel: record.channel,
+    build: {
+      commit: record.build.baseCommit,
+      sourceStatus: record.build.sourceStatus,
+      sourceDigest: record.build.sourceDigest,
+      builtAt: record.build.builtAt,
+      identityEmbeddedIn: record.build.identityEmbeddedIn,
+    },
+    // Read from the record, like the README's own line. A build whose record
+    // names no tested Windows states that here too.
+    platform: {
+      os: 'Windows',
+      architecture: 'x64',
+      tested: testedOn(record) ?? NOT_RECORDED,
+      otherVersions: 'unverified',
+    },
+    ...(mac ? { platforms: ['windows', 'macos'] } : { platforms: ['windows'] }),
+    runtime: { electron: record.package.electron, nativeRuntime: record.nativeRuntime?.version ?? null },
+    protocols: record.protocols,
+    artifacts,
+    supportFiles: [support],
+    internalPackageHashes: {
+      executableSha256: record.package.executableSha256,
+      asarSha256: record.package.asarSha256,
+      payloadTreeSha256: record.installer.appTreeSha256,
+    },
+    installer: { productId: record.installer.productId, compiler: record.installer.compiler },
+    signing: record.signing,
+    verification: {
+      typecheck: record.verification.typecheck,
+      unit: { passed: record.verification.unit.passed, failed: record.verification.unit.failed, files: record.verification.unit.files },
+      browser: { expected: record.verification.browser.expected, unexpected: record.verification.browser.unexpected },
+      record: `evidence/release-candidates/${record.releaseId}.json`,
+    },
+    generatedAt,
+    generatedBy: 'scripts/write-release-assets.mjs',
+  };
+}
+
+/**
+ * What the macOS launch smoke (scripts/packaged-launch-smoke.mjs) must say before
+ * its disk image may be published: it passed, on darwin/arm64, for this version,
+ * with no page error. Anything else is refused rather than published as weaker.
+ */
+export function macLaunchOutcome(proof, version) {
+  if (!proof || typeof proof !== 'object') throw new Error('The macOS launch proof is not a JSON object.');
+  if (proof.passed !== true) throw new Error(`The macOS launch proof did not pass${proof.error ? `: ${proof.error}` : '.'}`);
+  if (proof.platform !== 'darwin' || proof.arch !== 'arm64')
+    throw new Error(`The macOS launch proof ran on ${proof.platform}/${proof.arch}, not darwin/arm64.`);
+  if (proof.appVersion !== version || proof.health?.version !== version)
+    throw new Error(`The macOS launch proof is for version ${proof.health?.version ?? proof.appVersion}, not ${version}.`);
+  if (!Array.isArray(proof.pageErrors) || proof.pageErrors.length)
+    throw new Error('The macOS launch proof records page errors.');
+  // The smoke runs the executable directly. A downloaded, quarantined copy is
+  // judged by its bundle signature, and one that does not verify is refused as
+  // damaged, so an image whose signature does not verify is never published.
+  if (proof.signature?.bundleSignatureVerifies !== true)
+    throw new Error(
+      `The macOS app bundle's signature does not verify${proof.signature?.codesignVerify ? ` (${proof.signature.codesignVerify})` : ''}; macOS would refuse a downloaded copy.`,
+    );
+  return { result: 'passed', ranAt: proof.startedAt ?? null, checks: proof.checks?.length ?? 0 };
+}
+
 async function main() {
   const args = new Map();
   for (let i = 2; i < process.argv.length; i += 1) {
@@ -301,14 +413,19 @@ async function main() {
   const outDir = path.resolve(need('out'));
   const tag = need('tag');
   const notesPath = path.resolve(need('notes'));
+  const macDmgPath = args.get('mac-dmg') ? path.resolve(args.get('mac-dmg')) : null;
+  const macProofPath = args.get('mac-proof') ? path.resolve(args.get('mac-proof')) : null;
+  if (Boolean(macDmgPath) !== Boolean(macProofPath))
+    throw new Error('--mac-dmg and --mac-proof go together: a disk image is published only beside the launch proof that passed on it.');
   const tagMatch = TAG.exec(tag);
-  if (!tagMatch) throw new Error(`Tag ${tag} is neither v<version> nor v<version>-experimental.<n>.`);
+  if (!tagMatch) throw new Error(`Tag ${tag} is not v<version>, v<version>-experimental.<n> or v<version>-rc.<n>.`);
 
   const record = JSON.parse(await fs.readFile(recordPath, 'utf8'));
   if (record.named !== true) throw new Error('The record is not a named candidate.');
   const version = record.appVersion;
   if (tagMatch[1] !== version) throw new Error(`Tag ${tag} does not carry the record's version ${version}.`);
   const capability = JSON.parse(await fs.readFile(path.join(root, CAPABILITY_RECORD), 'utf8'));
+  const names = releaseAssetNames(version);
 
   // The bytes must be the tested bytes.
   const installerSha = await sha256(installerPath);
@@ -321,6 +438,21 @@ async function main() {
   const asarSha = await sha256(path.join(payloadDir, 'resources', 'app.asar'));
   if (asarSha !== record.package.asarSha256) throw new Error('Payload app.asar differs from the record.');
 
+  // The macOS image, when given, must be the one its launch proof drove.
+  let mac = null;
+  if (macDmgPath) {
+    if (path.basename(macDmgPath) !== names.macDmg)
+      throw new Error(`The disk image is named ${path.basename(macDmgPath)}; this release names it ${names.macDmg}.`);
+    const proof = JSON.parse(await fs.readFile(macProofPath, 'utf8'));
+    const outcome = macLaunchOutcome(proof, version);
+    const dmgSha256 = await sha256(macDmgPath);
+    if (proof.dmgSha256 !== dmgSha256)
+      throw new Error(`The macOS launch proof drove a disk image hashing ${proof.dmgSha256 ?? 'nothing recorded'}, not ${dmgSha256}.`);
+    if (proof.build?.baseCommit !== record.build.baseCommit)
+      throw new Error(`The disk image was built from ${proof.build?.baseCommit ?? 'an unrecorded commit'}, not ${record.build.baseCommit}.`);
+    mac = { dmgName: names.macDmg, testedOn: proof.testedOn ?? 'a hosted macOS runner', outcome, proof };
+  }
+
   // Output directory: empty, or owned by a previous run of this script.
   await fs.mkdir(outDir, { recursive: true });
   const existing = await fs.readdir(outDir);
@@ -330,8 +462,8 @@ async function main() {
   for (const entry of existing) await fs.rm(path.join(outDir, entry), { recursive: true, force: true });
   await fs.writeFile(ownerFile, JSON.stringify({ ownedBy: 'scripts/write-release-assets.mjs', releaseId: record.releaseId, tag }, null, 2) + '\n');
 
-  const zipFolder = `Diomedes-Experimental-${version}-win32-x64`;
-  const zipName = `${zipFolder}.zip`;
+  const zipName = names.zip;
+  const zipFolder = zipName.replace(/\.zip$/, '');
   const staging = path.join(outDir, zipFolder);
   await fs.cp(payloadDir, staging, { recursive: true });
   const tarExe = path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe');
@@ -340,8 +472,9 @@ async function main() {
 
   const installerName = record.installer.filename;
   await fs.copyFile(installerPath, path.join(outDir, installerName));
-  const launcherName = 'Start-Experimental.ps1';
+  const launcherName = names.launcher;
   await fs.copyFile(path.join(root, 'scripts', 'release-support', launcherName), path.join(outDir, launcherName));
+  if (mac) await fs.copyFile(macDmgPath, path.join(outDir, mac.dmgName));
 
   /**
    * Everything else in the README is derived from the two records. These closing
@@ -368,8 +501,9 @@ async function main() {
     zipName,
     launcherName,
     notes,
+    mac,
   });
-  await fs.writeFile(path.join(outDir, 'README.txt'), readme.replaceAll('\n', '\r\n'));
+  await fs.writeFile(path.join(outDir, names.readme), readme.replaceAll('\n', '\r\n'));
 
   // Each asset reports the record's state for the kind of file it is, rather
   // than the word "unsigned" every asset used to carry whatever was signed.
@@ -388,58 +522,31 @@ async function main() {
     await asset(zipName, 'portable-zip', 'application'),
     await asset(installerName, 'per-user-installer', 'installer'),
   ];
+  if (mac) {
+    const file = path.join(outDir, mac.dmgName);
+    artifacts.push({
+      kind: 'macos-disk-image',
+      filename: mac.dmgName,
+      bytes: (await fs.stat(file)).size,
+      sha256: await sha256(file),
+      signing: MAC_SIGNING,
+      publisher: null,
+      platform: { os: 'macOS', architecture: 'arm64', tested: mac.testedOn },
+      launchSmoke: mac.outcome.result,
+    });
+  }
   // A script this repository copies in; the record states nothing about it.
   const support = await asset(launcherName, 'optional-isolated-launcher', 'launcher');
-  const manifest = {
-    schemaVersion: 2,
-    product: record.product,
-    releaseId: record.releaseId,
-    tag,
-    appVersion: version,
-    channel: record.channel,
-    build: {
-      commit,
-      sourceStatus: record.build.sourceStatus,
-      sourceDigest: record.build.sourceDigest,
-      builtAt: record.build.builtAt,
-      identityEmbeddedIn: record.build.identityEmbeddedIn,
-    },
-    // Read from the record, like the README's own line. A build whose record
-    // names no tested Windows states that here too.
-    platform: {
-      os: 'Windows',
-      architecture: 'x64',
-      tested: testedOn(record) ?? NOT_RECORDED,
-      otherVersions: 'unverified',
-    },
-    runtime: { electron: record.package.electron, nativeRuntime: record.nativeRuntime?.version ?? null },
-    protocols: record.protocols,
-    artifacts,
-    supportFiles: [support],
-    internalPackageHashes: {
-      executableSha256: record.package.executableSha256,
-      asarSha256: record.package.asarSha256,
-      payloadTreeSha256: record.installer.appTreeSha256,
-    },
-    installer: { productId: record.installer.productId, compiler: record.installer.compiler },
-    signing: record.signing,
-    verification: {
-      typecheck: record.verification.typecheck,
-      unit: { passed: record.verification.unit.passed, failed: record.verification.unit.failed, files: record.verification.unit.files },
-      browser: { expected: record.verification.browser.expected, unexpected: record.verification.browser.unexpected },
-      record: `evidence/release-candidates/${record.releaseId}.json`,
-    },
-    generatedAt: new Date().toISOString(),
-    generatedBy: 'scripts/write-release-assets.mjs',
-  };
+  const manifest = releaseManifest({ record, tag, artifacts, support, generatedAt: new Date().toISOString() });
   const manifestText = JSON.stringify(manifest, null, 2) + '\n';
-  if (/[A-Za-z]:\\|\/f\/|\/c\//i.test(manifestText)) throw new Error('The public manifest contains a local path.');
-  await fs.writeFile(path.join(outDir, 'release-manifest.json'), manifestText);
+  if (/[A-Za-z]:\\|\/f\/|\/c\/|\/Users\/|\/home\/|\/private\//i.test(manifestText))
+    throw new Error('The public manifest contains a local path.');
+  await fs.writeFile(path.join(outDir, names.manifest), manifestText);
 
   const sums = [];
-  for (const name of [zipName, installerName, launcherName, 'README.txt', 'release-manifest.json'])
-    sums.push(`${await sha256(path.join(outDir, name))}  ${name}`);
-  await fs.writeFile(path.join(outDir, 'SHA256SUMS.txt'), sums.join('\n') + '\n');
+  const published = [zipName, installerName, ...(mac ? [mac.dmgName] : []), launcherName, names.readme, names.manifest];
+  for (const name of published) sums.push(`${await sha256(path.join(outDir, name))}  ${name}`);
+  await fs.writeFile(path.join(outDir, names.sums), sums.join('\n') + '\n');
 
   console.log(JSON.stringify({ outDir, tag, releaseId: record.releaseId, commit: short, artifacts, support }, null, 2));
 }

@@ -1202,7 +1202,11 @@ test('Engine choices: the list comes from the engine, and the levels follow the 
     await page.request.get('/api/engines/claude-code/models')
   ).json();
   expect(none.models).toEqual([]);
-  expect(none.detail).toMatch(/Check|check|not checked|Not checked/);
+  // Which sentence depends on the machine: "Check connections" above runs real
+  // discovery, so a computer without Claude Code (a hosted Windows runner) has
+  // it recorded as not installed, and one never checked says so. Both say why
+  // there is no list; neither invents one.
+  expect(none.detail).toMatch(/Check|check|not checked|Not checked|Install this tool/);
 
   const on = await page.request.put('/api/settings', {
     headers: HEADERS,
@@ -1346,12 +1350,32 @@ test('Modes: the Console composer shows four modes and Fix needs what is failing
 test('Enter sends from the Console composer and Shift+Enter adds a line', async ({ page }) => {
   await openProject(page);
   await goTo(page, 'Thread');
+  // New creates the thread, reloads the project (state and grants), and only then
+  // opens it, and opening a different thread empties the box. Typing before that
+  // lands in the box the switch then clears, which a slower machine (a hosted
+  // Windows runner) reaches. So wait for the switch before typing.
+  const path = (url: string) => new URL(url).pathname;
+  let created = false;
+  const creating = page.waitForResponse((r) => {
+    const hit = r.request().method() === 'POST' && path(r.url()).endsWith('/threads');
+    if (hit) created = true;
+    return hit;
+  });
+  const reloaded = (suffix: string) =>
+    page.waitForResponse(
+      (r) => created && r.request().method() === 'GET' && path(r.url()).endsWith(suffix),
+    );
+  const reloading = Promise.all([reloaded('/state'), reloaded('/permissions/grants')]);
   await railOf(page).getByRole('button', { name: 'New', exact: true }).click();
+  await creating;
+  await reloading;
+  await expect(page.getByText('A new thread.', { exact: true })).toBeVisible();
   await page
     .getByRole('radiogroup', { name: 'Mode' })
     .getByRole('radio', { name: 'ask', exact: true })
     .click();
   const box = page.getByRole('textbox', { name: 'Message this thread', exact: true });
+  await expect(box).toHaveValue('');
   const heldText = `Shift+Enter held line ${Date.now()}`;
   await box.fill(heldText);
   await page.keyboard.down('Shift');

@@ -65,13 +65,25 @@ let origin;
 const origins = new Set();
 const headers = { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' };
 
+// The packaged service answers only this launch's own window: desktop/main.mjs
+// adds a per-launch loopback session header to the window's requests and gives
+// it to nothing else, so a request from this Node process is refused with 401
+// (server/app.ts). Every request is therefore made from inside the window, the
+// way the Console makes it, as scripts/desktop-smoke.mjs does.
 async function request(route, method = 'GET', body, expectedStatus = 200) {
-  const response = await fetch(`${origin}/api${route}`, {
-    method,
-    headers,
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  });
-  const text = await response.text();
+  const response = await page.evaluate(
+    async ({ url, method, headers, body }) => {
+      const answer = await fetch(url, { method, headers, body });
+      return { status: answer.status, ok: answer.ok, text: await answer.text() };
+    },
+    {
+      url: `/api${route}`,
+      method,
+      headers,
+      body: body === undefined ? undefined : JSON.stringify(body),
+    },
+  );
+  const text = response.text;
   let value;
   try {
     value = text ? JSON.parse(text) : null;
@@ -111,6 +123,13 @@ async function launch() {
   await page.waitForURL('http://127.0.0.1:*/');
   origin = new URL(page.url()).origin;
   origins.add(origin);
+  // The one request this process may still make itself is the one that must fail.
+  const outside = await fetch(`${origin}/api/health`, { headers });
+  assert.equal(
+    outside.status,
+    401,
+    `/health from outside the window: expected 401, received ${outside.status}`,
+  );
   const health = await api('/health');
   proof.launches.push({
     origin,

@@ -4,15 +4,21 @@
     {
       "version": "0.2.0",
       "date": "2026-09-25",
-      "channel": "draft",
+      "channel": "stable",
       "platforms": [
-        "windows"
+        "windows",
+        "macos"
       ],
-      "headline": "Nectovia can now run a weekly brief for you, show you exactly what a task changed before you keep it, and take files you drop into a project.",
+      "headline": "Rules that act while a task runs, helpers that work in their own copy, a Git view for software projects, automations, a line-by-line review of every change, and updates that refresh your install. Now also on Apple silicon Macs.",
       "sections": [
         {
           "title": "New",
           "items": [
+            "Rule triggers. Write rules, for this installation or one project, that watch a Diomedes loop run while it works: a phrase or pattern in what the model writes, or a tool it is about to use on a file. A rule can note it, steer the run back, hold the step for your go-ahead before it runs, or stop the run. Project rules can add to organization rules but never loosen them. Settings has a Rules section, a project has its own, and every time a rule acts it shows in the run's Supervision section.",
+            "A lead task can hand bounded pieces of work to up to three helpers at once and ask a read-only advisor. Each helper works in its own copy of the files it was given and hands back a set of changes you keep or discard, file by file or part by part; nothing it does reaches the project until you say so. The Team view shows each helper, its budget used, its result and whether it was checked.",
+            "Software projects get a Repository section at the top of Files when the Software Engineering pack is on: the branch, changed files with a readable diff, and recent commits. It can add or remove a separate worktree on a new branch without touching your own checkout, and run the build and test commands you declare, asking you every time. A task whose check is one of those commands can be Verified on that result.",
+            "Updates now refresh your install the first time the new version opens. Settings you never changed move to the new defaults, anything you chose is kept, cached screens are cleared, and a byte-for-byte backup and a record of what moved are kept. A custom look keeps its colours, fonts and artwork, while text sizes, line spacing and density follow the new version. You see it once: Updated to 0.2.0, with how many settings moved.",
+            "A Mac build for Apple silicon (M1 and later) is published beside the Windows installer.",
             "Automations. Open Automations from the Nectovia group or Ctrl K. The weekly brief is listed there, and Run once runs it now. Owners and admins can turn on a schedule, pause it, resume it or turn it off; the screen shows the next three runs and any that were missed or skipped. Saving a schedule does not turn it on.",
             "Review what a task changed before you keep it. A task's thread shows each change line by line, and you can keep or undo each one, keep or undo them all, or send notes back with Revise with these comments.",
             "Approvals you give often can be remembered. After you approve the same step three times in a project, Nectovia asks whether to stop asking. Remembered approvals are listed in the Task permissions dialog, where Revoke takes any of them back.",
@@ -42,20 +48,22 @@
             "Stopping a tool on Windows no longer sometimes reports a clean-up failure that did not happen.",
             "Facts in Discovery can be corrected or retired again after their source file is edited.",
             "An installed tool that changes in place is noticed, and size limits count the real size of text in any language.",
-            "At 200 percent zoom and in small windows the work area and the inspector are usable again, and the Interface detail menu closes with Escape."
+            "At 200 percent zoom and in small windows the work area and the inspector are usable again, and the Interface detail menu closes with Escape.",
+            "Two windows sending the first message in a new project at the same moment no longer makes one of them refuse its own message."
           ]
         },
         {
           "title": "Known limits",
           "items": [
-            "Unsigned and experimental. The release is for Windows x64 only; there is no macOS build.",
+            "Unsigned and experimental. On Windows, SmartScreen may warn before the installer runs: choose More info, then Run anyway, after checking the file's SHA-256. The Mac build is signed ad hoc, not with an Apple Developer ID, and is not notarized, so the first time you open it, right-click the app and choose Open, or allow it under System Settings, Privacy and Security.",
+            "The Mac build is for Apple silicon only; there is no Intel Mac build. It was built and launched on a GitHub-hosted Mac, not on a person's computer, and it does not install updates itself: Check for updates says when a new version exists, and you download it from the release page.",
             "Nothing in this version was tried against a real provider. Every route in its tests was scripted or fake, including Codex, Claude Code, OpenCode, AWS Bedrock, Google Vertex AI, Azure OpenAI and OpenRouter.",
-            "Some parts are new and have not yet had an independent review: suggested edits to instruction files, playbook reading and the zoom and accessibility fixes. The Claude Code session controls are still under review.",
+            "Some parts are new and have not yet had an independent review: suggested edits to instruction files, playbook reading, the zoom and accessibility fixes, helpers and their own copies, the Repository section, the update refresh and the Rules screens. Rule triggers themselves were reviewed and the problems found were fixed.",
             "Automations run only the weekly brief, only while this computer is on, and tell you only inside the app: nothing is sent by push, email or phone.",
             "Resume, Retry, Fork and Steer work on ChatGPT (Codex) runs only. Claude Code keeps its session on the home conversation only, not in project threads.",
             "Run checks run only the checks a task declares, and never run your project's own code. Nothing checks a run automatically when it finishes.",
             "Files has no PDF viewer. Pictures and PDFs cannot be sent to an AI, and a binary file cannot be put back from an earlier version.",
-            "A step-by-step plan-act-check loop and a lead that hands work to helpers are built, but nothing in the app starts them yet.",
+            "Rule triggers watch Diomedes loop runs only. Runs on Codex, Claude Code, OpenCode and other outside tools are not watched, and a rule that steers cannot yet reach a loop run: the correction is recorded and shown as not sent.",
             "The Console still has no History screen, no Make tasks from this plan and no Stop for a conversation.",
             "This app is not signed in to a Nectovia account, and every route runs on, and is billed to, your own account."
           ]

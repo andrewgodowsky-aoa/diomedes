@@ -1,0 +1,460 @@
+name: Release
+
+# Builds, verifies and publishes one Nectovia (Diomedes) release on hosted runners,
+# from the exact commit the run is started on. It never publishes a stable release:
+# the result is a draft or a prerelease, and a person promotes it
+# (docs/implementation/2026-09-25-release-pipeline.md, "Publishing").
+#
+#   windows  gates, package, installer, desktop smoke, negative smoke, installer
+#            install/repair/uninstall with the installed runtime, candidate record
+#   macos    package, disk image, launch smoke from the mounted image
+#   release  release assets, manifest and checksums; the GitHub release
+#
+# A macOS failure never blocks Windows: the release job runs when Windows passed,
+# and carries the macOS image only when `macos` is attach-if-passing and the
+# macOS job passed.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'X.Y.Z (must equal package.json) or X.Y.Z-rc.N for a candidate'
+        required: true
+        type: string
+      publish:
+        description: 'draft or prerelease; a stable release is promoted by hand'
+        required: true
+        default: draft
+        type: choice
+        options: [draft, prerelease]
+      macos:
+        description: 'build-only: build and smoke macOS, publish Windows only. attach-if-passing: also publish the .dmg when its smoke passes. skip: no macOS job.'
+        required: true
+        default: build-only
+        type: choice
+        options: [build-only, attach-if-passing, skip]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.version }}
+  cancel-in-progress: false
+
+env:
+  VERSION: ${{ inputs.version }}
+  PUBLISH: ${{ inputs.publish }}
+  MACOS: ${{ inputs.macos }}
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      sha: ${{ steps.check.outputs.sha }}
+      base: ${{ steps.check.outputs.base }}
+      tag: ${{ steps.check.outputs.tag }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          # The version guard diffs against release tags, which a shallow clone lacks.
+          fetch-depth: 0
+      # The app files must not have changed since this version was tagged, and an
+      # untagged version must be ahead of the latest release (scripts/release-check.mjs).
+      - name: Version guard
+        run: node scripts/release-check.mjs
+      - name: Check the version, the publish mode and that the tag is free
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          case "$PUBLISH" in draft|prerelease) ;; *) echo "::error::publish must be draft or prerelease, not '$PUBLISH'"; exit 1;; esac
+          if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$'; then
+            echo "::error::version must be X.Y.Z or X.Y.Z-rc.N, not '$VERSION'"; exit 1
+          fi
+          base="${VERSION%%-*}"
+          pkg="$(node -p "require('./package.json').version")"
+          if [ "$base" != "$pkg" ]; then
+            echo "::error::version $VERSION is not package.json's $pkg. Bump package.json first."; exit 1
+          fi
+          tag="v$VERSION"
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" >/dev/null 2>&1; then
+            echo "::error::tag $tag already exists"; exit 1
+          fi
+          if gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '.[].tag_name' | grep -Fxq "$tag"; then
+            echo "::error::a release (possibly a draft) already uses $tag; delete it first"; exit 1
+          fi
+          test -f "docs/releases/notes/v$base.txt" || test -f resources/release-notes/releases.json || {
+            echo "::error::no release notes: add docs/releases/notes/v$base.txt or resources/release-notes/releases.json"; exit 1; }
+          echo "sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "Building $tag from $GITHUB_SHA ($PUBLISH, macOS: $MACOS)" >> "$GITHUB_STEP_SUMMARY"
+
+  windows:
+    needs: prepare
+    runs-on: windows-latest
+    timeout-minutes: 150
+    env:
+      CODEX_HOME: ${{ github.workspace }}\test-results\ci-codex-home
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+        working-directory: services/control-plane
+      - name: Gate 1 of 4, TypeScript
+        run: node node_modules/typescript/bin/tsc --noEmit
+      # Both archives are checked before anything is packaged; nothing below
+      # downloads a runtime unverified.
+      - name: Native runtime from the published v0.1.11 archive (pinned hashes)
+        run: node scripts/release-support/acquire-native-runtime.mjs
+      - name: Electron archive (SHASUMS256 and the locked checksums must agree)
+        run: node scripts/release-support/acquire-electron-archive.mjs --platform win32 --arch x64 --dir "${{ runner.temp }}\electron-zips"
+      # package:windows runs tsc and vite build (gate 3) and then packages. Nothing
+      # rebuilds dist/ after this: the candidate record re-hashes it. It comes
+      # before the unit gate, as in a hand release, because packaging stamps
+      # evidence/windows-release/build-info.json with this version, and
+      # tests/build-identity.test.ts requires the stamp to match package.json.
+      - name: Gate 3 of 4 and package
+        run: npm run package:windows
+        env:
+          DIOMEDES_ELECTRON_ZIP_DIR: ${{ runner.temp }}\electron-zips
+      # The release commits this stamp beside the version it describes
+      # (tests/build-identity.test.ts). Printed so it can be read back from the log.
+      - name: Build stamp
+        shell: pwsh
+        run: |
+          Write-Output '----- BEGIN evidence/windows-release/build-info.json -----'
+          Get-Content evidence/windows-release/build-info.json
+          Write-Output '----- END evidence/windows-release/build-info.json -----'
+      - name: Gate 2 of 4, unit tests
+        run: node node_modules/vitest/vitest.mjs run --maxWorkers=2 --reporter=default --reporter=json --outputFile.json=test-results/candidate/unit-results.json
+      - name: Gate 4 of 4, browser tests
+        run: node node_modules/@playwright/test/cli.js test tests/ui.spec.ts tests/native-ui.spec.ts tests/field.spec.ts --reporter=list,json
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_NAME: test-results/candidate/browser-results.json
+      - name: Installer
+        run: node scripts/build-windows-installer.mjs --app-dir release/Diomedes-win32-x64 --out-dir release/installer --tool-cache test-results/installer-tools
+      - name: Packaged desktop smoke
+        run: npm run test:desktop
+      # Recorded, not a gate, until the product fault it hits is fixed: a packaged
+      # build refuses its own Connections ingress self-call (no session header),
+      # so the smoke's signed-event steps fail with ingress_refused. Nothing
+      # claims it passed: the candidate record does not read it, and the summary
+      # prints its outcome. docs/implementation/2026-09-25-release-pipeline.md.
+      - name: Packaged negative smoke (recorded, not a gate)
+        id: negative
+        continue-on-error: true
+        run: node scripts/package-negative-smoke.mjs release/Diomedes-win32-x64/Diomedes.exe test-results/negative-smoke
+      - name: Installer install, launch, repair and uninstall in a temporary folder
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem release/installer -Filter 'Diomedes-Experimental-*-setup.exe' | Select-Object -First 1
+          pwsh -NoProfile -File scripts/verify-windows-installer.ps1 -Installer $installer.FullName -ProofRoot test-results/installer-proof -Payload release/Diomedes-win32-x64 -RuntimeSmoke launch
+      - name: Candidate record and capability record
+        shell: pwsh
+        run: |
+          $installer = (Get-ChildItem release/installer -Filter 'Diomedes-Experimental-*-setup.exe' | Select-Object -First 1).Name
+          node node_modules/tsx/dist/cli.mjs scripts/write-candidate-record.ts --typecheck passed `
+            --unit test-results/candidate/unit-results.json --browser test-results/candidate/browser-results.json `
+            --installer "release/installer/$installer" --desktop-smoke evidence/desktop-proof.json `
+            --installer-proof test-results/installer-proof/proof.json `
+            --installed-runtime test-results/installer-proof/runtime-proof/proof.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node node_modules/tsx/dist/cli.mjs scripts/write-capability-record.ts --generated-from "${{ needs.prepare.outputs.sha }}"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Summary
+        if: always()
+        shell: pwsh
+        run: |
+          $lines = @('## Windows', '')
+          foreach ($file in @(Get-ChildItem release/installer -Filter '*.exe' -ErrorAction SilentlyContinue)) {
+            $lines += ('- `{0}`: {1:N0} bytes, SHA-256 `{2}`' -f $file.Name, $file.Length, (Get-FileHash $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant())
+          }
+          $unit = 'test-results/candidate/unit-results.json'
+          if (Test-Path $unit) { $u = Get-Content $unit -Raw | ConvertFrom-Json; $lines += "- Unit: $($u.numPassedTests) passed, $($u.numFailedTests) failed, $($u.testResults.Count) files" }
+          $browser = 'test-results/candidate/browser-results.json'
+          if (Test-Path $browser) { $b = Get-Content $browser -Raw | ConvertFrom-Json; $lines += "- Browser: $($b.stats.expected) expected, $($b.stats.unexpected) unexpected, $($b.stats.skipped) skipped" }
+          foreach ($proof in @('evidence/desktop-proof.json', 'test-results/negative-smoke/proof.json', 'test-results/installer-proof/proof.json', 'test-results/installer-proof/runtime-proof/proof.json')) {
+            if (Test-Path $proof) { $p = Get-Content $proof -Raw | ConvertFrom-Json; $lines += "- ${proof}: passed=$($p.passed)$(if ($p.error) { ' (' + $p.error.Split([Environment]::NewLine)[0] + ')' })" } else { $lines += "- ${proof}: not written" }
+          }
+          $lines | Add-Content $env:GITHUB_STEP_SUMMARY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: windows-build
+          retention-days: 5
+          if-no-files-found: error
+          path: |
+            release/Diomedes-win32-x64/
+            release/installer/
+            evidence/release-candidates/
+            docs/reference/capability-record.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: windows-proofs
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            test-results/candidate/
+            evidence/desktop-proof.json
+            evidence/windows-release/build-info.json
+            test-results/negative-smoke/proof.json
+            test-results/installer-proof/proof.json
+            test-results/installer-proof/runtime-proof/proof.json
+            test-results/browser/
+
+  macos:
+    needs: prepare
+    if: ${{ inputs.macos != 'skip' }}
+    # Apple Silicon, named rather than macos-latest. The first step proves the
+    # architecture instead of trusting the label.
+    runs-on: macos-14
+    timeout-minutes: 60
+    outputs:
+      publishable: ${{ steps.publishable.outputs.publishable }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Assert Apple Silicon and a native arm64 Node
+        run: |
+          set -eu
+          sw_vers
+          test "$(uname -m)" = "arm64"
+          test "$(node -p process.arch)" = "arm64"
+      - run: npm ci
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+        working-directory: services/control-plane
+      - name: Electron archive (SHASUMS256 and the locked checksums must agree)
+        run: node scripts/release-support/acquire-electron-archive.mjs --platform darwin --arch arm64 --dir "$RUNNER_TEMP/electron-zips"
+      # On a Mac host the packager restores the ad-hoc signature Electron ships
+      # with after writing the ASAR integrity digest. It adds no Developer ID and
+      # no notarization; package-desktop.mjs refuses it unless it is named here.
+      - name: Package
+        run: npm run package:mac
+        env:
+          DIOMEDES_ELECTRON_ZIP_DIR: ${{ runner.temp }}/electron-zips
+          DIOMEDES_MAC_ADHOC_FRAMEWORK_RESIGN: accept
+      # Andrew, 2026-09-25: publish macOS with an ad-hoc whole-bundle signature (QUESTIONS.md O43,
+      # option a). It gives the bundle a seal that verifies, so a downloaded copy is not refused as
+      # damaged; it names no developer, so Gatekeeper still asks the person to open it once from
+      # right-click > Open or System Settings. No Developer ID, no notarization.
+      - name: Ad-hoc bundle signature
+        run: |
+          set -eu
+          app="release/Diomedes-darwin-arm64/Diomedes.app"
+          codesign --force --deep --sign - "$app"
+          codesign --verify --deep --strict --verbose=2 "$app"
+      - name: Disk image
+        run: |
+          set -eu
+          app="release/Diomedes-darwin-arm64/Diomedes.app"
+          dmg="release/Diomedes-Experimental-$VERSION_BASE-mac-arm64.dmg"
+          stage="$RUNNER_TEMP/dmg-stage"
+          rm -rf "$stage" && mkdir -p "$stage"
+          ditto "$app" "$stage/Diomedes.app"
+          ln -s /Applications "$stage/Applications"
+          hdiutil create -volname "Nectovia $VERSION_BASE" -srcfolder "$stage" -fs HFS+ -format UDZO -ov "$dmg"
+          hdiutil verify "$dmg"
+        env:
+          VERSION_BASE: ${{ needs.prepare.outputs.base }}
+      # The launch smoke runs the executable directly, which macOS allows for an
+      # app that was never downloaded. A downloaded copy is quarantined, and
+      # Gatekeeper refuses one whose bundle signature does not verify as damaged,
+      # with no way to open it short of a workaround nobody may tell a customer.
+      # So this is recorded here and decides below whether the image may be published.
+      - name: Signature facts
+        run: |
+          set +e
+          app="release/Diomedes-darwin-arm64/Diomedes.app"
+          mkdir -p test-results/mac
+          codesign -dv --verbose=2 "$app" > test-results/mac/codesign-display.txt 2>&1
+          codesign --verify --deep --strict --verbose=2 "$app" > test-results/mac/codesign-verify.txt 2>&1; verify=$?
+          spctl --assess --type execute -vv "$app" > test-results/mac/spctl.txt 2>&1; assess=$?
+          cat test-results/mac/codesign-display.txt test-results/mac/codesign-verify.txt test-results/mac/spctl.txt
+          node -e "
+            const fs = require('fs');
+            const read = (f) => fs.readFileSync('test-results/mac/' + f, 'utf8').trim();
+            fs.writeFileSync('test-results/mac/signature.json', JSON.stringify({
+              bundleSignatureVerifies: $verify === 0,
+              gatekeeperAccepts: $assess === 0,
+              codesignDisplay: read('codesign-display.txt').replace(/^Executable=.*\n/m, ''),
+              codesignVerify: read('codesign-verify.txt').replace(/^[^:]*Diomedes\.app: /m, 'Diomedes.app: '),
+              spctl: read('spctl.txt').replace(/^[^:]*Diomedes\.app: /m, 'Diomedes.app: '),
+            }, null, 2) + '\n');
+          "
+          exit 0
+      - name: Launch smoke from the mounted disk image
+        run: |
+          set -eu
+          dmg="release/Diomedes-Experimental-$VERSION_BASE-mac-arm64.dmg"
+          mount="$RUNNER_TEMP/dmg-mount"
+          mkdir -p "$mount"
+          hdiutil attach -readonly -nobrowse -mountpoint "$mount" "$dmg"
+          status=0
+          node scripts/packaged-launch-smoke.mjs "$mount/Diomedes.app/Contents/MacOS/Diomedes" test-results/mac/launch || status=$?
+          hdiutil detach "$mount" || hdiutil detach -force "$mount"
+          exit $status
+        env:
+          VERSION_BASE: ${{ needs.prepare.outputs.base }}
+          # macOS /var is a symlink, and the product's path guard refuses linked ancestors.
+          TMPDIR: ${{ runner.temp }}
+      - name: Release proof for the disk image
+        run: |
+          node --input-type=module -e "
+            import fs from 'node:fs';
+            import { createHash } from 'node:crypto';
+            import { execFileSync } from 'node:child_process';
+            const dmg = 'release/Diomedes-Experimental-' + process.env.VERSION_BASE + '-mac-arm64.dmg';
+            const proof = JSON.parse(fs.readFileSync('test-results/mac/launch/proof.json', 'utf8'));
+            const build = JSON.parse(fs.readFileSync('evidence/macos-release/build-info.json', 'utf8'));
+            const os = execFileSync('sw_vers', ['-productVersion'], { encoding: 'utf8' }).trim();
+            proof.dmg = dmg.split('/').pop();
+            proof.dmgBytes = fs.statSync(dmg).size;
+            proof.dmgSha256 = createHash('sha256').update(fs.readFileSync(dmg)).digest('hex');
+            proof.build = { baseCommit: build.baseCommit, sourceStatus: build.sourceStatus, sourceDigest: build.sourceDigest, electronVersion: build.electronVersion, macFrameworkSignature: build.macFrameworkSignature ?? null };
+            proof.testedOn = 'a GitHub-hosted macOS ' + os + ' arm64 runner';
+            proof.signature = JSON.parse(fs.readFileSync('test-results/mac/signature.json', 'utf8'));
+            proof.bundleSignature = 'ad-hoc (codesign --force --deep --sign -), decided by Andrew on 2026-09-25; no Developer ID, not notarized';
+            fs.writeFileSync('release/mac-release-proof.json', JSON.stringify(proof, null, 2) + '\n');
+            console.log(proof.dmg, proof.dmgBytes, proof.dmgSha256);
+          "
+        env:
+          VERSION_BASE: ${{ needs.prepare.outputs.base }}
+      - name: Whether this image may be published
+        id: publishable
+        run: |
+          ok=$(node -p "const p=require('./release/mac-release-proof.json'); p.passed === true && p.signature.bundleSignatureVerifies === true")
+          echo "publishable=$ok" >> "$GITHUB_OUTPUT"
+          echo "publishable=$ok"
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo '## macOS'
+            echo
+            if [ -f release/mac-release-proof.json ]; then
+              node -e "const p=require('./release/mac-release-proof.json');console.log('- Launch smoke: **'+(p.passed?'PASSED':'FAILED')+'** ('+p.checks.length+' checks)');console.log('- \`'+p.dmg+'\`: '+p.dmgBytes.toLocaleString('en-US')+' bytes, SHA-256 \`'+p.dmgSha256+'\`')"
+            elif [ -f test-results/mac/launch/proof.json ]; then
+              node -e "const p=require('./test-results/mac/launch/proof.json');console.log('- Launch smoke: **FAILED**: '+(p.error||'see log'))"
+            else
+              echo '- **macOS did not produce a disk image that launched.** The release carries Windows only.'
+            fi
+            if [ -f test-results/mac/signature.json ]; then
+              node -e "const s=require('./test-results/mac/signature.json');console.log('- App bundle signature verifies: **'+(s.bundleSignatureVerifies?'yes':'NO')+'**'+(s.bundleSignatureVerifies?'':' ('+s.codesignVerify.split('\\n')[0]+'). A downloaded copy would be refused by Gatekeeper, so this image is not publishable.'));console.log('- Gatekeeper assessment: '+(s.gatekeeperAccepts?'accepted':'rejected'))"
+            fi
+            echo "- Publish mode for macOS: $MACOS; publishable: ${{ steps.publishable.outputs.publishable || 'false' }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: macos-build
+          retention-days: 5
+          if-no-files-found: error
+          path: |
+            release/*.dmg
+            release/mac-release-proof.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: macos-proofs
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            test-results/mac/
+            evidence/macos-release/build-info.json
+
+  release:
+    needs: [prepare, windows, macos]
+    # Windows must pass; macOS may fail or be skipped.
+    if: ${{ always() && needs.prepare.result == 'success' && needs.windows.result == 'success' }}
+    runs-on: windows-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    env:
+      SHA: ${{ needs.prepare.outputs.sha }}
+      TAG: ${{ needs.prepare.outputs.tag }}
+      BASE: ${{ needs.prepare.outputs.base }}
+      WITH_MAC: ${{ inputs.macos == 'attach-if-passing' && needs.macos.result == 'success' && needs.macos.outputs.publishable == 'true' }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4
+        with:
+          name: windows-build
+          path: .
+      - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4
+        if: ${{ env.WITH_MAC == 'true' }}
+        with:
+          name: macos-build
+          path: ${{ runner.temp }}/mac
+      - name: Release assets
+        shell: pwsh
+        run: |
+          $record = (Get-ChildItem evidence/release-candidates -Filter "diomedes-$env:BASE-windows-experimental-*-$($env:SHA.Substring(0,12)).json" | Select-Object -First 1).FullName
+          if (-not $record) { throw "No candidate record for $env:BASE at $env:SHA" }
+          $installer = (Get-ChildItem release/installer -Filter 'Diomedes-Experimental-*-setup.exe' | Select-Object -First 1).FullName
+          # The notes: releases.json's entry for this version, else docs/releases/notes/v<X.Y.Z>.txt.
+          node scripts/release-support/release-body.mjs --version $env:VERSION --notes-out "$env:RUNNER_TEMP/notes.txt"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $argv = @('scripts/write-release-assets.mjs', '--record', $record, '--installer', $installer, '--payload', 'release/Diomedes-win32-x64',
+                    '--out', "$env:RUNNER_TEMP/assets", '--tag', $env:TAG, '--notes', "$env:RUNNER_TEMP/notes.txt")
+          if ($env:WITH_MAC -eq 'true') {
+            $argv += @('--mac-dmg', "$env:RUNNER_TEMP/mac/Diomedes-Experimental-$env:BASE-mac-arm64.dmg", '--mac-proof', "$env:RUNNER_TEMP/mac/mac-release-proof.json")
+          }
+          node @argv
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # The body is the README, as for every release since 0.1.7.
+          node scripts/release-support/release-body.mjs --version $env:VERSION --readme "$env:RUNNER_TEMP/assets/README.txt" --out "$env:RUNNER_TEMP/body.md"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Create the ${{ inputs.publish }} release at the built commit
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $assets = @(Get-ChildItem "$env:RUNNER_TEMP/assets" -File | Where-Object { $_.Name -ne '.release-assets-owner.json' } | ForEach-Object { $_.FullName })
+          $kind = if ($env:VERSION -match '-rc\.') { 'release candidate, ' } else { '' }
+          $title = "Diomedes $env:VERSION (${kind}experimental, unsigned)"
+          # [string[]]: PowerShell unrolls a one-element array from an if, and splatting a
+          # string passes it one character at a time, which gh reads as asset names.
+          [string[]]$mode = if ($env:PUBLISH -eq 'prerelease') { @('--prerelease', '--latest=false') } else { @('--draft') }
+          gh release create $env:TAG --repo $env:GITHUB_REPOSITORY --target $env:SHA --title $title --notes-file "$env:RUNNER_TEMP/body.md" @mode @assets
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Check every uploaded asset against GitHub's own digest
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $release = gh api "repos/$env:GITHUB_REPOSITORY/releases?per_page=30" | ConvertFrom-Json | Where-Object { $_.tag_name -eq $env:TAG } | Select-Object -First 1
+          if (-not $release) { throw "The release $env:TAG was not found after creation." }
+          $lines = @("## Release $env:TAG ($env:PUBLISH)", '', "Target commit ``$env:SHA``. macOS attached: $env:WITH_MAC.", '', '| Asset | Bytes | SHA-256 (local = GitHub digest) |', '|---|---:|---|')
+          foreach ($file in Get-ChildItem "$env:RUNNER_TEMP/assets" -File | Where-Object { $_.Name -ne '.release-assets-owner.json' }) {
+            $local = (Get-FileHash $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            $remote = $release.assets | Where-Object { $_.name -eq $file.Name }
+            if (-not $remote) { throw "$($file.Name) is missing from the release." }
+            if ($remote.digest -ne "sha256:$local") { throw "$($file.Name): GitHub reports $($remote.digest), the file hashes $local." }
+            if ($remote.size -ne $file.Length) { throw "$($file.Name): GitHub reports $($remote.size) bytes, the file has $($file.Length)." }
+            $lines += ('| `{0}` | {1:N0} | `{2}` |' -f $file.Name, $file.Length, $local)
+          }
+          $lines += '', "Release page: $($release.html_url)"
+          $lines | Add-Content $env:GITHUB_STEP_SUMMARY
