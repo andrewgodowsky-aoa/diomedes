@@ -152,6 +152,19 @@ export interface FundingTransaction {
   /** Pending and uncertain holds at their ceiling plus settled debits, across the root job. */
   jobUsed(tenantId: string, rootJobId: string): Promise<MicroUsd>;
   lastReceipt(tenantId: string, organizationId: string, periodId: string): Promise<UsageReceipt | null>;
+  /**
+   * Serializes every reservation checked against the company spend ceiling,
+   * across every tenant and organization, until this transaction ends. Always
+   * the last lock a transaction takes, so it cannot deadlock with the
+   * organization lock.
+   */
+  lockCompany(): Promise<void>;
+  /**
+   * What the company's provider account may already owe, across every tenant
+   * and organization: settled provider cost, plus every pending, uncertain or
+   * written-off hold at its full ceiling.
+   */
+  companySpend(): Promise<MicroUsd>;
 }
 
 export interface FundingRepository {
@@ -365,11 +378,21 @@ export class FundingService {
    * Hold a conservative ceiling against the root job and the organization's
    * funds in one transaction. The attempt is bound to the period current at
    * reservation, and settles there however late it finishes.
+   *
+   * With `companyCeilingMicroUsd`, the same transaction also refuses
+   * (`company_ceiling`) a hold that would take the company's provider spend
+   * past it: settled provider cost across every tenant and organization, plus
+   * every pending, uncertain or written-off hold in full, plus this hold. It
+   * reads that total only after taking the company lock, and transactions run
+   * at READ COMMITTED, so a reservation waiting on the lock reads every hold
+   * committed before it; two can never both slip under. Only a reservation
+   * adds to the total: a settlement never exceeds its hold, and releases and
+   * settlements only lower it. Without a ceiling there is no lock and no read.
    */
   async reserve(input: {
     tenantId: string; organizationId: string; attemptId: string; rootJobId: string; parentAttemptId: string | null;
     kind: ChargeKind; route: string; requestDigest: string; rateSnapshot: RateSnapshot; maxMicroUsd: MicroUsd;
-    usageClass: UsageClass;
+    usageClass: UsageClass; companyCeilingMicroUsd?: MicroUsd | null;
   }): Promise<FundedAttempt> {
     const tenantId = requireId(input.tenantId, 'tenant');
     const organizationId = requireId(input.organizationId, 'organization');
@@ -384,6 +407,8 @@ export class FundingService {
     const usageClass = input.usageClass;
     if (!(RATE_CARD_V1.kinds as readonly string[]).includes(input.kind) || !debitsAllowance(RATE_CARD_V1, input.kind))
       throw new FundingError(409, 'That kind of charge is not run on included credits.', 'charge_not_admissible');
+    const companyCeiling = input.companyCeilingMicroUsd === undefined || input.companyCeilingMicroUsd === null
+      ? null : requireMoney(input.companyCeilingMicroUsd, 'the company spend ceiling', false);
     const at = this.at();
     return this.repository.transaction(async (tx) => {
       await tx.lockOrganization(tenantId, organizationId);
@@ -417,6 +442,11 @@ export class FundingService {
       });
       if (!decision.ok)
         throw new FundingError(decision.code === 'invalid_ceiling' ? 422 : 402, decision.reason, decision.code);
+      if (companyCeiling !== null) {
+        await tx.lockCompany();
+        if (sumMoney([await tx.companySpend(), input.maxMicroUsd]) > companyCeiling)
+          throw new FundingError(503, 'This hold would take the company’s provider spend past its ceiling.', 'company_ceiling');
+      }
       const attempt: FundedAttempt = {
         id: attemptId, organizationId, periodId, parentTaskId: rootJobId, kind: input.kind, route, payer: 'managed',
         maxMicroUsd: input.maxMicroUsd, rateCardVersion: period.rateCardVersion, state: 'pending', createdAt: at,

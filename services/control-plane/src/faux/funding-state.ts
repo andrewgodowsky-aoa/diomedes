@@ -80,6 +80,11 @@ export class StateFundingTransaction implements FundingTransaction {
     });
     return sum([...held, ...settled]);
   }
+  async lockCompany() {}
+  async companySpend() {
+    const held = this.state.attempts.filter((row) => row.state === 'pending' || row.state === 'uncertain' || row.state === 'written-off');
+    return sum([...this.state.settlements.map((row) => row.providerCostMicroUsd), ...held.map((row) => row.maxMicroUsd)]);
+  }
   async lastReceipt(tenantId: string, organizationId: string, periodId: string) {
     const rows = this.state.settlements.filter((row) => row.tenantId === tenantId && row.organizationId === organizationId && row.periodId === periodId)
       .sort((a, b) => (a.settledAt < b.settledAt ? -1 : a.settledAt > b.settledAt ? 1 : 0));
