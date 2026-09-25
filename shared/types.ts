@@ -118,6 +118,8 @@ export interface Settings {
    * thread follows when it names none.
    */
   services?: Record<string, boolean | string>;
+  /** H16 stream-time trigger rules for every project on this installation (organization authority). */
+  streamTriggerRules?: import('./stream-rules.js').StreamRule[];
 }
 export interface Project {
   ai?: { engine: Route; model: string | null };
@@ -664,6 +666,10 @@ export interface ProjectState {
   reviewComments?: import('./review-comments.js').ReviewComment[];
   /** H10 guidance maintenance: the signed revision chain and declines. Absent until the first. */
   guidance?: import('./guidance.js').GuidanceLedger;
+  /** H16 stream-time trigger rules at project authority. Absent until the first one. */
+  streamTriggerRules?: import('./stream-rules.js').StreamRule[];
+  /** H16 trigger firings. Append-only; absent before the first firing. */
+  streamTriggerFirings?: import('./stream-rules.js').StreamTriggerFiring[];
 }
 /** How Diomedes knows whether an engine is signed in. 'first-use' means the first run reports it. */
 export type SignInState = 'signed-in' | 'not-signed-in' | 'unknown' | 'first-use' | 'not-needed';

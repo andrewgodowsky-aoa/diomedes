@@ -52,7 +52,7 @@ export interface InstructionSource {
 }
 
 export async function driftInputFor(input: {
-  state: Pick<ProjectState, 'tasks' | 'needs' | 'history' | 'sessions' | 'scopeGrants'>;
+  state: Pick<ProjectState, 'tasks' | 'needs' | 'history' | 'sessions' | 'scopeGrants' | 'streamTriggerFirings'>;
   session: Session;
   harness: HarnessRun | null;
   instructions: InstructionSource;
@@ -211,6 +211,7 @@ export async function driftInputFor(input: {
     budget,
     plan: null,
     rules,
+    triggers: (state.streamTriggerFirings ?? []).filter((firing) => firing.sessionId === session.id),
     verification: {
       history: state.history,
       sessions: state.sessions.map(({ id, state: runState, taskId }) => ({

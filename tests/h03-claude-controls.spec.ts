@@ -296,9 +296,11 @@ test("a Stop Claude Code does not honour ends its process, and the page says it 
   // Stop names a command the record holds, so it is pressed once the turn reached Claude Code.
   await expect.poll(() => received('Stuck [stuck]')).toBe(true);
   await page.getByRole('button', { name: 'Stop', exact: true }).click();
-  await expect(page.getByRole('alert')).toContainText('Claude Code did not stop in time, so its process was ended.', {
-    timeout: 20_000,
-  });
   await expect(session(page).locator('.dio-session-state')).toHaveText("Couldn't resume", { timeout: 20_000 });
-  await expect(session(page).locator('.dio-session-detail')).toContainText('Claude Code did not stop when asked');
+  await expect(session(page).locator('.dio-session-detail')).toHaveText(
+    /^Claude Code did not stop when asked, so its process was ended\./,
+  );
+  // Review F (decision 4): the forced stop is said once, by the session line read from the record.
+  await expect(page.getByText(/process was ended/)).toHaveCount(1);
+  await expect(page.getByText("Couldn't resume")).toHaveCount(1);
 });

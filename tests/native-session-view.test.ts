@@ -48,6 +48,10 @@ describe('what the Console says about a native session (H03)', () => {
     );
     expect(broken).toMatchObject({ state: "Couldn't resume", tone: 'warn' });
     expect(broken?.detail).toContain('outcome is unknown');
+    // Review F (decision 4): the state word already says "Couldn't resume"; the reason does not say it again.
+    expect(broken?.detail).toBe(
+      "Diomedes stopped while Claude Code was answering, so that answer's outcome is unknown. The next message starts a new session.",
+    );
     expect(sessionLine(view({ continuity: null }))?.state).toBeNull();
   });
 

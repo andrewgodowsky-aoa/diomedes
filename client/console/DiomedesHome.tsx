@@ -110,9 +110,6 @@ const refusedForHistory = (error: unknown) =>
 /** What an interrupt acknowledgement that cannot confirm a stop is told as. */
 const STOP_UNCONFIRMED =
   'Stop was not confirmed. Sending the message again checks what happened.';
-/** H03: a Stop the engine did not honour in time, so its process was ended. */
-const STOP_FORCED =
-  'Claude Code did not stop in time, so its process was ended. Your next message starts a new session.';
 
 /** The message a conversation may still be owed an answer for. Unreadable storage reads as none. */
 function retained(found: Binding): PendingMessage | null {
@@ -648,9 +645,9 @@ export function DiomedesHome(props: DiomedesHomeProps) {
     const mine = turn.current;
     void interruptMessage(issued.projectId, issued.threadId, issued.commandId).then(
       (ack) => {
+        // A forced stop (`ack.stop === 'killed'`) is said by the session line, from the record.
         if (turn.current === mine && ack.state !== 'requested' && ack.state !== 'settled')
           setNotice(STOP_UNCONFIRMED);
-        else if (turn.current === mine && ack.stop === 'killed') setNotice(STOP_FORCED);
       },
       () => {
         if (turn.current === mine) setNotice(STOP_UNCONFIRMED);
