@@ -664,12 +664,12 @@ export interface ProjectState {
   supervision?: import('./supervision.js').SupervisionRecord[];
   /** P06 review comments on changes and file versions. Absent until the first one. */
   reviewComments?: import('./review-comments.js').ReviewComment[];
+  /** H10 guidance maintenance: the signed revision chain and declines. Absent until the first. */
+  guidance?: import('./guidance.js').GuidanceLedger;
   /** H16 stream-time trigger rules at project authority. Absent until the first one. */
   streamTriggerRules?: import('./stream-rules.js').StreamRule[];
   /** H16 trigger firings. Append-only; absent before the first firing. */
   streamTriggerFirings?: import('./stream-rules.js').StreamTriggerFiring[];
-  /** H10 guidance maintenance: the signed revision chain and declines. Absent until the first. */
-  guidance?: import('./guidance.js').GuidanceLedger;
 }
 /** How Diomedes knows whether an engine is signed in. 'first-use' means the first run reports it. */
 export type SignInState = 'signed-in' | 'not-signed-in' | 'unknown' | 'first-use' | 'not-needed';

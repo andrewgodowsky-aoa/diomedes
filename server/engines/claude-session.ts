@@ -278,22 +278,35 @@ export class ClaudeNativeSession {
     prompt: string,
     request: { id: string; digest: string },
   ): Promise<TextResponse> {
+    let dispatched = false;
+    // Once the message is on Claude Code's stdin, the caller going away ends the process. Before
+    // that nothing was sent: the turn is refused as stopped and the live session is kept.
     const abort = () => {
-      this.controller.abort();
+      if (dispatched) this.controller.abort();
     };
     input.signal?.addEventListener('abort', abort, { once: true });
-    let dispatched = false;
     const openCalls = new Map<string, string>();
     let webUsed = false;
     try {
       if (input.signal?.aborted) throw stopped();
       await this.recheckAccount(
         AbortSignal.any([this.controller.signal, ...(input.signal ? [input.signal] : [])]),
-      );
+      ).catch((error: unknown) => {
+        if (input.signal?.aborted && !this.controller.signal.aborted) throw stopped();
+        throw error;
+      });
+      if (input.signal?.aborted) throw stopped();
       this.saved.state = 'busy';
       this.saved.requests.push(request);
       await this.save();
       if (this.closed || this.controller.signal.aborted) throw stopped();
+      if (input.signal?.aborted) {
+        // Stopped while the request was being recorded, still before it was sent.
+        this.saved.requests = this.saved.requests.filter((item) => item !== request);
+        this.saved.state = 'idle';
+        await this.save();
+        throw stopped();
+      }
       this.interrupted = false;
       this.process.child.send({
         type: 'user',
@@ -512,7 +525,8 @@ export class ClaudeNativeSession {
    */
   async stop(graceMs = 5000): Promise<'interrupted' | 'killed'> {
     const running = this.active;
-    if (!running || this.closed || this.saved.state !== 'busy')
+    // Before the message is sent there is nothing to interrupt: the caller withdraws it instead.
+    if (!running || this.closed || this.saved.state !== 'busy' || (!this.dispatched && !this.interruptPending))
       throw new EngineError('SESSION_IDLE', 'No native turn is running.');
     const ended = running.then(
       () => true,
@@ -549,6 +563,8 @@ export class ClaudeNativeSession {
       const timer = setTimeout(() => {
         this.interruptPending = undefined;
         reject(new EngineError('TIMEOUT', 'Claude did not acknowledge interrupt.', true));
+        // Ending the process because it did not answer the interrupt is a forced stop, and says so.
+        this.forced = true;
         this.controller.abort();
       }, 5000);
       this.interruptPending = { id, resolve, reject, timer };
