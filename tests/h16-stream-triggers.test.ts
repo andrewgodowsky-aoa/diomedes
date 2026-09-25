@@ -72,8 +72,9 @@ async function globalRules(...rules: StreamRule[]) {
   expect(saved.status, JSON.stringify(saved.data)).toBe(200);
 }
 
-async function start() {
+async function start(extra: Record<string, unknown> = {}) {
   const response = await project<{ runId: string; session: Session }>('/loop/start', 'POST', {
+    ...extra,
     protocolVersion: 1,
     commandId: `loop-${Math.random().toString(36).slice(2)}`,
     taskId,
@@ -240,6 +241,34 @@ describe('H16 stream-time triggers on the scripted loop route', () => {
     expect(view).toHaveLength(1);
     expect(view[0]).toMatchObject({ state: 'acted', firing: { intervention: 'hold', handling: 'handed-to-supervision' } });
     expect(view[0].outcome).toMatch(/^Paused for you before it ran: /);
+  });
+
+  test('review-g: a hold on a read the loop hands to a delegate still holds; the helper never reads it', async () => {
+    // The parent reads order.md itself and hands delivery.md to a delegate child run, which
+    // carries no Session of its own. The rule must reach the child's intent all the same.
+    await projectRules(
+      rule('delivery-held', {
+        match: { kind: 'tool', tool: 'read_project_file', target: 'delivery.md' },
+        intervention: 'hold',
+        text: 'Delivery notes are read only after a person says so.',
+      }),
+    );
+    const started = await start({ delegate: { route: 'native-fixture' } });
+    await vi.waitFor(
+      async () => expect(['cancelled', 'waiting', 'completed', 'failed']).toContain((await host().get(projectId, started.runId)).state),
+      { timeout: 15_000 },
+    );
+    await host().bridge.flush();
+    const child = await host().get(projectId, `${started.runId}-d1`).catch(() => null);
+    // Either the helper never started, or it started and its read was never admitted.
+    const read = child?.steps.find((step) => step.intent.kind === 'tool' && step.intent.name === 'read_project_file');
+    expect(read?.state ?? 'never', JSON.stringify(read ?? null)).not.toBe('succeeded');
+    const firings = state().streamTriggerFirings ?? [];
+    expect(firings.map((firing) => [firing.rule.id, firing.runId, firing.sessionId])).toEqual([
+      ['delivery-held', `${started.runId}-d1`, started.session.id],
+    ]);
+    const escalation = await openNeed(started.session.id);
+    expect(escalation.supervision?.code).toBe('rule-trigger');
   });
 
   test('stop on streamed text: supervision pauses the run through H08 Stop and asks you; nothing the plan proposed runs', async () => {
