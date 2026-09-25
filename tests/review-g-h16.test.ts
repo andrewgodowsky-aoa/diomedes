@@ -65,3 +65,36 @@ describe('review-g: the pattern grammar bounds backtracking', () => {
     expect(performance.now() - started).toBeLessThan(1000);
   });
 });
+
+describe('review-g: the evidence says exactly what matched', () => {
+  const phraseRule = (phrase: string): StreamRule => ({
+    id: 'p',
+    version: 1,
+    enabled: true,
+    text: 'Why.',
+    intervention: 'annotate',
+    match: { kind: 'text', phrase },
+  });
+  const run = (phrase: string, stream: string, size: number) => {
+    const hits: { start: number; end: number; text: string }[] = [];
+    const evaluator = new StreamEvaluator([phraseRule(phrase)], ({ start, end, text }) => hits.push({ start, end, text }));
+    for (let at = 0; at < stream.length; at += size) evaluator.push(stream.slice(at, at + size));
+    evaluator.end();
+    return hits;
+  };
+
+  test('case folding never moves the span: text before the match that lowercases longer (İ) leaves offsets exact', () => {
+    const stream = 'İstanbul İzmir: the API KEY is here';
+    const at = stream.indexOf('API KEY');
+    for (const size of [1, 3, 7, stream.length])
+      expect(run('api key', stream, size), `chunks of ${size}`).toEqual([{ start: at, end: at + 7, text: 'API KEY' }]);
+  });
+
+  test('astral characters and accents split at every code-unit boundary are found once, with exact offsets', () => {
+    const phrase = 'déploie 🔥 now';
+    const stream = `prefix ${phrase} suffix`;
+    const at = stream.indexOf(phrase);
+    for (let size = 1; size <= stream.length; size++)
+      expect(run(phrase, stream, size), `chunks of ${size}`).toEqual([{ start: at, end: at + phrase.length, text: phrase }]);
+  });
+});
