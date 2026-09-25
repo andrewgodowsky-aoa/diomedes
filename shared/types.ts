@@ -118,6 +118,8 @@ export interface Settings {
    * thread follows when it names none.
    */
   services?: Record<string, boolean | string>;
+  /** H16 stream-time trigger rules for every project on this installation (organization authority). */
+  streamTriggerRules?: import('./stream-rules.js').StreamRule[];
 }
 export interface Project {
   ai?: { engine: Route; model: string | null };
@@ -664,6 +666,10 @@ export interface ProjectState {
   reviewComments?: import('./review-comments.js').ReviewComment[];
   /** H10 guidance maintenance: the signed revision chain and declines. Absent until the first. */
   guidance?: import('./guidance.js').GuidanceLedger;
+  /** H16 stream-time trigger rules at project authority. Absent until the first one. */
+  streamTriggerRules?: import('./stream-rules.js').StreamRule[];
+  /** H16 trigger firings. Append-only; absent before the first firing. */
+  streamTriggerFirings?: import('./stream-rules.js').StreamTriggerFiring[];
   /** P07 Software Engineering pack: declared commands, their runs and worktrees. Absent until first used. */
   softwarePack?: import('./software-pack.js').SoftwarePackRecord;
 }

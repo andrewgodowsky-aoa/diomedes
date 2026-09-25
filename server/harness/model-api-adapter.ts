@@ -242,10 +242,18 @@ export function createModelApiAdapter(spec: ModelApiAdapterSpec): ModelAdapter &
         messages: () => providerMessages(request),
       });
     },
-    async complete(request, signal): Promise<ModelResult> {
+    async complete(request, signal, stream): Promise<ModelResult> {
       signal.throwIfAborted();
       boundProfile(request);
       const messages = await providerMessages(request);
+      const routeDelta = spec.sinks?.onDelta;
+      const onDelta =
+        stream && routeDelta
+          ? (text: string) => {
+              routeDelta(text);
+              stream.onDelta(text);
+            }
+          : (routeDelta ?? (stream ? (text: string) => stream.onDelta(text) : undefined));
       const attempt = attemptFor(request);
 
       const result = await spec.respond({
@@ -253,7 +261,7 @@ export function createModelApiAdapter(spec: ModelApiAdapterSpec): ModelAdapter &
         tools: request.tools,
         attempt,
         signal,
-        onDelta: spec.sinks?.onDelta,
+        onDelta,
         onToolActivity: spec.sinks?.onToolActivity,
       });
       let response: ModelResult['response'];

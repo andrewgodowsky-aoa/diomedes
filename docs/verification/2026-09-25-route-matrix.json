@@ -1,0 +1,3600 @@
+{
+  "matrixVersion": 1,
+  "generatedAt": "2026-09-25T00:04:46.041Z",
+  "environment": {
+    "platform": "linux-x64",
+    "node": "22.22.2",
+    "commit": "f5259bbed967"
+  },
+  "capabilities": [
+    "turn",
+    "stream",
+    "tool-proposal",
+    "approval",
+    "steer",
+    "queue",
+    "stop",
+    "resume",
+    "retry",
+    "fork",
+    "verification",
+    "context-accounting"
+  ],
+  "rows": [
+    {
+      "routeId": "claude-code-session",
+      "mode": "external-session",
+      "engine": {
+        "id": "claude-code",
+        "version": "2.1.252",
+        "protocolVersion": "stream-json"
+      },
+      "authentication": "native-sign-in",
+      "testedWith": "2.1.252",
+      "cells": {
+        "turn": {
+          "state": "proven",
+          "declared": {
+            "support": "native",
+            "source": "commands.start",
+            "note": "Opt-in persistent stream-json process; each turn has a fenced RunService step."
+          },
+          "scenarios": [
+            "claude-code-native-session"
+          ],
+          "fixtures": [
+            "claude-code: tests/fixtures/claude-stream-json.mjs, a stream-json child standing in for the Claude Code CLI (the H03 route tests’ script)"
+          ],
+          "reason": "the first turn answered 200: “Answer to Good morning”."
+        },
+        "stream": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "native",
+            "source": "streaming.transientPreview",
+            "note": "Transient text-delta preview; the durable record is the final observation."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared native. Needs the real claude-code 2.1.252 binary, signed in; no fixture of it drives this capability through Core here."
+        },
+        "tool-proposal": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "routeId",
+            "note": "A kept conversation answers in text; it is not a Work route and declares no proposal path."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: A kept conversation answers in text; it is not a Work route and declares no proposal path."
+        },
+        "approval": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "routeId",
+            "note": "A kept conversation declares no approval path of its own."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: A kept conversation declares no approval path of its own."
+        },
+        "steer": {
+          "state": "proven",
+          "declared": {
+            "support": "host",
+            "source": "commands.steer",
+            "note": "H03: queued by Diomedes while a turn runs and sent as the next turn of the same live process once it finishes; never injected mid-turn, and refused with a stated reason if the turn ahead of it stops."
+          },
+          "scenarios": [
+            "claude-code-native-session"
+          ],
+          "fixtures": [
+            "claude-code: tests/fixtures/claude-stream-json.mjs, a stream-json child standing in for the Claude Code CLI (the H03 route tests’ script)"
+          ],
+          "reason": "a message sent while an answer ran was held and sent as the next turn of the same process (delivered)."
+        },
+        "queue": {
+          "state": "proven",
+          "declared": {
+            "support": "native",
+            "source": "commands.follow-up",
+            "note": "Sequential user messages reuse the live process after a known result."
+          },
+          "scenarios": [
+            "claude-code-native-session"
+          ],
+          "fixtures": [
+            "claude-code: tests/fixtures/claude-stream-json.mjs, a stream-json child standing in for the Claude Code CLI (the H03 route tests’ script)"
+          ],
+          "reason": "a follow-up was answered by the same live process (1 process): “Answer to Where is the linen?”."
+        },
+        "stop": {
+          "state": "proven",
+          "declared": {
+            "support": "native",
+            "source": "commands.interrupt",
+            "note": "Native control interrupt acknowledgment is distinct from turn completion. A Stop waits a bounded grace for the turn boundary, then ends the process tree and says so."
+          },
+          "scenarios": [
+            "claude-code-native-session"
+          ],
+          "fixtures": [
+            "claude-code: tests/fixtures/claude-stream-json.mjs, a stream-json child standing in for the Claude Code CLI (the H03 route tests’ script)"
+          ],
+          "reason": "Stop answered 200 (interrupted); the turn ended interrupted=true; the session stayed live."
+        },
+        "resume": {
+          "state": "proven",
+          "declared": {
+            "support": "native",
+            "source": "commands.resume",
+            "note": "Explicit --resume after validated idle metadata; uncertain turns are never replayed."
+          },
+          "scenarios": [
+            "claude-code-native-session"
+          ],
+          "fixtures": [
+            "claude-code: tests/fixtures/claude-stream-json.mjs, a stream-json child standing in for the Claude Code CLI (the H03 route tests’ script)"
+          ],
+          "reason": "after a restart the thread read resumable; the next message resumed the session by id (--resume: true)."
+        },
+        "retry": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "host",
+            "source": "commands.retry",
+            "note": "Duplicate command IDs replay durable outcomes; unknown dispatches refuse redispatch."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared host. Needs the real claude-code 2.1.252 binary, signed in; no fixture of it drives this capability through Core here."
+        },
+        "fork": {
+          "state": "proven",
+          "declared": {
+            "support": "native",
+            "source": "commands.fork",
+            "note": "Explicit --resume plus --fork-session starts a child run with no copied hidden state."
+          },
+          "scenarios": [
+            "claude-code-native-session"
+          ],
+          "fixtures": [
+            "claude-code: tests/fixtures/claude-stream-json.mjs, a stream-json child standing in for the Claude Code CLI (the H03 route tests’ script)"
+          ],
+          "reason": "fork started claude-92343d7016140448b3e18aeda7f2bf079ea4cf4b20d5c58bf9a6d0ab548b1340 with --resume and --fork-session (true): “Answer to Try another way”."
+        },
+        "verification": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "routeId",
+            "note": "H17 verifies a finished Work run; a kept conversation is not one."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: H17 verifies a finished Work run; a kept conversation is not one."
+        },
+        "context-accounting": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "mode",
+            "note": "The engine builds and manages its own context; Diomedes measures none of it."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: The engine builds and manages its own context; Diomedes measures none of it."
+        }
+      }
+    },
+    {
+      "routeId": "opencode-session",
+      "mode": "external-session",
+      "engine": {
+        "id": "opencode",
+        "version": "1.18.4",
+        "protocolVersion": "http+sse"
+      },
+      "authentication": "native-sign-in",
+      "testedWith": "1.18.4",
+      "cells": {
+        "turn": {
+          "state": "proven",
+          "declared": {
+            "support": "native",
+            "source": "commands.start",
+            "note": "Opt-in kept `opencode serve` process and OpenCode session; each turn has a fenced RunService step."
+          },
+          "scenarios": [
+            "opencode-kept-session"
+          ],
+          "fixtures": [
+            "opencode: tests/fixtures/opencode-session-server.mjs, a real HTTP+SSE server standing in for `opencode serve`"
+          ],
+          "reason": "the first turn answered 200: “answer:first (turn 1 of ses_0001096faa)”."
+        },
+        "stream": {
+          "state": "proven",
+          "declared": {
+            "support": "native",
+            "source": "streaming.transientPreview",
+            "note": "Transient text-delta preview; the durable record is the final observation."
+          },
+          "scenarios": [
+            "opencode-kept-session"
+          ],
+          "fixtures": [
+            "opencode: tests/fixtures/opencode-session-server.mjs, a real HTTP+SSE server standing in for `opencode serve`"
+          ],
+          "reason": "1 transient text deltas reached the event stream."
+        },
+        "tool-proposal": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "routeId",
+            "note": "A kept conversation answers in text; it is not a Work route and declares no proposal path."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: A kept conversation answers in text; it is not a Work route and declares no proposal path."
+        },
+        "approval": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "routeId",
+            "note": "A kept conversation declares no approval path of its own."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: A kept conversation declares no approval path of its own."
+        },
+        "steer": {
+          "state": "proven",
+          "declared": {
+            "support": "host",
+            "source": "commands.steer",
+            "note": "Queued by Diomedes while a turn runs and sent as the next turn once it finishes; never injected mid-turn, and dropped with a stated reason if the turn stops."
+          },
+          "scenarios": [
+            "opencode-kept-session"
+          ],
+          "fixtures": [
+            "opencode: tests/fixtures/opencode-session-server.mjs, a real HTTP+SSE server standing in for `opencode serve`"
+          ],
+          "reason": "a message sent while a turn ran was pending, then delivered; the thread shows it as its own turn (true)."
+        },
+        "queue": {
+          "state": "proven",
+          "declared": {
+            "support": "native",
+            "source": "commands.follow-up",
+            "note": "Sequential messages go to the same OpenCode session after a known idle."
+          },
+          "scenarios": [
+            "opencode-kept-session"
+          ],
+          "fixtures": [
+            "opencode: tests/fixtures/opencode-session-server.mjs, a real HTTP+SSE server standing in for `opencode serve`"
+          ],
+          "reason": "a follow-up went to the same OpenCode session: “answer:second (turn 2 of ses_0001096faa)”."
+        },
+        "stop": {
+          "state": "mismatch",
+          "declared": {
+            "support": "native",
+            "source": "commands.interrupt",
+            "note": "POST /session/:id/abort, then idle is confirmed from /session/status; only a confirmed idle session stays resumable."
+          },
+          "scenarios": [
+            "opencode-kept-session"
+          ],
+          "fixtures": [
+            "opencode: tests/fixtures/opencode-session-server.mjs, a real HTTP+SSE server standing in for `opencode serve`"
+          ],
+          "reason": "Declared native, but Stop while the session reads busy and not yet connected, at 46 ms: 409 (SESSION_CLOSED: The native process is already closed.); the turn ended at 5496 ms, 409 TIMEOUT (“OpenCode did not finish within the time limit. Recheck before starting another request.”)."
+        },
+        "resume": {
+          "state": "proven",
+          "declared": {
+            "support": "native",
+            "source": "commands.resume",
+            "note": "A later server finds the saved session id in OpenCode’s own store; a session OpenCode no longer has starts fresh and the record says so."
+          },
+          "scenarios": [
+            "opencode-kept-session"
+          ],
+          "fixtures": [
+            "opencode: tests/fixtures/opencode-session-server.mjs, a real HTTP+SSE server standing in for `opencode serve`"
+          ],
+          "reason": "closed, restarted, then resumed the same OpenCode session: “answer:resumed (turn 5 of ses_0001096faa)”."
+        },
+        "retry": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "host",
+            "source": "commands.retry",
+            "note": "Duplicate command IDs replay durable outcomes; unknown dispatches refuse redispatch."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared host. Needs the real opencode 1.18.4 binary, signed in; no fixture of it drives this capability through Core here."
+        },
+        "fork": {
+          "state": "proven",
+          "declared": {
+            "support": "native",
+            "source": "commands.fork",
+            "note": "POST /session/:id/fork from a saved idle session starts a child run; no hidden state is copied into the run record."
+          },
+          "scenarios": [
+            "opencode-kept-session"
+          ],
+          "fixtures": [
+            "opencode: tests/fixtures/opencode-session-server.mjs, a real HTTP+SSE server standing in for `opencode serve`"
+          ],
+          "reason": "fork started opencode-5bfc091a0b6642b6fbf41f906a2caf08854bf425bc5c03c98c8521237d946ee1 on a new OpenCode session in the same lineage: “answer:forked (turn 6 of ses_000275cfb4)”."
+        },
+        "verification": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "routeId",
+            "note": "H17 verifies a finished Work run; a kept conversation is not one."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: H17 verifies a finished Work run; a kept conversation is not one."
+        },
+        "context-accounting": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "mode",
+            "note": "The engine builds and manages its own context; Diomedes measures none of it."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: The engine builds and manages its own context; Diomedes measures none of it."
+        }
+      }
+    },
+    {
+      "routeId": "cursor-session",
+      "mode": "external-session",
+      "engine": {
+        "id": "cursor",
+        "version": "2026.08.11",
+        "protocolVersion": "acp/1"
+      },
+      "authentication": "native-sign-in",
+      "testedWith": "2026.08.11",
+      "cells": {
+        "turn": {
+          "state": "proven",
+          "declared": {
+            "support": "native",
+            "source": "commands.start",
+            "note": "Opt-in kept Cursor conversation; each turn is a fenced RunService step whose ACP session id is saved before the prompt is sent."
+          },
+          "scenarios": [
+            "cursor-acp-session"
+          ],
+          "fixtures": [
+            "cursor: tests/fixtures/acp-agent.mjs, a real ACP v1 agent process standing in for the Cursor CLI"
+          ],
+          "reason": "the first turn answered 200: “answer after 0 earlier turns”."
+        },
+        "stream": {
+          "state": "proven",
+          "declared": {
+            "support": "native",
+            "source": "streaming.transientPreview",
+            "note": "Transient text-delta preview; the durable record is the final observation."
+          },
+          "scenarios": [
+            "cursor-acp-session"
+          ],
+          "fixtures": [
+            "cursor: tests/fixtures/acp-agent.mjs, a real ACP v1 agent process standing in for the Cursor CLI"
+          ],
+          "reason": "1 transient text deltas reached the event stream."
+        },
+        "tool-proposal": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "routeId",
+            "note": "A kept conversation answers in text; it is not a Work route and declares no proposal path."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: A kept conversation answers in text; it is not a Work route and declares no proposal path."
+        },
+        "approval": {
+          "state": "proven",
+          "declared": {
+            "support": "native",
+            "source": "engine.protocolVersion",
+            "note": "An ACP permission ask becomes a Need a person answers."
+          },
+          "scenarios": [
+            "cursor-acp-session"
+          ],
+          "fixtures": [
+            "cursor: tests/fixtures/acp-agent.mjs, a real ACP v1 agent process standing in for the Cursor CLI"
+          ],
+          "reason": "the plan Cursor presented mid-turn became a Need (“Cursor asks you to approve its plan: Outline the report in three sections”); go-ahead reached the agent: “plan accepted; outlined”."
+        },
+        "steer": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "commands.steer",
+            "note": "ACP has no in-band steering channel; a message waits for the turn to end."
+          },
+          "scenarios": [
+            "cursor-acp-session"
+          ],
+          "fixtures": [
+            "cursor: tests/fixtures/acp-agent.mjs, a real ACP v1 agent process standing in for the Cursor CLI"
+          ],
+          "reason": "Declared unsupported, and the refusal was observed: no steer route is mounted for a contract that declares none (404)."
+        },
+        "queue": {
+          "state": "proven",
+          "declared": {
+            "support": "native",
+            "source": "commands.follow-up",
+            "note": "Each message continues the saved ACP session with session/load where Cursor advertises loadSession; otherwise it starts fresh and the turn says so."
+          },
+          "scenarios": [
+            "cursor-acp-session"
+          ],
+          "fixtures": [
+            "cursor: tests/fixtures/acp-agent.mjs, a real ACP v1 agent process standing in for the Cursor CLI"
+          ],
+          "reason": "a follow-up continued the same ACP session: “answer after 1 earlier turns”."
+        },
+        "stop": {
+          "state": "mismatch",
+          "declared": {
+            "support": "native",
+            "source": "commands.interrupt",
+            "note": "session/cancel, a bounded wait for the agent to end the prompt, then the owned process tree is ended; the checkpoint records which happened."
+          },
+          "scenarios": [
+            "cursor-acp-session"
+          ],
+          "fixtures": [
+            "cursor: tests/fixtures/acp-agent.mjs, a real ACP v1 agent process standing in for the Cursor CLI"
+          ],
+          "reason": "Declared native, but Stop as soon as the turn reads busy: Stop at 41 ms answered 200 (acknowledged true); the turn ended at 10270 ms, 409 TIMEOUT (“Cursor exceeded the request time limit. No retry was sent.”)."
+        },
+        "resume": {
+          "state": "mismatch",
+          "declared": {
+            "support": "native",
+            "source": "commands.resume",
+            "note": "After a restart the saved session id is continued with session/load where advertised; a session Cursor no longer has, or an agent without loadSession, starts fresh and the record says so."
+          },
+          "scenarios": [
+            "cursor-acp-session"
+          ],
+          "fixtures": [
+            "cursor: tests/fixtures/acp-agent.mjs, a real ACP v1 agent process standing in for the Cursor CLI"
+          ],
+          "reason": "Declared native, but restart while a turn ran, then resume: refused 409 RECONCILE_REQUIRED (“The native turn outcome is uncertain.”); the conversation reads start-again: “Couldn't resume. The last Cursor turn did not finish, so its outcome is unknown. The next message starts a new session.” — though the agent advertises loadSession."
+        },
+        "retry": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "host",
+            "source": "commands.retry",
+            "note": "Duplicate command IDs replay durable outcomes; unknown dispatches refuse redispatch."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared host. Needs the real cursor 2026.08.11 binary, signed in; no fixture of it drives this capability through Core here."
+        },
+        "fork": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "commands.fork",
+            "note": "ACP v1 has no fork of a saved session."
+          },
+          "scenarios": [
+            "cursor-acp-session"
+          ],
+          "fixtures": [
+            "cursor: tests/fixtures/acp-agent.mjs, a real ACP v1 agent process standing in for the Cursor CLI"
+          ],
+          "reason": "Declared unsupported, and the refusal was observed: fork answered 409: The native session contract does not match this route and build."
+        },
+        "verification": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "routeId",
+            "note": "H17 verifies a finished Work run; a kept conversation is not one."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: H17 verifies a finished Work run; a kept conversation is not one."
+        },
+        "context-accounting": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "mode",
+            "note": "The engine builds and manages its own context; Diomedes measures none of it."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: The engine builds and manages its own context; Diomedes measures none of it."
+        }
+      }
+    },
+    {
+      "routeId": "devin-session",
+      "mode": "external-session",
+      "engine": {
+        "id": "devin",
+        "version": "3000.10.23",
+        "protocolVersion": "acp/1"
+      },
+      "authentication": "native-sign-in",
+      "testedWith": "3000.10.23",
+      "cells": {
+        "turn": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "native",
+            "source": "commands.start",
+            "note": "Opt-in kept Devin conversation; each turn is a fenced RunService step whose ACP session id is saved before the prompt is sent."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared native. Needs the real devin 3000.10.23 binary, signed in; no fixture of it drives this capability through Core here."
+        },
+        "stream": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "native",
+            "source": "streaming.transientPreview",
+            "note": "Transient text-delta preview; the durable record is the final observation."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared native. Needs the real devin 3000.10.23 binary, signed in; no fixture of it drives this capability through Core here."
+        },
+        "tool-proposal": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "routeId",
+            "note": "A kept conversation answers in text; it is not a Work route and declares no proposal path."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: A kept conversation answers in text; it is not a Work route and declares no proposal path."
+        },
+        "approval": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "native",
+            "source": "engine.protocolVersion",
+            "note": "An ACP permission ask becomes a Need a person answers."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared native. Needs the real devin 3000.10.23 binary, signed in; no fixture of it drives this capability through Core here."
+        },
+        "steer": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "commands.steer",
+            "note": "ACP has no in-band steering channel; a message waits for the turn to end."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: ACP has no in-band steering channel; a message waits for the turn to end."
+        },
+        "queue": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "native",
+            "source": "commands.follow-up",
+            "note": "Each message continues the saved ACP session with session/load where Devin advertises loadSession; otherwise it starts fresh and the turn says so."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared native. Needs the real devin 3000.10.23 binary, signed in; no fixture of it drives this capability through Core here."
+        },
+        "stop": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "native",
+            "source": "commands.interrupt",
+            "note": "session/cancel, a bounded wait for the agent to end the prompt, then the owned process tree is ended; the checkpoint records which happened."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared native. Needs the real devin 3000.10.23 binary, signed in; no fixture of it drives this capability through Core here."
+        },
+        "resume": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "native",
+            "source": "commands.resume",
+            "note": "After a restart the saved session id is continued with session/load where advertised; a session Devin no longer has, or an agent without loadSession, starts fresh and the record says so."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared native. Needs the real devin 3000.10.23 binary, signed in; no fixture of it drives this capability through Core here."
+        },
+        "retry": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "host",
+            "source": "commands.retry",
+            "note": "Duplicate command IDs replay durable outcomes; unknown dispatches refuse redispatch."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared host. Needs the real devin 3000.10.23 binary, signed in; no fixture of it drives this capability through Core here."
+        },
+        "fork": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "commands.fork",
+            "note": "ACP v1 has no fork of a saved session."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: ACP v1 has no fork of a saved session."
+        },
+        "verification": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "routeId",
+            "note": "H17 verifies a finished Work run; a kept conversation is not one."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: H17 verifies a finished Work run; a kept conversation is not one."
+        },
+        "context-accounting": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "mode",
+            "note": "The engine builds and manages its own context; Diomedes measures none of it."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: The engine builds and manages its own context; Diomedes measures none of it."
+        }
+      }
+    },
+    {
+      "routeId": "native-fixture",
+      "mode": "harness-agent",
+      "engine": {
+        "id": "native-fixture",
+        "version": "1",
+        "protocolVersion": "harness-v1"
+      },
+      "authentication": "development-fixture",
+      "testedWith": null,
+      "cells": {
+        "turn": {
+          "state": "proven",
+          "declared": {
+            "support": "native",
+            "source": "commands.start",
+            "note": "RunService.start writes the run and its first event. The scripted fixture model drives the loop."
+          },
+          "scenarios": [
+            "h13-loop-restart-verified"
+          ],
+          "fixtures": [
+            "native-fixture: the Diomedes loop’s fixed local script (loopFixtureAdapter, delegateFixtureAdapter)"
+          ],
+          "reason": "planned 4 items, took 4 turns, finished with “Proposed Harness report.md from order.md and a helper's reading of delivery.md.”."
+        },
+        "stream": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "streaming.transientPreview",
+            "note": "The route declares no transient preview."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: The route declares no transient preview."
+        },
+        "tool-proposal": {
+          "state": "proven",
+          "declared": {
+            "support": "native",
+            "source": "mode",
+            "note": "Registered tool steps, dispatched and gated by RunService."
+          },
+          "scenarios": [
+            "h13-loop-restart-verified"
+          ],
+          "fixtures": [
+            "native-fixture: the Diomedes loop’s fixed local script (loopFixtureAdapter, delegateFixtureAdapter)"
+          ],
+          "reason": "the propose_write tool step asked for Harness report.md through a Need."
+        },
+        "approval": {
+          "state": "proven",
+          "declared": {
+            "support": "native",
+            "source": "mode",
+            "note": "RunService refuses an approval-gated tool step until an exact approval is recorded."
+          },
+          "scenarios": [
+            "h13-loop-restart-verified"
+          ],
+          "fixtures": [
+            "native-fixture: the Diomedes loop’s fixed local script (loopFixtureAdapter, delegateFixtureAdapter)"
+          ],
+          "reason": "the exact approval, given after the restart, was recorded."
+        },
+        "steer": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "commands.steer",
+            "note": "No steering channel is proven on this route."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: No steering channel is proven on this route."
+        },
+        "queue": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "host",
+            "source": "commands.follow-up",
+            "note": "A follow-up is a new run for the same task; the run record stays the authority."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared host. No scenario in this run exercises it."
+        },
+        "stop": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "commands.interrupt",
+            "note": "There is no in-band interrupt; run-level cancel is the only stop, and it parks non-idempotent work for reconciliation."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: There is no in-band interrupt; run-level cancel is the only stop, and it parks non-idempotent work for reconciliation."
+        },
+        "resume": {
+          "state": "proven",
+          "declared": {
+            "support": "native",
+            "source": "commands.resume",
+            "note": "The run service replays persisted steps and continues at the first unresolved one."
+          },
+          "scenarios": [
+            "h13-loop-restart-verified"
+          ],
+          "fixtures": [
+            "native-fixture: the Diomedes loop’s fixed local script (loopFixtureAdapter, delegateFixtureAdapter)"
+          ],
+          "reason": "after a restart the reopened Core continued the run from its record; the 2 turns observed before it read the same after it (true)."
+        },
+        "retry": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "native",
+            "source": "commands.retry",
+            "note": "A step retries under its maxAttempts against the same intent hash."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared native. No scenario in this run exercises it."
+        },
+        "fork": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "native",
+            "source": "commands.fork",
+            "note": "RunService.fork starts a child run at a recorded pure-prefix step."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared native. No scenario in this run exercises it."
+        },
+        "verification": {
+          "state": "proven",
+          "declared": {
+            "support": "host",
+            "source": "mode",
+            "note": "H17 runs the task’s declared checks against the run’s recorded output bytes."
+          },
+          "scenarios": [
+            "h13-loop-restart-verified"
+          ],
+          "fixtures": [
+            "native-fixture: the Diomedes loop’s fixed local script (loopFixtureAdapter, delegateFixtureAdapter)"
+          ],
+          "reason": "H17 at the finish: Verified — 2 declared checks passed against 1 exact file version."
+        },
+        "context-accounting": {
+          "state": "proven",
+          "declared": {
+            "support": "host",
+            "source": "mode",
+            "note": "Diomedes assembles the context, so H18 records a section account of it."
+          },
+          "scenarios": [
+            "h13-loop-restart-verified"
+          ],
+          "fixtures": [
+            "native-fixture: the Diomedes loop’s fixed local script (loopFixtureAdapter, delegateFixtureAdapter)"
+          ],
+          "reason": "H18 account: 7 sections, 950 estimated tokens (utf8-bytes/4)."
+        }
+      }
+    },
+    {
+      "routeId": "codex-report",
+      "mode": "harness-agent",
+      "engine": {
+        "id": "codex",
+        "version": "0.153.4",
+        "protocolVersion": "codex app-server 0.153.4"
+      },
+      "authentication": "native-sign-in",
+      "testedWith": "0.153.4",
+      "cells": {
+        "turn": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "native",
+            "source": "commands.start",
+            "note": "RunService.start writes the run and its first event. The Codex app-server session is the model adapter."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared native. Needs the real codex 0.153.4 binary, signed in; no fixture of it drives this capability through Core here."
+        },
+        "stream": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "streaming.transientPreview",
+            "note": "The route declares no transient preview."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: The route declares no transient preview."
+        },
+        "tool-proposal": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "native",
+            "source": "mode",
+            "note": "Registered tool steps, dispatched and gated by RunService."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared native. Needs the real codex 0.153.4 binary, signed in; no fixture of it drives this capability through Core here."
+        },
+        "approval": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "native",
+            "source": "mode",
+            "note": "RunService refuses an approval-gated tool step until an exact approval is recorded."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared native. Needs the real codex 0.153.4 binary, signed in; no fixture of it drives this capability through Core here."
+        },
+        "steer": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "commands.steer",
+            "note": "No steering channel is proven on this route."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: No steering channel is proven on this route."
+        },
+        "queue": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "host",
+            "source": "commands.follow-up",
+            "note": "A follow-up is a new run for the same task; the run record stays the authority."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared host. Needs the real codex 0.153.4 binary, signed in; no fixture of it drives this capability through Core here."
+        },
+        "stop": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "commands.interrupt",
+            "note": "There is no in-band interrupt; run-level cancel is the only stop, and it parks non-idempotent work for reconciliation."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: There is no in-band interrupt; run-level cancel is the only stop, and it parks non-idempotent work for reconciliation."
+        },
+        "resume": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "native",
+            "source": "commands.resume",
+            "note": "The run service replays persisted steps and continues at the first unresolved one."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared native. Needs the real codex 0.153.4 binary, signed in; no fixture of it drives this capability through Core here."
+        },
+        "retry": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "native",
+            "source": "commands.retry",
+            "note": "A step retries under its maxAttempts against the same intent hash."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared native. Needs the real codex 0.153.4 binary, signed in; no fixture of it drives this capability through Core here."
+        },
+        "fork": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "native",
+            "source": "commands.fork",
+            "note": "RunService.fork starts a child run at a recorded pure-prefix step."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared native. Needs the real codex 0.153.4 binary, signed in; no fixture of it drives this capability through Core here."
+        },
+        "verification": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "host",
+            "source": "mode",
+            "note": "H17 runs the task’s declared checks against the run’s recorded output bytes."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared host. Needs the real codex 0.153.4 binary, signed in; no fixture of it drives this capability through Core here."
+        },
+        "context-accounting": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "host",
+            "source": "mode",
+            "note": "Diomedes assembles the context, so H18 records a section account of it."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared host. Needs the real codex 0.153.4 binary, signed in; no fixture of it drives this capability through Core here."
+        }
+      }
+    },
+    {
+      "routeId": "harness-runtime",
+      "mode": "harness-agent",
+      "engine": {
+        "id": "diomedes-harness",
+        "version": "1",
+        "protocolVersion": "harness-v1"
+      },
+      "authentication": "none",
+      "testedWith": null,
+      "cells": {
+        "turn": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "native",
+            "source": "commands.start",
+            "note": "RunService.start writes the run and its first event. The in-process run service itself."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared native. No scenario in this run exercises it."
+        },
+        "stream": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "streaming.transientPreview",
+            "note": "The route declares no transient preview."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: The route declares no transient preview."
+        },
+        "tool-proposal": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "native",
+            "source": "mode",
+            "note": "Registered tool steps, dispatched and gated by RunService."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared native. No scenario in this run exercises it."
+        },
+        "approval": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "native",
+            "source": "mode",
+            "note": "RunService refuses an approval-gated tool step until an exact approval is recorded."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared native. No scenario in this run exercises it."
+        },
+        "steer": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "commands.steer",
+            "note": "No steering channel is proven on this route."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: No steering channel is proven on this route."
+        },
+        "queue": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "host",
+            "source": "commands.follow-up",
+            "note": "A follow-up is a new run for the same task; the run record stays the authority."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared host. No scenario in this run exercises it."
+        },
+        "stop": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "commands.interrupt",
+            "note": "There is no in-band interrupt; run-level cancel is the only stop, and it parks non-idempotent work for reconciliation."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: There is no in-band interrupt; run-level cancel is the only stop, and it parks non-idempotent work for reconciliation."
+        },
+        "resume": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "native",
+            "source": "commands.resume",
+            "note": "The run service replays persisted steps and continues at the first unresolved one."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared native. No scenario in this run exercises it."
+        },
+        "retry": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "native",
+            "source": "commands.retry",
+            "note": "A step retries under its maxAttempts against the same intent hash."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared native. No scenario in this run exercises it."
+        },
+        "fork": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "native",
+            "source": "commands.fork",
+            "note": "RunService.fork starts a child run at a recorded pure-prefix step."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared native. No scenario in this run exercises it."
+        },
+        "verification": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "host",
+            "source": "mode",
+            "note": "H17 runs the task’s declared checks against the run’s recorded output bytes."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared host. No scenario in this run exercises it."
+        },
+        "context-accounting": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "host",
+            "source": "mode",
+            "note": "Diomedes assembles the context, so H18 records a section account of it."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared host. No scenario in this run exercises it."
+        }
+      }
+    },
+    {
+      "routeId": "sample",
+      "mode": "native-worker",
+      "engine": {
+        "id": "sample",
+        "version": "0.1.0",
+        "protocolVersion": "in-process"
+      },
+      "authentication": "none",
+      "testedWith": null,
+      "cells": {
+        "turn": {
+          "state": "proven",
+          "declared": {
+            "support": "native",
+            "source": "commands.start",
+            "note": "The staged worker starts a deterministic run."
+          },
+          "scenarios": [
+            "sample-proposal-approve-decline"
+          ],
+          "fixtures": [
+            "sample: the staged worker inside Core"
+          ],
+          "reason": "the staged run started and finished (done)."
+        },
+        "stream": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "streaming.transientPreview",
+            "note": "The route declares no transient preview."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: The route declares no transient preview."
+        },
+        "tool-proposal": {
+          "state": "proven",
+          "declared": {
+            "support": "host",
+            "source": "mode",
+            "note": "The route answers in text; Diomedes’ recorded writer turns it into a proposal."
+          },
+          "scenarios": [
+            "sample-proposal-approve-decline"
+          ],
+          "fixtures": [
+            "sample: the staged worker inside Core"
+          ],
+          "reason": "the run proposed “add a file called Sample work notes.md to the project folder” as a Need before the file existed."
+        },
+        "approval": {
+          "state": "proven",
+          "declared": {
+            "support": "host",
+            "source": "mode",
+            "note": "A proposal waits on a Need; only the exact approved change is written."
+          },
+          "scenarios": [
+            "sample-proposal-approve-decline"
+          ],
+          "fixtures": [
+            "sample: the staged worker inside Core"
+          ],
+          "reason": "declining “add a file called Sample work notes.md to the project folder” left Sample work notes.md unwritten (exists: false)."
+        },
+        "steer": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "commands.steer",
+            "note": "A staged run has no steering channel."
+          },
+          "scenarios": [
+            "sample-controls-refused"
+          ],
+          "fixtures": [
+            "sample: the staged worker inside Core"
+          ],
+          "reason": "Declared unsupported, and the refusal was observed: steer was refused: A staged run has no steering channel. Queue the message to send it after this turn."
+        },
+        "queue": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "commands.follow-up",
+            "note": "A staged run has no follow-up channel."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: A staged run has no follow-up channel."
+        },
+        "stop": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "commands.interrupt",
+            "note": "Stop is the only interruption."
+          },
+          "scenarios": [
+            "sample-controls-refused"
+          ],
+          "fixtures": [
+            "sample: the staged worker inside Core"
+          ],
+          "reason": "Declared unsupported, and the refusal was observed: stop was refused: This route cannot stop only the request in flight: Stop is the only interruption."
+        },
+        "resume": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "commands.resume",
+            "note": "A stopped staged run restarts from the beginning."
+          },
+          "scenarios": [
+            "sample-controls-refused"
+          ],
+          "fixtures": [
+            "sample: the staged worker inside Core"
+          ],
+          "reason": "Declared unsupported, and the refusal was observed: resume was refused: A stopped staged run restarts from the beginning."
+        },
+        "retry": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "commands.retry",
+            "note": "A staged run has no mid-run retry."
+          },
+          "scenarios": [
+            "sample-controls-refused"
+          ],
+          "fixtures": [
+            "sample: the staged worker inside Core"
+          ],
+          "reason": "Declared unsupported, and the refusal was observed: retry was refused: A staged run has no mid-run retry."
+        },
+        "fork": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "commands.fork",
+            "note": "A staged run has no lineage."
+          },
+          "scenarios": [
+            "sample-controls-refused"
+          ],
+          "fixtures": [
+            "sample: the staged worker inside Core"
+          ],
+          "reason": "Declared unsupported, and the refusal was observed: fork was refused: A staged run has no lineage."
+        },
+        "verification": {
+          "state": "proven",
+          "declared": {
+            "support": "host",
+            "source": "mode",
+            "note": "H17 runs the task’s declared checks against the run’s recorded output bytes."
+          },
+          "scenarios": [
+            "h17-verification-evidence"
+          ],
+          "fixtures": [
+            "sample: the staged worker inside Core"
+          ],
+          "reason": "Verified: 1 declared check passed against 4 exact file versions."
+        },
+        "context-accounting": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "mode",
+            "note": "The engine builds and manages its own context; Diomedes measures none of it."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: The engine builds and manages its own context; Diomedes measures none of it."
+        }
+      }
+    },
+    {
+      "routeId": "codex",
+      "mode": "external-session",
+      "engine": {
+        "id": "codex",
+        "version": "0.153.4",
+        "protocolVersion": "codex app-server 0.153.4"
+      },
+      "authentication": "native-sign-in",
+      "testedWith": "0.153.4",
+      "cells": {
+        "turn": {
+          "state": "proven",
+          "declared": {
+            "support": "native",
+            "source": "commands.start",
+            "note": "askCodex dispatches a turn over the app-server session."
+          },
+          "scenarios": [
+            "codex-retry-after-failure"
+          ],
+          "fixtures": [
+            "codex: scripted Work call (nativeGenerator) that fails once, then proposes"
+          ],
+          "reason": "the retried turn answered with a proposal for Fall menu.md."
+        },
+        "stream": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "streaming.transientPreview",
+            "note": "The route declares no transient preview."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: The route declares no transient preview."
+        },
+        "tool-proposal": {
+          "state": "proven",
+          "declared": {
+            "support": "host",
+            "source": "mode",
+            "note": "The route answers in text; Diomedes’ recorded writer turns it into a proposal."
+          },
+          "scenarios": [
+            "codex-retry-after-failure"
+          ],
+          "fixtures": [
+            "codex: scripted Work call (nativeGenerator) that fails once, then proposes"
+          ],
+          "reason": "an exact proposal waits on a Need with digests (true)."
+        },
+        "approval": {
+          "state": "proven",
+          "declared": {
+            "support": "host",
+            "source": "mode",
+            "note": "A proposal waits on a Need; only the exact approved change is written."
+          },
+          "scenarios": [
+            "codex-retry-after-failure"
+          ],
+          "fixtures": [
+            "codex: scripted Work call (nativeGenerator) that fails once, then proposes"
+          ],
+          "reason": "the exact approval was recorded and the file holds the approved bytes (true)."
+        },
+        "steer": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "commands.steer",
+            "note": "The ask route has no in-band steering channel."
+          },
+          "scenarios": [
+            "codex-stop-mid-turn"
+          ],
+          "fixtures": [
+            "codex: scripted Work call (nativeGenerator) that holds until its signal aborts"
+          ],
+          "reason": "Declared unsupported, and the refusal was observed: steer on a running Codex turn with no recorded thread: refused (unsupported)"
+        },
+        "queue": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "commands.follow-up",
+            "note": "Each ask is a fresh turn; the route does not expose continuing the same one."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: Each ask is a fresh turn; the route does not expose continuing the same one."
+        },
+        "stop": {
+          "state": "proven",
+          "declared": {
+            "support": "native",
+            "source": "commands.interrupt",
+            "note": "interruptTurn plus process end; the engine reports the interruption."
+          },
+          "scenarios": [
+            "codex-stop-mid-turn"
+          ],
+          "fixtures": [
+            "codex: scripted Work call (nativeGenerator) that holds until its signal aborts"
+          ],
+          "reason": "Stop (generation) was applied and acknowledged; the in-flight call saw its abort (true); no proposal was written (true); the run is working."
+        },
+        "resume": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "commands.resume",
+            "note": "A turn does not outlive its dispatch."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: A turn does not outlive its dispatch."
+        },
+        "retry": {
+          "state": "proven",
+          "declared": {
+            "support": "host",
+            "source": "commands.retry",
+            "note": "An explicit re-dispatch is a fresh call; an unknown outcome is never resent silently."
+          },
+          "scenarios": [
+            "codex-retry-after-failure"
+          ],
+          "fixtures": [
+            "codex: scripted Work call (nativeGenerator) that fails once, then proposes"
+          ],
+          "reason": "retry was applied, attempt 2, as Scc2c3b94c176."
+        },
+        "fork": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "commands.fork",
+            "note": "The ask route has no lineage."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: The ask route has no lineage."
+        },
+        "verification": {
+          "state": "proven",
+          "declared": {
+            "support": "host",
+            "source": "mode",
+            "note": "H17 runs the task’s declared checks against the run’s recorded output bytes."
+          },
+          "scenarios": [
+            "codex-retry-after-failure"
+          ],
+          "fixtures": [
+            "codex: scripted Work call (nativeGenerator) that fails once, then proposes"
+          ],
+          "reason": "H17 on the retried run: Verified — 2 declared checks passed against 1 exact file version."
+        },
+        "context-accounting": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "mode",
+            "note": "The engine builds and manages its own context; Diomedes measures none of it."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: The engine builds and manages its own context; Diomedes measures none of it."
+        }
+      }
+    },
+    {
+      "routeId": "claude-code",
+      "mode": "single-turn-text",
+      "engine": {
+        "id": "claude-code",
+        "version": "2.1.252",
+        "protocolVersion": "stream-json"
+      },
+      "authentication": "native-sign-in",
+      "testedWith": "2.1.252",
+      "cells": {
+        "turn": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "native",
+            "source": "commands.start",
+            "note": "A fresh Claude Code process or session per request; the request is the unit."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared native. Needs the real claude-code 2.1.252 binary, signed in; no fixture of it drives this capability through Core here."
+        },
+        "stream": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "native",
+            "source": "streaming.transientPreview",
+            "note": "Transient text-delta preview; the durable record is the final observation."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared native. Needs the real claude-code 2.1.252 binary, signed in; no fixture of it drives this capability through Core here."
+        },
+        "tool-proposal": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "host",
+            "source": "mode",
+            "note": "The route answers in text; Diomedes’ recorded writer turns it into a proposal."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared host. Needs the real claude-code 2.1.252 binary, signed in; no fixture of it drives this capability through Core here."
+        },
+        "approval": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "host",
+            "source": "mode",
+            "note": "A proposal waits on a Need; only the exact approved change is written."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared host. Needs the real claude-code 2.1.252 binary, signed in; no fixture of it drives this capability through Core here."
+        },
+        "steer": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "commands.steer",
+            "note": "The text route has no in-band steering channel."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: The text route has no in-band steering channel."
+        },
+        "queue": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "commands.follow-up",
+            "note": "Each request is one turn over a fresh session; a follow-up is a new request."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: Each request is one turn over a fresh session; a follow-up is a new request."
+        },
+        "stop": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "native",
+            "source": "commands.interrupt",
+            "note": "Abort plus owned-process termination; the engine-side stop is reported back."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared native. Needs the real claude-code 2.1.252 binary, signed in; no fixture of it drives this capability through Core here."
+        },
+        "resume": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "commands.resume",
+            "note": "Nothing outlives the request process; there is no provider session to reattach."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: Nothing outlives the request process; there is no provider session to reattach."
+        },
+        "retry": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "host",
+            "source": "commands.retry",
+            "note": "An explicit re-dispatch composes a new request; a replayed one resolves from the recorded run. Ambiguous outcomes are marked uncertain rather than retried silently."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared host. Needs the real claude-code 2.1.252 binary, signed in; no fixture of it drives this capability through Core here."
+        },
+        "fork": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "commands.fork",
+            "note": "A single request has no lineage to fork."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: A single request has no lineage to fork."
+        },
+        "verification": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "host",
+            "source": "mode",
+            "note": "H17 runs the task’s declared checks against the run’s recorded output bytes."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared host. Needs the real claude-code 2.1.252 binary, signed in; no fixture of it drives this capability through Core here."
+        },
+        "context-accounting": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "mode",
+            "note": "The engine builds and manages its own context; Diomedes measures none of it."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: The engine builds and manages its own context; Diomedes measures none of it."
+        }
+      }
+    },
+    {
+      "routeId": "opencode",
+      "mode": "single-turn-text",
+      "engine": {
+        "id": "opencode",
+        "version": "1.18.4",
+        "protocolVersion": "http+sse"
+      },
+      "authentication": "native-sign-in",
+      "testedWith": "1.18.4",
+      "cells": {
+        "turn": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "native",
+            "source": "commands.start",
+            "note": "A fresh OpenCode process or session per request; the request is the unit."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared native. Needs the real opencode 1.18.4 binary, signed in; no fixture of it drives this capability through Core here."
+        },
+        "stream": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "native",
+            "source": "streaming.transientPreview",
+            "note": "Transient text-delta preview; the durable record is the final observation."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared native. Needs the real opencode 1.18.4 binary, signed in; no fixture of it drives this capability through Core here."
+        },
+        "tool-proposal": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "host",
+            "source": "mode",
+            "note": "The route answers in text; Diomedes’ recorded writer turns it into a proposal."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared host. Needs the real opencode 1.18.4 binary, signed in; no fixture of it drives this capability through Core here."
+        },
+        "approval": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "host",
+            "source": "mode",
+            "note": "A proposal waits on a Need; only the exact approved change is written."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared host. Needs the real opencode 1.18.4 binary, signed in; no fixture of it drives this capability through Core here."
+        },
+        "steer": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "commands.steer",
+            "note": "The text route has no in-band steering channel."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: The text route has no in-band steering channel."
+        },
+        "queue": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "commands.follow-up",
+            "note": "Each request is one turn over a fresh session; a follow-up is a new request."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: Each request is one turn over a fresh session; a follow-up is a new request."
+        },
+        "stop": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "native",
+            "source": "commands.interrupt",
+            "note": "Abort plus owned-process termination; the engine-side stop is reported back."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared native. Needs the real opencode 1.18.4 binary, signed in; no fixture of it drives this capability through Core here."
+        },
+        "resume": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "commands.resume",
+            "note": "Nothing outlives the request process; there is no provider session to reattach."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: Nothing outlives the request process; there is no provider session to reattach."
+        },
+        "retry": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "host",
+            "source": "commands.retry",
+            "note": "An explicit re-dispatch composes a new request; a replayed one resolves from the recorded run. Ambiguous outcomes are marked uncertain rather than retried silently."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared host. Needs the real opencode 1.18.4 binary, signed in; no fixture of it drives this capability through Core here."
+        },
+        "fork": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "commands.fork",
+            "note": "A single request has no lineage to fork."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: A single request has no lineage to fork."
+        },
+        "verification": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "host",
+            "source": "mode",
+            "note": "H17 runs the task’s declared checks against the run’s recorded output bytes."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared host. Needs the real opencode 1.18.4 binary, signed in; no fixture of it drives this capability through Core here."
+        },
+        "context-accounting": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "mode",
+            "note": "The engine builds and manages its own context; Diomedes measures none of it."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: The engine builds and manages its own context; Diomedes measures none of it."
+        }
+      }
+    },
+    {
+      "routeId": "oh-my-pi",
+      "mode": "single-turn-text",
+      "engine": {
+        "id": "oh-my-pi",
+        "version": "18.0.6",
+        "protocolVersion": "stream-json"
+      },
+      "authentication": "native-sign-in",
+      "testedWith": "18.0.6",
+      "cells": {
+        "turn": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "native",
+            "source": "commands.start",
+            "note": "A fresh oh-my-pi process or session per request; the request is the unit."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared native. Needs the real oh-my-pi 18.0.6 binary, signed in; no fixture of it drives this capability through Core here."
+        },
+        "stream": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "native",
+            "source": "streaming.transientPreview",
+            "note": "Transient text-delta preview; the durable record is the final observation."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared native. Needs the real oh-my-pi 18.0.6 binary, signed in; no fixture of it drives this capability through Core here."
+        },
+        "tool-proposal": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "host",
+            "source": "mode",
+            "note": "The route answers in text; Diomedes’ recorded writer turns it into a proposal."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared host. Needs the real oh-my-pi 18.0.6 binary, signed in; no fixture of it drives this capability through Core here."
+        },
+        "approval": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "host",
+            "source": "mode",
+            "note": "A proposal waits on a Need; only the exact approved change is written."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared host. Needs the real oh-my-pi 18.0.6 binary, signed in; no fixture of it drives this capability through Core here."
+        },
+        "steer": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "commands.steer",
+            "note": "The text route has no in-band steering channel."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: The text route has no in-band steering channel."
+        },
+        "queue": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "commands.follow-up",
+            "note": "Each request is one turn over a fresh session; a follow-up is a new request."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: Each request is one turn over a fresh session; a follow-up is a new request."
+        },
+        "stop": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "native",
+            "source": "commands.interrupt",
+            "note": "Abort plus owned-process termination; the engine-side stop is reported back."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared native. Needs the real oh-my-pi 18.0.6 binary, signed in; no fixture of it drives this capability through Core here."
+        },
+        "resume": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "commands.resume",
+            "note": "Nothing outlives the request process; there is no provider session to reattach."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: Nothing outlives the request process; there is no provider session to reattach."
+        },
+        "retry": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "host",
+            "source": "commands.retry",
+            "note": "An explicit re-dispatch composes a new request; a replayed one resolves from the recorded run. Ambiguous outcomes are marked uncertain rather than retried silently."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared host. Needs the real oh-my-pi 18.0.6 binary, signed in; no fixture of it drives this capability through Core here."
+        },
+        "fork": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "commands.fork",
+            "note": "A single request has no lineage to fork."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: A single request has no lineage to fork."
+        },
+        "verification": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "host",
+            "source": "mode",
+            "note": "H17 runs the task’s declared checks against the run’s recorded output bytes."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared host. Needs the real oh-my-pi 18.0.6 binary, signed in; no fixture of it drives this capability through Core here."
+        },
+        "context-accounting": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "mode",
+            "note": "The engine builds and manages its own context; Diomedes measures none of it."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: The engine builds and manages its own context; Diomedes measures none of it."
+        }
+      }
+    },
+    {
+      "routeId": "cursor",
+      "mode": "single-turn-text",
+      "engine": {
+        "id": "cursor",
+        "version": "2026.08.11",
+        "protocolVersion": "acp/1"
+      },
+      "authentication": "native-sign-in",
+      "testedWith": "2026.08.11",
+      "cells": {
+        "turn": {
+          "state": "proven",
+          "declared": {
+            "support": "native",
+            "source": "commands.start",
+            "note": "A fresh Cursor process or session per request; the request is the unit."
+          },
+          "scenarios": [
+            "cursor-acp-session"
+          ],
+          "fixtures": [
+            "cursor: tests/fixtures/acp-agent.mjs, a real ACP v1 agent process standing in for the Cursor CLI"
+          ],
+          "reason": "a direct Ask on the text route answered 200: “answer after 0 earlier turns” — a fresh session, no history."
+        },
+        "stream": {
+          "state": "proven",
+          "declared": {
+            "support": "native",
+            "source": "streaming.transientPreview",
+            "note": "Transient text-delta preview; the durable record is the final observation."
+          },
+          "scenarios": [
+            "cursor-acp-session"
+          ],
+          "fixtures": [
+            "cursor: tests/fixtures/acp-agent.mjs, a real ACP v1 agent process standing in for the Cursor CLI"
+          ],
+          "reason": "1 transient text deltas reached the event stream for the direct Ask."
+        },
+        "tool-proposal": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "host",
+            "source": "mode",
+            "note": "The route answers in text; Diomedes’ recorded writer turns it into a proposal."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared host. Needs the real cursor 2026.08.11 binary, signed in; no fixture of it drives this capability through Core here."
+        },
+        "approval": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "host",
+            "source": "mode",
+            "note": "A proposal waits on a Need; only the exact approved change is written."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared host. Needs the real cursor 2026.08.11 binary, signed in; no fixture of it drives this capability through Core here."
+        },
+        "steer": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "commands.steer",
+            "note": "The text route has no in-band steering channel."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: The text route has no in-band steering channel."
+        },
+        "queue": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "commands.follow-up",
+            "note": "Each request is one turn over a fresh session; a follow-up is a new request."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: Each request is one turn over a fresh session; a follow-up is a new request."
+        },
+        "stop": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "native",
+            "source": "commands.interrupt",
+            "note": "Abort plus owned-process termination; the engine-side stop is reported back."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared native. Needs the real cursor 2026.08.11 binary, signed in; no fixture of it drives this capability through Core here."
+        },
+        "resume": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "commands.resume",
+            "note": "Nothing outlives the request process; there is no provider session to reattach."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: Nothing outlives the request process; there is no provider session to reattach."
+        },
+        "retry": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "host",
+            "source": "commands.retry",
+            "note": "An explicit re-dispatch composes a new request; a replayed one resolves from the recorded run. Ambiguous outcomes are marked uncertain rather than retried silently."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared host. Needs the real cursor 2026.08.11 binary, signed in; no fixture of it drives this capability through Core here."
+        },
+        "fork": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "commands.fork",
+            "note": "A single request has no lineage to fork."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: A single request has no lineage to fork."
+        },
+        "verification": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "host",
+            "source": "mode",
+            "note": "H17 runs the task’s declared checks against the run’s recorded output bytes."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared host. Needs the real cursor 2026.08.11 binary, signed in; no fixture of it drives this capability through Core here."
+        },
+        "context-accounting": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "mode",
+            "note": "The engine builds and manages its own context; Diomedes measures none of it."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: The engine builds and manages its own context; Diomedes measures none of it."
+        }
+      }
+    },
+    {
+      "routeId": "devin",
+      "mode": "single-turn-text",
+      "engine": {
+        "id": "devin",
+        "version": "3000.10.23",
+        "protocolVersion": "acp/1"
+      },
+      "authentication": "native-sign-in",
+      "testedWith": "3000.10.23",
+      "cells": {
+        "turn": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "native",
+            "source": "commands.start",
+            "note": "A fresh Devin process or session per request; the request is the unit."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared native. Needs the real devin 3000.10.23 binary, signed in; no fixture of it drives this capability through Core here."
+        },
+        "stream": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "native",
+            "source": "streaming.transientPreview",
+            "note": "Transient text-delta preview; the durable record is the final observation."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared native. Needs the real devin 3000.10.23 binary, signed in; no fixture of it drives this capability through Core here."
+        },
+        "tool-proposal": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "host",
+            "source": "mode",
+            "note": "The route answers in text; Diomedes’ recorded writer turns it into a proposal."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared host. Needs the real devin 3000.10.23 binary, signed in; no fixture of it drives this capability through Core here."
+        },
+        "approval": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "host",
+            "source": "mode",
+            "note": "A proposal waits on a Need; only the exact approved change is written."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared host. Needs the real devin 3000.10.23 binary, signed in; no fixture of it drives this capability through Core here."
+        },
+        "steer": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "commands.steer",
+            "note": "The text route has no in-band steering channel."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: The text route has no in-band steering channel."
+        },
+        "queue": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "commands.follow-up",
+            "note": "Each request is one turn over a fresh session; a follow-up is a new request."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: Each request is one turn over a fresh session; a follow-up is a new request."
+        },
+        "stop": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "native",
+            "source": "commands.interrupt",
+            "note": "Abort plus owned-process termination; the engine-side stop is reported back."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared native. Needs the real devin 3000.10.23 binary, signed in; no fixture of it drives this capability through Core here."
+        },
+        "resume": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "commands.resume",
+            "note": "Nothing outlives the request process; there is no provider session to reattach."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: Nothing outlives the request process; there is no provider session to reattach."
+        },
+        "retry": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "host",
+            "source": "commands.retry",
+            "note": "An explicit re-dispatch composes a new request; a replayed one resolves from the recorded run. Ambiguous outcomes are marked uncertain rather than retried silently."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared host. Needs the real devin 3000.10.23 binary, signed in; no fixture of it drives this capability through Core here."
+        },
+        "fork": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "commands.fork",
+            "note": "A single request has no lineage to fork."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: A single request has no lineage to fork."
+        },
+        "verification": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "host",
+            "source": "mode",
+            "note": "H17 runs the task’s declared checks against the run’s recorded output bytes."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared host. Needs the real devin 3000.10.23 binary, signed in; no fixture of it drives this capability through Core here."
+        },
+        "context-accounting": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "mode",
+            "note": "The engine builds and manages its own context; Diomedes measures none of it."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: The engine builds and manages its own context; Diomedes measures none of it."
+        }
+      }
+    },
+    {
+      "routeId": "aws-bedrock",
+      "mode": "harness-agent",
+      "engine": {
+        "id": "aws-bedrock",
+        "version": "ai@7.0.107+@ai-sdk/openai@4.0.71",
+        "protocolVersion": "openai-responses"
+      },
+      "authentication": "host-credential",
+      "testedWith": "ai@7.0.107+@ai-sdk/openai@4.0.71",
+      "cells": {
+        "turn": {
+          "state": "proven",
+          "declared": {
+            "support": "host",
+            "source": "commands.start",
+            "note": "RunService admits and records each model call and each registered tool step."
+          },
+          "scenarios": [
+            "aws-ask-answer-stream"
+          ],
+          "fixtures": [
+            "aws-bedrock: captured-shape Responses stream (tests/fixtures/model-api-streams.ts) below the AI SDK"
+          ],
+          "reason": "the turn answered 200: “Answered H20-FIRST.”."
+        },
+        "stream": {
+          "state": "proven",
+          "declared": {
+            "support": "native",
+            "source": "streaming.transientPreview",
+            "note": "Transient text-delta preview; the durable record is the final observation."
+          },
+          "scenarios": [
+            "aws-ask-answer-stream"
+          ],
+          "fixtures": [
+            "aws-bedrock: captured-shape Responses stream (tests/fixtures/model-api-streams.ts) below the AI SDK"
+          ],
+          "reason": "5 transient text deltas reached the Console’s event stream for this thread."
+        },
+        "tool-proposal": {
+          "state": "proven",
+          "declared": {
+            "support": "native",
+            "source": "mode",
+            "note": "Registered tool steps, dispatched and gated by RunService."
+          },
+          "scenarios": [
+            "aws-ask-answer-stream"
+          ],
+          "fixtures": [
+            "aws-bedrock: captured-shape Responses stream (tests/fixtures/model-api-streams.ts) below the AI SDK"
+          ],
+          "reason": "the conversation proposed acting (proposed); selected, Work on aws-bedrock proposed Linen checklist.md as an exact Need before the file existed."
+        },
+        "approval": {
+          "state": "proven",
+          "declared": {
+            "support": "native",
+            "source": "mode",
+            "note": "RunService refuses an approval-gated tool step until an exact approval is recorded."
+          },
+          "scenarios": [
+            "aws-ask-answer-stream"
+          ],
+          "fixtures": [
+            "aws-bedrock: captured-shape Responses stream (tests/fixtures/model-api-streams.ts) below the AI SDK"
+          ],
+          "reason": "the exact approval was recorded; the file holds the approved bytes (true); the run ended done."
+        },
+        "steer": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "commands.steer",
+            "note": "A running call cannot be redirected; stop it and send a new message."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: A running call cannot be redirected; stop it and send a new message."
+        },
+        "queue": {
+          "state": "proven",
+          "declared": {
+            "support": "host",
+            "source": "commands.follow-up",
+            "note": "Each message is a new bounded turn. Context comes from the durable run record, never from provider-side state."
+          },
+          "scenarios": [
+            "aws-ask-answer-stream"
+          ],
+          "fixtures": [
+            "aws-bedrock: captured-shape Responses stream (tests/fixtures/model-api-streams.ts) below the AI SDK"
+          ],
+          "reason": "a follow-up message was answered (200) as a new bounded turn whose request carried the earlier message (true)."
+        },
+        "stop": {
+          "state": "proven",
+          "declared": {
+            "support": "host",
+            "source": "commands.interrupt",
+            "note": "Stop aborts the HTTP read. It does not prove AWS stopped processing, so the spend hold stays uncertain."
+          },
+          "scenarios": [
+            "aws-ask-answer-stream"
+          ],
+          "fixtures": [
+            "aws-bedrock: captured-shape Responses stream (tests/fixtures/model-api-streams.ts) below the AI SDK"
+          ],
+          "reason": "interrupt answered 200; the turn ended 200 with interrupted=true."
+        },
+        "resume": {
+          "state": "proven",
+          "declared": {
+            "support": "host",
+            "source": "commands.resume",
+            "note": "Completed calls replay from RunService and the private transcript. No provider conversation is resumed."
+          },
+          "scenarios": [
+            "aws-ask-answer-stream"
+          ],
+          "fixtures": [
+            "aws-bedrock: captured-shape Responses stream (tests/fixtures/model-api-streams.ts) below the AI SDK"
+          ],
+          "reason": "after a restart the next message was answered (200) and its request carried the conversation from the durable record (true)."
+        },
+        "retry": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "host",
+            "source": "commands.retry",
+            "note": "The SDK never retries. An uncertain call is reconciled, never sent again."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared host. Needs a live aws-bedrock credential or a transport fixture that exercises this capability; none ran here."
+        },
+        "fork": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "commands.fork",
+            "note": "Forking a model-API conversation is not supported."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: Forking a model-API conversation is not supported."
+        },
+        "verification": {
+          "state": "proven",
+          "declared": {
+            "support": "host",
+            "source": "mode",
+            "note": "H17 runs the task’s declared checks against the run’s recorded output bytes."
+          },
+          "scenarios": [
+            "aws-ask-answer-stream"
+          ],
+          "fixtures": [
+            "aws-bedrock: captured-shape Responses stream (tests/fixtures/model-api-streams.ts) below the AI SDK"
+          ],
+          "reason": "H17 on the Work run: Verified — 1 declared check passed against 1 exact file version."
+        },
+        "context-accounting": {
+          "state": "proven",
+          "declared": {
+            "support": "host",
+            "source": "mode",
+            "note": "Diomedes assembles the context, so H18 records a section account of it."
+          },
+          "scenarios": [
+            "aws-ask-answer-stream"
+          ],
+          "fixtures": [
+            "aws-bedrock: captured-shape Responses stream (tests/fixtures/model-api-streams.ts) below the AI SDK"
+          ],
+          "reason": "H18 account on the answered turn: 7 sections, 1089 estimated tokens, provider reported 900 input tokens."
+        }
+      }
+    },
+    {
+      "routeId": "azure-openai",
+      "mode": "harness-agent",
+      "engine": {
+        "id": "azure-openai",
+        "version": "ai@7.0.107+@ai-sdk/azure@4.0.75+@ai-sdk/openai@4.0.71",
+        "protocolVersion": "openai-responses"
+      },
+      "authentication": "host-credential",
+      "testedWith": "ai@7.0.107+@ai-sdk/azure@4.0.75+@ai-sdk/openai@4.0.71",
+      "cells": {
+        "turn": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "host",
+            "source": "commands.start",
+            "note": "RunService admits and records each model call and each registered tool step."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared host. Needs a live azure-openai credential or a transport fixture that exercises this capability; none ran here."
+        },
+        "stream": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "native",
+            "source": "streaming.transientPreview",
+            "note": "Transient text-delta preview; the durable record is the final observation."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared native. Needs a live azure-openai credential or a transport fixture that exercises this capability; none ran here."
+        },
+        "tool-proposal": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "native",
+            "source": "mode",
+            "note": "Registered tool steps, dispatched and gated by RunService."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared native. Needs a live azure-openai credential or a transport fixture that exercises this capability; none ran here."
+        },
+        "approval": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "native",
+            "source": "mode",
+            "note": "RunService refuses an approval-gated tool step until an exact approval is recorded."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared native. Needs a live azure-openai credential or a transport fixture that exercises this capability; none ran here."
+        },
+        "steer": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "commands.steer",
+            "note": "A running call cannot be redirected; stop it and send a new message."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: A running call cannot be redirected; stop it and send a new message."
+        },
+        "queue": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "host",
+            "source": "commands.follow-up",
+            "note": "Each message is a new bounded turn. Context comes from the durable run record, never from provider-side state."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared host. Needs a live azure-openai credential or a transport fixture that exercises this capability; none ran here."
+        },
+        "stop": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "host",
+            "source": "commands.interrupt",
+            "note": "Stop aborts the HTTP read. It does not prove Azure stopped processing, so the spend hold stays uncertain."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared host. Needs a live azure-openai credential or a transport fixture that exercises this capability; none ran here."
+        },
+        "resume": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "host",
+            "source": "commands.resume",
+            "note": "Completed calls replay from RunService and the private transcript. No provider conversation is resumed."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared host. Needs a live azure-openai credential or a transport fixture that exercises this capability; none ran here."
+        },
+        "retry": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "host",
+            "source": "commands.retry",
+            "note": "The SDK never retries. An uncertain call is reconciled, never sent again."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared host. Needs a live azure-openai credential or a transport fixture that exercises this capability; none ran here."
+        },
+        "fork": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "commands.fork",
+            "note": "Forking a model-API conversation is not supported."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: Forking a model-API conversation is not supported."
+        },
+        "verification": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "host",
+            "source": "mode",
+            "note": "H17 runs the task’s declared checks against the run’s recorded output bytes."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared host. Needs a live azure-openai credential or a transport fixture that exercises this capability; none ran here."
+        },
+        "context-accounting": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "host",
+            "source": "mode",
+            "note": "Diomedes assembles the context, so H18 records a section account of it."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared host. Needs a live azure-openai credential or a transport fixture that exercises this capability; none ran here."
+        }
+      }
+    },
+    {
+      "routeId": "openrouter",
+      "mode": "harness-agent",
+      "engine": {
+        "id": "openrouter",
+        "version": "ai@7.0.107+@openrouter/ai-sdk-provider@3.1.0",
+        "protocolVersion": "openai-chat-completions"
+      },
+      "authentication": "host-credential",
+      "testedWith": "ai@7.0.107+@openrouter/ai-sdk-provider@3.1.0",
+      "cells": {
+        "turn": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "host",
+            "source": "commands.start",
+            "note": "RunService admits and records each model call and each registered tool step."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared host. Needs a live openrouter credential or a transport fixture that exercises this capability; none ran here."
+        },
+        "stream": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "native",
+            "source": "streaming.transientPreview",
+            "note": "Transient text-delta preview; the durable record is the final observation."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared native. Needs a live openrouter credential or a transport fixture that exercises this capability; none ran here."
+        },
+        "tool-proposal": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "native",
+            "source": "mode",
+            "note": "Registered tool steps, dispatched and gated by RunService."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared native. Needs a live openrouter credential or a transport fixture that exercises this capability; none ran here."
+        },
+        "approval": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "native",
+            "source": "mode",
+            "note": "RunService refuses an approval-gated tool step until an exact approval is recorded."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared native. Needs a live openrouter credential or a transport fixture that exercises this capability; none ran here."
+        },
+        "steer": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "commands.steer",
+            "note": "A running call cannot be redirected; stop it and send a new message."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: A running call cannot be redirected; stop it and send a new message."
+        },
+        "queue": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "host",
+            "source": "commands.follow-up",
+            "note": "Each message is a new bounded turn. Context comes from the durable run record, never from provider-side state."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared host. Needs a live openrouter credential or a transport fixture that exercises this capability; none ran here."
+        },
+        "stop": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "host",
+            "source": "commands.interrupt",
+            "note": "Stop aborts the HTTP read. It does not prove OpenRouter stopped processing, so the spend hold stays uncertain."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared host. Needs a live openrouter credential or a transport fixture that exercises this capability; none ran here."
+        },
+        "resume": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "host",
+            "source": "commands.resume",
+            "note": "Completed calls replay from RunService and the private transcript. No provider conversation is resumed."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared host. Needs a live openrouter credential or a transport fixture that exercises this capability; none ran here."
+        },
+        "retry": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "host",
+            "source": "commands.retry",
+            "note": "The SDK never retries. An uncertain call is reconciled, never sent again."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared host. Needs a live openrouter credential or a transport fixture that exercises this capability; none ran here."
+        },
+        "fork": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "commands.fork",
+            "note": "Forking a model-API conversation is not supported."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: Forking a model-API conversation is not supported."
+        },
+        "verification": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "host",
+            "source": "mode",
+            "note": "H17 runs the task’s declared checks against the run’s recorded output bytes."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared host. Needs a live openrouter credential or a transport fixture that exercises this capability; none ran here."
+        },
+        "context-accounting": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "host",
+            "source": "mode",
+            "note": "Diomedes assembles the context, so H18 records a section account of it."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared host. Needs a live openrouter credential or a transport fixture that exercises this capability; none ran here."
+        }
+      }
+    },
+    {
+      "routeId": "google-vertex",
+      "mode": "harness-agent",
+      "engine": {
+        "id": "google-vertex",
+        "version": "ai@7.0.107+@ai-sdk/google-vertex@5.0.90+@ai-sdk/google@4.0.77+google-auth-library@10.9.1",
+        "protocolVersion": "vertex-v1-stream-generate-content"
+      },
+      "authentication": "host-credential",
+      "testedWith": "ai@7.0.107+@ai-sdk/google-vertex@5.0.90+@ai-sdk/google@4.0.77+google-auth-library@10.9.1",
+      "cells": {
+        "turn": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "host",
+            "source": "commands.start",
+            "note": "RunService admits and records each model call and each registered tool step."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared host. Needs a live google-vertex credential or a transport fixture that exercises this capability; none ran here."
+        },
+        "stream": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "native",
+            "source": "streaming.transientPreview",
+            "note": "Transient text-delta preview; the durable record is the final observation."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared native. Needs a live google-vertex credential or a transport fixture that exercises this capability; none ran here."
+        },
+        "tool-proposal": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "native",
+            "source": "mode",
+            "note": "Registered tool steps, dispatched and gated by RunService."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared native. Needs a live google-vertex credential or a transport fixture that exercises this capability; none ran here."
+        },
+        "approval": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "native",
+            "source": "mode",
+            "note": "RunService refuses an approval-gated tool step until an exact approval is recorded."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared native. Needs a live google-vertex credential or a transport fixture that exercises this capability; none ran here."
+        },
+        "steer": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "commands.steer",
+            "note": "A running call cannot be redirected; stop it and send a new message."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: A running call cannot be redirected; stop it and send a new message."
+        },
+        "queue": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "host",
+            "source": "commands.follow-up",
+            "note": "Each message is a new bounded turn. Context comes from the durable run record, never from provider-side state."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared host. Needs a live google-vertex credential or a transport fixture that exercises this capability; none ran here."
+        },
+        "stop": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "host",
+            "source": "commands.interrupt",
+            "note": "Stop aborts the HTTP read. It does not prove Google stopped processing, so the spend hold stays uncertain."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared host. Needs a live google-vertex credential or a transport fixture that exercises this capability; none ran here."
+        },
+        "resume": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "host",
+            "source": "commands.resume",
+            "note": "Completed calls replay from RunService and the private transcript. No provider conversation is resumed."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared host. Needs a live google-vertex credential or a transport fixture that exercises this capability; none ran here."
+        },
+        "retry": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "host",
+            "source": "commands.retry",
+            "note": "The SDK never retries. An uncertain call is reconciled, never sent again."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared host. Needs a live google-vertex credential or a transport fixture that exercises this capability; none ran here."
+        },
+        "fork": {
+          "state": "unsupported",
+          "declared": {
+            "support": "unsupported",
+            "source": "commands.fork",
+            "note": "Forking a model-API conversation is not supported."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared unsupported: Forking a model-API conversation is not supported."
+        },
+        "verification": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "host",
+            "source": "mode",
+            "note": "H17 runs the task’s declared checks against the run’s recorded output bytes."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared host. Needs a live google-vertex credential or a transport fixture that exercises this capability; none ran here."
+        },
+        "context-accounting": {
+          "state": "declared-not-proven",
+          "declared": {
+            "support": "host",
+            "source": "mode",
+            "note": "Diomedes assembles the context, so H18 records a section account of it."
+          },
+          "scenarios": [],
+          "fixtures": [],
+          "reason": "Declared host. Needs a live google-vertex credential or a transport fixture that exercises this capability; none ran here."
+        }
+      }
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "aws-ask-answer-stream",
+      "title": "Ask and answer on AWS Bedrock: a streamed turn and its context account, a follow-up, Stop mid-turn, a proposal approved and verified, and resume after a restart",
+      "fixture": "aws-bedrock: captured-shape Responses stream (tests/fixtures/model-api-streams.ts) below the AI SDK",
+      "outcome": "passed",
+      "durationMs": 1326,
+      "checks": [
+        {
+          "route": "aws-bedrock",
+          "capability": "turn",
+          "expect": "performs",
+          "passed": true,
+          "detail": "the turn answered 200: “Answered H20-FIRST.”."
+        },
+        {
+          "route": "aws-bedrock",
+          "capability": "stream",
+          "expect": "performs",
+          "passed": true,
+          "detail": "5 transient text deltas reached the Console’s event stream for this thread."
+        },
+        {
+          "route": "aws-bedrock",
+          "capability": "context-accounting",
+          "expect": "performs",
+          "passed": true,
+          "detail": "H18 account on the answered turn: 7 sections, 1089 estimated tokens, provider reported 900 input tokens."
+        },
+        {
+          "route": "aws-bedrock",
+          "capability": "queue",
+          "expect": "performs",
+          "passed": true,
+          "detail": "a follow-up message was answered (200) as a new bounded turn whose request carried the earlier message (true)."
+        },
+        {
+          "route": "aws-bedrock",
+          "capability": "stop",
+          "expect": "performs",
+          "passed": true,
+          "detail": "interrupt answered 200; the turn ended 200 with interrupted=true."
+        },
+        {
+          "route": "aws-bedrock",
+          "capability": "tool-proposal",
+          "expect": "performs",
+          "passed": true,
+          "detail": "the conversation proposed acting (proposed); selected, Work on aws-bedrock proposed Linen checklist.md as an exact Need before the file existed."
+        },
+        {
+          "route": "aws-bedrock",
+          "capability": "approval",
+          "expect": "performs",
+          "passed": true,
+          "detail": "the exact approval was recorded; the file holds the approved bytes (true); the run ended done."
+        },
+        {
+          "route": "aws-bedrock",
+          "capability": "verification",
+          "expect": "performs",
+          "passed": true,
+          "detail": "H17 on the Work run: Verified — 1 declared check passed against 1 exact file version."
+        },
+        {
+          "route": "aws-bedrock",
+          "capability": "resume",
+          "expect": "performs",
+          "passed": true,
+          "detail": "after a restart the next message was answered (200) and its request carried the conversation from the durable record (true)."
+        }
+      ],
+      "assertions": [
+        {
+          "name": "every provider request stayed below the SDK fixture",
+          "passed": true,
+          "detail": "6 captured requests"
+        }
+      ],
+      "evidence": {}
+    },
+    {
+      "id": "sample-proposal-approve-decline",
+      "title": "A proposal needing approval: approve, and decline",
+      "fixture": "sample: the staged worker inside Core",
+      "outcome": "passed",
+      "durationMs": 6753,
+      "checks": [
+        {
+          "route": "sample",
+          "capability": "approval",
+          "expect": "performs",
+          "passed": true,
+          "detail": "declining “add a file called Sample work notes.md to the project folder” left Sample work notes.md unwritten (exists: false)."
+        },
+        {
+          "route": "sample",
+          "capability": "turn",
+          "expect": "performs",
+          "passed": true,
+          "detail": "the staged run started and finished (done)."
+        },
+        {
+          "route": "sample",
+          "capability": "tool-proposal",
+          "expect": "performs",
+          "passed": true,
+          "detail": "the run proposed “add a file called Sample work notes.md to the project folder” as a Need before the file existed."
+        },
+        {
+          "route": "sample",
+          "capability": "approval",
+          "expect": "performs",
+          "passed": true,
+          "detail": "after go-ahead the file was written (true) and History recorded it."
+        }
+      ],
+      "assertions": [],
+      "evidence": {
+        "approvedSession": "Sa64194404734",
+        "declinedSession": "S7e0ba650c137"
+      }
+    },
+    {
+      "id": "sample-controls-refused",
+      "title": "Controls the staged worker declares unsupported are refused, with the contract’s reason",
+      "fixture": "sample: the staged worker inside Core",
+      "outcome": "passed",
+      "durationMs": 96,
+      "checks": [
+        {
+          "route": "sample",
+          "capability": "steer",
+          "expect": "refuses",
+          "passed": true,
+          "detail": "steer was refused: A staged run has no steering channel. Queue the message to send it after this turn."
+        },
+        {
+          "route": "sample",
+          "capability": "stop",
+          "expect": "refuses",
+          "passed": true,
+          "detail": "stop was refused: This route cannot stop only the request in flight: Stop is the only interruption."
+        },
+        {
+          "route": "sample",
+          "capability": "resume",
+          "expect": "refuses",
+          "passed": true,
+          "detail": "resume was refused: A stopped staged run restarts from the beginning."
+        },
+        {
+          "route": "sample",
+          "capability": "retry",
+          "expect": "refuses",
+          "passed": true,
+          "detail": "retry was refused: A staged run has no mid-run retry."
+        },
+        {
+          "route": "sample",
+          "capability": "fork",
+          "expect": "refuses",
+          "passed": true,
+          "detail": "fork was refused: A staged run has no lineage."
+        }
+      ],
+      "assertions": [
+        {
+          "name": "the task-level Stop, which Diomedes composes on every route, applies",
+          "passed": true,
+          "detail": "stop task: applied"
+        },
+        {
+          "name": "Diomedes’ own follow-up queue holds a message on a route whose contract declares no follow-up (it is not the route’s follow-up)",
+          "passed": true,
+          "detail": "queue: queued, performed by diomedes"
+        },
+        {
+          "name": "every control, refused or not, left a receipt",
+          "passed": true,
+          "detail": "7 receipts"
+        }
+      ],
+      "evidence": {}
+    },
+    {
+      "id": "codex-stop-mid-turn",
+      "title": "Stop mid-turn on the Codex route",
+      "fixture": "codex: scripted Work call (nativeGenerator) that holds until its signal aborts",
+      "outcome": "passed",
+      "durationMs": 105,
+      "checks": [
+        {
+          "route": "codex",
+          "capability": "steer",
+          "expect": "refuses",
+          "passed": true,
+          "detail": "steer on a running Codex turn with no recorded thread: refused (unsupported)"
+        },
+        {
+          "route": "codex",
+          "capability": "stop",
+          "expect": "performs",
+          "passed": true,
+          "detail": "Stop (generation) was applied and acknowledged; the in-flight call saw its abort (true); no proposal was written (true); the run is working."
+        }
+      ],
+      "assertions": [
+        {
+          "name": "the task Stop then ends the interrupted run",
+          "passed": true,
+          "detail": "stop task applied; run stopped"
+        }
+      ],
+      "evidence": {
+        "stopReceipt": "3d9d12bb-5196-40a7-97ae-edf4c6c8d7fa",
+        "session": "S69b7d36a2598"
+      }
+    },
+    {
+      "id": "codex-retry-after-failure",
+      "title": "Retry after failure on the Codex route, then approve and verify the retried run",
+      "fixture": "codex: scripted Work call (nativeGenerator) that fails once, then proposes",
+      "outcome": "passed",
+      "durationMs": 140,
+      "checks": [
+        {
+          "route": "codex",
+          "capability": "retry",
+          "expect": "performs",
+          "passed": true,
+          "detail": "retry was applied, attempt 2, as Scc2c3b94c176."
+        },
+        {
+          "route": "codex",
+          "capability": "turn",
+          "expect": "performs",
+          "passed": true,
+          "detail": "the retried turn answered with a proposal for Fall menu.md."
+        },
+        {
+          "route": "codex",
+          "capability": "tool-proposal",
+          "expect": "performs",
+          "passed": true,
+          "detail": "an exact proposal waits on a Need with digests (true)."
+        },
+        {
+          "route": "codex",
+          "capability": "approval",
+          "expect": "performs",
+          "passed": true,
+          "detail": "the exact approval was recorded and the file holds the approved bytes (true)."
+        },
+        {
+          "route": "codex",
+          "capability": "verification",
+          "expect": "performs",
+          "passed": true,
+          "detail": "H17 on the retried run: Verified — 2 declared checks passed against 1 exact file version."
+        }
+      ],
+      "assertions": [
+        {
+          "name": "the first attempt failed",
+          "passed": true,
+          "detail": "failed"
+        },
+        {
+          "name": "the failed original is kept as evidence, still failed",
+          "passed": true,
+          "detail": "failed"
+        },
+        {
+          "name": "the scripted Codex call ran exactly twice: once failed, once retried",
+          "passed": true,
+          "detail": "2 calls"
+        }
+      ],
+      "evidence": {
+        "retryReceipt": "913f5985-4b5b-4fae-b1ca-26874df8cf39",
+        "verificationEntry": "E0789fb2d54f0"
+      }
+    },
+    {
+      "id": "h13-loop-restart-verified",
+      "title": "H13 loop: restart while it waits for approval, resume from the record, finish Verified (H17)",
+      "fixture": "native-fixture: the Diomedes loop’s fixed local script (loopFixtureAdapter, delegateFixtureAdapter)",
+      "outcome": "passed",
+      "durationMs": 551,
+      "checks": [
+        {
+          "route": "native-fixture",
+          "capability": "turn",
+          "expect": "performs",
+          "passed": true,
+          "detail": "planned 4 items, took 4 turns, finished with “Proposed Harness report.md from order.md and a helper's reading of delivery.md.”."
+        },
+        {
+          "route": "native-fixture",
+          "capability": "tool-proposal",
+          "expect": "performs",
+          "passed": true,
+          "detail": "the propose_write tool step asked for Harness report.md through a Need."
+        },
+        {
+          "route": "native-fixture",
+          "capability": "approval",
+          "expect": "performs",
+          "passed": true,
+          "detail": "the exact approval, given after the restart, was recorded."
+        },
+        {
+          "route": "native-fixture",
+          "capability": "resume",
+          "expect": "performs",
+          "passed": true,
+          "detail": "after a restart the reopened Core continued the run from its record; the 2 turns observed before it read the same after it (true)."
+        },
+        {
+          "route": "native-fixture",
+          "capability": "verification",
+          "expect": "performs",
+          "passed": true,
+          "detail": "H17 at the finish: Verified — 2 declared checks passed against 1 exact file version."
+        },
+        {
+          "route": "native-fixture",
+          "capability": "context-accounting",
+          "expect": "performs",
+          "passed": true,
+          "detail": "H18 account: 7 sections, 950 estimated tokens (utf8-bytes/4)."
+        }
+      ],
+      "assertions": [
+        {
+          "name": "H17 evidence binds the exact bytes it judged",
+          "passed": true,
+          "detail": "1 bound file versions"
+        }
+      ],
+      "evidence": {
+        "runId": "R33b10c40b131",
+        "verificationEntry": "Ed6c63d6a9d3b"
+      }
+    },
+    {
+      "id": "h12-uncertain-effect-blocks-retry",
+      "title": "H12: a write whose outcome is uncertain after a crash blocks Retry, and nothing is sent",
+      "fixture": "codex: tests/approval-crash-child.ts, a real Core process that exits after the first file of an approved write; then an outside edit",
+      "outcome": "passed",
+      "durationMs": 1387,
+      "checks": [],
+      "assertions": [
+        {
+          "name": "the Core process exited at the durable boundary after the first approved file",
+          "passed": true,
+          "detail": "exit 83"
+        },
+        {
+          "name": "recovery kept the outside edit and recorded the write as conflicted, the run as failed",
+          "passed": true,
+          "detail": "execution conflicted, run failed"
+        },
+        {
+          "name": "Retry is refused as uncertain-effects and names the effect",
+          "passed": true,
+          "detail": "refused (uncertain-effects): Some of the approved change “apply the proposed changes to 2 files” may have been written while outside edits were kept."
+        },
+        {
+          "name": "nothing was sent and no run was started",
+          "passed": true,
+          "detail": "0 engine calls, 1 runs"
+        }
+      ],
+      "evidence": {
+        "retryReceipt": "e1e7cb99-d639-4b2c-9871-e678340fb411"
+      }
+    },
+    {
+      "id": "h15-drift-escalation",
+      "title": "H15: a run writing outside its selected folder is paused and escalated to a person",
+      "fixture": "sample: the staged worker inside Core",
+      "outcome": "passed",
+      "durationMs": 3659,
+      "checks": [],
+      "assertions": [
+        {
+          "name": "scope drift is detected from the durable records and escalated as an ordinary Need",
+          "passed": true,
+          "detail": "scope-drift: Diomedes paused this run: it started writing outside the selected folder"
+        },
+        {
+          "name": "the run was paused through an H08 Stop asked in supervision’s name and performed by Diomedes",
+          "passed": true,
+          "detail": "run stopped; stop requested via supervision"
+        },
+        {
+          "name": "the escalation names the evidence it rests on",
+          "passed": true,
+          "detail": "Reopening plan.md"
+        },
+        {
+          "name": "re-evaluating raises nothing new for the same issue",
+          "passed": true,
+          "detail": "1 escalations after re-evaluating (0 records)"
+        }
+      ],
+      "evidence": {
+        "escalationNeed": "N72c09f1d0a92"
+      }
+    },
+    {
+      "id": "h17-verification-evidence",
+      "title": "H17: declared checks verify a finished run against exact bytes; an outside edit makes it uncertain",
+      "fixture": "sample: the staged worker inside Core",
+      "outcome": "passed",
+      "durationMs": 4149,
+      "checks": [
+        {
+          "route": "sample",
+          "capability": "verification",
+          "expect": "performs",
+          "passed": true,
+          "detail": "Verified: 1 declared check passed against 4 exact file versions."
+        }
+      ],
+      "assertions": [
+        {
+          "name": "with no checks declared the run reads Not verified",
+          "passed": true,
+          "detail": "Not verified: No acceptance checks are declared for this task, so nothing was verified."
+        },
+        {
+          "name": "the verification is a History entry that binds the digest it judged",
+          "passed": true,
+          "detail": "entry E21fde27ff4b7: verified"
+        },
+        {
+          "name": "an outside edit to a verified file turns the result uncertain on the next read",
+          "passed": true,
+          "detail": "Verification uncertain: Fall menu.md changed after verification, so the result no longer describes these bytes."
+        }
+      ],
+      "evidence": {
+        "verificationEntry": "E21fde27ff4b7"
+      }
+    },
+    {
+      "id": "cursor-acp-session",
+      "title": "A kept Cursor conversation: turns, a follow-up, a plan approved and declined, Stop mid-turn, and resume after a restart",
+      "fixture": "cursor: tests/fixtures/acp-agent.mjs, a real ACP v1 agent process standing in for the Cursor CLI",
+      "outcome": "failed",
+      "durationMs": 13764,
+      "checks": [
+        {
+          "route": "cursor-session",
+          "capability": "turn",
+          "expect": "performs",
+          "passed": true,
+          "detail": "the first turn answered 200: “answer after 0 earlier turns”."
+        },
+        {
+          "route": "cursor-session",
+          "capability": "stream",
+          "expect": "performs",
+          "passed": true,
+          "detail": "1 transient text deltas reached the event stream."
+        },
+        {
+          "route": "cursor-session",
+          "capability": "queue",
+          "expect": "performs",
+          "passed": true,
+          "detail": "a follow-up continued the same ACP session: “answer after 1 earlier turns”."
+        },
+        {
+          "route": "cursor-session",
+          "capability": "steer",
+          "expect": "refuses",
+          "passed": true,
+          "detail": "no steer route is mounted for a contract that declares none (404)."
+        },
+        {
+          "route": "cursor-session",
+          "capability": "fork",
+          "expect": "refuses",
+          "passed": true,
+          "detail": "fork answered 409: The native session contract does not match this route and build."
+        },
+        {
+          "route": "cursor-session",
+          "capability": "approval",
+          "expect": "performs",
+          "passed": true,
+          "detail": "the plan Cursor presented mid-turn became a Need (“Cursor asks you to approve its plan: Outline the report in three sections”); go-ahead reached the agent: “plan accepted; outlined”."
+        },
+        {
+          "route": "cursor",
+          "capability": "turn",
+          "expect": "performs",
+          "passed": true,
+          "detail": "a direct Ask on the text route answered 200: “answer after 0 earlier turns” — a fresh session, no history."
+        },
+        {
+          "route": "cursor",
+          "capability": "stream",
+          "expect": "performs",
+          "passed": true,
+          "detail": "1 transient text deltas reached the event stream for the direct Ask."
+        },
+        {
+          "route": "cursor-session",
+          "capability": "stop",
+          "expect": "performs",
+          "passed": true,
+          "detail": "Stop once the prompt is running: Stop at 356 ms answered 200 (acknowledged true); the turn ended at 370 ms, 200 interrupted=true."
+        },
+        {
+          "route": "cursor-session",
+          "capability": "resume",
+          "expect": "performs",
+          "passed": true,
+          "detail": "restart while idle, then resume: the saved ACP session was loaded (“answer after 4 earlier turns”)."
+        },
+        {
+          "route": "cursor-session",
+          "capability": "resume",
+          "expect": "performs",
+          "passed": false,
+          "detail": "restart while a turn ran, then resume: refused 409 RECONCILE_REQUIRED (“The native turn outcome is uncertain.”); the conversation reads start-again: “Couldn't resume. The last Cursor turn did not finish, so its outcome is unknown. The next message starts a new session.” — though the agent advertises loadSession."
+        },
+        {
+          "route": "cursor-session",
+          "capability": "stop",
+          "expect": "performs",
+          "passed": false,
+          "detail": "Stop as soon as the turn reads busy: Stop at 41 ms answered 200 (acknowledged true); the turn ended at 10270 ms, 409 TIMEOUT (“Cursor exceeded the request time limit. No retry was sent.”)."
+        }
+      ],
+      "assertions": [
+        {
+          "name": "a declined plan tells the agent no",
+          "passed": true,
+          "detail": "“plan rejected”"
+        }
+      ],
+      "evidence": {
+        "afterLiveRestart": {
+          "status": 409,
+          "code": "RECONCILE_REQUIRED",
+          "continuity": "start-again"
+        },
+        "earlyStop": {
+          "stopAt": 41,
+          "endedAt": 10270,
+          "status": 409,
+          "code": "TIMEOUT"
+        },
+        "runId": "cursor-1960476eaf993990e0715b8e76ad41448e6068778d7a953f0f0fcd0612578b2c",
+        "nativeSession": null
+      }
+    },
+    {
+      "id": "opencode-kept-session",
+      "title": "A kept OpenCode session: turns, a message held and sent after the running turn, resume after a restart, fork, and Stop mid-turn",
+      "fixture": "opencode: tests/fixtures/opencode-session-server.mjs, a real HTTP+SSE server standing in for `opencode serve`",
+      "outcome": "failed",
+      "durationMs": 10449,
+      "checks": [
+        {
+          "route": "opencode-session",
+          "capability": "turn",
+          "expect": "performs",
+          "passed": true,
+          "detail": "the first turn answered 200: “answer:first (turn 1 of ses_0001096faa)”."
+        },
+        {
+          "route": "opencode-session",
+          "capability": "stream",
+          "expect": "performs",
+          "passed": true,
+          "detail": "1 transient text deltas reached the event stream."
+        },
+        {
+          "route": "opencode-session",
+          "capability": "queue",
+          "expect": "performs",
+          "passed": true,
+          "detail": "a follow-up went to the same OpenCode session: “answer:second (turn 2 of ses_0001096faa)”."
+        },
+        {
+          "route": "opencode-session",
+          "capability": "steer",
+          "expect": "performs",
+          "passed": true,
+          "detail": "a message sent while a turn ran was pending, then delivered; the thread shows it as its own turn (true)."
+        },
+        {
+          "route": "opencode-session",
+          "capability": "resume",
+          "expect": "performs",
+          "passed": true,
+          "detail": "closed, restarted, then resumed the same OpenCode session: “answer:resumed (turn 5 of ses_0001096faa)”."
+        },
+        {
+          "route": "opencode-session",
+          "capability": "fork",
+          "expect": "performs",
+          "passed": true,
+          "detail": "fork started opencode-5bfc091a0b6642b6fbf41f906a2caf08854bf425bc5c03c98c8521237d946ee1 on a new OpenCode session in the same lineage: “answer:forked (turn 6 of ses_000275cfb4)”."
+        },
+        {
+          "route": "opencode-session",
+          "capability": "stop",
+          "expect": "performs",
+          "passed": true,
+          "detail": "Stop while the session reads busy and connected, at 528 ms: 200 (acknowledged true); the turn ended at 537 ms, 200 interrupted=true."
+        },
+        {
+          "route": "opencode-session",
+          "capability": "stop",
+          "expect": "performs",
+          "passed": false,
+          "detail": "Stop while the session reads busy and not yet connected, at 46 ms: 409 (SESSION_CLOSED: The native process is already closed.); the turn ended at 5496 ms, 409 TIMEOUT (“OpenCode did not finish within the time limit. Recheck before starting another request.”)."
+        }
+      ],
+      "assertions": [],
+      "evidence": {
+        "stopConnected": {
+          "stopAt": 528,
+          "status": 200,
+          "code": null
+        },
+        "stopOpening": {
+          "stopAt": 46,
+          "status": 409,
+          "code": "TIMEOUT"
+        },
+        "runId": "opencode-c609243a6db39ce5b20b5680e394c2c9af1734e61f0e0710a8dc7ec58e19c757",
+        "forkRunId": "opencode-5bfc091a0b6642b6fbf41f906a2caf08854bf425bc5c03c98c8521237d946ee1"
+      }
+    },
+    {
+      "id": "claude-code-native-session",
+      "title": "A Claude Code thread: a turn, a follow-up in the same process, a message queued behind a running answer, Stop mid-turn, and resume after a restart",
+      "fixture": "claude-code: tests/fixtures/claude-stream-json.mjs, a stream-json child standing in for the Claude Code CLI (the H03 route tests’ script)",
+      "outcome": "passed",
+      "durationMs": 3169,
+      "checks": [
+        {
+          "route": "claude-code-session",
+          "capability": "turn",
+          "expect": "performs",
+          "passed": true,
+          "detail": "the first turn answered 200: “Answer to Good morning”."
+        },
+        {
+          "route": "claude-code-session",
+          "capability": "queue",
+          "expect": "performs",
+          "passed": true,
+          "detail": "a follow-up was answered by the same live process (1 process): “Answer to Where is the linen?”."
+        },
+        {
+          "route": "claude-code-session",
+          "capability": "steer",
+          "expect": "performs",
+          "passed": true,
+          "detail": "a message sent while an answer ran was held and sent as the next turn of the same process (delivered)."
+        },
+        {
+          "route": "claude-code-session",
+          "capability": "stop",
+          "expect": "performs",
+          "passed": true,
+          "detail": "Stop answered 200 (interrupted); the turn ended interrupted=true; the session stayed live."
+        },
+        {
+          "route": "claude-code-session",
+          "capability": "resume",
+          "expect": "performs",
+          "passed": true,
+          "detail": "after a restart the thread read resumable; the next message resumed the session by id (--resume: true)."
+        },
+        {
+          "route": "claude-code-session",
+          "capability": "fork",
+          "expect": "performs",
+          "passed": true,
+          "detail": "fork started claude-92343d7016140448b3e18aeda7f2bf079ea4cf4b20d5c58bf9a6d0ab548b1340 with --resume and --fork-session (true): “Answer to Try another way”."
+        }
+      ],
+      "assertions": [],
+      "evidence": {
+        "forkOfAutoLineage": {
+          "status": 409,
+          "code": "SESSION_MISMATCH",
+          "error": "Fork requires the same idle project, thread, model and instructions."
+        },
+        "launches": 4
+      }
+    }
+  ],
+  "orphanChecks": [],
+  "counts": {
+    "proven": 43,
+    "declared-not-proven": 96,
+    "unsupported": 74,
+    "mismatch": 3
+  },
+  "mismatches": [
+    {
+      "routeId": "opencode-session",
+      "capability": "stop",
+      "reason": "Declared native, but Stop while the session reads busy and not yet connected, at 46 ms: 409 (SESSION_CLOSED: The native process is already closed.); the turn ended at 5496 ms, 409 TIMEOUT (“OpenCode did not finish within the time limit. Recheck before starting another request.”).",
+      "scenarios": [
+        "opencode-kept-session"
+      ]
+    },
+    {
+      "routeId": "cursor-session",
+      "capability": "stop",
+      "reason": "Declared native, but Stop as soon as the turn reads busy: Stop at 41 ms answered 200 (acknowledged true); the turn ended at 10270 ms, 409 TIMEOUT (“Cursor exceeded the request time limit. No retry was sent.”).",
+      "scenarios": [
+        "cursor-acp-session"
+      ]
+    },
+    {
+      "routeId": "cursor-session",
+      "capability": "resume",
+      "reason": "Declared native, but restart while a turn ran, then resume: refused 409 RECONCILE_REQUIRED (“The native turn outcome is uncertain.”); the conversation reads start-again: “Couldn't resume. The last Cursor turn did not finish, so its outcome is unknown. The next message starts a new session.” — though the agent advertises loadSession.",
+      "scenarios": [
+        "cursor-acp-session"
+      ]
+    }
+  ],
+  "failedScenarios": [
+    {
+      "id": "cursor-acp-session",
+      "error": null,
+      "assertions": []
+    },
+    {
+      "id": "opencode-kept-session",
+      "error": null,
+      "assertions": []
+    }
+  ]
+}
