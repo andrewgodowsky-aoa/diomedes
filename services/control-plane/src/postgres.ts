@@ -1,9 +1,9 @@
 import { Client } from '@neondatabase/serverless';
 import { z } from 'zod';
 import { AccountError } from './errors.js';
-import { ACCOUNT_WORKSPACE_LIMIT, ORGANIZATION_MEMBER_LIMIT, CLOUD_WORKSPACE_PAGE_SIZE, recordSchemas, type AccountRepository, type AccountTransaction, type VerifiedIdentity,
+import { ACCOUNT_WORKSPACE_LIMIT, ORGANIZATION_MEMBER_LIMIT, CLOUD_WORKSPACE_PAGE_SIZE, CODE_INVITATION_PAGE, recordSchemas, type AccountRepository, type AccountTransaction, type VerifiedIdentity,
   type AccountState, type SubjectMapping, type SessionRecord, type OrganizationRow,
-  type MembershipRow, type InvitationRecord, type AccountEvent } from './domain.js';
+  type MembershipRow, type InvitationRecord, type CodeInvitationRecord, type AccountEvent } from './domain.js';
 
 export interface SqlClient {
   connect(): Promise<void>;
@@ -143,6 +143,24 @@ class PostgresTransaction implements AccountTransaction {
   async saveInvitation(record: InvitationRecord) {
     await this.client.query('INSERT INTO control_plane.invitations(token_hash,organization_id,invited_by,record) VALUES ($1,$2,$3,$4::jsonb) ON CONFLICT (token_hash) DO UPDATE SET record=EXCLUDED.record',
       [record.tokenHash, record.organizationId, record.invitedBy, JSON.stringify(record)]);
+  }
+  codeInvitation(hash: string) {
+    return this.record('SELECT record FROM control_plane.invitation_codes WHERE code_hash=$1', [hash], recordSchemas.codeInvitation);
+  }
+  async saveCodeInvitation(record: CodeInvitationRecord) {
+    await this.client.query('INSERT INTO control_plane.invitation_codes(code_hash,organization_id,invited_by,record) VALUES ($1,$2,$3,$4::jsonb) ON CONFLICT (code_hash) DO UPDATE SET record=EXCLUDED.record',
+      [record.codeHash, record.organizationId, record.invitedBy, JSON.stringify(record)]);
+  }
+  async openCodeInvitations(organizationId: string, at: string) {
+    const result = await this.client.query(`SELECT record FROM control_plane.invitation_codes WHERE organization_id=$1 AND record->>'redeemedAt' IS NULL AND record->>'revokedAt' IS NULL AND (record->>'expiresAt')::timestamptz > $2::timestamptz ORDER BY record->>'createdAt' DESC LIMIT ${CODE_INVITATION_PAGE}`, [organizationId, at]);
+    return result.rows.map((row) => recordSchemas.codeInvitation.parse(row.record));
+  }
+  async roster(organizationId: string) {
+    const result = await this.client.query(`SELECT m.record AS member_record,m.generation AS member_generation,p.record AS person_record FROM control_plane.memberships m JOIN control_plane.persons p ON p.id=m.person_id WHERE m.organization_id=$1 ORDER BY m.person_id LIMIT ${ORGANIZATION_MEMBER_LIMIT * 2}`, [organizationId]);
+    return result.rows.map((row) => ({
+      membership: memberRow.parse({ record: row.member_record, generation: row.member_generation }),
+      person: recordSchemas.person.parse(row.person_record),
+    }));
   }
   async event(record: AccountEvent) {
     await this.client.query('INSERT INTO control_plane.account_events(id,organization_id,actor_person_id,record) VALUES ($1,$2,$3,$4::jsonb)',
