@@ -32,6 +32,16 @@ export function defaultRoot(env: NodeJS.ProcessEnv = process.env): string {
   return path.join(base, 'nectovia-sample-businesses');
 }
 
+/** `<slug...|all> [--root <folder>]`, in any order. */
+export function parseResetArgs(args: string[], env: NodeJS.ProcessEnv = process.env) {
+  const at = args.indexOf('--root');
+  if (at >= 0 && (!args[at + 1] || args[at + 1].startsWith('--')))
+    throw new Error('--root needs a folder');
+  const root = at >= 0 ? path.resolve(args[at + 1]) : defaultRoot(env);
+  const slugs = args.filter((a, i) => !a.startsWith('--') && !(at >= 0 && i === at + 1));
+  return { root, slugs };
+}
+
 /** The nearest existing ancestor resolved through links and 8.3 aliases, plus the rest. */
 export function realish(p: string): string {
   let current = path.resolve(p);

@@ -8,13 +8,9 @@
  * overrides it). See reset.ts for what is written and what is refused.
  */
 import { BUSINESSES, business } from './suite.js';
-import { defaultRoot, resetBusiness } from './reset.js';
+import { parseResetArgs, resetBusiness } from './reset.js';
 
-const args = process.argv.slice(2);
-const at = args.indexOf('--root');
-const root = at >= 0 ? args[at + 1] : defaultRoot();
-if (at >= 0 && !root) throw new Error('--root needs a folder');
-const slugs = args.filter((a, i) => !a.startsWith('--') && i !== at + 1);
+const { root, slugs } = parseResetArgs(process.argv.slice(2));
 if (!slugs.length) {
   console.log(
     `Usage: npm run samples:reset -- <${BUSINESSES.map((b) => b.slug).join('|')}|all> [--root <folder>]`,

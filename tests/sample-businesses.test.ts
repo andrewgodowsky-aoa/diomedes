@@ -9,6 +9,7 @@ import {
   assertSafeTarget,
   defaultRoot,
   guardedLocations,
+  parseResetArgs,
   resetBusiness,
   treeDigest,
 } from '../scripts/sample-businesses/reset.js';
@@ -262,6 +263,21 @@ describe('sample business reset', () => {
     await expect(
       resetBusiness('brandt-and-rowe-remodeling', { root, guarded }),
     ).resolves.toMatchObject({ slug: 'brandt-and-rowe-remodeling' });
+  });
+
+  test('reads its arguments with or without --root', () => {
+    const env = { LOCALAPPDATA: 'C:/Local' };
+    expect(parseResetArgs(['all'], env)).toEqual({
+      root: path.join('C:/Local', 'nectovia-sample-businesses'),
+      slugs: ['all'],
+    });
+    expect(
+      parseResetArgs(['kestrel-row-auto', '--root', 'D:/s', 'quarry-hill-cabinetworks'], env),
+    ).toEqual({
+      root: path.resolve('D:/s'),
+      slugs: ['kestrel-row-auto', 'quarry-hill-cabinetworks'],
+    });
+    expect(() => parseResetArgs(['all', '--root'], env)).toThrow('--root needs a folder');
   });
 
   test('refuses an unknown business', async () => {
