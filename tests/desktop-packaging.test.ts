@@ -139,6 +139,26 @@ describe('FD01 same desktop packaging entry point', () => {
     );
   });
 
+  it('declares the diomedes-auth sign-in scheme in the macOS app bundle', async () => {
+    const { deps, options } = await fixture();
+    await packageDesktop(options, deps);
+    const call = deps.packager.mock.calls[0][0] as { protocols?: unknown };
+    // CFBundleURLTypes: without it macOS never hands diomedes-auth://callback to the app.
+    expect(call.protocols).toEqual([{ name: 'Nectovia sign-in', schemes: ['diomedes-auth'] }]);
+    const repo = path.resolve(import.meta.dirname, '..');
+    // The declared scheme is the one native sign-in's callback uses.
+    const auth = await fs.readFile(path.join(repo, 'desktop/native-auth.ts'), 'utf8');
+    expect(auth).toContain("export const NATIVE_AUTH_CALLBACK = 'diomedes-auth://callback';");
+    // Windows keeps registering the scheme at run time; only the macOS bundle declares it.
+    const script = await fs.readFile(path.join(repo, 'scripts/package-desktop.mjs'), 'utf8');
+    expect(script).toContain("...(platform === 'darwin' ? { protocols: [{ name: 'Nectovia sign-in', schemes: ['diomedes-auth'] }] } : {}),");
+    // macOS delivers the callback as `open-url`; main subscribes to it before the app is ready.
+    const main = await fs.readFile(path.join(repo, 'desktop/main.mjs'), 'utf8');
+    const capture = main.indexOf('captureNativeAuthCallbacks(app, process.argv)');
+    expect(capture).toBeGreaterThan(0);
+    expect(capture).toBeLessThan(main.indexOf('.whenReady()'));
+  });
+
   it('fails when the packager builds nothing, instead of reporting an empty release', async () => {
     // On a Windows host that cannot create symlinks, Electron Packager logs that
     // it is skipping the macOS target and resolves with no outputs.

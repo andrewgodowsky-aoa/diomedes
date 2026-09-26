@@ -248,6 +248,9 @@ export async function packageDesktop(options = {}, dependencies = {}) {
       ignore: /^\/native-runtime(?:\/|$)/,
       appVersion: manifest.version,
       overwrite: true,
+      // macOS routes a sign-in's diomedes-auth://callback to the app only for a scheme its
+      // Info.plist declares (CFBundleURLTypes). Windows registers the scheme at run time instead.
+      ...(platform === 'darwin' ? { protocols: [{ name: 'Nectovia sign-in', schemes: ['diomedes-auth'] }] } : {}),
       ...(platform === 'win32'
         ? {
             // What Windows shows for the running app (Task Manager, the file's details).
