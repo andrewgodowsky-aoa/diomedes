@@ -1,19 +1,14 @@
-import { describe, expect, it, vi } from 'vitest';
-import { AccountService } from '../src/account-service.js';
-import { CommercialService } from '../src/commercial.js';
-import { ConfigurationError, configuration, identityFor, type AccountPool, type Configuration } from '../src/config.js';
+import { describe, expect, it } from 'vitest';
+import type { AccountService } from '../src/account-service.js';
+import { ConfigurationError, configuration, identityFor, type AccountPool } from '../src/config.js';
 import { AccountError } from '../src/errors.js';
-import { FauxCloudStore } from '../src/faux/store.js';
-import { createWorkOSStandIn } from '../src/faux/workos-standin.js';
-import { FundingService } from '../src/funding.js';
-import { WorkOSIdentityVerifier } from '../src/identity-workos.js';
 import type { ManagedInferenceService } from '../src/managed-inference.js';
 import { createHandler } from '../src/worker.js';
 import { validEnv } from './support/fixtures.js';
 
-// Customers (Nectovia) and staff (Diomedes Systems) sign in through two WorkOS
-// environments, each with its own branded page, users and keys. /ops/* accepts only
-// the staff environment; every other route accepts only the customer environment.
+// Which pool a route belongs to: /ops/* is staff, every other route is customer.
+// Staff sign in with staff keys since 2026-09-26 (tests/staff-keys.test.ts). The staff
+// WorkOS environment settings below are still parsed, but /ops/* no longer reads them.
 
 const STAFF_CLIENT = 'client_fixture_staff';
 const STAFF_KEY = 'sk_test_fixture_staff_only_no_calls';
@@ -99,55 +94,5 @@ describe('which environment a route verifies against', () => {
     expect(pools).toEqual(['customer']);
   });
 
-  it('refuses /ops/* with 503 when no staff environment is configured, before any provider call', async () => {
-    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const response = await createHandler()(request('GET', '/ops/me'), validEnv);
-    expect(response.status).toBe(503);
-    expect(errors.mock.calls.map(([line]) => line)).toContain(JSON.stringify({ event: 'staff-identity-unavailable', setting: 'STAFF_WORKOS_CLIENT_ID', rule: 'not-set' }));
-    expect(vi.mocked(fetch)).not.toHaveBeenCalled();
-  });
-});
-
-describe('two WorkOS environments, end to end', () => {
-  async function environments() {
-    const customers = await createWorkOSStandIn({ clientId: 'client_standin_customers' });
-    const staff = await createWorkOSStandIn({ clientId: 'client_standin_staff', apiKey: 'sk_test_standin_staff_environment_0000' });
-    const env = {
-      ...validEnv,
-      WORKOS_CLIENT_ID: customers.clientId, WORKOS_API_KEY: customers.apiKey, WORKOS_TOKEN_AUDIENCE: customers.audience,
-      STAFF_WORKOS_CLIENT_ID: staff.clientId, STAFF_WORKOS_API_KEY: staff.apiKey,
-    };
-    const store = await FauxCloudStore.open(null);
-    const provider = { customer: customers, staff };
-    // The Worker's own composition, with only the verifier's transport pointed at each stand-in.
-    const accounts = (config: Configuration, pool: AccountPool) =>
-      new AccountService(store.accounts, new WorkOSIdentityVerifier({ ...identityFor(config, pool), fetch: provider[pool].fetch }));
-    const handler = createHandler(accounts, undefined, {
-      createCommercial: (_config, verified) => new CommercialService(verified, store.commercial, new FundingService(store.funding)),
-    });
-    const call = (method: string, path: string, token: string) => handler(request(method, path, token), env);
-    const customer = (await customers.signInDirect('owner@juniper.example')).access_token;
-    const operator = (await staff.signInDirect('andrew@diomedes.example')).access_token;
-    return { call, customer, operator };
-  }
-
-  it('keeps each sign-in to its own routes', async () => {
-    const { call, customer, operator } = await environments();
-    expect((await call('GET', '/account/session', customer)).status).toBe(200);
-    expect((await call('GET', '/ops/me', customer)).status).toBe(401);
-    expect((await call('GET', '/account/session', operator)).status).toBe(401);
-    // The staff environment verified the bearer; the role check refuses a person who isn't staff.
-    const me = await call('GET', '/ops/me', operator);
-    expect(me.status).toBe(403);
-    expect(await me.json()).toEqual({ error: 'This account is not a Diomedes staff account.' });
-  });
-
-  it('signs a staff session out only through /ops/session/revoke', async () => {
-    const { call, customer, operator } = await environments();
-    expect((await call('POST', '/ops/session/revoke', customer)).status).toBe(401);
-    expect((await call('POST', '/account/session/revoke', operator)).status).toBe(401);
-    expect((await call('POST', '/ops/session/revoke', operator)).status).toBe(204);
-    expect((await call('GET', '/ops/me', operator)).status).toBe(401);
-    expect((await call('GET', '/account/session', customer)).status).toBe(200);
-  });
+  // What /ops/* does with its bearer, end to end, is in tests/staff-keys.test.ts.
 });

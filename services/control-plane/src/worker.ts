@@ -4,6 +4,7 @@ import { AccountService, organizationInput, invitationInput, changeInput, accept
 import { AccountError } from './errors.js';
 import { readBytes } from './crypto.js';
 import { WorkOSIdentityVerifier } from './identity-workos.js';
+import { StaffKeyVerifier, postgresStaffKeys } from './identity-staff-key.js';
 import { PostgresRepository, neonClientFactory } from './postgres.js';
 import { FundingService, UsageService } from './funding.js';
 import { PostgresFundingRepository } from './funding-postgres.js';
@@ -80,14 +81,15 @@ const MANAGED_ATTEMPT = /^\/managed\/v1\/attempts\/([A-Za-z0-9][A-Za-z0-9._:-]{0
 
 /**
  * Factory injection is only a test seam; no environment flag enables fake identity/storage.
- * `pool` names the WorkOS environment the route's bearer must come from: /ops/* is staff
- * (Diomedes Systems), everything else is customer (Nectovia). A bearer from the other
- * environment fails verification, so neither pool's sign-in reaches the other's routes.
+ * `pool` names who the route's bearer must be: /ops/* is staff, who sign in with a personal
+ * staff key (src/identity-staff-key.ts); everything else is customer (Nectovia), who sign in
+ * through WorkOS. A customer token is not a staff key and a staff key is not a WorkOS token,
+ * so neither pool's sign-in reaches the other's routes.
  */
 export function createHandler(create: (config: Configuration, pool: AccountPool) => AccountService = (config, pool) => {
-  if (pool === 'staff' && !config.staffIdentity)
-    console.error(JSON.stringify({ event: 'staff-identity-unavailable', ...(config.staffProblem ?? { setting: 'STAFF_WORKOS_CLIENT_ID', rule: 'not-set' }) }));
-  return new AccountService(new PostgresRepository(neonClientFactory(config.databaseUrl)), new WorkOSIdentityVerifier(identityFor(config, pool)));
+  const repository = new PostgresRepository(neonClientFactory(config.databaseUrl));
+  if (pool === 'staff') return new AccountService(repository, new StaffKeyVerifier(postgresStaffKeys(neonClientFactory(config.databaseUrl))));
+  return new AccountService(repository, new WorkOSIdentityVerifier(identityFor(config, pool)));
 },
   // The usage read verifies membership first, then reads funding rows under the
   // organization's own tenant, as the Worker login, which may only read them.
@@ -214,8 +216,9 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
       if (pathname === '/account/routing-policy' && method === 'GET')
         return json(await createCommercial(config, accounts).routingPolicy(token));
 
-      // --- Diomedes staff (Operations app). Bearers come from the staff environment only. --
-      // Every route but sign-out checks the staff role itself.
+      // --- Diomedes staff (Operations app). The bearer is a registered staff key. ---------
+      // Every route but sign-out checks the staff role itself. Sign-out retires the key's
+      // session for good; the app forgets a key locally instead of calling it.
       if (pathname.startsWith('/ops/')) {
         if (pathname === '/ops/session/revoke' && method === 'POST') {
           await accounts.revokeLocalSession(token); return new Response(null, { status: 204, headers });
@@ -266,8 +269,9 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
  * - FUNDING_DATABASE_URL, the login cp_funding for the gateway's funding rows
  *   (scripts/funding-permissions.sql), on the same database as DATABASE_URL.
  *   Unset, blank or unreadable: every managed call answers 503 route_unavailable.
- * And the staff environment's server key, STAFF_WORKOS_API_KEY, beside the var
- * STAFF_WORKOS_CLIENT_ID (src/config.ts). Without both, /ops/* answers 503.
+ * STAFF_WORKOS_API_KEY and STAFF_WORKOS_CLIENT_ID (src/config.ts) are no longer read by
+ * /ops/*: staff sign in with staff keys since 2026-09-26. They go with the staff WorkOS
+ * environment.
  */
 export type GatewayEnv = WorkerEnv & {
   BEDROCK_API_KEY?: string;
