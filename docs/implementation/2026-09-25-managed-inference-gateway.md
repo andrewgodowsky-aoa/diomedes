@@ -179,7 +179,7 @@ Every refusal before step 10 sends nothing to the provider and holds nothing.
 | 409 | `attempt_replayed` | the attempt was already sent and has finished |
 | 413 | `request_too_large`, `context_too_long` | over 2,000,000 bytes, or an input bound over 272,000 |
 | 429 | `provider_busy` | the provider answered 429 before any output |
-| 503 | `route_unavailable` | no usable route or key, a provider 401/403/404, 5xx, network failure or timeout before any byte, an unreadable spend setting, or the company spend ceiling |
+| 503 | `route_unavailable` | no usable route or key, no readable funding login (`FUNDING_DATABASE_URL`, section 4), a provider 401/403/404, 5xx, network failure or timeout before any byte, an unreadable spend setting, or the company spend ceiling |
 | 503 | `unavailable` | the account service itself failed, with `Retry-After: 5` |
 
 `GET {accountService}/managed/v1/attempts/:attemptId` with the same `Authorization` and
@@ -215,6 +215,20 @@ is off. Any other value that is not a whole number in range refuses every manage
 
 The ceiling counts the ledger of the service it runs in: the Worker's database, or the faux
 cloud's own store. The two never share a total.
+
+### The funding login (2026-09-26)
+
+The gateway's funding rows (credit periods, funded jobs, holds, dispatch claims, settlements)
+are read and written through the Worker secret `FUNDING_DATABASE_URL`, the login `cp_funding`,
+never through `DATABASE_URL`'s `cp_runtime`, which may only read funding rows. Its grants are
+`services/control-plane/scripts/funding-permissions.sql`: exactly the statements
+`PostgresFundingRepository` runs on the gateway's paths, with column-level UPDATE on
+`funded_jobs` and `funding_reservations`, and `tests/funding-permissions.test.ts` fails when the
+two differ. The URL must name the same Neon endpoint and database as `DATABASE_URL`. Unset,
+blank or unreadable, every managed call (both routes) answers 503 `route_unavailable` before
+membership, any hold or any provider call, and logs `managed-funding-database-unavailable`.
+The admission, grant and routing reads, the usage projection and every other route stay on
+`DATABASE_URL`. The faux cloud has one store and no logins.
 
 ## 5. Faux cloud
 

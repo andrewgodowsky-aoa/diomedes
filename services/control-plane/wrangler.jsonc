@@ -13,7 +13,7 @@
     "traces": { "enabled": true, "head_sampling_rate": 0.01 }
   },
   "dev": { "ip": "127.0.0.1", "port": 8791, "local_protocol": "http" },
-  // Refuses (503) until WORKOS_CLIENT_ID is set here and both secrets exist. The
+  // Refuses (503) until WORKOS_CLIENT_ID is set here and both required secrets exist. The
   // client ID is public; it goes here, not in the dashboard, so a deploy keeps it.
   // The audience is the resource the WorkOS application's JWT template adds.
   // The two MANAGED_* values are the owner's testing limits of 2026-09-25: $100 in provider cost
@@ -27,12 +27,17 @@
     "MANAGED_SPEND_CEILING_MICRO_USD": "100000000",
     "MANAGED_MAX_OUTPUT_TOKENS": "2000"
   },
-  // Managed inference (/managed/v1/*, contract nectovia-managed/1) reads one more secret at call
-  // time: BEDROCK_API_KEY, a Bedrock long-term API key for the company's AWS account, sent only to
-  // the endpoint in src/managed-providers.ts. The owner sets it; it is never written here. Until it
-  // is set, every managed call answers 503 route_unavailable and nothing is held or sent.
+  // Managed inference (/managed/v1/*, contract nectovia-managed/1) reads two more secrets at call
+  // time. The owner sets both; neither is ever written here. Until both are set, every managed
+  // call answers 503 route_unavailable and nothing is held or sent. The account routes need neither.
+  // - BEDROCK_API_KEY: a Bedrock long-term API key for the company's AWS account, sent only to the
+  //   endpoint in src/managed-providers.ts.
+  // - FUNDING_DATABASE_URL: the login cp_funding (scripts/funding-permissions.sql), on the same
+  //   host and database as DATABASE_URL. Only the gateway's credit periods, jobs, holds and
+  //   settlements use it; DATABASE_URL's cp_runtime may only read funding rows. Set it with
+  //   `npx wrangler secret put FUNDING_DATABASE_URL --name diomedes`.
   //
-  // Two optional spend settings are read at call time beside it (whole numbers; unset or blank is
+  // Two optional spend settings are read at call time beside them (whole numbers; unset or blank is
   // off; anything unreadable refuses every managed call with 503 route_unavailable):
   // - MANAGED_SPEND_CEILING_MICRO_USD: the most the company's provider account may owe, all
   //   tenants and organizations, for all time: settled provider cost plus every pending,

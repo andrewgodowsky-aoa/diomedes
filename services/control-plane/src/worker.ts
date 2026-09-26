@@ -22,7 +22,7 @@ import {
 } from './commercial.js';
 import type { WorkerEnv } from '../worker-configuration.js';
 import { accountId } from './domain.js';
-import { ManagedError, ManagedInferenceService, managedErrorResponse, managedHeaders, type ManagedContext } from './managed-inference.js';
+import { ManagedError, ManagedInferenceService, ROUTE_UNAVAILABLE, managedErrorResponse, managedHeaders, type ManagedContext } from './managed-inference.js';
 import { bedrockResponsesCaller } from './managed-providers.js';
 
 async function body<T>(request: Request, schema: z.ZodType<T>): Promise<T> {
@@ -82,7 +82,7 @@ const MANAGED_ATTEMPT = /^\/managed\/v1\/attempts\/([A-Za-z0-9][A-Za-z0-9._:-]{0
 export function createHandler(create: (config: Configuration) => AccountService = (config) =>
   new AccountService(new PostgresRepository(neonClientFactory(config.databaseUrl)), new WorkOSIdentityVerifier(config.identity)),
   // The usage read verifies membership first, then reads funding rows under the
-  // organization's own tenant. There is no funding write route in this Worker.
+  // organization's own tenant, as the Worker login, which may only read them.
   createUsage: (config: Configuration, accounts: AccountService) => Pick<UsageService, 'usage'> = (config, accounts) =>
     new UsageService(accounts, new FundingService(new PostgresFundingRepository(neonClientFactory(config.databaseUrl)))),
   options: HandlerOptions = {}) {
@@ -91,7 +91,15 @@ export function createHandler(create: (config: Configuration) => AccountService 
     new CommercialService(accounts, new PostgresCommercialRepository(neonClientFactory(config.databaseUrl)),
       new FundingService(new PostgresFundingRepository(neonClientFactory(config.databaseUrl)))));
   const createManaged = options.createManaged ?? ((config: Configuration, accounts: AccountService) => {
-    const funding = new PostgresFundingRepository(neonClientFactory(config.databaseUrl));
+    // Every funding read and write the gateway makes runs as cp_funding
+    // (FUNDING_DATABASE_URL), never as the Worker login, which may only read
+    // funding rows. Without that login the gateway refuses before it reads,
+    // holds or sends anything; the account routes are unaffected.
+    if (config.fundingDatabaseUrl === null) {
+      console.error(JSON.stringify({ event: 'managed-funding-database-unavailable' }));
+      throw new ManagedError(503, 'route_unavailable', ROUTE_UNAVAILABLE);
+    }
+    const funding = new PostgresFundingRepository(neonClientFactory(config.fundingDatabaseUrl));
     return new ManagedInferenceService({
       accounts,
       commercial: new PostgresCommercialRepository(neonClientFactory(config.databaseUrl)),
@@ -105,7 +113,8 @@ export function createHandler(create: (config: Configuration) => AccountService 
    * The managed gateway (contract nectovia-managed/1). Its own header rules, a
    * 2,000,000-byte body, a streamed answer and the `{ error: { code, message } }`
    * shape, so it is routed before the account API's bearer and body handling.
-   * The provider key is read from `env` by the gateway at call time.
+   * The provider key is read from `env` by the gateway at call time; the funding
+   * login's URL comes from the configuration read here, on every call.
    */
   async function managed(request: Request, env: Record<string, unknown>, ctx?: ManagedContext): Promise<Response> {
     const headers = managedHeaders();
@@ -236,13 +245,17 @@ export function createHandler(create: (config: Configuration) => AccountService 
 }
 
 /**
- * The Worker's bindings, plus the managed gateway's provider key: the secret
- * BEDROCK_API_KEY, a Bedrock long-term API key set by the owner and read by the
- * gateway at call time. It is never in wrangler.jsonc, a log, a response or a row.
+ * The Worker's bindings, plus the managed gateway's two secrets and its two
+ * optional spend settings (see src/managed-inference.ts):
+ * - BEDROCK_API_KEY, a Bedrock long-term API key set by the owner and read by the
+ *   gateway at call time. It is never in wrangler.jsonc, a log, a response or a row.
+ * - FUNDING_DATABASE_URL, the login cp_funding for the gateway's funding rows
+ *   (scripts/funding-permissions.sql), on the same database as DATABASE_URL.
+ *   Unset, blank or unreadable: every managed call answers 503 route_unavailable.
  */
-/** The managed gateway's secret and its two optional spend settings (see src/managed-inference.ts). */
 export type GatewayEnv = WorkerEnv & {
   BEDROCK_API_KEY?: string;
+  FUNDING_DATABASE_URL?: string;
   MANAGED_SPEND_CEILING_MICRO_USD?: string | number;
   MANAGED_MAX_OUTPUT_TOKENS?: string | number;
 };

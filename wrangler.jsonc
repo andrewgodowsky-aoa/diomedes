@@ -24,6 +24,13 @@
     "MANAGED_SPEND_CEILING_MICRO_USD": "100000000",
     "MANAGED_MAX_OUTPUT_TOKENS": "2000"
   },
+  // Secrets are set by the owner with `npx wrangler secret put <NAME> --name diomedes` and are
+  // never written here. DATABASE_URL (the login cp_runtime) and WORKOS_API_KEY are read on every
+  // call. Managed inference (/managed/v1/*) reads two more at call time, and until both are set
+  // every managed call answers 503 route_unavailable with nothing held or sent: BEDROCK_API_KEY,
+  // and FUNDING_DATABASE_URL, the login cp_funding (services/control-plane/scripts/
+  // funding-permissions.sql) on the same host and database as DATABASE_URL. The gateway's funding
+  // writes run only as cp_funding. services/control-plane/wrangler.jsonc says the same.
   "build": {
     "cwd": "services/control-plane",
     "command": "npm ci --ignore-scripts --no-audit --no-fund && npm run typecheck && npm test"
