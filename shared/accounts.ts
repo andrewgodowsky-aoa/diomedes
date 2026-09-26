@@ -20,7 +20,7 @@ export interface AccountBackendView {
   url: string | null;
   /** Why the service cannot be reached, when it cannot. */
   reason: string | null;
-  /** How this service signs people in. `browser` is WorkOS AuthKit, not yet wired in this build. */
+  /** How this service signs people in. `browser` is WorkOS AuthKit, in the system browser. */
   signIn: 'password' | 'browser';
   /** The faux service's demo customers, so a tester can sign in as each role. Never set for the cloud. */
   demo?: { password: string; accounts: { email: string; name: string; label: string }[] } | null;
@@ -44,9 +44,22 @@ export interface AccountWorkspaceView {
   access: AccessView | null;
 }
 
+/** Where a sign-in through the system browser stands, for a service that signs people in that way. */
+export interface BrowserSignInView {
+  /**
+   * `ready`: nothing has started. `waiting`: the browser is open at the sign-in page. `failed`: the
+   * last attempt ended without a sign-in. `unavailable`: this installation cannot open one.
+   */
+  status: 'ready' | 'waiting' | 'failed' | 'unavailable';
+  /** What to tell the person; empty when there is nothing to say. */
+  message: string;
+}
+
 export interface AccountStateView {
   v: typeof ACCOUNT_VIEW_VERSION;
   backend: AccountBackendView;
+  /** Null when the service signs people in with a password. */
+  browser: BrowserSignInView | null;
   signedIn: boolean;
   person: { id: string; name: string; email: string } | null;
   /** This sign-in is kept on this computer across restarts. */

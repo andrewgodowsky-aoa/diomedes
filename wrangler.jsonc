@@ -35,10 +35,17 @@
   // funding-permissions.sql) on the same host and database as DATABASE_URL. The gateway's funding
   // writes run only as cp_funding. STAFF_WORKOS_API_KEY is the staff environment's server key;
   // without it /ops/* answers 503. services/control-plane/wrangler.jsonc says the same.
+  // OPENROUTER_API_KEY is the key /managed/v1/evaluations sends to OpenRouter; without it that
+  // route alone answers 503 route_unavailable.
   "build": {
     "cwd": "services/control-plane",
     "command": "npm ci --ignore-scripts --no-audit --no-fund && npm run typecheck && npm test"
   },
+  // The phone relay (2026-09-26): one hub per business, the Durable Object class RelayHub that
+  // src/worker.ts exports, named by the business's organization id. The first deploy with this
+  // migration creates the class, SQLite-backed. services/control-plane/wrangler.jsonc says the same.
+  "durable_objects": { "bindings": [{ "name": "RELAY_HUB", "class_name": "RelayHub" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RelayHub"] }],
   "observability": {
     "enabled": true,
     "logs": { "enabled": true, "head_sampling_rate": 1 },

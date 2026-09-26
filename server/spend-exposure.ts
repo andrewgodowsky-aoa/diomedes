@@ -719,6 +719,8 @@ export class SpendExposure {
   private loading: Promise<void> | null = null;
   /** The one queue every change waits in. It never rejects, so one failure cannot jam it. */
   private chain: Promise<void> = Promise.resolve();
+  /** Told when an open hold reaches a final cost; see `onResolved`. */
+  private resolvedListener: ((reservation: ExposureReservation) => void) | null = null;
 
   constructor(
     private readonly dataDir: string,
@@ -880,7 +882,28 @@ export class SpendExposure {
       allowance: found.stored.allowance,
       reservations: found.stored.reservations.map((item) => (item.id === next.id ? next : item)),
     });
+    const listener = this.resolvedListener;
+    if (listener && next.state !== found.reservation.state && (next.state === 'settled' || next.state === 'written-off')) {
+      const copy = structuredClone(next);
+      // After the write, outside this ledger's queue and outside the caller's settle.
+      setImmediate(() => {
+        try {
+          listener(copy);
+        } catch {
+          // A listener never changes the ledger.
+        }
+      });
+    }
     return structuredClone(next);
+  }
+
+  /**
+   * One optional listener, told with a copy when an open hold (pending or uncertain) settles, is
+   * reconciled or is written off. It runs after the write, on a later turn, and cannot change or
+   * delay the ledger. The optional metadata observation uses it for late costs (PostHog PH-02).
+   */
+  onResolved(listener: ((reservation: ExposureReservation) => void) | null) {
+    this.resolvedListener = listener;
   }
 
   /**

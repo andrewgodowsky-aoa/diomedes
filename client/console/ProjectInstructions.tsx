@@ -49,6 +49,7 @@ const EXCLUSION: Record<InstructionExclusion, string> = {
   'out-of-scope': 'out of scope',
   'not-shared': 'not shared',
   'not-loaded': 'not loaded',
+  'not-included': 'kept, not sent',
 };
 
 /** The folder a file governs, as a person reads it. */
@@ -94,7 +95,7 @@ function deliveryRows(
     status: EXCLUSION[file.exclusion],
     bytes: file.bytes,
     sha: file.sha,
-    detail: file.detail,
+    detail: file.exclusion === 'not-included' ? null : file.detail,
     readable: readable(file.path),
   }));
   return [...sent, ...excluded];
@@ -157,6 +158,8 @@ export function ProjectInstructions({
     (row) => !recorded.some((item) => item.path === row.path),
   );
   const sent = delivery?.files.filter((file) => file.state === 'sent').length ?? 0;
+  // Withheld files carry the plan's reason (Andrew, 2026-09-25); say it once, on the run.
+  const withheld = delivery?.excluded?.find((file) => file.exclusion === 'not-included');
 
   async function read(path: string) {
     if (shown === path) {
@@ -248,6 +251,7 @@ export function ProjectInstructions({
               <div className="mono lc instructions-run-head">
                 last run · {delivery.routeId} · {sent} sent · {kb(delivery.bytes)}
               </div>
+              {withheld?.detail && <p>{withheld.detail}</p>}
               <ol className="instructions-list">{recorded.map((item) => row(item, true))}</ol>
             </section>
           )}

@@ -391,7 +391,9 @@ export function createHarnessHost({
   codexAccountRoute,
   textLeaseMs,
   weeklyBrief,
+  observation,
   nectoviaAccount,
+  ownerRules,
 }: {
   store: Store;
   dataDir: string;
@@ -402,8 +404,16 @@ export function createHarnessHost({
   textLeaseMs?: number;
   /** The pinned configuration and live target the weekly brief procedure needs. */
   weeklyBrief?: WeeklyBriefHost;
+  /** Optional metadata observation (server/observability/): reads each saved run, never changes it. */
+  observation?: { onRunSaved(run: HarnessRun): void } | null;
   /** The Nectovia route's account for a project now, or null when nobody is signed in or it is Personal. */
   nectoviaAccount?: (projectId: string) => string | null;
+  /**
+   * Whether the work's business holds 'owner-rules' (Andrew, 2026-09-25), resolved through the
+   * account session the way the Agent gate does. Absent passes everything through, the
+   * embedded-host behaviour; a Personal project answers false.
+   */
+  ownerRules?: (projectId: string | null) => boolean;
 }) {
   if (path.resolve(dataDir) !== store.dataDir)
     throw new Error('The harness must use the Store data folder.');
@@ -458,7 +468,7 @@ export function createHarnessHost({
   registerFormatReport(tools, store, runs);
   registerLoopTools(tools, store, runs);
   // H16: stream-time rules watch each loop model step and judge each tool intent at admission.
-  const streamRules = new StreamRuleService({ store, runs, tools, redact });
+  const streamRules = new StreamRuleService({ store, runs, tools, redact, ownerRules });
   const loop = createLoopProcedure({ store, runs, tools, stream: streamRules });
   const weeklyBriefProcedure = weeklyBrief
     ? registerWeeklyBrief(tools, store, runs, weeklyBrief)
@@ -533,6 +543,11 @@ export function createHarnessHost({
     // authorized snapshot after the atomic write, using the same durable log.
     for (const observer of observers)
       if (observer.runId === run.id) observer.changed();
+    try {
+      observation?.onRunSaved(run);
+    } catch {
+      // Observation never changes a run, its commit or its readers.
+    }
   };
   runs.afterStep = () => bridge.flush();
   runs.use((context) => bridge.beforeStep(context));

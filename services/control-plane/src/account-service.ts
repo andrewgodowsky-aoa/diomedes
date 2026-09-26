@@ -94,7 +94,7 @@ export class AccountService {
     const org = await tx.organization(organizationId, true);
     const member = org ? await tx.member(organizationId, personId) : undefined;
     if (!org || !member || member.record.state !== 'active')
-      throw new AccountError(403, 'This Business workspace is unavailable to this person.');
+      throw new AccountError(403, 'This Business workspace is unavailable to this person.', 'not_a_member');
     return { org, member };
   }
   private async owner(tx: AccountTransaction, personId: string, organizationId: string) {
@@ -355,7 +355,7 @@ export class AccountService {
       const { org, member } = await this.member(tx, actor.person.id, organizationId);
       const result = assertMembership({ organization: org.record, membership: member.record,
         generation: { identity: org.generation, principal: member.generation }, at: this.at() });
-      if (!result.asserted) throw new AccountError(403, 'Current membership could not be established.');
+      if (!result.asserted) throw new AccountError(403, 'Current membership could not be established.', 'not_a_member');
       return { ...actor, organization: org.record, membership: member.record, assertion: result.assertion,
         checkedAt: this.at(), validUntil: new Date(Math.min(this.now() + 30_000, Date.parse(actor.expiresAt))).toISOString() };
     });

@@ -79,6 +79,9 @@ export function TriggerRules({
   }, [load]);
 
   const rules = view ? view[authority] : [];
+  // The business does not hold 'owner-rules': the rules stay listed — they are
+  // the owner's data — but nothing edits them here or claims they apply.
+  const readOnly = Boolean(view?.notIncludedReason);
   const taskName = (id: string) => tasks.find((task) => task.id === id)?.name ?? id;
   const reach = (rule: StreamRule) =>
     rule.taskId
@@ -125,7 +128,7 @@ export function TriggerRules({
           </span>
           <span className="trigger-rule-intervention">{interventionLabel(rule.intervention)}</span>
           {!rule.enabled && <span className="trigger-rule-off">off</span>}
-          {own && (
+          {own && !readOnly && (
             <span className="trigger-rule-acts">
               <button
                 type="button"
@@ -182,6 +185,7 @@ export function TriggerRules({
   return (
     <div className="trigger-rules" data-authority={authority}>
       <p className="trigger-rules-reach">{watchesSentence(view?.watches)}</p>
+      {view?.notIncludedReason && <p className="trigger-rules-reach">{view.notIncludedReason}</p>}
       {view?.unreadable?.map((item) => (
         <p key={item.authority} className="trigger-rules-error" role="alert">
           {item.message}
@@ -201,7 +205,7 @@ export function TriggerRules({
         {view && rules.length === 0 && <p className="trigger-rules-empty">No rules yet.</p>}
         {rules.length > 0 && <ul className="trigger-rules-list">{rules.map((rule) => row(rule, true))}</ul>}
       </section>
-      {editing ? (
+      {editing && !readOnly ? (
         <RuleForm
           authority={authority}
           draft={editing.draft}
@@ -227,7 +231,7 @@ export function TriggerRules({
             <button
               type="button"
               className="button"
-              disabled={busy || !view}
+              disabled={busy || !view || readOnly}
               onClick={() => {
                 setError('');
                 setDeleting(null);

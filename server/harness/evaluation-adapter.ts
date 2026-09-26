@@ -36,6 +36,16 @@ import type {
   EvaluationUsage,
 } from '../../shared/evaluation.js';
 import { validateEvaluationResult } from '../../shared/evaluation.js';
+import {
+  EVALUATION_ROUTE_LIMITS,
+  REQUEST_ENVELOPE_TOKENS,
+  TYPESAFE_DOCUMENTED_LIMITS,
+  UNPROVEN_ROUTE_LIMITS,
+  serializedRequestTokens,
+  serializedStateTokens,
+  type EvaluationRequestLimits,
+  type ProviderQuestion,
+} from '../../shared/evaluation-wire.js';
 
 export type EvaluationTransportCode =
   | 'unsupported_question_type'
@@ -45,19 +55,35 @@ export type EvaluationTransportCode =
   | 'transport_unavailable'
   | 'invalid_transport'
   /**
+   * The route's data policy left no provider that could take the request: it
+   * reached no model and nothing was charged. The managed gateway sends every
+   * evaluation to providers that do not collect data, and never falls back.
+   */
+  | 'provider_policy'
+  /**
+   * The business's current plan does not include this route, or the person is
+   * not one of its members: refused before anything was sent.
+   */
+  | 'not_included'
+  /**
    * The provider answered and the answer was unusable. This is the only code
    * that means money was already spent: every other code is a refusal made
    * before anything was sent.
    */
   | 'answer_rejected';
 
-/** Codes that are always raised before anything is sent, so nothing can have been charged. */
+/**
+ * Codes that are always raised before anything was sent to a model, so nothing
+ * can have been charged. A metered route's refusal that it released is one too.
+ */
 export const PRE_DISPATCH_CODES: ReadonlySet<EvaluationTransportCode> = new Set([
   'unsupported_question_type',
   'state_too_large',
   'request_too_large',
   'transport_unavailable',
   'invalid_transport',
+  'provider_policy',
+  'not_included',
 ]);
 
 export class EvaluationTransportError extends Error {
@@ -106,88 +132,17 @@ function reportedUsage(raw: unknown): EvaluationUsage | null {
   return { inputTokens, outputTokens };
 }
 
-/**
- * What a route was actually tested at, not what the model's own documentation
- * advertises. The direct model documents a 64k aggregate across state and
- * questions; the shared-state bound proven for a gateway call is half that, and
- * an untested headroom is not headroom.
- */
-export const EVALUATION_ROUTE_LIMITS = Object.freeze({
-  maxStateTokens: 32_000,
-  maxQuestions: 32,
-});
-
-/**
- * A deliberately pessimistic token estimate: three characters per token, where
- * English prose averages closer to four. Under-counting here would mean sending
- * a payload the provider rejects after it has already been serialized and
- * disclosed, and reserving less money than the call goes on to cost.
- */
-export function serializedStateTokens(state: unknown): number {
-  const text = typeof state === 'string' ? state : JSON.stringify(state ?? null);
-  return Math.ceil(text.length / 3);
-}
-
-/**
- * The bounds on a whole request, not only its state. The provider documents two:
- * the complete payload (state plus every question) and the state plus the
- * longest single question. A state that fits can still carry a question batch
- * that does not, so both are checked against the exact wire body, before I/O.
- */
-export interface EvaluationRequestLimits {
-  readonly maxTotalTokens: number;
-  readonly maxStatePlusLongestQuestionTokens: number;
-}
-
-/**
- * TypeSafe's documented bounds for the direct model: 64k total, 32k for the
- * state and the longest question. Documented, not tested by this product.
- */
-export const TYPESAFE_DOCUMENTED_LIMITS: EvaluationRequestLimits = Object.freeze({
-  maxTotalTokens: 64_000,
-  maxStatePlusLongestQuestionTokens: 32_000,
-});
-
-/**
- * What a route gets when it has proven nothing larger: the smallest bound any
- * listed route publishes (OpenRouter lists 32k context for Jev). An untested
- * headroom is not headroom.
- */
-export const UNPROVEN_ROUTE_LIMITS: EvaluationRequestLimits = Object.freeze({
-  maxTotalTokens: 32_000,
-  maxStatePlusLongestQuestionTokens: 32_000,
-});
-
-/**
- * Room for what a provider wraps around state and questions: the model id, an
- * empty `providerOptions` (the gateway sends one) and the JSON punctuation.
- * Measured at well under a hundred characters; held at a flat 64 tokens.
- */
-export const REQUEST_ENVELOPE_TOKENS = 64;
-
-/** The conservative token count of the complete wire body and of its largest state+question pair. */
-export function serializedRequestTokens(
-  state: unknown,
-  questions: Record<string, ProviderQuestion>,
-): { total: number; statePlusLongestQuestion: number } {
-  const stateTokens = serializedStateTokens(state);
-  let longest = 0;
-  for (const [id, question] of Object.entries(questions))
-    longest = Math.max(longest, serializedStateTokens(JSON.stringify({ [id]: question })));
-  return {
-    total:
-      serializedStateTokens(JSON.stringify({ state: state ?? null, questions })) +
-      REQUEST_ENVELOPE_TOKENS,
-    statePlusLongestQuestion: stateTokens + longest,
-  };
-}
-
-// --- the provider's question shape --------------------------------------------
-
-export type ProviderQuestion =
-  | { type: 'choice'; instructions: string; criteria: Record<string, string | null> }
-  | { type: 'score'; instructions: string; criteria: (string | null)[] }
-  | { type: 'boolean'; instructions: string; criteria?: { true?: string | null; false?: string | null } };
+// The bounds, the token estimate and the question shape live in shared/evaluation-wire.ts, so
+// the managed gateway counts and refuses a request exactly as this adapter does.
+export {
+  EVALUATION_ROUTE_LIMITS,
+  REQUEST_ENVELOPE_TOKENS,
+  TYPESAFE_DOCUMENTED_LIMITS,
+  UNPROVEN_ROUTE_LIMITS,
+  serializedRequestTokens,
+  serializedStateTokens,
+};
+export type { EvaluationRequestLimits, ProviderQuestion };
 
 /**
  * Convert an authorized profile into the provider's question map.
@@ -229,10 +184,43 @@ export function providerQuestions(profile: EvaluationProfile): Record<string, Pr
 
 // --- the port -----------------------------------------------------------------
 
+/** Who one evaluation is for: the same three names a preflight is scoped by. */
+export interface EvaluationScope {
+  /** The organization or local installation the request belongs to. */
+  readonly tenant: string;
+  readonly project: string;
+  readonly thread: string | null;
+}
+
+/**
+ * What a metered route says one call was charged, from the ledger that paid it.
+ * `settled` is exact; `uncertain` was sent and its cost is unknown until it is
+ * reconciled (never zero); `released` reached no model and cost nothing.
+ * `attemptId` is the hold the charge is recorded against.
+ */
+export type EvaluationReceipt =
+  | {
+      readonly state: 'settled';
+      readonly attemptId: string;
+      readonly microUsd: number;
+      /** The terms it was priced under. */
+      readonly rateCard: string;
+      readonly usage: { readonly inputTokens: number; readonly outputTokens: number };
+    }
+  | { readonly state: 'uncertain'; readonly attemptId: string; readonly rateCard: string | null; readonly reason: string }
+  | { readonly state: 'released'; readonly attemptId: string };
+
 export interface EvaluationPortCall {
   state: unknown;
   questions: Record<string, ProviderQuestion>;
   signal: AbortSignal;
+  /** Present when the caller knows it. A port that admits and meters each call per business reads it. */
+  scope?: EvaluationScope;
+  /**
+   * Where a port that is metered by the service it calls reports the receipt,
+   * before it returns or throws. Ports that price their own calls never call it.
+   */
+  onReceipt?: (receipt: EvaluationReceipt) => void;
 }
 
 export interface EvaluationPort {
@@ -535,6 +523,9 @@ export async function runEvaluation(input: {
   state: unknown;
   signal: AbortSignal;
   observedAt: string;
+  /** Passed to the port as given. */
+  scope?: EvaluationScope;
+  onReceipt?: (receipt: EvaluationReceipt) => void;
 }): Promise<EvaluationObservation> {
   const { port, profile, state, signal } = input;
   signal.throwIfAborted();
@@ -585,7 +576,13 @@ export async function runEvaluation(input: {
       `The state and the longest question together are about ${request.statePlusLongestQuestion} tokens, over the ${limits.maxStatePlusLongestQuestionTokens} route ${port.id} accepts.`,
     );
 
-  const raw = await port.evaluate({ state, questions, signal });
+  const raw = await port.evaluate({
+    state,
+    questions,
+    signal,
+    ...(input.scope ? { scope: input.scope } : {}),
+    ...(input.onReceipt ? { onReceipt: input.onReceipt } : {}),
+  });
   try {
     return validateEvaluationResult(profile, raw, {
       requestedModel: port.requestedModel,

@@ -33,6 +33,9 @@ export function LoopStart({
   // One dialog, one command: a second click or a resend names the same run.
   const [commandId] = useState(newLoopCommandId);
   const [offers, setOffers] = useState<LoopRouteOffer[] | null>(null);
+  // Set when the business does not hold 'owner-rules' (Andrew, 2026-09-25): the
+  // run still starts, but the project's instruction files do not reach it.
+  const [notIncluded, setNotIncluded] = useState<string | null>(null);
   const [documents, setDocuments] = useState<DocumentInfo[]>([]);
   const [route, setRoute] = useState('');
   const [goal, setGoal] = useState(() => defaultLoopGoal(task));
@@ -44,10 +47,13 @@ export function LoopStart({
 
   useEffect(() => {
     let live = true;
-    api<{ routes: LoopRouteOffer[] }>(`/projects/${projectId}/loop/routes`).then(
-      ({ routes }) => {
+    api<{ routes: LoopRouteOffer[]; notIncludedReason?: string | null }>(
+      `/projects/${projectId}/loop/routes`,
+    ).then(
+      ({ routes, notIncludedReason }) => {
         if (!live) return;
         setOffers(routes);
+        setNotIncluded(notIncludedReason ?? null);
         setRoute((current) => current || routes.find((offer) => offer.admitted)?.route || '');
       },
       (failure) => live && setError(failure instanceof Error ? failure.message : 'The routes could not be read.'),
@@ -105,6 +111,7 @@ export function LoopStart({
         <p className="loop-start-task" title={task.name}>
           {task.name}
         </p>
+        {notIncluded && <p className="trigger-rules-reach">{notIncluded}</p>}
         {offers && admitted.length === 0 && (
           <p className="trigger-rules-reach">No route can run a work loop here yet.</p>
         )}

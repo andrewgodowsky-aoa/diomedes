@@ -12,6 +12,11 @@
     "logs": { "enabled": true, "head_sampling_rate": 1 },
     "traces": { "enabled": true, "head_sampling_rate": 0.01 }
   },
+  // The phone relay (2026-09-26): one hub per business, the Durable Object class RelayHub that
+  // src/worker.ts exports, named by the business's organization id. The first deploy with this
+  // migration creates the class, SQLite-backed. The repository root's wrangler.jsonc says the same.
+  "durable_objects": { "bindings": [{ "name": "RELAY_HUB", "class_name": "RelayHub" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RelayHub"] }],
   "dev": { "ip": "127.0.0.1", "port": 8791, "local_protocol": "http" },
   // Refuses (503) until WORKOS_CLIENT_ID is set here and both required secrets exist. The
   // client ID is public; it goes here, not in the dashboard, so a deploy keeps it.
@@ -44,6 +49,9 @@
   //   host and database as DATABASE_URL. Only the gateway's credit periods, jobs, holds and
   //   settlements use it; DATABASE_URL's cp_runtime may only read funding rows. Set it with
   //   `npx wrangler secret put FUNDING_DATABASE_URL --name diomedes`.
+  // Typed evaluations (/managed/v1/evaluations) also read OPENROUTER_API_KEY, sent only to the
+  // OpenRouter endpoint in src/managed-providers.ts. Without it that route alone answers 503
+  // route_unavailable. Set it with `npx wrangler secret put OPENROUTER_API_KEY --name diomedes`.
   //
   // Two optional spend settings are read at call time beside them (whole numbers; unset or blank is
   // off; anything unreadable refuses every managed call with 503 route_unavailable):

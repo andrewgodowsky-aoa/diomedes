@@ -59,7 +59,11 @@ it offline with exact usage; the placeholder key it holds stands in for the
 Worker secret `BEDROCK_API_KEY`. Bedrock is called for real only when
 `NECTOVIA_FAUX_BEDROCK_API_KEY` is set, which needs Andrew's spend approval
 first; with that key set and no readable `MANAGED_SPEND_CEILING_MICRO_USD`,
-the faux cloud refuses to start. Two optional spend settings are read from the environment under the
+the faux cloud refuses to start. Typed evaluations (`/managed/v1/evaluations`)
+work the same way: a scripted provider answers them offline, its placeholder
+key stands in for the Worker secret `OPENROUTER_API_KEY`, and OpenRouter is
+called for real only when `NECTOVIA_FAUX_OPENROUTER_API_KEY` is set, under the
+same approval and the same ceiling rule. Two optional spend settings are read from the environment under the
 Worker's own names (or `managed.settings` in code), whole numbers, blank meaning
 unset, anything unreadable refusing every managed call with 503
 `route_unavailable`:

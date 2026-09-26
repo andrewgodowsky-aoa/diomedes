@@ -9,6 +9,7 @@ import fs from 'node:fs/promises';
 import http from 'node:http';
 import path from 'node:path';
 import os from 'node:os';
+import type { Duplex } from 'node:stream';
 import { createFauxCloud, FAUX_BACKEND_LABEL, type FauxCloud, type FauxCloudOptions, type FauxIdentityMode } from './cloud.js';
 import { seedDemo, type SeedResult } from './seed.js';
 import { SPEND_SETTINGS } from '../managed-inference.js';
@@ -79,6 +80,28 @@ async function toRequest(req: http.IncomingMessage, port: number): Promise<Reque
   });
 }
 
+/** The request line and headers of a WebSocket upgrade, as a Fetch request. An upgrade has no body to read. */
+function upgradeRequest(req: http.IncomingMessage, port: number): Request {
+  const headers = new Headers();
+  for (const [key, value] of Object.entries(req.headers)) {
+    if (value === undefined) continue;
+    if (Array.isArray(value)) value.forEach((item) => headers.append(key, item));
+    else headers.set(key, value);
+  }
+  return new Request(`http://127.0.0.1:${port}${req.url ?? '/'}`, { method: req.method ?? 'GET', headers });
+}
+
+/** Answer a refused upgrade as plain HTTP on the raw socket, then close it. */
+async function refuseUpgrade(socket: Duplex, response: Response): Promise<void> {
+  const body = Buffer.from(await response.arrayBuffer());
+  const lines = [`HTTP/1.1 ${response.status} ${http.STATUS_CODES[response.status] ?? ''}`];
+  response.headers.forEach((value, key) => {
+    if (key !== 'content-length' && key !== 'connection') lines.push(`${key}: ${value}`);
+  });
+  lines.push(`content-length: ${body.length}`, 'connection: close', '', '');
+  socket.end(Buffer.concat([Buffer.from(lines.join('\r\n')), body]), () => socket.destroy());
+}
+
 /**
  * Stream a Fetch response to Node as it is produced, so a managed answer
  * arrives token by token, and cancel it when the client leaves, so the gateway
@@ -121,6 +144,8 @@ export interface RunningFauxCloud {
  * settings, MANAGED_SPEND_CEILING_MICRO_USD and MANAGED_MAX_OUTPUT_TOKENS, are
  * read from the environment under the same names; `managed.settings` wins. A
  * live key without a readable ceiling refuses to start (createFauxCloud).
+ * Typed evaluations are answered by the scripted Decisions provider unless
+ * NECTOVIA_FAUX_OPENROUTER_API_KEY is set, under the same approval and rule.
  */
 export async function startFauxCloud(options: {
   file?: string | null;
@@ -131,16 +156,21 @@ export async function startFauxCloud(options: {
   identity?: FauxIdentityMode;
   managed?: FauxCloudOptions['managed'];
   liveBedrockApiKey?: string | null;
+  liveOpenRouterApiKey?: string | null;
+  /** The faux cloud's clock; tests move it to reach the relay's rechecks. */
+  now?: () => number;
 }): Promise<RunningFauxCloud> {
   const file = options.file === undefined ? defaultFauxCloudFile(options.identity) : options.file;
   const unlock = file ? await lock(file) : async () => {};
   try {
     const liveBedrockApiKey = options.liveBedrockApiKey !== undefined ? options.liveBedrockApiKey
       : process.env.NECTOVIA_FAUX_BEDROCK_API_KEY?.trim() || null;
+    const liveOpenRouterApiKey = options.liveOpenRouterApiKey !== undefined ? options.liveOpenRouterApiKey
+      : process.env.NECTOVIA_FAUX_OPENROUTER_API_KEY?.trim() || null;
     const fromEnvironment = Object.fromEntries(SPEND_SETTINGS.filter((name) => process.env[name] !== undefined).map((name) => [name, process.env[name]!]));
     const managed = { ...options.managed, settings: { ...fromEnvironment, ...options.managed?.settings } };
     const cloud = await createFauxCloud({ file, allowedOrigins: options.allowedOrigins, passwordIterations: options.passwordIterations,
-      identity: options.identity, managed, liveBedrockApiKey });
+      identity: options.identity, managed, liveBedrockApiKey, liveOpenRouterApiKey, now: options.now });
     const seed = options.seed ? await seedDemo(cloud) : null;
     const port = options.port ?? FAUX_CLOUD_PORT;
     const server = http.createServer(async (req, res) => {
@@ -156,6 +186,21 @@ export async function startFauxCloud(options: {
         res.end(JSON.stringify({ error: error instanceof RangeError ? 'The request is too large.' : 'The test account service failed.' }));
       }
     });
+    // A desktop dials the phone relay with a WebSocket upgrade. The Worker's own relay route
+    // decides; the relay hubs answer the upgrade on this socket when it lets the desktop in.
+    server.on('upgrade', (req: http.IncomingMessage, socket: Duplex, head: Buffer) => {
+      socket.on('error', () => socket.destroy());
+      void (async () => {
+        try {
+          const request = upgradeRequest(req, port);
+          cloud.relayHubs.hold(request, socket, head);
+          const response = await cloud.handle(request);
+          if (!cloud.relayHubs.taken(request)) await refuseUpgrade(socket, response);
+        } catch {
+          await refuseUpgrade(socket, Response.json({ error: 'The test account service failed.' }, { status: 500 })).catch(() => socket.destroy());
+        }
+      })();
+    });
     await new Promise<void>((resolve, reject) => {
       server.once('error', reject);
       server.listen(port, '127.0.0.1', () => { server.off('error', reject); resolve(); });
@@ -168,7 +213,9 @@ export async function startFauxCloud(options: {
       file,
       seed,
       async close() {
-        // Keep-alive clients would hold close() open forever; end them first.
+        // Keep-alive clients would hold close() open forever; end them first. Relay sockets
+        // left HTTP at their upgrade, so closeAllConnections() no longer sees them.
+        cloud.relayHubs.closeAll();
         const closed = new Promise<void>((resolve) => server.close(() => resolve()));
         server.closeAllConnections();
         await closed;

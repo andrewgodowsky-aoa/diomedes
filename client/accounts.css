@@ -178,6 +178,27 @@
 .account-plan p {
   margin: 0 0 4px;
 }
+/* "Reach this computer from your phone": the switch, then one line of state. */
+.account-phone-relay {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.account-phone-relay-switch {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 36px;
+  font-size: var(--dm-type-ui);
+  color: var(--dm-text-1);
+}
+.account-phone-relay p {
+  margin: 0;
+  min-width: 0;
+  /* A computer's name can be one long word. */
+  overflow-wrap: anywhere;
+}
 .account-grants {
   margin: 4px 0 8px;
   padding-left: 18px;

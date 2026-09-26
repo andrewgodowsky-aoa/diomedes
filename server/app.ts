@@ -4,8 +4,13 @@ import { mountPermissionRoutes } from './permission-routes.js';
 import { WorkspaceService } from './workspaces.js';
 import { AccountAgentGate, AGENT_NOT_INCLUDED, AGENT_SIGN_IN_REQUIRED } from './accounts/agent-gate.js';
 import { resolveAccountBackend, type AccountBackend } from './accounts/backend.js';
+import type { BrowserIdentity } from './accounts/browser-identity.js';
+import { browserSignIn } from './accounts/deployment.js';
 import { mountAccountSessionRoutes } from './accounts/routes.js';
 import { AccountSessionService } from './accounts/session.js';
+import { mountPhoneRelayRoutes } from './relay/routes.js';
+import { PhoneRelayService } from './relay/service.js';
+import { createObservation, type ObservationOptions } from './observability/runtime.js';
 import { FAUX_DEMO_PASSWORD } from '../services/control-plane/src/faux/seed.js';
 import { ACCOUNT_VIEW_VERSION, type AccountsOffView } from '../shared/accounts.js';
 import { mountWorkspaceRoutes } from './workspace-routes.js';
@@ -193,6 +198,7 @@ import {
 import type { EngineAsk } from './engines/contract.js';
 import { mountJevAdvisorRoutes } from './jev-advisor-routes.js';
 import type { JevAdvisor } from './harness/jev-advisor.js';
+import { createManagedJevAdvisor } from './harness/evaluation-managed.js';
 import { loadApprovedReadServers, readScopeDigest, type ReadScope } from './engines/read-scope.js';
 import {
   buildTurnReadScope,
@@ -255,7 +261,7 @@ import {
   type ModelApiRoute,
   type NectoviaRouteView,
 } from '../shared/model-api.js';
-import { AGENT_PERSONAL_REASON } from '../shared/access.js';
+import { AGENT_PERSONAL_REASON, OWNER_RULES_FEATURE } from '../shared/access.js';
 import {
   NECTOVIA_SIGN_IN,
   NECTOVIA_UNAVAILABLE,
@@ -323,6 +329,13 @@ interface AppOptions {
    * a fixture advisor; no build constructs a real one yet.
    */
   jevAdvisor?: JevAdvisor | null;
+  /**
+   * The preflight for business conversations on the `nectovia` route, on company-managed
+   * inference: asked through the account service's gateway, which pays and meters it, with
+   * nothing connected here. A launch-time authorization like `ownerRoutes`: off unless given or
+   * `DIOMEDES_MANAGED_JEV=1`, and only on a host with accounts.
+   */
+  managedJev?: boolean;
   engineService?: EngineService;
   /** How a native sign-in window is opened; tests pass a fake so none opens. */
   nativeLoginLaunch?: ConstructorParameters<typeof NativeLogin>[1];
@@ -338,11 +351,18 @@ interface AppOptions {
    * Customer accounts (server/accounts/). The desktop app and the local service turn them on:
    * every /api route then needs a signed-in person, and the Nectovia Agent admits work only for
    * a business whose plan includes it. Unset, as embedded tests leave it, nothing changes.
-   * `DIOMEDES_TEST_ACCOUNT` signs one demo account in at start, in test mode only.
+   * `DIOMEDES_TEST_ACCOUNT` signs one demo account in at start, in test mode only. The desktop's
+   * packaged build says so with `packaged`, and signs people in to the deployed service through
+   * `identity`, its WorkOS sign-in in the system browser (server/accounts/deployment.ts).
    */
-  accounts?: { env?: NodeJS.ProcessEnv; backend?: AccountBackend } | null;
+  accounts?: { env?: NodeJS.ProcessEnv; backend?: AccountBackend; packaged?: boolean; identity?: BrowserIdentity | null } | null;
   /** Tests replace the network below the SDK here. Production leaves it unset. */
   modelApiTransport?: typeof globalThis.fetch;
+  /**
+   * Metadata observation of admitted Agent work (server/observability/). Unset reads
+   * `NECTOVIA_OBSERVATION` once, whose default is off; null is off. Needs `accounts`.
+   */
+  observation?: ObservationOptions | null;
   /**
    * Whether AI setup shows the owner's own provider routes (AWS Bedrock, Azure OpenAI,
    * OpenRouter, Google Vertex AI) and the tier map. A launch-time authorization: read once, from
@@ -776,13 +796,24 @@ export async function createApp(options: AppOptions) {
   // creates is a labelled local fixture rather than a hosted organization.
   const workspaces = new WorkspaceService(store);
   await workspaces.init();
+  const signInExpected = options.accounts?.identity
+    ? browserSignIn({ env: options.accounts.env, packaged: options.accounts.packaged })
+    : null;
   const accountSession = options.accounts
     ? new AccountSessionService(
         options.accounts.backend ??
-          (await resolveAccountBackend({ dataDir: store.dataDir, env: options.accounts.env })),
+          (await resolveAccountBackend({ dataDir: store.dataDir, env: options.accounts.env, packaged: options.accounts.packaged })),
         store.dataDir,
         options.secretBox ?? null,
+        undefined,
+        options.accounts.identity && signInExpected ? { identity: options.accounts.identity, expect: signInExpected } : null,
       )
+    : null;
+  // "Reach this computer from your phone": outbound only, and only while the setting is on.
+  const phoneRelay = accountSession ? new PhoneRelayService(accountSession, store.dataDir, options.secretBox ?? null) : null;
+  // Built before the account session starts, so a resumed sign-in is already seen by it.
+  const observation = accountSession
+    ? createObservation({ options: options.observation, env: process.env, build: running.version, session: accountSession, workspaces, settings: store })
     : null;
   if (accountSession) {
     workspaces.connectAccounts({
@@ -791,7 +822,15 @@ export async function createApp(options: AppOptions) {
     });
     // Signing in and out reach the registry under the store lock. Creating a business from a
     // locked workspace route mirrors its own answer, so this never nests inside that lock.
-    accountSession.onProjection((projection) => store.locked(() => workspaces.project(projection)));
+    // Observation then sees the sign-in, sign-out or change of person (PH-07 N-3).
+    accountSession.onProjection(async (projection) => {
+      await store.locked(() => workspaces.project(projection));
+      observation?.scopes.observeContext();
+      void phoneRelay?.sync();
+    });
+    // Signing out, switching accounts or forgetting one removes this computer's phone access first.
+    accountSession.onRelease((personId, signedIn) => phoneRelay!.release(personId, signedIn));
+    await phoneRelay?.init();
     await accountSession.init();
     const env = options.accounts?.env ?? process.env;
     const testAccount = env.DIOMEDES_TEST_MODE === '1' ? (env.DIOMEDES_TEST_ACCOUNT ?? '').trim() : '';
@@ -799,6 +838,7 @@ export async function createApp(options: AppOptions) {
       await accountSession.signIn({ email: testAccount, password: FAUX_DEMO_PASSWORD, remember: false });
     engines.agentGate = new AccountAgentGate(accountSession, workspaces);
   }
+  if (observation) engines.observation = observation.scopes;
   const agentGate = engines.agentGate instanceof AccountAgentGate ? engines.agentGate : null;
   // The owner's own provider routes in AI setup, authorized at launch like design authoring.
   const ownerRoutes = options.ownerRoutes ?? process.env.DIOMEDES_OWNER_ROUTES === '1';
@@ -818,6 +858,17 @@ export async function createApp(options: AppOptions) {
           fetch: (input, init) => accountSession.backend.client.send(new Request(input, init)),
         }
       : null;
+  /**
+   * Owner-written rules are a paid ability (Andrew, 2026-09-25): they reach work only while
+   * the business that work belongs to holds 'owner-rules'. The business is the one the Agent
+   * gate resolves — the project's owner, else the active Business workspace — so Personal
+   * gets none. With accounts off everything passes through, exactly like the Agent gate.
+   */
+  const ownerRules = (projectId: string | null): boolean => {
+    if (!accountSession || !agentGate) return true;
+    const organizationId = agentGate.organizationFor(projectId);
+    return organizationId !== null && accountSession.includes(organizationId, OWNER_RULES_FEATURE);
+  };
   const discovery = new DiscoveryService(store, {
     // A new observation needs `verified`. A stored one whose approved file has
     // changed since reads `stale` and stays inspectable (DIO-84); `stale` is
@@ -1051,6 +1102,7 @@ export async function createApp(options: AppOptions) {
     agents,
     changeReview,
     agentProfiles,
+    ownerRules,
   );
   const harness = createHarnessHost({
     store,
@@ -1060,12 +1112,15 @@ export async function createApp(options: AppOptions) {
     // The one job an activated setup can run, as a harness procedure: the
     // workspace decides where it writes and refuses rather than guessing.
     weeklyBrief: AutomationService.host(workspaces, configuration),
+    observation: observation?.projector ?? null,
     // A Nectovia run is authorized on the business its project belongs to, while someone is signed in.
     nectoviaAccount: (projectId) => {
       if (!nectoviaAccount?.signedIn()) return null;
       const organizationId = nectoviaAccount.organizationFor(projectId);
       return organizationId ? nectoviaAccountRoute(organizationId) : null;
     },
+    // H16 trigger rules are the owner's: they evaluate only where the business holds 'owner-rules'.
+    ownerRules,
   });
   // External text turns run through the host's RunService: the adapter is only
   // the provider transport inside the fenced dispatch step.
@@ -1098,6 +1153,7 @@ export async function createApp(options: AppOptions) {
   const engineAsks = new EngineAskNeeds(store);
   const exposure = new SpendExposure(store.dataDir);
   await exposure.init();
+  observation?.projector.attachLedger(exposure);
   // Parent-job caps (owner decision 2026-09-23): each job's tier is its thread's WorkStyle, else
   // the Settings default, read here by the host; the engine service holds every model-API call
   // to its job's cap as well as the connection's.
@@ -1111,6 +1167,17 @@ export async function createApp(options: AppOptions) {
   });
   await jobCaps.init();
   engines.jobCaps = jobCaps;
+  // The preflight on company-managed inference, for business conversations on `nectovia`.
+  const managedJevAdvisor =
+    (options.managedJev ?? process.env.DIOMEDES_MANAGED_JEV === '1') && nectoviaAccount && accountSession && agentGate
+      ? createManagedJevAdvisor({
+          account: nectoviaAccount,
+          includes: (organizationId, feature) => accountSession.includes(organizationId, feature),
+          gate: agentGate,
+          tierOf: (projectId, threadId) => jobCaps.tierFor(projectId, threadId),
+          exposure,
+        })
+      : null;
   engines.modelApi = {
     connections: new AwsConnections(store.dataDir),
     secrets: new ConnectionSecrets(store.dataDir, options.secretBox ?? null),
@@ -1193,7 +1260,7 @@ export async function createApp(options: AppOptions) {
   await automations.init();
   // The one clock for automation slots. It admits only through `automations`.
   const automationScheduler = new AutomationScheduler(store, automations, options.automationTickMs);
-  const connections = new DesktopConnections(store, harness);
+  const connections = new DesktopConnections(store, harness, { loopbackToken: options.loopbackToken });
   const app = express();
   app.locals.allowsCodexSignInReference = (destination: string) =>
     codexSetup.allowsReference(destination);
@@ -1309,6 +1376,7 @@ export async function createApp(options: AppOptions) {
     app.get('/api/account', (_req, res) => {
       res.json({ v: ACCOUNT_VIEW_VERSION, off: true } satisfies AccountsOffView);
     });
+  if (phoneRelay) mountPhoneRelayRoutes(app, phoneRelay);
   connections.mountRaw(app);
   app.use(express.json({ limit: '9mb' }));
   const teamService = mountTeamRoutes(app, store);
@@ -1361,13 +1429,14 @@ export async function createApp(options: AppOptions) {
     {
       reviewTimeoutMs: options.verificationReviewTimeoutMs,
       commandEvidence: (projectId, command, notBefore) => softwarePack.commandEvidence(projectId, command, notBefore),
+      observe: observation ? (record, view) => observation.projector.onVerification(record, view) : undefined,
     },
   );
   mountVerificationRoutes(app, store, verification);
   // H13: the Diomedes work loop's finish gate runs the task's declared checks through H17's verifier.
   harness.loop.attachVerification(verification);
   // H14: team roles resolve their H09 profiles and Agents at admission; H08 retries a loop.
-  const loopRoutes = mountNativeLoopRoutes(app, store, harness, verification, { profiles: agentProfiles, agents });
+  const loopRoutes = mountNativeLoopRoutes(app, store, harness, verification, { profiles: agentProfiles, agents }, ownerRules);
   mountWorkspaceRoutes(app, store, workspaces, configuration, automations);
   mountAutomationRoutes(app, store, automations);
   mountThemeRoutes(app, store, themes, customization);
@@ -3704,8 +3773,8 @@ export async function createApp(options: AppOptions) {
   );
   // A preview of the Jev preflight for a thread's next message, beside the resolution above.
   // The thread is read under the lock; the provider is asked after it is released.
-  if (options.jevAdvisor)
-    mountJevAdvisorRoutes(app, options.jevAdvisor, (projectId, threadId) =>
+  if (options.jevAdvisor || managedJevAdvisor)
+    mountJevAdvisorRoutes(app, options.jevAdvisor ?? null, (projectId, threadId) =>
       store.locked(async () => {
         const state = store.state(projectId);
         const thread = state.conversations.find((c) => c.id === threadId);
@@ -3717,13 +3786,17 @@ export async function createApp(options: AppOptions) {
           tier?.outcome === 'run'
             ? (tier.route as Route)
             : selectedEngine(store.settings, state.project, thread);
-        if (engine === 'sample') return { tenant: 'local', mode: thread.mode, style, workStyle: null };
+        if (engine === 'sample') return { tenant: 'local', managed: false, mode: thread.mode, style, workStyle: null };
+        // A conversation on company-managed inference is its business's preflight, never the owner's.
+        const managed = engine === NECTOVIA_ROUTE;
+        const business = managed ? (nectoviaAccount?.organizationFor(projectId) ?? null) : null;
         const savedModel =
           engine === 'codex'
             ? codexModelSetting()
             : selectedModel(engine, store.settings, state.project, { ...thread, requested: null });
         return {
-          tenant: 'local',
+          tenant: business ?? 'local',
+          managed,
           mode: thread.mode,
           style,
           workStyle: {
@@ -3740,6 +3813,15 @@ export async function createApp(options: AppOptions) {
           },
         };
       }),
+      managedJevAdvisor,
+      // A preflight on the owner’s own route is Agent work on their own connection: the Agent gate
+      // admits it before any provider is asked. A managed preflight is admitted by the managed advisor
+      // itself, pinned to its own job. No accounts, no gate: nothing to admit.
+      agentGate
+        ? async (projectId) => {
+            await agentGate.check({ phase: 'admit', surface: 'other', projectId, rootJobId: null, routeKind: 'byo' });
+          }
+        : undefined,
     );
   // The explicit native conversation routes. Claude Code's (H03) and OpenCode's kept session
   // (H04) take the same admission and the same thread projection, each under its own engine.
@@ -3801,6 +3883,7 @@ export async function createApp(options: AppOptions) {
           sourceBytes: documents.reduce((bytes, document) => bytes + Buffer.byteLength(document.text), 0),
           workPaths: documents.map((document) => document.path),
           allowedDocuments: cloudSharing(state).documents,
+          ownerRulesIncluded: ownerRules(projectId),
         });
         return {
           projectId,
@@ -4415,6 +4498,7 @@ export async function createApp(options: AppOptions) {
           sourceBytes: documents.reduce((bytes, document) => bytes + Buffer.byteLength(document.text), 0),
           workPaths: documents.map((document) => document.path),
           allowedDocuments: cloudSharing(state).documents,
+          ownerRulesIncluded: ownerRules(projectId),
         });
         // One current lineage per mode. Retiring one and admitting its replacement are a single
         // mutation, and the next generation counts every entry the thread ever had.
@@ -5412,6 +5496,7 @@ export async function createApp(options: AppOptions) {
                 ),
                 allowedDocuments: cloudSharing(store.state(projectId)).documents,
                 workPaths: prepared.documents.map((doc) => doc.path),
+                ownerRulesIncluded: ownerRules(projectId),
               })
             ).section;
       const instructionsForRequest = [
@@ -5854,6 +5939,7 @@ export async function createApp(options: AppOptions) {
               sourceBytes,
               workPaths: draft.sources.map((source) => relativeName(source.path)),
               allowedDocuments: cloudSharing(state).documents,
+              ownerRulesIncluded: ownerRules(projectId),
             })
           : undefined;
       return meteredPlan(threadId, route, model, {
@@ -5968,6 +6054,7 @@ export async function createApp(options: AppOptions) {
   app.locals.nativeWork = nativeWork;
   app.locals.changeReview = changeReview;
   app.locals.harness = harness;
+  app.locals.observation = observation;
   app.locals.connections = connections;
   app.locals.workControl = workControl;
   app.locals.durableControls = durableControls;
@@ -5996,6 +6083,8 @@ export async function createApp(options: AppOptions) {
     // A declared command already approved finishes and is recorded before the run store closes.
     await softwarePack.settled();
     engines.close();
+    await observation?.exporter.close();
+    await phoneRelay?.close();
     await accountSession?.backend.close();
     await login.close();
     await codexSetup.close();

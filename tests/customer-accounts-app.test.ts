@@ -311,7 +311,8 @@ describe('production entries turn accounts on', () => {
     const service = await fs.readFile(path.resolve('server/index.ts'), 'utf8');
     const desktop = await fs.readFile(path.resolve('desktop/main.mjs'), 'utf8');
     expect(service).toMatch(/createApp\(\{[^}]*accounts: \{\}/);
-    expect(desktop).toMatch(/accounts: \{\},/);
+    // The desktop app also says whether it is the packaged build, and hands over its WorkOS sign-in.
+    expect(desktop).toMatch(/accounts: \{ packaged: app\.isPackaged, identity: [^}]*\},/);
   });
 
   test('an embedded host without accounts says so, and its routes ask for no sign-in', async () => {

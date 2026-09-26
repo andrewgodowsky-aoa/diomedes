@@ -21,6 +21,7 @@ import {
   type ShellLike,
 } from '@workos/authkit-electron/internals';
 import type { NativeAccountState } from '../shared/native-auth.js';
+import type { BrowserIdentity, BrowserSession } from '../server/accounts/browser-identity.js';
 import { createNativeTokenStorage, type NativeTokenStorage } from './native-auth-storage.js';
 
 export const NATIVE_AUTH_CALLBACK = 'diomedes-auth://callback';
@@ -31,6 +32,17 @@ const failure = () => ({
   error: { code: 'NativeSignInUnavailable', message: 'Sign-in could not finish. Try again.' },
 });
 const signedOut = (): NativeAccountState => ({ status: 'signed-out', account: null, message: '' });
+/** The WorkOS user as the account session shows them. */
+const personOf = (user: { id: string; email: string; firstName?: string | null; lastName?: string | null }) => ({
+  id: user.id,
+  email: user.email,
+  name:
+    [user.firstName, user.lastName]
+      .filter((part) => typeof part === 'string' && part)
+      .join(' ')
+      .slice(0, 200)
+      .trim() || user.email,
+});
 type Callback = { state: string; code: string } | { state: string; error: true };
 
 function isTrustedIssuer(value: unknown): value is string {
@@ -159,11 +171,19 @@ export function captureNativeAuthCallbacks(application: AppLike, argv: string[])
   };
 }
 
-/** Tokens and SDK state stay here. No control-plane policy or workspace mutation. */
+/**
+ * Tokens and SDK state stay here. No control-plane policy or workspace mutation: the account
+ * session reads this sign-in through `identity`, in this process, and the renderer never sees a token.
+ */
 export function createNativeAuth(options: {
   clientId?: string;
-  /** Exact issuer from trusted main-process configuration, independent of clientId. */
-  tokenIssuer?: string;
+  /**
+   * Exact issuer from trusted main-process configuration, independent of clientId. Several are each
+   * exact too: the deployed service accepts WorkOS's bare issuer and the client's own.
+   */
+  tokenIssuer?: string | readonly string[];
+  /** When set, a token must also name this audience (the account service's, which the JWT template adds). */
+  audience?: string;
   origin: string;
   getWindow(): BrowserWindow | undefined;
   storage?: NativeTokenStorage;
@@ -177,11 +197,17 @@ export function createNativeAuth(options: {
   let disposed = false;
   let handling: number | null = null;
   let reading: Promise<AuthResult> | undefined;
-  const tokenIssuer = options.tokenIssuer;
+  const tokenIssuers: readonly unknown[] =
+    typeof options.tokenIssuer === 'string' ? [options.tokenIssuer] : Array.isArray(options.tokenIssuer) ? options.tokenIssuer : [];
+  const audience = options.audience;
+  const listeners = new Set<() => void>();
+  let renew: (() => Promise<BrowserSession | null>) | undefined;
   const configured =
     typeof options.clientId === 'string' &&
     /^client_[A-Za-z0-9_-]{1,120}$/.test(options.clientId) &&
-    isTrustedIssuer(tokenIssuer);
+    tokenIssuers.length > 0 &&
+    tokenIssuers.every(isTrustedIssuer) &&
+    (audience === undefined || isTrustedIssuer(audience));
   const rendererOrigin = new URL(options.origin);
   if (
     rendererOrigin.protocol !== 'http:' ||
@@ -205,7 +231,15 @@ export function createNativeAuth(options: {
     }
     return win;
   };
-  const notify = () => trustedWindow()?.webContents.send(IPC_CHANNELS.authChanged, state);
+  const notify = () => {
+    for (const listener of listeners)
+      try {
+        listener();
+      } catch {
+        // A listener's failure never changes the sign-in.
+      }
+    trustedWindow()?.webContents.send(IPC_CHANNELS.authChanged, state);
+  };
   const ensure = () => {
     if (disposed || !manager || !storage) throw new Error('Native sign-in is not configured.');
     storage.assertAvailable();
@@ -277,9 +311,12 @@ export function createNativeAuth(options: {
           const header = JSON.parse(
             Buffer.from(token.split('.')[0]!, 'base64url').toString('utf8'),
           );
+          const audiences = typeof claims.aud === 'string' ? [claims.aud] : Array.isArray(claims.aud) ? claims.aud : [];
           return (
             header.alg === 'RS256' &&
-            claims.iss === tokenIssuer &&
+            typeof claims.iss === 'string' &&
+            tokenIssuers.includes(claims.iss) &&
+            (audience === undefined || audiences.includes(audience)) &&
             claims.client_id === clientId &&
             typeof claims.sub === 'string' &&
             /^user_[A-Za-z0-9_-]+$/.test(claims.sub) &&
@@ -292,6 +329,17 @@ export function createNativeAuth(options: {
         } catch {
           return false;
         }
+      };
+      // A new access token now, whatever the old one's lifetime: the account service refused it, or
+      // it is about to expire. The refreshed token is verified like any other (the proxy above).
+      renew = async () => {
+        const kept = storage!.sdk.getSession();
+        if (!kept) return null;
+        const refreshed = await core.validateAndRefresh(kept, { force: true });
+        storage!.sdk.setSession(refreshed.session);
+        return refreshed.session.user
+          ? { accessToken: refreshed.session.accessToken, user: personOf(refreshed.session.user) }
+          : null;
       };
       const browser = options.shell ?? shell;
       const safeBrowser: ShellLike = {
@@ -459,7 +507,41 @@ export function createNativeAuth(options: {
     { ipcMain: guardedIpc, broadcast: notify, broadcastError: () => notify() },
   );
 
+  /** The account session's view of this sign-in (server/accounts/browser-identity.ts). Main process only. */
+  const identity: BrowserIdentity = {
+    begin: beginSignIn,
+    async session(request = {}) {
+      if (!manager || !storage || disposed) return null;
+      if (request.fresh) {
+        const epoch = storage.generation;
+        const renewed = await storage.run(() => renew!());
+        if (storage.generation !== epoch || disposed) throw new Error('The account session changed.');
+        if (!renewed && state.status === 'signed-in') state = signedOut();
+        return renewed;
+      }
+      const auth = await getUser();
+      if (auth.user) return { accessToken: auth.accessToken, user: personOf(auth.user) };
+      if (state.status === 'unavailable' || state.status === 'signing-in' || handling !== null) return null;
+      // The SDK keeps a session whose renewal failed for a reason other than its token: WorkOS
+      // could not be asked just now. That is not a sign-out.
+      if (await storage.run(async () => storage!.sdk.getSession() !== null))
+        throw new Error('The sign-in could not be renewed just now.');
+      return null;
+    },
+    signOut: async () => {
+      await signOut();
+    },
+    status: () => ({ status: state.status, message: state.message }),
+    onChange(listener) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+  };
+
   return {
+    identity,
     async handleCallback(url: string): Promise<boolean> {
       const parsed = parseNativeCallback(url);
       if (!parsed || !storage || !manager || disposed || handling !== null) return false;
@@ -492,6 +574,7 @@ export function createNativeAuth(options: {
     },
     dispose() {
       disposed = true;
+      listeners.clear();
       cleanup();
       storage?.dispose();
     },

@@ -44,6 +44,7 @@ import {
   type StreamTriggerMatch,
 } from '../../shared/stream-rules.js';
 import { AGENT_NAME } from '../../shared/agent-name.js';
+import { OWNER_RULES_NOT_INCLUDED_REASON } from '../../shared/access.js';
 import { ApiError, relativeName } from '../paths.js';
 import { identifier, now, type Store } from '../store.js';
 import { digest, HarnessError } from '../harness/policy.js';
@@ -216,6 +217,12 @@ export class StreamRuleService {
       runs: RunService;
       tools: ToolRegistry;
       redact: (text: string) => string;
+      /**
+       * Whether the work's business holds 'owner-rules' (Andrew, 2026-09-25), resolved
+       * through the account session the way the Agent gate does. Absent passes everything
+       * through, the embedded-host behaviour; a Personal project answers false.
+       */
+      ownerRules?: (projectId: string | null) => boolean;
     },
   ) {}
 
@@ -225,6 +232,15 @@ export class StreamRuleService {
 
   private get store() {
     return this.deps.store;
+  }
+
+  /**
+   * Owner-written rules are a paid ability: without the feature they are kept, listed and
+   * never evaluated — not read for a watch, not judged at a tool's admission. `null` (the
+   * organization list) answers for the active workspace, as the Agent gate resolves it.
+   */
+  private included(projectId: string | null): boolean {
+    return this.deps.ownerRules?.(projectId) ?? true;
   }
 
   // --- the rules -----------------------------------------------------------------
@@ -244,7 +260,10 @@ export class StreamRuleService {
 
   /** Which rules watch a run of this task in this project, and why the others do not. */
   resolution(projectId: string, taskId: string | null): StreamRuleResolution {
-    return resolveStreamRules(this.authored(this.store.state(projectId)), taskId);
+    return resolveStreamRules(
+      this.included(projectId) ? this.authored(this.store.state(projectId)) : [],
+      taskId,
+    );
   }
 
   /**
@@ -259,12 +278,21 @@ export class StreamRuleService {
       readLayer('organization', organization),
       ...(state ? [readLayer('project', state.streamTriggerRules)] : []),
     ].flatMap((layer) => ('problem' in layer ? [layer.problem] : []));
-    const view = { organization, watches: WATCHED_RUNS, ...(unreadable.length ? { unreadable } : {}) };
+    // The rules stay listed — they are the owner's data — but nothing claims they watch
+    // when the business does not hold them: no resolution, and the one reason sentence.
+    const included = this.included(projectId);
+    const view = {
+      organization,
+      watches: WATCHED_RUNS,
+      notIncludedReason: included ? null : OWNER_RULES_NOT_INCLUDED_REASON,
+      ...(unreadable.length ? { unreadable } : {}),
+    };
     if (state === null) return { ...view, project: [], resolution: null };
     return {
       ...view,
       project: structuredClone(state.streamTriggerRules ?? []),
-      resolution: unreadable.length ? null : resolveStreamRules(this.authored(state), taskId),
+      resolution:
+        unreadable.length || !included ? null : resolveStreamRules(this.authored(state), taskId),
     };
   }
 
@@ -470,6 +498,7 @@ export class StreamRuleService {
     const owner = await this.owner(runId);
     if (!owner) return;
     const { run, state, ref } = owner;
+    if (!this.included(run.projectId)) return;
     const existing = run.steps.find((item) => item.intent.stepId === step.stepId);
     if (existing?.state === 'succeeded') return;
     const active = resolveStreamRules(this.authored(state), run.taskId).active.filter(
@@ -564,6 +593,7 @@ export class StreamRuleService {
     stopped: () => Promise<boolean>,
   ): StreamWatch | null {
     const run = { projectId };
+    if (!this.included(projectId)) return null;
     const active = resolveStreamRules(this.authored(state), ref.taskId).active.filter(
       (item) => item.rule.match.kind !== 'tool',
     );

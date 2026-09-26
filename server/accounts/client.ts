@@ -9,6 +9,8 @@
  */
 import type { AccessView } from '../../shared/access.js';
 import type { Membership, MemberRole, Organization, Person } from '../../shared/workspaces.js';
+import { RELAY_DEVICE_HEADER } from '../../services/control-plane/src/relay/protocol.js';
+import type { DesktopCheckAnswer } from '../../services/control-plane/src/relay/service.js';
 
 export type Fetcher = (request: Request) => Promise<Response>;
 
@@ -61,6 +63,14 @@ export interface RoutingPolicyAnswer {
   tiers: Record<'efficient' | 'focused' | 'thorough', { entryId: string; provider: string; model: string; label: string; entryRevision: number } | null>;
 }
 
+/** A computer registered for phone access. The service never answers its key. */
+export interface RelayRegistrationAnswer {
+  deviceId: string;
+  organizationId: string;
+  label: string;
+  createdAt: string;
+}
+
 export interface RosterAnswer {
   organizationId: string;
   you: { personId: string; role: MemberRole };
@@ -75,8 +85,8 @@ export class ControlPlaneClient {
     private readonly timeoutMs = 15_000,
   ) {}
 
-  private async call<T>(method: string, path: string, token?: string | null, body?: unknown): Promise<T> {
-    const headers = new Headers();
+  private async call<T>(method: string, path: string, token?: string | null, body?: unknown, extra: Record<string, string> = {}): Promise<T> {
+    const headers = new Headers(extra);
     if (token) headers.set('authorization', `Bearer ${token}`);
     if (body !== undefined) headers.set('content-type', 'application/json');
     let response: Response;
@@ -117,13 +127,16 @@ export class ControlPlaneClient {
     return this.fetcher(request);
   }
 
-  /** The faux cloud answers this; a deployed Worker answers 404 and is taken to be the cloud. */
+  /**
+   * The faux cloud answers this. A deployed Worker refuses it, and is taken to be the cloud: it
+   * checks the bearer before it routes, so it answers 401 to a request without one (404 once past it).
+   */
   async status(): Promise<{ backend: 'faux' | 'cloud'; label: string | null }> {
     try {
       const answer = await this.call<{ backend: string; label: string }>('GET', '/faux/status');
       return { backend: answer.backend === 'faux' ? 'faux' : 'cloud', label: answer.label };
     } catch (error) {
-      if (error instanceof ControlPlaneError && error.status === 404) return { backend: 'cloud', label: null };
+      if (error instanceof ControlPlaneError && (error.status === 401 || error.status === 404)) return { backend: 'cloud', label: null };
       throw error;
     }
   }
@@ -178,5 +191,22 @@ export class ControlPlaneClient {
   }
   setMember(token: string, organizationId: string, personId: string, change: { role: MemberRole; state: 'active' | 'revoked' }) {
     return this.call<Membership>('PATCH', `/account/organizations/${encodeURIComponent(organizationId)}/members/${encodeURIComponent(personId)}`, token, change);
+  }
+
+  // --- the phone relay (services/control-plane/src/relay) ----------------------
+
+  /** Register this computer for phone access with the public half of its key. */
+  registerRelayDevice(token: string, organizationId: string, input: { publicKey: string; label: string }) {
+    return this.call<RelayRegistrationAnswer>('POST', `/relay/v1/organizations/${encodeURIComponent(organizationId)}/devices`, token, input);
+  }
+  /** Stop phones reaching a computer: its device record becomes a tombstone that can never connect. */
+  async revokeRelayDevice(token: string, organizationId: string, deviceId: string) {
+    await this.call<null>('DELETE', `/relay/v1/organizations/${encodeURIComponent(organizationId)}/devices/${encodeURIComponent(deviceId)}`, token);
+  }
+  /** The checks a desktop's dial runs, without opening anything: why an upgrade was refused. */
+  checkRelayDesktop(token: string, organizationId: string, deviceId: string) {
+    return this.call<DesktopCheckAnswer>('GET', `/relay/v1/organizations/${encodeURIComponent(organizationId)}/desktop`, token, undefined, {
+      [RELAY_DEVICE_HEADER]: deviceId,
+    });
   }
 }

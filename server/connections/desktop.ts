@@ -35,7 +35,9 @@ export class DesktopConnections {
   private readonly adoptions = new Map<string, { digest: string; work: Promise<unknown> }>();
   private writeDispatches = 0;
   private closed = false;
-  constructor(private readonly store: Store, private readonly host: HarnessHost) {
+  /** `loopbackToken` is this launch's session; the synthetic event's self-call to the ingress carries it. */
+  constructor(private readonly store: Store, private readonly host: HarnessHost,
+    private readonly options: { loopbackToken?: string } = {}) {
     const scan = fixtureCredentials('unused-scanner').credentials;
     this.service = new ConnectionsService(store, host, [toastConnector, ...compiledConnectionDemoConnectors], {
       verify: async (id, raw, timestamp, signature) =>
@@ -221,7 +223,8 @@ export class DesktopConnections {
       const response = await fetch(`http://127.0.0.1:${loopbackPort}/vendor/connections/${encodeURIComponent(projectId)}/${id}`, {
         method: 'POST', redirect: 'error', signal: AbortSignal.timeout(5000),
         headers: { 'Content-Type': 'application/json', 'Toast-Signature': signer.sign(raw, at),
-          'Toast-Restaurant-External-ID': TOAST_RESOURCES[0].id }, body: raw,
+          'Toast-Restaurant-External-ID': TOAST_RESOURCES[0].id,
+          ...(this.options.loopbackToken ? { 'X-Diomedes-Session': this.options.loopbackToken } : {}) }, body: raw,
       });
       const result: unknown = await response.json();
       if (response.status !== 202) fail('ingress_refused', 'The signed local ingress refused the synthetic event.');

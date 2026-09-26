@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { spendControls } from '../src/managed-inference.js';
+import * as worker from '../src/worker.js';
 
 // Workers Builds deploys the repository root's wrangler.jsonc on every merge to
 // main; this package's wrangler.jsonc is the same Worker for `wrangler dev` and
@@ -23,6 +24,8 @@ interface WranglerConfig {
   preview_urls?: boolean;
   routes?: unknown[];
   vars?: Record<string, string>;
+  durable_objects?: { bindings: { name: string; class_name: string; script_name?: string }[] };
+  migrations?: { tag: string; new_sqlite_classes?: string[]; new_classes?: string[] }[];
 }
 
 /** Whole-line `//` comments only, which is all these files use. */
@@ -55,5 +58,17 @@ describe('the deployed Worker configuration', () => {
     const controls = spendControls(deployed.vars ?? {});
     expect(controls.ceilingMicroUsd).toBe(100_000_000);
     expect(controls.maxOutputTokens).toBe(2000);
+  });
+
+  // Every main merge deploys the root file. A binding or migration naming a class the Worker
+  // does not export fails that deploy, so the class, the binding and the migration move together.
+  it('binds the phone relay hub in both files, to a SQLite-backed class the Worker exports', () => {
+    expect(deployed.durable_objects).toEqual(local.durable_objects);
+    expect(deployed.migrations).toEqual(local.migrations);
+    expect(deployed.durable_objects?.bindings).toEqual([{ name: 'RELAY_HUB', class_name: 'RelayHub' }]);
+    expect(deployed.migrations).toEqual([{ tag: 'v1', new_sqlite_classes: ['RelayHub'] }]);
+    expect(typeof worker.RelayHub).toBe('function');
+    for (const binding of deployed.durable_objects?.bindings ?? [])
+      expect(typeof (worker as unknown as Record<string, unknown>)[binding.class_name]).toBe('function');
   });
 });

@@ -220,6 +220,11 @@ async function packagingFixture() {
   for (const file of ['desktop/native-auth.ts', 'desktop/native-auth-preload.ts'])
     await fs.writeFile(path.join(root, file), 'export const fixture = true;');
   await fs.writeFile(path.join(root, 'package.json'), JSON.stringify({ version: '0.1.4' }));
+  // The account service a packaged build signs customers in to (scripts/package-desktop.mjs reads it).
+  await fs.writeFile(path.join(root, 'wrangler.jsonc'), JSON.stringify({
+    routes: [{ pattern: 'accounts.independent-fixture.invalid', custom_domain: true }],
+    vars: { WORKOS_CLIENT_ID: 'client_independent_fixture', WORKOS_ISSUER: 'https://api.workos.com', WORKOS_TOKEN_AUDIENCE: 'https://accounts.independent-fixture.invalid' },
+  }));
   await fs.writeFile(path.join(root, 'node_modules/electron/package.json'), JSON.stringify({ version: '44.2.0' }));
   await fs.writeFile(path.join(root, 'cache/electron-v44.2.0-darwin-arm64.zip'), 'fixture only: real packager never runs');
   await fs.writeFile(path.join(root, '.data/native-runtime/codex.exe'), 'Windows poison resource');

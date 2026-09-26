@@ -20,12 +20,12 @@
  * local figure as what the business has left.
  */
 import { createOpenAI } from '@ai-sdk/openai';
-import type { JobTier, UsageClass } from '../../shared/managed-usage.js';
+import { creditAmount, publishedMonthlyGrant, type JobTier, type UsageClass } from '../../shared/managed-usage.js';
 import { GPT6_LUNA, NECTOVIA_ROUTE } from '../../shared/model-api.js';
 import type { TierResolution } from '../../shared/tier-map.js';
 import { classifyTask, WORK_STYLE_LABELS, type WorkStyle } from '../../shared/work-style.js';
 import { digest } from '../harness/policy.js';
-import { attemptIdFor, type ModelRateCard } from '../spend-exposure.js';
+import { attemptIdFor, type ExposureSummary, type ModelRateCard, type SpendExposure } from '../spend-exposure.js';
 import { AWS_BEDROCK_SDK } from './aws-bedrock.js';
 import {
   classifyEnvelope,
@@ -112,6 +112,25 @@ export const nectoviaAccountRoute = (organizationId: string) => `${NECTOVIA_ROUT
 export function nectoviaConnectionId(organizationId: string, at: Date): string {
   const month = `${at.getUTCFullYear()}${String(at.getUTCMonth() + 1).padStart(2, '0')}`;
   return `${NECTOVIA_ROUTE}-${digest(organizationId).slice(0, 12)}-${month}`;
+}
+
+/**
+ * The local guard for one business's month, and what it has left. Its cap is set once, from the
+ * plan's published monthly grant (a plan without a published figure is guarded at the Business
+ * grant). The gateway decides what the business can actually spend; this only stops this computer
+ * sending past what the plan could fund. Every Nectovia call and every managed preflight holds on it.
+ */
+export async function ensureNectoviaGuard(
+  exposure: Pick<SpendExposure, 'allowance' | 'setCap' | 'summary'>,
+  connectionId: string,
+  planId: string | null,
+): Promise<ExposureSummary> {
+  if (!exposure.allowance(connectionId))
+    await exposure.setCap(connectionId, publishedMonthlyGrant(planId ?? '') ?? creditAmount(1_000), {
+      approvedBy: `the ${planId ?? 'Nectovia'} plan, by this computer's host`,
+      note: "Nectovia's local guard for this business this month. The account service's ledger is the authority.",
+    });
+  return exposure.summary(connectionId);
 }
 
 /**
@@ -415,3 +434,11 @@ export function nectoviaTier(input: {
 /** Build and Fix run through Work; the Nectovia Agent answers in the conversation. */
 export const NECTOVIA_WORK_REFUSED =
   'The Nectovia Agent answers in the conversation. Build and Fix are not on it yet, so nothing was sent.';
+
+/**
+ * A work loop runs on the business's own provider routes. On Nectovia it is refused before the
+ * Agent gate is asked, so no managed admission is recorded for it: the gateway admits one job for
+ * at most 15 minutes, and a loop's many steps, its resumes and its delegates' own jobs have no
+ * admission or metering under one root job yet.
+ */
+export const NECTOVIA_LOOP_REFUSED = "Work loops don't run on the Nectovia Agent yet, so nothing was sent.";

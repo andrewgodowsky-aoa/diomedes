@@ -3,7 +3,8 @@
  *
  * Starting is admission and nothing more. It checks, in order: the task, the
  * route (the scripted fixture or a Diomedes-owned model-API route; an external
- * engine drives its own loop and is not offered here), that the route is on,
+ * engine drives its own loop and is not offered here, and the Nectovia route is
+ * refused before anything is admitted), that the route is on,
  * the person's consent to send, the project's sharing grant for every selected
  * file, and the route's own admission (connection, model, credential, spend
  * cap). A delegate route, when the person names one, is admitted the same way
@@ -19,7 +20,7 @@ import { createHash } from 'node:crypto';
 import type { Express, NextFunction, Request, Response } from 'express';
 import { z } from 'zod';
 import type { Json } from '../shared/harness.js';
-import { isModelApiRoute, MODEL_API_NAMES, MODEL_API_PROVIDERS } from '../shared/model-api.js';
+import { isModelApiRoute, MODEL_API_NAMES, MODEL_API_PROVIDERS, NECTOVIA_ROUTE } from '../shared/model-api.js';
 import {
   LOOP_LIMITS,
   NATIVE_LOOP_CAPABILITY,
@@ -29,6 +30,9 @@ import {
   type LoopRunInput,
 } from '../shared/native-loop.js';
 import { ApiError, relativeName } from './paths.js';
+import { NECTOVIA_LOOP_REFUSED } from './engines/nectovia.js';
+import { EngineError } from './engines/process.js';
+import { AGENT_NOT_INCLUDED, AGENT_SIGN_IN_REQUIRED } from './accounts/agent-gate.js';
 import type { Store } from './store.js';
 import { cloudSharing, requireCloudSharing } from './cloud-sharing.js';
 import { assembleInstructions, instructionSectionBudget } from './harness/instruction-delivery.js';
@@ -52,6 +56,7 @@ import {
   type TeamRole,
 } from '../shared/team-delegation.js';
 import type { Route, Session } from '../shared/types.js';
+import { OWNER_RULES_NOT_INCLUDED_REASON } from '../shared/access.js';
 
 const routeName = z.string().min(1).max(40);
 /** One team role as the person names it: an Agent, and either an H09 profile or a route. */
@@ -136,6 +141,12 @@ export function mountNativeLoopRoutes(
   harness: HarnessHost,
   verification: VerificationService,
   teamAdmission: TeamAdmission | null = null,
+  /**
+   * Whether the work's business holds 'owner-rules' (Andrew, 2026-09-25),
+   * resolved through the account session the way the Agent gate does. The
+   * default passes everything through, the embedded-host behaviour.
+   */
+  ownerRules: (projectId: string | null) => boolean = () => true,
 ) {
   const handle =
     (action: (req: Request) => Promise<unknown>) => async (req: Request, res: Response, next: NextFunction) => {
@@ -162,6 +173,7 @@ export function mountNativeLoopRoutes(
         code: 'loop_route_unsupported',
       });
     if (route === LOOP_FIXTURE_ROUTE) return { model: null, accountRoute: null };
+    if (route === NECTOVIA_ROUTE) throw new ApiError(409, NECTOVIA_LOOP_REFUSED, { code: 'loop_route_unsupported' });
     if (services()[route] !== true) throw new ApiError(409, 'Turn the selected route on in Settings before using it.');
     if (!consent)
       throw new ApiError(
@@ -178,6 +190,9 @@ export function mountNativeLoopRoutes(
       return await harness.loop.admit(route, { projectId, model, accountRoute });
     } catch (error) {
       if (error instanceof ApiError) throw error;
+      // The Agent gate's refusal is the business's plan, not the route: it answers as every Agent
+      // entry point does (403 AGENT_NOT_INCLUDED, or 401 to sign in).
+      if (error instanceof EngineError && (error.code === AGENT_NOT_INCLUDED || error.code === AGENT_SIGN_IN_REQUIRED)) throw error;
       throw new ApiError(409, error instanceof Error ? error.message : 'This route refused the loop.', { code: 'route_refused' });
     }
   };
@@ -362,6 +377,7 @@ export function mountNativeLoopRoutes(
       budgetBytes: instructionSectionBudget(0),
       ...(cloud ? { allowedDocuments: cloudSharing(state).documents } : {}),
       workPaths: sources,
+      ownerRulesIncluded: ownerRules(projectId),
     });
     const input: LoopRunInput & { command: { id: string; digest: string } } = {
       v: 1,
@@ -456,7 +472,12 @@ export function mountNativeLoopRoutes(
           });
         }
       }
-      return { routes };
+      // A business that does not hold 'owner-rules' still starts loops; its own
+      // rules just do not reach them, and the Console says so once.
+      return {
+        routes,
+        notIncludedReason: ownerRules(projectId) ? null : OWNER_RULES_NOT_INCLUDED_REASON,
+      };
     }),
   );
 

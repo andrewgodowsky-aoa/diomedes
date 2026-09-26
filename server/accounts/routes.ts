@@ -4,6 +4,7 @@
  *
  *   GET   /api/account                                   who is signed in, their businesses, the chooser
  *   POST  /api/account/sign-in | sign-up | resume | sign-out | forget | refresh
+ *   POST  /api/account/browser-sign-in                   sign in to the deployed service through the system browser
  *   GET   /api/account/organizations/:id/roster          people, by what the viewer's role may see
  *   POST  /api/account/organizations/:id/invitation-codes
  *   POST  /api/account/organizations/:id/invitation-codes/:codeId/revoke
@@ -68,8 +69,9 @@ export function mountAccountSessionRoutes(app: Express, session: AccountSessionS
   const router = express.Router();
   router.use(express.json({ limit: '16kb' }));
 
-  router.get('/', route(async () => session.state()));
+  router.get('/', route(async () => session.read()));
   router.post('/sign-in', route(async (req) => session.signIn(parse(signInBody, req.body))));
+  router.post('/browser-sign-in', route(async () => session.signInWithBrowser()));
   router.post('/sign-up', route(async (req) => session.signUp(parse(signUpBody, req.body))));
   router.post('/resume', route(async (req) => session.resume(parse(personBody, req.body).personId)));
   router.post('/sign-out', route(async () => session.signOut()));

@@ -2,6 +2,77 @@
   "schemaVersion": 1,
   "releases": [
     {
+      "version": "0.2.1",
+      "date": "2026-09-26",
+      "channel": "stable",
+      "platforms": [
+        "windows",
+        "macos"
+      ],
+      "headline": "You now sign in with a Nectovia account, and the Nectovia Agent answers on Nectovia's own AI service for a business whose plan includes it. Trigger rules also watch task work on every tool, and answers follow one plain-writing standard.",
+      "sections": [
+        {
+          "title": "New",
+          "items": [
+            "Nectovia now asks you to sign in with a Nectovia account before anything else. Sign in with your browser opens the sign-in page, and this computer keeps your sign-in in its protected storage for the next launch. Your initials at the top of the window open the account menu, with Account settings, Switch account and Sign out.",
+            "Settings > Account shows who is signed in and each business you belong to, with your role. A Business owner also sees the plan and what it includes. A Business owner or a Manager invites people with a code that works once, for seven days; a Manager can remove Employees, and only the Business owner changes roles. Join a business takes a code someone gave you.",
+            "Add a business workspace now creates the business in your Nectovia account, with you as its Business owner. It has no plan until Diomedes Systems sets one.",
+            "The Nectovia Agent now answers Home's conversation, for All projects and for each project, on Nectovia's own AI service. There's nothing to connect: it answers for a business whose plan includes the Nectovia Agent and included AI usage, as the Business plan does. For Personal work, or a business whose plan leaves it out, it says why and sends nothing.",
+            "Setup's Connect an AI service step now says the Nectovia Agent is included with Business and needs no setup. That step and Settings > Helpers on this computer no longer offer AWS Bedrock, Azure OpenAI, OpenRouter or Google Vertex AI connections.",
+            "On Windows, ChatGPT can now be set up inside Nectovia, using the Codex that comes with it. In setup and in the ChatGPT row of Settings > Helpers on this computer, Sign in to ChatGPT gives you a Continue to OpenAI link to finish signing in with your browser, and Check ChatGPT connection checks the bundled Codex and your sign-in without starting any work.",
+            "Business rules are part of the Business plan. A project's instruction files, the trigger rules in Settings > Rules and a project's own trigger rules reach the work only for a business whose plan includes Business rules. Otherwise they're kept: trigger rules show read-only, and a run's instruction files are marked as not sent. Personal work gets none of them. Nectovia's own product knowledge and writing standard still go with every run.",
+            "Where Business rules reach the work, a project's instruction files now go with every conversation message, on Home and in project threads, and with each Ask and Plan, as they already did with Work and work loop runs.",
+            "Trigger rules now watch task work on every tool as well as Nectovia work loop runs. A text rule reads what Codex, Claude Code, OpenCode or another tool writes for a task and can stop it before it becomes a proposal, and on Codex a rule's correction reaches the running turn.",
+            "Nectovia now holds what it writes for you to one plain-writing standard. In answers, and in a Work proposal's summary and changed Markdown and text files, it takes out long dashes between clauses, filler openings and closing offers, and a sentence it rewrites keeps every number, name, date and file name.",
+            "Settings > Account has a Reach this computer from your phone switch for each business whose plan includes Phone access. A Business owner or a Manager can turn it on, and while it's on, this computer connects out to the business's relay and is listed as online; it never listens for connections. Turning it off or signing out removes this computer's record.",
+            "On Windows the program file is now nectovia.exe, and an update removes the old Diomedes.exe from the install folder. The install folder and the data folders keep the Diomedes name, so an update still finds your projects."
+          ]
+        },
+        {
+          "title": "Fixed",
+          "items": [
+            "In Connections, Deliver signed stock event now reaches Nectovia in the desktop app. From 0.1.8 on, the app refused every such event.",
+            "Italics inside bold text now display, and the labels along the bottom of a chart fit: whole, over two lines, or shortened with the full label on hover.",
+            "On the Board, a long task title shows two lines where there's room and the rest on hover or keyboard focus, and hovering shows what a task's age means and the default document's path.",
+            "Labels made from file names keep POS, CSV, PDF, SKU, W-2 and similar terms in capitals. A weekly brief's source tags open the file they name, in Files and when an answer quotes them.",
+            "Settings lists the tools on this computer once, as Helpers on this computer, or Engines when Interface detail is Technical.",
+            "Claude Code's model list keeps the 1M-context models that recent versions of Claude Code offer, so you can choose them.",
+            "A trigger rule edited by hand that Nectovia can't run now stops the runs it would watch, and the rule editor names it. The editor also refuses pattern rules that together would take too long to check, and says how to shorten them."
+          ]
+        },
+        {
+          "title": "Updating",
+          "items": [
+            "Settings > App updates offers stable releases only. Nothing is downloaded, verified or installed until you confirm it, and a download is accepted only when its SHA-256 matches the digest the release publishes. An installed 0.1.7, 0.1.8, 0.1.9, 0.1.10, 0.1.11 or 0.2.0 on Windows can find this release when you press Check for updates.",
+            "An update from 0.1.9, 0.1.10, 0.1.11 or 0.2.0 keeps your settings, routes, saved keys, projects and conversations, and Home's conversation and each project's own conversation move to the Nectovia Agent unless you chose their route yourself. An update from 0.1.7 or 0.1.8 that skips 0.1.9 still gets the one-time fresh start 0.1.9 introduced: the earlier version's data and the Documents\\Diomedes folder are set aside, renamed with \"before 0.1.9\" and the date, and nothing is deleted.",
+            "Your install is refreshed the first time this version opens, and again after each later update. Settings you never changed move to the new defaults, anything you chose is kept, cached screens are cleared, and a byte-for-byte backup and a record of what moved are kept. A custom look keeps its colours, fonts and artwork, while text sizes, line spacing and density follow the new version. You see it once: Updated to 0.2.1, with how many settings moved.",
+            "On a Mac, Check for updates says when a newer version exists, and you download it from the release page; the app does not install it itself."
+          ]
+        },
+        {
+          "title": "Known limits",
+          "items": [
+            "This build is unsigned and experimental. On Windows, SmartScreen may warn before the installer runs: choose More info, then Run anyway, after checking the file's SHA-256. The Mac build has an ad hoc signature with no Apple Developer ID and is not notarized, so the first time you open it, right-click the app and choose Open, or allow it under System Settings, Privacy and Security.",
+            "There is no build for Intel Macs, and the Apple silicon build has been built and launched only on a GitHub-hosted Mac.",
+            "Apart from one trigger rule run on Claude Code, a read-only look at its model list and a measurement of the writing standard on answers from the Claude Code command line, nothing in this version was tried against a real provider. Every route in its tests was scripted or fake, the Nectovia Agent's AI service included, and Sign in to ChatGPT was never tried against OpenAI.",
+            "Signing in, Settings > Account and the Nectovia Agent's AI service were tested only against stand-ins for the Nectovia account service and its sign-in page, and the return to the app after signing in on a Mac has not been tried. The account service this version uses is still a staging service with a fixed testing budget: while it is, the Nectovia Agent's answers are kept short, and the Agent stops answering once that budget is spent.",
+            "Signing in needs the Nectovia account service, so if it can't be reached when Nectovia starts, you can't open anything, your own projects included; the sign-in screen says why. A connection lost after you sign in doesn't sign you out.",
+            "The Nectovia Agent answers in the conversation only: Build, Fix and work loops don't run on it yet. Besides the scripted demonstration, Loop run offers only AWS Bedrock, Azure OpenAI, OpenRouter and Google Vertex AI, which setup no longer connects, and Loop run is in the task's work panel, which the Conversation view hides.",
+            "The phone apps can't reach this computer through the relay yet; this version only connects the computer and lists it as online. The relay was tested against a stand-in and hasn't yet run on the live account service.",
+            "An update that installs this version over an earlier one, including the change from Diomedes.exe to nectovia.exe, hasn't been run on an installed copy.",
+            "These parts have not had an independent review: signing in and Settings > Account, the Nectovia Agent's AI service, ChatGPT setup, Business rules, the phone relay, trigger rules on task work and plain writing, and from 0.2.0, suggested edits to instruction files, playbook reading, the zoom and accessibility fixes, the Repository section, the update refresh, the Rules screens and Loop run.",
+            "Automations run the weekly brief alone, and only while this computer is on. They tell you inside the app and send nothing by push, email or phone.",
+            "Resume, Retry, Fork and Steer work on ChatGPT (Codex) runs only.",
+            "Run checks run only the checks a task declares, and never run your project's own code. Nothing checks a run automatically when it finishes.",
+            "Files has no PDF viewer. Pictures and PDFs cannot be sent to an AI, and a binary file cannot be put back from an earlier version.",
+            "Trigger rules don't watch conversations, Ask or Plan. Tool rules don't reach Codex, Claude Code, OpenCode or other outside tools, which run their own tools, and on every outside tool except Codex a text rule reads the text after secrets are removed, so a rule looking for a secret may not fire there. A correction asked of a tool other than Codex was not tested, and a rule that asks a work loop run to correct still can't reach it: the correction is recorded and shown as not sent.",
+            "Helpers that take pieces of a loop run's work, each in its own copy of the files, and a lead that runs a small team of them are built but cannot be started from the app yet. The Console still has no History screen and no Make tasks from this plan.",
+            "Every route except the Nectovia Agent still runs on, and is billed to, your own account. That includes any AWS Bedrock, Azure OpenAI, OpenRouter or Google Vertex AI connection you saved yourself, which now works only for a business whose plan includes the Nectovia Agent. You can still choose such a connection for a thread, and Settings no longer has a place to change or remove it."
+          ]
+        }
+      ]
+    },
+    {
       "version": "0.2.0",
       "date": "2026-09-25",
       "channel": "stable",

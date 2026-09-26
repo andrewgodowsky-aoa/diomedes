@@ -26,14 +26,33 @@ export const ACCESS_CONTRACT_VERSION = 1 as const;
 
 // --- features ------------------------------------------------------------------
 
+/**
+ * Which feature each paid ability needs (Andrew, 2026-09-25 and 2026-09-26). Every
+ * ability of the Nectovia bot sits behind a grant; connecting a provider unlocks none.
+ *
+ *   Agent work on Nectovia: Ask, Plan, Build, Fix, loops    'nectovia-agent', at admission
+ *   Diomedes-funded calls, the Jev preflight included       'managed-inference', per call
+ *   Owner rules and trigger rules reaching the work         'owner-rules'
+ *   Reaching this business's computers from the phone      'phone-relay'
+ *
+ * Product rules (the plain-writing standard, safety rules) are core behaviour and
+ * need no feature. With accounts off (embedded tests only) every check passes
+ * through, exactly as the Agent gate does.
+ */
 /** The supervising Nectovia Agent: native model-API work where Nectovia owns the loop. */
 export const AGENT_FEATURE = 'nectovia-agent' as const;
+export const OWNER_RULES_FEATURE = 'owner-rules' as const;
+export const PHONE_RELAY_FEATURE = 'phone-relay' as const;
 export const ACCESS_FEATURES = [
   AGENT_FEATURE,
   /** Maintained Agent profiles from the Nectovia catalog. */
   'maintained-profiles',
   /** Diomedes-funded model calls, within the organization's funding. */
   'managed-inference',
+  /** A project's instruction files, the Console's rules and trigger rules reach the work. */
+  OWNER_RULES_FEATURE,
+  /** A person's phone may reach this business's computers through the account service relay. */
+  PHONE_RELAY_FEATURE,
 ] as const;
 export type AccessFeature = (typeof ACCESS_FEATURES)[number];
 
@@ -41,6 +60,8 @@ export const FEATURE_LABELS: Record<AccessFeature, string> = {
   'nectovia-agent': 'Nectovia Agent',
   'maintained-profiles': 'Maintained Agent profiles',
   'managed-inference': 'Included AI usage',
+  'owner-rules': 'Business rules',
+  'phone-relay': 'Phone access',
 };
 
 export const isAccessFeature = (value: unknown): value is AccessFeature =>
@@ -70,7 +91,7 @@ export const PLAN_TEMPLATES: readonly PlanTemplate[] = Object.freeze([
   {
     id: 'business',
     label: 'Business',
-    features: ['nectovia-agent', 'maintained-profiles', 'managed-inference'],
+    features: ['nectovia-agent', 'maintained-profiles', 'managed-inference', 'owner-rules', 'phone-relay'],
     termDays: 31,
     customerVisible: true,
     note: 'The $300/month Business subscription. Monthly credits come from the funding service.',
@@ -78,7 +99,7 @@ export const PLAN_TEMPLATES: readonly PlanTemplate[] = Object.freeze([
   {
     id: 'workflow-starter',
     label: '90-Day Workflow Starter',
-    features: ['nectovia-agent', 'maintained-profiles', 'managed-inference'],
+    features: ['nectovia-agent', 'maintained-profiles', 'managed-inference', 'owner-rules', 'phone-relay'],
     termDays: 92,
     customerVisible: true,
     note: '$250/month for three months, one workflow or location. Never add Business on top.',
@@ -86,7 +107,7 @@ export const PLAN_TEMPLATES: readonly PlanTemplate[] = Object.freeze([
   {
     id: 'managed-small',
     label: 'Managed Small',
-    features: ['nectovia-agent', 'maintained-profiles', 'managed-inference'],
+    features: ['nectovia-agent', 'maintained-profiles', 'managed-inference', 'owner-rules', 'phone-relay'],
     termDays: 31,
     customerVisible: true,
     note: 'Business included.',
@@ -94,7 +115,7 @@ export const PLAN_TEMPLATES: readonly PlanTemplate[] = Object.freeze([
   {
     id: 'managed-standard',
     label: 'Managed Standard',
-    features: ['nectovia-agent', 'maintained-profiles', 'managed-inference'],
+    features: ['nectovia-agent', 'maintained-profiles', 'managed-inference', 'owner-rules', 'phone-relay'],
     termDays: 31,
     customerVisible: true,
     note: 'Business included.',
@@ -102,7 +123,7 @@ export const PLAN_TEMPLATES: readonly PlanTemplate[] = Object.freeze([
   {
     id: 'managed-plus',
     label: 'Managed Plus',
-    features: ['nectovia-agent', 'maintained-profiles', 'managed-inference'],
+    features: ['nectovia-agent', 'maintained-profiles', 'managed-inference', 'owner-rules', 'phone-relay'],
     termDays: 31,
     customerVisible: true,
     note: 'Business included.',
@@ -110,7 +131,7 @@ export const PLAN_TEMPLATES: readonly PlanTemplate[] = Object.freeze([
   {
     id: 'service-agreement',
     label: 'Service agreement',
-    features: ['nectovia-agent', 'maintained-profiles'],
+    features: ['nectovia-agent', 'maintained-profiles', 'owner-rules', 'phone-relay'],
     termDays: null,
     customerVisible: true,
     note: 'What a quoted implementation explicitly grants. Choose the features and end date from the agreement; funding is separate.',
@@ -118,7 +139,7 @@ export const PLAN_TEMPLATES: readonly PlanTemplate[] = Object.freeze([
   {
     id: 'internal-test',
     label: 'Internal test',
-    features: ['nectovia-agent', 'maintained-profiles'],
+    features: ['nectovia-agent', 'maintained-profiles', 'owner-rules', 'phone-relay'],
     termDays: 30,
     customerVisible: false,
     note: 'Diomedes staff and test accounts. No included usage unless funding is added separately.',
@@ -288,3 +309,9 @@ export const AGENT_NOT_INCLUDED_REASON =
   'The Nectovia Agent is part of a Business plan. You can still use your workspace and your own AI tools directly.';
 export const AGENT_PERSONAL_REASON =
   'The Nectovia Agent works for a business. Switch to a business workspace that includes it, or use your own AI tools directly.';
+/** The sentence a person reads when their business's plan does not include owner rules. */
+export const OWNER_RULES_NOT_INCLUDED_REASON =
+  "Business rules are part of a Business plan. They're kept, but they don't reach the work until the business includes them.";
+/** The sentence a person reads when their business's plan does not include phone access. */
+export const PHONE_RELAY_NOT_INCLUDED_REASON =
+  'Reaching this computer from your phone is part of a Business plan.';

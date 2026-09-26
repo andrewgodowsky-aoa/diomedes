@@ -103,16 +103,18 @@ import {
 } from './google-vertex.js';
 import { callCeiling, type CallExposure, type RespondLimits, type RespondResult, type StreamSinks } from './model-api-core.js';
 import { decideJobStep, DEFAULT_JOB_TIER, type JobTier } from '../../shared/job-caps.js';
-import { creditAmount, publishedMonthlyGrant, type MicroUsd } from '../../shared/managed-usage.js';
+import type { MicroUsd } from '../../shared/managed-usage.js';
 import { createAwsModelAdapter } from '../harness/aws-model-adapter.js';
 import { createAzureModelAdapter } from '../harness/azure-model-adapter.js';
 import { createOpenRouterModelAdapter } from '../harness/openrouter-model-adapter.js';
 import { createVertexModelAdapter } from '../harness/vertex-model-adapter.js';
 import { createNectoviaModelAdapter } from '../harness/nectovia-model-adapter.js';
 import {
+  NECTOVIA_LOOP_REFUSED,
   NECTOVIA_SDK,
   NECTOVIA_SIGN_IN,
   NECTOVIA_UNAVAILABLE,
+  ensureNectoviaGuard,
   nectoviaAccountRoute,
   nectoviaConnectionId,
   nectoviaRateCard,
@@ -137,6 +139,7 @@ import {
   type AgentGatePort,
   type AgentWork,
 } from '../accounts/agent-gate.js';
+import { refusalEndsObservation, type ObservationAsk, type ObservationBinder } from '../observability/scopes.js';
 
 function recordShimError(error: unknown): boolean {
   return (
@@ -455,6 +458,8 @@ export class EngineService {
    * includes the Agent. It runs before any model step, so a refusal is recorded as nothing sent.
    */
   agentGate?: AgentGatePort;
+  /** Optional metadata observation (server/observability/). Bound only after every check below passed. */
+  observation?: ObservationBinder;
   constructor(
     readonly root: string,
     deps: Partial<EngineServiceDeps> = {},
@@ -1987,14 +1992,35 @@ export class EngineService {
     },
     agent?: Pick<AgentWork, 'surface' | 'rootJobId'>,
   ): Promise<ModelSessionAdmission> {
+    // A loop on the Nectovia route is refused before the Agent gate is asked, so the service records
+    // no admission for work that would then be refused (NECTOVIA_LOOP_REFUSED says why).
+    if (route === NECTOVIA_ROUTE && agent?.surface === 'loop') throw new EngineError('ROUTE_REFUSED', NECTOVIA_LOOP_REFUSED);
     const api = this.modelApi;
     if (!api)
       throw new EngineError('RUNTIME_UNAVAILABLE', 'This model-API route is not available in this process.', true);
+    // What observation measures this admission from, read on the same turn as the gate, before its
+    // round trip: the business a refusal is about, and the workspace a bind is compared against.
+    let ask: ObservationAsk | undefined;
+    try {
+      ask = this.observation?.ask(input.projectId ?? null);
+    } catch {
+      // Observation never changes an admission.
+    }
+    const refused = (error: unknown): never => {
+      try {
+        // Only a refusal of the business ends its observation; an outage does not.
+        if (refusalEndsObservation(error))
+          this.observation?.refused({ projectId: input.projectId ?? null, organizationId: ask?.organizationId ?? null });
+      } catch {
+        // Observation never changes a refusal.
+      }
+      throw error;
+    };
     // The Nectovia route is company-managed inference: its admission is the managed one, and it is
     // admitted on the business's plan and the published policy, never on a connection in Settings.
     if (route === NECTOVIA_ROUTE)
-      return this.admitNectovia(api, input, agent, await this.admitAgent(input, { ...agent, routeKind: 'managed' }));
-    await this.admitAgent(input, agent);
+      return this.admitNectovia(api, input, agent, await this.admitAgent(input, { ...agent, routeKind: 'managed' }).catch(refused), ask);
+    const admitted = await this.admitAgent(input, agent).catch(refused);
     const handle = await modelApiRoute(api, route);
     const { short, long } = handle.names;
     if (!handle.connected) throw new EngineError('ROUTE_REFUSED', `Connect ${long} in AI setup before sending.`, true);
@@ -2012,6 +2038,18 @@ export class EngineService {
         `The approved ${short} spend limit has no room left. Nothing was sent. The owner can review usage and approve more in AI setup.`,
         true,
       );
+    try {
+      this.observation?.bind({
+        admission: admitted,
+        rootJobId: agent?.rootJobId ?? null,
+        route,
+        connectionId: handle.connectionId,
+        model: input.model,
+        ask,
+      });
+    } catch {
+      // Observation never changes an admission.
+    }
     return {
       route,
       connectionId: handle.connectionId,
@@ -2033,6 +2071,7 @@ export class EngineService {
     input: Pick<TextRequest, 'model' | 'accountRoute'> & { projectId?: string; requestId?: string; threadId?: string | null },
     agent: Pick<AgentWork, 'surface' | 'rootJobId'> | undefined,
     admitted: AdmittedAgentWork | null,
+    ask?: ObservationAsk,
   ): Promise<ModelSessionAdmission> {
     const account = api.nectovia?.account;
     if (!account?.signedIn()) throw new EngineError(AGENT_SIGN_IN_REQUIRED, NECTOVIA_SIGN_IN, false);
@@ -2081,23 +2120,20 @@ export class EngineService {
     } catch (error) {
       throw new EngineError('ROUTE_REFUSED', error instanceof Error ? error.message : NECTOVIA_UNAVAILABLE, true);
     }
-    if (!api.exposure.allowance(handle.connectionId))
-      await api.exposure.setCap(
-        handle.connectionId,
-        // The plan's published monthly grant; a plan without a published figure is guarded at the
-        // Business grant. The gateway decides what the business can actually spend.
-        publishedMonthlyGrant(admitted.planId ?? '') ?? creditAmount(1_000),
-        {
-          approvedBy: `the ${admitted.planId ?? 'Nectovia'} plan, by this computer's host`,
-          note: "Nectovia's local guard for this business this month. The account service's ledger is the authority.",
-        },
-      );
-    if (api.exposure.summary(handle.connectionId).availableMicroUsd <= 0)
+    // The plan's published monthly grant, set once for the month; the gateway decides what the
+    // business can actually spend.
+    if ((await ensureNectoviaGuard(api.exposure, handle.connectionId, admitted.planId)).availableMicroUsd <= 0)
       throw new EngineError(
         'SPEND_LIMIT',
         "Nectovia's safety limit on this computer for this business's month has been reached, so nothing was sent.",
         true,
       );
+    // Observed as managed because the gate admitted it as managed (`admitted.routeKind`), never by name.
+    try {
+      this.observation?.bind({ admission: admitted, rootJobId, route: NECTOVIA_ROUTE, connectionId: handle.connectionId, model: input.model, ask });
+    } catch {
+      // Observation never changes an admission.
+    }
     return {
       route: NECTOVIA_ROUTE,
       connectionId: handle.connectionId,
