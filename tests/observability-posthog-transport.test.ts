@@ -330,7 +330,9 @@ describe('late cost from the real spend ledger', () => {
       surface: 'conversation',
       validUntil: '2026-09-25T13:00:00.000Z',
     };
-    scopes.bind({ admission, rootJobId: 'lineage-1', route: 'aws-bedrock', connectionId: 'conn-1', model: AWS_LUNA_MODEL });
+    // Each message is its own job: a conversation turn admits under its own turn run's id.
+    for (const rootJobId of ['turn-1', 'turn-2'])
+      scopes.bind({ admission, rootJobId, route: 'aws-bedrock', connectionId: 'conn-1', model: AWS_LUNA_MODEL });
     return { ledger, projector, seen };
   }
   const request = (text: string) => ({ messages: [{ role: 'user', text }] });

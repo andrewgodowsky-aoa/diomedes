@@ -601,7 +601,7 @@ describe('failed attempts, parking and the managed route', () => {
   const failing = (holds: ExposureReservation[]) => {
     seq = 0;
     const h = harness({ ledger: { list: () => holds } });
-    h.bind('conversation', 'lineage-1');
+    h.bind('conversation', 'turn-1');
     const step = modelStep('model:0', { state: 'reconcile_required', output: null, origin: undefined });
     const events = [
       event('run.created', 1),
@@ -645,7 +645,7 @@ describe('failed attempts, parking and the managed route', () => {
   test('an attempt that started before the binding is never sent', () => {
     seq = 0;
     const h = harness({ now: ZERO + 100 });
-    h.bind('conversation', 'lineage-1');
+    h.bind('conversation', 'turn-1');
     h.projector.onRunSaved(
       turn(modelStep('model:0'), [event('run.created', 1), event('step.started', 50, 'model:0', 1), event('step.succeeded', 200, 'model:0', 1)], 'running'),
     );
@@ -655,7 +655,7 @@ describe('failed attempts, parking and the managed route', () => {
   test('a scripted adapter step is an application span, never a generation', () => {
     seq = 0;
     const h = harness();
-    h.bind('conversation', 'lineage-1');
+    h.bind('conversation', 'turn-1');
     const scripted = modelStep('model:0', { intent: { ...modelStep('model:0').intent, name: 'native-fixture' }, origin: undefined });
     h.projector.onRunSaved(turn(scripted, [event('step.started', 10, 'model:0', 1), event('step.succeeded', 20, 'model:0', 1)], 'running'));
     const wire = h.exporter.wire();
@@ -666,7 +666,7 @@ describe('failed attempts, parking and the managed route', () => {
   test('host shapes: a registered tool with an application origin is a tool span; a model step reported as application is scripted (PH-07 F-1)', () => {
     seq = 0;
     const h = harness();
-    h.bind('conversation', 'lineage-1');
+    h.bind('conversation', 'turn-1');
     const scripted = modelStep('model:0', { intent: { ...modelStep('model:0').intent, name: 'native-fixture' }, origin: applicationOrigin() });
     const direct = modelStep('model:1', { intent: { ...modelStep('model:1').intent, stepId: 'model:1' } });
     const tool = toolStep('tool:0', 'read_project_file');
@@ -713,7 +713,7 @@ describe('failed attempts, parking and the managed route', () => {
   test('managed: the gateway’s settlement is the cost, so the desktop sends it as cost-pending', () => {
     seq = 0;
     const h = harness({ route: 'nectovia', routeKind: 'managed', ledger: { list: () => [hold({ attempt: { ...attempt } })] } });
-    expect(h.bind('conversation', 'lineage-1', 'nectovia-standard-1').eligible).toBe(true);
+    expect(h.bind('conversation', 'turn-1', 'nectovia-standard-1').eligible).toBe(true);
     h.projector.onRunSaved(turn(modelStep('model:0'), [event('step.started', 10, 'model:0', 1), event('step.succeeded', 20, 'model:0', 1)], 'running'));
     const properties = byEvent(h.exporter.wire(), '$ai_generation')[0].properties;
     expect(properties).toMatchObject({ nectovia_payer: 'managed', nectovia_route: 'nectovia', $ai_provider: 'nectovia', nectovia_cost_state: 'gateway-pending', $ai_input_tokens: 100 });

@@ -254,7 +254,8 @@ describe('scopes: bound by the admitted job, resolved from the run record', () =
 
   test('each capability resolves through the key its caller bound, and nothing else resolves', () => {
     const scopes = scopesFor();
-    bind(scopes, 'conversation', 'lineage-1');
+    // Each message is its own job: the conversation admission names the turn run's own id.
+    bind(scopes, 'conversation', 'turn-1');
     bind(scopes, 'work', 'text-run-1');
     bind(scopes, 'team', 'request-1');
     bind(scopes, 'loop', 'loop-root');
@@ -263,6 +264,10 @@ describe('scopes: bound by the admitted job, resolved from the run record', () =
       traceRootRunId: 'turn-1',
       lineageRunId: 'lineage-1',
     });
+    // Another message in the same conversation was not admitted by that admission.
+    expect(scopes.resolve(run({ id: 'turn-2', capabilityId: 'model-api-turn', input: { conversationRunId: 'lineage-1' } }))).toBeNull();
+    // A turn that names no conversation is not a turn this host made.
+    expect(scopes.resolve(run({ id: 'turn-1', capabilityId: 'model-api-turn', input: {} }))).toBeNull();
     // The lineage run holds history, not work.
     expect(scopes.resolve(run({ id: 'lineage-1', capabilityId: 'model-api-conversation' }))).toBeNull();
     expect(scopes.resolve(run({ id: 'text-run-1', capabilityId: 'engine-text-turn' }))).toMatchObject({ traceRootRunId: 'text-run-1' });

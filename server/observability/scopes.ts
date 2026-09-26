@@ -9,7 +9,8 @@
  * A run resolves to a scope from what its own record says it is, never from what a request
  * claimed:
  *
- *   model-api-turn            conversation:<input.conversationRunId>, trace root = the turn
+ *   model-api-turn            conversation:<run.id> (each message admits under its own turn run,
+ *                             since bot mode); trace root = the turn; session = input.conversationRunId
  *   engine-text-turn          work:<run.id>
  *   model-api-team-work       team:<input.commandId>   (the admission's rootJobId is the request id)
  *   diomedes-loop             loop:<run.id>
@@ -211,8 +212,10 @@ export class ObservationScopes implements ObservationBinder {
     };
     switch (run.capabilityId) {
       case 'model-api-turn': {
+        // Each message is its own job: its admission names the turn run's own id
+        // (`turnRunId(lineage, requestId)`), and the lineage is only its session.
         const lineage = text(input.conversationRunId);
-        return lineage ? found(`conversation:${lineage}`, true, run.id, null, lineage) : null;
+        return lineage ? found(`conversation:${run.id}`, true, run.id, null, lineage) : null;
       }
       case 'engine-text-turn':
         return found(`work:${run.id}`, true, run.id, null, null);
