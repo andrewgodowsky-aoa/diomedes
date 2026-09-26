@@ -132,16 +132,19 @@ LIMITS
   There is no build for Intel Macs, and the Apple silicon build has been built
   and launched only on a GitHub-hosted Mac.
 
-  Apart from one trigger rule run on Claude Code and a read-only look at its
-  model list, nothing in this version was tried against a real provider. Every
-  route in its tests was scripted or fake, the Nectovia Agent's AI service
-  included, and Sign in to ChatGPT was never tried against OpenAI.
+  Apart from one trigger rule run on Claude Code, a read-only look at its
+  model list and a measurement of the writing standard on answers from the
+  Claude Code command line, nothing in this version was tried against a real
+  provider. Every route in its tests was scripted or fake, the Nectovia
+  Agent's AI service included, and Sign in to ChatGPT was never tried against
+  OpenAI.
 
   Signing in, Settings > Account and the Nectovia Agent's AI service were
   tested only against stand-ins for the Nectovia account service and its
   sign-in page, and the return to the app after signing in on a Mac has not
-  been tried. The account service this version uses is still a staging
-  service, and while it is, the Nectovia Agent's answers are kept short.
+  been tried. The account service this version uses is still a staging service
+  with a fixed testing budget: while it is, the Nectovia Agent's answers are
+  kept short, and the Agent stops answering once that budget is spent.
 
   Signing in needs the Nectovia account service, so if it can't be reached
   when Nectovia starts, you can't open anything, your own projects included;
@@ -196,4 +199,6 @@ LIMITS
   Every route except the Nectovia Agent still runs on, and is billed to, your
   own account. That includes any AWS Bedrock, Azure OpenAI, OpenRouter or
   Google Vertex AI connection you saved yourself, which now works only for a
-  business whose plan includes the Nectovia Agent.
+  business whose plan includes the Nectovia Agent. You can still choose such a
+  connection for a thread, and Settings no longer has a place to change or
+  remove it.
