@@ -60,7 +60,7 @@ describe('versioned migration protocol', () => {
 });
 
 describe('versioned migration source files', () => {
-  const names = ['001_accounts.sql', '002_commercial.sql', '003_funded_jobs.sql', '004_usage_contract.sql', '005_customer_access.sql'];
+  const names = ['001_accounts.sql', '002_commercial.sql', '003_funded_jobs.sql', '004_usage_contract.sql', '005_customer_access.sql', '006_staff_keys.sql'];
   const load = () => Promise.all(names.map(async (name, index) => {
     const sql = await readFile(new URL(`../migrations/${name}`, import.meta.url), 'utf8');
     return { version: index + 1, name, sql, sha256: createHash('sha256').update(sql).digest('hex') };
@@ -70,7 +70,7 @@ describe('versioned migration source files', () => {
     const files = await load();
     for (const file of files) expect(file.sql.includes(String.fromCharCode(13))).toBe(false);
     const db = database();
-    expect(await migrate(db.factory, files)).toEqual([1, 2, 3, 4, 5]);
+    expect(await migrate(db.factory, files)).toEqual([1, 2, 3, 4, 5, 6]);
   });
 
   it('003 extends the 002 funding seams without destroying data or granting public access', async () => {
@@ -110,5 +110,16 @@ describe('versioned migration source files', () => {
     // No credential column anywhere in the route registry.
     expect(access.sql).not.toMatch(/secret|api_key|password|credential/i);
     expect(access.sql.trim().endsWith('REVOKE ALL ON ALL FUNCTIONS IN SCHEMA control_plane FROM PUBLIC;')).toBe(true);
+  });
+
+  it('006 stores staff keys as hashes only, withdrawn once, with no key column', async () => {
+    const [, , , , , keys] = await load();
+    expect(keys.sql).not.toMatch(/\b(DROP\s+TABLE|DELETE\s+FROM|TRUNCATE|DROP\s+SCHEMA|GRANT)\b/i);
+    expect(keys.sql).toContain('CREATE TABLE control_plane.staff_keys');
+    expect(keys.sql).toContain("key_hash text PRIMARY KEY CHECK (key_hash ~ '^[a-f0-9]{64}$')");
+    expect(keys.sql).toContain("CHECK (key_id = 'staff_key_' || left(key_hash, 16))");
+    expect(keys.sql).toContain('CREATE TRIGGER staff_key_tombstone BEFORE UPDATE');
+    expect(keys.sql).not.toMatch(/\bkey text|secret|password/i);
+    expect(keys.sql.trim().endsWith('REVOKE ALL ON ALL FUNCTIONS IN SCHEMA control_plane FROM PUBLIC;')).toBe(true);
   });
 });

@@ -27,3 +27,6 @@ GRANT SELECT, INSERT, UPDATE ON control_plane.invitation_codes, control_plane.fe
   control_plane.organization_access, control_plane.route_entries, control_plane.operators TO cp_runtime;
 GRANT SELECT, INSERT ON control_plane.tier_policies, control_plane.ops_audit,
   control_plane.agent_admissions TO cp_runtime;
+-- 006 staff keys (2026-09-26): the Worker only reads a key's hash to sign staff
+-- in. Registering and withdrawing keys is the schema owner's, for now.
+GRANT SELECT ON control_plane.staff_keys TO cp_runtime;

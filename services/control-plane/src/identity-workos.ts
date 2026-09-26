@@ -73,6 +73,11 @@ const refused = (check: string) => {
 };
 const unavailable = () =>
   new ApiError(503, 'Identity verification is unavailable; try again when the provider recovers.');
+/** An unavailable answer, with the WorkOS step and HTTP status in the Worker's log. Never a body. */
+const unavailableAt = (step: string, status?: number) => {
+  console.error(JSON.stringify({ event: 'identity-unavailable', step, ...(status === undefined ? {} : { status }) }));
+  return unavailable();
+};
 
 function decode(segment: string): unknown {
   if (!/^[A-Za-z0-9_-]+$/.test(segment)) throw invalid();
@@ -132,7 +137,7 @@ export class WorkOSIdentityVerifier implements IdentityVerifier {
     this.now = config.now ?? Date.now;
   }
 
-  private async getJson(url: string, authenticated: boolean): Promise<unknown> {
+  private async getJson(url: string, authenticated: boolean, step: string): Promise<unknown> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5000);
     try {
@@ -147,15 +152,15 @@ export class WorkOSIdentityVerifier implements IdentityVerifier {
           signal: controller.signal,
         });
       } catch {
-        throw unavailable();
+        throw unavailableAt(step);
       } // Transport only; no fallback or credentials in the error.
       if (response.status === 404 && authenticated) throw invalid();
-      if (!response.ok || !response.body) throw unavailable();
+      if (!response.ok || !response.body) throw unavailableAt(step, response.status);
       try {
         return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(await readBytes(response, 1024 * 1024)));
       } catch (error) {
         if (error instanceof ApiError) throw error;
-        throw unavailable();
+        throw unavailableAt(step);
       }
     } finally {
       clearTimeout(timeout);
@@ -166,13 +171,13 @@ export class WorkOSIdentityVerifier implements IdentityVerifier {
     if (!this.refreshing) {
       this.refreshing = (async () => {
         const parsed = keysSchema.safeParse(
-          await this.getJson(`${API}/sso/jwks/${this.clientId}`, false),
+          await this.getJson(`${API}/sso/jwks/${this.clientId}`, false, 'jwks'),
         );
         if (
           !parsed.success ||
           new Set(parsed.data.keys.map((key) => key.kid)).size !== parsed.data.keys.length
         )
-          throw unavailable();
+          throw unavailableAt('jwks-shape');
         this.keys = parsed.data.keys;
         this.fetchedAt = this.now();
       })();
@@ -212,8 +217,8 @@ export class WorkOSIdentityVerifier implements IdentityVerifier {
       const url = new URL(`${API}/user_management/users/${subject}/sessions`);
       url.searchParams.set('limit', '100');
       if (after) url.searchParams.set('after', after);
-      const result = sessionsSchema.safeParse(await this.getJson(url.href, true));
-      if (!result.success) throw unavailable();
+      const result = sessionsSchema.safeParse(await this.getJson(url.href, true, 'sessions'));
+      if (!result.success) throw unavailableAt('sessions-shape');
       const match = result.data.data.find((session) => session.id === sessionId);
       if (match) {
         if (
@@ -280,10 +285,10 @@ export class WorkOSIdentityVerifier implements IdentityVerifier {
     if (!valid) throw refused('signature');
     const [sessionExpires, userInput] = await Promise.all([
       this.activeSession(claims.sub, claims.sid),
-      this.getJson(`${API}/user_management/users/${claims.sub}`, true),
+      this.getJson(`${API}/user_management/users/${claims.sub}`, true, 'user'),
     ]);
     const user = userSchema.safeParse(userInput);
-    if (!user.success) throw unavailable();
+    if (!user.success) throw unavailableAt('user-shape');
     if (user.data.id !== claims.sub) throw invalid();
     if (!user.data.email_verified)
       throw new ApiError(403, 'Verify the account email before joining a Business workspace.');
