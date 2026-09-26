@@ -448,6 +448,7 @@ PH-01 adds one additive durable fact: an `errorCode` attribute on the existing `
 | Daily pilot budget | `NECTOVIA_OBSERVATION_DAILY_EVENTS`, default **0** | `budget`; nothing is sent until the funded pilot limit is set |
 | Vendor funding | `NECTOVIA_OBSERVATION_FUNDED_UNTIL` required in `posthog` mode | absent or past: `disabled:funding`, queue cleared, no later backfill. Continuing on cash needs a new explicit configuration value; nothing flips automatically |
 
+- **No PostHog AI services, ever** (Andrew, 2026-09-26). The transport reaches one endpoint only, `POST <configured host>/batch/`, PostHog's ordinary usage-billed ingestion; never PostHog AI, summarization, evaluations, `text_repr` or anything billed in AI credits (`tests/observability-no-posthog-ai.test.ts`).
 - **A slow exporter** never slows the runtime. `enqueue` is synchronous and O(1). The caps bound memory, and age expiry bounds staleness.
 - **Health** stays local. Exporter failures are counted, never sent as observations.
 - **Retries** apply to telemetry only. Model and tool work are never retried because of export.
