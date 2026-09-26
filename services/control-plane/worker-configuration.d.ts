@@ -6,6 +6,7 @@ interface __BaseEnv_Env {
 	WORKOS_CLIENT_ID: string;
 	WORKOS_ISSUER: string;
 	WORKOS_TOKEN_AUDIENCE: string;
+	STAFF_WORKOS_CLIENT_ID: string;
 	DATABASE_URL: string;
 	WORKOS_API_KEY: string;
 }
@@ -20,7 +21,7 @@ type StringifyValues<EnvType extends Record<string, unknown>> = {
 	[Binding in keyof EnvType]: EnvType[Binding] extends string ? EnvType[Binding] : string;
 };
 declare namespace NodeJS {
-	interface ProcessEnv extends StringifyValues<Pick<Cloudflare.Env, "ENVIRONMENT" | "ALLOWED_ORIGINS" | "WORKOS_CLIENT_ID" | "WORKOS_ISSUER" | "WORKOS_TOKEN_AUDIENCE" | "DATABASE_URL" | "WORKOS_API_KEY">> {}
+	interface ProcessEnv extends StringifyValues<Pick<Cloudflare.Env, "ENVIRONMENT" | "ALLOWED_ORIGINS" | "WORKOS_CLIENT_ID" | "WORKOS_ISSUER" | "WORKOS_TOKEN_AUDIENCE" | "STAFF_WORKOS_CLIENT_ID" | "DATABASE_URL" | "WORKOS_API_KEY">> {}
 }
 
 // Module scope prevents Worker bindings from augmenting desktop ProcessEnv.

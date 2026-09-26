@@ -153,6 +153,9 @@ export async function createFauxCloud(options: FauxCloudOptions): Promise<FauxCl
     identity: standIn
       ? { clientId: standIn.clientId, issuer: WORKOS_ISSUER, audience: standIn.audience, apiKey: standIn.apiKey }
       : { clientId: 'faux', issuer: FAUX_ISSUER, audience: 'faux', apiKey: 'faux' },
+    // One identity provider serves customers and staff here: the account factory below
+    // answers both pools, so no separate staff environment is ever read.
+    staffIdentity: null,
   };
   const credential = live ? options.liveBedrockApiKey! : options.managed?.credential === undefined ? FAUX_SCRIPTED_CREDENTIAL : options.managed.credential;
   // The environment the gateway reads its key and spend settings from, as the Worker's would be.

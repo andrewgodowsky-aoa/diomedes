@@ -76,9 +76,11 @@ function loopbackRedirect(value: string | null): URL | null {
   }
 }
 
-export async function createWorkOSStandIn(options: { now?: () => number; accessTtlSeconds?: number; clientId?: string } = {}): Promise<WorkOSStandIn> {
+export async function createWorkOSStandIn(options: { now?: () => number; accessTtlSeconds?: number; clientId?: string; apiKey?: string } = {}): Promise<WorkOSStandIn> {
   const now = options.now ?? Date.now;
   const clientId = options.clientId ?? STANDIN_CLIENT_ID;
+  // A second stand-in (a second WorkOS environment, as for staff) needs its own key.
+  const apiKey = options.apiKey ?? STANDIN_API_KEY;
   const ttl = options.accessTtlSeconds ?? 300;
   const pair = (await crypto.subtle.generateKey(
     { name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' },
@@ -147,7 +149,7 @@ export async function createWorkOSStandIn(options: { now?: () => number; accessT
     return session;
   }
 
-  const authorized = (request: Request) => request.headers.get('authorization') === `Bearer ${STANDIN_API_KEY}`;
+  const authorized = (request: Request) => request.headers.get('authorization') === `Bearer ${apiKey}`;
 
   async function handle(request: Request): Promise<Response> {
     const url = new URL(request.url);
@@ -225,7 +227,7 @@ export async function createWorkOSStandIn(options: { now?: () => number; accessT
 
   return {
     clientId,
-    apiKey: STANDIN_API_KEY,
+    apiKey,
     audience: STANDIN_AUDIENCE,
     handle,
     fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {

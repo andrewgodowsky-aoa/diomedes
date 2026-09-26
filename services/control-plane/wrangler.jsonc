@@ -16,6 +16,13 @@
   // Refuses (503) until WORKOS_CLIENT_ID is set here and both required secrets exist. The
   // client ID is public; it goes here, not in the dashboard, so a deploy keeps it.
   // The audience is the resource the WorkOS application's JWT template adds.
+  // Two WorkOS environments, each with its own branded sign-in, users and keys:
+  // - WORKOS_CLIENT_ID and the secret WORKOS_API_KEY: customers (Nectovia), for /account/* and
+  //   /managed/*.
+  // - STAFF_WORKOS_CLIENT_ID and the secret STAFF_WORKOS_API_KEY: staff (Diomedes Systems), the
+  //   only environment /ops/* accepts. Until both are set, and differ from the customer
+  //   environment's client and key, every /ops/* call answers 503. Customer routes don't read them.
+  //   The staff environment uses the same issuer and the same JWT template audience.
   // The two MANAGED_* values are the owner's testing limits of 2026-09-25: $100 in provider cost
   // for all staging testing, for all time, and short answers. Raise them only on his word.
   "vars": {
@@ -24,6 +31,7 @@
     "WORKOS_CLIENT_ID": "client_01M2CX1HZ8RDE8EYGG2YCDX39H",
     "WORKOS_ISSUER": "https://api.workos.com",
     "WORKOS_TOKEN_AUDIENCE": "https://accounts.diomedes.net",
+    "STAFF_WORKOS_CLIENT_ID": "client_01M3E6R03GCWVQPV3FWZJSDVQW",
     "MANAGED_SPEND_CEILING_MICRO_USD": "100000000",
     "MANAGED_MAX_OUTPUT_TOKENS": "2000"
   },
