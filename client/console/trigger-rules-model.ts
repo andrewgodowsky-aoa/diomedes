@@ -23,6 +23,12 @@ export interface StreamRulesView {
   readonly organization: StreamRule[];
   readonly project: StreamRule[];
   readonly resolution: StreamRuleResolution | null;
+  /**
+   * Set when the business this work belongs to does not hold 'owner-rules' (Andrew,
+   * 2026-09-25): the rules are kept and listed, but they do not reach the work. The
+   * server's own sentence; the editor shows it once and offers no controls.
+   */
+  readonly notIncludedReason?: string | null;
   /** The runs rules watch: work loop runs (`diomedes-loop`) and Work on an external engine (`external-work`). */
   readonly watches?: readonly string[];
   /** A stored layer that cannot run (edited by hand): which rule and why. Its runs fail closed until it is fixed. */
