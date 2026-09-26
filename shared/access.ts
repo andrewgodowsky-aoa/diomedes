@@ -309,3 +309,9 @@ export const AGENT_NOT_INCLUDED_REASON =
   'The Nectovia Agent is part of a Business plan. You can still use your workspace and your own AI tools directly.';
 export const AGENT_PERSONAL_REASON =
   'The Nectovia Agent works for a business. Switch to a business workspace that includes it, or use your own AI tools directly.';
+/** The sentence a person reads when their business's plan does not include owner rules. */
+export const OWNER_RULES_NOT_INCLUDED_REASON =
+  "Business rules are part of a Business plan. They're kept, but they don't reach the work until the business includes them.";
+/** The sentence a person reads when their business's plan does not include phone access. */
+export const PHONE_RELAY_NOT_INCLUDED_REASON =
+  'Reaching this computer from your phone is part of a Business plan.';
