@@ -10,7 +10,7 @@ import { createFauxCloud, type FauxCloud } from '../src/faux/cloud.js';
 import { DEMO_ACCOUNTS, FAUX_DEMO_PASSWORD, seedDemo, type DemoAccount } from '../src/faux/seed.js';
 import { MANAGED_PROVIDERS, bedrockResponsesCaller, scriptedResponsesFetch } from '../src/managed-providers.js';
 import { FundingService } from '../src/funding.js';
-import { ManagedInferenceService } from '../src/managed-inference.js';
+import { MANAGED_USAGE_NOT_INCLUDED, ManagedInferenceService } from '../src/managed-inference.js';
 import { creditAmount, usageCost, periodIdFor } from '../../../shared/managed-usage.js';
 import { inputTokenBound } from '../../../shared/job-caps.js';
 import { chunkedStream, concat, providerSpy, readAll, type ProviderRequest, type ProviderSpy } from './support/managed.js';
@@ -152,6 +152,28 @@ describe('refusals before dispatch send nothing to the provider and hold nothing
       message: 'This business’s Nectovia Agent access was withdrawn. Your files and history are unchanged.',
     });
     expectNothingSentOrHeld();
+  });
+
+  it('refuses the Agent without included AI usage on every call, even with this month’s credit left, before a job or a hold', async () => {
+    const { token, admission } = await employee();
+    const billing = await signIn('staffBilling');
+    const business = (await call('GET', `/ops/customers/${orgs.juniper}`, billing)).body.grants[0].id as string;
+    // A service agreement takes over from Business mid-month: the Agent stays, included usage goes.
+    const agreement = await call('POST', `/ops/customers/${orgs.juniper}/grants`, billing, {
+      planId: 'service-agreement', source: 'service-agreement', reference: 'Agreement 12', note: 'The quoted implementation.',
+      validUntil: '2026-12-31T00:00:00.000Z',
+    });
+    expect(agreement.status).toBe(201);
+    expect(agreement.body.grant.features).toContain('nectovia-agent');
+    expect(agreement.body.grant.features).not.toContain('managed-inference');
+    expect((await call('POST', `/ops/customers/${orgs.juniper}/grants/${business}/revoke`, billing, { reason: 'Moved to the agreement.' })).status).toBe(200);
+    // September's credit, allocated from the Business grant, is still there.
+    expect(cloud.store.snapshot().funding.periods.filter((row) => row.organizationId === orgs.juniper).map((row) => row.periodId)).toEqual(['2026-09']);
+    // The service still admits the Agent. The call is refused under that admission and the earlier one.
+    for (const presented of [admission, await admit(token, orgs.juniper)])
+      expect(await refusal(await ask({ token, admission: presented }))).toEqual({ status: 403, code: 'agent_not_included', message: MANAGED_USAGE_NOT_INCLUDED });
+    expectNothingSentOrHeld();
+    expect(cloud.store.snapshot().funding.jobs.filter((row) => row.rootJobId === 'run-1')).toEqual([]);
   });
 
   it('refuses an admission from another organization the same person belongs to', async () => {

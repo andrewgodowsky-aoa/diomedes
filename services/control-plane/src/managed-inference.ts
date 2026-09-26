@@ -16,6 +16,7 @@
  * through FundingService (openJob, reserve, markDispatched, settle,
  * markUncertain, releaseRefused).
  */
+import { FEATURE_LABELS } from '../../../shared/access.js';
 import { inputTokenBound } from '../../../shared/token-bound.js';
 import {
   approvedJobCap,
@@ -301,6 +302,8 @@ const unavailable = () => new ManagedError(503, 'route_unavailable', ROUTE_UNAVA
 /** The company spend ceiling's only customer-facing words: nothing about the ceiling itself. */
 export const CEILING_REFUSAL = 'Nectovia’s model service isn’t available right now. Nothing was charged.';
 const ceilingReached = () => new ManagedError(503, 'route_unavailable', CEILING_REFUSAL);
+/** Why a call is refused when the business's current grants hold the Agent but not included AI usage. */
+export const MANAGED_USAGE_NOT_INCLUDED = `${FEATURE_LABELS['managed-inference']} isn’t part of this business’s plan, so the Nectovia Agent can’t answer here. Nothing was charged.`;
 /** The contract names these three funding refusals as 402, whatever status FundingService gives them. */
 const PAYMENT_REFUSALS: ReadonlySet<string> = new Set(['insufficient_allowance', 'cap_request_required', 'no_period']);
 
@@ -669,6 +672,10 @@ export class ManagedInferenceService {
     const view = entitlementFromGrants(state.grants, state.accessRevision, at);
     const decision = decideAgentAdmission({ workspace: 'business', member: true, entitlement: snapshotFromView(view), at });
     if (!decision.admitted) throw new ManagedError(403, 'agent_not_included', decision.reason);
+    // Every call here is Diomedes-funded, so it also needs included AI usage ('managed-inference'),
+    // read from the same current grants. A month's credit period outlives the grant that funded it,
+    // so funding alone doesn't answer this. Refused before the job is opened or anything is held.
+    if (!view.managedInference) throw new ManagedError(403, 'agent_not_included', MANAGED_USAGE_NOT_INCLUDED);
     // 5. The body.
     const bytes = await this.readBody(request);
     let parsed: unknown;

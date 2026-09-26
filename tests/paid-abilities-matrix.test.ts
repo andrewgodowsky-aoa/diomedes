@@ -10,19 +10,21 @@
  *   Work loop drive, resume and delegates          Agent gate, on each drive's adapter and each child
  *   A team member's Work turn                      Agent gate, before the member's run starts
  *   Jev preflight                                  Agent gate, managed, before the advisor is asked
+ *   A managed call at the account service          its gateway, on every call: both features again
  *
  * Harbor Hardware holds no grant: it is refused at every one before anything is sent. Juniper
- * Street Bakery holds Business: it is admitted at every one. A business whose grant has the Agent
- * but not included AI usage is refused Diomedes-funded work before the service records anything,
- * and keeps its own connection.
+ * Street Bakery holds Business: it is admitted at every one. A business on a service agreement
+ * holds the Agent without included AI usage: it is refused Diomedes-funded work before the service
+ * records anything, the gateway refuses a managed call it makes anyway, and its own connection
+ * still runs.
  *
  * Not in this matrix, each gated in its own lane: owner rules and trigger rules reaching the work
  * ('owner-rules', feature/paid-business-rules) and the phone relay ('phone-relay',
  * feature/phone-relay).
  *
- * The account service is the real control-plane handler over the faux store, in this process.
- * AWS, the managed gateway and the Jev port are scripted doubles that count every call. Nothing
- * leaves this process.
+ * The account service is the real control-plane handler over the faux store, in this process,
+ * managed gateway included. AWS, the gateway's provider and the Jev port are scripted doubles
+ * that count every call. Nothing leaves this process.
  */
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import fs from 'node:fs/promises';
@@ -40,8 +42,10 @@ import { EngineService } from '../server/engines/service';
 import { scriptedEvaluationPort, type ScriptedEvaluationPort } from '../server/harness/evaluation-adapter';
 import { createJevAdvisor } from '../server/harness/jev-advisor';
 import { teamToolRegistry } from '../server/team/tools';
+import type { TierPolicy } from '../services/control-plane/src/commercial';
 import { createFauxCloud, FAUX_BACKEND_LABEL, type FauxCloud } from '../services/control-plane/src/faux/cloud';
 import { DEMO_ACCOUNTS, FAUX_DEMO_PASSWORD, seedDemo } from '../services/control-plane/src/faux/seed';
+import { MANAGED_USAGE_NOT_INCLUDED as GATEWAY_USAGE_NOT_INCLUDED } from '../services/control-plane/src/managed-inference';
 import { AGENT_NOT_INCLUDED_REASON } from '../shared/access';
 import type { AccountStateView } from '../shared/accounts';
 import type { Conversation, Project } from '../shared/types';
@@ -55,13 +59,17 @@ const PLAN = 'Work out a staffing plan for the holiday weekend given the new ope
 let root: string;
 let cloud: FauxCloud;
 let orgs: { juniper: string; harbor: string };
+let policy: TierPolicy;
 let engines: EngineService;
 let port: ScriptedEvaluationPort;
 let app: Awaited<ReturnType<typeof createApp>>;
 let server: Server | undefined;
 let base: string;
-/** Calls that left for a provider: AWS on the business's own connection, and the company gateway. */
-let calls: { aws: number; gateway: number };
+/**
+ * Calls that left: AWS on the business's own connection, this computer's calls to the account
+ * service's managed gateway, and the gateway's calls to the company's provider.
+ */
+let calls: { aws: number; gateway: number; provider: number };
 
 const answer = (id: string, model: string) =>
   sseResponse(
@@ -87,14 +95,15 @@ async function api<T>(route: string, method = 'GET', body?: unknown): Promise<T>
   expect(response.ok, `${method} ${route}: ${response.status} ${text}`).toBe(true);
   return (text ? JSON.parse(text) : null) as T;
 }
-async function staffToken(email: string) {
+/** A signed-in session at the account service, for staff or a customer. */
+async function tokenFor(email: string) {
   const pair = await cloud.store.run((draft) => cloud.identity.signIn(draft.identity, { email, password: FAUX_DEMO_PASSWORD, remember: false }));
   await cloud.accounts.signIn(pair.accessToken);
   return pair.accessToken;
 }
 /** Every Agent admission the service recorded for a business, oldest first. */
 async function admissions(organizationId: string) {
-  return (await cloud.commercial.customer(await staffToken(DEMO_ACCOUNTS.staffBilling.email), organizationId)).admissions as {
+  return (await cloud.commercial.customer(await tokenFor(DEMO_ACCOUNTS.staffBilling.email), organizationId)).admissions as {
     decision: string;
     surface: string;
     routeKind: string;
@@ -104,12 +113,23 @@ const signIn = (email: string) => api<AccountStateView>('/account/sign-in', 'POS
 
 beforeEach(async () => {
   root = await fs.mkdtemp(path.join(os.tmpdir(), 'nectovia-paid-abilities-'));
-  calls = { aws: 0, gateway: 0 };
-  cloud = await createFauxCloud({ file: null, passwordIterations: 1_000 });
+  calls = { aws: 0, gateway: 0, provider: 0 };
+  cloud = await createFauxCloud({
+    file: null,
+    passwordIterations: 1_000,
+    // The gateway's provider: what would reach Bedrock on the company's account.
+    managed: {
+      transport: (async (_input: RequestInfo | URL, init?: RequestInit) => {
+        calls.provider += 1;
+        const body = JSON.parse(typeof init?.body === 'string' ? init.body : '{}') as { model?: unknown };
+        return answer(`gw_${calls.provider}`, String(body.model));
+      }) as typeof globalThis.fetch,
+    },
+  });
   orgs = (await seedDemo(cloud)).organizations!;
   // The Routing role qualifies GPT-6 Luna and publishes it for Efficient and Focused, as in
   // nectovia-bot-app.test.ts, so a Home message has a model to run on.
-  const routing = await staffToken(DEMO_ACCOUNTS.staffRouting.email);
+  const routing = await tokenFor(DEMO_ACCOUNTS.staffRouting.email);
   const luna = (await cloud.commercial.routes(routing)).routes.find((row) => row.id === 'aws-luna-6')!;
   await cloud.commercial.saveRoute(routing, {
     id: 'aws-luna-6',
@@ -122,17 +142,15 @@ beforeEach(async () => {
     evidence: 'Test fixture: qualified for this file.',
     baseRevision: luna.revision,
   });
-  await cloud.commercial.publishPolicy(routing, {
+  policy = await cloud.commercial.publishPolicy(routing, {
     tiers: { efficient: 'aws-luna-6', focused: 'aws-luna-6', thorough: null },
     note: 'Test fixture: GPT-6 Luna for Efficient and Focused.',
     baseRevision: 1,
   });
   const backend: AccountBackend = {
-    client: new ControlPlaneClient('http://faux.local', async (req) => {
-      if (!new URL(req.url).pathname.startsWith('/managed/v1/')) return cloud.handle(req);
-      calls.gateway += 1;
-      const body = (await req.json()) as { model?: unknown };
-      return answer(`gw_${calls.gateway}`, String(body.model));
+    client: new ControlPlaneClient('http://faux.local', (req) => {
+      if (new URL(req.url).pathname.startsWith('/managed/v1/')) calls.gateway += 1;
+      return cloud.handle(req);
     }),
     view: () => ({ kind: 'faux', label: FAUX_BACKEND_LABEL, url: null, reason: null, signIn: 'password' }),
     close: async () => {},
@@ -167,6 +185,8 @@ beforeEach(async () => {
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
 afterEach(async () => {
+  // Settlements the gateway started finish before the store goes.
+  await cloud.idle();
   if (server) {
     await app.locals.close();
     server.closeAllConnections();
@@ -271,7 +291,61 @@ const refusedAs = async (response: Response, error: string) => {
   expect(response.status, body).toBe(403);
   expect(JSON.parse(body)).toMatchObject({ code: 'AGENT_NOT_INCLUDED', error });
 };
-const nothingSent = () => expect(calls).toEqual({ aws: 0, gateway: 0 });
+const nothingSent = () => expect(calls).toEqual({ aws: 0, gateway: 0, provider: 0 });
+
+/**
+ * A managed call made straight to the account service's gateway, the way a member's own client
+ * could make it, under an admission the service recorded for it. This computer's gate is not
+ * asked, so what answers is the gateway's own check on the call.
+ */
+async function managedCall(email: string, organizationId: string, job: string) {
+  const authorization = `Bearer ${await tokenFor(email)}`;
+  const admitted = await cloud.handle(
+    new Request(`http://faux.local/account/organizations/${organizationId}/agent-admissions`, {
+      method: 'POST',
+      headers: { authorization, 'content-type': 'application/json' },
+      body: JSON.stringify({ surface: 'conversation', routeKind: 'managed', rootJobId: job }),
+    }),
+  );
+  expect(admitted.status).toBe(200);
+  const admission = (await admitted.json()) as { admissionId: string; decision: { admitted: boolean } };
+  const response = await cloud.handle(
+    new Request('http://faux.local/managed/v1/responses', {
+      method: 'POST',
+      headers: {
+        authorization,
+        'content-type': 'application/json',
+        'x-nectovia-organization': organizationId,
+        'x-nectovia-admission': admission.admissionId,
+        'x-nectovia-job': job,
+        'x-nectovia-attempt': `${job}:1`,
+        'x-nectovia-tier': 'efficient',
+        'x-nectovia-usage-class': 'included-chat',
+        'x-nectovia-policy-revision': String(policy.revision),
+      },
+      body: JSON.stringify({
+        model: policy.tiers.efficient!.model,
+        input: [
+          { role: 'developer', content: 'Be brief.' },
+          { role: 'user', content: [{ type: 'input_text', text: 'How many loaves are on order?' }] },
+        ],
+        reasoning: { effort: 'low' },
+        include: ['reasoning.encrypted_content'],
+        store: false,
+        stream: true,
+        parallel_tool_calls: false,
+        max_output_tokens: 4_096,
+      }),
+    }),
+  );
+  return { admitted: admission.decision.admitted, response };
+}
+/** What the gateway opened and held for one business's job. */
+const fundingOf = (organizationId: string, job: string) => {
+  const { attempts, jobs } = cloud.store.snapshot().funding;
+  const mine = (row: { organizationId: string; rootJobId: string }) => row.organizationId === organizationId && row.rootJobId === job;
+  return { attempts: attempts.filter(mine), jobs: jobs.filter(mine) };
+};
 
 describe('the paid-abilities matrix', () => {
   test('Harbor Hardware, with no grant, is refused at every entry point before anything is sent', async () => {
@@ -315,10 +389,12 @@ describe('the paid-abilities matrix', () => {
     expect(juniper.workspaces.map((row) => [row.organization.id, row.access?.agent.included])).toEqual([[orgs.juniper, true]]);
     const work = await workOnAws('Juniper order', await connectAws());
 
+    // Home runs on the account service's gateway, which checks both features again on the call.
     const home = await entry.home('j-home');
     expect(home.status, await home.clone().text()).toBe(200);
     expect(await home.json()).toMatchObject({ answerText: ANSWER });
     expect(calls.gateway).toBeGreaterThan(0);
+    expect(calls.provider).toBeGreaterThan(0);
 
     const conversation = await entry.conversation(work, 'j-conversation');
     expect(conversation.status, await conversation.clone().text()).toBe(200);
@@ -358,32 +434,53 @@ describe('the paid-abilities matrix', () => {
     expect(recorded.some((row) => row.decision === 'refused')).toBe(false);
   });
 
-  test('the Agent without included AI usage: Diomedes-funded work is refused before the service records it; the own connection still runs', async () => {
-    // A service agreement that names the Agent and nothing else.
-    const billing = await staffToken(DEMO_ACCOUNTS.staffBilling.email);
-    await cloud.commercial.issueGrant(billing, orgs.harbor, {
-      planId: null,
-      features: ['nectovia-agent'],
+  test('a service agreement, the Agent without included AI usage: Diomedes-funded work is refused here and at the gateway, Agent work on its own connection runs, and Business passes the gateway', async () => {
+    // Harbor on the Service agreement template, whose features leave out included AI usage.
+    const billing = await tokenFor(DEMO_ACCOUNTS.staffBilling.email);
+    const { grant } = await cloud.commercial.issueGrant(billing, orgs.harbor, {
+      planId: 'service-agreement',
       source: 'service-agreement',
       reference: 'Test agreement',
-      note: 'The Agent, on the business’s own connections only.',
+      note: 'The quoted implementation.',
       validUntil: new Date(Date.now() + 30 * 86_400_000).toISOString(),
     });
+    expect(grant.features).toContain('nectovia-agent');
+    expect(grant.features).not.toContain('managed-inference');
     const harbor = await signIn(DEMO_ACCOUNTS.harborOwner.email);
     expect(harbor.workspaces[0].access).toMatchObject({ state: 'active', agent: { included: true } });
     expect(harbor.workspaces[0].access?.features).not.toContain('managed-inference');
     const work = await workOnAws('Harbor order', await connectAws());
     const before = (await admissions(orgs.harbor)).length;
 
+    // On this computer, refused before the service records anything.
     await refusedAs(await entry.home('a-home'), MANAGED_USAGE_NOT_INCLUDED);
     await refusedAs(await entry.preflight(work), MANAGED_USAGE_NOT_INCLUDED);
     expect(calls.gateway).toBe(0);
     expect(port.calls).toHaveLength(0);
     expect(await admissions(orgs.harbor), 'nothing was recorded for the refused work').toHaveLength(before);
 
+    // A managed call made anyway: the service admits the Agent, and the gateway refuses the call
+    // before it opens a job or holds anything.
+    const refused = await managedCall(DEMO_ACCOUNTS.harborOwner.email, orgs.harbor, 'harbor-job');
+    expect(refused.admitted).toBe(true);
+    expect(refused.response.status).toBe(403);
+    expect(await refused.response.json()).toEqual({ error: { code: 'agent_not_included', message: GATEWAY_USAGE_NOT_INCLUDED } });
+    expect(calls.provider).toBe(0);
+    expect(fundingOf(orgs.harbor, 'harbor-job')).toEqual({ attempts: [], jobs: [] });
+
+    // Agent work on the business's own connection is admitted and runs.
     const own = await entry.conversation(work, 'a-conversation');
     expect(own.status, await own.clone().text()).toBe(200);
     expect(await own.json()).toMatchObject({ answerText: ANSWER });
     expect(calls.aws).toBeGreaterThan(0);
+    expect(await admissions(orgs.harbor)).toContainEqual(expect.objectContaining({ decision: 'admitted', surface: 'conversation', routeKind: 'byo' }));
+
+    // The same call for Business passes the gateway and reaches the provider once.
+    const passed = await managedCall(DEMO_ACCOUNTS.owner.email, orgs.juniper, 'juniper-job');
+    expect(passed.admitted).toBe(true);
+    expect(passed.response.status).toBe(200);
+    expect(await passed.response.text()).toContain(ANSWER);
+    expect(calls.provider).toBe(1);
+    expect(fundingOf(orgs.juniper, 'juniper-job').attempts).toHaveLength(1);
   });
 });
