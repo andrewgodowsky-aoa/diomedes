@@ -21,7 +21,7 @@
   "vars": {
     "ENVIRONMENT": "staging",
     "ALLOWED_ORIGINS": "https://accounts.diomedes.net",
-    "WORKOS_CLIENT_ID": "",
+    "WORKOS_CLIENT_ID": "client_01M2CX1HZ8RDE8EYGG2YCDX39H",
     "WORKOS_ISSUER": "https://api.workos.com",
     "WORKOS_TOKEN_AUDIENCE": "https://accounts.diomedes.net",
     "MANAGED_SPEND_CEILING_MICRO_USD": "100000000",
