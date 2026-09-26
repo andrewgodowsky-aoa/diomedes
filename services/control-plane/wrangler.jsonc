@@ -43,5 +43,7 @@
   //   raises it. Larger requests are clamped silently and the clamp is named in the response
   //   header X-Nectovia-Max-Output. Testing runs with 2000.
   // Both are set in "vars" above for staging. A production environment sets its own.
+  // Workers Builds deploys the repository root's wrangler.jsonc, which must carry the same routes
+  // and vars as this file (tests/deploy-config.test.ts).
   "secrets": { "required": ["DATABASE_URL", "WORKOS_API_KEY"] }
 }

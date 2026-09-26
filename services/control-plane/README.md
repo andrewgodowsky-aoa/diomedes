@@ -132,7 +132,7 @@ the issuer (`https://api.workos.com`) and the audience
    (workos.com/docs/authkit/jwt-templates), add
    `"aud": "https://accounts.diomedes.net"`. `aud` is not one of the reserved
    keys; if WorkOS refuses it anyway, stop. Do not remove the audience check. Put
-   the client ID (`client_...`, public) in `WORKOS_CLIENT_ID` above, and run
+   the client ID (`client_...`, public) in `WORKOS_CLIENT_ID` in both `wrangler.jsonc` files (step 3), and run
    `npx wrangler secret put WORKOS_API_KEY` with the `sk_test_...` key. The
    people who sign in need verified emails.
 2. **Neon** (project small-wave-81999606). Make a database `accounts_staging`,
@@ -142,9 +142,11 @@ the issuer (`https://api.workos.com`) and the audience
    migrate`. Create the login `cp_runtime`, run `scripts/runtime-permissions.sql`
    as the owner, and run `npx wrangler secret put DATABASE_URL` with
    `postgresql://cp_runtime:<password>@<host>/accounts_staging?sslmode=require`.
-3. **Deploy.** Merging to main deploys through Workers Builds, and the vars ride
-   with the deploy. That is why the client ID lives in this file and not in the
-   dashboard.
+3. **Deploy.** Merging to main deploys through Workers Builds, which reads the
+   **repository root's** `wrangler.jsonc`, not this package's. The two files must
+   carry the same routes and vars, and `tests/deploy-config.test.ts` fails the
+   build when they differ. The vars ride with the deploy, which is why the client
+   ID lives in these files and not in the dashboard.
 4. **First admin.** Build the company Operations app (`OPS_WORKOS_CLIENT_ID=client_...
    npm run package:company` in diomedes-ops) and sign in once. It refuses you
    and shows your WorkOS user id. Then, with the same pins as the migration,

@@ -1,11 +1,29 @@
 {
   "$schema": "services/control-plane/node_modules/wrangler/config-schema.json",
+  // THIS is the file Workers Builds deploys on every merge to main (verified
+  // 2026-09-26: the version deployed from d96321c carried this file's empty
+  // routes and no vars). services/control-plane/wrangler.jsonc is the same
+  // Worker for local `wrangler dev` and the runtime smoke. The two must agree
+  // on routes and vars; services/control-plane/tests/deploy-config.test.ts
+  // fails the build when they do not.
   "name": "diomedes",
   "main": "services/control-plane/src/worker.ts",
   "compatibility_date": "2026-09-19",
   "workers_dev": false,
   "preview_urls": false,
-  "routes": [],
+  // The company account service. Staging data until production is approved.
+  "routes": [{ "pattern": "accounts.diomedes.net", "custom_domain": true }],
+  // The two MANAGED_* values are the owner's testing limits of 2026-09-25: $100 in provider cost
+  // for all staging testing, for all time, and short answers. Raise them only on his word.
+  "vars": {
+    "ENVIRONMENT": "staging",
+    "ALLOWED_ORIGINS": "https://accounts.diomedes.net",
+    "WORKOS_CLIENT_ID": "",
+    "WORKOS_ISSUER": "https://api.workos.com",
+    "WORKOS_TOKEN_AUDIENCE": "https://accounts.diomedes.net",
+    "MANAGED_SPEND_CEILING_MICRO_USD": "100000000",
+    "MANAGED_MAX_OUTPUT_TOKENS": "2000"
+  },
   "build": {
     "cwd": "services/control-plane",
     "command": "npm ci --ignore-scripts --no-audit --no-fund && npm run typecheck && npm test"
