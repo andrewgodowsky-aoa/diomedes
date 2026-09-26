@@ -20,7 +20,8 @@ export type VendorRole =
   | 'identity'
   | 'database'
   | 'payments'
-  | 'app-hosting';
+  | 'app-hosting'
+  | 'observability';
 
 /** A dated primary source — the vendor's own page, not a third-party summary. */
 export interface VendorSource {
@@ -255,6 +256,47 @@ export const VENDOR_ALLOWLIST: readonly VendorEntry[] = Object.freeze([
       },
     ],
     accountState: 'not-selected',
+  },
+  {
+    vendor: 'posthog',
+    role: 'observability',
+    tier: 'LLM analytics, free allowance first',
+    selected: true,
+    monthlyFixedMicroUsd: micro(0),
+    features: [
+      'metadata-only $ai_trace, $ai_generation and $ai_span events for admitted internal Agent work',
+      'the documented /batch/ capture API over HTTPS; no SDK',
+    ],
+    limits: [
+      'the first 100,000 LLM analytics events per month are free, with 30-day retention',
+      'on the free plan, events above the allowance are dropped and not billed',
+      'export is off by default and needs an operator-set daily event cap and funded-until date',
+    ],
+    fees:
+      'Usage-based: above the free allowance, volume pricing from USD 0.00035 per LLM event, falling with volume; no seat fees. Any benefit award and its expiry are private operator configuration. Pay-as-you-go billing needs explicit approval.',
+    rejectedAddOns: [
+      'pay-as-you-go billing with a card on file before a funded pilot is approved',
+      'session replay, feature flags and other PostHog products',
+      'the posthog-node SDK and its automatic enrichment',
+    ],
+    sources: [
+      {
+        label: 'PostHog AI observability: start here (use for free)',
+        url: 'https://github.com/PostHog/posthog.com/blob/master/contents/docs/ai-observability/start-here.mdx',
+        asOf: '2026-09-25',
+      },
+      {
+        label: 'PostHog pricing FAQ: going over the free limit',
+        url: 'https://github.com/PostHog/posthog.com/blob/master/src/pages-content/pricing-data.js',
+        asOf: '2026-09-25',
+      },
+      {
+        label: 'PostHog AI observability: calculating costs',
+        url: 'https://github.com/PostHog/posthog.com/blob/master/contents/docs/ai-observability/calculating-costs.mdx',
+        asOf: '2026-09-25',
+      },
+    ],
+    accountState: 'unverified',
   },
 ]);
 

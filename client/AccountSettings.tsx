@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { FEATURE_LABELS } from '../shared/access';
 import type { AccountStateView, AccountWorkspaceView } from '../shared/accounts';
 import type { MemberRole } from '../shared/workspaces';
 import { api } from './api';
@@ -21,11 +22,7 @@ interface Roster {
 }
 
 const ROLE_NAMES: Record<MemberRole, string> = { owner: 'Business owner', admin: 'Manager', member: 'Employee' };
-const FEATURE_NAMES: Record<string, string> = {
-  'nectovia-agent': 'Nectovia Agent',
-  'maintained-profiles': 'Maintained profiles',
-  'managed-inference': 'Included AI usage',
-};
+const FEATURE_NAMES: Record<string, string> = FEATURE_LABELS;
 const day = (value: string | null) =>
   value ? new Date(value).toLocaleDateString([], { year: 'numeric', month: 'short', day: 'numeric' }) : null;
 const message = (error: unknown, fallback: string) => (error instanceof Error && error.message ? error.message : fallback);

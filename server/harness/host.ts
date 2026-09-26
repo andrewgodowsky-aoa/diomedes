@@ -391,6 +391,7 @@ export function createHarnessHost({
   codexAccountRoute,
   textLeaseMs,
   weeklyBrief,
+  observation,
   nectoviaAccount,
 }: {
   store: Store;
@@ -402,6 +403,8 @@ export function createHarnessHost({
   textLeaseMs?: number;
   /** The pinned configuration and live target the weekly brief procedure needs. */
   weeklyBrief?: WeeklyBriefHost;
+  /** Optional metadata observation (server/observability/): reads each saved run, never changes it. */
+  observation?: { onRunSaved(run: HarnessRun): void } | null;
   /** The Nectovia route's account for a project now, or null when nobody is signed in or it is Personal. */
   nectoviaAccount?: (projectId: string) => string | null;
 }) {
@@ -533,6 +536,11 @@ export function createHarnessHost({
     // authorized snapshot after the atomic write, using the same durable log.
     for (const observer of observers)
       if (observer.runId === run.id) observer.changed();
+    try {
+      observation?.onRunSaved(run);
+    } catch {
+      // Observation never changes a run, its commit or its readers.
+    }
   };
   runs.afterStep = () => bridge.flush();
   runs.use((context) => bridge.beforeStep(context));

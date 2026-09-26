@@ -104,6 +104,14 @@ export interface ModelApiAdapterSpec {
   }): Promise<void>;
 }
 
+/**
+ * The spend hold's step id for one model request, fixed before anything is sent. The observation
+ * projector joins a model step to its hold with the same derivation (server/observability/projector.ts).
+ */
+export function exposureStepId(request: Pick<ModelRequest, 'messages'>): string {
+  return `model@${digest(request.messages).slice(0, 24)}`;
+}
+
 type Prepared = ModelRequest & {
   modelApiProfile?: { route: string; connectionId: string; revision: number; modelId: string; profileHash: string };
 };
@@ -190,7 +198,7 @@ export function createModelApiAdapter(spec: ModelApiAdapterSpec): ModelAdapter &
   };
   /** A spend hold's identity for one step, fixed before anything is sent. */
   const attemptFor = (request: ModelRequest): ExposureAttempt =>
-    exposureAttempt(request.runId, `model@${digest(request.messages).slice(0, 24)}`, {
+    exposureAttempt(request.runId, exposureStepId(request), {
       runId: request.runId,
       capabilityId: request.capabilityId,
       messages: request.messages,

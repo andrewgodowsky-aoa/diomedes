@@ -102,6 +102,11 @@ export class AccountAgentGate implements AgentGatePort {
         surface: work.surface,
         validUntil: decision.validUntil,
       };
-    throw new EngineError(decision.code === SIGN_IN_REQUIRED ? AGENT_SIGN_IN_REQUIRED : AGENT_NOT_INCLUDED, decision.reason, false);
+    const refusal = new EngineError(decision.code === SIGN_IN_REQUIRED ? AGENT_SIGN_IN_REQUIRED : AGENT_NOT_INCLUDED, decision.reason, false);
+    // Additive: the service's own refusal code (`entitlement_revoked`, `entitlement_unknown`, ...), so
+    // a caller can tell a revocation from an outage. Read-only and not enumerable: the error's class,
+    // `code`, message and status are unchanged, and nothing that serializes it sees the field.
+    Object.defineProperty(refusal, 'refusalCode', { value: decision.code, enumerable: false });
+    throw refusal;
   }
 }
