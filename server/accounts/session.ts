@@ -140,20 +140,22 @@ const UNREADABLE_ADMISSION_REASON =
   'The account service answered in a way this app could not read, so the Nectovia Agent could not confirm this business includes it. Nothing was sent.';
 
 /**
- * The account service's own refusals of an Agent admission because the person is not an active
- * member of the business: its `member()` and `membership()` checks
- * (services/control-plane/src/account-service.ts), each a 403 whose JSON body carries the sentence.
- * The service sends no code with them yet; `not_a_member` is accepted when it does. Only these are
- * `not_a_member`. Any other 403 or 404 (an edge page, a Worker without the route, a proxy) is the
- * service not answering (PH-07 R3-2).
+ * The account service's own refusals because the person is not an active member of the business:
+ * its `member()` and `membership()` checks (services/control-plane/src/account-service.ts), each a
+ * 403 whose JSON body carries the sentence and `code: 'not_a_member'`. The code is what this host
+ * reads. The sentences are the fallback for an older service that sends them without a code. Only
+ * these are `not_a_member`. Any other 403 or 404 (an edge page, a Worker without the route, a proxy)
+ * is the service not answering (PH-07 R3-2).
  */
 export const MEMBERSHIP_REFUSALS: ReadonlySet<string> = new Set([
   'This Business workspace is unavailable to this person.',
   'Current membership could not be established.',
 ]);
 
-/** Whether a failed admission request is the account service's own membership refusal. */
+/** Whether a failed account service request is the service's own membership refusal. */
 export function refusedMembership(error: unknown): boolean {
+  if (error instanceof ControlPlaneError)
+    return error.status === 403 && (error.code === 'not_a_member' || MEMBERSHIP_REFUSALS.has(error.message));
   if (!(error instanceof ApiError) || error.status !== 403) return false;
   return error.details.code === 'not_a_member' || MEMBERSHIP_REFUSALS.has(error.message);
 }
@@ -174,6 +176,8 @@ interface Current {
   signedInAt: string;
   organizations: { organization: Organization; membership: Membership }[];
   access: Map<string, AccessView | null>;
+  /** Businesses whose access read the service refused because the person is not a member. */
+  notMember: Set<string>;
   policy: RoutingPolicyAnswer | null;
 }
 
@@ -371,6 +375,7 @@ export class AccountSessionService {
       signedInAt: this.at(),
       organizations: session.organizations,
       access: new Map(),
+      notMember: new Set(),
       policy: null,
     };
     if (this.current && this.current.personId !== current.personId) await this.revokeQuietly(this.current);
@@ -470,17 +475,21 @@ export class AccountSessionService {
   private async loadAccess(current: Current) {
     const active = current.organizations.filter((row) => row.membership.state === 'active');
     // A read that fails in transport, by status or in parsing leaves the business unanswered (null),
-    // never answered as inactive: `entitlement()` reports it as `unknown` (PH-07 R3-1).
+    // never answered as inactive: `entitlement()` reports it as `unknown` (PH-07 R3-1). The one
+    // failure that is an answer is the service's own membership refusal (R3-2).
+    const notMember = new Set<string>();
     const answers = await Promise.all(
       active.map(async (row) => {
         try {
           return [row.organization.id, accessAnswer(await this.backend.client.access(current.accessToken, row.organization.id), row.organization.id)] as const;
-        } catch {
+        } catch (error) {
+          if (refusedMembership(error)) notMember.add(row.organization.id);
           return [row.organization.id, null] as const;
         }
       }),
     );
     current.access = new Map(answers);
+    current.notMember = notMember;
     current.policy = await this.backend.client.routingPolicy(current.accessToken).catch(() => current.policy);
   }
 
@@ -520,13 +529,15 @@ export class AccountSessionService {
   /**
    * The last answer for one business. Null when the service knows nothing of it here. State
    * `unknown` only when the service has not answered for a business the person is an active member
-   * of; a membership the service lists as not active is an answer, and reads as not included.
+   * of. A membership the service lists as not active is an answer, and so is its own membership
+   * refusal of the access read; both read as not included.
    */
   entitlement(organizationId: string): EntitlementView | null {
     const current = this.current;
     const row = current?.organizations.find((item) => item.organization.id === organizationId);
     if (!current || !row) return null;
-    if (row.membership.state !== 'active') return { ...NO_ENTITLEMENT_VIEW, source: 'account-service', reason: NOT_A_MEMBER_REASON };
+    if (row.membership.state !== 'active' || current.notMember.has(organizationId))
+      return { ...NO_ENTITLEMENT_VIEW, source: 'account-service', reason: NOT_A_MEMBER_REASON };
     const access = current.access.get(organizationId);
     if (!access)
       return {
