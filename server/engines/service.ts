@@ -116,7 +116,7 @@ import type { ConnectionSecrets } from '../connection-secrets.js';
 import type { SpendExposure } from '../spend-exposure.js';
 import type { ModelApiRoute } from '../../shared/model-api.js';
 import type { AdmittedAgentWork, AgentGatePort, AgentWork } from '../accounts/agent-gate.js';
-import type { ObservationBinder } from '../observability/scopes.js';
+import { refusalEndsObservation, type ObservationBinder } from '../observability/scopes.js';
 
 function recordShimError(error: unknown): boolean {
   return (
@@ -1967,9 +1967,17 @@ export class EngineService {
     const api = this.modelApi;
     if (!api)
       throw new EngineError('RUNTIME_UNAVAILABLE', 'This model-API route is not available in this process.', true);
+    // The business a refusal is about: the gate's own pick, read on the same turn, before its round trip.
+    let business: string | null = null;
+    try {
+      business = this.observation?.businessFor(input.projectId ?? null) ?? null;
+    } catch {
+      // Observation never changes an admission.
+    }
     const admitted = await this.admitAgent(input, agent).catch((error: unknown) => {
       try {
-        this.observation?.refused({ projectId: input.projectId ?? null });
+        // Only a refusal of the business ends its observation; an outage does not.
+        if (refusalEndsObservation(error)) this.observation?.refused({ projectId: input.projectId ?? null, organizationId: business });
       } catch {
         // Observation never changes a refusal.
       }

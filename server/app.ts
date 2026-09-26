@@ -767,6 +767,10 @@ export async function createApp(options: AppOptions) {
         options.secretBox ?? null,
       )
     : null;
+  // Built before the account session starts, so a resumed sign-in is already seen by it.
+  const observation = accountSession
+    ? createObservation({ options: options.observation, env: process.env, build: running.version, session: accountSession, workspaces, settings: store })
+    : null;
   if (accountSession) {
     workspaces.connectAccounts({
       entitlement: (organizationId) => accountSession.entitlement(organizationId),
@@ -774,7 +778,11 @@ export async function createApp(options: AppOptions) {
     });
     // Signing in and out reach the registry under the store lock. Creating a business from a
     // locked workspace route mirrors its own answer, so this never nests inside that lock.
-    accountSession.onProjection((projection) => store.locked(() => workspaces.project(projection)));
+    // Observation then sees the sign-in, sign-out or change of person (PH-07 N-3).
+    accountSession.onProjection(async (projection) => {
+      await store.locked(() => workspaces.project(projection));
+      observation?.scopes.observeContext();
+    });
     await accountSession.init();
     const env = options.accounts?.env ?? process.env;
     const testAccount = env.DIOMEDES_TEST_MODE === '1' ? (env.DIOMEDES_TEST_ACCOUNT ?? '').trim() : '';
@@ -782,9 +790,6 @@ export async function createApp(options: AppOptions) {
       await accountSession.signIn({ email: testAccount, password: FAUX_DEMO_PASSWORD, remember: false });
     engines.agentGate = new AccountAgentGate(accountSession, workspaces);
   }
-  const observation = accountSession
-    ? createObservation({ options: options.observation, env: process.env, build: running.version, session: accountSession, workspaces })
-    : null;
   if (observation) engines.observation = observation.scopes;
   const discovery = new DiscoveryService(store, {
     // A new observation needs `verified`. A stored one whose approved file has

@@ -44,15 +44,43 @@ export interface ObservationBindInput {
   readonly model: string | null;
 }
 
-/** All `EngineService` holds: `bind` after every admission check passed, `refused` when the Agent gate refused. */
+/**
+ * All `EngineService` holds: `bind` after every admission check passed; `businessFor` just before
+ * the Agent gate is asked, and `refused` when the gate's answer says the business is not entitled.
+ */
 export interface ObservationBinder {
   bind(input: ObservationBindInput): void;
+  businessFor(projectId: string | null): string | null;
   refused(input: ObservationRefusalInput): void;
 }
 
-/** What `EngineService` knows of a refused admission: the project it was for, if any. */
+/** A refused admission: the project it was for, and the business the gate asked about. */
 export interface ObservationRefusalInput {
   readonly projectId: string | null;
+  /**
+   * The business, decided before the admission's round trip by the gate's own rule (PH-07 N-1), so a
+   * workspace switch during the round trip cannot move the refusal to another business. Only a
+   * direct caller that omits it has the business resolved from `projectId` at the call.
+   */
+  readonly organizationId?: string | null;
+}
+
+/**
+ * The account service's refusal codes that say the business is not entitled (PH-07 N-2). Only these
+ * end a business's observation. `entitlement_unknown` (the service unreachable, a 5xx, a timeout) and
+ * sign-in are not refusals of the business, and end nothing.
+ */
+export const ENTITLEMENT_REFUSALS: ReadonlySet<string> = new Set([
+  'entitlement_revoked',
+  'entitlement_expired',
+  'agent_not_included',
+  'not_a_member',
+]);
+
+/** Whether an error the Agent gate threw is a definitive refusal of the business. */
+export function refusalEndsObservation(error: unknown): boolean {
+  const code = error && typeof error === 'object' ? (error as { refusalCode?: unknown }).refusalCode : undefined;
+  return typeof code === 'string' && ENTITLEMENT_REFUSALS.has(code);
 }
 
 export interface ResolvedScope {
@@ -92,8 +120,18 @@ export class ObservationScopes implements ObservationBinder {
   private readonly denied = new Map<ObservationDenial, number>();
   /** Refused admissions per business. A scope bound before its business's latest refusal has ended. */
   private readonly refusals = new Map<string, number>();
-  /** The refusal count each bound scope saw at bind. Weak, so a forgotten scope is not kept. */
-  private readonly generation = new WeakMap<ObservationScope, number>();
+  /**
+   * Who is signed in and which business is active, as last seen, and how many times that has
+   * changed. A scope bound before the latest change has ended for good (contract 4.6; PH-07 N-3).
+   */
+  private context: { person: string | null; active: string | null } | null = null;
+  private contextChanges = 0;
+  /** Why each recent change ended what came before it, by change number; the oldest are forgotten. */
+  private readonly contextEnds = new Map<number, ObservationDenial>();
+  /** What each bound scope saw at bind. Weak, so a forgotten scope is not kept. */
+  private readonly generation = new WeakMap<ObservationScope, { refusals: number; context: number }>();
+  /** A scope whose recheck once failed stays ended, with the reason it first failed. */
+  private readonly ended = new WeakMap<ObservationScope, ObservationDenial>();
   private readonly telemetry: TelemetryPolicyPort;
   private readonly now: () => number;
   private readonly limit: number;
@@ -111,6 +149,8 @@ export class ObservationScopes implements ObservationBinder {
 
   /** `bind`, returning the decision so tests can read it. A denial is counted, never thrown. */
   decide(input: ObservationBindInput): EligibilityDecision {
+    // A change not yet seen ends what was bound before it, never this new scope.
+    this.observeContext();
     const decision = decideObservationEligibility({
       operator: this.operator,
       backend: this.options.backend(),
@@ -128,21 +168,34 @@ export class ObservationScopes implements ObservationBinder {
     }
     this.scopes.delete(decision.scope.bindKey);
     this.scopes.set(decision.scope.bindKey, decision.scope);
-    this.generation.set(decision.scope, this.refusals.get(decision.scope.organizationId) ?? 0);
+    this.generation.set(decision.scope, {
+      refusals: this.refusals.get(decision.scope.organizationId) ?? 0,
+      context: this.contextChanges,
+    });
     while (this.scopes.size > this.limit) this.scopes.delete(this.scopes.keys().next().value as string);
     return decision;
   }
 
   /**
-   * The Agent gate refused an admission (contract section 3: a revocation ends optional export at
-   * the next reload or the next admission, whichever comes first). Every scope of that business
-   * ends: no later event of its runs is projected, and the recheck drops whatever is queued or
-   * waiting for a retry at the next flush. A later admission the service admits binds anew.
-   * Personal work (no business) ends nothing.
+   * The business an admission for this project is asked about, by the Agent gate's rule: the
+   * project's owner, else the active business. Null is Personal. `EngineService` reads it on the
+   * same turn the gate does, before the round trip to the account service (PH-07 N-1).
+   */
+  businessFor(projectId: string | null): string | null {
+    const authority = this.options.authority;
+    return authority.organizationFor ? authority.organizationFor(projectId) : authority.activeOrganizationId();
+  }
+
+  /**
+   * The account service refused the business (contract section 3, as amended by the architect ruling
+   * of 2026-09-25: a definitive refusal ends optional export at the next admission). Every scope of
+   * that business ends: no later event of its runs is projected, and the recheck drops whatever is
+   * queued or waiting for a retry at the next flush. A later admission the service admits binds
+   * anew. Personal work (no business) ends nothing. `EngineService` calls this only for
+   * `ENTITLEMENT_REFUSALS`, with the business it read before the round trip.
    */
   refused(input: ObservationRefusalInput): void {
-    const authority = this.options.authority;
-    const organizationId = authority.organizationFor ? authority.organizationFor(input.projectId) : authority.activeOrganizationId();
+    const organizationId = input.organizationId !== undefined ? input.organizationId : this.businessFor(input.projectId);
     if (!organizationId) return;
     this.refusals.set(organizationId, (this.refusals.get(organizationId) ?? 0) + 1);
     for (const [key, scope] of this.scopes) if (scope.organizationId === organizationId) this.scopes.delete(key);
@@ -183,16 +236,51 @@ export class ObservationScopes implements ObservationBinder {
   recheck(scope: ObservationScope): ScopeRecheck {
     let result: ScopeRecheck;
     try {
-      // Ended by a later refusal, even when the cached entitlement has not caught up yet.
-      result =
-        (this.generation.get(scope) ?? 0) < (this.refusals.get(scope.organizationId) ?? 0)
+      this.observeContext();
+      const bound = this.generation.get(scope) ?? { refusals: 0, context: 0 };
+      const ended = this.ended.get(scope);
+      result = ended
+        ? { live: false, denial: ended }
+        : // Ended by a later refusal, even when the cached entitlement has not caught up yet.
+          bound.refusals < (this.refusals.get(scope.organizationId) ?? 0)
           ? { live: false, denial: 'admission-refused' }
-          : recheckScope(scope, this.options.authority, this.operator, this.telemetry);
+          : // Ended by a sign-out, another person or another business since bind, even if it is back.
+            bound.context < this.contextChanges
+            ? { live: false, denial: this.contextEnds.get(bound.context + 1) ?? 'workspace-changed' }
+            : recheckScope(scope, this.options.authority, this.operator, this.telemetry);
     } catch {
       result = { live: false, denial: 'account-service-unavailable' };
     }
-    if (!result.live) this.count(result.denial);
+    if (!result.live) {
+      this.count(result.denial);
+      // An end is final for the scope (contract 4.6; PH-07 N-3). Not being able to ask is not an end.
+      if (result.denial !== 'account-service-unavailable' && !this.ended.has(scope)) this.ended.set(scope, result.denial);
+    }
     return result;
+  }
+
+  /**
+   * Sample who is signed in and which business is active. A change from the last sample, even one
+   * that is later undone, ends every scope bound before it. Called on every settings save and every
+   * account projection (sign-in, sign-out, reload), at bind and at every recheck. Never throws.
+   */
+  observeContext(): void {
+    let now: { person: string | null; active: string | null };
+    try {
+      now = { person: this.options.authority.personId(), active: this.options.authority.activeOrganizationId() };
+    } catch {
+      return;
+    }
+    const seen = this.context;
+    this.context = now;
+    // The first sample only sets the baseline: no scope can exist before it.
+    if (!seen || (seen.person === now.person && seen.active === now.active)) return;
+    this.contextChanges += 1;
+    this.contextEnds.set(
+      this.contextChanges,
+      now.person === null ? 'signed-out' : now.person !== seen.person ? 'person-changed' : 'workspace-changed',
+    );
+    this.contextEnds.delete(this.contextChanges - 256);
   }
 
   denials(): Readonly<Partial<Record<ObservationDenial, number>>> {

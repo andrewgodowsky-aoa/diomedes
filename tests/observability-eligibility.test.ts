@@ -3,7 +3,9 @@
  * and rechecked while events wait. Pure: no app, no network.
  */
 import { describe, expect, test } from 'vitest';
-import type { AdmittedAgentWork } from '../server/accounts/agent-gate.js';
+import { AGENT_NOT_INCLUDED, AccountAgentGate, type AdmittedAgentWork } from '../server/accounts/agent-gate.js';
+import { EngineError } from '../server/engines/process.js';
+import { SIGN_IN_REQUIRED } from '../shared/accounts.js';
 import {
   ABSENT_TELEMETRY_POLICY,
   OBSERVATION_OFF,
@@ -17,7 +19,7 @@ import {
   type ObservationScope,
   type TelemetryPolicyPort,
 } from '../server/observability/eligibility.js';
-import { ObservationScopes } from '../server/observability/scopes.js';
+import { ENTITLEMENT_REFUSALS, ObservationScopes, refusalEndsObservation } from '../server/observability/scopes.js';
 import type { HarnessRun } from '../shared/harness.js';
 
 const KEY_HEX = 'ab'.repeat(32);
@@ -338,6 +340,145 @@ describe('scopes: bound by the admitted job, resolved from the run record', () =
     expect(scopes.recheck(again)).toEqual({ live: true });
     expect(scopes.recheck(b)).toEqual({ live: true });
     expect(scopes.denials()['admission-refused']).toBeGreaterThanOrEqual(1);
+  });
+
+  test('a refusal ends the business passed to it, even when the active business has since changed (PH-07 N-1)', () => {
+    let active: string | null = ORG_A;
+    const scopes = new ObservationScopes({
+      operator: operator({ internalOrganizations: new Set([ORG_A, ORG_B]) }),
+      backend: () => 'faux',
+      authority: {
+        personId: () => 'person_1',
+        activeOrganizationId: () => active,
+        entitlement: () => ({ agent: true, state: 'active' }),
+        organizationFor: (projectId) => (projectId === 'owned-by-b' ? ORG_B : active),
+      },
+      now: () => 1_000,
+    });
+    const bindFor = (organizationId: string, rootJobId: string) => {
+      const decision = scopes.decide({
+        admission: admission({ surface: 'work', organizationId, admissionId: `adm_${rootJobId}` }),
+        rootJobId,
+        route: 'aws-bedrock',
+        connectionId: 'conn-1',
+        model: null,
+      });
+      if (!decision.eligible) throw new Error(`expected eligible: ${decision.denial}`);
+      return decision.scope;
+    };
+    const a = bindFor(ORG_A, 'work-a');
+    // The gate's rule: the project's owner, else the active business. Read before the round trip.
+    expect(scopes.businessFor('unowned')).toBe(ORG_A);
+    expect(scopes.businessFor('owned-by-b')).toBe(ORG_B);
+    expect(scopes.businessFor(null)).toBe(ORG_A);
+    const asked = scopes.businessFor('unowned');
+    active = ORG_B; // the person switches while the admission is on the wire
+    scopes.refused({ projectId: 'unowned', organizationId: asked });
+    expect(scopes.resolve(run({ id: 'work-a', capabilityId: 'engine-text-turn' }))).toBeNull();
+    expect(scopes.recheck(a)).toMatchObject({ live: false });
+    // Harbor's business was not refused: a scope bound for it now is live.
+    const b = bindFor(ORG_B, 'work-b');
+    expect(scopes.recheck(b)).toEqual({ live: true });
+    // An explicit null (Personal) ends nothing, and is not re-derived from the project.
+    scopes.refused({ projectId: 'owned-by-b', organizationId: null });
+    expect(scopes.recheck(b)).toEqual({ live: true });
+  });
+
+  test('only a refusal that says the business is not entitled ends observation; an outage or sign-in does not (PH-07 N-2)', () => {
+    const withCode = (code: string) => Object.defineProperty(new EngineError(AGENT_NOT_INCLUDED, 'x', false), 'refusalCode', { value: code });
+    expect([...ENTITLEMENT_REFUSALS].sort()).toEqual(['agent_not_included', 'entitlement_expired', 'entitlement_revoked', 'not_a_member']);
+    for (const code of ENTITLEMENT_REFUSALS) expect(refusalEndsObservation(withCode(code)), code).toBe(true);
+    for (const code of ['entitlement_unknown', SIGN_IN_REQUIRED, 'SIGN_IN_REQUIRED', 'personal_workspace', 'cap_request_required', ''])
+      expect(refusalEndsObservation(withCode(code)), code).toBe(false);
+    expect(refusalEndsObservation(new EngineError(AGENT_NOT_INCLUDED, 'x', false))).toBe(false);
+    expect(refusalEndsObservation(new Error('boom'))).toBe(false);
+    expect(refusalEndsObservation(null)).toBe(false);
+  });
+
+  test('the gate’s refusal carries the service’s code and is otherwise the same error it always threw (PH-07 N-2)', async () => {
+    const refusedWith = async (code: string, reason: string) => {
+      const gate = new AccountAgentGate(
+        { admitAgent: async () => ({ admitted: false, code, reason }) } as never,
+        { projectOwner: () => null, active: () => ({ kind: 'business', organizationId: ORG_A }) } as never,
+      );
+      return gate.check({ phase: 'admit', surface: 'conversation', projectId: 'p1', rootJobId: 'job-1' }).then(
+        () => {
+          throw new Error('expected a refusal');
+        },
+        (error: unknown) => error as EngineError,
+      );
+    };
+    for (const code of ['entitlement_revoked', 'entitlement_unknown', 'not_a_member']) {
+      const reason = `The reason for ${code}.`;
+      const thrown = await refusedWith(code, reason);
+      const before = new EngineError(AGENT_NOT_INCLUDED, reason, false);
+      expect(thrown.constructor).toBe(EngineError);
+      expect([thrown.name, thrown.code, thrown.message, thrown.status, thrown.ambiguous]).toEqual([before.name, before.code, before.message, before.status, before.ambiguous]);
+      expect(Object.keys(thrown)).toEqual(Object.keys(before));
+      expect(JSON.stringify(thrown)).toBe(JSON.stringify(before));
+      expect(JSON.stringify({ ...thrown })).toBe(JSON.stringify({ ...before }));
+      expect((thrown as unknown as { refusalCode: string }).refusalCode).toBe(code);
+      expect(() => {
+        (thrown as unknown as { refusalCode: string }).refusalCode = 'agent_not_included';
+      }).toThrow();
+    }
+    // The service's sign-in refusal keeps the gate's sign-in error, and ends nothing.
+    const signIn = await refusedWith(SIGN_IN_REQUIRED, 'Sign in.');
+    expect(signIn.code).toBe('SIGN_IN_REQUIRED');
+    expect(refusalEndsObservation(signIn)).toBe(false);
+  });
+
+  test('sign-out, another person or another business ends a scope for good, even once undone; the next bind is fresh (PH-07 N-3)', () => {
+    let person: string | null = 'person_1';
+    let active: string | null = ORG_A;
+    const scopes = new ObservationScopes({
+      operator: operator(),
+      backend: () => 'faux',
+      authority: { personId: () => person, activeOrganizationId: () => active, entitlement: () => ({ agent: true, state: 'active' }) },
+      now: () => 1_000,
+    });
+    const bindAs = (rootJobId: string) => {
+      const decision = scopes.decide({
+        admission: admission({ surface: 'work', admissionId: `adm_${rootJobId}` }),
+        rootJobId,
+        route: 'aws-bedrock',
+        connectionId: 'conn-1',
+        model: null,
+      });
+      if (!decision.eligible) throw new Error(`expected eligible: ${decision.denial}`);
+      return decision.scope;
+    };
+    // A save that changes nothing ends nothing.
+    const first = bindAs('work-1');
+    scopes.observeContext();
+    scopes.observeContext();
+    expect(scopes.recheck(first)).toEqual({ live: true });
+    // Away and back before any recheck: seen at the switch, final.
+    active = ORG_B;
+    scopes.observeContext();
+    active = ORG_A;
+    scopes.observeContext();
+    expect(scopes.recheck(first)).toEqual({ live: false, denial: 'workspace-changed' });
+    // The run still resolves to its (ended) scope; its events drop at the recheck.
+    expect(scopes.resolve(run({ id: 'work-1', capabilityId: 'engine-text-turn' }))?.scope).toBe(first);
+    // The next admission binds a fresh scope, which is live; the old one stays ended.
+    const second = bindAs('work-1');
+    expect(second).not.toBe(first);
+    expect(scopes.recheck(second)).toEqual({ live: true });
+    expect(scopes.recheck(first).live).toBe(false);
+    // Sign-out and sign-in again as the same person.
+    person = null;
+    scopes.observeContext();
+    person = 'person_1';
+    scopes.observeContext();
+    expect(scopes.recheck(second)).toEqual({ live: false, denial: 'signed-out' });
+    const third = bindAs('work-2');
+    expect(scopes.recheck(third)).toEqual({ live: true });
+    // A failed recheck is final even when nothing was seen in between: the first answer stands.
+    active = ORG_B;
+    expect(scopes.recheck(third)).toEqual({ live: false, denial: 'workspace-changed' });
+    active = ORG_A;
+    expect(scopes.recheck(third).live).toBe(false);
   });
 
   test('bounded: the oldest scope is forgotten first', () => {

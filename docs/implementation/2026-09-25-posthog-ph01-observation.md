@@ -24,9 +24,10 @@ observed run produces PostHog-shaped events (`$ai_trace`, `$ai_generation`, `$ai
     - the organization is on the operator's internal list, on a declared company host;
     - or it is a customer with a metadata telemetry policy and customer export on. Neither exists
       in production, so every customer is refused `telemetry-policy-absent`.
-- **Where it ends on a refusal.** When the Agent gate refuses an admission, `admitModelApi` calls
-  `ObservationScopes.refused` with the project id and rethrows the same error. Every scope of that
-  business ends (PH-07 F-2; see "PH-07 repairs" below).
+- **Where it ends on a refusal.** When the Agent gate refuses an admission because the business is
+  not entitled, `admitModelApi` calls `ObservationScopes.refused` with the business the gate asked
+  about (read before the round trip) and rethrows the same error. Every scope of that business
+  ends. An outage ends nothing (PH-07 F-2, N-1, N-2; see the repair sections below).
 - **What it reads.** The run record the RunService has just committed, received in `files.saved`
   and projected synchronously, plus the local spend ledger's in-memory holds. A projector failure
   is caught twice, inside the projector and in the host.
@@ -44,7 +45,9 @@ observed run produces PostHog-shaped events (`$ai_trace`, `$ai_generation`, `$ai
   - for internal work, the organization still internal;
   - for customer work, the policy still `metadata` with export on.
 
-  A failure drops the scope's queued events as `scope-ended`. Nothing is relabelled.
+  A failure drops the scope's queued events as `scope-ended`. Nothing is relabelled. Since PH-07
+  round 2 an end is final: a sign-out, another person or another business seen at any moment since
+  bind ends the scope even if it is undone before the next flush (N-3).
 
 ## Files
 
@@ -233,11 +236,13 @@ P3s. Each is repaired here; the reviewer's assertions are unchanged.
 Contract 4.4's line "a scripted adapter step (`origin.mode === 'application'`) is a `scripted-step`
 span" is read as applying to model steps only, as the reviewer found it was meant.
 
-The `service.ts` change stays inside `admitModelApi`'s `const admitted =` line, which is the scope-bind
-area; `agent-gate.ts` and `session.ts` are unedited.
+In round 1 the `service.ts` change stayed inside `admitModelApi`'s `const admitted =` line, which is
+the scope-bind area; `agent-gate.ts` and `session.ts` were unedited. Round 2 changes both of the first
+two (below); `session.ts` is still unedited.
 
-**Tests after the repairs.** Each run was under its own heavy slot (`slot_muhl7kbu_36d7615f` for
-tsc and the first vitest run, `slot_muhl8r1e_44a69a84` for the second), released after use.
+**Tests after the round 1 repairs.** tsc and the first vitest run shared one heavy slot,
+`slot_muhl7kbu_36d7615f`, one after the other; the second vitest run had its own,
+`slot_muhl8r1e_44a69a84`. Both were released after use.
 
 ```
 npx tsc --noEmit
@@ -253,4 +258,59 @@ npx vitest run tests/harness.test.ts tests/harness-host.test.ts tests/harness-ne
   tests/native-loop-host.test.ts tests/model-session-activity.test.ts tests/h16-external-model-api.test.ts \
   tests/spend-exposure.test.ts tests/b00-control-plane-contract.test.ts tests/b00-h01-repair.test.ts --maxWorkers=2
   15 files, 274 tests passed
+```
+
+## PH-07 round 2 repairs
+
+The round 2 review (`docs/implementation/2026-09-25-posthog-ph07-review-round2.md`, reproducers in
+`tests/ph07-round2-review.test.ts`, both cherry-picked unchanged from 7e4f0c9 and b17f5bf) accepted
+PH-02 and accepted PH-01 with conditions N-1, N-2 and N-3. Each follows an **architect ruling of
+2026-09-25, provisional and going to Andrew**. Contract section 3 carries the same rulings, marked
+as provisional.
+
+| # | Ruling (provisional) | What changed | Proven by |
+|---|---|---|---|
+| N-1 (P2) | Decide the refused business once, before the await, by the gate's own rule, and pass it to `refused`; never re-derive it afterwards. | `admitModelApi` reads `observation.businessFor(projectId)` on the line before `this.admitAgent(...)`. Nothing is awaited between them, and the gate picks its business synchronously before its own await, so both picks are made on the same turn. The `.catch` passes that business to `refused({ projectId, organizationId })`, which uses it as given (an explicit null, Personal, ends nothing). Only a direct caller that omits `organizationId`, such as the reviewer's `R3`, has it resolved at the call. | `R2`; eligibility: "a refusal ends the business passed to it, even when the active business has since changed" |
+| N-2 (P3) | Export ends only on a definitive refusal; an outage (network, timeout, 5xx, `entitlement_unknown`) ends nothing. The gate's error carries the refusal code, strictly additively. | `agent-gate.ts`: the error thrown for the service's refusal gets a read-only, non-enumerable `refusalCode` (the service's code). Its class, `code`, message, `ambiguous`, HTTP status and every caller's behaviour are unchanged, and it serializes byte for byte as before. `scopes.ts` exports `ENTITLEMENT_REFUSALS` (`entitlement_revoked`, `entitlement_expired`, `agent_not_included`, `not_a_member`) and `refusalEndsObservation(error)`. `service.ts` calls `refused` only when that is true. | `R1`; `R4` (status, body bytes and runs equal with observation off, on, and on with a throwing `refused`); eligibility: the refusal-code predicate, and "the gate's refusal carries the service's code and is otherwise the same error it always threw" (same constructor, `name`, `code`, `message`, `status`, `ambiguous`, `Object.keys`, `JSON.stringify` and spread) |
+| N-3 (P3) | Contract 4.6 governs: sign-out, a different person or an active-workspace change ends the scope for good, and its unsent events are dropped. Coming back, or signing in again as the same person, starts a fresh scope and never revives the old queue. | `ObservationScopes.observeContext()` samples (person, active business). Any change, even one later undone, counts. Each scope records the count at bind, and the recheck ends every scope bound before a later change, with the reason of the first change after its bind. It is called on every settings save (the store's `settings` event, through which every write of the active workspace goes), on every account projection (sign-in, sign-out, reload: `app.ts` wraps its `onProjection` handler), at bind and at every recheck. Any failed recheck is also final for its scope, except `account-service-unavailable`. Ended scopes stay in the resolve map; only a refusal deletes. So a run still resolves, and its events drop at enqueue. `app.ts` now builds observation before the account session starts, so a resumed sign-in is seen and its handler never reads an uninitialized binding. | `S1`; eligibility: "sign-out, another person or another business ends a scope for good, even once undone; the next bind is fresh" |
+
+Naming deviation for N-2: the ruling names the new field `code`, but `EngineError` already has a
+read-only `code` (`AGENT_NOT_INCLUDED` or `SIGN_IN_REQUIRED`). `app.ts:5784` and
+`engines/interaction-routes.ts:81` branch on it, and it becomes the response body's `code`. Replacing
+it would change the person's response, so the service's code is carried as `refusalCode`.
+
+Round 2 edits, besides tests and docs:
+
+| File | Edit |
+|---|---|
+| `server/accounts/agent-gate.ts` | The one refusal throw: build the same `EngineError`, define `refusalCode` on it, throw it |
+| `server/engines/service.ts` | `admitModelApi` only: `businessFor` read before the admission, and the `.catch` calls `refused` only for `refusalEndsObservation` |
+| `server/app.ts` | Observation is built before the account session starts and given the store's settings events; the projection handler calls `observeContext()` after `workspaces.project` |
+| `server/observability/scopes.ts` | `businessFor`, the explicit business in `refused`, `ENTITLEMENT_REFUSALS`, `refusalEndsObservation`, the context count, and final ends in `recheck` |
+| `server/observability/runtime.ts` | Subscribes `observeContext` to the settings events |
+
+**Tests after the round 2 repairs.** Each command below had its own heavy slot, taken and released
+one at a time. My eligibility file first failed one of its own new assertions: it used the literal
+`'SIGN_IN_REQUIRED'` where the service's constant is `'sign_in_required'`. After that fix, the eight
+files were run again.
+
+```
+npx tsc --noEmit                                                   (slot_muhun1a0_3b52dcbd)
+  exit 0
+npx vitest run tests/ph07-round2-review.test.ts tests/ph07-review.test.ts \
+  tests/observability-eligibility.test.ts tests/observability-record.test.ts \
+  tests/observability-exporter.test.ts tests/observability-posthog-transport.test.ts \
+  tests/observability-runtime.test.ts tests/observability-first-trace.test.ts --maxWorkers=2
+                                                                   (slot_muhuoq7y_0c78740c)
+  8 files, 116 tests passed: ph07-round2-review 13, ph07-review 17, eligibility 19, record 24,
+  exporter 11, posthog-transport 12, runtime 11, first-trace 9
+npx vitest run tests/harness.test.ts tests/harness-host.test.ts tests/harness-negative.test.ts \
+  tests/harness-provider-outcomes.test.ts tests/aws-model-adapter.test.ts tests/aws-conversation-seam.test.ts \
+  tests/h01-runtime-seam.test.ts tests/verification-service.test.ts tests/customer-accounts-app.test.ts \
+  tests/native-loop-host.test.ts tests/model-session-activity.test.ts tests/h16-external-model-api.test.ts \
+  tests/spend-exposure.test.ts tests/b00-control-plane-contract.test.ts tests/b00-h01-repair.test.ts --maxWorkers=2
+                                                                   (slot_muhupi5u_95d63000)
+  15 files, 274 tests passed
+npx tsc --noEmit                                                   (slot_muhuq9rv_2e92a5a1)
+  exit 0, on the final tree
 ```

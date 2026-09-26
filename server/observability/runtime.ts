@@ -51,6 +51,8 @@ export function createObservation(input: {
   readonly build: string;
   readonly session: Pick<AccountSessionService, 'personId' | 'entitlement' | 'backend'>;
   readonly workspaces: Pick<WorkspaceService, 'active' | 'projectOwner'>;
+  /** The store's settings saves: every write of the active workspace goes through one (PH-07 N-3). */
+  readonly settings?: { on(event: 'settings', listener: () => void): unknown };
 }): ObservationRuntime | null {
   if (input.options === null) return null;
   const operator = input.options?.operator ?? operatorConfigFromEnv(input.env);
@@ -81,6 +83,8 @@ export function createObservation(input: {
     },
     now: input.options?.clock,
   });
+  // A business switch ends what was bound under the one before it, even if the person switches back.
+  input.settings?.on('settings', () => scopes.observeContext());
   const exporter = new BoundedObservationExporter({
     sink,
     scopes,
