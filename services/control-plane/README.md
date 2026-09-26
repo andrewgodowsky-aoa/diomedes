@@ -142,6 +142,15 @@ the issuer (`https://api.workos.com`) and the audience
    migrate`. Create the login `cp_runtime`, run `scripts/runtime-permissions.sql`
    as the owner, and run `npx wrangler secret put DATABASE_URL` with
    `postgresql://cp_runtime:<password>@<host>/accounts_staging?sslmode=require`.
+   Then create the login `cp_funding` (its own password; `NOSUPERUSER NOCREATEDB
+   NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS`, no role memberships), run
+   `scripts/funding-permissions.sql` as the owner, and run
+   `npx wrangler secret put FUNDING_DATABASE_URL --name diomedes` with
+   `postgresql://cp_funding:<password>@<host>/accounts_staging?sslmode=require`,
+   on the same host and database as `DATABASE_URL`. Only the managed gateway
+   uses it, for its credit periods, jobs, holds and settlements. Until it is set,
+   every `/managed/v1/*` call answers 503 `route_unavailable` and nothing is held
+   or sent; the account routes do not need it.
 3. **Deploy.** Merging to main deploys through Workers Builds, which reads the
    **repository root's** `wrangler.jsonc`, not this package's. The two files must
    carry the same routes and vars, and `tests/deploy-config.test.ts` fails the
@@ -153,9 +162,13 @@ the issuer (`https://api.workos.com`) and the audience
    run `npm run bootstrap-admin -- --subject user_...`. Sign in again as Admin
    and add everyone else from the Staff tab; each person signs in once first.
 
-Funding writes stay with a separately reviewed role. On staging, a grant is
-issued but its month's included credits are not allocated, and a staff funding
-correction is refused, until that role exists.
+Funding writes never run as the Worker login. The managed gateway's run as
+`cp_funding`, the separately reviewed role `scripts/funding-permissions.sql`
+grants: exactly the statements the gateway's paths execute, which
+`tests/funding-permissions.test.ts` checks against the code. The staff routes
+still run on the Worker login, so on staging a grant is issued but its month's
+included credits are allocated only by the gateway's first call that month, and
+a staff funding correction is refused.
 
 ## Transaction and schema boundary
 
@@ -198,6 +211,9 @@ inside that explicitly disposable database. It tests empty/prior/interrupted
 migrations, concurrency, rollback, tenant foreign keys, duplicate events and
 revocation across clients. scripts/runtime-permissions.sql is a review template
 for a separate non-owner cp_runtime role; it grants no deletion or DDL rights.
+scripts/funding-permissions.sql is the same for cp_funding, the managed
+gateway's funding login: SELECT, INSERT and column-level UPDATE on the funding
+tables only, each grant cited to the statement that needs it.
 
 ## Funded parent-job accounting (NC-2026-09-22.1, code and tests only)
 

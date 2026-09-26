@@ -149,6 +149,7 @@ export async function createFauxCloud(options: FauxCloudOptions): Promise<FauxCl
     environment: 'local',
     origins,
     databaseUrl: 'faux://local-store',
+    fundingDatabaseUrl: 'faux://local-store',
     identity: standIn
       ? { clientId: standIn.clientId, issuer: WORKOS_ISSUER, audience: standIn.audience, apiKey: standIn.apiKey }
       : { clientId: 'faux', issuer: FAUX_ISSUER, audience: 'faux', apiKey: 'faux' },
