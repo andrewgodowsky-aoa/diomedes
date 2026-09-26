@@ -67,11 +67,16 @@ A setup file without a tag was saved on this computer before the service kept se
 
 ## Rollout and rollback
 
-1. **Apply migration 008 and the `cp_runtime` grant to Neon before the merge.** A merge to main deploys the Worker. A Worker with the route but without the table fails every setup read, and the desktop shows that as a load error for every signed-in business. The desktop cannot tell that apart from an outage, and should not try.
-2. A desktop build without ORG-01 never calls the route, so the Worker can ship first.
-3. A desktop with ORG-01 against a Worker without the route gets the Worker's exact 404, "This account action was not found.", and keeps the setup on the computer as before. So the desktop can also ship first, and a Worker rollback falls back to local setups rather than to load errors.
-4. Setups saved during such a rollback are local only. When the route returns, the business's revision wins, and a local setup that differs from it is set aside, not merged.
-5. Rolling the table back is not supported. Revisions are append-only by design. Dropping the table loses every business's setup.
+1. **Validate 008 on a disposable Neon branch first.** Run the two opt-in suites in `services/control-plane` against a `b01_validation_*` database on that branch:
+   - `npm run test:postgres` (all eight migrations, then the setup table's compare-and-set, trigger, foreign key and checks);
+   - then `npx vitest run tests/postgres-role-independent.test.ts` (the `cp_runtime` grant: setup rows can be read and appended, never updated or deleted).
+
+   Each run needs these variables: `CP_TEST_DATABASE_URL`, `CP_TEST_ALLOW_SCHEMA_RESET=yes`, `CP_APPROVED_ISOLATED_BRANCH=yes`, `CP_TEST_BRANCH_ID` and `CP_TEST_EXPECTED_HOST`.
+2. **Apply migration 008 and the `cp_runtime` grant to Neon before the merge.** A merge to main deploys the Worker. A Worker with the route but without the table fails every setup read, and the desktop shows that as a load error for every signed-in business. The desktop cannot tell that apart from an outage, and should not try.
+3. A desktop build without ORG-01 never calls the route, so the Worker can ship first.
+4. A desktop with ORG-01 against a Worker without the route gets the Worker's exact 404, "This account action was not found.", and keeps the setup on the computer as before. So the desktop can also ship first, and a Worker rollback falls back to local setups rather than to load errors.
+5. Setups saved during such a rollback are local only. When the route returns, the business's revision wins, and a local setup that differs from it is set aside, not merged.
+6. Rolling the table back is not supported. Revisions are append-only by design. Dropping the table loses every business's setup.
 
 ## Limitations
 
@@ -81,7 +86,8 @@ A setup file without a tag was saved on this computer before the service kept se
 - **An old setup moves only when one person wrote all of it.** A setup answered by two administrators on one computer before ORG-01 is set aside, and the business starts from its first question.
 - **One Worker read per open.** Opening the setup always reads the business's current revision. An answer is saved against the revision held in memory and relies on compare-and-set rather than a read first.
 - **Employees don't open the questionnaire.** The service lets any member read a business's setup. The desktop still gates the questionnaire to owners and Managers; an Employee sees where setup stands.
-- **Not run on Cloudflare or Neon.** The Postgres adapter is checked for its SQL and its grants, both ways, against a recording client. The account service ran as the faux cloud in-process.
+- **Not run on Cloudflare or Neon.** The Postgres adapter is checked for its SQL and its grants, both ways, against a recording client. The account service ran as the faux cloud in-process. The two opt-in PostgreSQL suites now carry ORG-01 cases (rollout step 1), but they have not run.
+- **The local fallback depends on the Worker's exact words.** The desktop recognizes a Worker without the route by the 404 message "This account action was not found." That sentence is written separately in `services/control-plane/src/worker.ts`, `server/business/identity-host.ts` and `server/accounts/session.ts`. If the Worker's wording changes, that fallback becomes a load error. The failure is conservative: never a blank setup.
 
 ## Acceptance cases
 
@@ -113,4 +119,4 @@ Gates run on 2026-09-26 in this worktree, on this change, by the integrating ses
 
 The full runs above were made before the invitee case was added to `tests/organization-setup-app.test.ts`. That change touches only the test file and this record. After it, the file (8 passed) and root `tsc` were run again.
 
-Not run: the PostgreSQL integration suite (it needs an approved disposable Neon database), anything on Cloudflare, and a packaged desktop build.
+Not run: the two opt-in PostgreSQL suites, which need an approved disposable Neon database. Both were stale on main: they expected 4 and 2 applied migrations. They now count the migrations themselves, and each carries an ORG-01 case. Also not run: anything on Cloudflare, and a packaged desktop build.
