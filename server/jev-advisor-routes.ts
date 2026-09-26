@@ -59,11 +59,17 @@ function parseSources(value: unknown): PreflightSource[] {
  * The provider is asked outside the store lock, bounded by the advisor's own
  * timeout, and abandoned if the caller disconnects. Whatever the provider does,
  * the response carries the deterministic resolution.
+ *
+ * A preflight is a Diomedes-funded call made for Agent work, so with customer
+ * accounts on the host admits it first (`admit`, the Agent gate): a business
+ * without the Nectovia Agent or without included AI usage is refused before any
+ * provider is asked. With accounts off there is nothing to admit.
  */
 export function mountJevAdvisorRoutes(
   app: Express,
   advisor: JevAdvisor,
   context: (projectId: string, threadId: string) => Promise<PreflightThreadContext>,
+  admit?: (projectId: string) => Promise<void>,
 ): void {
   app.post(
     '/api/projects/:id/threads/:threadId/preflight',
@@ -77,6 +83,7 @@ export function mountJevAdvisorRoutes(
         const projectId = String(req.params.id);
         const threadId = String(req.params.threadId);
         const thread = await context(projectId, threadId);
+        await admit?.(projectId);
 
         const controller = new AbortController();
         res.once('close', () => controller.abort());

@@ -31,6 +31,8 @@ import {
 } from '../shared/native-loop.js';
 import { ApiError, relativeName } from './paths.js';
 import { NECTOVIA_LOOP_REFUSED } from './engines/nectovia.js';
+import { EngineError } from './engines/process.js';
+import { AGENT_NOT_INCLUDED, AGENT_SIGN_IN_REQUIRED } from './accounts/agent-gate.js';
 import type { Store } from './store.js';
 import { cloudSharing, requireCloudSharing } from './cloud-sharing.js';
 import { assembleInstructions, instructionSectionBudget } from './harness/instruction-delivery.js';
@@ -181,6 +183,9 @@ export function mountNativeLoopRoutes(
       return await harness.loop.admit(route, { projectId, model, accountRoute });
     } catch (error) {
       if (error instanceof ApiError) throw error;
+      // The Agent gate's refusal is the business's plan, not the route: it answers as every Agent
+      // entry point does (403 AGENT_NOT_INCLUDED, or 401 to sign in).
+      if (error instanceof EngineError && (error.code === AGENT_NOT_INCLUDED || error.code === AGENT_SIGN_IN_REQUIRED)) throw error;
       throw new ApiError(409, error instanceof Error ? error.message : 'This route refused the loop.', { code: 'route_refused' });
     }
   };

@@ -3767,6 +3767,13 @@ export async function createApp(options: AppOptions) {
           },
         };
       }),
+      // A Diomedes-funded call for Agent work: the Agent gate admits it as managed before any provider
+      // is asked. No accounts, no gate: nothing to admit.
+      agentGate
+        ? async (projectId) => {
+            await agentGate.check({ phase: 'admit', surface: 'other', projectId, rootJobId: null, routeKind: 'managed' });
+          }
+        : undefined,
     );
   // The explicit native conversation routes. Claude Code's (H03) and OpenCode's kept session
   // (H04) take the same admission and the same thread projection, each under its own engine.

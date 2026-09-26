@@ -18,15 +18,23 @@
  * The business is the one the work belongs to: the organization that owns the
  * project, or else the active Business workspace. Personal work has no
  * business, so the Agent refuses it with the sentence the service would use.
+ *
+ * Diomedes-funded work (`managed`) also needs the business's included AI usage
+ * ('managed-inference'). The host reads it from the same access as the Agent,
+ * through `AccountSessionService.includes`, and refuses before the service
+ * records an admission; the company gateway still checks funding on every call.
  */
 import { SIGN_IN_REQUIRED } from '../../shared/accounts.js';
-import { AGENT_PERSONAL_REASON } from '../../shared/access.js';
+import { AGENT_FEATURE, AGENT_PERSONAL_REASON, FEATURE_LABELS, type AccessFeature } from '../../shared/access.js';
 import { EngineError } from '../engines/process.js';
 import type { WorkspaceService } from '../workspaces.js';
 import type { AccountSessionService, AgentRouteKind, AgentSurface } from './session.js';
 
 export const AGENT_NOT_INCLUDED = 'AGENT_NOT_INCLUDED';
 export const AGENT_SIGN_IN_REQUIRED = 'SIGN_IN_REQUIRED';
+const MANAGED_INFERENCE: AccessFeature = 'managed-inference';
+/** Why Diomedes-funded work is refused for a business whose plan has the Agent but not included usage. */
+export const MANAGED_USAGE_NOT_INCLUDED = `${FEATURE_LABELS[MANAGED_INFERENCE]} isn't part of this business's plan, so the Nectovia Agent can't answer here. Nothing was sent.`;
 
 export interface AgentWork {
   phase: 'admit' | 'dispatch';
@@ -84,6 +92,17 @@ export class AccountAgentGate implements AgentGatePort {
     const organizationId = this.organizationFor(work.projectId);
     if (!organizationId) throw new EngineError(AGENT_NOT_INCLUDED, AGENT_PERSONAL_REASON, false);
     const routeKind = work.routeKind ?? 'byo';
+    // Only where the access is known (it includes the Agent): a business this host has no answer
+    // for is the service's to refuse, in its own words.
+    if (
+      routeKind === 'managed' &&
+      this.session.includes(organizationId, AGENT_FEATURE) &&
+      !this.session.includes(organizationId, MANAGED_INFERENCE)
+    ) {
+      const refusal = new EngineError(AGENT_NOT_INCLUDED, MANAGED_USAGE_NOT_INCLUDED, false);
+      Object.defineProperty(refusal, 'refusalCode', { value: 'managed_inference_not_included', enumerable: false });
+      throw refusal;
+    }
     const decision = await this.session.admitAgent({
       organizationId,
       surface: work.surface,
