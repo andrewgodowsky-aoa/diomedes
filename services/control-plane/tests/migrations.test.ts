@@ -60,7 +60,7 @@ describe('versioned migration protocol', () => {
 });
 
 describe('versioned migration source files', () => {
-  const names = ['001_accounts.sql', '002_commercial.sql', '003_funded_jobs.sql', '004_usage_contract.sql', '005_customer_access.sql'];
+  const names = ['001_accounts.sql', '002_commercial.sql', '003_funded_jobs.sql', '004_usage_contract.sql', '005_customer_access.sql', '006_relay_devices.sql'];
   const load = () => Promise.all(names.map(async (name, index) => {
     const sql = await readFile(new URL(`../migrations/${name}`, import.meta.url), 'utf8');
     return { version: index + 1, name, sql, sha256: createHash('sha256').update(sql).digest('hex') };
@@ -70,7 +70,7 @@ describe('versioned migration source files', () => {
     const files = await load();
     for (const file of files) expect(file.sql.includes(String.fromCharCode(13))).toBe(false);
     const db = database();
-    expect(await migrate(db.factory, files)).toEqual([1, 2, 3, 4, 5]);
+    expect(await migrate(db.factory, files)).toEqual([1, 2, 3, 4, 5, 6]);
   });
 
   it('003 extends the 002 funding seams without destroying data or granting public access', async () => {
@@ -110,5 +110,21 @@ describe('versioned migration source files', () => {
     // No credential column anywhere in the route registry.
     expect(access.sql).not.toMatch(/secret|api_key|password|credential/i);
     expect(access.sql.trim().endsWith('REVOKE ALL ON ALL FUNCTIONS IN SCHEMA control_plane FROM PUBLIC;')).toBe(true);
+  });
+
+  it('006 keeps a relay device a tombstone once revoked and stores only the public half of its key', async () => {
+    const [, , , , , relay] = await load();
+    expect(relay.sql).not.toMatch(/\b(DROP\s+TABLE|DELETE\s+FROM|TRUNCATE|DROP\s+SCHEMA)\b/i);
+    expect(relay.sql).toContain('CREATE TABLE control_plane.relay_devices');
+    for (const column of ['tenant_id', 'device_id', 'organization_id', 'person_id', 'public_key', 'label', 'created_at', 'revoked_at', 'revoked_by', 'last_seen_at'])
+      expect(relay.sql).toMatch(new RegExp(`\\n  ${column} `));
+    // A device belongs to one business within its own tenant, and is registered by a person.
+    expect(relay.sql).toMatch(/FOREIGN KEY \(organization_id,tenant_id\) REFERENCES control_plane\.organizations\(id,tenant_id\)/);
+    expect(relay.sql).toMatch(/person_id text NOT NULL REFERENCES control_plane\.persons\(id\)/);
+    expect(relay.sql).toContain("public_key ~ '^[A-Za-z0-9_-]{43}$'");
+    expect(relay.sql).toContain('CREATE TRIGGER relay_device_tombstone BEFORE UPDATE ON control_plane.relay_devices');
+    // Only the public half of a key is ever stored here.
+    expect(relay.sql).not.toMatch(/private_key|secret|password|credential|sealed/i);
+    expect(relay.sql.trim().endsWith('REVOKE ALL ON ALL FUNCTIONS IN SCHEMA control_plane FROM PUBLIC;')).toBe(true);
   });
 });

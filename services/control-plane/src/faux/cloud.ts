@@ -32,6 +32,7 @@ import { ManagedInferenceService, SPEND_SETTINGS, spendControls, type SpendSetti
 import { FAUX_SCRIPTED_CREDENTIAL, bedrockResponsesCaller, scriptedResponsesFetch } from '../managed-providers.js';
 import { createHandler } from '../worker.js';
 import { readBytes } from '../crypto.js';
+import { RelayService } from '../relay/service.js';
 import { accountId } from '../domain.js';
 import { WorkOSIdentityVerifier } from '../identity-workos.js';
 import {
@@ -88,6 +89,8 @@ export interface FauxCloud {
   readonly commercial: CommercialService;
   readonly funding: FundingService;
   readonly managed: ManagedInferenceService;
+  /** The phone relay's device records, over this store. */
+  readonly relay: RelayService;
   /** Which provider answers managed calls. */
   readonly provider: 'scripted' | 'live';
   handle(request: Request): Promise<Response>;
@@ -172,10 +175,11 @@ export async function createFauxCloud(options: FauxCloudOptions): Promise<FauxCl
     now,
     idleTimeoutMs: options.managed?.idleTimeoutMs,
   });
+  const relay = new RelayService(accounts, store.relay, null, { now });
   const worker = createHandler(
     () => accounts,
     () => new UsageService(accounts, funding),
-    { configuration: () => config, createCommercial: () => commercial, createManaged: () => managed },
+    { configuration: () => config, createCommercial: () => commercial, createManaged: () => managed, createRelay: () => relay },
   );
 
   const headers = () => new Headers({ 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'X-Nectovia-Backend': 'faux' });
@@ -246,6 +250,7 @@ export async function createFauxCloud(options: FauxCloudOptions): Promise<FauxCl
     commercial,
     funding,
     managed,
+    relay,
     provider: live ? 'live' : 'scripted',
     idle: () => managed.idle(),
     async seedSignIn(account) {
