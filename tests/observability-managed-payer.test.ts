@@ -168,6 +168,7 @@ describe('the payer comes from the admitted decision', () => {
       // 1. The Home conversation, on the Nectovia route, with nothing connected. The request
       //    claims `byo` in headers; the app reads no such header, and the gate's decision wins.
       const home = await api<Binding>('/home/conversation', 'POST');
+      await api(`/workspace/organizations/${juniper}/output`, 'POST', { projectId: home.projectId });
       const thread = (await api<{ conversations: Conversation[] }>(`/projects/${home.projectId}/state`)).conversations.find(
         (item) => item.id === home.threadId,
       );
@@ -203,6 +204,7 @@ describe('the payer comes from the admitted decision', () => {
 
       // 2. The owner's AWS route in the same business.
       const project = await api<Project>('/projects', 'POST', { name: 'Linen order' });
+      await api(`/workspace/organizations/${juniper}/output`, 'POST', { projectId: project.id });
       const awsThread = await api<Conversation>(`/projects/${project.id}/threads`, 'POST', {});
       await api(`/projects/${project.id}/threads/${awsThread.id}`, 'PUT', { engine: 'aws-bedrock' });
       await api(`/projects/${project.id}/cloud-sharing`, 'PUT', {

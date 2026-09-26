@@ -51,6 +51,7 @@ import {
 import { SpendExposure, type ExposureReservation } from '../server/spend-exposure';
 import type { AccessFeature } from '../shared/access';
 import type { AccountStateView } from '../shared/accounts';
+import type { WorkspaceView } from '../shared/workspaces';
 
 const headers = { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' };
 const ACCOUNT_SERVICE = 'http://faux.local';
@@ -125,7 +126,13 @@ async function api<T>(route: string, method = 'GET', body?: unknown): Promise<T>
 const signIn = (email: string) =>
   api<AccountStateView>('/account/sign-in', 'POST', { email, password: FAUX_DEMO_PASSWORD, remember: false });
 type Binding = { projectId: string; threadId: string };
-const home = () => api<Binding>('/home/conversation', 'POST');
+async function home(): Promise<Binding> {
+  const binding = await api<Binding>('/home/conversation', 'POST');
+  const active = (await api<WorkspaceView>('/workspace')).active;
+  if (active.kind !== 'business') throw new Error('This fixture requires a selected business.');
+  await api(`/workspace/organizations/${active.organizationId}/output`, 'POST', { projectId: binding.projectId });
+  return binding;
+}
 interface Preflight {
   advice: PreflightAdvice | null;
   resolution: { deterministic: unknown; advised: unknown } | null;

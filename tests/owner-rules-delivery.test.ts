@@ -252,6 +252,8 @@ describe('the feature decides through the account session', () => {
     const signed = await signIn('owner@juniper.test');
     expect(signed.status).toBe(200);
     const { projectId, taskId } = await ownerRuledProject();
+    const bound = await call(`/workspace/organizations/${signed.data.workspaces[0].organization.id}/output`, 'POST', { projectId });
+    expect(bound.status).toBe(200);
 
     const routes = await call<RoutesView>(`/projects/${projectId}/loop/routes`);
     expect(routes.data.notIncludedReason).toBeNull();
@@ -267,6 +269,8 @@ describe('the feature decides through the account session', () => {
     const signed = await signIn('owner@harbor.test');
     expect(signed.status).toBe(200);
     const { projectId, taskId } = await ownerRuledProject();
+    const bound = await call(`/workspace/organizations/${signed.data.workspaces[0].organization.id}/output`, 'POST', { projectId });
+    expect(bound.status).toBe(200);
 
     const routes = await call<RoutesView>(`/projects/${projectId}/loop/routes`);
     expect(routes.data.notIncludedReason).toBe(OWNER_RULES_NOT_INCLUDED_REASON);
