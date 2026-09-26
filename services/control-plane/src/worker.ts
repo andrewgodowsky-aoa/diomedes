@@ -141,6 +141,10 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
         if (request.method !== 'POST') throw new ManagedError(405, 'method_not_allowed', 'Send this request as a POST.', { Allow: 'POST' });
         return await createManaged(config, create(config, 'customer')).respond(request, env, ctx);
       }
+      if (url.pathname === '/managed/v1/evaluations') {
+        if (request.method !== 'POST') throw new ManagedError(405, 'method_not_allowed', 'Send this request as a POST.', { Allow: 'POST' });
+        return await createManaged(config, create(config, 'customer')).evaluate(request, env);
+      }
       if ((match = MANAGED_ATTEMPT.exec(url.pathname))) {
         if (request.method !== 'GET') throw new ManagedError(405, 'method_not_allowed', 'Read an attempt with a GET.', { Allow: 'GET' });
         return await createManaged(config, create(config, 'customer')).attempt(request, match[1]);
@@ -262,19 +266,22 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
 }
 
 /**
- * The Worker's bindings, plus the managed gateway's two secrets and its two
+ * The Worker's bindings, plus the managed gateway's three secrets and its two
  * optional spend settings (see src/managed-inference.ts):
  * - BEDROCK_API_KEY, a Bedrock long-term API key set by the owner and read by the
  *   gateway at call time. It is never in wrangler.jsonc, a log, a response or a row.
  * - FUNDING_DATABASE_URL, the login cp_funding for the gateway's funding rows
  *   (scripts/funding-permissions.sql), on the same database as DATABASE_URL.
  *   Unset, blank or unreadable: every managed call answers 503 route_unavailable.
+ * - OPENROUTER_API_KEY, the key /managed/v1/evaluations sends to OpenRouter's
+ *   Decisions endpoint; without it that route alone answers 503.
  * STAFF_WORKOS_API_KEY and STAFF_WORKOS_CLIENT_ID (src/config.ts) are no longer read by
  * /ops/*: staff sign in with staff keys since 2026-09-26. They go with the staff WorkOS
  * environment.
  */
 export type GatewayEnv = WorkerEnv & {
   BEDROCK_API_KEY?: string;
+  OPENROUTER_API_KEY?: string;
   FUNDING_DATABASE_URL?: string;
   STAFF_WORKOS_API_KEY?: string;
   MANAGED_SPEND_CEILING_MICRO_USD?: string | number;

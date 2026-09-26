@@ -194,6 +194,7 @@ import {
 import type { EngineAsk } from './engines/contract.js';
 import { mountJevAdvisorRoutes } from './jev-advisor-routes.js';
 import type { JevAdvisor } from './harness/jev-advisor.js';
+import { createManagedJevAdvisor } from './harness/evaluation-managed.js';
 import { loadApprovedReadServers, readScopeDigest, type ReadScope } from './engines/read-scope.js';
 import {
   buildTurnReadScope,
@@ -324,6 +325,13 @@ interface AppOptions {
    * a fixture advisor; no build constructs a real one yet.
    */
   jevAdvisor?: JevAdvisor | null;
+  /**
+   * The preflight for business conversations on the `nectovia` route, on company-managed
+   * inference: asked through the account service's gateway, which pays and meters it, with
+   * nothing connected here. A launch-time authorization like `ownerRoutes`: off unless given or
+   * `DIOMEDES_MANAGED_JEV=1`, and only on a host with accounts.
+   */
+  managedJev?: boolean;
   engineService?: EngineService;
   /** How a native sign-in window is opened; tests pass a fake so none opens. */
   nativeLoginLaunch?: ConstructorParameters<typeof NativeLogin>[1];
@@ -1142,6 +1150,17 @@ export async function createApp(options: AppOptions) {
   });
   await jobCaps.init();
   engines.jobCaps = jobCaps;
+  // The preflight on company-managed inference, for business conversations on `nectovia`.
+  const managedJevAdvisor =
+    (options.managedJev ?? process.env.DIOMEDES_MANAGED_JEV === '1') && nectoviaAccount && accountSession && agentGate
+      ? createManagedJevAdvisor({
+          account: nectoviaAccount,
+          includes: (organizationId, feature) => accountSession.includes(organizationId, feature),
+          gate: agentGate,
+          tierOf: (projectId, threadId) => jobCaps.tierFor(projectId, threadId),
+          exposure,
+        })
+      : null;
   engines.modelApi = {
     connections: new AwsConnections(store.dataDir),
     secrets: new ConnectionSecrets(store.dataDir, options.secretBox ?? null),
@@ -3736,8 +3755,8 @@ export async function createApp(options: AppOptions) {
   );
   // A preview of the Jev preflight for a thread's next message, beside the resolution above.
   // The thread is read under the lock; the provider is asked after it is released.
-  if (options.jevAdvisor)
-    mountJevAdvisorRoutes(app, options.jevAdvisor, (projectId, threadId) =>
+  if (options.jevAdvisor || managedJevAdvisor)
+    mountJevAdvisorRoutes(app, options.jevAdvisor ?? null, (projectId, threadId) =>
       store.locked(async () => {
         const state = store.state(projectId);
         const thread = state.conversations.find((c) => c.id === threadId);
@@ -3749,13 +3768,17 @@ export async function createApp(options: AppOptions) {
           tier?.outcome === 'run'
             ? (tier.route as Route)
             : selectedEngine(store.settings, state.project, thread);
-        if (engine === 'sample') return { tenant: 'local', mode: thread.mode, style, workStyle: null };
+        if (engine === 'sample') return { tenant: 'local', managed: false, mode: thread.mode, style, workStyle: null };
+        // A conversation on company-managed inference is its business's preflight, never the owner's.
+        const managed = engine === NECTOVIA_ROUTE;
+        const business = managed ? (nectoviaAccount?.organizationFor(projectId) ?? null) : null;
         const savedModel =
           engine === 'codex'
             ? codexModelSetting()
             : selectedModel(engine, store.settings, state.project, { ...thread, requested: null });
         return {
-          tenant: 'local',
+          tenant: business ?? 'local',
+          managed,
           mode: thread.mode,
           style,
           workStyle: {
@@ -3772,6 +3795,7 @@ export async function createApp(options: AppOptions) {
           },
         };
       }),
+      managedJevAdvisor,
     );
   // The explicit native conversation routes. Claude Code's (H03) and OpenCode's kept session
   // (H04) take the same admission and the same thread projection, each under its own engine.

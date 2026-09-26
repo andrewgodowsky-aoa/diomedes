@@ -34,7 +34,9 @@
  * advisor on a non-scripted port refuses to be built without a `recordCharge`
  * sink, and every dispatched attempt reports a known or uncertain charge to it.
  * Which ledger that sink writes to is an owner decision this module does not
- * make.
+ * make. A route that is metered by the service it calls (the managed gateway)
+ * reports a receipt instead, and the receipt is the charge: this build's own
+ * price table is never consulted for it.
  */
 import { createHash } from 'node:crypto';
 import type {
@@ -57,6 +59,7 @@ import {
   PRE_DISPATCH_CODES,
   runEvaluation,
   type EvaluationPort,
+  type EvaluationReceipt,
 } from './evaluation-adapter.js';
 import { evaluationCost, priceFor } from './evaluation-price.js';
 
@@ -520,6 +523,11 @@ export interface PreflightChargeRecord {
   readonly charge: Exclude<PreflightCharge, { state: 'none' }>;
   readonly provenance: PreflightProvenance | null;
   readonly at: string;
+  /**
+   * What a metered route said this attempt was charged, when it said: the hold
+   * it is recorded against, and whether it settled or stays uncertain.
+   */
+  readonly receipt?: EvaluationReceipt;
 }
 
 export interface JevAdvisor {
@@ -565,6 +573,22 @@ function chargeFor(port: EvaluationPort, observation: EvaluationObservation): Pr
       ? null
       : observation.usage;
   return { state: 'uncertain', usage, reason: cost.reason };
+}
+
+/**
+ * A metered route's receipt as the preflight's charge. The ledger that paid
+ * decides: settled is exact, uncertain is held and never zero, and released
+ * reached no model and cost nothing.
+ */
+function chargeFromReceipt(receipt: EvaluationReceipt): PreflightCharge {
+  if (receipt.state === 'released') return { state: 'none' };
+  if (receipt.state === 'uncertain') return { state: 'uncertain', usage: null, reason: receipt.reason };
+  return {
+    state: 'known',
+    microUsd: receipt.microUsd,
+    priceVersion: receipt.rateCard,
+    tokens: { input: receipt.usage.inputTokens, output: receipt.usage.outputTokens },
+  };
 }
 
 export function createJevAdvisor(options: JevAdvisorOptions): JevAdvisor {
@@ -632,9 +656,19 @@ export function createJevAdvisor(options: JevAdvisorOptions): JevAdvisor {
         profileDigest: digest,
         providerRequestId: observation?.providerRequestId ?? null,
       });
+      // A metered route's receipt, when it gives one. A holder, because the port reports it
+      // from inside the call.
+      const heard: { receipt: EvaluationReceipt | null } = { receipt: null };
       const record = (charge: PreflightCharge, provenance: PreflightProvenance) => {
         if (charge.state === 'none' || !options.recordCharge) return;
-        options.recordCharge({ key, scope: input.scope, charge, provenance, at: assessedAt });
+        options.recordCharge({
+          key,
+          scope: input.scope,
+          charge,
+          provenance,
+          at: assessedAt,
+          ...(heard.receipt ? { receipt: heard.receipt } : {}),
+        });
       };
 
       let dispatched = false;
@@ -655,9 +689,13 @@ export function createJevAdvisor(options: JevAdvisorOptions): JevAdvisor {
           state: plan.state,
           signal: combined,
           observedAt: assessedAt,
+          scope: input.scope,
+          onReceipt: (receipt) => {
+            heard.receipt = receipt;
+          },
         });
         const { hints, origins } = hintsFromObservation(plan, observation, thresholds);
-        const charge = chargeFor(port, observation);
+        const charge = heard.receipt ? chargeFromReceipt(heard.receipt) : chargeFor(port, observation);
         const provenance = provenanceOf(observation);
         record(charge, provenance);
         const advice: PreflightAdvice = {
@@ -678,7 +716,11 @@ export function createJevAdvisor(options: JevAdvisorOptions): JevAdvisor {
         const transport = error instanceof EvaluationTransportError ? error : null;
         // A code that is always raised before anything is sent spent nothing,
         // whatever the dispatch flag says (an absent SDK is found inside the port).
-        const spentNothing = !dispatched || (transport !== null && PRE_DISPATCH_CODES.has(transport.code));
+        // A metered route's receipt says it outright: only a released call spent nothing.
+        const receipt = heard.receipt;
+        const spentNothing = receipt
+          ? receipt.state === 'released'
+          : !dispatched || (transport !== null && PRE_DISPATCH_CODES.has(transport.code));
         const cancelled = signal?.aborted === true;
         const timedOut = !cancelled && timeout.aborted;
         const reason = cancelled
@@ -690,9 +732,9 @@ export function createJevAdvisor(options: JevAdvisorOptions): JevAdvisor {
               : transport && PRE_DISPATCH_CODES.has(transport.code) && transport.code !== 'transport_unavailable'
                 ? `The preflight was not sent: ${transport.message}`
                 : 'Jev is unavailable; the request goes ahead on its ordinary path.';
-        const charge: PreflightCharge = spentNothing
-          ? { state: 'none' }
-          : port.scripted
+        const charge: PreflightCharge = receipt
+          ? chargeFromReceipt(receipt)
+          : spentNothing || port.scripted
             ? { state: 'none' }
             : {
                 state: 'uncertain',

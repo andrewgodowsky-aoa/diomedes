@@ -35,6 +35,8 @@
   // funding-permissions.sql) on the same host and database as DATABASE_URL. The gateway's funding
   // writes run only as cp_funding. STAFF_WORKOS_API_KEY is the staff environment's server key;
   // without it /ops/* answers 503. services/control-plane/wrangler.jsonc says the same.
+  // OPENROUTER_API_KEY is the key /managed/v1/evaluations sends to OpenRouter; without it that
+  // route alone answers 503 route_unavailable.
   "build": {
     "cwd": "services/control-plane",
     "command": "npm ci --ignore-scripts --no-audit --no-fund && npm run typecheck && npm test"

@@ -19,7 +19,13 @@ import {
  * takes no WorkStyle.
  */
 export interface PreflightThreadContext {
+  /** The business the thread belongs to on managed inference; `local` otherwise. */
   readonly tenant: string;
+  /**
+   * A business conversation on company-managed inference (the `nectovia` route). Its preflight
+   * is asked only through the managed advisor, never on a route this computer pays for.
+   */
+  readonly managed: boolean;
   readonly mode: Mode;
   readonly style: WorkStyle | null;
   readonly workStyle: Omit<WorkStyleInput, 'hints'> | null;
@@ -59,11 +65,18 @@ function parseSources(value: unknown): PreflightSource[] {
  * The provider is asked outside the store lock, bounded by the advisor's own
  * timeout, and abandoned if the caller disconnects. Whatever the provider does,
  * the response carries the deterministic resolution.
+ *
+ * Two advisors, one per payer. A business conversation on managed inference is
+ * asked through `managedAdvisor`, which the account service's gateway meters;
+ * every other thread through `advisor`, on the owner's own route. Neither ever
+ * stands in for the other, so the payer never switches: a thread whose advisor
+ * the host was not given gets `advice: null` and the deterministic resolution.
  */
 export function mountJevAdvisorRoutes(
   app: Express,
-  advisor: JevAdvisor,
+  advisor: JevAdvisor | null,
   context: (projectId: string, threadId: string) => Promise<PreflightThreadContext>,
+  managedAdvisor: JevAdvisor | null = null,
 ): void {
   app.post(
     '/api/projects/:id/threads/:threadId/preflight',
@@ -80,20 +93,23 @@ export function mountJevAdvisorRoutes(
 
         const controller = new AbortController();
         res.once('close', () => controller.abort());
-        const advice = await advisor.preflight(
-          {
-            scope: { tenant: thread.tenant, project: projectId, thread: threadId },
-            intent: text,
-            mode: thread.mode,
-            style: thread.style,
-            sources,
-            // No tool shortlist is offered from here yet: the host has no
-            // per-thread list of authorized tools to offer, and advice may only
-            // choose among what it is given.
-            shortlist: [],
-          },
-          controller.signal,
-        );
+        const chosen = thread.managed ? managedAdvisor : advisor;
+        const advice = chosen
+          ? await chosen.preflight(
+              {
+                scope: { tenant: thread.tenant, project: projectId, thread: threadId },
+                intent: text,
+                mode: thread.mode,
+                style: thread.style,
+                sources,
+                // No tool shortlist is offered from here yet: the host has no
+                // per-thread list of authorized tools to offer, and advice may only
+                // choose among what it is given.
+                shortlist: [],
+              },
+              controller.signal,
+            )
+          : null;
 
         const base = thread.workStyle ? { ...thread.workStyle, hints: { text } } : null;
         res.json({

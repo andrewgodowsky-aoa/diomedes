@@ -103,7 +103,7 @@ import {
 } from './google-vertex.js';
 import { callCeiling, type CallExposure, type RespondLimits, type RespondResult, type StreamSinks } from './model-api-core.js';
 import { decideJobStep, DEFAULT_JOB_TIER, type JobTier } from '../../shared/job-caps.js';
-import { creditAmount, publishedMonthlyGrant, type MicroUsd } from '../../shared/managed-usage.js';
+import type { MicroUsd } from '../../shared/managed-usage.js';
 import { createAwsModelAdapter } from '../harness/aws-model-adapter.js';
 import { createAzureModelAdapter } from '../harness/azure-model-adapter.js';
 import { createOpenRouterModelAdapter } from '../harness/openrouter-model-adapter.js';
@@ -113,6 +113,7 @@ import {
   NECTOVIA_SDK,
   NECTOVIA_SIGN_IN,
   NECTOVIA_UNAVAILABLE,
+  ensureNectoviaGuard,
   nectoviaAccountRoute,
   nectoviaConnectionId,
   nectoviaRateCard,
@@ -2115,18 +2116,9 @@ export class EngineService {
     } catch (error) {
       throw new EngineError('ROUTE_REFUSED', error instanceof Error ? error.message : NECTOVIA_UNAVAILABLE, true);
     }
-    if (!api.exposure.allowance(handle.connectionId))
-      await api.exposure.setCap(
-        handle.connectionId,
-        // The plan's published monthly grant; a plan without a published figure is guarded at the
-        // Business grant. The gateway decides what the business can actually spend.
-        publishedMonthlyGrant(admitted.planId ?? '') ?? creditAmount(1_000),
-        {
-          approvedBy: `the ${admitted.planId ?? 'Nectovia'} plan, by this computer's host`,
-          note: "Nectovia's local guard for this business this month. The account service's ledger is the authority.",
-        },
-      );
-    if (api.exposure.summary(handle.connectionId).availableMicroUsd <= 0)
+    // The plan's published monthly grant, set once for the month; the gateway decides what the
+    // business can actually spend.
+    if ((await ensureNectoviaGuard(api.exposure, handle.connectionId, admitted.planId)).availableMicroUsd <= 0)
       throw new EngineError(
         'SPEND_LIMIT',
         "Nectovia's safety limit on this computer for this business's month has been reached, so nothing was sent.",

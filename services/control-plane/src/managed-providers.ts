@@ -15,7 +15,13 @@
  * endpoint) and the faux cloud's scripted provider, which answers in the same
  * Responses SSE the real endpoint streams, with exact usage, so the desktop's
  * whole loop runs offline.
+ *
+ * Typed evaluations (`POST /managed/v1/evaluations`) have their own row, their
+ * own caller (OpenRouter's Decisions API) and their own scripted provider, at the
+ * end of this file. The same rules hold: the endpoint, the price and the
+ * credential's name are reviewed lines, never data.
  */
+import type { EvaluationRequest, ProviderQuestion } from '../../../shared/evaluation-wire.js';
 import type { RateSnapshot } from '../../../shared/managed-usage.js';
 
 export interface ProviderRegistryRow {
@@ -68,10 +74,26 @@ export function registryRow(
 
 export type ProviderEnv = Readonly<Record<string, unknown>>;
 
+/** Every Worker secret a row may name. Each is set by the owner and read at call time. */
+export type ProviderCredential = 'BEDROCK_API_KEY' | 'OPENROUTER_API_KEY';
+
 /** The configured key for a row, read now, or null when it is absent or unusable. */
-export function credentialFor(item: ProviderRegistryRow, env: ProviderEnv): string | null {
+export function credentialFor(item: { readonly credential: ProviderCredential }, env: ProviderEnv): string | null {
   const value = env[item.credential];
   return typeof value === 'string' && value.length <= 8_192 && /^[\x21-\x7e]+$/.test(value) ? value : null;
+}
+
+/**
+ * Which rule a row's key breaks, for the Worker's log, or null when `credentialFor`
+ * would accept it. A rule name only, never the value: the owner reads it to fix a
+ * secret nobody can read back.
+ */
+export function credentialProblem(item: { readonly credential: ProviderCredential }, env: ProviderEnv): 'missing' | 'whitespace' | 'format' | null {
+  const value = env[item.credential];
+  if (typeof value !== 'string' || !value) return 'missing';
+  if (value !== value.trim() || /[\r\n\0]/.test(value)) return 'whitespace';
+  if (credentialFor(item, env) === null) return 'format';
+  return null;
 }
 
 // --- calling a provider ---------------------------------------------------------------
@@ -218,5 +240,206 @@ export function scriptedResponsesFetch(options: { now?: () => number; id?: () =>
       },
     });
     return new Response(stream, { status: 200, headers: { 'content-type': 'text/event-stream', 'x-amzn-requestid': id() } });
+  }) as typeof globalThis.fetch;
+}
+
+// --- typed evaluations ------------------------------------------------------------------
+
+/**
+ * A route the gateway sends a typed evaluation to (`POST /managed/v1/evaluations`).
+ * Reviewed like the rows above: nothing in it is data.
+ */
+export interface EvaluationProviderRow {
+  /** The route id every hold for it is recorded under. */
+  readonly id: string;
+  readonly provider: 'openrouter';
+  /**
+   * The model id sent. The provider may answer under a dated snapshot of it
+   * (`<model>-YYYYMMDD`), which is the same model at the same price.
+   */
+  readonly model: string;
+  /** The one URL a call to this row may go to. */
+  readonly endpoint: string;
+  /**
+   * µUSD per million tokens, under the version the desktop prices this model with
+   * (server/harness/evaluation-price.ts, EVALUATION_PRICE_JEV_113_OPENROUTER). The
+   * route reports no cache tokens; if it ever did, they would cost what input does.
+   */
+  readonly rate: RateSnapshot;
+  /** The Worker secret that holds the key. A name only. */
+  readonly credential: 'OPENROUTER_API_KEY';
+  /** Where the provider puts a request id, kept as the evidence on a released refusal. */
+  readonly requestIdHeaders: readonly string[];
+}
+
+/**
+ * Jev 1.13 on OpenRouter's Decisions API, as OpenRouter lists it on 2026-09-26:
+ * one endpoint (TypeSafe), 32,000 tokens of context, $0.000000042 per prompt
+ * token and nothing per completion token.
+ */
+export const EVALUATION_PROVIDER: EvaluationProviderRow = Object.freeze<EvaluationProviderRow>({
+  id: 'openrouter-jev-1.13',
+  provider: 'openrouter',
+  model: 'typesafe/jev-1.13',
+  endpoint: 'https://openrouter.ai/api/alpha/decisions',
+  rate: Object.freeze({
+    version: 'evaluation-price-2026-09-22.openrouter.1',
+    inputMicroUsdPerMillion: 42_000,
+    cacheReadMicroUsdPerMillion: 42_000,
+    cacheWriteMicroUsdPerMillion: 42_000,
+    outputMicroUsdPerMillion: 0,
+  }),
+  credential: 'OPENROUTER_API_KEY',
+  requestIdHeaders: Object.freeze(['x-request-id', 'cf-ray']),
+});
+
+export interface EvaluationProviderCall {
+  row: EvaluationProviderRow;
+  credential: string;
+  /** The serialized request body, exactly as it is to be sent. */
+  body: string;
+  signal: AbortSignal;
+}
+export type EvaluationProviderCaller = (call: EvaluationProviderCall) => Promise<Response>;
+
+/**
+ * OpenRouter's Decisions endpoint, called once. Nothing here retries (the AI
+ * SDK's default of two retries would make one refusal three calls); the key is
+ * the one passed in, never an ambient variable; and a redirect is returned, never
+ * followed, so the key only ever goes to the registry's endpoint. The transport
+ * defaults to the global fetch, read at call time.
+ */
+export function openRouterDecisionsCaller(transport?: typeof globalThis.fetch): EvaluationProviderCaller {
+  return ({ row: item, credential, body, signal }) =>
+    (transport ?? globalThis.fetch)(item.endpoint, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${credential}`, 'content-type': 'application/json', accept: 'application/json' },
+      body,
+      signal,
+      redirect: 'manual',
+    });
+}
+
+/**
+ * Private processing by default (Pillar 09): every evaluation goes only to
+ * providers that don't collect data. Never `zdr`: OpenRouter lists no
+ * zero-retention endpoint for this model, so a ZDR-only request would find none.
+ * When no endpoint meets the policy, the call is refused, never sent elsewhere.
+ */
+export const DECISIONS_DATA_POLICY = Object.freeze({ data_collection: 'deny' as const });
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === 'object' && !Array.isArray(value);
+
+/** A question in the Decisions API's shape: a yes-or-no question is a `noul`, described on both sides or neither. */
+function decisionsQuestion(question: ProviderQuestion): Record<string, unknown> {
+  if (question.type !== 'boolean') return question;
+  return question.criteria
+    ? { type: 'noul', instructions: question.instructions, criteria: { true: question.criteria.true, false: question.criteria.false } }
+    : { type: 'noul', instructions: question.instructions };
+}
+
+/** What is sent for a checked evaluation: the row's model, the state, the questions and the data policy. Nothing else. */
+export function decisionsBody(item: EvaluationProviderRow, request: EvaluationRequest): string {
+  return JSON.stringify({
+    model: item.model,
+    state: request.state,
+    questions: Object.fromEntries(Object.entries(request.questions).map(([id, question]) => [id, decisionsQuestion(question)])),
+    provider: DECISIONS_DATA_POLICY,
+  });
+}
+
+/**
+ * Decisions usage in the `nectovia-usage/1` counts. The API reports no cache or
+ * reasoning tokens, so those parts are none; a count it leaves out stays out, and
+ * the settlement then holds the charge as uncertain.
+ */
+export function decisionsUsage(usage: Record<string, unknown>) {
+  return { inputTokens: usage.input_tokens, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: usage.output_tokens, reasoningTokens: 0 };
+}
+
+/** Whether the model the provider says answered is the row's: itself, or a dated snapshot of it. */
+export function answeredAs(item: EvaluationProviderRow, model: string): boolean {
+  return model === item.model || (model.startsWith(`${item.model}-`) && /^\d{8}$/.test(model.slice(item.model.length + 1)));
+}
+
+/** Decisions answers are rounded to two decimals, as the installed OpenRouter provider declares. */
+export const DECISIONS_ROUNDING = Object.freeze({ probabilityDecimals: 2, scoreDecimals: 2 });
+
+function evaluationAnswer(answer: unknown): unknown {
+  if (!isRecord(answer)) return answer;
+  const probabilities = answer.probabilities === undefined ? {} : { probabilities: answer.probabilities };
+  if (answer.type === 'noul') return { type: 'boolean', probability: answer.noul };
+  if (answer.type === 'choice') return { type: 'choice', choice: answer.choice, ...probabilities };
+  if (answer.type === 'score') return { type: 'score', score: answer.score, ...probabilities };
+  return answer;
+}
+
+/**
+ * A Decisions answer in the reply shape the desktop validates
+ * (shared/evaluation.ts, the same shape the installed provider produces): a
+ * `noul` becomes a yes-or-no question's P(true), confidence and legends are
+ * dropped, and the answering model and id are named only when the provider
+ * named them. `answers` must already be an object.
+ */
+export function evaluationReply(answer: Record<string, unknown>): Record<string, unknown> {
+  const answers = answer.answers as Record<string, unknown>;
+  const usage = isRecord(answer.usage) ? answer.usage : null;
+  return {
+    answers: Object.fromEntries(Object.entries(answers).map(([id, value]) => [id, evaluationAnswer(value)])),
+    ...(usage ? { usage: { inputTokens: usage.input_tokens, outputTokens: usage.output_tokens } } : {}),
+    rounding: DECISIONS_ROUNDING,
+    warnings: [],
+    response: {
+      ...(typeof answer.model === 'string' ? { modelId: answer.model } : {}),
+      ...(typeof answer.id === 'string' ? { id: answer.id } : {}),
+    },
+  };
+}
+
+/** The date the scripted Decisions provider reports its model under: a snapshot, as the real API names one. */
+export const SCRIPTED_DECISIONS_SNAPSHOT = '20260917';
+
+/**
+ * A fetch-compatible transport that answers every Decisions request from the
+ * request itself: each choice takes its first option, each score its lowest
+ * level and each yes-or-no question 0.1, all with certainty, under a dated
+ * snapshot of the model asked for, with the usage the real API reports (input
+ * and output tokens, and their cost at the row's price). Given to
+ * `openRouterDecisionsCaller`, it runs the whole evaluation path offline.
+ */
+export function scriptedDecisionsFetch(options: { id?: () => string } = {}): typeof globalThis.fetch {
+  const id = options.id ?? (() => crypto.randomUUID().replace(/-/g, ''));
+  return (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const request = new Request(input, init);
+    const text = await request.text();
+    let body: Record<string, unknown>;
+    try {
+      const value: unknown = JSON.parse(text);
+      if (!isRecord(value)) throw new TypeError('not an object');
+      body = value;
+    } catch {
+      return Response.json({ error: { code: 400, message: 'The scripted provider needs a JSON body.' } }, { status: 400 });
+    }
+    const questions = isRecord(body.questions) ? body.questions : {};
+    const answers: Record<string, unknown> = {};
+    for (const [key, question] of Object.entries(questions)) {
+      if (isRecord(question) && question.type === 'choice') {
+        const first = Object.keys(isRecord(question.criteria) ? question.criteria : {})[0] ?? '';
+        answers[key] = { type: 'choice', choice: first, probabilities: { [first]: 1 }, confidence: 1 };
+      } else if (isRecord(question) && question.type === 'score') answers[key] = { type: 'score', score: 0, probabilities: { 0: 1 }, confidence: 1 };
+      else answers[key] = { type: 'noul', noul: 0.1 };
+    }
+    const inputTokens = Math.ceil(new TextEncoder().encode(text).byteLength / 4);
+    const outputTokens = Object.keys(questions).length;
+    const rate = EVALUATION_PROVIDER.rate;
+    return Response.json({
+      id: `gen-${id()}`,
+      model: `${typeof body.model === 'string' ? body.model : 'scripted'}-${SCRIPTED_DECISIONS_SNAPSHOT}`,
+      provider: 'Scripted',
+      answers,
+      // USD, as OpenRouter reports it: tokens at µUSD per million, over 10^12.
+      usage: { input_tokens: inputTokens, output_tokens: outputTokens, cost: (inputTokens * rate.inputMicroUsdPerMillion + outputTokens * rate.outputMicroUsdPerMillion) / 1e12 },
+    }, { headers: { 'x-request-id': `req-${id()}` } });
   }) as typeof globalThis.fetch;
 }
