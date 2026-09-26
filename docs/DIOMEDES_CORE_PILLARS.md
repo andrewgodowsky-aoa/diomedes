@@ -1,6 +1,6 @@
 # DIOMEDES CORE PILLARS — BINDING PRODUCT CONSTITUTION
 
-**Version:** 2026-09-22.1  
+**Version:** 2026-09-26.1  
 **Status:** Owner-approved product/business/agent/design authority  
 **Product:** Nectovia (named Diomedes until 2026-09-22)  
 **Company direction:** Diomedes Systems  
@@ -35,7 +35,7 @@ Each pillar has three representations:
 
 ## Pillar 02 — One configurable Diomedes, many kinds of work
 
-**Technical contract:** Restaurants, warehouses, construction/remodeling, professional services, technical/personal work and later larger organizations use the same Core/Runtime/Trust/Observatory/Interop foundations. Industry differences are expressed through capability packs, workflows, schemas, mappings, rules, connectors, UI configuration and organization facts rather than product forks. A new business type may require new integration semantics, but should not create a second Diomedes architecture.
+**Technical contract:** Restaurants, warehouses, construction/remodeling, professional services, technical/personal work and later larger organizations use the same Core/Runtime/Trust/Observatory/Interop foundations. Industry differences are expressed through capability packs, workflows, schemas, mappings, rules, connectors, UI configuration and organization facts rather than product forks. A new business type may require new integration semantics, but should not create a second Diomedes architecture. Departments may specialize that same product through scoped packs and private configuration. Restaurants are an initial learning/design-partner context, not a required hospitality-first growth path; select customer segments by workflow fit and measured delivery economics.
 
 **Human version:** Diomedes is not restaurant software or construction software. It adapts the same system to the work a business actually does.
 
@@ -43,7 +43,7 @@ Each pillar has three representations:
 
 ## Pillar 03 — Meet work where it already lives
 
-**Technical contract:** Prefer coordinating the systems a customer already uses before replacing systems of record. Connect supported POS, scheduling, inventory, accounting, email, files, project management, reservations, field-service and other tools through truthful adapters/capabilities. Email, calendar, exports, PDFs, shared folders and photos are first-class inputs when a direct API is unavailable. Never represent an export/read path as write authority. Recommend removing another product only after measured evidence shows its actually used functions are safely redundant and hidden obligations have been evaluated.
+**Technical contract:** Prefer coordinating the systems a customer already uses before replacing systems of record. Connect supported POS, scheduling, inventory, accounting, email, files, project management, reservations, field-service and other tools through truthful adapters/capabilities. Email, calendar, exports, PDFs, shared folders and photos are first-class inputs when a direct API is unavailable. Never represent an export/read path as write authority. Recommend removing another product only after measured evidence shows its actually used functions are safely redundant and hidden obligations have been evaluated. Evaluate legitimate alternative access paths before declaring a workflow unsupported, and report partial coverage and freshness. Customer-authorized database views, exports, report feeds and permitted browser-assisted work may be useful where available, but no wrapper bypasses vendor or security requirements. Replacing a bounded software function is an eligible paid implementation only after migration, total-cost, reliability, security and exit obligations are explicitly assessed.
 
 **Human version:** You should not have to throw away the software your business already knows. Diomedes should connect the useful pieces and remove the busywork between them. If another subscription truly becomes unnecessary later, that should be proven rather than promised.
 
@@ -59,11 +59,11 @@ Each pillar has three representations:
 
 ## Pillar 05 — Self-setup and self-maintenance are primary product requirements
 
-**Technical contract:** The normal customer path must increasingly install, configure and maintain itself. Diomedes should discover supported engines/hardware after disclosure, guide provider-supported authentication, connect authorized business tools, recommend relevant capability packs, configure local models when chosen, rehearse/validate workflows, monitor health, update safely, diagnose common failures and recover known problems without Andrew. Paid setup/deployment services mean “have us do it with/for you,” not “the software only works if the founder manually configures it.”
+**Technical contract:** The normal customer path must increasingly install, configure and maintain itself. Diomedes should discover supported engines/hardware after disclosure, guide provider-supported authentication, connect authorized business tools, recommend relevant capability packs, configure local models when chosen, rehearse/validate workflows, monitor health, update safely, diagnose common failures and recover known problems without Andrew. Paid setup/deployment services mean “have us do it with/for you,” not “the software only works if the founder manually configures it.” Persist the versioned questions, original answers, interpreted facts, unresolved items, active configuration, package bindings and rehearsal evidence to the organization under authorized account access, with protected local caching where appropriate. Reopening, signing in, switching devices or transferring ownership loads or resumes that state instead of repeating the quiz. Ask only justified incremental questions. Configuration completion, current health, authentication, permissions and paid entitlement are separate states.
 
 **Human version:** You should be able to get Diomedes working without becoming an AI expert or waiting for the founder to come fix every computer.
 
-**Real proof / website capture:** A clean first-run sequence inside the real app: hardware/engine discovery → connect ChatGPT through Codex or another supported route → select a relevant capability pack → connect a business source → run a rehearsal → show “ready” only after verification. Capture both the normal path and a self-diagnosed recoverable error.
+**Real proof / website capture:** A new business completes a short intake, reviews the suggested capabilities, authorizes a supported source and gets a verified useful result. Close and reopen the app, sign in on a second device and transfer an owner role: the same configuration returns without a repeated quiz. An expired connector requests only reauthentication; a changed requirement requests only relevant new answers.
 
 ## Pillar 06 — No routine babysitting; control without constant clicks
 
@@ -107,7 +107,7 @@ Each pillar has three representations:
 
 ## Pillar 11 — Diomedes must scale without scaling the founder
 
-**Technical contract:** Repeated setup/support work becomes product automation, diagnostics, self-repair, documentation, capability packs or a support playbook. Support follows prevention → automatic recovery → Diomedes support agent → human support → engineering escalation → founder only for genuinely novel/product-level decisions. Human support roles are deliberately scoped; no employee becomes an overloaded universal fixer. Customer #50 should require materially less founder intervention than customer #1.
+**Technical contract:** Repeated setup/support work becomes product automation, diagnostics, self-repair, documentation, capability packs or a support playbook. Support follows prevention → automatic recovery → Diomedes support agent → human support → engineering escalation → founder only for genuinely novel/product-level decisions. Human support roles are deliberately scoped; no employee becomes an overloaded universal fixer. Customer #50 should require materially less founder intervention than customer #1. The long-term objective is more active retained business accounts per delivery/support employee without worse service. Track human setup time, support and intervention minutes per account, service mix, incidents, retention and accepted-result cost alongside accounts per full-time equivalent. Use those observations to productize repeated work, not to assume unlimited employee capacity.
 
 **Human version:** The company should not need one Andrew for every customer. Diomedes should handle normal setup and problems itself, with real people available when something actually needs them.
 
@@ -120,6 +120,22 @@ Each pillar has three representations:
 **Human version:** The simple version should not be fake or weak, and the technical version should not be a different product. Diomedes should explain itself differently depending on how much detail you want.
 
 **Real proof / website capture:** Show the same completed work in two real UI views: a plain-language owner view (“Schedule ready. One conflict needs you.”) and Technical detail expanded underneath with agent/model/engine, rules, evidence, route and verification. Both refer to the same durable work object.
+
+## Pillar 13 — Governed learning is part of the core
+
+**Technical contract:** Nectovia improves through an evidence-backed learning loop: observed work and corrections → candidate memory, mapping, rule or skill → replay and held-out evaluation → authorized versioned promotion → monitoring and rollback. This Hermes-inspired loop is a core product requirement, not an optional final-stage enhancement. Distinguish sourced business facts, user preferences, procedural skills, pending work and enforced policy. Keep customer learning private to its permitted organization and department unless separately authorized for broader reuse. Prefer retrieval and configuration over model-weight changes for changing business knowledge. Learning may propose improvements and reduce repeated work; it may never grant authority, alter payer/data-processing policy, expose restricted information, or promote its own unsupported conclusions as truth. Any automated promotion must use a separately approved bounded policy with independent checks, never the proposing model's self-approval.
+
+**Human version:** Nectovia should remember how your business works and get better from checked results, without quietly changing the rules or sharing your information.
+
+**Real proof / website capture:** A corrected invoice mapping becomes a private candidate procedure, passes held-out examples, is approved by an authorized reviewer, and is reused on a later job. Show its source, version and improvement evidence, then a regression-triggered rollback that does not revive revoked access.
+
+## Pillar 14 — One organizational brain, scoped departmental capabilities
+
+**Technical contract:** One organization can use different capability packs, workflows and interfaces for IT, HR, finance, management and other departments on the same Core/Runtime/Trust and durable records. Shared organizational facts and definitions form a logical knowledge layer, not an unrestricted global prompt or physically mandatory single database. Department/project overlays specialize capabilities without weakening organization policy. Preserve source permissions through retrieval, caches, summaries, embeddings, agents, artifacts, search results and notifications; a supervisor or administrator role does not by itself authorize every source. Cross-department work uses explicitly permitted inputs and handoff outputs. Govern external databases, files and indexes with source identity, freshness, versions, lineage, access revocation and conflict/drift detection. Configuration, executable permissions and knowledge remain separate authorities.
+
+**Human version:** Each department gets the tools and knowledge it needs, while the business stays coordinated and private information stays private.
+
+**Real proof / website capture:** HR, IT and a manager coordinate onboarding through the same task record. IT receives the approved equipment request but cannot retrieve salary or disciplinary records. A source policy changes; dependent work detects the drift and requests review without restarting company setup.
 
 ## Website translation contract
 
@@ -165,7 +181,11 @@ The first full-system run should be designed as both a product verification and 
 12. Run at least one non-coding synthetic business scenario so the proof does not accidentally validate only a programming harness. Preferred scenarios: restaurant scheduling or warehouse inventory.
 13. Capture reproducible screenshots/state sequences from the actual harness with synthetic data and provenance for any pillar that the current build can honestly demonstrate.
 
-Passing the test does not mean all twelve pillars are fully implemented. The result should explicitly identify: **proven now, partially proven, blocked, and planned**. Missing proof becomes roadmap work rather than marketing copy.
+Passing the test does not mean all pillars are fully implemented. The result should explicitly identify: **proven now, partially proven, blocked, and planned**. Missing proof becomes roadmap work rather than marketing copy.
+
+## SC-2026-09-26.1 — Amendment scope
+
+Andrew approved persistent business self-configuration, governed core learning, departmental capabilities, cross-industry positioning and measured scaling of accounts per employee. P02, P03, P05 and P11 are expanded; P13 and P14 are added. Existing safety, paid-Agent entitlement and source-evidence requirements remain. The detailed decision record is docs/product/2026-09-26-self-configuring-business-platform.md. Documentation approval does not certify implementation.
 
 ## Change control
 
@@ -179,4 +199,5 @@ Version changes:
 Amendments:
 - **2026-09-19.1 (minor, Andrew's explicit decision):** Pillar 07 no longer says to prefer intelligence the customer already pays for, and its human version no longer opens with the customer's own ChatGPT or Claude subscription. Customers are not expected to bring, buy or share an AI subscription; a customer organization's own provider account and a local model remain valid routes, and a personal subscription is still never company inventory. No other pillar changed. The canonical cloud document could not be written from the session that made this change; a current cloud mirror of this version is recorded in docs/reference/CLOUD_SYNC_2026-09-19.md.
 - **2026-09-22.1 (patch, Andrew's explicit decision):** the product, app and agent are named Nectovia; Diomedes Systems (LLC) remains the company. No pillar's meaning changed. Until a wording pass, "Diomedes" in pillar text means the product now named Nectovia, except where it names the company. Shipped identifiers (app id, installer and update channel, userData, environment variables, repositories, diomedes.net) are unchanged by the rename. Andrew named the product on 2026-09-22 and approved this amendment on 2026-09-23. This text was written into this cloud canonical on 2026-09-24 from the repository mirror (docs/DIOMEDES_CORE_PILLARS.md, origin/main 559a1ab); docs/reference/CLOUD_SYNC_2026-09-24.md records it.
-- **2026-09-25.1 (minor, Andrew's explicit decision):** Pillar 12 no longer says Personal is a capable self-managed BYO harness without qualification. Personal keeps the workspace, the person's own AI tools and the direct engines; the Nectovia Agent is paid-only, admitted by the account service for a business whose plan (or a scoped grant) includes it. Access to the Agent is separate from who pays for inference: a customer-funded route never unlocks it, and a Diomedes-funded route never grants it. Andrew chose this on 2026-09-25 while commissioning customer accounts. No other pillar changed. Cloud synchronisation pending: the canonical cloud document has not been updated from this repository mirror yet.
+- **2026-09-25.1 (minor, Andrew's explicit decision):** Pillar 12 no longer says Personal is a capable self-managed BYO harness without qualification. Personal keeps the workspace, the person's own AI tools and the direct engines; the Nectovia Agent is paid-only, admitted by the account service for a business whose plan (or a scoped grant) includes it. Access to the Agent is separate from who pays for inference: a customer-funded route never unlocks it, and a Diomedes-funded route never grants it. Andrew chose this on 2026-09-25 while commissioning customer accounts. No other pillar changed. Synchronized to the canonical cloud document on 2026-09-26; the paid-Agent boundary is preserved by SC-2026-09-26.1.
+- **2026-09-26.1 (minor, Andrew's explicit decision):** Expanded P02/P03/P05/P11 and added P13/P14 under SC-2026-09-26.1. Persistent self-configuration, governed learning, scoped departmental knowledge and measured accounts-per-employee scaling are core direction. No runtime release, pricing change or production-access permission is implied.
