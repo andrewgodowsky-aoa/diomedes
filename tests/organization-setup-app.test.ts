@@ -309,6 +309,40 @@ describe('a business setup kept by the business (ORG-01)', () => {
     expect(revisions()).toHaveLength(1);
   });
 
+  test('a Manager invited later opens the setup where the owner left it, on their own computer', async () => {
+    const laptop = await computer('laptop');
+    const owner = await signIn(laptop, DEMO_ACCOUNTS.owner.email);
+    await answerWith(laptop, await startSetup(laptop), 'name', 'Juniper Street Bakery');
+
+    // Jordan is not a member yet, so their computer knows no such business.
+    const home = await computer('home');
+    const jordan = await signIn(home, DEMO_ACCOUNTS.free.email);
+    expect(await refused(home, setupRoute())).toMatchObject({ status: 404, body: { code: 'unknown_organization' } });
+
+    // The owner invites Jordan as a Manager, and Jordan accepts in the account service.
+    const asOwner = await asPerson(DEMO_ACCOUNTS.owner.email);
+    const { subject } = (await cloud.subjectFor(DEMO_ACCOUNTS.free.email))!;
+    const invited = await asOwner('POST', `/account/organizations/${juniper}/invitations`, { subject, role: 'admin', ttlMs: 60_000 });
+    expect(invited.status).toBe(201);
+    const { token } = (await invited.json()) as { token: string };
+    const asJordan = await asPerson(DEMO_ACCOUNTS.free.email);
+    expect((await asJordan('POST', `/account/organizations/${juniper}/invitations/accept`, { token })).ok).toBe(true);
+
+    // Once Jordan's computer has heard and Jordan switches to the business, the
+    // intake continues rather than starting over.
+    await api(home, '/account/refresh', 'POST');
+    await api(home, '/workspace/switch', 'POST', { kind: 'business', organizationId: juniper });
+    const opened = await openSetup(home);
+    expect(opened.answers.name).toMatchObject({ value: 'Juniper Street Bakery', by: owner });
+    const next = await answerWith(home, opened, 'industry', 'Bakery');
+    expect(next.answers.industry).toMatchObject({ by: jordan });
+    expect(revisions()).toEqual([
+      { revision: 1, writtenBy: owner, answers: [] },
+      { revision: 2, writtenBy: owner, answers: ['name'] },
+      { revision: 3, writtenBy: jordan, answers: ['industry', 'name'] },
+    ]);
+  });
+
   test("a setup kept only on this computer before ORG-01 becomes the business's first revision when its author opens it", async () => {
     const laptop = await computer('laptop');
     const owner = await signIn(laptop, DEMO_ACCOUNTS.owner.email);

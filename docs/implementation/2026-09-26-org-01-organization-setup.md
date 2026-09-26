@@ -92,6 +92,8 @@ A setup file without a tag was saved on this computer before the service kept se
 | A network failure is a load error, not an empty setup | `tests/organization-setup-app.test.ts`: a setup that cannot be loaded; `tests/organization-setup-sync.test.ts` |
 | A stale copy cannot revive a revoked membership | `tests/organization-setup-app.test.ts`: a person removed, online or off; `decideSetupLoad` cases in `tests/organization-setup-sync.test.ts` |
 
+The brief's builder prompt also asks for invitee entry. In `tests/organization-setup-app.test.ts`, "a Manager invited later" covers a person who was not a member when the owner answered. Before they accept, their computer refuses the business. After they accept the invitation in the account service, refresh and switch to the business, the intake continues from the owner's answers. Their answer then becomes the next revision, in their name.
+
 SET-01's "resume and revise without losing original answers or conflating businesses": every answer keeps the words of the question it was given against (`BusinessAnswer.prompt`), every revision is kept, and a record naming another business is refused by the host, the service and the database.
 
 ## State of this branch
@@ -107,6 +109,8 @@ Gates run on 2026-09-26 in this worktree, on this change, by the integrating ses
 | `wrangler deploy --dry-run` (services/control-plane) | bundles; one copy of zod; 1.29 MB |
 | `npx vite build` | exit 0 |
 | `npx playwright test` (all specs, which include the named gate) | 308 passed in 9.2 minutes, none skipped or flaky; `ui.spec.ts` 17, `native-ui.spec.ts` 11, `field.spec.ts` 8, `workspace-ui.spec.ts` 5, `configuration-ui.spec.ts` 3. The PNGs the run rewrote under `evidence/` and `docs/verification/` were restored |
-| New tests | `tests/organization-setup-sync.test.ts` 25, `tests/organization-setup-app.test.ts` 7, `services/control-plane/tests/organization-setup.test.ts` 11, `services/control-plane/tests/organization-setup-postgres.test.ts` 7, plus the 008 case in `tests/migrations.test.ts` |
+| New tests | `tests/organization-setup-sync.test.ts` 25, `tests/organization-setup-app.test.ts` 8, `services/control-plane/tests/organization-setup.test.ts` 11, `services/control-plane/tests/organization-setup-postgres.test.ts` 7, plus the 008 case in `tests/migrations.test.ts` |
+
+The full runs above were made before the invitee case was added to `tests/organization-setup-app.test.ts`. That change touches only the test file and this record. After it, the file (8 passed) and root `tsc` were run again.
 
 Not run: the PostgreSQL integration suite (it needs an approved disposable Neon database), anything on Cloudflare, and a packaged desktop build.
