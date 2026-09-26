@@ -71,12 +71,19 @@ function parseSources(value: unknown): PreflightSource[] {
  * every other thread through `advisor`, on the owner's own route. Neither ever
  * stands in for the other, so the payer never switches: a thread whose advisor
  * the host was not given gets `advice: null` and the deterministic resolution.
+ *
+ * With customer accounts on, a preflight on the owner’s own route is Agent work on their own
+ * connection, so the host admits it first (`admitOwnRoute`, the Agent gate): a business without
+ * the Nectovia Agent is refused before any provider is asked. A managed preflight is admitted by
+ * the managed advisor itself, pinned to its own job, and the gateway checks included AI usage
+ * again on the call. With accounts off there is nothing to admit.
  */
 export function mountJevAdvisorRoutes(
   app: Express,
   advisor: JevAdvisor | null,
   context: (projectId: string, threadId: string) => Promise<PreflightThreadContext>,
   managedAdvisor: JevAdvisor | null = null,
+  admitOwnRoute?: (projectId: string) => Promise<void>,
 ): void {
   app.post(
     '/api/projects/:id/threads/:threadId/preflight',
@@ -94,6 +101,7 @@ export function mountJevAdvisorRoutes(
         const controller = new AbortController();
         res.once('close', () => controller.abort());
         const chosen = thread.managed ? managedAdvisor : advisor;
+        if (chosen && !thread.managed) await admitOwnRoute?.(projectId);
         const advice = chosen
           ? await chosen.preflight(
               {

@@ -22,6 +22,7 @@
  * (docs/implementation/2026-09-26-jev-managed-evaluations.md).
  */
 import { EVALUATION_OUTPUT_TOKENS_PER_QUESTION, checkEvaluationRequest } from '../../../shared/evaluation-wire.js';
+import { FEATURE_LABELS } from '../../../shared/access.js';
 import { inputTokenBound } from '../../../shared/token-bound.js';
 import { normalizeUsage } from '../../../shared/usage-contract.js';
 import {
@@ -321,10 +322,10 @@ const unavailable = () => new ManagedError(503, 'route_unavailable', ROUTE_UNAVA
 /** The company spend ceiling's only customer-facing words: nothing about the ceiling itself. */
 export const CEILING_REFUSAL = 'Nectovia’s model service isn’t available right now. Nothing was charged.';
 const ceilingReached = () => new ManagedError(503, 'route_unavailable', CEILING_REFUSAL);
+/** Why a call is refused when the business's current grants hold the Agent but not included AI usage. */
+export const MANAGED_USAGE_NOT_INCLUDED = `${FEATURE_LABELS['managed-inference']} isn’t part of this business’s plan, so the Nectovia Agent can’t answer here. Nothing was charged.`;
 /** The contract names these three funding refusals as 402, whatever status FundingService gives them. */
 const PAYMENT_REFUSALS: ReadonlySet<string> = new Set(['insufficient_allowance', 'cap_request_required', 'no_period']);
-/** What a member reads when the business's grants leave included AI usage out. */
-export const MANAGED_INFERENCE_NOT_INCLUDED = 'Included AI usage is part of a Business plan, so nothing was sent.';
 /** An evaluation no provider could take under the data policy: it reached no model and was released. */
 export const PROVIDER_POLICY_REFUSAL = 'No provider that meets Nectovia’s data policy can take this right now. Nothing was charged.';
 
@@ -799,11 +800,8 @@ export class ManagedInferenceService {
   private async runEvaluation(request: Request, env: ProviderEnv, headers: Headers): Promise<Response> {
     // 1. Headers.
     const h = jobHeaders(request.headers);
-    // 2 to 4. Membership, the stored admission and the entitlement, as for a response.
-    const { tenantId, state, view } = await this.admitted(h);
-    // Included AI usage ('managed-inference'), decided again from the current grants.
-    if (!view.managedInference)
-      throw new ManagedError(403, 'managed_inference_not_included', MANAGED_INFERENCE_NOT_INCLUDED);
+    // 2 to 4. Membership, the stored admission, the Agent and included AI usage, as for a response.
+    const { tenantId, state } = await this.admitted(h);
     // 5. The body: a state and its questions, inside the route's bounds.
     const bytes = await this.readBody(request, MAX_EVALUATION_REQUEST_BYTES);
     const parsed = parseBody(bytes);
@@ -838,7 +836,7 @@ export class ManagedInferenceService {
    * Steps 2 to 4 of every managed call. The person is a current member; the
    * stored admission is theirs, managed, current and pinned to this job
    * (evidence of intent, never a bearer credential); and the business's grants,
-   * read now, still admit the Agent.
+   * read now, still admit the Agent and include AI usage.
    */
   private async admitted(h: JobHeaders) {
     const member = await this.member(h.token, h.organizationId);
@@ -855,6 +853,10 @@ export class ManagedInferenceService {
     const view = entitlementFromGrants(state.grants, state.accessRevision, at);
     const decision = decideAgentAdmission({ workspace: 'business', member: true, entitlement: snapshotFromView(view), at });
     if (!decision.admitted) throw new ManagedError(403, 'agent_not_included', decision.reason);
+    // Every call here is Diomedes-funded, so it also needs included AI usage ('managed-inference'),
+    // read from the same current grants. A month's credit period outlives the grant that funded it,
+    // so funding alone doesn't answer this. Refused before the job is opened or anything is held.
+    if (!view.managedInference) throw new ManagedError(403, 'agent_not_included', MANAGED_USAGE_NOT_INCLUDED);
     return { tenantId, state, view };
   }
 

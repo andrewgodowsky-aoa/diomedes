@@ -66,8 +66,11 @@ purpose high.
 3. The stored admission → 403 `admission_invalid`.
 4. The Agent, decided again from the current grants → 403 `agent_not_included`.
 5. Included AI usage (`managed-inference`), decided again from the current grants → 403
-   `managed_inference_not_included`, "Included AI usage is part of a Business plan, so nothing was
-   sent."
+   `agent_not_included`, "Included AI usage isn’t part of this business’s plan, so the Nectovia Agent
+   can’t answer here. Nothing was charged." Steps 2 to 5 are one shared step for both managed routes
+   (`admitted()` in `managed-inference.ts`), so a response and an evaluation refuse this the same way.
+   (Integration, 2026-09-26: this lane's own code `managed_inference_not_included` was folded into
+   `agent_not_included`, which the desktop and the phone apps already read on the response route.)
 6. The body (section 1) → 400 or 413.
 7. The provider key (`OPENROUTER_API_KEY`) and the owner's spend settings → 503
    `route_unavailable`.
@@ -136,8 +139,7 @@ a customer can read.
 | 400 | `provider_refused` | the provider answered 400, 413 or 422 before any output (released) |
 | 401 | `sign_in_required` | the session ended |
 | 402 | `insufficient_allowance`, `cap_request_required`, `no_period` | funding refusals |
-| 403 | `not_a_member`, `admission_invalid`, `agent_not_included` | membership, admission, the Agent |
-| 403 | `managed_inference_not_included` | the current grants do not include AI usage |
+| 403 | `not_a_member`, `admission_invalid`, `agent_not_included` | membership, admission, the Agent or included AI usage |
 | 405 | `method_not_allowed` | not a POST |
 | 409 | `attempt_in_flight`, `attempt_replayed`, `attempt_conflict` | the attempt id was used |
 | 413 | `request_too_large` | over a bound in section 1, or an input bound over 272,000 |
@@ -225,7 +227,7 @@ How the gateway's answers reach the advice:
 | `released`, `evaluation_provider_policy` | `refused` | none | released |
 | `released`, `provider_refused` | `refused` | none | released |
 | `released`, otherwise | `unavailable` | none | released |
-| no charge header, `not_a_member`, `agent_not_included`, `managed_inference_not_included` | `refused` | none | released |
+| no charge header, `not_a_member`, `agent_not_included` | `refused` | none | released |
 | no charge header, `request_too_large` | `refused` | none | released |
 | no charge header, anything else (sign-in, admission, credits, `route_unavailable`) | `unavailable` | none | released |
 | no charge header, `attempt_in_flight` or `attempt_replayed` | `unavailable` | uncertain | uncertain |

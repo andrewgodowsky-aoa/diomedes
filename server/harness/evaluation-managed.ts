@@ -212,7 +212,6 @@ function preDispatchCode(code: string): EvaluationTransportCode {
   switch (code) {
     case 'not_a_member':
     case 'agent_not_included':
-    case 'managed_inference_not_included':
       return 'not_included';
     case 'request_too_large':
       return 'request_too_large';

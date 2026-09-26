@@ -238,7 +238,7 @@ describe('R3-2 only the account service’s own membership refusal is `not_a_mem
     const root = fileURLToPath(new URL('..', import.meta.url));
     const source = await fs.readFile(path.join(root, 'services', 'control-plane', 'src', 'account-service.ts'), 'utf8');
     expect(MEMBERSHIP_REFUSALS.size).toBe(2);
-    for (const sentence of MEMBERSHIP_REFUSALS) expect(source, sentence).toContain(`new AccountError(403, '${sentence}')`);
+    for (const sentence of MEMBERSHIP_REFUSALS) expect(source, sentence).toContain(`new AccountError(403, '${sentence}', 'not_a_member')`);
   });
 
   test('refusedMembership reads the status and the service’s body, never a bare status', () => {

@@ -19,7 +19,7 @@ import {
 import {
   CEILING_REFUSAL,
   EVALUATION_OUTPUT_TOKENS_PER_QUESTION,
-  MANAGED_INFERENCE_NOT_INCLUDED,
+  MANAGED_USAGE_NOT_INCLUDED,
   MAX_EVALUATION_REQUEST_BYTES,
   PROVIDER_POLICY_REFUSAL,
 } from '../src/managed-inference.js';
@@ -365,7 +365,7 @@ describe('every call is checked against the business’s current grants', () => 
     const harbor = await signIn('harborOwner');
     const admission = await admit(harbor, orgs.harbor);
     expect(await refusal(await evaluate({ token: harbor, admission, org: orgs.harbor }))).toEqual({
-      status: 403, code: 'managed_inference_not_included', message: MANAGED_INFERENCE_NOT_INCLUDED,
+      status: 403, code: 'agent_not_included', message: MANAGED_USAGE_NOT_INCLUDED,
     });
     expectNothingSentOrHeld();
   });

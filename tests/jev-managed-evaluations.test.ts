@@ -438,7 +438,7 @@ describe('the managed port', () => {
   });
 
   test.each([
-    ['a plan without included usage', refusal(403, 'managed_inference_not_included', 'Included AI usage is part of a Business plan, so nothing was sent.'), 'not_included'],
+    ['a plan without included usage', refusal(403, 'agent_not_included', 'Included AI usage isn’t part of this business’s plan, so the Nectovia Agent can’t answer here. Nothing was charged.'), 'not_included'],
     ['a membership that ended', refusal(403, 'not_a_member', 'You are not an active member of this business.'), 'not_included'],
     ['a sign-in that ended', refusal(401, 'sign_in_required', 'Your Nectovia sign-in has ended. Sign in again to continue.'), 'transport_unavailable'],
     ['credits that ran out', refusal(402, 'insufficient_allowance', 'This step needs up to 1 credits and 0 are available.'), 'transport_unavailable'],

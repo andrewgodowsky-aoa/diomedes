@@ -110,6 +110,7 @@ import { createOpenRouterModelAdapter } from '../harness/openrouter-model-adapte
 import { createVertexModelAdapter } from '../harness/vertex-model-adapter.js';
 import { createNectoviaModelAdapter } from '../harness/nectovia-model-adapter.js';
 import {
+  NECTOVIA_LOOP_REFUSED,
   NECTOVIA_SDK,
   NECTOVIA_SIGN_IN,
   NECTOVIA_UNAVAILABLE,
@@ -1991,6 +1992,9 @@ export class EngineService {
     },
     agent?: Pick<AgentWork, 'surface' | 'rootJobId'>,
   ): Promise<ModelSessionAdmission> {
+    // A loop on the Nectovia route is refused before the Agent gate is asked, so the service records
+    // no admission for work that would then be refused (NECTOVIA_LOOP_REFUSED says why).
+    if (route === NECTOVIA_ROUTE && agent?.surface === 'loop') throw new EngineError('ROUTE_REFUSED', NECTOVIA_LOOP_REFUSED);
     const api = this.modelApi;
     if (!api)
       throw new EngineError('RUNTIME_UNAVAILABLE', 'This model-API route is not available in this process.', true);

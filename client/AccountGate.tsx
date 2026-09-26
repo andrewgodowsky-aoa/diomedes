@@ -159,10 +159,7 @@ function SignIn({
             <Button onClick={() => void onRetry()}>Try again</Button>
           </>
         ) : backend.signIn === 'browser' ? (
-          <p className="prose" role="alert">
-            This account service signs people in through the browser, which this build does not open
-            yet.
-          </p>
+          <BrowserSignIn state={state} onChange={onSignedIn} />
         ) : (
           <>
             {mode === 'sign-in' && remembered.length > 0 && (
@@ -284,5 +281,78 @@ function SignIn({
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * The deployed account service signs people in through WorkOS in the system browser. This asks the
+ * desktop to open it, and looks for the sign-in to arrive while the browser is open.
+ */
+function BrowserSignIn({ state, onChange }: { state: AccountStateView; onChange: (state: AccountStateView) => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const browser = state.browser ?? { status: 'unavailable' as const, message: "Sign-in through the browser isn't set up on this installation." };
+  const waiting = browser.status === 'waiting';
+  useEffect(() => {
+    if (!waiting) return;
+    let active = true;
+    const timer = window.setInterval(() => {
+      void api<AccountStateView>('/account')
+        .then((next) => {
+          if (active) onChange(next);
+        })
+        .catch(() => {});
+    }, 1500);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [waiting, onChange]);
+  const act = async (route: string) => {
+    setBusy(true);
+    setError('');
+    try {
+      onChange(await api<AccountStateView>(route, 'POST', {}));
+    } catch (e) {
+      setError(message(e, 'Signing in did not work. Try again.'));
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (browser.status === 'unavailable')
+    return (
+      <p className="prose" role="alert">
+        {browser.message}
+      </p>
+    );
+  return (
+    <>
+      {waiting ? (
+        <>
+          <p className="prose" role="status">
+            {browser.message}
+          </p>
+          <Button disabled={busy} onClick={() => void act('/account/sign-out')}>
+            Cancel
+          </Button>
+        </>
+      ) : (
+        <>
+          {browser.message && (
+            <p className="prose" role="alert">
+              {browser.message}
+            </p>
+          )}
+          <Button disabled={busy} onClick={() => void act('/account/browser-sign-in')}>
+            Sign in with your browser
+          </Button>
+        </>
+      )}
+      {error && (
+        <p className="prose" role="alert">
+          {error}
+        </p>
+      )}
+    </>
   );
 }

@@ -127,13 +127,16 @@ export class ControlPlaneClient {
     return this.fetcher(request);
   }
 
-  /** The faux cloud answers this; a deployed Worker answers 404 and is taken to be the cloud. */
+  /**
+   * The faux cloud answers this. A deployed Worker refuses it, and is taken to be the cloud: it
+   * checks the bearer before it routes, so it answers 401 to a request without one (404 once past it).
+   */
   async status(): Promise<{ backend: 'faux' | 'cloud'; label: string | null }> {
     try {
       const answer = await this.call<{ backend: string; label: string }>('GET', '/faux/status');
       return { backend: answer.backend === 'faux' ? 'faux' : 'cloud', label: answer.label };
     } catch (error) {
-      if (error instanceof ControlPlaneError && error.status === 404) return { backend: 'cloud', label: null };
+      if (error instanceof ControlPlaneError && (error.status === 401 || error.status === 404)) return { backend: 'cloud', label: null };
       throw error;
     }
   }

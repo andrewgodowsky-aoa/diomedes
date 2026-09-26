@@ -89,7 +89,11 @@ this table omits is a contract bug to raise, not a field to drop silently.
 3. Load the admission record → 403 `admission_invalid` (not found, wrong org/person/job, refused,
    not `managed`, or stale).
 4. Re-decide entitlement from current grants → 403 `agent_not_included` with the contract's
-   reason sentence.
+   reason sentence. Then, from the same grants, included AI usage (`managed-inference`) → 403
+   `agent_not_included`, "Included AI usage isn’t part of this business’s plan, so the Nectovia
+   Agent can’t answer here. Nothing was charged." Every call here is Diomedes-funded, and a month's
+   credit period outlives the grant that funded it, so funding alone doesn't answer this (added
+   2026-09-26; `/managed/v1/evaluations` shares this step).
 5. Validate the body (section 1) → 400 / 413.
 6. Read the owner's spend settings (section 4); an unreadable value → 503 `route_unavailable`.
    Resolve the route: current policy `tiers[tier]` → 409 `tier_unrouted` when null. The route

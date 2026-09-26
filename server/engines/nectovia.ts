@@ -434,3 +434,11 @@ export function nectoviaTier(input: {
 /** Build and Fix run through Work; the Nectovia Agent answers in the conversation. */
 export const NECTOVIA_WORK_REFUSED =
   'The Nectovia Agent answers in the conversation. Build and Fix are not on it yet, so nothing was sent.';
+
+/**
+ * A work loop runs on the business's own provider routes. On Nectovia it is refused before the
+ * Agent gate is asked, so no managed admission is recorded for it: the gateway admits one job for
+ * at most 15 minutes, and a loop's many steps, its resumes and its delegates' own jobs have no
+ * admission or metering under one root job yet.
+ */
+export const NECTOVIA_LOOP_REFUSED = "Work loops don't run on the Nectovia Agent yet, so nothing was sent.";
