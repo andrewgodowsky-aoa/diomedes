@@ -82,14 +82,14 @@ describe('the Worker logs the setting and rule, never the value', () => {
     expect(lines.join('\n')).not.toContain(key);
   });
 
-  it('on the staff routes, naming the staff setting', async () => {
+  it('not on the staff routes, which sign staff in with staff keys and never read the staff WorkOS settings', async () => {
     const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
     const key = 'sk_test_fixture staff key';
     const env = { ...validEnv, STAFF_WORKOS_CLIENT_ID: 'client_fixture_staff', STAFF_WORKOS_API_KEY: key };
-    expect((await createHandler()(request('/ops/me'), env)).status).toBe(503);
+    // A malformed staff WorkOS key no longer takes /ops/* down: the route asks for a staff key.
+    expect((await createHandler()(request('/ops/me'), env)).status).toBe(401);
     const lines = errors.mock.calls.map(([line]) => String(line));
-    expect(lines).toContain(JSON.stringify({ event: 'staff-identity-unavailable', setting: 'STAFF_WORKOS_API_KEY', rule: 'format' }));
-    expect(lines).toContain(JSON.stringify({ event: 'control-plane-unavailable', setting: 'STAFF_WORKOS_API_KEY', rule: 'format' }));
+    expect(lines.join('\n')).not.toContain('staff-identity-unavailable');
     expect(lines.join('\n')).not.toContain(key);
     expect(vi.mocked(fetch)).not.toHaveBeenCalled();
   });
