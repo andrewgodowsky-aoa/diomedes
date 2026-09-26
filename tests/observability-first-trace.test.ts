@@ -129,6 +129,7 @@ async function api<T>(route: string, method = 'GET', body?: unknown): Promise<T>
 async function ownerTurn() {
   await api('/account/sign-in', 'POST', { email: 'owner@juniper.test', password: FAUX_DEMO_PASSWORD, remember: false });
   const project = await api<Project>('/projects', 'POST', { name: 'Linen orders' });
+  await api(`/workspace/organizations/${juniper}/output`, 'POST', { projectId: project.id });
   const thread = await api<Conversation>(`/projects/${project.id}/threads`, 'POST', {});
   await api(`/projects/${project.id}/threads/${thread.id}`, 'PUT', { engine: 'aws-bedrock' });
   await api(`/projects/${project.id}/cloud-sharing`, 'PUT', { expectedVersion: 0, routes: ['aws-bedrock'], documents: [], shareConversationHistory: true, shareReviewPackets: false });

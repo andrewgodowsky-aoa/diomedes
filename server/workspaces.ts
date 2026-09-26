@@ -1119,8 +1119,8 @@ export class WorkspaceService {
 
   /**
    * The organization that owns a project, read from its active project access
-   * resource (recorded when the project is bound as that organization's work
-   * target). Null when no organization, or more than one, claims it: an
+   * resource (recorded when an owner links the project to the business).
+   * Null when no organization, or more than one, claims it: an
    * ambiguous owner is never resolved by picking one.
    */
   projectOwner(projectId: string): { organizationId: string; resourceId: string } | null {
@@ -1651,37 +1651,33 @@ export class WorkspaceService {
     return this.registry.outputs[organizationId] ?? null;
   }
 
-  /**
-   * Bind the project this organization's work is written into.
-   *
-   * The project must already exist. Creating one here would put a company's
-   * work somewhere nobody chose, and this decision is worth making explicitly
-   * exactly once.
-   */
-  async bindOutputProject(organizationId: string, projectId: string): Promise<WorkspaceView> {
+  private async assignProjectToOrganization(
+    organizationId: string,
+    projectId: string,
+  ): Promise<{ id: string; name: string }> {
     const { membership } = this.mine(organizationId);
     if (!canBindOutputProject(membership))
       throw refuse(
         403,
-        'Only an owner or an admin chooses where this business writes.',
+        'Only an owner or an admin links a project to this business.',
         'not_a_configurator',
       );
     const projects = await this.store.projects();
     const project = projects.find((candidate) => candidate.id === projectId);
     if (!project) throw refuse(404, 'That project is not here.', 'project_not_found');
-    const existingOwner = this.registry.access.resources.find(
+    const owners = this.registry.access.resources.filter(
       (resource) =>
         resource.type === 'project' &&
         resource.externalId === project.id &&
         resource.state === 'active',
     );
-    if (existingOwner && existingOwner.organizationId !== organizationId)
+    if (owners.length > 1 || (owners.length === 1 && owners[0].organizationId !== organizationId))
       throw refuse(
         409,
         'That project already belongs to another organization.',
         'project_owned_by_another_organization',
       );
-    if (!existingOwner) {
+    if (owners.length === 0) {
       this.registry.access.resources.push({
         v: BUSINESS_ACCESS_CONTRACT_VERSION,
         organizationId,
@@ -1695,6 +1691,22 @@ export class WorkspaceService {
       });
       this.bumpOrganizationGeneration(organizationId);
     }
+    return project;
+  }
+
+  /** Link an existing project to a business without choosing its automation output. */
+  async linkProject(organizationId: string, projectId: string): Promise<WorkspaceView> {
+    await this.assignProjectToOrganization(organizationId, projectId);
+    await this.saveRegistry();
+    return this.view();
+  }
+
+  /**
+   * Bind the project this organization's work is written into.
+   * The project must already exist, and is linked to the business as well.
+   */
+  async bindOutputProject(organizationId: string, projectId: string): Promise<WorkspaceView> {
+    const project = await this.assignProjectToOrganization(organizationId, projectId);
     this.registry.outputs[organizationId] = {
       projectId: project.id,
       projectName: project.name,

@@ -144,6 +144,11 @@ const signIn = (email: string) =>
 
 type Binding = { projectId: string; threadId: string };
 const home = () => api<Binding>('/home/conversation', 'POST');
+async function ownedHome(organizationId: string): Promise<Binding> {
+  const binding = await home();
+  await api(`/workspace/organizations/${organizationId}/output`, 'POST', { projectId: binding.projectId });
+  return binding;
+}
 const homeThread = async (binding: Binding) =>
   (await api<{ conversations: Conversation[] }>(`/projects/${binding.projectId}/state`)).conversations.find(
     (thread) => thread.id === binding.threadId,
@@ -206,10 +211,27 @@ afterEach(async () => {
 });
 
 describe('the Nectovia bot', () => {
-  test('a Business owner’s Home message answers on nectovia through the managed gateway, with nothing connected', async () => {
+  test('a selected business cannot pay for unlinked Home; an owner must link it first', async () => {
     const owner = await signIn(DEMO_ACCOUNTS.owner.email);
     const organizationId = owner.workspaces[0].organization.id;
     const binding = await home();
+    const refused = await say(binding, 'm-unlinked', 'How many loaves are on order?');
+    expect(refused.status).toBe(403);
+    expect(gateway).toHaveLength(0);
+    expect(awsCalls).toBe(0);
+
+    await api(`/workspace/organizations/${organizationId}/projects`, 'POST', {
+      projectId: binding.projectId,
+    });
+    const answered = await say(binding, 'm-linked', 'How many loaves are on order?');
+    expect(answered.status, await answered.clone().text()).toBe(200);
+    expect(gateway.length).toBeGreaterThan(0);
+  });
+
+  test('a Business owner’s Home message answers on nectovia through the managed gateway, with nothing connected', async () => {
+    const owner = await signIn(DEMO_ACCOUNTS.owner.email);
+    const organizationId = owner.workspaces[0].organization.id;
+    const binding = await ownedHome(organizationId);
     expect(await homeThread(binding)).toMatchObject({ engine: 'nectovia' });
 
     const view = await api<NectoviaRouteView>('/ai/nectovia');
@@ -268,7 +290,7 @@ describe('the Nectovia bot', () => {
   test('each message is its own job: two messages carry two job ids, each the rootJobId its admission names', async () => {
     const owner = await signIn(DEMO_ACCOUNTS.owner.email);
     const organizationId = owner.workspaces[0].organization.id;
-    const binding = await home();
+    const binding = await ownedHome(organizationId);
     const results: MessageResult[] = [];
     for (const [commandId, text] of [['m-first', 'How many loaves are on order?'], ['m-second', 'And rolls?']]) {
       const sent = await say(binding, commandId, text);
@@ -296,8 +318,8 @@ describe('the Nectovia bot', () => {
   });
 
   test('a message with a tool step sends the same job on both calls, each with its own attempt', async () => {
-    await signIn(DEMO_ACCOUNTS.owner.email);
-    const binding = await home();
+    const owner = await signIn(DEMO_ACCOUNTS.owner.email);
+    const binding = await ownedHome(owner.workspaces[0].organization.id);
     const sent = await say(binding, 'm-files', 'Check the attached files, then tell me the loaves on order.');
     expect(sent.status, await sent.clone().text()).toBe(200);
     expect(((await sent.json()) as MessageResult).answerText).toBe('Twelve loaves are on order.');
@@ -316,8 +338,8 @@ describe('the Nectovia bot', () => {
   });
 
   test('a tier chosen on the Home thread stays on nectovia: Focused runs the policy’s model at medium, Thorough is refused by name', async () => {
-    await signIn(DEMO_ACCOUNTS.owner.email);
-    const binding = await home();
+    const owner = await signIn(DEMO_ACCOUNTS.owner.email);
+    const binding = await ownedHome(owner.workspaces[0].organization.id);
     await api(`/projects/${binding.projectId}/threads/${binding.threadId}`, 'PUT', { workStyle: 'focused' });
     expect(await homeThread(binding)).toMatchObject({ engine: 'nectovia', workStyle: 'focused' });
     const answered = await say(binding, 'm-focused', 'How many loaves are on order?');
@@ -341,8 +363,8 @@ describe('the Nectovia bot', () => {
     [503, 'route_unavailable', 'Upstream route is down.', NECTOVIA_UNAVAILABLE],
     [429, 'provider_busy', 'Slow down.', "Nectovia's model service is busy. Nothing was charged. Try again in a minute."],
   ])('a gateway %i %s reaches the conversation in plain words, with the local hold released', async (status, code, said, words) => {
-    await signIn(DEMO_ACCOUNTS.owner.email);
-    const binding = await home();
+    const owner = await signIn(DEMO_ACCOUNTS.owner.email);
+    const binding = await ownedHome(owner.workspaces[0].organization.id);
     refuseWith = { status, code, message: said };
     const refused = await say(binding, `m-${code}`, 'How many loaves are on order?');
     const body = (await refused.json()) as { error: string; code: string };
@@ -374,8 +396,8 @@ describe('the Nectovia bot', () => {
   });
 
   test('a business without the Agent in its plan is refused with the service’s reason before any gateway call', async () => {
-    await signIn(DEMO_ACCOUNTS.harborOwner.email);
-    const binding = await home();
+    const owner = await signIn(DEMO_ACCOUNTS.harborOwner.email);
+    const binding = await ownedHome(owner.workspaces[0].organization.id);
     const refused = await say(binding, 'm-harbor', 'How many hammers are in stock?');
     const body = (await refused.json()) as { error: string; code: string };
     expect(refused.status).toBe(403);

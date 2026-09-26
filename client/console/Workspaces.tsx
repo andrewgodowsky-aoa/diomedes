@@ -64,6 +64,11 @@ interface PanelProps {
   onOpenAutomations?(): void;
 }
 
+type HomeLink = {
+  projectId: string | null;
+  state: 'not-created' | 'unlinked' | 'linked-here' | 'linked-elsewhere';
+};
+
 export function WorkspacePanel({
   view,
   busy,
@@ -81,6 +86,7 @@ export function WorkspacePanel({
   const [setupFor, setSetupFor] = useState<string | null>(null);
   const [configureFor, setConfigureFor] = useState<string | null>(null);
   const [projects, setProjects] = useState<{ id: string; name: string }[] | null>(null);
+  const [homeLink, setHomeLink] = useState<HomeLink | null>(null);
   const [brief, setBrief] = useState('');
   // `useWorkspace` below holds `report` the same way, and for the same reason:
   // a caller's inline callback is a new function every render, and an effect
@@ -126,12 +132,39 @@ export function WorkspacePanel({
     };
   }, [activeOrganizationId]);
 
+  useEffect(() => {
+    setHomeLink(null);
+    if (!activeOrganizationId) return;
+    let live = true;
+    api<HomeLink>(`/workspace/organizations/${activeOrganizationId}/home-link`)
+      .then((link) => {
+        if (live) setHomeLink(link);
+      })
+      .catch((error) => reportRef.current(error));
+    return () => {
+      live = false;
+    };
+  }, [activeOrganizationId]);
+
   const disabled = busy || working;
   const active = view.active;
   const activeOrganization =
     active.kind === 'business'
       ? view.organizations.find((item) => item.organization.id === active.organizationId)
       : undefined;
+  const linkHome = (projectId: string | null) => {
+    if (!activeOrganization) return;
+    void run(async () => {
+      const homeId = projectId ?? (await api<{ projectId: string }>('/home/conversation', 'POST')).projectId;
+      const next = await api<WorkspaceView>(
+        `/workspace/organizations/${activeOrganization.organization.id}/projects`,
+        'POST',
+        { projectId: homeId },
+      );
+      setHomeLink({ projectId: homeId, state: 'linked-here' });
+      return next;
+    });
+  };
 
   if (setupFor)
     return (
@@ -291,6 +324,43 @@ export function WorkspacePanel({
               An owner or administrator sets this workspace up. You work in the configuration they
               have made.
             </p>
+          </section>
+        )}
+
+        {activeOrganization && homeLink && (
+          <section className="ws-section">
+            <h3>Home conversation</h3>
+            {homeLink.state === 'not-created' && (
+              activeOrganization.setup?.mayConfigure ? (
+                <Button tone="quiet" disabled={disabled} onClick={() => linkHome(null)}>
+                  Create and link Home to this business
+                </Button>
+              ) : (
+                <p className="caption ws-boundary">An owner or administrator can create and link Home.</p>
+              )
+            )}
+            {homeLink.state === 'linked-here' && (
+              <p className="caption">Home belongs to this business.</p>
+            )}
+            {homeLink.state === 'linked-elsewhere' && (
+              <p className="caption">Home is already linked to another business.</p>
+            )}
+            {homeLink.state === 'unlinked' && (
+              <>
+                <p className="caption">Home has no business owner, so paid Agent work there is unavailable.</p>
+                {activeOrganization.setup?.mayConfigure ? (
+                  <Button
+                    tone="quiet"
+                    disabled={disabled}
+                    onClick={() => linkHome(homeLink.projectId)}
+                  >
+                    Link Home to this business
+                  </Button>
+                ) : (
+                  <p className="caption ws-boundary">An owner or administrator can link Home.</p>
+                )}
+              </>
+            )}
           </section>
         )}
 

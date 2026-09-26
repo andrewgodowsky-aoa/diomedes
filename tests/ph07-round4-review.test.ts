@@ -293,6 +293,7 @@ const say = (target: Target, commandId: string, text: string) =>
   request(`/projects/${target.projectId}/threads/${target.threadId}/messages`, 'POST', { commandId, text, mode: 'auto', sources: [], consent: true });
 async function workingAws(name: string): Promise<Target> {
   const project = await api<Project>('/projects', 'POST', { name });
+  await api(`/workspace/organizations/${orgs.juniper}/output`, 'POST', { projectId: project.id });
   const thread = await api<Conversation>(`/projects/${project.id}/threads`, 'POST', {});
   await api(`/projects/${project.id}/threads/${thread.id}`, 'PUT', { engine: 'aws-bedrock' });
   await api(`/projects/${project.id}/cloud-sharing`, 'PUT', {
@@ -340,6 +341,7 @@ describe('G2 on the production fetch path, a turn reaches POST <host>/batch/ and
       await api('/account/sign-in', 'POST', { email: 'owner@juniper.test', password: FAUX_DEMO_PASSWORD, remember: false });
 
       const home = await api<Target>('/home/conversation', 'POST');
+      await api(`/workspace/organizations/${orgs.juniper}/output`, 'POST', { projectId: home.projectId });
       const managed = await say(home, 'r4-g2-home', 'How many loaves are on order?');
       expect(managed.status, await managed.clone().text()).toBe(200);
       const owned = await workingAws('Linen order');

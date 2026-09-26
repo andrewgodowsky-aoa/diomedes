@@ -30,6 +30,7 @@ import type { PostHogWireEvent } from '../server/observability/wire.js';
 import { createFauxCloud, FAUX_BACKEND_LABEL, type FauxCloud } from '../services/control-plane/src/faux/cloud.js';
 import { FAUX_DEMO_PASSWORD, seedDemo } from '../services/control-plane/src/faux/seed.js';
 import type { AccountStateView } from '../shared/accounts.js';
+import type { WorkspaceView } from '../shared/workspaces.js';
 import type { Conversation, Project } from '../shared/types.js';
 import { responsesEvents, sseResponse } from './fixtures/model-api-streams.js';
 
@@ -143,6 +144,9 @@ const signIn = (email: string) => api<AccountStateView>('/account/sign-in', 'POS
 
 async function workingAws(name = `${CANARY.project} linen`) {
   const project = await api<Project>('/projects', 'POST', { name });
+  const active = (await api<WorkspaceView>('/workspace')).active;
+  if (active.kind === 'business')
+    await api(`/workspace/organizations/${active.organizationId}/output`, 'POST', { projectId: project.id });
   const thread = await api<Conversation>(`/projects/${project.id}/threads`, 'POST', {});
   await api(`/projects/${project.id}/threads/${thread.id}`, 'PUT', { engine: 'aws-bedrock' });
   await api(`/projects/${project.id}/cloud-sharing`, 'PUT', {
@@ -327,6 +331,19 @@ describe('an internal synthetic trace, offline', () => {
 });
 
 describe('negative controls: zero events', () => {
+  test('the observation runtime never assigns an unlinked project to the selected business', async () => {
+    await open(memory([organizations.juniper]));
+    await signIn('owner@juniper.test');
+    const project = await api<Project>('/projects', 'POST', { name: 'Unlinked notes' });
+    expect(runtime()!.scopes.businessFor(project.id)).toBeNull();
+    expect(runtime()!.scopes.businessFor(null)).toBe(organizations.juniper);
+
+    await api(`/workspace/organizations/${organizations.juniper}/projects`, 'POST', {
+      projectId: project.id,
+    });
+    expect(runtime()!.scopes.businessFor(project.id)).toBe(organizations.juniper);
+  });
+
   test(
     'Free, a business with no plan, Personal, a spoofed body, and the host connection test',
     async () => {

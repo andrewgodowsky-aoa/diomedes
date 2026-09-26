@@ -15,9 +15,10 @@
  * keeps its admission until it next resumes. Per-call enforcement for
  * Diomedes-funded routes belongs to the company proxy, which sees every call.
  *
- * The business is the one the work belongs to: the organization that owns the
- * project, or else the active Business workspace. Personal work has no
- * business, so the Agent refuses it with the sentence the service would use.
+ * The business is the one that owns the project. An unbound project, including
+ * Home, has no payer and is refused. Projectless work uses the active Business
+ * workspace. Personal work has no business, so the Agent refuses it with the
+ * sentence the service would use.
  *
  * Diomedes-funded work (`managed`) also needs the business's included AI usage
  * ('managed-inference'). The host reads it from the same access as the Agent,
@@ -32,6 +33,7 @@ import type { AccountSessionService, AgentRouteKind, AgentSurface } from './sess
 
 export const AGENT_NOT_INCLUDED = 'AGENT_NOT_INCLUDED';
 export const AGENT_SIGN_IN_REQUIRED = 'SIGN_IN_REQUIRED';
+export const AGENT_PROJECT_UNLINKED = 'This project is not linked to one business. An owner or administrator must link it before the Nectovia Agent can work here. Nothing was sent.';
 const MANAGED_INFERENCE: AccessFeature = 'managed-inference';
 /** Why Diomedes-funded work is refused for a business whose plan has the Agent but not included usage. */
 export const MANAGED_USAGE_NOT_INCLUDED = `${FEATURE_LABELS[MANAGED_INFERENCE]} isn't part of this business's plan, so the Nectovia Agent can't answer here. Nothing was sent.`;
@@ -82,15 +84,22 @@ export class AccountAgentGate implements AgentGatePort {
 
   /** The business this work is for, or null for Personal. */
   organizationFor(projectId: string | null): string | null {
-    const owner = projectId ? this.workspaces.projectOwner(projectId) : null;
-    if (owner) return owner.organizationId;
+    if (projectId !== null) {
+      const owner = this.workspaces.projectOwner(projectId);
+      return owner?.organizationId ?? null;
+    }
     const active = this.workspaces.active();
     return active.kind === 'business' ? active.organizationId : null;
   }
 
   async check(work: AgentWork): Promise<AdmittedAgentWork> {
     const organizationId = this.organizationFor(work.projectId);
-    if (!organizationId) throw new EngineError(AGENT_NOT_INCLUDED, AGENT_PERSONAL_REASON, false);
+    if (!organizationId)
+      throw new EngineError(
+        AGENT_NOT_INCLUDED,
+        work.projectId === null ? AGENT_PERSONAL_REASON : AGENT_PROJECT_UNLINKED,
+        false,
+      );
     const routeKind = work.routeKind ?? 'byo';
     // Only where the access is known (it includes the Agent): a business this host has no answer
     // for is the service's to refuse, in its own words.

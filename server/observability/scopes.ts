@@ -275,12 +275,14 @@ export class ObservationScopes implements ObservationBinder {
 
   /**
    * The business an admission for this project is asked about, by the Agent gate's rule: the
-   * project's owner, else the active business. Null is Personal. `ask` reads it on the same turn
+   * project's owner, or the active business for projectless work. Null is unowned. `ask` reads it on the same turn
    * the gate does, before the round trip to the account service (PH-07 N-1).
    */
   businessFor(projectId: string | null): string | null {
     const authority = this.options.authority;
-    return authority.organizationFor ? authority.organizationFor(projectId) : authority.activeOrganizationId();
+    return authority.organizationFor
+      ? authority.organizationFor(projectId)
+      : projectId === null ? authority.activeOrganizationId() : null;
   }
 
   /**

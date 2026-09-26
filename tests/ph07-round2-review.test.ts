@@ -44,6 +44,7 @@ import { encodeEvent, toWireEvent, type PostHogWireEvent } from '../server/obser
 import { createFauxCloud, FAUX_BACKEND_LABEL, type FauxCloud } from '../services/control-plane/src/faux/cloud.js';
 import { FAUX_DEMO_PASSWORD, seedDemo } from '../services/control-plane/src/faux/seed.js';
 import type { AccountStateView } from '../shared/accounts.js';
+import type { WorkspaceView } from '../shared/workspaces.js';
 import { applicationOrigin, directOrigin } from '../shared/attribution.js';
 import type { HarnessEvent, HarnessRun, StepRecord } from '../shared/harness.js';
 import { supervisorOrigin } from '../shared/native-loop.js';
@@ -199,6 +200,9 @@ async function connectAws(capUsd = 5) {
 }
 async function workingAws(name = 'Linen order'): Promise<Target> {
   const project = await api<Project>('/projects', 'POST', { name });
+  const active = (await api<WorkspaceView>('/workspace')).active;
+  if (active.kind !== 'business') throw new Error('This fixture requires a selected business.');
+  await api(`/workspace/organizations/${active.organizationId}/output`, 'POST', { projectId: project.id });
   const thread = await api<Conversation>(`/projects/${project.id}/threads`, 'POST', {});
   await api(`/projects/${project.id}/threads/${thread.id}`, 'PUT', { engine: 'aws-bedrock' });
   await api(`/projects/${project.id}/cloud-sharing`, 'PUT', {
@@ -750,6 +754,7 @@ describe('T F-1 classifier and F-7 label', () => {
       await signIn('owner@juniper.test');
       await connectAws();
       const project = await api<Project>('/projects', 'POST', { name: 'Loop' });
+      await api(`/workspace/organizations/${orgs.juniper}/output`, 'POST', { projectId: project.id });
       await fs.writeFile(path.join(state(project.id).project.folder, 'order.md'), 'Order 1182: 100 napkins.\n');
       await api(`/projects/${project.id}/cloud-sharing`, 'PUT', {
         expectedVersion: 0,

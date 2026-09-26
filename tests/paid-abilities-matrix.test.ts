@@ -49,6 +49,7 @@ import { DEMO_ACCOUNTS, FAUX_DEMO_PASSWORD, seedDemo } from '../services/control
 import { MANAGED_USAGE_NOT_INCLUDED as GATEWAY_USAGE_NOT_INCLUDED } from '../services/control-plane/src/managed-inference';
 import { AGENT_NOT_INCLUDED_REASON } from '../shared/access';
 import type { AccountStateView } from '../shared/accounts';
+import type { WorkspaceView } from '../shared/workspaces';
 import type { Conversation, Project } from '../shared/types';
 import { responsesEvents, sseResponse } from './fixtures/model-api-streams.js';
 
@@ -214,6 +215,9 @@ async function connectAws() {
 /** A project of the signed-in person's business, with a thread on AWS and a task. */
 async function workOnAws(name: string, accountRoute: string) {
   const project = await api<Project>('/projects', 'POST', { name });
+  const active = (await api<WorkspaceView>('/workspace')).active;
+  if (active.kind !== 'business') throw new Error('This fixture requires a selected business.');
+  await api(`/workspace/organizations/${active.organizationId}/output`, 'POST', { projectId: project.id });
   const thread = await api<Conversation>(`/projects/${project.id}/threads`, 'POST', {});
   await api(`/projects/${project.id}/threads/${thread.id}`, 'PUT', { engine: 'aws-bedrock' });
   await api(`/projects/${project.id}/cloud-sharing`, 'PUT', {
@@ -232,6 +236,9 @@ type Work = Awaited<ReturnType<typeof workOnAws>>;
 const entry = {
   home: async (commandId: string) => {
     const binding = await api<{ projectId: string; threadId: string }>('/home/conversation', 'POST');
+    const active = (await api<WorkspaceView>('/workspace')).active;
+    if (active.kind !== 'business') throw new Error('This fixture requires a selected business.');
+    await api(`/workspace/organizations/${active.organizationId}/output`, 'POST', { projectId: binding.projectId });
     return request(`/projects/${binding.projectId}/threads/${binding.threadId}/messages`, 'POST', {
       commandId,
       text: 'How many loaves are on order?',

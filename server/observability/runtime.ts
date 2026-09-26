@@ -78,8 +78,10 @@ export function createObservation(input: {
       personId: () => session.personId(),
       activeOrganizationId,
       entitlement: (organizationId) => session.entitlement(organizationId),
-      // The Agent gate's own rule (agent-gate.ts `organizationFor`): the project's owner, else the active business.
-      organizationFor: (projectId) => (projectId ? workspaces.projectOwner(projectId)?.organizationId : null) ?? activeOrganizationId(),
+      // Match Agent admission: project work needs a recorded owner; only projectless work
+      // uses the selected business. An unowned project must never inherit its telemetry label.
+      organizationFor: (projectId) =>
+        projectId === null ? activeOrganizationId() : workspaces.projectOwner(projectId)?.organizationId ?? null,
     },
     now: input.options?.clock,
   });
