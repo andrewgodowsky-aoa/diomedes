@@ -153,20 +153,21 @@ describe('the managed gateway’s funding login', () => {
 });
 
 describe('without a readable FUNDING_DATABASE_URL', () => {
-  const cases: [string, unknown][] = [
-    ['unset', undefined],
-    ['blank', ''],
-    ['whitespace', '   '],
-    ['the Worker login', DATABASE_URL],
-    ['another database', FUNDING_URL.replace('/neondb?', '/otherdb?')],
-    ['another host', FUNDING_URL.replace('ep-fixture.', 'ep-elsewhere.')],
-    ['not Neon', 'postgresql://cp_funding:fixture_password@db.example.com/neondb?sslmode=require'],
-    ['without TLS', FUNDING_URL.replace('?sslmode=require', '')],
-    ['not a URL', 'cp_funding'],
-    ['not text', 5432],
+  // The third column is the rule the Worker logs, never the value.
+  const cases: [string, unknown, string][] = [
+    ['unset', undefined, 'not-set'],
+    ['blank', '', 'not-set'],
+    ['whitespace', '   ', 'not-set'],
+    ['the Worker login', DATABASE_URL, 'login'],
+    ['another database', FUNDING_URL.replace('/neondb?', '/otherdb?'), 'other-database'],
+    ['another host', FUNDING_URL.replace('ep-fixture.', 'ep-elsewhere.'), 'other-database'],
+    ['not Neon', 'postgresql://cp_funding:fixture_password@db.example.com/neondb?sslmode=require', 'host'],
+    ['without TLS', FUNDING_URL.replace('?sslmode=require', ''), 'sslmode'],
+    ['not a URL', 'cp_funding', 'not-a-url'],
+    ['not text', 5432, 'not-set'],
   ];
 
-  it.each(cases)('refuses every managed call with 503 route_unavailable when it is %s, before any statement or provider call', async (_name, funding) => {
+  it.each(cases)('refuses every managed call with 503 route_unavailable when it is %s, before any statement or provider call', async (_name, funding, rule) => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
     for (const request of [respond(), readAttempt()]) {
       const response = await handler()(request, envWith(funding));
@@ -176,7 +177,9 @@ describe('without a readable FUNDING_DATABASE_URL', () => {
     }
     expect(db.log).toEqual([]);
     expect(fetchSpy).not.toHaveBeenCalled();
-    expect(error.mock.calls.map((call) => String(call[0]))).toEqual(Array(2).fill(JSON.stringify({ event: 'managed-funding-database-unavailable' })));
+    const logged = error.mock.calls.map((call) => String(call[0]));
+    expect(logged).toEqual(Array(2).fill(JSON.stringify({ event: 'managed-funding-database-unavailable', setting: 'FUNDING_DATABASE_URL', rule })));
+    expect(logged.join('\n')).not.toContain('fixture_password');
     error.mockRestore();
   });
 

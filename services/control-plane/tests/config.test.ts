@@ -56,7 +56,7 @@ describe('FUNDING_DATABASE_URL, the managed gateway’s funding login', () => {
     ['an extra parameter', `${funding}&options=-csearch_path%3Dpublic`],
     ['a repeated parameter', `${funding}&sslmode=require`],
   ])('is null, never a refusal of the account routes, when %s', (_name, value) => {
-    expect(configuration({ ...validEnv, FUNDING_DATABASE_URL: value })).toEqual(base);
+    expect({ ...configuration({ ...validEnv, FUNDING_DATABASE_URL: value }), fundingProblem: undefined }).toEqual(base);
   });
   it('never lets the Worker run as the funding login', () => {
     expect(() => configuration({ ...validEnv, DATABASE_URL: funding })).toThrow();

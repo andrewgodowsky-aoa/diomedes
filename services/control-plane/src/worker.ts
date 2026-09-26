@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { configuration, identityFor, type AccountPool, type Configuration } from './config.js';
+import { ConfigurationError, configuration, identityFor, type AccountPool, type Configuration } from './config.js';
 import { AccountService, organizationInput, invitationInput, changeInput, acceptanceInput, codeInvitationInput, redeemCodeInput } from './account-service.js';
 import { AccountError } from './errors.js';
 import { readBytes } from './crypto.js';
@@ -85,7 +85,8 @@ const MANAGED_ATTEMPT = /^\/managed\/v1\/attempts\/([A-Za-z0-9][A-Za-z0-9._:-]{0
  * environment fails verification, so neither pool's sign-in reaches the other's routes.
  */
 export function createHandler(create: (config: Configuration, pool: AccountPool) => AccountService = (config, pool) => {
-  if (pool === 'staff' && !config.staffIdentity) console.error(JSON.stringify({ event: 'staff-identity-unavailable' }));
+  if (pool === 'staff' && !config.staffIdentity)
+    console.error(JSON.stringify({ event: 'staff-identity-unavailable', ...(config.staffProblem ?? { setting: 'STAFF_WORKOS_CLIENT_ID', rule: 'not-set' }) }));
   return new AccountService(new PostgresRepository(neonClientFactory(config.databaseUrl)), new WorkOSIdentityVerifier(identityFor(config, pool)));
 },
   // The usage read verifies membership first, then reads funding rows under the
@@ -103,7 +104,7 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
     // funding rows. Without that login the gateway refuses before it reads,
     // holds or sends anything; the account routes are unaffected.
     if (config.fundingDatabaseUrl === null) {
-      console.error(JSON.stringify({ event: 'managed-funding-database-unavailable' }));
+      console.error(JSON.stringify({ event: 'managed-funding-database-unavailable', setting: 'FUNDING_DATABASE_URL', rule: config.fundingProblem ?? 'not-set' }));
       throw new ManagedError(503, 'route_unavailable', ROUTE_UNAVAILABLE);
     }
     const funding = new PostgresFundingRepository(neonClientFactory(config.fundingDatabaseUrl));
@@ -144,6 +145,7 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
       }
       throw new ManagedError(404, 'not_found', 'This managed model action was not found.');
     } catch (error) {
+      if (error instanceof ConfigurationError) console.error(JSON.stringify({ event: 'managed-configuration-unavailable', ...error.problem }));
       return managedErrorResponse(error, headers);
     }
   }
@@ -248,7 +250,8 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
         const code = (error as { code?: unknown }).code;
         return json(typeof code === 'string' ? { error: error.message, code } : { error: error.message }, error.status);
       }
-      console.error(JSON.stringify({ event: 'control-plane-unavailable' }));
+      // Names the setting and rule a configuration refusal broke, never its value.
+      console.error(JSON.stringify({ event: 'control-plane-unavailable', ...(error instanceof ConfigurationError ? error.problem : {}) }));
       headers.set('Retry-After', '5');
       return json({ error: 'Account service is unavailable. Try again later.' }, 503);
     }
