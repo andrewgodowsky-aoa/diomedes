@@ -72,6 +72,11 @@ export interface VerificationOptions {
     command: string,
     notBefore: string | null,
   ) => Promise<{ outcome: 'passed' | 'failed' | 'incomplete'; sentence: string } | null>;
+  /**
+   * Optional metadata observation (server/observability/), told of each recorded verification
+   * after it is persisted and the store lock is released. It never changes the record.
+   */
+  observe?: (record: VerificationRecord, view: VerificationView) => void;
 }
 
 interface Read {
@@ -87,6 +92,7 @@ export class VerificationService {
   private readonly inFlight = new Map<string, Promise<VerificationView>>();
   private readonly reviewTimeoutMs: number;
   private readonly commandEvidence: VerificationOptions['commandEvidence'];
+  private readonly observe: VerificationOptions['observe'];
   constructor(
     private readonly store: Store,
     private readonly reviewer: VerificationReviewerAdapter | null,
@@ -94,6 +100,7 @@ export class VerificationService {
   ) {
     this.reviewTimeoutMs = options.reviewTimeoutMs ?? REVIEWER_TIMEOUT_MS;
     this.commandEvidence = options.commandEvidence;
+    this.observe = options.observe;
   }
 
   /** A command check judged on the pack's recorded run, or the not-run sentence where there is none. */
@@ -290,7 +297,8 @@ export class VerificationService {
 
     // 3. Under the lock again: record the evidence. If a file moved meanwhile,
     //    the projection reads it as uncertain; the record stays what was judged.
-    return this.store.locked(async () => {
+    let recorded: VerificationRecord | null = null;
+    const view = await this.store.locked(async () => {
       const state = this.store.state(projectId);
       const bound = new Map<string, string | null>();
       for (const result of prepared.results)
@@ -326,8 +334,16 @@ export class VerificationService {
       });
       entry.verification = record;
       await this.store.persist(state);
+      recorded = record;
       return this.view(projectId, sessionId);
     });
+    if (recorded && this.observe)
+      try {
+        this.observe(recorded, view);
+      } catch {
+        // Observation never changes a verification.
+      }
+    return view;
   }
 
   /** Every verification first confirms it is judging the bytes the run wrote. */

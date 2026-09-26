@@ -79,6 +79,50 @@ const rememberedSchema = z.object({
 type Remembered = z.infer<typeof rememberedSchema>;
 type RememberedEntry = Remembered['accounts'][number];
 
+/**
+ * The fields of a `GET /account/organizations/:id/access` answer this host reads. A 200 that is not
+ * JSON, `{}`, or another business's answer is no answer, exactly as a failed read is (PH-07 R3-1).
+ */
+const accessAnswerSchema = z.object({
+  organizationId: z.string(),
+  state: z.enum(['none', 'active', 'expired', 'revoked', 'unknown']),
+  planId: z.string().nullable(),
+  planLabel: z.string().nullable(),
+  features: z.array(z.string()),
+  agent: z.object({ included: z.boolean(), reason: z.string() }),
+  validFrom: z.string().nullable(),
+  validUntil: z.string().nullable(),
+  revision: z.number(),
+});
+
+/** The service's answer for this business, or null when it did not give one. */
+function accessAnswer(answer: unknown, organizationId: string): AccessView | null {
+  const parsed = accessAnswerSchema.safeParse(answer);
+  return parsed.success && parsed.data.organizationId === organizationId ? (answer as AccessView) : null;
+}
+
+/**
+ * The account service's own refusals of an Agent admission because the person is not an active
+ * member of the business: its `member()` and `membership()` checks
+ * (services/control-plane/src/account-service.ts), each a 403 whose JSON body carries the sentence.
+ * The service sends no code with them yet; `not_a_member` is accepted when it does. Only these are
+ * `not_a_member`. Any other 403 or 404 (an edge page, a Worker without the route, a proxy) is the
+ * service not answering (PH-07 R3-2).
+ */
+export const MEMBERSHIP_REFUSALS: ReadonlySet<string> = new Set([
+  'This Business workspace is unavailable to this person.',
+  'Current membership could not be established.',
+]);
+
+/** Whether a failed admission request is the account service's own membership refusal. */
+export function refusedMembership(error: unknown): boolean {
+  if (!(error instanceof ApiError) || error.status !== 403) return false;
+  return error.details.code === 'not_a_member' || MEMBERSHIP_REFUSALS.has(error.message);
+}
+
+/** A business the service no longer lists as the person's: known, and not included. */
+const NOT_A_MEMBER_REASON = 'You are no longer a member of this business, so nothing that needs its plan can start.';
+
 interface Current {
   personId: string;
   name: string;
@@ -387,10 +431,12 @@ export class AccountSessionService {
 
   private async loadAccess(current: Current) {
     const active = current.organizations.filter((row) => row.membership.state === 'active');
+    // A read that fails in transport, by status or in parsing leaves the business unanswered (null),
+    // never answered as inactive: `entitlement()` reports it as `unknown` (PH-07 R3-1).
     const answers = await Promise.all(
       active.map(async (row) => {
         try {
-          return [row.organization.id, await this.backend.client.access(current.accessToken, row.organization.id)] as const;
+          return [row.organization.id, accessAnswer(await this.backend.client.access(current.accessToken, row.organization.id), row.organization.id)] as const;
         } catch {
           return [row.organization.id, null] as const;
         }
@@ -433,10 +479,16 @@ export class AccountSessionService {
     return this.current?.personId ?? null;
   }
 
-  /** The last answer for one business. Null when the service knows nothing of it here. */
+  /**
+   * The last answer for one business. Null when the service knows nothing of it here. State
+   * `unknown` only when the service has not answered for a business the person is an active member
+   * of; a membership the service lists as not active is an answer, and reads as not included.
+   */
   entitlement(organizationId: string): EntitlementView | null {
     const current = this.current;
-    if (!current || !current.organizations.some((row) => row.organization.id === organizationId)) return null;
+    const row = current?.organizations.find((item) => item.organization.id === organizationId);
+    if (!current || !row) return null;
+    if (row.membership.state !== 'active') return { ...NO_ENTITLEMENT_VIEW, source: 'account-service', reason: NOT_A_MEMBER_REASON };
     const access = current.access.get(organizationId);
     if (!access)
       return {
@@ -499,7 +551,9 @@ export class AccountSessionService {
       this.admissions.delete(key);
       if (error instanceof ApiError && error.status === 401)
         return { admitted: false, code: SIGN_IN_REQUIRED, reason: error.message };
-      if (error instanceof ApiError && (error.status === 403 || error.status === 404))
+      // Only the service's own membership refusal says the person is not a member. A bare 403 or 404
+      // (an edge page, a Worker without this route) is the service not answering, below (PH-07 R3-2).
+      if (refusedMembership(error))
         return { admitted: false, code: 'not_a_member', reason: 'You are not a member of this business, so the Nectovia Agent cannot work for it.' };
       return {
         admitted: false,

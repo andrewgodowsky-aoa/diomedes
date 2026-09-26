@@ -137,6 +137,7 @@ import {
   type AgentGatePort,
   type AgentWork,
 } from '../accounts/agent-gate.js';
+import { refusalEndsObservation, type ObservationAsk, type ObservationBinder } from '../observability/scopes.js';
 
 function recordShimError(error: unknown): boolean {
   return (
@@ -455,6 +456,8 @@ export class EngineService {
    * includes the Agent. It runs before any model step, so a refusal is recorded as nothing sent.
    */
   agentGate?: AgentGatePort;
+  /** Optional metadata observation (server/observability/). Bound only after every check below passed. */
+  observation?: ObservationBinder;
   constructor(
     readonly root: string,
     deps: Partial<EngineServiceDeps> = {},
@@ -1990,11 +1993,29 @@ export class EngineService {
     const api = this.modelApi;
     if (!api)
       throw new EngineError('RUNTIME_UNAVAILABLE', 'This model-API route is not available in this process.', true);
+    // What observation measures this admission from, read on the same turn as the gate, before its
+    // round trip: the business a refusal is about, and the workspace a bind is compared against.
+    let ask: ObservationAsk | undefined;
+    try {
+      ask = this.observation?.ask(input.projectId ?? null);
+    } catch {
+      // Observation never changes an admission.
+    }
+    const refused = (error: unknown): never => {
+      try {
+        // Only a refusal of the business ends its observation; an outage does not.
+        if (refusalEndsObservation(error))
+          this.observation?.refused({ projectId: input.projectId ?? null, organizationId: ask?.organizationId ?? null });
+      } catch {
+        // Observation never changes a refusal.
+      }
+      throw error;
+    };
     // The Nectovia route is company-managed inference: its admission is the managed one, and it is
     // admitted on the business's plan and the published policy, never on a connection in Settings.
     if (route === NECTOVIA_ROUTE)
-      return this.admitNectovia(api, input, agent, await this.admitAgent(input, { ...agent, routeKind: 'managed' }));
-    await this.admitAgent(input, agent);
+      return this.admitNectovia(api, input, agent, await this.admitAgent(input, { ...agent, routeKind: 'managed' }).catch(refused), ask);
+    const admitted = await this.admitAgent(input, agent).catch(refused);
     const handle = await modelApiRoute(api, route);
     const { short, long } = handle.names;
     if (!handle.connected) throw new EngineError('ROUTE_REFUSED', `Connect ${long} in AI setup before sending.`, true);
@@ -2012,6 +2033,18 @@ export class EngineService {
         `The approved ${short} spend limit has no room left. Nothing was sent. The owner can review usage and approve more in AI setup.`,
         true,
       );
+    try {
+      this.observation?.bind({
+        admission: admitted,
+        rootJobId: agent?.rootJobId ?? null,
+        route,
+        connectionId: handle.connectionId,
+        model: input.model,
+        ask,
+      });
+    } catch {
+      // Observation never changes an admission.
+    }
     return {
       route,
       connectionId: handle.connectionId,
@@ -2033,6 +2066,7 @@ export class EngineService {
     input: Pick<TextRequest, 'model' | 'accountRoute'> & { projectId?: string; requestId?: string; threadId?: string | null },
     agent: Pick<AgentWork, 'surface' | 'rootJobId'> | undefined,
     admitted: AdmittedAgentWork | null,
+    ask?: ObservationAsk,
   ): Promise<ModelSessionAdmission> {
     const account = api.nectovia?.account;
     if (!account?.signedIn()) throw new EngineError(AGENT_SIGN_IN_REQUIRED, NECTOVIA_SIGN_IN, false);
@@ -2098,6 +2132,12 @@ export class EngineService {
         "Nectovia's safety limit on this computer for this business's month has been reached, so nothing was sent.",
         true,
       );
+    // Observed as managed because the gate admitted it as managed (`admitted.routeKind`), never by name.
+    try {
+      this.observation?.bind({ admission: admitted, rootJobId, route: NECTOVIA_ROUTE, connectionId: handle.connectionId, model: input.model, ask });
+    } catch {
+      // Observation never changes an admission.
+    }
     return {
       route: NECTOVIA_ROUTE,
       connectionId: handle.connectionId,

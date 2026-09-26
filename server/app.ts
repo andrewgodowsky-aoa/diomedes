@@ -6,6 +6,7 @@ import { AccountAgentGate, AGENT_NOT_INCLUDED, AGENT_SIGN_IN_REQUIRED } from './
 import { resolveAccountBackend, type AccountBackend } from './accounts/backend.js';
 import { mountAccountSessionRoutes } from './accounts/routes.js';
 import { AccountSessionService } from './accounts/session.js';
+import { createObservation, type ObservationOptions } from './observability/runtime.js';
 import { FAUX_DEMO_PASSWORD } from '../services/control-plane/src/faux/seed.js';
 import { ACCOUNT_VIEW_VERSION, type AccountsOffView } from '../shared/accounts.js';
 import { mountWorkspaceRoutes } from './workspace-routes.js';
@@ -343,6 +344,11 @@ interface AppOptions {
   accounts?: { env?: NodeJS.ProcessEnv; backend?: AccountBackend } | null;
   /** Tests replace the network below the SDK here. Production leaves it unset. */
   modelApiTransport?: typeof globalThis.fetch;
+  /**
+   * Metadata observation of admitted Agent work (server/observability/). Unset reads
+   * `NECTOVIA_OBSERVATION` once, whose default is off; null is off. Needs `accounts`.
+   */
+  observation?: ObservationOptions | null;
   /**
    * Whether AI setup shows the owner's own provider routes (AWS Bedrock, Azure OpenAI,
    * OpenRouter, Google Vertex AI) and the tier map. A launch-time authorization: read once, from
@@ -784,6 +790,10 @@ export async function createApp(options: AppOptions) {
         options.secretBox ?? null,
       )
     : null;
+  // Built before the account session starts, so a resumed sign-in is already seen by it.
+  const observation = accountSession
+    ? createObservation({ options: options.observation, env: process.env, build: running.version, session: accountSession, workspaces, settings: store })
+    : null;
   if (accountSession) {
     workspaces.connectAccounts({
       entitlement: (organizationId) => accountSession.entitlement(organizationId),
@@ -791,7 +801,11 @@ export async function createApp(options: AppOptions) {
     });
     // Signing in and out reach the registry under the store lock. Creating a business from a
     // locked workspace route mirrors its own answer, so this never nests inside that lock.
-    accountSession.onProjection((projection) => store.locked(() => workspaces.project(projection)));
+    // Observation then sees the sign-in, sign-out or change of person (PH-07 N-3).
+    accountSession.onProjection(async (projection) => {
+      await store.locked(() => workspaces.project(projection));
+      observation?.scopes.observeContext();
+    });
     await accountSession.init();
     const env = options.accounts?.env ?? process.env;
     const testAccount = env.DIOMEDES_TEST_MODE === '1' ? (env.DIOMEDES_TEST_ACCOUNT ?? '').trim() : '';
@@ -799,6 +813,7 @@ export async function createApp(options: AppOptions) {
       await accountSession.signIn({ email: testAccount, password: FAUX_DEMO_PASSWORD, remember: false });
     engines.agentGate = new AccountAgentGate(accountSession, workspaces);
   }
+  if (observation) engines.observation = observation.scopes;
   const agentGate = engines.agentGate instanceof AccountAgentGate ? engines.agentGate : null;
   // The owner's own provider routes in AI setup, authorized at launch like design authoring.
   const ownerRoutes = options.ownerRoutes ?? process.env.DIOMEDES_OWNER_ROUTES === '1';
@@ -1060,6 +1075,7 @@ export async function createApp(options: AppOptions) {
     // The one job an activated setup can run, as a harness procedure: the
     // workspace decides where it writes and refuses rather than guessing.
     weeklyBrief: AutomationService.host(workspaces, configuration),
+    observation: observation?.projector ?? null,
     // A Nectovia run is authorized on the business its project belongs to, while someone is signed in.
     nectoviaAccount: (projectId) => {
       if (!nectoviaAccount?.signedIn()) return null;
@@ -1098,6 +1114,7 @@ export async function createApp(options: AppOptions) {
   const engineAsks = new EngineAskNeeds(store);
   const exposure = new SpendExposure(store.dataDir);
   await exposure.init();
+  observation?.projector.attachLedger(exposure);
   // Parent-job caps (owner decision 2026-09-23): each job's tier is its thread's WorkStyle, else
   // the Settings default, read here by the host; the engine service holds every model-API call
   // to its job's cap as well as the connection's.
@@ -1361,6 +1378,7 @@ export async function createApp(options: AppOptions) {
     {
       reviewTimeoutMs: options.verificationReviewTimeoutMs,
       commandEvidence: (projectId, command, notBefore) => softwarePack.commandEvidence(projectId, command, notBefore),
+      observe: observation ? (record, view) => observation.projector.onVerification(record, view) : undefined,
     },
   );
   mountVerificationRoutes(app, store, verification);
@@ -5968,6 +5986,7 @@ export async function createApp(options: AppOptions) {
   app.locals.nativeWork = nativeWork;
   app.locals.changeReview = changeReview;
   app.locals.harness = harness;
+  app.locals.observation = observation;
   app.locals.connections = connections;
   app.locals.workControl = workControl;
   app.locals.durableControls = durableControls;
@@ -5996,6 +6015,7 @@ export async function createApp(options: AppOptions) {
     // A declared command already approved finishes and is recorded before the run store closes.
     await softwarePack.settled();
     engines.close();
+    await observation?.exporter.close();
     await accountSession?.backend.close();
     await login.close();
     await codexSetup.close();
