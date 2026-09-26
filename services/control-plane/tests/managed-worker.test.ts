@@ -13,6 +13,7 @@ const now = () => Date.parse('2026-09-25T12:00:00.000Z');
 const config: Configuration = {
   environment: 'local', origins: ['http://127.0.0.1:8791'], databaseUrl: 'faux://local-store', fundingDatabaseUrl: 'faux://local-store',
   identity: { clientId: 'faux', issuer: FAUX_ISSUER, audience: 'faux', apiKey: 'faux' },
+  staffIdentity: null,
 };
 
 async function setup() {

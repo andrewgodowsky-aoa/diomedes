@@ -102,7 +102,11 @@ plane tombstone, not provider-wide logout.
 
 Configuration must supply ENVIRONMENT (local/staging/production), comma-separated
 exact ALLOWED_ORIGINS, WORKOS_CLIENT_ID, WORKOS_ISSUER,
-WORKOS_TOKEN_AUDIENCE, and server-only WORKOS_API_KEY/DATABASE_URL. Origins have
+WORKOS_TOKEN_AUDIENCE, and server-only WORKOS_API_KEY/DATABASE_URL. The staff
+routes (/ops/*) accept bearers only from a second WorkOS environment, named by
+STAFF_WORKOS_CLIENT_ID and the server-only STAFF_WORKOS_API_KEY. It shares the issuer
+and audience, and must not reuse the customer client or key. Without it, /ops/*
+answers 503, and customer routes never read it. Origins have
 no path/trailing slash/wildcard; HTTP loopback is allowed only in local mode.
 The WorkOS resource audience needs its separately configured JWT template.
 DATABASE_URL must use a Neon hostname, sslmode=require and a non-owner
@@ -124,7 +128,9 @@ Operations app and, later, Nectovia. `wrangler.jsonc` already names the host,
 the issuer (`https://api.workos.com`) and the audience
 (`https://accounts.diomedes.net`). What needs the owner's accounts:
 
-1. **WorkOS** (staging environment, AuthKit on). Add the redirect URI
+1. **WorkOS, customers (Nectovia)** (the staging environment, AuthKit on). WorkOS
+   brands the sign-in page per environment, so this one carries the Nectovia
+   logo and colors (Branding). Add the redirect URI
    `http://127.0.0.1:47319/callback`; WorkOS allows `http://127.0.0.1` for
    native clients
    (workos.com/docs/reference/authkit/authentication/get-authorization-url/pkce).
@@ -135,6 +141,21 @@ the issuer (`https://api.workos.com`) and the audience
    the client ID (`client_...`, public) in `WORKOS_CLIENT_ID` in both `wrangler.jsonc` files (step 3), and run
    `npx wrangler secret put WORKOS_API_KEY` with the `sk_test_...` key. The
    people who sign in need verified emails.
+
+   **WorkOS, staff (Diomedes Systems).** Create a second environment
+   (workos.com/docs/authkit/environments) of the **staging** type, so that its key
+   is `sk_test_...`. Outside production the Worker refuses any other key. Turn on
+   AuthKit, brand it Diomedes Systems, and add the same redirect URI and the same
+   JWT template. Put its client ID in `STAFF_WORKOS_CLIENT_ID` in both
+   `wrangler.jsonc` files, and run `npx wrangler secret put STAFF_WORKOS_API_KEY
+   --name diomedes` with its key.
+   - Only the Operations app signs in here. `/ops/*` accepts no other bearer, and
+     `/account/*` and `/managed/*` accept no staff bearer, so a customer sign-up
+     can never reach the staff routes.
+   - A client or key shared with the customer environment is refused, and
+     `/ops/*` answers 503.
+   - Staff have their own WorkOS users here. Their user IDs differ from any
+     customer-side account they also hold.
 2. **Neon** (project small-wave-81999606). Make a database `accounts_staging`,
    then migrate it with the owner's direct (non-pooler) URL:
    `CP_MIGRATION_TARGET=staging CP_STAGING_EXPECTED_HOST=<ep-....neon.tech>
@@ -156,9 +177,10 @@ the issuer (`https://api.workos.com`) and the audience
    carry the same routes and vars, and `tests/deploy-config.test.ts` fails the
    build when they differ. The vars ride with the deploy, which is why the client
    ID lives in these files and not in the dashboard.
-4. **First admin.** Build the company Operations app (`OPS_WORKOS_CLIENT_ID=client_...
-   npm run package:company` in diomedes-ops) and sign in once. It refuses you
-   and shows your WorkOS user id. Then, with the same pins as the migration,
+4. **First admin.** Build the company Operations app with the **staff**
+   environment's client ID (`OPS_WORKOS_CLIENT_ID=client_... npm run
+   package:company` in diomedes-ops) and sign in once. It refuses you and shows
+   your WorkOS user id in the staff environment, which is the one to bootstrap. Then, with the same pins as the migration,
    run `npm run bootstrap-admin -- --subject user_...`. Sign in again as Admin
    and add everyone else from the Staff tab; each person signs in once first.
 

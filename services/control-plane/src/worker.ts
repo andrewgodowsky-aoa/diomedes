@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { configuration, type Configuration } from './config.js';
+import { configuration, identityFor, type AccountPool, type Configuration } from './config.js';
 import { AccountService, organizationInput, invitationInput, changeInput, acceptanceInput, codeInvitationInput, redeemCodeInput } from './account-service.js';
 import { AccountError } from './errors.js';
 import { readBytes } from './crypto.js';
@@ -78,9 +78,16 @@ export interface HandlerOptions {
 
 const MANAGED_ATTEMPT = /^\/managed\/v1\/attempts\/([A-Za-z0-9][A-Za-z0-9._:-]{0,127})$/;
 
-/** Factory injection is only a test seam; no environment flag enables fake identity/storage. */
-export function createHandler(create: (config: Configuration) => AccountService = (config) =>
-  new AccountService(new PostgresRepository(neonClientFactory(config.databaseUrl)), new WorkOSIdentityVerifier(config.identity)),
+/**
+ * Factory injection is only a test seam; no environment flag enables fake identity/storage.
+ * `pool` names the WorkOS environment the route's bearer must come from: /ops/* is staff
+ * (Diomedes Systems), everything else is customer (Nectovia). A bearer from the other
+ * environment fails verification, so neither pool's sign-in reaches the other's routes.
+ */
+export function createHandler(create: (config: Configuration, pool: AccountPool) => AccountService = (config, pool) => {
+  if (pool === 'staff' && !config.staffIdentity) console.error(JSON.stringify({ event: 'staff-identity-unavailable' }));
+  return new AccountService(new PostgresRepository(neonClientFactory(config.databaseUrl)), new WorkOSIdentityVerifier(identityFor(config, pool)));
+},
   // The usage read verifies membership first, then reads funding rows under the
   // organization's own tenant, as the Worker login, which may only read them.
   createUsage: (config: Configuration, accounts: AccountService) => Pick<UsageService, 'usage'> = (config, accounts) =>
@@ -129,11 +136,11 @@ export function createHandler(create: (config: Configuration) => AccountService 
       let match: RegExpExecArray | null;
       if (url.pathname === '/managed/v1/responses') {
         if (request.method !== 'POST') throw new ManagedError(405, 'method_not_allowed', 'Send this request as a POST.', { Allow: 'POST' });
-        return await createManaged(config, create(config)).respond(request, env, ctx);
+        return await createManaged(config, create(config, 'customer')).respond(request, env, ctx);
       }
       if ((match = MANAGED_ATTEMPT.exec(url.pathname))) {
         if (request.method !== 'GET') throw new ManagedError(405, 'method_not_allowed', 'Read an attempt with a GET.', { Allow: 'GET' });
-        return await createManaged(config, create(config)).attempt(request, match[1]);
+        return await createManaged(config, create(config, 'customer')).attempt(request, match[1]);
       }
       throw new ManagedError(404, 'not_found', 'This managed model action was not found.');
     } catch (error) {
@@ -167,9 +174,9 @@ export function createHandler(create: (config: Configuration) => AccountService 
       if (!authorization || authorization.length > 16_391 || !/^Bearer [A-Za-z0-9._~-]+$/.test(authorization))
         throw new AccountError(401, 'A verified bearer session is required.');
       const token = authorization.slice(7);
-      const accounts = create(config);
       const { pathname } = url;
       const method = request.method;
+      const accounts = create(config, pathname.startsWith('/ops/') ? 'staff' : 'customer');
       let match: RegExpExecArray | null;
 
       // --- customer account routes (original shapes unchanged) --------------------------
@@ -205,8 +212,12 @@ export function createHandler(create: (config: Configuration) => AccountService 
       if (pathname === '/account/routing-policy' && method === 'GET')
         return json(await createCommercial(config, accounts).routingPolicy(token));
 
-      // --- Diomedes staff (Operations app). Every route checks the staff role itself. -------
+      // --- Diomedes staff (Operations app). Bearers come from the staff environment only. --
+      // Every route but sign-out checks the staff role itself.
       if (pathname.startsWith('/ops/')) {
+        if (pathname === '/ops/session/revoke' && method === 'POST') {
+          await accounts.revokeLocalSession(token); return new Response(null, { status: 204, headers });
+        }
         const ops = createCommercial(config, accounts);
         if (pathname === '/ops/me' && method === 'GET') return json(await ops.me(token));
         if (pathname === '/ops/customers' && method === 'GET') return json(await ops.customers(token, url.searchParams.get('q') ?? ''));
@@ -252,10 +263,13 @@ export function createHandler(create: (config: Configuration) => AccountService 
  * - FUNDING_DATABASE_URL, the login cp_funding for the gateway's funding rows
  *   (scripts/funding-permissions.sql), on the same database as DATABASE_URL.
  *   Unset, blank or unreadable: every managed call answers 503 route_unavailable.
+ * And the staff environment's server key, STAFF_WORKOS_API_KEY, beside the var
+ * STAFF_WORKOS_CLIENT_ID (src/config.ts). Without both, /ops/* answers 503.
  */
 export type GatewayEnv = WorkerEnv & {
   BEDROCK_API_KEY?: string;
   FUNDING_DATABASE_URL?: string;
+  STAFF_WORKOS_API_KEY?: string;
   MANAGED_SPEND_CEILING_MICRO_USD?: string | number;
   MANAGED_MAX_OUTPUT_TOKENS?: string | number;
 };
