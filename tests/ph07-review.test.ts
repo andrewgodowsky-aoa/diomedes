@@ -688,7 +688,10 @@ describe('D failure isolation', () => {
       mode === 'off'
         ? null
         : mode === 'tiny-queue'
-          ? exporting([orgs.juniper], 'ok', { timer: true, limits: { queueEvents: 1, flushEveryMs: 20 } })
+          ? // The flush timer keeps its production interval, so the one slot stays full and later
+            // events are refused as queue-full until the flush below. A 20 ms timer emptied the slot
+            // between events whenever they came more than 20 ms apart, and then nothing was dropped.
+            exporting([orgs.juniper], 'ok', { timer: true, limits: { queueEvents: 1 } })
           : mode === 'budget-1'
             ? {
                 ...exporting([orgs.juniper], 'ok', { timer: true, limits: { flushEveryMs: 20 } }),
