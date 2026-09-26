@@ -2,6 +2,7 @@ import { _electron as electron, expect } from '@playwright/test';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { SMOKE_ACCOUNT, signInFromWindow, startSmokeAccountService } from './smoke-account-service.mjs';
 
 // Launch one packaged Diomedes executable, prove its local service answers, and quit.
 //
@@ -10,8 +11,11 @@ import path from 'node:path';
 // Platform-neutral: the release workflow runs it on the macOS package, where the
 // full Windows smoke (scripts/desktop-smoke.mjs) has nothing to drive yet. It
 // starts the app on a fresh profile, data and projects folder and an empty
-// CODEX_HOME, so it reads no account and touches no existing install. It then:
+// CODEX_HOME, so it touches no existing install, and points it at a local test
+// account service (scripts/smoke-account-service.mjs), never the deployed one. It then:
 //   - waits for the window to load the app from 127.0.0.1;
+//   - signs the service's seeded owner in from that window, because the app
+//     answers nothing but sign-in until someone signs in;
 //   - asks /api/health from inside that window, which is the only caller the
 //     service answers (desktop/main.mjs adds the per-launch session header), and
 //     requires ok and this package.json's version;
@@ -70,8 +74,11 @@ const exists = (file) =>
     },
   );
 
+let accounts;
 let desktop;
 try {
+  accounts = await startSmokeAccountService(root);
+  env.NECTOVIA_ACCOUNT_SERVICE = accounts.url;
   const started = Date.now();
   desktop = await electron.launch({ executablePath, env, cwd: root, timeout: 90_000 });
   const page = await desktop.firstWindow({ timeout: 90_000 });
@@ -80,6 +87,10 @@ try {
   const origin = new URL(page.url()).origin;
   proof.windowLoadedMs = Date.now() - started;
   proof.checks.push('The packaged app opened a window served from 127.0.0.1');
+
+  await signInFromWindow(page);
+  proof.signIn = { accountService: 'local test account service (faux cloud)', person: SMOKE_ACCOUNT.email };
+  proof.checks.push(`Signed in ${SMOKE_ACCOUNT.email} to a local test account service from inside the app window`);
 
   const health = await page.evaluate(async () => {
     const response = await fetch('/api/health');
@@ -134,6 +145,7 @@ try {
   process.exitCode = 1;
 } finally {
   if (desktop) await desktop.close().catch(() => {});
+  await accounts?.close();
   proof.finishedAt = new Date().toISOString();
   await fs.writeFile(path.join(root, 'proof.json'), `${JSON.stringify(proof, null, 2)}\n`);
   console.log(JSON.stringify(proof, null, 2));

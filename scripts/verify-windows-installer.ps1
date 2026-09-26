@@ -4,8 +4,9 @@ param(
   [Parameter(Mandatory=$true)][string]$Payload,
   # What the installed copy is run with. 'connections' is the full Connections
   # desktop/crash/restart smoke. 'launch' is scripts/packaged-launch-smoke.mjs:
-  # start the installed app on an isolated profile, /api/health from its window,
-  # 401 from outside it, quit cleanly. The release workflow uses 'launch' while
+  # start the installed app on an isolated profile, sign in to a local test
+  # account service, /api/health from its window, 401 from outside it, quit
+  # cleanly. The release workflow uses 'launch' while
   # the Connections event path is refused inside a packaged build (see
   # docs/implementation/2026-09-25-release-pipeline.md).
   [ValidateSet('connections', 'launch')][string]$RuntimeSmoke = 'connections'
@@ -113,7 +114,7 @@ try {
   $proof.runtime = Join-Path $runtimeProof 'proof.json'
   $proof.runtimeSmoke = $RuntimeSmoke
   if ($RuntimeSmoke -eq 'launch') {
-    $proof.checks += 'Installed executable launched on an isolated profile, answered /api/health inside its window, refused the same request from outside it, and quit cleanly'
+    $proof.checks += 'Installed executable launched on an isolated profile, signed in to a local test account service, answered /api/health inside its window, refused the same request from outside it, and quit cleanly'
   } else {
     $proof.checks += 'Installed executable passed full Connections desktop/crash/restart smoke with isolated profile'
   }

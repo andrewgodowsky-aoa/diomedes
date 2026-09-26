@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { checkPackagedRelease } from './packaged-release-check.mjs';
+import { SMOKE_ACCOUNT, signInFromWindow, startSmokeAccountService } from './smoke-account-service.mjs';
 
 const executablePath = path.resolve('release/Diomedes-win32-x64/nectovia.exe');
 await checkPackagedRelease({ executablePath });
@@ -25,6 +26,8 @@ function watchCsp(target) {
   });
 }
 const admissionProof = [];
+// The local test account service both launches sign in to (scripts/smoke-account-service.mjs).
+let accounts;
 let desktop;
 let url;
 // The window the smoke is driving. `api` asks the local service from inside it.
@@ -82,6 +85,10 @@ try {
   // missing executable fails with this smoke's own one line.
   // scripts/app-updates-desktop-smoke.mjs records exeSha256 the same way.
   const executableSha256 = createHash('sha256').update(await fs.readFile(executablePath)).digest('hex');
+  // The app answers nothing but sign-in until someone signs in, so both launches
+  // below use a local test account service and its seeded owner.
+  accounts = await startSmokeAccountService(root);
+  env.NECTOVIA_ACCOUNT_SERVICE = accounts.url;
   desktop = await electron.launch({ executablePath, env });
   const page = await desktop.firstWindow();
   current = page;
@@ -91,6 +98,8 @@ try {
   await page.waitForURL('http://127.0.0.1:*/');
   url = new URL(page.url()).origin;
   await expect(page.locator('meta[http-equiv="Content-Security-Policy"]')).toHaveCount(1);
+  await signInFromWindow(page);
+  await page.reload();
   await expect(page.getByRole('button', { name: 'Continue', exact: true })).toBeVisible();
   const project = await api('/projects/sample', 'POST', {});
   const { found } = await api(`/projects/${project.id}/plans/find-tasks`, 'POST', {
@@ -305,6 +314,9 @@ try {
   // the settings calls below and the receipt reads after them reach it through
   // this window; url is kept pointing at the live service.
   url = new URL(reopened.url()).origin;
+  // Nothing was remembered, so the restart signs the same owner in again.
+  await signInFromWindow(reopened);
+  await reopened.reload();
   // A restart is a launch: the window opens on Diomedes, on the Console, and the
   // retired Workbook's keys are still absent from the stored settings.
   await expect(reopened.locator('html[data-surface="console"]')).toHaveCount(1);
@@ -335,6 +347,8 @@ try {
         executableSha256,
         passed: true,
         startup,
+        // Both launches signed in to a local test account service, never the deployed one.
+        signIn: { accountService: 'local test account service (faux cloud)', person: SMOKE_ACCOUNT.email, launches: 2 },
         taskCount: found.length,
         fontSizes: { before, after },
         rendererNodeDisabled: true,
@@ -350,7 +364,7 @@ try {
     ),
   );
   console.log(
-    'PASS: packaged desktop, task board, font scaling, Console lost-response recovery, team threads and messages, renderer isolation, shutdown, and receipt persistence after restart.',
+    'PASS: packaged desktop signed in to a local test account service, task board, font scaling, Console lost-response recovery, team threads and messages, renderer isolation, shutdown, and receipt persistence after restart.',
   );
 } catch (error) {
   const message = error instanceof Error ? error.message.split(/\r?\n/, 1)[0] : String(error);
@@ -358,4 +372,5 @@ try {
   process.exitCode = 1;
 } finally {
   if (desktop) await desktop.close();
+  await accounts?.close();
 }
