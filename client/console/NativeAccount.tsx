@@ -1,10 +1,14 @@
 import { useEffect, useState } from 'react';
 import type { NativeAccountState } from '../../shared/native-auth';
+import { useAccount } from '../AccountGate';
 import { Button } from '../components';
 
 /** Account entry only; a WorkOS identity does not activate a Business workspace. */
 export function NativeAccount() {
   const bridge = window.__authkit_electron;
+  // Where the account service signs people in through WorkOS, this sign-in is the account itself,
+  // shown and signed out of in Settings, so it is not offered here a second time.
+  const signedInThroughBrowser = useAccount()?.state.backend.signIn === 'browser';
   const [state, setState] = useState<NativeAccountState>({
     status: 'unavailable',
     account: null,
@@ -46,7 +50,7 @@ export function NativeAccount() {
       removeError();
     };
   }, [bridge]);
-  if (!bridge) return null;
+  if (!bridge || signedInThroughBrowser) return null;
   const run = async (action: 'signIn' | 'signOut') => {
     setBusy(true);
     setError('');

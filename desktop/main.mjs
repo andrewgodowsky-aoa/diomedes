@@ -396,7 +396,7 @@ if (!app.requestSingleInstanceLock()) {
         if (fresh.reset) await session.defaultSession.clearStorageData();
       }
       await fs.mkdir(dataDir, { recursive: true });
-      const { claimDataFolder, createApp, serveClient } = await import('./server/app.mjs');
+      const { browserSignIn, claimDataFolder, createApp, serveClient } = await import('./server/app.mjs');
       // Bind an available loopback port before configuring the origin checks.
       server = createServer();
       await new Promise((resolve, reject) => {
@@ -424,6 +424,17 @@ if (!app.requestSingleInstanceLock()) {
             dialog.showErrorBox('Nectovia could not close for the update', error.message),
         }),
       };
+      // Native sign-in before the service: a packaged build signs customers in to the deployed
+      // account service through it (WorkOS in the system browser), and the service picks up a
+      // kept sign-in as it starts. The tokens stay in this process.
+      const signIn = browserSignIn({ env: process.env, packaged: app.isPackaged });
+      nativeAuth = createNativeAuth({
+        clientId: signIn?.clientId,
+        tokenIssuer: signIn?.issuers,
+        audience: signIn?.audience,
+        origin: `http://127.0.0.1:${port}`,
+        getWindow: () => window,
+      });
       service = await createApp({
         dataDir,
         projectRoot:
@@ -433,8 +444,9 @@ if (!app.requestSingleInstanceLock()) {
         updateOverrides: updates,
         secretBox,
         loopbackToken,
-        // Customer accounts: sign-in is required, and a kept sign-in is sealed by secretBox.
-        accounts: {},
+        // Customer accounts: sign-in is required, and a kept sign-in is sealed by secretBox, or
+        // by native sign-in for the deployed service.
+        accounts: { packaged: app.isPackaged, identity: signIn ? nativeAuth.identity : null },
         // The first launch of a new build clears the renderer's HTTP and code
         // caches once, before any window loads. Storage is not touched.
         updateReconcile: {
@@ -447,12 +459,6 @@ if (!app.requestSingleInstanceLock()) {
       serveClient(service, path.join(root, 'dist'));
       server.on('request', service);
       appUrl = `http://127.0.0.1:${port}`;
-      nativeAuth = createNativeAuth({
-        clientId: process.env.DIOMEDES_WORKOS_CLIENT_ID,
-        tokenIssuer: process.env.DIOMEDES_WORKOS_TOKEN_ISSUER,
-        origin: appUrl,
-        getWindow: () => window,
-      });
       nativeCallbacks.connect((callback) => nativeAuth.handleCallback(callback));
       await createMainWindow();
       if (supportsTitleBarOverlay(process.platform)) watchSettingsForTitleBar();

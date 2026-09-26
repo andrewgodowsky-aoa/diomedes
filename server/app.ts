@@ -4,6 +4,8 @@ import { mountPermissionRoutes } from './permission-routes.js';
 import { WorkspaceService } from './workspaces.js';
 import { AccountAgentGate, AGENT_NOT_INCLUDED, AGENT_SIGN_IN_REQUIRED } from './accounts/agent-gate.js';
 import { resolveAccountBackend, type AccountBackend } from './accounts/backend.js';
+import type { BrowserIdentity } from './accounts/browser-identity.js';
+import { browserSignIn } from './accounts/deployment.js';
 import { mountAccountSessionRoutes } from './accounts/routes.js';
 import { AccountSessionService } from './accounts/session.js';
 import { createObservation, type ObservationOptions } from './observability/runtime.js';
@@ -339,9 +341,11 @@ interface AppOptions {
    * Customer accounts (server/accounts/). The desktop app and the local service turn them on:
    * every /api route then needs a signed-in person, and the Nectovia Agent admits work only for
    * a business whose plan includes it. Unset, as embedded tests leave it, nothing changes.
-   * `DIOMEDES_TEST_ACCOUNT` signs one demo account in at start, in test mode only.
+   * `DIOMEDES_TEST_ACCOUNT` signs one demo account in at start, in test mode only. The desktop's
+   * packaged build says so with `packaged`, and signs people in to the deployed service through
+   * `identity`, its WorkOS sign-in in the system browser (server/accounts/deployment.ts).
    */
-  accounts?: { env?: NodeJS.ProcessEnv; backend?: AccountBackend } | null;
+  accounts?: { env?: NodeJS.ProcessEnv; backend?: AccountBackend; packaged?: boolean; identity?: BrowserIdentity | null } | null;
   /** Tests replace the network below the SDK here. Production leaves it unset. */
   modelApiTransport?: typeof globalThis.fetch;
   /**
@@ -782,12 +786,17 @@ export async function createApp(options: AppOptions) {
   // creates is a labelled local fixture rather than a hosted organization.
   const workspaces = new WorkspaceService(store);
   await workspaces.init();
+  const signInExpected = options.accounts?.identity
+    ? browserSignIn({ env: options.accounts.env, packaged: options.accounts.packaged })
+    : null;
   const accountSession = options.accounts
     ? new AccountSessionService(
         options.accounts.backend ??
-          (await resolveAccountBackend({ dataDir: store.dataDir, env: options.accounts.env })),
+          (await resolveAccountBackend({ dataDir: store.dataDir, env: options.accounts.env, packaged: options.accounts.packaged })),
         store.dataDir,
         options.secretBox ?? null,
+        undefined,
+        options.accounts.identity && signInExpected ? { identity: options.accounts.identity, expect: signInExpected } : null,
       )
     : null;
   // Built before the account session starts, so a resumed sign-in is already seen by it.

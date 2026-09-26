@@ -12,6 +12,11 @@
  * keeps no sign-in at all: the chooser lists the account and asks for the
  * password again. There is no plaintext fallback.
  *
+ * A service that signs people in through the browser (the deployed one) keeps
+ * no token here at all. The WorkOS sign-in is the desktop's (a BrowserIdentity,
+ * sealed in protected storage by native sign-in); its access token is the
+ * bearer, renewed and ended through it.
+ *
  * The account service decides every answer. This module caches the last
  * answer for display, and the Agent admission cache holds an admitted
  * decision for at most the minute the service allows.
@@ -23,6 +28,7 @@ import {
   SIGN_IN_REQUIRED,
   type AccountStateView,
   type AccountWorkspaceView,
+  type BrowserSignInView,
 } from '../../shared/accounts.js';
 import { AGENT_FEATURE, ROLE_CAPABILITIES, roleLabel, type AccessView } from '../../shared/access.js';
 import {
@@ -36,7 +42,9 @@ import type { SecretBox } from '../connection-secrets.js';
 import { ApiError } from '../paths.js';
 import { durableWrite, readJson } from '../store.js';
 import type { AccountBackend } from './backend.js';
+import { checkBrowserToken, type BrowserIdentity, type BrowserSession } from './browser-identity.js';
 import { ControlPlaneError, type RoutingPolicyAnswer, type TokenPair } from './client.js';
+import type { BrowserSignInConfig } from './deployment.js';
 
 /** What the workspace registry mirrors from the account service. */
 export interface AccountProjection {
@@ -179,7 +187,28 @@ interface Current {
   /** Businesses whose access read the service refused because the person is not a member. */
   notMember: Set<string>;
   policy: RoutingPolicyAnswer | null;
+  /** Signed in through the browser: the bearer is the WorkOS access token, and there is no refresh token here. */
+  browser: boolean;
+  /** The WorkOS user a browser sign-in is for; null for a password sign-in. */
+  subject: string | null;
 }
+
+/** The desktop's WorkOS sign-in, and what its tokens must be for the account service. */
+export interface BrowserSignIn {
+  identity: BrowserIdentity;
+  expect: BrowserSignInConfig;
+}
+
+const BROWSER_SENTENCES = {
+  notSetUp: "Sign-in through the browser isn't set up on this installation.",
+  noSafeStorage: "This computer can't keep a sign-in in protected storage, so you can't sign in here.",
+  waiting: 'Finish signing in in your browser.',
+  notOpened: "The browser couldn't open for sign-in. Try again.",
+  notForUs: "That sign-in isn't for the Nectovia account service. Sign in again.",
+  refused: "The Nectovia account service didn't accept that sign-in. Sign in again.",
+  unreachable: "You're signed in with WorkOS, but the Nectovia account service didn't answer. Check the connection, then try again.",
+  unchecked: "Your sign-in couldn't be checked with WorkOS just now. Check the connection, then try again.",
+} as const;
 
 const empty = (): Remembered => ({ v: 1, last: null, accounts: [] });
 
@@ -207,12 +236,17 @@ export class AccountSessionService {
   private rotating: Promise<void> | null = null;
   private readonly admissions = new Map<string, { decision: AgentDecision & { admitted: true }; until: number }>();
   private projector: (projection: AccountProjection | null) => Promise<void> = async () => {};
+  /** Why the last browser sign-in did not become a session, until the next attempt. */
+  private browserFailure: string | null = null;
+  private following: Promise<void> = Promise.resolve();
 
   constructor(
     readonly backend: AccountBackend,
     private readonly dataDir: string,
     private readonly box: SecretBox | null,
     private readonly now: () => number = Date.now,
+    /** The desktop's WorkOS sign-in, for a service that signs people in through the browser. */
+    private readonly browser: BrowserSignIn | null = null,
   ) {}
 
   private get file() {
@@ -246,6 +280,11 @@ export class AccountSessionService {
     // Resume the last kept sign-in silently. Any failure leaves the person signed out.
     const last = this.remembered.accounts.find((entry) => entry.personId === this.remembered.last && entry.backend === this.backendKey);
     if (last?.sealed && this.protectedStorage()) await this.resume(last.personId).catch(() => {});
+    // A browser sign-in is kept by the identity itself. The session follows it from now on.
+    if (this.browser) {
+      this.browser.identity.onChange(() => void this.followBrowser().catch(() => {}));
+      await this.followBrowser().catch(() => {});
+    }
   }
 
   private async save() {
@@ -273,6 +312,7 @@ export class AccountSessionService {
   // --- tokens -----------------------------------------------------------------
 
   private async rotate(current: Current) {
+    if (current.browser) return this.renewBrowser(current);
     let pair: TokenPair;
     try {
       pair = await this.backend.client.refresh(current.refreshToken);
@@ -292,6 +332,27 @@ export class AccountSessionService {
     current.refreshExpiresAt = pair.refreshExpiresAt;
     // Refresh tokens rotate: the sealed copy must follow, or the next start resumes with a spent one.
     if (current.remember) await this.keep(current, pair.refreshToken);
+  }
+
+  /** A browser sign-in's bearer, renewed through WorkOS. A session WorkOS no longer has ends here too. */
+  private async renewBrowser(current: Current) {
+    let session: BrowserSession | null;
+    try {
+      session = await this.browser!.identity.session({ fresh: true });
+    } catch {
+      // WorkOS could not be asked just now. The sign-in stands; this call does not go ahead.
+      throw new ApiError(503, BROWSER_SENTENCES.unchecked, { code: 'unreachable' });
+    }
+    const claims = session ? checkBrowserToken(session.accessToken, this.browser!.expect, this.now()) : null;
+    // Ended, no longer for this service, or now another WorkOS user's: this person's session ends.
+    if (!session || !claims || claims.subject !== current.subject) {
+      await this.end(current.personId, false, true);
+      throw new ApiError(401, 'Your sign-in ended. Sign in again.', { code: SIGN_IN_REQUIRED });
+    }
+    if (this.current !== current) return;
+    current.accessToken = session.accessToken;
+    current.accessExpiresAt = claims.expiresAt;
+    current.refreshExpiresAt = claims.expiresAt;
   }
 
   /** A live access token, rotated shortly before it expires. One rotation at a time. */
@@ -377,12 +438,19 @@ export class AccountSessionService {
       access: new Map(),
       notMember: new Set(),
       policy: null,
+      browser: false,
+      subject: null,
     };
+    await this.start(current, current.remember ? pair.refreshToken : null);
+  }
+
+  /** Make `current` the signed-in person: read their access, remember them, tell the registry. */
+  private async start(current: Current, sealedRefreshToken: string | null) {
     if (this.current && this.current.personId !== current.personId) await this.revokeQuietly(this.current);
     this.current = current;
     this.admissions.clear();
     await this.loadAccess(current);
-    await this.keep(current, current.remember ? pair.refreshToken : null);
+    await this.keep(current, sealedRefreshToken);
     await this.projector(this.projection('sign-in'));
   }
 
@@ -434,6 +502,8 @@ export class AccountSessionService {
   }
 
   private async revokeQuietly(current: Current) {
+    // A browser sign-in has no refresh token here: WorkOS ends it, through the identity.
+    if (current.browser) return;
     try {
       await this.backend.client.signOut(current.refreshToken);
     } catch {
@@ -459,7 +529,133 @@ export class AccountSessionService {
 
   async signOut() {
     if (this.current) await this.end(this.current.personId, true);
+    // Signing out of a browser sign-in ends the WorkOS session too, and clears the one this computer
+    // keeps. While a sign-in is still in the browser, this cancels it.
+    if (this.browser && this.browserMode()) {
+      this.browserFailure = null;
+      await this.browser.identity.signOut().catch(() => {});
+    }
     return this.state();
+  }
+
+  // --- signing in through the browser ------------------------------------------
+
+  private browserMode(): boolean {
+    return this.backend.view().signIn === 'browser';
+  }
+
+  /**
+   * Sign in through the system browser. A WorkOS sign-in this computer already keeps is used first;
+   * one the service would not take is ended, and the browser opens for a new one.
+   */
+  async signInWithBrowser(): Promise<AccountStateView> {
+    const browser = this.browser;
+    if (!browser || !this.browserMode()) throw new ApiError(409, BROWSER_SENTENCES.notSetUp, { code: 'browser_sign_in_unavailable' });
+    if (this.current) return this.state();
+    await this.followBrowser();
+    if (this.current || browser.identity.status().status !== 'signed-out') return this.state();
+    this.browserFailure = null;
+    try {
+      await browser.identity.begin();
+    } catch {
+      this.browserFailure = BROWSER_SENTENCES.notOpened;
+    }
+    return this.state();
+  }
+
+  /** Follow the WorkOS sign-in, one step at a time: begin the session when it has one, end it when it has none. */
+  private followBrowser(): Promise<void> {
+    const next = this.following.then(() => this.reconcileBrowser());
+    this.following = next.catch(() => {});
+    return next;
+  }
+
+  private async reconcileBrowser() {
+    const browser = this.browser;
+    if (!browser || !this.browserMode()) return;
+    let session: BrowserSession | null;
+    try {
+      session = await browser.identity.session();
+    } catch {
+      // A kept sign-in that could not be renewed just now is not a sign-out.
+      if (!this.current) this.browserFailure = BROWSER_SENTENCES.unchecked;
+      return;
+    }
+    if (!session) {
+      // WorkOS keeps no session here: it was signed out, from this screen or the account panel.
+      if (this.current?.browser) await this.end(this.current.personId, false);
+      return;
+    }
+    const current = this.current;
+    if (current?.browser) {
+      if (current.accessToken === session.accessToken) return;
+      // The same WorkOS user with a newer token: the person and their workspace stay as they are.
+      const claims = checkBrowserToken(session.accessToken, browser.expect, this.now());
+      if (claims && claims.subject === current.subject) {
+        current.accessToken = session.accessToken;
+        current.accessExpiresAt = claims.expiresAt;
+        current.refreshExpiresAt = claims.expiresAt;
+        return;
+      }
+    }
+    await this.beginBrowser(browser, session);
+  }
+
+  private async beginBrowser(browser: BrowserSignIn, session: BrowserSession) {
+    const claims = checkBrowserToken(session.accessToken, browser.expect, this.now());
+    if (!claims) {
+      // Nothing is sent with a token meant for anything else. Ending it lets the next attempt start clean.
+      this.browserFailure = BROWSER_SENTENCES.notForUs;
+      if (this.current?.browser) await this.end(this.current.personId, false);
+      await browser.identity.signOut().catch(() => {});
+      return;
+    }
+    let page: Awaited<ReturnType<AccountBackend['client']['session']>>;
+    try {
+      page = await this.backend.client.session(session.accessToken);
+    } catch (error) {
+      if (error instanceof ControlPlaneError && (error.status === 401 || error.status === 403)) {
+        // The service's refusal of this sign-in, in its own words when it has them (an unverified email).
+        this.browserFailure = error.status === 403 ? error.message : BROWSER_SENTENCES.refused;
+        if (this.current?.browser) await this.end(this.current.personId, false);
+        await browser.identity.signOut().catch(() => {});
+      } else if (!this.current) this.browserFailure = BROWSER_SENTENCES.unreachable;
+      return;
+    }
+    this.browserFailure = null;
+    await this.start(
+      {
+        personId: page.person.id,
+        name: page.person.name,
+        email: session.user.email,
+        createdAt: page.person.createdAt,
+        accessToken: session.accessToken,
+        accessExpiresAt: claims.expiresAt,
+        refreshToken: '',
+        refreshExpiresAt: claims.expiresAt,
+        // Kept by the identity, sealed in protected storage; nothing is sealed here.
+        remember: true,
+        signedInAt: this.at(),
+        organizations: page.organizations,
+        access: new Map(),
+        notMember: new Set(),
+        policy: null,
+        browser: true,
+        subject: claims.subject,
+      },
+      null,
+    );
+  }
+
+  private browserView(): BrowserSignInView | null {
+    if (!this.browserMode()) return null;
+    const identity = this.browser?.identity;
+    if (!identity) return { status: 'unavailable', message: BROWSER_SENTENCES.notSetUp };
+    const now = identity.status();
+    if (now.status === 'unavailable') return { status: 'unavailable', message: BROWSER_SENTENCES.noSafeStorage };
+    if (now.status === 'signing-in') return { status: 'waiting', message: BROWSER_SENTENCES.waiting };
+    const failure = this.browserFailure ?? (now.message || null);
+    return failure ? { status: 'failed', message: failure } : { status: 'ready', message: '' };
   }
 
   /** Remove an account from this computer's chooser, signing it out first when it is the current one. */
@@ -659,6 +855,18 @@ export class AccountSessionService {
 
   // --- the view ---------------------------------------------------------------
 
+  /**
+   * The view, for `GET /api/account`. A service named by address that has not answered is asked
+   * again first, so "Try again" can reach it, and a kept browser sign-in is picked up once it does.
+   */
+  async read(): Promise<AccountStateView> {
+    if (this.backend.view().kind === 'unavailable' && this.backend.recheck) {
+      await this.backend.recheck();
+      if (!this.current) await this.followBrowser().catch(() => {});
+    }
+    return this.state();
+  }
+
   state(): AccountStateView {
     const current = this.current;
     const workspaces: AccountWorkspaceView[] = (current?.organizations ?? [])
@@ -673,6 +881,7 @@ export class AccountSessionService {
     return {
       v: ACCOUNT_VIEW_VERSION,
       backend: this.backend.view(),
+      browser: this.browserView(),
       signedIn: current !== null,
       person: current ? { id: current.personId, name: current.name, email: current.email } : null,
       remember: current?.remember ?? false,

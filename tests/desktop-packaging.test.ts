@@ -4,11 +4,25 @@ import os from 'node:os';
 import path from 'node:path';
 // @ts-expect-error The desktop packaging entry is an executable JavaScript module.
 import { packageDesktop } from '../scripts/package-desktop.mjs';
+import { deploymentFromWrangler } from '../server/accounts/deployment.js';
 
 const roots: string[] = [];
 afterEach(async () => {
   for (const root of roots.splice(0)) await fs.rm(root, { recursive: true, force: true });
 });
+/** The deployment a packaged build signs customers in to, as the repository's wrangler.jsonc names it. */
+const FIXTURE_WRANGLER = `{
+  // Fixture: the Worker's own settings, and the account service it serves.
+  "name": "fixture-worker",
+  "routes": [{ "pattern": "accounts.fixture.invalid", "custom_domain": true }],
+  "vars": {
+    "ALLOWED_ORIGINS": "https://fixture.invalid",
+    "WORKOS_CLIENT_ID": "client_fixture_packaging",
+    "WORKOS_ISSUER": "https://api.workos.com",
+    "WORKOS_TOKEN_AUDIENCE": "https://accounts.fixture.invalid"
+  }
+}
+`;
 async function fixture() {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fd01-package-'));
   roots.push(root);
@@ -43,6 +57,7 @@ async function fixture() {
   for (const file of ['desktop/native-auth.ts', 'desktop/native-auth-preload.ts'])
     await fs.writeFile(path.join(root, file), 'export const fixture = true;');
   await fs.writeFile(path.join(root, 'package.json'), JSON.stringify({ version: '0.1.4' }));
+  await fs.writeFile(path.join(root, 'wrangler.jsonc'), FIXTURE_WRANGLER);
   await fs.writeFile(
     path.join(root, 'node_modules/electron/package.json'),
     JSON.stringify({ version: '44.2.0' }),
@@ -157,6 +172,46 @@ describe('FD01 same desktop packaging entry point', () => {
     const capture = main.indexOf('captureNativeAuthCallbacks(app, process.argv)');
     expect(capture).toBeGreaterThan(0);
     expect(capture).toBeLessThan(main.indexOf('.whenReady()'));
+  });
+
+  it('bakes the account service and WorkOS client from wrangler.jsonc into the service bundle', async () => {
+    const { deps, options } = await fixture();
+    await packageDesktop(options, deps);
+    const { define } = deps.build.mock.calls[0][0] as unknown as { define: Record<string, string> };
+    expect(define.DIOMEDES_BUNDLED).toBe('true');
+    // An esbuild define is an expression: here, one string literal holding the deployment's JSON.
+    const baked: string = JSON.parse(define.NECTOVIA_DEPLOYMENT);
+    expect(JSON.parse(baked)).toEqual({
+      routes: [{ pattern: 'accounts.fixture.invalid', custom_domain: true }],
+      vars: {
+        WORKOS_CLIENT_ID: 'client_fixture_packaging',
+        WORKOS_ISSUER: 'https://api.workos.com',
+        WORKOS_TOKEN_AUDIENCE: 'https://accounts.fixture.invalid',
+      },
+    });
+    // The running app reads it with its own reader, to the same deployment.
+    expect(deploymentFromWrangler(baked)).toEqual({
+      url: 'https://accounts.fixture.invalid',
+      workos: {
+        clientId: 'client_fixture_packaging',
+        issuer: 'https://api.workos.com',
+        audience: 'https://accounts.fixture.invalid',
+      },
+    });
+  });
+
+  it('packages nothing when wrangler.jsonc does not name the account service', async () => {
+    for (const edit of [
+      (root: string) => fs.rm(path.join(root, 'wrangler.jsonc')),
+      (root: string) => fs.writeFile(path.join(root, 'wrangler.jsonc'), FIXTURE_WRANGLER.replace(/"WORKOS_CLIENT_ID".*\n/, '')),
+    ]) {
+      const { root, deps, options } = await fixture();
+      await edit(root);
+      await expect(packageDesktop(options, deps)).rejects.toThrow('Nothing was packaged.');
+      expect(deps.build).not.toHaveBeenCalled();
+      expect(deps.packager).not.toHaveBeenCalled();
+      expect((await fs.readdir(root)).filter((entry) => entry.startsWith('.desktop-stage-'))).toEqual([]);
+    }
   });
 
   it('fails when the packager builds nothing, instead of reporting an empty release', async () => {

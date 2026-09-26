@@ -18,6 +18,51 @@ export const WINDOWS_NATIVE_RUNTIME_SHA256 = Object.freeze({
     '682cf7b351a871f3479b78fe3b7ea7348554de655bd98b0f322cef2d006a8d62',
 });
 
+/**
+ * The deployed account service and the WorkOS client a packaged build signs customers in to, read
+ * from the repository root's wrangler.jsonc (the file Workers Builds deploys on every merge) and
+ * baked into the service bundle, which server/accounts/deployment.ts reads with the same rules.
+ * Packaging stops when the file cannot say: a build that does not know its account service would
+ * sign nobody in.
+ */
+export async function readDeployment(root) {
+  let config;
+  try {
+    const text = await fs.readFile(path.join(root, 'wrangler.jsonc'), 'utf8');
+    // Whole-line `//` comments only, which is all the file uses.
+    config = JSON.parse(text.replace(/^\s*\/\/.*$/gm, ''));
+  } catch {
+    throw new Error('wrangler.jsonc could not be read, so this build would not know its account service. Nothing was packaged.');
+  }
+  const domains = (config?.routes ?? []).filter((route) => route?.custom_domain === true && typeof route.pattern === 'string');
+  const vars = config?.vars ?? {};
+  const workos = {
+    WORKOS_CLIENT_ID: vars.WORKOS_CLIENT_ID,
+    WORKOS_ISSUER: vars.WORKOS_ISSUER,
+    WORKOS_TOKEN_AUDIENCE: vars.WORKOS_TOKEN_AUDIENCE,
+  };
+  const httpsOrigin = (value) => {
+    try {
+      const url = new URL(value);
+      return url.protocol === 'https:' && url.pathname === '/' && !url.username && !url.password && !url.search && !url.hash;
+    } catch {
+      return false;
+    }
+  };
+  if (
+    domains.length !== 1 ||
+    !httpsOrigin(`https://${domains[0].pattern}`) ||
+    typeof workos.WORKOS_CLIENT_ID !== 'string' ||
+    !/^client_[A-Za-z0-9_-]{1,120}$/.test(workos.WORKOS_CLIENT_ID) ||
+    typeof workos.WORKOS_ISSUER !== 'string' ||
+    !httpsOrigin(workos.WORKOS_ISSUER) ||
+    typeof workos.WORKOS_TOKEN_AUDIENCE !== 'string' ||
+    !httpsOrigin(workos.WORKOS_TOKEN_AUDIENCE)
+  )
+    throw new Error('wrangler.jsonc does not name one account service domain and its WorkOS client. Nothing was packaged.');
+  return JSON.stringify({ routes: [{ pattern: domains[0].pattern, custom_domain: true }], vars: workos });
+}
+
 // Export the same entry point for offline packaging-boundary tests. Invoking
 // this script runs it once for the host target, unless `--platform`/`--arch`
 // or DIOMEDES_DESKTOP_PLATFORM/ARCH name another supported one.
@@ -152,6 +197,7 @@ export async function packageDesktop(options = {}, dependencies = {}) {
     { cwd: root, encoding: 'utf8', windowsHide: true },
   ).trim();
   const sourceStatus = dirty ? 'local-uncommitted' : 'committed';
+  const deployment = await readDeployment(root);
   // Each build gets an isolated staging folder; never copy app data or credentials.
   const stage = await fs.mkdtemp(path.join(root, '.desktop-stage-'));
   try {
@@ -195,7 +241,8 @@ export async function packageDesktop(options = {}, dependencies = {}) {
       platform: 'node',
       format: 'esm',
       target: 'node22',
-      define: { DIOMEDES_BUNDLED: 'true' },
+      // NECTOVIA_DEPLOYMENT: the account service and WorkOS client this build signs customers in to.
+      define: { DIOMEDES_BUNDLED: 'true', NECTOVIA_DEPLOYMENT: JSON.stringify(deployment) },
       banner: {
         js: "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);",
       },

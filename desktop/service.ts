@@ -4,6 +4,8 @@ export { createApp } from '../server/app.js';
 // The packaged app copies desktop/main.mjs verbatim and bundles only this file,
 // so the Electron main process reaches the shared lock through this re-export.
 export { claimDataFolder, DataFolderInUse } from '../server/lock.js';
+// And the WorkOS sign-in this build opens, read from the deployment baked into this bundle.
+export { browserSignIn } from '../server/accounts/deployment.js';
 
 export function serveClient(app: express.Express, directory: string) {
   app.use(express.static(directory));
