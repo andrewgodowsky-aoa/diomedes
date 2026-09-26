@@ -33,6 +33,7 @@ type SigningKey = z.infer<typeof jwkSchema>;
 const keysSchema = z.object({ keys: z.array(jwkSchema).min(1).max(32) });
 const userSchema = z.object({
   id: providerId,
+  email: z.email().max(320).optional(),
   email_verified: z.boolean(),
   first_name: z.string().max(200).nullable().optional(),
   last_name: z.string().max(200).nullable().optional(),
@@ -285,6 +286,8 @@ export class WorkOSIdentityVerifier implements IdentityVerifier {
       subject: claims.sub,
       sessionId: claims.sid,
       emailVerified: true,
+      // Verified above. Only an email-bound invitation code reads it.
+      email: user.data.email?.toLowerCase() ?? null,
       displayName:
         [user.data.first_name, user.data.last_name]
           .filter(Boolean)

@@ -875,5 +875,30 @@ export class CommercialService {
   }
 }
 
+/**
+ * Make the first Diomedes admin. Staff administration needs an admin to add
+ * anyone, so the first one is written here, by the database's operator, never by
+ * a route. It is refused once any active admin exists, and the person must have
+ * signed in once so their account row exists. Audited like any staff change.
+ */
+export async function bootstrapFirstAdmin(repository: CommercialRepository, personId: string, at: string): Promise<Operator> {
+  return repository.transaction(async (tx) => {
+    if (!(await tx.person(personId))) throw new AccountError(404, 'That person has no account yet. They sign in once first.');
+    const admin = (await tx.operators()).find((row) => row.state === 'active' && row.role === 'admin');
+    if (admin) throw new AccountError(409, 'An active admin already exists. That admin adds staff from the Operations app.');
+    const existing = await tx.operator(personId);
+    const row: Operator = existing
+      ? { ...existing, role: 'admin', state: 'active', updatedAt: at, updatedBy: personId }
+      : { v: 1, personId, role: 'admin', state: 'active', addedAt: at, addedBy: personId, updatedAt: at, updatedBy: personId };
+    await tx.saveOperator(row);
+    await tx.audit({
+      id: newId('audit'), at, actorPersonId: personId, actorRole: 'admin', action: existing ? 'staff.changed' : 'staff.added',
+      organizationId: null, targetKind: 'operator', targetId: personId,
+      reason: 'Bootstrap: the first admin, written by the database operator.', detail: { role: 'admin', bootstrap: true },
+    });
+    return row;
+  });
+}
+
 /** Staff roles, re-exported for adapters that seed the first admin. */
 export type { StaffRole };
