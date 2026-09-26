@@ -443,7 +443,9 @@ describe('a project thread on AWS through its tier', () => {
     await tier('efficient');
     const view = await readThreadRoute(project.id, thread.id);
     expect(view.route).toBe('aws-bedrock');
-    expect(view.refusal).toMatch(/^Efficient runs on AWS Bedrock .*not connected and turned on/);
+    expect(view.refusal).toBe(
+      'AWS Bedrock is unavailable right now. Please contact support and check that your account is connected and has credits remaining.',
+    );
     for (const mode of ['ask', 'plan', 'build', 'fix'] as const)
       expect(planThreadSend(view, mode)).toEqual({ kind: 'refuse', reason: view.refusal });
     // Nothing was sent: the client only read the route.
@@ -464,7 +466,7 @@ describe('a project thread on AWS through its tier', () => {
     // Focused maps to Google Vertex AI, which this build does not have yet: refused by that name.
     await tier('focused');
     const focused = await readThreadRoute(project.id, thread.id);
-    expect(focused.refusal).toMatch(/^Focused runs on Google Vertex AI/);
+    expect(focused.refusal).toMatch(/^Google Vertex AI is unavailable right now\./);
     expect(planThreadSend(focused, 'ask')).toMatchObject({ kind: 'refuse' });
   });
 });

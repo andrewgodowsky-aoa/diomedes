@@ -255,14 +255,14 @@ test('a tier whose mapped route is not connected, or has no model, is refused by
   await style(home, 'focused');
   const refused = await sendRaw(home, 'm-focused', 'Review the plan for next week.');
   expect(refused.status).toBe(409);
-  expect(await refused.text()).toContain('Connect Google Vertex AI in AI setup');
+  expect(await refused.text()).toContain('Google Vertex AI is unavailable right now. Please contact support');
   expect(seen).toHaveLength(0);
   // Thorough is meant for GPT-6 Sol, which is not qualified: it has no model until the owner
   // chooses one, and even a greeting is not answered by something else.
   await style(home, 'thorough');
   const unset = await sendRaw(home, 'm-hi', 'hello');
   expect(unset.status).toBe(409);
-  expect(await unset.text()).toContain('Choose the Thorough model in AI setup');
+  expect(await unset.text()).toContain('AWS Bedrock is unavailable right now. Please contact support');
   expect(seen).toHaveLength(0);
   // Once the owner maps Thorough to a model AWS serves, it runs there at Thorough's level.
   const settings = await api<{ services?: Record<string, unknown> }>('/settings');

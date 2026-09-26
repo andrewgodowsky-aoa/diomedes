@@ -316,7 +316,7 @@ describe('what is refused before anything is sent', () => {
     const input = turnInput({ accountRoute: view.connection!.accountRoute });
     await expect(service.modelSession('google-vertex', 'start', modelSessionRunId(project.id, input.requestId), input)).rejects.toMatchObject({
       code: 'ROUTE_REFUSED',
-      message: expect.stringMatching(/not the one Google Vertex AI was verified with/),
+      message: 'Google Vertex AI is unavailable right now. Please contact support and check that your account is connected and has credits remaining.',
     });
     expect(seen).toHaveLength(0);
     expect(mints).toBe(0);
@@ -416,7 +416,7 @@ describe('an API key from the billed project', () => {
     await approve(10);
     await service.modelApi!.secrets.put('google-vertex-1', 'AQ.a-different-key-put-behind-the-record-9');
     const input = turnInput({ accountRoute: view.connection!.accountRoute });
-    await expect(service.modelSession('google-vertex', 'start', modelSessionRunId(project.id, input.requestId), input)).rejects.toThrow(/not the one (that was )?connected/);
+    await expect(service.modelSession('google-vertex', 'start', modelSessionRunId(project.id, input.requestId), input)).rejects.toThrow(/^Google Vertex AI is unavailable right now\. Please contact support/);
     expect((await api<VertexConnectionView>('/ai/model-api/google-vertex')).connection?.credential.matches).toBe(false);
     expect(seen).toHaveLength(0);
 

@@ -1,6 +1,7 @@
 import type { EngineModel, Mode } from './types.js';
 import { isModelApiProvider, MODEL_API_PROVIDERS, type ModelApiProvider } from './model-api.js';
 import { isRoute, routeDisplayName } from './engines.js';
+import { routeUnavailable } from './route-unavailable.js';
 import {
   classifyTask,
   inferEffort,
@@ -19,9 +20,9 @@ import {
  * provider gave trial credits, so a tier maps to one of the company-account
  * model-API routes.
  *
- * A tier whose mapped route is not connected and turned on is refused by name,
- * with a pointer to AI setup. Nothing here falls back to another route, and so
- * to another payer.
+ * A tier whose mapped route cannot run is refused, naming the route's provider
+ * and pointing the person to support (`routeUnavailable`). This resolver never
+ * picks a different route for the tier on its own.
  */
 export const TIER_ROUTES = MODEL_API_PROVIDERS;
 
@@ -215,21 +216,21 @@ export function resolveTier(input: {
     return refuse(
       pinned
         ? `Owner testing pins every tier to ${name}, which is not connected and turned on. Connect it in AI setup or clear the pin under Advanced.`
-        : `${label} runs on ${name}${target.model ? ` (${target.model})` : ''}, which is not connected and turned on. Connect ${name} in AI setup. Nectovia does not move this work to another provider.`,
+        : routeUnavailable(name),
     );
   const model = target.model ?? (pinned ? (state.savedModel ?? null) : null);
   if (!model)
     return refuse(
       pinned
         ? `Owner testing pins every tier to ${name}, which has no model saved. Choose one in AI setup.`
-        : `${label} is meant for ${TIER_INTENT[style]} on ${name}, which is not qualified yet. Choose the ${label} model in AI setup.`,
+        : routeUnavailable(name),
     );
   const listed = state.models.find((entry) => entry.slug === model);
   if (state.models.length > 0 && !listed)
     return refuse(
       pinned
         ? `Owner testing pins ${model} on ${name}, which that connection does not offer. Change the pin in AI setup.`
-        : `${label} is set to ${model} on ${name}, which that connection does not offer. The owner can add it there or change ${label} in AI setup.`,
+        : routeUnavailable(name),
     );
   return {
     outcome: 'run',
