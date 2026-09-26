@@ -460,7 +460,7 @@ export function AzureOpenAISetup(props: CardProps) {
                     spellCheck={false}
                     value={entry.model}
                     onChange={(event) => change(index, { model: event.target.value })}
-                    placeholder="gpt-5.6-luna"
+                    placeholder="gpt-6-luna"
                   />
                 </label>
                 <label>

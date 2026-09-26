@@ -132,6 +132,7 @@ import type { ConnectionSecrets } from '../connection-secrets.js';
 import type { SpendExposure } from '../spend-exposure.js';
 import { NECTOVIA_ROUTE, type ModelApiRoute } from '../../shared/model-api.js';
 import { WORK_STYLE_LABELS } from '../../shared/work-style.js';
+import { routeUnavailable } from '../../shared/route-unavailable.js';
 import {
   AGENT_NOT_INCLUDED,
   AGENT_SIGN_IN_REQUIRED,
@@ -2023,15 +2024,17 @@ export class EngineService {
     const admitted = await this.admitAgent(input, agent).catch(refused);
     const handle = await modelApiRoute(api, route);
     const { short, long } = handle.names;
-    if (!handle.connected) throw new EngineError('ROUTE_REFUSED', `Connect ${long} in AI setup before sending.`, true);
+    // A customer cannot repair a provider connection, so each of these reads the same: the
+    // provider is unavailable, and support is the place to go (`routeUnavailable`).
+    if (!handle.connected) throw new EngineError('ROUTE_REFUSED', routeUnavailable(long), true);
     if (handle.accountRoute !== input.accountRoute)
       throw new EngineError('ACCOUNT_CHANGED', `The ${short} connection changed. Select it again before sending.`);
     if (!handle.serves(input.model))
-      throw new EngineError('ROUTE_REFUSED', `This ${short} connection serves ${handle.serving}, not ${input.model}.`, true);
+      throw new EngineError('ROUTE_REFUSED', routeUnavailable(long), true);
     if (handle.expiresAt && Date.parse(handle.expiresAt) <= Date.now() + 60_000)
-      throw new EngineError('ROUTE_REFUSED', `The saved ${short} key has expired. Enter a new key in AI setup.`, true);
+      throw new EngineError('ROUTE_REFUSED', routeUnavailable(long), true);
     const blocked = await handle.credential.check();
-    if (blocked) throw new EngineError('ROUTE_REFUSED', blocked, true);
+    if (blocked) throw new EngineError('ROUTE_REFUSED', routeUnavailable(long), true);
     if (!api.exposure.allowance(handle.connectionId) || api.exposure.summary(handle.connectionId).availableMicroUsd <= 0)
       throw new EngineError(
         'SPEND_LIMIT',
@@ -2780,7 +2783,7 @@ async function modelApiRoute(api: ModelApiServices, route: ModelApiRoute, work: 
             if (connection.credential.kind !== 'google-api-key') return (await mint(connection)).token;
             const key = await api.secrets.get(connection.id);
             if (secretFingerprint(key) !== connection.credential.fingerprint)
-              throw new EngineError('RUNTIME_UNAVAILABLE', 'The saved Google Vertex AI key is not the one that was connected. Connect it again in AI setup. Nothing was sent.', false);
+              throw new EngineError('RUNTIME_UNAVAILABLE', routeUnavailable('Google Vertex AI'), false);
             return key;
           },
         },

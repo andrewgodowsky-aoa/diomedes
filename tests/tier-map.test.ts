@@ -6,6 +6,7 @@
  */
 import { describe, expect, test } from 'vitest';
 import { AWS_LUNA_MODEL } from '../server/engines/aws-bedrock.js';
+import { routeUnavailable } from '../shared/route-unavailable.js';
 import { resolveTeamMemberModel, type TeamRouteCandidate } from '../shared/team-routes.js';
 import {
   DEFAULT_TIER_MAP,
@@ -147,14 +148,17 @@ describe('each tier resolves to its mapped route and model', () => {
 });
 
 describe('a tier that cannot run is refused by name, never moved', () => {
-  test('a mapped route that is not connected names the route and AI setup, and offers no other route', () => {
+  test('a mapped route that is not connected names its provider and support, and offers no other route', () => {
     // AWS and OpenRouter are ready; Focused's Google Vertex AI is not.
     const state = connected({ 'aws-bedrock': [model(AWS_LUNA_MODEL)], openrouter: [model('vendor/model-a')] });
     const refused = resolveTier({ style: 'focused', mode: 'ask', map: DEFAULT_TIER_MAP, state });
     expect(refused).toMatchObject({ outcome: 'refuse', route: 'google-vertex', model: 'gemini-3.8-flash' });
     expect(refused.reason).toBe(
-      'Focused runs on Google Vertex AI (gemini-3.8-flash), which is not connected and turned on. Connect Google Vertex AI in AI setup. Nectovia does not move this work to another provider.',
+      'Google Vertex AI is unavailable right now. Please contact support and check that your account is connected and has credits remaining.',
     );
+    // Customer text never names a model id, a setup screen or a claim about other providers.
+    expect(refused.reason).not.toContain('gemini-3.8-flash');
+    expect(refused.reason).not.toMatch(/AI setup|another provider/);
     const offline = resolveTier({
       style: 'efficient',
       mode: 'ask',
@@ -162,7 +166,8 @@ describe('a tier that cannot run is refused by name, never moved', () => {
       state: connected({ 'aws-bedrock': [model(AWS_LUNA_MODEL)] }, []),
     });
     expect(offline).toMatchObject({ outcome: 'refuse', route: 'aws-bedrock' });
-    expect(offline.reason).toContain('Connect AWS Bedrock in AI setup');
+    expect(offline.reason).toBe(routeUnavailable('AWS Bedrock'));
+    expect(offline.reason).not.toContain(AWS_LUNA_MODEL);
   });
 
   test('Thorough, meant for GPT-6 Sol, has no model until the owner chooses one', () => {
@@ -173,9 +178,7 @@ describe('a tier that cannot run is refused by name, never moved', () => {
       state: connected({ 'aws-bedrock': [model(AWS_LUNA_MODEL)] }),
     });
     expect(refused).toMatchObject({ outcome: 'refuse', model: null });
-    expect(refused.reason).toBe(
-      'Thorough is meant for GPT-6 Sol on AWS Bedrock, which is not qualified yet. Choose the Thorough model in AI setup.',
-    );
+    expect(refused.reason).toBe(routeUnavailable('AWS Bedrock'));
     expect(refused.reason).not.toContain(AWS_LUNA_MODEL);
   });
 
@@ -188,7 +191,8 @@ describe('a tier that cannot run is refused by name, never moved', () => {
       state: connected({ openrouter: [model('vendor/model-a', [])] }),
     });
     expect(refused).toMatchObject({ outcome: 'refuse', route: 'openrouter', model: 'vendor/model-b' });
-    expect(refused.reason).toContain('which that connection does not offer');
+    expect(refused.reason).toBe(routeUnavailable('OpenRouter'));
+    expect(refused.reason).not.toContain('vendor/model-b');
   });
 });
 
@@ -254,8 +258,7 @@ describe('team “Nectovia chooses” follows the tier map', () => {
     const refused = resolveTeamMemberModel({ role: 'member', style: 'focused', candidates: [aws], tiers: { map: DEFAULT_TIER_MAP } });
     expect(refused).toEqual({
       outcome: 'ask',
-      reason:
-        'Focused runs on Google Vertex AI (gemini-3.8-flash), which is not connected and turned on. Connect Google Vertex AI in AI setup. Nectovia does not move this work to another provider.',
+      reason: routeUnavailable('Google Vertex AI'),
     });
   });
 });
