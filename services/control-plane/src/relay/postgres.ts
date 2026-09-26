@@ -33,7 +33,7 @@ const generation = z.number().int().nonnegative().max(2_147_483_647);
 const memberRow = z.object({ record: recordSchemas.membership, generation });
 
 /**
- * Migration 006's table, and the account and access rows the relay rechecks by
+ * Migration 007's table, and the account and access rows the relay rechecks by
  * id. Same discipline as the other adapters: one request-owned client per
  * transaction, parameterized SQL, rows parsed through the record schemas, and
  * only the statements scripts/runtime-permissions.sql grants cp_runtime.

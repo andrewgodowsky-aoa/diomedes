@@ -9,7 +9,7 @@ import type { EntitlementSnapshot } from '../contract/contract.js';
 export type { FundingRepository as FundingRepositoryContract, FundingTransaction } from './funding.js';
 
 /**
- * The phone relay's device records (migration 006): `RelayRepository` /
+ * The phone relay's device records (migration 007): `RelayRepository` /
  * `RelayTransaction` in ./relay/service.ts, over the faux store and Postgres.
  */
 export type { RelayRepository as RelayRepositoryContract, RelayTransaction } from './relay/service.js';

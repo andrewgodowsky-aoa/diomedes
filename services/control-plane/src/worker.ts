@@ -218,8 +218,6 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
         return json(await createCommercial(config, accounts).access(token, match[1]));
       if ((match = route('/account/organizations/:id/agent-admissions').exec(pathname)) && method === 'POST')
         return json(await createCommercial(config, accounts).admitAgent(token, match[1], await body(request, agentAdmissionInput)));
-      if (pathname === '/account/routing-policy' && method === 'GET')
-        return json(await createCommercial(config, accounts).routingPolicy(token));
 
       // --- the phone relay: the computers a business's phones may reach ------------------
       if ((match = route('/relay/v1/organizations/:id/devices').exec(pathname)) && method === 'POST')
@@ -229,6 +227,9 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
       if ((match = route('/relay/v1/organizations/:id/devices/:id').exec(pathname)) && method === 'DELETE') {
         await createRelay(config, accounts, env).revoke(token, match[1], match[2]); return new Response(null, { status: 204, headers });
       }
+
+      if (pathname === '/account/routing-policy' && method === 'GET')
+        return json(await createCommercial(config, accounts).routingPolicy(token));
 
       // --- Diomedes staff (Operations app). Bearers come from the staff environment only. --
       // Every route but sign-out checks the staff role itself.

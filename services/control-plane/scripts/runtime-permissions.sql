@@ -8,6 +8,14 @@ GRANT SELECT, INSERT ON control_plane.persons, control_plane.external_subjects,
   control_plane.account_events TO cp_runtime;
 GRANT SELECT, INSERT, UPDATE ON control_plane.sessions, control_plane.organizations,
   control_plane.memberships, control_plane.invitations TO cp_runtime;
+-- 007 phone relay (2026-09-26): the device records the relay routes register,
+-- list and revoke, and the relay hub rechecks every 20 seconds. A revocation
+-- is a tombstone (revoked_at, revoked_by), never a DELETE, and last_seen_at is
+-- the only other column the Worker may move; the key and who registered it
+-- cannot be rewritten. The rechecks also read memberships, sessions and
+-- feature_grants, which this file grants too.
+GRANT SELECT, INSERT ON control_plane.relay_devices TO cp_runtime;
+GRANT UPDATE (revoked_at, revoked_by, last_seen_at) ON control_plane.relay_devices TO cp_runtime;
 -- B01 runtime does not yet consume the later commercial tables. A separately
 -- reviewed receiver role can receive only the inbox/customer privileges it needs.
 -- NC-2026-09-22.1: the Worker's usage projection only reads funding rows.
@@ -27,11 +35,3 @@ GRANT SELECT, INSERT, UPDATE ON control_plane.invitation_codes, control_plane.fe
   control_plane.organization_access, control_plane.route_entries, control_plane.operators TO cp_runtime;
 GRANT SELECT, INSERT ON control_plane.tier_policies, control_plane.ops_audit,
   control_plane.agent_admissions TO cp_runtime;
--- 006 phone relay (2026-09-26): the device records the relay routes register,
--- list and revoke, and the relay hub rechecks every 20 seconds. A revocation
--- is a tombstone (revoked_at, revoked_by), never a DELETE, and last_seen_at is
--- the only other column the Worker may move; the key and who registered it
--- cannot be rewritten. The rechecks also read memberships, sessions and
--- feature_grants, which are granted above.
-GRANT SELECT, INSERT ON control_plane.relay_devices TO cp_runtime;
-GRANT UPDATE (revoked_at, revoked_by, last_seen_at) ON control_plane.relay_devices TO cp_runtime;

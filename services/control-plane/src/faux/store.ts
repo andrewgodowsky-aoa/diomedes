@@ -62,7 +62,7 @@ export interface FauxCloudState {
   identity: FauxIdentityState;
   commercial: CommercialState;
   funding: FundingState;
-  /** Phone relay device records (migration 006). */
+  /** Phone relay device records (migration 007). */
   relay: RelayState;
 }
 
@@ -235,7 +235,7 @@ class FauxCommercialTransaction implements CommercialTransaction {
   }
 }
 
-/** Migration 006's rows over the draft, with the rules the table and its trigger enforce. */
+/** Migration 007's rows over the draft, with the rules the table and its trigger enforce. */
 class FauxRelayTransaction implements RelayTransaction {
   constructor(private readonly state: FauxCloudState) {}
   private find(organizationId: string, deviceId: string) {
