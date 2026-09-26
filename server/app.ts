@@ -6,6 +6,8 @@ import { AccountAgentGate, AGENT_NOT_INCLUDED, AGENT_SIGN_IN_REQUIRED } from './
 import { resolveAccountBackend, type AccountBackend } from './accounts/backend.js';
 import { mountAccountSessionRoutes } from './accounts/routes.js';
 import { AccountSessionService } from './accounts/session.js';
+import { mountPhoneRelayRoutes } from './relay/routes.js';
+import { PhoneRelayService } from './relay/service.js';
 import { createObservation, type ObservationOptions } from './observability/runtime.js';
 import { FAUX_DEMO_PASSWORD } from '../services/control-plane/src/faux/seed.js';
 import { ACCOUNT_VIEW_VERSION, type AccountsOffView } from '../shared/accounts.js';
@@ -798,6 +800,8 @@ export async function createApp(options: AppOptions) {
         options.secretBox ?? null,
       )
     : null;
+  // "Reach this computer from your phone": outbound only, and only while the setting is on.
+  const phoneRelay = accountSession ? new PhoneRelayService(accountSession, store.dataDir, options.secretBox ?? null) : null;
   // Built before the account session starts, so a resumed sign-in is already seen by it.
   const observation = accountSession
     ? createObservation({ options: options.observation, env: process.env, build: running.version, session: accountSession, workspaces, settings: store })
@@ -813,7 +817,11 @@ export async function createApp(options: AppOptions) {
     accountSession.onProjection(async (projection) => {
       await store.locked(() => workspaces.project(projection));
       observation?.scopes.observeContext();
+      void phoneRelay?.sync();
     });
+    // Signing out, switching accounts or forgetting one removes this computer's phone access first.
+    accountSession.onRelease((personId, signedIn) => phoneRelay!.release(personId, signedIn));
+    await phoneRelay?.init();
     await accountSession.init();
     const env = options.accounts?.env ?? process.env;
     const testAccount = env.DIOMEDES_TEST_MODE === '1' ? (env.DIOMEDES_TEST_ACCOUNT ?? '').trim() : '';
@@ -1359,6 +1367,7 @@ export async function createApp(options: AppOptions) {
     app.get('/api/account', (_req, res) => {
       res.json({ v: ACCOUNT_VIEW_VERSION, off: true } satisfies AccountsOffView);
     });
+  if (phoneRelay) mountPhoneRelayRoutes(app, phoneRelay);
   connections.mountRaw(app);
   app.use(express.json({ limit: '9mb' }));
   const teamService = mountTeamRoutes(app, store);
@@ -6058,6 +6067,7 @@ export async function createApp(options: AppOptions) {
     await softwarePack.settled();
     engines.close();
     await observation?.exporter.close();
+    await phoneRelay?.close();
     await accountSession?.backend.close();
     await login.close();
     await codexSetup.close();

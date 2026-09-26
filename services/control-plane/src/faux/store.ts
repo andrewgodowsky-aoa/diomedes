@@ -1,13 +1,14 @@
 /**
  * The faux cloud's database: one JSON document standing in for Neon.
  *
- * It implements the three repository seams the real adapters implement —
- * `AccountRepository`, `CommercialRepository` and `FundingRepository` — plus the
- * faux identity state, so every service above it runs its production code.
- * Swapping to Neon is choosing `PostgresRepository`, `PostgresCommercialRepository`
- * and `PostgresFundingRepository` instead; nothing above the seam changes.
+ * It implements the four repository seams the real adapters implement —
+ * `AccountRepository`, `CommercialRepository`, `FundingRepository` and
+ * `RelayRepository` — plus the faux identity state, so every service above it
+ * runs its production code. Swapping to Neon is choosing `PostgresRepository`,
+ * `PostgresCommercialRepository`, `PostgresFundingRepository` and
+ * `PostgresRelayRepository` instead; nothing above the seam changes.
  *
- * Every transaction (of any of the four kinds) takes one process-wide lock,
+ * Every transaction (of any of the five kinds) takes one process-wide lock,
  * works on a draft, validates the draft against the record schemas, and only
  * then replaces the state and writes the file (temp file + rename). A throw
  * leaves both the state and the file untouched. This models serializable
@@ -36,6 +37,7 @@ import {
 } from '../commercial.js';
 import { accountStateSchema, emptyAccountState, type AccountRepository, type AccountState, type AccountTransaction } from '../domain.js';
 import type { FundingRepository, FundingTransaction } from '../funding.js';
+import { RELAY_DEVICE_LIMIT, relayDeviceSchema, type RelayDevice, type RelayRepository, type RelayTransaction } from '../relay/service.js';
 import { StateTransaction } from '../state-transaction.js';
 import { emptyFundingState, StateFundingTransaction, type FundingState } from './funding-state.js';
 import { emptyFauxIdentity, fauxIdentityStateSchema, type FauxIdentityState } from './identity.js';
@@ -60,6 +62,12 @@ export interface FauxCloudState {
   identity: FauxIdentityState;
   commercial: CommercialState;
   funding: FundingState;
+  /** Phone relay device records (migration 007). */
+  relay: RelayState;
+}
+
+export interface RelayState {
+  devices: RelayDevice[];
 }
 
 /** The append-only logs keep their newest entries up to this many. */
@@ -75,6 +83,8 @@ const commercialSchema = z.strictObject({
   admissions: z.array(admissionRecordSchema).max(LOG_LIMIT),
 });
 
+const relaySchema = z.strictObject({ devices: z.array(relayDeviceSchema).max(100_000) });
+
 export function emptyFauxCloudState(now = new Date().toISOString()): FauxCloudState {
   return {
     v: 1,
@@ -85,6 +95,7 @@ export function emptyFauxCloudState(now = new Date().toISOString()): FauxCloudSt
     identity: emptyFauxIdentity(),
     commercial: { grants: [], accessRevisions: {}, routes: [], policies: [], operators: [], audit: [], admissions: [] },
     funding: emptyFundingState(),
+    relay: { devices: [] },
   };
 }
 
@@ -102,6 +113,8 @@ function validate(state: FauxCloudState): FauxCloudState {
     identity: fauxIdentityStateSchema.parse(state.identity),
     commercial: commercialSchema.parse(state.commercial) as CommercialState,
     funding: state.funding,
+    // Stores written before the phone relay existed have no devices yet.
+    relay: relaySchema.parse((state as Partial<FauxCloudState>).relay ?? { devices: [] }),
   };
 }
 
@@ -222,18 +235,66 @@ class FauxCommercialTransaction implements CommercialTransaction {
   }
 }
 
+/** Migration 007's rows over the draft, with the rules the table and its trigger enforce. */
+class FauxRelayTransaction implements RelayTransaction {
+  constructor(private readonly state: FauxCloudState) {}
+  private find(organizationId: string, deviceId: string) {
+    return this.state.relay.devices.find((row) => row.organizationId === organizationId && row.deviceId === deviceId);
+  }
+  async lockOrganization() {}
+  async devices(organizationId: string) {
+    return this.state.relay.devices
+      .filter((row) => row.organizationId === organizationId && row.revokedAt === null)
+      .sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : a.deviceId < b.deviceId ? -1 : 1))
+      .slice(0, RELAY_DEVICE_LIMIT + 1);
+  }
+  async device(organizationId: string, deviceId: string) {
+    return this.find(organizationId, deviceId);
+  }
+  async insertDevice(row: RelayDevice) {
+    const checked = relayDeviceSchema.parse(row);
+    if (this.state.relay.devices.some((old) => old.deviceId === checked.deviceId)) throw new Error('A relay device id is used once.');
+    const organization = this.state.accounts.organizations.find((item) => item.record.id === checked.organizationId);
+    if (!organization || organization.record.tenantId !== checked.tenantId || !this.state.accounts.persons.some((item) => item.id === checked.personId))
+      throw new Error('A relay device belongs to an existing business and person.');
+    this.state.relay.devices.push(checked);
+  }
+  async revokeDevice(organizationId: string, deviceId: string, at: string, by: string) {
+    const row = this.find(organizationId, deviceId);
+    if (!row || row.revokedAt !== null) return false;
+    row.revokedAt = at;
+    row.revokedBy = by;
+    return true;
+  }
+  async touchDevice(organizationId: string, deviceId: string, at: string) {
+    const row = this.find(organizationId, deviceId);
+    if (row && row.revokedAt === null && (row.lastSeenAt === null || row.lastSeenAt < at)) row.lastSeenAt = at;
+  }
+  async member(organizationId: string, personId: string) {
+    return this.state.accounts.memberships.find((row) => row.record.organizationId === organizationId && row.record.personId === personId);
+  }
+  async grants(organizationId: string) {
+    return this.state.commercial.grants.filter((row) => row.organizationId === organizationId);
+  }
+  async session(issuer: string, sessionId: string) {
+    return this.state.accounts.sessions.find((row) => row.issuer === issuer && row.sessionId === sessionId);
+  }
+}
+
 export class FauxCloudStore {
   private state: FauxCloudState;
   private tail: Promise<void> = Promise.resolve();
   readonly accounts: AccountRepository;
   readonly commercial: CommercialRepository;
   readonly funding: FundingRepository;
+  readonly relay: RelayRepository;
 
   private constructor(private readonly file: string | null, state: FauxCloudState) {
     this.state = state;
     this.accounts = { transaction: (action) => this.run((draft) => action(new StateTransaction(draft.accounts)) as Promise<never>) };
     this.commercial = { transaction: (action) => this.run((draft) => action(new FauxCommercialTransaction(draft))) };
     this.funding = { transaction: (action) => this.run((draft) => action(new StateFundingTransaction(draft.funding))) };
+    this.relay = { transaction: (action) => this.run((draft) => action(new FauxRelayTransaction(draft))) };
   }
 
   /** Open (or create) a store. `file: null` keeps it in memory, for tests. */

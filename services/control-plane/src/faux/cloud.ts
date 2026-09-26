@@ -43,6 +43,7 @@ import {
 } from '../managed-providers.js';
 import { createHandler } from '../worker.js';
 import { readBytes } from '../crypto.js';
+import { RelayAuthority, RelayService } from '../relay/service.js';
 import { accountId } from '../domain.js';
 import { WorkOSIdentityVerifier } from '../identity-workos.js';
 import {
@@ -54,6 +55,7 @@ import {
   signInInput,
   signUpInput,
 } from './identity.js';
+import { FauxRelayHubs } from './relay-hubs.js';
 import { FauxCloudStore } from './store.js';
 import { createWorkOSStandIn, WORKOS_ISSUER, type WorkOSStandIn } from './workos-standin.js';
 
@@ -105,6 +107,10 @@ export interface FauxCloud {
   readonly commercial: CommercialService;
   readonly funding: FundingService;
   readonly managed: ManagedInferenceService;
+  /** The phone relay's device records, over this store. */
+  readonly relay: RelayService;
+  /** The phone relay's hubs, in this process. The faux server hands them its WebSocket upgrades. */
+  readonly relayHubs: FauxRelayHubs;
   /** Which provider answers managed calls. */
   readonly provider: 'scripted' | 'live';
   /** Which provider answers typed evaluations. */
@@ -201,10 +207,12 @@ export async function createFauxCloud(options: FauxCloudOptions): Promise<FauxCl
     now,
     idleTimeoutMs: options.managed?.idleTimeoutMs,
   });
+  const relayHubs = new FauxRelayHubs(new RelayAuthority(store.relay), now);
+  const relay = new RelayService(accounts, store.relay, relayHubs, { now });
   const worker = createHandler(
     () => accounts,
     () => new UsageService(accounts, funding),
-    { configuration: () => config, createCommercial: () => commercial, createManaged: () => managed },
+    { configuration: () => config, createCommercial: () => commercial, createManaged: () => managed, createRelay: () => relay },
   );
 
   const headers = () => new Headers({ 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'X-Nectovia-Backend': 'faux' });
@@ -275,6 +283,8 @@ export async function createFauxCloud(options: FauxCloudOptions): Promise<FauxCl
     commercial,
     funding,
     managed,
+    relay,
+    relayHubs,
     provider: live ? 'live' : 'scripted',
     evaluationProvider: liveEvaluations ? 'live' : 'scripted',
     idle: () => managed.idle(),

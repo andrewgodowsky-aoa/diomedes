@@ -57,6 +57,8 @@ export type AgentDecision =
 const MAX_REMEMBERED = 12;
 const REFRESH_MARGIN_MS = 60_000;
 const ADMISSION_CACHE_MAX_MS = 60_000;
+/** The longest signing out waits for the phone relay to remove this computer's records. */
+const RELEASE_WAIT_MS = 5_000;
 
 const rememberedSchema = z.object({
   v: z.literal(1),
@@ -165,6 +167,7 @@ export class AccountSessionService {
   private rotating: Promise<void> | null = null;
   private readonly admissions = new Map<string, { decision: AgentDecision & { admitted: true }; until: number }>();
   private projector: (projection: AccountProjection | null) => Promise<void> = async () => {};
+  private releaser: (personId: string, signedIn: boolean) => Promise<void> = async () => {};
 
   constructor(
     readonly backend: AccountBackend,
@@ -187,6 +190,27 @@ export class AccountSessionService {
   /** The workspace registry's hook. Called outside any store lock. */
   onProjection(projector: (projection: AccountProjection | null) => Promise<void>) {
     this.projector = projector;
+  }
+
+  /**
+   * The phone relay's hook: a person's sign-in on this computer is ending on purpose (signing out,
+   * switching accounts or forgetting the account). With `signedIn` the service can still be called
+   * as them. A sign-in the service ended does not call it.
+   */
+  onRelease(releaser: (personId: string, signedIn: boolean) => Promise<void>) {
+    this.releaser = releaser;
+  }
+
+  /** Waits for the hook at most RELEASE_WAIT_MS, so a slow service never holds up signing out. */
+  private async release(personId: string, signedIn: boolean) {
+    let timer: NodeJS.Timeout | undefined;
+    await Promise.race([
+      this.releaser(personId, signedIn).catch(() => {}),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, RELEASE_WAIT_MS);
+      }),
+    ]);
+    clearTimeout(timer);
   }
 
   protectedStorage(): boolean {
@@ -335,7 +359,12 @@ export class AccountSessionService {
       access: new Map(),
       policy: null,
     };
-    if (this.current && this.current.personId !== current.personId) await this.revokeQuietly(this.current);
+    const previous = this.current;
+    if (previous && previous.personId !== current.personId) {
+      // Before the previous sign-in is revoked, while the service still answers as that person.
+      await this.release(previous.personId, true);
+      await this.revokeQuietly(previous);
+    }
     this.current = current;
     this.admissions.clear();
     await this.loadAccess(current);
@@ -401,7 +430,10 @@ export class AccountSessionService {
   private async end(personId: string, revoke: boolean, deferProjection = false) {
     const current = this.current;
     if (current && current.personId === personId) {
-      if (revoke) await this.revokeQuietly(current);
+      if (revoke) {
+        await this.release(personId, true);
+        await this.revokeQuietly(current);
+      }
       this.current = null;
       this.admissions.clear();
     }
@@ -422,6 +454,7 @@ export class AccountSessionService {
   /** Remove an account from this computer's chooser, signing it out first when it is the current one. */
   async forget(personId: string) {
     if (this.current?.personId === personId) await this.end(personId, true);
+    else await this.release(personId, false);
     this.remembered.accounts = this.remembered.accounts.filter((item) => !(item.personId === personId && item.backend === this.backendKey));
     await this.save();
     return this.state();

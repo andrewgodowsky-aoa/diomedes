@@ -25,6 +25,12 @@ import type { WorkerEnv } from '../worker-configuration.js';
 import { accountId } from './domain.js';
 import { ManagedError, ManagedInferenceService, ROUTE_UNAVAILABLE, managedErrorResponse, managedHeaders, type ManagedContext } from './managed-inference.js';
 import { bedrockResponsesCaller } from './managed-providers.js';
+import { RelayService, registerDeviceInput } from './relay/service.js';
+import { PostgresRelayRepository } from './relay/postgres.js';
+import { durableObjectHubs } from './relay/durable-object.js';
+
+/** The phone relay's per-business hub, bound as RELAY_HUB (both wrangler.jsonc files). */
+export { RelayHub } from './relay/durable-object.js';
 
 async function body<T>(request: Request, schema: z.ZodType<T>): Promise<T> {
   if (request.headers.get('content-type')?.split(';')[0].trim().toLowerCase() !== 'application/json')
@@ -75,6 +81,8 @@ export interface HandlerOptions {
   createCommercial?: (config: Configuration, accounts: AccountService) => CommercialService;
   /** Test and faux-cloud seam for the managed gateway: the scripted provider instead of Bedrock. */
   createManaged?: (config: Configuration, accounts: AccountService) => ManagedInferenceService;
+  /** Test and faux-cloud seam for the phone relay: the faux store and an in-process hub. */
+  createRelay?: (config: Configuration, accounts: AccountService, env: Record<string, unknown>) => RelayService;
 }
 
 const MANAGED_ATTEMPT = /^\/managed\/v1\/attempts\/([A-Za-z0-9][A-Za-z0-9._:-]{0,127})$/;
@@ -118,6 +126,10 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
       caller: bedrockResponsesCaller(),
     });
   });
+  // The phone relay's device records run as the Worker login (cp_runtime); each business's
+  // hub is a Durable Object. Without the RELAY_HUB binding no computer can connect.
+  const createRelay = options.createRelay ?? ((config: Configuration, accounts: AccountService, env: Record<string, unknown>) =>
+    new RelayService(accounts, new PostgresRelayRepository(neonClientFactory(config.databaseUrl)), durableObjectHubs(env.RELAY_HUB)));
 
   /**
    * The managed gateway (contract nectovia-managed/1). Its own header rules, a
@@ -217,6 +229,23 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
         return json(await createCommercial(config, accounts).access(token, match[1]));
       if ((match = route('/account/organizations/:id/agent-admissions').exec(pathname)) && method === 'POST')
         return json(await createCommercial(config, accounts).admitAgent(token, match[1], await body(request, agentAdmissionInput)));
+
+      // --- the phone relay: the computers a business's phones may reach ------------------
+      if ((match = route('/relay/v1/organizations/:id/devices').exec(pathname)) && method === 'POST')
+        return json(await createRelay(config, accounts, env).register(token, match[1], await body(request, registerDeviceInput)), 201);
+      if ((match = route('/relay/v1/organizations/:id/devices').exec(pathname)) && method === 'GET')
+        return json(await createRelay(config, accounts, env).devices(token, match[1]));
+      if ((match = route('/relay/v1/organizations/:id/devices/:id').exec(pathname)) && method === 'DELETE') {
+        await createRelay(config, accounts, env).revoke(token, match[1], match[2]); return new Response(null, { status: 204, headers });
+      }
+      if ((match = route('/relay/v1/organizations/:id/presence').exec(pathname)) && method === 'GET')
+        return json(await createRelay(config, accounts, env).presence(token, match[1]));
+      // A desktop dials out here. The hub answers the WebSocket upgrade itself; a plain GET runs the same checks.
+      if ((match = route('/relay/v1/organizations/:id/desktop').exec(pathname)) && method === 'GET') {
+        const answer = await createRelay(config, accounts, env).desktop(token, match[1], request);
+        return answer instanceof Response ? answer : json(answer);
+      }
+
       if (pathname === '/account/routing-policy' && method === 'GET')
         return json(await createCommercial(config, accounts).routingPolicy(token));
 
