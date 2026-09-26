@@ -119,8 +119,10 @@ appears in any body:
 - **Credit and benefit.** Nothing was verified; `accountState` stays `unverified`.
 - **Managed cost.** The managed gateway's attempt read (`GET /managed/v1/attempts/:id`) is not
   built, so a `nectovia` generation stays `gateway-pending`, with no late-cost event.
-- **Managed route kind.** Every admission is `byo` until the managed lane passes
-  `routeKind: 'managed'` at its `admitModelApi` call sites.
+- **Managed route kind.** Done at the main merge (2026-09-26): bot mode admits the `nectovia`
+  route as `routeKind: 'managed'`, and `admitNectovia` binds it, so a Nectovia generation leaves
+  with `nectovia_payer: 'managed'` and `nectovia_cost_state: 'gateway-pending'`. See the PH-01
+  record's "Main merge and the managed payer" section.
 
 ## PH-07 repairs
 

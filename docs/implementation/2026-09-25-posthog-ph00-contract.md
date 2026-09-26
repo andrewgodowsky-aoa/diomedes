@@ -48,7 +48,7 @@ Named dependencies that do not exist today:
 | D1 | A server-authoritative customer **telemetry or data-export policy** | `AccessView` (`shared/access.ts:265-283`) and the admission record (`commercial.ts:170-184`) carry none. The pinned `policyRevision` is the **routing tier** policy (`commercial.ts:442`, `routingPolicy` `:468`) | Customer export is denied as `telemetry-policy-absent`. PH-01 ships a port whose production implementation returns `null`, plus a fixture in tests |
 | D2 | A control-plane marker that work is company-internal | The admission pins have no grant source. The faux demo business is plan `business` with source `internal-test` (`services/control-plane/src/faux/seed.ts:113`), so `planId` cannot identify internal work | Internal is decided by operator configuration plus an admitted decision (section 3). The stronger marker is follow-up work in the control plane, to be coordinated with PR #152 |
 | D3 | A trusted host identity on the desktop | The desktop host is customer-local. Its tenant is `local` (`bridge.ts:32-38`) | Every host observation is `client-reported` unless the operator declares a company host. Source trust is a label, not proof |
-| D4 | A read port for the managed (Diomedes-funded) ledger | Nothing on this host is Diomedes-funded yet (`agent-gate.ts:66-68`). The gate hard-codes `routeKind: 'byo'` | Only `byo` routes are observable. Managed-route cost will be `unknown('not-linked')` until the port exists |
+| D4 | A read port for the managed (Diomedes-funded) ledger | Nothing on this host is Diomedes-funded yet (`agent-gate.ts:66-68`). The gate hard-codes `routeKind: 'byo'` | Only `byo` routes are observable. Managed-route cost will be `unknown('not-linked')` until the port exists. **Updated at the main merge, 2026-09-26 (code fact, not a ruling):** bot mode (#153) admits the `nectovia` route as `routeKind: 'managed'`, and PH-01 binds it, so managed work is observable with `payer: managed`. Its cost is `unknown('cost-pending')`, on the wire `nectovia_cost_state: 'gateway-pending'` with no figure, until the gateway's attempt read exists |
 | D5 | A company collector that authenticates, validates and rate-limits customer-host events fleet-wide | None under `services/control-plane/src` | Customer export stays off in production configuration even after D1 |
 | D6 | A PostHog vendor entry and a funded pilot record | `VENDOR_ALLOWLIST` has no PostHog entry, and its test enforces zero fixed spend (`services/control-plane/contract/vendors.ts`, `tests/b00-control-plane-contract.test.ts:300-303`) | Live export (PH-02) waits for it. PH-01 needs neither |
 | D7 | An `isPaid` flag | Does not exist, and is not needed. Entitlement is `AccessView.features ∋ 'nectovia-agent'` plus the admission decision | PH-01 must not add one |
@@ -65,7 +65,7 @@ export interface AdmittedAgentWork {
   readonly personId: string;             // AccountSessionService.personId() at admission
   readonly planId: string | null;
   readonly policyRevision: number;       // routing tier policy revision; NOT a telemetry policy
-  readonly routeKind: AgentRouteKind;    // 'byo' on this host today
+  readonly routeKind: AgentRouteKind;    // 'byo' on this host today; since #153, 'managed' for the nectovia route
   readonly surface: AgentSurface;
 }
 export interface AgentGatePort {
@@ -252,9 +252,11 @@ No input to either function is derived from an HTTP request, the renderer, a run
 
 ```ts
 export class ObservationScopes {
-  /** Called by EngineService.admitModelApi after every check passed. No-op when mode is 'off'. */
+  /** Called by EngineService.admitModelApi after every check passed (since #153 also by
+      admitNectovia, for the managed route). No-op when mode is 'off'. */
   bind(input: Omit<EligibilityInput, 'operator' | 'telemetry' | 'now'>): EligibilityDecision;
-  /** run.id, else input.conversationRunId (model-api-turn), else input.rootRunId (loop delegate). */
+  /** run.id, else input.conversationRunId (model-api-turn), else input.rootRunId (loop delegate).
+      Since #153 a model-api-turn resolves by its own run.id (each message is its own job). */
   scopeFor(run: HarnessRun): ObservationScope | null;
   /** Turn run → itself; loop delegate → input.rootRunId; otherwise run.id. */
   traceRootOf(run: HarnessRun): string;
@@ -339,7 +341,7 @@ The recheck reads `AccountSessionService.entitlement()`, which is the last cache
 
 | Surface | Scope bound to | Trace root | Note |
 |---|---|---|---|
-| Conversation | lineage run id (`service.ts:2033`) | each turn run; `$ai_session_id` = lineage | Turn runs resolve through `input.conversationRunId` |
+| Conversation | lineage run id (`service.ts:2033`). **Updated at the main merge, 2026-09-26 (code fact):** bot mode (#153) admits each message under its own job, `turnRunId(lineage, requestId)`, which is the turn run's id, so the scope is bound per turn | each turn run; `$ai_session_id` = lineage | Turn runs resolve by their own run id (`conversation:<run.id>`); the lineage still comes from `input.conversationRunId`. The Nectovia route binds the same way, from `admitNectovia` |
 | Work | `textRunId` (`service.ts:2113`) | the run | |
 | Team | `teamWorkRunId(projectId, requestId)` | the run | The admission's `rootJobId` is `input.requestId` (`service.ts:2244`), so binding by `rootJobId` would miss this run |
 | Loop | `request.runId` (`service.ts:2292`) | the loop run | A delegate admits under its own child run id; its trace root is `input.rootRunId` |

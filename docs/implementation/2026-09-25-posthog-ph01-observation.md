@@ -85,11 +85,10 @@ Minimal edits:
     `unknown('cost-pending')`, with no `$ai_total_cost_usd`. Usage may still come from a local
     settled hold.
   - The read of `GET /managed/v1/attempts/:id` is not built.
-- **Surface is not route.** `admitModelApi` does not take a route kind today (its `agent`
-  parameter is `Pick<AgentWork, 'surface' | 'rootJobId'>`), so every admission is `byo`. A
-  `nectovia` bind is refused `route-kind-not-observable` until the managed lane passes
-  `routeKind: 'managed'` at its call sites. That is a one-line change in `service.ts` outside the
-  scope-bind lines, so it was not made here.
+- **Surface is not route.** When PH-01 was built, `admitModelApi` took no route kind, so every
+  admission was `byo` and a `nectovia` bind was refused `route-kind-not-observable`. Since the
+  main merge (2026-09-26) bot mode admits the `nectovia` route as `routeKind: 'managed'`, and
+  `admitNectovia` binds it. See "Main merge and the managed payer" below.
 - **Open questions.** All eight take the contract's recommended answer provisionally:
   1. operator allowlist now;
   2. D1 telemetry policy port, absent in production;
@@ -313,4 +312,98 @@ npx vitest run tests/harness.test.ts tests/harness-host.test.ts tests/harness-ne
   15 files, 274 tests passed
 npx tsc --noEmit                                                   (slot_muhuq9rv_2e92a5a1)
   exit 0, on the final tree
+```
+
+## Main merge and the managed payer (2026-09-26)
+
+The coordinator accepted 7e3765c as the round 2 repair. It then asked for main (bot mode #153,
+merge 538800f; the account service #152, d96321c) to be merged into this branch, and for the payer
+to be wired from the admitted route. Everything below is a code fact at the merge, not a ruling.
+
+**Merge, 62a2198.** Conflicts and their resolutions:
+
+| File | Conflict | Resolution |
+|---|---|---|
+| `server/engines/service.ts` imports | Bot mode added `NECTOVIA_ROUTE`, `WORK_STYLE_LABELS` and gate constants; this branch added the observation imports | Kept both |
+| `server/engines/service.ts` `admitModelApi` | Bot mode's `nectovia` branch (`admitNectovia(... await this.admitAgent(input, { ...agent, routeKind: 'managed' }))`) against this branch's N-1/N-2 `businessFor` and `refused` | Bot mode's gate contract and admission are unchanged. Both gate calls take the same `.catch(refused)`, the business is still read before either await, and the `byo` path keeps `const admitted` for its bind |
+| `server/app.ts` options | `observation` against bot mode's `ownerRoutes` | Kept both. The keep-both left `ownerRoutes`' doc comment without its opener, which root tsc caught (TS1005), so the opener was restored |
+| `server/app.ts` after the account block | The observation binding against bot mode's `agentGate`, `ownerRoutes` and `nectoviaAccount` | Kept both, observation first |
+| `server/app.ts` harness options, `server/harness/host.ts` | `observation` against `nectoviaAccount` | `createHarnessHost` takes both |
+
+The expected conflicts in `server/accounts/agent-gate.ts` and
+`services/control-plane/contract/vendors.ts` did not happen: `git log 5aadddb..origin/main` is
+empty for both paths, so main had not touched them since the bot-mode commit this branch already
+had. `session.ts` and `spend-exposure.ts` took main's additions (`refreshPolicy`, `attemptIdFor`)
+cleanly.
+
+**Semantic conflicts, found after the textual merge.**
+
+- **Per-message jobs, 2acb30a.** Bot mode admits each conversation message under its own job,
+  `turnRunId(lineage, requestId)`, which is also the turn run's id. A turn's scope is therefore
+  bound per turn, and the `model-api-turn` resolver now keys by `conversation:<run.id>`. The
+  session is still the lineage (`input.conversationRunId`), and a turn without one resolves to
+  nothing. The record, transport and eligibility tests bind turn ids. The eligibility test also
+  proves that a second turn of the same lineage does not inherit the first turn's scope. The scope
+  map is still bounded, by its existing 2,000-entry limit. Per-message binding adds churn, not
+  growth.
+- **GPT-6 Luna, 81612fd.** Main's ecdd072 moved the owner's AWS route to GPT-6 Luna and retired
+  5.6. The observation catalog mirrors `AWS_LUNA_MODEL`, so the real model was classified
+  `customer-named` and `nectovia_requested_model` was dropped from every AWS generation. Five
+  tests caught it:
+  - the record file's catalog-equality test;
+  - the record file's catalog-pick test;
+  - the record file's loop test;
+  - the runtime test;
+  - the PH-07 review's H1, which was not edited.
+
+  The catalog now names GPT-6 Luna. A retired model is not listed, because nothing is sent on a
+  connection saved for one.
+
+**The payer, c69394e.** `admitNectovia` binds its scope after every admission check, with the
+gate's `AdmittedAgentWork`. The payer comes only from `decideObservationEligibility`:
+
+- `managed` when `admission.routeKind === 'managed'`, and `byo` when it is `byo`;
+- a scope whose route and route kind disagree is denied `route-kind-not-observable`;
+- nothing reads a header, a body field or the route name.
+
+A managed generation keeps cost `unknown('cost-pending')`. On the wire that is
+`nectovia_cost_state: 'gateway-pending'`, with no `nectovia_cost_micro_usd` and no
+`$ai_total_cost_usd`.
+
+`tests/observability-managed-payer.test.ts` drives a real Home send through `createApp`, the Agent
+gate and the faux account service's own managed gateway. The only seam is the gateway's provider
+transport, as in `tests/fixtures/nectovia-home.ts`. It proves:
+
+- the `nectovia` generations and the trace carry `payer: managed` with cost pending, even though
+  the request's headers claim `byo`;
+- a body claiming a payer is refused 400 by the strict message schema, before anything is admitted,
+  sent or observed;
+- an owner AWS send in the same business, with headers claiming `managed`, stays `byo`, with its
+  cost settled and no managed-gateway call;
+- every event's payer matches its route.
+
+Negative control: with the bind disabled, the file fails ("expected 0 to be greater than 0"), and
+it passes again once the bind is restored.
+
+**Gates after the merge.** Each command had its own heavy slot, taken and released one at a time.
+
+```
+npx tsc --noEmit -p .                           root              (slot_muhxq7bs_5f835c84) exit 0
+npx tsc --noEmit -p .                           control plane     (slot_muhxqs1f_49202d15) exit 0
+npx vitest run <2 review files + 7 observability files> --maxWorkers=2
+                                                                  (slot_muhxr1ux_6aba71c3)
+  5 failed | 112 passed (117): the GPT-6 Luna catalog, fixed in 81612fd
+npx vitest run <the same 9 files> --maxWorkers=2                  (slot_muhxska1_6c2663ba)
+  9 files, 117 tests passed: ph07-round2-review 13, ph07-review 17, eligibility 19, record 24,
+  exporter 11, posthog-transport 12, runtime 11, first-trace 9, managed-payer 1
+npx vitest run <the 15 touched suites + nectovia-route + nectovia-bot-app> --maxWorkers=2
+                                                                  (slot_muhxtdz9_fde700db)
+  17 files (customer-accounts-app is in both lists), 303 tests passed
+npx vitest run --maxWorkers=4                   full root         (slot_muhxubpj_d243f87e)
+  453 files passed; 7840 tests passed, 4 skipped
+npx vitest run                                  full control plane (slot_muhy44zz_97e044c9)
+  26 files passed, 3 skipped; 375 tests passed, 29 skipped (the Postgres integration files,
+  which need a database)
+npx tsc --noEmit -p .                           root              (slot_muhy6r79_8557885c) exit 0,
+  on the final code tree (after 81612fd)
 ```
