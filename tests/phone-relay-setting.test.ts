@@ -33,7 +33,7 @@ describe('the phone access row in Settings, Account', () => {
     const lines = {
       off: 'Reach this computer from your phone Your phone will see this computer as FRONT-COUNTER.',
       connecting: 'Reach this computer from your phone Connecting FRONT-COUNTER to the relay…',
-      reachable: 'Reach this computer from your phone Your phone can reach FRONT-COUNTER.',
+      reachable: 'Reach this computer from your phone FRONT-COUNTER is connected and shows as online.',
     } as const;
     for (const state of ['off', 'connecting', 'reachable'] as const) {
       const html = draw({ ...off, enabled: state !== 'off', state });

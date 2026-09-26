@@ -162,7 +162,8 @@ function BusinessCard({ workspace, onChanged }: { workspace: AccountWorkspaceVie
 /** The row's one line: this computer's name and its state, or the one sentence that explains it. */
 function phoneRelayLine(view: PhoneRelayView): string {
   if (view.sentence) return view.sentence;
-  if (view.state === 'reachable') return `Your phone can reach ${view.label}.`;
+  // Steps 1 and 2 of the phone relay list the computer as online; a phone can't reach it yet.
+  if (view.state === 'reachable') return `${view.label} is connected and shows as online.`;
   if (view.state === 'connecting') return `Connecting ${view.label} to the relay…`;
   return `Your phone will see this computer as ${view.label}.`;
 }
