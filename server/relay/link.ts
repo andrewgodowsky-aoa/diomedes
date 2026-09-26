@@ -70,7 +70,7 @@ export const LINK_SENTENCES = {
   signedOut: 'Your sign-in ended. Sign in again to reach this computer from your phone.',
   stoppedElsewhere: 'Phone access to this computer was stopped from another device.',
   keyMismatch: "This computer's key for phone access didn't match. Turn it off and on again.",
-  protocol: 'The relay answered in a way this version of Nectovia doesn’t understand. Turn it off and on again.',
+  protocol: "The relay answered in a way this version of Nectovia doesn't understand. Turn it off and on again.",
   takenOver: 'Another copy of Nectovia on this computer took over phone access.',
 } as const;
 

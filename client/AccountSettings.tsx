@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { FEATURE_LABELS } from '../shared/access';
 import type { AccountStateView, AccountWorkspaceView } from '../shared/accounts';
+import type { PhoneRelayChange, PhoneRelayView } from '../shared/phone-relay';
 import type { MemberRole } from '../shared/workspaces';
 import { api } from './api';
 import { useAccount } from './AccountGate';
@@ -148,6 +149,7 @@ function BusinessCard({ workspace, onChanged }: { workspace: AccountWorkspaceVie
           <p className="caption">Plans are changed by Diomedes Systems. Reply to your invoice or write to hello@diomedes.net.</p>
         </div>
       )}
+      <PhoneRelayRow organizationId={workspace.organization.id} />
       {capabilities.managePeople === 'nobody' ? (
         <p className="caption">A Manager or the Business owner invites people to this business.</p>
       ) : (
@@ -155,6 +157,93 @@ function BusinessCard({ workspace, onChanged }: { workspace: AccountWorkspaceVie
       )}
     </section>
   );
+}
+
+/** The row's one line: this computer's name and its state, or the one sentence that explains it. */
+function phoneRelayLine(view: PhoneRelayView): string {
+  if (view.sentence) return view.sentence;
+  if (view.state === 'reachable') return `Your phone can reach ${view.label}.`;
+  if (view.state === 'connecting') return `Connecting ${view.label} to the relay…`;
+  return `Your phone will see this computer as ${view.label}.`;
+}
+
+/**
+ * "Reach this computer from your phone" as one answer draws it: the switch and one line, or only
+ * the reason when the business's plan leaves phone access out.
+ */
+export function PhoneRelaySwitch({
+  view,
+  busy = false,
+  error = '',
+  onChange,
+}: {
+  view: PhoneRelayView;
+  busy?: boolean;
+  error?: string;
+  onChange?: (enabled: boolean) => void;
+}) {
+  if (!view.included && !view.enabled) return <p className="caption">{view.sentence}</p>;
+  const alert = error !== '' || view.state === 'error';
+  return (
+    <div className="account-phone-relay">
+      <label className="account-phone-relay-switch">
+        <input
+          type="checkbox"
+          role="switch"
+          checked={view.enabled}
+          disabled={busy || !view.canChange}
+          onChange={(e) => onChange?.(e.target.checked)}
+        />
+        <span>Reach this computer from your phone</span>
+      </label>
+      <p className={alert ? 'account-error' : 'caption'} role={alert ? 'alert' : undefined}>
+        {error || phoneRelayLine(view)}
+      </p>
+    </div>
+  );
+}
+
+/**
+ * The setting for one business. Only a Business owner or a Manager can turn it on, and only when
+ * the plan includes phone access. While it's on, this computer dials out to the business's relay;
+ * it never listens. Turning it off removes this computer's record.
+ */
+function PhoneRelayRow({ organizationId }: { organizationId: string }) {
+  const path = `/account/organizations/${encodeURIComponent(organizationId)}/phone-relay`;
+  const [view, setView] = useState<PhoneRelayView | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const load = useCallback(async () => {
+    try {
+      setView(await api<PhoneRelayView>(path));
+    } catch {
+      setView(null);
+    }
+  }, [path]);
+  useEffect(() => {
+    void load();
+  }, [load]);
+  const enabled = view?.enabled === true;
+  // While it's on, the connection can change at any moment: look again every few seconds.
+  useEffect(() => {
+    if (!enabled) return;
+    const timer = window.setInterval(() => void load(), 5_000);
+    return () => window.clearInterval(timer);
+  }, [enabled, load]);
+  if (!view) return null;
+  const change = async (next: boolean) => {
+    setBusy(true);
+    setError('');
+    try {
+      setView(await api<PhoneRelayView>(path, 'PUT', { enabled: next } satisfies PhoneRelayChange));
+    } catch (e) {
+      setError(message(e, 'That change did not go through.'));
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  };
+  return <PhoneRelaySwitch view={view} busy={busy} error={error} onChange={(next) => void change(next)} />;
 }
 
 function People({ workspace, onChanged }: { workspace: AccountWorkspaceView; onChanged: () => Promise<void> }) {
