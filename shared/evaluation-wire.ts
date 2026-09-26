@@ -94,6 +94,12 @@ export function serializedRequestTokens(
 }
 
 /**
+ * Output held per question, by the gateway and by this computer's guard alike:
+ * an answer is a few tokens, and the managed route prices output at nothing today.
+ */
+export const EVALUATION_OUTPUT_TOKENS_PER_QUESTION = 64;
+
+/**
  * The shape bounds a profile is built under (`shared/evaluation.ts`), restated
  * so a request that no profile could have produced is refused on the wire too.
  */

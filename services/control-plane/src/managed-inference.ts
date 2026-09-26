@@ -21,7 +21,7 @@
  * Decisions API), held, sent once and settled before it answers
  * (docs/implementation/2026-09-26-jev-managed-evaluations.md).
  */
-import { checkEvaluationRequest } from '../../../shared/evaluation-wire.js';
+import { EVALUATION_OUTPUT_TOKENS_PER_QUESTION, checkEvaluationRequest } from '../../../shared/evaluation-wire.js';
 import { inputTokenBound } from '../../../shared/token-bound.js';
 import { normalizeUsage } from '../../../shared/usage-contract.js';
 import {
@@ -617,8 +617,8 @@ export const MAX_REQUEST_BYTES = 2_000_000;
 export const MAX_EVALUATION_REQUEST_BYTES = 524_288;
 /** The most of a provider's evaluation answer the gateway reads. The desktop keeps 65,536 bytes of it. */
 export const MAX_EVALUATION_ANSWER_BYTES = 262_144;
-/** Output held per question: an answer is a few tokens, and this route prices output at nothing today. */
-export const EVALUATION_OUTPUT_TOKENS_PER_QUESTION = 64;
+/** Output held per question (shared/evaluation-wire.ts), the same bound the desktop's guard holds. */
+export { EVALUATION_OUTPUT_TOKENS_PER_QUESTION };
 /** v1 refuses long-context pricing rather than guessing it. */
 export const MAX_INPUT_TOKEN_BOUND = 272_000;
 export const ADMISSION_WINDOW_MS = 15 * 60_000;

@@ -61,6 +61,11 @@ export type EvaluationTransportCode =
    */
   | 'provider_policy'
   /**
+   * The business's current plan does not include this route, or the person is
+   * not one of its members: refused before anything was sent.
+   */
+  | 'not_included'
+  /**
    * The provider answered and the answer was unusable. This is the only code
    * that means money was already spent: every other code is a refusal made
    * before anything was sent.
@@ -78,6 +83,7 @@ export const PRE_DISPATCH_CODES: ReadonlySet<EvaluationTransportCode> = new Set(
   'transport_unavailable',
   'invalid_transport',
   'provider_policy',
+  'not_included',
 ]);
 
 export class EvaluationTransportError extends Error {
