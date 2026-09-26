@@ -1210,7 +1210,7 @@ export async function createApp(options: AppOptions) {
   await automations.init();
   // The one clock for automation slots. It admits only through `automations`.
   const automationScheduler = new AutomationScheduler(store, automations, options.automationTickMs);
-  const connections = new DesktopConnections(store, harness);
+  const connections = new DesktopConnections(store, harness, { loopbackToken: options.loopbackToken });
   const app = express();
   app.locals.allowsCodexSignInReference = (destination: string) =>
     codexSetup.allowsReference(destination);
