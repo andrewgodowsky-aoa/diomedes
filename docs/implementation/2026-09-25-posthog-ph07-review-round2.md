@@ -44,7 +44,7 @@ printed nothing (0 bytes). The same command for the round 1 document also printe
 |---|---|---|---|---|
 | N-1 | **P2** | `R2`, `tests/ph07-round2-review.test.ts:431`, `:432`, `:437-440` | `server/observability/scopes.ts:145`; `server/observability/runtime.ts:80`; called after the await at `server/engines/service.ts:1970-1972`, while the gate chose the business at `server/accounts/agent-gate.ts:84` before its own await at `:87` | A refusal is charged to whichever business is active when it *returns*. A workspace switch during the round trip ends the wrong business's scopes, and the refused business's events still leave |
 | N-2 | P3 | `R1`, `tests/ph07-round2-review.test.ts:381` | `server/engines/service.ts:1970-1977` calls `refused` for every rejection. `server/accounts/session.ts:490-496` turns an unreachable service or a 5xx into `entitlement_unknown`, which `server/accounts/agent-gate.ts:105` throws as `AGENT_NOT_INCLUDED` | A network error, 503 or 500 on one admission is treated as a revocation. The business's earlier, admitted work is never exported, and the drop is counted as `admission-refused` |
-| N-3 | P3, predates the repair | `S1`, `tests/ph07-round2-review.test.ts:614` | `server/observability/eligibility.ts:280-282` (in 678dba6) | Sign-out and a workspace switch end a scope only while they last. Going back before the next flush makes the scope live again, and its queued events leave |
+| N-3 | P3, predates the repair | `S1`, `tests/ph07-round2-review.test.ts:614` | `server/observability/eligibility.ts:280-282` (introduced in 678dba6 at `:265-267`; lines cited at d18f64c) | Sign-out and a workspace switch end a scope only while they last. Going back before the next flush makes the scope live again, and its queued events leave |
 
 ### N-1 (P2): a refusal is charged to the business active when it returns
 
@@ -77,7 +77,7 @@ only when a project is bound as a business's work target (`server/workspaces.ts:
 
 **Effect.** This is F-2's effect again, a revoked business's events leaving, through a narrower
 trigger: a workspace switch during the admission round trip. The wrong business's queued telemetry
-is also dropped. Nothing leaks across businesses: each event still carries its own bound scope.
+is also dropped. Nothing is relabelled across businesses: each queued event keeps the scope it was enqueued with (`exporter.ts:261`, read, not asserted in `R2`).
 
 **Fix direction.** Decide the business once, before the await, and pass it to `refused`. For
 example, compute the gate's `organizationFor(input.projectId)` in `admitModelApi` before
@@ -131,6 +131,10 @@ failing closed on an outage is intended. That is Andrew's call.
 **What came back.** Both queued events leave in each case: `{"workspace A→B→A": 2, "sign-out,
 sign-in": 2}`.
 
+Round 1's `A3` ("switching back resurrects nothing") still passes, and it does not contradict this.
+`A3` flushes while Harbor is active, so the Juniper events are dropped at that flush. `S1` switches
+back before any flush.
+
 **Cause.** `recheckScope` compares the present with the bind time (`eligibility.ts:280-282`). An
 end lasts only while its condition does. The repair made a *refusal* sticky, with a per-business
 counter, but not these transitions.
@@ -167,6 +171,9 @@ record in the contract that these ends are point in time.
 - **Refusals that must not end anything:**
   - A refusal after admission (a zero spend limit) leaves the earlier turn exported and records no
     `admission-refused` (`R6`).
+  - A direct engine (Claude, Codex, OpenCode, ACP, or `engine-text-turn` on a non-model-API route)
+    never calls `admitModelApi`. So no scope is ever bound for it, and a refusal has nothing of it
+    to end. Round 1's `A1`, which checks that direct-engine work sends nothing, passed again here.
   - Personal work, where no business is resolved, ends nothing. The candidate's eligibility test
     shows this, and it passed here. A project no business owns does end scopes: it falls back to the
     active business, as the gate does, and N-1 is the case where the two picks differ.
