@@ -54,19 +54,20 @@ describe('the committed releases.json', () => {
     expect(errorsOf(COMMITTED)).toEqual([]);
   });
 
-  it('carries every earlier release as a stable, Windows-only entry', () => {
-    const seeded = ['0.1.11', '0.1.10', '0.1.9', '0.1.8', '0.1.7', '0.1.6', '0.1.5', '0.1.4', '0.1.3', '0.1.2'];
-    const stable = COMMITTED.releases.filter((r) => r.channel === 'stable' && r.version !== '0.2.0');
+  it('carries every earlier release as a stable entry, Windows-only before 0.2.0', () => {
+    const seeded = ['0.2.0', '0.1.11', '0.1.10', '0.1.9', '0.1.8', '0.1.7', '0.1.6', '0.1.5', '0.1.4', '0.1.3', '0.1.2'];
+    const stable = COMMITTED.releases.filter((r) => r.channel === 'stable' && r.version !== '0.2.1');
     expect(stable.map((r) => r.version)).toEqual(seeded);
-    for (const release of stable) expect(release.platforms).toEqual(['windows']);
+    for (const release of stable)
+      expect(release.platforms).toEqual(release.version === '0.2.0' ? ['windows', 'macos'] : ['windows']);
   });
 
-  it('publishes 0.2.0 on top for Windows and macOS, the release this build ships as', () => {
+  it('publishes 0.2.1 on top for Windows and macOS, the release this build ships as', () => {
     const [first] = COMMITTED.releases;
-    expect(first.version).toBe('0.2.0');
+    expect(first.version).toBe('0.2.1');
     expect(first.channel).toBe('stable');
     expect(first.platforms).toEqual(['windows', 'macos']);
-    expect(publishedRelease(COMMITTED, '0.2.0')).toEqual(first);
+    expect(publishedRelease(COMMITTED, '0.2.1')).toEqual(first);
     expect(publishedReleases(COMMITTED).some((r) => r.channel !== 'stable')).toBe(false);
     expect(first.sections.map((s) => s.title)).toEqual(['New', 'Fixed', 'Updating', 'Known limits']);
   });
