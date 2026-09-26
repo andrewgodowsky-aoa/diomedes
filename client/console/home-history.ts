@@ -3,6 +3,7 @@ import {
   isConversationRoute,
   routeDisplayName,
 } from '../../shared/engines';
+import { NECTOVIA_ROUTE } from '../../shared/model-api';
 import { ownerPinFrom, tierMapFrom } from '../../shared/tier-map';
 import type { Route, Turn } from '../../shared/types';
 import { DEFAULT_WORK_STYLE, isWorkStyle, type WorkStyle } from '../../shared/work-style';
@@ -112,7 +113,8 @@ export function historyLine(input: {
 
 /**
  * The route the conversation's next message takes, by the host's rules (server/app.ts `tierFor`,
- * `threadRoute`): a thread that pins a model keeps its recorded route; otherwise its tier, or
+ * `threadRoute`): a Nectovia thread, and one that will be provisioned on Nectovia, stays on
+ * Nectovia whatever its tier; a thread that pins a model keeps its recorded route; otherwise its tier, or
  * the Settings default tier, sends it where the owner's map or the owner-testing pin says; with
  * no tier it is the recorded route, or the default a first message takes.
  */
@@ -123,6 +125,7 @@ export function nextRoute(input: {
   services?: Record<string, unknown>;
 }): string {
   const { engine, workStyle, requestedModel, services } = input;
+  if ((engine ?? CONVERSATION_DEFAULT_ROUTE) === NECTOVIA_ROUTE) return NECTOVIA_ROUTE;
   if (!requestedModel) {
     const saved = services?.workStyle;
     const style = workStyle ?? (isWorkStyle(saved) ? saved : DEFAULT_WORK_STYLE);

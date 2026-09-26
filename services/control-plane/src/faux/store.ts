@@ -163,6 +163,9 @@ class FauxCommercialTransaction implements CommercialTransaction {
   async admissions(organizationId: string, limit: number) {
     return newestFirst(this.c.admissions.filter((row) => row.organizationId === organizationId)).slice(0, limit);
   }
+  async admission(tenantId: string, id: string) {
+    return this.c.admissions.find((row) => row.tenantId === tenantId && row.id === id);
+  }
   private subjectOf(personId: string) {
     const row = this.state.accounts.subjects.find((item) => item.personId === personId);
     if (!row) throw new Error('Account storage is inconsistent.');

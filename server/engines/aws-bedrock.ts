@@ -3,7 +3,7 @@
  *
  * One route, pinned end to end: the Bedrock runtime's OpenAI-compatible
  * Responses endpoint in us-east-1, the Geo inference profile
- * `us.openai.gpt-5.6-luna`, the company's own AWS account, `store: false`, one
+ * `us.openai.gpt-6-luna`, the company's own AWS account, `store: false`, one
  * provider exchange per call and no fallback of any kind. There is no Gateway,
  * no bare model string, no ambient `OPENAI_API_KEY` or AWS environment
  * variable, no SDK retry and no SDK tool executor: every tool the model may
@@ -34,6 +34,7 @@ import type { ModelMessage } from 'ai';
 import { z } from 'zod';
 import type { ToolDescriptor } from '../../shared/harness.js';
 import { micro } from '../../shared/managed-usage.js';
+import { GPT6_LUNA } from '../../shared/model-api.js';
 import { digest, HarnessError } from '../harness/policy.js';
 import type { ExposureAttempt, ModelRateCard, SpendExposure } from '../spend-exposure.js';
 import { jsonWrite } from '../store.js';
@@ -68,11 +69,18 @@ export const AWS_BEDROCK_ROUTE = 'aws-bedrock' as const;
 /** The exact dependency pair this route was written and tested against. */
 export const AWS_BEDROCK_SDK = 'ai@7.0.107+@ai-sdk/openai@4.0.71';
 export const AWS_BEDROCK_PROTOCOL = 'openai-responses';
-export const AWS_LUNA_MODEL = 'us.openai.gpt-5.6-luna';
+export const AWS_LUNA_MODEL = GPT6_LUNA.model;
+/**
+ * Models an earlier version saved a connection for. Such a record is read as retired: the
+ * owner reconnects, and nothing is sent on it or silently moved to the current model.
+ */
+export const AWS_RETIRED_MODELS: readonly string[] = ['us.openai.gpt-5.6-luna'];
+export const AWS_RECONNECT =
+  'The saved AWS Bedrock connection is for GPT-5.6 Luna, which this version no longer runs. Reconnect AWS Bedrock with GPT-6 Luna in AI setup.';
 /**
  * The runtime endpoint the Luna model card pairs with the Geo profile. The
  * Luna-specific Mantle base (`bedrock-mantle…/openai/v1`, model
- * `openai.gpt-5.6-luna`) is a different route with its own identity; it is not
+ * `openai.gpt-6-luna`) is a different route with its own identity; it is not
  * accepted here and is never substituted.
  */
 export const AWS_RESPONSES_ENDPOINTS = {
@@ -89,19 +97,19 @@ export const AWS_VETTED_MODELS: Record<AwsRegion, readonly string[]> = {
 };
 
 /**
- * List prices from the AWS model card for the Geo (`us.`) profile, read
- * 2026-09-21: an application estimate of gross cost, never an invoice and
- * never a statement about promotional credit.
+ * List prices from the AWS model card for the US Geo profile, from the one registry row
+ * (`GPT6_LUNA`) the Nectovia route's local guard prices with: an application estimate of
+ * gross cost, never an invoice and never a statement about promotional credit. The row has
+ * no long-context price, so a long input is priced at the same band.
  */
 export const AWS_LUNA_RATE_CARD: ModelRateCard = {
-  version: 'aws-bedrock-luna-2026-09-21.1',
+  version: GPT6_LUNA.rateCard,
   route: AWS_BEDROCK_ROUTE,
   modelId: AWS_LUNA_MODEL,
-  source:
-    'AWS Bedrock model card, OpenAI GPT-5.6 Luna, Geo profile list prices per 1M tokens, read 2026-09-21. Estimate only.',
-  shortContextMaxInputTokens: 272_000,
-  short: { input: 220_000, cacheWrite: 275_000, cacheRead: 22_000, output: 1_320_000 },
-  long: { input: 440_000, cacheWrite: 550_000, cacheRead: 44_000, output: 1_980_000 },
+  source: GPT6_LUNA.source,
+  shortContextMaxInputTokens: GPT6_LUNA.maxInputTokens,
+  short: { ...GPT6_LUNA.rates },
+  long: { ...GPT6_LUNA.rates },
 };
 
 // --- the connection record ------------------------------------------------------
@@ -138,6 +146,24 @@ export const redactedAccount = (accountId: string) => `••••${accountId.s
 export const accountEvidence =
   'Account declared by the owner at setup. A Bedrock API key does not report its account, so Diomedes records the declared account and the key fingerprint, not a verified identity.';
 
+/**
+ * A saved connection that is valid in every way except that it names a retired model. It
+ * carries the revision it reached so a reconnect keeps counting up, and a result from a
+ * call made under it is still refused.
+ */
+export class AwsConnectionRetired extends HarnessError {
+  constructor(readonly retired: Pick<AwsConnection, 'revision' | 'createdAt'>) {
+    super('connection_retired', AWS_RECONNECT);
+  }
+}
+function retiredConnection(raw: unknown): Pick<AwsConnection, 'revision' | 'createdAt'> | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const modelId = (raw as { modelId?: unknown }).modelId;
+  if (typeof modelId !== 'string' || !AWS_RETIRED_MODELS.includes(modelId)) return null;
+  const parsed = awsConnectionSchema.safeParse({ ...raw, modelId: AWS_LUNA_MODEL });
+  return parsed.success ? { revision: parsed.data.revision, createdAt: parsed.data.createdAt } : null;
+}
+
 /** The one connection this first slice supports, kept as a plain record beside the other data. */
 export class AwsConnections {
   constructor(private readonly dataDir: string) {}
@@ -152,9 +178,13 @@ export class AwsConnections {
       if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return null;
       throw error;
     }
-    const parsed = awsConnectionSchema.safeParse(JSON.parse(text));
-    if (!parsed.success)
+    const raw: unknown = JSON.parse(text);
+    const parsed = awsConnectionSchema.safeParse(raw);
+    if (!parsed.success) {
+      const retired = retiredConnection(raw);
+      if (retired) throw new AwsConnectionRetired(retired);
       throw new HarnessError('connection_corrupt', 'The saved AWS connection record is not readable.');
+    }
     return parsed.data;
   }
   async write(connection: AwsConnection): Promise<AwsConnection> {

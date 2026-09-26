@@ -101,6 +101,10 @@ class PostgresCommercialTransaction implements CommercialTransaction {
     const result = await this.client.query('SELECT record FROM control_plane.agent_admissions WHERE organization_id=$1 ORDER BY at DESC LIMIT $2', [organizationId, limit]);
     return result.rows.map((row) => admissionRecordSchema.parse(row.record));
   }
+  async admission(tenantId: string, id: string) {
+    const result = await this.client.query('SELECT record FROM control_plane.agent_admissions WHERE tenant_id=$1 AND id=$2', [tenantId, id]);
+    return result.rows.length ? admissionRecordSchema.parse(result.rows[0].record) : undefined;
+  }
   async organizations(query: string, limit: number) {
     const result = await this.client.query(
       `SELECT o.record, (SELECT count(*) FROM control_plane.memberships m WHERE m.organization_id=o.id AND m.record->>'state'='active') AS active

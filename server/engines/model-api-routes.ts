@@ -34,8 +34,10 @@ import {
   AWS_LUNA_RATE_CARD,
   AWS_RESPONSES_ENDPOINTS,
   awsAccountRoute,
+  AwsConnectionRetired,
   redactedAccount,
   type AwsConnection,
+  type AwsConnections,
 } from './aws-bedrock.js';
 import { EngineError } from './process.js';
 import { mountProviderRoutes } from './provider-routes.js';
@@ -63,6 +65,18 @@ const reconcileBody = z.strictObject({ microUsd: z.number().int().min(0), note: 
 const writeOffBody = z.strictObject({ note: z.string().trim().min(1).max(500) });
 const controlBody = z.strictObject({ commandId: z.string().regex(/^[A-Za-z0-9._-]{1,128}$/) });
 
+/** The saved connection, or the retired record in its place. Any other unreadable record throws. */
+async function savedConnection(
+  connections: Pick<AwsConnections, 'read'>,
+): Promise<{ connection: AwsConnection | null; retired: AwsConnectionRetired | null }> {
+  try {
+    return { connection: await connections.read(), retired: null };
+  } catch (error) {
+    if (error instanceof AwsConnectionRetired) return { connection: null, retired: error };
+    throw error;
+  }
+}
+
 export function mountModelApiRoutes(app: Express, deps: { store: Store; engines: EngineService }) {
   const { store, engines } = deps;
   const api = () => {
@@ -86,7 +100,9 @@ export function mountModelApiRoutes(app: Express, deps: { store: Store; engines:
 
   const view = async (): Promise<AwsConnectionView> => {
     const { connections, secrets, exposure } = api();
-    const connection = await connections.read();
+    // A connection an earlier version saved for a retired model shows as not set up, with the
+    // reconnect sentence as the next step.
+    const { connection, retired } = await savedConnection(connections);
     const protectedStorage = secrets.available();
     const enabled = store.settings.services?.[AWS_BEDROCK_ROUTE] === true;
     const expired =
@@ -95,15 +111,17 @@ export function mountModelApiRoutes(app: Express, deps: { store: Store; engines:
     const allowance = connection ? exposure.allowance(connection.id) : null;
     const next = !protectedStorage
       ? 'Open the Diomedes desktop app to connect AWS: this process has no protected credential storage.'
-      : !connection
-        ? 'Connect your AWS account: account number and a Bedrock API key.'
-        : expired
-          ? 'The saved AWS key has expired. Enter a new key.'
-          : !allowance || !summary || summary.availableMicroUsd <= 0
-            ? 'Approve a spend limit for AWS before sending.'
-            : !enabled
-              ? 'Turn AWS Bedrock on.'
-              : null;
+      : retired
+        ? retired.message
+        : !connection
+          ? 'Connect your AWS account: account number and a Bedrock API key.'
+          : expired
+            ? 'The saved AWS key has expired. Enter a new key.'
+            : !allowance || !summary || summary.availableMicroUsd <= 0
+              ? 'Approve a spend limit for AWS before sending.'
+              : !enabled
+                ? 'Turn AWS Bedrock on.'
+                : null;
     return {
       route: AWS_BEDROCK_ROUTE,
       configured: !!connection,
@@ -166,7 +184,9 @@ export function mountModelApiRoutes(app: Express, deps: { store: Store; engines:
         const { connections, secrets } = api();
         if (!secrets.available())
           throw new ApiError(409, 'Protected credential storage is available only in the Diomedes desktop app. Nothing was saved.');
-        const previous = await connections.read();
+        // Reconnecting over a retired connection continues its revision and first-saved time.
+        const { connection: current, retired } = await savedConnection(connections);
+        const previous = current ?? retired?.retired ?? null;
         const at = new Date().toISOString();
         const { fingerprint } = await secrets.put(CONNECTION_ID, body.apiKey);
         const connection: AwsConnection = await connections.write({

@@ -10,9 +10,10 @@ import type { Store } from '../server/store';
 import { diomedesThread } from '../shared/diomedes-thread';
 import type { Conversation, Project, ProjectState } from '../shared/types';
 
-// A project's own Diomedes conversation, through the real app over HTTP: the real Store, the
-// real settings file, the real routes, and no provider at all, because nothing here sends a
-// message. `close()` then `open()` over the same data directory is a crash and a restart.
+// A project's own Diomedes conversation, provisioned on the Nectovia default (2026-09-25),
+// through the real app over HTTP: the real Store, the real settings file, the real routes, and no
+// provider at all, because nothing here sends a message. `close()` then `open()` over the same
+// data directory is a crash and a restart.
 // Nothing provisions a conversation except a POST to the project's conversation route.
 
 const headers = { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' };
@@ -108,7 +109,7 @@ test('two first sends at once reach one conversation, not two', async () => {
   }
 });
 
-test('the thread it makes is the threads route own thread, pinned to AWS Bedrock', async () => {
+test('the thread it makes is the threads route own thread, pinned to the Nectovia default', async () => {
   const control = await project('Control');
   await api<Conversation>(`/projects/${control.id}/threads`, 'POST', {
     name: 'Diomedes',
@@ -126,7 +127,7 @@ test('the thread it makes is the threads route own thread, pinned to AWS Bedrock
   });
   const made = threadsOf(mine.id)[0];
   const wouldBe = threadsOf(control.id)[0];
-  expect(shape(made)).toEqual({ ...shape(wouldBe), engine: 'aws-bedrock' });
+  expect(shape(made)).toEqual({ ...shape(wouldBe), engine: 'nectovia' });
   // `toEqual` passes over a key whose value is undefined, so the key sets are compared too.
   expect(Object.keys(made).sort()).toEqual([...Object.keys(wouldBe), 'engine'].sort());
   expect(binding).toEqual({ projectId: mine.id, threadId: made.id });
@@ -196,7 +197,7 @@ test('a task, document or review thread is never adopted, and neither is a work 
   expect(byId(mine.id, binding.threadId)).toMatchObject({
     name: 'Diomedes',
     mode: 'auto',
-    engine: 'aws-bedrock',
+    engine: 'nectovia',
     attachedTo: { kind: 'project', ref: mine.id },
     taskId: null,
   });
@@ -217,14 +218,14 @@ test('an adopted conversation on another engine is pinned, and no sibling moves'
     }),
   ]);
   expect((await provision(mine.id)).threadId).toBe('Coldest');
-  expect(byId(mine.id, 'Coldest').engine).toBe('aws-bedrock');
+  expect(byId(mine.id, 'Coldest').engine).toBe('nectovia');
   expect(byId(mine.id, 'Cnewer').engine).toBe('codex');
   expect(byId(mine.id, 'Cordinary').engine).toBe('codex');
   expect(threadsOf(mine.id)).toHaveLength(3);
   // The pin was written by the same operation that adopted, so a restart still reads it.
   await close();
   await open();
-  expect(byId(mine.id, 'Coldest').engine).toBe('aws-bedrock');
+  expect(byId(mine.id, 'Coldest').engine).toBe('nectovia');
   expect(byId(mine.id, 'Cnewer').engine).toBe('codex');
 });
 
@@ -297,6 +298,6 @@ test('an ordinary thread is still made and still routed after a conversation exi
     { engine: 'sample' },
   );
   expect([rerouted.name, rerouted.mode, rerouted.engine]).toEqual(['Orders', 'ask', 'sample']);
-  expect(byId(mine.id, binding.threadId).engine).toBe('aws-bedrock');
+  expect(byId(mine.id, binding.threadId).engine).toBe('nectovia');
   expect(await provision(mine.id)).toEqual(binding);
 });

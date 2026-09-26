@@ -4,18 +4,70 @@
  * `ExternalEngine`s: nothing is discovered, installed, bound or signed in to,
  * and every place that handles a route must say what it does with these.
  */
-export const MODEL_API_ROUTES = ['aws-bedrock', 'azure-openai', 'openrouter', 'google-vertex'] as const;
+/**
+ * The provider routes: a provider's API reached with a company credential. Only these can be a
+ * route entry in the account service (`routeEntrySchema.provider`), and only these are the
+ * owner's tools in AI setup.
+ */
+export const MODEL_API_PROVIDERS = ['aws-bedrock', 'azure-openai', 'openrouter', 'google-vertex'] as const;
+export type ModelApiProvider = (typeof MODEL_API_PROVIDERS)[number];
+/**
+ * Nectovia's managed route (contract `nectovia-managed/1`,
+ * docs/implementation/2026-09-25-managed-inference-gateway.md). On this computer it runs like any
+ * model-API route, but it is not a provider: the account service's gateway pays for each call and
+ * meters it, and no provider credential exists on this computer for it.
+ */
+export const NECTOVIA_ROUTE = 'nectovia' as const;
+export const MODEL_API_ROUTES = [...MODEL_API_PROVIDERS, NECTOVIA_ROUTE] as const;
 export type ModelApiRoute = (typeof MODEL_API_ROUTES)[number];
 
 export const isModelApiRoute = (value: unknown): value is ModelApiRoute =>
   typeof value === 'string' && (MODEL_API_ROUTES as readonly string[]).includes(value);
+export const isModelApiProvider = (value: unknown): value is ModelApiProvider =>
+  typeof value === 'string' && (MODEL_API_PROVIDERS as readonly string[]).includes(value);
 
 export const MODEL_API_NAMES: Record<ModelApiRoute, string> = {
-  'aws-bedrock': 'AWS Bedrock (GPT-5.6 Luna)',
+  'aws-bedrock': 'AWS Bedrock (GPT-6 Luna)',
   'azure-openai': 'Azure OpenAI',
   openrouter: 'OpenRouter',
   'google-vertex': 'Google Vertex AI (Gemini 3.8 Flash)',
+  nectovia: 'Nectovia',
 };
+
+/**
+ * GPT-6 Luna on Bedrock, as the managed gateway's provider registry lists it (contract section 4):
+ * the US Geo inference profile, its rate card and Nectovia's own output cap. Kept in one place so
+ * the owner's AWS route and the Nectovia route's local guard price a call alike.
+ */
+export const GPT6_LUNA = {
+  model: 'us.openai.gpt-6-luna',
+  label: 'GPT-6 Luna',
+  rateCard: 'aws-bedrock-gpt-6-luna-us-2026-09-25.1',
+  /** Whole micro-USD per million tokens. */
+  rates: { input: 110_000, cacheRead: 11_000, cacheWrite: 137_500, output: 550_000 },
+  /** Nectovia's own limit on one answer's output, not a claim about the model's maximum. */
+  maxOutputTokens: 16_000,
+  /** The gateway refuses input past this bound rather than guess a long-context price. */
+  maxInputTokens: 272_000,
+  source:
+    'AWS Bedrock model card, OpenAI GPT-6 Luna, US Geo profile list prices per 1M tokens, checked 2026-09-25. Estimate only.',
+} as const;
+
+/**
+ * What `GET /api/ai/nectovia` returns: whether the Nectovia route can answer now, the model each
+ * tier runs as the account service published it, and whether this app was launched with the
+ * company's provider tools. Never a balance: the account service's ledger is the only one.
+ */
+export interface NectoviaRouteView {
+  route: 'nectovia';
+  /** True when the app was launched with `DIOMEDES_OWNER_ROUTES=1`: the provider cards show. */
+  ownerRoutes: boolean;
+  /** Null when a message would be sent; otherwise why it would be refused, in words. */
+  refusal: { code: string; reason: string } | null;
+  /** The published model for each tier, or null for a tier with no route. */
+  tiers: Record<'efficient' | 'focused' | 'thorough', { model: string; label: string } | null> | null;
+  policyRevision: number | null;
+}
 
 /** What `GET /api/ai/model-api/aws-bedrock` returns. Identifiers and state only, never a credential. */
 export interface AwsConnectionView {

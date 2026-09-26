@@ -1,5 +1,5 @@
 import type { EngineModel, ExternalEngine, Route } from './types.js';
-import { isModelApiRoute, MODEL_API_ROUTES, type ModelApiRoute } from './model-api.js';
+import { isModelApiRoute, MODEL_API_ROUTES, NECTOVIA_ROUTE, type ModelApiRoute } from './model-api.js';
 import type {
   Candidate,
   CandidateSource,
@@ -25,12 +25,12 @@ export function isRoute(value: unknown): value is Route {
   return ROUTES.some((id) => id === value);
 }
 /**
- * The route a Diomedes conversation is provisioned on when nobody chose one. A
- * typed literal, not the server-owned `AWS_BEDROCK_ROUTE`, because shared code
- * must not import a server module; a test asserts the two spellings agree.
- * Used only by the two conversation provisioners.
+ * The route a Diomedes conversation is provisioned on when nobody chose one:
+ * Nectovia's company-managed route (owner decision 2026-09-25). The customer
+ * connects nothing; the account service's gateway pays for and meters it.
+ * Used by the two conversation provisioners and the client's caption.
  */
-export const CONVERSATION_DEFAULT_ROUTE: Route = 'aws-bedrock';
+export const CONVERSATION_DEFAULT_ROUTE: Route = NECTOVIA_ROUTE;
 /**
  * What a Diomedes conversation may run on: the native Claude Code session or a
  * model-API route. The Home thread update and the send path share this one
@@ -63,6 +63,7 @@ export const ROUTE_NAMES: Record<Route, string> = {
   'azure-openai': 'Azure OpenAI',
   openrouter: 'OpenRouter',
   'google-vertex': 'Google Vertex AI',
+  nectovia: 'Nectovia',
 };
 /**
  * A route or engine id as a person reads it. An id outside the registry is

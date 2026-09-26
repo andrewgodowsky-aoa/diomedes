@@ -261,7 +261,10 @@ test('F01-F02: first run preserves detail and approvals, supports AI skip, and r
   await page.screenshot({ path: testInfo.outputPath('first-run-ai.png'), fullPage: true });
   await page.getByRole('button', { name: 'Skip AI setup' }).click();
   await expect(page.getByRole('heading', { name: 'Your workspace is ready' })).toBeVisible();
-  await expect(page.getByText(/AI setup was skipped/)).toBeVisible();
+  // The test account's business includes the Agent, so the ready page says so rather than
+  // offering sample work.
+  await expect(page.getByText('The Nectovia Agent is ready and included with your plan.')).toBeVisible();
+  await expect(page.getByText(/uses sample work on this computer/)).toHaveCount(0);
   await page.getByRole('button', { name: 'Open Nectovia' }).click();
   // The app opens to Nectovia. The Projects page is where it always was, one click away.
   await expect(page.getByRole('heading', { name: 'Nectovia', exact: true })).toBeVisible();

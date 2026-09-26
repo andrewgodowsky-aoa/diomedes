@@ -51,7 +51,7 @@ export type AgentSurface = 'conversation' | 'work' | 'team' | 'loop' | 'automati
 export type AgentRouteKind = 'managed' | 'byo' | 'local' | 'external-engine';
 
 export type AgentDecision =
-  | { admitted: true; admissionId: string; organizationId: string; planId: string | null; policyRevision: number; validUntil: string }
+  | { admitted: true; admissionId: string; organizationId: string; personId: string; planId: string | null; policyRevision: number; validUntil: string }
   | { admitted: false; code: string; reason: string };
 
 const MAX_REMEMBERED = 12;
@@ -451,6 +451,18 @@ export class AccountSessionService {
     return this.current?.policy ?? null;
   }
 
+  /**
+   * Ask the service for its published tier policy again, once. The last answer stays when the
+   * service cannot say; signed out, there is none.
+   */
+  async refreshPolicy(): Promise<RoutingPolicyAnswer | null> {
+    const current = this.current;
+    if (!current) return null;
+    const answer = await this.call((token) => this.backend.client.routingPolicy(token)).catch(() => null);
+    if (answer && this.current === current) current.policy = answer;
+    return this.current?.policy ?? null;
+  }
+
   async createOrganization(name: string) {
     const organization = await this.call((token) => this.backend.client.createOrganization(token, name));
     return { organizationId: organization.id, projection: await this.reload({ project: false }) };
@@ -470,7 +482,8 @@ export class AccountSessionService {
     phase: 'admit' | 'dispatch';
   }): Promise<AgentDecision> {
     if (!this.current) return { admitted: false, code: SIGN_IN_REQUIRED, reason: 'Sign in to use the Nectovia Agent.' };
-    const key = `${this.current.personId}|${input.organizationId}|${input.surface}|${input.rootJobId ?? ''}`;
+    // The route kind is part of the key: a managed admission and a BYO one are different records.
+    const key = `${this.current.personId}|${input.organizationId}|${input.surface}|${input.routeKind}|${input.rootJobId ?? ''}`;
     const cached = this.admissions.get(key);
     if (input.phase === 'dispatch' && cached && cached.until > this.now()) return cached.decision;
     let answer;
@@ -503,6 +516,7 @@ export class AccountSessionService {
       admitted: true as const,
       admissionId: answer.admissionId,
       organizationId: input.organizationId,
+      personId: answer.pins.personId,
       planId: answer.pins.planId,
       policyRevision: answer.pins.policyRevision,
       validUntil: new Date(until).toISOString(),

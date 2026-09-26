@@ -102,7 +102,7 @@ describe('AWS Bedrock setup view', () => {
       body: {
         accountId: '123456789012',
         region: 'us-east-1',
-        model: 'us.openai.gpt-5.6-luna',
+        model: 'us.openai.gpt-6-luna',
         apiKey: KEY,
         expiresAt: null,
         consent: true,

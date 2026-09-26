@@ -157,8 +157,8 @@ async function resolveNeed(resolution: 'go-ahead' | 'declined') {
   });
 }
 
-// The three routes this lane proved; Google Vertex AI arrived later with its own tests.
-type TestedRoute = Exclude<ModelApiRoute, 'google-vertex'>;
+// The three routes this lane proved; Google Vertex AI and Nectovia arrived later with their own tests.
+type TestedRoute = Exclude<ModelApiRoute, 'google-vertex' | 'nectovia'>;
 const connect: Record<TestedRoute, () => Promise<string>> = {
   'aws-bedrock': async () => {
     const view = await api<AwsConnectionView>('/ai/model-api/aws-bedrock', 'PUT', {

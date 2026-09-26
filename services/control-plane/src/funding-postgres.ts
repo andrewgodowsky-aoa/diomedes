@@ -223,6 +223,24 @@ export class PostgresFundingTransaction implements FundingTransaction {
       [tenantId, rootJobId]);
     return money(row?.used);
   }
+  /** Exactly one row moved, or this caller does not send. An unknown count is not a claim. */
+  async claimDispatch(tenantId: string, attemptId: string, at: string) {
+    const result = await this.client.query(
+      "UPDATE control_plane.funding_reservations SET dispatched_at=$3 WHERE tenant_id=$1 AND reservation_id=$2 AND state='pending' AND dispatched_at IS NULL",
+      [tenantId, attemptId, at]);
+    return result.rowCount === 1;
+  }
+  /** A key of its own: no organization's lock can collide with it. */
+  async lockCompany() {
+    await this.client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [JSON.stringify(['funding-company'])]);
+  }
+  /** Every tenant and organization: no tenant filter, by design. */
+  async companySpend(): Promise<MicroUsd> {
+    const row = await this.one(`SELECT
+        (SELECT COALESCE(SUM(provider_cost_micro_usd),0) FROM control_plane.funding_settlements)
+      + (SELECT COALESCE(SUM(reserved_micro_usd),0) FROM control_plane.funding_reservations WHERE state IN ('pending','uncertain','written-off')) AS company_spend`, []);
+    return money(row?.company_spend);
+  }
   async lastReceipt(tenantId: string, organizationId: string, periodId: string) {
     const row = await this.one('SELECT provider_receipt_ref,settled_at,allowance_debit_micro_usd FROM control_plane.funding_settlements WHERE tenant_id=$1 AND organization_id=$2 AND period_id=$3 ORDER BY settled_at DESC, reservation_id DESC LIMIT 1',
       [tenantId, organizationId, periodId]);

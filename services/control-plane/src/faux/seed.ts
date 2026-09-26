@@ -39,8 +39,8 @@ export const DEMO_ROUTES: readonly RouteSeed[] = [
   },
   {
     id: 'aws-luna-6', provider: 'aws-bedrock', model: 'us.openai.gpt-6-luna', label: 'GPT-6 Luna', region: 'us',
-    processing: 'AWS Bedrock US inference profile.', status: 'unqualified',
-    evidence: 'Announced on Bedrock 2026-09-22. Not yet checked on the company account, credits or quota.',
+    processing: 'AWS Bedrock US inference profile. In the faux cloud a scripted provider answers instead.', status: 'qualified',
+    evidence: 'Faux seed: scripted provider, 2026-09-25',
   },
   {
     id: 'aws-sol-6', provider: 'aws-bedrock', model: 'us.openai.gpt-6-sol', label: 'GPT-6 Sol', region: 'us',
@@ -98,8 +98,10 @@ export async function seedDemo(cloud: FauxCloud): Promise<SeedResult> {
   // The route registry and the first policy, by the Routing role.
   for (const entry of DEMO_ROUTES) await cloud.commercial.saveRoute(tokens.staffRouting, entry);
   await cloud.commercial.publishPolicy(tokens.staffRouting, {
-    tiers: { efficient: 'aws-luna-5-6', focused: 'vertex-gemini-3-8-flash', thorough: null },
-    note: 'Faux seed: the owner tier map of 2026-09-23. Thorough stays refused until GPT-6 Sol is qualified.',
+    // Managed inference (nectovia-managed/1): every tier runs on GPT-6 Luna. Reasoning effort
+    // differs by tier on the desktop; the route does not.
+    tiers: { efficient: 'aws-luna-6', focused: 'aws-luna-6', thorough: 'aws-luna-6' },
+    note: 'Faux seed: GPT-6 Luna behind all three tiers, answered by the scripted provider (2026-09-25).',
     baseRevision: 0,
   });
 

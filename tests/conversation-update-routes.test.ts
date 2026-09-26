@@ -257,6 +257,9 @@ describe('the confirmation, the note, the record and the next send agree', () =>
 
   test('V2: Home sharing history with Vertex only: the update says it won\'t remember, and a move to Vertex carries nothing', async () => {
     const at = await atHome(['google-vertex'], true);
+    // Home now starts on Nectovia's managed route; this case is about the owner's routes, so the
+    // person moves Home to AWS first.
+    await moveTo(at, { engine: 'aws-bedrock' });
     // Home's typed messages need no grant, so the first goes to AWS, where history is not shared.
     await onMain(at, 'v2-1');
     expect(seen.at(-1)!.provider).toBe('aws');

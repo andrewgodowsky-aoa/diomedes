@@ -3,7 +3,7 @@
  * host's view alone (`GET /api/ai/model-api/aws-bedrock`). Pure, so every
  * sentence a person reads here is testable without a browser.
  */
-import type { AwsConnectionView } from '../shared/model-api';
+import { GPT6_LUNA, type AwsConnectionView } from '../shared/model-api';
 
 export const AWS_ACCOUNT_PATTERN = /^\d{12}$/;
 export const AWS_MIN_KEY_LENGTH = 20;
@@ -95,7 +95,7 @@ export function awsConnectBody(input: AwsConnectInput, nowMs = Date.now()):
     return { ok: false, message: 'Confirm that conversations and chosen files may be sent to AWS under this account.' };
   return {
     ok: true,
-    body: { accountId, region: 'us-east-1', model: 'us.openai.gpt-5.6-luna', apiKey, expiresAt, consent: true },
+    body: { accountId, region: 'us-east-1', model: GPT6_LUNA.model, apiKey, expiresAt, consent: true },
   };
 }
 

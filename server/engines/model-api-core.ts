@@ -612,6 +612,11 @@ export interface RouteBinding {
   usage(envelope: StreamEnvelope): ProviderUsage | null;
   /** Route-specific refusal of a classified answer (served by another endpoint, model or payer). */
   served?(classified: ClassifiedEnvelope): { code: string; message: string } | null;
+  /**
+   * A route's own reading of an error status with its error body: the code and the sentence a
+   * person reads. Null keeps the shared wording. It never changes whether the hold is released.
+   */
+  refused?(status: number, error: { code: string | null; message: string } | null): { code: string; message: string } | null;
   /** Provider statuses whose readable error body means nothing was inferred. */
   releasableStatuses?: ReadonlySet<number>;
 }
@@ -915,6 +920,8 @@ export async function respondStream(input: {
   const classified = read.classified;
   const partialText = classified.text ? bounded(classified.text) : null;
   const common = { responseId: classified.responseId };
+  const own = seen.status >= 400 ? (binding.refused?.(seen.status, classified.providerError) ?? null) : null;
+  if (own) return fail(own.code, own.message, common);
   if (seen.status >= 400 || classified.providerError)
     return fail(
       seen.status >= 500 ? `${prefix}_provider_error` : `${prefix}_provider_refused`,

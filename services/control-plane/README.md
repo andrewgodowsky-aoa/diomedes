@@ -53,6 +53,27 @@ end on this computer. Its store is a separate file, and `POST
 /faux/bootstrap-admin {subject}` does what `npm run bootstrap-admin` does
 against Postgres.
 
+The faux cloud serves the managed inference gateway (`/managed/v1/*`, contract
+`nectovia-managed/1`) with the Worker's own handler. A scripted provider answers
+it offline with exact usage; the placeholder key it holds stands in for the
+Worker secret `BEDROCK_API_KEY`. Bedrock is called for real only when
+`NECTOVIA_FAUX_BEDROCK_API_KEY` is set, which needs Andrew's spend approval
+first; with that key set and no readable `MANAGED_SPEND_CEILING_MICRO_USD`,
+the faux cloud refuses to start. Two optional spend settings are read from the environment under the
+Worker's own names (or `managed.settings` in code), whole numbers, blank meaning
+unset, anything unreadable refusing every managed call with 503
+`route_unavailable`:
+
+- `MANAGED_SPEND_CEILING_MICRO_USD`: the most the provider account may owe
+  across every business, for all time: settled provider cost plus every
+  pending, uncertain or written-off hold in full plus the new call's hold. A
+  call that would pass it is refused before any hold with 503
+  `route_unavailable`, "Nothing was charged." Here it counts this store's
+  ledger only, never the Worker's database, so the two do not share a total.
+- `MANAGED_MAX_OUTPUT_TOKENS`: lowers the registry's output cap (16,000),
+  never raises it. A larger request is clamped silently, and the response
+  names the clamp in `X-Nectovia-Max-Output`.
+
 ## Entry and configuration
 
 `src/worker.ts` is the actual Fetch entry. Existing route shapes are retained:
@@ -111,7 +132,7 @@ the issuer (`https://api.workos.com`) and the audience
    (workos.com/docs/authkit/jwt-templates), add
    `"aud": "https://accounts.diomedes.net"`. `aud` is not one of the reserved
    keys; if WorkOS refuses it anyway, stop. Do not remove the audience check. Put
-   the client ID (`client_...`, public) in `WORKOS_CLIENT_ID` above, and run
+   the client ID (`client_...`, public) in `WORKOS_CLIENT_ID` in both `wrangler.jsonc` files (step 3), and run
    `npx wrangler secret put WORKOS_API_KEY` with the `sk_test_...` key. The
    people who sign in need verified emails.
 2. **Neon** (project small-wave-81999606). Make a database `accounts_staging`,
@@ -121,9 +142,11 @@ the issuer (`https://api.workos.com`) and the audience
    migrate`. Create the login `cp_runtime`, run `scripts/runtime-permissions.sql`
    as the owner, and run `npx wrangler secret put DATABASE_URL` with
    `postgresql://cp_runtime:<password>@<host>/accounts_staging?sslmode=require`.
-3. **Deploy.** Merging to main deploys through Workers Builds, and the vars ride
-   with the deploy. That is why the client ID lives in this file and not in the
-   dashboard.
+3. **Deploy.** Merging to main deploys through Workers Builds, which reads the
+   **repository root's** `wrangler.jsonc`, not this package's. The two files must
+   carry the same routes and vars, and `tests/deploy-config.test.ts` fails the
+   build when they differ. The vars ride with the deploy, which is why the client
+   ID lives in these files and not in the dashboard.
 4. **First admin.** Build the company Operations app (`OPS_WORKOS_CLIENT_ID=client_...
    npm run package:company` in diomedes-ops) and sign in once. It refuses you
    and shows your WorkOS user id. Then, with the same pins as the migration,

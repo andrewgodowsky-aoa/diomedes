@@ -1,5 +1,5 @@
 import { ROUTES } from '../shared/engines';
-import { MODEL_API_ROUTES } from '../shared/model-api';
+import { MODEL_API_PROVIDERS } from '../shared/model-api';
 import {
   DEFAULT_TIER_MAP,
   OWNER_PIN_MODEL_KEY,
@@ -31,7 +31,7 @@ export function tierDraftFrom(services: Record<string, unknown> | undefined): Ti
  * hides what the tier is set to.
  */
 export function tierRouteChoices(current: string): { id: string; name: string }[] {
-  const ids: string[] = [...MODEL_API_ROUTES];
+  const ids: string[] = [...MODEL_API_PROVIDERS];
   if (!ids.includes(current)) ids.push(current);
   return ids.map((id) => ({ id, name: tierRouteName(id) }));
 }

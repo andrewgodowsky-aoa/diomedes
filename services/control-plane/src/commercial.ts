@@ -37,7 +37,7 @@ import {
   type StaffPermission,
   type StaffRole,
 } from '../../../shared/access.js';
-import { MODEL_API_ROUTES } from '../../../shared/model-api.js';
+import { MODEL_API_PROVIDERS as MODEL_API_ROUTES } from '../../../shared/model-api.js';
 import { CREDIT_MICRO_USD, creditAmount, periodIdFor, publishedMonthlyGrant, type UsageState } from '../../../shared/managed-usage.js';
 import type { EntitlementView, Membership, Organization, Person } from '../../../shared/workspaces.js';
 import { decideAgentAdmission, snapshotFromView, type AgentAdmissionDecision } from '../contract/contract.js';
@@ -208,6 +208,8 @@ export interface CommercialTransaction {
   auditLog(input: { organizationId?: string; limit: number }): Promise<AuditEvent[]>;
   saveAdmission(row: AdmissionRecord): Promise<void>;
   admissions(organizationId: string, limit: number): Promise<AdmissionRecord[]>;
+  /** One admission by id, within one tenant. Another tenant's record reads as absent. */
+  admission(tenantId: string, id: string): Promise<AdmissionRecord | undefined>;
   // Staff directory reads over the account tables. Reads only; bounded.
   organizations(query: string, limit: number): Promise<{ organization: Organization; activeMembers: number }[]>;
   organizationRecord(id: string): Promise<Organization | undefined>;

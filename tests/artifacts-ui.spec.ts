@@ -30,7 +30,7 @@ import {
   WEEKLY_VISUAL,
   type ArtifactEngine,
 } from './fixtures/scripted-artifacts';
-import { AWS_CONNECT_BODY } from './fixtures/scripted-home-luna';
+import { gateway, nectoviaAccounts } from './fixtures/nectovia-home';
 import { shareAfter } from './fixtures/cloud-sharing-grant';
 
 // Model artifacts in the real Console: the real host, Store, event stream and built bundle, with
@@ -133,6 +133,8 @@ const leaks: string[] = [];
 let leakMark = 0;
 /** Every policy violation the Console's own document reported in this test. */
 let violations: string[] = [];
+/** Calls that went to a provider directly rather than through Nectovia's gateway. */
+let direct = 0;
 
 async function api<T>(route: string, method = 'GET', data?: unknown): Promise<T> {
   const response = await fetch(`${url}/api${route}`, {
@@ -208,6 +210,11 @@ test.beforeAll(async () => {
   url = `http://127.0.0.1:${port}`;
   probes.stun = `stun:127.0.0.1:${stunSocket.address().port}`;
   probes.leak = `${url}/leak`;
+  // The Diomedes conversation answers on Nectovia, the company-managed route: the app signs the
+  // faux seed's Business owner in at start (test mode) and reaches the real account service and
+  // its real managed gateway, with the artifact script answering behind the gateway at the
+  // provider boundary. The customer connects nothing.
+  const { accounts } = await nectoviaAccounts(artifactTransport);
   app = await createApp({
     port,
     clientPort: port,
@@ -216,7 +223,12 @@ test.beforeAll(async () => {
     engineService: engine.service,
     reviewerAdapter: null,
     secretBox: testOnlySecretBox(),
-    modelApiTransport: artifactTransport,
+    // Nothing on this computer calls a provider directly, so this transport only counts.
+    modelApiTransport: (async () => {
+      direct += 1;
+      throw new Error('No provider is called directly in this spec.');
+    }) as typeof globalThis.fetch,
+    accounts,
     // An installed Windows build, so the host's updater runs; its channel is the fixture's.
     updateOverrides: { platform: 'win32', packaged: true, installed: true, transport: update.transport },
   });
@@ -230,10 +242,7 @@ test.beforeAll(async () => {
   await api('/ai/discover', 'POST', { consent: true });
   await api(`/ai/check/${ARTIFACT_ENGINE}`, 'POST', {});
   await api('/ai/select', 'POST', { engine: ARTIFACT_ENGINE, model: ARTIFACT_MODEL });
-  // The Diomedes conversation runs on AWS Bedrock (Luna), connected and spend-approved the way a
-  // person would do it; only its transport is scripted. Project threads stay on Claude Code.
-  await api('/ai/model-api/aws-bedrock', 'PUT', AWS_CONNECT_BODY);
-  await api('/ai/model-api/aws-bedrock/spend-limit', 'PUT', { capUsd: 1, consent: true });
+  // Project threads stay on Claude Code; the Diomedes conversation is Nectovia's (above).
 });
 
 test.afterAll(async () => {
@@ -1427,10 +1436,14 @@ test('on the Nectovia page the panel opens beside the conversation, and says why
   await page.goto(url);
   await expect(page.getByRole('heading', { name: 'Nectovia', exact: true })).toBeVisible();
   const box = page.getByRole('textbox', { name: 'Message Nectovia' });
+  const calls = gateway.length;
   await box.fill('CHART of this week');
   await box.press('Enter');
   const turn = page.locator('.turn.dio').last();
   await expect(turn.getByRole('img', { name: WEEKLY, exact: true })).toBeVisible();
+  // The answer came through Nectovia's gateway, and nothing here called a provider itself.
+  expect(gateway.length).toBeGreaterThan(calls);
+  expect(direct).toBe(0);
   const open = panelControl(turn, 'Weekly sends');
   await expect(open).toBeVisible();
   await open.click();

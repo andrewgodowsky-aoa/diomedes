@@ -8,7 +8,14 @@ import { Diomedes, routeName } from '../client/console/Diomedes';
 // model (owner decision 2026-09-23).
 
 describe('the route caption', () => {
-  it('names the conversation default AWS Bedrock (Luna)', () => {
+  it('names the conversation default Nectovia with the model its policy publishes', () => {
+    // The label is the account service's own (the Home reads it from GET /api/ai/nectovia).
+    expect(routeName('nectovia', 'GPT-6 Luna')).toBe('Nectovia (GPT-6 Luna)');
+    // Before the policy is read, the route alone.
+    expect(routeName('nectovia')).toBe('Nectovia');
+  });
+
+  it('names the owner AWS route AWS Bedrock (Luna)', () => {
     expect(routeName('aws-bedrock')).toBe('AWS Bedrock (Luna)');
   });
 
