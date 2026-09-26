@@ -102,6 +102,44 @@ function accessAnswer(answer: unknown, organizationId: string): AccessView | nul
 }
 
 /**
+ * The fields of a `POST /account/organizations/:id/agent-admissions` answer this host reads. A
+ * refusal needs its code and the sentence the person reads. An admission needs the record the
+ * gateway checks, who and what it was pinned to, and a time it is good until. `{}`, a 200 that is
+ * not JSON, an admission without its id or pins, a `validUntil` that is not a time, or another
+ * business's admission is no answer, exactly as a failed request is.
+ */
+const admissionRefusalSchema = z.object({
+  decision: z.object({ admitted: z.literal(false), code: z.string().min(1), reason: z.string().min(1) }),
+});
+const admissionGrantSchema = z.object({
+  admissionId: z.string().min(1),
+  decision: z.object({ admitted: z.literal(true) }),
+  pins: z.object({
+    organizationId: z.string(),
+    personId: z.string().min(1),
+    planId: z.string().nullable(),
+    policyRevision: z.number().int().nonnegative(),
+  }),
+  validUntil: z.string().refine((value) => Number.isFinite(Date.parse(value))),
+});
+type AdmissionAnswer =
+  | { admitted: false; code: string; reason: string }
+  | { admitted: true; admissionId: string; personId: string; planId: string | null; policyRevision: number; validUntil: string };
+
+/** The service's admission decision for this business, or null when it did not give one. */
+function admissionAnswer(answer: unknown, organizationId: string): AdmissionAnswer | null {
+  const refused = admissionRefusalSchema.safeParse(answer);
+  if (refused.success) return refused.data.decision;
+  const admitted = admissionGrantSchema.safeParse(answer);
+  if (!admitted.success || admitted.data.pins.organizationId !== organizationId) return null;
+  const { admissionId, pins, validUntil } = admitted.data;
+  return { admitted: true, admissionId, personId: pins.personId, planId: pins.planId, policyRevision: pins.policyRevision, validUntil };
+}
+
+const UNREADABLE_ADMISSION_REASON =
+  'The account service answered in a way this app could not read, so the Nectovia Agent could not confirm this business includes it. Nothing was sent.';
+
+/**
  * The account service's own refusals of an Agent admission because the person is not an active
  * member of the business: its `member()` and `membership()` checks
  * (services/control-plane/src/account-service.ts), each a 403 whose JSON body carries the sentence.
@@ -538,9 +576,9 @@ export class AccountSessionService {
     const key = `${this.current.personId}|${input.organizationId}|${input.surface}|${input.routeKind}|${input.rootJobId ?? ''}`;
     const cached = this.admissions.get(key);
     if (input.phase === 'dispatch' && cached && cached.until > this.now()) return cached.decision;
-    let answer;
+    let reply: unknown;
     try {
-      answer = await this.call((token) =>
+      reply = await this.call((token) =>
         this.backend.client.admitAgent(token, input.organizationId, {
           surface: input.surface,
           routeKind: input.routeKind,
@@ -561,18 +599,25 @@ export class AccountSessionService {
         reason: 'The account service could not be reached, so the Nectovia Agent could not confirm this business includes it. Nothing was sent.',
       };
     }
-    if (!answer.decision.admitted) {
+    const answer = admissionAnswer(reply, input.organizationId);
+    // An answer this host cannot read is not a decision: the Agent does not start, nothing is cached,
+    // and the next piece of work asks again. It is not a refusal of the business either.
+    if (!answer) {
       this.admissions.delete(key);
-      return { admitted: false, code: answer.decision.code, reason: answer.decision.reason };
+      return { admitted: false, code: 'entitlement_unknown', reason: UNREADABLE_ADMISSION_REASON };
+    }
+    if (!answer.admitted) {
+      this.admissions.delete(key);
+      return { admitted: false, code: answer.code, reason: answer.reason };
     }
     const until = Math.min(Date.parse(answer.validUntil), this.now() + ADMISSION_CACHE_MAX_MS);
     const decision = {
       admitted: true as const,
       admissionId: answer.admissionId,
       organizationId: input.organizationId,
-      personId: answer.pins.personId,
-      planId: answer.pins.planId,
-      policyRevision: answer.pins.policyRevision,
+      personId: answer.personId,
+      planId: answer.planId,
+      policyRevision: answer.policyRevision,
       validUntil: new Date(until).toISOString(),
     };
     this.admissions.set(key, { decision, until });
