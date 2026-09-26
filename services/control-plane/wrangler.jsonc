@@ -44,6 +44,9 @@
   //   host and database as DATABASE_URL. Only the gateway's credit periods, jobs, holds and
   //   settlements use it; DATABASE_URL's cp_runtime may only read funding rows. Set it with
   //   `npx wrangler secret put FUNDING_DATABASE_URL --name diomedes`.
+  // Typed evaluations (/managed/v1/evaluations) also read OPENROUTER_API_KEY, sent only to the
+  // OpenRouter endpoint in src/managed-providers.ts. Without it that route alone answers 503
+  // route_unavailable. Set it with `npx wrangler secret put OPENROUTER_API_KEY --name diomedes`.
   //
   // Two optional spend settings are read at call time beside them (whole numbers; unset or blank is
   // off; anything unreadable refuses every managed call with 503 route_unavailable):

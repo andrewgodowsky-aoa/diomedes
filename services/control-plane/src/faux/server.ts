@@ -121,6 +121,8 @@ export interface RunningFauxCloud {
  * settings, MANAGED_SPEND_CEILING_MICRO_USD and MANAGED_MAX_OUTPUT_TOKENS, are
  * read from the environment under the same names; `managed.settings` wins. A
  * live key without a readable ceiling refuses to start (createFauxCloud).
+ * Typed evaluations are answered by the scripted Decisions provider unless
+ * NECTOVIA_FAUX_OPENROUTER_API_KEY is set, under the same approval and rule.
  */
 export async function startFauxCloud(options: {
   file?: string | null;
@@ -131,16 +133,19 @@ export async function startFauxCloud(options: {
   identity?: FauxIdentityMode;
   managed?: FauxCloudOptions['managed'];
   liveBedrockApiKey?: string | null;
+  liveOpenRouterApiKey?: string | null;
 }): Promise<RunningFauxCloud> {
   const file = options.file === undefined ? defaultFauxCloudFile(options.identity) : options.file;
   const unlock = file ? await lock(file) : async () => {};
   try {
     const liveBedrockApiKey = options.liveBedrockApiKey !== undefined ? options.liveBedrockApiKey
       : process.env.NECTOVIA_FAUX_BEDROCK_API_KEY?.trim() || null;
+    const liveOpenRouterApiKey = options.liveOpenRouterApiKey !== undefined ? options.liveOpenRouterApiKey
+      : process.env.NECTOVIA_FAUX_OPENROUTER_API_KEY?.trim() || null;
     const fromEnvironment = Object.fromEntries(SPEND_SETTINGS.filter((name) => process.env[name] !== undefined).map((name) => [name, process.env[name]!]));
     const managed = { ...options.managed, settings: { ...fromEnvironment, ...options.managed?.settings } };
     const cloud = await createFauxCloud({ file, allowedOrigins: options.allowedOrigins, passwordIterations: options.passwordIterations,
-      identity: options.identity, managed, liveBedrockApiKey });
+      identity: options.identity, managed, liveBedrockApiKey, liveOpenRouterApiKey });
     const seed = options.seed ? await seedDemo(cloud) : null;
     const port = options.port ?? FAUX_CLOUD_PORT;
     const server = http.createServer(async (req, res) => {

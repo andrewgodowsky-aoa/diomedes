@@ -15,8 +15,15 @@
  * entitlement and routing are the commercial records', and every hold moves
  * through FundingService (openJob, reserve, markDispatched, settle,
  * markUncertain, releaseRefused).
+ *
+ * `POST /managed/v1/evaluations` is the second route through the same checks
+ * and the same hold lifecycle: one typed evaluation (Jev, on OpenRouter's
+ * Decisions API), held, sent once and settled before it answers
+ * (docs/implementation/2026-09-26-jev-managed-evaluations.md).
  */
+import { checkEvaluationRequest } from '../../../shared/evaluation-wire.js';
 import { inputTokenBound } from '../../../shared/token-bound.js';
+import { normalizeUsage } from '../../../shared/usage-contract.js';
 import {
   approvedJobCap,
   isJobTier,
@@ -24,9 +31,13 @@ import {
   micro,
   periodIdFor,
   publishedMonthlyGrant,
+  usageCost,
+  type AttemptSettlement,
+  type ChargeKind,
   type FundedAttempt,
   type JobTier,
   type MicroUsd,
+  type RateSnapshot,
   type UsageClass,
 } from '../../../shared/managed-usage.js';
 import { decideAgentAdmission, snapshotFromView } from '../contract/contract.js';
@@ -45,9 +56,18 @@ import { accountId, type AccountMembershipSnapshot } from './domain.js';
 import { AccountError } from './errors.js';
 import { FundingError, RELEASABLE_REFUSALS, type AttemptRef, type FundingRepository, type FundingService } from './funding.js';
 import {
+  EVALUATION_PROVIDER,
   MANAGED_PROVIDERS,
+  answeredAs,
   credentialFor,
+  credentialProblem,
+  decisionsBody,
+  decisionsUsage,
+  evaluationReply,
+  openRouterDecisionsCaller,
   registryRow,
+  type EvaluationProviderCaller,
+  type EvaluationProviderRow,
   type ProviderCaller,
   type ProviderEnv,
   type ProviderRegistryRow,
@@ -303,6 +323,10 @@ export const CEILING_REFUSAL = 'Nectovia’s model service isn’t available rig
 const ceilingReached = () => new ManagedError(503, 'route_unavailable', CEILING_REFUSAL);
 /** The contract names these three funding refusals as 402, whatever status FundingService gives them. */
 const PAYMENT_REFUSALS: ReadonlySet<string> = new Set(['insufficient_allowance', 'cap_request_required', 'no_period']);
+/** What a member reads when the business's grants leave included AI usage out. */
+export const MANAGED_INFERENCE_NOT_INCLUDED = 'Included AI usage is part of a Business plan, so nothing was sent.';
+/** An evaluation no provider could take under the data policy: it reached no model and was released. */
+export const PROVIDER_POLICY_REFUSAL = 'No provider that meets Nectovia’s data policy can take this right now. Nothing was charged.';
 
 export function managedHeaders(): Headers {
   return new Headers({ 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer' });
@@ -338,7 +362,8 @@ function header(headers: Headers, name: string, valid: (value: string) => boolea
   return value;
 }
 
-interface GatewayHeaders {
+/** What every managed call carries: who, for which business, under which admission, job and attempt. */
+interface JobHeaders {
   token: string;
   organizationId: string;
   admissionId: string;
@@ -347,10 +372,14 @@ interface GatewayHeaders {
   parentAttemptId: string | null;
   tier: JobTier;
   usageClass: UsageClass;
+}
+
+/** A response also names the routing policy revision its model was resolved from. */
+interface GatewayHeaders extends JobHeaders {
   policyRevision: number;
 }
 
-function gatewayHeaders(headers: Headers): GatewayHeaders {
+function jobHeaders(headers: Headers): JobHeaders {
   const token = header(headers, 'Authorization', isBearer).slice('Bearer '.length);
   const organizationId = header(headers, 'X-Nectovia-Organization', isAccountId);
   const admissionId = header(headers, 'X-Nectovia-Admission', isAccountId);
@@ -359,8 +388,13 @@ function gatewayHeaders(headers: Headers): GatewayHeaders {
   const parentAttemptId = headers.has('X-Nectovia-Parent-Attempt') ? header(headers, 'X-Nectovia-Parent-Attempt', isRunId) : null;
   const tier = header(headers, 'X-Nectovia-Tier', isJobTier) as JobTier;
   const usageClass = header(headers, 'X-Nectovia-Usage-Class', isUsageClass) as UsageClass;
+  return { token, organizationId, admissionId, jobId, attemptId, parentAttemptId, tier, usageClass };
+}
+
+function gatewayHeaders(headers: Headers): GatewayHeaders {
+  const job = jobHeaders(headers);
   const revision = header(headers, 'X-Nectovia-Policy-Revision', (value) => REVISION.test(value) && Number.isSafeInteger(Number(value)));
-  return { token, organizationId, admissionId, jobId, attemptId, parentAttemptId, tier, usageClass, policyRevision: Number(revision) };
+  return { ...job, policyRevision: Number(revision) };
 }
 
 // --- the owner's spend controls ----------------------------------------------------------------
@@ -529,21 +563,62 @@ export function scrubbed(text: string, secret: string): string {
   return chars.length > 300 ? chars.slice(0, 300).join('') : clean;
 }
 
-async function providerMessage(response: Response, credential: string): Promise<string> {
+/** OpenRouter's words for a request no endpoint was allowed to take. */
+const NO_ENDPOINT = /no (?:allowed )?(?:providers|endpoints)|data policy/i;
+
+/**
+ * A provider's refusal, read once: its sentence with the key taken out, and
+ * whether it says no endpoint could take the request at all (OpenRouter filters
+ * endpoints before it sends, and then reports `openrouter_metadata.attempt` 0).
+ */
+async function providerRefusal(response: Response, credential: string): Promise<{ message: string; unrouted: boolean }> {
   try {
     const value: unknown = JSON.parse(new TextDecoder().decode(await readBytes(response, 65_536)));
-    if (isObject(value) && isObject(value.error) && typeof value.error.message === 'string' && value.error.message.trim())
-      return scrubbed(value.error.message, credential);
+    const said = isObject(value) && isObject(value.error) && typeof value.error.message === 'string' && value.error.message.trim()
+      ? value.error.message : null;
+    const metadata = isObject(value) && isObject(value.openrouter_metadata) ? value.openrouter_metadata : null;
+    return { message: said === null ? REFUSED : scrubbed(said, credential), unrouted: metadata?.attempt === 0 || (said !== null && NO_ENDPOINT.test(said)) };
   } catch {
     // An unreadable refusal is still a refusal.
+    return { message: REFUSED, unrouted: false };
   }
-  return REFUSED;
+}
+
+async function providerMessage(response: Response, credential: string): Promise<string> {
+  return (await providerRefusal(response, credential)).message;
+}
+
+/** The customer's answer to a provider refusal whose hold was released. It never says our key failed. */
+function releasedRefusal(status: number, detail: string | null, retryAfter: string | null): ManagedError {
+  if (status === 429)
+    return new ManagedError(429, 'provider_busy', 'Nectovia’s model service is busy right now. Try again shortly.',
+      retryAfter !== null && /^[\x20-\x7e]{1,64}$/.test(retryAfter) ? { 'Retry-After': retryAfter } : {});
+  if (status === 401 || status === 403 || status === 404) return unavailable();
+  return new ManagedError(400, 'provider_refused', detail ?? REFUSED);
+}
+
+/**
+ * A hold at the dearest input-side rate (fresh input, cache write or cache
+ * read) for every input token the bound allows, so no mix of cache use can
+ * cost more than the hold, plus the output bound at the output rate, rounded up.
+ */
+function holdFor(rate: RateSnapshot, inputBound: number, outputBound: number): MicroUsd {
+  const inputRate = Math.max(rate.inputMicroUsdPerMillion, rate.cacheWriteMicroUsdPerMillion, rate.cacheReadMicroUsdPerMillion);
+  return micro(Number(
+    (BigInt(inputBound) * BigInt(inputRate) + BigInt(outputBound) * BigInt(rate.outputMicroUsdPerMillion) + 999_999n) / 1_000_000n,
+  ));
 }
 
 // --- the gateway (contract sections 2 and 3) -------------------------------------------------
 
 export const MANAGED_CONTRACT = 'nectovia-managed/1';
 export const MAX_REQUEST_BYTES = 2_000_000;
+/** An evaluation body: far above what its 32,000-token bound can fill, far below a response's. */
+export const MAX_EVALUATION_REQUEST_BYTES = 524_288;
+/** The most of a provider's evaluation answer the gateway reads. The desktop keeps 65,536 bytes of it. */
+export const MAX_EVALUATION_ANSWER_BYTES = 262_144;
+/** Output held per question: an answer is a few tokens, and this route prices output at nothing today. */
+export const EVALUATION_OUTPUT_TOKENS_PER_QUESTION = 64;
 /** v1 refuses long-context pricing rather than guessing it. */
 export const MAX_INPUT_TOKEN_BOUND = 272_000;
 export const ADMISSION_WINDOW_MS = 15 * 60_000;
@@ -564,6 +639,10 @@ export interface ManagedInferenceOptions {
   fundingReads: FundingRepository;
   caller: ProviderCaller;
   registry?: readonly ProviderRegistryRow[];
+  /** The typed-evaluation provider. Default: OpenRouter's Decisions API over the global fetch. */
+  evaluationCaller?: EvaluationProviderCaller;
+  /** The typed-evaluation route. Default: `EVALUATION_PROVIDER`. */
+  evaluationProvider?: EvaluationProviderRow;
   now?: () => number;
   idleTimeoutMs?: number;
 }
@@ -578,6 +657,15 @@ interface Dispatch {
 }
 
 const inFlight = () => new ManagedError(409, 'attempt_in_flight', 'That request is already being answered.');
+
+/** A request body as JSON, or the refusal a customer reads. */
+function parseBody(bytes: Uint8Array): unknown {
+  try {
+    return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
+  } catch {
+    throw new ManagedError(400, 'invalid_body', 'The request body is not valid JSON.');
+  }
+}
 
 export class ManagedInferenceService {
   private readonly now: () => number;
@@ -652,31 +740,11 @@ export class ManagedInferenceService {
   private async run(request: Request, env: ProviderEnv, headers: Headers, ctx?: ManagedContext): Promise<Response> {
     // 1. Headers.
     const h = gatewayHeaders(request.headers);
-    // 2. Membership.
-    const member = await this.member(h.token, h.organizationId);
-    const tenantId = member.organization.tenantId;
-    const at = this.at();
-    const state = await this.options.commercial.transaction(async (tx) => ({
-      admission: await tx.admission(tenantId, h.admissionId),
-      grants: await tx.grants(h.organizationId),
-      accessRevision: await tx.accessRevision(h.organizationId),
-      policy: await tx.policy(),
-      routes: await tx.routes(),
-    }));
-    // 3. The stored admission: evidence of intent, never a bearer credential.
-    this.checkAdmission(state.admission, member, h);
-    // 4. Entitlement, decided again from the current grants.
-    const view = entitlementFromGrants(state.grants, state.accessRevision, at);
-    const decision = decideAgentAdmission({ workspace: 'business', member: true, entitlement: snapshotFromView(view), at });
-    if (!decision.admitted) throw new ManagedError(403, 'agent_not_included', decision.reason);
+    // 2 to 4. Membership, the stored admission and the entitlement.
+    const { tenantId, state } = await this.admitted(h);
     // 5. The body.
-    const bytes = await this.readBody(request);
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
-    } catch {
-      throw new ManagedError(400, 'invalid_body', 'The request body is not valid JSON.');
-    }
+    const bytes = await this.readBody(request, MAX_REQUEST_BYTES);
+    const parsed = parseBody(bytes);
     const checked = validateResponsesBody(parsed);
     if (!checked.ok) throw new ManagedError(400, checked.code, checked.message);
     const body = checked.body;
@@ -696,27 +764,121 @@ export class ManagedInferenceService {
     const bound = inputTokenBound(bytes.byteLength, body.input.length);
     if (bound > MAX_INPUT_TOKEN_BOUND)
       throw new ManagedError(413, 'context_too_long', 'This conversation is too long for one request. Start a new one, or attach less.');
-    // 8. The job.
+    // 8 to 10. The job, the hold (the input bound and the output cap) and the dispatch commit.
+    const ref = await this.holdAndDispatch(h, tenantId, state.grants, {
+      kind: 'generation', route: entry.id, requestDigest: await digest(canonicalJson(parsed)), rate: row.rate,
+      maxMicroUsd: holdFor(row.rate, bound, maxOutputTokens), ceilingMicroUsd: controls.ceilingMicroUsd,
+    });
+    // 11. The call: the allowlisted body, with the route's model, store off, streaming,
+    // and the output cap the hold was priced at.
+    const forwarded = JSON.stringify({ ...body, model: entry.model, store: false, stream: true, max_output_tokens: maxOutputTokens });
+    return this.dispatch({ ref, row, credential, body: forwarded, headers, ctx });
+  }
+
+  /**
+   * `POST /managed/v1/evaluations`: one typed evaluation, held, sent once and
+   * settled before it answers. The same headers as a response less the policy
+   * revision, the same membership, admission and entitlement checks, and the same
+   * hold lifecycle; and the current grants must include AI usage, because this
+   * is included usage. Every refusal before dispatch sends nothing and holds
+   * nothing. Once a call is sent, X-Nectovia-Charge says what became of its hold:
+   * `settled` (with X-Nectovia-Charge-Micro-Usd and the tokens it was priced
+   * from), `uncertain` or `released`.
+   */
+  async evaluate(request: Request, env: ProviderEnv): Promise<Response> {
+    const headers = managedHeaders();
+    const attempt = request.headers.get('x-nectovia-attempt');
+    if (attempt !== null && RUN_ID.test(attempt)) headers.set('X-Nectovia-Attempt', attempt);
+    try {
+      return await this.runEvaluation(request, env, headers);
+    } catch (error) {
+      return managedErrorResponse(error, headers);
+    }
+  }
+
+  private async runEvaluation(request: Request, env: ProviderEnv, headers: Headers): Promise<Response> {
+    // 1. Headers.
+    const h = jobHeaders(request.headers);
+    // 2 to 4. Membership, the stored admission and the entitlement, as for a response.
+    const { tenantId, state, view } = await this.admitted(h);
+    // Included AI usage ('managed-inference'), decided again from the current grants.
+    if (!view.managedInference)
+      throw new ManagedError(403, 'managed_inference_not_included', MANAGED_INFERENCE_NOT_INCLUDED);
+    // 5. The body: a state and its questions, inside the route's bounds.
+    const bytes = await this.readBody(request, MAX_EVALUATION_REQUEST_BYTES);
+    const parsed = parseBody(bytes);
+    const checked = checkEvaluationRequest(parsed);
+    if (!checked.ok) throw new ManagedError(checked.code === 'request_too_large' ? 413 : 400, checked.code, checked.message);
+    // 6. The route, its key and the owner's spend controls.
+    const row = this.options.evaluationProvider ?? EVALUATION_PROVIDER;
+    const credential = credentialFor(row, env);
+    if (!credential) {
+      console.error(JSON.stringify({ event: 'managed-configuration-unavailable', setting: row.credential, rule: credentialProblem(row, env) ?? 'format' }));
+      throw unavailable();
+    }
+    const controls = spendControls(env);
+    headers.set('X-Nectovia-Model', row.model);
+    headers.set('X-Nectovia-Rate-Card', row.rate.version);
+    // 7. The input bound, over the body exactly as it will be sent.
+    const forwarded = decisionsBody(row, checked.request);
+    const questions = Object.keys(checked.request.questions).length;
+    const bound = inputTokenBound(new TextEncoder().encode(forwarded).byteLength, questions);
+    if (bound > MAX_INPUT_TOKEN_BOUND)
+      throw new ManagedError(413, 'request_too_large', 'This evaluation is too large for one request.');
+    // 8 to 10. The job, the hold and the dispatch commit, as for a response.
+    const ref = await this.holdAndDispatch(h, tenantId, state.grants, {
+      kind: 'advisor', route: row.id, requestDigest: await digest(canonicalJson(parsed)), rate: row.rate,
+      maxMicroUsd: holdFor(row.rate, bound, questions * EVALUATION_OUTPUT_TOKENS_PER_QUESTION), ceilingMicroUsd: controls.ceilingMicroUsd,
+    });
+    // 11. The call, once, and its settlement before anything is answered.
+    return this.decide(ref, row, credential, forwarded, headers);
+  }
+
+  /**
+   * Steps 2 to 4 of every managed call. The person is a current member; the
+   * stored admission is theirs, managed, current and pinned to this job
+   * (evidence of intent, never a bearer credential); and the business's grants,
+   * read now, still admit the Agent.
+   */
+  private async admitted(h: JobHeaders) {
+    const member = await this.member(h.token, h.organizationId);
+    const tenantId = member.organization.tenantId;
+    const at = this.at();
+    const state = await this.options.commercial.transaction(async (tx) => ({
+      admission: await tx.admission(tenantId, h.admissionId),
+      grants: await tx.grants(h.organizationId),
+      accessRevision: await tx.accessRevision(h.organizationId),
+      policy: await tx.policy(),
+      routes: await tx.routes(),
+    }));
+    this.checkAdmission(state.admission, member, h);
+    const view = entitlementFromGrants(state.grants, state.accessRevision, at);
+    const decision = decideAgentAdmission({ workspace: 'business', member: true, entitlement: snapshotFromView(view), at });
+    if (!decision.admitted) throw new ManagedError(403, 'agent_not_included', decision.reason);
+    return { tenantId, state, view };
+  }
+
+  /**
+   * Steps 8 to 10 of every managed call: the job, this month's credit, the hold
+   * and the dispatch commit. A refusal here sent nothing. On return the attempt
+   * is marked dispatched by this caller alone, and only this caller may send it.
+   */
+  private async holdAndDispatch(h: JobHeaders, tenantId: string, grants: readonly FeatureGrant[], hold: {
+    kind: ChargeKind; route: string; requestDigest: string; rate: RateSnapshot; maxMicroUsd: MicroUsd; ceilingMicroUsd: MicroUsd | null;
+  }): Promise<AttemptRef> {
     const ref: AttemptRef = { tenantId, organizationId: h.organizationId, attemptId: h.attemptId };
     await this.options.funding.openJob({
       tenantId, organizationId: h.organizationId, rootJobId: h.jobId, runRef: h.jobId, parentRunRef: null,
       tier: h.tier, capMicroUsd: approvedJobCap(h.tier),
     });
-    await this.ensurePeriod(tenantId, h.organizationId, state.grants);
-    // 9. The hold: the input bound at the highest input-side rate (fresh input, cache write or
-    // cache read), so no mix of cache use can cost more than the hold, plus the output cap at
-    // the output rate, rounded up.
-    const inputRate = Math.max(row.rate.inputMicroUsdPerMillion, row.rate.cacheWriteMicroUsdPerMillion, row.rate.cacheReadMicroUsdPerMillion);
-    const maxMicroUsd = micro(Number(
-      (BigInt(bound) * BigInt(inputRate) + BigInt(maxOutputTokens) * BigInt(row.rate.outputMicroUsdPerMillion) + 999_999n) / 1_000_000n,
-    ));
+    await this.ensurePeriod(tenantId, h.organizationId, grants);
     // The company ceiling is checked inside the reserving transaction, so a refusal holds nothing.
     let attempt: FundedAttempt;
     try {
       attempt = await this.options.funding.reserve({
-        ...ref, rootJobId: h.jobId, parentAttemptId: h.parentAttemptId, kind: 'generation', route: entry.id,
-        requestDigest: await digest(canonicalJson(parsed)), rateSnapshot: row.rate, maxMicroUsd, usageClass: h.usageClass,
-        companyCeilingMicroUsd: controls.ceilingMicroUsd,
+        ...ref, rootJobId: h.jobId, parentAttemptId: h.parentAttemptId, kind: hold.kind, route: hold.route,
+        requestDigest: hold.requestDigest, rateSnapshot: hold.rate, maxMicroUsd: hold.maxMicroUsd, usageClass: h.usageClass,
+        companyCeilingMicroUsd: hold.ceilingMicroUsd,
       });
     } catch (error) {
       if (!(error instanceof FundingError && error.code === 'company_ceiling')) throw error;
@@ -729,7 +891,7 @@ export class ManagedInferenceService {
     if (attempt.state !== 'pending')
       throw new ManagedError(409, 'attempt_replayed',
         `Attempt ${h.attemptId} was already sent. Read its outcome at /managed/v1/attempts/${h.attemptId}, and retry under a new attempt id.`);
-    // 10. Dispatch commits before anything leaves, and is exclusive: only the caller whose
+    // Dispatch commits before anything leaves, and is exclusive: only the caller whose
     // conditional update moved the attempt sends. Any other, in any isolate, gets attempt_in_flight.
     try {
       await this.options.funding.markDispatched(ref);
@@ -737,10 +899,110 @@ export class ManagedInferenceService {
       if (error instanceof FundingError && error.code === 'attempt_in_flight') throw inFlight();
       throw error;
     }
-    // 11. The call: the allowlisted body, with the route's model, store off, streaming,
-    // and the output cap the hold was priced at.
-    const forwarded = JSON.stringify({ ...body, model: entry.model, store: false, stream: true, max_output_tokens: maxOutputTokens });
-    return this.dispatch({ ref, row, credential, body: forwarded, headers, ctx });
+    return ref;
+  }
+
+  /**
+   * One evaluation call and what became of its hold. The provider is asked once,
+   * its answer is read whole, and the hold is settled, parked or released before
+   * the customer hears anything, with the outcome in X-Nectovia-Charge.
+   */
+  private async decide(ref: AttemptRef, row: EvaluationProviderRow, credential: string, body: string, headers: Headers): Promise<Response> {
+    const caller = this.options.evaluationCaller ?? openRouterDecisionsCaller();
+    const lost = async (reason: string): Promise<never> => {
+      await this.park(ref, reason);
+      headers.set('X-Nectovia-Charge', 'uncertain');
+      throw unavailable();
+    };
+    const abort = new AbortController();
+    let response: Response;
+    try {
+      response = await within(caller({ row, credential, body, signal: abort.signal }), this.idleTimeoutMs, () => abort.abort());
+    } catch {
+      return lost('The provider call failed before it answered, by a network failure or a timeout. The provider may still have received it.');
+    }
+    const requestId = row.requestIdHeaders.map((name) => response.headers.get(name)).find((value) => value !== null && RUN_ID.test(value)) ?? null;
+    if (response.status < 200 || response.status > 299) return this.evaluationRefused(response, ref, credential, requestId, headers);
+    let answer: Record<string, unknown>;
+    try {
+      const bytes = await within(readBytes(response, MAX_EVALUATION_ANSWER_BYTES), this.idleTimeoutMs, () => abort.abort());
+      const value: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
+      if (!isObject(value)) throw new TypeError('The answer is not an object.');
+      answer = value;
+    } catch {
+      return lost('The provider answered, but its answer could not be read, so what it used is unknown.');
+    }
+    const receipt = await this.settleEvaluation(ref, row, answer, requestId);
+    headers.set('X-Nectovia-Charge', receipt ? 'settled' : 'uncertain');
+    if (receipt) {
+      headers.set('X-Nectovia-Charge-Micro-Usd', String(receipt.allowanceDebitMicroUsd));
+      headers.set('X-Nectovia-Input-Tokens', String(receipt.usage.inputTokens));
+      headers.set('X-Nectovia-Output-Tokens', String(receipt.usage.outputTokens));
+    }
+    // Paid for, whatever comes next; an answer with no answers in it is still refused.
+    if (!isObject(answer.answers)) throw unavailable();
+    return Response.json(evaluationReply(answer), { status: 200, headers });
+  }
+
+  /**
+   * Settle an answered evaluation from the usage the provider reported, priced
+   * under the route's rate. It stays uncertain, never zero, when the usage is
+   * missing or unreadable, when another model answered, when the provider says
+   * it cost more than that price, or when there is nothing to settle against.
+   * Null means it was parked.
+   */
+  private async settleEvaluation(ref: AttemptRef, row: EvaluationProviderRow, answer: Record<string, unknown>, requestId: string | null): Promise<AttemptSettlement | null> {
+    const park = async (reason: string) => {
+      await this.park(ref, reason);
+      return null;
+    };
+    const usage = answer.usage;
+    if (!isObject(usage)) return park('The provider reported no usage for this evaluation.');
+    if (answer.model !== undefined && (typeof answer.model !== 'string' || !answeredAs(row, answer.model)))
+      return park('A model other than the one this call was priced for answered it.');
+    const counts = decisionsUsage(usage);
+    const cost = usage.cost;
+    const known = normalizeUsage(counts);
+    // OpenRouter reports what it charged in USD. More than the published price means the price moved.
+    if (typeof cost === 'number' && Number.isFinite(cost) && known.state === 'known' &&
+        Math.round(cost * 1e12) > usageCost(row.rate, known.usage) * 1_000_000)
+      return park('The provider reported a cost above the published price, so the charge is held for reconciliation.');
+    const receiptRef = typeof answer.id === 'string' && RUN_ID.test(answer.id) ? answer.id : requestId;
+    if (!receiptRef) return park('The provider named no response or request id to settle against.');
+    try {
+      // A report FundingService cannot price keeps the hold as uncertain, with its reason.
+      const settled = await this.options.funding.settle({ ...ref, receiptRef, usage: counts, raw: usage, reconciledFrom: 'response' });
+      return settled.outcome === 'settled' ? settled.settlement : null;
+    } catch {
+      return park('Settlement from the provider’s usage did not complete. The hold stays until reconciliation.');
+    }
+  }
+
+  /**
+   * A provider refusal to an evaluation, before any output. Released on a status
+   * the provider does not bill, parked otherwise, exactly as for a response. A
+   * request no endpoint could take under the data policy is refused by name and
+   * never sent anywhere else. Always throws the customer's answer.
+   */
+  private async evaluationRefused(response: Response, ref: AttemptRef, credential: string, requestId: string | null, headers: Headers): Promise<never> {
+    const status = response.status;
+    if (!RELEASABLE_STATUSES.has(status)) {
+      await response.body?.cancel().catch(() => {});
+      await this.park(ref, `The provider answered HTTP ${status} before any output, so it may have processed the request.`);
+      headers.set('X-Nectovia-Charge', 'uncertain');
+      throw unavailable();
+    }
+    let said: { message: string; unrouted: boolean } | null = null;
+    if (status === 400 || status === 404 || status === 413 || status === 422) said = await providerRefusal(response, credential);
+    else await response.body?.cancel().catch(() => {});
+    const released = await this.releaseRefused(ref, status, requestId);
+    headers.set('X-Nectovia-Charge', released ? 'released' : 'uncertain');
+    if (status === 404 && said?.unrouted) {
+      console.warn(JSON.stringify({ event: 'managed-evaluation-provider-policy', attemptId: ref.attemptId }));
+      // "Nothing was charged" is said only of a hold that was released.
+      throw released ? new ManagedError(503, 'evaluation_provider_policy', PROVIDER_POLICY_REFUSAL) : unavailable();
+    }
+    throw releasedRefusal(status, said?.message ?? null, response.headers.get('retry-after'));
   }
 
   private async member(token: string, organizationId: string): Promise<AccountMembershipSnapshot> {
@@ -755,7 +1017,7 @@ export class ManagedInferenceService {
     }
   }
 
-  private checkAdmission(record: AdmissionRecord | undefined, member: AccountMembershipSnapshot, h: GatewayHeaders) {
+  private checkAdmission(record: AdmissionRecord | undefined, member: AccountMembershipSnapshot, h: JobHeaders) {
     const now = this.now();
     const at = record ? Date.parse(record.at) : Number.NaN;
     const current = at <= now + 5_000 && now - at <= ADMISSION_WINDOW_MS;
@@ -765,12 +1027,12 @@ export class ManagedInferenceService {
       throw new ManagedError(403, 'admission_invalid', 'This work has no current admission to Nectovia’s managed model service. Ask for admission again, then retry.');
   }
 
-  private async readBody(request: Request): Promise<Uint8Array> {
+  private async readBody(request: Request, max: number): Promise<Uint8Array> {
     try {
-      return await readBytes(request, MAX_REQUEST_BYTES);
+      return await readBytes(request, max);
     } catch (error) {
       if (error instanceof RangeError)
-        throw new ManagedError(413, 'request_too_large', `A request can be at most ${MAX_REQUEST_BYTES.toLocaleString('en-US')} bytes.`);
+        throw new ManagedError(413, 'request_too_large', `A request can be at most ${max.toLocaleString('en-US')} bytes.`);
       throw new ManagedError(400, 'invalid_body', 'A JSON request body is required.');
     }
   }
@@ -870,14 +1132,7 @@ export class ManagedInferenceService {
     if (status === 400 || status === 413 || status === 422) detail = await providerMessage(response, call.credential);
     else await response.body?.cancel().catch(() => {});
     await this.releaseRefused(call.ref, status, requestId);
-    if (status === 429) {
-      const retry = response.headers.get('retry-after');
-      throw new ManagedError(429, 'provider_busy', 'Nectovia’s model service is busy right now. Try again shortly.',
-        retry !== null && /^[\x20-\x7e]{1,64}$/.test(retry) ? { 'Retry-After': retry } : {});
-    }
-    // Never tell a customer our key failed.
-    if (status === 401 || status === 403 || status === 404) throw unavailable();
-    throw new ManagedError(400, 'provider_refused', detail ?? REFUSED);
+    throw releasedRefusal(status, detail, response.headers.get('retry-after'));
   }
 
   /**
@@ -887,11 +1142,13 @@ export class ManagedInferenceService {
    * request id as the evidence. If that release fails, the hold is parked as
    * uncertain for reconciliation: never released on a guess, never left pending.
    */
-  private async releaseRefused(ref: AttemptRef, status: number, requestId: string | null) {
+  private async releaseRefused(ref: AttemptRef, status: number, requestId: string | null): Promise<boolean> {
     try {
       await this.options.funding.releaseRefused({ ...ref, providerStatus: status, providerRequestId: requestId });
+      return true;
     } catch {
       await this.park(ref, `The provider refused the request with HTTP ${status} before any output. The hold stays until provider records reconcile it.`);
+      return false;
     }
   }
 

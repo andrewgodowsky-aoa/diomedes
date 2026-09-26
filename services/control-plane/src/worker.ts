@@ -139,6 +139,10 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
         if (request.method !== 'POST') throw new ManagedError(405, 'method_not_allowed', 'Send this request as a POST.', { Allow: 'POST' });
         return await createManaged(config, create(config, 'customer')).respond(request, env, ctx);
       }
+      if (url.pathname === '/managed/v1/evaluations') {
+        if (request.method !== 'POST') throw new ManagedError(405, 'method_not_allowed', 'Send this request as a POST.', { Allow: 'POST' });
+        return await createManaged(config, create(config, 'customer')).evaluate(request, env);
+      }
       if ((match = MANAGED_ATTEMPT.exec(url.pathname))) {
         if (request.method !== 'GET') throw new ManagedError(405, 'method_not_allowed', 'Read an attempt with a GET.', { Allow: 'GET' });
         return await createManaged(config, create(config, 'customer')).attempt(request, match[1]);
@@ -268,9 +272,12 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
  *   Unset, blank or unreadable: every managed call answers 503 route_unavailable.
  * And the staff environment's server key, STAFF_WORKOS_API_KEY, beside the var
  * STAFF_WORKOS_CLIENT_ID (src/config.ts). Without both, /ops/* answers 503.
+ * And OPENROUTER_API_KEY, the key /managed/v1/evaluations sends to OpenRouter's
+ * Decisions endpoint; without it that route alone answers 503.
  */
 export type GatewayEnv = WorkerEnv & {
   BEDROCK_API_KEY?: string;
+  OPENROUTER_API_KEY?: string;
   FUNDING_DATABASE_URL?: string;
   STAFF_WORKOS_API_KEY?: string;
   MANAGED_SPEND_CEILING_MICRO_USD?: string | number;
