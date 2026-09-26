@@ -76,6 +76,11 @@ export interface ProjectorStats {
   readonly projected: number;
   readonly failures: number;
   readonly unlinkedVerifications: number;
+  /**
+   * Runs saved after the scope map forgot their scope, once per run (PH-07 R3-4): their events are
+   * lost, not merely unobserved. A run that never had a scope is not counted.
+   */
+  readonly scopeEvicted: number;
 }
 
 const ATTEMPT_END = new Set(['step.succeeded', 'step.failed', 'step.reconcile_required', 'step.cancelled', 'step.retry_wait']);
@@ -148,9 +153,12 @@ export class ObservationProjector {
   private readonly sessions = new Bounded<string, SessionLink>(TRACKED);
   private readonly children = new Bounded<string, Set<string>>(TRACKED);
   private readonly openCosts = new Bounded<string, OpenCost>(TRACKED);
+  /** Runs already counted in `scopeEvicted`. */
+  private readonly lost = new Bounded<string, true>(TRACKED);
   private projected = 0;
   private failures = 0;
   private unlinkedVerifications = 0;
+  private scopeEvicted = 0;
 
   constructor(private readonly options: ObservationProjectorOptions) {
     this.ledger = null;
@@ -267,14 +275,27 @@ export class ObservationProjector {
   }
 
   stats(): ProjectorStats {
-    return { projected: this.projected, failures: this.failures, unlinkedVerifications: this.unlinkedVerifications };
+    return {
+      projected: this.projected,
+      failures: this.failures,
+      unlinkedVerifications: this.unlinkedVerifications,
+      scopeEvicted: this.scopeEvicted,
+    };
   }
 
   // --- projection ---------------------------------------------------------------
 
   private project(run: HarnessRun) {
     const resolved = this.options.scopes.resolve(run);
-    if (!resolved) return;
+    if (!resolved) {
+      // Work that was never scoped is not observed at all. Work whose scope the bound forgot is a
+      // loss, and is counted, so it is never mistaken for a lost trace (PH-07 R3-4).
+      if (!this.lost.has(run.id) && this.options.scopes.forgot(run)) {
+        this.lost.set(run.id, true);
+        this.scopeEvicted += 1;
+      }
+      return;
+    }
     const from = this.cursors.get(run.id) ?? 0;
     this.cursors.set(run.id, run.lastSeq);
     const isRoot = resolved.traceRootRunId === run.id;
@@ -298,6 +319,8 @@ export class ObservationProjector {
       else if (RUN_END[event.type]) this.runEnded(run, resolved, event, RUN_END[event.type]);
     }
     this.parked(run, resolved);
+    // Projected to its end: only now may the scope map forget this run's own scope first.
+    this.options.scopes.runEnded(run, resolved);
   }
 
   private ids(resolved: ResolvedScope, key: string, spanId: string, parentId: string | null): ObservationIds {

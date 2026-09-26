@@ -1,10 +1,11 @@
 /**
  * Where an observation scope starts, and which scope a saved run belongs to (PH-00 contract 2.4, 3).
  *
- * `bind` is the only way a scope comes into being. `EngineService.admitModelApi` calls it once
- * every admission check has passed, keyed by the surface and the job id that caller already
- * passes to the Agent gate, and calls `refused` when the gate refuses, which ends every scope of
- * that business. Every other caller only reads a scope or ends one.
+ * `bind` is the only way a scope comes into being. `EngineService.admitModelApi` calls `ask` on the
+ * same turn as the Agent gate, before its round trip, then `bind` with that ask once every admission
+ * check has passed, keyed by the surface and the job id that caller already passes to the Agent
+ * gate, and calls `refused` when the gate refuses, which ends every scope of that business. Every
+ * other caller only reads a scope or ends one.
  *
  * A run resolves to a scope from what its own record says it is, never from what a request
  * claimed:
@@ -43,13 +44,32 @@ export interface ObservationBindInput {
   readonly route: string;
   readonly connectionId: string;
   readonly model: string | null;
+  /**
+   * What `ask` read before the admission's round trip (PH-07 R3-3). The scope is measured from it:
+   * a workspace switch that lands while the account service answers is a change since the ask, and
+   * ends the scope, never its baseline. Only a direct caller with no round trip omits it, and is
+   * measured from the moment of bind.
+   */
+  readonly ask?: ObservationAsk;
+}
+
+/** Read on the same turn as the Agent gate, before its round trip to the account service. */
+export interface ObservationAsk {
+  /** The business the gate asks about, by its own rule. Null is Personal. */
+  readonly organizationId: string | null;
+  /** The active business then. */
+  readonly activeOrganizationId: string | null;
+  /** How many changes of person or business had been seen then. */
+  readonly context: number;
 }
 
 /**
- * All `EngineService` holds: `bind` after every admission check passed; `businessFor` just before
- * the Agent gate is asked, and `refused` when the gate's answer says the business is not entitled.
+ * All `EngineService` holds: `ask` just before the Agent gate is asked, `bind` after every
+ * admission check passed, with that ask, and `refused` when the gate's answer says the business is
+ * not entitled, with the business that ask named.
  */
 export interface ObservationBinder {
+  ask(projectId: string | null): ObservationAsk;
   bind(input: ObservationBindInput): void;
   businessFor(projectId: string | null): string | null;
   refused(input: ObservationRefusalInput): void;
@@ -68,8 +88,10 @@ export interface ObservationRefusalInput {
 
 /**
  * The account service's refusal codes that say the business is not entitled (PH-07 N-2). Only these
- * end a business's observation. `entitlement_unknown` (the service unreachable, a 5xx, a timeout) and
- * sign-in are not refusals of the business, and end nothing.
+ * end a business's observation. `entitlement_unknown` (the service unreachable, a 5xx, a timeout, a
+ * 403 or 404 that is not its own membership refusal) and sign-in are not refusals of the business,
+ * and end nothing. The session names `not_a_member` only from the service's own refusal (PH-07 R3-2,
+ * `refusedMembership` in server/accounts/session.ts).
  */
 export const ENTITLEMENT_REFUSALS: ReadonlySet<string> = new Set([
   'entitlement_revoked',
@@ -101,8 +123,25 @@ export interface ObservationScopesOptions {
   readonly authority: ObservationAuthorityPort;
   readonly telemetry?: TelemetryPolicyPort;
   readonly now?: () => number;
-  /** Bound scopes kept; the oldest is forgotten first. */
+  /**
+   * Bound scopes kept (PH-07 R3-4). Past it, the oldest scope whose run has ended is forgotten first,
+   * then the oldest no run has claimed. A scope claimed by a run that is still live is never
+   * forgotten, so the map holds more than this only while more runs than this are live.
+   */
   readonly limit?: number;
+}
+
+/** A run in one of these has ended: nothing more is projected from it. */
+const FINAL_RUN_STATES: ReadonlySet<string> = new Set(['completed', 'failed', 'cancelled']);
+/** Forgotten bind keys remembered, so a later save of their run is counted as lost. */
+const FORGOTTEN_REMEMBERED = 10_000;
+
+interface Candidate {
+  readonly key: string;
+  readonly own: boolean;
+  readonly traceRootRunId: string;
+  readonly parentRunId: string | null;
+  readonly lineageRunId: string | null;
 }
 
 export const LOOP_CHILD_CAPABILITIES: readonly string[] = Object.freeze([
@@ -133,6 +172,13 @@ export class ObservationScopes implements ObservationBinder {
   private readonly generation = new WeakMap<ObservationScope, { refusals: number; context: number }>();
   /** A scope whose recheck once failed stays ended, with the reason it first failed. */
   private readonly ended = new WeakMap<ObservationScope, ObservationDenial>();
+  /**
+   * Whether a run has claimed each scope (`resolve` found it) and whether that run has since ended,
+   * as the projector saw it. Absent: no run has claimed it yet (PH-07 R3-4).
+   */
+  private readonly runs = new WeakMap<ObservationScope, 'live' | 'ended'>();
+  /** Bind keys the bound forgot, oldest first, so the projector can count a later save as lost. */
+  private readonly forgotten = new Map<string, true>();
   private readonly telemetry: TelemetryPolicyPort;
   private readonly now: () => number;
   private readonly limit: number;
@@ -150,17 +196,23 @@ export class ObservationScopes implements ObservationBinder {
 
   /** `bind`, returning the decision so tests can read it. A denial is counted, never thrown. */
   decide(input: ObservationBindInput): EligibilityDecision {
-    // A change not yet seen ends what was bound before it, never this new scope.
+    // A change not yet seen ends what was bound (or asked) before it, never this new scope.
     this.observeContext();
-    const decision = decideObservationEligibility({
-      operator: this.operator,
-      backend: this.options.backend(),
-      admission: input.admission,
-      work: { rootJobId: input.rootJobId, route: input.route, connectionId: input.connectionId, model: input.model },
-      activeOrganizationId: this.options.authority.activeOrganizationId(),
-      telemetry: this.telemetry,
-      now: this.now(),
-    });
+    const ask = input.ask;
+    const decision: EligibilityDecision =
+      // The gate admitted another business than the one asked about: nothing to measure a switch from.
+      ask && input.admission && ask.organizationId !== input.admission.organizationId
+        ? ({ eligible: false, denial: 'workspace-changed' } as const)
+        : decideObservationEligibility({
+            operator: this.operator,
+            backend: this.options.backend(),
+            admission: input.admission,
+            work: { rootJobId: input.rootJobId, route: input.route, connectionId: input.connectionId, model: input.model },
+            // The business active when the admission was asked, not when its answer came back (PH-07 R3-3).
+            activeOrganizationId: ask ? ask.activeOrganizationId : this.options.authority.activeOrganizationId(),
+            telemetry: this.telemetry,
+            now: this.now(),
+          });
     if (!decision.eligible) {
       this.count(decision.denial);
       // A later admission that is refused ends the earlier scope for the same work.
@@ -169,18 +221,62 @@ export class ObservationScopes implements ObservationBinder {
     }
     this.scopes.delete(decision.scope.bindKey);
     this.scopes.set(decision.scope.bindKey, decision.scope);
+    this.forgotten.delete(decision.scope.bindKey);
     this.generation.set(decision.scope, {
       refusals: this.refusals.get(decision.scope.organizationId) ?? 0,
-      context: this.contextChanges,
+      // A switch while the account service answered is a change since the ask: it ends this scope.
+      context: ask ? Math.min(ask.context, this.contextChanges) : this.contextChanges,
     });
-    while (this.scopes.size > this.limit) this.scopes.delete(this.scopes.keys().next().value as string);
+    this.evictOverflow(decision.scope.bindKey);
     return decision;
   }
 
   /**
+   * What an admission is measured from, read before its round trip on the same turn as the Agent
+   * gate (PH-07 N-1, R3-3): the business the gate asks about, the active business, and how many
+   * changes of person or business have been seen. `EngineService` carries it to `refused` and `bind`.
+   */
+  ask(projectId: string | null): ObservationAsk {
+    // A change not yet sampled happened before this ask, so it never ends the scope bound from it.
+    this.observeContext();
+    return {
+      organizationId: this.businessFor(projectId),
+      activeOrganizationId: this.options.authority.activeOrganizationId(),
+      context: this.contextChanges,
+    };
+  }
+
+  /**
+   * Past the bound, forget the oldest scope whose run has ended, else the oldest no run has
+   * claimed (counted: its run may still start). Never one a live run has claimed, and never the one
+   * just bound (PH-07 R3-4).
+   */
+  private evictOverflow(justBound: string) {
+    while (this.scopes.size > this.limit) {
+      let pick: string | null = null;
+      for (const [key, scope] of this.scopes) {
+        if (key === justBound) continue;
+        const state = this.runs.get(scope);
+        if (state === 'ended') {
+          pick = key;
+          break;
+        }
+        if (state === undefined && pick === null) pick = key;
+      }
+      if (pick === null) return;
+      const scope = this.scopes.get(pick)!;
+      this.scopes.delete(pick);
+      if (this.runs.get(scope) !== 'ended') this.count('scope-evicted');
+      this.forgotten.delete(pick);
+      this.forgotten.set(pick, true);
+      while (this.forgotten.size > FORGOTTEN_REMEMBERED) this.forgotten.delete(this.forgotten.keys().next().value as string);
+    }
+  }
+
+  /**
    * The business an admission for this project is asked about, by the Agent gate's rule: the
-   * project's owner, else the active business. Null is Personal. `EngineService` reads it on the
-   * same turn the gate does, before the round trip to the account service (PH-07 N-1).
+   * project's owner, else the active business. Null is Personal. `ask` reads it on the same turn
+   * the gate does, before the round trip to the account service (PH-07 N-1).
    */
   businessFor(projectId: string | null): string | null {
     const authority = this.options.authority;
@@ -203,34 +299,61 @@ export class ObservationScopes implements ObservationBinder {
     this.count('admission-refused');
   }
 
-  /** The bound scope for one run, or null: no observation of anything that has none. */
+  /**
+   * The bound scope for one run, or null: no observation of anything that has none. Finding it is
+   * the run claiming it: from then on it is live, and never forgotten, until the projector sees that
+   * run end (`runEnded`).
+   */
   resolve(run: HarnessRun): ResolvedScope | null {
-    const input = record(run.input);
-    const found = (key: string, own: boolean, traceRootRunId: string, parentRunId: string | null, lineageRunId: string | null) => {
+    for (const { key, ...rest } of this.candidates(run)) {
       const scope = this.scopes.get(key);
-      return scope ? { scope, own, traceRootRunId, parentRunId, lineageRunId } : null;
-    };
+      if (!scope) continue;
+      if (!this.runs.has(scope)) this.runs.set(scope, 'live');
+      return { scope, ...rest };
+    }
+    return null;
+  }
+
+  /** Whether this run's scope was forgotten by the bound, so what it saves now is lost (PH-07 R3-4). */
+  forgot(run: HarnessRun): boolean {
+    return this.candidates(run).some((candidate) => this.forgotten.has(candidate.key));
+  }
+
+  /**
+   * The projector saw this run in a final state, after projecting it. Its own scope may now be
+   * forgotten first. A loop child that took its root's scope never ends the root's.
+   */
+  runEnded(run: HarnessRun, resolved: ResolvedScope): void {
+    if (resolved.own && FINAL_RUN_STATES.has(run.state)) this.runs.set(resolved.scope, 'ended');
+  }
+
+  /** Where a run's scope is bound, in the order it is looked for. */
+  private candidates(run: HarnessRun): Candidate[] {
+    const input = record(run.input);
     switch (run.capabilityId) {
       case 'model-api-turn': {
         // Each message is its own job: its admission names the turn run's own id
         // (`turnRunId(lineage, requestId)`), and the lineage is only its session.
         const lineage = text(input.conversationRunId);
-        return lineage ? found(`conversation:${run.id}`, true, run.id, null, lineage) : null;
+        return lineage ? [{ key: `conversation:${run.id}`, own: true, traceRootRunId: run.id, parentRunId: null, lineageRunId: lineage }] : [];
       }
       case 'engine-text-turn':
-        return found(`work:${run.id}`, true, run.id, null, null);
+        return [{ key: `work:${run.id}`, own: true, traceRootRunId: run.id, parentRunId: null, lineageRunId: null }];
       case 'model-api-team-work': {
         const command = text(input.commandId);
-        return command ? found(`team:${command}`, true, run.id, null, null) : null;
+        return command ? [{ key: `team:${command}`, own: true, traceRootRunId: run.id, parentRunId: null, lineageRunId: null }] : [];
       }
       case 'diomedes-loop':
-        return found(`loop:${run.id}`, true, run.id, null, null);
+        return [{ key: `loop:${run.id}`, own: true, traceRootRunId: run.id, parentRunId: null, lineageRunId: null }];
       default: {
-        if (!LOOP_CHILD_CAPABILITIES.includes(run.capabilityId)) return null;
+        if (!LOOP_CHILD_CAPABILITIES.includes(run.capabilityId)) return [];
         const parent = text(record(input.parent).runId);
         const root = text(input.rootRunId) ?? parent;
-        if (!root || !parent) return null;
-        return found(`loop:${run.id}`, true, root, parent, null) ?? found(`loop:${root}`, false, root, parent, null);
+        if (!root || !parent) return [];
+        return [
+          { key: `loop:${run.id}`, own: true, traceRootRunId: root, parentRunId: parent, lineageRunId: null },
+          { key: `loop:${root}`, own: false, traceRootRunId: root, parentRunId: parent, lineageRunId: null },
+        ];
       }
     }
   }

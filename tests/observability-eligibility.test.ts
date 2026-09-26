@@ -218,7 +218,9 @@ describe('the recheck while events wait', () => {
     expect(recheck(authority({ active: ORG_B }))).toBe('workspace-changed');
     expect(recheck(authority({ entitlement: { agent: true, state: 'revoked' } }))).toBe('entitlement-inactive');
     expect(recheck(authority({ entitlement: { agent: true, state: 'expired' } }))).toBe('entitlement-inactive');
-    expect(recheck(authority({ entitlement: { agent: true, state: 'unknown' } }))).toBe('entitlement-inactive');
+    // `unknown` is the service not having answered: an inability to ask, not an end (PH-07 R3-1).
+    expect(recheck(authority({ entitlement: { agent: true, state: 'unknown' } }))).toBe('account-service-unavailable');
+    expect(recheck(authority({ entitlement: { agent: false, state: 'unknown' } }))).toBe('account-service-unavailable');
     expect(recheck(authority({ entitlement: { agent: false, state: 'active' } }))).toBe('entitlement-inactive');
     expect(recheck(authority({ entitlement: null }))).toBe('entitlement-inactive');
     expect(recheck(authority(), operator({ internalOrganizations: new Set() }))).toBe('no-longer-internal');

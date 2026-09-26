@@ -153,7 +153,12 @@ export type ObservationDenial =
   | 'entitlement-inactive'
   | 'no-longer-internal'
   /** The account service refused a later admission for the business (contract section 3). */
-  | 'admission-refused';
+  | 'admission-refused'
+  /**
+   * The scope map was over its bound and forgot a scope no run had yet claimed (PH-07 R3-4). A
+   * claimed scope whose run is still live is never forgotten; an ended one is forgotten uncounted.
+   */
+  | 'scope-evicted';
 
 export interface ObservationScope {
   /** `osc_` + 24 hex of the admission id. */
@@ -162,6 +167,10 @@ export interface ObservationScope {
   // Host-only from here down. None of these is ever serialized.
   readonly organizationId: string;
   readonly personId: string;
+  /**
+   * The active business when the admission was asked, before its round trip (PH-07 R3-3): the
+   * baseline a workspace switch is measured from, never the one active when the answer came back.
+   */
   readonly activeOrganizationAtBind: string | null;
   readonly bindKey: string;
   readonly connectionId: string;
@@ -184,6 +193,7 @@ export interface EligibilityInput {
     readonly connectionId: string;
     readonly model: string | null;
   };
+  /** The active business when the admission was asked (see `ObservationScope.activeOrganizationAtBind`). */
   readonly activeOrganizationId: string | null;
   readonly telemetry: TelemetryPolicyPort;
   readonly now: number;
@@ -256,7 +266,10 @@ export function decideObservationEligibility(input: EligibilityInput): Eligibili
 export interface ObservationAuthorityPort {
   personId(): string | null;
   activeOrganizationId(): string | null;
-  /** The account service's last answer for this business (cached; refreshed on sign-in and reload). */
+  /**
+   * The account service's last answer for this business (cached; refreshed on sign-in and reload).
+   * State `unknown` means it has not answered; null means its answer does not list the business.
+   */
   entitlement(organizationId: string): { readonly agent: boolean; readonly state: string } | null;
   /**
    * The business an admission for this project is asked for: the project's owner, else the active
@@ -281,6 +294,9 @@ export function recheckScope(
   if (person !== scope.personId) return end('person-changed');
   if (authority.activeOrganizationId() !== scope.activeOrganizationAtBind) return end('workspace-changed');
   const entitlement = authority.entitlement(scope.organizationId);
+  // `unknown` is the service not having answered (a failed, refused or malformed read; PH-07 R3-1):
+  // an inability to ask, like a read that throws, and never final. Only an answer ends the scope.
+  if (entitlement?.state === 'unknown') return end('account-service-unavailable');
   if (!entitlement || !entitlement.agent || entitlement.state !== 'active') return end('entitlement-inactive');
   if (scope.facts.class === 'customer-agent') {
     const policy = telemetry.policyFor(scope.organizationId);
