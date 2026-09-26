@@ -254,6 +254,15 @@ export interface OrganizationView {
     resumable: boolean;
     /** True only when this person may start or resume company setup. */
     mayConfigure: boolean;
+    /**
+     * For a business the account service keeps (ORG-01), where this summary
+     * came from: the service, this computer's read-only copy while the service
+     * cannot be reached, or nothing usable. Absent for a business kept only on
+     * this computer.
+     */
+    source?: 'service' | 'cache' | 'unavailable';
+    /** Why the setup could not be loaded, in words to show. Set only when `source` is `unavailable`. */
+    loadError?: string;
   } | null;
 }
 

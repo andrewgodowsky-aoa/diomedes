@@ -6,29 +6,12 @@
  * the statements need exactly the relay_devices privileges
  * scripts/runtime-permissions.sql grants cp_runtime, both ways.
  */
-import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { createFauxCloud } from '../src/faux/cloud.js';
 import { seedDemo } from '../src/faux/seed.js';
-import type { SqlClient } from '../src/postgres.js';
 import { PostgresRelayRepository, PostgresRelayTransaction } from '../src/relay/postgres.js';
 import { RELAY_DEVICE_LIMIT, type RelayDevice, type RelayTransaction } from '../src/relay/service.js';
-
-const read = (relative: string) => readFileSync(new URL(relative, import.meta.url), 'utf8').replace(/\r\n/g, '\n');
-
-function recording(rows: (sql: string, values: unknown[]) => Record<string, unknown>[] = () => []) {
-  const calls: { sql: string; values: unknown[] }[] = [];
-  const client: SqlClient = {
-    async connect() {},
-    async query(sql, values = []) {
-      calls.push({ sql, values });
-      const result = rows(sql, values);
-      return { rows: result, rowCount: result.length };
-    },
-    async end() {},
-  };
-  return { client, factory: () => client, calls };
-}
+import { describePrivileges, needs, read, recording, runtimeGrants } from './support/runtime-grants.js';
 
 const device: RelayDevice = {
   deviceId: 'relay_device_1', tenantId: 'tenant_1', organizationId: 'org_1', personId: 'person_1',
@@ -145,75 +128,6 @@ describe('relay SQL adapter protocol', () => {
 });
 
 // --- the Worker login's grants -------------------------------------------------------------------
-
-interface Privileges { select: boolean; insert: boolean; update: Set<string> }
-
-/** Split at commas outside parentheses. */
-function topLevel(list: string): string[] {
-  const parts: string[] = [];
-  let depth = 0;
-  let current = '';
-  for (const char of list) {
-    if (char === '(') depth++;
-    if (char === ')') depth--;
-    if (char === ',' && depth === 0) { parts.push(current.trim()); current = ''; } else current += char;
-  }
-  if (current.trim()) parts.push(current.trim());
-  return parts;
-}
-
-/** cp_runtime's table grants. Statements other than table GRANTs (the schema and revoke lines) are not table grants. */
-function runtimeGrants(sql: string): Map<string, Privileges> {
-  const tables = new Map<string, Privileges>();
-  const statements = sql.split('\n').map((line) => line.replace(/--.*$/, '')).join(' ')
-    .split(';').map((statement) => statement.replace(/\s+/g, ' ').trim()).filter(Boolean);
-  for (const statement of statements) {
-    const grant = /^GRANT (.+?) ON (control_plane\.\w+(?:, control_plane\.\w+)*) TO cp_runtime$/.exec(statement);
-    if (!grant) continue;
-    for (const table of grant[2].split(',').map((name) => name.trim().replace(/^control_plane\./, ''))) {
-      const entry = tables.get(table) ?? { select: false, insert: false, update: new Set<string>() };
-      for (const privilege of topLevel(grant[1])) {
-        const parsed = /^(SELECT|INSERT|UPDATE)(?: \(([a-z_]+(?:, [a-z_]+)*)\))?$/.exec(privilege);
-        if (!parsed) throw new Error(`Unrecognized privilege "${privilege}" in: ${statement}`);
-        if (parsed[1] === 'SELECT') entry.select = true;
-        if (parsed[1] === 'INSERT') entry.insert = true;
-        if (parsed[1] === 'UPDATE') for (const column of parsed[2] ? parsed[2].split(', ') : ['*']) entry.update.add(column);
-      }
-      tables.set(table, entry);
-    }
-  }
-  return tables;
-}
-
-/** What each recorded statement needs, per table (PostgreSQL's GRANT, INSERT, UPDATE and SELECT pages). */
-function needs(statements: string[]): Map<string, Privileges> {
-  const tables = new Map<string, Privileges>();
-  const entry = (table: string) => {
-    const found = tables.get(table) ?? { select: false, insert: false, update: new Set<string>() };
-    tables.set(table, found);
-    return found;
-  };
-  for (const text of statements) {
-    let match: RegExpExecArray | null;
-    if (/^(BEGIN|COMMIT|ROLLBACK)$/.test(text) || /^SET LOCAL \w+ = '[^']*'$/.test(text)) continue;
-    if (text === 'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))') continue;
-    if ((match = /^INSERT INTO control_plane\.(\w+)\(/.exec(text))) {
-      if (/ ON CONFLICT | RETURNING /.test(text)) throw new Error(`Name what this needs: ${text}`);
-      entry(match[1]).insert = true;
-    } else if ((match = /^UPDATE control_plane\.(\w+) SET (.+?) WHERE /.exec(text))) {
-      for (const assignment of topLevel(match[2])) entry(match[1]).update.add(assignment.split('=')[0].trim());
-      // The WHERE clause and RETURNING read the row.
-      entry(match[1]).select = true;
-    } else if ((match = /^SELECT .+? FROM control_plane\.(\w+) WHERE /.exec(text))) {
-      if (/ FOR (UPDATE|SHARE)\b| JOIN /.test(text)) throw new Error(`Name what this needs: ${text}`);
-      entry(match[1]).select = true;
-    } else throw new Error(`Unrecognized statement: ${text}`);
-  }
-  return tables;
-}
-
-const describePrivileges = (entry: Privileges | undefined) =>
-  entry && { select: entry.select, insert: entry.insert, update: [...entry.update].sort() };
 
 describe('the Worker login and the relay', () => {
   it('needs exactly the relay_devices privileges cp_runtime is granted, and only reads the rows it rechecks', async () => {

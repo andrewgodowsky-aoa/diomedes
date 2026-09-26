@@ -44,6 +44,7 @@ import {
 import { createHandler } from '../worker.js';
 import { readBytes } from '../crypto.js';
 import { RelayAuthority, RelayService } from '../relay/service.js';
+import { OrganizationSetupService } from '../organization-setup/service.js';
 import { accountId } from '../domain.js';
 import { WorkOSIdentityVerifier } from '../identity-workos.js';
 import {
@@ -111,6 +112,8 @@ export interface FauxCloud {
   readonly relay: RelayService;
   /** The phone relay's hubs, in this process. The faux server hands them its WebSocket upgrades. */
   readonly relayHubs: FauxRelayHubs;
+  /** Each business's setup revisions, over this store. */
+  readonly organizationSetups: OrganizationSetupService;
   /** Which provider answers managed calls. */
   readonly provider: 'scripted' | 'live';
   /** Which provider answers typed evaluations. */
@@ -209,10 +212,17 @@ export async function createFauxCloud(options: FauxCloudOptions): Promise<FauxCl
   });
   const relayHubs = new FauxRelayHubs(new RelayAuthority(store.relay), now);
   const relay = new RelayService(accounts, store.relay, relayHubs, { now });
+  const organizationSetups = new OrganizationSetupService(accounts, store.organizationSetups, { now });
   const worker = createHandler(
     () => accounts,
     () => new UsageService(accounts, funding),
-    { configuration: () => config, createCommercial: () => commercial, createManaged: () => managed, createRelay: () => relay },
+    {
+      configuration: () => config,
+      createCommercial: () => commercial,
+      createManaged: () => managed,
+      createRelay: () => relay,
+      createOrganizationSetup: () => organizationSetups,
+    },
   );
 
   const headers = () => new Headers({ 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'X-Nectovia-Backend': 'faux' });
@@ -285,6 +295,7 @@ export async function createFauxCloud(options: FauxCloudOptions): Promise<FauxCl
     managed,
     relay,
     relayHubs,
+    organizationSetups,
     provider: live ? 'live' : 'scripted',
     evaluationProvider: liveEvaluations ? 'live' : 'scripted',
     idle: () => managed.idle(),

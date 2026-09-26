@@ -28,6 +28,9 @@ import { bedrockResponsesCaller } from './managed-providers.js';
 import { RelayService, registerDeviceInput } from './relay/service.js';
 import { PostgresRelayRepository } from './relay/postgres.js';
 import { durableObjectHubs } from './relay/durable-object.js';
+import { OrganizationSetupService } from './organization-setup/service.js';
+import { PostgresOrganizationSetupRepository } from './organization-setup/postgres.js';
+import { organizationSetupWriteSchema } from './organization-setup/schema.js';
 
 /** The phone relay's per-business hub, bound as RELAY_HUB (both wrangler.jsonc files). */
 export { RelayHub } from './relay/durable-object.js';
@@ -83,6 +86,8 @@ export interface HandlerOptions {
   createManaged?: (config: Configuration, accounts: AccountService) => ManagedInferenceService;
   /** Test and faux-cloud seam for the phone relay: the faux store and an in-process hub. */
   createRelay?: (config: Configuration, accounts: AccountService, env: Record<string, unknown>) => RelayService;
+  /** Test and faux-cloud seam for business setups: the faux store instead of Neon. */
+  createOrganizationSetup?: (config: Configuration, accounts: AccountService) => OrganizationSetupService;
 }
 
 const MANAGED_ATTEMPT = /^\/managed\/v1\/attempts\/([A-Za-z0-9][A-Za-z0-9._:-]{0,127})$/;
@@ -130,6 +135,9 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
   // hub is a Durable Object. Without the RELAY_HUB binding no computer can connect.
   const createRelay = options.createRelay ?? ((config: Configuration, accounts: AccountService, env: Record<string, unknown>) =>
     new RelayService(accounts, new PostgresRelayRepository(neonClientFactory(config.databaseUrl)), durableObjectHubs(env.RELAY_HUB)));
+  // Each business's setup revisions (migration 008) run as the Worker login, which may only read and append them.
+  const createOrganizationSetup = options.createOrganizationSetup ?? ((config: Configuration, accounts: AccountService) =>
+    new OrganizationSetupService(accounts, new PostgresOrganizationSetupRepository(neonClientFactory(config.databaseUrl))));
 
   /**
    * The managed gateway (contract nectovia-managed/1). Its own header rules, a
@@ -229,6 +237,12 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
         return json(await createCommercial(config, accounts).access(token, match[1]));
       if ((match = route('/account/organizations/:id/agent-admissions').exec(pathname)) && method === 'POST')
         return json(await createCommercial(config, accounts).admitAgent(token, match[1], await body(request, agentAdmissionInput)));
+
+      // --- the business setup, kept for the organization (ORG-01) --------------------------
+      if ((match = route('/account/organizations/:id/setup').exec(pathname)) && method === 'GET')
+        return json(await createOrganizationSetup(config, accounts).read(token, match[1]));
+      if ((match = route('/account/organizations/:id/setup').exec(pathname)) && method === 'POST')
+        return json(await createOrganizationSetup(config, accounts).write(token, match[1], await body(request, organizationSetupWriteSchema)));
 
       // --- the phone relay: the computers a business's phones may reach ------------------
       if ((match = route('/relay/v1/organizations/:id/devices').exec(pathname)) && method === 'POST')

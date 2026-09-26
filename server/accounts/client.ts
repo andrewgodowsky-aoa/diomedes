@@ -8,9 +8,11 @@
  * for every answer here; the desktop caches, it never decides.
  */
 import type { AccessView } from '../../shared/access.js';
+import type { OrganizationSetupAnswer, OrganizationSetupWrite } from '../../shared/organization-setup.js';
 import type { Membership, MemberRole, Organization, Person } from '../../shared/workspaces.js';
 import { RELAY_DEVICE_HEADER } from '../../services/control-plane/src/relay/protocol.js';
 import type { DesktopCheckAnswer } from '../../services/control-plane/src/relay/service.js';
+import { organizationSetupAnswerSchema } from '../../services/control-plane/src/organization-setup/schema.js';
 
 export type Fetcher = (request: Request) => Promise<Response>;
 
@@ -191,6 +193,23 @@ export class ControlPlaneClient {
   }
   setMember(token: string, organizationId: string, personId: string, change: { role: MemberRole; state: 'active' | 'revoked' }) {
     return this.call<Membership>('PATCH', `/account/organizations/${encodeURIComponent(organizationId)}/members/${encodeURIComponent(personId)}`, token, change);
+  }
+
+  // --- the business setup, kept for the organization (ORG-01) --------------------------
+
+  /** The business's current setup revision. An answer this client cannot read is refused, never guessed at. */
+  async organizationSetup(token: string, organizationId: string): Promise<OrganizationSetupAnswer> {
+    return this.setupAnswer(await this.call<unknown>('GET', `/account/organizations/${encodeURIComponent(organizationId)}/setup`, token));
+  }
+  /** Save the next revision, made from `expectedRevision`. */
+  async saveOrganizationSetup(token: string, organizationId: string, input: OrganizationSetupWrite): Promise<OrganizationSetupAnswer> {
+    return this.setupAnswer(await this.call<unknown>('POST', `/account/organizations/${encodeURIComponent(organizationId)}/setup`, token, input));
+  }
+  private setupAnswer(payload: unknown): OrganizationSetupAnswer {
+    const parsed = organizationSetupAnswerSchema.safeParse(payload);
+    if (!parsed.success)
+      throw new ControlPlaneError('The account service answered in a way this app could not read.', 502, 'unreadable_answer');
+    return parsed.data;
   }
 
   // --- the phone relay (services/control-plane/src/relay) ----------------------

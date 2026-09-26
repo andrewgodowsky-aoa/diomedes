@@ -116,7 +116,8 @@ export function mountConfigurationRoutes(
       // Authority first. Reading the intake would otherwise answer "switch to
       // that workspace first" to somebody who is not in this business at all.
       configuration.assertMayConfigure(id);
-      const setup = workspaces.setupView(id);
+      // A signed-in business's answers are its current revision in the account service (ORG-01).
+      const setup = await workspaces.setupView(id);
       if (!readyForProposal(setup.answers))
         throw new ApiError(
           409,

@@ -114,6 +114,12 @@ export interface BusinessAnswer {
   at: string;
   /** The person id that recorded it. Attribution, not authority. */
   by: string;
+  /**
+   * The question as it was worded when this was answered. A later revision may
+   * reword a question; the answer keeps the words it was given against.
+   * Absent on answers saved before 2026-09-26.
+   */
+  prompt?: string;
 }
 
 export type AnswerMap = Readonly<Record<string, BusinessAnswer>>;
@@ -608,4 +614,23 @@ export interface BusinessSetupView {
   digest: string;
   proposalDigest: string | null;
   afterProposal: string;
+  /**
+   * Where this setup came from, for a business the account service keeps
+   * (ORG-01). Absent for a business kept only on this computer.
+   */
+  sync?: BusinessSetupSync;
+}
+
+/** Where a signed-in business's setup was loaded from, as the questionnaire shows it. */
+export interface BusinessSetupSync {
+  /** `service`: the business's current revision. `cache`: this computer's last copy of it. */
+  source: 'service' | 'cache';
+  /** The service revision this is. 0 when the service holds none yet. */
+  revision: number;
+  /** Nothing can be saved: the account service cannot be reached. */
+  readOnly: boolean;
+  /** Why it is read-only, in words to show. Null when it is not. */
+  reason: string | null;
+  /** When this revision was saved, or when this computer last fetched its copy. */
+  asOf: string | null;
 }

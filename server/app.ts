@@ -819,14 +819,22 @@ export async function createApp(options: AppOptions) {
     workspaces.connectAccounts({
       entitlement: (organizationId) => accountSession.entitlement(organizationId),
       createOrganization: (name) => accountSession.createOrganization(name),
+      // ORG-01: each business's setup is kept by the account service, not by this computer.
+      setup: {
+        read: (organizationId) => accountSession.readOrganizationSetup(organizationId),
+        write: (organizationId, input) => accountSession.writeOrganizationSetup(organizationId, input),
+      },
     });
     // Signing in and out reach the registry under the store lock. Creating a business from a
     // locked workspace route mirrors its own answer, so this never nests inside that lock.
     // Observation then sees the sign-in, sign-out or change of person (PH-07 N-3).
+    // Each business's setup is then read from the account service, outside the lock, and
+    // awaited, so the first view after a sign-in shows the business's setup as it stands.
     accountSession.onProjection(async (projection) => {
       await store.locked(() => workspaces.project(projection));
       observation?.scopes.observeContext();
       void phoneRelay?.sync();
+      await workspaces.refreshSetups();
     });
     // Signing out, switching accounts or forgetting one removes this computer's phone access first.
     accountSession.onRelease((personId, signedIn) => phoneRelay!.release(personId, signedIn));
