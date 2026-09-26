@@ -9,16 +9,20 @@ import fs from 'node:fs/promises';
 import http from 'node:http';
 import path from 'node:path';
 import os from 'node:os';
-import { createFauxCloud, FAUX_BACKEND_LABEL, type FauxCloud, type FauxCloudOptions } from './cloud.js';
+import { createFauxCloud, FAUX_BACKEND_LABEL, type FauxCloud, type FauxCloudOptions, type FauxIdentityMode } from './cloud.js';
 import { seedDemo, type SeedResult } from './seed.js';
 import { SPEND_SETTINGS } from '../managed-inference.js';
 
 export const FAUX_CLOUD_PORT = 8795;
 
-/** Where the shared faux store lives when nobody says otherwise. */
-export function defaultFauxCloudFile(): string {
+/**
+ * Where the shared faux store lives when nobody says otherwise. A WorkOS stand-in
+ * store is kept apart: its people have WorkOS subjects, so a password store's
+ * staff would not be staff there.
+ */
+export function defaultFauxCloudFile(identity: FauxIdentityMode = 'password'): string {
   const base = process.env.LOCALAPPDATA ?? process.env.XDG_DATA_HOME ?? path.join(os.homedir(), '.local', 'share');
-  return path.join(base, 'Diomedes', 'faux-cloud', 'faux-cloud.json');
+  return path.join(base, 'Diomedes', 'faux-cloud', identity === 'workos-standin' ? 'faux-cloud-workos-standin.json' : 'faux-cloud.json');
 }
 
 function alive(pid: number): boolean {
@@ -124,10 +128,11 @@ export async function startFauxCloud(options: {
   seed?: boolean;
   allowedOrigins?: readonly string[];
   passwordIterations?: number;
+  identity?: FauxIdentityMode;
   managed?: FauxCloudOptions['managed'];
   liveBedrockApiKey?: string | null;
 }): Promise<RunningFauxCloud> {
-  const file = options.file === undefined ? defaultFauxCloudFile() : options.file;
+  const file = options.file === undefined ? defaultFauxCloudFile(options.identity) : options.file;
   const unlock = file ? await lock(file) : async () => {};
   try {
     const liveBedrockApiKey = options.liveBedrockApiKey !== undefined ? options.liveBedrockApiKey
@@ -135,7 +140,7 @@ export async function startFauxCloud(options: {
     const fromEnvironment = Object.fromEntries(SPEND_SETTINGS.filter((name) => process.env[name] !== undefined).map((name) => [name, process.env[name]!]));
     const managed = { ...options.managed, settings: { ...fromEnvironment, ...options.managed?.settings } };
     const cloud = await createFauxCloud({ file, allowedOrigins: options.allowedOrigins, passwordIterations: options.passwordIterations,
-      managed, liveBedrockApiKey });
+      identity: options.identity, managed, liveBedrockApiKey });
     const seed = options.seed ? await seedDemo(cloud) : null;
     const port = options.port ?? FAUX_CLOUD_PORT;
     const server = http.createServer(async (req, res) => {

@@ -62,6 +62,7 @@ beforeEach(() => {
     if (url.endsWith('/user_management/users/user_alice'))
       return Response.json({
         id: 'user_alice',
+        email: 'Alice@Example.test',
         email_verified: !unverified,
         first_name: 'Alice',
         last_name: null,
@@ -86,6 +87,8 @@ describe('WorkOS access-token and active-session verification (offline HTTP fixt
       subject: 'user_alice',
       sessionId: 'session_alice',
       emailVerified: true,
+      // Email-bound invitation codes compare against this.
+      email: 'alice@example.test',
     });
     expect(requests[0].url).toBe(`https://api.workos.com/sso/jwks/${clientId}`);
     expect(requests[0].init?.headers).not.toHaveProperty('Authorization');

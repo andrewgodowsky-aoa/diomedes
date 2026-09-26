@@ -5,22 +5,25 @@
   "compatibility_date": "2026-09-19",
   "workers_dev": false,
   "preview_urls": false,
-  "routes": [],
+  // The company account service. Staging data until production is approved.
+  "routes": [{ "pattern": "accounts.diomedes.net", "custom_domain": true }],
   "observability": {
     "enabled": true,
     "logs": { "enabled": true, "head_sampling_rate": 1 },
     "traces": { "enabled": true, "head_sampling_rate": 0.01 }
   },
   "dev": { "ip": "127.0.0.1", "port": 8791, "local_protocol": "http" },
-  // Refuses until exact authorized provider metadata, origins and secrets exist.
+  // Refuses (503) until WORKOS_CLIENT_ID is set here and both secrets exist. The
+  // client ID is public; it goes here, not in the dashboard, so a deploy keeps it.
+  // The audience is the resource the WorkOS application's JWT template adds.
   // The two MANAGED_* values are the owner's testing limits of 2026-09-25: $100 in provider cost
   // for all staging testing, for all time, and short answers. Raise them only on his word.
   "vars": {
     "ENVIRONMENT": "staging",
-    "ALLOWED_ORIGINS": "",
+    "ALLOWED_ORIGINS": "https://accounts.diomedes.net",
     "WORKOS_CLIENT_ID": "",
-    "WORKOS_ISSUER": "",
-    "WORKOS_TOKEN_AUDIENCE": "",
+    "WORKOS_ISSUER": "https://api.workos.com",
+    "WORKOS_TOKEN_AUDIENCE": "https://accounts.diomedes.net",
     "MANAGED_SPEND_CEILING_MICRO_USD": "100000000",
     "MANAGED_MAX_OUTPUT_TOKENS": "2000"
   },
