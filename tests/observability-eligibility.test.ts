@@ -51,7 +51,7 @@ const input = (overrides: Partial<EligibilityInput> = {}): EligibilityInput => (
   operator: operator(),
   backend: 'faux',
   admission: admission(),
-  work: { rootJobId: 'conv-1', route: 'aws-bedrock', connectionId: 'conn-1', model: 'us.openai.gpt-5.6-luna' },
+  work: { rootJobId: 'conv-1', route: 'aws-bedrock', connectionId: 'conn-1', model: 'us.openai.gpt-6-luna' },
   activeOrganizationId: ORG_A,
   telemetry: ABSENT_TELEMETRY_POLICY,
   now: 1_000,
@@ -250,7 +250,7 @@ describe('scopes: bound by the admitted job, resolved from the run record', () =
       limit,
     });
   const bind = (scopes: ObservationScopes, surface: AdmittedAgentWork['surface'], rootJobId: string | null) =>
-    scopes.decide({ admission: admission({ surface }), rootJobId, route: 'aws-bedrock', connectionId: 'conn-1', model: 'us.openai.gpt-5.6-luna' });
+    scopes.decide({ admission: admission({ surface }), rootJobId, route: 'aws-bedrock', connectionId: 'conn-1', model: 'us.openai.gpt-6-luna' });
 
   test('each capability resolves through the key its caller bound, and nothing else resolves', () => {
     const scopes = scopesFor();

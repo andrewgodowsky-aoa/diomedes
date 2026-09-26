@@ -58,10 +58,11 @@ export const rateCardKeyFor = (key: Uint8Array, version: string) =>
 /**
  * Built-in catalog models a person picks from rather than types. Mirrors
  * `AWS_LUNA_MODEL` (server/engines/aws-bedrock.ts) and `VERTEX_GEMINI_MODEL`
- * (server/engines/google-vertex.ts); a test keeps them equal.
+ * (server/engines/google-vertex.ts); a test keeps them equal. A retired model
+ * (`AWS_RETIRED_MODELS`) is not listed: nothing is sent on a connection saved for one.
  */
 export const CATALOG_MODELS: Readonly<Record<'aws-bedrock' | 'google-vertex', readonly string[]>> = Object.freeze({
-  'aws-bedrock': Object.freeze(['us.openai.gpt-5.6-luna']),
+  'aws-bedrock': Object.freeze(['us.openai.gpt-6-luna']),
   'google-vertex': Object.freeze(['gemini-3.8-flash']),
 });
 
