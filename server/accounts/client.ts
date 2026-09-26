@@ -108,6 +108,15 @@ export class ControlPlaneClient {
     return payload as T;
   }
 
+  /**
+   * One request on the account service's own transport, unchanged. The Nectovia route gives
+   * this to the AI SDK for the managed gateway, so the gateway is reached exactly as the rest
+   * of the account service is, including an in-process test service.
+   */
+  send(request: Request): Promise<Response> {
+    return this.fetcher(request);
+  }
+
   /** The faux cloud answers this; a deployed Worker answers 404 and is taken to be the cloud. */
   async status(): Promise<{ backend: 'faux' | 'cloud'; label: string | null }> {
     try {

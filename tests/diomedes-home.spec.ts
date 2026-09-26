@@ -8,14 +8,17 @@ import type { Store } from '../server/store';
 import { testOnlySecretBox } from '../server/connection-secrets';
 import type { Project, ProjectState } from '../shared/types';
 import { SCRIPTED_MODEL, scriptedEngineService } from './fixtures/scripted-conversation';
-import { AWS_CONNECT_BODY, awsTransport } from './fixtures/scripted-home-luna';
+import { awsTransport } from './fixtures/scripted-home-luna';
+import { gateway, nectoviaAccounts, refusal } from './fixtures/nectovia-home';
 import { shareAfter } from './fixtures/cloud-sharing-grant';
 
 // The Diomedes page end to end in a real browser: the real Store, Runtime, session driver and
-// both admissions, with only the providers scripted. The conversation runs on AWS Bedrock
-// (Luna), the default a Diomedes conversation is provisioned on, at the real provider boundary:
-// the HTTPS call the model-API runtime makes. It never calls a model, uses credentials or
-// spends quota. Like native-ui.spec.ts it serves the built bundle, so it refuses a stale one.
+// both admissions, with only the providers scripted. The conversation runs on Nectovia, the
+// company-managed route a Diomedes conversation is provisioned on: the Business owner the app
+// signs in at start (test mode) sends through the real account service and its real managed
+// gateway, and the scripted provider answers behind the gateway at the provider boundary. The
+// customer connects nothing. It never calls a model, uses credentials or spends quota. Like
+// native-ui.spec.ts it serves the built bundle, so it refuses a stale one.
 test.describe.configure({ mode: 'serial' });
 
 const port = Number(process.env.DIOMEDES_HOME_UI_PORT ?? 47639);
@@ -25,6 +28,8 @@ let application: Awaited<ReturnType<typeof createApp>> | undefined;
 let server: Server | undefined;
 let project: Project;
 let pageErrors: string[] = [];
+/** Calls that went to a provider directly rather than through Nectovia's gateway. */
+let direct = 0;
 
 async function api<T>(route: string, method = 'GET', data?: unknown): Promise<T> {
   const response = await fetch(`${baseURL}/api${route}`, {
@@ -86,6 +91,7 @@ test.beforeAll(async () => {
   const results = path.resolve('test-results');
   await fs.mkdir(results, { recursive: true });
   const root = await fs.mkdtemp(path.join(results, 'diomedes-home-'));
+  const { accounts } = await nectoviaAccounts(awsTransport);
   application = await createApp({
     dataDir: path.join(root, 'data'),
     projectRoot: path.join(root, 'projects'),
@@ -94,7 +100,15 @@ test.beforeAll(async () => {
     engineService: scriptedEngineService(path.join(root, 'engines'), root),
     reviewerAdapter: null,
     secretBox: testOnlySecretBox(),
-    modelApiTransport: awsTransport,
+    // Nectovia reaches its gateway on the account service's own transport. Nothing on this
+    // computer calls a provider directly, so this transport only counts.
+    modelApiTransport: (async () => {
+      direct += 1;
+      throw new Error('No provider is called directly in this spec.');
+    }) as typeof globalThis.fetch,
+    accounts,
+    // A customer's app: the owner's own provider routes stay out of AI setup.
+    ownerRoutes: false,
   });
   const dist = path.resolve('dist');
   await fs.access(path.join(dist, 'index.html'));
@@ -111,10 +125,6 @@ test.beforeAll(async () => {
   await api('/ai/discover', 'POST', { consent: true });
   await api('/ai/check/claude-code', 'POST', {});
   await api('/ai/select', 'POST', { engine: 'claude-code', model: SCRIPTED_MODEL });
-  // AWS is connected and spend-approved the way a person would do it, so the default route a
-  // conversation is provisioned on can actually send. Nothing but the transport is faked.
-  await api('/ai/model-api/aws-bedrock', 'PUT', AWS_CONNECT_BODY);
-  await api('/ai/model-api/aws-bedrock/spend-limit', 'PUT', { capUsd: 1, consent: true });
   await api('/settings', 'PUT', {
     onboarding: {
       work: 'business',
@@ -126,7 +136,7 @@ test.beforeAll(async () => {
   });
   project = await api<Project>('/projects', 'POST', { name: 'Linen service' });
   // The project's own work runs on the scripted sample worker, so starting Work needs no
-  // provider. The conversation runs on AWS Bedrock: the provisioner's default pins its thread.
+  // provider. The conversation runs on Nectovia: the provisioner's default pins its thread.
   const store = application.locals.store as Store;
   const saved = store.state(project.id);
   saved.project.ai = { engine: 'sample', model: null };
@@ -153,12 +163,13 @@ test('the app opens to Diomedes, and looking at it creates nothing', async ({ pa
   expect(await home()).toBeNull();
   expect((await listed()).map((item) => item.name)).toEqual(['Linen service']);
 
-  // Automations opens the business's output project on its screen (D4). This
-  // install is Personal, so it says why and opens nothing, and creates nothing.
+  // Automations opens the business's output project on its screen (D4). The signed-in owner
+  // works in Juniper Street Bakery, which has not chosen the project it writes into, so it says
+  // why and opens nothing, and creates nothing.
   const automations = page.getByRole('button', { name: /Automations/ }).first();
   await expect(automations).not.toHaveAttribute('aria-disabled', 'true');
   await automations.click();
-  await expect(page.getByRole('status').filter({ hasText: 'set up per business workspace' })).toBeVisible();
+  await expect(page.getByRole('status').filter({ hasText: 'nowhere to open Automations' })).toBeVisible();
   await expect(composer(page)).toBeVisible();
   expect(await home()).toBeNull();
   await page.getByRole('button', { name: 'Dismiss', exact: true }).click();
@@ -173,10 +184,16 @@ test('the app opens to Diomedes, and looking at it creates nothing', async ({ pa
 
 test('a greeting is answered and starts nothing', async ({ page }) => {
   await open(page);
+  const calls = gateway.length;
   await say(page, 'Good morning');
   await expect(answers(page).last()).toHaveText('You said: Good morning');
   await expect(composer(page)).toHaveValue('');
   await expect(page.locator('.dio-card')).toHaveCount(0);
+  // The answer came through Nectovia's gateway for the signed-in business, and nothing on this
+  // computer called a provider itself.
+  expect(gateway.length).toBeGreaterThan(calls);
+  expect(gateway.at(-1)!.headers['x-nectovia-organization']).toMatch(/\S/);
+  expect(direct).toBe(0);
 
   // The first message made the home conversation. It is nobody's project: the listing leaves
   // it out, and no task or work exists anywhere.
@@ -212,7 +229,7 @@ test('in a project, work is offered and starts only when Start is pressed', asyn
   const offered = await state();
   expect([offered.tasks.length, offered.sessions.length]).toEqual([0, 0]);
   const thread = offered.conversations.find((item) => item.name === 'Diomedes');
-  expect([thread?.mode, thread?.engine]).toEqual(['auto', 'aws-bedrock']);
+  expect([thread?.mode, thread?.engine]).toEqual(['auto', 'nectovia']);
 
   await card.getByRole('button', { name: 'Start', exact: true }).click();
   await expect(card).toContainText('Started in Linen service');
@@ -290,21 +307,25 @@ test('the page holds together on a narrow screen', async ({ page }) => {
 });
 
 test('a message the server refuses stays in the box', async ({ page }) => {
-  // The server replaces `services` whole, so the switch is flipped inside the full map and the
-  // full map is put back. A partial map would drop the account route and refuse every later send.
-  const { services } = await api<{ services: Record<string, boolean | string> }>('/settings');
-  await api('/settings', 'PUT', { services: { ...services, 'aws-bedrock': false } });
+  // Nectovia's gateway refuses this business's message before sending it anywhere: the month's
+  // credits are used. The words are the service's own, and nothing was charged.
+  refusal.next = {
+    status: 402,
+    code: 'insufficient_allowance',
+    message: "This business has used this month's 1,000 credits.",
+  };
   try {
     await open(page);
+    const calls = gateway.length;
     await say(page, 'Are you there?');
-    // The refusal names the route the conversation is on, never a fallback it did not take.
-    await expect(page.getByRole('alert')).toHaveText(
-      'Turn AWS Bedrock (GPT-5.6 Luna) on in Settings before sending.',
-    );
+    // The refusal is Nectovia's, never a fallback it did not take.
+    await expect(page.getByRole('alert')).toHaveText("This business has used this month's 1,000 credits.");
     await expect(composer(page)).toHaveValue('Are you there?');
     await expect(page.locator('.dio-card')).toHaveCount(0);
+    expect(gateway.length).toBe(calls + 1);
+    expect(direct).toBe(0);
   } finally {
-    await api('/settings', 'PUT', { services });
+    refusal.next = null;
   }
 });
 
@@ -881,7 +902,7 @@ test('CD05-R-10 closure: a conversation another window re-routed is mended by th
   const mended = (await api<ProjectState>(`/projects/${p.id}/state`)).conversations.find(
     (item) => item.id === thread.id,
   )!;
-  expect(mended.engine).toBe('aws-bedrock');
+  expect(mended.engine).toBe('nectovia');
 });
 
 test('CD05-R-07 closure: an answer that lands after the person left does not paint where they went', async ({

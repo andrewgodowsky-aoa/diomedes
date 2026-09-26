@@ -188,9 +188,9 @@ test.beforeAll(async () => {
   await api('/ai/discover', 'POST', { consent: true });
   await api('/ai/check/claude-code', 'POST', {});
   await api('/ai/select', 'POST', { engine: 'claude-code', model });
-  // Every Diomedes conversation on this computer goes to Claude Code: the owner's testing pin.
-  // The pin applies wherever a style applies, so a default style is saved with it. Services are
-  // saved whole, so both are added to what Claude Code's selection already saved.
+  // The owner's testing pin sends a styled conversation to Claude Code. The pin applies wherever
+  // a style applies, so a default style is saved with it. Services are saved whole, so both are
+  // added to what Claude Code's selection already saved.
   const saved = await api<{ services?: Record<string, unknown> }>('/settings');
   await api('/settings', 'PUT', {
     services: { ...saved.services, workStyle: 'focused', ownerPinRoute: 'claude-code', ownerPinModel: model },
@@ -204,8 +204,17 @@ test.beforeAll(async () => {
   });
   // The home conversation, shared with Claude Code as a person would in Cloud sharing, so a
   // follow-up may reach the session that holds the earlier messages.
-  const home = await api<{ projectId: string }>('/home/conversation', 'POST', {});
+  const home = await api<{ projectId: string; threadId: string }>('/home/conversation', 'POST', {});
   await shareFixtureProject(api, home.projectId);
+  // A new conversation is provisioned on Nectovia, which this app (no account service) cannot
+  // send on. This spec is about Claude Code's session controls, so the person routes Home to
+  // Claude Code explicitly: a choice the provisioner keeps, here and after the restart below.
+  const routed = await api<{ engine: string; engineChoice?: string }>(
+    `/projects/${home.projectId}/threads/${home.threadId}`,
+    'PUT',
+    { engine: 'claude-code' },
+  );
+  expect(routed).toMatchObject({ engine: 'claude-code', engineChoice: 'person' });
 });
 
 test.afterAll(async () => {

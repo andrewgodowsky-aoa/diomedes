@@ -121,15 +121,23 @@ describe('first-run AI setup and the existing Work pipeline', () => {
     expect(Object.keys(initial)).not.toContain('surface');
     expect(initial.permissions.changingFiles).toBe(true);
     const markup = renderToStaticMarkup(
-      createElement(AIConnections, { settings: initial, save: async () => {} }),
+      createElement(AIConnections, { settings: initial, save: async () => {}, ownerRoutes: true }),
     );
-    // One card per installed engine, then the company-account routes: AWS Bedrock, Azure OpenAI,
-    // OpenRouter and Google Vertex AI, then the owner's tier map.
+    // One card per installed engine, then, on an app launched with DIOMEDES_OWNER_ROUTES=1, the
+    // company-account routes: AWS Bedrock, Azure OpenAI, OpenRouter and Google Vertex AI, then
+    // the owner's tier map.
     expect(markup.match(/<section class="service"/g)).toHaveLength(10);
+    // A customer's app shows the installed engines only: no provider card and no tier map.
+    const customer = renderToStaticMarkup(
+      createElement(AIConnections, { settings: initial, save: async () => {}, ownerRoutes: false }),
+    );
+    expect(customer.match(/<section class="service"/g)).toHaveLength(5);
+    for (const label of ['Tiers', 'AWS Bedrock (GPT-6 Luna)', 'Azure OpenAI', 'OpenRouter', 'Google Vertex AI'])
+      expect(customer).not.toContain(`aria-label="${label}"`);
     expect(markup).toContain('aria-label="Tiers"');
     expect(markup).toContain('aria-label="Cursor"');
     expect(markup).toContain('aria-label="Devin"');
-    expect(markup).toContain('aria-label="AWS Bedrock (GPT-5.6 Luna)"');
+    expect(markup).toContain('aria-label="AWS Bedrock (GPT-6 Luna)"');
     expect(markup).toContain('aria-label="Azure OpenAI"');
     expect(markup).toContain('aria-label="OpenRouter"');
     expect(

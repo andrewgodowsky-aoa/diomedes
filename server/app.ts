@@ -2,7 +2,7 @@ import { parseApprovalCommand } from './approval-admission.js';
 import { taskDocumentProblem } from '../shared/task-sources.js';
 import { mountPermissionRoutes } from './permission-routes.js';
 import { WorkspaceService } from './workspaces.js';
-import { AccountAgentGate } from './accounts/agent-gate.js';
+import { AccountAgentGate, AGENT_NOT_INCLUDED, AGENT_SIGN_IN_REQUIRED } from './accounts/agent-gate.js';
 import { resolveAccountBackend, type AccountBackend } from './accounts/backend.js';
 import { mountAccountSessionRoutes } from './accounts/routes.js';
 import { AccountSessionService } from './accounts/session.js';
@@ -248,7 +248,23 @@ import { mountModelApiRoutes } from './engines/model-api-routes.js';
 import { mountReadConnectorRoutes } from './engines/read-connector-routes.js';
 import { ConnectionSecrets, type SecretBox } from './connection-secrets.js';
 import { SpendExposure } from './spend-exposure.js';
-import { isModelApiRoute, MODEL_API_NAMES, MODEL_API_ROUTES, type ModelApiRoute } from '../shared/model-api.js';
+import {
+  isModelApiRoute,
+  MODEL_API_NAMES,
+  MODEL_API_ROUTES,
+  NECTOVIA_ROUTE,
+  type ModelApiRoute,
+  type NectoviaRouteView,
+} from '../shared/model-api.js';
+import { AGENT_PERSONAL_REASON } from '../shared/access.js';
+import {
+  NECTOVIA_SIGN_IN,
+  NECTOVIA_UNAVAILABLE,
+  NECTOVIA_WORK_REFUSED,
+  nectoviaAccountRoute,
+  nectoviaTier,
+  type NectoviaAccount,
+} from './engines/nectovia.js';
 import { baselineRedact } from './secrets.js';
 import { EngineError } from './engines/process.js';
 import { selectedEngine, selectedModel } from '../shared/ai-selection.js';
@@ -333,6 +349,13 @@ interface AppOptions {
    * `NECTOVIA_OBSERVATION` once, whose default is off; null is off. Needs `accounts`.
    */
   observation?: ObservationOptions | null;
+  /**
+   * Whether AI setup shows the owner's own provider routes (AWS Bedrock, Azure OpenAI,
+   * OpenRouter, Google Vertex AI) and the tier map. A launch-time authorization: read once, from
+   * `DIOMEDES_OWNER_ROUTES=1` in the environment the service started in, never a setting.
+   * Tests may pass it directly.
+   */
+  ownerRoutes?: boolean;
   updateOverrides?: {
     platform?: string;
     packaged?: boolean;
@@ -791,6 +814,25 @@ export async function createApp(options: AppOptions) {
     engines.agentGate = new AccountAgentGate(accountSession, workspaces);
   }
   if (observation) engines.observation = observation.scopes;
+  const agentGate = engines.agentGate instanceof AccountAgentGate ? engines.agentGate : null;
+  // The owner's own provider routes in AI setup, authorized at launch like design authoring.
+  const ownerRoutes = options.ownerRoutes ?? process.env.DIOMEDES_OWNER_ROUTES === '1';
+  /**
+   * The Nectovia route's view of the account session: nothing is stored and nothing is
+   * connected. The gateway is reached on the account service's own transport.
+   */
+  const nectoviaAccount: NectoviaAccount | null =
+    accountSession && agentGate
+      ? {
+          base: accountSession.backend.client.base,
+          signedIn: () => accountSession.signedIn(),
+          token: () => accountSession.token(),
+          policy: () => accountSession.policy(),
+          refreshPolicy: () => accountSession.refreshPolicy(),
+          organizationFor: (projectId) => agentGate.organizationFor(projectId),
+          fetch: (input, init) => accountSession.backend.client.send(new Request(input, init)),
+        }
+      : null;
   const discovery = new DiscoveryService(store, {
     // A new observation needs `verified`. A stored one whose approved file has
     // changed since reads `stale` and stays inspectable (DIO-84); `stale` is
@@ -1034,6 +1076,12 @@ export async function createApp(options: AppOptions) {
     // workspace decides where it writes and refuses rather than guessing.
     weeklyBrief: AutomationService.host(workspaces, configuration),
     observation: observation?.projector ?? null,
+    // A Nectovia run is authorized on the business its project belongs to, while someone is signed in.
+    nectoviaAccount: (projectId) => {
+      if (!nectoviaAccount?.signedIn()) return null;
+      const organizationId = nectoviaAccount.organizationFor(projectId);
+      return organizationId ? nectoviaAccountRoute(organizationId) : null;
+    },
   });
   // External text turns run through the host's RunService: the adapter is only
   // the provider transport inside the fenced dispatch step.
@@ -1102,6 +1150,19 @@ export async function createApp(options: AppOptions) {
         OPENROUTER_ROUTE,
       ),
     },
+    // Company-managed inference: the account service's gateway pays and meters it. Only a host
+    // with accounts has it; without one the route refuses by asking the person to sign in.
+    ...(nectoviaAccount
+      ? {
+          nectovia: {
+            account: nectoviaAccount,
+            transcripts: new FileModelTranscripts(
+              path.join(store.dataDir, 'model-transcripts-nectovia'),
+              NECTOVIA_ROUTE,
+            ),
+          },
+        }
+      : {}),
   };
   // H13: a model-API route drives a Diomedes work loop through the engine service's own
   // admission. A loop resumed at startup waits until every route and the verifier exist.
@@ -2505,6 +2566,7 @@ export async function createApp(options: AppOptions) {
             text: typeof b.instruction === 'string' ? b.instruction : null,
           })
         : choice(b.route, ROUTES, 'service');
+    if (selectedRoute === NECTOVIA_ROUTE) throw new ApiError(409, NECTOVIA_WORK_REFUSED);
     const team = teamForThread(projectId, threadId, port, selectedRoute);
     if (command && team)
       throw new ApiError(409, 'Saved Work commands for team helpers are not available yet.', {
@@ -3304,6 +3366,23 @@ export async function createApp(options: AppOptions) {
     const efforts = ['low', 'medium', 'high'].map((level) => ({ id: level, description: '' }));
     return [{ slug: saved, name: saved, description: '', defaultEffort: 'low', efforts }];
   };
+  /**
+   * The Nectovia route's account for work in one project: the business it belongs to, as the
+   * run's account route. Nobody connects anything. Refused in plain words, with nothing sent,
+   * when nobody is signed in or the work is Personal; the Agent gate decides the plan when the
+   * message is admitted.
+   */
+  const nectoviaAccountFor = (projectId: string): string => {
+    if (!nectoviaAccount?.signedIn()) throw new EngineError(AGENT_SIGN_IN_REQUIRED, NECTOVIA_SIGN_IN, false);
+    const organizationId = nectoviaAccount.organizationFor(projectId);
+    if (!organizationId) throw new EngineError(AGENT_NOT_INCLUDED, AGENT_PERSONAL_REASON, false);
+    return nectoviaAccountRoute(organizationId);
+  };
+  /** Whether a route takes a send: Nectovia has no switch; every other route is turned on in Settings. */
+  const routeOn = (route: string) => route === NECTOVIA_ROUTE || store.settings.services?.[route] === true;
+  /** The account a send on this route runs under, as Settings or the account session records it. */
+  const routeAccount = (route: string, projectId: string): unknown =>
+    route === NECTOVIA_ROUTE ? nectoviaAccountFor(projectId) : store.settings.services?.[`${route}AccountRoute`];
   /** What the host knows about one route when a tier resolves: on, connected, and what it lists. */
   const tierRouteState = (route: string) => {
     // A mapped route this build does not have (Google Vertex AI before its branch lands) is
@@ -3331,6 +3410,15 @@ export async function createApp(options: AppOptions) {
     conversation: Conversation | null | undefined,
     options: RunHints = {},
   ): TierResolution | null => {
+    // A Nectovia conversation's tier is answered by the account service's published policy, on
+    // Nectovia: neither a model pin nor the owner's tier map moves it. No style is Efficient.
+    if (conversation?.engine === NECTOVIA_ROUTE)
+      return nectoviaTier({
+        style: jobTierOf(styleOf(conversation)),
+        signedIn: nectoviaAccount?.signedIn() ?? false,
+        policy: nectoviaAccount?.policy() ?? null,
+        text: options.text ?? null,
+      });
     if (conversation?.requested?.model) return null;
     const style = styleOf(conversation);
     if (!style) return null;
@@ -3354,6 +3442,8 @@ export async function createApp(options: AppOptions) {
     options: RunHints = {},
   ): Route => {
     const tier = tierFor(conversation, options);
+    // Nectovia's own refusals (nobody signed in, Personal work) come before any tier's.
+    if (tier?.route === NECTOVIA_ROUTE) nectoviaAccountFor(projectId);
     if (tier?.outcome === 'refuse') throw new ApiError(409, tier.reason);
     if (tier) return tier.route as Route;
     return selectedEngine(store.settings, store.state(projectId).project, conversation);
@@ -3370,6 +3460,13 @@ export async function createApp(options: AppOptions) {
     conversation: Conversation | null | undefined,
     options: RunHints = {},
   ): (RunChoice & { reason: string }) | null => {
+    // On Nectovia the published policy's model for the tier is the only choice there is.
+    if (engine === NECTOVIA_ROUTE) {
+      const tier = tierFor(conversation, options);
+      return tier?.outcome === 'run' && tier.route === engine
+        ? { model: tier.model, ...(tier.effort ? { effort: tier.effort } : {}), selection: 'automatic', reason: tier.reason }
+        : null;
+    }
     if (conversation?.requested?.model) return null;
     const style = styleOf(conversation);
     if (!style) return null;
@@ -3528,6 +3625,37 @@ export async function createApp(options: AppOptions) {
    * Read-only: it resolves exactly as dispatch does, minus the message itself, and changes
    * nothing. A pin is reported as the pin; a style that would ask says so here first.
    */
+  /**
+   * The Nectovia route as this computer sees it: the model each tier runs on now, from the
+   * account service's published policy; why a message would be refused, if it would; and
+   * whether AI setup shows the owner's own provider routes. Read-only.
+   */
+  app.get(
+    '/api/ai/nectovia',
+    route(async (): Promise<NectoviaRouteView> => {
+      const signedIn = nectoviaAccount?.signedIn() ?? false;
+      const policy = signedIn
+        ? (nectoviaAccount!.policy() ?? (await nectoviaAccount!.refreshPolicy()))
+        : null;
+      return {
+        route: NECTOVIA_ROUTE,
+        ownerRoutes,
+        refusal: !signedIn
+          ? { code: 'sign_in_required', reason: NECTOVIA_SIGN_IN }
+          : !policy
+            ? { code: 'route_unavailable', reason: NECTOVIA_UNAVAILABLE }
+            : null,
+        tiers: policy
+          ? {
+              efficient: policy.tiers.efficient && { model: policy.tiers.efficient.model, label: policy.tiers.efficient.label },
+              focused: policy.tiers.focused && { model: policy.tiers.focused.model, label: policy.tiers.focused.label },
+              thorough: policy.tiers.thorough && { model: policy.tiers.thorough.model, label: policy.tiers.thorough.label },
+            }
+          : null,
+        policyRevision: policy?.revision ?? null,
+      };
+    }, false),
+  );
   app.get(
     '/api/projects/:id/threads/:threadId/work-style',
     route(async (req) => {
@@ -4227,6 +4355,10 @@ export async function createApp(options: AppOptions) {
         // which driver answers a message; Build and Fix on a thread run on every connected
         // route through /ask (owner decision 2026-09-23). The tier decides the route when one
         // applies; a tier whose route cannot run is refused by name before anything is sent.
+        // A Nectovia conversation's model is the published policy's; when this session has not
+        // read one yet, it asks once before the tier resolves.
+        if (thread.engine === NECTOVIA_ROUTE && nectoviaAccount?.signedIn() && !nectoviaAccount.policy())
+          await nectoviaAccount.refreshPolicy();
         const conversationRoute = threadRoute(projectId, thread, {
           mode: command.mode,
           text: command.text,
@@ -4238,9 +4370,9 @@ export async function createApp(options: AppOptions) {
           );
         const routeName =
           conversationRoute === 'claude-code' ? 'Claude Code' : MODEL_API_NAMES[conversationRoute];
-        if (store.settings.services?.[conversationRoute] !== true)
+        if (!routeOn(conversationRoute))
           throw new ApiError(409, `Turn ${routeName} on in Settings before sending.`);
-        const accountRoute = store.settings.services?.[`${conversationRoute}AccountRoute`];
+        const accountRoute = routeAccount(conversationRoute, projectId);
         // A WorkStyle, when one applies, chooses from what the route offers; on a model-API
         // route its level follows style and mode only, because that route binds it into the
         // lineage's saved context. Without one, each route keeps its own path.
@@ -5070,6 +5202,7 @@ export async function createApp(options: AppOptions) {
           409,
           `${MODEL_API_NAMES[serviceRoute]} answers through the conversation. Send your message there.`,
         );
+      if (serviceRoute === NECTOVIA_ROUTE) throw new ApiError(409, NECTOVIA_WORK_REFUSED);
       // A Small Business skill the person picked. Checked here, before consent is asked for or
       // anything is read, so a skill that cannot run says why instead of a send being confirmed
       // for nothing. The section itself is assembled once the selected documents are known,
@@ -5703,11 +5836,17 @@ export async function createApp(options: AppOptions) {
         stableEffort: true,
       });
       const model = styled?.model ?? store.settings.services?.[`${route}Model`];
+      let account: unknown = null;
+      try {
+        account = routeAccount(route, projectId);
+      } catch {
+        // Nectovia with nobody signed in, or Personal work: the send refuses it in its own words.
+      }
       // A route that is off or not set up cannot spend: the send refuses it by name, so no cap
       // warning stands in front of that refusal.
       if (
-        store.settings.services?.[route] !== true ||
-        typeof store.settings.services?.[`${route}AccountRoute`] !== 'string' ||
+        !routeOn(route) ||
+        typeof account !== 'string' ||
         typeof model !== 'string' ||
         !model
       )

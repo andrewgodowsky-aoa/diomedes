@@ -262,6 +262,9 @@ describe('model-API conversations (AWS Bedrock, Diomedes-owned system text)', ()
       shareConversationHistory: true,
       shareReviewPackets: false,
     }).catch(() => undefined);
+    // Home starts on Nectovia's managed route; this block covers the owner's AWS route, so the
+    // person moves Home there first.
+    await api(`/projects/${home.projectId}/threads/${home.threadId}`, 'PUT', { engine: 'aws-bedrock' });
     await api(`/projects/${home.projectId}/threads/${home.threadId}`, 'PUT', { workStyle: 'efficient' });
     await send(home.projectId, home.threadId, 'h1', 'What can you do?', []);
     await until(() => seen.length, (count) => count > 0, 'the Home request');

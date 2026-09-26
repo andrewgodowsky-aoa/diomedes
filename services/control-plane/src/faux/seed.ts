@@ -3,13 +3,16 @@
  * calls a person or staff member would make — sign-up, creating a business,
  * invitation codes, staff administration, route registry, policy publication
  * and grant issue — so the seed also exercises those paths. Only the first
- * admin is written directly, because staff administration needs one to exist.
+ * admin is bootstrapped, through bootstrapFirstAdmin, because staff
+ * administration needs one to exist.
  *
- * Every account's password is FAUX_DEMO_PASSWORD. Faux data only: none of these
- * people, businesses or grants exist, and nothing here was bought.
+ * In password mode every account's password is FAUX_DEMO_PASSWORD. In
+ * workos-standin mode there are no passwords: each person signs in through the
+ * stand-in with their email. Faux data only: none of these people, businesses or
+ * grants exist, and nothing here was bought.
  */
 import type { FauxCloud } from './cloud.js';
-import type { RouteEntry } from '../commercial.js';
+import { bootstrapFirstAdmin, type RouteEntry } from '../commercial.js';
 
 export const FAUX_DEMO_PASSWORD = 'nectovia-demo';
 export const FAUX_SEED_ID = 'demo-2026-09-25';
@@ -36,8 +39,8 @@ export const DEMO_ROUTES: readonly RouteSeed[] = [
   },
   {
     id: 'aws-luna-6', provider: 'aws-bedrock', model: 'us.openai.gpt-6-luna', label: 'GPT-6 Luna', region: 'us',
-    processing: 'AWS Bedrock US inference profile.', status: 'unqualified',
-    evidence: 'Announced on Bedrock 2026-09-22. Not yet checked on the company account, credits or quota.',
+    processing: 'AWS Bedrock US inference profile. In the faux cloud a scripted provider answers instead.', status: 'qualified',
+    evidence: 'Faux seed: scripted provider, 2026-09-25',
   },
   {
     id: 'aws-sol-6', provider: 'aws-bedrock', model: 'us.openai.gpt-6-sol', label: 'GPT-6 Sol', region: 'us',
@@ -65,14 +68,13 @@ export interface SeedResult {
 
 /** Seed an empty store. A store that already has any account is left alone. */
 export async function seedDemo(cloud: FauxCloud): Promise<SeedResult> {
-  if (cloud.store.snapshot().identity.users.length > 0)
+  const snapshot = cloud.store.snapshot();
+  if (snapshot.seeded !== null || snapshot.identity.users.length > 0 || snapshot.accounts.persons.length > 0)
     return { seeded: false, password: FAUX_DEMO_PASSWORD, accounts: DEMO_ACCOUNTS, organizations: null };
   const tokens = {} as Record<DemoAccount, string>;
   for (const [key, account] of Object.entries(DEMO_ACCOUNTS) as [DemoAccount, (typeof DEMO_ACCOUNTS)[DemoAccount]][]) {
-    const pair = await cloud.store.run((draft) =>
-      cloud.identity.signUp(draft.identity, { name: account.name, email: account.email, password: FAUX_DEMO_PASSWORD }));
-    tokens[key] = pair.accessToken;
-    await cloud.accounts.signIn(pair.accessToken);
+    tokens[key] = await cloud.seedSignIn({ name: account.name, email: account.email, password: FAUX_DEMO_PASSWORD });
+    await cloud.accounts.signIn(tokens[key]);
   }
 
   // Businesses, and people joining them by invitation code.
@@ -87,14 +89,7 @@ export async function seedDemo(cloud: FauxCloud): Promise<SeedResult> {
 
   // The first admin is bootstrapped; everyone else is added by that admin.
   const adminSession = await cloud.accounts.signIn(tokens.staffAdmin);
-  await cloud.store.run(async (draft) => {
-    const at = new Date().toISOString();
-    draft.commercial.operators.push({ v: 1, personId: adminSession.person.id, role: 'admin', state: 'active', addedAt: at,
-      addedBy: adminSession.person.id, updatedAt: at, updatedBy: adminSession.person.id });
-    draft.commercial.audit.push({ id: `audit_${crypto.randomUUID()}`, at, actorPersonId: adminSession.person.id, actorRole: 'admin',
-      action: 'staff.added', organizationId: null, targetKind: 'operator', targetId: adminSession.person.id,
-      reason: 'Bootstrap: the first admin of this faux store.', detail: { role: 'admin', bootstrap: true } });
-  });
+  await bootstrapFirstAdmin(cloud.store.commercial, adminSession.person.id, new Date().toISOString());
   for (const [key, role] of [['staffSupport', 'support'], ['staffBilling', 'billing'], ['staffRouting', 'routing']] as const) {
     const session = await cloud.accounts.signIn(tokens[key]);
     await cloud.commercial.addStaff(tokens.staffAdmin, { personId: session.person.id, role });
@@ -103,8 +98,10 @@ export async function seedDemo(cloud: FauxCloud): Promise<SeedResult> {
   // The route registry and the first policy, by the Routing role.
   for (const entry of DEMO_ROUTES) await cloud.commercial.saveRoute(tokens.staffRouting, entry);
   await cloud.commercial.publishPolicy(tokens.staffRouting, {
-    tiers: { efficient: 'aws-luna-5-6', focused: 'vertex-gemini-3-8-flash', thorough: null },
-    note: 'Faux seed: the owner tier map of 2026-09-23. Thorough stays refused until GPT-6 Sol is qualified.',
+    // Managed inference (nectovia-managed/1): every tier runs on GPT-6 Luna. Reasoning effort
+    // differs by tier on the desktop; the route does not.
+    tiers: { efficient: 'aws-luna-6', focused: 'aws-luna-6', thorough: 'aws-luna-6' },
+    note: 'Faux seed: GPT-6 Luna behind all three tiers, answered by the scripted provider (2026-09-25).',
     baseRevision: 0,
   });
 

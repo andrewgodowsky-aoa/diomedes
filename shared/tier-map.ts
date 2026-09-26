@@ -1,5 +1,5 @@
 import type { EngineModel, Mode } from './types.js';
-import { isModelApiRoute, MODEL_API_ROUTES, type ModelApiRoute } from './model-api.js';
+import { isModelApiProvider, MODEL_API_PROVIDERS, type ModelApiProvider } from './model-api.js';
 import { isRoute, routeDisplayName } from './engines.js';
 import {
   classifyTask,
@@ -23,7 +23,7 @@ import {
  * with a pointer to AI setup. Nothing here falls back to another route, and so
  * to another payer.
  */
-export const TIER_ROUTES = MODEL_API_ROUTES;
+export const TIER_ROUTES = MODEL_API_PROVIDERS;
 
 export interface TierAssignment {
   /**
@@ -42,7 +42,7 @@ export type TierMap = Record<WorkStyle, TierAssignment>;
  * server/engines/aws-bedrock.ts; a test asserts the two spellings agree). The
  * owner calls it GPT-6 Luna; the connection serves this id and it is never renamed.
  */
-export const TIER_AWS_LUNA_MODEL = 'us.openai.gpt-5.6-luna';
+export const TIER_AWS_LUNA_MODEL = 'us.openai.gpt-6-luna';
 /**
  * The Google Vertex AI route's id, as the Vertex branch names it. Not yet in
  * `MODEL_API_ROUTES` on every build, so it is a plain string here.
@@ -55,12 +55,12 @@ export const TIER_VERTEX_ROUTE = 'google-vertex';
 export const TIER_GEMINI_FLASH_MODEL = 'gemini-3.8-flash';
 
 /**
- * The defaults the owner set on 2026-09-23. GPT-6 Luna and GPT-6 Sol on AWS
- * Bedrock are not qualified yet: AWS has published no model id, inference
- * profile, region or price. So Efficient runs the AWS model already pinned in
- * code (GPT-5.6 Luna) until the owner switches it, and Thorough has no model:
- * it is refused by name until the owner chooses one. GPT-6 Sol is named in the
- * copy and never sent.
+ * The defaults the owner set on 2026-09-23, with Efficient moved to GPT-6 Luna
+ * on 2026-09-25 when its AWS model id and price were recorded. GPT-6 Sol on AWS
+ * Bedrock is not qualified yet, so Thorough has no model: it is refused by name
+ * until the owner chooses one. GPT-6 Sol is named in the copy and never sent.
+ * This map routes the owner's own routes; a Nectovia conversation's tier is
+ * answered by the account service's published policy instead.
  */
 export const DEFAULT_TIER_MAP: TierMap = {
   efficient: { route: 'aws-bedrock', model: TIER_AWS_LUNA_MODEL },
@@ -87,7 +87,7 @@ export const TIER_INTENT: Record<WorkStyle, string> = {
 };
 /** One line per tier default for AI setup, saying what runs today and what is intended. */
 export const TIER_DEFAULT_NOTES: Record<WorkStyle, string> = {
-  efficient: 'GPT-5.6 Luna, the model the AWS connection serves today. Switch it to GPT-6 Luna once AWS qualifies it.',
+  efficient: 'GPT-6 Luna on AWS Bedrock.',
   focused: 'Gemini 3.8 Flash on Google Vertex AI.',
   thorough: 'Meant for GPT-6 Sol on AWS Bedrock, which is not qualified yet. No model is sent until you choose one.',
 };
@@ -114,9 +114,9 @@ export const TIER_SETTING_KEYS: readonly string[] = [
 export function tierSettingRefusal(key: string, value: unknown): string | null {
   const style = WORK_STYLES.find((candidate) => key === tierRouteKey(candidate) || key === tierModelKey(candidate));
   if (style && key === tierRouteKey(style))
-    return isModelApiRoute(value)
+    return isModelApiProvider(value)
       ? null
-      : `${WORK_STYLE_LABELS[style]} runs on a company account this build has: choose ${MODEL_API_ROUTES.map(routeDisplayName).join(', ')}.`;
+      : `${WORK_STYLE_LABELS[style]} runs on a company account this build has: choose ${MODEL_API_PROVIDERS.map(routeDisplayName).join(', ')}.`;
   if (style || key === OWNER_PIN_MODEL_KEY)
     return typeof value === 'string' && TIER_MODEL.test(value.trim())
       ? null
@@ -132,7 +132,7 @@ export function tierMapFrom(services: Record<string, unknown> | undefined): Tier
   for (const style of WORK_STYLES) {
     const route = services?.[tierRouteKey(style)];
     const model = services?.[tierModelKey(style)];
-    if (isModelApiRoute(route)) {
+    if (isModelApiProvider(route)) {
       const changed = route !== map[style].route;
       map[style] = { route, model: typeof model === 'string' && model ? model : changed ? null : map[style].model };
     } else if (typeof model === 'string' && model) map[style] = { ...map[style], model };
@@ -244,6 +244,6 @@ export function resolveTier(input: {
 }
 
 /** Whether a route id can be the target of a tier in this build (a company-account route). */
-export function isTierRoute(value: unknown): value is ModelApiRoute {
-  return isModelApiRoute(value);
+export function isTierRoute(value: unknown): value is ModelApiProvider {
+  return isModelApiProvider(value);
 }

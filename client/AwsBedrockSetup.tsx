@@ -134,9 +134,9 @@ export function AwsBedrockSetup({
   const showForm = !!view && view.protectedStorage && (!connection || editing || connection.credential.expired);
 
   return (
-    <section className="service" aria-label="AWS Bedrock (GPT-5.6 Luna)">
+    <section className="service" aria-label="AWS Bedrock (GPT-6 Luna)">
       <div className="row">
-        <h3>AWS Bedrock (GPT-5.6 Luna)</h3>
+        <h3>AWS Bedrock (GPT-6 Luna)</h3>
         {awsIsDefault(settings.services) && <span className="caption push-right">Default</span>}
       </div>
       <p className="caption ai-route">

@@ -37,7 +37,7 @@ import {
   type StaffPermission,
   type StaffRole,
 } from '../../../shared/access.js';
-import { MODEL_API_ROUTES } from '../../../shared/model-api.js';
+import { MODEL_API_PROVIDERS as MODEL_API_ROUTES } from '../../../shared/model-api.js';
 import { CREDIT_MICRO_USD, creditAmount, periodIdFor, publishedMonthlyGrant, type UsageState } from '../../../shared/managed-usage.js';
 import type { EntitlementView, Membership, Organization, Person } from '../../../shared/workspaces.js';
 import { decideAgentAdmission, snapshotFromView, type AgentAdmissionDecision } from '../contract/contract.js';
@@ -208,6 +208,8 @@ export interface CommercialTransaction {
   auditLog(input: { organizationId?: string; limit: number }): Promise<AuditEvent[]>;
   saveAdmission(row: AdmissionRecord): Promise<void>;
   admissions(organizationId: string, limit: number): Promise<AdmissionRecord[]>;
+  /** One admission by id, within one tenant. Another tenant's record reads as absent. */
+  admission(tenantId: string, id: string): Promise<AdmissionRecord | undefined>;
   // Staff directory reads over the account tables. Reads only; bounded.
   organizations(query: string, limit: number): Promise<{ organization: Organization; activeMembers: number }[]>;
   organizationRecord(id: string): Promise<Organization | undefined>;
@@ -873,6 +875,31 @@ export class CommercialService {
     const limit = Math.max(1, Math.min(500, input.limit ?? 200));
     return this.repository.transaction((tx) => tx.auditLog({ organizationId: input.organizationId, limit }));
   }
+}
+
+/**
+ * Make the first Diomedes admin. Staff administration needs an admin to add
+ * anyone, so the first one is written here, by the database's operator, never by
+ * a route. It is refused once any active admin exists, and the person must have
+ * signed in once so their account row exists. Audited like any staff change.
+ */
+export async function bootstrapFirstAdmin(repository: CommercialRepository, personId: string, at: string): Promise<Operator> {
+  return repository.transaction(async (tx) => {
+    if (!(await tx.person(personId))) throw new AccountError(404, 'That person has no account yet. They sign in once first.');
+    const admin = (await tx.operators()).find((row) => row.state === 'active' && row.role === 'admin');
+    if (admin) throw new AccountError(409, 'An active admin already exists. That admin adds staff from the Operations app.');
+    const existing = await tx.operator(personId);
+    const row: Operator = existing
+      ? { ...existing, role: 'admin', state: 'active', updatedAt: at, updatedBy: personId }
+      : { v: 1, personId, role: 'admin', state: 'active', addedAt: at, addedBy: personId, updatedAt: at, updatedBy: personId };
+    await tx.saveOperator(row);
+    await tx.audit({
+      id: newId('audit'), at, actorPersonId: personId, actorRole: 'admin', action: existing ? 'staff.changed' : 'staff.added',
+      organizationId: null, targetKind: 'operator', targetId: personId,
+      reason: 'Bootstrap: the first admin, written by the database operator.', detail: { role: 'admin', bootstrap: true },
+    });
+    return row;
+  });
 }
 
 /** Staff roles, re-exported for adapters that seed the first admin. */

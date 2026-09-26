@@ -45,6 +45,7 @@ import {
   verifiedSentence,
 } from './ai-setup-state';
 import { ApiError, api, selectEngineModel, setEngineEnabled } from './api';
+import type { NectoviaRouteView } from '../shared/model-api';
 import { Button } from './components';
 import './ai-setup.css';
 
@@ -95,6 +96,11 @@ export interface AIConnectionProps {
    * then no control is drawn at all.
    */
   onStartFirstTask?: (route: ExternalEngine, model: string, effort: string | null) => void;
+  /**
+   * Whether the owner's own provider routes and the tier map are shown. The host says so from
+   * its launch-time `DIOMEDES_OWNER_ROUTES`; a caller that already knows may pass it.
+   */
+  ownerRoutes?: boolean;
 }
 
 export interface AISetupProps extends AIConnectionProps {
@@ -109,8 +115,23 @@ export function AIConnections({
   onConnections,
   openTest,
   onStartFirstTask,
+  ownerRoutes: ownerRoutesKnown,
 }: AIConnectionProps) {
   const [connections, setConnections] = useState<EngineConnection[] | null>(null);
+  // Off until the host says otherwise: a customer never sees the provider cards.
+  const [ownerRoutes, setOwnerRoutes] = useState(ownerRoutesKnown ?? false);
+  useEffect(() => {
+    if (ownerRoutesKnown !== undefined) return;
+    let current = true;
+    void api<NectoviaRouteView>('/ai/nectovia')
+      .then((view) => {
+        if (current) setOwnerRoutes(view.ownerRoutes);
+      })
+      .catch(() => undefined);
+    return () => {
+      current = false;
+    };
+  }, [ownerRoutesKnown]);
   const [statusLoading, setStatusLoading] = useState(true);
   const [statusError, setStatusError] = useState<string | null>(null);
   const [discovering, setDiscovering] = useState(false);
@@ -1137,13 +1158,19 @@ export function AIConnections({
             </section>
           );
         })}
-        {/* Model-API routes: the company's own provider accounts, not installed engines. */}
-        <AwsBedrockSetup settings={settings} save={save} busy={busy} />
-        <AzureOpenAISetup settings={settings} save={save} busy={busy} />
-        <OpenRouterSetup settings={settings} save={save} busy={busy} />
-        <GoogleVertexSetup settings={settings} save={save} busy={busy} />
-        {/* The owner's tier map: the one place that decides which route serves each tier. */}
-        <TierSetup settings={settings} save={save} busy={busy} />
+        {/* Model-API routes: the company's own provider accounts, not installed engines. Shown
+            only when the app was launched with DIOMEDES_OWNER_ROUTES=1; customers never connect a
+            provider, because the Nectovia Agent runs on Nectovia's own route. */}
+        {ownerRoutes && (
+          <>
+            <AwsBedrockSetup settings={settings} save={save} busy={busy} />
+            <AzureOpenAISetup settings={settings} save={save} busy={busy} />
+            <OpenRouterSetup settings={settings} save={save} busy={busy} />
+            <GoogleVertexSetup settings={settings} save={save} busy={busy} />
+            {/* The owner's tier map: the one place that decides which route serves each tier. */}
+            <TierSetup settings={settings} save={save} busy={busy} />
+          </>
+        )}
       </div>
     </div>
   );
@@ -1194,6 +1221,10 @@ export default function AISetup({ settings, save, busy, onContinue, onBack }: AI
   return (
     <div className="ai-setup">
       <h1>Connect an AI service</h1>
+      <p className="prose" data-agent-included>
+        The Nectovia Agent is included with Business and needs no setup. The tools below are optional:
+        connect one only if you want it for Work.
+      </p>
       <CodexSetup settings={settings} save={save} busy={busy} />
       <AIConnections
         settings={settings}

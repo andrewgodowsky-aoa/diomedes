@@ -2,7 +2,7 @@
  * H20: the all-route acceptance matrix, derived and never hand-written.
  *
  * Rows are every route contract this build advertises: the registry in
- * `server/harness/route-contract.ts` plus the four model-API contracts that
+ * `server/harness/route-contract.ts` plus the five model-API contracts that
  * live beside their adapters. Columns are twelve capabilities. Each cell is
  * computed from two inputs only:
  *

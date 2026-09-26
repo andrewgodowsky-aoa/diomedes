@@ -8,11 +8,17 @@ import { EngineService } from '../server/engines/service';
 import { testOnlySecretBox } from '../server/connection-secrets';
 import type { Store } from '../server/store';
 import type { Conversation, ProjectState } from '../shared/types';
-import { AWS_CONNECT_BODY, awsTransport, seen } from './fixtures/scripted-home-luna';
+import { awsTransport, seen } from './fixtures/scripted-home-luna';
+import { gateway, nectoviaAccounts } from './fixtures/nectovia-home';
 
 // Independent route-display counterexamples. The app, Store and HTTP writes are
 // real. The provider is fake; the first test delays only an already committed
 // PUT response, and the second seeds an unmarked historical thread pin.
+//
+// The default a conversation migrates to is Nectovia, the company-managed route: the app signs
+// the faux seed's Business owner in at start (test mode) and reaches the real account service
+// and its real managed gateway, with the scripted provider answering behind the gateway. The
+// customer connects nothing, and nothing calls a provider directly.
 test.describe.configure({ mode: 'serial' });
 const port = Number(process.env.DIOMEDES_ROUTE_REVIEW_PORT ?? 47641);
 const baseURL = `http://127.0.0.1:${port}`;
@@ -21,6 +27,13 @@ let app: Awaited<ReturnType<typeof createApp>>;
 let server: Server | undefined;
 let binding: { projectId: string; threadId: string };
 let pageErrors: string[] = [];
+/**
+ * What the caption names a Nectovia conversation by: the route's display name and the label the
+ * account service publishes for Efficient (client/console/DiomedesHome.tsx passes
+ * `nectovia.tiers.efficient.label`; client/console/Diomedes.tsx `routeName` writes
+ * "Nectovia (<label>)"). The faux seed publishes GPT-6 Luna.
+ */
+const NECTOVIA_CAPTION = 'Nectovia (GPT-6 Luna)';
 
 const gate = () => {
   let release!: () => void;
@@ -75,6 +88,7 @@ test.beforeEach(async ({ page }) => {
   const results = path.resolve('test-results');
   await fs.mkdir(results, { recursive: true });
   const root = await fs.mkdtemp(path.join(results, 'home-route-review-'));
+  const { accounts } = await nectoviaAccounts(awsTransport);
   app = await createApp({
     dataDir: path.join(root, 'data'), projectRoot: path.join(root, 'projects'),
     port, clientPort: port, reviewerAdapter: null,
@@ -83,7 +97,13 @@ test.beforeEach(async ({ page }) => {
       version: async () => { throw new Error('No native engine in this fixture'); },
       adapter: () => { throw new Error('No native engine in this fixture'); },
     }),
-    secretBox: testOnlySecretBox(), modelApiTransport: awsTransport,
+    secretBox: testOnlySecretBox(),
+    // Nectovia reaches its gateway on the account service's own transport; nothing here calls a
+    // provider directly.
+    modelApiTransport: (async () => {
+      throw new Error('No provider is called directly in this spec.');
+    }) as typeof globalThis.fetch,
+    accounts,
   });
   const dist = path.resolve('dist');
   await fs.access(path.join(dist, 'index.html'));
@@ -94,8 +114,6 @@ test.beforeEach(async ({ page }) => {
     server!.once('listening', resolve);
     server!.once('error', reject);
   });
-  await api('/ai/model-api/aws-bedrock', 'PUT', AWS_CONNECT_BODY);
-  await api('/ai/model-api/aws-bedrock/spend-limit', 'PUT', { capUsd: 1, consent: true });
   await api('/settings', 'PUT', {
     onboarding: {
       work: 'business',
@@ -129,14 +147,19 @@ test('HLR-02: a migrated conversation names the route serving its pending messag
   await open(page);
   await expect(page.locator('.instr')).toContainText('Claude Code');
   const callsBefore = seen.length;
+  const gatewayBefore = gateway.length;
   const composer = page.getByRole('textbox', { name: 'Message Nectovia' });
   try {
     await composer.fill('SLOW migration route review');
     await composer.press('Enter');
+    // The migrated send went to Nectovia's gateway, which put it on the wire to the provider,
+    // where SLOW holds it: the message is still pending while the display is read.
     await expect.poll(() => seen.length).toBeGreaterThan(callsBefore);
-    expect((await savedThread()).engine).toBe('aws-bedrock');
+    expect(gateway.length).toBeGreaterThan(gatewayBefore);
+    expect((await savedThread()).engine).toBe('nectovia');
     await expect(page.locator('.dio-pending')).toBeVisible();
-    await expect(page.locator('.instr')).toContainText('AWS Bedrock (Luna)');
+    await expect(page.locator('.instr')).toContainText(NECTOVIA_CAPTION);
+    await expect(page.locator('.instr')).not.toContainText('Claude Code');
   } finally {
     const stop = page.getByRole('button', { name: 'Stop', exact: true });
     if (await stop.isVisible()) await stop.click();

@@ -451,6 +451,18 @@ export class AccountSessionService {
     return this.current?.policy ?? null;
   }
 
+  /**
+   * Ask the service for its published tier policy again, once. The last answer stays when the
+   * service cannot say; signed out, there is none.
+   */
+  async refreshPolicy(): Promise<RoutingPolicyAnswer | null> {
+    const current = this.current;
+    if (!current) return null;
+    const answer = await this.call((token) => this.backend.client.routingPolicy(token)).catch(() => null);
+    if (answer && this.current === current) current.policy = answer;
+    return this.current?.policy ?? null;
+  }
+
   async createOrganization(name: string) {
     const organization = await this.call((token) => this.backend.client.createOrganization(token, name));
     return { organizationId: organization.id, projection: await this.reload({ project: false }) };

@@ -79,7 +79,7 @@ const NO_ISOLATION = {
 
 const AWS_BEDROCK: RouteCapabilities = {
   routeId: 'aws-bedrock',
-  name: 'AWS Bedrock, GPT-5.6 Luna, company AWS account',
+  name: 'AWS Bedrock, GPT-6 Luna, company AWS account',
   storeOnlyWrites: fact(
     'yes',
     'diomedes-enforced',

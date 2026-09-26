@@ -392,6 +392,7 @@ export function createHarnessHost({
   textLeaseMs,
   weeklyBrief,
   observation,
+  nectoviaAccount,
 }: {
   store: Store;
   dataDir: string;
@@ -404,6 +405,8 @@ export function createHarnessHost({
   weeklyBrief?: WeeklyBriefHost;
   /** Optional metadata observation (server/observability/): reads each saved run, never changes it. */
   observation?: { onRunSaved(run: HarnessRun): void } | null;
+  /** The Nectovia route's account for a project now, or null when nobody is signed in or it is Personal. */
+  nectoviaAccount?: (projectId: string) => string | null;
 }) {
   if (path.resolve(dataDir) !== store.dataDir)
     throw new Error('The harness must use the Store data folder.');
@@ -422,7 +425,7 @@ export function createHarnessHost({
     ],
   );
   // Model-API conversation runs: the route must be on and the run's account route still selected.
-  const modelAuthorize = modelApiDispatchAuthorizer(() => store.settings.services);
+  const modelAuthorize = modelApiDispatchAuthorizer(() => store.settings.services, nectoviaAccount);
   const modelRun = (capabilityId: string) =>
     (MODEL_SESSION_CAPABILITIES as readonly string[]).includes(capabilityId);
   // H13 loop runs and their delegates: the admitted route must be on and still selected.

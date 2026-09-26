@@ -20,7 +20,7 @@ describe('the tier form', () => {
   it('starts from the owner’s defaults and saves nothing for a tier left on its default', () => {
     const draft = tierDraftFrom({});
     expect(draft).toEqual({
-      efficient: { route: 'aws-bedrock', model: 'us.openai.gpt-5.6-luna' },
+      efficient: { route: 'aws-bedrock', model: 'us.openai.gpt-6-luna' },
       focused: { route: 'google-vertex', model: 'gemini-3.8-flash' },
       thorough: { route: 'aws-bedrock', model: '' },
     });

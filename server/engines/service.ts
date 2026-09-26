@@ -66,6 +66,7 @@ import {
   ModelApiError,
   WORK_LIMITS,
   awsAccountRoute,
+  AwsConnectionRetired,
   respondOnce,
   type AwsConnection,
   type AwsConnections,
@@ -101,21 +102,41 @@ import {
   type VertexConnections,
 } from './google-vertex.js';
 import { callCeiling, type CallExposure, type RespondLimits, type RespondResult, type StreamSinks } from './model-api-core.js';
-import { decideJobStep, type JobTier } from '../../shared/job-caps.js';
-import type { MicroUsd } from '../../shared/managed-usage.js';
+import { decideJobStep, DEFAULT_JOB_TIER, type JobTier } from '../../shared/job-caps.js';
+import { creditAmount, publishedMonthlyGrant, type MicroUsd } from '../../shared/managed-usage.js';
 import { createAwsModelAdapter } from '../harness/aws-model-adapter.js';
 import { createAzureModelAdapter } from '../harness/azure-model-adapter.js';
 import { createOpenRouterModelAdapter } from '../harness/openrouter-model-adapter.js';
 import { createVertexModelAdapter } from '../harness/vertex-model-adapter.js';
+import { createNectoviaModelAdapter } from '../harness/nectovia-model-adapter.js';
+import {
+  NECTOVIA_SDK,
+  NECTOVIA_SIGN_IN,
+  NECTOVIA_UNAVAILABLE,
+  nectoviaAccountRoute,
+  nectoviaConnectionId,
+  nectoviaRateCard,
+  respondNectovia,
+  usageClassFor,
+  type ManagedAdmission,
+  type NectoviaAccount,
+} from './nectovia.js';
 import type { ModelAdapter } from '../harness/native-agent.js';
 import type { ExposureAttempt, JobScope, ModelRateCard } from '../spend-exposure.js';
 import type { ModelTranscripts } from '../harness/model-transcripts.js';
-import type { ModelSessionAdmission, ModelSessionRuns, ModelSessionTurn } from '../harness/model-session-run.js';
+import { turnRunId, type ModelSessionAdmission, type ModelSessionRuns, type ModelSessionTurn } from '../harness/model-session-run.js';
 import type { ReadToolDeps } from '../harness/capabilities/read-scope-tools.js';
 import type { ConnectionSecrets } from '../connection-secrets.js';
 import type { SpendExposure } from '../spend-exposure.js';
-import type { ModelApiRoute } from '../../shared/model-api.js';
-import type { AdmittedAgentWork, AgentGatePort, AgentWork } from '../accounts/agent-gate.js';
+import { NECTOVIA_ROUTE, type ModelApiRoute } from '../../shared/model-api.js';
+import { WORK_STYLE_LABELS } from '../../shared/work-style.js';
+import {
+  AGENT_NOT_INCLUDED,
+  AGENT_SIGN_IN_REQUIRED,
+  type AdmittedAgentWork,
+  type AgentGatePort,
+  type AgentWork,
+} from '../accounts/agent-gate.js';
 import { refusalEndsObservation, type ObservationBinder } from '../observability/scopes.js';
 
 function recordShimError(error: unknown): boolean {
@@ -1961,7 +1982,12 @@ export class EngineService {
    */
   async admitModelApi(
     route: ModelApiRoute,
-    input: Pick<TextRequest, 'model' | 'accountRoute'> & { projectId?: string; prompt?: string },
+    input: Pick<TextRequest, 'model' | 'accountRoute'> & {
+      projectId?: string;
+      prompt?: string;
+      requestId?: string;
+      threadId?: string | null;
+    },
     agent?: Pick<AgentWork, 'surface' | 'rootJobId'>,
   ): Promise<ModelSessionAdmission> {
     const api = this.modelApi;
@@ -1974,7 +2000,7 @@ export class EngineService {
     } catch {
       // Observation never changes an admission.
     }
-    const admitted = await this.admitAgent(input, agent).catch((error: unknown) => {
+    const refused = (error: unknown): never => {
       try {
         // Only a refusal of the business ends its observation; an outage does not.
         if (refusalEndsObservation(error)) this.observation?.refused({ projectId: input.projectId ?? null, organizationId: business });
@@ -1982,7 +2008,12 @@ export class EngineService {
         // Observation never changes a refusal.
       }
       throw error;
-    });
+    };
+    // The Nectovia route is company-managed inference: its admission is the managed one, and it is
+    // admitted on the business's plan and the published policy, never on a connection in Settings.
+    if (route === NECTOVIA_ROUTE)
+      return this.admitNectovia(api, input, agent, await this.admitAgent(input, { ...agent, routeKind: 'managed' }).catch(refused));
+    const admitted = await this.admitAgent(input, agent).catch(refused);
     const handle = await modelApiRoute(api, route);
     const { short, long } = handle.names;
     if (!handle.connected) throw new EngineError('ROUTE_REFUSED', `Connect ${long} in AI setup before sending.`, true);
@@ -2020,12 +2051,104 @@ export class EngineService {
     };
   }
   /**
+   * Admission for the Nectovia route. Nobody connects anything: the person is signed in, the
+   * Agent gate admitted this work as managed for a business, the tier's model is the one the
+   * account service publishes now (read again once when the service admitted under a newer
+   * revision), and this computer has a price for it. The local guard for the business's month is
+   * approved here by the host from the plan's published grant; it guards this computer and is
+   * never read as the business's balance, which only the gateway's ledger holds.
+   */
+  private async admitNectovia(
+    api: ModelApiServices,
+    input: Pick<TextRequest, 'model' | 'accountRoute'> & { projectId?: string; requestId?: string; threadId?: string | null },
+    agent: Pick<AgentWork, 'surface' | 'rootJobId'> | undefined,
+    admitted: AdmittedAgentWork | null,
+  ): Promise<ModelSessionAdmission> {
+    const account = api.nectovia?.account;
+    if (!account?.signedIn()) throw new EngineError(AGENT_SIGN_IN_REQUIRED, NECTOVIA_SIGN_IN, false);
+    // Only the Agent gate names the business and records the admission the gateway checks, so a
+    // call without one (the host's own connection test, or a host with no gate) is not sent.
+    if (!admitted)
+      throw new EngineError(
+        'ROUTE_REFUSED',
+        input.projectId === HOST_TEST_PROJECT
+          ? 'Nectovia is checked by sending it a message. Nothing was sent.'
+          : NECTOVIA_UNAVAILABLE,
+        true,
+      );
+    const rootJobId = agent?.rootJobId ?? null;
+    if (!rootJobId || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(rootJobId))
+      throw new EngineError('ROUTE_REFUSED', 'This work has no job Nectovia can meter it under. Nothing was sent.', true);
+    const tier = await this.managedTier(input);
+    const label = WORK_STYLE_LABELS[tier];
+    let policy = account.policy();
+    if (!policy || policy.revision !== admitted.policyRevision)
+      policy = (await account.refreshPolicy().catch(() => null)) ?? policy;
+    if (!policy) throw new EngineError('ROUTE_REFUSED', NECTOVIA_UNAVAILABLE, true);
+    const published = policy.tiers[tier];
+    if (!published)
+      throw new EngineError('ROUTE_REFUSED', `${label} has no Nectovia model right now. Nothing was sent. Choose another tier.`, true);
+    if (published.model !== input.model)
+      throw new EngineError(
+        'ROUTE_REFUSED',
+        `Nectovia now runs ${label} on ${published.label}. Nothing was sent. Send your message again to use it.`,
+        true,
+      );
+    const managed: ManagedAdmission = {
+      admissionId: admitted.admissionId,
+      organizationId: admitted.organizationId,
+      policyRevision: policy.revision,
+      tier,
+      usageClass: usageClassFor(admitted.surface),
+      rootJobId,
+    };
+    const handle = await modelApiRoute(api, NECTOVIA_ROUTE, { managed });
+    if (!handle.connected) throw new EngineError(AGENT_SIGN_IN_REQUIRED, NECTOVIA_SIGN_IN, false);
+    if (handle.accountRoute !== input.accountRoute)
+      throw new EngineError('ACCOUNT_CHANGED', 'This conversation belongs to another business. Send the message again from this one.');
+    try {
+      handle.card(input.model);
+    } catch (error) {
+      throw new EngineError('ROUTE_REFUSED', error instanceof Error ? error.message : NECTOVIA_UNAVAILABLE, true);
+    }
+    if (!api.exposure.allowance(handle.connectionId))
+      await api.exposure.setCap(
+        handle.connectionId,
+        // The plan's published monthly grant; a plan without a published figure is guarded at the
+        // Business grant. The gateway decides what the business can actually spend.
+        publishedMonthlyGrant(admitted.planId ?? '') ?? creditAmount(1_000),
+        {
+          approvedBy: `the ${admitted.planId ?? 'Nectovia'} plan, by this computer's host`,
+          note: "Nectovia's local guard for this business this month. The account service's ledger is the authority.",
+        },
+      );
+    if (api.exposure.summary(handle.connectionId).availableMicroUsd <= 0)
+      throw new EngineError(
+        'SPEND_LIMIT',
+        "Nectovia's safety limit on this computer for this business's month has been reached, so nothing was sent.",
+        true,
+      );
+    return {
+      route: NECTOVIA_ROUTE,
+      connectionId: handle.connectionId,
+      revision: handle.revision,
+      model: input.model,
+      accountRoute: handle.accountRoute,
+      managed,
+    };
+  }
+  /** The tier a managed job is metered under: the one its job record pinned from its thread. */
+  private async managedTier(input: { projectId?: string; requestId?: string; threadId?: string | null }): Promise<JobTier> {
+    if (!this.jobCaps || !input.projectId || !input.requestId) return DEFAULT_JOB_TIER;
+    return (await this.jobCaps.scope(input.projectId, input.requestId, input.threadId ?? null)).tier;
+  }
+  /**
    * The Agent check for one admission. The host's own connection test (the fixed one-word prompt in
    * the host test project) proves a route works and is not Agent work; everything else is.
    */
   private async admitAgent(
     input: { projectId?: string; prompt?: string },
-    agent?: Pick<AgentWork, 'surface' | 'rootJobId' | 'routeKind'>,
+    agent?: Partial<Pick<AgentWork, 'surface' | 'rootJobId' | 'routeKind'>>,
   ): Promise<AdmittedAgentWork | null> {
     const gate = this.agentGate;
     if (!gate) return null;
@@ -2040,7 +2163,7 @@ export class EngineService {
   }
   private async openModelApi(admission: ModelSessionAdmission): Promise<{ handle: ConnectedRoute; secret: string }> {
     const api = this.modelApi!;
-    const handle = await modelApiRoute(api, admission.route as ModelApiRoute);
+    const handle = await modelApiRoute(api, admission.route as ModelApiRoute, { managed: admission.managed ?? null });
     if (!handle.connected || handle.connectionId !== admission.connectionId || handle.revision !== admission.revision)
       throw new EngineError(
         'ACCOUNT_CHANGED',
@@ -2063,7 +2186,10 @@ export class EngineService {
         route,
         input,
         readTools: api.readTools,
-        admit: () => this.admitModelApi(route, input, { surface: 'conversation', rootJobId: runId }),
+        // Each message is its own job: admitted, capped and metered under the message's own turn
+        // run, never the conversation's, so a job cap applies to one message.
+        admit: () =>
+          this.admitModelApi(route, input, { surface: 'conversation', rootJobId: turnRunId(runId, input.requestId) }),
         // The caller's channels, stamped with the turn step's identity and published only while
         // that exact attempt still owns its lease.
         activity:
@@ -2322,7 +2448,11 @@ export class EngineService {
   ): Promise<ModelAdapter> {
     const api = this.modelApi;
     if (!api) throw new EngineError('RUNTIME_UNAVAILABLE', 'The model-API runtime is not attached to this service.', true);
-    const admission = await this.admitModelApi(route, request, { surface: 'loop', rootJobId: request.runId });
+    const admission = await this.admitModelApi(
+      route,
+      { ...request, requestId: request.runId, threadId: `loop-${request.runId}` },
+      { surface: 'loop', rootJobId: request.runId },
+    );
     const { handle, secret } = await this.openModelApi(admission);
     const adapter = handle.adapter({
       model: admission.model,
@@ -2382,6 +2512,17 @@ export interface ModelApiServices {
     funding?: (base: SpendExposure, runId: string) => CallExposure;
     now?: () => Date;
   };
+  /**
+   * The Nectovia route: company-managed inference through the account service's gateway. It has
+   * no connection record and no credential here; it reads the signed-in session for each call.
+   * Absent in a host without customer accounts, where it is never connected.
+   */
+  nectovia?: {
+    account: NectoviaAccount;
+    transcripts: ModelTranscripts;
+    /** Tests only: the clock the month's local guard is named by. */
+    now?: () => Date;
+  };
   /** Tests substitute the network here, below the SDK. Production leaves it unset. */
   transport?: typeof globalThis.fetch;
   /**
@@ -2439,7 +2580,17 @@ const ROUTE_WORDS: Record<ModelApiRoute, { short: string; long: string }> = {
   'azure-openai': { short: 'Azure', long: 'Azure OpenAI' },
   openrouter: { short: 'OpenRouter', long: 'OpenRouter' },
   'google-vertex': { short: 'Google Vertex AI', long: 'Google Vertex AI' },
+  nectovia: { short: 'Nectovia', long: 'Nectovia' },
 };
+
+/**
+ * What a route handle is built for. Only the Nectovia route reads it: its business comes from the
+ * admission when there is one, else from the project the work belongs to (or the active business).
+ */
+interface RouteWork {
+  projectId?: string | null;
+  managed?: ManagedAdmission | null;
+}
 
 /** A keyed route's credential: the key in protected storage under its own connection id. */
 const storedKey = (api: ModelApiServices, connectionId: string): ConnectedRoute['credential'] => ({
@@ -2453,13 +2604,19 @@ const localLedger = (base: SpendExposure) => base;
  * builds only its own route's adapter and exchange from its own record: there is no path from
  * one route's admission to another route's provider, key or ledger entry.
  */
-async function modelApiRoute(api: ModelApiServices, route: ModelApiRoute): Promise<RouteHandle> {
+async function modelApiRoute(api: ModelApiServices, route: ModelApiRoute, work: RouteWork = {}): Promise<RouteHandle> {
   const names = ROUTE_WORDS[route];
   const unavailable = () =>
     new EngineError('RUNTIME_UNAVAILABLE', 'This model-API route is not available in this process.', true);
   switch (route) {
     case AWS_BEDROCK_ROUTE: {
-      const connection: AwsConnection | null = await api.connections.read();
+      // A connection saved for a retired model is refused with the reconnect sentence; nothing is
+      // sent on it and nothing moves it to the current model.
+      const connection: AwsConnection | null = await api.connections.read().catch((error: unknown) => {
+        if (error instanceof AwsConnectionRetired)
+          throw new EngineError('ROUTE_REFUSED', `${error.message} Nothing was sent.`, true);
+        throw error;
+      });
       if (!connection) return { connected: false, route, names };
       return {
         connected: true,
@@ -2640,6 +2797,81 @@ async function modelApiRoute(api: ModelApiServices, route: ModelApiRoute): Promi
           respondVertex({ connection, card: vertexRateCard(now()), now, ...options, ...sinks }),
       };
     }
+    case NECTOVIA_ROUTE: {
+      // Connected when someone is signed in and the work belongs to a business. There is no record
+      // to read and no key to open: the session's token is the credential, read for each call.
+      const services = api.nectovia;
+      const account = services?.account;
+      const organizationId = work.managed?.organizationId ?? account?.organizationFor(work.projectId ?? null) ?? null;
+      if (!services || !account?.signedIn() || !organizationId) return { connected: false, route, names };
+      const now = services.now ?? (() => new Date());
+      const connectionId = nectoviaConnectionId(organizationId, now());
+      const published = Object.values(account.policy()?.tiers ?? {}).flatMap((entry) => (entry ? [entry.model] : []));
+      const managed = () => {
+        if (!work.managed)
+          throw new EngineError('ROUTE_REFUSED', 'This Nectovia call has no admission, so nothing was sent.', true);
+        return work.managed;
+      };
+      // The gateway is the account service's, so its own transport reaches it. A provider test
+      // transport (`modelApiTransport`) replaces the provider network, never the account service.
+      const transport = (given?: typeof globalThis.fetch) => account.fetch ?? given;
+      return {
+        connected: true,
+        route,
+        prefix: 'nectovia',
+        names,
+        sdk: NECTOVIA_SDK,
+        connectionId,
+        // Nothing on this computer is revised: the business, the admission and the policy
+        // revision are what fence a call, and each is checked again by the gateway.
+        revision: 1,
+        accountRoute: nectoviaAccountRoute(organizationId),
+        expiresAt: null,
+        serving: [...new Set(published)].join(', ') || 'no published model',
+        serves: (model) => published.includes(model),
+        card: (model) => nectoviaRateCard(model),
+        credential: {
+          check: async () => (account.signedIn() ? null : NECTOVIA_SIGN_IN),
+          open: async () => {
+            if (!account.signedIn()) throw new EngineError(AGENT_SIGN_IN_REQUIRED, NECTOVIA_SIGN_IN, false);
+            return account.token();
+          },
+        },
+        // The local guard: this computer's own ledger, held to the job's cap. Never the balance.
+        exposure: localLedger,
+        adapter: (options) =>
+          createNectoviaModelAdapter({
+            base: account.base,
+            account,
+            connectionId,
+            model: options.model,
+            managed: managed(),
+            token: options.secret,
+            card: nectoviaRateCard(options.model),
+            // This route's `exposure()` is the local ledger itself, so what arrives is one.
+            exposure: options.exposure as SpendExposure,
+            transcripts: services.transcripts,
+            instructions: options.instructions,
+            effort: options.effort,
+            transport: transport(options.transport),
+            now,
+            ...options.sinks,
+          }),
+        respond: ({ sinks, secret, transport: given, ...options }) =>
+          respondNectovia({
+            base: account.base,
+            account,
+            connectionId,
+            managed: managed(),
+            token: secret,
+            card: nectoviaRateCard(options.model),
+            transport: transport(given),
+            now,
+            ...options,
+            ...sinks,
+          }),
+      };
+    }
   }
 }
 
@@ -2702,6 +2934,12 @@ const effortOf = (effort: string | undefined): 'low' | 'medium' | 'high' =>
 /** A model-API failure in the service's vocabulary. What is known about the send decides the code. */
 function modelApiError(error: unknown): unknown {
   if (!(error instanceof ModelApiError)) return error;
+  // The gateway's refusals held and sent nothing: said in the Agent's own vocabulary, so a
+  // signed-out person is asked to sign in and a plan that ended names the plan.
+  if (error.code === 'nectovia_sign_in_required') return new EngineError(AGENT_SIGN_IN_REQUIRED, error.message, false);
+  if (error.code === 'nectovia_agent_not_included') return new EngineError(AGENT_NOT_INCLUDED, error.message, false);
+  if (/^nectovia_/.test(error.code) && error.evidence.reservation?.state === 'released')
+    return new EngineError('ROUTE_REFUSED', error.message, true);
   // A job that reached its cap stopped at a step boundary: nothing of that step was sent.
   if (!error.dispatched && /_job_cap_reached$/.test(error.code))
     return new EngineError('JOB_CAP', error.message, false);
