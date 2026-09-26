@@ -345,10 +345,22 @@ async function openNeed(projectId: string, sessionId: string) {
   return structuredClone(found!);
 }
 
-/** Every encoding of every planted value, searched in the exact bytes. */
+/**
+ * Every encoding of every planted value, searched in the exact bytes. A value of four characters or
+ * fewer, such as the store's task id "T1", is matched only as a whole token: every ISO timestamp
+ * from 10:00 to 19:59 UTC contains "t1". Its base64 and hex forms ("VDE=", "5431") are skipped,
+ * because forms that short can't be told apart from ordinary text and numbers.
+ */
 function expectNoCanary(bodies: string, planted: string[]) {
   const lower = bodies.toLowerCase();
   for (const value of planted) {
+    if (value.length <= 4) {
+      for (const form of new Set([value, encodeURIComponent(value), JSON.stringify(value).slice(1, -1)])) {
+        const token = form.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        expect(new RegExp(`(?<![a-z0-9])${token}(?![a-z0-9])`).test(lower), `${value} as ${form}`).toBe(false);
+      }
+      continue;
+    }
     const forms = [
       value,
       Buffer.from(value).toString('base64'),
