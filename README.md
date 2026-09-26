@@ -22,7 +22,7 @@ work run without it, without signing in and without network access
 conversation needs connectivity. What a task sends leaves through the route it uses:
 the AI tool you signed in to, or your own AWS account.
 
-Made by Diomedes Systems LLC. This source tree is Nectovia 0.2.0;
+Made by Diomedes Systems LLC. This source tree is Nectovia 0.2.1;
 `package.json` holds that number and `tests/engine-routes.test.ts` fails if this file
 disagrees with it.
 
