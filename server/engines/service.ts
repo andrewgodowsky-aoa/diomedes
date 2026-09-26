@@ -2128,6 +2128,12 @@ export class EngineService {
         "Nectovia's safety limit on this computer for this business's month has been reached, so nothing was sent.",
         true,
       );
+    // Observed as managed because the gate admitted it as managed (`admitted.routeKind`), never by name.
+    try {
+      this.observation?.bind({ admission: admitted, rootJobId, route: NECTOVIA_ROUTE, connectionId: handle.connectionId, model: input.model });
+    } catch {
+      // Observation never changes an admission.
+    }
     return {
       route: NECTOVIA_ROUTE,
       connectionId: handle.connectionId,
