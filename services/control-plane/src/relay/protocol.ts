@@ -166,6 +166,14 @@ export interface PingMessage {
 }
 export type DesktopMessage = ProveMessage | PingMessage;
 
+/**
+ * The heartbeat frames, byte for byte. On Cloudflare the hub answers a ping
+ * without waking (a Durable Object auto-response matches the exact text), so a
+ * desktop sends exactly RELAY_PING_FRAME, which is JSON.stringify of a ping.
+ */
+export const RELAY_PING_FRAME = '{"v":1,"type":"ping"}';
+export const RELAY_PONG_FRAME = '{"v":1,"type":"pong"}';
+
 const desktopMessageSchema = z.discriminatedUnion('type', [
   z.strictObject({ v: z.literal(1), type: z.literal('prove'), signature: z.string().regex(RELAY_SIGNATURE) }),
   z.strictObject({ v: z.literal(1), type: z.literal('ping') }),

@@ -32,7 +32,7 @@ import { ManagedInferenceService, SPEND_SETTINGS, spendControls, type SpendSetti
 import { FAUX_SCRIPTED_CREDENTIAL, bedrockResponsesCaller, scriptedResponsesFetch } from '../managed-providers.js';
 import { createHandler } from '../worker.js';
 import { readBytes } from '../crypto.js';
-import { RelayService } from '../relay/service.js';
+import { RelayAuthority, RelayService } from '../relay/service.js';
 import { accountId } from '../domain.js';
 import { WorkOSIdentityVerifier } from '../identity-workos.js';
 import {
@@ -44,6 +44,7 @@ import {
   signInInput,
   signUpInput,
 } from './identity.js';
+import { FauxRelayHubs } from './relay-hubs.js';
 import { FauxCloudStore } from './store.js';
 import { createWorkOSStandIn, WORKOS_ISSUER, type WorkOSStandIn } from './workos-standin.js';
 
@@ -91,6 +92,8 @@ export interface FauxCloud {
   readonly managed: ManagedInferenceService;
   /** The phone relay's device records, over this store. */
   readonly relay: RelayService;
+  /** The phone relay's hubs, in this process. The faux server hands them its WebSocket upgrades. */
+  readonly relayHubs: FauxRelayHubs;
   /** Which provider answers managed calls. */
   readonly provider: 'scripted' | 'live';
   handle(request: Request): Promise<Response>;
@@ -175,7 +178,8 @@ export async function createFauxCloud(options: FauxCloudOptions): Promise<FauxCl
     now,
     idleTimeoutMs: options.managed?.idleTimeoutMs,
   });
-  const relay = new RelayService(accounts, store.relay, null, { now });
+  const relayHubs = new FauxRelayHubs(new RelayAuthority(store.relay), now);
+  const relay = new RelayService(accounts, store.relay, relayHubs, { now });
   const worker = createHandler(
     () => accounts,
     () => new UsageService(accounts, funding),
@@ -251,6 +255,7 @@ export async function createFauxCloud(options: FauxCloudOptions): Promise<FauxCl
     funding,
     managed,
     relay,
+    relayHubs,
     provider: live ? 'live' : 'scripted',
     idle: () => managed.idle(),
     async seedSignIn(account) {
