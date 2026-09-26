@@ -55,6 +55,7 @@ import {
 } from '../../shared/capability-packs.js';
 import type { ProductKnowledgeBundle, ProductKnowledgeReceipt } from '../../shared/readiness.js';
 import type { GoverningRecord } from '../../shared/rule-authority.js';
+import { OWNER_RULES_NOT_INCLUDED_REASON } from '../../shared/access.js';
 import { instructionRules } from '../capability-packs.js';
 import { PLAIN_WRITING_VERSION, WRITING_STANDARD } from '../../shared/plain-writing.js';
 import { createHash } from 'node:crypto';
@@ -247,6 +248,14 @@ export async function assembleInstructions(input: {
   at?: string;
   /** Deterministic fixture seam; production loads the shipped indexed files. */
   productKnowledge?: ProductKnowledgeBundle;
+  /**
+   * Whether the business this work belongs to holds 'owner-rules' (Andrew,
+   * 2026-09-25). `false` delivers none of the project's instruction files:
+   * each one that would otherwise have governed is recorded `not-included`
+   * with the plan's sentence, and the product's own rules still go. Absent
+   * passes everything through, the embedded-host behaviour.
+   */
+  ownerRulesIncluded?: boolean;
 }): Promise<AssembledInstructions> {
   const at = input.at ?? now();
   const knowledge = input.productKnowledge ?? await loadShippedProductKnowledge({
@@ -325,6 +334,8 @@ export async function assembleInstructions(input: {
             : 'names no file there'
         }.`,
       );
+    else if (input.ownerRulesIncluded === false)
+      exclude(record, 'not-included', OWNER_RULES_NOT_INCLUDED_REASON);
     else if (records.has(record.ruleId))
       // A nested rule id carries a 32-bit digest of the path, so two paths can
       // share one. The stronger file keeps the rule; this one is said, never
@@ -480,12 +491,16 @@ export async function assembleInstructions(input: {
 export function deliverySentence(delivery: InstructionDelivery): string {
   const sent = delivery.files.filter((file) => file.state === 'sent');
   const omitted = delivery.files.filter((file) => file.state === 'omitted');
-  const named = (files: readonly DeliveredInstructionFile[]) =>
+  const withheld = (delivery.excluded ?? []).filter((file) => file.exclusion === 'not-included');
+  const named = (files: readonly { path: string; sha: string | null }[]) =>
     files.map((file) => `${file.path}${file.sha ? ` (${short(file.sha)})` : ''}`).join(', ');
   const first = sent.length
     ? `Diomedes sent project instructions to ${delivery.routeId}: ${named(sent)}.`
     : `Diomedes sent no project instructions to ${delivery.routeId}.`;
-  return omitted.length ? `${first} Left out whole: ${named(omitted)}.` : first;
+  const kept = withheld.length
+    ? ` ${OWNER_RULES_NOT_INCLUDED_REASON} Withheld: ${named(withheld)}.`
+    : '';
+  return `${omitted.length ? `${first} Left out whole: ${named(omitted)}.` : first}${kept}`;
 }
 
 /**
@@ -507,6 +522,7 @@ export function ruleDeliveryRecord(assembled: AssembledInstructions, text: strin
     excluded: (assembled.delivery?.excluded ?? []).map((file) => ({
       path: file.path,
       exclusion: file.exclusion,
+      ...(file.exclusion === 'not-included' ? { detail: file.detail } : {}),
     })),
     productKnowledge: {
       state: assembled.productKnowledge.state,
@@ -530,6 +546,8 @@ export async function messageRules(input: {
   workPaths: readonly string[];
   allowedDocuments?: readonly string[];
   productKnowledge?: ProductKnowledgeBundle;
+  /** Whether the work's business holds 'owner-rules'; absent passes through. */
+  ownerRulesIncluded?: boolean;
 }): Promise<{ text: string; record: Json } | undefined> {
   const assembled = await assembleInstructions({
     state: input.state,
@@ -539,6 +557,7 @@ export async function messageRules(input: {
     ...(input.allowedDocuments === undefined ? {} : { allowedDocuments: input.allowedDocuments }),
     workPaths: input.workPaths,
     ...(input.productKnowledge ? { productKnowledge: input.productKnowledge } : {}),
+    ...(input.ownerRulesIncluded === undefined ? {} : { ownerRulesIncluded: input.ownerRulesIncluded }),
   });
   if (!assembled.section) return undefined;
   return { text: assembled.section, record: ruleDeliveryRecord(assembled, assembled.section) };

@@ -256,7 +256,7 @@ import {
   type ModelApiRoute,
   type NectoviaRouteView,
 } from '../shared/model-api.js';
-import { AGENT_PERSONAL_REASON } from '../shared/access.js';
+import { AGENT_PERSONAL_REASON, OWNER_RULES_FEATURE } from '../shared/access.js';
 import {
   NECTOVIA_SIGN_IN,
   NECTOVIA_UNAVAILABLE,
@@ -833,6 +833,17 @@ export async function createApp(options: AppOptions) {
           fetch: (input, init) => accountSession.backend.client.send(new Request(input, init)),
         }
       : null;
+  /**
+   * Owner-written rules are a paid ability (Andrew, 2026-09-25): they reach work only while
+   * the business that work belongs to holds 'owner-rules'. The business is the one the Agent
+   * gate resolves — the project's owner, else the active Business workspace — so Personal
+   * gets none. With accounts off everything passes through, exactly like the Agent gate.
+   */
+  const ownerRules = (projectId: string | null): boolean => {
+    if (!accountSession || !agentGate) return true;
+    const organizationId = agentGate.organizationFor(projectId);
+    return organizationId !== null && accountSession.includes(organizationId, OWNER_RULES_FEATURE);
+  };
   const discovery = new DiscoveryService(store, {
     // A new observation needs `verified`. A stored one whose approved file has
     // changed since reads `stale` and stays inspectable (DIO-84); `stale` is
@@ -1066,6 +1077,7 @@ export async function createApp(options: AppOptions) {
     agents,
     changeReview,
     agentProfiles,
+    ownerRules,
   );
   const harness = createHarnessHost({
     store,
@@ -1082,6 +1094,8 @@ export async function createApp(options: AppOptions) {
       const organizationId = nectoviaAccount.organizationFor(projectId);
       return organizationId ? nectoviaAccountRoute(organizationId) : null;
     },
+    // H16 trigger rules are the owner's: they evaluate only where the business holds 'owner-rules'.
+    ownerRules,
   });
   // External text turns run through the host's RunService: the adapter is only
   // the provider transport inside the fenced dispatch step.
@@ -1385,7 +1399,7 @@ export async function createApp(options: AppOptions) {
   // H13: the Diomedes work loop's finish gate runs the task's declared checks through H17's verifier.
   harness.loop.attachVerification(verification);
   // H14: team roles resolve their H09 profiles and Agents at admission; H08 retries a loop.
-  const loopRoutes = mountNativeLoopRoutes(app, store, harness, verification, { profiles: agentProfiles, agents });
+  const loopRoutes = mountNativeLoopRoutes(app, store, harness, verification, { profiles: agentProfiles, agents }, ownerRules);
   mountWorkspaceRoutes(app, store, workspaces, configuration, automations);
   mountAutomationRoutes(app, store, automations);
   mountThemeRoutes(app, store, themes, customization);
@@ -3819,6 +3833,7 @@ export async function createApp(options: AppOptions) {
           sourceBytes: documents.reduce((bytes, document) => bytes + Buffer.byteLength(document.text), 0),
           workPaths: documents.map((document) => document.path),
           allowedDocuments: cloudSharing(state).documents,
+          ownerRulesIncluded: ownerRules(projectId),
         });
         return {
           projectId,
@@ -4433,6 +4448,7 @@ export async function createApp(options: AppOptions) {
           sourceBytes: documents.reduce((bytes, document) => bytes + Buffer.byteLength(document.text), 0),
           workPaths: documents.map((document) => document.path),
           allowedDocuments: cloudSharing(state).documents,
+          ownerRulesIncluded: ownerRules(projectId),
         });
         // One current lineage per mode. Retiring one and admitting its replacement are a single
         // mutation, and the next generation counts every entry the thread ever had.
@@ -5430,6 +5446,7 @@ export async function createApp(options: AppOptions) {
                 ),
                 allowedDocuments: cloudSharing(store.state(projectId)).documents,
                 workPaths: prepared.documents.map((doc) => doc.path),
+                ownerRulesIncluded: ownerRules(projectId),
               })
             ).section;
       const instructionsForRequest = [
@@ -5872,6 +5889,7 @@ export async function createApp(options: AppOptions) {
               sourceBytes,
               workPaths: draft.sources.map((source) => relativeName(source.path)),
               allowedDocuments: cloudSharing(state).documents,
+              ownerRulesIncluded: ownerRules(projectId),
             })
           : undefined;
       return meteredPlan(threadId, route, model, {
