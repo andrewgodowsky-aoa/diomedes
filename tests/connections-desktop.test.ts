@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -235,4 +236,29 @@ test.each(['before-triage', 'after-task-commit'])('fresh session recovers accept
   const old = await app.locals.harness.runs.get(receipt.runId);
   expect(old.state).toBe('cancelled');
   await call('event', event, 202); expect((await call()).tasks).toHaveLength(1);
+});
+
+test('a session-guarded launch delivers the synthetic event through its own signed ingress', async () => {
+  // A packaged build always passes a per-launch session token (desktop/main.mjs), so the
+  // event's call to this service's own /vendor/connections/ ingress must carry it too.
+  await close();
+  const token = randomBytes(32).toString('hex');
+  app = await createApp({ dataDir: path.join(root, 'data'), projectRoot: path.join(root, 'projects'), loopbackToken: token });
+  server = await new Promise<Server>((resolve) => { const listening = app.listen(0, '127.0.0.1', () => resolve(listening)); });
+  const address = server.address(); if (!address || typeof address === 'string') throw new Error('No local port');
+  origin = `http://127.0.0.1:${address.port}`;
+  const guarded = async (action: string, body: unknown, expected: number) => {
+    const response = await fetch(`${origin}/api/projects/${projectId}/connections/${action}`, {
+      method: 'POST', body: JSON.stringify(body),
+      headers: { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1', 'X-Diomedes-Session': token },
+    });
+    const result = await response.json(); expect(response.status, JSON.stringify(result)).toBe(expected); return result;
+  };
+  const proposed = await guarded('propose', { text: 'Watch Toast menu availability across three Raleigh restaurants', threshold: 5, serviceWindow: window }, 200);
+  await guarded('adopt', { id: proposed.plan.id, digest: proposed.digest }, 200);
+  await guarded('event', { id: crypto.randomUUID(), quantity: 3, at: new Date().toISOString() }, 202);
+  // The ingress still refuses any caller without this launch's session, whatever it signs.
+  const unsessioned = await fetch(`${origin}/vendor/connections/${projectId}/any`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'Toast-Signature': 'bad' }, body: '{}' });
+  expect(unsessioned.status).toBe(401);
 });
