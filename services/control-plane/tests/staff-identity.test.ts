@@ -33,23 +33,25 @@ describe('the staff environment in configuration', () => {
     });
   });
 
-  it.each<[string, Record<string, unknown>]>([
-    ['no client', { STAFF_WORKOS_CLIENT_ID: undefined }],
-    ['the blank client the wrangler files ship', { STAFF_WORKOS_CLIENT_ID: '' }],
-    ['no key', { STAFF_WORKOS_API_KEY: undefined }],
-    ['a blank key', { STAFF_WORKOS_API_KEY: '' }],
-    ['a malformed client', { STAFF_WORKOS_CLIENT_ID: 'staff' }],
-    ['a padded client', { STAFF_WORKOS_CLIENT_ID: ` ${STAFF_CLIENT}` }],
-    ['a client ending in a newline', { STAFF_WORKOS_CLIENT_ID: `${STAFF_CLIENT}\n` }],
-    ['a non-string client', { STAFF_WORKOS_CLIENT_ID: 42 }],
-    ['a malformed key', { STAFF_WORKOS_API_KEY: 'placeholder' }],
-    ['a live key outside production', { STAFF_WORKOS_API_KEY: 'sk_live_fixture_staff_only_no_calls' }],
-    ['the customer environment’s client', { STAFF_WORKOS_CLIENT_ID: validEnv.WORKOS_CLIENT_ID }],
-    ['the customer environment’s key', { STAFF_WORKOS_API_KEY: validEnv.WORKOS_API_KEY }],
-  ])('is off with %s, and the customer environment still reads', (_name, change) => {
+  it.each<[string, Record<string, unknown>, string, string]>([
+    ['no client', { STAFF_WORKOS_CLIENT_ID: undefined }, 'STAFF_WORKOS_CLIENT_ID', 'missing'],
+    ['the blank client the wrangler files ship', { STAFF_WORKOS_CLIENT_ID: '' }, 'STAFF_WORKOS_CLIENT_ID', 'missing'],
+    ['no key', { STAFF_WORKOS_API_KEY: undefined }, 'STAFF_WORKOS_API_KEY', 'missing'],
+    ['a blank key', { STAFF_WORKOS_API_KEY: '' }, 'STAFF_WORKOS_API_KEY', 'missing'],
+    ['a malformed client', { STAFF_WORKOS_CLIENT_ID: 'staff' }, 'STAFF_WORKOS_CLIENT_ID', 'format'],
+    ['a padded client', { STAFF_WORKOS_CLIENT_ID: ` ${STAFF_CLIENT}` }, 'STAFF_WORKOS_CLIENT_ID', 'whitespace'],
+    ['a client ending in a newline', { STAFF_WORKOS_CLIENT_ID: `${STAFF_CLIENT}\n` }, 'STAFF_WORKOS_CLIENT_ID', 'whitespace'],
+    ['a non-string client', { STAFF_WORKOS_CLIENT_ID: 42 }, 'STAFF_WORKOS_CLIENT_ID', 'missing'],
+    ['a malformed key', { STAFF_WORKOS_API_KEY: 'placeholder' }, 'STAFF_WORKOS_API_KEY', 'format'],
+    ['a live key outside production', { STAFF_WORKOS_API_KEY: 'sk_live_fixture_staff_only_no_calls' }, 'STAFF_WORKOS_API_KEY', 'test-key-required'],
+    ['the customer environment’s client', { STAFF_WORKOS_CLIENT_ID: validEnv.WORKOS_CLIENT_ID }, 'STAFF_WORKOS_CLIENT_ID', 'same-as-customer'],
+    ['the customer environment’s key', { STAFF_WORKOS_API_KEY: validEnv.WORKOS_API_KEY }, 'STAFF_WORKOS_API_KEY', 'same-as-customer'],
+  ])('is off with %s, names why, and the customer environment still reads', (_name, change, setting, rule) => {
     const config = configuration({ ...staffEnv, ...change });
     expect(config.staffIdentity).toBeNull();
-    expect(config).toEqual(base);
+    expect(config.staffProblem).toEqual({ setting, rule });
+    expect({ ...config, staffProblem: undefined }).toEqual(base);
+    expect(() => identityFor(config, 'staff')).toThrow(expect.objectContaining({ problem: { setting, rule } }));
   });
 
   it('takes a live key only in production, as the customer key does', () => {
@@ -101,7 +103,7 @@ describe('which environment a route verifies against', () => {
     const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
     const response = await createHandler()(request('GET', '/ops/me'), validEnv);
     expect(response.status).toBe(503);
-    expect(errors.mock.calls.map(([line]) => line)).toContain(JSON.stringify({ event: 'staff-identity-unavailable' }));
+    expect(errors.mock.calls.map(([line]) => line)).toContain(JSON.stringify({ event: 'staff-identity-unavailable', setting: 'STAFF_WORKOS_CLIENT_ID', rule: 'not-set' }));
     expect(vi.mocked(fetch)).not.toHaveBeenCalled();
   });
 });
