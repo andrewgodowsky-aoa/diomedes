@@ -582,7 +582,13 @@ export type InstructionExclusion =
   | 'missing'
   | 'out-of-scope'
   | 'not-shared'
-  | 'not-loaded';
+  | 'not-loaded'
+  /**
+   * The business this work belongs to does not hold the `owner-rules` feature:
+   * the file is kept, but it did not reach the work. It never reached the rule
+   * path for this run either, so it stays on `excluded`, not `files`.
+   */
+  | 'not-included';
 
 /**
  * A discovered instruction file that did not take part in this run, and why.
@@ -597,7 +603,7 @@ export interface ExcludedInstructionFile {
   readonly sha: string | null;
   readonly bytes: number | null;
   readonly packId: CapabilityPackId;
-  readonly exclusion: Extract<InstructionExclusion, 'out-of-scope' | 'not-shared' | 'not-loaded'>;
+  readonly exclusion: Extract<InstructionExclusion, 'out-of-scope' | 'not-shared' | 'not-loaded' | 'not-included'>;
   readonly detail: string;
 }
 

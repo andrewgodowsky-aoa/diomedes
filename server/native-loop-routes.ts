@@ -52,6 +52,7 @@ import {
   type TeamRole,
 } from '../shared/team-delegation.js';
 import type { Route, Session } from '../shared/types.js';
+import { OWNER_RULES_NOT_INCLUDED_REASON } from '../shared/access.js';
 
 const routeName = z.string().min(1).max(40);
 /** One team role as the person names it: an Agent, and either an H09 profile or a route. */
@@ -136,6 +137,12 @@ export function mountNativeLoopRoutes(
   harness: HarnessHost,
   verification: VerificationService,
   teamAdmission: TeamAdmission | null = null,
+  /**
+   * Whether the work's business holds 'owner-rules' (Andrew, 2026-09-25),
+   * resolved through the account session the way the Agent gate does. The
+   * default passes everything through, the embedded-host behaviour.
+   */
+  ownerRules: (projectId: string | null) => boolean = () => true,
 ) {
   const handle =
     (action: (req: Request) => Promise<unknown>) => async (req: Request, res: Response, next: NextFunction) => {
@@ -362,6 +369,7 @@ export function mountNativeLoopRoutes(
       budgetBytes: instructionSectionBudget(0),
       ...(cloud ? { allowedDocuments: cloudSharing(state).documents } : {}),
       workPaths: sources,
+      ownerRulesIncluded: ownerRules(projectId),
     });
     const input: LoopRunInput & { command: { id: string; digest: string } } = {
       v: 1,
@@ -456,7 +464,12 @@ export function mountNativeLoopRoutes(
           });
         }
       }
-      return { routes };
+      // A business that does not hold 'owner-rules' still starts loops; its own
+      // rules just do not reach them, and the Console says so once.
+      return {
+        routes,
+        notIncludedReason: ownerRules(projectId) ? null : OWNER_RULES_NOT_INCLUDED_REASON,
+      };
     }),
   );
 

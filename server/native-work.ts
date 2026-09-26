@@ -338,6 +338,12 @@ export class NativeWorkService {
     },
     /** Exact-model Agent profiles (H09). Absent leaves route and model to the caller. */
     private profiles?: AgentProfileService,
+    /**
+     * Whether the work's business holds 'owner-rules' (Andrew, 2026-09-25),
+     * resolved through the account session the way the Agent gate does. The
+     * default passes everything through, the embedded-host behaviour.
+     */
+    private ownerRulesIncluded: (projectId: string | null) => boolean = () => true,
   ) {}
   running(projectId: string) {
     return this.runs.has(projectId);
@@ -538,6 +544,7 @@ export class NativeWorkService {
       budgetBytes: instructionSectionBudget(bytes),
       allowedDocuments: cloudSharing(state).documents,
       workPaths: sources.map((source) => source.path),
+      ownerRulesIncluded: this.ownerRulesIncluded(projectId),
     });
     const team = input.team;
     const member = team
@@ -646,10 +653,14 @@ export class NativeWorkService {
             : 'The adapter disables engine tools and sends only selected text. This is not an operating-system sandbox.',
           'technical',
         );
-      if (instructions.delivery?.files.length) {
+      const withheld = (instructions.delivery?.excluded ?? []).some(
+        (file) => file.exclusion === 'not-included',
+      );
+      if (instructions.delivery && (instructions.delivery.files.length || withheld)) {
         // Said once, in the place History already reads: which files went, at
-        // which sha, and which were left out whole. The session carries the same
-        // record structurally; this is the sentence a person sees.
+        // which sha, which were left out whole, and which the business's plan
+        // kept back. The session carries the same record structurally; this is
+        // the sentence a person sees.
         const sentence = deliverySentence(instructions.delivery);
         this.log(session, sentence, 'technical');
         this.store.addEntry(state, {
