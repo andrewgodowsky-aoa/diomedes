@@ -75,7 +75,8 @@ describe('the faux cloud in workos-standin mode', () => {
     expect(tokens.status).toBe(200);
     expect(tokens.body.user).toMatchObject({ email: 'andrew@diomedes.test', email_verified: true });
     const claims = JSON.parse(Buffer.from(tokens.body.access_token.split('.')[1], 'base64url').toString());
-    expect(claims).toMatchObject({ iss: WORKOS_ISSUER, aud: 'https://accounts.diomedes.net', client_id: STANDIN_CLIENT_ID });
+    // The per-client issuer a live AuthKit token carries, as the stand-in now issues it.
+    expect(claims).toMatchObject({ iss: `${WORKOS_ISSUER}/user_management/${STANDIN_CLIENT_ID}`, aud: 'https://accounts.diomedes.net', client_id: STANDIN_CLIENT_ID });
 
     // A verified person, through WorkOSIdentityVerifier (JWKS, session and user checks).
     expect((await call('GET', '/account/session', { token: tokens.body.access_token })).status).toBe(200);

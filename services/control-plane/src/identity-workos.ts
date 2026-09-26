@@ -66,6 +66,11 @@ export interface WorkOSIdentityConfiguration {
 }
 
 const invalid = () => new ApiError(401, 'The access token or provider session is invalid.');
+/** A refused token, with the one check it failed in the Worker's log. Never a claim value. */
+const refused = (check: string) => {
+  console.error(JSON.stringify({ event: 'identity-refused', check }));
+  return invalid();
+};
 const unavailable = () =>
   new ApiError(503, 'Identity verification is unavailable; try again when the provider recovers.');
 
@@ -187,7 +192,7 @@ export class WorkOSIdentityVerifier implements IdentityVerifier {
       await this.refreshKeys();
       match = this.keys.find((key) => key.kid === kid);
     }
-    if (!match) throw invalid();
+    if (!match) throw refused('signing-key');
     let modulus: Uint8Array<ArrayBuffer>;
     try { modulus = fromBase64url(match.n); } catch { throw unavailable(); }
     if (
@@ -237,24 +242,27 @@ export class WorkOSIdentityVerifier implements IdentityVerifier {
       .strictObject({ alg: z.literal('RS256'), kid: providerId, typ: z.literal('JWT').optional() })
       .safeParse(decode(parts[0]));
     const parsed = jwtClaims.safeParse(decode(parts[1]));
-    if (!header.success || !parsed.success) throw invalid();
+    if (!header.success) throw refused('header');
+    if (!parsed.success) throw refused('claims-shape');
     const claims = parsed.data;
     const seconds = this.now() / 1000;
     const audiences = typeof claims.aud === 'string' ? [claims.aud] : claims.aud;
-    if (
-      claims.iss !== this.issuer ||
-      claims.client_id !== this.clientId ||
-      !audiences.includes(this.audience) ||
-      !claims.sub.startsWith('user_') ||
-      !claims.sid.startsWith('session_') ||
-      claims.act !== undefined ||
-      claims.exp <= seconds ||
-      claims.iat > seconds + 5 ||
-      claims.exp <= claims.iat ||
-      claims.exp - claims.iat > 3600 ||
-      (claims.nbf !== undefined && claims.nbf > seconds + 5)
-    )
-      throw invalid();
+    // WorkOS's documentation shows the bare API origin as the issuer, but a live AuthKit
+    // token carries its client's issuer, the one its OpenID configuration publishes:
+    // https://api.workos.com/user_management/<client_id>. Both are exact matches, and
+    // client_id and the signature below still bind the token to this client.
+    const checks: [string, boolean][] = [
+      ['issuer', claims.iss === this.issuer || claims.iss === `${this.issuer.replace(/\/+$/, '')}/user_management/${this.clientId}`],
+      ['client', claims.client_id === this.clientId],
+      ['audience', audiences.includes(this.audience)],
+      ['subject', claims.sub.startsWith('user_')],
+      ['session', claims.sid.startsWith('session_')],
+      ['actor', claims.act === undefined],
+      ['lifetime', !(claims.exp <= seconds || claims.iat > seconds + 5 || claims.exp <= claims.iat ||
+        claims.exp - claims.iat > 3600 || (claims.nbf !== undefined && claims.nbf > seconds + 5))],
+    ];
+    const failed = checks.find(([, passed]) => !passed);
+    if (failed) throw refused(failed[0]);
     const key = await this.key(header.data.kid);
     let signature: Uint8Array<ArrayBuffer>;
     try { signature = fromBase64url(parts[2]); } catch { throw invalid(); }
@@ -269,7 +277,7 @@ export class WorkOSIdentityVerifier implements IdentityVerifier {
       if (!(error instanceof DOMException) && !(error instanceof TypeError)) throw error;
       throw unavailable();
     }
-    if (!valid) throw invalid();
+    if (!valid) throw refused('signature');
     const [sessionExpires, userInput] = await Promise.all([
       this.activeSession(claims.sub, claims.sid),
       this.getJson(`${API}/user_management/users/${claims.sub}`, true),

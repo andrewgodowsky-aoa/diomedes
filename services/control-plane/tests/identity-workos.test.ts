@@ -1,8 +1,10 @@
 import { generateKeyPairSync, sign, type KeyObject } from 'node:crypto';
-import { beforeEach, describe, expect, test } from 'vitest';
+import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { WorkOSIdentityVerifier } from '../src/identity-workos.js';
 
 const issuer = 'https://api.workos.com/';
+/** The issuer a live AuthKit token for this client carries. */
+const clientIssuer = 'https://api.workos.com/user_management/client_account_test';
 const clientId = 'client_account_test';
 const audience = 'https://account.example.test';
 const pair = generateKeyPairSync('rsa', { modulusLength: 2048 });
@@ -96,8 +98,33 @@ describe('WorkOS access-token and active-session verification (offline HTTP fixt
     expect(JSON.stringify(identity)).not.toContain('sk_offline');
   });
 
+  test('accepts the per-client issuer a live AuthKit token carries, and keeps the configured issuer', async () => {
+    // What https://api.workos.com/user_management/<client_id>/.well-known/openid-configuration
+    // publishes, and what live tokens carry (2026-09-26); the documentation shows the bare origin.
+    const identity = await verifier.verify(jwt({ ...claims, iss: clientIssuer }));
+    expect(identity).toMatchObject({ issuer, subject: 'user_alice', sessionId: 'session_alice' });
+  });
+
+  test.each([
+    ['audience', { aud: 'https://other.example/' }, 'audience'],
+    ['issuer', { iss: 'https://attacker.example/' }, 'issuer'],
+    ['client', { client_id: 'client_other' }, 'client'],
+    ['impersonation', { act: { sub: 'admin' } }, 'actor'],
+    ['expired', { exp: Date.parse('2026-09-20T00:00:00Z') / 1000 }, 'lifetime'],
+  ])('logs only the failed check (%s), never a claim value', async (_name, patch, check) => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await expect(verifier.verify(jwt({ ...claims, ...patch }))).rejects.toMatchObject({ status: 401 });
+    const lines = errors.mock.calls.map(([line]) => String(line));
+    expect(lines).toEqual([JSON.stringify({ event: 'identity-refused', check })]);
+    expect(lines.join('\n')).not.toMatch(/user_alice|session_alice|attacker|client_other/);
+  });
+
   test.each([
     ['issuer', { iss: 'https://attacker.example/' }],
+    ['another client’s issuer', { iss: clientIssuer.replace(clientId, 'client_other') }],
+    ['a longer issuer path', { iss: `${clientIssuer}/extra` }],
+    ['the client issuer with a trailing slash', { iss: `${clientIssuer}/` }],
+    ['the user-management root', { iss: 'https://api.workos.com/user_management' }],
     ['audience', { aud: 'https://other.example/' }],
     ['missing audience', { aud: undefined }],
     ['client', { client_id: 'client_other' }],

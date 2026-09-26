@@ -124,7 +124,8 @@ export async function createWorkOSStandIn(options: { now?: () => number; accessT
   async function answer(user: StandInUser, session: StandInSession): Promise<TokenAnswer> {
     const iat = Math.floor(now() / 1000);
     const access = await sign({
-      iss: WORKOS_ISSUER,
+      // What a live AuthKit token carries (its client's OpenID issuer), not the documented bare origin.
+      iss: `${WORKOS_ISSUER}/user_management/${clientId}`,
       aud: STANDIN_AUDIENCE,
       sub: user.id,
       sid: session.id,
