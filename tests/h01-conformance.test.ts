@@ -111,7 +111,7 @@ describe('the OpenCode session route descriptor (H04)', () => {
     expect(contract).toMatchObject({
       mode: 'external-session',
       engine: { id: 'opencode', version: '1.18.4', protocolVersion: 'http+sse' },
-      streaming: { transientPreview: 'text-delta', reasoning: 'none', durableEvents: 'run-record' },
+      streaming: { transientPreview: 'text-delta', reasoning: 'reasoning-delta', durableEvents: 'run-record' },
       models: { source: 'runtime-reported' },
       commands: {
         'follow-up': { support: 'native' },
