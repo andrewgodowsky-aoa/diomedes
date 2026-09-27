@@ -5894,6 +5894,8 @@ export async function createApp(options: AppOptions) {
               : `${routeDisplayName('codex')} could not complete this request.`,
           );
         } finally {
+          // What the preview still holds back is shown before it ends.
+          onDelta.flush();
           progress('ended');
         }
       } else {

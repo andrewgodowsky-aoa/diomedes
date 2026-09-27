@@ -1053,11 +1053,12 @@ describe('verified helper is stored with every turn and session', () => {
     } finally {
       app.locals.store.off('engine-text', listener);
     }
-    expect(frames.map((frame) => frame.kind)).toEqual(['started', 'delta', 'delta', 'ended']);
-    expect(frames.filter((f) => f.kind === 'delta').map((f) => [f.seq, f.text])).toEqual([
-      [1, 'A mocked '],
-      [2, 'answer.'],
-    ]);
+    // Frames follow what is safe to show under the redaction floor, not the engine's chunks.
+    const kinds = frames.map((frame) => frame.kind);
+    expect(kinds.filter((kind, at) => kind !== kinds[at - 1])).toEqual(['started', 'delta', 'ended']);
+    const deltas = frames.filter((f) => f.kind === 'delta');
+    expect(deltas.map((f) => f.seq)).toEqual(deltas.map((_f, at) => at + 1));
+    expect(deltas.map((f) => f.text).join('')).toBe('A mocked answer.');
     expect(new Set(frames.map((f) => f.runId)).size).toBe(1);
     // The request's own signal reaches the adapter, so Stop can end the turn.
     expect(askCodexSignals.at(-1)).toBeInstanceOf(AbortSignal);
@@ -1068,7 +1069,8 @@ describe('verified helper is stored with every turn and session', () => {
     const frames: Record<string, unknown>[] = [];
     const listener = (frame: unknown) => frames.push(frame as Record<string, unknown>);
     app.locals.store.on('engine-text', listener);
-    askCodexDeltas = ['Your key is sk-abcdefghijklmnop ', 'in C:\\Users\\andrew\\notes.'];
+    // The key and the home folder each arrive split across deltas.
+    askCodexDeltas = ['Your key is sk-abcd', 'efghijklmnop in C:\\Users\\and', 'rew\\notes.'];
     try {
       const answer = await request(`/projects/${id}/ask`, 'POST', {
         mode: 'ask',
@@ -1082,7 +1084,7 @@ describe('verified helper is stored with every turn and session', () => {
       app.locals.store.off('engine-text', listener);
     }
     const texts = frames.filter((f) => f.kind === 'delta').map((f) => f.text);
-    expect(texts).toEqual(['Your key is [redacted] ', 'in [home]\\notes.']);
+    expect(texts.join('')).toBe('Your key is [redacted] in [home]\\notes.');
   });
   test('a Codex Plan names the verified helper in its History sentence', async () => {
     await request('/settings', 'PUT', { services: { codex: true } });

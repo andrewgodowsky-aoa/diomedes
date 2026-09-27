@@ -65,6 +65,7 @@ describe('thinking frames', () => {
     sink('key sk-live-1\u0007 found\u202e');
     sink('\u0001\u0002');
     sink('');
+    sink.flush();
     expect(frames.map((frame) => frame.text)).toEqual(['key [redacted] found']);
   });
 

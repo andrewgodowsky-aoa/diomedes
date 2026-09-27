@@ -37,6 +37,7 @@ import { secretFingerprint } from '../connection-secrets.js';
 import {
   activitySink,
   commandGate,
+  liveOrder,
   previewSink,
   reasoningSink,
   type AdapterRouteContract,
@@ -1710,18 +1711,23 @@ export class EngineService {
             attempt: context.attempt,
             fence: context.fence,
           };
+          // Text and thinking hold back their newest part until it is safe to redact
+          // (LIVE_REDACTION); the attempt's order keeps every channel as the engine wrote it.
+          const order = liveOrder();
           const onDelta = previewSink({
             identity,
             redact: this.deps.redactFor?.(engine),
             onPreview: (frame) => publish(() => input.onPreview?.(frame)),
             onInvalid: (failure) => previewFailures.push(failure),
             signal: attemptSignal,
+            order,
           });
           const onToolActivity = activitySink({
             identity,
             redact: this.deps.redactFor?.(engine),
             onActivity: (frame) => publish(() => input.onActivity?.(frame)),
             signal: attemptSignal,
+            order,
           });
           // Thinking only where the route declares it, on the same ordered, fenced queue as text.
           thinking =
@@ -1731,6 +1737,7 @@ export class EngineService {
                   redact: this.deps.redactFor?.(engine),
                   onReasoning: (frame) => publish(() => input.onReasoning?.(frame)),
                   signal: attemptSignal,
+                  order,
                 })
               : undefined;
           let result: TextResponse;
@@ -1745,6 +1752,8 @@ export class EngineService {
               onReasoningDelta: thinking,
             });
           } finally {
+            // What the channels still hold is shown before they close.
+            order.flush();
             accepting = false;
             // Drain ordered publications before the step can commit or fail.
             await pending;
@@ -2025,9 +2034,11 @@ export class EngineService {
             attempt: context.attempt,
             fence: context.fence,
           };
+          const order = liveOrder();
           const onDelta = previewSink({
             identity,
             signal,
+            order,
             redact: this.deps.redactFor?.(route.engine),
             onInvalid: (invalid) => {
               failure = { error: new EngineError('OUTPUT_LIMIT', invalid.reason, true) };
@@ -2037,6 +2048,7 @@ export class EngineService {
           const onToolActivity = activitySink({
             identity,
             signal,
+            order,
             redact: this.deps.redactFor?.(route.engine),
             onActivity: (frame) => publish(() => input.onActivity?.(frame)),
           });
@@ -2046,6 +2058,7 @@ export class EngineService {
               ? reasoningSink({
                   identity,
                   signal,
+                  order,
                   redact: this.deps.redactFor?.(route.engine),
                   onReasoning: (frame) => publish(() => input.onReasoning?.(frame)),
                 })
@@ -2055,6 +2068,8 @@ export class EngineService {
             onToolActivity,
             onReasoningDelta: thinking,
             finish: async () => {
+              // What the channels still hold is shown before they close.
+              order.flush();
               accepting = false;
               await pending;
               if (failure) throw failure.error;
@@ -3082,8 +3097,8 @@ async function modelApiRoute(api: ModelApiServices, route: ModelApiRoute, work: 
 /**
  * A caller's preview and activity channels, stamped with one fenced attempt's identity: text
  * through `previewSink`, tool activity through `activitySink`, both published in order and only
- * while that attempt still owns its lease. `finish` stops accepting, drains, and reports a
- * contract violation or a publication failure.
+ * while that attempt still owns its lease. `finish` shows what the channels still hold back, stops
+ * accepting, drains, and reports a contract violation or a publication failure.
  */
 function fencedSinks(
   input: TextRequest,
@@ -3112,10 +3127,12 @@ function fencedSinks(
       });
   };
   const stamped = { projectId: input.projectId, threadId: input.threadId, requestId: input.requestId, ...identity };
+  const order = liveOrder();
   const onDelta = input.onPreview
     ? previewSink({
         identity: stamped,
         signal,
+        order,
         redact,
         onInvalid: (invalid) => {
           failure ??= { error: new EngineError('OUTPUT_LIMIT', invalid.reason, true) };
@@ -3124,13 +3141,20 @@ function fencedSinks(
       })
     : undefined;
   const onToolActivity = input.onActivity
-    ? activitySink({ identity: stamped, signal, redact, onActivity: (frame) => publish(() => input.onActivity?.(frame)) })
+    ? activitySink({
+        identity: stamped,
+        signal,
+        order,
+        redact,
+        onActivity: (frame) => publish(() => input.onActivity?.(frame)),
+      })
     : undefined;
   const onReasoningDelta =
     reasoning && input.onReasoning
       ? reasoningSink({
           identity: stamped,
           signal,
+          order,
           redact,
           onReasoning: (frame) => publish(() => input.onReasoning?.(frame)),
         })
@@ -3140,6 +3164,7 @@ function fencedSinks(
     onToolActivity,
     onReasoningDelta,
     finish: async () => {
+      order.flush();
       accepting = false;
       await pending;
       if (failure) throw failure.error;
