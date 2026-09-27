@@ -40,21 +40,23 @@ same bearer, origin and query rules:
   /ops/routing/preview|publish|rollback, GET|POST /ops/staff, PATCH
   /ops/staff/:id, GET /ops/people(?q), GET /ops/audit(?organizationId&limit).
 
-The **faux cloud** (`src/faux/`) runs this same handler over a JSON store and
-local passwords in place of Neon and WorkOS; nothing else differs. `npm run
-faux-cloud` serves it on 127.0.0.1:8795 with demo accounts (password
-`nectovia-demo`), and the desktop app hosts it itself when nothing answers
-there. Faux data only: none of its people, businesses or grants exist.
+The **faux cloud** (`src/faux/`) runs this handler over a JSON store and local
+passwords in place of Neon and WorkOS. `npm run faux-cloud` serves it on
+127.0.0.1:8795 with demo accounts (password `nectovia-demo`). A source/development
+desktop with no account-service override hosts it when nothing answers there;
+explicit test mode uses a separate in-process store. Packaged builds use the
+deployed account service and refuse sign-in when it is unavailable. Faux data
+only: none of its people, businesses or grants exist in the deployed service.
 
 `npm run faux-cloud -- --identity workos-standin` swaps the passwords for a
 local WorkOS stand-in (`src/faux/workos-standin.ts`, under /workos): the AuthKit
 authorize (PKCE, loopback redirect, no login page; the person is the
 `login_hint` email), authenticate (code and rotating refresh), JWKS, user and
-session endpoints. The faux cloud then verifies with the Worker's own
-`WorkOSIdentityVerifier`, so the Operations app's company sign-in runs end to
-end on this computer. Its store is a separate file, and `POST
-/faux/bootstrap-admin {subject}` does what `npm run bootstrap-admin` does
-against Postgres.
+session endpoints. The faux cloud then verifies with `WorkOSIdentityVerifier`
+to exercise the legacy WorkOS staff flow locally. This does not exercise the
+current Operations app's registered-device-key sign-in. Its store is a separate
+file, and `POST /faux/bootstrap-admin {subject}` mirrors the legacy
+`npm run bootstrap-admin` command against that faux store.
 
 The faux cloud serves the managed inference gateway (`/managed/v1/*`, contract
 `nectovia-managed/1`) with the Worker's own handler. A scripted provider answers

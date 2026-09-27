@@ -122,6 +122,11 @@ projects, credentials, Operations session or installation were replaced.
 - Real customer signup/email verification, actual token issuer/audience, native
   OS callback, authenticated Neon writes, session restart/refresh, password
   recovery and hosted logout: not yet proven.
+- Independent read-only review found no credential exposure or high-severity
+  false pass. Its documentation finding was corrected: the legacy faux WorkOS
+  staff flow does not prove current Operations device-key sign-in. The README
+  also now limits automatic faux-cloud startup to source/development use and
+  names the separate explicit test mode.
 
 No provider inference or paid request was made. The readiness checks do not
 establish authenticated customer operation or completed-prompt acceptance.
@@ -144,7 +149,7 @@ smoke and hosted Apple-silicon disk-image launch passed. The draft was published
 at 2026-09-26T23:43:58Z after its source, manifest, checksum list and GitHub asset
 digests were reconciled. It is the latest stable-channel update, still labeled
 experimental and unsigned. No verification gate was disabled. These release results
-cover the named source commit, not the uncommitted readiness utility in this lane.
+cover the named source commit. The readiness utility was added after this release.
 
 The owner subsequently requested headless work only. Desktop control remained
 stopped. With no installed app process running, the verified installer completed
