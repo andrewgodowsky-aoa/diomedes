@@ -1809,6 +1809,8 @@ export class EngineService {
     runId: string,
     input: TextRequest,
     sourceRunId?: string,
+    /** Wait behind a running turn (the route's steer queue) instead of being refused. */
+    options: { queued?: boolean } = {},
   ) {
     return this.nativeTurn(
       { engine: 'opencode', routeId: 'opencode-session', driver: this.opencodeSessions, name: 'OpenCode' },
@@ -1816,6 +1818,7 @@ export class EngineService {
       runId,
       input,
       sourceRunId,
+      options,
     );
   }
   /**

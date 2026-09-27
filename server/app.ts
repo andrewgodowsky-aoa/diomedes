@@ -4224,10 +4224,7 @@ export async function createApp(options: AppOptions) {
         .sort((a, b) => b.generation - a.generation)[0];
       return open?.runId ?? null;
     },
-    drivers: {
-      claude: () => engines.nativeSessions as never,
-      opencode: () => engines.opencodeSessions as never,
-    },
+    engines,
   });
   mountOpenCodeSessionRoutes(app, engines, nativeSessionDependencies('opencode'));
   mountAcpSessionRoutes(app, engines, 'cursor', nativeSessionDependencies('cursor'));
