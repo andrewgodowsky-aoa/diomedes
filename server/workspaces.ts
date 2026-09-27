@@ -355,6 +355,14 @@ export class WorkspaceService {
   }
 
   /**
+   * Whether the account service keeps this business: a signed-in session listed it. A business
+   * made on this computer without an account never is, whatever its identity source says.
+   */
+  isAccountBusiness(organizationId: string): boolean {
+    return this.accountBacked(organizationId);
+  }
+
+  /**
    * Mirror what the account service says about the signed-in person. The caller
    * holds the store lock. Null means nobody is signed in: the local person
    * returns, and every mirrored business reads as someone else's.

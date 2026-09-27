@@ -45,6 +45,7 @@ import {
   type OrganizationSetupRow,
   type OrganizationSetupTransaction,
 } from '../organization-setup/service.js';
+import type { OrganizationExportRepository, OrganizationExportTransaction } from '../organization-export/service.js';
 import { StateTransaction } from '../state-transaction.js';
 import { emptyFundingState, StateFundingTransaction, type FundingState } from './funding-state.js';
 import { emptyFauxIdentity, fauxIdentityStateSchema, type FauxIdentityState } from './identity.js';
@@ -321,6 +322,23 @@ class FauxOrganizationSetupTransaction implements OrganizationSetupTransaction {
   }
 }
 
+/** OPS-05's reads over the draft, in the order the SQL adapter returns them. */
+class FauxOrganizationExportTransaction implements OrganizationExportTransaction {
+  constructor(private readonly state: FauxCloudState) {}
+  async member(organizationId: string, personId: string) {
+    return this.state.accounts.memberships.find((row) => row.record.organizationId === organizationId && row.record.personId === personId);
+  }
+  async setupRevisions(organizationId: string) {
+    return this.state.organizationSetups.filter((row) => row.organizationId === organizationId).sort((a, b) => a.revision - b.revision);
+  }
+  async history(organizationId: string, limit: number) {
+    return this.state.accounts.events
+      .filter((event) => event.organizationId === organizationId)
+      .sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+      .slice(-limit);
+  }
+}
+
 export class FauxCloudStore {
   private state: FauxCloudState;
   private tail: Promise<void> = Promise.resolve();
@@ -329,6 +347,7 @@ export class FauxCloudStore {
   readonly funding: FundingRepository;
   readonly relay: RelayRepository;
   readonly organizationSetups: OrganizationSetupRepository;
+  readonly organizationExports: OrganizationExportRepository;
 
   private constructor(private readonly file: string | null, state: FauxCloudState) {
     this.state = state;
@@ -337,6 +356,7 @@ export class FauxCloudStore {
     this.funding = { transaction: (action) => this.run((draft) => action(new StateFundingTransaction(draft.funding))) };
     this.relay = { transaction: (action) => this.run((draft) => action(new FauxRelayTransaction(draft))) };
     this.organizationSetups = { transaction: (action) => this.run((draft) => action(new FauxOrganizationSetupTransaction(draft))) };
+    this.organizationExports = { transaction: (action) => this.run((draft) => action(new FauxOrganizationExportTransaction(draft))) };
   }
 
   /** Open (or create) a store. `file: null` keeps it in memory, for tests. */

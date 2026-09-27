@@ -15,9 +15,12 @@ function iso(value: unknown): string {
   return date.toISOString();
 }
 
-const COLUMNS = 'tenant_id,organization_id,revision,record,written_at,written_by';
+/** The columns of control_plane.organization_setups, in the order `setupRow` reads them. */
+export const SETUP_COLUMNS = 'tenant_id,organization_id,revision,record,written_at,written_by';
+const COLUMNS = SETUP_COLUMNS;
 
-function setupRow(row: Record<string, unknown>): OrganizationSetupRow {
+/** One row of control_plane.organization_setups, parsed through the row schema. */
+export function setupRow(row: Record<string, unknown>): OrganizationSetupRow {
   return organizationSetupRowSchema.parse({
     tenantId: row.tenant_id,
     organizationId: row.organization_id,

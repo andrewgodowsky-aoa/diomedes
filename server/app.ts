@@ -25,6 +25,7 @@ import { CustomizationBenefitLedger } from './customization-benefit.js';
 import { mountCustomizationBenefitRoutes } from './customization-benefit-routes.js';
 import { ConfigurationService } from './configuration.js';
 import { mountConfigurationRoutes } from './configuration-routes.js';
+import { mountOrganizationExportRoute } from './organization-export.js';
 import { DiscoveryService } from './discovery/service.js';
 import { mountDiscoveryRoutes } from './discovery/routes.js';
 import { planTitle, taskNameFromText } from '../shared/display-names.js';
@@ -1451,6 +1452,8 @@ export async function createApp(options: AppOptions) {
   mountCustomizationBenefitRoutes(app, store, workspaces, customization, customizationBenefit);
   mountManagedUsageRoutes(app, store, ledger, gateway, billing, workspaces);
   mountConfigurationRoutes(app, store, workspaces, configuration, agents);
+  // OPS-05: the Business owner's copy of the business's records, written into one of its projects.
+  mountOrganizationExportRoute(app, { store, workspaces, configuration, accounts: accountSession, build: running.version });
   mountDiscoveryRoutes(app, discovery, {
     operatorId: () => workspaces.currentPerson().id,
     importDocument: async (_req, input) => {

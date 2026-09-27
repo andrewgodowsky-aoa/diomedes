@@ -13,6 +13,7 @@ import { BusinessSetup } from './BusinessSetup';
 import { Configuration } from './Configuration';
 import { BriefFiles } from './BriefFiles';
 import { NativeAccount } from './NativeAccount';
+import { OrganizationExport } from './OrganizationExport';
 import './workspace.css';
 
 /**
@@ -457,6 +458,21 @@ export function WorkspacePanel({
               )
             )}
           </section>
+        )}
+
+        {/* Only a business the account service keeps has account records to export; ORG-01
+            sets `setup.source` for exactly those, while someone is signed in. */}
+        {activeOrganization &&
+          activeOrganization.membership.role === 'owner' &&
+          activeOrganization.setup?.source !== undefined && (
+          <OrganizationExport
+            key={activeOrganization.organization.id}
+            organizationId={activeOrganization.organization.id}
+            name={activeOrganization.organization.name}
+            output={activeOrganization.output ?? null}
+            disabled={disabled}
+            report={report}
+          />
         )}
 
         {activeOrganization && (

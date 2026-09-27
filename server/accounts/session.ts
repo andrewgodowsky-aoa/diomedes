@@ -931,6 +931,13 @@ export class AccountSessionService {
     }
   }
 
+  // --- the business's records, for its owner (OPS-05) -------------------------------
+
+  /** The account service's records of the business. It answers only the Business owner. */
+  exportOrganization(organizationId: string) {
+    return this.call((token) => this.backend.client.organizationExport(token, organizationId));
+  }
+
   // --- the view ---------------------------------------------------------------
 
   /**

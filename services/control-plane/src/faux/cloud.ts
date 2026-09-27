@@ -45,6 +45,7 @@ import { createHandler } from '../worker.js';
 import { readBytes } from '../crypto.js';
 import { RelayAuthority, RelayService } from '../relay/service.js';
 import { OrganizationSetupService } from '../organization-setup/service.js';
+import { OrganizationExportService } from '../organization-export/service.js';
 import { accountId } from '../domain.js';
 import { WorkOSIdentityVerifier } from '../identity-workos.js';
 import {
@@ -114,6 +115,8 @@ export interface FauxCloud {
   readonly relayHubs: FauxRelayHubs;
   /** Each business's setup revisions, over this store. */
   readonly organizationSetups: OrganizationSetupService;
+  /** Each business's records, for its owner (OPS-05), over this store. */
+  readonly organizationExports: OrganizationExportService;
   /** Which provider answers managed calls. */
   readonly provider: 'scripted' | 'live';
   /** Which provider answers typed evaluations. */
@@ -213,6 +216,12 @@ export async function createFauxCloud(options: FauxCloudOptions): Promise<FauxCl
   const relayHubs = new FauxRelayHubs(new RelayAuthority(store.relay), now);
   const relay = new RelayService(accounts, store.relay, relayHubs, { now });
   const organizationSetups = new OrganizationSetupService(accounts, store.organizationSetups, { now });
+  const organizationExports = new OrganizationExportService(
+    accounts,
+    { access: (token, organizationId) => commercial.access(token, organizationId), devices: (token, organizationId) => relay.devices(token, organizationId) },
+    store.organizationExports,
+    { now },
+  );
   const worker = createHandler(
     () => accounts,
     () => new UsageService(accounts, funding),
@@ -222,6 +231,7 @@ export async function createFauxCloud(options: FauxCloudOptions): Promise<FauxCl
       createManaged: () => managed,
       createRelay: () => relay,
       createOrganizationSetup: () => organizationSetups,
+      createOrganizationExport: () => organizationExports,
     },
   );
 
@@ -296,6 +306,7 @@ export async function createFauxCloud(options: FauxCloudOptions): Promise<FauxCl
     relay,
     relayHubs,
     organizationSetups,
+    organizationExports,
     provider: live ? 'live' : 'scripted',
     evaluationProvider: liveEvaluations ? 'live' : 'scripted',
     idle: () => managed.idle(),
