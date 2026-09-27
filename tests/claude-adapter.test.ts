@@ -48,6 +48,7 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
   if(mode==='streamed') return emit({type:'stream_event',event:{type:'content_block_delta',delta:{type:'text_delta',text:'Answer'}}});
   if(mode==='early-limit') return emit({type:'result',subtype:'error_during_execution',is_error:true,result:'',errors:['rate_limit_error'],session_id:'native1',modelUsage:{}});
   if(mode==='disk-quota') return emit({type:'result',subtype:'error_during_execution',is_error:true,result:'',errors:{message:'the temporary directory is over its disk quota'},session_id:'native1',modelUsage:{}});
+  if(mode==='thinking') { emit({type:'stream_event',event:{type:'content_block_delta',delta:{type:'thinking_delta',thinking:'Weighing '}}}); emit({type:'stream_event',event:{type:'content_block_delta',delta:{type:'thinking_delta',thinking:'the menu.'}}}); emit({type:'stream_event',event:{type:'content_block_delta',delta:{type:'signature_delta',signature:'sig'}}}); }
   emit({type:'stream_event',event:{type:'content_block_delta',delta:{type:'text_delta',text:'Answer'}}});
   emit({type:'result',subtype:mode==='limit'?'error_during_execution':'success',is_error:mode==='limit',result:'Answer',errors:mode==='limit'?['rate_limit_error']:[],session_id:'native1',modelUsage:{[reportedModel]:{}}});
  }
@@ -115,6 +116,19 @@ describe('Claude Code structured text route', () => {
       requestId: 'r1',
     });
     expect(deltas).toEqual(['Answer']);
+  });
+  it('streams thinking to its own sink and never into the answer', async () => {
+    const { adapter } = await fixture('thinking');
+    const deltas: string[] = [];
+    const thoughts: string[] = [];
+    const result = await adapter.generate({
+      ...request,
+      onDelta: (text) => deltas.push(text),
+      onReasoningDelta: (text) => thoughts.push(text),
+    });
+    expect(thoughts).toEqual(['Weighing ', 'the menu.']);
+    expect(deltas).toEqual(['Answer']);
+    expect(result.text).toBe('Answer');
   });
   it.each(['model', 'tools'])('rejects a %s mismatch before accepting output', async (mode) => {
     const { adapter } = await fixture(mode);

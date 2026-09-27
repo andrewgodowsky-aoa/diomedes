@@ -957,7 +957,8 @@ export class ClaudeAdapter implements TextEngineAdapter {
             if (delta.type === 'text_delta' && typeof delta.text === 'string') {
               phase = 'stream';
               input.onDelta?.(delta.text);
-            }
+            } else if (delta.type === 'thinking_delta' && typeof delta.thinking === 'string')
+              input.onReasoningDelta?.(delta.thinking);
           }
           if (frame.type === 'assistant' || frame.type === 'user') {
             if (claudeObserveTools(scope, frame, input.onToolActivity, open, team)) webUsed = true;

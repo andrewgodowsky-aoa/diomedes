@@ -74,7 +74,7 @@ describe('route descriptors', () => {
     expect(contract).toMatchObject({
       mode: 'external-session',
       engine: { id: 'claude-code', version: '2.1.252', protocolVersion: 'stream-json' },
-      streaming: { transientPreview: 'text-delta', reasoning: 'none', durableEvents: 'run-record' },
+      streaming: { transientPreview: 'text-delta', reasoning: 'reasoning-delta', durableEvents: 'run-record' },
       // H03: a message sent while Claude Code answers is the host's queue, never a native channel.
       commands: { fork: { support: 'native' }, steer: { support: 'host' }, reconcile: { support: 'unsupported' } },
     });
