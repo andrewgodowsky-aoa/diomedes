@@ -293,7 +293,7 @@ export function DiomedesHome(props: DiomedesHomeProps) {
       if (!bound) return;
       setLive((prev) => stepLiveReply(prev, bound, event));
     };
-    const frame = (type: 'engine-text' | 'engine-activity') => (ev: Event) => {
+    const frame = (type: 'engine-text' | 'engine-activity' | 'engine-reasoning') => (ev: Event) => {
       let data: unknown;
       try {
         data = JSON.parse((ev as MessageEvent).data);
@@ -304,11 +304,13 @@ export function DiomedesHome(props: DiomedesHomeProps) {
     };
     const onText = frame('engine-text');
     const onActivity = frame('engine-activity');
+    const onReasoning = frame('engine-reasoning');
     // A reconnect replays nothing, so a missed text frame loses the preview; the recorded
     // answer still replaces it.
     const onLost = () => step({ type: 'lost' });
     es.addEventListener('engine-text', onText);
     es.addEventListener('engine-activity', onActivity);
+    es.addEventListener('engine-reasoning', onReasoning);
     es.addEventListener('error', onLost);
     return () => es.close();
   }, []);
@@ -848,7 +850,7 @@ export function DiomedesHome(props: DiomedesHomeProps) {
         }}
         turns={turns}
         pending={pending}
-        live={live ? { text: live.text, activity: live.activity?.lines ?? [] } : null}
+        live={live ? { text: live.text, activity: live.activity?.lines ?? [], thinking: live.thinking } : null}
         technical={props.detail === 'technical'}
         restriction={restriction}
         onRestriction={setRestriction}

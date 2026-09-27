@@ -2162,6 +2162,39 @@ html[data-motion='reduced'] .console .modes .ind b {
   background: transparent;
 }
 
+/* ---- an engine's thinking ----
+   Above a reply: open and muted while the engine thinks, then one line that
+   opens on click. Narration only: the saved reply keeps the record. */
+.console .thinking {
+  margin: 0 0 8px;
+  font-size: 0.92em;
+  color: var(--t3);
+}
+.console .thinking-label {
+  display: block;
+  margin-bottom: 4px;
+}
+.console .thinking-text {
+  margin: 4px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.console .thinking-toggle {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.console .thinking-toggle:hover {
+  text-decoration: underline;
+}
+.console .thinking-toggle:focus-visible {
+  outline: 2px solid var(--light);
+  outline-offset: 2px;
+}
+
 /* ---- live tool calls ----
    One plain line per tool call under a streaming reply or inside a live run
    card. Narration only: the run record stays the authority. A tool detail can
