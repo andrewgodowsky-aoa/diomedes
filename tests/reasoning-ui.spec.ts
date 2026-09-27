@@ -21,6 +21,9 @@ let server: Server;
 let url: string;
 let answering: () => void;
 let finishing: () => void;
+/** What the engine does: think then answer, think past the saved cap, or think then fail. */
+type Script = 'answer' | 'long' | 'fail';
+let script: Script;
 async function api<T>(endpoint: string, method = 'GET', body?: unknown): Promise<T> {
   const response = await fetch(`${url}/api${endpoint}`, { method,
     headers: { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' },
@@ -30,7 +33,8 @@ async function api<T>(endpoint: string, method = 'GET', body?: unknown): Promise
   await shareAfter(api, endpoint, method, value);
   return value;
 }
-async function start(reasoning: AdapterRouteContract['streaming']['reasoning']) {
+async function start(reasoning: AdapterRouteContract['streaming']['reasoning'], how: Script = 'answer') {
+  script = how;
   await fs.mkdir(path.resolve('test-results'), { recursive: true });
   const root = await fs.mkdtemp(path.resolve('test-results', 'reasoning-ui-'));
   const toAnswer = new Promise<void>(resolve => { answering = resolve; });
@@ -49,8 +53,9 @@ async function start(reasoning: AdapterRouteContract['streaming']['reasoning']) 
       inspect: async () => ({ authentication: 'signed-in', accountRoute: 'fixture:account',
         models: [{ slug: model, name: 'Fixture', description: '', efforts: [], defaultEffort: null }], detail: '' }),
       generate: async input => {
-        input.onReasoningDelta?.(thought);
+        input.onReasoningDelta?.(script === 'long' ? 'x'.repeat(40_000) : thought);
         await toAnswer;
+        if (script === 'fail') throw new Error('The fixture engine stopped before answering.');
         input.onDelta?.(answer);
         await toFinish;
         return { text: answer, model: input.model, version: TESTED_VERSIONS[engine],
@@ -138,6 +143,38 @@ test('thinking streams above the reply, folds at the first answer text, and stay
   await expect(transcript.getByText(thought)).toBeHidden();
   await saved.click();
   await expect(transcript.getByText(thought)).toBeVisible();
+});
+
+test('a saved reply whose thinking was cut to fit says so, and still does after a reload', async ({ page }) => {
+  await start('reasoning-delta', 'long');
+  await send(page);
+  const transcript = page.locator('.transcript');
+  const liveLabel = transcript.locator('.who .mono', { hasText: /^live$/ });
+  await expect(transcript.getByText('Thinking', { exact: true })).toBeVisible();
+  answering();
+  await expect(transcript).toContainText(answer);
+  await expect(liveLabel).toHaveCount(1);
+  finishing();
+  await expect(liveLabel).toHaveCount(0);
+  await transcript.getByRole('button', { name: /^Thought for/ }).click();
+  await expect(transcript.getByText('Shortened to fit.')).toBeVisible();
+
+  await page.reload();
+  await expect(transcript).toContainText(answer);
+  await transcript.getByRole('button', { name: /^Thought for/ }).click();
+  await expect(transcript.getByText('Shortened to fit.')).toBeVisible();
+});
+
+test('a reply that fails after thinking leaves no thinking behind', async ({ page }) => {
+  await start('reasoning-delta', 'fail');
+  await send(page);
+  const transcript = page.locator('.transcript');
+  await expect(transcript.getByText(thought)).toBeVisible();
+  answering();
+  await expect(transcript.locator('.who .mono', { hasText: /^live$/ })).toHaveCount(0);
+  await expect(transcript.getByText('Thinking', { exact: true })).toHaveCount(0);
+  await expect(transcript.getByRole('button', { name: /^Thought for/ })).toHaveCount(0);
+  await expect(transcript).not.toContainText(thought);
 });
 
 test('a route that declares no thinking shows none, live or saved', async ({ page }) => {
