@@ -399,7 +399,9 @@ describe('the Nectovia bot', () => {
     // Nothing tells someone with no business to link or switch to one; it names what they can do.
     expect(body.code).toBe('AGENT_NOT_INCLUDED');
     expect(body.error).toMatch(FREE_VERSION);
-    expect(body.error).toContain('Choose Claude Code in AI setup to talk here, or sign up for a plan.');
+    // With no AI of their own chosen, the only suggestion is a plan; no engine is named (Andrew, 2026-09-27).
+    expect(body.error).toContain('Sign up for a plan to talk here.');
+    expect(body.error).not.toMatch(/Claude|ChatGPT|Codex|OpenCode|Cursor|Devin|oh-my-pi|install|AI setup/i);
     expect(gateway).toHaveLength(0);
     expect(awsCalls).toBe(0);
     expect(body.error).not.toMatch(/AWS|Bedrock|provider|connect|business/i);
@@ -440,6 +442,8 @@ describe('the Nectovia bot', () => {
     expect(body.code).toBe('AGENT_NOT_INCLUDED');
     expect(body.error).toMatch(FREE_VERSION);
     expect(body.error).toContain('A model key of your own also runs through the Nectovia Agent');
+    expect(body.error).toContain('Sign up for a plan to talk here.');
+    expect(body.error).not.toMatch(/Claude|ChatGPT|Codex|OpenCode|Cursor|Devin|AI setup/i);
     expect(gateway).toHaveLength(0);
     expect(awsCalls).toBe(0);
   });

@@ -31,10 +31,10 @@ refusal that commit introduced). Merge f9553c9 first, or merge this branch in it
 
 ### Refusal sentences (`shared/access.ts`)
 - **No paid access anywhere:** `AGENT_FREE_VERSION_REASON`, "You're on the free version of Nectovia, so the Nectovia Agent isn't available here. Nothing was sent."
-  - Where the host knows the person's AI setup (`nectoviaAccountFor`), `freeVersionRefusal(hint)` adds what they can do, computed from route predicates and never an engine name hardcoded:
-    - Nothing chosen: "Choose Claude Code in AI setup to talk here, or sign up for a plan."
-    - A model key chosen: "A model key of your own also runs through the Nectovia Agent, so it needs a plan too. …"
-    - An engine that can't hold conversations: "Codex can't hold a conversation yet, but it can still do Build and Fix work. …"
+  - Where the host knows the person's AI setup (`nectoviaAccountFor`), `freeVersionRefusal(hint)` adds one hint. The hint never suggests installing or choosing an engine, and the only thing it suggests is a plan (Andrew, 2026-09-27: "does not suggest engines. if one doesn't have one installed, only suggest nectovia paid inference subscription"):
+    - Nothing chosen: "Sign up for a plan to talk here."
+    - A model key chosen: "A model key of your own also runs through the Nectovia Agent, so it needs a plan too. Sign up for a plan to talk here."
+    - An engine that can't hold conversations, named because the person chose it: "ChatGPT can't hold a conversation yet, but it can still do Build and Fix work. Sign up for a plan to talk here." This case goes away for ChatGPT, OpenCode, Cursor and Devin once `feature/codex-conversation-driver` admits them as conversation routes.
   - The gate (`unpaidReason`) gives this sentence only when `agentPlan()` is `free`.
 - **Paid access somewhere else:** a person with a plan through a business keeps `AGENT_PERSONAL_REASON` (switch workspace) or `AGENT_PROJECT_UNLINKED` (link the project). While their plan is still being read, they are never told they are on the free version.
 - **Other paid-feature sentences** (business rules, phone access, included AI usage) now say "part of a paid plan", not "part of a Business plan", because the individual tier includes them.
