@@ -21,6 +21,7 @@ const PRODUCERS: Record<string, string> = {
   'devin-session': 'tests/acp-session.test.ts',
   opencode: 'tests/opencode-session.test.ts',
   'opencode-session': 'tests/opencode-session.test.ts',
+  'codex-session': 'tests/codex-session.test.ts',
 };
 
 describe('thinking conformance', () => {

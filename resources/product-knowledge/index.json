@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "version": "2026-09-20.1",
+  "version": "2026-09-27.1",
   "buildVersion": "0.2.1",
   "resources": [
     {
       "path": "core.json",
-      "sha256": "07f77cfc9b837841c102e59193d593886ed6a799710e0ac5b5cde8c071325a4a",
+      "sha256": "c409a5b0b95b958206f19f49bb1c32ad673f6b33bad505f28979cfa2ae078293",
       "scopes": [
         "product",
         "route:native-fixture",
@@ -13,6 +13,7 @@
         "route:harness-runtime",
         "route:sample",
         "route:codex",
+        "route:codex-session",
         "route:claude-code",
         "route:claude-code-session",
         "route:opencode",
