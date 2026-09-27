@@ -631,7 +631,8 @@ test('R-17: a refused home engine change is whole, and the conversation still an
   };
   const before = written();
   // One request that renames, narrows the Mode and re-routes: refused as one thing.
-  const mixed = await request(threadPath, 'PUT', { name: 'Renamed', mode: 'ask', engine: 'codex' });
+  // oh-my-pi has no kept session, so it can't carry a conversation (spec 2).
+  const mixed = await request(threadPath, 'PUT', { name: 'Renamed', mode: 'ask', engine: 'oh-my-pi' });
   expect(mixed.status).toBe(409);
   expect(await mixed.text()).toContain('runs on Claude Code');
   // An engine nobody offers is refused the same way, not half applied.

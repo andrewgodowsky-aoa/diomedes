@@ -97,6 +97,7 @@ import { ChangeReviewService } from './change-review/service.js';
 import {
   askCodex,
   closeWarmCodex,
+  codexConversations,
   forkCodexThread,
   getIntegrationStatuses,
   steerCodex,
@@ -248,6 +249,8 @@ import {
 } from './interaction-turn.js';
 import { assertReplay, findCommand } from './command-admission.js';
 import { claudeSessionRunId } from './harness/claude-session-run.js';
+import { KEPT_SESSIONS, keptSessionOfRun } from './conversation-sessions.js';
+import { CODEX_ACCOUNT_ROUTE } from './engines/codex-session.js';
 import { opencodeSessionRunId } from './harness/opencode-session-run.js';
 import { acpSessionRunId } from './harness/acp-session-run.js';
 import { EngineAskNeeds } from './engines/engine-asks.js';
@@ -1168,6 +1171,12 @@ export async function createApp(options: AppOptions) {
   engines.opencodeSessions = harness.opencodeSessions;
   engines.cursorSessions = harness.cursorSessions;
   engines.devinSessions = harness.devinSessions;
+  engines.codexSessions = harness.codexSessions;
+  // The kept ChatGPT conversation's processes. A test that brings its own Codex integration
+  // brings these with it, or has none, so a test never reaches the real Codex runtime.
+  engines.codexConversations = options.codexIntegration
+    ? options.codexIntegration.codexConversations
+    : codexConversations;
   engines.modelSessions = harness.modelSessions;
   // A kept ACP conversation's mid-turn questions become Needs a person answers (H05).
   const engineAsks = new EngineAskNeeds(store);
@@ -3574,9 +3583,17 @@ export async function createApp(options: AppOptions) {
   };
   /** Whether a route takes a send: Nectovia has no switch; every other route is turned on in Settings. */
   const routeOn = (route: string) => route === NECTOVIA_ROUTE || store.settings.services?.[route] === true;
-  /** The account a send on this route runs under, as Settings or the account session records it. */
+  /**
+   * The account a send on this route runs under, as Settings or the account session records it.
+   * ChatGPT signs in under one account route (`codex:chatgpt`), the one its scope grants assume,
+   * unless Settings recorded another.
+   */
   const routeAccount = (route: string, projectId: string): unknown =>
-    route === NECTOVIA_ROUTE ? nectoviaAccountFor(projectId) : store.settings.services?.[`${route}AccountRoute`];
+    route === NECTOVIA_ROUTE
+      ? nectoviaAccountFor(projectId)
+      : route === 'codex'
+        ? (store.settings.services?.codexAccountRoute ?? CODEX_ACCOUNT_ROUTE)
+        : store.settings.services?.[`${route}AccountRoute`];
   /** What the host knows about one route when a tier resolves: on, connected, and what it lists. */
   const tierRouteState = (route: string) => {
     // A mapped route this build does not have (Google Vertex AI before its branch lands) is
@@ -4330,11 +4347,20 @@ export async function createApp(options: AppOptions) {
   // The Diomedes conversation. `InteractionTurns` owns the sequence; what follows is only what
   // the Store and the existing admission paths supply to it. Each method takes and releases
   // its own lock, and none of them holds one while a provider runs.
-  /** The driver that owns a conversation run. Model-API runs are named `model-...`. */
-  const conversationDriver = (runId: string) => {
-    const driver = runId.startsWith('model-') ? engines.modelSessions : engines.nativeSessions;
+  /**
+   * The kept session's driver for a conversation run that isn't a model-API run: the session its
+   * id names (`KEPT_SESSIONS`), or Claude Code's for a run no session names, as before.
+   */
+  const sessionDriverOf = (runId: string) => {
+    const driver = (keptSessionOfRun(runId) ?? KEPT_SESSIONS['claude-code']).driver(engines);
     if (!driver) throw new ApiError(503, 'The conversation runtime is unavailable.');
     return driver;
+  };
+  /** The driver that owns a conversation run. Model-API runs are named `model-...`. */
+  const conversationDriver = (runId: string) => {
+    if (!runId.startsWith('model-')) return sessionDriverOf(runId);
+    if (!engines.modelSessions) throw new ApiError(503, 'The conversation runtime is unavailable.');
+    return engines.modelSessions;
   };
   /**
    * A conversation run this build cannot read: its file is damaged, or a newer build wrote it
@@ -4407,10 +4433,13 @@ export async function createApp(options: AppOptions) {
       resumable: true,
     });
   };
-  /** The route a lineage runs on: a model-API lineage's recorded route, else the thread's, as a replay reads it. */
+  /**
+   * The route a lineage runs on: the kept session its run belongs to, else a model-API lineage's
+   * recorded route, else the thread's, as a replay reads it.
+   */
   const lineageRoute = (lineage: ConversationLineage, thread: Conversation): Route =>
     !lineage.runId.startsWith('model-')
-      ? 'claude-code'
+      ? (keptSessionOfRun(lineage.runId)?.route ?? 'claude-code')
       : isModelApiRoute(lineage.route)
         ? lineage.route
         : isModelApiRoute(thread.engine)
@@ -4513,8 +4542,6 @@ export async function createApp(options: AppOptions) {
   const interactionHost: InteractionHost = {
     resolve: (projectId, threadId, command, options) =>
       store.locked(async () => {
-        const driver = engines.nativeSessions;
-        if (!driver) throw new ApiError(503, 'The native conversation runtime is unavailable.');
         // The runs of this thread this build could not read, found while the command is located.
         const unreadable = new Set<string>();
         const locateAny = conversationLocator(unreadable);
@@ -4564,13 +4591,14 @@ export async function createApp(options: AppOptions) {
               thread.mode === 'auto' || thread.mode === 'plan' ? thread.mode : 'ask',
             ),
             runId: located.runId,
-            // A model-API run answers on the route the thread recorded; AWS is only the
-            // historical default for a thread that predates the other routes.
+            // A kept session's run answers on its own route. A model-API run answers on the route
+            // the thread recorded; AWS is only the historical default for a thread that predates
+            // the other routes.
             route: located.runId.startsWith('model-')
               ? isModelApiRoute(thread.engine)
                 ? thread.engine
                 : AWS_BEDROCK_ROUTE
-              : ('claude-code' as const),
+              : (keptSessionOfRun(located.runId)?.route ?? ('claude-code' as const)),
             action: 'follow-up' as const,
             replay: true,
             text: command.text,
@@ -4594,9 +4622,9 @@ export async function createApp(options: AppOptions) {
           (sent.settled || lineages.find((lineage) => lineage.runId === sent.runId)?.retired)
         )
           return { unfinished: true as const, runId: sent.runId, sourceMessageId };
-        // CD-01 Decision 5: a conversation runs on the native Claude session or on a
-        // model-API route through its own driver. Any other route is refused here, by
-        // name, through the same predicate the thread update guards with. This is about
+        // CD-01 Decision 5 (amended 2026-09-27): a conversation runs on an engine's kept
+        // session or on a model-API route, each through its own driver. Any other route is
+        // refused here, through the same predicate the thread update guards with. This is about
         // which driver answers a message; Build and Fix on a thread run on every connected
         // route through /ask (owner decision 2026-09-23). The tier decides the route when one
         // applies; a tier whose route cannot run is refused by name before anything is sent.
@@ -4613,8 +4641,9 @@ export async function createApp(options: AppOptions) {
             409,
             `${routeDisplayName(conversationRoute) || 'This route'} does not answer conversations. Select ${CONVERSATION_ROUTE_LIST} for this conversation before sending.`,
           );
-        const routeName =
-          conversationRoute === 'claude-code' ? 'Claude Code' : MODEL_API_NAMES[conversationRoute];
+        const routeName = isModelApiRoute(conversationRoute)
+          ? MODEL_API_NAMES[conversationRoute]
+          : routeDisplayName(conversationRoute);
         if (!routeOn(conversationRoute))
           throw new ApiError(409, `Turn ${routeName} on in Settings before sending.`);
         const accountRoute = routeAccount(conversationRoute, projectId);
@@ -4628,9 +4657,9 @@ export async function createApp(options: AppOptions) {
         });
         const selection: { model?: unknown; effort?: string } =
           styled ??
-          (conversationRoute === 'claude-code'
-            ? nativeChoice('claude-code', projectId, thread)
-            : { model: store.settings.services?.[`${conversationRoute}Model`] });
+          (isModelApiRoute(conversationRoute)
+            ? { model: store.settings.services?.[`${conversationRoute}Model`] }
+            : nativeChoice(conversationRoute, projectId, thread));
         if (typeof selection.model !== 'string' || !selection.model || typeof accountRoute !== 'string')
           throw new ApiError(409, `Connect ${routeName} and choose its model in AI setup first.`);
         requireCloudSharing(state, conversationRoute, command.sources.map((source) => source.path), false, {
@@ -4663,7 +4692,7 @@ export async function createApp(options: AppOptions) {
         const readScope: { readScope?: ReadScope } = {
           ...(modelRoute ? refuseWholeProjectRead(command.readAccess) : {}),
           ...(await readScopeFor(projectId, command.mode, {
-            route: modelRoute ? conversationRoute : 'claude-code',
+            route: conversationRoute,
             access: command.readAccess,
             documents,
           })),
@@ -4674,7 +4703,7 @@ export async function createApp(options: AppOptions) {
         // retiring (TextRequest.rules).
         const rules = await messageRules({
           state,
-          routeId: modelRoute ? conversationRoute : 'claude-code',
+          routeId: conversationRoute,
           sourceBytes: documents.reduce((bytes, document) => bytes + Buffer.byteLength(document.text), 0),
           workPaths: documents.map((document) => document.path),
           allowedDocuments: cloudSharing(state).documents,
@@ -4703,8 +4732,15 @@ export async function createApp(options: AppOptions) {
         const tier = tierFor(projectId, thread, { mode: command.mode, text: command.text });
         const tierName = tier?.outcome === 'run' ? WORK_STYLE_LABELS[tier.style] : undefined;
         // A lineage belongs to one route. Choosing another route starts the next generation;
-        // the earlier run stays as evidence under its own driver.
-        if (current && !sent && current.runId.startsWith('model-') !== modelRoute)
+        // the earlier run stays as evidence under its own driver. Model-API routes share one
+        // driver, so a move between two of them is settled below, with the model.
+        if (
+          current &&
+          !sent &&
+          (current.runId.startsWith('model-')
+            ? !modelRoute
+            : modelRoute || (keptSessionOfRun(current.runId)?.route ?? 'claude-code') !== conversationRoute)
+        )
           retire('scope-change', tierName ? 'tier' : 'route');
         // A model-API lineage keeps the level it was opened with. A style change that moves
         // the level is the safe boundary: the next generation starts, the earlier stays.
@@ -4729,12 +4765,12 @@ export async function createApp(options: AppOptions) {
         // decide both whether it continues and which text this message is sent with.
         const scope = current ? await recordedScope(projectId, current.runId) : null;
         const recorded: RecordedInstructions | null = current ? recordedInstructions(scope, command.mode) : null;
-        // A native Claude Code session resumes only under the read scope it was opened with; any
+        // A kept session resumes only under the read scope it was opened with; any
         // other scope is refused inside its turn, which fails the message. Its lineage keeps its
         // recorded text only when this turn's scope is the one the session saved, or none is saved.
         let resumable = true;
         if (current && !modelRoute && !current.runId.startsWith('model-')) {
-          const saved = await driver.status(projectId, current.runId).then(
+          const saved = await sessionDriverOf(current.runId).status(projectId, current.runId).then(
             (status) => status.scopeDigest,
             (error: unknown) => {
               if (error instanceof HarnessError && error.code === 'unknown_run') return null;
@@ -4785,7 +4821,7 @@ export async function createApp(options: AppOptions) {
           current = {
             mode: command.mode,
             generation,
-            runId: (modelRoute ? modelSessionRunId : claudeSessionRunId)(
+            runId: (isModelApiRoute(conversationRoute) ? modelSessionRunId : KEPT_SESSIONS[conversationRoute].runId)(
               projectId,
               `lineage.${evidenceDigest({ threadId, mode: command.mode, generation }).slice(0, 40)}`,
             ),
@@ -4835,9 +4871,7 @@ export async function createApp(options: AppOptions) {
             ? current.carriedFrom
             : await carrySource(projectId, current.carriedFrom, current.mode);
         const runId = current.runId;
-        const lineageDriver = runId.startsWith('model-') ? engines.modelSessions : driver;
-        if (!lineageDriver) throw new ApiError(503, 'The conversation runtime is unavailable.');
-        const known = await lineageDriver.status(projectId, runId).catch((error: unknown) => {
+        const known = await conversationDriver(runId).status(projectId, runId).catch((error: unknown) => {
           if (error instanceof HarnessError && error.code === 'unknown_run') return null;
           throw error;
         });
@@ -4848,7 +4882,9 @@ export async function createApp(options: AppOptions) {
             : known.nativeSession
               ? ('resume' as const)
               : ('start' as const);
-        if (conversationRoute === 'claude-code' && action !== 'start')
+        // Continuing an engine's own session sends it this conversation again, so it needs the
+        // history grant, as Claude Code always has; a model-API route checks its own context.
+        if (!modelRoute && action !== 'start')
           requireCloudSharing(state, conversationRoute, command.sources.map((source) => source.path), true, {
             home: store.isHomeProject(projectId),
           });
@@ -4886,7 +4922,7 @@ export async function createApp(options: AppOptions) {
           restriction,
           control: restriction,
           runId,
-          route: modelRoute ? conversationRoute : ('claude-code' as const),
+          route: conversationRoute,
           action,
           replay: false,
           text: command.text,
@@ -4898,7 +4934,10 @@ export async function createApp(options: AppOptions) {
             ...(rules ? { rules } : {}),
             writing: { phrases: store.settings.plainWritingPhrases ?? [] },
             model: selection.model as string,
-            ...(modelRoute && selection.effort ? { effort: selection.effort } : {}),
+            // ChatGPT takes its level on each turn; a model-API lineage binds its own.
+            ...((modelRoute || conversationRoute === 'codex') && selection.effort
+              ? { effort: selection.effort }
+              : {}),
             ...(carrying ? { carriedFrom: carrying } : {}),
             accountRoute,
             ...readScope,
@@ -5036,7 +5075,7 @@ export async function createApp(options: AppOptions) {
         // the model AWS reported (or none) and the account route, exactly as the turn saved them.
         const modelAnswer = result.runId.startsWith('model-');
         const recorded = resolved.replay || modelAnswer
-          ? await (modelAnswer ? engines.modelSessions! : engines.nativeSessions!).evidence(
+          ? await (modelAnswer ? engines.modelSessions! : sessionDriverOf(result.runId)).evidence(
               resolved.projectId,
               result.runId,
               resolved.commandId,
