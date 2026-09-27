@@ -484,9 +484,24 @@ test('DIO-85: words typed while the rescue copy is being written are not lost', 
   await page.unrouteAll({ behavior: 'ignoreErrors' });
 });
 
+/**
+ * Hold the service's live events for the rest of the test. The Console lists
+ * the project's files again by itself after every change the service records,
+ * so with the events held, every listing is one the test asked for.
+ */
+async function holdEvents(page: Page) {
+  await page.route(/\/api\/events$/, () => undefined);
+}
+
 test('DIO-87: a file the listing does not have says so and can be looked for again', async ({
   page,
 }) => {
+  // Two changes are recorded while this runs: the copy itself, and the outside
+  // change to Alpha that the Files pane records when a listing brings Alpha
+  // back. A listing either one makes after the listing below turns real opens
+  // the copy by itself, and "Try again" is gone before it can be pressed. The
+  // listing a state event makes is covered by the stranded-kind test above.
+  await holdEvents(page);
   const mine = `${ALPHA_TEXT}\nLooked for again.\n`;
   const conflict = await conflictOn(page, mine);
   // First the listing cannot be read at all, then it answers without the copy.
