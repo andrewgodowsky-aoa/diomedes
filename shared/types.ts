@@ -602,6 +602,12 @@ export interface Turn {
    * it (a model-API route). Absent for an external engine, which manages its own context.
    */
   context?: ContextAccount;
+  /**
+   * The thinking the engine showed before this reply: redacted, at most 32 KiB, cut and marked
+   * when longer. Only the person reads it; it is never sent to an engine, carried into another
+   * conversation or shared. Absent on turns written before 2026-09-27 and where none came.
+   */
+  thinking?: import('./adapter-contract.js').ReasoningRecord;
 }
 /** A thread: a named conversation that belongs to a project and, optionally, to a task. */
 /**

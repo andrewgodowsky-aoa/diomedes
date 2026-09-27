@@ -341,6 +341,156 @@ export function activitySink(options: {
   };
 }
 
+// --- live thinking ---------------------------------------------------------------------------
+
+/** The thinking channel: live frames while it streams, then one finished record for the reply. */
+export const REASONING = Object.freeze({
+  /** One thinking frame's text budget, in UTF-8 bytes. A longer chunk is split, never refused. */
+  maxChunkBytes: 64 * 1024,
+  /** The most finished thinking one reply keeps, in UTF-8 bytes. Past it the text is cut and marked. */
+  maxSavedBytes: 32 * 1024,
+});
+
+/** How much raw thinking a sink holds for the finished record; the saved text is cut far sooner. */
+const MAX_RAW_REASONING_CHARS = 4 * REASONING.maxSavedBytes;
+
+/**
+ * One live thinking frame: a preview like `text-delta`, stamped with the same run identity and
+ * its own dense sequence. Never persisted; the reply keeps one finished record instead.
+ */
+export const reasoningPreviewSchema = z.strictObject({
+  kind: z.literal('reasoning-delta'),
+  projectId: z.string().min(1).max(200),
+  threadId: z.string().min(1).max(200),
+  requestId: z.string().min(1).max(200),
+  runId: z.string().min(1).max(200),
+  stepId: z.string().min(1).max(200),
+  attempt: z.number().int().positive(),
+  fence: z.number().int().positive(),
+  seq: z.number().int().positive(),
+  text: z
+    .string()
+    .min(1)
+    .refine((text) => utf8Bytes(text) <= REASONING.maxChunkBytes, {
+      message: `A thinking frame may carry at most ${REASONING.maxChunkBytes} UTF-8 bytes.`,
+    }),
+});
+export type ReasoningPreview = z.infer<typeof reasoningPreviewSchema>;
+
+/** The finished thinking of one reply, as the reply keeps it (`Turn.thinking`). */
+export interface ReasoningRecord {
+  /** Redacted as one piece, at most `REASONING.maxSavedBytes` UTF-8 bytes. */
+  text: string;
+  /** From the attempt's start to its last thinking chunk. */
+  ms: number;
+  /** True when the text was cut to fit. */
+  shortened: boolean;
+}
+
+/** The adapter-facing raw thinking sink, and the finished record it collected. */
+export interface ReasoningSink {
+  (raw: string): void;
+  /** The finished thinking, or null when none came. Read it once the attempt has ended. */
+  finish(): ReasoningRecord | null;
+}
+
+/** Control characters and bidirectional overrides. Line breaks and tabs stay. */
+const UNSAFE_CHARACTERS = /[\u0000-\u0008\u000b-\u001f\u007f\u202a-\u202e]/g;
+
+/** A character's UTF-8 size. A lone surrogate is encoded as U+FFFD, three bytes. */
+const charBytes = (char: string) => {
+  const code = char.codePointAt(0) ?? 0;
+  return code < 0x80 ? 1 : code < 0x800 ? 2 : code < 0x10000 ? 3 : 4;
+};
+
+/** Pieces of at most `max` UTF-8 bytes, never splitting a character. */
+function splitBytes(text: string, max: number): string[] {
+  const pieces: string[] = [];
+  let piece = '';
+  let bytes = 0;
+  for (const char of text) {
+    const size = charBytes(char);
+    if (piece && bytes + size > max) {
+      pieces.push(piece);
+      piece = '';
+      bytes = 0;
+    }
+    piece += char;
+    bytes += size;
+  }
+  if (piece) pieces.push(piece);
+  return pieces;
+}
+
+/**
+ * The producer half of the thinking channel, the sibling of `activitySink`. Each chunk becomes
+ * one or more stamped frames: redacted, stripped of control characters and split to the frame
+ * budget. Unlike the answer, thinking never fails anything: a frame that still does not parse is
+ * dropped, a presenter that throws is ignored, and everything after the signal aborts is dropped.
+ * `finish` gives the whole thinking redacted as one piece, so a secret split across two chunks is
+ * still caught, cut to `REASONING.maxSavedBytes`.
+ */
+export function reasoningSink(options: {
+  readonly identity: {
+    readonly projectId: string;
+    readonly threadId: string;
+    readonly requestId: string;
+    readonly runId: string;
+    readonly stepId: string;
+    readonly attempt: number;
+    readonly fence: number;
+  };
+  readonly redact?: (text: string) => string;
+  readonly onReasoning?: (frame: ReasoningPreview) => void;
+  readonly signal?: AbortSignal;
+  /** The clock, replaceable in tests. */
+  readonly now?: () => number;
+}): ReasoningSink {
+  const now = options.now ?? Date.now;
+  const startedAt = now();
+  let seq = 0;
+  let raw = '';
+  let overflow = false;
+  let lastAt: number | null = null;
+  const clean = (text: string) =>
+    (options.redact ? options.redact(text) : text).replace(UNSAFE_CHARACTERS, '');
+  const sink = ((chunk: string) => {
+    if (options.signal?.aborted || typeof chunk !== 'string' || !chunk) return;
+    lastAt = now();
+    const room = MAX_RAW_REASONING_CHARS - raw.length;
+    if (chunk.length > room) overflow = true;
+    if (room > 0) raw += chunk.slice(0, room);
+    for (const text of splitBytes(clean(chunk), REASONING.maxChunkBytes)) {
+      const parsed = reasoningPreviewSchema.safeParse({
+        kind: 'reasoning-delta',
+        ...options.identity,
+        seq: seq + 1,
+        text,
+      });
+      if (!parsed.success) continue;
+      seq += 1;
+      try {
+        options.onReasoning?.(parsed.data);
+      } catch {
+        // Thinking is narration: a presenter's failure never reaches the answer.
+      }
+    }
+  }) as ReasoningSink;
+  sink.finish = () => {
+    if (lastAt === null) return null;
+    const whole = clean(raw).trim();
+    if (!whole) return null;
+    const [kept = ''] = splitBytes(whole, REASONING.maxSavedBytes);
+    const text = kept.replace(/[\ud800-\udbff]$/, '');
+    return {
+      text,
+      ms: Math.max(0, lastAt - startedAt),
+      shortened: overflow || text.length < whole.length,
+    };
+  };
+  return sink;
+}
+
 // --- cursor semantics ------------------------------------------------------------------------
 
 /** A position in one run's durable stream. `afterSeq` is the last seen seq. */
@@ -433,6 +583,11 @@ export const adapterRouteContractSchema = z.strictObject({
   ),
   streaming: z.strictObject({
     transientPreview: z.enum(['text-delta', 'none']),
+    /**
+     * `reasoning-delta`: the route can stream an engine's thinking as its own preview frames
+     * (`reasoningSink`). `none`: it never does, and EngineService never hands it the sink.
+     */
+    reasoning: z.enum(['reasoning-delta', 'none']),
     /**
      * `run-record` — the run service writes the stream. `host-record` — the
      * caller persists one outcome (History, Need) with no event stream.

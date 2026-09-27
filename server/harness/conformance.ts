@@ -190,6 +190,16 @@ export function contractChecks(contract: AdapterRouteContract): ConformanceCheck
 
   checks.push(
     check(
+      'reasoning-needs-live-channel',
+      contract.streaming.reasoning === 'none' || contract.streaming.transientPreview === 'text-delta',
+      contract.streaming.reasoning === 'none'
+        ? 'The route streams no thinking.'
+        : 'Thinking streams beside a live text preview.',
+    ),
+  );
+
+  checks.push(
+    check(
       'tested-version-recorded',
       contract.mode === 'harness-agent' || contract.mode === 'native-worker'
         ? true
