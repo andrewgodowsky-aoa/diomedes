@@ -120,6 +120,23 @@ describe('kept OpenCode session transport', () => {
     expect((await f.log()).filter((line) => line === 'POST /session')).toHaveLength(1);
   });
 
+  it('streams reasoning parts to the thinking sink and keeps them out of the answer', async () => {
+    const f = await fixture();
+    f.state.mode = 'think';
+    const session = await f.openSession(request('first'));
+    const thoughts: string[] = [];
+    const deltas: string[] = [];
+    const result = await session.turn({
+      ...request('first'),
+      onDelta: (text) => deltas.push(text),
+      onReasoningDelta: (text) => thoughts.push(text),
+    });
+    expect(thoughts).toEqual(['Weighing the menu. ', 'Checking prices.']);
+    expect(result.text.startsWith('answer:first')).toBe(true);
+    expect(result.text).not.toContain('Weighing');
+    expect(deltas.join('')).toBe(result.text);
+  });
+
   it('refuses a turn outside the scope it was opened with, and a second turn while one runs', async () => {
     const f = await fixture();
     f.state.mode = 'slow';
