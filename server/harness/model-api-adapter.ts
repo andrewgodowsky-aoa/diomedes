@@ -22,9 +22,25 @@ import type { ExposureAttempt } from '../spend-exposure.js';
 import type { ModelTranscripts } from './model-transcripts.js';
 import type { ModelAdapter } from './native-agent.js';
 import { copy, digest } from './policy.js';
+import type { ModelApiRoute } from '../../shared/model-api.js';
 
 const unsupported = (note: string) => ({ support: 'unsupported' as const, note });
 const host = (note: string) => ({ support: 'host' as const, note });
+
+/**
+ * Which model-API routes stream their model's thinking (`streaming.reasoning`). One entry per
+ * route, so a provider that refuses reasoning summaries declares `none` on its own line. Each
+ * route's contract and EngineService both read it.
+ */
+export const MODEL_API_REASONING: Readonly<
+  Record<ModelApiRoute, AdapterRouteContract['streaming']['reasoning']>
+> = Object.freeze({
+  'aws-bedrock': 'none',
+  'azure-openai': 'none',
+  openrouter: 'none',
+  'google-vertex': 'none',
+  nectovia: 'none',
+});
 
 /** The route contract every model-API route shares; only its identity and wording differ. */
 export function modelApiContract(route: {
@@ -58,7 +74,11 @@ export function modelApiContract(route: {
       ),
       close: host('There is no provider process or session to close.'),
     },
-    streaming: { transientPreview: 'text-delta', durableEvents: 'run-record' },
+    streaming: {
+      transientPreview: 'text-delta',
+      reasoning: MODEL_API_REASONING[route.routeId as ModelApiRoute] ?? 'none',
+      durableEvents: 'run-record',
+    },
     models: { source: 'runtime-reported' },
     authentication: 'host-credential',
     testedWith: route.sdk,
