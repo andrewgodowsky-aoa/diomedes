@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Briefs | ORG-01 (organization-owned configuration persistence) and the persistence half of SET-01 (adaptive intake), decision package SC-2026-09-26.1 |
-| Branch | `feature/organization-setup`, worktree `F:/Diomedes/diomedes-wt/organization-setup`, from `c5eca16` |
+| Branch | `feature/organization-setup`, worktree `F:/Diomedes/diomedes-wt/organization-setup`, from `c5eca16`, with origin/main `5d5a581` merged in |
 | Migration | `services/control-plane/migrations/008_organization_setup.sql`, plus one grant in `scripts/runtime-permissions.sql` |
 | Contract | `shared/organization-setup.ts` is the contract: the record, the service's screening and the one load decision. This page is its prose |
 | Status | Built. Not merged, not deployed, and migration 008 is not applied to any Neon branch. See "State of this branch" for what has run |
@@ -104,19 +104,19 @@ SET-01's "resume and revise without losing original answers or conflating busine
 
 ## State of this branch
 
-Gates run on 2026-09-26 in this worktree, on this change, by the integrating session:
+The integrating session ran these gates on 2026-09-26 in this worktree, on the whole branch with origin/main 5d5a581 merged in (b170347):
 
 | Gate | Result |
 |---|---|
 | `npx tsc --noEmit` (root) | exit 0 |
-| `npx vitest run --maxWorkers=4` (root) | 472 files passed; 8,063 tests passed, 4 skipped; exit 0 |
-| `npm test` (services/control-plane) | 40 files passed, 3 skipped (the opt-in PostgreSQL suites); 604 tests passed, 29 skipped; exit 0 |
+| `npx vitest run --maxWorkers=4` (root) | 473 files passed; 8,073 tests passed, 4 skipped; exit 0 |
+| `npm test` (services/control-plane) | 40 files passed, 3 skipped (the opt-in PostgreSQL suites); 604 tests passed, 33 skipped; exit 0 |
 | `npm run typecheck` (services/control-plane) | exit 0 |
-| `wrangler deploy --dry-run` (services/control-plane) | bundles; one copy of zod; 1.29 MB |
+| `wrangler deploy --dry-run` (services/control-plane) | bundles; one copy of zod; 1,257 KiB, 241 KiB gzipped |
 | `npx vite build` | exit 0 |
-| `npx playwright test` (all specs, which include the named gate) | 308 passed in 9.2 minutes, none skipped or flaky; `ui.spec.ts` 17, `native-ui.spec.ts` 11, `field.spec.ts` 8, `workspace-ui.spec.ts` 5, `configuration-ui.spec.ts` 3. The PNGs the run rewrote under `evidence/` and `docs/verification/` were restored |
-| New tests | `tests/organization-setup-sync.test.ts` 25, `tests/organization-setup-app.test.ts` 8, `services/control-plane/tests/organization-setup.test.ts` 11, `services/control-plane/tests/organization-setup-postgres.test.ts` 7, plus the 008 case in `tests/migrations.test.ts` |
+| `npx playwright test` (all specs, which include the named gate) | 257 passed, 4 failed, 47 did not run, in 10.8 minutes. Every spec on this change's surfaces passed in full: `ui.spec.ts` 17, `native-ui.spec.ts` 11, `field.spec.ts` 8, `workspace-ui.spec.ts` 5, `configuration-ui.spec.ts` 3. The PNGs the run rewrote under `evidence/` and `docs/verification/` were restored |
+| New tests | `tests/organization-setup-sync.test.ts` 25, `tests/organization-setup-app.test.ts` 8, `services/control-plane/tests/organization-setup.test.ts` 11, `services/control-plane/tests/organization-setup-postgres.test.ts` 7, the 008 case in `tests/migrations.test.ts`, and the opt-in ORG-01 cases above |
 
-The full runs above were made before the invitee case was added to `tests/organization-setup-app.test.ts`. That change touches only the test file and this record. After it, the file (8 passed) and root `tsc` were run again.
+The four Playwright failures belong to main, not to this branch. They fail on origin/main 5d5a581 alone, which was checked in a separate worktree, with the same refusal on the page: "The Nectovia Agent works for a business. Switch to a business workspace that includes it…". The four are `diomedes-home.spec.ts:185`, `home-luna.spec.ts:232`, `artifacts-ui.spec.ts:1434` and `home-route-ownership.review-20260921.spec.ts:140`. Main's 5d5a581 made paid work need a project with a business owner, and these specs send on a Home that nobody linked. The 47 that did not run are the serial specs after those failures: `diomedes-home.spec.ts` 31 and `home-luna.spec.ts` 16. Before the merge, on c5eca16, this branch passed all 308.
 
 Not run: the two opt-in PostgreSQL suites, which need an approved disposable Neon database. Both were stale on main: they expected 4 and 2 applied migrations. They now count the migrations themselves, and each carries an ORG-01 case. Also not run: anything on Cloudflare, and a packaged desktop build.
