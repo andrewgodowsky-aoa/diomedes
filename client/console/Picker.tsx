@@ -12,6 +12,7 @@ import type {
 import type { EngineConnection } from '../../shared/engines';
 import type { AwsConnectionView } from '../../shared/model-api';
 import { EXTERNAL_ENGINES, isExternalEngine, routeDisplayName } from '../../shared/engines';
+import { isFoundEngine } from '../../shared/conversation-engines';
 import { freshness } from '../../shared/connection-policy';
 import { routeCaption } from '../../shared/engine-routes';
 import { MODE_CEILING, effortFor } from '../../shared/effort';
@@ -68,15 +69,7 @@ function available(id: string, integrations: IntegrationStatus[], settings: Sett
  * route is not this route's account.
  */
 export function signedIn(connection: EngineConnection | undefined): connection is EngineConnection {
-  return (
-    !!connection &&
-    connection.installation === 'found' &&
-    connection.compatibility === 'supported' &&
-    connection.authentication === 'signed-in' &&
-    connection.models.length > 0 &&
-    !connection.repair &&
-    !connection.routeIssue
-  );
+  return isFoundEngine(connection);
 }
 
 /**

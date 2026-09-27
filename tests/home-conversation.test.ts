@@ -634,7 +634,10 @@ test('R-17: a refused home engine change is whole, and the conversation still an
   // oh-my-pi has no kept session, so it can't carry a conversation (spec 2).
   const mixed = await request(threadPath, 'PUT', { name: 'Renamed', mode: 'ask', engine: 'oh-my-pi' });
   expect(mixed.status).toBe(409);
-  expect(await mixed.text()).toContain('runs on Claude Code');
+  const said = await mixed.text();
+  expect(said).toContain("oh-my-pi can't run the Diomedes conversation, so its engine wasn't changed.");
+  // Decision 5: the refusal names only what was asked for, never a list of engines to choose.
+  expect(said).not.toContain('Claude Code');
   // An engine nobody offers is refused the same way, not half applied.
   expect((await request(threadPath, 'PUT', { name: 'Renamed', engine: 'nonsense' })).status).toBe(409);
   expect(written()).toEqual(before);

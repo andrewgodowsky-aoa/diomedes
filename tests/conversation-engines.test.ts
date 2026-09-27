@@ -41,6 +41,7 @@ let root: string;
 let app: Awaited<ReturnType<typeof createApp>>;
 let server: Server | undefined;
 let base: string;
+let acpSignedIn = true;
 
 async function request(route: string, method = 'GET', body?: unknown) {
   return fetch(`${base}/api${route}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -279,6 +280,28 @@ describe('ChatGPT, and a thread moved between ChatGPT and Claude Code', () => {
     expect(answeredOn(on)).toEqual(['codex', 'codex']);
   });
 
+  test('ChatGPT signed out while its thread waits: the next message is refused in its own words, nothing is sent, and the thread keeps ChatGPT', async () => {
+    const on = await threadOn('codex');
+    await send(on, 'm-one', 'What is on the lunch menu?');
+    await fs.writeFile(path.join(codexDir, 'control.json'), JSON.stringify({ signedOut: true }));
+    const refused = await request(`/projects/${on.project.id}/threads/${on.thread.id}/messages`, 'POST', {
+      commandId: 'm-two',
+      text: 'And for dinner?',
+      mode: 'ask',
+      sources: [],
+      consent: true,
+    });
+    expect(refused.status).toBe(409);
+    expect(((await refused.json()) as { error: string }).error).toBe(
+      "ChatGPT isn't signed in on this computer, so this conversation can't continue here. Nothing was sent.",
+    );
+    const thread = recorded(on);
+    expect(thread.engine).toBe('codex');
+    expect(answeredOn(on)).toEqual(['codex']);
+    expect(thread.lineages!.map((lineage) => lineage.retired ?? null)).toEqual([null]);
+    expect((await calls()).filter((call) => call.method === 'turn/start')).toHaveLength(1);
+  });
+
   test('a whole-project read is refused on ChatGPT before anything is recorded or started', async () => {
     const on = await threadOn('codex');
     const refused = await request(`/projects/${on.project.id}/threads/${on.thread.id}/messages`, 'POST', {
@@ -333,13 +356,21 @@ describe('ChatGPT, and a thread moved between ChatGPT and Claude Code', () => {
 
 describe.each(['cursor', 'devin'] as const)('a %s conversation', (engine) => {
   beforeEach(async () => {
+    acpSignedIn = true;
     const deps = {
       spawn: (_file: string, _args: string[], options: Parameters<typeof spawn>[2]) =>
         spawn(process.execPath, [ACP_FIXTURE], options) as ChildProcessWithoutNullStreams,
       capture: (async (options: { args: string[] }) =>
         options.args.includes('--version')
           ? { code: 0, stdout: engine === 'cursor' ? '2026.08.11-e8db854' : 'devin 3000.10.23' }
-          : { code: 0, stdout: JSON.stringify({ status: 'authenticated', isAuthenticated: true }) }) as never,
+          : {
+              code: 0,
+              stdout: JSON.stringify(
+                acpSignedIn
+                  ? { status: 'authenticated', isAuthenticated: true }
+                  : { status: 'unauthenticated', isAuthenticated: false },
+              ),
+            }) as never,
       startupTimeoutMs: 5_000,
       requestTimeoutMs: 10_000,
     };
@@ -373,6 +404,30 @@ describe.each(['cursor', 'devin'] as const)('a %s conversation', (engine) => {
     });
     expect(answeredOn(on)).toEqual([engine, engine]);
   });
+
+  test.runIf(engine === 'cursor')(
+    "signed out while its thread waits: the next message is refused in Cursor's own words, nothing is sent, and the thread keeps Cursor",
+    async () => {
+      const on = await threadOn(engine);
+      await send(on, 'm-one', 'What is on the lunch menu?');
+      acpSignedIn = false;
+      const refused = await request(`/projects/${on.project.id}/threads/${on.thread.id}/messages`, 'POST', {
+        commandId: 'm-two',
+        text: 'And for dinner?',
+        mode: 'ask',
+        sources: [],
+        consent: true,
+      });
+      expect(refused.status).toBe(409);
+      expect(((await refused.json()) as { error: string }).error).toBe(
+        "Cursor isn't signed in on this computer, so this conversation can't continue here. Nothing was sent.",
+      );
+      const thread = recorded(on);
+      expect(thread.engine).toBe('cursor');
+      expect(answeredOn(on)).toEqual(['cursor']);
+      expect(thread.lineages!.map((lineage) => lineage.retired ?? null)).toEqual([null]);
+    },
+  );
 });
 
 describe('an OpenCode conversation', () => {
@@ -413,5 +468,24 @@ describe('an OpenCode conversation', () => {
       busy: false,
     });
     expect(answeredOn(on)).toEqual(['opencode', 'opencode']);
+  });
+});
+
+describe('a route with no kept session', () => {
+  test('is refused by its own name, with no list of other engines, and nothing is sent', async () => {
+    await boot(new EngineService(path.join(root, 'engines'), { discover: async () => [] }));
+    const on = await threadOn('oh-my-pi');
+    const refused = await request(`/projects/${on.project.id}/threads/${on.thread.id}/messages`, 'POST', {
+      commandId: 'm-one',
+      text: 'Hello',
+      mode: 'ask',
+      sources: [],
+      consent: true,
+    });
+    expect(refused.status).toBe(409);
+    const said = ((await refused.json()) as { error: string }).error;
+    expect(said).toBe("oh-my-pi can't answer this conversation, so nothing was sent.");
+    for (const other of ['Claude Code', 'ChatGPT', 'OpenCode', 'Cursor', 'Devin', 'Nectovia']) expect(said).not.toContain(other);
+    expect(recorded(on).lineages ?? []).toEqual([]);
   });
 });

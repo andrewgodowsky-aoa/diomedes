@@ -145,6 +145,7 @@ import type { SpendExposure } from '../spend-exposure.js';
 import { NECTOVIA_ROUTE, type ModelApiRoute } from '../../shared/model-api.js';
 import { WORK_STYLE_LABELS } from '../../shared/work-style.js';
 import { routeUnavailable } from '../../shared/route-unavailable.js';
+import { ENGINE_GONE_CODES, engineGoneSentence } from '../../shared/conversation-engines.js';
 import {
   AGENT_NOT_INCLUDED,
   AGENT_SIGN_IN_REQUIRED,
@@ -2066,7 +2067,7 @@ export class EngineService {
         ? { ...result, response: { ...result.response, reasoning } }
         : result;
     } catch (error) {
-      throw seamError(error);
+      throw seamError(engineGone(route.engine, error) ?? error);
     }
   }
   /**
@@ -3174,6 +3175,23 @@ interface TextAdmission {
   location: string;
   model: string;
   accountRoute: string;
+}
+
+/**
+ * Spec decision 5: a kept conversation whose engine is no longer found on this computer is
+ * refused in that engine's own words, and only when nothing was sent. Every other refusal keeps
+ * its own sentence. One code per meaning, both answered 409, so a caller reads them alike.
+ */
+function engineGone(engine: string, error: unknown): EngineError | null {
+  if (!(error instanceof EngineError) || error.ambiguous) return null;
+  const gone = ENGINE_GONE_CODES[error.code];
+  if (!gone) return null;
+  return new EngineError(
+    gone === 'not-installed' ? 'NOT_INSTALLED' : 'AUTH_REQUIRED',
+    engineGoneSentence(engine, gone),
+    false,
+    error.stage,
+  );
 }
 
 /**
