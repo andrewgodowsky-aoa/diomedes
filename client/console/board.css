@@ -499,9 +499,105 @@
 .console .columns.compact .column .why {
   display: none;
 }
+/* Moving a card (shared/board-moves.ts). While a card is dragged each column shows whether a
+   drop there asks for anything, and the one under the pointer says what, or why not, in words:
+   compact rows hide the caption, so it comes back for that one column. No shadows: outlines. */
+.console .crow[draggable='true'] {
+  cursor: grab;
+}
+.console .crow.dragging {
+  opacity: 0.45;
+}
+.console .crow.pending {
+  opacity: 0.85;
+}
+.console .column.drop-ok,
+.console .column.drop-no {
+  border-radius: var(--rb);
+  transition: background var(--quick), outline-color var(--quick);
+}
+.console .column.drop-no h3 {
+  color: var(--t3);
+}
+.console .column.drop-ok.drop-over {
+  background: var(--raised);
+  outline: 1px solid var(--light);
+  outline-offset: 2px;
+}
+.console .column.drop-no.drop-over {
+  outline: 1px dashed var(--attn);
+  outline-offset: 2px;
+}
+.console .columns.compact .column.drop-over .why {
+  display: block;
+}
+.console .column.drop-over .why {
+  color: var(--t2);
+  overflow-wrap: anywhere;
+}
+.console .column.drop-no.drop-over .why {
+  color: var(--attn);
+}
+.console .crow .x .pending {
+  color: var(--light);
+}
+/* What a running task last said, from its own log: a person's-language sentence, two lines. */
+.console .crow .x .said {
+  color: var(--t2);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  min-width: 0;
+}
+.console .crow .x.issue {
+  margin: 4px 0 0;
+  color: var(--attn);
+  font-size: var(--dm-type-caption);
+  overflow-wrap: anywhere;
+}
+.console .crow .verb.move {
+  color: var(--t3);
+}
+.console .crow .verb.move:hover {
+  color: var(--t1);
+}
+.console .crow .movemenu {
+  grid-column: 2;
+  display: grid;
+  gap: 2px;
+  margin-top: 6px;
+  white-space: normal;
+}
+.console .crow .movemenu button {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  text-align: left;
+  font-size: var(--dm-type-caption);
+  color: var(--t1);
+  padding: 2px 4px;
+  border-radius: var(--rb);
+}
+.console .crow .movemenu button:is(:hover, :focus-visible) {
+  background: var(--raised);
+}
+.console .crow .movemenu button.no {
+  color: var(--t3);
+}
+.console .crow .movemenu .mono {
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--t3);
+}
 @media (prefers-reduced-motion: reduce) {
   .console .crow.arrived {
     animation-duration: 120ms;
+  }
+  .console .column.drop-ok,
+  .console .column.drop-no {
+    transition: none;
   }
   .console .crow .acts {
     transition: none;

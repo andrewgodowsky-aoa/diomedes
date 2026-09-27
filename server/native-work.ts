@@ -5,7 +5,14 @@ import { routeDisplayName } from '../shared/engines.js';
 import { isModelApiRoute } from '../shared/model-api.js';
 import { AGENT_NAME } from '../shared/agent-name.js';
 import { diffLines } from 'diff';
-import type { Change, Need, NeedCheck, Session, ThreadPermission } from '../shared/types.js';
+import type {
+  Change,
+  Need,
+  NeedCheck,
+  ProjectState,
+  Session,
+  ThreadPermission,
+} from '../shared/types.js';
 import {
   SVG_CHECK_PASSED,
   SVG_CHECK_VERSION,
@@ -52,7 +59,11 @@ import { secretScrubber } from './secrets.js';
 import { reviewerBoundary, type ReviewerService } from './trust/reviewer.js';
 import type { AgentRegistry } from './agents.js';
 import type { AgentProfileService } from './agent-profiles.js';
-import { fallbackSentence } from '../shared/agent-profiles.js';
+import {
+  fallbackSentence,
+  type ProfileResolution,
+  type ProfileRouting,
+} from '../shared/agent-profiles.js';
 import type { AgentResolution } from '../shared/agents.js';
 import type { InstructionDelivery } from '../shared/capability-packs.js';
 import {
@@ -321,6 +332,55 @@ export function contentCheck(path: string, text: string): NeedCheck | null {
   return null;
 }
 
+/** What a native Work start is asked for. */
+export interface NativeStartInput {
+  engine?: Exclude<Route, 'sample'>;
+  threadId?: string;
+  instruction?: string;
+  sources: string[];
+  consent: boolean;
+  team?: NativeTeamOptions;
+  turnId?: string;
+  mode?: 'build' | 'fix';
+  /**
+   * `selection` says who chose the model: `automatic` when a WorkStyle resolved it. Absent
+   * means a named model is the person's choice and no model is the engine's default.
+   */
+  requested?: {
+    model?: string;
+    effort?: string;
+    selection?: 'manual' | 'automatic' | 'runtime-default';
+  };
+  /** The Agent the person asked for, or `auto`. Never read from model text. */
+  agentId?: string | null;
+  permission?: ThreadPermission;
+  admission?: WorkAdmission;
+  /**
+   * Runs the durable admission inside the caller's own ordering guard. A conversation
+   * passes the guard that holds its source run's queue, so a cancellation there is
+   * ordered against this commit rather than racing it. The Agent, file and instruction
+   * preparation above stays outside it. A person's own Start passes none.
+   */
+  commit?: <T>(step: () => Promise<T>) => Promise<T>;
+}
+
+/** A profile that decides a start names its route, exact model and Agent (H09). */
+export function withProfile<T extends Pick<NativeStartInput, 'engine' | 'requested' | 'agentId'>>(
+  input: T,
+  profile: ProfileResolution,
+): T {
+  return {
+    ...input,
+    engine: profile.engine as Exclude<Route, 'sample'>,
+    requested: {
+      model: profile.model,
+      ...(profile.effort ? { effort: profile.effort } : {}),
+      selection: profile.source === 'thread' ? 'manual' : 'automatic',
+    },
+    agentId: profile.agentId,
+  };
+}
+
 /** Codex proposes text. This controller alone applies an approved, fixed batch. */
 export class NativeWorkService {
   private runs = new Map<string, NativeRun>();
@@ -398,69 +458,62 @@ export class NativeWorkService {
       run.releaseToken?.();
     }
   }
-  async start(
+  /**
+   * The profile that decides a start with this input (H09), before anything is admitted. A
+   * team member's wake runs as the member was recorded, so profiles do not route it. `start`
+   * runs exactly this; the task inspector reads the same answer and changes nothing
+   * (server/task-execution.ts). Throws only when the saved profiles cannot be read.
+   */
+  async routingFor(
     projectId: string,
     taskId: string,
-    input: {
-      engine?: Exclude<Route, 'sample'>;
-      threadId?: string;
-      instruction?: string;
-      sources: string[];
-      consent: boolean;
-      team?: NativeTeamOptions;
-      turnId?: string;
-      mode?: 'build' | 'fix';
-      /**
-       * `selection` says who chose the model: `automatic` when a WorkStyle resolved it. Absent
-       * means a named model is the person's choice and no model is the engine's default.
-       */
-      requested?: {
-        model?: string;
-        effort?: string;
-        selection?: 'manual' | 'automatic' | 'runtime-default';
-      };
-      /** The Agent the person asked for, or `auto`. Never read from model text. */
-      agentId?: string | null;
-      permission?: ThreadPermission;
-      admission?: WorkAdmission;
-      /**
-       * Runs the durable admission inside the caller's own ordering guard. A conversation
-       * passes the guard that holds its source run's queue, so a cancellation there is
-       * ordered against this commit rather than racing it. The Agent, file and instruction
-       * preparation above stays outside it. A person's own Start passes none.
-       */
-      commit?: <T>(step: () => Promise<T>) => Promise<T>;
-    },
-  ) {
+    input: Pick<NativeStartInput, 'threadId' | 'agentId' | 'team'>,
+  ): Promise<ProfileRouting> {
+    if (!this.profiles || input.team) return { outcome: 'none' };
+    return this.profiles.resolve({
+      projectId,
+      taskId,
+      thread: input.threadId
+        ? this.store.state(projectId).conversations.find((item) => item.id === input.threadId)
+        : null,
+      projectFolder: this.store.state(projectId).project.folder,
+      agentId: input.agentId ?? null,
+    });
+  }
+  /**
+   * The Agent a start resolves to on `engine`, with the person's live grant for the task, or
+   * undefined when this host resolves no worker. `start` calls it after its own validation;
+   * the task inspector calls it to show who would work. It reads and writes nothing else.
+   */
+  async agentFor(
+    state: ProjectState,
+    taskId: string,
+    engine: Exclude<Route, 'sample'>,
+    input: Pick<NativeStartInput, 'agentId' | 'mode' | 'requested'>,
+    profile?: ProfileResolution,
+  ): Promise<AgentResolution | undefined> {
+    if (!this.agents) return undefined;
+    return this.agents.resolve({
+      requestedAgentId: input.agentId ?? null,
+      mode: input.mode ?? 'build',
+      routeId: engine,
+      requestedModel: input.requested?.model ?? null,
+      modelSelection:
+        input.requested?.selection ?? (input.requested?.model ? 'manual' : 'runtime-default'),
+      state,
+      taskId,
+      ...(profile ? { profile } : {}),
+    });
+  }
+  async start(projectId: string, taskId: string, input: NativeStartInput) {
     // A profile, where one decides this run, names the route, the exact model and
     // the Agent, and is pinned below exactly as resolved. Fallback off is a refusal
     // by name; nothing moves to another route or payer unless the person said so.
-    // A team member's wake runs as the member was recorded; profiles do not route it.
-    const routing = this.profiles && !input.team
-      ? await this.profiles.resolve({
-          projectId,
-          taskId,
-          thread: input.threadId
-            ? this.store.state(projectId).conversations.find((item) => item.id === input.threadId)
-            : null,
-          projectFolder: this.store.state(projectId).project.folder,
-          agentId: input.agentId ?? null,
-        })
-      : ({ outcome: 'none' } as const);
+    const routing = await this.routingFor(projectId, taskId, input);
     if (routing.outcome === 'refused')
       throw new ApiError(409, routing.reason, { code: 'profile_unavailable', tried: routing.tried });
     const profile = routing.outcome === 'resolved' ? routing.pick : undefined;
-    if (profile)
-      input = {
-        ...input,
-        engine: profile.engine as Exclude<Route, 'sample'>,
-        requested: {
-          model: profile.model,
-          ...(profile.effort ? { effort: profile.effort } : {}),
-          selection: profile.source === 'thread' ? 'manual' : 'automatic',
-        },
-        agentId: profile.agentId,
-      };
+    if (profile) input = withProfile(input, profile);
     const engine = input.engine ?? 'codex';
     if (this.store.settings.services?.[engine] !== true)
       throw new ApiError(409, `Turn ${engine} on in Settings before using it.`);
@@ -494,19 +547,7 @@ export class NativeWorkService {
     // Resolve the worker identity while this is still pure validation. A refused
     // Agent must leave no session, no working task and no saved-version entry
     // behind, so this cannot happen after the session is added below.
-    const resolved = this.agents
-      ? await this.agents.resolve({
-          requestedAgentId: input.agentId ?? null,
-          mode: input.mode ?? 'build',
-          routeId: engine,
-          requestedModel: input.requested?.model ?? null,
-          modelSelection:
-            input.requested?.selection ?? (input.requested?.model ? 'manual' : 'runtime-default'),
-          state,
-          taskId,
-          ...(profile ? { profile } : {}),
-        })
-      : undefined;
+    const resolved = await this.agentFor(state, taskId, engine, input, profile);
     if (resolved && !resolved.compatible)
       throw new ApiError(
         409,

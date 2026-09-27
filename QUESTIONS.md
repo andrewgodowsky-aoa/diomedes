@@ -635,6 +635,37 @@ Raised 2026-09-25 with customer accounts (`server/accounts/`, `services/control-
 
 Default: each stays as built.
 
+### O44. The executable Board: what its first slice leaves open
+
+Raised 2026-09-27 with the executable Board (`docs/implementation/2026-09-27-executable-task-board.md`,
+branch `feature/executable-task-board`, not merged), which follows the 2026-09-26 research on
+Hermes' board.
+
+1. **An Inbox before Ready.** The research proposes an Inbox column where tasks an agent made wait
+   until a person accepts them. Today a task made from a conversation proposal the person chose
+   (CD-01) goes straight to Ready, and H07's automatic start treats Ready as startable. An Inbox
+   changes what Ready means for H07 and for OS01's priority order (R14). Andrew's call.
+2. **A workflow phase.** The research keeps a phase (for example plan, build, review) apart from
+   the six columns and makes each task's execution settings depend on it. That needs a Task field
+   and a rule for who moves a phase. Not built.
+3. **Phase handoffs and bounded decomposition** (the research's step 4). Not started. Runs already
+   split work inside themselves (H13 delegates, H14 workers). A Board-level child task, made only
+   when its output is genuinely separate, is not built.
+4. **Clicking a card's title opens the task in full.** It used to open the task's thread. The
+   thread is now one click further, under "Open thread" in the task's own view.
+5. **The task's own profile choice.** The task view offers the task's H09 profile list at
+   Technical detail only, because customers do not choose routes (Andrew, 2026-09-23). Settings ›
+   Agent profiles is itself not gated. Should the per-task choice be in the Console at all?
+6. **Which conversation a task came from.** A task made from a proposal says so, read from its
+   creation receipt, but nothing links it to the thread and message: `ConversationLineage` and
+   `Turn` carry no task id. A link needs a Task field written when the task is made. Not linked.
+7. **Board work on the Nectovia route.** The Nectovia Agent answers in the conversation and refuses
+   Work (`NECTOVIA_WORK_REFUSED`). So the one-journey proof runs on the sample route, and the
+   task's view lists the refusal as the reason a Start would stop. Whether a Board Start on a
+   Nectovia project should start a Diomedes work loop belongs with O23.
+
+Default: each stays as built.
+
 ## Resolved
 
 ### R14. Task priority: order, due dates, labels and who edits (raised by OS-DISC-01 section 5)

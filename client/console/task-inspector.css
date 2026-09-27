@@ -1,0 +1,277 @@
+/* The task inspector: a task in full over the Board, the work on the left and how it runs on
+   the right. Console tokens only, thin separators, one accent, no shadows of its own. Every
+   rule is prefixed with `.console`; the dialog it lives in is the shared Modal. */
+.console .dialog.wide:has(.task-inspector) {
+  width: min(1040px, calc((100vw - 40px) / var(--dm-ui-scale)));
+}
+.console .task-inspector {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  white-space: normal;
+  font-size: var(--dm-type-body);
+  color: var(--t1);
+}
+.console .task-inspector :is(p, dd, li, small, legend, label) {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.console .task-inspector .ti-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  align-items: baseline;
+  margin: 0;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--hair);
+  color: var(--t2);
+  font-size: var(--dm-type-caption);
+}
+.console .task-inspector .ti-column {
+  color: var(--t1);
+  font-weight: 500;
+}
+.console .task-inspector .ti-column.working {
+  color: var(--light);
+}
+.console .task-inspector .ti-column:is(.review, .blocked) {
+  color: var(--attn);
+}
+.console .task-inspector .ti-origin {
+  margin-left: auto;
+  color: var(--t3);
+}
+.console .task-inspector .ti-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+  gap: 0 28px;
+  align-items: start;
+}
+.console .task-inspector .ti-work,
+.console .task-inspector .ti-controls {
+  min-width: 0;
+}
+.console .task-inspector .ti-controls {
+  padding-left: 22px;
+  border-left: 1px solid var(--hair);
+}
+.console .task-inspector h3,
+.console .task-inspector h4 {
+  margin: 14px 0 4px;
+  font: 500 var(--dm-type-caption) / 1.4 var(--ui);
+  color: var(--t3);
+}
+.console .task-inspector .ti-work > h3:first-child,
+.console .task-inspector .ti-controls > :first-child {
+  margin-top: 0;
+}
+.console .task-inspector p {
+  margin: 0;
+  line-height: 1.5;
+}
+.console .task-inspector .ti-objective {
+  white-space: pre-wrap;
+  color: var(--t1);
+}
+.console .task-inspector .ti-quiet,
+.console .task-inspector .ti-note {
+  color: var(--t3);
+  font-size: var(--dm-type-caption);
+}
+.console .task-inspector .ti-result {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  margin-top: 8px;
+  color: var(--t2);
+  font-size: var(--dm-type-caption);
+}
+.console .task-inspector .ti-waiting {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  margin-top: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--hair-2);
+  border-radius: var(--rb);
+  color: var(--attn);
+  font-size: var(--dm-type-caption);
+}
+.console .task-inspector .ti-activity {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+.console .task-inspector .ti-activity li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  font-size: var(--dm-type-caption);
+  color: var(--t2);
+}
+.console .task-inspector .ti-activity time {
+  color: var(--t3);
+  font-variant-numeric: tabular-nums;
+}
+.console .task-inspector .ti-facts {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px 14px;
+  margin: 0;
+}
+.console .task-inspector .ti-facts dt {
+  color: var(--t3);
+  font-size: var(--dm-type-caption);
+  padding-top: 1px;
+}
+.console .task-inspector .ti-facts dd {
+  margin: 0;
+  display: grid;
+  gap: 1px;
+}
+.console .task-inspector .ti-facts small,
+.console .task-inspector .ti-runs small {
+  color: var(--t3);
+  font-size: var(--dm-type-caption);
+}
+/* A model id is a machine string: it wraps where it must (decision 5). */
+.console .task-inspector .ti-machine {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: var(--dm-type-caption);
+  overflow-wrap: anywhere;
+}
+.console .task-inspector .ti-routing {
+  margin: 16px 0 0;
+  padding: 10px 0 0;
+  border: 0;
+  border-top: 1px solid var(--hair);
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.console .task-inspector .ti-routing legend {
+  padding: 0;
+  color: var(--t3);
+  font-size: var(--dm-type-caption);
+}
+.console .task-inspector .ti-routing select {
+  min-width: 0;
+  max-width: 100%;
+  font: 400 var(--dm-type-input) / 1.4 var(--ui);
+  color: var(--t1);
+  background: var(--raised);
+  border: 1px solid var(--hair-2);
+  border-radius: var(--rb);
+  padding: 4px 6px;
+}
+.console .task-inspector .ti-fallback {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  color: var(--t2);
+  font-size: var(--dm-type-caption);
+}
+.console .task-inspector .ti-blockers {
+  margin-top: 14px;
+  padding: 8px 10px;
+  border: 1px solid var(--hair-2);
+  border-left: 2px solid var(--attn);
+  border-radius: var(--rb);
+}
+.console .task-inspector .ti-blockers h4 {
+  margin: 0 0 4px;
+  color: var(--attn);
+}
+.console .task-inspector .ti-blockers ul,
+.console .task-inspector .ti-notes,
+.console .task-inspector .ti-runs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+  font-size: var(--dm-type-caption);
+  color: var(--t2);
+}
+.console .task-inspector .ti-notes {
+  margin-top: 10px;
+  color: var(--t3);
+}
+.console .task-inspector .ti-runs li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--hair);
+}
+.console .task-inspector .ti-runs li small {
+  grid-column: 1 / -1;
+}
+.console .task-inspector .ti-run-state {
+  color: var(--t1);
+}
+.console .task-inspector .ti-runs time {
+  color: var(--t3);
+  font-variant-numeric: tabular-nums;
+}
+.console .task-inspector .ti-actions {
+  display: grid;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--hair);
+}
+.console .task-inspector .ti-verbs,
+.console .task-inspector .ti-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: baseline;
+  font-size: var(--dm-type-caption);
+}
+.console .task-inspector .ti-confirm span {
+  color: var(--t2);
+  flex: 1 1 260px;
+}
+.console .task-inspector .ti-confirm button {
+  color: var(--t1);
+}
+.console .task-inspector .ti-confirm button.go,
+.console .task-inspector .verb.light {
+  color: var(--light);
+}
+.console .task-inspector .verb {
+  color: var(--t2);
+}
+.console .task-inspector .verb:hover {
+  color: var(--t1);
+}
+.console .task-inspector button:disabled {
+  color: var(--t3);
+  cursor: default;
+}
+.console .task-inspector .ti-issue {
+  color: var(--attn);
+  font-size: var(--dm-type-caption);
+}
+@media (max-width: 760px) {
+  .console .task-inspector .ti-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .console .task-inspector .ti-controls {
+    padding-left: 0;
+    border-left: 0;
+    border-top: 1px solid var(--hair);
+    padding-top: 12px;
+    margin-top: 12px;
+  }
+  .console .task-inspector .ti-origin {
+    margin-left: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .console .task-inspector * {
+    transition: none;
+  }
+}

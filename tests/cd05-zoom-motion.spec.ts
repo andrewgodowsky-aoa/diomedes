@@ -86,7 +86,9 @@ async function openInspector(page: Page) {
   await reopenLastProject(page);
   await expect(page.locator('#scrThread')).toBeVisible();
   await rail(page).getByRole('button', { name: /^Board\b/ }).click();
+  // A row's title opens the task in full; its thread is one click on from there.
   await page.locator('.console .crow .t', { hasText: TASK }).click();
+  await page.getByRole('dialog', { name: TASK }).getByRole('button', { name: 'Open thread' }).click();
   await expect(page.locator('#scrThread .ledger .focus')).toBeAttached();
   await page.evaluate(() => document.fonts.ready);
 }

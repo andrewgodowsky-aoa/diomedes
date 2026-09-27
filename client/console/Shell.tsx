@@ -2319,6 +2319,7 @@ export function Shell({
               policy={policy}
               focusTaskId={selectedTask?.id}
               busy={busy}
+              technical={settings.detail === 'technical'}
               onStart={async (task) => {
                 await startTask(task, routeForTask(task));
               }}
@@ -2342,6 +2343,9 @@ export function Shell({
               }}
               onReopen={async (task) => {
                 await moveTask(task, 'todo');
+              }}
+              onMarkDone={async (task) => {
+                await moveTask(task, 'done');
               }}
               onOpenTeam={() => setView('Team')}
               onOpenThread={(task) => openTaskThread(task)}

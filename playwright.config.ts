@@ -119,6 +119,7 @@ export default defineConfig({
     'verification-ui.spec.ts',
     'context-used.spec.ts',
     'ready-queue-ui.spec.ts',
+    'task-board-ui.spec.ts',
     'pack-lifecycle-ui.spec.ts',
     'remembered-approvals-ui.spec.ts',
     'editor-guard-ui.spec.ts',

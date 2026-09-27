@@ -22,7 +22,7 @@ function board(patch: Partial<ProjectState>, options: {
     onPolicyChange: options.onPolicyChange, busy: false,
     documents: [], documentsLoading: false, documentsFailure: null,
     onStart: mutation, onPause: mutation, onReview: mutation, onRoute: mutation, onReopen: mutation,
-    onOpenTeam: mutation, onOpenThread: mutation, onCreateTask: mutation }));
+    onMarkDone: mutation, onOpenTeam: mutation, onOpenThread: mutation, onCreateTask: mutation }));
   expect(mutation).not.toHaveBeenCalled();
   return markup;
 }
