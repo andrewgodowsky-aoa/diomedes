@@ -231,6 +231,12 @@ is unchanged.
   yesterday's sales is a fixture declaration awaiting that verification.
 - The freshness predicate mirrors `isFreshAt` rather than sharing it, because
   shared code cannot import server code. A change to one must be made in both.
+- A field label used mid-sentence has its first letter lower-cased
+  (`midSentence`), unless its first word has a capital after the first letter.
+  So "QuickBooks export" stays as written, but a label that starts with a
+  one-capital name, such as "Toast tips", would read "toast tips". No fixture
+  label starts with a name yet. The fix is for a label to say that it starts
+  with a name, or to keep labels as declared.
 
 ## Status
 
