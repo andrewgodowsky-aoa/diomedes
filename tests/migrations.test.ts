@@ -23,6 +23,7 @@ import { backupPath, commitMigration, openVersionedFile } from '../server/migrat
 import {
   AUTOMATION_DEFINITIONS,
   AUTOMATION_OCCURRENCES,
+  BUSINESS_SETUP,
   DURABLE_FAMILIES,
   HARNESS_RUN,
   PACK_STORE,
@@ -181,6 +182,8 @@ describe('golden fixtures of older files', () => {
     [READY_QUEUE, 'ready-queue.v1.json'],
     [AUTOMATION_DEFINITIONS, 'automation-definitions.v1.json'],
     [AUTOMATION_OCCURRENCES, 'automation-occurrences.v2.expected.json'],
+    // Revision 1 of the business questions: one answer saved before answers kept their question's words.
+    [BUSINESS_SETUP, 'business-setup.v1.json'],
   ].map(([family, name]) => [(family as DurableFamily).id, name, family] as const))(
     '%s reads %s as current',
     async (_id, name, family) => {

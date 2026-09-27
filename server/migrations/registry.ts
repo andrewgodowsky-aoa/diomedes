@@ -12,6 +12,8 @@
  */
 import { HARNESS_CONTRACT_VERSION } from '../../shared/harness.js';
 import { AUTOMATION_DEFINITION_VERSION, OCCURRENCES_FILE_VERSION } from '../../shared/automations.js';
+import { BUSINESS_SETUP_SCHEMA_REVISION } from '../../shared/business-setup.js';
+import { QUESTION_SET_CHANGES, setupMigrations } from '../../shared/setup-question-changes.js';
 import type { DurableFamily } from './framework.js';
 
 const family = (value: DurableFamily) => Object.freeze(value);
@@ -104,6 +106,29 @@ export const READY_QUEUE = family({
 });
 
 /**
+ * A business's setup (ORG-01, ORG-02): the file on this computer and each
+ * revision the account service keeps have the same shape. Its version is the
+ * revision of the questions it was answered under; `v` is the record's own
+ * envelope, which the account service holds at 1. An older setup is carried
+ * forward only when a person resumes it, and a newer one is refused with
+ * nothing written. The steps are the declared question changes in
+ * `shared/setup-question-changes.ts`. The copies ORG-01 sets aside
+ * (`<org>.before-sync[-n].json`) have the same shape and are read the same way
+ * once the account service holds them.
+ */
+export const BUSINESS_SETUP = family({
+  id: 'business-setup',
+  title: 'business setup',
+  location: 'workspaces/setup/*.json',
+  versionField: 'schemaRevision',
+  oldest: 1,
+  current: BUSINESS_SETUP_SCHEMA_REVISION,
+  migrations: setupMigrations(QUESTION_SET_CHANGES),
+  unversioned: null,
+  reader: { file: 'server/workspaces.ts', throughFramework: true },
+});
+
+/**
  * The update reconcile's files (`server/update-reconcile.ts`). Each is read
  * with `assertReadable`, so one written by a newer Diomedes is refused and left
  * as it was. The provenance file's `settingsSchemaVersion` is not its format
@@ -162,6 +187,10 @@ export const DURABLE_FAMILIES: readonly DurableFamily[] = Object.freeze([
   LAST_BUILD,
   SETTINGS_PROVENANCE,
   UPDATE_RECORD,
+  BUSINESS_SETUP,
+  own('business-setup-tag', 'business setup copy tag', 'workspaces/setup/*.sync.json', 'v',
+    'server/organization-setup.ts',
+    'Refuses any v other than 1. A tag it cannot read means the copy beside it is never shown offline.'),
   family({
     id: 'project-registry',
     title: 'project list',

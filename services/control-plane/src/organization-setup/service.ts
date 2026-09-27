@@ -14,6 +14,9 @@
  *   any other latest revision is a `setup_conflict`. Revisions are rows that
  *   are never updated or deleted (the table's trigger refuses both), so the
  *   history survives owner transfers and corrections.
+ * - **The questions only move forward (ORG-02).** A record answered under
+ *   earlier questions than the latest revision is `setup_newer`: a desktop
+ *   too old to read the business's setup cannot empty it.
  * - **The record is the organization's description, never authority.** Nothing
  *   here reads it to grant access, spending or membership. It is screened for
  *   credentials and for truthful attribution (`screenSetupRecord`), and it needs
@@ -57,6 +60,10 @@ export class OrganizationSetupError extends AccountError {
 
 export const SETUP_CONFLICT =
   'Someone else saved this setup first. Reload it to see their changes, then try again.';
+
+/** A write that would take the business's setup back to earlier questions (ORG-02). */
+export const SETUP_NEWER =
+  "This business's setup was saved by a newer version of Nectovia, which asks different questions. Update Nectovia to continue it. Nothing was changed.";
 
 /** Who may change a business's setup: an active owner or Manager. */
 export function mayConfigure(role: MemberRole): boolean {
@@ -136,6 +143,11 @@ export class OrganizationSetupService {
       const latest = await tx.latest(organizationId);
       if ((latest?.revision ?? 0) !== parsed.data.expectedRevision)
         throw new OrganizationSetupError(409, SETUP_CONFLICT, 'setup_conflict');
+      // A setup is carried forward to newer questions, never back (ORG-02). An
+      // older desktop that resumed a newer setup would otherwise replace the
+      // answers it cannot read with none.
+      if (latest && parsed.data.record.setup.schemaRevision < latest.record.setup.schemaRevision)
+        throw new OrganizationSetupError(409, SETUP_NEWER, 'setup_newer');
       const refusal = screenSetupRecord(parsed.data.record, {
         organizationId,
         tenantId: snapshot.organization.tenantId,

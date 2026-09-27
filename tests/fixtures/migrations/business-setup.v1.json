@@ -1,0 +1,49 @@
+{
+  "v": 1,
+  "organizationId": "org_3hJq8vT2mK",
+  "tenantId": "tenant_9Xw4pLr7Qa",
+  "schemaRevision": 1,
+  "state": "proposal-ready",
+  "answers": {
+    "name": {
+      "questionId": "name",
+      "value": "Ridge Cabinetry",
+      "unknown": false,
+      "origin": "person",
+      "at": "2026-09-18T14:02:11.408Z",
+      "by": "person_Vq2nB8sLx1"
+    },
+    "industry": {
+      "questionId": "industry",
+      "value": "cabinetry",
+      "unknown": false,
+      "origin": "person",
+      "at": "2026-09-26T15:20:03.117Z",
+      "by": "person_Vq2nB8sLx1",
+      "prompt": "What kind of work is that, in a word or two?"
+    },
+    "job": {
+      "questionId": "job",
+      "value": "recurring-report",
+      "unknown": false,
+      "origin": "person",
+      "at": "2026-09-26T15:20:09.550Z",
+      "by": "person_Vq2nB8sLx1",
+      "prompt": "What recurring job should Diomedes help with first?"
+    },
+    "spend-cap": {
+      "questionId": "spend-cap",
+      "value": null,
+      "unknown": true,
+      "origin": "person",
+      "at": "2026-09-26T15:21:40.002Z",
+      "by": "person_Vq2nB8sLx1",
+      "prompt": "What monthly AI spending limit applies, and who can change it?"
+    }
+  },
+  "cursor": "review",
+  "startedAt": "2026-09-18T14:01:57.930Z",
+  "startedBy": "person_Vq2nB8sLx1",
+  "updatedAt": "2026-09-26T15:21:40.002Z",
+  "proposalDigest": "sha256:5b1f0f3c2e9d4a7b8c6e1d2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b"
+}
