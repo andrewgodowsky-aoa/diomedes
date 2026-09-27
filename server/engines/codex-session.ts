@@ -271,7 +271,8 @@ export class CodexNativeSession {
       await this.save();
       return {
         text: answer.text,
-        model: input.model,
+        // The model Codex reported answers for the turn (decision 8); the requested one is a fallback.
+        model: answer.model ?? live.model ?? input.model,
         version: live.process.version,
         projectId: input.projectId,
         threadId: input.threadId,
@@ -282,8 +283,9 @@ export class CodexNativeSession {
       // A process whose turn failed or was ended isn't reused; one that acknowledged a Stop is.
       if (stop !== 'acknowledged') await this.drop();
       if (sent) {
-        // Codex keeps the thread's rollout whatever became of the turn, so the next message
-        // continues the same thread.
+        // Codex keeps the thread's rollout whatever became of the turn. After a Stop the next
+        // message continues it; a failed turn is uncertain, so the driver holds the run for
+        // reconciliation and the conversation's next message starts a new lineage and thread.
         this.latest = { origin: this.saved.origin, interrupted };
         this.saved = { ...this.saved, state: 'idle', lastStop: stop, interruptedRequestId: null };
         await this.save().catch(() => undefined);

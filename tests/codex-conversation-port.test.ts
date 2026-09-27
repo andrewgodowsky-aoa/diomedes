@@ -3,7 +3,7 @@
  * the fixture app-server (tests/fixtures/codex-app-server.mjs): a real child process speaking the
  * pinned 0.153.4 JSON-RPC over stdio. No Codex binary or ChatGPT account is reached.
  */
-import { afterEach, beforeEach, expect, test } from 'vitest';
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -26,11 +26,11 @@ const calls = async () =>
     .trim()
     .split('\n')
     .map((line) => JSON.parse(line) as { pid: number; method: string; params: Record<string, unknown> });
-const conversations = () =>
+const conversations = (turnTimeoutMs = 20_000) =>
   createIntegrations({
     platform: 'win32',
     verifySandbox: async () => {},
-    turnTimeoutMs: 20_000,
+    turnTimeoutMs,
     createClient: async () =>
       createRpcClient(
         spawn(process.execPath, [FIXTURE], {
@@ -41,8 +41,8 @@ const conversations = () =>
         }),
       ),
   }).codexConversations;
-const open = async () => {
-  const opened = await conversations().open(undefined);
+const open = async (turnTimeoutMs?: number) => {
+  const opened = await conversations(turnTimeoutMs).open(undefined);
   processes.push(opened);
   return opened;
 };
@@ -66,6 +66,7 @@ beforeEach(async () => {
 });
 afterEach(async () => {
   for (const opened of processes) await opened.close().catch(() => undefined);
+  vi.unstubAllEnvs();
   await fs.rm(dir, { recursive: true, force: true });
 });
 
@@ -161,3 +162,26 @@ test('an account that is not ChatGPT is refused before any thread opens', async 
   await expect(conversations().open(undefined)).rejects.toMatchObject({ code: 'CHATGPT_REQUIRED' });
   expect((await calls()).some((call) => call.method === 'thread/start')).toBe(false);
 });
+
+test("a conversation's turn outlives the direct path's deadline: Stop bounds it, as it bounds Claude Code's", async () => {
+  // The direct path's two minutes, shortened. A conversation's answer may run longer than that.
+  const on = await open(100);
+  const opened = await on.thread(thread);
+  await control({ turnMs: 400 });
+  const answer = await turn(on, opened.threadId);
+  expect(answer.text).toContain(`Fixture answer on ${opened.threadId} after 1 user turn.`);
+});
+
+test.runIf(process.platform === 'win32')(
+  'a runtime that was never prepared is refused as not installed, with no sandbox proof remembered',
+  async () => {
+    vi.stubEnv('DIOMEDES_DATA_DIR', path.join(dir, 'data'));
+    vi.stubEnv('DIOMEDES_RUNTIME_DIR', path.join(dir, 'no-runtime'));
+    vi.resetModules();
+    const fresh = await import('../server/integrations');
+    // Only the platform is given: the real sandbox proof and the real process start run.
+    await expect(fresh.createIntegrations({ platform: 'win32' }).codexConversations.open(undefined)).rejects.toMatchObject({
+      code: 'NATIVE_NOT_INSTALLED',
+    });
+  },
+);

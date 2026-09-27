@@ -25,6 +25,7 @@
  *   tool:          an item type (for example "fileChange") reported completed before the answer.
  *   delayTurnStart: milliseconds before turn/start is answered and its turn begins. A process
  *                  ended in that time never starts the turn or records its message.
+ *   turnMs:        milliseconds a started turn runs before it completes (default 5).
  * Every request is appended to CODEX_FIXTURE_DIR/calls.jsonl for assertions.
  */
 import fs from 'node:fs';
@@ -135,6 +136,7 @@ function beginTurn(params) {
   // Decided when the turn starts: a test that rewrites control.json while this turn streams
   // (for another process's next turn) doesn't release it.
   const hold = control().hold;
+  const turnMs = control().turnMs ?? 5;
   const think = params.summary === 'auto' ? control().think : undefined;
   const parts = typeof think === 'string' ? [think] : Array.isArray(think) ? think : [];
   const preamble = control().stream;
@@ -155,9 +157,9 @@ function beginTurn(params) {
       if (typeof preamble === 'string')
         for (let at = 0; at < preamble.length; at += 5)
           notify('item/agentMessage/delta', { threadId: thread.id, turnId, delta: preamble.slice(at, at + 5) });
-      if (!hold) setTimeout(complete, 5);
+      if (!hold) setTimeout(complete, turnMs);
     }, 20);
-  } else if (!hold) setTimeout(complete, 5);
+  } else if (!hold) setTimeout(complete, turnMs);
   return { turn: { id: turnId, status: 'inProgress' } };
 }
 
