@@ -54,7 +54,7 @@
 | `resources/product-knowledge/core.json`, `index.json` | the `codex-session` route statement | 5 |
 | `shared/engines.ts` | `KEPT_SESSION_ROUTES`, `ConversationRoute`, `CONVERSATION_ROUTES` | 6 |
 | `server/conversation-sessions.ts` | route to driver, run id and turn, in one table | 6 |
-| `server/interaction-service.ts`, `server/engines/claude-session-routes.ts` | dispatch and the thread session view through that table | 6 |
+| `server/interaction-service.ts`, `server/engines/claude-session-routes.ts`, `server/app.ts` (the thread session mount) | dispatch and the thread session view through that table | 6 |
 | `server/app.ts` | `resolve`, the projection, `lineageRoute`, `sessionDriverOf`, the account route for ChatGPT | 7 |
 | `shared/conversation-engines.ts`, `server/engines/service.ts`, `server/app.ts`, `client/console/Picker.tsx` | found engines, and a gone engine refused in its own words | 8 |
 | `client/console/thread-send.ts` | kept-session threads send through the conversation | 9 |
@@ -5682,14 +5682,15 @@ The spec's coordination section (8) says `feature/free-harness-paid-agent` lands
 - Consumes: every earlier task's commits; `QUESTIONS.md` R16 and CD-01 Round 12 (Task 10), which the report cites.
 - Produces: the gate counts and the report. Nothing later reads them.
 
-- [ ] **Step 1: Run the full gates, one at a time, under the slot**
+- [ ] **Step 1: Run the gates other than vitest, one at a time, under the slot**
 
-Check that ports 5174 and 47632 are free first (`netstat -ano | grep -E ":(5174|47632) "` prints nothing). Take the heavy slot once, run these in order (never two at once), write each output to the plan's workspace and read its tail, then release the slot:
+The full vitest run is Step 3's `task-done`: it is the task's contract run, and its count is the one the report gives. Running it here too would spend a second heavy run on the same result.
+
+Check that ports 5174 and 47632 are free first (`netstat -ano | grep -E ":(5174|47632) "` prints nothing). Take the heavy slot, run these in order (never two at once), write each output to the plan's workspace and read its tail, then release the slot:
 
 ```bash
 cd /f/Diomedes/diomedes-wt/codex-conversation-driver
 npx tsc --noEmit -p . > "$WS/gate-tsc.log" 2>&1; echo "tsc exit=$?"
-npx vitest run > "$WS/gate-vitest.log" 2>&1; echo "vitest exit=$?"; tail -8 "$WS/gate-vitest.log"
 npx vite build > "$WS/gate-build.log" 2>&1; echo "build exit=$?"
 npx playwright test tests/ui.spec.ts tests/native-ui.spec.ts tests/field.spec.ts tests/reasoning-ui.spec.ts tests/kept-session-thread-ui.spec.ts tests/h03-claude-controls.spec.ts > "$WS/gate-playwright.log" 2>&1; echo "playwright exit=$?"; tail -8 "$WS/gate-playwright.log"
 npm test --prefix services/control-plane > "$WS/gate-cp.log" 2>&1; echo "cp exit=$?"; tail -8 "$WS/gate-cp.log"
@@ -5698,7 +5699,7 @@ git status --short
 
 (`$WS` is the plan's workspace directory that `sdd-workspace` printed.)
 
-Expected: every exit is 0. Record the real counts from this run (files and tests passed, skipped), and name the run as their source. A failure that looks like contention (a timeout, `EPERM` on a rename, `pack-lifecycle-ui` line 142) is rerun alone under the slot before it's diagnosed; a failure that repeats alone is a real failure and gets fixed test-first. Playwright rewrites tracked screenshot PNGs on some runs: `git status --short` must show none of them, so restore any it touched with `git checkout -- <file>`.
+Expected: every exit is 0. Record the real counts from this run and name the run as their source. A failure that looks like contention (a timeout, `EPERM` on a rename, `pack-lifecycle-ui` line 142) is rerun alone under the slot before it's diagnosed; a failure that repeats alone is a real failure and gets fixed test-first. Playwright rewrites tracked screenshot PNGs on some runs: `git status --short` must show none of them, so restore any it touched with `git checkout -- <file>`.
 
 - [ ] **Step 2: Rehearse the merge with the free-harness branch**
 
@@ -5719,11 +5720,24 @@ git -C /f/Diomedes/diomedes-wt/codex-conversation-driver show feature/free-harne
 ```
 
 Expected, and what each means after the rebase:
-- `isFreeConversationRoute` is `isConversationRoute(route) && !isModelApiRoute(route)`. Task 7 widened `isConversationRoute`, so ChatGPT, OpenCode, Cursor and Devin become free conversation routes with no edit on either branch: a free person whose AI setup default is ChatGPT gets their Nectovia-default thread answered on ChatGPT. That's the spec's "its free fallback picks up the new routes".
+- `isFreeConversationRoute` is `isConversationRoute(route) && !isModelApiRoute(route)`. Task 7 widened `isConversationRoute`, so ChatGPT, OpenCode, Cursor and Devin become free conversation routes with no edit on either branch: that branch's `routed()` will answer a free person's Nectovia-default thread on their AI setup default when it's ChatGPT, OpenCode, Cursor or Devin. That's the spec's "its free fallback picks up the new routes".
 - `freeHint`'s "`${routeDisplayName(own)}` can't hold a conversation yet, but it can still do Build and Fix work" now fires only for an engine with no kept session (oh-my-pi today).
 - That branch's record (`docs/implementation/2026-09-27-free-harness-paid-agent.md`) uses ChatGPT as its example of an engine that can't hold a conversation. After the rebase the example is stale: the rebase changes it to oh-my-pi, on that branch's record.
 
-- [ ] **Step 3: Write the report**
+The rehearsal proves the branches merge as text, nothing more. The report says so in these words: "The merged tree's suites were not run. The rebase's own gate run must exercise `routed()` with a kept-session `defaultEngine` and accounts on." Several of that branch's specs set `defaultEngine: 'codex'` (`tests/autonomy-ui.spec.ts`, `tests/agent-ui.spec.ts`, `tests/engine-selection.test.ts`), so they are the first place a changed meaning would show.
+
+- [ ] **Step 3: The contract run**
+
+Run `task-done` with the full vitest run as the task's test command, under the heavy slot, so the ledger line carries this run's result and the report takes its vitest count from it:
+
+```bash
+cd /f/Diomedes/diomedes-wt/codex-conversation-driver
+"<executing-plans skill>/scripts/task-done" docs/superpowers/plans/2026-09-27-engine-conversations.md 11 <BASE> -- npx vitest run
+```
+
+Expected: it passes and writes `Task 11: complete (…)` to the ledger. A failure is handled as in Step 1: rerun a contention-looking file alone, fix a real one test-first, and run `task-done` again. No commit unless a gate fix was needed (that fix is committed with its test, in its own commit, named for what it fixes).
+
+- [ ] **Step 4: Write the report**
 
 Write `F:/Temp/andre/claude/F--Diomedes/10d15dc9-b757-4678-9c71-ccf83ce8ff38/scratchpad/report-plan2.md` with these sections, in this order, from this run's evidence only:
 
@@ -5732,18 +5746,14 @@ Write `F:/Temp/andre/claude/F--Diomedes/10d15dc9-b757-4678-9c71-ccf83ce8ff38/scr
 3. **PILLAR IMPACT.**
    - Pillar 07 (engines are interchangeable resources): advanced. A conversation runs on ChatGPT, OpenCode, Cursor or Devin through the same driver as Claude Code, and moving between them opens a new lineage with the route note (RF4's test).
    - Pillar 12 (one strong core, no artificial crippling): advanced once the free-harness branch lands, because its free fallback admits these engines as the person's own AI.
-   - Pillar 09 (trust and data choice): a risk to state plainly. A ChatGPT conversation keeps its thread in the person's own Codex history, including the documents a turn reads (R16). The account is checked every turn, and a changed account refuses the turn with nothing sent.
+   - Pillar 09 (trust and data choice): a risk to state plainly. A ChatGPT conversation keeps its thread in the person's own Codex history (the app-server runs with the person's own `CODEX_HOME`, `nativeEnvironment` in `server/integrations.ts`), including the documents a turn reads (R16). The account is checked every turn, and a changed account refuses the turn with nothing sent.
    - Pillar 06 (control without babysitting): Stop and queued steering reach ChatGPT conversations through `sessionControls(contract)`.
 4. **ROADMAP IMPACT.** The H04 and H05 lines and a new paragraph, as proposed in `docs/harness/CHANGES.md` ("Engine conversations, 2026-09-27"). Cloud synchronisation pending: the roadmap's cloud canonical wasn't written. No status becomes live, hosted, packaged or device-proven.
 5. **BUILD / PUBLICATION / DEPLOYMENT STATUS.** Nothing released, published or deployed. Plan 1's gateway change still waits for Andrew's approval to deploy the Worker.
 6. **Implemented versus recorded.** Implemented in source with fixture, conformance and browser proof. Live proof is pending on Andrew's machine with his own sign-in: one ChatGPT conversation that shows thinking, takes a Stop mid-reply, and continues its thread after an app restart.
-7. **Gate counts** from Step 1, each named as from this run.
-8. **Merge rehearsal** from Step 2: clean or the conflicted files, and the three meanings above.
+7. **Gate counts** from Steps 1 and 3, each named as from this run.
+8. **Merge rehearsal** from Step 2: clean or the conflicted files, the three meanings above, and the sentence that the merged tree's suites were not run.
 9. **Uncommitted or unpushed.** Every commit is local on `feature/codex-conversation-driver`; nothing is pushed.
 10. **Waiting on Andrew.** The reasoning-levels decision for spec B (L1 recommended: every tier starts high and steps up automatically, Plan mode and long messages go to xhigh, greetings stay low, Fix stays at medium or below; L2: Luna xhigh, Sol high, Opus 5.5 high; L3: one fixed level per tier), the push, and the live proof.
 
 The rulings and deferred minors are added after the final review, from the ledger (superpowers:executing-plans, "Finish").
-
-- [ ] **Step 4: Record the task**
-
-No commit unless a gate fix was needed (that fix is committed with its test, in its own commit, named for what it fixes). Run `task-done` with the full vitest run as the task's test command, so the ledger line carries this run's result.
