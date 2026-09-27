@@ -16,6 +16,7 @@ import { sessionControls, type ThreadSessionView } from '../../shared/session-co
 import type { TextRequest } from './contract.js';
 import { EngineError } from './process.js';
 import type { EngineService } from './service.js';
+import { keptSessionOfRun, type KeptSessionEngines } from '../conversation-sessions.js';
 
 const commandId = z.string().trim().min(1).max(200);
 export const claudeSessionBody = z.strictObject({
@@ -271,10 +272,8 @@ export interface ThreadSessionRouteDependencies {
   authorize(req: Request): Promise<void>;
   /** The run of the thread's open native lineage for `mode` (the newest when absent), or null. */
   lineage(projectId: string, threadId: string, mode?: 'ask' | 'plan' | 'auto'): Promise<string | null>;
-  drivers: {
-    claude(): ClaudeSessionRuns<SessionCheckpointFacts> | undefined;
-    opencode(): ClaudeSessionRuns<SessionCheckpointFacts> | undefined;
-  };
+  /** The engines' session drivers; the thread's run id says which one answers it. */
+  engines: KeptSessionEngines;
 }
 export function mountThreadSessionRoute(app: Express, dependencies: ThreadSessionRouteDependencies) {
   app.get('/api/projects/:id/threads/:threadId/native-session', async (req, res, next) => {
@@ -284,11 +283,8 @@ export function mountThreadSessionRoute(app: Express, dependencies: ThreadSessio
       if (!mode.success) throw new ApiError(400, 'Provide a mode of ask, plan or auto, or none.');
       const projectId = String(req.params.id);
       const runId = await dependencies.lineage(projectId, String(req.params.threadId), mode.data);
-      const native = runId?.startsWith('claude-')
-        ? { driver: dependencies.drivers.claude(), routeId: 'claude-code-session' }
-        : runId?.startsWith('opencode-')
-          ? { driver: dependencies.drivers.opencode(), routeId: 'opencode-session' }
-          : null;
+      const session = keptSessionOfRun(runId);
+      const native = session ? { driver: session.driver(dependencies.engines), routeId: session.routeId } : null;
       const empty: ThreadSessionView = {
         runId: null,
         controls: null,
