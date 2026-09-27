@@ -1149,7 +1149,7 @@ test('Usage: chip, signal bar and Settings bars from the test-mode snapshot', as
   const banned =
     /\b(?:kanban|git|github|repo|repository|branch|commit|agent|agentic|worker|model|llm|context window|tokens|mcp|patch|diff|prompt|pipeline|orchestration|autonomous|copilot)\b/gi;
   expect(
-    (await codexService.innerText()).match(banned) ?? [],
+    (await codexService.locator('.usage-block').innerText()).match(banned) ?? [],
     'Forbidden words in the usage block',
   ).toEqual([]);
   // Switching Codex back off hides the chip again.
