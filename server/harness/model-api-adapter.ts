@@ -35,10 +35,13 @@ const host = (note: string) => ({ support: 'host' as const, note });
 export const MODEL_API_REASONING: Readonly<
   Record<ModelApiRoute, AdapterRouteContract['streaming']['reasoning']>
 > = Object.freeze({
-  'aws-bedrock': 'none',
-  'azure-openai': 'none',
-  openrouter: 'none',
-  'google-vertex': 'none',
+  // Bedrock's acceptance of reasoning.summary is proven only by the paid Luna proof; if it
+  // refuses the summary, this one entry goes back to 'none'.
+  'aws-bedrock': 'reasoning-delta',
+  'azure-openai': 'reasoning-delta',
+  // Maps only the reasoning its models return; nothing new is asked for (require_parameters).
+  openrouter: 'reasoning-delta',
+  'google-vertex': 'reasoning-delta',
   nectovia: 'none',
 });
 

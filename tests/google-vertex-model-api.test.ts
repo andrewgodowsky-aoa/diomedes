@@ -255,6 +255,26 @@ describe('the request the real SDK sends to Vertex', () => {
     expect(result.usage).toEqual({ inputTokens: 900, cacheReadTokens: 100, cacheWriteTokens: 0, outputTokens: 200, reasoningTokens: 50 });
   });
 
+  test('with a thinking sink, visible thinking is asked for and thought parts stream apart from the answer', async () => {
+    const net = transport([() => sse(geminiStream([{ text: 'Checking the menu.', thought: true }, { text: 'DIOMEDES_VERTEX_OK' }]))]);
+    const thoughts: string[] = [];
+    const deltas: string[] = [];
+    const result = await call(net.fetch, {
+      onDelta: (text) => deltas.push(text),
+      onReasoningDelta: (text) => thoughts.push(text),
+    });
+    expect((net.sent[0].body.generationConfig as Item).thinkingConfig).toMatchObject({ includeThoughts: true });
+    expect(thoughts.join('')).toBe('Checking the menu.');
+    expect(deltas.join('')).toBe('DIOMEDES_VERTEX_OK');
+    expect(result.outcome).toEqual({ kind: 'final', text: 'DIOMEDES_VERTEX_OK' });
+  });
+
+  test('without a thinking sink, no visible thinking is asked for', async () => {
+    const net = transport([() => sse(geminiStream([{ text: 'DIOMEDES_VERTEX_OK' }]))]);
+    await call(net.fetch);
+    expect((net.sent[0].body.generationConfig as Item).thinkingConfig).toMatchObject({ includeThoughts: false });
+  });
+
   test('an ambient Express Mode key never switches the route to key billing', async () => {
     process.env.GOOGLE_VERTEX_API_KEY = 'ambient-express-key-must-not-be-sent';
     const net = transport([() => sse(geminiStream([{ text: 'DIOMEDES_VERTEX_OK' }]))]);
@@ -361,6 +381,18 @@ describe('the request the real SDK sends to Vertex', () => {
 });
 
 describe('refusals before anything is sent', () => {
+  test('visible thinking passes the body check; every other refusal stands with its own sentence', async () => {
+    const { inspectVertexBody } = await import('../server/engines/google-vertex.js');
+    expect(() =>
+      inspectVertexBody(JSON.stringify({ contents: [], generationConfig: { thinkingConfig: { includeThoughts: true } } })),
+    ).not.toThrow();
+    expect(() => inspectVertexBody(JSON.stringify({ contents: [], cachedContent: 'projects/x/cachedContents/1' }))).toThrow(/explicit cache/);
+    expect(() => inspectVertexBody(JSON.stringify({ contents: [], tools: [{ googleSearch: {} }] }))).toThrow(/Google would run itself/);
+    expect(() =>
+      inspectVertexBody(JSON.stringify({ contents: [], generationConfig: { candidateCount: 2 } })),
+    ).toThrow(/several answers/);
+  });
+
   test('every call is priced at the gross standard rate; stale evidence refuses with nothing sent', async () => {
     // Google's "introductory" figure is a later credit-back, not a lower invoice line, so no card carries it.
     for (const at of ['2026-09-23T12:00:00.000Z', '2026-12-31T23:00:00.000Z', '2027-01-02T00:00:00.000Z'])
@@ -409,9 +441,6 @@ describe('refusals before anything is sent', () => {
     const { inspectVertexBody } = await import('../server/engines/google-vertex.js');
     expect(() => inspectVertexBody(JSON.stringify({ contents: [], tools: [{ googleSearch: {} }] }))).toThrow(/Google would run itself/);
     expect(() => inspectVertexBody(JSON.stringify({ contents: [], cachedContent: 'projects/x/cachedContents/1' }))).toThrow(/explicit cache/);
-    expect(() =>
-      inspectVertexBody(JSON.stringify({ contents: [], generationConfig: { thinkingConfig: { includeThoughts: true } } })),
-    ).toThrow(/visible thinking/);
     const result = await call(transport([() => sse(geminiStream([{ text: 'ok' }]))]).fetch, { tools: [searchTool] });
     expect(result.outcome.kind).toBe('final');
     expect(net.sent).toHaveLength(0);
@@ -420,7 +449,7 @@ describe('refusals before anything is sent', () => {
   test('a different project, a partner model or the Gemini API host is refused with nothing sent', async () => {
     const { vertexBinding } = await import('../server/engines/google-vertex.js');
     const { guardedStreamFetch } = await import('../server/engines/model-api-core.js');
-    const binding = vertexBinding(CONNECTION, 'low', 'vtx-test-1');
+    const binding = vertexBinding(CONNECTION, 'low', 'vtx-test-1', false);
     const net = transport([]);
     const guarded = guardedStreamFetch({
       prefix: 'vertex',
