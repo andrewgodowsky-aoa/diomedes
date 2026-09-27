@@ -468,6 +468,20 @@ export function createRpcClient(
   };
 }
 
+/**
+ * Diomedes' prepared Codex runtime is there to run. Checked before anything runs it, the sandbox
+ * proof included, so a runtime that was never prepared (or was removed) is refused as that, which
+ * spec decision 5 reads as a gone engine, and never as a sandbox that couldn't start.
+ */
+async function requireNativeRuntime(): Promise<void> {
+  await fs.access(CODEX_EXECUTABLE).catch(() => {
+    throw new IntegrationError(
+      'NATIVE_NOT_INSTALLED',
+      'The matched native Codex runtime has not been prepared for Diomedes.',
+    );
+  });
+}
+
 async function startNative(env?: NodeJS.ProcessEnv, extra?: JsonObject): Promise<NativeRpc> {
   if (process.platform !== 'win32')
     throw new IntegrationError(
@@ -475,12 +489,7 @@ async function startNative(env?: NodeJS.ProcessEnv, extra?: JsonObject): Promise
       'This native adapter has been verified on Windows only.',
     );
   await fs.mkdir(CODEX_WORKSPACE, { recursive: true });
-  await fs.access(CODEX_EXECUTABLE).catch(() => {
-    throw new IntegrationError(
-      'NATIVE_NOT_INSTALLED',
-      'The matched native Codex runtime has not been prepared for Diomedes.',
-    );
-  });
+  await requireNativeRuntime();
   const child = spawn(
     CODEX_EXECUTABLE,
     ['app-server', '--listen', 'stdio://', ...configArgs(extra)],
@@ -502,6 +511,8 @@ async function verifyWindowsSandbox(): Promise<void> {
       'This native adapter has been verified on Windows only.',
     );
   await fs.mkdir(CODEX_WORKSPACE, { recursive: true });
+  // The proof runs the runtime, so a missing runtime is reported before it is tried.
+  await requireNativeRuntime();
   const sentinel = path.join(CODEX_WORKSPACE, `denied-write-${randomUUID()}.txt`);
   const escaped = sentinel.replaceAll("'", "''");
   const command = `try { [System.IO.File]::WriteAllText('${escaped}', 'Diomedes sandbox probe'); Write-Output 'WRITE_ALLOWED'; exit 93 } catch [System.UnauthorizedAccessException] { Write-Output 'WRITE_DENIED'; exit 0 } catch { Write-Output 'PROBE_FAILED'; exit 94 }`;
@@ -1356,13 +1367,14 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
     let deadline: NodeJS.Timeout | undefined;
     let removeListener: (() => void) | undefined;
     const completed = new Promise<string>((resolve, reject) => {
-      deadline = setTimeout(
-        () =>
-          reject(
-            new IntegrationError('TURN_TIMEOUT', 'The Codex response exceeded two minutes and was stopped.'),
-          ),
-        dependencies.turnTimeoutMs,
-      );
+      if (!input.unbounded)
+        deadline = setTimeout(
+          () =>
+            reject(
+              new IntegrationError('TURN_TIMEOUT', 'The Codex response exceeded two minutes and was stopped.'),
+            ),
+          dependencies.turnTimeoutMs,
+        );
       removeListener = client.onNotification((method, params) => {
         if (method === 'diomedes/error') {
           reject(new IntegrationError('NATIVE_DISCONNECTED', String(params.message || 'The Codex connection closed.')));
@@ -2066,6 +2078,7 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
           if (input.signal.aborted) throw abortError();
           const watch = watchTurn(client, input.threadId, {
             scope: input.scope,
+            unbounded: true,
             onDelta: input.onDelta,
             onToolActivity: input.onToolActivity,
             onReasoningDelta: input.onReasoningDelta,
@@ -2149,6 +2162,11 @@ interface TurnWatchInput {
   onTeamToolCall?(tool: string): void;
   /** Reasoning summaries, on their own channel. Absent: they're dropped. */
   onReasoningDelta?(text: string): void;
+  /**
+   * A kept conversation's turn has no deadline of its own: Stop ends it, as it ends a Claude
+   * Code conversation's turn. The direct request path keeps `turnTimeoutMs`.
+   */
+  unbounded?: boolean;
 }
 interface TurnWatch {
   readonly completed: Promise<string>;

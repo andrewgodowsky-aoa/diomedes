@@ -172,6 +172,14 @@ and answers `QUESTIONS.md` O19 and O39 item 1, now R16.
   the conversation (`client/console/thread-send.ts`). Claude Code project threads (O38) and
   Build and Fix keep the direct path.
 
+The final review's fixes (2026-09-27): a ChatGPT conversation's turn has no deadline of its own,
+because Stop ends it as it ends a Claude Code conversation's turn, and the direct request path
+keeps its two minutes. A playbook message on ChatGPT, OpenCode, Cursor or Devin keeps the direct
+request path it had, because the conversation takes no playbook yet, so that message isn't part
+of the engine's kept session. The session line names ChatGPT, Cursor and Devin as people read
+them, and a ChatGPT answer records the model ChatGPT reported. A Codex runtime that was never
+prepared is refused as not installed before the sandbox proof runs.
+
 Fixture, conformance and browser proof only. Live proof is pending on Andrew's machine: one
 ChatGPT conversation that shows thinking, takes a Stop, and continues after an app restart.
 

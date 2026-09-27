@@ -350,3 +350,10 @@ test('a fork continues a copy of the thread in the same lineage, under its own D
   );
   expect((await first.turn(request())).text).toContain(`on ${source.nativeSessionId} after 2 user turns.`);
 });
+
+test('a turn answers with the model Codex reported, never the one requested (decision 8)', async () => {
+  const session = await open({}, {}, { model: 'requested-alias' });
+  const answer = await session.turn(request({ model: 'requested-alias' }));
+  expect(answer.model).toBe('fixture-codex-model');
+  expect(session.checkpoint.reportedModel).toBe('fixture-codex-model');
+});
