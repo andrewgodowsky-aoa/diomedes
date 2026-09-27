@@ -182,8 +182,8 @@ evidence`) and the duplicate-id guard.
 
 ## Validation
 
-Both gates ran in this worktree on base 8daf0c1 plus this patch, each under the
-shared heavy slot and one at a time.
+The work order's two gates ran first, in this worktree on base 8daf0c1 plus this
+patch, each under the shared heavy slot and one at a time.
 
 - `npx vitest run tests/data-coverage.test.ts --maxWorkers=4`: 1 file, 9 tests
   passed, none skipped, exit 0 (slot `slot_muj4tiuf_45fbbbf3`).
@@ -199,6 +199,21 @@ the module was restored byte for byte. The first pass showed that the
 documentation rule was masked, because the Toast route is also not set up, so
 the rule 5 test now checks a set-up route with documented evidence too. The
 checking script was scratch work and is not part of the patch.
+
+The repository's four gates then ran on the committed patch, ca1f329, with a
+clean tree, on 2026-09-26:
+
+| Gate | Result |
+|---|---|
+| `npx tsc --noEmit -p .` | exit 0 |
+| `npx vitest run --maxWorkers=4` | 473 files; 8,068 passed, 4 skipped |
+| `npx vite build` | exit 0 |
+| `npx playwright test tests/ui.spec.ts tests/native-ui.spec.ts tests/field.spec.ts` | 36 passed: ui 17, native-ui 11, field 8 |
+
+The first two ran under slot `slot_muj7chxc_32bd7fef` and the last two under slot
+`slot_muj8cfb8_3f07a13b`. Each count is from that run's own output. This record
+was updated afterwards in a documentation-only commit, so the code the gates ran
+is unchanged.
 
 ## Remaining limitations
 
@@ -216,7 +231,6 @@ checking script was scratch work and is not part of the patch.
   yesterday's sales is a fixture declaration awaiting that verification.
 - The freshness predicate mirrors `isFreshAt` rather than sharing it, because
   shared code cannot import server code. A change to one must be made in both.
-- Only the two gates the work order names were run, not the repository's four.
 
 ## Status
 
