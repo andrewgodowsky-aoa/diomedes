@@ -31,6 +31,8 @@ import { durableObjectHubs } from './relay/durable-object.js';
 import { OrganizationSetupService } from './organization-setup/service.js';
 import { PostgresOrganizationSetupRepository } from './organization-setup/postgres.js';
 import { organizationSetupWriteSchema } from './organization-setup/schema.js';
+import { OrganizationExportService } from './organization-export/service.js';
+import { PostgresOrganizationExportRepository } from './organization-export/postgres.js';
 
 /** The phone relay's per-business hub, bound as RELAY_HUB (both wrangler.jsonc files). */
 export { RelayHub } from './relay/durable-object.js';
@@ -88,6 +90,8 @@ export interface HandlerOptions {
   createRelay?: (config: Configuration, accounts: AccountService, env: Record<string, unknown>) => RelayService;
   /** Test and faux-cloud seam for business setups: the faux store instead of Neon. */
   createOrganizationSetup?: (config: Configuration, accounts: AccountService) => OrganizationSetupService;
+  /** Test and faux-cloud seam for the owner's export (OPS-05): the faux store and the faux services' views. */
+  createOrganizationExport?: (config: Configuration, accounts: AccountService, env: Record<string, unknown>) => OrganizationExportService;
 }
 
 const MANAGED_ATTEMPT = /^\/managed\/v1\/attempts\/([A-Za-z0-9][A-Za-z0-9._:-]{0,127})$/;
@@ -138,6 +142,16 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
   // Each business's setup revisions (migration 008) run as the Worker login, which may only read and append them.
   const createOrganizationSetup = options.createOrganizationSetup ?? ((config: Configuration, accounts: AccountService) =>
     new OrganizationSetupService(accounts, new PostgresOrganizationSetupRepository(neonClientFactory(config.databaseUrl))));
+  // The owner's export reads as the Worker login too, SELECT only. Its plan and phones are the
+  // owner's own access and device views, so it shows nothing those views don't.
+  const createOrganizationExport = options.createOrganizationExport ?? ((config: Configuration, accounts: AccountService, env: Record<string, unknown>) => {
+    const commercial = createCommercial(config, accounts);
+    const relay = createRelay(config, accounts, env);
+    return new OrganizationExportService(accounts, {
+      access: (token, organizationId) => commercial.access(token, organizationId),
+      devices: (token, organizationId) => relay.devices(token, organizationId),
+    }, new PostgresOrganizationExportRepository(neonClientFactory(config.databaseUrl)));
+  });
 
   /**
    * The managed gateway (contract nectovia-managed/1). Its own header rules, a
@@ -243,6 +257,10 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
         return json(await createOrganizationSetup(config, accounts).read(token, match[1]));
       if ((match = route('/account/organizations/:id/setup').exec(pathname)) && method === 'POST')
         return json(await createOrganizationSetup(config, accounts).write(token, match[1], await body(request, organizationSetupWriteSchema)));
+
+      // --- the business's records, for its owner (OPS-05) ----------------------------------
+      if ((match = route('/account/organizations/:id/export').exec(pathname)) && method === 'GET')
+        return json(await createOrganizationExport(config, accounts, env).export(token, match[1]));
 
       // --- the phone relay: the computers a business's phones may reach ------------------
       if ((match = route('/relay/v1/organizations/:id/devices').exec(pathname)) && method === 'POST')
