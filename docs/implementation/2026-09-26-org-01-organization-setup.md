@@ -27,6 +27,7 @@ Every call carries the person's bearer. Every refusal is `{ "error": "<one sente
 | Not an active member of this business | 403 | `not_a_member` |
 | An Employee writing | 403 | `role_not_allowed` |
 | A revision someone else saved first | 409 | `setup_conflict` |
+| A record answered under earlier questions than the business's latest revision (added by ORG-02) | 409 | `setup_newer` |
 | A record the schema refuses (extra fields, bad ids, over the bounds) | 422 | `invalid_setup` |
 | The record names another business or tenant | 422 | `setup_wrong_organization` |
 | An answer or question text that looks like a key, password or card number | 422 | `setup_secret_like` |

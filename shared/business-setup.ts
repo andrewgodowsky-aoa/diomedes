@@ -593,6 +593,40 @@ export interface QuestionView {
   maxLength: number | null;
 }
 
+/** A question one revision of the questions added, changed or stopped asking, and why, in words to show (ORG-02). */
+export interface SetupQuestionNote {
+  id: string;
+  why: string;
+}
+
+/**
+ * What resuming a setup saved under earlier questions does to its answers
+ * (ORG-02), for the person to read before they resume. No answer is
+ * reinterpreted: each is either carried exactly as it was given, or left in the
+ * revision it was given in.
+ */
+export interface SetupCarryView {
+  /** The revision of the questions the setup was saved under. */
+  from: number;
+  /** The revision this build asks. */
+  to: number;
+  /** Questions whose answers are carried exactly as they were given, in the name of whoever gave them. */
+  keeps: string[];
+  /** Questions asked again, because what they ask changed. */
+  asks: SetupQuestionNote[];
+  /** Questions asked for the first time. */
+  adds: SetupQuestionNote[];
+  /** Answers not carried, because their question is no longer asked. The earlier revision keeps them. */
+  drops: SetupQuestionNote[];
+}
+
+/** Why this build cannot continue a setup, in words to show (ORG-02). */
+export interface SetupUnreadable {
+  /** `setup_newer`: saved by a newer version of the questions. `setup_unreadable`: a revision this build does not carry. */
+  code: 'setup_newer' | 'setup_unreadable';
+  reason: string;
+}
+
 /**
  * One organization's intake, as the host presents it. `step` is the host's own
  * answer to "what comes next", so the renderer never computes a different one.
@@ -602,8 +636,17 @@ export interface BusinessSetupView {
   state: SetupState;
   schemaRevision: number;
   currentSchemaRevision: number;
-  /** Saved under a schema this build does not use; resume before continuing. */
+  /** Saved under earlier questions; resuming carries its answers across before anything else. */
   stale: boolean;
+  /** When `stale`, what resuming keeps and asks. Null otherwise. */
+  carry: SetupCarryView | null;
+  /**
+   * Set when this build cannot read the setup: saved by a newer version of the
+   * questions, or at a revision it no longer carries. Nothing here can change
+   * it, and its answers are not shown, because this build cannot say what they
+   * mean. Null when it can be read.
+   */
+  unreadable: SetupUnreadable | null;
   step: string;
   previous: string | null;
   answers: Record<string, BusinessAnswer>;

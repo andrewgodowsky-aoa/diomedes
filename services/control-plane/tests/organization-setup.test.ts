@@ -267,4 +267,20 @@ describe('a business setup kept for the organization', () => {
     const response = await cloud.handle(new Request(`http://faux.local${setupPath(juniper)}`));
     expect(response.status).toBe(401);
   });
+
+  it('carries a setup forward to newer questions and refuses one that would take it back (ORG-02)', async () => {
+    const owner = await signIn(DEMO_ACCOUNTS.owner.email);
+    const underTwo = (setup: OrganizationSetupRecord) => ({ ...setup, setup: { ...setup.setup, schemaRevision: 2 } });
+    const first = record(juniper, owner.personId, { name: { value: 'Juniper', by: owner.personId } });
+    await ok(call('POST', setupPath(juniper), owner.token, { expectedRevision: 0, record: first }));
+    // A newer desktop carries it to revision 2 of the questions.
+    await ok(call('POST', setupPath(juniper), owner.token, { expectedRevision: 1, record: underTwo(first) }));
+
+    // A desktop that only knows revision 1 resumes it with no answers: refused, nothing written.
+    const emptied = record(juniper, owner.personId, {});
+    await refused(call('POST', setupPath(juniper), owner.token, { expectedRevision: 2, record: emptied }), 409, 'setup_newer');
+    const rows = cloud.store.snapshot().organizationSetups;
+    expect(rows.map((row) => [row.revision, row.record.setup.schemaRevision])).toEqual([[1, 1], [2, 2]]);
+    expect(rows[1]!.record.setup.answers.name?.value).toBe('Juniper');
+  });
 });

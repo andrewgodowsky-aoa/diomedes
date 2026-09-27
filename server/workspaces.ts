@@ -38,6 +38,7 @@
  * current revision; a save names the revision its content was read with, so a
  * second computer or person conflicts rather than overwriting.
  */
+import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import {
@@ -57,8 +58,20 @@ import {
   type BusinessSetup,
   type BusinessSetupSync,
   type BusinessSetupView,
+  type SetupCarryView,
+  type SetupUnreadable,
 } from '../shared/business-setup.js';
 import { SETUP_UNREACHABLE_REASON, type SetupLoad } from '../shared/organization-setup.js';
+import {
+  QUESTION_SET_CHANGES,
+  SETUP_EARLIER_REASON,
+  SETUP_NEWER_REASON,
+  SETUP_UNREADABLE_REASON,
+  carryPlan,
+} from '../shared/setup-question-changes.js';
+import { assertReadable, migrateRecord, MigrationRefusal } from './migrations/framework.js';
+import { backupPath } from './migrations/files.js';
+import { BUSINESS_SETUP } from './migrations/registry.js';
 import {
   OrganizationSetupSync,
   SETUP_LOCAL_ERROR_REASON,
@@ -115,8 +128,8 @@ import {
   type WorkspaceView,
 } from '../shared/workspaces.js';
 import { payloadDigest } from './command-admission.js';
-import { ApiError } from './paths.js';
-import { jsonWrite, readJson, type Store } from './store.js';
+import { absent, ApiError } from './paths.js';
+import { durableWrite, jsonWrite, readJson, type Store } from './store.js';
 import { revokeTenant, trustBackendInstalled } from './trust/index.js';
 import type { AccountProjection } from './accounts/session.js';
 
@@ -194,6 +207,46 @@ export function answersDigest(answers: Readonly<Record<string, BusinessAnswer>>)
 
 const refuse = (status: number, message: string, code: string) =>
   new ApiError(status, message, { code });
+
+/** How this build reads a stored setup against the questions it asks (ORG-02). */
+type SetupReading =
+  | { kind: 'current' }
+  | { kind: 'earlier'; carry: SetupCarryView }
+  | ({ kind: 'unreadable' } & SetupUnreadable);
+
+/**
+ * Whether this build can continue a stored setup (ORG-02, through H21). One
+ * saved under earlier questions is resumed by carrying its answers across. One
+ * saved by a newer build, or under a revision this build no longer carries, is
+ * left exactly as it is: this build cannot know what its answers mean.
+ */
+function readSetup(setup: BusinessSetup): SetupReading {
+  let revision: number;
+  try {
+    revision = assertReadable(BUSINESS_SETUP, setup);
+  } catch (error) {
+    if (!(error instanceof MigrationRefusal)) throw error;
+    return error.code === 'newer-version'
+      ? { kind: 'unreadable', code: 'setup_newer', reason: SETUP_NEWER_REASON }
+      : { kind: 'unreadable', code: 'setup_unreadable', reason: SETUP_UNREADABLE_REASON };
+  }
+  if (revision === BUSINESS_SETUP.current) return { kind: 'current' };
+  // The table the family's steps were built from, named rather than defaulted.
+  const carry = carryPlan(setup, BUSINESS_SETUP.current, QUESTION_SET_CHANGES);
+  return carry
+    ? { kind: 'earlier', carry }
+    : { kind: 'unreadable', code: 'setup_unreadable', reason: SETUP_UNREADABLE_REASON };
+}
+
+/** Carry a setup saved under earlier questions to the current ones. A failure writes nothing. */
+function carrySetup(setup: BusinessSetup): BusinessSetup {
+  try {
+    return migrateRecord(BUSINESS_SETUP, setup).record as unknown as BusinessSetup;
+  } catch {
+    // A refusal, or a step that could not carry this record: nothing is written either way.
+    throw refuse(409, SETUP_UNREADABLE_REASON, 'setup_unreadable');
+  }
+}
 
 /** Where a signed-in business's setup came from, as the questionnaire shows it. */
 function syncView(load: SetupLoad): BusinessSetupSync | undefined {
@@ -1109,14 +1162,15 @@ export class WorkspaceService {
     return load.kind === 'service' || load.kind === 'local' ? load.setup : null;
   }
 
-  /** A stored setup from an older schema is refused until it is explicitly resumed. */
+  /**
+   * A setup takes answers only under the questions this build asks (ORG-02).
+   * One saved under earlier questions is resumed first, which carries its
+   * answers across; one this build cannot read is refused and left as it is.
+   */
   private requireCurrentSchema(setup: BusinessSetup) {
-    if (setup.schemaRevision !== BUSINESS_SETUP_SCHEMA_REVISION)
-      throw refuse(
-        409,
-        'This setup was saved by an earlier version of the questions. Resume it to continue with the current ones.',
-        'stale_setup',
-      );
+    const reading = readSetup(setup);
+    if (reading.kind === 'unreadable') throw refuse(409, reading.reason, reading.code);
+    if (reading.kind === 'earlier') throw refuse(409, SETUP_EARLIER_REASON, 'stale_setup');
   }
 
   /** Drafting is the only state that accepts answers; the rest must be resumed. */
@@ -1143,9 +1197,12 @@ export class WorkspaceService {
     setup: BusinessSetup | null,
     sync?: BusinessSetupSync,
   ): BusinessSetupView {
-    const answers = setup?.answers ?? {};
+    const reading = setup ? readSetup(setup) : null;
+    const unreadable = reading?.kind === 'unreadable' ? { code: reading.code, reason: reading.reason } : null;
+    const stale = reading?.kind === 'earlier';
+    // A setup this build cannot read shows none of its answers: it cannot say what they mean.
+    const answers = unreadable ? {} : (setup?.answers ?? {});
     const counts = progress(answers);
-    const stale = setup !== null && setup.schemaRevision !== BUSINESS_SETUP_SCHEMA_REVISION;
     return {
       organization: {
         id: organization.id,
@@ -1156,14 +1213,16 @@ export class WorkspaceService {
       schemaRevision: setup?.schemaRevision ?? BUSINESS_SETUP_SCHEMA_REVISION,
       currentSchemaRevision: BUSINESS_SETUP_SCHEMA_REVISION,
       stale,
-      step: stale ? REVIEW_STEP : (setup?.cursor ?? nextStep(answers)),
-      previous: setup ? previousStep(answers, setup.cursor) : null,
+      carry: reading?.kind === 'earlier' ? reading.carry : null,
+      unreadable,
+      step: stale || unreadable ? REVIEW_STEP : (setup?.cursor ?? nextStep(answers)),
+      previous: setup && !stale && !unreadable ? previousStep(answers, setup.cursor) : null,
       answers,
       facts: collectFacts(answers),
       progress: counts,
       ready: readyForProposal(answers),
       digest: answersDigest(answers),
-      proposalDigest: setup?.proposalDigest ?? null,
+      proposalDigest: unreadable ? null : (setup?.proposalDigest ?? null),
       /** What this build does after a proposal, said plainly rather than implied. */
       afterProposal: AFTER_PROPOSAL,
       ...(sync ? { sync } : {}),
@@ -1202,6 +1261,10 @@ export class WorkspaceService {
       const sync = await this.storeSetup(organization, membership, fresh, revision);
       return this.presentSetup(organization, fresh, sync);
     }
+    // A setup this build cannot read is left exactly as it is: never restarted,
+    // never resumed. Before ORG-02 a resume replaced its answers with none.
+    const reading = readSetup(setup);
+    if (reading.kind === 'unreadable') throw refuse(409, reading.reason, reading.code);
     if (mode === 'start' && setup.state !== 'not-started')
       throw refuse(
         409,
@@ -1210,18 +1273,44 @@ export class WorkspaceService {
       );
     // Resuming a finished draft starts a new proposal from the same answers; it
     // does not reopen the old one, and it never edits anything already active.
-    const answers = setup.schemaRevision === BUSINESS_SETUP_SCHEMA_REVISION ? setup.answers : {};
+    // A setup saved under earlier questions is first carried across (H21):
+    // every answer the change did not touch comes across exactly as it was
+    // given, and the questions that changed are asked again.
+    const carried = reading.kind === 'earlier' ? carrySetup(setup) : setup;
     const resumed: BusinessSetup = {
-      ...setup,
-      schemaRevision: BUSINESS_SETUP_SCHEMA_REVISION,
-      answers,
+      ...carried,
       state: 'drafting',
-      cursor: nextStep(answers),
+      cursor: nextStep(carried.answers),
       proposalDigest: null,
       updatedAt: at,
     };
+    if (reading.kind === 'earlier') await this.keepBeforeCarry(organizationId, setup.schemaRevision);
     const sync = await this.storeSetup(organization, membership, resumed, revision);
     return this.presentSetup(organization, resumed, sync);
+  }
+
+  /**
+   * Keep this computer's setup file as it was, beside itself, before a carry
+   * replaces it (H21, decision 10). A business kept only here has no earlier
+   * revision anywhere else. The copy is never removed automatically.
+   */
+  private async keepBeforeCarry(organizationId: string, from: number) {
+    const file = this.setupPath(organizationId);
+    let bytes: Buffer;
+    try {
+      bytes = await fs.readFile(file);
+    } catch (error) {
+      if (absent(error)) return;
+      throw error;
+    }
+    const backup = backupPath(file, from, bytes);
+    try {
+      await fs.access(backup);
+      return;
+    } catch (error) {
+      if (!absent(error)) throw error;
+    }
+    await durableWrite(backup, bytes);
   }
 
   async answer(
@@ -1972,7 +2061,8 @@ export class WorkspaceService {
         continue;
       }
       const setup = this.setups.get(organization.id) ?? null;
-      const counts = progress(setup?.answers ?? {});
+      const reading = setup ? readSetup(setup) : null;
+      const counts = progress(reading?.kind === 'unreadable' ? {} : (setup?.answers ?? {}));
       const mayConfigure = canConfigureOrganization(membership);
       // A signed-in business's summary says where it came from. One that did
       // not load says so, rather than reading as a setup nobody has started.
@@ -1995,13 +2085,24 @@ export class WorkspaceService {
           schemaRevision: setup?.schemaRevision ?? BUSINESS_SETUP_SCHEMA_REVISION,
           answered: counts.answered,
           required: counts.required,
-          // Only a configurator sees a resumable draft; a member has nothing to resume.
-          resumable: !unavailable && mayConfigure && setup !== null && setup.state !== 'not-started',
+          // Only a configurator sees a resumable draft; a member has nothing to
+          // resume, and nobody resumes a setup this build cannot read.
+          resumable:
+            !unavailable &&
+            mayConfigure &&
+            setup !== null &&
+            setup.state !== 'not-started' &&
+            reading?.kind !== 'unreadable',
           mayConfigure,
           ...(unavailable
             ? { source: 'unavailable' as const, loadError: unavailable.reason }
             : loaded?.kind === 'service' || loaded?.kind === 'cache'
               ? { source: loaded.kind }
+              : {}),
+          ...(reading?.kind === 'earlier'
+            ? { questions: 'earlier' as const }
+            : reading?.kind === 'unreadable'
+              ? { questions: reading.code === 'setup_newer' ? ('newer' as const) : ('unreadable' as const) }
               : {}),
         },
       });
