@@ -54,8 +54,8 @@ export const NECTOVIA_UNAVAILABLE = "Nectovia's model service isn't available ri
 export interface NectoviaPolicy {
   revision: number;
   tiers: Record<JobTier, { model: string; label: string } | null>;
-  /** The gateway accepts reasoning summaries. Absent means it does not, and none is asked for. */
-  reasoningSummaries?: boolean;
+  /** Per tier, whether the gateway accepts reasoning summaries for it. Absent: none is asked for. */
+  reasoningSummaries?: Partial<Record<JobTier, boolean>>;
 }
 
 /**
@@ -391,7 +391,7 @@ export async function respondNectovia(
         attemptId: () => attemptId,
         parentAttemptId,
         // Ask for summaries only from a gateway that says it accepts them.
-        summaries: Boolean(rest.onReasoningDelta) && account.policy?.()?.reasoningSummaries === true,
+        summaries: Boolean(rest.onReasoningDelta) && account.policy?.()?.reasoningSummaries?.[managed.tier] === true,
       }),
     });
   } catch (error) {

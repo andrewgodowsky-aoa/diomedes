@@ -38,7 +38,9 @@ export const MODEL_API_REASONING: Readonly<
   // Bedrock's acceptance of reasoning.summary is proven only by the paid Luna proof; if it
   // refuses the summary, this one entry goes back to 'none'.
   'aws-bedrock': 'reasoning-delta',
-  'azure-openai': 'reasoning-delta',
+  // No summary is asked for on any deployment until a live proof shows Azure accepts
+  // reasoning.summary on the reasoning models people deploy: a refusal would fail every watched reply.
+  'azure-openai': 'none',
   // Maps only the reasoning its models return; nothing new is asked for (require_parameters).
   openrouter: 'reasoning-delta',
   'google-vertex': 'reasoning-delta',
@@ -295,6 +297,7 @@ export function createModelApiAdapter(spec: ModelApiAdapterSpec): ModelAdapter &
         signal,
         onDelta,
         onToolActivity: spec.sinks?.onToolActivity,
+        onReasoningDelta: spec.sinks?.onReasoningDelta,
       });
       let response: ModelResult['response'];
       let portable: PortableMessage;

@@ -316,13 +316,16 @@ describe('the request the real SDK sends to the gateway', () => {
     expect(result.providerRequestId).toBe('gw-attempt-1');
   });
 
-  test('a gateway that publishes reasoning summaries is asked for them while a thinking sink listens; they stream apart from the answer', async () => {
+  test("a gateway that publishes reasoning summaries for this turn's tier is asked for them while a thinking sink listens; they stream apart from the answer", async () => {
     const summarized: Item = { ...reasoning(), summary: [{ type: 'summary_text', text: 'Adding up the standing orders.' }] };
     const net = gateway([() => answer(envelope([summarized, message('Forty loaves are on order.')]))]);
     const thoughts: string[] = [];
     const deltas: string[] = [];
     const result = await call(net.fetch, {
-      account: { refreshPolicy: async () => policy(), policy: () => ({ ...policy(), reasoningSummaries: true }) },
+      account: {
+        refreshPolicy: async () => policy(),
+        policy: () => ({ ...policy(), reasoningSummaries: { efficient: true, focused: false, thorough: false } }),
+      },
       onDelta: (text) => deltas.push(text),
       onReasoningDelta: (text) => thoughts.push(text),
     });
@@ -333,15 +336,16 @@ describe('the request the real SDK sends to the gateway', () => {
     expect(result.outcome).toEqual({ kind: 'final', text: 'Forty loaves are on order.' });
   });
 
-  test.each([
-    ['the policy does not publish reasoning summaries', false, true],
-    ['no thinking sink listens', true, false],
-  ])('no summary is asked for when %s', async (_why, publishes, listens) => {
+  test.each<[string, NectoviaPolicy['reasoningSummaries'], boolean]>([
+    ['the policy does not publish reasoning summaries', undefined, true],
+    ["the policy publishes them only for tiers this turn doesn't run on", { efficient: false, focused: true, thorough: true }, true],
+    ['no thinking sink listens', { efficient: true, focused: true, thorough: true }, false],
+  ])('no summary is asked for when %s', async (_why, published, listens) => {
     const net = gateway([() => answer(envelope([reasoning(), message('Forty loaves are on order.')]))]);
     await call(net.fetch, {
       account: {
         refreshPolicy: async () => policy(),
-        policy: () => ({ ...policy(), ...(publishes ? { reasoningSummaries: true } : {}) }),
+        policy: () => ({ ...policy(), ...(published ? { reasoningSummaries: published } : {}) }),
       },
       ...(listens ? { onReasoningDelta: () => undefined } : {}),
     });

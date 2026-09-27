@@ -192,7 +192,7 @@ export interface EngineServiceDeps {
    * The preview contract's redaction: any secret the caller knows is in scope
    * for this engine's deltas. Applied before the frame is measured or emitted.
    */
-  redactFor?(engine: ExternalEngine): (text: string) => string;
+  redactFor?(engine: ExternalEngine | ModelApiRoute): (text: string) => string;
   /** This computer's answer for one file: its real path, size and bytes. */
   identify?(file: string): Promise<FileIdentity | null>;
   /** The reviewed-release digest check for Diomedes's own private copy. */
@@ -2263,6 +2263,7 @@ export class EngineService {
                   context,
                   signal,
                   MODEL_API_REASONING[route] === 'reasoning-delta',
+                  this.deps.redactFor?.(route),
                 );
                 thinking = sinks.onReasoningDelta;
                 return {
@@ -2999,6 +3000,8 @@ function fencedSinks(
   signal: AbortSignal,
   /** Whether the route declares thinking (`streaming.reasoning`). Work turns pass false. */
   reasoning = false,
+  /** The route's redaction (`redactFor`), applied to every frame and to the saved thinking. */
+  redact?: (text: string) => string,
 ) {
   let accepting = true;
   let pending = Promise.resolve();
@@ -3021,6 +3024,7 @@ function fencedSinks(
     ? previewSink({
         identity: stamped,
         signal,
+        redact,
         onInvalid: (invalid) => {
           failure ??= { error: new EngineError('OUTPUT_LIMIT', invalid.reason, true) };
         },
@@ -3028,13 +3032,14 @@ function fencedSinks(
       })
     : undefined;
   const onToolActivity = input.onActivity
-    ? activitySink({ identity: stamped, signal, onActivity: (frame) => publish(() => input.onActivity?.(frame)) })
+    ? activitySink({ identity: stamped, signal, redact, onActivity: (frame) => publish(() => input.onActivity?.(frame)) })
     : undefined;
   const onReasoningDelta =
     reasoning && input.onReasoning
       ? reasoningSink({
           identity: stamped,
           signal,
+          redact,
           onReasoning: (frame) => publish(() => input.onReasoning?.(frame)),
         })
       : undefined;

@@ -39,6 +39,12 @@ export interface ProviderRegistryRow {
   readonly credential: 'BEDROCK_API_KEY';
   /** Where the provider puts its request id, for a receipt when the stream carries no response id. */
   readonly requestIdHeaders: readonly string[];
+  /**
+   * Whether this upstream is proven to accept `reasoning.summary`. A tier it serves is published as
+   * accepting summaries only with this line; absent, no desktop asks, because a provider or model
+   * that refuses the option would fail every watched reply (spec 4.2).
+   */
+  readonly reasoningSummaries?: boolean;
 }
 
 const row = (value: ProviderRegistryRow): ProviderRegistryRow =>
@@ -61,6 +67,9 @@ export const MANAGED_PROVIDERS: readonly ProviderRegistryRow[] = Object.freeze([
     maxOutputTokens: 16_000,
     credential: 'BEDROCK_API_KEY',
     requestIdHeaders: ['x-amzn-requestid', 'x-request-id'],
+    // Pending the paid Luna proof, which gates the merge and so this Worker's deploy. If Bedrock
+    // refuses the summary, this line and the desktop's AWS entry in MODEL_API_REASONING go together.
+    reasoningSummaries: true,
   }),
 ]);
 

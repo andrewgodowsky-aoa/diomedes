@@ -16,7 +16,7 @@ import { createApp } from '../server/app';
 import { EngineService } from '../server/engines/service';
 import { AzureConnections } from '../server/engines/azure-openai';
 import { OPENROUTER_SDK, OpenRouterConnections } from '../server/engines/openrouter';
-import { AWS_LUNA_MODEL } from '../server/engines/aws-bedrock';
+import { AWS_LUNA_MODEL, AWS_RESPONSES_ENDPOINTS } from '../server/engines/aws-bedrock';
 import { EngineError } from '../server/engines/process';
 import { testOnlySecretBox } from '../server/connection-secrets';
 import { FileModelTranscripts } from '../server/harness/model-transcripts';
@@ -24,7 +24,7 @@ import { modelSessionRunId } from '../server/harness/model-session-run';
 import { TEXT_DISPATCH_STEP } from '../server/harness/text-route';
 import type { Store } from '../server/store';
 import type { TextRequest } from '../server/engines/contract';
-import type { ToolActivity, TransientPreview } from '../shared/adapter-contract';
+import type { ReasoningPreview, ToolActivity, TransientPreview } from '../shared/adapter-contract';
 import type { AzureConnectionView, ModelApiReadiness, OpenRouterConnectionView } from '../shared/model-api';
 import type { Project } from '../shared/types';
 import { chatEvents, responsesEvents, sseResponse } from './fixtures/model-api-streams.js';
@@ -51,6 +51,13 @@ interface Seen {
   body: Item;
 }
 let seen: Seen[];
+/** What the next OpenRouter answer carries besides its usual text: its thinking, or another answer. */
+let orReasoning: string | string[] | undefined;
+let orAnswer: string | undefined;
+/** The reasoning summary the next AWS answer carries. */
+let awsReasoning: string | undefined;
+/** A key the test redactor knows, as `redactFor` knows the secrets in scope for a route. */
+const LEAKED = 'sk-test-leak-0123456789abcdef';
 
 /** One captured network for all three providers, answering from what each request carries. */
 const network = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -75,7 +82,8 @@ const network = (async (input: RequestInfo | URL, init?: RequestInit) => {
       chatEvents({
         model: OR_MODEL,
         provider: 'Anthropic',
-        text: observed.includes('Tomato soup') ? 'Tomato soup and a grilled cheese (menu.md).' : 'I could not read the menu.',
+        ...(orReasoning ? { reasoning: orReasoning } : {}),
+        text: orAnswer ?? (observed.includes('Tomato soup') ? 'Tomato soup and a grilled cheese (menu.md).' : 'I could not read the menu.'),
         usage: { prompt_tokens: 700, completion_tokens: 40, total_tokens: 740, is_byok: false },
       }),
     );
@@ -103,6 +111,32 @@ const network = (async (input: RequestInfo | URL, init?: RequestInit) => {
       }),
       { 'apim-request-id': 'apim-1' },
     );
+  if (url.startsWith(AWS_RESPONSES_ENDPOINTS['us-east-1']))
+    return sseResponse(
+      responsesEvents({
+        id: `resp_aws_${seen.length}`,
+        object: 'response',
+        created_at: 1_790_000_000,
+        status: 'completed',
+        model: AWS_LUNA_MODEL,
+        output: [
+          ...(awsReasoning
+            ? [{ type: 'reasoning', id: 'rs_aws', summary: [{ type: 'summary_text', text: awsReasoning }], encrypted_content: 'enc-aws' }]
+            : []),
+          {
+            type: 'message',
+            id: 'msg_aws',
+            role: 'assistant',
+            status: 'completed',
+            content: [{ type: 'output_text', text: 'Tomato soup and a grilled cheese (menu.md).', annotations: [] }],
+          },
+        ],
+        usage: { input_tokens: 500, output_tokens: 60, total_tokens: 560 },
+        incomplete_details: null,
+        error: null,
+      }),
+      { 'x-amzn-requestid': 'req-aws-1' },
+    );
   throw new Error(`A request reached a provider this test never expects: ${url}`);
 }) as typeof globalThis.fetch;
 
@@ -117,7 +151,13 @@ const store = () => app.locals.store as Store;
 beforeEach(async () => {
   root = await fs.mkdtemp(path.join(os.tmpdir(), 'diomedes-providers-'));
   seen = [];
-  service = new EngineService(path.join(root, 'engines'), { discover: async () => [] });
+  orReasoning = undefined;
+  orAnswer = undefined;
+  awsReasoning = undefined;
+  service = new EngineService(path.join(root, 'engines'), {
+    discover: async () => [],
+    redactFor: () => (text: string) => text.split(LEAKED).join('[redacted]'),
+  });
   const dataDir = path.join(root, 'data');
   app = await createApp({
     dataDir,
@@ -300,6 +340,91 @@ describe('an OpenRouter conversation turn streams stamped previews and tool acti
     const other = turnInput({ model: OR_MODEL, accountRoute: view.connection!.accountRoute, onToolActivity: () => undefined });
     await expect(service.generateModelApi('openrouter', other)).rejects.toMatchObject({ code: 'PREVIEW_CONTRACT' });
     expect(seen).toHaveLength(0);
+  });
+});
+
+describe('thinking on a model-API conversation', () => {
+  test('an OpenRouter conversation streams returned reasoning and saves it on the reply', async () => {
+    orReasoning = 'Weighing the menu.';
+    const view = await connectOpenRouter();
+    await approve('openrouter');
+    const previews: TransientPreview[] = [];
+    const thoughts: ReasoningPreview[] = [];
+    const input = turnInput({
+      model: OR_MODEL,
+      accountRoute: view.connection!.accountRoute,
+      onPreview: (frame) => previews.push(frame),
+      onReasoning: (frame) => thoughts.push(frame),
+    });
+    const runId = modelSessionRunId(project.id, input.requestId);
+    const result = await service.modelSession('openrouter', 'start', runId, input);
+
+    expect(result.response?.text).toBe('Tomato soup and a grilled cheese (menu.md).');
+    expect(thoughts.map((frame) => frame.text).join('')).toBe('Weighing the menu.');
+    for (const frame of thoughts)
+      expect(frame).toMatchObject({ projectId: project.id, threadId: 'thread-1', requestId: input.requestId, runId, stepId: previews[0].stepId });
+    expect(result.response?.reasoning?.text).toBe('Weighing the menu.');
+    expect(previews.map((frame) => frame.text).join('')).not.toContain('Weighing');
+  });
+
+  test('model-API thinking and answer previews are redacted, and saved thinking again as one piece', async () => {
+    // One key split across two thinking parts, and one whole in the second part and in the answer.
+    orReasoning = ['Checking sk-test-leak-01', `23456789abcdef against ${LEAKED}.`];
+    orAnswer = `The menu key was ${LEAKED}.`;
+    const view = await connectOpenRouter();
+    await approve('openrouter');
+    const previews: TransientPreview[] = [];
+    const thoughts: ReasoningPreview[] = [];
+    const input = turnInput({
+      model: OR_MODEL,
+      accountRoute: view.connection!.accountRoute,
+      onPreview: (frame) => previews.push(frame),
+      onReasoning: (frame) => thoughts.push(frame),
+    });
+    const result = await service.modelSession('openrouter', 'start', modelSessionRunId(project.id, input.requestId), input);
+
+    expect(thoughts.length).toBeGreaterThan(0);
+    expect(thoughts.some((frame) => frame.text.includes(LEAKED))).toBe(false);
+    expect(previews.some((frame) => frame.text.includes(LEAKED))).toBe(false);
+    expect(result.response?.reasoning?.text).not.toContain(LEAKED);
+    expect(result.response?.reasoning?.text).toBe('Checking [redacted] against [redacted].');
+  });
+
+  test('an AWS Bedrock conversation asks for summaries only while watched, and streams and saves them', async () => {
+    awsReasoning = 'Checking the menu first.';
+    await connectAws();
+    const accountRoute = String(store().settings.services!['aws-bedrockAccountRoute']);
+    const thoughts: ReasoningPreview[] = [];
+    const watched = turnInput({ model: AWS_LUNA_MODEL, accountRoute, onReasoning: (frame) => thoughts.push(frame) });
+    const result = await service.modelSession('aws-bedrock', 'start', modelSessionRunId(project.id, watched.requestId), watched);
+
+    expect(result.response?.text).toBe('Tomato soup and a grilled cheese (menu.md).');
+    expect((seen[0].body.reasoning as Item).summary).toBe('auto');
+    expect(thoughts.map((frame) => frame.text).join('')).toBe('Checking the menu first.');
+    expect(result.response?.reasoning?.text).toBe('Checking the menu first.');
+
+    const unwatched = turnInput({ model: AWS_LUNA_MODEL, accountRoute, threadId: 'thread-2' });
+    const quiet = await service.modelSession('aws-bedrock', 'start', modelSessionRunId(project.id, unwatched.requestId), unwatched);
+    expect(((seen[1].body.reasoning as Item | undefined)?.summary ?? null)).toBeNull();
+    expect(quiet.response?.reasoning).toBeUndefined();
+  });
+
+  test('an Azure conversation asks for no reasoning summary until Azure is proven to accept one', async () => {
+    const view = await connectAzure();
+    await approve('azure-openai');
+    const thoughts: ReasoningPreview[] = [];
+    const input = turnInput({
+      model: 'gpt-5.6-luna',
+      accountRoute: view.connection!.accountRoute,
+      onReasoning: (frame) => thoughts.push(frame),
+    });
+    const result = await service.modelSession('azure-openai', 'start', modelSessionRunId(project.id, input.requestId), input);
+
+    expect(result.response?.text).toBe('{"summary":"Draft","changes":[]}');
+    expect(seen).toHaveLength(1);
+    expect((seen[0].body.reasoning as Item | undefined)?.summary ?? null).toBeNull();
+    expect(thoughts).toEqual([]);
+    expect(result.response?.reasoning).toBeUndefined();
   });
 });
 
