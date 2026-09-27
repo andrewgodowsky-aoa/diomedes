@@ -170,6 +170,7 @@ import { keepPartially } from './change-review/partial-keep.js';
 import { documentDiff, ReviewComments } from './review-comments.js';
 import { mountGuidanceRoutes } from './guidance.js';
 import { ReadyScheduler } from './ready-scheduler.js';
+import { taskExecutionView } from './task-execution.js';
 import { DesktopConnections } from './connections/desktop.js';
 import { toastConnector } from './connections/fixture.js';
 import { compiledConnectionDemoConnectors } from './connections/compiler-demo.js';
@@ -2479,7 +2480,21 @@ export async function createApp(options: AppOptions) {
           )
         )
           throw new ApiError(409, 'Stop this work before moving the task manually.');
-        store.moveTask(state, task, choice(b.state, states, 'task state'));
+        const target = choice(b.state, states, 'task state');
+        // A person's reopen is recorded even when the task already reads To do. A Stop or a
+        // declined proposal leaves it there by Diomedes' own move, and the Board and the Ready
+        // queue count a reopen only when it is the person's (taskEvidence, readyAt): without
+        // the record the request would be accepted and change nothing. A reopen that already
+        // counts is not recorded twice, so a retried request adds nothing.
+        const latest = task.moves.filter((move) => !move.undone).at(-1);
+        const counted =
+          latest?.to === 'todo' &&
+          latest.by === 'you' &&
+          !state.sessions.some(
+            (session) =>
+              session.taskId === task.id && (session.endedAt ?? session.startedAt) > latest.at,
+          );
+        store.moveTask(state, task, target, 'you', target === 'todo' && !counted);
         task.reason = null;
       }
       await store.persist(state);
@@ -2880,6 +2895,34 @@ export async function createApp(options: AppOptions) {
   );
   app.get('/api/ready-queue', route(async () => ({ allPaused: readyScheduler.globalPause })));
   app.put('/api/ready-queue', route(async (req) => readyScheduler.configureAll(body(req))));
+  /**
+   * The task inspector's execution view: what a Board Start of this task would run with, read
+   * through the services the Work start admission uses, and what each of its runs recorded.
+   * Read-only; the admission resolves again when it runs (server/task-execution.ts).
+   */
+  app.get(
+    '/api/projects/:id/tasks/:taskId/execution',
+    route(
+      async (req) =>
+        taskExecutionView(
+          {
+            store,
+            profiles: agentProfiles,
+            nativeWork,
+            // What `admitWork` asks for when no profile decides a Board Start.
+            choice: (engine, projectId, thread) =>
+              nativeChoice(engine, projectId, thread, { mode: 'build', text: null }),
+            queue: (projectId) => readyScheduler.view(projectId),
+            running: (projectId) => work.running(projectId) || nativeWork.running(projectId),
+            updateClosing: () =>
+              isUpdateClosing() ? 'The app update is accepted. New work pauses until restart.' : null,
+          },
+          id(req),
+          String(req.params.taskId),
+        ),
+      false,
+    ),
+  );
   app.post(
     '/api/projects/:id/work/start',
     route(async (req) => admitWork(id(req), body(req), req.socket.localPort)),

@@ -1979,8 +1979,9 @@ export class Store extends EventEmitter {
     state.tasks.push(task);
     return task;
   }
-  moveTask(state: StoredState, task: Task, target: TaskState, by: Owner = 'you') {
-    if (task.state === target) return;
+  /** `unchanged` records the move even when the task already reads `target` (a person's reopen). */
+  moveTask(state: StoredState, task: Task, target: TaskState, by: Owner = 'you', unchanged = false) {
+    if (task.state === target && !unchanged) return;
     const previous = task.state;
     task.state = target;
     task.moves.push({

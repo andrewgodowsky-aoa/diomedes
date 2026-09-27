@@ -32,6 +32,10 @@ export type ShellView =
 export type BoardProps = { project: Project; state: ProjectState; tasks: Task[]; policy: 'first' | 'go'; focusTaskId?: string; busy: boolean; onPolicyChange?(policy: 'first' | 'go'): void;
   documents: DocumentInfo[]; documentsLoading: boolean; documentsFailure: string | null;
   onStart(task: Task): Promise<void>; onPause(task: Task): Promise<void>; onReview(task: Task): void; onRoute(task: Task, to: Slot): Promise<void>; onReopen(task: Task): Promise<void>; onOpenTeam(task: Task): void; onOpenThread(task: Task): void;
+  /** Marks a settled task done through the task route, as a drag or menu move to Done asks (shared/board-moves.ts). */
+  onMarkDone(task: Task): Promise<void>;
+  /** Technical detail: only there does the task inspector offer the task's own profile choice (H09). */
+  technical?: boolean;
   /** Rejects when the task was not made, so the board keeps the typed words. */
   onCreateTask(input: { name: string; description: string; sourceDocument?: string }): Promise<void>; };
 export type TeamProps = { project: Project; state: ProjectState; members: TeamMember[]; mail: MailboxMessage[]; runs: TeamRun[]; focusTaskId?: string; usage: UsageSnapshot[]; busy: boolean;
