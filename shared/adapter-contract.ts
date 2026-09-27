@@ -191,12 +191,168 @@ export interface PreviewRejection {
   readonly reason: string;
 }
 
+// --- live redaction --------------------------------------------------------------------------
+
+/**
+ * How much of a live stream waits before it is shown, so the route's redaction reads a secret
+ * whole even when the engine streams it in pieces: always the newest `holdChars` characters, and
+ * the word still being written when it is longer, up to `wordChars`. A secret without spaces (a
+ * key, a token, a home folder) is caught up to `wordChars` characters long, and one with spaces up
+ * to `holdChars`; a longer one can still show its first part live. The saved reply and its saved
+ * thinking are redacted as one piece either way.
+ */
+export const LIVE_REDACTION = Object.freeze({
+  holdChars: 32,
+  wordChars: 256,
+});
+
+/** Past this, a window no clean cut has shortened is redacted again only once it grows by a quarter. */
+const SLOW_WINDOW_CHARS = 16 * 1024;
+
+const WHITESPACE = /\s/;
+
+/** A character's UTF-8 size. A lone surrogate is encoded as U+FFFD, three bytes. */
+const charBytes = (char: string) => {
+  const code = char.codePointAt(0) ?? 0;
+  return code < 0x80 ? 1 : code < 0x800 ? 2 : code < 0x10000 ? 3 : 4;
+};
+
+/** Pieces of at most `max` UTF-8 bytes, never splitting a character. */
+function splitBytes(text: string, max: number): string[] {
+  const pieces: string[] = [];
+  let piece = '';
+  let bytes = 0;
+  for (const char of text) {
+    const size = charBytes(char);
+    if (piece && bytes + size > max) {
+      pieces.push(piece);
+      piece = '';
+      bytes = 0;
+    }
+    piece += char;
+    bytes += size;
+  }
+  if (piece) pieces.push(piece);
+  return pieces;
+}
+
+/** How many leading UTF-16 units two strings share. */
+function sharedPrefix(a: string, b: string): number {
+  const most = Math.min(a.length, b.length);
+  let at = 0;
+  while (at < most && a.charCodeAt(at) === b.charCodeAt(at)) at += 1;
+  return at;
+}
+
+/**
+ * Redaction for a stream that arrives in pieces. `redact` always reads the stream's text as one
+ * piece, never a chunk on its own, and only what more text can no longer change is released: the
+ * part of the whole that the text before the held tail, redacted alone, already agrees with. The
+ * window restarts at that cut once everything before it is released and the two sides redact the
+ * same apart as together, so a chunk costs about the hold rather than the whole stream so far.
+ *
+ * After a restart, a pattern anchored on a word boundary can match at the window's start where the
+ * whole stream would not. That only ever redacts more, never less.
+ */
+function streamRedaction(redact: (text: string) => string) {
+  /** The raw text since the last clean cut. Everything before it is released and final. */
+  let text = '';
+  /** How much of `redact(text)` has been released. */
+  let released = 0;
+  /** The window's length when it was last redacted. */
+  let read = 0;
+  const reset = () => {
+    text = '';
+    released = 0;
+    read = 0;
+  };
+  return {
+    /** Adds a chunk and returns the redacted text that is now safe to show, often none. */
+    push(chunk: string): string {
+      text += chunk;
+      const floor = Math.max(0, text.length - LIVE_REDACTION.wordChars);
+      let word = text.length;
+      while (word > floor && !WHITESPACE.test(text[word - 1])) word -= 1;
+      const cut = Math.min(text.length - LIVE_REDACTION.holdChars, word);
+      if (cut <= 0) return '';
+      if (text.length > SLOW_WINDOW_CHARS && text.length < read + read / 4) return '';
+      read = text.length;
+      const whole = redact(text);
+      const settled = redact(text.slice(0, cut));
+      let end = sharedPrefix(whole, settled);
+      // Never half a surrogate pair: the whole character goes with the next release.
+      const last = whole.charCodeAt(end - 1);
+      if (last >= 0xd800 && last <= 0xdbff) end -= 1;
+      const out = end > released ? whole.slice(released, end) : '';
+      released = Math.max(released, end);
+      if (released === settled.length && whole === settled + redact(text.slice(cut))) {
+        text = text.slice(cut);
+        released = 0;
+        read = text.length;
+      }
+      return out;
+    },
+    /** Everything still held, redacted with the rest of its window. The stream starts over. */
+    flush(): string {
+      const rest = text;
+      const from = released;
+      reset();
+      return rest ? redact(rest).slice(from) : '';
+    },
+    /** Forgets what is held, unseen. */
+    drop: reset,
+  };
+}
+
+/**
+ * One attempt's live channels, kept in the order the engine produced them. A text or thinking
+ * sink holds back the newest part of its stream (`LIVE_REDACTION`), and anything on another channel
+ * of the same attempt first shows what the others hold: a tool line never overtakes the text
+ * written before it, and an answer never overtakes its thinking. So at most one channel holds text
+ * at a time, and `flush` shows it when the attempt ends, before the channels close.
+ */
+export interface LiveOrder {
+  /** Joins a channel by its flush, and returns what the channel calls before it sends anything. */
+  join(flush: () => void): () => void;
+  /** Shows what every channel still holds. */
+  flush(): void;
+}
+
+export function liveOrder(): LiveOrder {
+  const channels: (() => void)[] = [];
+  return {
+    join(flush) {
+      channels.push(flush);
+      return () => {
+        for (const channel of channels) if (channel !== flush) channel();
+      };
+    },
+    flush() {
+      for (const channel of channels) channel();
+    },
+  };
+}
+
+/** The raw text sink an adapter writes the answer to. */
+export interface PreviewSink {
+  (raw: string): void;
+  /** Shows what is still held back, as the attempt ends; nothing once the signal has aborted. */
+  flush(): void;
+}
+
 /**
  * The producer half of the preview contract. An adapter-facing raw text sink
  * is wrapped into the caller-facing frame channel: the host stamps the run
  * identity and a dense sequence, applies the caller's redaction before
- * measuring, and treats an over-budget frame as a contract violation — the
- * frame is never emitted and the stream is poisoned rather than truncated.
+ * measuring, and treats an over-budget chunk as a contract violation — the
+ * chunk is never emitted and the stream is poisoned rather than truncated.
+ *
+ * With a redaction, the stream is redacted as one piece across chunk
+ * boundaries: its newest part is held back (`LIVE_REDACTION`) until more text
+ * arrives, another channel of the attempt speaks (`order`), or `flush` is
+ * called as the attempt ends. A release longer than one frame is split into
+ * frames within the budget. Without one, each chunk is one frame, as it comes.
+ * A poisoned or stopped stream never shows what it held.
  *
  * `onInvalid` decides who sees the refusal: pass it to collect the rejection
  * (EngineService turns it into an `OUTPUT_LIMIT` failure after the adapter
@@ -222,36 +378,61 @@ export function previewSink(options: {
    * preview outlives its request.
    */
   readonly signal?: AbortSignal;
-}): (text: string) => void {
+  /** The attempt's other live channels, so held text is never overtaken. */
+  readonly order?: LiveOrder;
+}): PreviewSink {
   let seq = 0;
   let poisoned = false;
-  return (raw: string) => {
-    if (poisoned || options.signal?.aborted) return;
-    seq += 1;
-    const text = options.redact ? options.redact(raw) : raw;
-    const frame: TransientPreview = {
-      kind: 'text-delta',
-      ...options.identity,
-      seq,
-      text,
+  const redact = options.redact;
+  const held = redact ? streamRedaction(redact) : undefined;
+  /** The frame this text would be. One that breaks the contract poisons the stream. */
+  const stamp = (text: string): TransientPreview | null => {
+    const parsed = transientPreviewSchema.safeParse({ kind: 'text-delta', ...options.identity, seq: seq + 1, text });
+    if (parsed.success) return parsed.data;
+    poisoned = true;
+    const failure: PreviewRejection = {
+      code: 'OUTPUT_LIMIT',
+      reason: `A preview frame violated the contract: ${parsed.error.issues
+        .map((issue) => `${issue.path.join('.')}: ${issue.message}`)
+        .join('; ')}`,
     };
-    const parsed = transientPreviewSchema.safeParse(frame);
-    if (!parsed.success) {
-      poisoned = true;
-      const failure: PreviewRejection = {
-        code: 'OUTPUT_LIMIT',
-        reason: `A preview frame violated the contract: ${parsed.error.issues
-          .map((issue) => `${issue.path.join('.')}: ${issue.message}`)
-          .join('; ')}`,
-      };
-      if (options.onInvalid) {
-        options.onInvalid(failure);
-        return;
-      }
-      throw Object.assign(new Error(failure.reason), { code: failure.code });
+    if (options.onInvalid) {
+      options.onInvalid(failure);
+      return null;
     }
-    options.onPreview?.(parsed.data);
+    throw Object.assign(new Error(failure.reason), { code: failure.code });
   };
+  const send = (text: string) => {
+    const frame = stamp(text);
+    if (!frame) return false;
+    seq += 1;
+    options.onPreview?.(frame);
+    return true;
+  };
+  /** Released text, in frames within the budget. */
+  const release = (text: string) => {
+    for (const piece of splitBytes(text, OUTPUT_DELTA.maxChunkBytes)) if (!send(piece)) return;
+  };
+  const flush = () => {
+    if (!held) return;
+    if (poisoned || options.signal?.aborted) return held.drop();
+    release(held.flush());
+  };
+  const releaseOthers = options.order?.join(flush);
+  const sink = ((raw: string) => {
+    if (poisoned || options.signal?.aborted) return;
+    releaseOthers?.();
+    if (!redact || !held) {
+      send(raw);
+      return;
+    }
+    // The adapter's bound is still one chunk, measured after redaction. The chunk then joins the
+    // rest of the stream, so a secret split across chunks is redacted whole.
+    if (!stamp(redact(raw))) return held.drop();
+    release(held.push(raw));
+  }) as PreviewSink;
+  sink.flush = flush;
+  return sink;
 }
 
 // --- live tool activity ----------------------------------------------------------------------
@@ -312,8 +493,12 @@ export function activitySink(options: {
   readonly redact?: (text: string) => string;
   readonly onActivity?: (frame: ToolActivity) => void;
   readonly signal?: AbortSignal;
+  /** The attempt's other live channels: what they hold is shown before this tool line. */
+  readonly order?: LiveOrder;
 }): (raw: RawToolActivity) => void {
   let seq = 0;
+  // Activity holds nothing back; it only releases what the text and thinking channels hold.
+  const releaseOthers = options.order?.join(() => undefined);
   const clean = (text: string, max: number) => {
     const redacted = (options.redact ? options.redact(text) : text)
       .replace(/[\u0000-\u0008\u000b-\u001f\u007f‪-‮]/g, '')
@@ -322,6 +507,7 @@ export function activitySink(options: {
   };
   return (raw: RawToolActivity) => {
     if (options.signal?.aborted) return;
+    releaseOthers?.();
     const summary = clean(raw.summary || raw.tool, 300);
     const detail = raw.detail === undefined ? undefined : clean(raw.detail, 4000);
     const frame = {
@@ -390,6 +576,8 @@ export interface ReasoningRecord {
 /** The adapter-facing raw thinking sink, and the finished record it collected. */
 export interface ReasoningSink {
   (raw: string): void;
+  /** Shows what is still held back, as the attempt ends; nothing once the signal has aborted. */
+  flush(): void;
   /** The finished thinking, or null when none came. Read it once the attempt has ended. */
   finish(): ReasoningRecord | null;
 }
@@ -397,38 +585,14 @@ export interface ReasoningSink {
 /** Control characters and bidirectional overrides. Line breaks and tabs stay. */
 const UNSAFE_CHARACTERS = /[\u0000-\u0008\u000b-\u001f\u007f\u202a-\u202e]/g;
 
-/** A character's UTF-8 size. A lone surrogate is encoded as U+FFFD, three bytes. */
-const charBytes = (char: string) => {
-  const code = char.codePointAt(0) ?? 0;
-  return code < 0x80 ? 1 : code < 0x800 ? 2 : code < 0x10000 ? 3 : 4;
-};
-
-/** Pieces of at most `max` UTF-8 bytes, never splitting a character. */
-function splitBytes(text: string, max: number): string[] {
-  const pieces: string[] = [];
-  let piece = '';
-  let bytes = 0;
-  for (const char of text) {
-    const size = charBytes(char);
-    if (piece && bytes + size > max) {
-      pieces.push(piece);
-      piece = '';
-      bytes = 0;
-    }
-    piece += char;
-    bytes += size;
-  }
-  if (piece) pieces.push(piece);
-  return pieces;
-}
-
 /**
- * The producer half of the thinking channel, the sibling of `activitySink`. Each chunk becomes
- * one or more stamped frames: redacted, stripped of control characters and split to the frame
- * budget. Unlike the answer, thinking never fails anything: a frame that still does not parse is
- * dropped, a presenter that throws is ignored, and everything after the signal aborts is dropped.
- * `finish` gives the whole thinking redacted as one piece, so a secret split across two chunks is
- * still caught, cut to `REASONING.maxSavedBytes`.
+ * The producer half of the thinking channel, the sibling of `activitySink`. Thinking is redacted
+ * as one piece across chunk boundaries, as the answer preview is (`previewSink`), then stripped of
+ * control characters and split to the frame budget; with no redaction each chunk is sent as it
+ * comes. Unlike the answer, thinking never fails anything: a frame that still does not parse is
+ * dropped, a presenter or a redaction that throws is ignored, and everything after the signal
+ * aborts is dropped, held text included. `finish` gives the whole thinking redacted as one piece,
+ * cut to `REASONING.maxSavedBytes`.
  */
 export function reasoningSink(options: {
   readonly identity: {
@@ -443,6 +607,8 @@ export function reasoningSink(options: {
   readonly redact?: (text: string) => string;
   readonly onReasoning?: (frame: ReasoningPreview) => void;
   readonly signal?: AbortSignal;
+  /** The attempt's other live channels, so held thinking is never overtaken. */
+  readonly order?: LiveOrder;
   /** The clock, replaceable in tests. */
   readonly now?: () => number;
 }): ReasoningSink {
@@ -454,18 +620,15 @@ export function reasoningSink(options: {
   let lastAt: number | null = null;
   const clean = (text: string) =>
     (options.redact ? options.redact(text) : text).replace(UNSAFE_CHARACTERS, '');
-  const sink = ((chunk: string) => {
-    if (options.signal?.aborted || typeof chunk !== 'string' || !chunk) return;
-    lastAt = now();
-    const room = MAX_RAW_REASONING_CHARS - raw.length;
-    if (chunk.length > room) overflow = true;
-    if (room > 0) raw += chunk.slice(0, room);
-    for (const text of splitBytes(clean(chunk), REASONING.maxChunkBytes)) {
+  const held = options.redact ? streamRedaction(options.redact) : undefined;
+  /** Redacted text as frames: stripped, split to the frame budget, and never failing anything. */
+  const send = (text: string) => {
+    for (const piece of splitBytes(text.replace(UNSAFE_CHARACTERS, ''), REASONING.maxChunkBytes)) {
       const parsed = reasoningPreviewSchema.safeParse({
         kind: 'reasoning-delta',
         ...options.identity,
         seq: seq + 1,
-        text,
+        text: piece,
       });
       if (!parsed.success) continue;
       seq += 1;
@@ -475,7 +638,31 @@ export function reasoningSink(options: {
         // Thinking is narration: a presenter's failure never reaches the answer.
       }
     }
+  };
+  /** What a redaction releases. One that throws shows nothing and fails nothing. */
+  const redacted = (release: () => string) => {
+    try {
+      return release();
+    } catch {
+      return '';
+    }
+  };
+  const flush = () => {
+    if (!held) return;
+    if (options.signal?.aborted) return held.drop();
+    send(redacted(() => held.flush()));
+  };
+  const releaseOthers = options.order?.join(flush);
+  const sink = ((chunk: string) => {
+    if (options.signal?.aborted || typeof chunk !== 'string' || !chunk) return;
+    releaseOthers?.();
+    lastAt = now();
+    const room = MAX_RAW_REASONING_CHARS - raw.length;
+    if (chunk.length > room) overflow = true;
+    if (room > 0) raw += chunk.slice(0, room);
+    send(held ? redacted(() => held.push(chunk)) : chunk);
   }) as ReasoningSink;
+  sink.flush = flush;
   sink.finish = () => {
     if (lastAt === null) return null;
     const whole = clean(raw).trim();

@@ -384,8 +384,9 @@ describe('thinking on a model-API conversation', () => {
     const result = await service.modelSession('openrouter', 'start', modelSessionRunId(project.id, input.requestId), input);
 
     expect(thoughts.length).toBeGreaterThan(0);
-    expect(thoughts.some((frame) => frame.text.includes(LEAKED))).toBe(false);
-    expect(previews.some((frame) => frame.text.includes(LEAKED))).toBe(false);
+    // The split key is caught in the live frames as well, not only in the saved thinking.
+    expect(thoughts.map((frame) => frame.text).join('')).toBe('Checking [redacted] against [redacted].');
+    expect(previews.map((frame) => frame.text).join('')).toBe('The menu key was [redacted].');
     expect(result.response?.reasoning?.text).not.toContain(LEAKED);
     expect(result.response?.reasoning?.text).toBe('Checking [redacted] against [redacted].');
   });

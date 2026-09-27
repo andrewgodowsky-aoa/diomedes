@@ -292,9 +292,9 @@ describe('the ChatGPT conversation through EngineService', () => {
     });
     expect(result.response?.text).toContain('after 1 user turn.');
     expect(result.response?.reasoning?.text).toBe('Weighing [redacted] first.');
-    // Live frames are redacted chunk by chunk, as answer previews are (shared/adapter-contract.ts);
-    // a secret split across chunks is caught in the saved thinking, redacted as one piece above.
-    expect(thoughts.join('')).toContain('Weighing');
+    // The fixture streams thinking in 7-character deltas, so the key arrives split; live frames are
+    // redacted across chunk boundaries too (shared/adapter-contract.ts, LIVE_REDACTION).
+    expect(thoughts.join('')).toBe('Weighing [redacted] first.');
     // The fixture previews the answer's first characters; the preview is where the answer began.
     expect(previews.join('')).not.toBe('');
     expect(result.response?.text.startsWith(previews.join(''))).toBe(true);

@@ -201,3 +201,36 @@ repository mirror waits for that write (cloud synchronisation pending):
 > installed and signed in. ChatGPT answers through a kept Codex session on Diomedes' own
 > runtime, with thinking, Stop and continuing after a restart. Fixture, conformance and browser
 > proof only; live proof pending."
+
+## Live frames redacted across chunks, 2026-09-27
+
+Engines stream answers and thinking in small token chunks, so a secret a model echoes usually
+arrives in pieces. `previewSink` and `reasoningSink` redacted each chunk on its own, which let a
+split secret reach the Console's live answer and Thinking over `/api/events` (`engine-text`,
+`engine-reasoning`). The saved reply and `Turn.thinking` were already redacted as one piece.
+Branch `feature/live-frame-redaction`, stacked on `feature/codex-conversation-driver`.
+
+- Both sinks (`shared/adapter-contract.ts`) now redact the stream's text as one piece and show
+  only what more text can no longer change. They hold back the newest part: always the last 32
+  characters, and the word still being written, up to 256 (`LIVE_REDACTION`). A secret without
+  spaces is caught up to 256 characters long, and one with spaces up to 32. A longer one can
+  still show its first part live; the saved reply and saved thinking are redacted whole either way.
+- Held text is shown when more text arrives, when another channel of the same attempt speaks
+  (`liveOrder`), or when the attempt ends. Every site flushes before its channels close:
+  `generate`, `nativeTurn`, `fencedSinks` (model-API conversations and Work turns) and the ChatGPT
+  Ask preview in `server/app.ts`. A Claude Code or ChatGPT kept-session turn that fails now drains
+  its channels, as a model-API turn already did, so it still shows what it wrote.
+- The order is unchanged: a tool line never overtakes the text written before it, and the answer
+  never overtakes its thinking.
+- A stopped or fenced attempt shows nothing it held, and a poisoned preview shows nothing more.
+  The adapter's bound is still one chunk of 64 KiB after redaction; a release longer than one
+  frame is split into frames within the budget, and sequences stay dense.
+- Frames follow what is safe to show, not the engine's chunks, so the newest words of a live
+  answer or thought appear with the next chunk, and a short answer can arrive as one frame at the
+  end. A sink with no redaction (only test fixtures build one) still sends one frame per chunk.
+
+`tests/live-redaction.test.ts` cuts a provider key, a bearer token and a home folder at random
+under `baselineRedact`, and covers the hold's bounds, budgets, surrogate pairs, Stop and channel
+order. Split secrets also run through `generate`, the ChatGPT kept session, model-API
+conversations and the ChatGPT Ask path, and a failing Claude Code kept-session turn shows its
+held text. Fixture and unit proof; no live run is needed for this change.

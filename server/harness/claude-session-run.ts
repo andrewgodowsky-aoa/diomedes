@@ -1214,7 +1214,12 @@ export class ClaudeSessionRuns<C extends SessionCheckpointFacts = ClaudeSessionC
                 connection.session.checkpoint.state === 'idle'
               )
                 interrupted = true;
-              else throw error;
+              else {
+                // A failed turn still shows what it wrote, as a finished one does; its own error
+                // is the one reported.
+                await preview?.finish().catch(() => undefined);
+                throw error;
+              }
             }
             await preview?.finish();
             // Plain writing, inside the step so a replay and the next message's history read the

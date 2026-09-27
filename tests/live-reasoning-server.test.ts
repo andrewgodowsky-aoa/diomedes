@@ -73,10 +73,11 @@ const inspect = async () => ({
   models: [{ slug: MODEL, name: MODEL, description: '', efforts: [], defaultEffort: null }],
 });
 
-/** The provider's scripted work: two thinking chunks, one holding a secret, then the answer. */
+/** The provider's scripted work: thinking with a secret split across two chunks, then the answer. */
 function think(input: TextRequest) {
   input.onReasoningDelta?.(THOUGHT);
-  input.onReasoningDelta?.(`The key ${SECRET} is not needed.`);
+  input.onReasoningDelta?.(`The key ${SECRET.slice(0, 11)}`);
+  input.onReasoningDelta?.(`${SECRET.slice(11)} is not needed.`);
   input.onDelta?.('Soup and bread.');
 }
 
@@ -224,11 +225,14 @@ describe('thread Ask on an external engine', () => {
   test('thinking streams as its own frames, bound to the answer run, ahead of the answer', async () => {
     await open(adapter('reasoning-delta'));
     const project = await ask();
-    expect(
-      frames.map((frame) =>
-        frame.channel === 'text' ? `text:${String(frame.kind)}` : `think:${String(frame.seq)}`,
-      ),
-    ).toEqual(['text:started', 'think:1', 'think:2', 'text:delta', 'text:ended']);
+    // Frames follow what is safe to show, not the engine's chunks; all thinking is ahead of the answer.
+    const channels = frames.map((frame) => (frame.channel === 'text' ? `text:${String(frame.kind)}` : 'think'));
+    expect(channels.filter((channel, at) => channel !== channels[at - 1])).toEqual([
+      'text:started',
+      'think',
+      'text:delta',
+      'text:ended',
+    ]);
     const delta = frames.find((frame) => frame.channel === 'text' && frame.kind === 'delta')!;
     for (const frame of frames.filter((item) => item.channel === 'reasoning')) {
       const { channel: _channel, ...wire } = frame;
@@ -242,10 +246,11 @@ describe('thread Ask on an external engine', () => {
         fence: delta.fence,
       });
     }
-    expect(frames.filter((frame) => frame.channel === 'reasoning').map((frame) => frame.text)).toEqual([
-      THOUGHT,
-      'The key [redacted] is not needed.',
-    ]);
+    const thinking = frames.filter((frame) => frame.channel === 'reasoning');
+    expect(thinking.map((frame) => frame.seq)).toEqual(thinking.map((_frame, at) => at + 1));
+    expect(thinking.map((frame) => frame.text).join('')).toBe(
+      'Weighing the menu. The key [redacted] is not needed.',
+    );
     const reply = replies(project.id).at(-1)!;
     expect(reply.text).toBe('Soup and bread.');
     expect(reply.thinking).toMatchObject({
@@ -275,6 +280,9 @@ describe('thread Ask on an external engine', () => {
     );
     const project = await ask(false);
     expect(replies(project.id).some((turn) => turn.thinking !== undefined)).toBe(false);
+    // The failed attempt still showed the thinking it had held back.
+    const shown = frames.filter((frame) => frame.channel === 'reasoning').map((frame) => frame.text);
+    expect(shown.join('')).toBe(THOUGHT);
   });
 
   test('a caller cannot hand the adapter-facing thinking sink in directly', async () => {
@@ -305,7 +313,7 @@ describe('thread Ask on an external engine', () => {
 });
 
 describe('the Diomedes conversation driver', () => {
-  const sessionAdapter = (): PersistentTextAdapter<ClaudeSessionCheckpoint> => ({
+  const sessionAdapter = (work: typeof think = think): PersistentTextAdapter<ClaudeSessionCheckpoint> => ({
     id: ENGINE,
     contract: routeContractFor(ENGINE),
     sessionContract: declaring(routeContractFor('claude-code-session'), 'reasoning-delta'),
@@ -351,7 +359,7 @@ describe('the Diomedes conversation driver', () => {
             requests: [...checkpoint.requests, { id: turn.requestId, digest: hash(turn.prompt)! }],
           };
           await options.onCheckpoint(checkpoint, signal);
-          think(turn);
+          work(turn);
           const text = 'Soup and bread.';
           checkpoint = {
             ...checkpoint,
@@ -391,7 +399,7 @@ describe('the Diomedes conversation driver', () => {
     };
     await api(`/projects/${home.projectId}/threads/${home.threadId}/messages`, 'POST', message);
     const reasoning = frames.filter((frame) => frame.channel === 'reasoning');
-    expect(reasoning.map((frame) => frame.text)).toEqual([THOUGHT, 'The key [redacted] is not needed.']);
+    expect(reasoning.map((frame) => frame.text).join('')).toBe('Weighing the menu. The key [redacted] is not needed.');
     expect(reasoning[0]).toMatchObject({
       projectId: home.projectId,
       threadId: home.threadId,
@@ -410,11 +418,39 @@ describe('the Diomedes conversation driver', () => {
     expect(await leaks(path.join(root, 'data'), THOUGHT.trim())).toEqual([]);
 
     // The same message again is answered from the record: no new frames, nothing rewritten.
-    const before = { frames: frames.length, turns: thread().turns.length };
+    const thinking = () => frames.filter((frame) => frame.channel === 'reasoning').length;
+    const before = { frames: frames.length, thinking: thinking(), turns: thread().turns.length };
     await api(`/projects/${home.projectId}/threads/${home.threadId}/messages`, 'POST', message);
-    expect(frames.filter((frame) => frame.channel === 'reasoning')).toHaveLength(2);
+    expect(thinking()).toBe(before.thinking);
     expect(frames.length - before.frames).toBeLessThanOrEqual(2);
     expect(thread().turns).toHaveLength(before.turns);
     expect(thread().turns.at(-1)!.thinking).toEqual(saved.thinking);
+  });
+
+  test('a home message that fails still shows what it had held back, redacted', async () => {
+    await open(
+      sessionAdapter((turn) => {
+        think(turn);
+        throw Object.assign(new Error('The provider stopped.'), { code: 'PROVIDER_ERROR' });
+      }),
+    );
+    await api('/ai/discover', 'POST', { consent: true });
+    await api('/ai/check/claude-code', 'POST', {});
+    await api('/ai/select', 'POST', { engine: ENGINE, model: MODEL });
+    const home = await api<{ projectId: string; threadId: string }>('/home/conversation', 'POST');
+    await api(`/projects/${home.projectId}/threads/${home.threadId}`, 'PUT', { engine: ENGINE });
+    const response = await fetch(`${base}/api/projects/${home.projectId}/threads/${home.threadId}/messages`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ commandId: 'm-fail', text: 'What is on the menu?', mode: 'ask', sources: [], consent: true }),
+    });
+    await response.text();
+    const shown = (channel: 'text' | 'reasoning') =>
+      frames
+        .filter((frame) => frame.channel === channel && frame.kind !== 'started' && frame.kind !== 'ended')
+        .map((frame) => frame.text)
+        .join('');
+    expect(shown('reasoning')).toBe('Weighing the menu. The key [redacted] is not needed.');
+    expect(shown('text')).toBe('Soup and bread.');
   });
 });
