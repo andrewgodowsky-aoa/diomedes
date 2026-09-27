@@ -9,7 +9,7 @@ import { testOnlySecretBox } from '../server/connection-secrets';
 import type { Store } from '../server/store';
 import type { Conversation, ProjectState } from '../shared/types';
 import { awsTransport, seen } from './fixtures/scripted-home-luna';
-import { gateway, nectoviaAccounts } from './fixtures/nectovia-home';
+import { gateway, linkHome, nectoviaAccounts } from './fixtures/nectovia-home';
 
 // Independent route-display counterexamples. The app, Store and HTTP writes are
 // real. The provider is fake; the first test delays only an already committed
@@ -123,7 +123,8 @@ test.beforeEach(async ({ page }) => {
       completedAt: new Date().toISOString(),
     },
   });
-  binding = await api('/home/conversation', 'POST', {});
+  // The Agent works only in a project one business owns, so the owner links Home, as Workspaces does.
+  binding = await linkHome(api);
 });
 
 test.afterEach(async () => {

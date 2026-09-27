@@ -8,9 +8,12 @@
  * for every answer here; the desktop caches, it never decides.
  */
 import type { AccessView } from '../../shared/access.js';
+import type { OrganizationSetupAnswer, OrganizationSetupWrite } from '../../shared/organization-setup.js';
 import type { Membership, MemberRole, Organization, Person } from '../../shared/workspaces.js';
 import { RELAY_DEVICE_HEADER } from '../../services/control-plane/src/relay/protocol.js';
 import type { DesktopCheckAnswer } from '../../services/control-plane/src/relay/service.js';
+import { organizationSetupAnswerSchema } from '../../services/control-plane/src/organization-setup/schema.js';
+import { organizationAccountExportSchema, type ReadOrganizationExport } from '../../services/control-plane/src/organization-export/schema.js';
 
 export type Fetcher = (request: Request) => Promise<Response>;
 
@@ -85,7 +88,14 @@ export class ControlPlaneClient {
     private readonly timeoutMs = 15_000,
   ) {}
 
-  private async call<T>(method: string, path: string, token?: string | null, body?: unknown, extra: Record<string, string> = {}): Promise<T> {
+  private async call<T>(
+    method: string,
+    path: string,
+    token?: string | null,
+    body?: unknown,
+    extra: Record<string, string> = {},
+    timeoutMs = this.timeoutMs,
+  ): Promise<T> {
     const headers = new Headers(extra);
     if (token) headers.set('authorization', `Bearer ${token}`);
     if (body !== undefined) headers.set('content-type', 'application/json');
@@ -95,7 +105,7 @@ export class ControlPlaneClient {
         method,
         headers,
         body: body === undefined ? undefined : JSON.stringify(body),
-        signal: AbortSignal.timeout(this.timeoutMs),
+        signal: AbortSignal.timeout(timeoutMs),
       }));
     } catch {
       throw new ControlPlaneError('The account service could not be reached. Check the connection and try again.', 503, 'unreachable');
@@ -191,6 +201,40 @@ export class ControlPlaneClient {
   }
   setMember(token: string, organizationId: string, personId: string, change: { role: MemberRole; state: 'active' | 'revoked' }) {
     return this.call<Membership>('PATCH', `/account/organizations/${encodeURIComponent(organizationId)}/members/${encodeURIComponent(personId)}`, token, change);
+  }
+
+  // --- the business setup, kept for the organization (ORG-01) --------------------------
+
+  /** The business's current setup revision. An answer this client cannot read is refused, never guessed at. */
+  async organizationSetup(token: string, organizationId: string): Promise<OrganizationSetupAnswer> {
+    return this.setupAnswer(await this.call<unknown>('GET', `/account/organizations/${encodeURIComponent(organizationId)}/setup`, token));
+  }
+  /** Save the next revision, made from `expectedRevision`. */
+  async saveOrganizationSetup(token: string, organizationId: string, input: OrganizationSetupWrite): Promise<OrganizationSetupAnswer> {
+    return this.setupAnswer(await this.call<unknown>('POST', `/account/organizations/${encodeURIComponent(organizationId)}/setup`, token, input));
+  }
+  private setupAnswer(payload: unknown): OrganizationSetupAnswer {
+    const parsed = organizationSetupAnswerSchema.safeParse(payload);
+    if (!parsed.success)
+      throw new ControlPlaneError('The account service answered in a way this app could not read.', 502, 'unreadable_answer');
+    return parsed.data;
+  }
+
+  // --- the business's records, for its owner (OPS-05) ------------------------------
+
+  /**
+   * Everything the account service keeps for the business, for its owner. Read against the
+   * strict schema before anything uses it: an answer with a field this app does not know, or
+   * for another business, is refused rather than written anywhere. A long history can take a
+   * while to read, so this call waits up to a minute.
+   */
+  async organizationExport(token: string, organizationId: string): Promise<ReadOrganizationExport> {
+    const payload = await this.call<unknown>(
+      'GET', `/account/organizations/${encodeURIComponent(organizationId)}/export`, token, undefined, {}, 60_000);
+    const parsed = organizationAccountExportSchema.safeParse(payload);
+    if (!parsed.success || parsed.data.organization.id !== organizationId)
+      throw new ControlPlaneError('The account service answered in a way this app could not read.', 502, 'unreadable_answer');
+    return parsed.data;
   }
 
   // --- the phone relay (services/control-plane/src/relay) ----------------------

@@ -433,3 +433,29 @@
   text-underline-offset: 2px;
   cursor: pointer;
 }
+/* ---- the owner's copy of the business's records (OPS-05) ---- */
+.ws-export details {
+  margin-top: 10px;
+  max-width: 62ch;
+}
+.ws-export summary {
+  cursor: pointer;
+  color: var(--t2);
+  font-size: var(--dm-type-caption);
+}
+.ws-export ul,
+.ws-export ol {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0 0;
+  padding-left: 18px;
+  color: var(--t3);
+  font-size: var(--dm-type-caption);
+}
+.ws-export strong {
+  color: var(--t1);
+}
+.ws-export-done {
+  margin: 10px 0 0;
+  font-size: var(--dm-type-caption);
+}

@@ -12,7 +12,7 @@ import { AWS_CONNECT_BODY, AWS_TEST_KEY, awsTransport, seen } from './fixtures/s
 import { AWS_LUNA_MODEL } from '../server/engines/aws-bedrock';
 import { FAUX_SCRIPTED_CREDENTIAL } from '../services/control-plane/src/managed-providers';
 import { shareAfter } from './fixtures/cloud-sharing-grant';
-import { gateway, nectoviaAccounts } from './fixtures/nectovia-home';
+import { gateway, linkHome, linkToBusiness, nectoviaAccounts } from './fixtures/nectovia-home';
 
 // The Diomedes page on GPT-6 Luna, end to end in a real browser and with no Claude installed at
 // all: the engine service discovers nothing, so there is no login to fall back to. A Diomedes
@@ -27,6 +27,9 @@ import { gateway, nectoviaAccounts } from './fixtures/nectovia-home';
 // launched as the owner's (ownerRoutes, what DIOMEDES_OWNER_ROUTES=1 turns on), AWS is connected
 // as the owner would connect it, and a case that needs it routes Home there by the person's own
 // choice, then puts Nectovia back.
+//
+// The Agent works only in a project one business owns, so the owner links Home, and each project
+// a case talks in, to the business first, the way Workspaces does.
 test.describe.configure({ mode: 'serial' });
 
 const port = Number(process.env.DIOMEDES_LUNA_UI_PORT ?? 47640);
@@ -237,6 +240,8 @@ test('the home conversation opens on Nectovia (GPT-6 Luna) and answers with noth
   await expect(page.locator('.instr')).toContainText(NECTOVIA_CAPTION);
   // And there is nothing to choose yet: the control needs a concrete thread to write to.
   await expect(routeControl(page)).toHaveCount(0);
+  // Both read before Home exists. The owner makes Home and links it now; the send finds it.
+  await linkHome(api);
 
   const callsBefore = seen.length;
   const gatewayBefore = gateway.length;
@@ -278,6 +283,7 @@ test('the home conversation opens on Nectovia (GPT-6 Luna) and answers with noth
 
 test('a project scope conversation is provisioned on Nectovia too', async ({ page }) => {
   const project = await api<Project>('/projects', 'POST', { name: 'Linen service' });
+  await linkToBusiness(api, project.id);
   await open(page);
   await page.getByRole('combobox', { name: 'In' }).selectOption({ label: 'Linen service' });
   await say(page, 'About this project');
@@ -722,6 +728,7 @@ test('a delivery left behind in an old visit cannot take the new Stop with it', 
   page,
 }) => {
   const project = await api<Project>('/projects', 'POST', { name: 'Second scope' });
+  await linkToBusiness(api, project.id);
   await open(page);
   const callsBefore = seen.length;
   const posts: string[] = [];
@@ -793,7 +800,8 @@ test('a delivery left behind in an old visit cannot take the new Stop with it', 
 
 test('a tier change that starts the conversation fresh says so in the thread', async ({ page }) => {
   // Its own scope, so the only lineage this test moves is one it opened itself.
-  await api<Project>('/projects', 'POST', { name: 'Tier change' });
+  const project = await api<Project>('/projects', 'POST', { name: 'Tier change' });
+  await linkToBusiness(api, project.id);
   await open(page);
   await page.getByRole('combobox', { name: 'In' }).selectOption({ label: 'Tier change' });
   await say(page, 'Where is the linen order?');
@@ -864,6 +872,7 @@ async function shareHistory(projectId: string, on: boolean) {
  */
 async function openedBefore(page: Page, name: string, words: string, answer: string) {
   const project = await api<Project>('/projects', 'POST', { name });
+  await linkToBusiness(api, project.id);
   const read = dryRuns(page, project.id);
   await open(page);
   await page.getByRole('combobox', { name: 'In' }).selectOption({ label: name });

@@ -25,6 +25,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readyForProposal } from '../shared/business-setup.js';
 import type { KnownAgent } from '../shared/configuration.js';
+import { SETUP_EARLIER_REASON } from '../shared/setup-question-changes.js';
 import { compileProposal, variantFor } from '../shared/packs.js';
 import type { AgentRegistry } from './agents.js';
 import type { ConfigurationService } from './configuration.js';
@@ -116,7 +117,12 @@ export function mountConfigurationRoutes(
       // Authority first. Reading the intake would otherwise answer "switch to
       // that workspace first" to somebody who is not in this business at all.
       configuration.assertMayConfigure(id);
-      const setup = workspaces.setupView(id);
+      // A signed-in business's answers are its current revision in the account service (ORG-01).
+      const setup = await workspaces.setupView(id);
+      // Only answers given under the questions this build asks become a
+      // proposal (ORG-02). Older ones are carried across by resuming first.
+      if (setup.unreadable) throw new ApiError(409, setup.unreadable.reason, { code: setup.unreadable.code });
+      if (setup.stale) throw new ApiError(409, SETUP_EARLIER_REASON, { code: 'stale_setup' });
       if (!readyForProposal(setup.answers))
         throw new ApiError(
           409,

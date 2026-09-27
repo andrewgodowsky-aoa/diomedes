@@ -129,7 +129,7 @@ const CANNED: Record<string, AnswerValue> = {
 /** Answer every visible question, in the step order the host itself chooses. */
 async function completeIntake(organizationId: string): Promise<void> {
   await workspaces.startSetup(organizationId, 'start');
-  let view = workspaces.setupView(organizationId);
+  let view = await workspaces.setupView(organizationId);
   for (let guard = 0; guard < 20 && view.step !== 'review'; guard += 1) {
     view = await workspaces.answer(organizationId, {
       questionId: view.step,

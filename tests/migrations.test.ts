@@ -23,6 +23,7 @@ import { backupPath, commitMigration, openVersionedFile } from '../server/migrat
 import {
   AUTOMATION_DEFINITIONS,
   AUTOMATION_OCCURRENCES,
+  BUSINESS_SETUP,
   DURABLE_FAMILIES,
   HARNESS_RUN,
   PACK_STORE,
@@ -167,6 +168,12 @@ describe('migrateRecord', () => {
 });
 
 describe('golden fixtures of older files', () => {
+  test('business setup revision 1 carries its original answers into revision 2', async () => {
+    const value = await fixture('business-setup.v1.json');
+    const result = migrateRecord(BUSINESS_SETUP, value);
+    expect(result).toMatchObject({ from: 1, to: 2, migrated: true });
+    expect(result.record).toEqual({ ...(value as object), schemaRevision: 2 });
+  });
   test('a Milestone A automation record (v1) becomes exactly the v2 record', async () => {
     const result = migrateRecord(AUTOMATION_OCCURRENCES, await fixture('automation-occurrences.v1.json'));
     expect(result).toMatchObject({ from: 1, to: 2, migrated: true });

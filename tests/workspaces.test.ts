@@ -18,7 +18,7 @@ import path from 'node:path';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createApp } from '../server/app.js';
-import type { BusinessSetupView } from '../shared/business-setup.js';
+import { BUSINESS_SETUP_SCHEMA_REVISION, type BusinessSetupView } from '../shared/business-setup.js';
 import type { Person, WorkspaceView } from '../shared/workspaces.js';
 import type { Settings } from '../shared/types.js';
 
@@ -348,30 +348,49 @@ describe('the Business intake', () => {
     expect((await setupOf(organizationId)).data.answers['name']?.value).toBe('Ridge Cabinetry');
   });
 
-  test('a draft saved under an older question set is refused until it is resumed', async () => {
+  /** Save one answer, then rewrite the setup file as if another build had saved it under `schemaRevision`. */
+  async function savedUnder(schemaRevision: number): Promise<string> {
     await request(`/workspace/organizations/${organizationId}/setup/start`, 'POST', {});
     await answerOne(organizationId, 'name', 'Ridge Cabinetry');
     await stop();
     const file = path.join(root, 'data', 'workspaces', 'setup', `${organizationId}.json`);
     const saved = JSON.parse(await fs.readFile(file, 'utf8'));
-    await fs.writeFile(file, JSON.stringify({ ...saved, schemaRevision: 0 }, null, 2), 'utf8');
+    await fs.writeFile(file, JSON.stringify({ ...saved, schemaRevision }, null, 2), 'utf8');
     await launch();
+    return file;
+  }
+
+  test('a setup saved by a newer version of the questions is refused and left exactly as it was (ORG-02)', async () => {
+    const file = await savedUnder(BUSINESS_SETUP_SCHEMA_REVISION + 1);
+    const before = await fs.readFile(file);
 
     const view = (await setupOf(organizationId)).data;
-    expect(view.stale).toBe(true);
-    const refused = await answerOne(organizationId, 'industry', 'cabinetry');
-    expect(refused.status).toBe(409);
-    expect(errorCode(refused.data)).toBe('stale_setup');
+    expect(view).toMatchObject({ stale: false, carry: null, unreadable: { code: 'setup_newer' }, schemaRevision: BUSINESS_SETUP_SCHEMA_REVISION + 1 });
+    // This build cannot say what a newer build's answers mean, so it shows none.
+    expect(view.answers).toEqual({});
+    const row = (await workspace()).organizations.find((item) => item.organization.id === organizationId)!;
+    expect(row.setup).toMatchObject({ questions: 'newer', resumable: false });
 
-    const resumed = await request<BusinessSetupView>(
-      `/workspace/organizations/${organizationId}/setup/resume`,
-      'POST',
-      {},
-    );
-    expect(resumed.data.stale).toBe(false);
-    expect(resumed.data.schemaRevision).toBe(resumed.data.currentSchemaRevision);
-    // Old answers are not reinterpreted under the new questions.
-    expect(resumed.data.answers).toEqual({});
+    // Before ORG-02, resuming replaced its answers with none and saved that.
+    for (const route of ['resume', 'start', 'back']) {
+      const refused = await request(`/workspace/organizations/${organizationId}/setup/${route}`, 'POST', {});
+      expect(refused.status, route).toBe(409);
+      expect(errorCode(refused.data), route).toBe('setup_newer');
+    }
+    const answered = await answerOne(organizationId, 'industry', 'cabinetry');
+    expect(answered.status).toBe(409);
+    expect(errorCode(answered.data)).toBe('setup_newer');
+    expect(await fs.readFile(file)).toEqual(before);
+  });
+
+  test('a setup under a revision no version wrote is refused rather than emptied', async () => {
+    const file = await savedUnder(0);
+    const before = await fs.readFile(file);
+    expect((await setupOf(organizationId)).data.unreadable?.code).toBe('setup_unreadable');
+    const refused = await request(`/workspace/organizations/${organizationId}/setup/resume`, 'POST', {});
+    expect(refused.status).toBe(409);
+    expect(errorCode(refused.data)).toBe('setup_unreadable');
+    expect(await fs.readFile(file)).toEqual(before);
   });
 
   test('a credential typed into an answer is refused, not stored', async () => {

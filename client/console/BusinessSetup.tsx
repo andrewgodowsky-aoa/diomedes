@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { AnswerValue, BusinessSetupView, QuestionView } from '../../shared/business-setup';
-import { api } from '../api';
+import { api, ApiError } from '../api';
 import { Button, Modal } from '../components';
 import './workspace.css';
 
@@ -15,6 +15,15 @@ import './workspace.css';
  * Every answer is sent with the digest the host last reported, so a second
  * administrator editing at the same time gets a conflict rather than quietly
  * losing their work.
+ *
+ * A signed-in business's setup belongs to the business (ORG-01). When the
+ * account service cannot be reached the host sends this computer's last copy
+ * marked read-only, or refuses to open it; a failure to load is said as one,
+ * never shown as a setup that has not started.
+ *
+ * A setup saved under earlier questions says what resuming keeps and what it
+ * asks again, and why, before anything is carried. One saved by a newer
+ * version of the questions says so, and nothing here can change it (ORG-02).
  */
 
 interface Props {
@@ -42,12 +51,15 @@ export function BusinessSetup({ organizationId, onClose, onDone, report }: Props
     setSetup(current);
   }, [organizationId]);
 
-  useEffect(() => {
+  const open = useCallback(() => {
+    setError('');
     load().catch((e) => {
       setError(e instanceof Error ? e.message : 'This setup could not be opened.');
       report(e);
     });
   }, [load, report]);
+
+  useEffect(open, [open]);
 
   const question = useMemo(
     () => (setup ? (questions.find((item) => item.id === setup.step) ?? null) : null),
@@ -85,11 +97,22 @@ export function BusinessSetup({ organizationId, onClose, onDone, report }: Props
       } catch (e) {
         setError(e instanceof Error ? e.message : 'That answer could not be saved.');
         report(e);
+        // Someone else saved first, the service went away, or the setup was
+        // saved under other questions than this screen showed: show it as it is now.
+        const code = e instanceof ApiError ? e.data.code : null;
+        if (
+          code === 'setup_conflict' ||
+          code === 'setup_unavailable' ||
+          code === 'stale_setup' ||
+          code === 'setup_newer' ||
+          code === 'setup_unreadable'
+        )
+          await load().catch(() => undefined);
       } finally {
         setBusy(false);
       }
     },
-    [report],
+    [load, report],
   );
 
   const base = `/workspace/organizations/${organizationId}/setup`;
@@ -123,13 +146,56 @@ export function BusinessSetup({ organizationId, onClose, onDone, report }: Props
     return true;
   };
 
+  /** A question's words: as this version asks it, or as it was asked when the answer was given. */
+  const label = (id: string) =>
+    questions.find((item) => item.id === id)?.prompt ?? setup?.answers[id]?.prompt ?? id;
+
   const title = setup ? `Set up ${setup.organization.name}` : 'Business setup';
+  // A copy shown while the account service cannot be reached is read-only: nothing here saves.
+  const readOnly = setup?.sync?.readOnly === true;
+  const locked = busy || readOnly;
+  const problem = error ? (
+    <p className="ws-error" role="alert">
+      {error}
+    </p>
+  ) : null;
 
   return (
     <Modal title={title} onClose={onClose} wide>
       <div className="ws-setup">
+        {readOnly && (
+          <p className="caption ws-reason" role="status">
+            {setup?.sync?.reason}
+          </p>
+        )}
         {!setup ? (
-          <p className="caption">Opening…</p>
+          error ? (
+            <>
+              {problem}
+              <div className="ws-actions">
+                <Button tone="quiet" onClick={onClose}>
+                  Close
+                </Button>
+                <Button tone="primary" onClick={open}>
+                  Try again
+                </Button>
+              </div>
+            </>
+          ) : (
+            <p className="caption">Opening…</p>
+          )
+        ) : setup.unreadable ? (
+          <>
+            <p className="prose" role="status">
+              {setup.unreadable.reason}
+            </p>
+            {problem}
+            <div className="ws-actions">
+              <Button tone="primary" onClick={onClose}>
+                Close
+              </Button>
+            </div>
+          </>
         ) : setup.state === 'not-started' ? (
           <>
             <p className="prose">
@@ -141,34 +207,61 @@ export function BusinessSetup({ organizationId, onClose, onDone, report }: Props
               You can stop at any point and pick it up here later. Anything you do not know can be
               left unanswered.
             </p>
+            {problem}
             <div className="ws-actions">
               <Button tone="quiet" onClick={onClose}>
                 Not now
               </Button>
               <Button
                 tone="primary"
-                disabled={busy}
+                disabled={locked}
                 onClick={() => void act(() => api<BusinessSetupView>(`${base}/start`, 'POST', {}))}
               >
                 Start
               </Button>
             </div>
           </>
-        ) : setup.stale ? (
+        ) : setup.stale && setup.carry ? (
           <>
             <p className="prose">
-              This setup was saved when the questions were different (revision{' '}
-              {setup.schemaRevision}; this version asks revision {setup.currentSchemaRevision}).
-              Resuming starts a fresh draft rather than reinterpreting the old answers as if they
-              meant the same thing.
+              This setup was saved when the questions were different (revision {setup.carry.from};
+              this version asks revision {setup.carry.to}).{' '}
+              {setup.carry.keeps.length === 0
+                ? 'None of its answers apply to the current questions, so resuming starts from the first question.'
+                : `Resuming keeps ${setup.carry.keeps.length === 1 ? 'one answer' : `${setup.carry.keeps.length} answers`} exactly as given, in the name of whoever gave them, and asks only what changed.`}
             </p>
+            {setup.carry.asks.length + setup.carry.adds.length + setup.carry.drops.length > 0 && (
+              <dl className="ws-facts">
+                {setup.carry.asks.map((note) => (
+                  <div key={`ask-${note.id}`}>
+                    <dt>Asked again: {label(note.id)}</dt>
+                    <dd>{note.why}</dd>
+                  </div>
+                ))}
+                {setup.carry.adds.map((note) => (
+                  <div key={`add-${note.id}`}>
+                    <dt>New question: {label(note.id)}</dt>
+                    <dd>{note.why}</dd>
+                  </div>
+                ))}
+                {setup.carry.drops.map((note) => (
+                  <div key={`drop-${note.id}`}>
+                    <dt>No longer asked: {label(note.id)}</dt>
+                    <dd>
+                      {note.why} The answer stays in this setup's history and is not carried.
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            )}
+            {problem}
             <div className="ws-actions">
               <Button tone="quiet" onClick={onClose}>
                 Leave it
               </Button>
               <Button
                 tone="primary"
-                disabled={busy}
+                disabled={locked}
                 onClick={() => void act(() => api<BusinessSetupView>(`${base}/resume`, 'POST', {}))}
               >
                 Resume with the current questions
@@ -276,16 +369,12 @@ export function BusinessSetup({ organizationId, onClose, onDone, report }: Props
               </label>
             )}
 
-            {error && (
-              <p className="ws-error" role="alert">
-                {error}
-              </p>
-            )}
+            {problem}
 
             <div className="ws-actions">
               <Button
                 tone="quiet"
-                disabled={busy || !setup.previous}
+                disabled={locked || !setup.previous}
                 onClick={() => void act(() => api<BusinessSetupView>(`${base}/back`, 'POST', {}))}
               >
                 Back
@@ -293,7 +382,7 @@ export function BusinessSetup({ organizationId, onClose, onDone, report }: Props
               {!question.required && (
                 <Button
                   tone="quiet push-right"
-                  disabled={busy}
+                  disabled={locked}
                   onClick={() => void send(null, true)}
                 >
                   I don&apos;t know
@@ -301,7 +390,7 @@ export function BusinessSetup({ organizationId, onClose, onDone, report }: Props
               )}
               <Button
                 tone="primary"
-                disabled={busy || !answerable()}
+                disabled={locked || !answerable()}
                 onClick={() => void send(current(), false)}
               >
                 Continue
@@ -326,15 +415,11 @@ export function BusinessSetup({ organizationId, onClose, onDone, report }: Props
               ))}
             </dl>
             <p className="caption ws-boundary">{setup.afterProposal}</p>
-            {error && (
-              <p className="ws-error" role="alert">
-                {error}
-              </p>
-            )}
+            {problem}
             <div className="ws-actions">
               <Button
                 tone="quiet"
-                disabled={busy || !setup.previous}
+                disabled={locked || !setup.previous}
                 onClick={() => void act(() => api<BusinessSetupView>(`${base}/back`, 'POST', {}))}
               >
                 Change an answer

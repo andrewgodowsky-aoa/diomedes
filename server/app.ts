@@ -2,7 +2,7 @@ import { parseApprovalCommand } from './approval-admission.js';
 import { taskDocumentProblem } from '../shared/task-sources.js';
 import { mountPermissionRoutes } from './permission-routes.js';
 import { WorkspaceService } from './workspaces.js';
-import { AccountAgentGate, AGENT_NOT_INCLUDED, AGENT_SIGN_IN_REQUIRED } from './accounts/agent-gate.js';
+import { AccountAgentGate, AGENT_NOT_INCLUDED, AGENT_PROJECT_UNLINKED, AGENT_SIGN_IN_REQUIRED } from './accounts/agent-gate.js';
 import { resolveAccountBackend, type AccountBackend } from './accounts/backend.js';
 import type { BrowserIdentity } from './accounts/browser-identity.js';
 import { browserSignIn } from './accounts/deployment.js';
@@ -25,6 +25,7 @@ import { CustomizationBenefitLedger } from './customization-benefit.js';
 import { mountCustomizationBenefitRoutes } from './customization-benefit-routes.js';
 import { ConfigurationService } from './configuration.js';
 import { mountConfigurationRoutes } from './configuration-routes.js';
+import { mountOrganizationExportRoute } from './organization-export.js';
 import { DiscoveryService } from './discovery/service.js';
 import { mountDiscoveryRoutes } from './discovery/routes.js';
 import { planTitle, taskNameFromText } from '../shared/display-names.js';
@@ -261,7 +262,7 @@ import {
   type ModelApiRoute,
   type NectoviaRouteView,
 } from '../shared/model-api.js';
-import { AGENT_PERSONAL_REASON, OWNER_RULES_FEATURE } from '../shared/access.js';
+import { OWNER_RULES_FEATURE } from '../shared/access.js';
 import {
   NECTOVIA_SIGN_IN,
   NECTOVIA_UNAVAILABLE,
@@ -819,14 +820,22 @@ export async function createApp(options: AppOptions) {
     workspaces.connectAccounts({
       entitlement: (organizationId) => accountSession.entitlement(organizationId),
       createOrganization: (name) => accountSession.createOrganization(name),
+      // ORG-01: each business's setup is kept by the account service, not by this computer.
+      setup: {
+        read: (organizationId) => accountSession.readOrganizationSetup(organizationId),
+        write: (organizationId, input) => accountSession.writeOrganizationSetup(organizationId, input),
+      },
     });
     // Signing in and out reach the registry under the store lock. Creating a business from a
     // locked workspace route mirrors its own answer, so this never nests inside that lock.
     // Observation then sees the sign-in, sign-out or change of person (PH-07 N-3).
+    // Each business's setup is then read from the account service, outside the lock, and
+    // awaited, so the first view after a sign-in shows the business's setup as it stands.
     accountSession.onProjection(async (projection) => {
       await store.locked(() => workspaces.project(projection));
       observation?.scopes.observeContext();
       void phoneRelay?.sync();
+      await workspaces.refreshSetups();
     });
     // Signing out, switching accounts or forgetting one removes this computer's phone access first.
     accountSession.onRelease((personId, signedIn) => phoneRelay!.release(personId, signedIn));
@@ -1443,6 +1452,8 @@ export async function createApp(options: AppOptions) {
   mountCustomizationBenefitRoutes(app, store, workspaces, customization, customizationBenefit);
   mountManagedUsageRoutes(app, store, ledger, gateway, billing, workspaces);
   mountConfigurationRoutes(app, store, workspaces, configuration, agents);
+  // OPS-05: the Business owner's copy of the business's records, written into one of its projects.
+  mountOrganizationExportRoute(app, { store, workspaces, configuration, accounts: accountSession, build: running.version });
   mountDiscoveryRoutes(app, discovery, {
     operatorId: () => workspaces.currentPerson().id,
     importDocument: async (_req, input) => {
@@ -3418,15 +3429,15 @@ export async function createApp(options: AppOptions) {
     return [{ slug: saved, name: saved, description: '', defaultEffort: 'low', efforts }];
   };
   /**
-   * The Nectovia route's account for work in one project: the business it belongs to, as the
+   * The Nectovia route's account for work in one project: the business that owns it, as the
    * run's account route. Nobody connects anything. Refused in plain words, with nothing sent,
-   * when nobody is signed in or the work is Personal; the Agent gate decides the plan when the
-   * message is admitted.
+   * when nobody is signed in or the project is not linked to one business, Home included until
+   * an owner links it; the Agent gate decides the plan when the message is admitted.
    */
   const nectoviaAccountFor = (projectId: string): string => {
     if (!nectoviaAccount?.signedIn()) throw new EngineError(AGENT_SIGN_IN_REQUIRED, NECTOVIA_SIGN_IN, false);
     const organizationId = nectoviaAccount.organizationFor(projectId);
-    if (!organizationId) throw new EngineError(AGENT_NOT_INCLUDED, AGENT_PERSONAL_REASON, false);
+    if (!organizationId) throw new EngineError(AGENT_NOT_INCLUDED, AGENT_PROJECT_UNLINKED, false);
     return nectoviaAccountRoute(organizationId);
   };
   /** Whether a route takes a send: Nectovia has no switch; every other route is turned on in Settings. */
@@ -3493,7 +3504,7 @@ export async function createApp(options: AppOptions) {
     options: RunHints = {},
   ): Route => {
     const tier = tierFor(conversation, options);
-    // Nectovia's own refusals (nobody signed in, Personal work) come before any tier's.
+    // Nectovia's own refusals (nobody signed in, a project no business owns) come before any tier's.
     if (tier?.route === NECTOVIA_ROUTE) nectoviaAccountFor(projectId);
     if (tier?.outcome === 'refuse') throw new ApiError(409, tier.reason);
     if (tier) return tier.route as Route;

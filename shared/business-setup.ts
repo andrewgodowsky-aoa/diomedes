@@ -1,5 +1,5 @@
 /**
- * The Business questionnaire — schema revision 1.
+ * The Business questionnaire — schema revision 2.
  *
  * A short, resumable intake that belongs to an organization, never to a person.
  * It is a pure state machine on purpose: the host enforces the same rule the
@@ -15,7 +15,7 @@
  * decides authority.
  */
 
-export const BUSINESS_SETUP_SCHEMA_REVISION = 1 as const;
+export const BUSINESS_SETUP_SCHEMA_REVISION = 2 as const;
 
 /**
  * The lifecycle the product contract names. This build implements the drafting
@@ -114,6 +114,12 @@ export interface BusinessAnswer {
   at: string;
   /** The person id that recorded it. Attribution, not authority. */
   by: string;
+  /**
+   * The question as it was worded when this was answered. A later revision may
+   * reword a question; the answer keeps the words it was given against.
+   * Absent on answers saved before 2026-09-26.
+   */
+  prompt?: string;
 }
 
 export type AnswerMap = Readonly<Record<string, BusinessAnswer>>;
@@ -181,7 +187,7 @@ export const BUSINESS_QUESTIONS: readonly Question[] = Object.freeze([
   },
   {
     id: 'job',
-    prompt: 'What recurring job should Diomedes help with first?',
+    prompt: 'What recurring job should Nectovia help with first?',
     reason:
       'One concrete outcome to start from. Anything unsupported is explained rather than promised.',
     kind: 'choice',
@@ -194,7 +200,7 @@ export const BUSINESS_QUESTIONS: readonly Question[] = Object.freeze([
     id: 'result',
     prompt: 'What does a useful result look like, and who reviews it today?',
     reason:
-      'Records the output and who checks it now. It is a baseline to compare against, not a saving Diomedes claims.',
+      'Records the output and who checks it now. It is a baseline to compare against, not a saving Nectovia claims.',
     kind: 'text',
     required: true,
     maxLength: 400,
@@ -587,6 +593,40 @@ export interface QuestionView {
   maxLength: number | null;
 }
 
+/** A question one revision of the questions added, changed or stopped asking, and why, in words to show (ORG-02). */
+export interface SetupQuestionNote {
+  id: string;
+  why: string;
+}
+
+/**
+ * What resuming a setup saved under earlier questions does to its answers
+ * (ORG-02), for the person to read before they resume. No answer is
+ * reinterpreted: each is either carried exactly as it was given, or left in the
+ * revision it was given in.
+ */
+export interface SetupCarryView {
+  /** The revision of the questions the setup was saved under. */
+  from: number;
+  /** The revision this build asks. */
+  to: number;
+  /** Questions whose answers are carried exactly as they were given, in the name of whoever gave them. */
+  keeps: string[];
+  /** Questions asked again, because what they ask changed. */
+  asks: SetupQuestionNote[];
+  /** Questions asked for the first time. */
+  adds: SetupQuestionNote[];
+  /** Answers not carried, because their question is no longer asked. The earlier revision keeps them. */
+  drops: SetupQuestionNote[];
+}
+
+/** Why this build cannot continue a setup, in words to show (ORG-02). */
+export interface SetupUnreadable {
+  /** `setup_newer`: saved by a newer version of the questions. `setup_unreadable`: a revision this build does not carry. */
+  code: 'setup_newer' | 'setup_unreadable';
+  reason: string;
+}
+
 /**
  * One organization's intake, as the host presents it. `step` is the host's own
  * answer to "what comes next", so the renderer never computes a different one.
@@ -596,8 +636,17 @@ export interface BusinessSetupView {
   state: SetupState;
   schemaRevision: number;
   currentSchemaRevision: number;
-  /** Saved under a schema this build does not use; resume before continuing. */
+  /** Saved under earlier questions; resuming carries its answers across before anything else. */
   stale: boolean;
+  /** When `stale`, what resuming keeps and asks. Null otherwise. */
+  carry: SetupCarryView | null;
+  /**
+   * Set when this build cannot read the setup: saved by a newer version of the
+   * questions, or at a revision it no longer carries. Nothing here can change
+   * it, and its answers are not shown, because this build cannot say what they
+   * mean. Null when it can be read.
+   */
+  unreadable: SetupUnreadable | null;
   step: string;
   previous: string | null;
   answers: Record<string, BusinessAnswer>;
@@ -608,4 +657,23 @@ export interface BusinessSetupView {
   digest: string;
   proposalDigest: string | null;
   afterProposal: string;
+  /**
+   * Where this setup came from, for a business the account service keeps
+   * (ORG-01). Absent for a business kept only on this computer.
+   */
+  sync?: BusinessSetupSync;
+}
+
+/** Where a signed-in business's setup was loaded from, as the questionnaire shows it. */
+export interface BusinessSetupSync {
+  /** `service`: the business's current revision. `cache`: this computer's last copy of it. */
+  source: 'service' | 'cache';
+  /** The service revision this is. 0 when the service holds none yet. */
+  revision: number;
+  /** Nothing can be saved: the account service cannot be reached. */
+  readOnly: boolean;
+  /** Why it is read-only, in words to show. Null when it is not. */
+  reason: string | null;
+  /** When this revision was saved, or when this computer last fetched its copy. */
+  asOf: string | null;
 }

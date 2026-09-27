@@ -13,6 +13,7 @@ import { BusinessSetup } from './BusinessSetup';
 import { Configuration } from './Configuration';
 import { BriefFiles } from './BriefFiles';
 import { NativeAccount } from './NativeAccount';
+import { OrganizationExport } from './OrganizationExport';
 import './workspace.css';
 
 /**
@@ -248,9 +249,11 @@ export function WorkspacePanel({
                           ? 'Administrator'
                           : 'Owner'}
                       {' · '}
-                      {setup?.mayConfigure
-                        ? setupSentence(setup.state, setup.answered, setup.required)
-                        : 'You join the setup the owners have made.'}
+                      {setup?.loadError
+                        ? setup.loadError
+                        : setup?.mayConfigure
+                          ? setupSentence(setup.state, setup.answered, setup.required, setup.questions)
+                          : 'You join the setup the owners have made.'}
                     </span>
                   </div>
                   {current ? (
@@ -296,15 +299,28 @@ export function WorkspacePanel({
             </p>
             <div className="ws-actions">
               <Button
-                tone={activeOrganization.setup.state === 'proposal-ready' ? 'quiet' : 'primary'}
+                tone={
+                  activeOrganization.setup.state === 'proposal-ready' &&
+                  !activeOrganization.setup.questions
+                    ? 'quiet'
+                    : 'primary'
+                }
                 disabled={disabled}
                 onClick={() => setSetupFor(activeOrganization.organization.id)}
               >
-                {activeOrganization.setup.resumable ? 'Resume setup' : 'Start setup'}
+                {activeOrganization.setup.source === 'unavailable' ||
+                activeOrganization.setup.questions === 'newer' ||
+                activeOrganization.setup.questions === 'unreadable'
+                  ? 'Open setup'
+                  : activeOrganization.setup.resumable
+                    ? 'Resume setup'
+                    : 'Start setup'}
               </Button>
               {/* The answers are finished, so the useful next step is reading
-                  what they make — not answering them again. */}
-              {activeOrganization.setup.state === 'proposal-ready' && (
+                  what they make — not answering them again. Answers saved
+                  under other questions are resumed first (ORG-02). */}
+              {activeOrganization.setup.state === 'proposal-ready' &&
+                !activeOrganization.setup.questions && (
                 <Button
                   tone="primary"
                   disabled={disabled}
@@ -442,6 +458,21 @@ export function WorkspacePanel({
               )
             )}
           </section>
+        )}
+
+        {/* Only a business the account service keeps has account records to export; ORG-01
+            sets `setup.source` for exactly those, while someone is signed in. */}
+        {activeOrganization &&
+          activeOrganization.membership.role === 'owner' &&
+          activeOrganization.setup?.source !== undefined && (
+          <OrganizationExport
+            key={activeOrganization.organization.id}
+            organizationId={activeOrganization.organization.id}
+            name={activeOrganization.organization.name}
+            output={activeOrganization.output ?? null}
+            disabled={disabled}
+            report={report}
+          />
         )}
 
         {activeOrganization && (
@@ -583,7 +614,15 @@ function switchTo(ref: WorkspaceRef) {
   return api<WorkspaceView>('/workspace/switch', 'POST', ref);
 }
 
-function setupSentence(state: string, answered: number, required: number): string {
+function setupSentence(
+  state: string,
+  answered: number,
+  required: number,
+  questions?: 'earlier' | 'newer' | 'unreadable',
+): string {
+  if (questions === 'newer') return 'Setup saved by a newer version of Nectovia — update to continue it';
+  if (questions === 'unreadable') return "Setup saved in a form this version can't read";
+  if (questions === 'earlier') return 'Setup saved under earlier questions — resume to carry the answers across';
   if (state === 'not-started') return 'Setup has not started';
   if (state === 'proposal-ready') return 'Setup answered — ready to review';
   return `Setup in progress — ${answered} of ${required} needed answers`;

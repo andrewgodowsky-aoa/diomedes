@@ -16,6 +16,11 @@ GRANT SELECT, INSERT, UPDATE ON control_plane.sessions, control_plane.organizati
 -- feature_grants, which this file grants too.
 GRANT SELECT, INSERT ON control_plane.relay_devices TO cp_runtime;
 GRANT UPDATE (revoked_at, revoked_by, last_seen_at) ON control_plane.relay_devices TO cp_runtime;
+-- 008 organization setup (2026-09-26): each business's setup revisions. The
+-- Worker reads the newest and appends the next; a revision is never updated or
+-- deleted (the table's trigger refuses both), so it gets no UPDATE. A write
+-- rechecks the writer's membership, which the grants above already cover.
+GRANT SELECT, INSERT ON control_plane.organization_setups TO cp_runtime;
 -- B01 runtime does not yet consume the later commercial tables. A separately
 -- reviewed receiver role can receive only the inbox/customer privileges it needs.
 -- NC-2026-09-22.1: the Worker's usage projection only reads funding rows.

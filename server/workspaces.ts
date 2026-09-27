@@ -4,6 +4,7 @@
  *   <data>/workspaces/identity.json    the person this install acts as
  *   <data>/workspaces/registry.json    organizations, memberships, invitations
  *   <data>/workspaces/setup/<org>.json one organization's intake answers
+ *   <data>/workspaces/setup/<org>.sync.json  which account-service revision that is (ORG-01)
  *
  * Three boundaries this module exists to hold:
  *
@@ -30,10 +31,18 @@
  * service stays the authority: a mirrored membership changes only when the
  * service says so, a business's people are managed in Settings, Account, and
  * its entitlement is the service's last answer, never a local record.
+ *
+ * A signed-in business's intake belongs to the business (ORG-01): the account
+ * service keeps every revision, and this computer holds a tagged copy
+ * (`server/organization-setup.ts`). Opening the setup reads the business's
+ * current revision; a save names the revision its content was read with, so a
+ * second computer or person conflicts rather than overwriting.
  */
+import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import {
+  BUSINESS_QUESTIONS,
   BUSINESS_SETUP_SCHEMA_REVISION,
   REVIEW_STEP,
   AFTER_PROPOSAL,
@@ -47,8 +56,29 @@ import {
   type AnswerValue,
   type BusinessAnswer,
   type BusinessSetup,
+  type BusinessSetupSync,
   type BusinessSetupView,
+  type SetupCarryView,
+  type SetupUnreadable,
 } from '../shared/business-setup.js';
+import { SETUP_UNREACHABLE_REASON, type SetupLoad } from '../shared/organization-setup.js';
+import {
+  QUESTION_SET_CHANGES,
+  SETUP_EARLIER_REASON,
+  SETUP_NEWER_REASON,
+  SETUP_UNREADABLE_REASON,
+  carryPlan,
+} from '../shared/setup-question-changes.js';
+import { assertReadable, migrateRecord, MigrationRefusal } from './migrations/framework.js';
+import { backupPath } from './migrations/files.js';
+import { BUSINESS_SETUP } from './migrations/registry.js';
+import {
+  OrganizationSetupSync,
+  SETUP_LOCAL_ERROR_REASON,
+  SetupConflict,
+  type SetupRemote,
+  type SetupSubject,
+} from './organization-setup.js';
 import {
   AUTHORIZATION_RESOURCE_TYPES,
   authorizeBusinessAccess,
@@ -98,8 +128,8 @@ import {
   type WorkspaceView,
 } from '../shared/workspaces.js';
 import { payloadDigest } from './command-admission.js';
-import { ApiError } from './paths.js';
-import { jsonWrite, readJson, type Store } from './store.js';
+import { absent, ApiError } from './paths.js';
+import { durableWrite, jsonWrite, readJson, type Store } from './store.js';
 import { revokeTenant, trustBackendInstalled } from './trust/index.js';
 import type { AccountProjection } from './accounts/session.js';
 
@@ -109,6 +139,11 @@ export interface WorkspaceAccountBridge {
   entitlement(organizationId: string): EntitlementView | null;
   /** Create a business in the account service; the caller mirrors the answer. */
   createOrganization(name: string): Promise<{ organizationId: string; projection: AccountProjection }>;
+  /**
+   * The account service's business setups (ORG-01). Without it a signed-in
+   * business's setup stays on this computer, as it did before.
+   */
+  setup?: SetupRemote;
 }
 
 const MANAGED_IN_ACCOUNT =
@@ -173,6 +208,55 @@ export function answersDigest(answers: Readonly<Record<string, BusinessAnswer>>)
 const refuse = (status: number, message: string, code: string) =>
   new ApiError(status, message, { code });
 
+/** How this build reads a stored setup against the questions it asks (ORG-02). */
+type SetupReading =
+  | { kind: 'current' }
+  | { kind: 'earlier'; carry: SetupCarryView }
+  | ({ kind: 'unreadable' } & SetupUnreadable);
+
+/**
+ * Whether this build can continue a stored setup (ORG-02, through H21). One
+ * saved under earlier questions is resumed by carrying its answers across. One
+ * saved by a newer build, or under a revision this build no longer carries, is
+ * left exactly as it is: this build cannot know what its answers mean.
+ */
+function readSetup(setup: BusinessSetup): SetupReading {
+  let revision: number;
+  try {
+    revision = assertReadable(BUSINESS_SETUP, setup);
+  } catch (error) {
+    if (!(error instanceof MigrationRefusal)) throw error;
+    return error.code === 'newer-version'
+      ? { kind: 'unreadable', code: 'setup_newer', reason: SETUP_NEWER_REASON }
+      : { kind: 'unreadable', code: 'setup_unreadable', reason: SETUP_UNREADABLE_REASON };
+  }
+  if (revision === BUSINESS_SETUP.current) return { kind: 'current' };
+  // The table the family's steps were built from, named rather than defaulted.
+  const carry = carryPlan(setup, BUSINESS_SETUP.current, QUESTION_SET_CHANGES);
+  return carry
+    ? { kind: 'earlier', carry }
+    : { kind: 'unreadable', code: 'setup_unreadable', reason: SETUP_UNREADABLE_REASON };
+}
+
+/** Carry a setup saved under earlier questions to the current ones. A failure writes nothing. */
+function carrySetup(setup: BusinessSetup): BusinessSetup {
+  try {
+    return migrateRecord(BUSINESS_SETUP, setup).record as unknown as BusinessSetup;
+  } catch {
+    // A refusal, or a step that could not carry this record: nothing is written either way.
+    throw refuse(409, SETUP_UNREADABLE_REASON, 'setup_unreadable');
+  }
+}
+
+/** Where a signed-in business's setup came from, as the questionnaire shows it. */
+function syncView(load: SetupLoad): BusinessSetupSync | undefined {
+  if (load.kind === 'service')
+    return { source: 'service', revision: load.revision, readOnly: false, reason: null, asOf: load.writtenAt };
+  if (load.kind === 'cache')
+    return { source: 'cache', revision: load.revision, readOnly: true, reason: load.reason, asOf: load.fetchedAt };
+  return undefined;
+}
+
 export class WorkspaceService {
   private registry: Registry = emptyRegistry();
   private person: Person | null = null;
@@ -180,6 +264,15 @@ export class WorkspaceService {
   private accountPerson: Person | null = null;
   private accounts: WorkspaceAccountBridge | null = null;
   private readonly setups = new Map<string, BusinessSetup>();
+  /** ORG-01: a signed-in business's setup, kept by the account service. Null until accounts connect. */
+  private setupSync: OrganizationSetupSync | null = null;
+  /**
+   * How each signed-in business's setup last loaded or saved here, and the
+   * service revision `setups` holds for it. The two maps are only ever written
+   * together, in one step, so a save always names the revision its content
+   * came from, even while a refresh runs outside the store lock.
+   */
+  private readonly synced = new Map<string, { load: SetupLoad; revision: number }>();
 
   constructor(private readonly store: Store) {}
 
@@ -254,10 +347,19 @@ export class WorkspaceService {
 
   connectAccounts(bridge: WorkspaceAccountBridge) {
     this.accounts = bridge;
+    this.setupSync = bridge.setup ? new OrganizationSetupSync(path.join(this.root, 'setup'), bridge.setup) : null;
   }
 
   private accountBacked(organizationId: string): boolean {
     return this.registry.accountOrganizations.includes(organizationId);
+  }
+
+  /**
+   * Whether the account service keeps this business: a signed-in session listed it. A business
+   * made on this computer without an account never is, whatever its identity source says.
+   */
+  isAccountBusiness(organizationId: string): boolean {
+    return this.accountBacked(organizationId);
   }
 
   /**
@@ -268,6 +370,7 @@ export class WorkspaceService {
   async project(projection: AccountProjection | null): Promise<void> {
     if (!projection) {
       this.accountPerson = null;
+      this.synced.clear();
       return;
     }
     // The faux service is a test fixture and is labelled as one; only the deployed service is hosted.
@@ -279,6 +382,8 @@ export class WorkspaceService {
       assurance: source,
       createdAt: projection.person.createdAt,
     };
+    // Another person's loads are not this person's: every business is read again for them.
+    if (this.accountPerson?.id !== person.id) this.synced.clear();
     this.accountPerson = person;
     const listed = new Set<string>();
     const ended: string[] = [];
@@ -877,6 +982,7 @@ export class WorkspaceService {
    */
   private configuring(organizationId: string): {
     organization: Organization;
+    membership: Membership;
     setup: BusinessSetup | null;
   } {
     const organization = this.organization(organizationId);
@@ -911,17 +1017,168 @@ export class WorkspaceService {
     const setup = this.setups.get(organizationId) ?? null;
     if (setup && setup.tenantId !== organization.tenantId)
       throw refuse(409, 'This saved setup belongs to a different tenant.', 'tenant_mismatch');
-    return { organization, setup };
+    return { organization, membership, setup };
   }
 
-  /** A stored setup from an older schema is refused until it is explicitly resumed. */
-  private requireCurrentSchema(setup: BusinessSetup) {
-    if (setup.schemaRevision !== BUSINESS_SETUP_SCHEMA_REVISION)
+  // --- a signed-in business's intake, kept by the account service (ORG-01) ----------
+
+  /** A signed-in business whose setup the account service keeps. */
+  private syncedSetup(organizationId: string): boolean {
+    return this.setupSync !== null && this.accountPerson !== null && this.accountBacked(organizationId);
+  }
+
+  private setupSubject(organization: Organization, membership: Membership): SetupSubject {
+    const person = this.currentPerson();
+    return {
+      organizationId: organization.id,
+      tenantId: organization.tenantId,
+      personId: person.id,
+      generation: this.principalGeneration(organization.id, person.id),
+      mayConfigure: isActiveMember(membership) && canConfigureOrganization(membership),
+    };
+  }
+
+  /** Take a load or a save as this computer's view of the business's setup, content and revision together. */
+  private applySetupLoad(organizationId: string, load: SetupLoad) {
+    const setup = load.kind === 'load-error' || load.kind === 'refused' ? null : load.setup;
+    if (setup) this.setups.set(organizationId, setup);
+    else this.setups.delete(organizationId);
+    this.synced.set(organizationId, {
+      load,
+      revision: load.kind === 'service' || load.kind === 'cache' ? load.revision : 0,
+    });
+  }
+
+  /**
+   * Read a signed-in business's setup from the account service. Never throws:
+   * a failure of this computer's own files is a load error like any other,
+   * never a blank setup. A result for someone no longer signed in is dropped.
+   */
+  private async loadSetup(organization: Organization, membership: Membership): Promise<SetupLoad> {
+    const subject = this.setupSubject(organization, membership);
+    let load: SetupLoad;
+    try {
+      load = await this.setupSync!.load(subject);
+    } catch {
+      load = { kind: 'load-error', reason: SETUP_LOCAL_ERROR_REASON };
+    }
+    if (this.accountPerson?.id === subject.personId) this.applySetupLoad(organization.id, load);
+    return load;
+  }
+
+  /**
+   * Read every signed-in business's setup this person belongs to, after the
+   * account service has said who they are. Runs outside the store lock: it
+   * waits on the network, and the sync takes one business at a time itself.
+   */
+  async refreshSetups(): Promise<void> {
+    const person = this.accountPerson;
+    if (!this.setupSync || !person) return;
+    const mine = this.registry.memberships.filter(
+      (membership) =>
+        membership.personId === person.id &&
+        isActiveMember(membership) &&
+        this.accountBacked(membership.organizationId),
+    );
+    await Promise.all(
+      mine.map(async (membership) => {
+        const organization = this.organization(membership.organizationId);
+        if (organization) await this.loadSetup(organization, membership);
+      }),
+    );
+  }
+
+  /** A setup that did not load has nothing to show or change: say why, never "not started". */
+  private requireLoaded(load: SetupLoad) {
+    if (load.kind === 'load-error') throw refuse(503, load.reason, 'setup_unavailable');
+    if (load.kind === 'refused')
+      throw new ApiError(load.code === 'sign_in_required' ? 401 : 403, load.reason, { code: load.code });
+  }
+
+  /**
+   * The gate, and for a signed-in business the service revision its setup was
+   * loaded as. `fresh` reads the business's current revision first. After the
+   * last wait, the setup and its revision are read in one step.
+   */
+  private async configuringSynced(
+    organizationId: string,
+    fresh: boolean,
+  ): Promise<{
+    organization: Organization;
+    membership: Membership;
+    setup: BusinessSetup | null;
+    /** The revision `setup` is, for a signed-in business; null for one kept only here. */
+    revision: number | null;
+    sync?: BusinessSetupSync;
+  }> {
+    let gate = this.configuring(organizationId);
+    if (!this.syncedSetup(organizationId)) return { ...gate, revision: null };
+    if (fresh || !this.synced.has(organizationId)) {
+      await this.loadSetup(gate.organization, gate.membership);
+      gate = this.configuring(organizationId);
+    }
+    const record = this.synced.get(organizationId);
+    if (!record) throw refuse(503, SETUP_UNREACHABLE_REASON, 'setup_unavailable');
+    this.requireLoaded(record.load);
+    return { ...gate, revision: record.revision, sync: syncView(record.load) };
+  }
+
+  /**
+   * Save a setup. A signed-in business's goes to the account service as the
+   * next revision after `revision`, and its compare-and-set decides; anything
+   * else is saved on this computer, as before.
+   */
+  private async storeSetup(
+    organization: Organization,
+    membership: Membership,
+    setup: BusinessSetup,
+    revision: number | null,
+  ): Promise<BusinessSetupSync | undefined> {
+    if (revision === null || !this.setupSync) {
+      await this.saveSetup(setup);
+      return undefined;
+    }
+    try {
+      const saved = await this.setupSync.save(this.setupSubject(organization, membership), setup, revision);
+      this.applySetupLoad(organization.id, saved);
+      return syncView(saved);
+    } catch (error) {
+      // Someone else saved first: take what the business holds now, so the reload shows it.
+      if (error instanceof SetupConflict && error.load) this.applySetupLoad(organization.id, error.load);
+      throw error;
+    }
+  }
+
+  /**
+   * The business's answers as they stand now, for a comparison that must not
+   * run on an old copy: activating a configuration. A signed-in business's are
+   * read from the account service, and a copy shown offline is not enough.
+   */
+  async currentSetup(organizationId: string): Promise<BusinessSetup | null> {
+    const organization = this.organization(organizationId);
+    const membership = this.membershipOf(organizationId);
+    if (!organization || !membership || !this.syncedSetup(organizationId))
+      return readJson<BusinessSetup | null>(this.setupPath(organizationId), () => null);
+    const load = await this.loadSetup(organization, membership);
+    this.requireLoaded(load);
+    if (load.kind === 'cache')
       throw refuse(
-        409,
-        'This setup was saved by an earlier version of the questions. Resume it to continue with the current ones.',
-        'stale_setup',
+        503,
+        "The account service can't be reached, so this business's current answers can't be checked. Try again when the connection is back.",
+        'setup_unavailable',
       );
+    return load.kind === 'service' || load.kind === 'local' ? load.setup : null;
+  }
+
+  /**
+   * A setup takes answers only under the questions this build asks (ORG-02).
+   * One saved under earlier questions is resumed first, which carries its
+   * answers across; one this build cannot read is refused and left as it is.
+   */
+  private requireCurrentSchema(setup: BusinessSetup) {
+    const reading = readSetup(setup);
+    if (reading.kind === 'unreadable') throw refuse(409, reading.reason, reading.code);
+    if (reading.kind === 'earlier') throw refuse(409, SETUP_EARLIER_REASON, 'stale_setup');
   }
 
   /** Drafting is the only state that accepts answers; the rest must be resumed. */
@@ -937,15 +1194,23 @@ export class WorkspaceService {
     throw refuse(409, UNIMPLEMENTED_SETUP_REASON, 'setup_state_unsupported');
   }
 
-  setupView(organizationId: string) {
-    const { organization, setup } = this.configuring(organizationId);
-    return this.presentSetup(organization, setup);
+  /** The setup as it stands. A signed-in business's is read from the account service each time. */
+  async setupView(organizationId: string): Promise<BusinessSetupView> {
+    const { organization, setup, sync } = await this.configuringSynced(organizationId, true);
+    return this.presentSetup(organization, setup, sync);
   }
 
-  private presentSetup(organization: Organization, setup: BusinessSetup | null): BusinessSetupView {
-    const answers = setup?.answers ?? {};
+  private presentSetup(
+    organization: Organization,
+    setup: BusinessSetup | null,
+    sync?: BusinessSetupSync,
+  ): BusinessSetupView {
+    const reading = setup ? readSetup(setup) : null;
+    const unreadable = reading?.kind === 'unreadable' ? { code: reading.code, reason: reading.reason } : null;
+    const stale = reading?.kind === 'earlier';
+    // A setup this build cannot read shows none of its answers: it cannot say what they mean.
+    const answers = unreadable ? {} : (setup?.answers ?? {});
     const counts = progress(answers);
-    const stale = setup !== null && setup.schemaRevision !== BUSINESS_SETUP_SCHEMA_REVISION;
     return {
       organization: {
         id: organization.id,
@@ -956,22 +1221,29 @@ export class WorkspaceService {
       schemaRevision: setup?.schemaRevision ?? BUSINESS_SETUP_SCHEMA_REVISION,
       currentSchemaRevision: BUSINESS_SETUP_SCHEMA_REVISION,
       stale,
-      step: stale ? REVIEW_STEP : (setup?.cursor ?? nextStep(answers)),
-      previous: setup ? previousStep(answers, setup.cursor) : null,
+      carry: reading?.kind === 'earlier' ? reading.carry : null,
+      unreadable,
+      step: stale || unreadable ? REVIEW_STEP : (setup?.cursor ?? nextStep(answers)),
+      previous: setup && !stale && !unreadable ? previousStep(answers, setup.cursor) : null,
       answers,
       facts: collectFacts(answers),
       progress: counts,
       ready: readyForProposal(answers),
       digest: answersDigest(answers),
-      proposalDigest: setup?.proposalDigest ?? null,
+      proposalDigest: unreadable ? null : (setup?.proposalDigest ?? null),
       /** What this build does after a proposal, said plainly rather than implied. */
       afterProposal: AFTER_PROPOSAL,
+      ...(sync ? { sync } : {}),
     };
   }
 
-  /** Start a new intake, or resume one that had stopped. Both are explicit. */
+  /**
+   * Start a new intake, or resume one that had stopped. Both are explicit. A
+   * signed-in business starts from what it holds now, so a second computer
+   * resumes the business's setup rather than starting another.
+   */
   async startSetup(organizationId: string, mode: 'start' | 'resume') {
-    const { organization, setup } = this.configuring(organizationId);
+    const { organization, membership, setup, revision } = await this.configuringSynced(organizationId, true);
     const person = this.currentPerson();
     const at = now();
     if (!setup) {
@@ -994,9 +1266,13 @@ export class WorkspaceService {
         updatedAt: at,
         proposalDigest: null,
       };
-      await this.saveSetup(fresh);
-      return this.presentSetup(organization, fresh);
+      const sync = await this.storeSetup(organization, membership, fresh, revision);
+      return this.presentSetup(organization, fresh, sync);
     }
+    // A setup this build cannot read is left exactly as it is: never restarted,
+    // never resumed. Before ORG-02 a resume replaced its answers with none.
+    const reading = readSetup(setup);
+    if (reading.kind === 'unreadable') throw refuse(409, reading.reason, reading.code);
     if (mode === 'start' && setup.state !== 'not-started')
       throw refuse(
         409,
@@ -1005,25 +1281,51 @@ export class WorkspaceService {
       );
     // Resuming a finished draft starts a new proposal from the same answers; it
     // does not reopen the old one, and it never edits anything already active.
-    const answers = setup.schemaRevision === BUSINESS_SETUP_SCHEMA_REVISION ? setup.answers : {};
+    // A setup saved under earlier questions is first carried across (H21):
+    // every answer the change did not touch comes across exactly as it was
+    // given, and the questions that changed are asked again.
+    const carried = reading.kind === 'earlier' ? carrySetup(setup) : setup;
     const resumed: BusinessSetup = {
-      ...setup,
-      schemaRevision: BUSINESS_SETUP_SCHEMA_REVISION,
-      answers,
+      ...carried,
       state: 'drafting',
-      cursor: nextStep(answers),
+      cursor: nextStep(carried.answers),
       proposalDigest: null,
       updatedAt: at,
     };
-    await this.saveSetup(resumed);
-    return this.presentSetup(organization, resumed);
+    if (reading.kind === 'earlier') await this.keepBeforeCarry(organizationId, setup.schemaRevision);
+    const sync = await this.storeSetup(organization, membership, resumed, revision);
+    return this.presentSetup(organization, resumed, sync);
+  }
+
+  /**
+   * Keep this computer's setup file as it was, beside itself, before a carry
+   * replaces it (H21, decision 10). A business kept only here has no earlier
+   * revision anywhere else. The copy is never removed automatically.
+   */
+  private async keepBeforeCarry(organizationId: string, from: number) {
+    const file = this.setupPath(organizationId);
+    let bytes: Buffer;
+    try {
+      bytes = await fs.readFile(file);
+    } catch (error) {
+      if (absent(error)) return;
+      throw error;
+    }
+    const backup = backupPath(file, from, bytes);
+    try {
+      await fs.access(backup);
+      return;
+    } catch (error) {
+      if (!absent(error)) throw error;
+    }
+    await durableWrite(backup, bytes);
   }
 
   async answer(
     organizationId: string,
     input: { questionId: string; value: AnswerValue; unknown?: boolean; expectedDigest?: string },
   ) {
-    const { organization, setup } = this.configuring(organizationId);
+    const { organization, membership, setup, revision } = await this.configuringSynced(organizationId, false);
     if (!setup) throw refuse(409, 'Start the setup for this workspace first.', 'setup_not_started');
     this.requireDrafting(setup);
     // Two administrators editing at once conflict rather than overwriting each
@@ -1045,6 +1347,9 @@ export class WorkspaceService {
         checked.problem.message,
         `answer_${checked.problem.code.replaceAll('-', '_')}`,
       );
+    // The question's words as they were asked, kept with the answer: a later
+    // revision may reword it, and the answer keeps what it was given against.
+    const prompt = BUSINESS_QUESTIONS.find((question) => question.id === input.questionId)?.prompt;
     const answers: Record<string, BusinessAnswer> = {
       ...setup.answers,
       [input.questionId]: {
@@ -1054,6 +1359,7 @@ export class WorkspaceService {
         origin: 'person',
         at: now(),
         by: this.currentPerson().id,
+        ...(prompt ? { prompt } : {}),
       },
     };
     const step = nextStep(answers);
@@ -1067,17 +1373,17 @@ export class WorkspaceService {
       proposalDigest: step === REVIEW_STEP ? answersDigest(answers) : null,
       updatedAt: now(),
     };
-    await this.saveSetup(next);
-    return this.presentSetup(organization, next);
+    const sync = await this.storeSetup(organization, membership, next, revision);
+    return this.presentSetup(organization, next, sync);
   }
 
   /** Move the cursor back one question without discarding anything. */
   async back(organizationId: string) {
-    const { organization, setup } = this.configuring(organizationId);
+    const { organization, membership, setup, revision, sync: loaded } = await this.configuringSynced(organizationId, false);
     if (!setup) throw refuse(409, 'Start the setup for this workspace first.', 'setup_not_started');
     this.requireCurrentSchema(setup);
     const target = previousStep(setup.answers, setup.cursor);
-    if (!target) return this.presentSetup(organization, setup);
+    if (!target) return this.presentSetup(organization, setup, loaded);
     const next: BusinessSetup = {
       ...setup,
       cursor: target,
@@ -1085,8 +1391,8 @@ export class WorkspaceService {
       proposalDigest: null,
       updatedAt: now(),
     };
-    await this.saveSetup(next);
-    return this.presentSetup(organization, next);
+    const sync = await this.storeSetup(organization, membership, next, revision);
+    return this.presentSetup(organization, next, sync);
   }
 
   // --- the view ----------------------------------------------------------------
@@ -1763,8 +2069,13 @@ export class WorkspaceService {
         continue;
       }
       const setup = this.setups.get(organization.id) ?? null;
-      const counts = progress(setup?.answers ?? {});
+      const reading = setup ? readSetup(setup) : null;
+      const counts = progress(reading?.kind === 'unreadable' ? {} : (setup?.answers ?? {}));
       const mayConfigure = canConfigureOrganization(membership);
+      // A signed-in business's summary says where it came from. One that did
+      // not load says so, rather than reading as a setup nobody has started.
+      const loaded = this.syncedSetup(organization.id) ? this.synced.get(organization.id)?.load : undefined;
+      const unavailable = loaded?.kind === 'load-error' || loaded?.kind === 'refused' ? loaded : null;
       organizations.push({
         organization,
         membership,
@@ -1778,13 +2089,29 @@ export class WorkspaceService {
         entitlement: this.entitlementFor(organization.id),
         output: this.registry.outputs[organization.id] ?? null,
         setup: {
-          state: setup?.state ?? 'not-started',
+          state: unavailable ? 'unavailable' : (setup?.state ?? 'not-started'),
           schemaRevision: setup?.schemaRevision ?? BUSINESS_SETUP_SCHEMA_REVISION,
           answered: counts.answered,
           required: counts.required,
-          // Only a configurator sees a resumable draft; a member has nothing to resume.
-          resumable: mayConfigure && setup !== null && setup.state !== 'not-started',
+          // Only a configurator sees a resumable draft; a member has nothing to
+          // resume, and nobody resumes a setup this build cannot read.
+          resumable:
+            !unavailable &&
+            mayConfigure &&
+            setup !== null &&
+            setup.state !== 'not-started' &&
+            reading?.kind !== 'unreadable',
           mayConfigure,
+          ...(unavailable
+            ? { source: 'unavailable' as const, loadError: unavailable.reason }
+            : loaded?.kind === 'service' || loaded?.kind === 'cache'
+              ? { source: loaded.kind }
+              : {}),
+          ...(reading?.kind === 'earlier'
+            ? { questions: 'earlier' as const }
+            : reading?.kind === 'unreadable'
+              ? { questions: reading.code === 'setup_newer' ? ('newer' as const) : ('unreadable' as const) }
+              : {}),
         },
       });
     }

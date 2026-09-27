@@ -24,9 +24,9 @@ import { NECTOVIA_SIGN_IN, NECTOVIA_UNAVAILABLE } from '../server/engines/nectov
 import { testOnlySecretBox } from '../server/connection-secrets';
 import { ControlPlaneClient } from '../server/accounts/client';
 import type { AccountBackend } from '../server/accounts/backend';
+import { AGENT_PROJECT_UNLINKED } from '../server/accounts/agent-gate';
 import { createFauxCloud, FAUX_BACKEND_LABEL, type FauxCloud } from '../services/control-plane/src/faux/cloud';
 import { DEMO_ACCOUNTS, FAUX_DEMO_PASSWORD, seedDemo } from '../services/control-plane/src/faux/seed';
-import { AGENT_PERSONAL_REASON } from '../shared/access';
 import type { AccountStateView } from '../shared/accounts';
 import type { MessageResult } from '../shared/conversation';
 import type { NectoviaRouteView } from '../shared/model-api';
@@ -217,6 +217,9 @@ describe('the Nectovia bot', () => {
     const binding = await home();
     const refused = await say(binding, 'm-unlinked', 'How many loaves are on order?');
     expect(refused.status).toBe(403);
+    // The owner is already working in the business, so the refusal names the missing link, not
+    // a workspace to switch to.
+    expect(await refused.json()).toMatchObject({ code: 'AGENT_NOT_INCLUDED', error: AGENT_PROJECT_UNLINKED });
     expect(gateway).toHaveLength(0);
     expect(awsCalls).toBe(0);
 
@@ -383,13 +386,13 @@ describe('the Nectovia bot', () => {
     expect(ledger.reservations.map((hold) => hold.state)).toEqual(['released']);
   });
 
-  test('a Free person is refused with the service’s sentence before any gateway call', async () => {
+  test('a Free person is refused before any gateway call, because no business owns their Home', async () => {
     await signIn(DEMO_ACCOUNTS.free.email);
     const binding = await home();
     const refused = await say(binding, 'm-free', 'How many loaves are on order?');
     const body = (await refused.json()) as { error: string; code: string };
     expect(refused.status).toBe(403);
-    expect(body).toMatchObject({ code: 'AGENT_NOT_INCLUDED', error: AGENT_PERSONAL_REASON });
+    expect(body).toMatchObject({ code: 'AGENT_NOT_INCLUDED', error: AGENT_PROJECT_UNLINKED });
     expect(gateway).toHaveLength(0);
     expect(awsCalls).toBe(0);
     expect(body.error).not.toMatch(/AWS|Bedrock|provider|connect/i);

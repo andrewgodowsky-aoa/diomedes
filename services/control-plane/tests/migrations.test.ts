@@ -60,7 +60,7 @@ describe('versioned migration protocol', () => {
 });
 
 describe('versioned migration source files', () => {
-  const names = ['001_accounts.sql', '002_commercial.sql', '003_funded_jobs.sql', '004_usage_contract.sql', '005_customer_access.sql', '006_staff_keys.sql', '007_relay_devices.sql'];
+  const names = ['001_accounts.sql', '002_commercial.sql', '003_funded_jobs.sql', '004_usage_contract.sql', '005_customer_access.sql', '006_staff_keys.sql', '007_relay_devices.sql', '008_organization_setup.sql'];
   const load = () => Promise.all(names.map(async (name, index) => {
     const sql = await readFile(new URL(`../migrations/${name}`, import.meta.url), 'utf8');
     return { version: index + 1, name, sql, sha256: createHash('sha256').update(sql).digest('hex') };
@@ -110,6 +110,24 @@ describe('versioned migration source files', () => {
     // Only the public half of a key is ever stored here.
     expect(relay.sql).not.toMatch(/private_key|secret|password|credential|sealed/i);
     expect(relay.sql.trim().endsWith('REVOKE ALL ON ALL FUNCTIONS IN SCHEMA control_plane FROM PUBLIC;')).toBe(true);
+  });
+
+  it('008 keeps every business setup revision, once, for its own business, and holds no credentials', async () => {
+    const setup = (await load()).find((file) => file.name === '008_organization_setup.sql')!;
+    expect(setup.sql).not.toMatch(/\b(DROP\s+TABLE|DELETE\s+FROM|TRUNCATE|DROP\s+SCHEMA|ALTER\s+TABLE)\b/i);
+    expect(setup.sql).toContain('CREATE TABLE control_plane.organization_setups');
+    for (const column of ['tenant_id', 'organization_id', 'revision', 'record', 'written_at', 'written_by'])
+      expect(setup.sql).toMatch(new RegExp(`\\n  ${column} `));
+    // One row per business and revision: the key is the compare-and-set.
+    expect(setup.sql).toContain('PRIMARY KEY (tenant_id,organization_id,revision)');
+    expect(setup.sql).toMatch(/FOREIGN KEY \(organization_id,tenant_id\) REFERENCES control_plane\.organizations\(id,tenant_id\)/);
+    expect(setup.sql).toMatch(/written_by text NOT NULL REFERENCES control_plane\.persons\(id\)/);
+    // The record names its own business, and a revision is never rewritten or removed.
+    expect(setup.sql).toContain("record->'setup'->>'organizationId' = organization_id");
+    expect(setup.sql).toContain('CREATE TRIGGER organization_setup_append_only BEFORE UPDATE OR DELETE ON control_plane.organization_setups');
+    // No column or statement holds a secret (the comments may say so; the SQL may not).
+    expect(setup.sql.replace(/--.*$/gm, '')).not.toMatch(/private_key|password|credential|sealed|api_key|token/i);
+    expect(setup.sql.trim().endsWith('REVOKE ALL ON ALL FUNCTIONS IN SCHEMA control_plane FROM PUBLIC;')).toBe(true);
   });
 
   it('005 keeps grants revoke-once, policy and audit append-only, and binds credits to a feature grant', async () => {

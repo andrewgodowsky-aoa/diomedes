@@ -17,7 +17,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { AGENT_REQUIREMENTS, type AgentRequirement } from '../shared/agents.js';
-import type { BusinessAnswer } from '../shared/business-setup.js';
 import { ROUTE_CAPABILITIES } from '../shared/capabilities.js';
 import {
   ACTIVATION_CONFLICT,
@@ -330,12 +329,11 @@ export class ConfigurationService {
   /** The intake owns the answers; configuration only compares against them. */
   private async currentAnswersDigest(owner: ConfigurationOwner): Promise<string> {
     if (owner.kind === 'prospect') return (await this.prospectSnapshot(owner)).answersDigest;
-    // Read the stored intake directly so activation cannot outrun an edit the
-    // in-memory view has not picked up yet. No intake means no answers.
-    const setup = await readJson<{ answers?: Record<string, BusinessAnswer> } | null>(
-      path.join(this.store.dataDir, 'workspaces', 'setup', `${owner.organizationId}.json`),
-      () => null,
-    );
+    // The answers as they stand now, never the in-memory view: the stored intake,
+    // or for a signed-in business its current revision in the account service
+    // (ORG-01), so activation cannot outrun an edit made here or on another
+    // computer. No intake means no answers.
+    const setup = await this.workspaces.currentSetup(owner.organizationId);
     return answersDigest(setup?.answers ?? {});
   }
 

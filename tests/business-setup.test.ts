@@ -231,5 +231,5 @@ describe('what the review shows', () => {
 });
 
 test('the schema revision is stated, so a stale draft can be recognised', () => {
-  expect(BUSINESS_SETUP_SCHEMA_REVISION).toBe(1);
+  expect(BUSINESS_SETUP_SCHEMA_REVISION).toBe(2);
 });

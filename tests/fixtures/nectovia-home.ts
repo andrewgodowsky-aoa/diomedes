@@ -2,6 +2,7 @@ import { ControlPlaneClient } from '../../server/accounts/client';
 import type { AccountBackend } from '../../server/accounts/backend';
 import { createFauxCloud, FAUX_BACKEND_LABEL, type FauxCloud } from '../../services/control-plane/src/faux/cloud';
 import { DEMO_ACCOUNTS, seedDemo } from '../../services/control-plane/src/faux/seed';
+import type { WorkspaceView } from '../../shared/workspaces';
 
 // The Nectovia route for the Home page specs, through the real account service and its real
 // managed gateway: the faux cloud's control-plane handler, seeded as the app's own test mode seeds
@@ -78,4 +79,25 @@ export async function nectoviaAccounts(provider: typeof globalThis.fetch): Promi
     accounts: { backend, env: { DIOMEDES_TEST_MODE: '1', DIOMEDES_TEST_ACCOUNT: NECTOVIA_OWNER } },
     cloud,
   };
+}
+
+type Api = <T>(route: string, method?: string, data?: unknown) => Promise<T>;
+
+/**
+ * Link a project to the business the signed-in owner works in, on the route Workspaces' "Link Home
+ * to this business" uses. Paid Agent work runs only in a project one business owns, and creating a
+ * project links it to nothing, so a spec links each project it talks to the Agent in, as an owner
+ * would. Linking never chooses where the business's Automations write.
+ */
+export async function linkToBusiness(api: Api, projectId: string): Promise<void> {
+  const { active } = await api<WorkspaceView>('/workspace');
+  if (active.kind !== 'business') throw new Error('The signed-in owner is not working in a business.');
+  await api(`/workspace/organizations/${active.organizationId}/projects`, 'POST', { projectId });
+}
+
+/** Home, made if it never was, and linked to the business the way Workspaces does it. */
+export async function linkHome(api: Api): Promise<{ projectId: string; threadId: string }> {
+  const home = await api<{ projectId: string; threadId: string }>('/home/conversation', 'POST', {});
+  await linkToBusiness(api, home.projectId);
+  return home;
 }
