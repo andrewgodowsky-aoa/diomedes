@@ -138,3 +138,58 @@ repository mirror waits for that write (cloud synchronisation pending):
 > on tiers whose model is proven to accept summaries), shown above the reply and saved on it.
 > Azure OpenAI waits on a live proof. ChatGPT (Codex) follows with the engine-conversations plan.
 > Fixture, conformance and browser proof only; live proof pending.
+
+## Engine conversations, 2026-09-27
+
+Branch `feature/codex-conversation-driver`, plan
+`docs/superpowers/plans/2026-09-27-engine-conversations.md`, spec
+`docs/superpowers/specs/2026-09-27-engine-conversations-and-reasoning-design.md` Part 1. It
+amends CD-01 Decision 5 (Round 12 of `docs/implementation/2026-09-20-core-agent-contract.md`)
+and answers `QUESTIONS.md` O19 and O39 item 1, now R16.
+
+- ChatGPT (Codex) has a kept session: `server/engines/codex-session.ts` on the shared native
+  conversation driver (`server/harness/codex-session-run.ts`, route contract `codex-session`,
+  `streaming.reasoning: 'reasoning-delta'`). Each conversation has its own app-server process
+  on Diomedes' proven runtime (0.153.4), which ends after 5 minutes without a turn. Every turn
+  can resume the saved thread with `thread/resume`, and a failed resume starts a fresh thread
+  with the continuity note. No version equality gate is added. Stop sends `turn/interrupt`,
+  waits 3 seconds, then ends the process tree, and the checkpoint records which happened. The
+  ChatGPT account is checked on every turn, and a changed account refuses the turn with
+  nothing sent.
+- ChatGPT's thinking streams through Plan 1's thinking channel. A turn asks for reasoning
+  summaries (`summary: 'auto'`) only while a thinking sink listens, and sends `'none'`
+  otherwise, because the protocol carries the setting to later turns.
+- One table, `KEPT_SESSIONS` in `server/conversation-sessions.ts`, says which driver, run id
+  prefix and turn each kept-session route uses, and the thread session view, the
+  conversation projection and `resolve` read it. `isConversationRoute` and
+  `CONVERSATION_ROUTES` admit `codex`, `opencode`, `cursor` and `devin` beside `claude-code`
+  and the model-API routes, so the Home engine update and the send path admit the same routes.
+- Found engines: `foundConversationEngines` (`shared/conversation-engines.ts`) lists only the
+  engines that are installed, compatible and signed in, and suggests the Nectovia plan when
+  none is. A turn on an engine that's gone is refused in its own words (`engineGoneSentence`),
+  translated where `EngineService.nativeTurn` fails, with nothing sent.
+- Project threads on ChatGPT, OpenCode, Cursor and Devin send Ask, Plan and Automatic through
+  the conversation (`client/console/thread-send.ts`). Claude Code project threads (O38) and
+  Build and Fix keep the direct path.
+
+Fixture, conformance and browser proof only. Live proof is pending on Andrew's machine: one
+ChatGPT conversation that shows thinking, takes a Stop, and continues after an app restart.
+
+The roadmap's runtime section needs this patch. The cloud canonical is the authority, so the
+repository mirror waits for that write (cloud synchronisation pending):
+
+> Section 5, the H05 sentence "H05 is an API route, not a Console conversation route
+> (QUESTIONS.md O39)." becomes: "Since 2026-09-27 (feature/codex-conversation-driver), H05's
+> kept Cursor and Devin conversations are Console conversation routes (QUESTIONS.md R16). A
+> kept conversation's folder is still never removed automatically (O39)."
+>
+> Section 5, H04's clause "no Console surface until OpenCode is admitted as a conversation
+> route (CD-01 Decision 5, QUESTIONS.md O19)" becomes: "a Console conversation route since
+> 2026-09-27 (CD-01 Decision 5 as amended in Round 12, QUESTIONS.md R16)".
+>
+> A new paragraph after H05: "Engine conversations (2026-09-27,
+> feature/codex-conversation-driver): a Console conversation runs on Claude Code, ChatGPT,
+> OpenCode, Cursor, Devin or a model-API route, and offers only the engines this computer has
+> installed and signed in. ChatGPT answers through a kept Codex session on Diomedes' own
+> runtime, with thinking, Stop and continuing after a restart. Fixture, conformance and browser
+> proof only; live proof pending."

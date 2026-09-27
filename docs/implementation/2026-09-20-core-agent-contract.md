@@ -13,6 +13,29 @@ The reviews answered are
 Nothing here is implemented. This freezes shapes and boundaries so CD-02 and
 CD-05 can be written against one contract.
 
+## Round 12: Decision 5 is amended, and kept-session engines hold conversations (2026-09-27)
+
+`docs/superpowers/specs/2026-09-27-engine-conversations-and-reasoning-design.md`, approved by
+Andrew on 2026-09-27, amends Decision 5 and widens Round 11's I-19. This note is the amendment;
+`docs/harness/CHANGES.md` ("Engine conversations, 2026-09-27") records the code, and
+`QUESTIONS.md` R16 records the decision.
+
+- **Decision 5.** A non-Claude user's conversation runs on their engine's kept session:
+  ChatGPT (Codex), OpenCode, Cursor or Devin, each on the shared `ClaudeSessionRuns` driver
+  under its own `NativeSessionProfile`. The Console offers exactly `sessionControls(contract)`
+  for the route. The prerequisite Decision 5 named, a second driver implementing `admit` and
+  `open`, was met by H04 (OpenCode) and H05 (Cursor, Devin); ChatGPT's is new here
+  (`server/harness/codex-session-run.ts`). An engine is offered only when it's installed,
+  compatible and signed in on this computer, and when none is, the only suggestion is the
+  Nectovia plan. A saved thread whose engine is gone is refused in that engine's own words,
+  with nothing sent, and keeps its engine.
+- **I-19.** The shared `isConversationRoute` predicate now admits `codex`, `opencode`, `cursor`
+  and `devin` beside `claude-code` and every model-API route, so the home thread update and the
+  send path still admit the same set. Anything else is refused in its own name, and the
+  engine is not changed.
+- Claude Code project threads keep the direct request path (O38), and Build and Fix keep it on
+  every route.
+
 ## Round 11: I-19 and I-20 are superseded by the Home Luna contract (2026-09-21)
 
 `2026-09-21-core-agent-home-luna-contract.md`, accepted as a bounded design in
@@ -1121,6 +1144,9 @@ A live conversation occupies no work slot: `ClaudeSessionRuns` writes no
 independent answer.
 
 ### Decision 5: what a non-Claude user gets
+
+> **Amended by Round 12 (2026-09-27).** A non-Claude user's conversation runs on their
+> engine's kept session: ChatGPT, OpenCode, Cursor or Devin. Read Round 12.
 
 They get the existing `/ask` path and none of this. `prepare` refuses unless the
 thread's engine is `claude-code` (`server/app.ts:2327-2331`) and unless the
