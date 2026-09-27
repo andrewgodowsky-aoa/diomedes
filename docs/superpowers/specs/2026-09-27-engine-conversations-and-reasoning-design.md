@@ -16,8 +16,8 @@
    - Rejected: wrapping every agent as an AI SDK model ("D2"), and running every model in our harness alone ("D3").
    - This confirms the 2026-09-13 runtime-seam rule: Diomedes' contract comes first, ACP is the preferred external transport, and the AI SDK is the plane for direct models.
 2. **ChatGPT (Codex) conversations run on our own app-server client as a kept session**, not on `@agentclientprotocol/codex-acp`.
-   - That adapter lists `@openai/codex` as a hard dependency, which would put Codex in the installer. Diomedes ships adapters, not engines.
-   - It also needs Codex 0.156 or later, and that would need a new isolation proof.
+   - The Codex route already runs Diomedes' own proven Codex runtime, 0.153.4 (`server/integrations.ts`, "Diomedes uses its own proven … copy"), and our client is proven against it.
+   - codex-acp lists its own `@openai/codex` (0.156 or later) as a hard dependency. That would mean a second Codex copy and a new isolation proof.
    - The 2026-09-13 rule keeps Codex on its own protocol unless ACP proves better.
 3. **Reasoning works on every conversation route that can supply it.** It streams live and is saved with the reply.
 4. **Console conversation routes** are Claude Code, ChatGPT (Codex), OpenCode, Cursor, Devin and the model-API routes. oh-my-pi joins once it has a kept session.
@@ -62,6 +62,7 @@
 - **The driver.** `conversationDriver` in `server/app.ts` already sends every run whose id doesn't start with `model-` to the native session driver. Each kept-session engine brings its own `NativeSessionProfile`.
 - **Found engines.**
   - The host decides which conversation engines a person may choose, using the existing install, compatibility and sign-in checks (`EngineCandidate`, `server/engines/install.ts`, `server/engines/login.ts`).
+  - For ChatGPT (Codex), "installed" means Diomedes' own Codex runtime is present, and "signed in" means the person has signed in to ChatGPT.
   - An engine that isn't found is not offered, and no sentence tells a person to install one.
   - A saved thread whose engine is no longer found is refused, in the engine's own sign-in or install wording, for example "ChatGPT isn't signed in on this computer, so this conversation can't continue here. Nothing was sent." The thread is never moved.
 - **Free and paid.**
@@ -105,9 +106,11 @@
   - `retry`, `status`, `reconcile` and `close` are host;
   - streaming is `text-delta` and `reasoning-delta`, and durable events are `run-record`;
   - models are `runtime-reported`, authentication is `native-sign-in`, and `testedWith` is the pinned protocol version.
-- **Pinned version.**
-  - `CODEX_PROTOCOL_VERSION` is 0.153.4. A different installed version is refused before anything is sent, with the existing setup sentence.
-  - The plan's first task generates the app-server schema from the installed CLI. It confirms that `turn/interrupt` and the reasoning-summary notifications exist at 0.153.4. If they don't, work stops and the question comes back to Andrew.
+- **Runtime version.**
+  - The conversation runs on the runtime the Codex route already uses: Diomedes' own proven copy, `CODEX_PROTOCOL_VERSION` 0.153.4.
+  - A person's own Codex install, of any version, is neither used nor refused.
+  - Under the 2026-09-23 version-agnostic decision, no version equality gate is added. If a Diomedes update brings a new runtime mid-conversation, the next turn continues the saved thread with `thread/resume`. If that fails, it starts a fresh thread with the continuity note.
+  - The plan's first task generates the app-server schema from the pinned runtime (`codex app-server generate-json-schema`, as in `evidence/codex-app-server-0.153.4/`). It confirms that `turn/interrupt` and the reasoning-summary notifications exist at 0.153.4. If they don't, work stops and the question comes back to Andrew.
 
 ### 3.3 OpenCode, Cursor and Devin in the Console
 
@@ -188,7 +191,7 @@ These changes go in `shared/adapter-contract.ts` and `server/engines/contract.ts
 
 Each case ends the turn with one plain sentence. Nothing is retried behind the person's back.
 
-- **ChatGPT is missing, signed out, or not the pinned version.** The turn is refused before anything is sent, with the setup step. A version change during a conversation stops it, as for the ACP sessions (`SESSION_MISMATCH`).
+- **ChatGPT isn't signed in, or Diomedes' Codex runtime is missing.** The turn is refused before anything is sent, with the existing setup sentence. A version difference is never a refusal (2026-09-23).
 - **ChatGPT no longer has the saved thread.** The message starts a fresh thread and says that earlier messages weren't carried over.
 - **Stop isn't acknowledged in time.** The process is ended and the record says `killed`, not `acknowledged`.
 - **The app restarts mid-reply.** The message is recorded as not completed and is never resent. The next message continues the thread.
@@ -202,7 +205,7 @@ Each case ends the turn with one plain sentence. Nothing is retried behind the p
   - starting a conversation, and resuming after a restart;
   - a lost thread;
   - Stop acknowledged, and Stop killed;
-  - a version change and an account change;
+  - a runtime update between turns, which continues the thread, and an account change;
   - a read-policy stop;
   - queued steering and fork.
 - **Console route tests** for each kept-session engine, next to `tests/h05-acp-session-routes.test.ts` and `tests/h04-opencode-session-routes.test.ts`.
@@ -240,8 +243,9 @@ This runs on Andrew's machine with his own sign-ins.
   - The runtime-seam section of `docs/DIOMEDES_LIVE_ROADMAP.md` is amended.
 - **Product knowledge.** The ChatGPT (Codex) conversation route contract gets its statement in `resources/product-knowledge/`. `server/readiness/projection.ts` looks for one statement per route contract. A route appears in four places there: `core.json` scopes, `core.json` routes, the statement's scopes, and the `index.json` entry.
 
-## 9. For Andrew's review
+## 9. Review answers (Andrew, 2026-09-27)
 
-- Decision 5 is read here as: offer only engines that are found installed and signed in, and only those with a kept session. Is that right?
-- Decision 5 is scoped to the conversation surfaces, and AI setup keeps its install and sign-in flows. Is that right?
-- Saved thinking is capped at 32 KiB.
+- **Decision 5 confirmed:** an engine is offered only when it is installed, signed in, and has a kept session.
+- **AI setup stays as it is.** Decision 5 covers only the conversation surfaces.
+- **Saved thinking is capped at 32 KiB,** about 5,000 words. A typical reasoning summary is a few hundred words, so the cap only matters for unusually long thinking. The cap stays unless Andrew changes it.
+- Andrew approved the spec and asked for execution to begin.
