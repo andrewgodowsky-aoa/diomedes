@@ -6,7 +6,8 @@
  *
  * argv: <session id> <known-sessions file> <turn log> <new|resume>
  * Per message: `[hang]` waits for an interrupt, `[stuck]` never ends, `[slow]`
- * answers after 400 ms; anything else is answered as "Answer to <words>".
+ * answers after 400 ms, and `[think]` streams two thinking chunks first; anything
+ * else is answered as "Answer to <words>".
  */
 import readline from 'node:readline';
 import fs from 'node:fs';
@@ -32,5 +33,8 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
   if (words.includes('[hang]')) { open = 'hang'; return; }
   if (words.includes('[stuck]')) { open = 'stuck'; return; }
   if (words.includes('[slow]')) return setTimeout(() => result('Answer to ' + words), 400);
+  if (words.includes('[think]'))
+    for (const thinking of ['Weighing the menu. ', 'Checking prices.'])
+      emit({ type: 'stream_event', session_id: session, event: { type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking } } });
   result('Answer to ' + words);
 });
