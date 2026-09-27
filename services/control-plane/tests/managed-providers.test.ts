@@ -32,6 +32,7 @@ describe('the reviewed provider registry', () => {
       maxOutputTokens: 16_000,
       credential: 'BEDROCK_API_KEY',
       requestIdHeaders: ['x-amzn-requestid', 'x-request-id'],
+      reasoningSummaries: true,
     });
     expect(Object.isFrozen(MANAGED_PROVIDERS)).toBe(true);
     expect(Object.isFrozen(LUNA)).toBe(true);
