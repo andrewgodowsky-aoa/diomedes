@@ -341,14 +341,6 @@ route are re-read at admission, but it asks for no separate per-message `consent
 review proposes yes (the steer carries consent and re-runs the turn's cloud-sharing check). Default
 in the code today: no separate consent.
 
-### O19. Should OpenCode's kept session become a Console conversation route?
-
-Raised 2026-09-24 by `docs/implementation/2026-09-24-h04-opencode-sessions.md`. CD-01 Decision 5
-names Claude Code and the model-API routes as the only Console conversation drivers; admitting
-OpenCode amends it. The kept session is built and its API exposes exactly the controls its contract
-declares. Proposal: allow it, with the Console offering exactly `sessionControls(contract)`.
-Default: not wired; no Console screen offers OpenCode session controls.
-
 ### O20. Agent profiles: fallback and precedence
 
 Raised 2026-09-24 by `docs/implementation/2026-09-24-h09-agent-profiles.md`.
@@ -560,15 +552,14 @@ reconciliation) ship only on the Diomedes page. Project threads on Claude Code (
 Automatic) still use the single-turn direct path. Moving them would change how a thread's route is
 chosen (`planThreadSend`). Default: not moved.
 
-### O39. Kept Cursor and Devin conversations: a Console route, and when their folder is removed
+### O39. When a kept Cursor or Devin conversation's folder is removed
 
 Raised 2026-09-24 by `docs/implementation/2026-09-24-h05-cursor-acp-sessions.md` (PR #90, on main
-through batch 5, PR #107).
+through batch 5, PR #107). Andrew answered its first item (a Console route) on 2026-09-27, and it
+is now R16.
 
-1. Should the kept Cursor and Devin conversations become Console conversation routes? That would
-   amend CD-01 Decision 5, as O19 would for OpenCode. Default: an API route only.
-2. When should a kept conversation's private engine folder be removed? The resume needs it, and
-   deletion is designed, never a blunt switch (decision 10). Default: never removed automatically.
+When should a kept conversation's private engine folder be removed? The resume needs it, and
+deletion is designed, never a blunt switch (decision 10). Default: never removed automatically.
 
 Also recorded as defaults: only `fetch` and `think` asks and plan approvals reach a person, and
 anything that would write, execute or switch mode stays declined. A declined question lets the
@@ -679,6 +670,34 @@ included in the continuation, without granting actions or picking another engine
 Default: each stays as built.
 
 ## Resolved
+
+### R16. Kept-session engines hold Console conversations (raised as O19 and O39 item 1)
+
+Decided by Andrew on 2026-09-27
+(`docs/superpowers/specs/2026-09-27-engine-conversations-and-reasoning-design.md`, Part 1 and
+section 9). It amends CD-01 Decision 5 (Round 12 of
+`docs/implementation/2026-09-20-core-agent-contract.md`).
+
+- **Routes.** A Console conversation runs on Claude Code, ChatGPT, OpenCode, Cursor, Devin or a
+  model-API route. ChatGPT, OpenCode, Cursor and Devin answer through their kept sessions, and
+  the Console offers exactly each route contract's `sessionControls(contract)`, as O19 proposed.
+  Home and project threads on those engines send Ask, Plan and Automatic through the
+  conversation. Build and Fix keep the direct path, and so do Claude Code project threads (O38).
+- **ChatGPT's kept session.** It runs on Diomedes' own Codex runtime, one app-server process per
+  conversation, and keeps its thread (`ephemeral: false`) so it can continue after a restart.
+  That writes the conversation, including the documents a turn reads, into the person's own
+  Codex history, as O17 item 1's default does for Work runs and H04 does for OpenCode.
+- **Found engines only.** A conversation offers an engine only when it's installed, compatible
+  and signed in on this computer, and no conversation surface suggests installing or choosing a
+  named engine. When none is found, the only suggestion is the Nectovia plan. AI setup keeps its
+  install and sign-in flows.
+- **A gone engine.** A saved thread whose engine is no longer installed or signed in is refused
+  in that engine's own words, with nothing sent, and keeps its engine.
+- **Free.** These engines are the person's own AI, so they're free (Pillar 12, amendment
+  2026-09-27.1, which lands with `feature/free-harness-paid-agent`). The Nectovia Agent stays
+  paid.
+- A kept conversation's private engine folder is still never removed automatically. That is
+  O39, which stays open.
 
 ### R14. Task priority: order, due dates, labels and who edits (raised by OS-DISC-01 section 5)
 
