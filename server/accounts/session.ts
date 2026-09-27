@@ -3,6 +3,7 @@
  * about them.
  *
  *   <data>/accounts/remembered.json   the accounts this computer remembers
+ *   <data>/accounts/plan-notice.json  each person's answer to the free-version notice
  *
  * A remembered account is a name and an email for the account chooser. When
  * the person chose "Keep me signed in" and the operating system can protect
@@ -26,11 +27,21 @@ import { z } from 'zod';
 import {
   ACCOUNT_VIEW_VERSION,
   SIGN_IN_REQUIRED,
+  type AccountPlanView,
   type AccountStateView,
   type AccountWorkspaceView,
   type BrowserSignInView,
 } from '../../shared/accounts.js';
-import { AGENT_FEATURE, ROLE_CAPABILITIES, roleLabel, type AccessView } from '../../shared/access.js';
+import {
+  AGENT_FEATURE,
+  PLAN_NOTICE_SNOOZE_DAYS,
+  PLANS_URL,
+  ROLE_CAPABILITIES,
+  roleLabel,
+  type AccessView,
+  type AgentPlanState,
+  type PlanNoticeChoice,
+} from '../../shared/access.js';
 import type { OrganizationSetupWrite, SetupFetchOutcome, SetupWriteOutcome } from '../../shared/organization-setup.js';
 import {
   NO_ENTITLEMENT_VIEW,
@@ -253,7 +264,17 @@ export function entitlementFromAccess(access: AccessView): EntitlementView {
   };
 }
 
+/** Each person's answer to the free-version notice, by person id. Local to this computer. */
+const planNoticeSchema = z.record(
+  z.string().min(1).max(128),
+  z.strictObject({ choice: z.enum(['later', 'never']), at: z.string().min(1).max(64) }),
+);
+type PlanNotices = z.infer<typeof planNoticeSchema>;
+
 export class AccountSessionService {
+  /** Where "Sign up for a plan" opens. The host sets it from `NECTOVIA_PLANS_URL` when that is given. */
+  plansUrl: string = PLANS_URL;
+  private planNotices: PlanNotices = {};
   private remembered: Remembered = empty();
   private current: Current | null = null;
   private rotating: Promise<void> | null = null;
@@ -275,6 +296,9 @@ export class AccountSessionService {
 
   private get file() {
     return path.join(this.dataDir, 'accounts', 'remembered.json');
+  }
+  private get planNoticeFile() {
+    return path.join(this.dataDir, 'accounts', 'plan-notice.json');
   }
   private get backendKey() {
     const view = this.backend.view();
@@ -322,6 +346,9 @@ export class AccountSessionService {
     const saved = await readJson<unknown>(this.file, empty);
     const parsed = rememberedSchema.safeParse(saved);
     this.remembered = parsed.success ? parsed.data : empty();
+    // A damaged answers file only brings the notice back; it never stops a sign-in.
+    const notices = planNoticeSchema.safeParse(await readJson<unknown>(this.planNoticeFile, () => ({})).catch(() => ({})));
+    this.planNotices = notices.success ? notices.data : {};
     // Resume the last kept sign-in silently. Any failure leaves the person signed out.
     const last = this.remembered.accounts.find((entry) => entry.personId === this.remembered.last && entry.backend === this.backendKey);
     if (last?.sealed && this.protectedStorage()) await this.resume(last.personId).catch(() => {});
@@ -972,6 +999,7 @@ export class AccountSessionService {
       remember: current?.remember ?? false,
       protectedStorage: this.protectedStorage(),
       workspaces,
+      plan: this.planView(),
       remembered: this.remembered.accounts
         .filter((item) => item.backend === this.backendKey)
         .map((item) => ({
@@ -986,6 +1014,50 @@ export class AccountSessionService {
         })),
       signedInAt: current?.signedInAt ?? null,
     };
+  }
+
+  /**
+   * Whether the signed-in person holds the Nectovia Agent through any subscription. A business
+   * counts while the person is an active member of it and its plan includes the Agent; one whose
+   * access has not been read yet makes the answer `unknown`, never `free`. Phase 2 adds the
+   * person's own individual subscription here.
+   */
+  agentPlan(): AgentPlanState {
+    const current = this.current;
+    if (!current) return 'free';
+    let unknown = false;
+    for (const row of current.organizations) {
+      if (row.membership.state !== 'active' || current.notMember.has(row.organization.id)) continue;
+      const access = current.access.get(row.organization.id);
+      if (!access || access.state === 'unknown') unknown = true;
+      else if (access.state === 'active' && access.features.includes(AGENT_FEATURE)) return 'paid';
+    }
+    return unknown ? 'unknown' : 'free';
+  }
+
+  /** The plan as the free-version notice reads it. */
+  private planView(): AccountPlanView {
+    const agent = this.agentPlan();
+    const person = this.current?.personId ?? null;
+    const answer = person ? this.planNotices[person] : undefined;
+    const snoozed =
+      answer?.choice === 'later' && Date.parse(answer.at) + PLAN_NOTICE_SNOOZE_DAYS * 86_400_000 > this.now();
+    return {
+      agent,
+      plansUrl: this.plansUrl,
+      notice: agent === 'free' && answer?.choice !== 'never' && !snoozed,
+    };
+  }
+
+  /**
+   * Records the signed-in person's answer to the free-version notice. "Remind me later" puts it
+   * off for PLAN_NOTICE_SNOOZE_DAYS; "Don't remind me again" keeps it away for this person.
+   */
+  async answerPlanNotice(choice: PlanNoticeChoice): Promise<AccountStateView> {
+    const current = this.requireCurrent();
+    this.planNotices = { ...this.planNotices, [current.personId]: { choice, at: this.at() } };
+    await durableWrite(this.planNoticeFile, JSON.stringify(this.planNotices, null, 2));
+    return this.state();
   }
 
   /** True when the named feature is in the business's current access. */

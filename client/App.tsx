@@ -24,6 +24,7 @@ import { Shell } from './console/Shell';
 import { leaveEditor } from './console/editor-guard';
 import { Home, type HomeDestination } from './console/Home';
 import { DiomedesHome } from './console/DiomedesHome';
+import { PlansLink, useFreePlan } from './console/FreePlanNotice';
 import type { EverythingItem } from './console/Everything';
 import type { ShellView } from './console/types';
 import type { WorkspaceView } from '../shared/workspaces';
@@ -67,7 +68,11 @@ function updateNoticeNote(text: string | undefined): string | undefined {
   return at ? text!.slice(at.index + at[0].length) : undefined;
 }
 
+/** Why the home row opened no Automations for a person on the free version: there's no business to switch to. */
+const AUTOMATIONS_FREE_VERSION = "Automations are part of a paid plan, and you're on the free version.";
+
 export function App() {
+  const freePlan = useFreePlan();
   const [settings, setSettings] = useState<Settings | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   // Newest first, once per projects change; the landing ask and its picker all read this.
@@ -690,7 +695,9 @@ export function App() {
       const workspace = await api<WorkspaceView>('/workspace');
       if (workspace.active.kind !== 'business') {
         setHomeNotice(
-          'Automations are set up per business workspace, and Personal has none. Open a project and switch under Change workspace.',
+          freePlan
+            ? AUTOMATIONS_FREE_VERSION
+            : 'Automations are set up per business workspace, and Personal has none. Open a project and switch under Change workspace.',
         );
         return;
       }
@@ -970,6 +977,11 @@ export function App() {
         <div className="error-bar appearance-notice" role="status">
           <Mark state="waiting" />
           <span>{homeNotice}</span>
+          {freePlan && homeNotice === AUTOMATIONS_FREE_VERSION && (
+            <PlansLink plan={freePlan} className="button quiet">
+              See plans
+            </PlansLink>
+          )}
           <Button tone="quiet" onClick={() => setHomeNotice('')}>
             Dismiss
           </Button>

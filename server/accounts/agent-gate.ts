@@ -18,7 +18,10 @@
  * The business is the one that owns the project. An unbound project, including
  * Home, has no payer and is refused. Projectless work uses the active Business
  * workspace. Personal work has no business, so the Agent refuses it with the
- * sentence the service would use.
+ * sentence the service would use. A person with no subscription anywhere reads the
+ * free-version sentence instead (Andrew, 2026-09-27): nothing tells them to link or
+ * switch to a business they do not have. Their conversations run on their own AI
+ * before any of this is asked (`paidFor` in the host's route resolution).
  *
  * Diomedes-funded work (`managed`) also needs the business's included AI usage
  * ('managed-inference'). The host reads it from the same access as the Agent,
@@ -26,7 +29,7 @@
  * records an admission; the company gateway still checks funding on every call.
  */
 import { SIGN_IN_REQUIRED } from '../../shared/accounts.js';
-import { AGENT_FEATURE, AGENT_PERSONAL_REASON, FEATURE_LABELS, type AccessFeature } from '../../shared/access.js';
+import { AGENT_FEATURE, AGENT_FREE_VERSION_REASON, AGENT_PERSONAL_REASON, FEATURE_LABELS, type AccessFeature } from '../../shared/access.js';
 import { EngineError } from '../engines/process.js';
 import type { WorkspaceService } from '../workspaces.js';
 import type { AccountSessionService, AgentRouteKind, AgentSurface } from './session.js';
@@ -92,14 +95,26 @@ export class AccountAgentGate implements AgentGatePort {
     return active.kind === 'business' ? active.organizationId : null;
   }
 
+  /**
+   * Whether work here has the Agent: the business it belongs to includes it, or that business's
+   * access has not been read yet, so the admission decides. False for work no business pays for.
+   * Phase 2 adds the person's own individual subscription.
+   */
+  paidFor(projectId: string | null): boolean {
+    const organizationId = this.organizationFor(projectId);
+    if (!organizationId) return false;
+    return this.session.entitlement(organizationId)?.state === 'unknown' || this.session.includes(organizationId, AGENT_FEATURE);
+  }
+
+  /** Why work no business pays for is refused: the free version, or the missing link or workspace. */
+  unpaidReason(projectId: string | null): string {
+    if (this.session.agentPlan() === 'free') return AGENT_FREE_VERSION_REASON;
+    return projectId === null ? AGENT_PERSONAL_REASON : AGENT_PROJECT_UNLINKED;
+  }
+
   async check(work: AgentWork): Promise<AdmittedAgentWork> {
     const organizationId = this.organizationFor(work.projectId);
-    if (!organizationId)
-      throw new EngineError(
-        AGENT_NOT_INCLUDED,
-        work.projectId === null ? AGENT_PERSONAL_REASON : AGENT_PROJECT_UNLINKED,
-        false,
-      );
+    if (!organizationId) throw new EngineError(AGENT_NOT_INCLUDED, this.unpaidReason(work.projectId), false);
     const routeKind = work.routeKind ?? 'byo';
     // Only where the access is known (it includes the Agent): a business this host has no answer
     // for is the service's to refuse, in its own words.

@@ -6,6 +6,7 @@ import type { MemberRole } from '../shared/workspaces';
 import { api } from './api';
 import { useAccount } from './AccountGate';
 import { Button } from './components';
+import { PlansLink } from './console/FreePlanNotice';
 
 /**
  * Settings, Account: who is signed in, and each business they belong to as
@@ -78,13 +79,28 @@ export function AccountSettings() {
           {error}
         </p>
       )}
-      <h2>Your businesses</h2>
-      {state.workspaces.length === 0 && (
-        <p className="prose">
-          You do not belong to a business yet. Personal work uses your own AI tools directly; the Nectovia
-          Agent works for a business whose plan includes it.
-        </p>
+      {/* Where sign-up stays once the free-version notice is put off or turned off. */}
+      {state.plan?.agent === 'free' && (
+        <>
+          <h2>Your plan</h2>
+          <p className="prose">
+            You're on the free version. The Nectovia Agent is part of a paid plan.{' '}
+            <PlansLink plan={state.plan} className="">
+              See plans
+            </PlansLink>
+          </p>
+        </>
       )}
+      <h2>Your businesses</h2>
+      {state.workspaces.length === 0 &&
+        (state.plan?.agent === 'free' ? (
+          <p className="prose">You don't belong to a business yet.</p>
+        ) : (
+          <p className="prose">
+            You do not belong to a business yet. Personal work uses your own AI tools directly; the Nectovia
+            Agent works for a business whose plan includes it.
+          </p>
+        ))}
       {state.workspaces.map((workspace) => (
         <BusinessCard key={workspace.organization.id} workspace={workspace} onChanged={refresh} />
       ))}

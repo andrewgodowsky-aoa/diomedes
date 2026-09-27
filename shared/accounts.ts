@@ -8,7 +8,7 @@
  * signed in" and the operating system can protect it, their sealed sign-in.
  * It never keeps a password.
  */
-import type { AccessView, RoleCapabilities } from './access.js';
+import type { AccessView, AgentPlanState, RoleCapabilities } from './access.js';
 import type { MemberRole } from './workspaces.js';
 
 export const ACCOUNT_VIEW_VERSION = 1 as const;
@@ -55,6 +55,15 @@ export interface BrowserSignInView {
   message: string;
 }
 
+/** The person's plan, as far as the free-version notice needs it. */
+export interface AccountPlanView {
+  agent: AgentPlanState;
+  /** Where "Sign up for a plan" opens. */
+  plansUrl: string;
+  /** Show the free-version notice now: on the free version, and not put off or turned off. */
+  notice: boolean;
+}
+
 export interface AccountStateView {
   v: typeof ACCOUNT_VIEW_VERSION;
   backend: AccountBackendView;
@@ -67,6 +76,7 @@ export interface AccountStateView {
   /** Whether this computer can keep a sign-in at all. False on the plain development server. */
   protectedStorage: boolean;
   workspaces: AccountWorkspaceView[];
+  plan: AccountPlanView;
   remembered: RememberedAccountView[];
   signedInAt: string | null;
 }

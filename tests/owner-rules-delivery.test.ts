@@ -1,16 +1,14 @@
 /**
- * 'owner-rules' (Andrew, 2026-09-25): a business's own instruction files reach
- * the work only while the business it belongs to holds the feature. Withheld
- * files are never silently absent — the delivery record names each one with
- * `not-included` and the plan's own sentence — while the product's rules (the
- * writing standard, shipped product knowledge) go regardless. A Personal
- * workspace has no business to hold the feature, and an embedded host with no
- * accounts passes everything through, exactly like the Agent gate.
+ * A project's own instruction files are part of the free harness (Andrew, 2026-09-27): they reach
+ * every engine whatever the plan, as they would in any harness. What stays paid under
+ * 'owner-rules' (Andrew, 2026-09-25) is the Console's rules and the trigger rules, and a loop
+ * says so once through `notIncludedReason`. The product's rules (the writing standard, shipped
+ * product knowledge) go regardless.
  *
- * The unit half exercises `assembleInstructions` and `deliverySentence`
- * directly (the same path every run and message uses). The app half stands up
- * the real host on the faux cloud: Juniper Street Bakery holds the Business
- * plan, Harbor Hardware holds nothing, and a free account is Personal.
+ * The unit half exercises `assembleInstructions` and `deliverySentence` directly (the same path
+ * every run and message uses). The app half stands up the real host on the faux cloud: Juniper
+ * Street Bakery holds the Business plan, Harbor Hardware holds nothing, and a free account is
+ * Personal.
  */
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import fs from 'node:fs/promises';
@@ -71,7 +69,7 @@ async function project(files: Record<string, string>) {
   return { store, id: created.id };
 }
 
-const assemble = (store: Store, id: string, workPaths: string[], ownerRulesIncluded?: boolean) =>
+const assemble = (store: Store, id: string, workPaths: string[]) =>
   assembleInstructions({
     state: store.state(id),
     routeId: 'codex',
@@ -79,88 +77,59 @@ const assemble = (store: Store, id: string, workPaths: string[], ownerRulesInclu
     budgetBytes: instructionSectionBudget(0),
     workPaths,
     at: '2026-09-26T01:00:00.000Z',
-    ...(ownerRulesIncluded === undefined ? {} : { ownerRulesIncluded }),
   });
 
-describe('the instruction gate', () => {
-  test('with the feature, and with the check absent, the files are sent', async () => {
-    // One project: a folder can be a project only once in a store.
+describe('a project’s own instruction files', () => {
+  test('are sent with no plan to ask, alongside the product’s rules', async () => {
     const { store, id } = await project(REPO);
     await activatePack(store, id, PACK);
-    for (const ownerRulesIncluded of [true, undefined] as const) {
-      const { section, delivery } = await assemble(store, id, ['pkg/one.md'], ownerRulesIncluded);
-      expect(delivery!.files.map((file) => [file.path, file.state])).toEqual([
-        ['pkg/AGENTS.md', 'sent'],
-        ['AGENTS.md', 'sent'],
-      ]);
-      expect(delivery!.excluded ?? []).toEqual([]);
-      expect(section).toContain('PKG-AGENTS-BODY');
-      expect(section).toContain('ROOT-AGENTS-BODY');
-    }
-  });
-
-  test('without the feature every in-scope file is withheld by name with the plan’s reason', async () => {
-    const { store, id } = await project(REPO);
-    await activatePack(store, id, PACK);
-    const { section, delivery } = await assemble(store, id, ['pkg/one.md'], false);
-    // Nothing the owner wrote reached the section; the record is not silently empty.
-    expect(section).not.toContain('ROOT-AGENTS-BODY');
-    expect(section).not.toContain('PKG-AGENTS-BODY');
-    expect(delivery).not.toBeNull();
-    expect(delivery!.files).toEqual([]);
-    expect(delivery!.excluded).toEqual([
-      expect.objectContaining({
-        path: 'pkg/AGENTS.md',
-        exclusion: 'not-included',
-        detail: OWNER_RULES_NOT_INCLUDED_REASON,
-      }),
-      expect.objectContaining({
-        path: 'AGENTS.md',
-        exclusion: 'not-included',
-        detail: OWNER_RULES_NOT_INCLUDED_REASON,
-      }),
+    const { section, delivery, writing } = await assemble(store, id, ['pkg/one.md']);
+    expect(delivery!.files.map((file) => [file.path, file.state])).toEqual([
+      ['pkg/AGENTS.md', 'sent'],
+      ['AGENTS.md', 'sent'],
     ]);
+    expect(delivery!.excluded ?? []).toEqual([]);
+    expect(section).toContain('PKG-AGENTS-BODY');
+    expect(section).toContain('ROOT-AGENTS-BODY');
+    expect(writing.state).toBe('sent');
   });
 
-  test('product rules still go: the writing standard and shipped product knowledge ride along', async () => {
-    const { store, id } = await project(REPO);
-    await activatePack(store, id, PACK);
-    const withheld = await assemble(store, id, ['pkg/one.md'], false);
-    expect(withheld.writing.state).toBe('sent');
-    expect(withheld.section).not.toBeNull();
-    // The project's own text is absent; what remains is the product's.
-    expect(withheld.section).not.toContain('AGENTS-BODY');
-    const delivered = await assemble(store, id, ['pkg/one.md'], true);
-    expect(delivered.writing.state).toBe('sent');
-    expect(delivered.productKnowledge.state).toBe(withheld.productKnowledge.state);
-  });
-
-  test('an out-of-scope file keeps its own reason; only governing files are withheld', async () => {
+  test('an out-of-scope file keeps its own reason; the governing files are sent', async () => {
     const { store, id } = await project({
       ...REPO,
       'other/AGENTS.md': '# Other\nOTHER-BODY\n',
     });
     await activatePack(store, id, PACK);
-    const { delivery } = await assemble(store, id, ['pkg/one.md'], false);
-    const excluded = Object.fromEntries(
-      (delivery!.excluded ?? []).map((file) => [file.path, file.exclusion]),
-    );
-    expect(excluded['other/AGENTS.md']).toBe('out-of-scope');
-    expect(excluded['pkg/AGENTS.md']).toBe('not-included');
-    expect(excluded['AGENTS.md']).toBe('not-included');
+    const { delivery } = await assemble(store, id, ['pkg/one.md']);
+    expect((delivery!.excluded ?? []).map((file) => [file.path, file.exclusion])).toEqual([
+      ['other/AGENTS.md', 'out-of-scope'],
+    ]);
+    expect(delivery!.files.map((file) => file.path)).toEqual(['pkg/AGENTS.md', 'AGENTS.md']);
   });
 
-  test('the History sentence names the withheld files after the plan’s reason', async () => {
+  test('a record written before 2026-09-27 still names what it withheld, after the plan’s reason', async () => {
     const { store, id } = await project(REPO);
     await activatePack(store, id, PACK);
-    const { delivery } = await assemble(store, id, ['pkg/one.md'], false);
-    const sentence = deliverySentence(delivery!);
+    const { delivery } = await assemble(store, id, ['pkg/one.md']);
+    // What the earlier gate wrote: no file sent, each one kept back with the plan's sentence.
+    const earlier: InstructionDelivery = {
+      ...delivery!,
+      files: [],
+      excluded: delivery!.files.map((file) => ({
+        path: file.path,
+        scope: '.',
+        sha: file.sha,
+        bytes: null,
+        packId: PACK,
+        exclusion: 'not-included' as const,
+        detail: OWNER_RULES_NOT_INCLUDED_REASON,
+      })),
+    };
+    const sentence = deliverySentence(earlier);
     expect(sentence).toContain('Diomedes sent no project instructions to codex.');
-    expect(sentence).toContain(OWNER_RULES_NOT_INCLUDED_REASON);
     const withheldAt = sentence.indexOf('Withheld:');
     expect(withheldAt).toBeGreaterThan(sentence.indexOf(OWNER_RULES_NOT_INCLUDED_REASON));
     expect(sentence.slice(withheldAt)).toContain('pkg/AGENTS.md');
-    expect(sentence.slice(withheldAt)).toContain('AGENTS.md');
   });
 });
 
@@ -235,7 +204,7 @@ const startLoop = (projectId: string, taskId: string) =>
     sources: [],
   });
 
-describe('the feature decides through the account session', () => {
+describe('through the account session', () => {
   beforeEach(async () => {
     cloud = await createFauxCloud({ file: null, passwordIterations: 1_000 });
     await seedDemo(cloud);
@@ -248,7 +217,12 @@ describe('the feature decides through the account session', () => {
   });
   afterEach(close);
 
-  test('Juniper Street Bakery holds the Business plan, so its project’s instructions are sent', async () => {
+  const sentFiles = (delivery: InstructionDelivery) => {
+    expect(delivery.excluded ?? []).toEqual([]);
+    return delivery.files.map((file) => [file.path, file.state]);
+  };
+
+  test('Juniper Street Bakery holds the Business plan: its instructions are sent and its trigger rules watch', async () => {
     const signed = await signIn('owner@juniper.test');
     expect(signed.status).toBe(200);
     const { projectId, taskId } = await ownerRuledProject();
@@ -260,12 +234,10 @@ describe('the feature decides through the account session', () => {
 
     const started = await startLoop(projectId, taskId);
     expect(started.status, JSON.stringify(started.data)).toBe(200);
-    const delivery: InstructionDelivery = started.data.session.instructions!;
-    expect(delivery.files.map((file) => [file.path, file.state])).toEqual([['AGENTS.md', 'sent']]);
-    expect(delivery.excluded ?? []).toEqual([]);
+    expect(sentFiles(started.data.session.instructions!)).toEqual([['AGENTS.md', 'sent']]);
   });
 
-  test('Harbor Hardware holds no plan: its rules are kept, named as withheld, and reach nothing', async () => {
+  test('Harbor Hardware holds no plan: its instructions are still sent, and only its trigger rules wait', async () => {
     const signed = await signIn('owner@harbor.test');
     expect(signed.status).toBe(200);
     const { projectId, taskId } = await ownerRuledProject();
@@ -274,23 +246,14 @@ describe('the feature decides through the account session', () => {
 
     const routes = await call<RoutesView>(`/projects/${projectId}/loop/routes`);
     expect(routes.data.notIncludedReason).toBe(OWNER_RULES_NOT_INCLUDED_REASON);
-    // An admitted route is still admitted — only the owner's rules stop reaching it.
     expect(routes.data.routes.find((offer) => offer.route === 'native-fixture')?.admitted).toBe(true);
 
     const started = await startLoop(projectId, taskId);
     expect(started.status, JSON.stringify(started.data)).toBe(200);
-    const delivery: InstructionDelivery = started.data.session.instructions!;
-    expect(delivery.files).toEqual([]);
-    expect(delivery.excluded).toEqual([
-      expect.objectContaining({
-        path: 'AGENTS.md',
-        exclusion: 'not-included',
-        detail: OWNER_RULES_NOT_INCLUDED_REASON,
-      }),
-    ]);
+    expect(sentFiles(started.data.session.instructions!)).toEqual([['AGENTS.md', 'sent']]);
   });
 
-  test('a Personal workspace holds no business, so its own files are withheld the same way', async () => {
+  test('a free person’s own project sends its instructions like any harness', async () => {
     const signed = await signIn('free@example.test');
     expect(signed.status).toBe(200);
     const { projectId, taskId } = await ownerRuledProject();
@@ -300,9 +263,7 @@ describe('the feature decides through the account session', () => {
 
     const started = await startLoop(projectId, taskId);
     expect(started.status, JSON.stringify(started.data)).toBe(200);
-    expect(started.data.session.instructions!.excluded).toEqual([
-      expect.objectContaining({ path: 'AGENTS.md', exclusion: 'not-included' }),
-    ]);
+    expect(sentFiles(started.data.session.instructions!)).toEqual([['AGENTS.md', 'sent']]);
   });
 
   test('with accounts off the host passes every rule through, exactly like the Agent gate', async () => {

@@ -25,6 +25,10 @@ import { testOnlySecretBox } from '../server/connection-secrets';
 import { ControlPlaneClient } from '../server/accounts/client';
 import type { AccountBackend } from '../server/accounts/backend';
 import { AGENT_PROJECT_UNLINKED } from '../server/accounts/agent-gate';
+import { PLANS_URL } from '../shared/access';
+
+/** The free-version refusal, whatever it goes on to suggest. */
+const FREE_VERSION = /^You're on the free version of Nectovia, so the Nectovia Agent isn't available here\. .*Nothing was sent\.$/;
 import { createFauxCloud, FAUX_BACKEND_LABEL, type FauxCloud } from '../services/control-plane/src/faux/cloud';
 import { DEMO_ACCOUNTS, FAUX_DEMO_PASSWORD, seedDemo } from '../services/control-plane/src/faux/seed';
 import type { AccountStateView } from '../shared/accounts';
@@ -386,16 +390,88 @@ describe('the Nectovia bot', () => {
     expect(ledger.reservations.map((hold) => hold.state)).toEqual(['released']);
   });
 
-  test('a Free person is refused before any gateway call, because no business owns their Home', async () => {
+  test('a Free person with no AI of their own reads the free-version sentence, before any gateway call', async () => {
     await signIn(DEMO_ACCOUNTS.free.email);
     const binding = await home();
     const refused = await say(binding, 'm-free', 'How many loaves are on order?');
     const body = (await refused.json()) as { error: string; code: string };
     expect(refused.status).toBe(403);
-    expect(body).toMatchObject({ code: 'AGENT_NOT_INCLUDED', error: AGENT_PROJECT_UNLINKED });
+    // Nothing tells someone with no business to link or switch to one; it names what they can do.
+    expect(body.code).toBe('AGENT_NOT_INCLUDED');
+    expect(body.error).toMatch(FREE_VERSION);
+    expect(body.error).toContain('Choose Claude Code in AI setup to talk here, or sign up for a plan.');
     expect(gateway).toHaveLength(0);
     expect(awsCalls).toBe(0);
-    expect(body.error).not.toMatch(/AWS|Bedrock|provider|connect/i);
+    expect(body.error).not.toMatch(/AWS|Bedrock|provider|connect|business/i);
+  });
+
+  const chooseOwnAi = async (engine: string) => {
+    const store = app.locals.store;
+    await store.locked(() =>
+      store.saveSettings({ ...store.settings, services: { ...store.settings.services, defaultEngine: engine } }),
+    );
+  };
+
+  test('a Free person’s Home runs on their own AI tool, not a tier; the thread stays Nectovia’s', async () => {
+    await signIn(DEMO_ACCOUNTS.free.email);
+    const binding = await home();
+    await chooseOwnAi('claude-code');
+    // No tier applies: a tier's routes are the Agent's, and nothing pays for it here.
+    const style = await api<{ route: string }>(`/projects/${binding.projectId}/threads/${binding.threadId}/work-style`);
+    expect(style.route).toBe('claude-code');
+    // Claude Code is not switched on in this file, so the send stops there, in that route's words.
+    const refused = await say(binding, 'm-free-own', 'How many loaves are on order?');
+    const body = (await refused.json()) as { error: string; code?: string };
+    expect(refused.status, body.error).toBe(409);
+    expect(body.error).toBe('Turn Claude Code on in Settings before sending.');
+    expect(gateway).toHaveLength(0);
+    expect(awsCalls).toBe(0);
+    // Subscribing brings Nectovia back: the stored thread was never moved.
+    expect((await homeThread(binding)).engine).toBe('nectovia');
+  });
+
+  test('a Free person’s own model key is the Agent too: the thread stays on Nectovia and is refused', async () => {
+    await signIn(DEMO_ACCOUNTS.free.email);
+    const binding = await home();
+    await chooseOwnAi('aws-bedrock');
+    const refused = await say(binding, 'm-free-key', 'How many loaves are on order?');
+    const body = (await refused.json()) as { error: string; code: string };
+    expect(refused.status).toBe(403);
+    expect(body.code).toBe('AGENT_NOT_INCLUDED');
+    expect(body.error).toMatch(FREE_VERSION);
+    expect(body.error).toContain('A model key of your own also runs through the Nectovia Agent');
+    expect(gateway).toHaveLength(0);
+    expect(awsCalls).toBe(0);
+  });
+
+  test('a Free person who put a thread on Nectovia themselves is refused, never moved', async () => {
+    await signIn(DEMO_ACCOUNTS.free.email);
+    const binding = await home();
+    await api(`/projects/${binding.projectId}/threads/${binding.threadId}`, 'PUT', { engine: 'nectovia' });
+    await chooseOwnAi('claude-code');
+    const refused = await say(binding, 'm-free-chosen', 'How many loaves are on order?');
+    const body = (await refused.json()) as { error: string; code: string };
+    expect(refused.status).toBe(403);
+    expect(body.code).toBe('AGENT_NOT_INCLUDED');
+    expect(body.error).toMatch(FREE_VERSION);
+    expect(gateway).toHaveLength(0);
+  });
+
+  test('the account view says who is on the free version, and the notice can be put off or turned off', async () => {
+    const free = await signIn(DEMO_ACCOUNTS.free.email);
+    expect(free.plan).toEqual({ agent: 'free', plansUrl: PLANS_URL, notice: true });
+    const later = await api<AccountStateView>('/account/plan-notice', 'POST', { choice: 'later' });
+    expect(later.plan.notice).toBe(false);
+    const never = await api<AccountStateView>('/account/plan-notice', 'POST', { choice: 'never' });
+    expect(never.plan).toMatchObject({ agent: 'free', notice: false });
+    const refused = await request('/account/plan-notice', 'POST', { choice: 'sometime' });
+    expect(refused.status).toBe(422);
+    // The answer is this person's: the owner of a paying business never sees the notice.
+    const owner = await signIn(DEMO_ACCOUNTS.owner.email);
+    expect(owner.plan).toMatchObject({ agent: 'paid', notice: false });
+    // A business with no plan leaves its owner on the free version.
+    const harbor = await signIn(DEMO_ACCOUNTS.harborOwner.email);
+    expect(harbor.plan).toMatchObject({ agent: 'free', notice: true });
   });
 
   test('a business without the Agent in its plan is refused with the service’s reason before any gateway call', async () => {

@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Settings } from '../shared/types';
 import type { ExternalEngine } from '../shared/types';
 import type { ConnectionReceipt, EngineConnection, InstallOffer } from '../shared/engines';
-import { ENGINE_NAMES, EXTERNAL_ENGINES, TEXT_ROUTE_CONTROLS } from '../shared/engines';
+import { ENGINE_NAMES, EXTERNAL_ENGINES, TEXT_ROUTE_CONTROLS, isConversationRoute } from '../shared/engines';
+import { useFreePlan } from './console/FreePlanNotice';
 import { ENGINE_ROUTE_PROFILES, routeCaption } from '../shared/engine-routes';
 import { AwsBedrockSetup } from './AwsBedrockSetup';
 import { AzureOpenAISetup, OpenRouterSetup } from './ProviderSetup';
@@ -48,6 +49,16 @@ import { ApiError, api, selectEngineModel, setEngineEnabled } from './api';
 import type { NectoviaRouteView } from '../shared/model-api';
 import { Button } from './components';
 import './ai-setup.css';
+
+/**
+ * The AI tools on this computer that can hold a conversation, as one phrase ("Claude Code"). On the
+ * free version a conversation runs on one of these; the model-API routes are Nectovia's own and
+ * stay paid, so they're never offered here as a free person's own AI.
+ */
+const CONVERSATION_ENGINE_NAMES = (() => {
+  const names = EXTERNAL_ENGINES.filter((engine) => isConversationRoute(engine)).map((engine) => ENGINE_NAMES[engine]);
+  return names.length > 1 ? `${names.slice(0, -1).join(', ')} or ${names.at(-1)}` : (names[0] ?? 'Claude Code');
+})();
 
 const DISCLOSURE =
   'Nectovia checks installed tools, versions, sign-in status, and model lists on this computer. ' +
@@ -1177,6 +1188,7 @@ export function AIConnections({
 }
 
 export default function AISetup({ settings, save, busy, onContinue, onBack }: AISetupProps) {
+  const freePlan = useFreePlan();
   const [skipBusy, setSkipBusy] = useState(false);
   const [skipError, setSkipError] = useState<string | null>(null);
   const [connections, setConnections] = useState<EngineConnection[]>([]);
@@ -1221,10 +1233,17 @@ export default function AISetup({ settings, save, busy, onContinue, onBack }: AI
   return (
     <div className="ai-setup">
       <h1>Connect an AI service</h1>
-      <p className="prose" data-agent-included>
-        The Nectovia Agent is included with Business and needs no setup. The tools below are optional:
-        connect one only if you want it for Work.
-      </p>
+      {freePlan ? (
+        <p className="prose" data-agent-included="free">
+          You're on the free version, so the Nectovia Agent isn't included. Connect your own AI tool
+          below. Conversations run on {CONVERSATION_ENGINE_NAMES}; the others take on project work.
+        </p>
+      ) : (
+        <p className="prose" data-agent-included>
+          The Nectovia Agent is included with Business and needs no setup. The tools below are optional:
+          connect one only if you want it for Work.
+        </p>
+      )}
       <CodexSetup settings={settings} save={save} busy={busy} />
       <AIConnections
         settings={settings}

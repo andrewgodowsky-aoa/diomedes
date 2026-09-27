@@ -149,6 +149,72 @@
   margin-top: 10px;
 }
 
+/* The free version: one flat box above the conversation, on the card's own
+   border. What's free and what a plan adds sit side by side as two short
+   caption lists, and the three choices are one row of caption controls. */
+.console.diomedes .dio-plan {
+  margin: 0 0 14px;
+  padding: 11px 14px;
+  border: 1px solid var(--hair-2);
+  border-left: 2px solid var(--t3);
+  border-radius: var(--rb);
+  background-color: var(--surface);
+}
+.console.diomedes .dio-plan h2 {
+  margin: 0;
+  color: var(--t1);
+  font-size: var(--dm-type-body);
+  font-weight: 600;
+}
+.console.diomedes .dio-plan p {
+  margin: 4px 0 0;
+  color: var(--t2);
+  font-size: var(--dm-type-body);
+  line-height: var(--dm-line-body);
+}
+.console.diomedes .dio-plan .dio-plan-error {
+  margin-top: 8px;
+  color: var(--fail);
+}
+.console.diomedes .dio-plan-lists {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px 24px;
+  margin-top: 10px;
+}
+.console.diomedes .dio-plan h3 {
+  margin: 0;
+  color: var(--t3);
+  font-size: var(--dm-type-caption);
+  font-weight: 500;
+}
+.console.diomedes .dio-plan ul {
+  margin: 2px 0 0;
+  padding: 0 0 0 16px;
+  color: var(--t2);
+  font-size: var(--dm-type-caption);
+  line-height: var(--dm-line-body);
+}
+.console.diomedes .dio-plan .dio-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin-top: 10px;
+}
+.console.diomedes .dio-plan .send {
+  padding: 0;
+  color: var(--t2);
+  font-size: var(--dm-type-caption);
+  font-weight: 500;
+  text-decoration: none;
+}
+.console.diomedes .dio-plan .send.ready {
+  color: var(--light);
+}
+.console.diomedes .dio-plan .send[aria-disabled='true'] {
+  cursor: default;
+}
+
 /* The two strips above the composer. A notice is one sentence; the
    unconfirmed message quotes what was sent and offers the only two honest
    choices. Neither draws a second composer. */

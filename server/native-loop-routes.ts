@@ -377,7 +377,6 @@ export function mountNativeLoopRoutes(
       budgetBytes: instructionSectionBudget(0),
       ...(cloud ? { allowedDocuments: cloudSharing(state).documents } : {}),
       workPaths: sources,
-      ownerRulesIncluded: ownerRules(projectId),
     });
     const input: LoopRunInput & { command: { id: string; digest: string } } = {
       v: 1,
@@ -472,8 +471,9 @@ export function mountNativeLoopRoutes(
           });
         }
       }
-      // A business that does not hold 'owner-rules' still starts loops; its own
-      // rules just do not reach them, and the Console says so once.
+      // A business that does not hold 'owner-rules' still starts loops; its trigger
+      // rules just do not reach them, and the Console says so once. The project's own
+      // instruction files reach every loop (Andrew, 2026-09-27).
       return {
         routes,
         notIncludedReason: ownerRules(projectId) ? null : OWNER_RULES_NOT_INCLUDED_REASON,
