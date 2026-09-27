@@ -220,6 +220,12 @@ coordination heavy slot `slot_mujeohvl_3d2e8848`. Every count below is from that
 - The pointer drag test failed on the build without the column's dragenter acceptance, at the
   drop (the column had shown it was under the drag, and no refusal followed the release), and
   passed with it.
+- On current main: this slice's commit merged onto origin/main 821acce without conflicts
+  (`Shell.tsx`, `playwright.config.ts` and `server/app.ts` changed on both sides). A throwaway
+  merge commit, checked out in a temporary worktree and moving no branch, gave tsc exit 0, a
+  clean vite build, 57 of 57 in the slice's vitest files and the Ready queue's, and 116 of 116 in
+  Playwright: `task-board-ui` 4, the named gates 36, and the four Home and Nectovia specs 76,
+  whose failures on 8daf0c1 do not occur there.
 
 ## PILLAR IMPACT
 
