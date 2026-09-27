@@ -2,7 +2,7 @@ import { parseApprovalCommand } from './approval-admission.js';
 import { taskDocumentProblem } from '../shared/task-sources.js';
 import { mountPermissionRoutes } from './permission-routes.js';
 import { WorkspaceService } from './workspaces.js';
-import { AccountAgentGate, AGENT_NOT_INCLUDED, AGENT_SIGN_IN_REQUIRED } from './accounts/agent-gate.js';
+import { AccountAgentGate, AGENT_NOT_INCLUDED, AGENT_PROJECT_UNLINKED, AGENT_SIGN_IN_REQUIRED } from './accounts/agent-gate.js';
 import { resolveAccountBackend, type AccountBackend } from './accounts/backend.js';
 import type { BrowserIdentity } from './accounts/browser-identity.js';
 import { browserSignIn } from './accounts/deployment.js';
@@ -261,7 +261,7 @@ import {
   type ModelApiRoute,
   type NectoviaRouteView,
 } from '../shared/model-api.js';
-import { AGENT_PERSONAL_REASON, OWNER_RULES_FEATURE } from '../shared/access.js';
+import { OWNER_RULES_FEATURE } from '../shared/access.js';
 import {
   NECTOVIA_SIGN_IN,
   NECTOVIA_UNAVAILABLE,
@@ -3418,15 +3418,15 @@ export async function createApp(options: AppOptions) {
     return [{ slug: saved, name: saved, description: '', defaultEffort: 'low', efforts }];
   };
   /**
-   * The Nectovia route's account for work in one project: the business it belongs to, as the
+   * The Nectovia route's account for work in one project: the business that owns it, as the
    * run's account route. Nobody connects anything. Refused in plain words, with nothing sent,
-   * when nobody is signed in or the work is Personal; the Agent gate decides the plan when the
-   * message is admitted.
+   * when nobody is signed in or the project is not linked to one business, Home included until
+   * an owner links it; the Agent gate decides the plan when the message is admitted.
    */
   const nectoviaAccountFor = (projectId: string): string => {
     if (!nectoviaAccount?.signedIn()) throw new EngineError(AGENT_SIGN_IN_REQUIRED, NECTOVIA_SIGN_IN, false);
     const organizationId = nectoviaAccount.organizationFor(projectId);
-    if (!organizationId) throw new EngineError(AGENT_NOT_INCLUDED, AGENT_PERSONAL_REASON, false);
+    if (!organizationId) throw new EngineError(AGENT_NOT_INCLUDED, AGENT_PROJECT_UNLINKED, false);
     return nectoviaAccountRoute(organizationId);
   };
   /** Whether a route takes a send: Nectovia has no switch; every other route is turned on in Settings. */
@@ -3493,7 +3493,7 @@ export async function createApp(options: AppOptions) {
     options: RunHints = {},
   ): Route => {
     const tier = tierFor(conversation, options);
-    // Nectovia's own refusals (nobody signed in, Personal work) come before any tier's.
+    // Nectovia's own refusals (nobody signed in, a project no business owns) come before any tier's.
     if (tier?.route === NECTOVIA_ROUTE) nectoviaAccountFor(projectId);
     if (tier?.outcome === 'refuse') throw new ApiError(409, tier.reason);
     if (tier) return tier.route as Route;
