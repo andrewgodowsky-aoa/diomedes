@@ -70,3 +70,53 @@ does not remove project files, History, Sessions or decision receipts. A code
 downgrade to the earlier exact-text-only reader requires the matching pre-run
 data snapshot, since that reader cannot interpret an empty-preview harness Need.
 No live data was migrated or removed by this work.
+
+## Thinking channel, 2026-09-27
+
+Spec: `docs/superpowers/specs/2026-09-27-engine-conversations-and-reasoning-design.md`. Plan:
+`docs/superpowers/plans/2026-09-27-reasoning-end-to-end.md`.
+
+`ADAPTER_CONTRACT_VERSION` remains 1. A route's descriptor gains `streaming.reasoning`,
+`reasoning-delta` or `none`, and the conformance check `reasoning-needs-live-channel` refuses a
+declaration without a live preview channel. EngineService builds the thinking sink only where the
+route declares it, fenced to the same attempt as the text, and refuses a caller that supplies the
+raw `onReasoningDelta` itself. Frames are `reasoning-delta` previews of at most 64 KiB on the
+events stream (`engine-reasoning`). They are never persisted.
+
+The finished thinking is saved on the reply only, as `Turn.thinking` (`text`, `ms`,
+`shortened`), redacted and cut to 32 KiB. It is never in the run record, so a replayed or
+reconciled answer has none. Work runs keep no thinking. The Console shows it above the reply,
+open and muted while the engine thinks, then folded to one line that opens on click.
+
+Producers by route:
+
+- Claude Code, one-shot and kept session: stream-json `thinking_delta`.
+- Cursor and Devin, one-shot and kept ACP session: `agent_thought_chunk` text inside the
+  prompted turn; anything else is dropped without stopping the turn.
+- OpenCode, one-shot and kept session: the reasoning parts of the turn's assistant message.
+- AWS Bedrock, and Azure OpenAI deployments marked reasoning: Responses reasoning summaries,
+  asked for (`reasoningSummary: 'auto'`) only while a thinking sink listens.
+- Google Vertex AI: thought parts, with `includeThoughts` only while a sink listens. The body
+  check now allows visible thinking and keeps every other refusal.
+- OpenRouter: only the reasoning its models return. Nothing new is requested, because
+  `require_parameters: true` would narrow the endpoints a model may use; a per-model request is
+  a follow-up.
+- Nectovia: Responses summaries through the managed gateway, asked for only when the routing
+  policy answers `reasoningSummaries: true`.
+- ChatGPT (Codex) follows with the engine-conversations plan; oh-my-pi joins once it has a kept
+  session.
+
+The gateway change (revision 3 of
+`docs/implementation/2026-09-25-managed-inference-gateway.md`) is committed and not deployed.
+Until the Worker deploys, the published policy has no `reasoningSummaries` and no desktop asks
+for a summary. AWS Bedrock's acceptance of `reasoning.summary` is proven only by the paid Luna
+proof; if Bedrock refuses it, `MODEL_API_REASONING['aws-bedrock']` goes back to `none`.
+
+The roadmap's runtime section needs this paragraph. The cloud canonical is the authority, so the
+repository mirror waits for that write (cloud synchronisation pending):
+
+> Thinking (2026-09-27, feature/codex-conversation-driver): an engine's thinking streams on every
+> conversation route that can supply it (Claude Code, Cursor, Devin, OpenCode, AWS Bedrock, Azure
+> OpenAI, Google Vertex AI, OpenRouter where its models return it, and Nectovia once the gateway
+> deploys), shown above the reply and saved on it. ChatGPT (Codex) follows with the
+> engine-conversations plan. Fixture, conformance and browser proof only; live proof pending.
