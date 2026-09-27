@@ -42,6 +42,7 @@ import { WIRE_KEYS, type PostHogWireEvent } from '../server/observability/wire.j
 import { createFauxCloud, FAUX_BACKEND_LABEL, type FauxCloud } from '../services/control-plane/src/faux/cloud.js';
 import { FAUX_DEMO_PASSWORD, seedDemo } from '../services/control-plane/src/faux/seed.js';
 import type { AccountStateView } from '../shared/accounts.js';
+import type { WorkspaceView } from '../shared/workspaces.js';
 import type { HarnessEvent, HarnessRun, StepRecord } from '../shared/harness.js';
 import { OBSERVATION_CONTRACT, known, unknown, type Observation, type ScopeFacts } from '../shared/observability.js';
 import type { ApprovalCommand, Conversation, Need, Project } from '../shared/types.js';
@@ -281,6 +282,9 @@ async function connectAws() {
 }
 async function workingAws(name = `${C.project} linen`, routes: string[] = ['aws-bedrock']): Promise<Target> {
   const project = await api<Project>('/projects', 'POST', { name });
+  const active = (await api<WorkspaceView>('/workspace')).active;
+  if (active.kind === 'business')
+    await api(`/workspace/organizations/${active.organizationId}/output`, 'POST', { projectId: project.id });
   const thread = await api<Conversation>(`/projects/${project.id}/threads`, 'POST', {});
   await api(`/projects/${project.id}/threads/${thread.id}`, 'PUT', { engine: 'aws-bedrock' });
   await api(`/projects/${project.id}/cloud-sharing`, 'PUT', {
@@ -1197,6 +1201,7 @@ describe('H the normal internal trace', () => {
       await signIn('owner@juniper.test');
       await connectAws();
       const project = await api<Project>('/projects', 'POST', { name: `${C.project} loop` });
+      await api(`/workspace/organizations/${orgs.juniper}/output`, 'POST', { projectId: project.id });
       const folder = state(project.id).project.folder;
       await fs.writeFile(path.join(folder, 'order.md'), `Order 1182: 100 napkins. ${C.fileBody}\n`);
       await api(`/projects/${project.id}/cloud-sharing`, 'PUT', {

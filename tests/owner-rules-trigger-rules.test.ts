@@ -22,6 +22,7 @@ import type { HarnessHost } from '../server/harness/host.js';
 import type { ApprovalCommand, Need, Session } from '../shared/types.js';
 import type { StreamRule } from '../shared/stream-rules.js';
 import { OWNER_RULES_NOT_INCLUDED_REASON } from '../shared/access.js';
+import type { WorkspaceView } from '../shared/workspaces.js';
 import { ControlPlaneClient } from '../server/accounts/client.js';
 import type { AccountBackend } from '../server/accounts/backend.js';
 import {
@@ -156,6 +157,13 @@ async function workspace() {
 }
 const signIn = (email: string) =>
   call('/account/sign-in', 'POST', { email, password: FAUX_DEMO_PASSWORD, remember: false });
+async function bindSelectedBusiness() {
+  const selected = await call<WorkspaceView>('/workspace');
+  expect(selected.status).toBe(200);
+  if (selected.data.active.kind !== 'business') throw new Error('This fixture requires a selected business.');
+  const bound = await call(`/workspace/organizations/${selected.data.active.organizationId}/output`, 'POST', { projectId });
+  expect(bound.status).toBe(200);
+}
 
 afterEach(async () => {
   vi.restoreAllMocks();
@@ -167,6 +175,7 @@ describe('trigger rules are the owner’s, so the feature decides whether they r
   test('Juniper Street Bakery holds the plan: its rule watches the run and fires', async () => {
     await workspace();
     expect((await signIn('owner@juniper.test')).status).toBe(200);
+    await bindSelectedBusiness();
     await projectRules(rule('helper-note', { match: { kind: 'text', phrase: 'helper to check' }, intervention: 'annotate' }));
     const listed = await project<RulesView>(`/stream-rules?taskId=${taskId}`);
     expect(listed.data.notIncludedReason).toBeNull();
@@ -182,6 +191,7 @@ describe('trigger rules are the owner’s, so the feature decides whether they r
   test('Harbor Hardware holds no plan: the rule stays written, is never evaluated, and the view says why', async () => {
     await workspace();
     expect((await signIn('owner@harbor.test')).status).toBe(200);
+    await bindSelectedBusiness();
     await projectRules(
       rule('helper-note', { match: { kind: 'text', phrase: 'helper to check' }, intervention: 'annotate' }),
       rule('writes-held', {

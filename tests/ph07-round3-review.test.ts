@@ -47,6 +47,7 @@ import type { ExposureReservation } from '../server/spend-exposure.js';
 import { createFauxCloud, FAUX_BACKEND_LABEL, type FauxCloud } from '../services/control-plane/src/faux/cloud.js';
 import { FAUX_DEMO_PASSWORD, seedDemo } from '../services/control-plane/src/faux/seed.js';
 import type { AccountStateView } from '../shared/accounts.js';
+import type { WorkspaceView } from '../shared/workspaces.js';
 import type { HarnessEvent, HarnessRun, StepRecord } from '../shared/harness.js';
 import { OBSERVATION_CONTRACT, known, unknown, type Observation, type ScopeFacts } from '../shared/observability.js';
 import type { Conversation, Project } from '../shared/types.js';
@@ -275,16 +276,26 @@ async function shareWithAws(projectId: string) {
     shareReviewPackets: false,
   });
 }
-async function workingAws(name = 'Linen order'): Promise<Target> {
+async function workingAws(name = 'Linen order', link = true): Promise<Target> {
   const project = await api<Project>('/projects', 'POST', { name });
   const thread = await api<Conversation>(`/projects/${project.id}/threads`, 'POST', {});
   await api(`/projects/${project.id}/threads/${thread.id}`, 'PUT', { engine: 'aws-bedrock' });
   await shareWithAws(project.id);
   await connectAws();
+  if (link) await linkToActiveBusiness(project.id);
   return { projectId: project.id, threadId: thread.id };
 }
-/** The Home conversation, on the Nectovia route: nothing is connected. */
-const home = () => api<Target>('/home/conversation', 'POST');
+async function linkToActiveBusiness(projectId: string): Promise<void> {
+  const workspace = await api<WorkspaceView>('/workspace');
+  if (workspace.active.kind !== 'business') throw new Error('This fixture needs an active business.');
+  await api(`/workspace/organizations/${workspace.active.organizationId}/projects`, 'POST', { projectId });
+}
+/** The Home conversation, explicitly owned by the active business for paid turns. */
+async function home(): Promise<Target> {
+  const target = await api<Target>('/home/conversation', 'POST');
+  await linkToActiveBusiness(target.projectId);
+  return target;
+}
 const say = (target: Target, commandId: string, text: string, extraHeaders: Record<string, string> = {}) =>
   request(
     `/projects/${target.projectId}/threads/${target.threadId}/messages`,
@@ -742,7 +753,7 @@ describe('B the workspace a scope is bound against', () => {
         await open(memory([orgs.juniper, orgs.harbor]));
         await signIn('owner@juniper.test');
         await switchTo(orgs.juniper);
-        const juniper = await workingAws(); // not owned by a business: the gate asks about the active one
+        const juniper = await workingAws(); // explicitly owned by Juniper before the workspace switch
         const held = latch();
         intercept = (req) => {
           if (!isAdmission(req)) return null;
@@ -839,14 +850,19 @@ describe('C refusalCode is invisible to the person', () => {
           intercept = null;
           seen[`${name} / ${label}`] = { withField, without };
         }
-      // Personal: the gate refuses before it asks the service, so no field is set at all.
+      // Unowned Personal projects: the gate refuses before it asks the service.
       await switchTo(null);
+      const personalAwsTarget = await workingAws('Personal order', false);
+      const personalProject = await api<Project>('/projects', 'POST', { name: 'Personal conversation' });
+      const personalThread = await api<Conversation>(`/projects/${personalProject.id}/threads`, 'POST', {});
+      await api(`/projects/${personalProject.id}/threads/${personalThread.id}`, 'PUT', { engine: 'nectovia' });
+      const personalNectoviaTarget = { projectId: personalProject.id, threadId: personalThread.id };
       strip = false;
-      const personalAws = await send(awsTarget);
-      const personalNectovia = await send(nectovia);
+      const personalAws = await send(personalAwsTarget);
+      const personalNectovia = await send(personalNectoviaTarget);
       strip = true;
-      seen['personal / aws'] = { withField: personalAws, without: await send(awsTarget) };
-      seen['personal / nectovia'] = { withField: personalNectovia, without: await send(nectovia) };
+      seen['personal / aws'] = { withField: personalAws, without: await send(personalAwsTarget) };
+      seen['personal / nectovia'] = { withField: personalNectovia, without: await send(personalNectoviaTarget) };
 
       console.info(
         `C1 observed: ${JSON.stringify(Object.fromEntries(Object.entries(seen).map(([name, pair]) => [name, pair.withField])))}; codes ${JSON.stringify(codes)}`,

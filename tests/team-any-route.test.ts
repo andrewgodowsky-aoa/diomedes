@@ -534,7 +534,7 @@ describe('Nectovia chooses a member’s route and model from the owner’s tier 
       style: 'efficient',
     });
     expect(lead.status).toBe(409);
-    expect(lead.data.error).toMatch(/^Focused runs on Google Vertex AI .*Connect Google Vertex AI in AI setup/);
+    expect(lead.data.error).toBe('Google Vertex AI is unavailable right now. Please contact support and check that your account is connected and has credits remaining.');
     expect((await state()).team?.members).toHaveLength(1);
 
     // The owner maps Focused to the OpenRouter model: now the lead runs there.
@@ -552,7 +552,7 @@ describe('Nectovia chooses a member’s route and model from the owner’s tier 
     expect(mapped.data.member).toMatchObject({ engine: 'openrouter', model: OR_MODEL, selection: { style: 'focused' } });
   });
 
-  test('with nothing connected, Nectovia names the tier’s route to connect', async () => {
+  test('with nothing connected, Nectovia names the tier’s provider as unavailable', async () => {
     await open();
     const refused = await request(`/projects/${projectId}/team/members`, 'POST', {
       name: 'Pip',
@@ -560,7 +560,7 @@ describe('Nectovia chooses a member’s route and model from the owner’s tier 
       engine: 'auto',
     });
     expect(refused.status).toBe(409);
-    expect(refused.data.error).toMatch(/Connect (AWS Bedrock|Google Vertex AI) in AI setup/);
+    expect(refused.data.error).toMatch(/^(AWS Bedrock|Google Vertex AI) is unavailable right now\. Please contact support/);
   });
 });
 

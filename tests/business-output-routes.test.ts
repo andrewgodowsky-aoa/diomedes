@@ -117,6 +117,46 @@ afterEach(async () => {
 });
 
 describe('binding where a business writes', () => {
+  test('an owner links Home for Agent billing without changing the automation output', async () => {
+    const organizationId = await makeOrganization('Fernbrook Joinery');
+    const route = `/workspace/organizations/${organizationId}/home-link`;
+    expect((await request<{ state: string }>(route)).data.state).toBe('not-created');
+
+    const home = await request<{ projectId: string }>('/home/conversation', 'POST');
+    expect(home.status).toBe(200);
+    expect((await request<{ state: string }>(route)).data.state).toBe('unlinked');
+
+    const linked = await request<WorkspaceView>(
+      `/workspace/organizations/${organizationId}/projects`,
+      'POST',
+      { projectId: home.data.projectId },
+    );
+    expect(linked.status).toBe(200);
+    expect(linked.data.organizations.find((entry) => entry.organization.id === organizationId)?.output).toBeNull();
+    expect((await request<{ state: string }>(route)).data.state).toBe('linked-here');
+  });
+
+  test('only an owner or admin may link a project, and a second business cannot take it', async () => {
+    const projectId = await makeProject('Company books');
+    const firstId = await makeOrganization('Fernbrook Joinery');
+    const secondId = await makeOrganization('Halcyon Bakery');
+    const firstRoute = `/workspace/organizations/${firstId}/projects`;
+    expect((await request(firstRoute, 'POST', { projectId })).status).toBe(200);
+    const second = await request<{ code?: string }>(
+      `/workspace/organizations/${secondId}/projects`, 'POST', { projectId },
+    );
+    expect(second.status).toBe(409);
+    expect(second.data.code).toBe('project_owned_by_another_organization');
+
+    const invited = await request<{ code: string }>(
+      `/workspace/organizations/${firstId}/invitations`, 'POST', { role: 'member' },
+    );
+    await restartAs('member');
+    expect((await request('/workspace/organizations/join', 'POST', { code: invited.data.code })).status).toBe(200);
+    expect((await request(firstRoute, 'POST', { projectId })).status).toBe(403);
+    expect((await request(`/workspace/organizations/${secondId}/home-link`)).status).toBe(404);
+  });
+
   test('an owner binds an existing project and the workspace view reports it', async () => {
     const projectId = await makeProject('Company books');
     const organizationId = await makeOrganization('Fernbrook Joinery');

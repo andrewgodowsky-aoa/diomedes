@@ -33,7 +33,8 @@ describe('planThreadSend', () => {
         expect(planThreadSend(on(route), mode)).toEqual({ kind: 'direct', route });
   });
   test("the host's refusal wins, in its own words, for every mode", () => {
-    const reason = 'Efficient runs on AWS Bedrock, which is not connected and turned on.';
+    const reason =
+      'AWS Bedrock is unavailable right now. Please contact support and check that your account is connected and has credits remaining.';
     for (const mode of ['ask', 'plan', 'build', 'fix'] as const)
       expect(planThreadSend(on('aws-bedrock', reason), mode)).toEqual({ kind: 'refuse', reason });
   });

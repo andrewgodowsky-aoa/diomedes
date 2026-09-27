@@ -52,6 +52,22 @@ export function mountWorkspaceRoutes(
     route(async () => workspaces.currentView(), false),
   );
 
+  app.get(
+    '/api/workspace/organizations/:organizationId/home-link',
+    route(async (req) => {
+      const id = organizationId(req);
+      // The membership check also keeps unknown business ids indistinguishable.
+      workspaces.assertMine(id);
+      const home = store.homeBinding();
+      if (!home) return { projectId: null, state: 'not-created' };
+      const owner = workspaces.projectOwner(home.projectId);
+      return {
+        projectId: home.projectId,
+        state: owner ? (owner.organizationId === id ? 'linked-here' : 'linked-elsewhere') : 'unlinked',
+      };
+    }, false),
+  );
+
   /**
    * The question set itself, so the renderer draws exactly what the host will
    * accept. It carries no answers and needs no membership: it is the schema.
@@ -274,6 +290,13 @@ export function mountWorkspaceRoutes(
     '/api/workspace/organizations/:organizationId/output',
     route(async (req) =>
       workspaces.bindOutputProject(organizationId(req), String(body(req).projectId ?? '')),
+    ),
+  );
+
+  app.post(
+    '/api/workspace/organizations/:organizationId/projects',
+    route(async (req) =>
+      workspaces.linkProject(organizationId(req), String(body(req).projectId ?? '')),
     ),
   );
 

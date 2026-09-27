@@ -254,7 +254,7 @@ describe('the owner’s tier map sends each tier to its mapped Azure or OpenRout
     expect((await ok<{ services?: Record<string, unknown> }>('/settings')).services).toEqual(settings.services);
   });
 
-  test('a model the mapped route does not offer is a refusal that names it, not another model', async () => {
+  test('a model the mapped route does not offer is a refusal that names the provider, never another model', async () => {
     const parsed = openRouterConnectBody({
       models: [{ id: 'vendor/gpt-6-luna', upstreams: 'upstream-one', rates: prices }],
       apiKey: SECRET,
@@ -268,8 +268,8 @@ describe('the owner’s tier map sends each tier to its mapped Azure or OpenRout
     const thread = await ok<Conversation>(`/projects/${project.id}/threads`, 'POST', {});
     const thorough = await styled(project, thread, 'thorough');
     expect(thorough.resolution.outcome).toBe('ask');
-    expect(thorough.resolution.reason).toContain('vendor/gpt-6-sol');
-    expect(thorough.resolution.reason).toContain('OpenRouter');
+    expect(thorough.resolution.reason).toBe('OpenRouter is unavailable right now. Please contact support and check that your account is connected and has credits remaining.');
+    expect(thorough.resolution.reason).not.toContain('vendor/gpt-6-sol');
   });
 });
 

@@ -114,7 +114,7 @@ const azureBody = z.strictObject({
   deployments: z
     .array(
       z.strictObject({
-        model: z.string().regex(AZURE_LOGICAL_MODEL, 'Name the model, for example gpt-5.6-luna.'),
+        model: z.string().regex(AZURE_LOGICAL_MODEL, 'Name the model, for example gpt-6-luna.'),
         deployment: z.string().regex(AZURE_DEPLOYMENT, 'Enter the deployment name exactly as Azure shows it.'),
         reasoning: z.boolean(),
         rates: ratesBody,

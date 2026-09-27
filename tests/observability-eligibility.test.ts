@@ -241,6 +241,21 @@ describe('the recheck while events wait', () => {
 });
 
 describe('scopes: bound by the admitted job, resolved from the run record', () => {
+  test('without a project-owner resolver, observation never assigns a project to the selected business', () => {
+    const scopes = new ObservationScopes({
+      operator: operator(),
+      backend: () => 'faux',
+      authority: {
+        personId: () => 'person_1',
+        activeOrganizationId: () => ORG_A,
+        entitlement: () => ({ agent: true, state: 'active' }),
+      },
+      now: () => 1_000,
+    });
+    expect(scopes.businessFor('unowned-project')).toBeNull();
+    expect(scopes.businessFor(null)).toBe(ORG_A);
+  });
+
   const run = (overrides: Partial<HarnessRun>): HarnessRun =>
     ({ id: 'run-x', capabilityId: 'model-api-turn', input: {}, events: [], steps: [], lastSeq: 0, sessionId: null, ...overrides }) as HarnessRun;
   const scopesFor = (limit?: number) =>
@@ -358,7 +373,8 @@ describe('scopes: bound by the admitted job, resolved from the run record', () =
         personId: () => 'person_1',
         activeOrganizationId: () => active,
         entitlement: () => ({ agent: true, state: 'active' }),
-        organizationFor: (projectId) => (projectId === 'owned-by-b' ? ORG_B : active),
+        organizationFor: (projectId) =>
+          projectId === 'owned-by-b' ? ORG_B : projectId === 'owned-by-a' ? ORG_A : projectId === null ? active : null,
       },
       now: () => 1_000,
     });
@@ -374,13 +390,14 @@ describe('scopes: bound by the admitted job, resolved from the run record', () =
       return decision.scope;
     };
     const a = bindFor(ORG_A, 'work-a');
-    // The gate's rule: the project's owner, else the active business. Read before the round trip.
-    expect(scopes.businessFor('unowned')).toBe(ORG_A);
+    // The gate's rule: an unowned project has no business; projectless work uses the active one.
+    expect(scopes.businessFor('unowned')).toBeNull();
+    expect(scopes.businessFor('owned-by-a')).toBe(ORG_A);
     expect(scopes.businessFor('owned-by-b')).toBe(ORG_B);
     expect(scopes.businessFor(null)).toBe(ORG_A);
-    const asked = scopes.businessFor('unowned');
+    const asked = scopes.businessFor('owned-by-a');
     active = ORG_B; // the person switches while the admission is on the wire
-    scopes.refused({ projectId: 'unowned', organizationId: asked });
+    scopes.refused({ projectId: 'owned-by-a', organizationId: asked });
     expect(scopes.resolve(run({ id: 'work-a', capabilityId: 'engine-text-turn' }))).toBeNull();
     expect(scopes.recheck(a)).toMatchObject({ live: false });
     // Harbor's business was not refused: a scope bound for it now is live.
@@ -406,7 +423,7 @@ describe('scopes: bound by the admitted job, resolved from the run record', () =
     const refusedWith = async (code: string, reason: string) => {
       const gate = new AccountAgentGate(
         { admitAgent: async () => ({ admitted: false, code, reason }) } as never,
-        { projectOwner: () => null, active: () => ({ kind: 'business', organizationId: ORG_A }) } as never,
+        { projectOwner: () => ({ organizationId: ORG_A, resourceId: 'project-p1' }), active: () => ({ kind: 'business', organizationId: ORG_A }) } as never,
       );
       return gate.check({ phase: 'admit', surface: 'conversation', projectId: 'p1', rootJobId: 'job-1' }).then(
         () => {

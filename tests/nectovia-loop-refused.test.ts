@@ -105,6 +105,7 @@ afterEach(async () => {
 
 async function projectWithTask() {
   const project = await api<Project>('/projects', 'POST', { name: 'Juniper loop' });
+  await api(`/workspace/organizations/${juniper}/output`, 'POST', { projectId: project.id });
   const taskId = (await api<{ id: string }>(`/projects/${project.id}/tasks`, 'POST', { name: 'Check the order' })).id;
   return { projectId: project.id, taskId };
 }

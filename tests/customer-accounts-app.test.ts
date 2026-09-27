@@ -175,8 +175,13 @@ describe('customer accounts in the desktop host', () => {
     expect(refusedBody).toMatch(/business/i);
     expect(sent).toBe(0);
 
-    // The same connection, the same project, a Business Employee: the Agent answers.
+    // The business owner explicitly links this existing project before an Employee uses it.
     await api('/account/sign-out', 'POST');
+    const owner = await signIn('owner@juniper.test');
+    await api(`/workspace/organizations/${owner.workspaces[0].organization.id}/output`, 'POST', { projectId: target.project.id });
+    await api('/account/sign-out', 'POST');
+
+    // The same connection, the now-owned project, a Business Employee: the Agent answers.
     const employee = await signIn('employee@juniper.test');
     expect(employee.workspaces).toHaveLength(1);
     expect(employee.workspaces[0]).toMatchObject({ role: 'member', roleLabel: 'Employee' });
