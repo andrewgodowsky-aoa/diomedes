@@ -218,8 +218,11 @@ Branch `feature/live-frame-redaction`, stacked on `feature/codex-conversation-dr
 - Held text is shown when more text arrives, when another channel of the same attempt speaks
   (`liveOrder`), or when the attempt ends. Every site flushes before its channels close:
   `generate`, `nativeTurn`, `fencedSinks` (model-API conversations and Work turns) and the ChatGPT
-  Ask preview in `server/app.ts`. A Claude Code or ChatGPT kept-session turn that fails now drains
-  its channels, as a model-API turn already did, so it still shows what it wrote.
+  Ask preview in `server/app.ts`. A kept-session turn that fails now drains its channels, as a
+  model-API turn already did, so it still shows what it wrote; Claude Code, ChatGPT, OpenCode,
+  Cursor and Devin share that driver (`ClaudeSessionRuns`). Showing held text when another channel
+  speaks assumes an engine switches channels between blocks rather than inside a word; a secret
+  cut by a channel switch would show its first part live.
 - The order is unchanged: a tool line never overtakes the text written before it, and the answer
   never overtakes its thinking.
 - A stopped or fenced attempt shows nothing it held, and a poisoned preview shows nothing more.
