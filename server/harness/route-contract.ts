@@ -219,6 +219,46 @@ export const ROUTE_CONTRACTS: Record<string, AdapterRouteContract> = Object.free
     'native-sign-in',
     '1.18.4',
   ),
+  // --- the kept ChatGPT conversation (spec 3.2), on Diomedes' own Codex runtime --------
+  'codex-session': contract(
+    'codex-session',
+    'external-session',
+    { id: 'codex', version: '0.153.4', protocolVersion: 'codex app-server 0.153.4' },
+    commands({
+      start: native(
+        "Opt-in kept ChatGPT conversation on Diomedes' own Codex app-server; each turn is a fenced RunService step whose thread id is saved before turn/start.",
+      ),
+      'follow-up': host(
+        "Each message continues the saved thread: on the conversation's own process, or with thread/resume on a new one after the idle time; never mid-turn.",
+      ),
+      steer: host(
+        'Queued by Diomedes while a turn runs and sent as the next turn once it finishes; turn/steer is never used.',
+      ),
+      interrupt: native(
+        'turn/interrupt, a bounded wait for Codex to end the turn, then the owned process tree is ended; the checkpoint records which happened.',
+      ),
+      resume: native(
+        'After a restart the saved thread is continued with thread/resume on a new process; a thread Codex no longer has starts fresh and the turn says so.',
+      ),
+      retry: host(
+        'Duplicate command IDs replay durable outcomes; unknown dispatches refuse redispatch.',
+      ),
+      fork: native(
+        'thread/fork of a saved idle thread starts a child run in the same lineage; no hidden state is copied into the run record.',
+      ),
+      status: host('Durable run state and transport presence; no provider status is invented.'),
+      reconcile: host(
+        'A turn a restart interrupted is recorded as not completed and never resent; a confirmed thread stays resumable, anything else is marked as unable to resume.',
+      ),
+      close: host(
+        "Diomedes ends the conversation's process; the thread stays in Codex's store for an explicit resume.",
+      ),
+    }),
+    { transientPreview: 'text-delta', reasoning: 'reasoning-delta', durableEvents: 'run-record' },
+    { source: 'runtime-reported' },
+    'native-sign-in',
+    '0.153.4',
+  ),
   // --- the kept ACP conversations (H05): one shared ACP session layer --------
   'cursor-session': ACP_SESSION_CONTRACT('cursor', 'Cursor', '2026.08.11'),
   'devin-session': ACP_SESSION_CONTRACT('devin', 'Devin', '3000.10.23'),

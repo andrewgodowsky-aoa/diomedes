@@ -176,11 +176,34 @@ export function contractChecks(contract: AdapterRouteContract): ConformanceCheck
       'native-session-run-backing', acpRunBacked,
       'The opt-in ACP session profile must match the versioned RunService lifecycle integration; live provider acceptance is separate.',
     ));
+  // The kept ChatGPT conversation (spec 3.2) is driven by the same RunService lifecycle, on
+  // Diomedes' own Codex runtime. Its follow-up and steering are the host's queue, and restart
+  // reconciliation and close are the host's; start, interrupt, resume and fork are native.
+  const codexRunBacked =
+    contract.routeId === 'codex-session' &&
+    contract.mode === 'external-session' &&
+    contract.engine.id === 'codex' &&
+    contract.engine.version === '0.153.4' &&
+    contract.engine.protocolVersion === 'codex app-server 0.153.4' &&
+    contract.testedWith === '0.153.4' &&
+    contract.authentication === 'native-sign-in' &&
+    contract.models.source === 'runtime-reported' &&
+    contract.streaming.transientPreview === 'text-delta' &&
+    contract.streaming.durableEvents === 'run-record' &&
+    (['start', 'interrupt', 'resume', 'fork'] as const)
+      .every(command => contract.commands[command].support === 'native') &&
+    (['follow-up', 'steer', 'retry', 'status', 'reconcile', 'close'] as const)
+      .every(command => contract.commands[command].support === 'host');
+  if (contract.routeId === 'codex-session')
+    checks.push(check(
+      'native-session-run-backing', codexRunBacked,
+      'The opt-in ChatGPT session profile must match the versioned RunService lifecycle integration; live provider acceptance is separate.',
+    ));
   checks.push(
     check(
       'streaming-matches-mode',
       contract.streaming.durableEvents === 'run-record'
-        ? RUN_DRIVEN_MODES.includes(contract.mode) || nativeRunBacked || openCodeRunBacked || acpRunBacked
+        ? RUN_DRIVEN_MODES.includes(contract.mode) || nativeRunBacked || openCodeRunBacked || acpRunBacked || codexRunBacked
         : contract.mode !== 'harness-agent',
       contract.mode === 'harness-agent'
         ? 'Harness routes persist through the run record.'

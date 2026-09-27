@@ -27,6 +27,7 @@ import type { RunService, StepContext, StepDefinition } from './run-service.js';
 import { localHarnessPrincipal } from './bridge.js';
 import { isExternalEngine } from '../../shared/engines.js';
 import { isModelApiRoute } from '../../shared/model-api.js';
+import { CODEX_ACCOUNT_ROUTE } from '../engines/codex-session.js';
 import type {
   CapabilityManifest,
   HarnessRun,
@@ -308,19 +309,22 @@ export function textDispatchAuthorizer(
       throw new HarnessError('egress_denied', 'This run is not a text-route run.');
     if (intent.destination !== 'external') return;
     const engine = (intent.input as { engine?: unknown } | null)?.engine;
-    if (typeof engine !== 'string' || !(isExternalEngine(engine) || isModelApiRoute(engine)))
+    if (
+      typeof engine !== 'string' ||
+      !(isExternalEngine(engine) || isModelApiRoute(engine) || engine === 'codex')
+    )
       throw new HarnessError('egress_denied', 'The step does not name an external engine route.');
     const settings = services();
     if (settings?.[engine] !== true)
       throw new HarnessError('egress_denied', 'This engine route is not enabled in Settings.');
     // The admitted account route is part of the run's durable input; the
     // setting is re-read at each phase, so a re-selected or cleared route
-    // cannot carry a result across.
+    // cannot carry a result across. ChatGPT's route is fixed: Settings records
+    // it only once a person chose it (as server/trust/scope-grants.ts reads it).
     const requestRoute = (run.input as { accountRoute?: unknown } | null)?.accountRoute;
-    if (
-      typeof requestRoute !== 'string' ||
-      settings[`${engine}AccountRoute`] !== requestRoute
-    )
+    const selected =
+      settings[`${engine}AccountRoute`] ?? (engine === 'codex' ? CODEX_ACCOUNT_ROUTE : undefined);
+    if (typeof requestRoute !== 'string' || selected !== requestRoute)
       throw new HarnessError(
         'egress_denied',
         phase === 'result'

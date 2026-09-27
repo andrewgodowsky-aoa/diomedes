@@ -58,9 +58,16 @@ import type { OpenCodeSessionCheckpoint } from './opencode-session.js';
 import type { AcpSessionCheckpoint, AcpSessionEngine } from './acp-session.js';
 import {
   ClaudeSessionRuns,
+  type ClaudeSessionAdmission,
   type ClaudeSessionTurn,
   type SessionCheckpointFacts,
 } from '../harness/claude-session-run.js';
+import { CODEX_PROTOCOL_VERSION, type CodexConversationPort } from '../integrations.js';
+import {
+  CODEX_ACCOUNT_ROUTE,
+  openCodexSession,
+  type CodexSessionCheckpoint,
+} from './codex-session.js';
 import { HarnessError } from '../harness/policy.js';
 import { TEXT_DISPATCH_STEP, textRunId, type TextDispatch } from '../harness/text-route.js';
 import { digest } from '../harness/policy.js';
@@ -192,7 +199,7 @@ export interface EngineServiceDeps {
    * The preview contract's redaction: any secret the caller knows is in scope
    * for this engine's deltas. Applied before the frame is measured or emitted.
    */
-  redactFor?(engine: ExternalEngine | ModelApiRoute): (text: string) => string;
+  redactFor?(engine: ExternalEngine | ModelApiRoute | 'codex'): (text: string) => string;
   /** This computer's answer for one file: its real path, size and bytes. */
   identify?(file: string): Promise<FileIdentity | null>;
   /** The reviewed-release digest check for Diomedes's own private copy. */
@@ -447,6 +454,10 @@ export class EngineService {
   /** The kept ACP conversations (H05); attaching them does not change generate() either. */
   cursorSessions?: ClaudeSessionRuns<AcpSessionCheckpoint>;
   devinSessions?: ClaudeSessionRuns<AcpSessionCheckpoint>;
+  /** The kept ChatGPT conversation driver (spec 3.2); the app attaches it. */
+  codexSessions?: ClaudeSessionRuns<CodexSessionCheckpoint>;
+  /** The processes a kept ChatGPT conversation runs on (`server/integrations.ts`); the app attaches it. */
+  codexConversations?: CodexConversationPort;
   /** The model-API conversation driver (CD-01 Decision 5's second driver). The app attaches it. */
   modelSessions?: ModelSessionRuns;
   /** Connection record, protected credential, spend ledger and private transcripts for model-API routes. */
@@ -1831,9 +1842,56 @@ export class EngineService {
       sourceRunId,
     );
   }
+  /**
+   * The kept ChatGPT conversation (spec 3.2): the same contract gate, fenced preview queue and
+   * driver lifecycle as the other kept sessions, on Diomedes' own Codex runtime. ChatGPT isn't one
+   * of the scanned engines: its profile opens the conversation's process and checks its ChatGPT
+   * account before a turn is recorded, so a refusal there is known not sent.
+   */
+  async codexSession(
+    mode: ClaudeSessionTurn['mode'],
+    runId: string,
+    input: TextRequest,
+    sourceRunId?: string,
+    /** Wait behind a running turn (the route's steer queue) instead of being refused. */
+    options: { queued?: boolean } = {},
+  ) {
+    const conversations = this.codexConversations;
+    return this.nativeTurn(
+      { engine: 'codex', routeId: 'codex-session', driver: this.codexSessions, name: 'ChatGPT' },
+      mode,
+      runId,
+      input,
+      sourceRunId,
+      options,
+      {
+        contract: routeContractFor('codex-session'),
+        admit: async () => {
+          if (!conversations)
+            throw new EngineError('RUNTIME_UNAVAILABLE', 'The ChatGPT conversation runtime is not attached.');
+          if (input.accountRoute !== CODEX_ACCOUNT_ROUTE)
+            throw new EngineError(
+              'ACCOUNT_CHANGED',
+              'The ChatGPT account route changed. Select it again.',
+              false,
+              'provider-auth',
+            );
+          // Diomedes' own proven runtime: every process it opens reports this version.
+          return {
+            location: 'diomedes-codex',
+            version: CODEX_PROTOCOL_VERSION,
+            model: input.model,
+            accountRoute: CODEX_ACCOUNT_ROUTE,
+          };
+        },
+        open: (_admission, request, sessionOptions) =>
+          openCodexSession(conversations!, request, sessionOptions),
+      },
+    );
+  }
   private async nativeTurn<C extends SessionCheckpointFacts>(
     route: {
-      engine: 'claude-code' | 'opencode' | AcpSessionEngine;
+      engine: 'claude-code' | 'opencode' | AcpSessionEngine | 'codex';
       routeId: string;
       driver: ClaudeSessionRuns<C> | undefined;
       name: string;
@@ -1843,6 +1901,15 @@ export class EngineService {
     input: TextRequest,
     sourceRunId?: string,
     options: { queued?: boolean } = {},
+    /**
+     * A route whose sessions aren't opened through a scanned engine's adapter (ChatGPT): its own
+     * admission and opener, under its declared contract and the same command gate.
+     */
+    transport?: {
+      contract: AdapterRouteContract;
+      admit(signal?: AbortSignal): Promise<ClaudeSessionAdmission>;
+      open: ClaudeSessionTurn<C>['open'];
+    },
   ) {
     const driver = route.driver;
     if (!driver)
@@ -1852,8 +1919,16 @@ export class EngineService {
     // What the route declares, read from the adapter admission resolved for this request.
     let declared: AdapterRouteContract | undefined;
     let thinking: ReasoningSink | undefined;
+    /** Only a scanned engine opens through an adapter; ChatGPT opens through its transport. */
+    const scanned = () => {
+      const engine = route.engine;
+      if (engine === 'codex')
+        throw new EngineError('COMMAND_UNSUPPORTED', 'This adapter has no native session transport.');
+      return engine;
+    };
     const adapterAt = (location: string) => {
-      const adapter = this.deps.adapter(route.engine, location, path.join(this.root, route.engine));
+      const engine = scanned();
+      const adapter = this.deps.adapter(engine, location, path.join(this.root, engine));
       if (
         !('openSession' in adapter) ||
         typeof adapter.openSession !== 'function' ||
@@ -1866,9 +1941,9 @@ export class EngineService {
       const persistent = adapter as PersistentTextAdapter<C>;
       const gate = commandGate(persistent.sessionContract, mode);
       if (
-        adapter.id !== route.engine ||
+        adapter.id !== engine ||
         persistent.sessionContract.routeId !== route.routeId ||
-        persistent.sessionContract.engine.version !== TESTED_VERSIONS[route.engine] ||
+        persistent.sessionContract.engine.version !== TESTED_VERSIONS[engine] ||
         !gate.admitted
       )
         throw new EngineError(
@@ -1885,26 +1960,39 @@ export class EngineService {
         sourceRunId,
         input,
         ...(options.queued ? { queued: true } : {}),
-        admit: async (signal) => {
-          await this.discover(true);
-          await this.check(route.engine, signal);
-          const selected = this.selection(route.engine, input.model);
-          if (selected.accountRoute !== input.accountRoute)
-            throw new EngineError(
-              'ACCOUNT_CHANGED',
-              `The ${route.name} account route changed. Select it again.`,
-            );
-          const value = this.connections.get(route.engine)!;
-          adapterAt(value.location!);
-          return {
-            location: value.location!,
-            version: value.version!,
-            model: selected.model,
-            accountRoute: selected.accountRoute,
-          };
-        },
-        open: (admission, request, options) =>
-          adapterAt(admission.location).openSession(request, options),
+        admit: transport
+          ? async (signal) => {
+              if (!commandGate(transport.contract, mode).admitted)
+                throw new EngineError(
+                  'CONTRACT_MISMATCH',
+                  'The native session contract does not match this route and build.',
+                );
+              declared = transport.contract;
+              return transport.admit(signal);
+            }
+          : async (signal) => {
+              const engine = scanned();
+              await this.discover(true);
+              await this.check(engine, signal);
+              const selected = this.selection(engine, input.model);
+              if (selected.accountRoute !== input.accountRoute)
+                throw new EngineError(
+                  'ACCOUNT_CHANGED',
+                  `The ${route.name} account route changed. Select it again.`,
+                );
+              const value = this.connections.get(engine)!;
+              adapterAt(value.location!);
+              return {
+                location: value.location!,
+                version: value.version!,
+                model: selected.model,
+                accountRoute: selected.accountRoute,
+              };
+            },
+        open: transport
+          ? transport.open
+          : (admission, request, options) =>
+              adapterAt(admission.location).openSession(request, options),
         preview: (context, stepId) => {
           let accepting = true;
           let pending = Promise.resolve();

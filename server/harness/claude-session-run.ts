@@ -68,7 +68,7 @@ export interface SessionCheckpointFacts {
  * steering are not.
  */
 export interface NativeSessionProfile<C extends SessionCheckpointFacts> {
-  engine: 'claude-code' | 'opencode' | 'cursor' | 'devin';
+  engine: 'claude-code' | 'opencode' | 'cursor' | 'devin' | 'codex';
   label: string;
   capability: CapabilityManifest;
   /** Validates a saved checkpoint for this engine and returns its payload. Throws `invalid_checkpoint`. */
