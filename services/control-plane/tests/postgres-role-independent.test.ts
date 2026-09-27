@@ -1,10 +1,13 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import { Client } from '@neondatabase/serverless';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { AccountService } from '../src/account-service.js';
 import { PostgresRepository, neonClientFactory } from '../src/postgres.js';
 import { createHandler } from '../src/worker.js';
+import { OrganizationSetupService } from '../src/organization-setup/service.js';
+import { PostgresOrganizationSetupRepository } from '../src/organization-setup/postgres.js';
+import type { OrganizationSetupRecord } from '../../../shared/organization-setup.js';
 import { now, validEnv, verifier } from './support/fixtures.js';
 
 const ownerUrl = process.env.CP_TEST_DATABASE_URL;
@@ -28,9 +31,10 @@ describe.skipIf(!ownerUrl)('Independent real Neon runtime role qualification', (
         !parsed.hostname.endsWith('.neon.tech') ||
         !/^\/b01_validation_[a-z0-9_]+$/.test(parsed.pathname))
       throw new Error('An explicitly pinned disposable Neon database is required.');
-    // The complete original migration/concurrency suite must run first.
+    // The complete original migration/concurrency suite must run first, and must have applied every migration.
+    const files = (await readdir(new URL('../migrations/', import.meta.url))).filter((name) => /^\d{3}_[a-z0-9_]+\.sql$/.test(name));
     const migrated = await query(ownerUrl!, 'SELECT count(*)::int AS count FROM control_plane.schema_migrations');
-    expect(migrated.rows[0].count).toBe(2);
+    expect(migrated.rows[0].count).toBe(files.length);
     const password = randomBytes(32).toString('hex');
     const role = `cp_runtime_${randomBytes(6).toString('hex')}`;
     // Fixture-only role; no existing role is altered or granted to this login.
@@ -59,6 +63,22 @@ describe.skipIf(!ownerUrl)('Independent real Neon runtime role qualification', (
     await expect(accounts.signIn('role_bob')).rejects.toMatchObject({ status: 401 });
   });
 
+  it('reads and appends business setup revisions through the restricted role (ORG-01)', async () => {
+    const org = await accounts.createOrganization('role_carol', 'Restricted setup qualification');
+    const carol = (await accounts.signIn('role_carol')).person.id;
+    const setups = new OrganizationSetupService(accounts, new PostgresOrganizationSetupRepository(neonClientFactory(runtimeUrl)), { now: () => now });
+    const at = new Date(now).toISOString();
+    const record: OrganizationSetupRecord = {
+      v: 1,
+      setup: {
+        v: 1, organizationId: org.id, tenantId: org.tenantId, schemaRevision: 1, state: 'drafting', answers: {},
+        cursor: 'name', startedAt: at, startedBy: carol, updatedAt: at, proposalDigest: null,
+      },
+    };
+    expect((await setups.write('role_carol', org.id, { expectedRevision: 0, record })).revision).toBe(1);
+    expect(await setups.read('role_carol', org.id)).toMatchObject({ revision: 1, writtenBy: carol });
+  });
+
   it.each([
     ['schema creation', 'CREATE SCHEMA forbidden_runtime_schema'],
     ['table creation', 'CREATE TABLE control_plane.forbidden_runtime_table(id integer)'],
@@ -67,6 +87,8 @@ describe.skipIf(!ownerUrl)('Independent real Neon runtime role qualification', (
     ['migration mutation', 'UPDATE control_plane.schema_migrations SET name=name WHERE false'],
     ['commercial mutation', 'DELETE FROM control_plane.billing_customers WHERE false'],
     ['commercial reads', 'SELECT * FROM control_plane.billing_customers LIMIT 1'],
+    ['setup rewrite', 'UPDATE control_plane.organization_setups SET revision=revision WHERE false'],
+    ['setup removal', 'DELETE FROM control_plane.organization_setups WHERE false'],
   ])('refuses %s with PostgreSQL insufficient_privilege', async (_name, sql) => {
     await expect(query(runtimeUrl, sql)).rejects.toMatchObject({ code: '42501' });
   });

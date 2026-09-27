@@ -1,12 +1,13 @@
 /**
  * The faux cloud's database: one JSON document standing in for Neon.
  *
- * It implements the four repository seams the real adapters implement —
- * `AccountRepository`, `CommercialRepository`, `FundingRepository` and
- * `RelayRepository` — plus the faux identity state, so every service above it
- * runs its production code. Swapping to Neon is choosing `PostgresRepository`,
- * `PostgresCommercialRepository`, `PostgresFundingRepository` and
- * `PostgresRelayRepository` instead; nothing above the seam changes.
+ * It implements the five repository seams the real adapters implement —
+ * `AccountRepository`, `CommercialRepository`, `FundingRepository`,
+ * `RelayRepository` and `OrganizationSetupRepository` — plus the faux identity
+ * state, so every service above it runs its production code. Swapping to Neon
+ * is choosing `PostgresRepository`, `PostgresCommercialRepository`,
+ * `PostgresFundingRepository`, `PostgresRelayRepository` and
+ * `PostgresOrganizationSetupRepository` instead; nothing above the seam changes.
  *
  * Every transaction (of any of the five kinds) takes one process-wide lock,
  * works on a draft, validates the draft against the record schemas, and only
@@ -38,6 +39,12 @@ import {
 import { accountStateSchema, emptyAccountState, type AccountRepository, type AccountState, type AccountTransaction } from '../domain.js';
 import type { FundingRepository, FundingTransaction } from '../funding.js';
 import { RELAY_DEVICE_LIMIT, relayDeviceSchema, type RelayDevice, type RelayRepository, type RelayTransaction } from '../relay/service.js';
+import {
+  organizationSetupRowSchema,
+  type OrganizationSetupRepository,
+  type OrganizationSetupRow,
+  type OrganizationSetupTransaction,
+} from '../organization-setup/service.js';
 import { StateTransaction } from '../state-transaction.js';
 import { emptyFundingState, StateFundingTransaction, type FundingState } from './funding-state.js';
 import { emptyFauxIdentity, fauxIdentityStateSchema, type FauxIdentityState } from './identity.js';
@@ -64,6 +71,8 @@ export interface FauxCloudState {
   funding: FundingState;
   /** Phone relay device records (migration 007). */
   relay: RelayState;
+  /** Every revision of every business's setup (migration 008). */
+  organizationSetups: OrganizationSetupRow[];
 }
 
 export interface RelayState {
@@ -84,6 +93,7 @@ const commercialSchema = z.strictObject({
 });
 
 const relaySchema = z.strictObject({ devices: z.array(relayDeviceSchema).max(100_000) });
+const organizationSetupsSchema = z.array(organizationSetupRowSchema).max(1_000_000);
 
 export function emptyFauxCloudState(now = new Date().toISOString()): FauxCloudState {
   return {
@@ -96,6 +106,7 @@ export function emptyFauxCloudState(now = new Date().toISOString()): FauxCloudSt
     commercial: { grants: [], accessRevisions: {}, routes: [], policies: [], operators: [], audit: [], admissions: [] },
     funding: emptyFundingState(),
     relay: { devices: [] },
+    organizationSetups: [],
   };
 }
 
@@ -115,6 +126,8 @@ function validate(state: FauxCloudState): FauxCloudState {
     funding: state.funding,
     // Stores written before the phone relay existed have no devices yet.
     relay: relaySchema.parse((state as Partial<FauxCloudState>).relay ?? { devices: [] }),
+    // Stores written before business setups were kept have none yet.
+    organizationSetups: organizationSetupsSchema.parse((state as Partial<FauxCloudState>).organizationSetups ?? []),
   };
 }
 
@@ -281,6 +294,33 @@ class FauxRelayTransaction implements RelayTransaction {
   }
 }
 
+/** Migration 008's rows over the draft, with the rules its keys and trigger enforce. */
+class FauxOrganizationSetupTransaction implements OrganizationSetupTransaction {
+  constructor(private readonly state: FauxCloudState) {}
+  async lockOrganization() {}
+  async latest(organizationId: string) {
+    let found: OrganizationSetupRow | undefined;
+    for (const row of this.state.organizationSetups)
+      if (row.organizationId === organizationId && (!found || row.revision > found.revision)) found = row;
+    return found;
+  }
+  async insert(row: OrganizationSetupRow) {
+    const checked = organizationSetupRowSchema.parse(row);
+    // The primary key: one row per business and revision, never replaced.
+    if (this.state.organizationSetups.some((old) => old.tenantId === checked.tenantId && old.organizationId === checked.organizationId && old.revision === checked.revision))
+      throw new Error('An organization setup revision is written once.');
+    const organization = this.state.accounts.organizations.find((item) => item.record.id === checked.organizationId);
+    if (!organization || organization.record.tenantId !== checked.tenantId || !this.state.accounts.persons.some((item) => item.id === checked.writtenBy))
+      throw new Error('An organization setup belongs to an existing business and is written by an existing person.');
+    if (checked.record.setup.organizationId !== checked.organizationId || checked.record.setup.tenantId !== checked.tenantId)
+      throw new Error('An organization setup record names its own business.');
+    this.state.organizationSetups.push(checked);
+  }
+  async member(organizationId: string, personId: string) {
+    return this.state.accounts.memberships.find((row) => row.record.organizationId === organizationId && row.record.personId === personId);
+  }
+}
+
 export class FauxCloudStore {
   private state: FauxCloudState;
   private tail: Promise<void> = Promise.resolve();
@@ -288,6 +328,7 @@ export class FauxCloudStore {
   readonly commercial: CommercialRepository;
   readonly funding: FundingRepository;
   readonly relay: RelayRepository;
+  readonly organizationSetups: OrganizationSetupRepository;
 
   private constructor(private readonly file: string | null, state: FauxCloudState) {
     this.state = state;
@@ -295,6 +336,7 @@ export class FauxCloudStore {
     this.commercial = { transaction: (action) => this.run((draft) => action(new FauxCommercialTransaction(draft))) };
     this.funding = { transaction: (action) => this.run((draft) => action(new StateFundingTransaction(draft.funding))) };
     this.relay = { transaction: (action) => this.run((draft) => action(new FauxRelayTransaction(draft))) };
+    this.organizationSetups = { transaction: (action) => this.run((draft) => action(new FauxOrganizationSetupTransaction(draft))) };
   }
 
   /** Open (or create) a store. `file: null` keeps it in memory, for tests. */

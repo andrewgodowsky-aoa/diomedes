@@ -248,9 +248,11 @@ export function WorkspacePanel({
                           ? 'Administrator'
                           : 'Owner'}
                       {' · '}
-                      {setup?.mayConfigure
-                        ? setupSentence(setup.state, setup.answered, setup.required)
-                        : 'You join the setup the owners have made.'}
+                      {setup?.loadError
+                        ? setup.loadError
+                        : setup?.mayConfigure
+                          ? setupSentence(setup.state, setup.answered, setup.required)
+                          : 'You join the setup the owners have made.'}
                     </span>
                   </div>
                   {current ? (
@@ -300,7 +302,11 @@ export function WorkspacePanel({
                 disabled={disabled}
                 onClick={() => setSetupFor(activeOrganization.organization.id)}
               >
-                {activeOrganization.setup.resumable ? 'Resume setup' : 'Start setup'}
+                {activeOrganization.setup.source === 'unavailable'
+                  ? 'Open setup'
+                  : activeOrganization.setup.resumable
+                    ? 'Resume setup'
+                    : 'Start setup'}
               </Button>
               {/* The answers are finished, so the useful next step is reading
                   what they make — not answering them again. */}

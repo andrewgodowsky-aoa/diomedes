@@ -31,6 +31,7 @@ import {
   type BrowserSignInView,
 } from '../../shared/accounts.js';
 import { AGENT_FEATURE, ROLE_CAPABILITIES, roleLabel, type AccessView } from '../../shared/access.js';
+import type { OrganizationSetupWrite, SetupFetchOutcome, SetupWriteOutcome } from '../../shared/organization-setup.js';
 import {
   NO_ENTITLEMENT_VIEW,
   type EntitlementView,
@@ -172,6 +173,26 @@ export function refusedMembership(error: unknown): boolean {
 
 /** A business the service no longer lists as the person's: known, and not included. */
 const NOT_A_MEMBER_REASON = 'You are no longer a member of this business, so nothing that needs its plan can start.';
+
+/**
+ * The Worker's own answer to a route it does not have. For the business setup routes it means a
+ * Worker from before migration 008, which keeps no setups: the setup stays on this computer. Any
+ * other 404 (an edge page, a proxy) is the service not answering.
+ */
+const ROUTE_NOT_FOUND = 'This account action was not found.';
+
+/** What a failed setup read or write was, kept apart from "there is no setup". */
+function setupFailure(error: unknown): Exclude<SetupFetchOutcome, { kind: 'answered' }> {
+  if (!(error instanceof ApiError) && !(error instanceof ControlPlaneError))
+    return { kind: 'unreachable', message: 'The account service could not be reached.' };
+  const code = error instanceof ApiError ? error.details.code : error.code;
+  if (error.status === 401) return { kind: 'refused', code: SIGN_IN_REQUIRED, message: error.message };
+  if (refusedMembership(error)) return { kind: 'refused', code: 'not_a_member', message: error.message };
+  if (typeof code === 'string' && (code === 'role_not_allowed' || code.startsWith('setup_') || code === 'invalid_setup'))
+    return { kind: 'refused', code, message: error.message };
+  if (error.status === 404 && (code === undefined || code === null) && error.message === ROUTE_NOT_FOUND) return { kind: 'unsupported' };
+  return { kind: 'unreachable', message: error.message };
+}
 
 interface Current {
   personId: string;
@@ -884,6 +905,30 @@ export class AccountSessionService {
     const membership = await this.call((token) => this.backend.client.setMember(token, organizationId, personId, change));
     if (personId === this.current?.personId) await this.reload();
     return membership;
+  }
+
+  // --- the business setup (ORG-01) ------------------------------------------------
+
+  /** The business's setup as the service keeps it. Every failure stays apart from "there is none". */
+  async readOrganizationSetup(organizationId: string): Promise<SetupFetchOutcome> {
+    if (!this.current) return { kind: 'refused', code: SIGN_IN_REQUIRED, message: 'Sign in to open this business setup.' };
+    try {
+      return { kind: 'answered', answer: await this.call((token) => this.backend.client.organizationSetup(token, organizationId)) };
+    } catch (error) {
+      return setupFailure(error);
+    }
+  }
+
+  /** Save the next revision. A revision someone else saved first is a conflict, never overwritten. */
+  async writeOrganizationSetup(organizationId: string, input: OrganizationSetupWrite): Promise<SetupWriteOutcome> {
+    if (!this.current) return { kind: 'refused', code: SIGN_IN_REQUIRED, message: 'Sign in to change this business setup.' };
+    try {
+      return { kind: 'written', answer: await this.call((token) => this.backend.client.saveOrganizationSetup(token, organizationId, input)) };
+    } catch (error) {
+      const failure = setupFailure(error);
+      if (failure.kind === 'refused' && failure.code === 'setup_conflict') return { kind: 'conflict', message: failure.message };
+      return failure;
+    }
   }
 
   // --- the view ---------------------------------------------------------------
