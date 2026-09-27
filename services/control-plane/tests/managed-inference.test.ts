@@ -644,6 +644,39 @@ describe('stream passthrough', () => {
   });
 });
 
+describe('reasoning summaries', () => {
+  it('are asked of the provider as the body asks, and their summary events reach the client byte for byte', async () => {
+    const { token, admission } = await employee();
+    let providerBytes = new Uint8Array();
+    let forwarded: unknown;
+    answer = async (request) => {
+      forwarded = (request.body as { reasoning?: unknown }).reasoning;
+      const scriptedBytes = Buffer.from(await readAll((await scriptedAnswer(request)).body));
+      // Summary events go in before the reasoning item is done, where a provider streams them.
+      const at = scriptedBytes.indexOf(Buffer.from('event: response.output_item.done'));
+      expect(at).toBeGreaterThan(0);
+      const text = 'Counting the loaves’ standing orders.';
+      const summary = [
+        { type: 'response.reasoning_summary_part.added', item_id: 'rs_summary', output_index: 0, summary_index: 0, part: { type: 'summary_text', text: '' } },
+        { type: 'response.reasoning_summary_text.delta', item_id: 'rs_summary', output_index: 0, summary_index: 0, delta: text },
+        { type: 'response.reasoning_summary_part.done', item_id: 'rs_summary', output_index: 0, summary_index: 0, part: { type: 'summary_text', text } },
+      ].map((event) => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join('');
+      providerBytes = new Uint8Array(Buffer.concat([scriptedBytes.subarray(0, at), Buffer.from(summary), scriptedBytes.subarray(at)]));
+      // Cut inside the summary's ’ as well, so the gateway cannot be re-encoding what it forwards.
+      const quote = Buffer.from(providerBytes).indexOf(Buffer.from('’'));
+      const pieces = [providerBytes.slice(0, quote + 1), providerBytes.slice(quote + 1, quote + 2), providerBytes.slice(quote + 2)];
+      return new Response(chunkedStream(pieces), { status: 200, headers: { 'content-type': 'text/event-stream' } });
+    };
+    const response = await ask({ token, admission, body: chatBody({ reasoning: { effort: 'low', summary: 'auto' } }) });
+    expect(response.status).toBe(200);
+    const clientBytes = await readAll(response.body);
+    expect(forwarded).toEqual({ effort: 'low', summary: 'auto' });
+    expect(Buffer.from(clientBytes).equals(Buffer.from(providerBytes))).toBe(true);
+    await cloud.idle();
+    expect(settlements()[0]).toMatchObject({ providerCostMicroUsd: SCRIPTED_COST });
+  });
+});
+
 // --- section 7: out of credit --------------------------------------------------------------------
 
 describe('out of credit', () => {

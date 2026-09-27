@@ -71,7 +71,7 @@ capped at 2,000,000 (413 `request_too_large`).
 | `tools` | Optional array of at most 64 `{ type: 'function', name, description?, parameters, strict? }`, each at most 16 KB serialized. No built-in tools (web search, file search, computer use, MCP). |
 | `tool_choice` | `auto`, `none`, `required` or `{ type: 'function', name }` naming a listed tool. |
 | `parallel_tool_calls` | `false` or absent. |
-| `reasoning` | `{ effort: 'low' \| 'medium' \| 'high', summary?: null }`. |
+| `reasoning` | `{ effort: 'low' \| 'medium' \| 'high', summary?: 'auto' \| 'concise' \| 'detailed' \| null }` (revision 3). |
 | `include` | Absent or exactly `['reasoning.encrypted_content']`. |
 | `max_output_tokens` | Integer 1..`route.maxOutputTokens`; absent means the cap. The cap is our own product limit (16,000 for GPT-6 Luna), not a claim about the model's maximum. Above the route cap is 400 `invalid_body`. When `MANAGED_MAX_OUTPUT_TOKENS` (section 4) lowers the cap, a request between it and the route cap is clamped to it silently, absent means it, and the response names it in `X-Nectovia-Max-Output`. The value forwarded is the value the hold is priced at. |
 | `store` | `false` or absent; always sent as `false`. |
@@ -339,3 +339,17 @@ The owner's rulings on the gateway lane's findings. Each is in the code and test
 10. **Not changed here:** `shared/job-caps.ts` pulls engine code into the Worker bundle through
     `inputTokenBound`; the coordinator moves `inputTokenBound` into a smaller shared module during
     integration.
+
+## Revision 3, 2026-09-27
+
+Visible thinking in Nectovia conversations
+(`docs/superpowers/specs/2026-09-27-engine-conversations-and-reasoning-design.md`).
+
+1. **Reasoning summaries** are accepted: `reasoning.summary` may be `auto`, `concise`, `detailed`
+   or `null`; anything else is still 400 `unsupported_field`. The provider's summary events are
+   forwarded byte for byte like every other event, and settlement still reads the usage the
+   provider reports on its terminal event.
+2. **The routing policy says so.** `GET /account/routing-policy` answers `reasoningSummaries: true`.
+   A desktop asks for a summary only when that is present and a person is watching the reply, so
+   a gateway without this revision is never asked for one.
+3. **Deployed only with the owner's approval**, through the next approved merge to main.

@@ -136,7 +136,8 @@ function contractProblems(body: Record<string, unknown>): string[] {
   const effort = (body.reasoning as Item | undefined)?.effort;
   if (body.reasoning !== undefined && !['low', 'medium', 'high'].includes(String(effort))) problems.push('reasoning.effort');
   for (const key of Object.keys((body.reasoning as Item | undefined) ?? {}))
-    if (key !== 'effort' && !(key === 'summary' && (body.reasoning as Item).summary === null)) problems.push(`reasoning.${key}`);
+    if (key !== 'effort' && !(key === 'summary' && ['auto', 'concise', 'detailed', null].includes((body.reasoning as Item).summary as string | null)))
+      problems.push(`reasoning.${key}`);
   const max = body.max_output_tokens;
   if (max !== undefined && (!Number.isInteger(max) || (max as number) < 1 || (max as number) > GPT6_LUNA.maxOutputTokens))
     problems.push('max_output_tokens');
@@ -313,6 +314,38 @@ describe('the request the real SDK sends to the gateway', () => {
     expect(result.reservation.settledMicroUsd).toBe(expected);
     expect(result.reservation.rateCardVersion).toBe('aws-bedrock-gpt-6-luna-us-2026-09-25.1');
     expect(result.providerRequestId).toBe('gw-attempt-1');
+  });
+
+  test('a gateway that publishes reasoning summaries is asked for them while a thinking sink listens; they stream apart from the answer', async () => {
+    const summarized: Item = { ...reasoning(), summary: [{ type: 'summary_text', text: 'Adding up the standing orders.' }] };
+    const net = gateway([() => answer(envelope([summarized, message('Forty loaves are on order.')]))]);
+    const thoughts: string[] = [];
+    const deltas: string[] = [];
+    const result = await call(net.fetch, {
+      account: { refreshPolicy: async () => policy(), policy: () => ({ ...policy(), reasoningSummaries: true }) },
+      onDelta: (text) => deltas.push(text),
+      onReasoningDelta: (text) => thoughts.push(text),
+    });
+    expect((net.sent[0].body.reasoning as Item).summary).toBe('auto');
+    expect(contractProblems(net.sent[0].body)).toEqual([]);
+    expect(thoughts.join('')).toBe('Adding up the standing orders.');
+    expect(deltas.join('')).toBe('Forty loaves are on order.');
+    expect(result.outcome).toEqual({ kind: 'final', text: 'Forty loaves are on order.' });
+  });
+
+  test.each([
+    ['the policy does not publish reasoning summaries', false, true],
+    ['no thinking sink listens', true, false],
+  ])('no summary is asked for when %s', async (_why, publishes, listens) => {
+    const net = gateway([() => answer(envelope([reasoning(), message('Forty loaves are on order.')]))]);
+    await call(net.fetch, {
+      account: {
+        refreshPolicy: async () => policy(),
+        policy: () => ({ ...policy(), ...(publishes ? { reasoningSummaries: true } : {}) }),
+      },
+      ...(listens ? { onReasoningDelta: () => undefined } : {}),
+    });
+    expect((net.sent[0].body.reasoning as Item).summary ?? null).toBeNull();
   });
 
   test('a tool call and its continuation stay inside the allowlist: function tools, reasoning, call and output items', async () => {
