@@ -77,6 +77,44 @@ export function responsesEvents(response: Item, options: { terminal?: string; sp
         arguments: String(item.arguments ?? ''),
       });
       out += frame({ type: 'response.output_item.done', sequence_number: next(), output_index: index, item });
+    } else if (item.type === 'reasoning') {
+      const summary = Array.isArray(item.summary) ? (item.summary as Item[]) : [];
+      out += frame({
+        type: 'response.output_item.added',
+        sequence_number: next(),
+        output_index: index,
+        item: { ...item, summary: [] },
+      });
+      summary.forEach((part, summaryIndex) => {
+        const text = typeof part.text === 'string' ? part.text : '';
+        out += frame({
+          type: 'response.reasoning_summary_part.added',
+          sequence_number: next(),
+          item_id: id,
+          output_index: index,
+          summary_index: summaryIndex,
+          part: { type: 'summary_text', text: '' },
+        });
+        const size = options.split ?? 4;
+        for (let at = 0; at < text.length; at += size)
+          out += frame({
+            type: 'response.reasoning_summary_text.delta',
+            sequence_number: next(),
+            item_id: id,
+            output_index: index,
+            summary_index: summaryIndex,
+            delta: text.slice(at, at + size),
+          });
+        out += frame({
+          type: 'response.reasoning_summary_part.done',
+          sequence_number: next(),
+          item_id: id,
+          output_index: index,
+          summary_index: summaryIndex,
+          part: { type: 'summary_text', text },
+        });
+      });
+      out += frame({ type: 'response.output_item.done', sequence_number: next(), output_index: index, item });
     } else {
       out += frame({ type: 'response.output_item.added', sequence_number: next(), output_index: index, item });
       out += frame({ type: 'response.output_item.done', sequence_number: next(), output_index: index, item });
@@ -115,6 +153,8 @@ export function chatEvents(answer: {
   id?: string;
   model: string;
   provider?: string;
+  /** Thinking the model returns before its answer, as OpenRouter streams it: `delta.reasoning`. */
+  reasoning?: string;
   text?: string;
   toolCalls?: { id: string; name: string; arguments: string }[];
   finishReason?: string | null;
@@ -124,6 +164,8 @@ export function chatEvents(answer: {
 }): string {
   const base = { id: answer.id ?? 'gen-1', object: 'chat.completion.chunk', created: 1_790_000_000, model: answer.model, ...(answer.provider ? { provider: answer.provider } : {}) };
   let out = frame({ ...base, choices: [{ index: 0, delta: { role: 'assistant', content: '' }, finish_reason: null }] });
+  if (answer.reasoning)
+    out += frame({ ...base, choices: [{ index: 0, delta: { reasoning: answer.reasoning }, finish_reason: null }] });
   const text = answer.text ?? '';
   const size = answer.split ?? 4;
   for (let at = 0; at < text.length; at += size)

@@ -854,6 +854,14 @@ export async function respondStream(input: {
           } catch {
             // The preview sink records its own contract failures.
           }
+      } else if (part.type === 'reasoning-delta') {
+        // Thinking is a preview only: never the answer, never a failure.
+        if (part.text && !signal.aborted)
+          try {
+            input.onReasoningDelta?.(part.text);
+          } catch {
+            // The thinking sink drops what it cannot carry.
+          }
       } else if (part.type === 'tool-call') {
         if (part.invalid || !offered.has(part.toolName) || signal.aborted) continue;
         started.push({ callId: part.toolCallId, tool: part.toolName });

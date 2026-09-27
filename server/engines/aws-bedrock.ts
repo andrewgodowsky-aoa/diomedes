@@ -245,7 +245,12 @@ export function guardedResponsesFetch(options: {
 // --- one call -----------------------------------------------------------------------
 
 /** The AWS route's part of a call: its SDK instance, its endpoint and its reading of the stream. */
-export function awsBinding(connection: AwsConnection, effort: 'low' | 'medium' | 'high'): RouteBinding {
+export function awsBinding(
+  connection: AwsConnection,
+  effort: 'low' | 'medium' | 'high',
+  /** Whether a thinking sink is listening: summaries are asked for only then. */
+  summaries: boolean,
+): RouteBinding {
   return {
     route: AWS_BEDROCK_ROUTE,
     prefix: 'aws',
@@ -276,7 +281,7 @@ export function awsBinding(connection: AwsConnection, effort: 'low' | 'medium' |
         systemMessageMode: 'developer',
         include: ['reasoning.encrypted_content'],
         reasoningEffort: effort,
-        reasoningSummary: null,
+        reasoningSummary: summaries ? 'auto' : null,
         store: false,
         parallelToolCalls: false,
       },
@@ -313,7 +318,7 @@ export async function respondOnce(
 ): Promise<RespondResult> {
   const connection = awsConnectionSchema.parse(input.connection);
   const { connection: _connection, effort, ...rest } = input;
-  return respondStream({ ...rest, binding: awsBinding(connection, effort) });
+  return respondStream({ ...rest, binding: awsBinding(connection, effort, Boolean(rest.onReasoningDelta)) });
 }
 
 /** A spend hold's identity, fixed before anything is sent. */

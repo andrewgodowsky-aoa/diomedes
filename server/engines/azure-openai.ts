@@ -181,6 +181,8 @@ export function azureBinding(
   connection: AzureConnection,
   entry: AzureDeployment,
   effort: 'low' | 'medium' | 'high',
+  /** Whether a thinking sink is listening: summaries are asked for only then. */
+  summaries: boolean,
 ): RouteBinding {
   return {
     route: AZURE_OPENAI_ROUTE,
@@ -213,7 +215,7 @@ export function azureBinding(
             systemMessageMode: 'developer',
             include: ['reasoning.encrypted_content'],
             reasoningEffort: effort,
-            reasoningSummary: null,
+            reasoningSummary: summaries ? 'auto' : null,
             store: false,
             parallelToolCalls: false,
           }
@@ -250,5 +252,5 @@ export async function respondAzure(
   const connection = azureConnectionSchema.parse(input.connection);
   const entry = azureDeploymentFor(connection, input.model);
   const { connection: _connection, model: _model, effort, ...rest } = input;
-  return respondStream({ ...rest, binding: azureBinding(connection, entry, effort) });
+  return respondStream({ ...rest, binding: azureBinding(connection, entry, effort, Boolean(rest.onReasoningDelta)) });
 }
