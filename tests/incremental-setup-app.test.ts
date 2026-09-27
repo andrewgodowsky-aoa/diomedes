@@ -131,6 +131,34 @@ afterEach(async () => {
 });
 
 describe('a business setup across versions of the questions (ORG-02)', () => {
+  test('the shipped rewording carries an owner answer unchanged when a Manager resumes it', async () => {
+    const laptop = await computer('laptop');
+    const owner = await signIn(laptop, DEMO_ACCOUNTS.owner.email);
+    const { organization } = await summary(laptop);
+    const at = '2026-09-20T10:00:00.000Z';
+    const earlier: BusinessSetup = {
+      v: 1, organizationId: juniper, tenantId: organization.tenantId,
+      schemaRevision: 1, state: 'drafting', cursor: 'name',
+      startedAt: at, startedBy: owner, updatedAt: at, proposalDigest: null,
+      answers: { job: {
+        questionId: 'job', value: 'recurring-report', unknown: false,
+        origin: 'person', at, by: owner,
+        prompt: 'What recurring job should Diomedes help with first?',
+      } },
+    };
+    await writeAs(DEMO_ACCOUNTS.owner.email, 0, earlier);
+    const desktop = await computer('desktop');
+    const manager = await signIn(desktop, DEMO_ACCOUNTS.manager.email);
+    expect(await openSetup(desktop)).toMatchObject({
+      stale: true, carry: { from: 1, to: 2, keeps: ['job'], asks: [], adds: [], drops: [] },
+    });
+    const resumed = await api<BusinessSetupView>(desktop, `${setupRoute()}/resume`, 'POST', {});
+    expect(resumed).toMatchObject({ stale: false, schemaRevision: 2, answers: earlier.answers });
+    expect(rows()).toHaveLength(2);
+    expect(rows()[0].record.setup).toEqual(earlier);
+    expect(rows()[1]).toMatchObject({ writtenBy: manager, record: { setup: { answers: earlier.answers } } });
+  });
+
   test('a setup a newer version saved is refused on every route, and nothing is written over it', async () => {
     const laptop = await computer('laptop');
     const owner = await signIn(laptop, DEMO_ACCOUNTS.owner.email);
@@ -141,7 +169,7 @@ describe('a business setup across versions of the questions (ORG-02)', () => {
       unknown: false,
       expectedDigest: view.digest,
     });
-    // The owner's phone runs a newer build that asks revision 2 of the questions.
+    // The owner's phone runs a newer build with questions this build does not know.
     const newer = rows().at(-1)!.record.setup;
     const at = '2026-09-27T09:00:00.000Z';
     await writeAs(DEMO_ACCOUNTS.owner.email, 2, {

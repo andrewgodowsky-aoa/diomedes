@@ -7,6 +7,7 @@ import { PostgresRepository, neonClientFactory } from '../src/postgres.js';
 import { createHandler } from '../src/worker.js';
 import { OrganizationSetupService } from '../src/organization-setup/service.js';
 import { PostgresOrganizationSetupRepository } from '../src/organization-setup/postgres.js';
+import { PostgresOrganizationExportRepository } from '../src/organization-export/postgres.js';
 import type { OrganizationSetupRecord } from '../../../shared/organization-setup.js';
 import { now, validEnv, verifier } from './support/fixtures.js';
 
@@ -77,6 +78,12 @@ describe.skipIf(!ownerUrl)('Independent real Neon runtime role qualification', (
     };
     expect((await setups.write('role_carol', org.id, { expectedRevision: 0, record })).revision).toBe(1);
     expect(await setups.read('role_carol', org.id)).toMatchObject({ revision: 1, writtenBy: carol });
+    const exports = new PostgresOrganizationExportRepository(neonClientFactory(runtimeUrl));
+    await exports.transaction(async (tx) => {
+      expect((await tx.member(org.id, carol))?.record.role).toBe('owner');
+      expect(await tx.setupRevisions(org.id)).toMatchObject([{ revision: 1, writtenBy: carol, record }]);
+      expect((await tx.history(org.id, 10)).length).toBeGreaterThan(0);
+    });
   });
 
   it.each([

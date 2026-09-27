@@ -365,8 +365,12 @@ describe('a business setup kept by the business (ORG-01)', () => {
     await fs.mkdir(folder, { recursive: true });
     await fs.writeFile(path.join(folder, `${juniper}.json`), JSON.stringify(earlier));
 
-    expect(await openSetup(laptop)).toMatchObject({ state: 'drafting', step: 'industry', sync: { source: 'service', revision: 1 } });
+    expect(await openSetup(laptop)).toMatchObject({ state: 'drafting', stale: true, step: 'review', sync: { source: 'service', revision: 1 } });
     expect(revisions()).toEqual([{ revision: 1, writtenBy: owner, answers: ['name'] }]);
+    expect(await api<BusinessSetupView>(laptop, `${setupRoute()}/resume`, 'POST', {})).toMatchObject({
+      state: 'drafting', stale: false, schemaRevision: 2, step: 'industry',
+      answers: { name: earlier.answers.name }, sync: { source: 'service', revision: 2 },
+    });
     const desktop = await computer('desktop');
     await signIn(desktop, DEMO_ACCOUNTS.manager.email);
     expect((await openSetup(desktop)).answers.name).toMatchObject({ value: 'Juniper Street Bakery', by: owner, at });

@@ -1,5 +1,8 @@
 # ORG-01 and SET-01: the business setup belongs to the business
 
+Integration update, 2026-09-27: the [combined integration record](2026-09-27-setup-export-integration.md)
+supersedes the verification and publication status below. This page preserves the original lane record.
+
 | | |
 |---|---|
 | Briefs | ORG-01 (organization-owned configuration persistence) and the persistence half of SET-01 (adaptive intake), decision package SC-2026-09-26.1 |

@@ -59,6 +59,7 @@ let computers: Computer[];
 let credentials: Set<string>;
 /** How many times a desktop asked the account service for an export. */
 let exportCalls: number;
+let beforeExportAnswer: (() => Promise<void>) | null;
 
 /** An invitation code as a person types it (INVITATION_CODE in the account service). */
 const INVITATION_CODE = /^[0-9A-HJKMNP-TV-Z]{4}(-[0-9A-HJKMNP-TV-Z]{4}){3}$/;
@@ -156,6 +157,7 @@ beforeEach(async () => {
   computers = [];
   credentials = new Set();
   exportCalls = 0;
+  beforeExportAnswer = null;
   cloud = await createFauxCloud({ file: null, passwordIterations: 1_000 });
   juniper = (await seedDemo(cloud)).organizations!.juniper;
   backend = {
@@ -164,6 +166,7 @@ beforeEach(async () => {
       if (authorization?.startsWith('Bearer ')) credentials.add(authorization.slice(7));
       if (new URL(req.url).pathname.endsWith('/export')) exportCalls += 1;
       const answer = await cloud.handle(req);
+      if (new URL(req.url).pathname.endsWith('/export')) await beforeExportAnswer?.();
       const text = await answer.clone().text();
       try {
         collect(JSON.parse(text));
@@ -183,6 +186,28 @@ afterEach(async () => {
 });
 
 describe("the Business owner's export (OPS-05)", () => {
+  test('switching to a Manager while the export is fetched refuses the write', async () => {
+    const laptop = await computer('laptop');
+    await signIn(laptop, DEMO_ACCOUNTS.owner.email);
+    const project = await businessProject(laptop, 'Bakery records');
+    let arrived!: () => void;
+    const fetched = new Promise<void>((resolve) => { arrived = resolve; });
+    let release!: () => void;
+    const paused = new Promise<void>((resolve) => { release = resolve; });
+    beforeExportAnswer = async () => { arrived(); await paused; };
+    const pending = request(laptop, exportRoute(), 'POST', { projectId: project.id });
+    await fetched;
+    try {
+      await api(laptop, '/account/sign-out', 'POST');
+      await signIn(laptop, DEMO_ACCOUNTS.manager.email);
+    } finally {
+      release();
+    }
+    const response = await pending;
+    expect(response.status).toBe(403);
+    expect(await exportsIn(project)).toEqual([]);
+  });
+
   test('writes every file into a project of the business, readable back, with no bearer token or other credential in it', async () => {
     const laptop = await computer('laptop');
     const owner = await signIn(laptop, DEMO_ACCOUNTS.owner.email);

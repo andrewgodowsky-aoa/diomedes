@@ -1,5 +1,9 @@
 # Self-configuring feature reconciliation (SC-2026-09-26.1)
 
+Integration update, 2026-09-27: see the [combined integration record](2026-09-27-setup-export-integration.md)
+for ORG-01, ORG-02, OPS-05, DATA-01 and the pillar amendments. The 80-brief inventory below remains
+the dated source inspection at its stated base, not a current completion ledger.
+
 - **Date:** 2026-09-26.
 - **Code base:** origin/main at c5eca16. The package baseline beda88b is an ancestor of c5eca16, so everything the package saw is included here.
 - **Pillars:** P13, P14 and the SC-2026-09-26.1 expansions of P02, P03, P05 and P11 exist only on the unmerged branch `docs/self-configuring-business-platform-2026-09-26`, open as andrewgodowsky-aoa/diomedes#161. Pillar notes quote the pillar names from that branch.

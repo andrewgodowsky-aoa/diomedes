@@ -268,12 +268,6 @@ function duration(ms: number): string {
 const list = (items: readonly string[]) =>
   items.length <= 1 ? (items[0] ?? '') : `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
 
-/** A label's first letter lower-cased for use mid-sentence, unless its first word is a name. */
-function midSentence(label: string): string {
-  const first = label.split(' ', 1)[0] ?? '';
-  return /[A-Z]/.test(first.slice(1)) ? label : label.charAt(0).toLowerCase() + label.slice(1);
-}
-
 /**
  * One observation judged at `now`, with the same predicate readiness uses
  * (`isFreshAt` in `server/readiness/projection.ts`): fresh when both times
@@ -528,7 +522,7 @@ export function coverageMatrix(
   const awaitingVerification = ordered.filter((route) => pendingRoutes.has(route.id)).map((route) => route.id);
 
   const rowById = new Map(fields.map((row) => [row.field, row]));
-  const labelOf = (id: string) => midSentence(rowById.get(id)?.label ?? id);
+  const labelOf = (id: string) => rowById.get(id)?.label ?? id;
   const fullyCovered = (version: CoverageNarrowerVersion) =>
     version.requires.length > 0 && version.requires.every((id) => rowById.get(id)?.evidence === 'verified');
   const offered = status === 'complete' ? undefined : workflow.narrower.find(fullyCovered);
@@ -551,7 +545,7 @@ export function coverageMatrix(
     const parts: string[] = [];
     if (missing.length > 0)
       parts.push(
-        `no usable route reads ${list(missing.map((entry) => midSentence(entry.label)))}, and nothing is filled in for ${
+        `no usable route reads ${list(missing.map((entry) => entry.label))}, and nothing is filled in for ${
           missing.length === 1 ? 'it' : 'them'
         }`,
       );

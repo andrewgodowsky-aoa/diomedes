@@ -272,7 +272,16 @@ test('a waiting message can be withdrawn, and Stop ends the answer gracefully wi
   await expect(queued).toContainText('Withdrawn by Stop before it was sent.');
   await queued.getByRole('button', { name: 'Dismiss' }).click();
   await expect(queued).toHaveCount(0);
+  const stopping = page.waitForResponse((response) =>
+    response.request().method() === 'POST' && /\/messages\/[^/]+\/interrupt$/.test(new URL(response.url()).pathname),
+  );
   await page.getByRole('button', { name: 'Stop', exact: true }).click();
+  const stopped = await stopping;
+  expect(stopped.status()).toBe(200);
+  // Stop releases the page before the driver finishes. Replaying the recorded
+  // interruption must wait for that record, otherwise it can return SESSION_BUSY.
+  const outcomePath = new URL(stopped.url()).pathname.replace(/^\/api/, '').replace(/\/interrupt$/, '');
+  await expect.poll(async () => (await api<{ interrupted: boolean }>(outcomePath)).interrupted).toBe(true);
   await expect(page.locator('.dio-pending')).toHaveCount(0);
   await expect(session(page).locator('.dio-session-state')).toHaveText('Live session');
   // The page's Stop leaves its own message unconfirmed; Send again reads the recorded,

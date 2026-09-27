@@ -13,6 +13,7 @@ import { creditAmount, micro } from '../../../shared/managed-usage.js';
 import { OrganizationSetupService } from '../src/organization-setup/service.js';
 import { PostgresOrganizationSetupRepository } from '../src/organization-setup/postgres.js';
 import type { OrganizationSetupRecord } from '../../../shared/organization-setup.js';
+import type { FeatureGrant } from '../src/commercial.js';
 
 const connectionString = process.env.CP_TEST_DATABASE_URL;
 const enabled = Boolean(connectionString);
@@ -104,9 +105,21 @@ describe.skipIf(!enabled)('REAL PostgreSQL (explicit disposable database only)',
     await repository.recordVerifiedWebhook({ provider: 'stripe', eventId: event, customerId: customer, payloadHash: 'c'.repeat(64), eventType: 'fixture.grant', payload: { fixture: true } });
     await query("INSERT INTO control_plane.entitlement_grants(tenant_id,grant_id,organization_id,provider,source_event_id,kind,state,valid_from,valid_until,projection) VALUES ($1,$2,$3,'stripe',$4,'plan','active','2026-09-01T00:00:00Z','2026-10-01T00:00:00Z','{}'::jsonb)",
       [org.tenantId, `grant_${org.id}`, org.id, event]);
+    // Migration 005 binds credit periods to feature grants. Keep the verified
+    // subscription entitlement as their source, as the current access model does.
+    const grant: FeatureGrant = {
+      v: 1, id: `feature_${org.id}`, organizationId: org.id, tenantId: org.tenantId,
+      planId: 'business', features: ['nectovia-agent'], source: 'subscription',
+      reference: `grant_${org.id}`, note: 'Synthetic database qualification.',
+      validFrom: '2026-09-01T00:00:00.000Z', validUntil: '2026-10-01T00:00:00.000Z',
+      state: 'active', issuedAt: '2026-09-01T00:00:00.000Z', issuedBy: org.createdBy,
+      revokedAt: null, revokedBy: null, revokedReason: null,
+    };
+    await query('INSERT INTO control_plane.feature_grants(tenant_id,grant_id,organization_id,record) VALUES ($1,$2,$3,$4)',
+      [org.tenantId, grant.id, org.id, JSON.stringify(grant)]);
     const funding = new FundingService(new PostgresFundingRepository(factory), { now: () => Date.parse('2026-09-10T12:00:00Z') });
-    await funding.allocatePeriod({ tenantId: org.tenantId, organizationId: org.id, periodId: '2026-09', planId: 'workflow-starter', sourceGrantId: `grant_${org.id}` });
-    return { org, funding };
+    await funding.allocatePeriod({ tenantId: org.tenantId, organizationId: org.id, periodId: '2026-09', planId: 'workflow-starter', sourceGrantId: grant.id });
+    return { org, funding, grant };
   }
   const rate = { version: 'fixture', inputMicroUsdPerMillion: 1_000_000, outputMicroUsdPerMillion: 1_000_000, cacheReadMicroUsdPerMillion: 1_000_000, cacheWriteMicroUsdPerMillion: 1_000_000 };
   it('serializes concurrent funded reservations so the last credits are held once', async () => {
@@ -147,18 +160,37 @@ describe.skipIf(!enabled)('REAL PostgreSQL (explicit disposable database only)',
     expect(await restarted.recoverAfterRestart({ tenantId: org.tenantId, organizationId: org.id })).toEqual({ released: [], uncertain: ['attempt_r'] });
     const settled = await restarted.settle({ ...ref, receiptRef: 'receipt_r', usage: { inputTokens: 400_000, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, reasoningTokens: 0 }, reconciledFrom: 'provider-report' });
     expect(settled.outcome === 'settled' && settled.settlement.periodId).toBe('2026-09');
+    const stored = await new PostgresFundingRepository(factory).transaction((tx) => tx.settlement(org.tenantId, ref.attemptId));
+    expect(stored).toMatchObject({ periodId: '2026-09', rateCardVersion: settled.outcome === 'settled' ? settled.settlement.rateCardVersion : '' });
   });
   it('refuses a funded period bound to another tenant’s grant', async () => {
-    const { org } = await fundedOrganization('Funding tenant');
+    const { grant } = await fundedOrganization('Funding tenant');
     const other = await accounts.createOrganization('alice', 'Funding other tenant');
     await expect(query("INSERT INTO control_plane.credit_periods(tenant_id,organization_id,period_id,plan_id,rate_card_version,granted_micro_usd,starts_at,ends_at,source_grant_id,allocated_at) VALUES ($1,$2,'2026-09','business','r',1,'2026-09-01','2026-10-01',$3,now())",
-      [other.tenantId, other.id, `grant_${org.id}`])).rejects.toMatchObject({ code: '23503' });
+      [other.tenantId, other.id, grant.id])).rejects.toMatchObject({ code: '23503' });
   });
   it('retains revoked session tombstones across repository instances', async () => {
     await accounts.revokeLocalSession('revoked');
     const restarted = new AccountService(new PostgresRepository(factory), verifier, { now: () => now });
     await expect(restarted.signIn('revoked')).rejects.toMatchObject({ status: 401 });
   });
+  it('a setup write holds the same organization lock as membership changes', async () => {
+    const org = await accounts.createOrganization('alice', 'Setup membership lock fixture');
+    const setups = new PostgresOrganizationSetupRepository(factory);
+    await setups.transaction(async (tx) => {
+      await tx.lockOrganization(org.id);
+      const competing = factory();
+      await competing.connect();
+      try {
+        await competing.query("SET lock_timeout = '200ms'");
+        await expect(competing.query('SELECT id FROM control_plane.organizations WHERE id=$1 FOR UPDATE', [org.id]))
+          .rejects.toMatchObject({ code: '55P03' });
+      } finally {
+        await competing.end();
+      }
+    });
+  });
+
   it('keeps a business setup append-only, compare-and-set and filed under its own business (ORG-01)', async () => {
     const org = await accounts.createOrganization('alice', 'Setup fixture');
     const alice = (await accounts.signIn('alice')).person.id;

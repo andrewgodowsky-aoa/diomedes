@@ -48,7 +48,7 @@ describe('organization setup SQL adapter protocol', () => {
     const db = recording();
     await everyMethod(new PostgresOrganizationSetupTransaction(db.client));
     expect(db.calls[0]).toEqual({
-      sql: 'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', values: [JSON.stringify(['organization-setup', 'org_1'])],
+      sql: 'SELECT id FROM control_plane.organizations WHERE id=$1 FOR UPDATE', values: ['org_1'],
     });
     expect(db.calls[1].sql).toMatch(/FROM control_plane\.organization_setups WHERE organization_id=\$1 ORDER BY revision DESC LIMIT 1$/);
     expect(db.calls[2].sql).toBe('INSERT INTO control_plane.organization_setups(tenant_id,organization_id,revision,record,written_at,written_by) VALUES ($1,$2,$3,$4,$5,$6)');
@@ -122,12 +122,15 @@ describe('the Worker login and business setups', () => {
     expect(describePrivileges(used.get('organization_setups'))).toEqual({ select: true, insert: true, update: [] });
     expect(describePrivileges(used.get('memberships'))).toEqual({ select: true, insert: false, update: [] });
     expect(granted.get('memberships')?.select).toBe(true);
-    expect([...used.keys()].sort()).toEqual(['memberships', 'organization_setups']);
+    expect(describePrivileges(used.get('organizations'))).toEqual({ select: true, insert: false, update: ['*'] });
+    expect(granted.get('organizations')?.select).toBe(true);
+    expect(granted.get('organizations')?.update.has('*')).toBe(true);
+    expect([...used.keys()].sort()).toEqual(['memberships', 'organization_setups', 'organizations']);
   });
 
   it('never updates or deletes a revision', () => {
     const adapter = read('../src/organization-setup/postgres.ts');
-    expect(adapter).not.toMatch(/\b(UPDATE|DELETE|TRUNCATE|DROP)\b/);
+    expect(adapter.replaceAll('FOR UPDATE', '')).not.toMatch(/\b(UPDATE|DELETE|TRUNCATE|DROP)\b/);
     expect(runtimeGrants(read('../scripts/runtime-permissions.sql')).get('organization_setups')!.update.size).toBe(0);
   });
 });

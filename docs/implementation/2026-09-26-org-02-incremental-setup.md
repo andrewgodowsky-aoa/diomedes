@@ -1,5 +1,9 @@
 # ORG-02: a business setup survives a change in the questions
 
+Integration update, 2026-09-27: the [combined integration record](2026-09-27-setup-export-integration.md)
+supersedes the verification and publication status below and records the first real question rewording.
+This page preserves the original lane record.
+
 | | |
 |---|---|
 | Brief | ORG-02 (incremental configuration and schema migration), the questionnaire half, decision package SC-2026-09-26.1 |

@@ -18,7 +18,7 @@ import path from 'node:path';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createApp } from '../server/app.js';
-import type { BusinessSetupView } from '../shared/business-setup.js';
+import { BUSINESS_SETUP_SCHEMA_REVISION, type BusinessSetupView } from '../shared/business-setup.js';
 import type { Person, WorkspaceView } from '../shared/workspaces.js';
 import type { Settings } from '../shared/types.js';
 
@@ -361,11 +361,11 @@ describe('the Business intake', () => {
   }
 
   test('a setup saved by a newer version of the questions is refused and left exactly as it was (ORG-02)', async () => {
-    const file = await savedUnder(2);
+    const file = await savedUnder(BUSINESS_SETUP_SCHEMA_REVISION + 1);
     const before = await fs.readFile(file);
 
     const view = (await setupOf(organizationId)).data;
-    expect(view).toMatchObject({ stale: false, carry: null, unreadable: { code: 'setup_newer' }, schemaRevision: 2 });
+    expect(view).toMatchObject({ stale: false, carry: null, unreadable: { code: 'setup_newer' }, schemaRevision: BUSINESS_SETUP_SCHEMA_REVISION + 1 });
     // This build cannot say what a newer build's answers mean, so it shows none.
     expect(view.answers).toEqual({});
     const row = (await workspace()).organizations.find((item) => item.organization.id === organizationId)!;

@@ -45,13 +45,16 @@ export interface QuestionSetChange {
 /**
  * Every change of the questions this build knows, oldest first.
  *
- * Empty: revision 1 is the only revision there has been. The next revision of
- * the questions adds its entry here, `{ from: 1, ... }`, in the same change that
- * raises `BUSINESS_SETUP_SCHEMA_REVISION` to 2 and edits `BUSINESS_QUESTIONS`.
+ * Revision 2 rewords the job prompt and result explanation to use Nectovia.
+ * Their meaning and accepted answers are unchanged, so every answer carries
+ * across, including its original prompt, author and time. Future revisions
+ * add a step here when raising `BUSINESS_SETUP_SCHEMA_REVISION`.
  * A question left out of the entry is carried as it is, so an entry must name
  * every question whose meaning changed, not only the reworded ones.
  */
-export const QUESTION_SET_CHANGES: readonly QuestionSetChange[] = Object.freeze([]);
+export const QUESTION_SET_CHANGES: readonly QuestionSetChange[] = Object.freeze([
+  { from: 1, added: [], changed: [], removed: [] },
+]);
 
 /** The refusal for a setup saved by a newer version of the questions. Nothing is changed. */
 export const SETUP_NEWER_REASON =

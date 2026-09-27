@@ -3,8 +3,8 @@
  * did not touch, exactly as it was given, and a setup saved under newer ones is
  * refused rather than guessed at.
  *
- * The shipped change table is empty: revision 1 is the only revision of the
- * questions there has been. These tests run the carry against a sample
+ * The shipped revision 2 only rewords the product name. These tests also run
+ * the carry against a separate sample
  * revision 2 (`REVISION_2`) that adds one question, changes one and stops
  * asking one.
  */
@@ -75,9 +75,15 @@ const savedUnderOne = (): BusinessSetup => ({
 const WITH_REVISION_2: DurableFamily = { ...BUSINESS_SETUP, current: 2, migrations: setupMigrations([REVISION_2]) };
 
 describe('the shipped questions', () => {
-  test('revision 1 is the only revision, so the change table is empty and the setup family carries nothing', () => {
-    expect(BUSINESS_SETUP_SCHEMA_REVISION).toBe(1);
-    expect(QUESTION_SET_CHANGES).toEqual([]);
+  test('revision 2 carries every answer across the product-name rewording', () => {
+    expect(BUSINESS_SETUP_SCHEMA_REVISION).toBe(2);
+    expect(QUESTION_SET_CHANGES).toEqual([{ from: 1, added: [], changed: [], removed: [] }]);
+    const saved = savedUnderOne();
+    saved.answers.job.prompt = 'What recurring job should Diomedes help with first?';
+    const carried = migrateRecord(BUSINESS_SETUP, saved).record;
+    expect(carried).toEqual({ ...saved, schemaRevision: 2 });
+    expect(carryPlan(saved)).toEqual({ from: 1, to: 2, keeps: Object.keys(saved.answers).sort(), asks: [], adds: [], drops: [] });
+    expect(BUSINESS_QUESTIONS.find((question) => question.id === 'job')?.prompt).toBe('What recurring job should Nectovia help with first?');
     expect(questionChangeProblems(QUESTION_SET_CHANGES)).toEqual([]);
     expect(durableFamily('business-setup')).toBe(BUSINESS_SETUP);
     expect(BUSINESS_SETUP).toMatchObject({
@@ -163,8 +169,8 @@ describe('the setup family, as the build that ships revision 2 would read it', (
     expect(refusal({ ...savedUnderOne(), schemaRevision: 0 })).toBe('unknown-version');
     const { schemaRevision: _revision, ...unversioned } = savedUnderOne();
     expect(refusal(unversioned)).toBe('unknown-version');
-    // The shipped family refuses a revision 2 setup the same way.
-    expect(() => migrateRecord(BUSINESS_SETUP, { ...savedUnderOne(), schemaRevision: 2 })).toThrow(MigrationRefusal);
+    // The shipped family refuses a setup newer than its own questions too.
+    expect(() => migrateRecord(BUSINESS_SETUP, { ...savedUnderOne(), schemaRevision: BUSINESS_SETUP_SCHEMA_REVISION + 1 })).toThrow(MigrationRefusal);
   });
 });
 
@@ -192,8 +198,7 @@ describe('the plan a person reads before resuming', () => {
     expect(carryPlan({ ...savedUnderOne(), schemaRevision: 3 }, 2, [REVISION_2])).toBeNull();
     expect(carryPlan(savedUnderOne(), 3, [REVISION_2])).toBeNull();
     expect(changesBetween(1, 3, [REVISION_2])).toBeNull();
-    // The shipped build has nothing to carry.
-    expect(carryPlan(savedUnderOne())).toBeNull();
+    expect(carryPlan({ ...savedUnderOne(), schemaRevision: BUSINESS_SETUP_SCHEMA_REVISION })).toBeNull();
   });
 
   test('across two changes, the later words win and a question that stops being asked is not also asked', () => {

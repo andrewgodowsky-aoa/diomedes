@@ -168,6 +168,12 @@ describe('migrateRecord', () => {
 });
 
 describe('golden fixtures of older files', () => {
+  test('business setup revision 1 carries its original answers into revision 2', async () => {
+    const value = await fixture('business-setup.v1.json');
+    const result = migrateRecord(BUSINESS_SETUP, value);
+    expect(result).toMatchObject({ from: 1, to: 2, migrated: true });
+    expect(result.record).toEqual({ ...(value as object), schemaRevision: 2 });
+  });
   test('a Milestone A automation record (v1) becomes exactly the v2 record', async () => {
     const result = migrateRecord(AUTOMATION_OCCURRENCES, await fixture('automation-occurrences.v1.json'));
     expect(result).toMatchObject({ from: 1, to: 2, migrated: true });
@@ -182,8 +188,6 @@ describe('golden fixtures of older files', () => {
     [READY_QUEUE, 'ready-queue.v1.json'],
     [AUTOMATION_DEFINITIONS, 'automation-definitions.v1.json'],
     [AUTOMATION_OCCURRENCES, 'automation-occurrences.v2.expected.json'],
-    // Revision 1 of the business questions: one answer saved before answers kept their question's words.
-    [BUSINESS_SETUP, 'business-setup.v1.json'],
   ].map(([family, name]) => [(family as DurableFamily).id, name, family] as const))(
     '%s reads %s as current',
     async (_id, name, family) => {

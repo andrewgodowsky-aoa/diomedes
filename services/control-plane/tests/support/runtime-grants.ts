@@ -77,6 +77,11 @@ export function needs(statements: string[]): Map<string, Privileges> {
     let match: RegExpExecArray | null;
     if (/^(BEGIN|COMMIT|ROLLBACK)$/.test(text) || /^SET LOCAL \w+ = '[^']*'$/.test(text)) continue;
     if (text === 'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))') continue;
+    if (text === 'SELECT id FROM control_plane.organizations WHERE id=$1 FOR UPDATE') {
+      entry('organizations').select = true;
+      entry('organizations').update.add('*');
+      continue;
+    }
     if ((match = /^INSERT INTO control_plane\.(\w+)\(/.exec(text))) {
       if (/ ON CONFLICT | RETURNING /.test(text)) throw new Error(`Name what this needs: ${text}`);
       entry(match[1]).insert = true;

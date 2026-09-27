@@ -1,5 +1,9 @@
 # DATA-01 coverage matrix - 2026-09-26
 
+Integration update, 2026-09-27: the [combined integration record](2026-09-27-setup-export-integration.md)
+supersedes the verification and publication status below and records the label-casing repair.
+This page preserves the original lane record.
+
 ## Work order
 
 - Feature and work item: DATA-01, the first slice of the authorized

@@ -517,6 +517,8 @@ test('Console standalone Ask includes only documents named in the message and re
   await expect(composer).toHaveValue('');
   await expect(page.locator('.exchange .turn.dio')).toBeVisible();
   await composer.fill('Explain how to write a brief.');
+  // A streamed answer can appear before the request finishes and Send unlocks.
+  await expect(page.getByRole('button', { name: 'Send', exact: true })).toBeEnabled();
   await composer.press('Enter');
   await expect(confirmation).toContainText('No project documents are included');
   await confirmation.getByRole('button', { name: 'Send message', exact: true }).click();

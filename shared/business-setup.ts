@@ -1,5 +1,5 @@
 /**
- * The Business questionnaire — schema revision 1.
+ * The Business questionnaire — schema revision 2.
  *
  * A short, resumable intake that belongs to an organization, never to a person.
  * It is a pure state machine on purpose: the host enforces the same rule the
@@ -15,7 +15,7 @@
  * decides authority.
  */
 
-export const BUSINESS_SETUP_SCHEMA_REVISION = 1 as const;
+export const BUSINESS_SETUP_SCHEMA_REVISION = 2 as const;
 
 /**
  * The lifecycle the product contract names. This build implements the drafting
@@ -187,7 +187,7 @@ export const BUSINESS_QUESTIONS: readonly Question[] = Object.freeze([
   },
   {
     id: 'job',
-    prompt: 'What recurring job should Diomedes help with first?',
+    prompt: 'What recurring job should Nectovia help with first?',
     reason:
       'One concrete outcome to start from. Anything unsupported is explained rather than promised.',
     kind: 'choice',
@@ -200,7 +200,7 @@ export const BUSINESS_QUESTIONS: readonly Question[] = Object.freeze([
     id: 'result',
     prompt: 'What does a useful result look like, and who reviews it today?',
     reason:
-      'Records the output and who checks it now. It is a baseline to compare against, not a saving Diomedes claims.',
+      'Records the output and who checks it now. It is a baseline to compare against, not a saving Nectovia claims.',
     kind: 'text',
     required: true,
     maxLength: 400,

@@ -51,8 +51,8 @@ function normalized(value: unknown): NormalizedUsage {
 
 const ATTEMPT_COLUMNS = `tenant_id,reservation_id,organization_id,root_job_id,existing_parent_task_ref,period_id,kind,route,request_digest,
   rate_snapshot,usage_class,rate_card_version,reserved_micro_usd,monthly_hold_micro_usd,topup_hold_micro_usd,state,created_at,dispatched_at,resolved_at,uncertain_reason`;
-const SETTLEMENT_COLUMNS = `tenant_id,reservation_id,organization_id,period_id,provider_receipt_ref,provider_cost_micro_usd,allowance_debit_micro_usd,
-  monthly_debit_micro_usd,topup_debit_micro_usd,usage,reconciled_from,settled_at,rate_card_version`;
+const SETTLEMENT_COLUMNS = `s.tenant_id,s.reservation_id,s.organization_id,s.period_id,s.provider_receipt_ref,s.provider_cost_micro_usd,s.allowance_debit_micro_usd,
+  s.monthly_debit_micro_usd,s.topup_debit_micro_usd,s.usage,s.reconciled_from,s.settled_at,r.rate_card_version`;
 
 function attemptFrom(row: Row): FundedAttempt {
   return {
@@ -140,7 +140,11 @@ export class PostgresFundingTransaction implements FundingTransaction {
   }
 
   async settlement(tenantId: string, attemptId: string) {
-    const row = await this.one(`SELECT ${SETTLEMENT_COLUMNS} FROM control_plane.funding_settlements WHERE tenant_id=$1 AND reservation_id=$2`, [tenantId, attemptId]);
+    // The immutable reservation owns the rate-card version; settlements have
+    // never had a rate_card_version column. Join on the full tenant-bound key.
+    const row = await this.one(`SELECT ${SETTLEMENT_COLUMNS} FROM control_plane.funding_settlements s
+      JOIN control_plane.funding_reservations r ON r.tenant_id=s.tenant_id AND r.reservation_id=s.reservation_id
+      WHERE s.tenant_id=$1 AND s.reservation_id=$2`, [tenantId, attemptId]);
     return row && settlementFrom(row);
   }
   async saveSettlement(row: AttemptSettlement) {

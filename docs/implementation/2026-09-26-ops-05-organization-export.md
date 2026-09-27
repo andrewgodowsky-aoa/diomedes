@@ -1,5 +1,8 @@
 # OPS-05: the Business owner's copy of the business's records, and leaving
 
+Integration update, 2026-09-27: the [combined integration record](2026-09-27-setup-export-integration.md)
+supersedes the verification and publication status below. This page preserves the original lane record.
+
 | | |
 |---|---|
 | Brief | OPS-05 (user-owned exit), decision package SC-2026-09-26.1 |

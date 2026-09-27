@@ -263,7 +263,7 @@ describe('DATA-01: the authorized data-coverage matrix', () => {
       requires: ['daily-net-sales'],
       leavesOut: ['menu-availability', 'ingredient-counts'],
       reason:
-        'Offered instead of Daily sales and stock check: every field it needs has a verified route. It leaves out menu items out of stock or running low at each location and on-hand ingredient counts from the last stock count.',
+        'Offered instead of Daily sales and stock check: every field it needs has a verified route. It leaves out Menu items out of stock or running low at each location and On-hand ingredient counts from the last stock count.',
     });
     expect(partial.decline).toBeNull();
 
@@ -284,7 +284,7 @@ describe('DATA-01: the authorized data-coverage matrix', () => {
     expect(none.status).toBe('incomplete');
     expect(none.narrower).toBeNull();
     expect(none.decline).toBe(
-      'Not offered as automated: no usable route reads net sales by location for yesterday and menu items out of stock or running low at each location, and nothing is filled in for them. No narrower version is fully covered either.',
+      'Not offered as automated: no usable route reads Net sales by location for yesterday and Menu items out of stock or running low at each location, and nothing is filled in for them. No narrower version is fully covered either.',
     );
 
     // A complete workflow needs neither.
@@ -298,6 +298,16 @@ describe('DATA-01: the authorized data-coverage matrix', () => {
     expect(complete.status).toBe('complete');
     expect(complete.narrower).toBeNull();
     expect(complete.decline).toBeNull();
+  });
+
+  test('brand names in field labels stay as declared in a decline and a narrower offer', () => {
+    const workflow: CoverageWorkflow = {
+      ...RESTAURANT_WORKFLOW,
+      fields: RESTAURANT_WORKFLOW.fields.map((field) => field.id === 'menu-availability'
+        ? { ...field, label: 'Toast tips' } : field),
+    };
+    expect(matrixOf(workflow, NO_ACCESS_ROUTES).decline).toContain('Toast tips');
+    expect(matrixOf(workflow, PARTIAL_ACCESS_ROUTES).narrower?.reason).toContain('Toast tips');
   });
 
   test('a route is verified only on current validated evidence', () => {
@@ -329,7 +339,7 @@ describe('DATA-01: the authorized data-coverage matrix', () => {
     expect(later.awaitingVerification).toEqual(['qbo-weekly-export']);
     expect(later.narrower).toBeNull();
     expect(later.decline).toBe(
-      'Not offered as automated: no usable route reads cash in the operating account right now, and nothing is filled in for it; it depends on Weekly QuickBooks Online report exports, which is not verified. No narrower version is fully covered either.',
+      'Not offered as automated: no usable route reads Cash in the operating account right now, and nothing is filled in for it; it depends on Weekly QuickBooks Online report exports, which is not verified. No narrower version is fully covered either.',
     );
 
     // Validated evidence on a route that is not set up for this business does not verify it.

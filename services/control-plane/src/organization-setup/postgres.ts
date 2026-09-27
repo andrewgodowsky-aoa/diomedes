@@ -45,7 +45,9 @@ export class PostgresOrganizationSetupTransaction implements OrganizationSetupTr
   constructor(private readonly client: SqlClient) {}
 
   async lockOrganization(organizationId: string) {
-    await this.client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [JSON.stringify(['organization-setup', organizationId])]);
+    // AccountService locks this same row before changing membership. A separate
+    // setup-only advisory lock would let revocation commit during a setup save.
+    await this.client.query('SELECT id FROM control_plane.organizations WHERE id=$1 FOR UPDATE', [organizationId]);
   }
   async latest(organizationId: string): Promise<OrganizationSetupRow | undefined> {
     const result = await this.client.query(
