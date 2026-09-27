@@ -30,7 +30,7 @@ import {
   WEEKLY_VISUAL,
   type ArtifactEngine,
 } from './fixtures/scripted-artifacts';
-import { gateway, nectoviaAccounts } from './fixtures/nectovia-home';
+import { gateway, linkHome, nectoviaAccounts } from './fixtures/nectovia-home';
 import { shareAfter } from './fixtures/cloud-sharing-grant';
 
 // Model artifacts in the real Console: the real host, Store, event stream and built bundle, with
@@ -1433,6 +1433,8 @@ test('live text holds an artifact back until its answer is saved', async ({ page
 
 test('on the Nectovia page the panel opens beside the conversation, and says why it cannot save there', async ({ page }, testInfo) => {
   await freshProject('Home page');
+  // The Agent works only in a project one business owns, so the owner links Home, as Workspaces does.
+  await linkHome(api);
   await page.goto(url);
   await expect(page.getByRole('heading', { name: 'Nectovia', exact: true })).toBeVisible();
   const box = page.getByRole('textbox', { name: 'Message Nectovia' });

@@ -9,7 +9,7 @@ import { testOnlySecretBox } from '../server/connection-secrets';
 import type { Project, ProjectState } from '../shared/types';
 import { SCRIPTED_MODEL, scriptedEngineService } from './fixtures/scripted-conversation';
 import { awsTransport } from './fixtures/scripted-home-luna';
-import { gateway, nectoviaAccounts, refusal } from './fixtures/nectovia-home';
+import { gateway, linkHome, linkToBusiness, nectoviaAccounts, refusal } from './fixtures/nectovia-home';
 import { shareAfter } from './fixtures/cloud-sharing-grant';
 
 // The Diomedes page end to end in a real browser: the real Store, Runtime, session driver and
@@ -19,6 +19,9 @@ import { shareAfter } from './fixtures/cloud-sharing-grant';
 // gateway, and the scripted provider answers behind the gateway at the provider boundary. The
 // customer connects nothing. It never calls a model, uses credentials or spends quota. Like
 // native-ui.spec.ts it serves the built bundle, so it refuses a stale one.
+//
+// The Agent works only in a project one business owns, so the owner links Home, and each project
+// a case talks in, to the business first, the way Workspaces does.
 test.describe.configure({ mode: 'serial' });
 
 const port = Number(process.env.DIOMEDES_HOME_UI_PORT ?? 47639);
@@ -135,6 +138,8 @@ test.beforeAll(async () => {
     },
   });
   project = await api<Project>('/projects', 'POST', { name: 'Linen service' });
+  // Linked, not chosen as where the business writes: Automations still has nowhere to open.
+  await linkToBusiness(api, project.id);
   // The project's own work runs on the scripted sample worker, so starting Work needs no
   // provider. The conversation runs on Nectovia: the provisioner's default pins its thread.
   const store = application.locals.store as Store;
@@ -184,6 +189,8 @@ test('the app opens to Diomedes, and looking at it creates nothing', async ({ pa
 
 test('a greeting is answered and starts nothing', async ({ page }) => {
   await open(page);
+  // Looking made nothing (above). Linking Home is what makes it; the send finds it.
+  const linked = await linkHome(api);
   const calls = gateway.length;
   await say(page, 'Good morning');
   await expect(answers(page).last()).toHaveText('You said: Good morning');
@@ -195,10 +202,10 @@ test('a greeting is answered and starts nothing', async ({ page }) => {
   expect(gateway.at(-1)!.headers['x-nectovia-organization']).toMatch(/\S/);
   expect(direct).toBe(0);
 
-  // The first message made the home conversation. It is nobody's project: the listing leaves
-  // it out, and no task or work exists anywhere.
+  // The answer is in the home conversation the owner linked. The listing still leaves it out,
+  // and no task or work exists anywhere.
   const bound = await home();
-  expect(bound).not.toBeNull();
+  expect(bound).toEqual(linked);
   expect((await listed()).map((item) => item.id)).toEqual([project.id]);
   const before = await state();
   expect([before.tasks.length, before.sessions.length]).toEqual([0, 0]);
@@ -329,10 +336,11 @@ test('a message the server refuses stays in the box', async ({ page }) => {
   }
 });
 
-// CD-05.R-2's reproducers, pasted unchanged from
-// docs/implementation/2026-09-21-core-agent-client-review-r2.md.
+// CD-05.R-2's reproducers, pasted from docs/implementation/2026-09-21-core-agent-client-review-r2.md.
+// Each project is now linked to the business before its first message.
 async function reviewProject(page: Page, name: string) {
   const p = await api<Project>('/projects', 'POST', { name });
+  await linkToBusiness(api, p.id);
   const store = application!.locals.store as Store;
   const saved = store.state(p.id);
   saved.project.ai = { engine: 'sample', model: null };
@@ -449,6 +457,7 @@ test('CD05-R-09: refusal after a lost reply exposes the retained message', async
 
 test('CD05-R-10: concurrent first sends adopt one project thread', async ({ page, context }) => {
   const p = await api<Project>('/projects', 'POST', { name: 'R10 project' });
+  await linkToBusiness(api, p.id);
   const other = await context.newPage();
   try {
     await Promise.all([open(page), open(other)]);
@@ -826,6 +835,7 @@ test("CD05-R-10 closure: a first send's lost reply is recovered from the other w
   context,
 }) => {
   const p = await api<Project>('/projects', 'POST', { name: 'R10b project' });
+  await linkToBusiness(api, p.id);
   const other = await context.newPage();
   try {
     // Both windows read the fresh project before either sends, so neither has seen a thread.
