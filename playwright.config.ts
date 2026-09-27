@@ -107,6 +107,7 @@ export default defineConfig({
     'automations.spec.ts',
     'files-pane-ux-20260917.spec.ts',
     'h01-preview-repair.spec.ts',
+    'reasoning-ui.spec.ts',
     'independent-h01-final-20260917.spec.ts',
     'allowance-ui.spec.ts',
     'organization-export-ui.spec.ts',
