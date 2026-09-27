@@ -153,8 +153,8 @@ export function chatEvents(answer: {
   id?: string;
   model: string;
   provider?: string;
-  /** Thinking the model returns before its answer, as OpenRouter streams it: `delta.reasoning`. */
-  reasoning?: string;
+  /** Thinking the model returns before its answer, as OpenRouter streams it: `delta.reasoning`, one per part. */
+  reasoning?: string | string[];
   text?: string;
   toolCalls?: { id: string; name: string; arguments: string }[];
   finishReason?: string | null;
@@ -164,8 +164,8 @@ export function chatEvents(answer: {
 }): string {
   const base = { id: answer.id ?? 'gen-1', object: 'chat.completion.chunk', created: 1_790_000_000, model: answer.model, ...(answer.provider ? { provider: answer.provider } : {}) };
   let out = frame({ ...base, choices: [{ index: 0, delta: { role: 'assistant', content: '' }, finish_reason: null }] });
-  if (answer.reasoning)
-    out += frame({ ...base, choices: [{ index: 0, delta: { reasoning: answer.reasoning }, finish_reason: null }] });
+  for (const reasoning of typeof answer.reasoning === 'string' ? [answer.reasoning] : (answer.reasoning ?? []))
+    out += frame({ ...base, choices: [{ index: 0, delta: { reasoning }, finish_reason: null }] });
   const text = answer.text ?? '';
   const size = answer.split ?? 4;
   for (let at = 0; at < text.length; at += size)

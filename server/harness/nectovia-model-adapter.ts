@@ -35,7 +35,8 @@ export const NECTOVIA_MODEL_CONTRACT: AdapterRouteContract = modelApiContract({
 
 export interface NectoviaModelAdapterOptions extends StreamSinks {
   base: string;
-  account: Pick<NectoviaAccount, 'refreshPolicy'>;
+  /** `policy` says, per tier, whether the gateway accepts reasoning summaries for this turn. */
+  account: Pick<NectoviaAccount, 'refreshPolicy'> & Partial<Pick<NectoviaAccount, 'policy'>>;
   connectionId: string;
   model: string;
   managed: ManagedAdmission;
@@ -88,7 +89,7 @@ export function createNectoviaModelAdapter(options: NectoviaModelAdapterOptions)
       'The gateway meters each call against the business’s credits; the local ledger is a guard, never the balance.',
       'Stopping a call closes the HTTP read and leaves its local hold uncertain until the gateway’s record settles it.',
     ],
-    sinks: { onDelta: options.onDelta, onToolActivity: options.onToolActivity },
+    sinks: { onDelta: options.onDelta, onToolActivity: options.onToolActivity, onReasoningDelta: options.onReasoningDelta },
     admitStep: (call) =>
       admitJobStep({
         prefix: 'nectovia',

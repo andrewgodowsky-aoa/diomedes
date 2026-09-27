@@ -85,7 +85,7 @@ export function createVertexModelAdapter(options: VertexModelAdapterOptions): Mo
       'The reported model is Vertex’s modelVersion, recorded beside the requested model and the project.',
       'Stopping a call closes the HTTP read. It does not prove Google stopped processing, so the spend hold stays uncertain.',
     ],
-    sinks: { onDelta: options.onDelta, onToolActivity: options.onToolActivity },
+    sinks: { onDelta: options.onDelta, onToolActivity: options.onToolActivity, onReasoningDelta: options.onReasoningDelta },
     respond: (call) =>
       respondVertex({
         connection,

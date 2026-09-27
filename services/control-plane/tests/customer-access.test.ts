@@ -199,9 +199,9 @@ describe('Diomedes staff administration', () => {
       .toMatchObject({ status: 'qualified', evidence: 'Faux seed: scripted provider, 2026-09-25' });
   });
 
-  it('tells a reader of the routing policy that the gateway accepts reasoning summaries', async () => {
+  it('tells a reader, tier by tier, whether the upstream serving it accepts reasoning summaries', async () => {
     const policy = await call('GET', '/account/routing-policy', await token('employee'));
-    expect(policy.body.reasoningSummaries).toBe(true);
+    expect(policy.body.reasoningSummaries).toEqual({ efficient: true, focused: true, thorough: true });
   });
 
   it('publishes only qualified routes, refuses a stale publish, and rolls back as a new revision', async () => {
@@ -215,6 +215,9 @@ describe('Diomedes staff administration', () => {
     expect(preview.body.changes).toHaveLength(1);
     const published = await call('POST', '/ops/routing/publish', routing, { tiers: { efficient: 'aws-luna-6', focused: 'aws-luna-6', thorough: 'aws-sol-6' }, note: 'Move Thorough to GPT-6 Sol.', baseRevision: 1 });
     expect(published.body).toMatchObject({ revision: 2, tiers: { thorough: { model: 'us.openai.gpt-6-sol' } } });
+    // GPT-6 Sol has no provider registry line saying it accepts reasoning summaries, so Thorough is never asked for them.
+    const moved = await call('GET', '/account/routing-policy', await token('employee'));
+    expect(moved.body.reasoningSummaries).toEqual({ efficient: true, focused: true, thorough: false });
     expect((await call('POST', '/ops/routing/publish', routing, { tiers: { efficient: 'aws-luna-5-6', focused: null, thorough: null }, note: 'stale', baseRevision: 1 })).status).toBe(409);
     // A route in use cannot be unqualified until a policy stops using it.
     expect((await call('POST', '/ops/routes', routing, { id: 'aws-sol-6', provider: 'aws-bedrock', model: 'us.openai.gpt-6-sol', label: 'GPT-6 Sol', region: 'us',

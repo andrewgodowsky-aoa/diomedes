@@ -76,7 +76,7 @@ export function createOpenRouterModelAdapter(
       'The reported model and serving endpoint are checked against the request before the answer is used.',
       'Stopping a call closes the HTTP read and leaves its spend hold uncertain.',
     ],
-    sinks: { onDelta: options.onDelta, onToolActivity: options.onToolActivity },
+    sinks: { onDelta: options.onDelta, onToolActivity: options.onToolActivity, onReasoningDelta: options.onReasoningDelta },
     admitStep: (call) =>
       admitJobStep({
         prefix: 'openrouter',

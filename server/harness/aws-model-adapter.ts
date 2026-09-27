@@ -86,7 +86,7 @@ export function createAwsModelAdapter(options: AwsModelAdapterOptions): ModelAda
       'The reported model is the provider envelope’s model field, recorded beside the requested model.',
       'Stopping a call closes the HTTP read and leaves its spend hold uncertain.',
     ],
-    sinks: { onDelta: options.onDelta, onToolActivity: options.onToolActivity },
+    sinks: { onDelta: options.onDelta, onToolActivity: options.onToolActivity, onReasoningDelta: options.onReasoningDelta },
     admitStep: (call) =>
       admitJobStep({
         prefix: 'aws',
