@@ -4,7 +4,7 @@ import {
   sendMessage,
   type DispatchIdentity,
 } from '../conversation-send';
-import { isKeptSessionRoute, isRoute, routeDisplayName, type KeptSessionRoute } from '../../shared/engines';
+import { isKeptSessionRoute, isRoute, type KeptSessionRoute } from '../../shared/engines';
 import { isModelApiRoute, MODEL_API_NAMES, type ModelApiRoute } from '../../shared/model-api';
 import type { ConversationMode, MessageResult } from '../../shared/conversation';
 import type { Conversation, Mode, Route } from '../../shared/types';
@@ -18,7 +18,8 @@ import type { ReadAccess } from '../../shared/read-access';
  * model-API route or a kept-session engine (ChatGPT, OpenCode, Cursor, Devin) answer through
  * the conversation (`conversation-send.ts`), which holds that route's lineage or the engine's
  * kept session, its read tools and its tool activity. Claude Code project threads keep the
- * direct request path (O38), and Build and Fix keep it on every route.
+ * direct request path (O38), Build and Fix keep it on every route, and so does a playbook
+ * message on a kept-session engine, because the conversation takes no playbook yet.
  */
 
 /** What `GET /projects/:id/threads/:threadId/work-style` says about the route, and nothing more. */
@@ -70,12 +71,16 @@ export function planThreadSend(view: ThreadRouteView, mode: Mode, skill?: string
   const conversational = conversationMode(mode);
   if (throughConversation(view.route) && conversational) {
     // The conversation takes no playbook, and dropping one silently would send a different
-    // request from the one the person composed.
-    if (skill)
+    // request from the one the person composed. A kept-session engine ran playbooks on the
+    // direct request path before its conversation existed, so that message keeps it; a
+    // model-API route's conversation refuses the playbook.
+    if (skill) {
+      if (isKeptSessionRoute(view.route)) return { kind: 'direct', route: view.route };
       return {
         kind: 'refuse',
-        reason: `Playbooks do not run in ${isModelApiRoute(view.route) ? MODEL_API_NAMES[view.route] : routeDisplayName(view.route)} conversations yet. Remove the playbook to send this message.`,
+        reason: `Playbooks do not run in ${MODEL_API_NAMES[view.route]} conversations yet. Remove the playbook to send this message.`,
       };
+    }
     return { kind: 'conversation', route: view.route, mode: conversational };
   }
   if (!isRoute(view.route))

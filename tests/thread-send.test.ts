@@ -43,11 +43,11 @@ describe('planThreadSend', () => {
     const planned = planThreadSend(on('openrouter'), 'ask', 'weekly-brief');
     expect(planned).toMatchObject({ kind: 'refuse' });
     if (planned.kind === 'refuse') expect(planned.reason).toMatch(/^Playbooks do not run in OpenRouter/);
-    // A kept-session conversation takes no playbook either, and says so by the engine's name.
-    expect(planThreadSend(on('codex'), 'plan', 'weekly-brief')).toEqual({
-      kind: 'refuse',
-      reason: 'Playbooks do not run in ChatGPT conversations yet. Remove the playbook to send this message.',
-    });
+    // A kept-session engine ran playbooks on the direct request path before its conversation
+    // existed. The conversation takes no playbook yet, so that message keeps the direct path
+    // rather than being refused.
+    for (const route of ['codex', 'opencode', 'cursor', 'devin'] as const)
+      expect(planThreadSend(on(route), 'plan', 'weekly-brief')).toEqual({ kind: 'direct', route });
     // Elsewhere the playbook rides the direct path as before.
     expect(planThreadSend(on('claude-code'), 'ask', 'weekly-brief')).toEqual({ kind: 'direct', route: 'claude-code' });
   });

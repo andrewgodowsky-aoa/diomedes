@@ -33,6 +33,19 @@ describe('what the Console says about a native session (H03)', () => {
     expect(sessionLine(view({ reportedModel: null }))?.attribution).toBe('Claude Code');
   });
 
+  it('names ChatGPT, OpenCode, Cursor and Devin as a person reads them, never by their route ids', () => {
+    for (const [route, name] of [
+      ['codex-session', 'ChatGPT'],
+      ['opencode-session', 'OpenCode'],
+      ['cursor-session', 'Cursor'],
+      ['devin-session', 'Devin'],
+    ] as const)
+      expect(
+        sessionLine(view({ controls: sessionControls(routeContractFor(route)), reportedModel: 'fixture-model' }))
+          ?.attribution,
+      ).toBe(`${name} · fixture-model`);
+  });
+
   it('says a saved session resumes, and says why one cannot', () => {
     expect(sessionLine(view({ continuity: { state: 'resumable', detail: 'x', cursor: 1 } }))?.state).toBe(
       'Resumes on your next message',
