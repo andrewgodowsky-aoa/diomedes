@@ -25,9 +25,10 @@
 - Heavy commands (vitest, tsc, vite build, Playwright, npm ci) run only under the heavy slot, one at a time:
   - take: `node services/control-plane/node_modules/tsx/dist/cli.mjs scripts/coordination.ts slot --role opus --pid <claude pid> --worktree F:/Diomedes/diomedes-wt/codex-conversation-driver --purpose "<what>" --node codex-conversation-driver`
   - release: `... unslot --role opus --pid <claude pid> --worktree <same> --slot <slotId>`
-  - Before the first `tsx` call in this worktree, run it from `F:/Diomedes/diomedes-wt/free-harness-paid-agent`, whose `services/control-plane/node_modules` exists.
+  - `<claude pid>` is the `claude.exe` that owns this session's shell, found by walking the process tree (`Get-CimInstance Win32_Process`). It changes whenever the app restarts: 17656 before the 2026-09-27 power cut, 3716 after it.
+  - Until this worktree has its own `node_modules`, run `tsx` from `F:/Diomedes/diomedes-wt/free-harness-paid-agent`, whose `services/control-plane/node_modules` exists.
 - This worktree has no `node_modules`. Before the first test, under the slot: `npm ci` at the root, then `npm ci` in `services/control-plane`.
-- Commit locally on `feature/codex-conversation-driver` after every task (Andrew, 2026-09-27: "commit locally in case it goes again"). No Co-Authored-By or AI trailer. Push and merge need Andrew's approval.
+- Commit locally on `feature/codex-conversation-driver` after every step that leaves `tsc` green, not only after each task (Andrew, 2026-09-27: "commit locally in case it goes again", after a power cut). No Co-Authored-By or AI trailer. Push and merge need Andrew's approval.
 - Copy: plain words, contractions, no dashes in sentences a person reads. The fold line reads "Thought for 14s", or "Thought for a moment" under 1.5 s. A cut record ends with "Shortened to fit."
 - Standing design decisions 4 and 5: the Thinking section never repeats the waiting line or the reply, and its text wraps.
 
@@ -80,7 +81,7 @@
   - `interface ReasoningSink { (raw: string): void; finish(): ReasoningRecord | null }`
   - `reasoningSink(options: { identity; redact?; onReasoning?: (frame: ReasoningPreview) => void; signal?: AbortSignal; now?: () => number }): ReasoningSink`
   - `AdapterRouteContract['streaming']['reasoning']: 'reasoning-delta' | 'none'`
-  - `MODEL_API_STREAMING` exported from `server/harness/model-api-adapter.ts`
+  - `MODEL_API_REASONING: Readonly<Record<ModelApiRoute, 'reasoning-delta' | 'none'>>`, exported from `server/harness/model-api-adapter.ts`. It holds one declaration per model-API route, so a provider that refuses summaries is switched to `none` alone. `modelApiContract` reads it, and so does EngineService.
   - `TextRequest.onReasoning?: (frame: ReasoningPreview) => void`, `TextRequest.onReasoningDelta?: (text: string) => void`, `TextResponse.reasoning?: ReasoningRecord`
   - `Turn.thinking?: ReasoningRecord`
 
@@ -99,7 +100,13 @@ import {
 } from '../shared/adapter-contract.js';
 import { contractChecks } from '../server/harness/conformance.js';
 import { ROUTE_CONTRACTS, routeContractFor } from '../server/harness/route-contract.js';
-import { MODEL_API_STREAMING, modelApiContract } from '../server/harness/model-api-adapter.js';
+import { MODEL_API_REASONING } from '../server/harness/model-api-adapter.js';
+import { AWS_MODEL_CONTRACT } from '../server/harness/aws-model-adapter.js';
+import { AZURE_MODEL_CONTRACT } from '../server/harness/azure-model-adapter.js';
+import { NECTOVIA_MODEL_CONTRACT } from '../server/harness/nectovia-model-adapter.js';
+import { OPENROUTER_MODEL_CONTRACT } from '../server/harness/openrouter-model-adapter.js';
+import { VERTEX_MODEL_CONTRACT } from '../server/harness/vertex-model-adapter.js';
+import { MODEL_API_ROUTES } from '../shared/model-api.js';
 
 const identity = {
   projectId: 'P1',
@@ -226,11 +233,20 @@ describe('route descriptors declare thinking', () => {
     expect(adapterRouteContractSchema.safeParse(contract).success).toBe(true);
   });
 
-  test('every registered route and every model-API route declares it', () => {
+  test('every registered route declares it, and each model-API route follows its own entry', () => {
     for (const contract of Object.values(ROUTE_CONTRACTS))
       expect(['reasoning-delta', 'none']).toContain(contract.streaming.reasoning);
-    const model = modelApiContract({ routeId: 'aws-bedrock', sdk: 'ai@7', protocol: 'responses', label: 'AWS Bedrock' });
-    expect(model.streaming).toEqual(MODEL_API_STREAMING);
+    expect(Object.keys(MODEL_API_REASONING).sort()).toEqual([...MODEL_API_ROUTES].sort());
+    for (const contract of [
+      AWS_MODEL_CONTRACT,
+      AZURE_MODEL_CONTRACT,
+      NECTOVIA_MODEL_CONTRACT,
+      OPENROUTER_MODEL_CONTRACT,
+      VERTEX_MODEL_CONTRACT,
+    ])
+      expect(contract.streaming.reasoning).toBe(
+        MODEL_API_REASONING[contract.routeId as keyof typeof MODEL_API_REASONING],
+      );
   });
 
   test('a route cannot stream thinking without a live text channel', () => {
@@ -428,21 +444,34 @@ In `adapterRouteContractSchema`, change `streaming` to:
 
 In `server/harness/route-contract.ts`, give every `streaming` literal a `reasoning: 'none'` key between `transientPreview` and `durableEvents`, for example `{ transientPreview: 'text-delta', reasoning: 'none', durableEvents: 'run-record' }`. That is the `ACP_SESSION_CONTRACT` literal and every entry of `ROUTE_CONTRACTS`. Do the same in `server/durable-controls-fixture.ts:43` and in the three inline descriptors of `tests/h01-conformance.test.ts` (lines 77, 114, 160).
 
-In `server/harness/model-api-adapter.ts`, add above `modelApiContract`:
+In `server/harness/model-api-adapter.ts`, import `type ModelApiRoute` from `../../shared/model-api.js` and add above `modelApiContract`:
 
 ```ts
 /**
- * What every model-API route streams: text previews, its model's thinking where the provider
- * returns it (model-api-core.ts), and the run record. One declaration, read by EngineService.
+ * Which model-API routes stream their model's thinking (`streaming.reasoning`). One entry per
+ * route, so a provider that refuses reasoning summaries declares `none` on its own line. Each
+ * route's contract and EngineService both read it.
  */
-export const MODEL_API_STREAMING: AdapterRouteContract['streaming'] = Object.freeze({
-  transientPreview: 'text-delta',
-  reasoning: 'none',
-  durableEvents: 'run-record',
+export const MODEL_API_REASONING: Readonly<
+  Record<ModelApiRoute, AdapterRouteContract['streaming']['reasoning']>
+> = Object.freeze({
+  'aws-bedrock': 'none',
+  'azure-openai': 'none',
+  openrouter: 'none',
+  'google-vertex': 'none',
+  nectovia: 'none',
 });
 ```
 
-and in `modelApiContract` replace the `streaming:` line with `streaming: { ...MODEL_API_STREAMING },`.
+and in `modelApiContract` replace the `streaming:` line with:
+
+```ts
+    streaming: {
+      transientPreview: 'text-delta',
+      reasoning: MODEL_API_REASONING[route.routeId as ModelApiRoute] ?? 'none',
+      durableEvents: 'run-record',
+    },
+```
 
 Then find any descriptor this missed:
 Run: `git grep -n "durableEvents:" -- server tests shared`
@@ -533,7 +562,7 @@ git commit -m "Add the thinking channel to the adapter contract"
 - Test: `tests/live-reasoning-server.test.ts` (new)
 
 **Interfaces:**
-- Consumes: Task 1's `reasoningSink`, `ReasoningSink`, `ReasoningRecord`, `ReasoningPreview`, `MODEL_API_STREAMING`, `TextRequest.onReasoning`, `TextRequest.onReasoningDelta`, `TextResponse.reasoning`, `Turn.thinking`.
+- Consumes: Task 1's `reasoningSink`, `ReasoningSink`, `ReasoningRecord`, `ReasoningPreview`, `MODEL_API_REASONING`, `TextRequest.onReasoning`, `TextRequest.onReasoningDelta`, `TextResponse.reasoning`, `Turn.thinking`.
 - Produces:
   - `ClaudeSessionTurn.preview(...)` returns `{ onDelta; onToolActivity?; onReasoningDelta?: (text: string) => void; finish }`
   - `ModelSessionTurn.activity(...)` returns `{ onDelta; onToolActivity; onReasoningDelta?(text: string): void; finish }`
@@ -689,7 +718,19 @@ async function api<T>(route: string, method = 'GET', body?: unknown): Promise<T>
   return JSON.parse(text) as T;
 }
 
-/** Files under `dir` that hold `marker` anywhere except inside a `thinking` field. */
+/** What is left of a JSON text once every `thinking` field is removed, or null when it isn't JSON. */
+const withoutThinking = (text: string): string | null => {
+  try {
+    return JSON.stringify(JSON.parse(text, (key, value) => (key === 'thinking' ? undefined : value)));
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Files under `dir` that hold `marker` anywhere except inside a `thinking` field. A file is read
+ * as one JSON document, or else line by line as a journal; text that is neither is a leak.
+ */
 async function leaks(dir: string, marker: string): Promise<string[]> {
   const found: string[] = [];
   for (const entry of await fs.readdir(dir, { recursive: true, withFileTypes: true })) {
@@ -697,14 +738,14 @@ async function leaks(dir: string, marker: string): Promise<string[]> {
     const file = path.join(entry.parentPath, entry.name);
     const text = await fs.readFile(file, 'utf8').catch(() => '');
     if (!text.includes(marker)) continue;
-    let outside = true;
-    try {
-      outside = JSON.stringify(
-        JSON.parse(text, (key, value) => (key === 'thinking' ? undefined : value)),
-      ).includes(marker);
-    } catch {
-      // Not one JSON document (a journal, a log): holding the thinking at all is a leak.
-    }
+    const whole = withoutThinking(text);
+    const outside =
+      whole !== null
+        ? whole.includes(marker)
+        : text
+            .split('\n')
+            .filter((line) => line.includes(marker))
+            .some((line) => withoutThinking(line)?.includes(marker) ?? true);
     if (outside) found.push(path.relative(dir, file));
   }
   return found;
@@ -974,7 +1015,7 @@ In `server/engines/service.ts`, at each of the five `PREVIEW_CONTRACT` refusals,
     if (input.onDelta || input.onToolActivity || input.onReasoningDelta)
 ```
 
-Import from `../../shared/adapter-contract.js`: `reasoningSink`, `type AdapterRouteContract`, `type ReasoningSink`. Import `routeContractFor` from `../harness/route-contract.js` and `MODEL_API_STREAMING` from `../harness/model-api-adapter.js` if they are not imported already.
+Import from `../../shared/adapter-contract.js`: `reasoningSink`, `type AdapterRouteContract`, `type ReasoningSink`. Import `routeContractFor` from `../harness/route-contract.js` and `MODEL_API_REASONING` from `../harness/model-api-adapter.js` if they are not imported already.
 
 - [ ] **Step 5: Wrap the sink on the text dispatch**
 
@@ -1074,7 +1115,7 @@ After `onToolActivity`:
 
 and return `onReasoningDelta,` beside `onDelta` and `onToolActivity`.
 
-In `modelSession`, declare `let thinking: ReasoningSink | undefined;` at the top. Change the `activity:` condition to `input.onPreview || input.onActivity || input.onReasoning`, pass `MODEL_API_STREAMING.reasoning === 'reasoning-delta'` as `fencedSinks`'s fifth argument, set `thinking = sinks.onReasoningDelta;`, and return:
+In `modelSession`, declare `let thinking: ReasoningSink | undefined;` at the top. Change the `activity:` condition to `input.onPreview || input.onActivity || input.onReasoning`, pass `MODEL_API_REASONING[route] === 'reasoning-delta'` as `fencedSinks`'s fifth argument, set `thinking = sinks.onReasoningDelta;`, and return:
 
 ```ts
                 return {
@@ -1516,7 +1557,7 @@ git commit -m "Stream OpenCode's thinking"
 - Modify: `server/engines/azure-openai.ts` (`azureBinding` at 180, its caller at ~253)
 - Modify: `server/engines/google-vertex.ts` (`inspectVertexBody` at ~645, `vertexBinding` at 662, its caller at ~737)
 - Modify: `server/engines/openrouter.ts` (no request change; see Step 4)
-- Modify: `server/harness/model-api-adapter.ts` (`MODEL_API_STREAMING.reasoning`)
+- Modify: `server/harness/model-api-adapter.ts` (`MODEL_API_REASONING`)
 - Modify: `tests/fixtures/model-api-streams.ts` (`responsesEvents` streams reasoning summaries)
 - Test: `tests/aws-bedrock-transport.test.ts`, `tests/azure-openai-model-api.test.ts`, `tests/google-vertex-model-api.test.ts`, `tests/openrouter-model-api.test.ts`
 
@@ -1526,7 +1567,7 @@ git commit -m "Stream OpenCode's thinking"
   - `awsBinding(connection, effort, summaries: boolean)`
   - `azureBinding(connection, entry, effort, summaries: boolean)`
   - `vertexBinding(connection, effort, callIdBase, summaries: boolean)`
-  - `MODEL_API_STREAMING.reasoning` becomes `'reasoning-delta'`.
+  - `MODEL_API_REASONING` declares `'reasoning-delta'` for `aws-bedrock`, `azure-openai`, `google-vertex` and `openrouter`. `nectovia` follows in Task 7.
 
 The request options, per provider:
 
@@ -1661,7 +1702,7 @@ Expected: FAIL.
 
 `server/engines/openrouter.ts`: no request change. `@openrouter/ai-sdk-provider` already turns a model's returned reasoning into `reasoning-delta` parts, and the loop above maps them.
 
-`server/harness/model-api-adapter.ts`: set `MODEL_API_STREAMING.reasoning` to `'reasoning-delta'`.
+`server/harness/model-api-adapter.ts`: in `MODEL_API_REASONING`, set `aws-bedrock`, `azure-openai`, `google-vertex` and `openrouter` to `'reasoning-delta'`. Bedrock's acceptance of `reasoning.summary` is proven only by the paid Luna proof (spec section 7). If that proof shows Bedrock refuses it, the fix is this one entry back to `'none'`. Name this in the Task 9 report.
 
 - [ ] **Step 5: Run the tests to see them pass**
 
@@ -1684,7 +1725,8 @@ git commit -m "Stream model-API thinking and ask for reasoning summaries"
 - Modify: `server/engines/nectovia.ts` (`NectoviaPolicy` at 54-57; `nectoviaBinding` at 258; its caller at ~377)
 - Modify: `services/control-plane/src/managed-inference.ts:249-253` (request validator)
 - Modify: `services/control-plane/src/commercial.ts:470-477` (`routingPolicy`)
-- Test: `tests/nectovia-route.test.ts` (find the existing Nectovia binding test with `git grep -ln "nectoviaBinding" tests`; add there if one exists), `services/control-plane/test/managed-inference.test.ts` (find with `git grep -ln "reasoning.summary" services/control-plane`)
+- Modify: `server/harness/model-api-adapter.ts` (`MODEL_API_REASONING.nectovia`)
+- Test: `tests/nectovia-route.test.ts` (new; if `git grep -ln "nectoviaBinding" tests` finds an existing binding test, add there instead and point Task 9's `TESTS` map at it), and the control-plane managed-inference test file (`git grep -ln "reasoning.summary" services/control-plane`)
 
 **Interfaces:**
 - Consumes: `StreamSinks.onReasoningDelta`, the routing policy the session already reads (`GET /account/routing-policy`).
@@ -1726,7 +1768,7 @@ Expected: FAIL.
       summaries: Boolean(rest.onReasoningDelta) && input.account.policy()?.reasoningSummaries === true,
 ```
 
-Adapt `input.account` to whatever the caller already uses to read the policy (`git grep -n "policy()" server/engines/nectovia.ts`).
+Adapt `input.account` to whatever the caller already uses to read the policy (`git grep -n "policy()" server/engines/nectovia.ts`). In `server/harness/model-api-adapter.ts`, set `MODEL_API_REASONING.nectovia` to `'reasoning-delta'`: the route's producer is the shared model-API one, and it asks for summaries only when the gateway says so.
 
 - [ ] **Step 4: Run the tests to see them pass**
 
@@ -2036,7 +2078,7 @@ git commit -m "Show an engine's thinking above its reply"
 import { describe, expect, test } from 'vitest';
 import fs from 'node:fs';
 import { ROUTE_CONTRACTS } from '../server/harness/route-contract.js';
-import { MODEL_API_STREAMING } from '../server/harness/model-api-adapter.js';
+import { MODEL_API_REASONING } from '../server/harness/model-api-adapter.js';
 
 /**
  * Every route that declares thinking has a producer test that drives it from recorded frames.
@@ -2065,9 +2107,17 @@ describe('thinking conformance', () => {
       expect(fs.readFileSync(file, 'utf8')).toMatch(/onReasoningDelta/);
   });
 
-  test('model-API routes declare thinking and their shared producer is tested', () => {
-    expect(MODEL_API_STREAMING.reasoning).toBe('reasoning-delta');
-    expect(fs.readFileSync('tests/aws-bedrock-transport.test.ts', 'utf8')).toMatch(/onReasoningDelta/);
+  test('each model-API route that declares thinking has its provider test', () => {
+    const TESTS: Record<string, string> = {
+      'aws-bedrock': 'tests/aws-bedrock-transport.test.ts',
+      'azure-openai': 'tests/azure-openai-model-api.test.ts',
+      'google-vertex': 'tests/google-vertex-model-api.test.ts',
+      openrouter: 'tests/openrouter-model-api.test.ts',
+      nectovia: 'tests/nectovia-route.test.ts',
+    };
+    for (const [route, declared] of Object.entries(MODEL_API_REASONING))
+      if (declared === 'reasoning-delta')
+        expect(fs.readFileSync(TESTS[route], 'utf8'), route).toMatch(/onReasoningDelta/);
   });
 });
 ```
@@ -2108,3 +2158,5 @@ Report:
 - That the Worker change waits for his approval to deploy.
 - The OpenRouter deviation (Task 6).
 - That the live proofs (a Claude Code conversation showing thinking, and a small paid Luna reply, the latter only with his approval) are still to run.
+- That AWS Bedrock declares thinking and asks for `reasoning.summary: 'auto'` before the Luna proof has shown Bedrock accepts it. The branch doesn't merge before the proof, and if Bedrock refuses it, one line in `MODEL_API_REASONING` turns it off.
+- That the phone relay carries no thread data yet (`server/relay` stops at its handshake), so saved thinking can't reach a phone today. When the relay starts carrying threads, it needs a decision on whether a person's own phone shows their thinking.
