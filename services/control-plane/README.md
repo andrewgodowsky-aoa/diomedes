@@ -1,9 +1,12 @@
 # Diomedes account control plane
 
-An independently packaged Fetch service for verified accounts and organization
-membership. This B01 subset does not implement payments, entitlement grants,
-funded model calls, OAuth login/refresh, remote execution or a cloud task store.
-Personal desktop and the separate marketing site do not depend on this package.
+An independently packaged Fetch service for verified accounts, organization
+membership, feature grants, staff operations and the managed inference gateway.
+The packaged Nectovia desktop signs customers in through WorkOS and uses this
+service for account access. OAuth login and refresh belong to the native client;
+Tasks, Runs and History remain with their existing owners. The marketing site
+does not depend on this package. Payments and production onboarding are not
+established by the presence of these routes.
 
 From the full repository checkout, enter services/control-plane and run:
 
@@ -106,11 +109,13 @@ plane tombstone, not provider-wide logout.
 
 Configuration must supply ENVIRONMENT (local/staging/production), comma-separated
 exact ALLOWED_ORIGINS, WORKOS_CLIENT_ID, WORKOS_ISSUER,
-WORKOS_TOKEN_AUDIENCE, and server-only WORKOS_API_KEY/DATABASE_URL. The staff
-routes (/ops/*) accept bearers only from a second WorkOS environment, named by
-STAFF_WORKOS_CLIENT_ID and the server-only STAFF_WORKOS_API_KEY. It shares the issuer
-and audience, and must not reuse the customer client or key. Without it, /ops/*
-answers 503, and customer routes never read it. Origins have
+WORKOS_TOKEN_AUDIENCE, and server-only WORKOS_API_KEY/DATABASE_URL. Since
+2026-09-26, deployed staff routes (/ops/*) use `StaffKeyVerifier`: an individually
+registered device key, checked on every request against `control_plane.staff_keys`,
+followed by the existing operator-role check. Customer WorkOS tokens do not grant
+staff access. The optional STAFF_WORKOS_* settings remain in the configuration
+contract for the earlier flow; the deployed staff verifier does not consume them.
+Origins have
 no path/trailing slash/wildcard; HTTP loopback is allowed only in local mode.
 The WorkOS resource audience needs its separately configured JWT template.
 DATABASE_URL must use a Neon hostname, sslmode=require and a non-owner
@@ -122,22 +127,24 @@ logs. Missing/invalid config and unavailable storage return 503 without fallback
 local secrets in ignored .dev.vars; none is supplied here. With no configuration,
 the local server correctly refuses requests. There is no fake-success dev flag.
 workers.dev and preview URLs stay disabled. The one route is the company
-account service, accounts.diomedes.net (a custom domain), which answers 503
-until the steps below are done.
+account service, accounts.diomedes.net (a custom domain). Incomplete server
+configuration answers 503; a configured service still refuses unsigned requests.
 
 ## Company staging: accounts.diomedes.net
 
 The Worker serves staging data at accounts.diomedes.net for the Diomedes
-Operations app and, later, Nectovia. `wrangler.jsonc` already names the host,
+Operations app and Nectovia. `wrangler.jsonc` already names the host,
 the issuer (`https://api.workos.com`) and the audience
 (`https://accounts.diomedes.net`). What needs the owner's accounts:
 
 1. **WorkOS, customers (Nectovia)** (the staging environment, AuthKit on). WorkOS
    brands the sign-in page per environment, so this one carries the Nectovia
-   logo and colors (Branding). Add the redirect URI
-   `http://127.0.0.1:47319/callback`; WorkOS allows `http://127.0.0.1` for
-   native clients
-   (workos.com/docs/reference/authkit/authentication/get-authorization-url/pkce).
+   logo and colors (Branding). Register `diomedes-auth://callback`, the exact
+   callback in `desktop/native-auth.ts`, on the application whose client ID the
+   packaged desktop uses. The old loopback URI `http://127.0.0.1:47319/callback`
+   alone does not admit the desktop callback; keep existing entries while adding
+   this one. Set the default logout URI to `https://nectovia.diomedes.net`.
+   See [WorkOS's Electron integration](https://workos.com/blog/add-authentication-to-your-electron-app-in-three-calls).
    In the access-token JWT template
    (workos.com/docs/authkit/jwt-templates), add
    `"aud": "https://accounts.diomedes.net"`. `aud` is not one of the reserved
@@ -146,20 +153,14 @@ the issuer (`https://api.workos.com`) and the audience
    `npx wrangler secret put WORKOS_API_KEY` with the `sk_test_...` key. The
    people who sign in need verified emails.
 
-   **WorkOS, staff (Diomedes Systems).** Create a second environment
-   (workos.com/docs/authkit/environments) of the **staging** type, so that its key
-   is `sk_test_...`. Outside production the Worker refuses any other key. Turn on
-   AuthKit, brand it Diomedes Systems, and add the same redirect URI and the same
-   JWT template. Put its client ID in `STAFF_WORKOS_CLIENT_ID` in both
-   `wrangler.jsonc` files, and run `npx wrangler secret put STAFF_WORKOS_API_KEY
-   --name diomedes` with its key.
-   - Only the Operations app signs in here. `/ops/*` accepts no other bearer, and
-     `/account/*` and `/managed/*` accept no staff bearer, so a customer sign-up
-     can never reach the staff routes.
-   - A client or key shared with the customer environment is refused, and
-     `/ops/*` answers 503.
-   - Staff have their own WorkOS users here. Their user IDs differ from any
-     customer-side account they also hold.
+   **Staff (Diomedes Systems).** The current Operations app creates a device key
+   and protects it with the operating system. An authorized database operator
+   registers its SHA-256 and staff identity in `control_plane.staff_keys`; the
+   raw key stays on the staff member's computer. Registration and operator-role
+   admission are separate. Withdrawing the key or revoking its account session
+   ends access. Do not create a customer account or configure another WorkOS
+   environment as a substitute for this registration. The deployed behavior is
+   in `src/identity-staff-key.ts` and `tests/staff-keys.test.ts`.
 2. **Neon** (project small-wave-81999606). Make a database `accounts_staging`,
    then migrate it with the owner's direct (non-pooler) URL:
    `CP_MIGRATION_TARGET=staging CP_STAGING_EXPECTED_HOST=<ep-....neon.tech>
@@ -181,12 +182,30 @@ the issuer (`https://api.workos.com`) and the audience
    carry the same routes and vars, and `tests/deploy-config.test.ts` fails the
    build when they differ. The vars ride with the deploy, which is why the client
    ID lives in these files and not in the dashboard.
-4. **First admin.** Build the company Operations app with the **staff**
-   environment's client ID (`OPS_WORKOS_CLIENT_ID=client_... npm run
-   package:company` in diomedes-ops) and sign in once. It refuses you and shows
-   your WorkOS user id in the staff environment, which is the one to bootstrap. Then, with the same pins as the migration,
-   run `npm run bootstrap-admin -- --subject user_...`. Sign in again as Admin
-   and add everyone else from the Staff tab; each person signs in once first.
+4. **Staff administration.** Use an existing verified Operations admin to add
+   staff after device-key registration. `scripts/bootstrap-admin.ts` is a legacy
+   WorkOS-subject bootstrap; it is not a bootstrap for the current device-key
+   identity. A fresh deployment with no admin still needs a deliberately scoped
+   database-operator bootstrap. Do not make the first customer an admin or
+   overwrite existing operator rows to work around this distinction.
+
+## Account readiness before a release
+
+From the repository root, run `node_modules/.bin/tsx scripts/account-readiness.ts`
+(`.\node_modules\.bin\tsx.cmd scripts/account-readiness.ts` in PowerShell).
+This reads the build's deployment and native callback, then makes four public GET
+requests: the service's unauthenticated refusal, the WorkOS signing keys, admission
+of the desktop PKCE callback, and refusal of a random unregistered callback. It
+uses no secrets, opens no browser, creates no account, follows no redirects, and
+returns a nonzero exit code when any check fails. A WorkOS HTTP 302 alone is not
+success: an invalid callback also redirects, to `/redirect-uri-invalid`.
+
+This check deliberately leaves real sign-in, email verification, OS callback
+delivery, authenticated database writes, organization isolation, refresh,
+restart, recovery and sign-out unverified. Complete those with an owned account
+and the actual installed app. It does not inspect or migrate Neon. A custom
+AuthKit domain requires updating the explicit destination check before this
+script will accept it.
 
 Funding writes never run as the Worker login. The managed gateway's run as
 `cp_funding`, the separately reviewed role `scripts/funding-permissions.sql`
@@ -226,8 +245,9 @@ Migration history is versioned/checksummed; the migration folder pins SQL to LF
 so Windows and Linux checkouts produce the same hashes. A transaction advisory lock protects
 the entire migration batch. DDL and version rows commit together; interruption
 rolls back to the prior version. Unknown/changed/gapped history refuses. The CLI
-accepts only an explicitly approved disposable b01_validation_* database and
-direct endpoint; it is not a production migration command.
+accepts an explicitly approved disposable b01_validation_* database and direct
+endpoint, or the pinned `accounts_staging` target described above. It is not a
+production migration command.
 
 For the operator-approved real suite set CP_TEST_DATABASE_URL through a secret
 channel, CP_TEST_ALLOW_SCHEMA_RESET=yes, and for Neon pin CP_TEST_BRANCH_ID and
