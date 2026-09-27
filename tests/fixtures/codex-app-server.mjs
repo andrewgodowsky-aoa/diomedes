@@ -23,6 +23,8 @@
  *   plan:          the account's planType (default "fixture"); changing it changes the account.
  *   signedOut:     account/read answers an API-key account, which is not ChatGPT.
  *   tool:          an item type (for example "fileChange") reported completed before the answer.
+ *   delayTurnStart: milliseconds before turn/start is answered and its turn begins. A process
+ *                  ended in that time never starts the turn or records its message.
  * Every request is appended to CODEX_FIXTURE_DIR/calls.jsonl for assertions.
  */
 import fs from 'node:fs';
@@ -124,6 +126,41 @@ function complete() {
   });
 }
 
+function beginTurn(params) {
+  const thread = find(params.threadId) ?? loaded.get(params.threadId);
+  thread.messages.push({ role: 'user', text: textOf(params.input) });
+  save(thread);
+  const turnId = `turn_${randomUUID().slice(0, 8)}`;
+  active = { threadId: thread.id, turnId, steered: [] };
+  // Decided when the turn starts: a test that rewrites control.json while this turn streams
+  // (for another process's next turn) doesn't release it.
+  const hold = control().hold;
+  const think = params.summary === 'auto' ? control().think : undefined;
+  const parts = typeof think === 'string' ? [think] : Array.isArray(think) ? think : [];
+  const preamble = control().stream;
+  if (parts.length || typeof preamble === 'string') {
+    // After the turn/start reply, as the app-server streams: the adapter registers the turn first.
+    setTimeout(() => {
+      parts.forEach((part, summaryIndex) => {
+        notify('item/reasoning/summaryPartAdded', { threadId: thread.id, turnId, itemId: 'rs_1', summaryIndex });
+        for (let at = 0; at < part.length; at += 7)
+          notify('item/reasoning/summaryTextDelta', {
+            threadId: thread.id,
+            turnId,
+            itemId: 'rs_1',
+            summaryIndex,
+            delta: part.slice(at, at + 7),
+          });
+      });
+      if (typeof preamble === 'string')
+        for (let at = 0; at < preamble.length; at += 5)
+          notify('item/agentMessage/delta', { threadId: thread.id, turnId, delta: preamble.slice(at, at + 5) });
+      if (!hold) setTimeout(complete, 5);
+    }, 20);
+  } else if (!hold) setTimeout(complete, 5);
+  return { turn: { id: turnId, status: 'inProgress' } };
+}
+
 const handlers = {
   initialize: () => ({ userAgent: 'codex_fixture/0.153.4 (fixture; stdio)' }),
   'account/read': () =>
@@ -163,36 +200,14 @@ const handlers = {
     save(thread);
     return { thread: { id: thread.id }, ...policy };
   },
-  'turn/start': (params) => {
-    const thread = find(params.threadId) ?? loaded.get(params.threadId);
-    thread.messages.push({ role: 'user', text: textOf(params.input) });
-    save(thread);
-    const turnId = `turn_${randomUUID().slice(0, 8)}`;
-    active = { threadId: thread.id, turnId, steered: [] };
-    const think = params.summary === 'auto' ? control().think : undefined;
-    const parts = typeof think === 'string' ? [think] : Array.isArray(think) ? think : [];
-    const preamble = control().stream;
-    if (parts.length || typeof preamble === 'string') {
-      // After the turn/start reply, as the app-server streams: the adapter registers the turn first.
-      setTimeout(() => {
-        parts.forEach((part, summaryIndex) => {
-          notify('item/reasoning/summaryPartAdded', { threadId: thread.id, turnId, itemId: 'rs_1', summaryIndex });
-          for (let at = 0; at < part.length; at += 7)
-            notify('item/reasoning/summaryTextDelta', {
-              threadId: thread.id,
-              turnId,
-              itemId: 'rs_1',
-              summaryIndex,
-              delta: part.slice(at, at + 7),
-            });
-        });
-        if (typeof preamble === 'string')
-          for (let at = 0; at < preamble.length; at += 5)
-            notify('item/agentMessage/delta', { threadId: thread.id, turnId, delta: preamble.slice(at, at + 5) });
-        if (!control().hold) setTimeout(complete, 5);
-      }, 20);
-    } else if (!control().hold) setTimeout(complete, 5);
-    return { turn: { id: turnId, status: 'inProgress' } };
+  'turn/start': (params, id) => {
+    const delay = control().delayTurnStart;
+    // A late reply: the caller has sent turn/start and doesn't know the turn id yet.
+    if (typeof delay === 'number') {
+      setTimeout(() => reply(id, beginTurn(params)), delay);
+      return undefined;
+    }
+    return beginTurn(params);
   },
   'turn/steer': (params, id) => {
     if (typeof params.threadId !== 'string')
