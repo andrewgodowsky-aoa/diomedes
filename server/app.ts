@@ -190,7 +190,6 @@ import {
   isExternalEngine,
   isRoute,
   isConversationRoute,
-  CONVERSATION_ROUTE_LIST,
   ROUTES,
   routeDisplayName,
   type EngineConnection,
@@ -3434,14 +3433,17 @@ export async function createApp(options: AppOptions) {
       // Checked before any field is touched, so a refused style leaves nothing half applied.
       if (b.workStyle !== undefined && b.workStyle !== null && !isWorkStyle(b.workStyle))
         throw new ApiError(400, chooseWorkStyleSentence());
-      // The home conversation runs on the routes a Diomedes conversation supports: Claude
-      // Code or a model-API route. Anything else is refused before any field is touched, so a
+      // The home conversation runs on the routes a Diomedes conversation supports: an engine
+      // with a kept session or a model-API route. Anything else is refused by its own name,
+      // with no list of engines to choose (spec decision 5), before any field is touched, so a
       // request that also renames or narrows the Mode leaves nothing half applied. Its name,
       // Mode and permission stay its own. The same predicate guards the send path.
       if (b.engine !== undefined && store.isHomeProject(id(req)) && !isConversationRoute(b.engine))
         throw new ApiError(
           409,
-          `The Diomedes conversation runs on ${CONVERSATION_ROUTE_LIST}. Its engine cannot be changed to that.`,
+          isRoute(b.engine)
+            ? `${routeDisplayName(b.engine)} can't run the Diomedes conversation, so its engine wasn't changed.`
+            : "That isn't an engine the Diomedes conversation can run on, so its engine wasn't changed.",
         );
       if (b.name !== undefined) {
         if (typeof b.name !== 'string' || !b.name.trim() || b.name.trim().length > 120)
@@ -4639,7 +4641,7 @@ export async function createApp(options: AppOptions) {
         if (!isConversationRoute(conversationRoute))
           throw new ApiError(
             409,
-            `${routeDisplayName(conversationRoute) || 'This route'} does not answer conversations. Select ${CONVERSATION_ROUTE_LIST} for this conversation before sending.`,
+            `${routeDisplayName(conversationRoute) || 'This route'} can't answer this conversation, so nothing was sent.`,
           );
         const routeName = isModelApiRoute(conversationRoute)
           ? MODEL_API_NAMES[conversationRoute]
