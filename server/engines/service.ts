@@ -38,8 +38,13 @@ import {
   activitySink,
   commandGate,
   previewSink,
+  reasoningSink,
+  type AdapterRouteContract,
   type PreviewRejection,
+  type ReasoningSink,
 } from '../../shared/adapter-contract.js';
+import { routeContractFor } from '../harness/route-contract.js';
+import { MODEL_API_REASONING } from '../harness/model-api-adapter.js';
 import type {
   PersistentTextAdapter,
   TextEngineAdapter,
@@ -1588,7 +1593,7 @@ export class EngineService {
     this.running.set(key, controller);
     const signal = AbortSignal.any([controller.signal, ...(input.signal ? [input.signal] : [])]);
     try {
-      if (input.onDelta || input.onToolActivity)
+      if (input.onDelta || input.onToolActivity || input.onReasoningDelta)
         throw new EngineError(
           'PREVIEW_CONTRACT',
           'Preview frames reach the caller through onPreview and onActivity; the raw adapter sinks are not caller-facing.',
@@ -1596,6 +1601,8 @@ export class EngineService {
         );
       const runId = textRunId(input.projectId, input.requestId);
       const previewFailures: PreviewRejection[] = [];
+      // The latest attempt's thinking; a replayed outcome streams none and keeps none.
+      let thinking: ReasoningSink | undefined;
       const outcome = await dispatch<TextAdmission, TextResponse>({
         runId,
         intent: {
@@ -1704,6 +1711,16 @@ export class EngineService {
             onActivity: (frame) => publish(() => input.onActivity?.(frame)),
             signal: attemptSignal,
           });
+          // Thinking only where the route declares it, on the same ordered, fenced queue as text.
+          thinking =
+            input.onReasoning && adapter.contract.streaming.reasoning === 'reasoning-delta'
+              ? reasoningSink({
+                  identity,
+                  redact: this.deps.redactFor?.(engine),
+                  onReasoning: (frame) => publish(() => input.onReasoning?.(frame)),
+                  signal: attemptSignal,
+                })
+              : undefined;
           let result: TextResponse;
           try {
             result = await adapter.generate({
@@ -1712,6 +1729,8 @@ export class EngineService {
               onDelta,
               onActivity: undefined,
               onToolActivity,
+              onReasoning: undefined,
+              onReasoningDelta: thinking,
             });
           } finally {
             accepting = false;
@@ -1741,7 +1760,8 @@ export class EngineService {
           return result;
         },
       });
-      return { ...outcome.result, runId: outcome.run.id };
+      const reasoning = thinking?.finish() ?? null;
+      return { ...outcome.result, runId: outcome.run.id, ...(reasoning ? { reasoning } : {}) };
     } catch (error) {
       throw seamError(error);
     } finally {
@@ -1827,8 +1847,11 @@ export class EngineService {
     const driver = route.driver;
     if (!driver)
       throw new EngineError('RUNTIME_UNAVAILABLE', 'The native session runtime is not attached.');
-    if (input.onDelta || input.onToolActivity)
+    if (input.onDelta || input.onToolActivity || input.onReasoningDelta)
       throw new EngineError('PREVIEW_CONTRACT', 'Use the bounded onPreview and onActivity channels.');
+    // What the route declares, read from the adapter admission resolved for this request.
+    let declared: AdapterRouteContract | undefined;
+    let thinking: ReasoningSink | undefined;
     const adapterAt = (location: string) => {
       const adapter = this.deps.adapter(route.engine, location, path.join(this.root, route.engine));
       if (
@@ -1852,10 +1875,11 @@ export class EngineService {
           'CONTRACT_MISMATCH',
           'The native session contract does not match this route and build.',
         );
+      declared = persistent.sessionContract;
       return persistent;
     };
     try {
-      return await driver.request({
+      const result = await driver.request({
         mode,
         runId,
         sourceRunId,
@@ -1924,9 +1948,20 @@ export class EngineService {
             redact: this.deps.redactFor?.(route.engine),
             onActivity: (frame) => publish(() => input.onActivity?.(frame)),
           });
+          thinking =
+            input.onReasoning &&
+            (declared ?? routeContractFor(route.routeId)).streaming.reasoning === 'reasoning-delta'
+              ? reasoningSink({
+                  identity,
+                  signal,
+                  redact: this.deps.redactFor?.(route.engine),
+                  onReasoning: (frame) => publish(() => input.onReasoning?.(frame)),
+                })
+              : undefined;
           return {
             onDelta,
             onToolActivity,
+            onReasoningDelta: thinking,
             finish: async () => {
               accepting = false;
               await pending;
@@ -1935,6 +1970,10 @@ export class EngineService {
           };
         },
       });
+      const reasoning = thinking?.finish() ?? null;
+      return reasoning && result.response
+        ? { ...result, response: { ...result.response, reasoning } }
+        : result;
     } catch (error) {
       throw seamError(error);
     }
@@ -2198,10 +2237,11 @@ export class EngineService {
     const api = this.modelApi;
     if (!driver || !api)
       throw new EngineError('RUNTIME_UNAVAILABLE', 'The model-API conversation runtime is not attached.', true);
-    if (input.onDelta || input.onToolActivity)
+    if (input.onDelta || input.onToolActivity || input.onReasoningDelta)
       throw new EngineError('PREVIEW_CONTRACT', 'Use the bounded onPreview and onActivity channels.');
     try {
-      return await driver.request({
+      let thinking: ReasoningSink | undefined;
+      const result = await driver.request({
         mode,
         runId,
         route,
@@ -2214,13 +2254,21 @@ export class EngineService {
         // The caller's channels, stamped with the turn step's identity and published only while
         // that exact attempt still owns its lease.
         activity:
-          input.onPreview || input.onActivity
+          input.onPreview || input.onActivity || input.onReasoning
             ? (context, stepId) => {
                 const signal = AbortSignal.any([context.signal, ...(input.signal ? [input.signal] : [])]);
-                const sinks = fencedSinks(input, { runId, stepId, attempt: context.attempt, fence: context.fence }, context, signal);
+                const sinks = fencedSinks(
+                  input,
+                  { runId, stepId, attempt: context.attempt, fence: context.fence },
+                  context,
+                  signal,
+                  MODEL_API_REASONING[route] === 'reasoning-delta',
+                );
+                thinking = sinks.onReasoningDelta;
                 return {
                   onDelta: (text) => sinks.onDelta?.(text),
                   onToolActivity: (raw) => sinks.onToolActivity?.(raw),
+                  onReasoningDelta: sinks.onReasoningDelta,
                   finish: sinks.finish,
                 };
               }
@@ -2242,6 +2290,10 @@ export class EngineService {
           };
         },
       });
+      const reasoning = thinking?.finish() ?? null;
+      return reasoning && result.response
+        ? { ...result, response: { ...result.response, reasoning } }
+        : result;
     } catch (error) {
       await this.noteJobStop(error);
       throw seamError(modelApiError(error));
@@ -2256,7 +2308,7 @@ export class EngineService {
     const key = `${input.projectId}:${input.threadId}`;
     if (this.running.has(key))
       throw new EngineError('REQUEST_ACTIVE', 'This thread already has a request in progress. Wait for it or cancel it.');
-    if (input.onDelta || input.onToolActivity)
+    if (input.onDelta || input.onToolActivity || input.onReasoningDelta)
       throw new EngineError('PREVIEW_CONTRACT', 'Use the bounded onPreview and onActivity channels.');
     // A team turn on this route runs through generateModelApiTools; this one offers no tools.
     if (input.team)
@@ -2406,7 +2458,7 @@ export class EngineService {
     const key = `${input.projectId}:${input.threadId}`;
     if (this.running.has(key))
       throw new EngineError('REQUEST_ACTIVE', 'This thread already has a request in progress. Wait for it or cancel it.');
-    if (input.onDelta || input.onToolActivity)
+    if (input.onDelta || input.onToolActivity || input.onReasoningDelta)
       throw new EngineError('PREVIEW_CONTRACT', 'Use the bounded onPreview and onActivity channels.');
     if (input.team || input.readScope)
       throw new EngineError('POLICY_MISMATCH', 'A model-API team turn carries its tools in the host registry only.', true);
@@ -2945,6 +2997,8 @@ function fencedSinks(
   identity: { runId: string; stepId: string; attempt: number; fence: number },
   context: { publishPreview: (publish: () => void) => Promise<void> },
   signal: AbortSignal,
+  /** Whether the route declares thinking (`streaming.reasoning`). Work turns pass false. */
+  reasoning = false,
 ) {
   let accepting = true;
   let pending = Promise.resolve();
@@ -2976,9 +3030,18 @@ function fencedSinks(
   const onToolActivity = input.onActivity
     ? activitySink({ identity: stamped, signal, onActivity: (frame) => publish(() => input.onActivity?.(frame)) })
     : undefined;
+  const onReasoningDelta =
+    reasoning && input.onReasoning
+      ? reasoningSink({
+          identity: stamped,
+          signal,
+          onReasoning: (frame) => publish(() => input.onReasoning?.(frame)),
+        })
+      : undefined;
   return {
     onDelta,
     onToolActivity,
+    onReasoningDelta,
     finish: async () => {
       accepting = false;
       await pending;

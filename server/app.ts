@@ -146,6 +146,8 @@ import { localHarnessPrincipal } from './harness/bridge.js';
 import { TEXT_DISPATCH_STEP, textRunId } from './harness/text-route.js';
 import {
   previewSink,
+  type ReasoningPreview,
+  type ReasoningRecord,
   type ToolActivity,
   type TransientPreview,
 } from '../shared/adapter-contract.js';
@@ -4122,6 +4124,7 @@ export async function createApp(options: AppOptions) {
         signal: req.res ? connectionSignal(req.res) : undefined,
         onPreview: (frame) => progress('delta', frame),
         onActivity: (frame) => store.emit('engine-activity', frame),
+        onReasoning: (frame) => store.emit('engine-reasoning', frame),
         // A kept ACP conversation's permission asks and plans go to a person as Needs (H05).
         ...(engine === 'cursor' || engine === 'devin'
           ? {
@@ -4188,6 +4191,7 @@ export async function createApp(options: AppOptions) {
             sources,
             route: engine,
             helper,
+            ...(response.reasoning ? { thinking: response.reasoning } : {}),
             origin: directOrigin({
               engine,
               requestedModel: input.model,
@@ -4910,6 +4914,8 @@ export async function createApp(options: AppOptions) {
               progress('delta', { ...frame, text: gate(frame.text) }),
             // Tool calls are narration beside the answer, bound to the same run identity.
             onActivity: (frame: ToolActivity) => store.emit('engine-activity', frame),
+            // Thinking is narration too: shown while it runs, saved only on the finished reply.
+            onReasoning: (frame: ReasoningPreview) => store.emit('engine-reasoning', frame),
           },
         };
       }),
@@ -5069,6 +5075,7 @@ export async function createApp(options: AppOptions) {
             },
             // H18: what went into this answer's context, as the turn recorded it.
             ...(recordedContext(recorded) ? { context: recordedContext(recorded)! } : {}),
+            ...(result.thinking ? { thinking: result.thinking } : {}),
             origin: recorded
               ? (recorded.origin ??
                 // Nothing was recorded, so nothing is claimed: the model the runtime reported
@@ -5706,6 +5713,7 @@ export async function createApp(options: AppOptions) {
       ].join('\n\n');
       let answer: string;
       let helper: NonNullable<Turn['helper']>;
+      let thinking: ReasoningRecord | undefined;
       const runChoice =
         serviceRoute === 'sample'
           ? {}
@@ -5764,8 +5772,10 @@ export async function createApp(options: AppOptions) {
             signal,
             onPreview: (frame) => progress('delta', frame.text, frame),
             onActivity: (frame) => store.emit('engine-activity', frame),
+            onReasoning: (frame) => store.emit('engine-reasoning', frame),
           });
           answer = result.text;
+          thinking = result.reasoning;
           helper = {
             engine: serviceRoute,
             model: result.model,
@@ -5949,6 +5959,7 @@ export async function createApp(options: AppOptions) {
           route: serviceRoute,
           ...(prepared.attempt ? { attempt: prepared.attempt } : {}),
           helper,
+          ...(thinking ? { thinking } : {}),
           ...(writing ? { writing } : {}),
           origin:
             serviceRoute === 'sample'
@@ -6012,11 +6023,14 @@ export async function createApp(options: AppOptions) {
     const textListener = (data: unknown) => send('engine-text', data);
     // Tool activity rides the same stream as text previews: narration, never persisted.
     const activityListener = (data: unknown) => send('engine-activity', data);
+    // Thinking frames ride the same stream: shown while the reply runs, never persisted as frames.
+    const reasoningListener = (data: unknown) => send('engine-reasoning', data);
     const usageListener = (snapshots: UsageSnapshot[]) => send('usage', { usage: snapshots });
     store.on('change', listener);
     store.on('settings', settingsListener);
     store.on('engine-text', textListener);
     store.on('engine-activity', activityListener);
+    store.on('engine-reasoning', reasoningListener);
     const offUsage: () => void = usageService.subscribe(usageListener);
     // The client re-fetches /api/usage on this event, like it does for settings.
     send('ready', { ok: true });
@@ -6030,6 +6044,7 @@ export async function createApp(options: AppOptions) {
       store.off('settings', settingsListener);
       store.off('engine-text', textListener);
       store.off('engine-activity', activityListener);
+      store.off('engine-reasoning', reasoningListener);
       offUsage();
     });
   });

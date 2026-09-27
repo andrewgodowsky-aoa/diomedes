@@ -213,6 +213,8 @@ export interface ClaudeSessionTurn<C extends SessionCheckpointFacts = ClaudeSess
     onDelta(text: string): void;
     /** The adapter-facing tool activity sink, fenced to the same attempt as `onDelta`. */
     onToolActivity?: TextRequest['onToolActivity'];
+    /** The adapter-facing thinking sink, fenced to the same attempt; absent where the route declares none. */
+    onReasoningDelta?: TextRequest['onReasoningDelta'];
     finish(): Promise<void>;
   };
 }
@@ -1075,6 +1077,8 @@ export class ClaudeSessionRuns<C extends SessionCheckpointFacts = ClaudeSessionC
           onPreview: undefined,
           onActivity: undefined,
           onToolActivity: undefined,
+          onReasoning: undefined,
+          onReasoningDelta: undefined,
         },
         {
           observedVersion: admission.version,
@@ -1189,6 +1193,8 @@ export class ClaudeSessionRuns<C extends SessionCheckpointFacts = ClaudeSessionC
                 onPreview: undefined,
                 onActivity: undefined,
                 onToolActivity: preview?.onToolActivity,
+                onReasoning: undefined,
+                onReasoningDelta: preview?.onReasoningDelta,
               });
               if (
                 result.projectId !== input.projectId ||
@@ -1624,6 +1630,7 @@ export class ClaudeSessionRuns<C extends SessionCheckpointFacts = ClaudeSessionC
           signal: undefined,
           onPreview: undefined,
           onActivity: undefined,
+          onReasoning: undefined,
         };
         const result = await this.request({
           ...base,
