@@ -21,6 +21,7 @@ import type {
   MessageResult,
 } from '../shared/conversation.js';
 import type { InteractionDecision } from '../shared/interaction.js';
+import type { ReasoningRecord } from '../shared/adapter-contract.js';
 import {
   admitInteraction,
   conversationCommandIds,
@@ -218,7 +219,14 @@ export interface InteractionHost {
   /** Idempotent transcript projection of a committed answer. */
   project(
     resolved: ResolvedMessage,
-    result: { runId: string; text: string; model: string; version: string },
+    result: {
+      runId: string;
+      text: string;
+      model: string;
+      version: string;
+      /** The finished thinking of the attempt that answered. A replay has none. */
+      thinking?: ReasoningRecord;
+    },
   ): Promise<void>;
   admissionContext(): Promise<{ homeProjectId: string | null; targetableProjectIds: string[] }>;
   /**
@@ -416,6 +424,7 @@ export class InteractionTurns {
         text: result.answerText ?? result.response.text,
         model: result.response.model,
         version: result.response.version,
+        ...(result.response.reasoning ? { thinking: result.response.reasoning } : {}),
       });
     // The outcome is read from what was recorded and from nothing else. A decision that was
     // never saved is not rebuilt in memory: the message reads as unresolved on every route.

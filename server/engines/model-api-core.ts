@@ -574,6 +574,8 @@ export async function admitJobStep(input: {
 export interface StreamSinks {
   onDelta?: (text: string) => void;
   onToolActivity?: (raw: RawToolActivity) => void;
+  /** Raw thinking chunks. A preview only; never the answer. */
+  onReasoningDelta?: (text: string) => void;
 }
 
 /**
