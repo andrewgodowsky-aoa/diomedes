@@ -708,6 +708,68 @@ export type CodexSteerAnswer =
 export type CodexForkAnswer =
   | { state: 'forked'; threadId: string; from: string; model: string | null; version: string }
   | { state: 'refused'; reason: string };
+/**
+ * One kept ChatGPT conversation's own app-server (spec 3.2): started for that conversation's read
+ * scope, never shared with another conversation and never parked in the warm slot `askCodex`
+ * uses. It stays open between turns until its conversation closes it; every check `askCodex`
+ * makes before a turn is made here too.
+ */
+export interface CodexConversationProcess {
+  readonly version: string;
+  /** True once the process ended: closed here, or exited on its own. */
+  readonly closed: boolean;
+  /** The ChatGPT account this process is signed in to now, as a nonsecret route hash. */
+  account(): Promise<string>;
+  /** Opens the conversation's thread here: `thread/start`, or `thread/resume` of `resume`. */
+  thread(input: CodexThreadInput): Promise<CodexThreadOpened>;
+  /** One turn on an open thread: the completed answer, or why it didn't complete. */
+  turn(input: CodexTurnInput): Promise<{ text: string; model: string | null }>;
+  /**
+   * Asks Codex to stop the running turn (`turn/interrupt`) and waits at most `waitMs` for the
+   * turn to end. True only when Codex reported the turn interrupted in that time.
+   */
+  interrupt(threadId: string, turnId: string, waitMs: number): Promise<boolean>;
+  /** Ends the process tree. */
+  close(): Promise<void>;
+}
+export interface CodexThreadInput {
+  scope?: ReadScope;
+  model: string;
+  effort?: string;
+  instructions: string;
+  /** The saved thread to continue. Absent: a new thread. */
+  resume?: string;
+  signal?: AbortSignal;
+}
+export interface CodexThreadOpened {
+  threadId: string;
+  /** `restarted-fresh`: Codex no longer had the saved thread, or couldn't resume it, and started a new one. */
+  origin: 'started' | 'resumed' | 'restarted-fresh';
+  /** With `restarted-fresh`, the saved thread that couldn't be continued. */
+  lost: string | null;
+  model: string | null;
+}
+export interface CodexTurnInput {
+  threadId: string;
+  /** The turn's text (`contextMessage`). */
+  prompt: string;
+  effort?: string;
+  scope?: ReadScope;
+  /** Ask for reasoning summaries (`summary: 'auto'`); otherwise `summary: 'none'` is sent. */
+  summaries: boolean;
+  signal: AbortSignal;
+  onDelta?(text: string): void;
+  onToolActivity?(raw: RawToolActivity): void;
+  onReasoningDelta?(text: string): void;
+  /** Called once Codex acknowledged the turn, with its id. */
+  onTurn?(turnId: string): void;
+}
+export interface CodexConversationPort {
+  /** Starts and proves an owned app-server: the sandbox, the pinned protocol and a ChatGPT account. */
+  open(scope: ReadScope | undefined, signal?: AbortSignal): Promise<CodexConversationProcess>;
+  /** Branches a kept thread (`thread/fork`, through H02's `forkCodexThread`). */
+  fork(threadId: string): Promise<CodexForkAnswer>;
+}
 
 export function createIntegrations(overrides: Partial<IntegrationDependencies> = {}) {
   const dependencies: IntegrationDependencies = {
@@ -1923,6 +1985,148 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
       await client.close();
     }
   }
+  /** A kept ChatGPT conversation's process (spec 3.2), built from the same pieces as `askCodex`. */
+  const codexConversations: CodexConversationPort = {
+    async open(scope, signal) {
+      if (scope && readAccessOf(scope) === 'project')
+        throw new IntegrationError(
+          'CONTEXT_UNBOUND',
+          'Codex cannot read the whole project folder, because its reads cannot be checked before they run. Choose the documents to include instead.',
+        );
+      await proveSandbox();
+      if (signal?.aborted) throw abortError();
+      const client = scope
+        ? await dependencies.createClient(
+            {
+              ...nativeEnvironment(),
+              ...Object.assign({}, ...(scope.mcp ?? []).map((server) => serverEnvironment(server))),
+            },
+            readConfig(scope),
+          )
+        : await dependencies.createClient();
+      let closed = false;
+      // The process ended on its own: every later call is refused by the client itself.
+      client.onNotification((method) => {
+        if (method === 'diomedes/error') closed = true;
+      });
+      let version: string;
+      try {
+        version = await initialize(client);
+        await requireChatGpt(client);
+      } catch (error) {
+        closed = true;
+        await client.close().catch(() => {});
+        throw error;
+      }
+      let running: { watch: TurnWatch; turnId: string | null } | undefined;
+      const close = async () => {
+        closed = true;
+        await client.close().catch(() => {});
+      };
+      return {
+        version,
+        get closed() {
+          return closed;
+        },
+        account: () => requireChatGpt(client),
+        async thread(input) {
+          const { threadStart: policy } = await threadPolicy(client, {
+            scope: input.scope,
+            model: input.model,
+            effort: input.effort,
+            instructions: input.instructions,
+            guarded: false,
+          });
+          // Kept, so a later process can resume it after this one ends.
+          const threadStart: JsonObject = { ...policy, ephemeral: false };
+          let started: JsonObject;
+          let origin: CodexThreadOpened['origin'] = 'started';
+          let lost: string | null = null;
+          if (input.resume) {
+            try {
+              started = object(await client.request('thread/resume', resumeParams(input.resume, threadStart)));
+              origin = 'resumed';
+            } catch (error) {
+              // Codex no longer has the thread, or this runtime can't resume one: a fresh thread,
+              // and the conversation says so. A lost connection or a timeout is neither.
+              const answer = protocolRejection(error);
+              if (!answer || !(threadGone(answer) || unknownMethod(answer))) throw error;
+              started = object(await client.request('thread/start', threadStart));
+              origin = 'restarted-fresh';
+              lost = input.resume;
+            }
+          } else started = object(await client.request('thread/start', threadStart));
+          const threadId = requireReadOnlyThread(started, origin === 'resumed' ? input.resume : undefined);
+          await requireIsolatedMcp(client, threadId, { scope: input.scope, signal: input.signal });
+          return { threadId, origin, lost, model: typeof started.model === 'string' ? started.model : null };
+        },
+        async turn(input) {
+          if (running)
+            throw new IntegrationError('NATIVE_BUSY', 'ChatGPT is still answering the previous message.');
+          if (input.signal.aborted) throw abortError();
+          const watch = watchTurn(client, input.threadId, {
+            scope: input.scope,
+            onDelta: input.onDelta,
+            onToolActivity: input.onToolActivity,
+            onReasoningDelta: input.onReasoningDelta,
+          });
+          const current: { watch: TurnWatch; turnId: string | null } = { watch, turnId: null };
+          running = current;
+          // An abort ends the process, which ends the turn: the caller asked for an interrupt first.
+          const onAbort = () => void close();
+          input.signal.addEventListener('abort', onAbort, { once: true });
+          try {
+            const turnId = await startTurn(client, {
+              threadId: input.threadId,
+              prompt: input.prompt,
+              effort: input.effort ?? 'low',
+              summary: input.summaries ? 'auto' : 'none',
+            });
+            if (turnId) {
+              current.turnId = turnId;
+              input.onTurn?.(turnId);
+            }
+            try {
+              return { text: await watch.completed, model: watch.model() ?? null };
+            } catch (error) {
+              if (watch.ended() === 'interrupted')
+                throw new IntegrationError('TURN_INTERRUPTED', 'ChatGPT stopped the answer when asked.');
+              throw error;
+            }
+          } finally {
+            watch.dispose();
+            if (running === current) running = undefined;
+            input.signal.removeEventListener('abort', onAbort);
+          }
+        },
+        async interrupt(threadId, turnId, waitMs) {
+          const current = running;
+          if (!current || current.turnId !== turnId) return false;
+          const ended = current.watch.completed.then(
+            () => true,
+            () => true,
+          );
+          let timer: NodeJS.Timeout | undefined;
+          const expired = new Promise<false>((resolve) => {
+            timer = setTimeout(() => resolve(false), waitMs);
+          });
+          try {
+            // The request's own answer can take as long as the turn: both share the one wait.
+            const asked = client.request('turn/interrupt', { threadId, turnId }).then(
+              () => true,
+              () => false,
+            );
+            await Promise.race([Promise.all([asked, ended]), expired]);
+          } finally {
+            clearTimeout(timer);
+          }
+          return current.watch.ended() === 'interrupted';
+        },
+        close,
+      };
+    },
+    fork: (threadId) => forkCodexThread({ threadId }),
+  };
   return {
     getIntegrationStatuses,
     askCodex,
@@ -1930,6 +2134,7 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
     closeWarm,
     steerCodex,
     forkCodexThread,
+    codexConversations,
   };
 }
 
@@ -1980,8 +2185,11 @@ export const readCodexAccountRoute = integrations.readCodexAccountRoute;
 export const closeWarmCodex = integrations.closeWarm;
 export const steerCodex = integrations.steerCodex;
 export const forkCodexThread = integrations.forkCodexThread;
-/** The Codex entry points a Work run's controls use (H02); a test passes its own. */
+/** The kept ChatGPT conversation's processes (spec 3.2). */
+export const codexConversations = integrations.codexConversations;
+/** The Codex entry points a Work run's controls use (H02), and a kept conversation's processes; a test passes its own. */
 export type CodexIntegration = Pick<
   ReturnType<typeof createIntegrations>,
   'askCodex' | 'steerCodex' | 'forkCodexThread' | 'closeWarm'
->;
+> &
+  Partial<Pick<ReturnType<typeof createIntegrations>, 'codexConversations'>>;
