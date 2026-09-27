@@ -94,15 +94,21 @@ Producers by route:
 - Cursor and Devin, one-shot and kept ACP session: `agent_thought_chunk` text inside the
   prompted turn; anything else is dropped without stopping the turn.
 - OpenCode, one-shot and kept session: the reasoning parts of the turn's assistant message.
-- AWS Bedrock, and Azure OpenAI deployments marked reasoning: Responses reasoning summaries,
-  asked for (`reasoningSummary: 'auto'`) only while a thinking sink listens.
+- AWS Bedrock: Responses reasoning summaries, asked for (`reasoningSummary: 'auto'`) only while
+  a thinking sink listens.
+- Azure OpenAI declares `none` for now. A deployment marked reasoning may run a model that
+  refuses `reasoning.summary`, which would fail every watched reply, so nothing is asked for until
+  a live Azure proof turns `MODEL_API_REASONING['azure-openai']` on; the binding already asks
+  for summaries when it's handed a sink.
 - Google Vertex AI: thought parts, with `includeThoughts` only while a sink listens. The body
   check now allows visible thinking and keeps every other refusal.
 - OpenRouter: only the reasoning its models return. Nothing new is requested, because
   `require_parameters: true` would narrow the endpoints a model may use; a per-model request is
   a follow-up.
 - Nectovia: Responses summaries through the managed gateway, asked for only when the routing
-  policy answers `reasoningSummaries: true`.
+  policy answers `reasoningSummaries` true for the tier the turn runs on. The gateway answers
+  per tier from its provider registry: true only when the upstream serving the tier has a proven
+  `reasoningSummaries` line.
 - ChatGPT (Codex) follows with the engine-conversations plan; oh-my-pi joins once it has a kept
   session.
 
@@ -110,13 +116,25 @@ The gateway change (revision 3 of
 `docs/implementation/2026-09-25-managed-inference-gateway.md`) is committed and not deployed.
 Until the Worker deploys, the published policy has no `reasoningSummaries` and no desktop asks
 for a summary. AWS Bedrock's acceptance of `reasoning.summary` is proven only by the paid Luna
-proof; if Bedrock refuses it, `MODEL_API_REASONING['aws-bedrock']` goes back to `none`.
+proof; if Bedrock refuses it, `MODEL_API_REASONING['aws-bedrock']` goes back to `none` and the
+gateway registry's GPT-6 Luna line loses `reasoningSummaries`.
+
+Model-API conversations hand the thinking sink through each route's own adapter (`complete()`
+and the five adapter factories), and their preview, activity and thinking frames get the route's
+`redactFor`, as every other engine's do. `tests/model-api-thinking.test.ts` runs every model-API
+route's own adapter against `MODEL_API_REASONING`, and `tests/model-session-activity.test.ts`
+runs whole conversations on OpenRouter and AWS Bedrock. A provider's own continuation (the
+private transcript of one reply's tool steps) keeps the reasoning items that provider returned,
+summaries included, and sends them back only to that provider within the same reply. They count
+toward the transcript's 1 MiB cap and each step's request cap, and never reach another engine,
+route or history.
 
 The roadmap's runtime section needs this paragraph. The cloud canonical is the authority, so the
 repository mirror waits for that write (cloud synchronisation pending):
 
 > Thinking (2026-09-27, feature/codex-conversation-driver): an engine's thinking streams on every
-> conversation route that can supply it (Claude Code, Cursor, Devin, OpenCode, AWS Bedrock, Azure
-> OpenAI, Google Vertex AI, OpenRouter where its models return it, and Nectovia once the gateway
-> deploys), shown above the reply and saved on it. ChatGPT (Codex) follows with the
-> engine-conversations plan. Fixture, conformance and browser proof only; live proof pending.
+> conversation route that can supply it (Claude Code, Cursor, Devin, OpenCode, AWS Bedrock,
+> Google Vertex AI, OpenRouter where its models return it, and Nectovia once the gateway deploys,
+> on tiers whose model is proven to accept summaries), shown above the reply and saved on it.
+> Azure OpenAI waits on a live proof. ChatGPT (Codex) follows with the engine-conversations plan.
+> Fixture, conformance and browser proof only; live proof pending.

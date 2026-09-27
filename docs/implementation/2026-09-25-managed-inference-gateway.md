@@ -349,7 +349,12 @@ Visible thinking in Nectovia conversations
    or `null`; anything else is still 400 `unsupported_field`. The provider's summary events are
    forwarded byte for byte like every other event, and settlement still reads the usage the
    provider reports on its terminal event.
-2. **The routing policy says so.** `GET /account/routing-policy` answers `reasoningSummaries: true`.
-   A desktop asks for a summary only when that is present and a person is watching the reply, so
-   a gateway without this revision is never asked for one.
+2. **The routing policy says so, tier by tier.** `GET /account/routing-policy` answers
+   `reasoningSummaries: { efficient, focused, thorough }`, each true only when the upstream serving
+   that tier has a proven `reasoningSummaries` line in the provider registry
+   (`managed-providers.ts`), because a model that refuses the option would fail every watched reply.
+   GPT-6 Luna's line waits on the paid Luna proof. A desktop asks for a summary only when its own
+   tier says true and a person is watching the reply, so a gateway without this revision is never
+   asked for one. (Amended the same day, before any deploy: the first text answered one
+   `reasoningSummaries: true` for every tier.)
 3. **Deployed only with the owner's approval**, through the next approved merge to main.
