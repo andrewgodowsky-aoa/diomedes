@@ -199,6 +199,11 @@ describe('Diomedes staff administration', () => {
       .toMatchObject({ status: 'qualified', evidence: 'Faux seed: scripted provider, 2026-09-25' });
   });
 
+  it('tells a reader of the routing policy that the gateway accepts reasoning summaries', async () => {
+    const policy = await call('GET', '/account/routing-policy', await token('employee'));
+    expect(policy.body.reasoningSummaries).toBe(true);
+  });
+
   it('publishes only qualified routes, refuses a stale publish, and rolls back as a new revision', async () => {
     const routing = await token('staffRouting');
     expect((await call('POST', '/ops/routing/publish', routing, { tiers: { efficient: 'aws-sol-6', focused: null, thorough: null }, note: 'Try GPT-6 Sol', baseRevision: 1 })).status).toBe(422);

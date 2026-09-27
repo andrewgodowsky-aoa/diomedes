@@ -471,9 +471,11 @@ export class CommercialService {
     await this.accounts.signIn(token);
     return this.repository.transaction(async (tx) => {
       const policy = await tx.policy();
+      // This gateway accepts reasoning summaries (managed-inference.ts); a desktop asks for them only
+      // when this says so.
       return policy
-        ? { revision: policy.revision, publishedAt: policy.publishedAt, tiers: policy.tiers }
-        : { revision: 0, publishedAt: null, tiers: { efficient: null, focused: null, thorough: null } };
+        ? { revision: policy.revision, publishedAt: policy.publishedAt, tiers: policy.tiers, reasoningSummaries: true }
+        : { revision: 0, publishedAt: null, tiers: { efficient: null, focused: null, thorough: null }, reasoningSummaries: true };
     });
   }
 

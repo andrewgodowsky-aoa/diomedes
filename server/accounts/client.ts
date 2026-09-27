@@ -64,6 +64,8 @@ export interface RoutingPolicyAnswer {
   revision: number;
   publishedAt: string | null;
   tiers: Record<'efficient' | 'focused' | 'thorough', { entryId: string; provider: string; model: string; label: string; entryRevision: number } | null>;
+  /** The gateway accepts reasoning summaries. An older gateway leaves it out and is never asked for one. */
+  reasoningSummaries?: boolean;
 }
 
 /** A computer registered for phone access. The service never answers its key. */

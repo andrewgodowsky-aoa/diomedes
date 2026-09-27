@@ -54,6 +54,8 @@ export const NECTOVIA_UNAVAILABLE = "Nectovia's model service isn't available ri
 export interface NectoviaPolicy {
   revision: number;
   tiers: Record<JobTier, { model: string; label: string } | null>;
+  /** The gateway accepts reasoning summaries. Absent means it does not, and none is asked for. */
+  reasoningSummaries?: boolean;
 }
 
 /**
@@ -264,6 +266,8 @@ export function nectoviaBinding(input: {
   attemptId: () => string | null;
   /** The attempt this call retries, when it is a retry. */
   parentAttemptId?: string | null;
+  /** Ask for reasoning summaries: a thinking sink listens and the gateway says it accepts them. */
+  summaries: boolean;
 }): RouteBinding {
   const baseUrl = `${input.base}/managed/v1`;
   const { managed } = input;
@@ -308,7 +312,7 @@ export function nectoviaBinding(input: {
         systemMessageMode: 'developer',
         include: ['reasoning.encrypted_content'],
         reasoningEffort: input.effort,
-        reasoningSummary: null,
+        reasoningSummary: input.summaries ? 'auto' : null,
         store: false,
         parallelToolCalls: false,
       },
@@ -331,7 +335,11 @@ export function nectoviaBinding(input: {
 export async function respondNectovia(
   input: {
     base: string;
-    account: Pick<NectoviaAccount, 'refreshPolicy'>;
+    /**
+     * `policy` says whether the gateway accepts reasoning summaries. A caller without it (the Work
+     * loop, which has no thinking sink) never asks for them.
+     */
+    account: Pick<NectoviaAccount, 'refreshPolicy'> & Partial<Pick<NectoviaAccount, 'policy'>>;
     connectionId: string;
     model: string;
     managed: ManagedAdmission;
@@ -374,7 +382,17 @@ export async function respondNectovia(
       exposure,
       secret: token,
       limits: nectoviaLimits(limits),
-      binding: nectoviaBinding({ base, connectionId, model, effort, managed, attemptId: () => attemptId, parentAttemptId }),
+      binding: nectoviaBinding({
+        base,
+        connectionId,
+        model,
+        effort,
+        managed,
+        attemptId: () => attemptId,
+        parentAttemptId,
+        // Ask for summaries only from a gateway that says it accepts them.
+        summaries: Boolean(rest.onReasoningDelta) && account.policy?.()?.reasoningSummaries === true,
+      }),
     });
   } catch (error) {
     if (!(error instanceof ModelApiError) || error.code !== 'nectovia_policy_changed') throw error;

@@ -42,7 +42,8 @@ export const MODEL_API_REASONING: Readonly<
   // Maps only the reasoning its models return; nothing new is asked for (require_parameters).
   openrouter: 'reasoning-delta',
   'google-vertex': 'reasoning-delta',
-  nectovia: 'none',
+  // Asks for summaries only when the gateway's routing policy says it accepts them.
+  nectovia: 'reasoning-delta',
 });
 
 /** The route contract every model-API route shares; only its identity and wording differ. */
