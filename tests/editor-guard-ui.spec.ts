@@ -484,6 +484,15 @@ test('DIO-85: words typed while the rescue copy is being written are not lost', 
   await page.unrouteAll({ behavior: 'ignoreErrors' });
 });
 
+/**
+ * Hold the service's live events for the rest of the test. The Console lists
+ * the project's files again by itself after every change the service records,
+ * so with the events held, every listing is one the test asked for.
+ */
+async function holdEvents(page: Page) {
+  await page.route(/\/api\/events$/, () => undefined);
+}
+
 test('DIO-87: a file the listing does not have says so and can be looked for again', async ({
   page,
 }) => {
@@ -526,6 +535,71 @@ test('DIO-87: a file the listing does not have says so and can be looked for aga
   await expect(editorState(page)).toHaveText('Not open');
   await expect(textBox(page)).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Save changes', exact: true })).toBeDisabled();
+
+  listing = 'real';
+  await again.click();
+  await expect(textBox(page)).toHaveValue(mine);
+  await expect(textBox(page)).toBeEditable();
+  await expect(editorState(page)).toHaveText('All saved');
+  await page.unrouteAll({ behavior: 'ignoreErrors' });
+});
+
+test('DIO-87: looking again when the project cannot be read says why and can be tried again', async ({
+  page,
+}) => {
+  // Held from the start: a listing a state event made by itself would bring
+  // "Try again" back on its own and hide an editor left waiting for nothing.
+  await holdEvents(page);
+  const mine = `${ALPHA_TEXT}\nLooked for while the project could not be read.\n`;
+  const conflict = await conflictOn(page, mine);
+  let listing: 'without copies' | 'real' = 'without copies';
+  await page.route(/\/api\/projects\/[^/]+\/documents(\?.*)?$/, async (route) => {
+    if (route.request().method() !== 'GET' || listing === 'real') return route.continue();
+    try {
+      const response = await route.fetch();
+      const body = (await response.json()) as { documents: DocumentInfo[] };
+      await route.fulfill({
+        response,
+        json: { documents: body.documents.filter((file) => !file.path.includes('(my copy')) },
+      });
+    } catch (error) {
+      if (!String(error).includes('already handled')) throw error;
+    }
+  });
+  await conflict
+    .getByRole('button', { name: 'Save my writing as a separate file', exact: true })
+    .click();
+  const editor = page.locator('.docedit');
+  const again = editor.getByRole('button', { name: 'Try again', exact: true });
+  await expect(editor.locator('.de-path')).toContainText('Alpha notes (my copy');
+  await expect(editor).toContainText("is not in this project's list of files");
+  await expect(again).toBeVisible();
+
+  // Looking again reads the project first, and this time that read fails, so
+  // no listing starts and nothing is on its way that could settle the file.
+  const unreadable = 'This project could not be read just now.';
+  let refusedOnce = false;
+  await page.route(/\/api\/projects\/[^/]+\/state$/, (route) => {
+    if (refusedOnce) return route.continue();
+    refusedOnce = true;
+    return route.fulfill({
+      status: 500,
+      contentType: 'application/json',
+      json: { error: unreadable },
+    });
+  });
+  const refused = page.waitForResponse(
+    (response) =>
+      /\/api\/projects\/[^/]+\/state$/.test(response.url()) && response.status() === 500,
+  );
+  await again.click();
+  await refused;
+  await expect(editorState(page)).toHaveText('Not open');
+  await expect(editor.getByRole('alert')).toContainText(unreadable);
+  await expect(again).toBeVisible();
+  await expect(textBox(page)).toHaveCount(0);
+  // Said once, beside the button that tries again, and not in the Console's bar as well.
+  await expect(page.locator('.error-bar')).toHaveCount(0);
 
   listing = 'real';
   await again.click();

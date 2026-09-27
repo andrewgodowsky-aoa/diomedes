@@ -65,9 +65,11 @@ export interface DocumentEditorProps {
    * The caller's file listing, for a file whose kind it has not settled yet:
    * whether a listing is being read now, and a way to read it again. With it,
    * a file the listing cannot be read for, or does not have, offers
-   * "Try again" instead of waiting with no way on but Close (DIO-87).
+   * "Try again" instead of waiting with no way on but Close (DIO-87). A read
+   * again that fails before any listing starts leaves nothing on its way to
+   * settle the file, so its failure comes back here to be said.
    */
-  listing?: { loading: boolean; refresh(): void };
+  listing?: { loading: boolean; refresh(): Promise<void> };
   /**
    * There is, or is no longer, writing that has not been saved. Fired on every
    * change and once with `false` when the editor goes away, so a caller that
@@ -197,15 +199,36 @@ function OneDocument({
    * reading "Opening" for ever. Still no kind, so still nothing to type in.
    */
   const [missing, setMissing] = useState(false);
+  /**
+   * Looking again failed before any listing started, so nothing is on its way
+   * that could settle the file. It says why and offers to look again, rather
+   * than reading "Opening" for ever.
+   */
+  const [lookFailure, setLookFailure] = useState<string | null>(null);
   const wasListing = useRef(listing?.loading ?? false);
+  /** The latest look, and whether a listing has started since it was asked for. */
+  const look = useRef({ n: 0, listed: false });
   useEffect(() => {
     const now = listing?.loading ?? false;
-    if (wasListing.current && !now && kind === undefined) setMissing(true);
+    if (now) look.current.listed = true;
+    if (wasListing.current && !now && kind === undefined) {
+      setMissing(true);
+      // What the listing found is the answer now, whatever the look said.
+      setLookFailure(null);
+    }
     wasListing.current = now;
   }, [listing?.loading, kind]);
   const lookAgain = () => {
+    const n = look.current.n + 1;
+    // A listing already under way settles the file by itself.
+    look.current = { n, listed: listing?.loading ?? false };
     setMissing(false);
-    listing?.refresh();
+    setLookFailure(null);
+    void listing?.refresh().catch((cause: unknown) => {
+      // A newer look, or any listing since this one was asked for, has the last word.
+      if (look.current.n !== n || look.current.listed) return;
+      setLookFailure(plainFailure(cause, `${AGENT_NAME} could not look for this file just now.`));
+    });
   };
   /** `unsupported` is what the read route refuses; it answers as if the file were gone. */
   const supported = resolved && kind !== 'unsupported';
@@ -240,7 +263,8 @@ function OneDocument({
   const latest = useRef(buffer);
   latest.current = buffer;
 
-  const loading = (!resolved && !problem && !missing) || (supported && !base && !failure);
+  const loading =
+    (!resolved && !problem && !missing && !lookFailure) || (supported && !base && !failure);
   const readOnly = (resolved && !supported) || !!readOnlyReason;
   const dirty = !!base && buffer !== base.text;
   const areaId = useId();
@@ -674,7 +698,7 @@ function OneDocument({
   }
 
   const state = !resolved
-    ? problem || missing
+    ? problem || missing || lookFailure
       ? 'Not open'
       : 'Opening'
     : !supported
@@ -734,10 +758,11 @@ function OneDocument({
       )}
       {backupWarning && <p className="de-note de-warn">{backupWarning}</p>}
       {loading && <p className="de-note">Opening this file...</p>}
-      {!resolved && (problem || missing) && (
+      {!resolved && (problem || missing || lookFailure) && (
         <div className="de-trouble" role="alert">
           <p>
-            {problem ??
+            {lookFailure ??
+              problem ??
               `${name} is not in this project's list of files, so ${AGENT_NAME} cannot tell yet what kind of file it is. It may have been moved or deleted.`}
           </p>
           {listing && (

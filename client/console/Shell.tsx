@@ -2067,7 +2067,9 @@ export function Shell({
               exits={editorExit}
               // A file the listing cannot be read for, or does not have, can
               // be looked for again: `load()` makes a new state, which lists again.
-              listing={{ loading: documentsLoading, refresh: () => void load().catch(report) }}
+              // When it fails before that, the editor says why beside its own
+              // Try again, so it is not reported here as well.
+              listing={{ loading: documentsLoading, refresh: load }}
               onOpen={(path) => setEditing(path)}
               // `load()` refreshes the listing too: the documents effect runs
               // again on every new state object, so a saved file's new size and
