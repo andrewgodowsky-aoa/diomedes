@@ -157,7 +157,7 @@ describe.each([
       mode: 'external-session',
       engine: { id: engine, version, protocolVersion: 'acp/1' },
       testedWith: version,
-      streaming: { transientPreview: 'text-delta', reasoning: 'none', durableEvents: 'run-record' },
+      streaming: { transientPreview: 'text-delta', reasoning: 'reasoning-delta', durableEvents: 'run-record' },
       models: { source: 'runtime-reported' },
       commands: {
         'follow-up': { support: 'native' },

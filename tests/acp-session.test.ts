@@ -123,6 +123,18 @@ describe.each(['cursor', 'devin'] as const)('kept ACP conversation — %s', (eng
     });
   });
 
+  it('streams thought chunks to the thinking sink and keeps them out of the answer', async () => {
+    const f = await fixture(engine);
+    const session = await f.open();
+    const thoughts: string[] = [];
+    const answer = await session.turn({
+      ...input(engine, 'r1', 'think it over'),
+      onReasoningDelta: (text) => thoughts.push(text),
+    });
+    expect(thoughts).toEqual(['Weighing the menu. ', 'Checking prices.']);
+    expect(answer.text).toBe('answer after 0 earlier turns');
+  });
+
   it('starts fresh and says so when the agent does not advertise loadSession', async () => {
     const f = await fixture(engine);
     f.env.ACP_FIXTURE_LOAD = '0';

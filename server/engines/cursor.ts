@@ -431,6 +431,7 @@ export class CursorAdapter implements PersistentTextAdapter<AcpSessionCheckpoint
       text: '',
       model: input.model,
       onDelta: input.onDelta,
+      onReasoningDelta: input.onReasoningDelta,
       prompting: false,
     };
     try {
