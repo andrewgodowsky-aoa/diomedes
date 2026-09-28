@@ -5,6 +5,8 @@ import {
   auditEventSchema,
   featureGrantSchema,
   operatorSchema,
+  personFeatureGrantSchema,
+  personalAdmissionRecordSchema,
   routeEntrySchema,
   tierPolicySchema,
   type AdmissionRecord,
@@ -13,6 +15,8 @@ import {
   type CommercialTransaction,
   type FeatureGrant,
   type Operator,
+  type PersonFeatureGrant,
+  type PersonalAdmissionRecord,
   type RouteEntry,
   type TierPolicy,
 } from './commercial.js';
@@ -147,6 +151,46 @@ class PostgresCommercialTransaction implements CommercialTransaction {
     if (!result.rows.length) return undefined;
     const row = result.rows[0];
     return { person: recordSchemas.person.parse(row.person) as Person, issuer: z.string().parse(row.issuer), subject: z.string().parse(row.subject) };
+  }
+
+  // --- migration 009: Individual plans ---------------------------------------------
+  async lockPerson(personId: string) {
+    await this.client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [JSON.stringify(['commercial-person', personId])]);
+  }
+  async personGrants(personId: string): Promise<PersonFeatureGrant[]> {
+    const result = await this.client.query('SELECT record FROM control_plane.person_feature_grants WHERE person_id=$1 ORDER BY record->>\'issuedAt\' LIMIT 500', [personId]);
+    return result.rows.map((row) => personFeatureGrantSchema.parse(row.record));
+  }
+  async savePersonGrant(row: PersonFeatureGrant) {
+    await this.client.query('INSERT INTO control_plane.person_feature_grants(tenant_id,grant_id,person_id,record) VALUES ($1,$2,$3,$4::jsonb) ON CONFLICT (tenant_id,grant_id) DO UPDATE SET record=EXCLUDED.record',
+      [row.tenantId, row.id, row.personId, JSON.stringify(row)]);
+  }
+  async personAccessRevision(personId: string) {
+    const result = await this.client.query('SELECT revision FROM control_plane.person_access WHERE person_id=$1', [personId]);
+    return result.rows.length ? Number(result.rows[0].revision) : 0;
+  }
+  async bumpPersonAccessRevision(personId: string, tenantId: string) {
+    const result = await this.client.query('INSERT INTO control_plane.person_access(person_id,tenant_id,revision) VALUES ($1,$2,1) ON CONFLICT (person_id) DO UPDATE SET revision=control_plane.person_access.revision+1 RETURNING revision',
+      [personId, tenantId]);
+    return Number(result.rows[0].revision);
+  }
+  async savePersonalAdmission(row: PersonalAdmissionRecord) {
+    await this.client.query('INSERT INTO control_plane.personal_agent_admissions(tenant_id,id,person_id,at,record) VALUES ($1,$2,$3,$4,$5::jsonb)',
+      [row.tenantId, row.id, row.personId, row.at, JSON.stringify(row)]);
+  }
+  async personalAdmissions(personId: string, limit: number) {
+    const result = await this.client.query('SELECT record FROM control_plane.personal_agent_admissions WHERE person_id=$1 ORDER BY at DESC LIMIT $2', [personId, limit]);
+    return result.rows.map((row) => personalAdmissionRecordSchema.parse(row.record));
+  }
+  async organizationActiveMembers(organizationId: string) {
+    const result = await this.client.query('SELECT count(*) AS active FROM control_plane.memberships WHERE organization_id=$1 AND record->>\'state\'=\'active\'', [organizationId]);
+    return Number(result.rows[0]?.active ?? 0);
+  }
+  async personAudit(personId: string, limit: number) {
+    const result = await this.client.query(
+      'SELECT record FROM control_plane.ops_audit WHERE organization_id IS NULL AND record->>\'targetKind\'=\'person-grant\' AND record->\'detail\'->>\'personId\'=$1 ORDER BY at DESC LIMIT $2',
+      [personId, limit]);
+    return result.rows.map((row) => auditEventSchema.parse(row.record));
   }
 }
 

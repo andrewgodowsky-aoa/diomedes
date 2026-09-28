@@ -8,6 +8,7 @@
  * for every answer here; the desktop caches, it never decides.
  */
 import type { AccessView } from '../../shared/access.js';
+import type { PersonAccessView } from '../../shared/individual-plan.js';
 import type { OrganizationSetupAnswer, OrganizationSetupWrite } from '../../shared/organization-setup.js';
 import type { Membership, MemberRole, Organization, Person } from '../../shared/workspaces.js';
 import { RELAY_DEVICE_HEADER } from '../../services/control-plane/src/relay/protocol.js';
@@ -49,7 +50,8 @@ export interface AgentAdmissionAnswer {
     | { admitted: true; planId: string | null; revision: number; validUntil: string | null }
     | { admitted: false; code: string; reason: string };
   pins: {
-    organizationId: string;
+    /** Null for Personal work admitted under the person's own Individual plan. */
+    organizationId: string | null;
     tenantId: string;
     personId: string;
     planId: string | null;
@@ -182,6 +184,14 @@ export class ControlPlaneClient {
   }
   admitAgent(token: string, organizationId: string, input: { surface: string; routeKind: string; rootJobId?: string | null }) {
     return this.call<AgentAdmissionAnswer>('POST', `/account/organizations/${encodeURIComponent(organizationId)}/agent-admissions`, token, input);
+  }
+  /** The signed-in person's own Individual access (a person's plan, not a business's). */
+  personAccess(token: string) {
+    return this.call<PersonAccessView>('GET', '/account/access', token);
+  }
+  /** Admit Personal work, or work in a project no business owns, under the person's own Individual plan. */
+  admitPersonalAgent(token: string, input: { surface: string; routeKind: string; rootJobId?: string | null }) {
+    return this.call<AgentAdmissionAnswer>('POST', '/account/agent-admissions', token, input);
   }
   routingPolicy(token: string) {
     return this.call<RoutingPolicyAnswer>('GET', '/account/routing-policy', token);

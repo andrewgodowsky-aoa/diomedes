@@ -29,6 +29,7 @@
  */
 import { z } from 'zod';
 import type { Configuration } from '../config.js';
+import { readIndividualCoverage } from '../../../../shared/individual-plan.js';
 import { AccountService } from '../account-service.js';
 import { bootstrapFirstAdmin, CommercialService } from '../commercial.js';
 import { AccountError } from '../errors.js';
@@ -91,6 +92,8 @@ export interface FauxCloudOptions {
     /** What the gateway reads as OPENROUTER_API_KEY. Null: no key is configured. */
     evaluationCredential?: string | null;
   };
+  /** INDIVIDUAL_MAX_ACTIVE_MEMBERS, read as the Worker reads it. Unset or blank: 1. */
+  individualMaxActiveMembers?: string | number;
   /** An owner-approved live test only: the gateway calls Bedrock for real with this key. */
   liveBedrockApiKey?: string | null;
   /** An owner-approved live test only: the gateway calls OpenRouter for real with this key. */
@@ -178,7 +181,8 @@ export async function createFauxCloud(options: FauxCloudOptions): Promise<FauxCl
   const directory = standIn ? standIn.directory : new FauxIdentityDirectory(() => store.identity());
   const accounts = new AccountService(store.accounts, verifier, { now });
   const funding = new FundingService(store.funding, { now });
-  const commercial = new CommercialService(accounts, store.commercial, funding, { now, directory, backend: 'faux' });
+  const coverage = readIndividualCoverage(options.individualMaxActiveMembers);
+  const commercial = new CommercialService(accounts, store.commercial, funding, { now, directory, backend: 'faux', coverage });
   const origins = [...(options.allowedOrigins ?? [])];
   // The Worker's configuration shape, filled with what the faux cloud actually is.
   // No database URL or WorkOS key exists here, and none is ever read.
@@ -193,6 +197,7 @@ export async function createFauxCloud(options: FauxCloudOptions): Promise<FauxCl
     // One identity provider serves customers and staff here: the account factory below
     // answers both pools, so no separate staff environment is ever read.
     staffIdentity: null,
+    individual: coverage,
   };
   const credential = live ? options.liveBedrockApiKey! : options.managed?.credential === undefined ? FAUX_SCRIPTED_CREDENTIAL : options.managed.credential;
   const evaluationCredential = liveEvaluations ? options.liveOpenRouterApiKey!

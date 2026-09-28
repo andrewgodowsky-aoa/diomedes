@@ -23,7 +23,6 @@ import {
   ACCESS_FEATURES,
   AGENT_FEATURE,
   GRANT_SOURCES,
-  PLAN_TEMPLATES,
   ROLE_CAPABILITIES,
   STAFF_ROLES,
   planLabel,
@@ -32,14 +31,31 @@ import {
   staffCan,
   type AccessFeature,
   type AccessState,
-  type AccessView,
   type GrantSummary,
   type StaffPermission,
   type StaffRole,
 } from '../../../shared/access.js';
+import {
+  AGENT_PERSONAL_INDIVIDUAL_REASON,
+  BUSINESS_PLAN_NOT_FOR_PERSON,
+  INDIVIDUAL_COVERAGE_DEFAULTS,
+  INDIVIDUAL_EXPIRED_REASON,
+  INDIVIDUAL_NONE_REASON,
+  INDIVIDUAL_PLAN_NOT_FOR_BUSINESS,
+  INDIVIDUAL_REVOKED_REASON,
+  catalogPlan,
+  catalogPlanLabel,
+  individualCovers,
+  isPersonPlan,
+  planCatalog,
+  type IndividualCoverage,
+  type CoveredAccessView,
+  type PersonAccessView,
+  type PersonGrantSummary,
+} from '../../../shared/individual-plan.js';
 import { MODEL_API_PROVIDERS as MODEL_API_ROUTES } from '../../../shared/model-api.js';
 import { CREDIT_MICRO_USD, creditAmount, periodIdFor, publishedMonthlyGrant, type UsageState } from '../../../shared/managed-usage.js';
-import type { EntitlementView, Membership, Organization, Person } from '../../../shared/workspaces.js';
+import { NO_ENTITLEMENT_VIEW, type EntitlementView, type Membership, type Organization, type Person } from '../../../shared/workspaces.js';
 import { decideAgentAdmission, snapshotFromView, type AgentAdmissionDecision } from '../contract/contract.js';
 import type { AccountService } from './account-service.js';
 import { accountId, NO_IDENTITY_DIRECTORY, type IdentityDirectory } from './domain.js';
@@ -80,6 +96,34 @@ export const featureGrantSchema = z.strictObject({
   revokedReason: text(1000).nullable(),
 });
 export type FeatureGrant = z.infer<typeof featureGrantSchema>;
+
+/**
+ * An Individual grant (migration 009): what a person, not a business, may use. Issued to a person
+ * and never to an organization. A person has no tenant of their own, so their rows use the
+ * person's id as the tenant id.
+ */
+export const personFeatureGrantSchema = z.strictObject({
+  v: z.literal(1),
+  id: accountId,
+  personId: accountId,
+  tenantId: accountId,
+  planId: z.string().max(64).nullable(),
+  features: z.array(z.enum(ACCESS_FEATURES)).min(1).max(ACCESS_FEATURES.length),
+  source: z.enum(GRANT_SOURCES),
+  reference: text(200),
+  note: text(1000),
+  validFrom: time,
+  validUntil: time,
+  state: z.enum(['active', 'revoked']),
+  issuedAt: time,
+  issuedBy: accountId,
+  revokedAt: time.nullable(),
+  revokedBy: accountId.nullable(),
+  revokedReason: text(1000).nullable(),
+});
+export type PersonFeatureGrant = z.infer<typeof personFeatureGrantSchema>;
+/** What access resolution reads from a grant, whoever holds it. */
+export type GrantTerms = Pick<FeatureGrant, 'planId' | 'features' | 'state' | 'validFrom' | 'validUntil' | 'issuedAt' | 'revokedAt'>;
 
 export const routeEntrySchema = z.strictObject({
   v: z.literal(1),
@@ -150,6 +194,8 @@ export const AUDIT_ACTIONS = [
   'policy.rolled-back',
   'staff.added',
   'staff.changed',
+  'person-grant.issued',
+  'person-grant.revoked',
 ] as const;
 export const auditEventSchema = z.strictObject({
   id: accountId,
@@ -158,7 +204,8 @@ export const auditEventSchema = z.strictObject({
   actorRole: z.enum(STAFF_ROLES),
   action: z.enum(AUDIT_ACTIONS),
   organizationId: accountId.nullable(),
-  targetKind: z.enum(['grant', 'funding', 'route', 'policy', 'operator']),
+  /** 'person-grant' events carry organizationId null and the person in `detail.personId`. */
+  targetKind: z.enum(['grant', 'funding', 'route', 'policy', 'operator', 'person-grant']),
   targetId: z.string().min(1).max(128),
   reason: text(1000),
   detail: z.record(z.string(), z.unknown()),
@@ -181,8 +228,27 @@ export const admissionRecordSchema = z.strictObject({
   accessRevision: epoch,
   policyRevision: epoch,
   rootJobId: z.string().max(128).nullable(),
+  /** Present when a person's Individual plan covered this business (a sole proprietor). */
+  coverage: z.enum(['plan', 'individual']).optional(),
 });
 export type AdmissionRecord = z.infer<typeof admissionRecordSchema>;
+
+/** An admission of Personal work under an Individual plan (migration 009). No business is involved. */
+export const personalAdmissionRecordSchema = z.strictObject({
+  id: accountId,
+  at: time,
+  personId: accountId,
+  tenantId: accountId,
+  surface: z.enum(AGENT_SURFACES),
+  routeKind: z.enum(ROUTE_KINDS),
+  decision: z.enum(['admitted', 'refused']),
+  code: z.string().max(64).nullable(),
+  planId: z.string().max(64).nullable(),
+  accessRevision: epoch,
+  policyRevision: epoch,
+  rootJobId: z.string().max(128).nullable(),
+});
+export type PersonalAdmissionRecord = z.infer<typeof personalAdmissionRecordSchema>;
 
 // --- persistence -------------------------------------------------------------------
 
@@ -216,6 +282,19 @@ export interface CommercialTransaction {
   roster(organizationId: string): Promise<{ membership: Membership; person: Person; issuer: string; subject: string }[]>;
   people(query: string, limit: number): Promise<{ person: Person; issuer: string; subject: string; memberships: Membership[] }[]>;
   person(personId: string): Promise<{ person: Person; issuer: string; subject: string } | undefined>;
+  // Individual plans (migration 009).
+  /** Serializes grant writes and access-revision bumps for one person. */
+  lockPerson(personId: string): Promise<void>;
+  personGrants(personId: string): Promise<PersonFeatureGrant[]>;
+  savePersonGrant(row: PersonFeatureGrant): Promise<void>;
+  personAccessRevision(personId: string): Promise<number>;
+  bumpPersonAccessRevision(personId: string, tenantId: string): Promise<number>;
+  savePersonalAdmission(row: PersonalAdmissionRecord): Promise<void>;
+  personalAdmissions(personId: string, limit: number): Promise<PersonalAdmissionRecord[]>;
+  /** Active members of one business, for the Individual coverage rule. */
+  organizationActiveMembers(organizationId: string): Promise<number>;
+  /** Staff audit rows about one person's Individual grants, newest first. */
+  personAudit(personId: string, limit: number): Promise<AuditEvent[]>;
 }
 export interface CommercialRepository {
   transaction<T>(action: (tx: CommercialTransaction) => Promise<T>): Promise<T>;
@@ -223,7 +302,7 @@ export interface CommercialRepository {
 
 // --- access resolution (pure) --------------------------------------------------------
 
-export function grantState(grant: FeatureGrant, at: number): AccessState {
+export function grantState(grant: GrantTerms, at: number): AccessState {
   if (grant.state === 'revoked') return 'revoked';
   if (Date.parse(grant.validUntil) <= at) return 'expired';
   if (Date.parse(grant.validFrom) > at) return 'none';
@@ -236,7 +315,7 @@ export function grantState(grant: FeatureGrant, at: number): AccessState {
  * current, the most recent grant decides whether it reads revoked or expired,
  * so a person sees why the Agent stopped rather than a bare "no plan".
  */
-export function entitlementFromGrants(grants: readonly FeatureGrant[], revision: number, at: string): EntitlementView {
+export function entitlementFromGrants(grants: readonly GrantTerms[], revision: number, at: string): EntitlementView {
   const when = Date.parse(at);
   const current = grants.filter((grant) => grantState(grant, when) === 'active');
   if (current.length > 0) {
@@ -274,7 +353,7 @@ export function entitlementFromGrants(grants: readonly FeatureGrant[], revision:
   return { ...base, state: 'none', validFrom: latest.validFrom, reason: `This business’s plan starts ${latest.validFrom.slice(0, 10)}.` };
 }
 
-function summary(grant: FeatureGrant, at: number): GrantSummary {
+function summary(grant: GrantTerms & Pick<FeatureGrant, 'id' | 'source'>, at: number): GrantSummary {
   return {
     id: grant.id,
     planId: grant.planId,
@@ -285,6 +364,29 @@ function summary(grant: FeatureGrant, at: number): GrantSummary {
     validUntil: grant.validUntil,
     state: grantState(grant, at),
   };
+}
+
+function personSummary(grant: PersonFeatureGrant, at: number): PersonGrantSummary {
+  return {
+    id: grant.id,
+    personId: grant.personId,
+    planId: grant.planId,
+    planLabel: catalogPlanLabel(grant.planId),
+    features: grant.features,
+    source: grant.source,
+    validFrom: grant.validFrom,
+    validUntil: grant.validUntil,
+    state: grantState(grant, at),
+  };
+}
+
+/** A person's own entitlement from their Individual grants, in the person's words rather than a business's. */
+export function personEntitlement(grants: readonly PersonFeatureGrant[], revision: number, at: string): EntitlementView {
+  const view = entitlementFromGrants(grants, revision, at);
+  const planLabel = view.plan === 'none' ? null : view.plan === 'custom' ? 'Custom access' : catalogPlanLabel(view.plan);
+  const reason = view.state === 'active' ? '' : view.state === 'expired' ? INDIVIDUAL_EXPIRED_REASON
+    : view.state === 'revoked' ? INDIVIDUAL_REVOKED_REASON : INDIVIDUAL_NONE_REASON;
+  return { ...view, planLabel, reason };
 }
 
 // --- inputs ----------------------------------------------------------------------------
@@ -306,6 +408,18 @@ export const issueGrantInput = z.strictObject({
   validUntil: time.optional(),
 });
 export const revokeGrantInput = z.strictObject({ reason: z.string().trim().min(1).max(1000) });
+/** An Individual grant: a person-scoped plan, from a subscription, a courtesy or an internal test. */
+export const issuePersonGrantInput = z.strictObject({
+  planId: z.string().max(64),
+  /** Omitted: the plan's features. */
+  features: z.array(z.enum(ACCESS_FEATURES)).min(1).max(ACCESS_FEATURES.length).optional(),
+  source: z.enum(['subscription', 'courtesy', 'internal-test']),
+  reference: text(200),
+  note: text(1000),
+  validFrom: time.optional(),
+  /** Omitted: the plan's term. */
+  validUntil: time.optional(),
+});
 export const addFundingInput = z.strictObject({
   credits: z.number().int().min(1).max(100_000),
   reason: z.string().trim().min(1).max(500),
@@ -347,6 +461,8 @@ export interface CommercialOptions {
   directory?: IdentityDirectory;
   /** A label for staff views: 'faux' for the local test service, else the deployment. */
   backend?: string;
+  /** When an Individual grant covers a business (INDIVIDUAL_MAX_ACTIVE_MEMBERS). */
+  coverage?: IndividualCoverage;
 }
 
 const newId = (kind: string) => `${kind}_${crypto.randomUUID()}`;
@@ -354,6 +470,7 @@ const newId = (kind: string) => `${kind}_${crypto.randomUUID()}`;
 export class CommercialService {
   private readonly now: () => number;
   private readonly directory: IdentityDirectory;
+  private readonly coverage: IndividualCoverage;
   readonly backend: string;
 
   constructor(
@@ -365,6 +482,24 @@ export class CommercialService {
     this.now = options.now ?? Date.now;
     this.directory = options.directory ?? NO_IDENTITY_DIRECTORY;
     this.backend = options.backend ?? 'cloud';
+    this.coverage = options.coverage ?? { ...INDIVIDUAL_COVERAGE_DEFAULTS };
+  }
+
+  /**
+   * The caller's Individual plan, when it covers this business: the business's own grants do not
+   * include the Agent, the person holds an active Individual grant with it, and the business has no
+   * more active members than the threshold. Read only on that fallback, so a business whose own plan
+   * includes the Agent reads exactly what it always did.
+   */
+  private async individualFor(tx: CommercialTransaction, personId: string, organizationId: string, at: string) {
+    const grants = await tx.personGrants(personId);
+    if (!grants.length) return null;
+    const revision = await tx.personAccessRevision(personId);
+    const view = personEntitlement(grants, revision, at);
+    if (!(view.state === 'active' && view.agent)) return null;
+    const members = await tx.organizationActiveMembers(organizationId);
+    if (!individualCovers({ grantActive: true, organizationActiveMembers: members, maxActiveMembers: this.coverage.maxActiveMembers })) return null;
+    return { grants, revision, view };
   }
 
   private at() {
@@ -374,17 +509,24 @@ export class CommercialService {
   // --- customer reads -----------------------------------------------------------------
 
   /** One member's view of their business's access. Owners also see the grants. */
-  async access(token: string, organizationId: string): Promise<AccessView> {
+  async access(token: string, organizationId: string): Promise<CoveredAccessView> {
     const snapshot = await this.accounts.membership(token, organizationId);
     const at = this.at();
-    const { grants, revision } = await this.repository.transaction(async (tx) => ({
-      grants: await tx.grants(organizationId),
-      revision: await tx.accessRevision(organizationId),
-    }));
-    const view = entitlementFromGrants(grants, revision, at);
+    const { grants, revision, personRevision, individual } = await this.repository.transaction(async (tx) => {
+      const grants = await tx.grants(organizationId);
+      const revision = await tx.accessRevision(organizationId);
+      const personRevision = await tx.personAccessRevision(snapshot.person.id);
+      const own = entitlementFromGrants(grants, revision, at);
+      return { grants, revision, personRevision, individual: own.state === 'active' && own.agent ? null : await this.individualFor(tx, snapshot.person.id, organizationId, at) };
+    });
+    const view = individual ? individual.view : entitlementFromGrants(grants, revision, at);
     const role = snapshot.membership.role;
     const capabilities = ROLE_CAPABILITIES[role];
     const admission = decideAgentAdmission({ workspace: 'business', member: true, entitlement: snapshotFromView(view), at });
+    const when = Date.parse(at);
+    // An owner sees the Individual grant beside the business's own, marked as the person's.
+    const summaries: (GrantSummary & { scope?: 'person' })[] = grants.map((grant) => summary(grant, when));
+    if (individual) summaries.push(...individual.grants.map((grant) => ({ ...summary(grant, when), planLabel: catalogPlanLabel(grant.planId), scope: 'person' as const })));
     return {
       v: 1,
       organizationId,
@@ -398,9 +540,12 @@ export class CommercialService {
       agent: { included: admission.admitted, reason: admission.admitted ? '' : admission.reason },
       validFrom: view.validFrom,
       validUntil: view.validUntil,
-      revision,
-      grants: capabilities.seePlan ? grants.map((grant) => summary(grant, Date.parse(at))).sort((a, b) => (a.validUntil < b.validUntil ? 1 : -1)) : null,
+      // The business's revision plus this person's own. Both only grow, and the person's is always
+      // added, so the number never steps down when an Individual plan stops covering the business.
+      revision: revision + personRevision,
+      grants: capabilities.seePlan ? summaries.sort((a, b) => (a.validUntil < b.validUntil ? 1 : -1)) : null,
       checkedAt: at,
+      ...(individual ? { coveredBy: 'individual' as const } : {}),
     };
   }
 
@@ -423,8 +568,12 @@ export class CommercialService {
     const snapshot = await this.accounts.membership(token, organizationId);
     const at = this.at();
     return this.repository.transaction(async (tx) => {
-      const revision = await tx.accessRevision(organizationId);
-      const view = entitlementFromGrants(await tx.grants(organizationId), revision, at);
+      const ownRevision = await tx.accessRevision(organizationId);
+      const own = entitlementFromGrants(await tx.grants(organizationId), ownRevision, at);
+      // A sole proprietor's Individual plan covers the business when its own plan does not include the Agent.
+      const individual = own.state === 'active' && own.agent ? null : await this.individualFor(tx, snapshot.person.id, organizationId, at);
+      const view = individual ? individual.view : own;
+      const revision = ownRevision + (await tx.personAccessRevision(snapshot.person.id));
       const policy = await tx.policy();
       const decision: AgentAdmissionDecision = decideAgentAdmission({
         workspace: 'business', member: true, entitlement: snapshotFromView(view), at,
@@ -443,6 +592,7 @@ export class CommercialService {
         accessRevision: revision,
         policyRevision: policy?.revision ?? 0,
         rootJobId: parsed.data.rootJobId ?? null,
+        ...(individual ? { coverage: 'individual' as const } : {}),
       };
       await tx.saveAdmission(record);
       return {
@@ -459,6 +609,87 @@ export class CommercialService {
         },
         // A decision is reused for at most this long before the host asks again.
         validUntil: new Date(Math.min(Date.parse(snapshot.validUntil), this.now() + 60_000)).toISOString(),
+      };
+    });
+  }
+
+  /** The signed-in person's own Individual access, for `GET /account/access`. State none without a grant. */
+  async personAccess(token: string): Promise<PersonAccessView> {
+    const session = await this.accounts.signIn(token);
+    const personId = session.person.id;
+    const at = this.at();
+    const { grants, revision } = await this.repository.transaction(async (tx) => ({
+      grants: await tx.personGrants(personId),
+      revision: await tx.personAccessRevision(personId),
+    }));
+    const view = personEntitlement(grants, revision, at);
+    const included = view.state === 'active' && view.agent;
+    const when = Date.parse(at);
+    return {
+      v: 1,
+      personId,
+      state: view.state,
+      planId: view.plan === 'none' ? null : view.plan,
+      planLabel: view.planLabel,
+      features: view.features as AccessFeature[],
+      agent: { included, reason: included ? '' : view.state === 'active' ? AGENT_PERSONAL_INDIVIDUAL_REASON : view.reason },
+      validFrom: view.validFrom,
+      validUntil: view.validUntil,
+      revision,
+      grants: grants.map((grant) => personSummary(grant, when)).sort((a, b) => (a.validUntil < b.validUntil ? 1 : -1)),
+      checkedAt: at,
+    };
+  }
+
+  /**
+   * Admit (or refuse) Personal work, or work in a project no business owns, under the person's own
+   * Individual plan, and record the decision. A business's plan never admits it.
+   */
+  async admitPersonalAgent(token: string, input: z.infer<typeof agentAdmissionInput>) {
+    const parsed = agentAdmissionInput.safeParse(input);
+    if (!parsed.success) throw new AccountError(422, 'Name the surface and route kind this Agent work runs on.');
+    const session = await this.accounts.signIn(token);
+    const personId = session.person.id;
+    const at = this.at();
+    return this.repository.transaction(async (tx) => {
+      const revision = await tx.personAccessRevision(personId);
+      const view = personEntitlement(await tx.personGrants(personId), revision, at);
+      const policy = await tx.policy();
+      const contract = decideAgentAdmission({
+        workspace: 'personal', member: true, entitlement: snapshotFromView(NO_ENTITLEMENT_VIEW), individual: snapshotFromView(view), at,
+      });
+      const decision = contract.admitted ? contract
+        : view.state === 'revoked' ? { admitted: false as const, code: 'entitlement_revoked', reason: INDIVIDUAL_REVOKED_REASON }
+        : view.state === 'expired' ? { admitted: false as const, code: 'entitlement_expired', reason: INDIVIDUAL_EXPIRED_REASON }
+        : { admitted: false as const, code: 'entitlement_none', reason: INDIVIDUAL_NONE_REASON };
+      const record: PersonalAdmissionRecord = {
+        id: newId('agent_admission'),
+        at,
+        personId,
+        tenantId: personId,
+        surface: parsed.data.surface,
+        routeKind: parsed.data.routeKind,
+        decision: decision.admitted ? 'admitted' : 'refused',
+        code: decision.admitted ? null : decision.code,
+        planId: view.plan === 'none' ? null : view.plan,
+        accessRevision: revision,
+        policyRevision: policy?.revision ?? 0,
+        rootJobId: parsed.data.rootJobId ?? null,
+      };
+      await tx.savePersonalAdmission(record);
+      return {
+        admissionId: record.id,
+        decision,
+        pins: {
+          organizationId: null,
+          tenantId: personId,
+          personId,
+          planId: record.planId,
+          accessRevision: revision,
+          policyRevision: record.policyRevision,
+          rootJobId: record.rootJobId,
+        },
+        validUntil: new Date(Math.min(Date.parse(session.expiresAt), this.now() + 60_000)).toISOString(),
       };
     });
   }
@@ -510,7 +741,8 @@ export class CommercialService {
       permissions: (['customers.read', 'grants.write', 'funding.write', 'routes.write', 'policy.publish', 'staff.write'] as const)
         .filter((permission) => staffCan(actor.operator.role, permission)),
       backend: this.backend,
-      plans: PLAN_TEMPLATES,
+      /** Every plan staff may issue, each with its scope: 'organization' or 'person'. */
+      plans: planCatalog(),
     };
   }
 
@@ -588,6 +820,8 @@ export class CommercialService {
     const parsed = issueGrantInput.safeParse(input);
     if (!parsed.success) throw new AccountError(422, 'A grant needs a plan or features, a source, a reference and dates.');
     const actor = await this.staff(token, 'grants.write');
+    // The Individual plan is a person's own subscription; it is never issued to a business.
+    if (isPersonPlan(parsed.data.planId)) throw new AccountError(422, INDIVIDUAL_PLAN_NOT_FOR_BUSINESS);
     const plan = parsed.data.planId === null ? undefined : planTemplate(parsed.data.planId);
     if (parsed.data.planId !== null && !plan) throw new AccountError(422, 'That plan is not in the catalog.');
     const features = parsed.data.features ?? plan?.features;
@@ -651,6 +885,106 @@ export class CommercialService {
       await this.audited(tx, actor, {
         action: 'grant.revoked', organizationId, targetKind: 'grant', targetId: grantId, reason: parsed.data.reason,
         detail: { planId: grant.planId, features: grant.features, accessRevision: revision },
+      });
+      return row;
+    });
+  }
+
+  // --- Individual plans, for staff ----------------------------------------------------------
+
+  /** One person, for the Operations app: their businesses, Individual grants, personal admissions and audit. */
+  async person(token: string, personId: string) {
+    await this.staff(token, 'customers.read');
+    const at = this.at();
+    const found = await this.repository.transaction(async (tx) => {
+      const person = await tx.person(personId);
+      if (!person) throw new AccountError(404, 'That person was not found.');
+      const row = (await tx.people(personId, 200)).find((item) => item.person.id === personId);
+      const memberships = [];
+      for (const membership of row?.memberships ?? []) {
+        const organization = await tx.organizationRecord(membership.organizationId);
+        memberships.push({
+          ...membership, roleLabel: roleLabel(membership.role), organizationName: organization?.name ?? null,
+          activeMembers: await tx.organizationActiveMembers(membership.organizationId),
+        });
+      }
+      return {
+        person,
+        memberships,
+        operator: await tx.operator(personId),
+        grants: await tx.personGrants(personId),
+        revision: await tx.personAccessRevision(personId),
+        admissions: await tx.personalAdmissions(personId, 50),
+        audit: await tx.personAudit(personId, 50),
+      };
+    });
+    const contact = await this.contact(found.person.issuer, found.person.subject);
+    return {
+      person: found.person.person,
+      email: contact?.email ?? null,
+      staffRole: found.operator?.state === 'active' ? found.operator.role : null,
+      memberships: found.memberships,
+      entitlement: personEntitlement(found.grants, found.revision, at),
+      grants: found.grants.map((grant) => ({ ...grant, current: grantState(grant, Date.parse(at)) })),
+      admissions: found.admissions,
+      audit: found.audit,
+    };
+  }
+
+  /** Issue an Individual grant to a person. Only a person-scoped plan; never included usage yet. */
+  async issuePersonGrant(token: string, personId: string, input: z.infer<typeof issuePersonGrantInput>) {
+    const parsed = issuePersonGrantInput.safeParse(input);
+    if (!parsed.success) throw new AccountError(422, 'A grant needs a plan, a source, a reference and dates.');
+    const actor = await this.staff(token, 'grants.write');
+    const plan = catalogPlan(parsed.data.planId);
+    if (!plan) throw new AccountError(422, 'That plan is not in the catalog.');
+    if (plan.scope !== 'person') throw new AccountError(422, BUSINESS_PLAN_NOT_FOR_PERSON);
+    const features = [...new Set(parsed.data.features ?? plan.features)] as AccessFeature[];
+    // Funding is kept per business today, so a person's grant cannot carry included usage until person funding exists.
+    if (features.includes('managed-inference'))
+      throw new AccountError(422, "Included AI usage isn't part of the Individual plan yet, so it can't be issued with it.");
+    if (!parsed.data.reference) throw new AccountError(422, 'Name the invoice, agreement or ticket this grant answers to.');
+    const now = this.now();
+    const validFrom = parsed.data.validFrom ?? new Date(now).toISOString();
+    const validUntil = parsed.data.validUntil ??
+      (plan.termDays ? new Date(Date.parse(validFrom) + plan.termDays * 86_400_000).toISOString() : undefined);
+    if (!validUntil) throw new AccountError(422, 'Choose when this grant ends.');
+    if (Date.parse(validUntil) <= Date.parse(validFrom) || Date.parse(validUntil) <= now)
+      throw new AccountError(422, 'A grant must end after it starts, and after today.');
+    return this.repository.transaction(async (tx) => {
+      if (!(await tx.person(personId))) throw new AccountError(404, 'That person was not found.');
+      await tx.lockPerson(personId);
+      const row: PersonFeatureGrant = {
+        v: 1, id: newId('grant'), personId, tenantId: personId, planId: plan.id, features, source: parsed.data.source,
+        reference: parsed.data.reference, note: parsed.data.note, validFrom, validUntil, state: 'active',
+        issuedAt: this.at(), issuedBy: actor.person.id, revokedAt: null, revokedBy: null, revokedReason: null,
+      };
+      await tx.savePersonGrant(row);
+      const revision = await tx.bumpPersonAccessRevision(personId, personId);
+      await this.audited(tx, actor, {
+        action: 'person-grant.issued', organizationId: null, targetKind: 'person-grant', targetId: row.id, reason: row.note || row.reference,
+        detail: { personId, planId: row.planId, features: row.features, source: row.source, reference: row.reference, validFrom, validUntil, accessRevision: revision },
+      });
+      return { grant: row };
+    });
+  }
+
+  async revokePersonGrant(token: string, personId: string, grantId: string, input: z.infer<typeof revokeGrantInput>) {
+    const parsed = revokeGrantInput.safeParse(input);
+    if (!parsed.success) throw new AccountError(422, 'Say why this grant is being withdrawn.');
+    const actor = await this.staff(token, 'grants.write');
+    return this.repository.transaction(async (tx) => {
+      await tx.lockPerson(personId);
+      const grant = (await tx.personGrants(personId)).find((row) => row.id === grantId);
+      if (!grant) throw new AccountError(404, 'That grant was not found for this person.');
+      if (grant.state === 'revoked') throw new AccountError(409, 'That grant is already withdrawn.');
+      // Like a business grant: it stops new Agent work at the next admission and deletes nothing.
+      const row: PersonFeatureGrant = { ...grant, state: 'revoked', revokedAt: this.at(), revokedBy: actor.person.id, revokedReason: parsed.data.reason };
+      await tx.savePersonGrant(row);
+      const revision = await tx.bumpPersonAccessRevision(personId, grant.tenantId);
+      await this.audited(tx, actor, {
+        action: 'person-grant.revoked', organizationId: null, targetKind: 'person-grant', targetId: grantId, reason: parsed.data.reason,
+        detail: { personId, planId: grant.planId, features: grant.features, accessRevision: revision },
       });
       return row;
     });
@@ -856,15 +1190,33 @@ export class CommercialService {
 
   async people(token: string, query = '') {
     await this.staff(token, 'customers.read');
-    const rows = await this.repository.transaction((tx) => tx.people(query.trim().toLowerCase().slice(0, 100), 200));
+    const at = this.at();
+    const rows = await this.repository.transaction(async (tx) => {
+      const found = await tx.people(query.trim().toLowerCase().slice(0, 100), 200);
+      const names = new Map<string, string | null>();
+      const out = [];
+      for (const row of found) {
+        for (const membership of row.memberships)
+          if (!names.has(membership.organizationId)) names.set(membership.organizationId, (await tx.organizationRecord(membership.organizationId))?.name ?? null);
+        const grants = await tx.personGrants(row.person.id);
+        const individual = grants.length ? personEntitlement(grants, await tx.personAccessRevision(row.person.id), at) : null;
+        out.push({ ...row, names, individual });
+      }
+      return out;
+    });
     const operators = new Map((await this.repository.transaction((tx) => tx.operators())).map((row) => [row.personId, row]));
     const out = [];
     for (const row of rows) {
       const contact = await this.contact(row.issuer, row.subject);
       out.push({
         person: row.person, email: contact?.email ?? null,
-        memberships: row.memberships.map((membership) => ({ ...membership, roleLabel: roleLabel(membership.role) })),
+        memberships: row.memberships.map((membership) => ({
+          ...membership, roleLabel: roleLabel(membership.role), organizationName: row.names.get(membership.organizationId) ?? null,
+        })),
         staffRole: operators.get(row.person.id)?.state === 'active' ? operators.get(row.person.id)!.role : null,
+        individual: row.individual
+          ? { state: row.individual.state, planId: row.individual.plan === 'none' ? null : row.individual.plan, validUntil: row.individual.validUntil }
+          : null,
       });
     }
     return out;
