@@ -71,10 +71,15 @@ beforeEach(async () => {
   }));
   token = (await signIn.json()).accessToken as string;
   admissionId = (await cloud.commercial.admitAgent(token, organizationId, { surface: 'conversation', routeKind: 'managed', rootJobId: 'run-1' })).admissionId;
+  const authority = await cloud.accounts.membership(token, organizationId);
   // The Worker login's database holds the seeded account, grant and routing rows; the funding login's is empty.
   db.log.length = 0;
   db.answer = async (url, sql, values) => {
     if (url !== DATABASE_URL) return [];
+    if (sql.includes('FROM control_plane.organizations') && String(values[0]) === organizationId)
+      return sql.includes('SELECT record') ? [{ record: authority.organization }] : [{ id: organizationId }];
+    if (sql.includes('FROM control_plane.memberships') && String(values[0]) === organizationId && String(values[1]) === authority.person.id)
+      return [{ record: authority.membership }];
     return cloud.store.commercial.transaction(async (tx) => {
       if (sql.includes('FROM control_plane.agent_admissions')) {
         const record = await tx.admission(String(values[0]), String(values[1]));
@@ -83,7 +88,7 @@ beforeEach(async () => {
       if (sql.includes('FROM control_plane.feature_grants')) return (await tx.grants(String(values[0]))).map((record) => ({ record }));
       if (sql.includes('FROM control_plane.organization_access')) return [{ revision: await tx.accessRevision(String(values[0])) }];
       if (sql.includes('FROM control_plane.tier_policies')) {
-        const record = await tx.policy();
+        const record = await tx.policy(undefined, String(values[0]));
         return record ? [{ record }] : [];
       }
       if (sql.includes('FROM control_plane.route_entries')) return (await tx.routes()).map((record) => ({ record }));
@@ -128,7 +133,8 @@ describe('the managed gateway’s funding login', () => {
       expect(funding.some((sql) => sql.startsWith(`INSERT INTO control_plane.${table}(`))).toBe(true);
     expect(tablesOn(FUNDING_URL).every((table) => FUNDING_TABLES.has(table))).toBe(true);
     expect(tablesOn(FUNDING_URL)).toEqual(expect.arrayContaining(['funded_job_refs', 'funded_jobs', 'credit_periods', 'funding_reservations']));
-    expect(tablesOn(DATABASE_URL).sort()).toEqual(['agent_admissions', 'feature_grants', 'organization_access', 'route_entries', 'tier_policies']);
+    expect(tablesOn(DATABASE_URL).sort()).toEqual(['account_routing_preferences', 'agent_admissions', 'feature_grants', 'memberships',
+      'organization_access', 'organizations', 'route_entries', 'routing_job_constraints', 'tier_policies']);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
@@ -137,7 +143,8 @@ describe('the managed gateway’s funding login', () => {
     expect(response.status).toBe(404);
     expect((await response.json()).error.code).toBe('unknown_attempt');
     expect(tablesOn(FUNDING_URL)).toEqual(['funding_reservations', 'funding_settlements']);
-    expect(statementsOn(DATABASE_URL)).toEqual([]);
+    expect(tablesOn(DATABASE_URL)).toEqual(['organizations', 'memberships']);
+    expect(tablesOn(DATABASE_URL).every((table) => !FUNDING_TABLES.has(table))).toBe(true);
   });
 
   it('keeps the usage projection and the commercial routes on DATABASE_URL', async () => {

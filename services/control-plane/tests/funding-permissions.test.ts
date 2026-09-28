@@ -5,9 +5,9 @@
  * 1. The gateway runs its funding paths over the faux cloud's store, through a
  *    recording repository: a first call in a new month (so the month's credit
  *    is allocated), a retry naming its parent, a settled call under the company
- *    ceiling, a provider 429 (released), a provider 500 (parked uncertain), a
- *    replay, and a read of an attempt. Every FundingTransaction call is kept
- *    with its arguments.
+ *    ceiling, a pre-dispatch refusal (released), a provider 429 (released), a
+ *    provider 500 (parked uncertain), a replay, and a read of an attempt.
+ *    Every FundingTransaction call is kept with its arguments.
  * 2. Every recorded call is replayed on PostgresFundingTransaction over a
  *    recording SQL client, so the statements are exactly the ones Postgres
  *    would receive, and each statement is reduced to the privileges it needs.
@@ -25,7 +25,7 @@ import { createFauxCloud } from '../src/faux/cloud.js';
 import { DEMO_ACCOUNTS, FAUX_DEMO_PASSWORD, seedDemo } from '../src/faux/seed.js';
 import { FundingService, type FundingRepository } from '../src/funding.js';
 import { PostgresFundingTransaction } from '../src/funding-postgres.js';
-import { ManagedInferenceService } from '../src/managed-inference.js';
+import { ManagedError, ManagedInferenceService } from '../src/managed-inference.js';
 import { MANAGED_PROVIDERS, bedrockResponsesCaller, scriptedResponsesFetch } from '../src/managed-providers.js';
 import type { SqlClient } from '../src/postgres.js';
 import { providerSpy, readAll, type ProviderRequest } from './support/managed.js';
@@ -256,6 +256,22 @@ async function runGatewayPaths() {
   const statuses = {
     first: await ask('run-1:1'),
     retry: await ask('run-1:2', 'run-1:1'),
+    refusedBeforeDispatch: await (async () => {
+      // The scoped route passes this callback after reserving. Invoke that same
+      // gateway boundary directly to cover its release without routing setup.
+      const authority = await cloud.accounts.membership(token, organizationId);
+      const grants = await cloud.store.commercial.transaction((tx) => tx.grants(organizationId));
+      const holdAndDispatch = Reflect.get(gateway, 'holdAndDispatch') as (...args: unknown[]) => Promise<unknown>;
+      await expect(holdAndDispatch.call(gateway,
+        { token, organizationId, admissionId: admission.admissionId, jobId: 'run-1', attemptId: 'run-1:5',
+          parentAttemptId: null, tier: 'efficient', usageClass: 'included-chat', scope: { kind: 'organization', id: organizationId } },
+        authority.organization.tenantId, grants,
+        { kind: 'generation', route: LUNA.model, requestDigest: 'a'.repeat(64), rate: LUNA.rate,
+          maxMicroUsd: 1000, ceilingMicroUsd: 100000000 },
+        async () => { throw new ManagedError(499, 'cancelled', 'The request was cancelled before dispatch.'); },
+      )).rejects.toMatchObject({ status: 499, code: 'cancelled' });
+      return 499;
+    })(),
     busy: await (async () => {
       answer = () => Response.json({ error: { message: 'Slow down.' } }, { status: 429 });
       return ask('run-1:3');
@@ -314,8 +330,8 @@ describe('cp_funding (scripts/funding-permissions.sql)', () => {
   it('grants exactly what PostgresFundingRepository runs on the gateway’s paths, and nothing else', async () => {
     const run = await runGatewayPaths();
     // The scenarios did what they are for.
-    expect(run.statuses).toEqual({ first: 200, retry: 200, busy: 429, failed: 503, replayed: 409, read: 200 });
-    expect(run.states).toEqual({ 'run-1:1': 'settled', 'run-1:2': 'settled', 'run-1:3': 'released', 'run-1:4': 'uncertain' });
+    expect(run.statuses).toEqual({ first: 200, retry: 200, busy: 429, failed: 503, refusedBeforeDispatch: 499, replayed: 409, read: 200 });
+    expect(run.states).toEqual({ 'run-1:1': 'settled', 'run-1:2': 'settled', 'run-1:3': 'released', 'run-1:4': 'uncertain', 'run-1:5': 'released' });
     expect(run.periods).toEqual(['2026-09', '2026-10']);
     expect(run.providerCalls).toBe(4);
 
