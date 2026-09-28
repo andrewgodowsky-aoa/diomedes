@@ -8,5 +8,7 @@ export default defineConfig({
   expect: { timeout: 15_000 },
   outputDir: '../../../test-results/operations-routing-browser',
   reporter: [['list']],
-  use: { browserName: 'chromium', headless: true, viewport: { width: 1440, height: 1000 }, trace: 'retain-on-failure' },
+  use: { browserName: 'chromium', headless: true, viewport: { width: 1440, height: 1000 }, trace: 'retain-on-failure',
+    actionTimeout: 15_000, screenshot: 'only-on-failure',
+    launchOptions: { executablePath: process.env.PLAYWRIGHT_EXECUTABLE_PATH } },
 });

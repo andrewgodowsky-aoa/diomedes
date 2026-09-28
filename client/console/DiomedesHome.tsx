@@ -55,6 +55,7 @@ import { HomeHistorySharing } from './HomeHistorySharing';
 import { JobCapWarning } from './JobCapWarning';
 import { ThreadMenu } from './ThreadMenu';
 import { NativeSessionControls } from './NativeSessionControls';
+import { ThreadManagedRoutingDetails } from './ManagedRoutingReceipt';
 import { readRecordedArtifacts } from './artifact-evidence';
 import { stepLiveReply, type LiveBinding, type LiveEvent, type LiveReply } from './live-reply';
 import { saveArtifact } from './artifact-save';
@@ -894,13 +895,23 @@ export function DiomedesHome(props: DiomedesHomeProps) {
         art={props.scheme === 'nectovia' ? <HomeArt /> : undefined}
         session={
           binding ? (
-            <NativeSessionControls
-              projectId={binding.projectId}
-              threadId={binding.threadId}
-              mode={modeFor(restriction)}
-              answering={pending}
-              onAnswered={() => void reread(binding)}
-            />
+            <>
+              <NativeSessionControls
+                projectId={binding.projectId}
+                threadId={binding.threadId}
+                mode={modeFor(restriction)}
+                answering={pending}
+                onAnswered={() => void reread(binding)}
+              />
+              {turns.length > 0 && (
+                <ThreadManagedRoutingDetails
+                  key={`${binding.projectId}/${binding.threadId}`}
+                  projectId={binding.projectId}
+                  threadId={binding.threadId}
+                  refreshKey={`${turns.length}:${pending}`}
+                />
+              )}
+            </>
           ) : undefined
         }
         menu={
