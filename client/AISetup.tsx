@@ -10,6 +10,7 @@ import { AzureOpenAISetup, OpenRouterSetup } from './ProviderSetup';
 import { GoogleVertexSetup } from './VertexSetup';
 import { TierSetup } from './TierSetup';
 import { CodexSetup } from './CodexSetup';
+import { ManagedInferencePolicy } from './ManagedInferencePolicy';
 import {
   advanceSetup,
   continueChoice,
@@ -128,6 +129,7 @@ export function AIConnections({
   onStartFirstTask,
   ownerRoutes: ownerRoutesKnown,
 }: AIConnectionProps) {
+  const freePlan = useFreePlan();
   const [connections, setConnections] = useState<EngineConnection[] | null>(null);
   // Off until the host says otherwise: a customer never sees the provider cards.
   const [ownerRoutes, setOwnerRoutes] = useState(ownerRoutesKnown ?? false);
@@ -633,6 +635,12 @@ export function AIConnections({
 
   return (
     <div className="ai-connections">
+      {!freePlan && <ManagedInferencePolicy />}
+      <h3>External AI tools</h3>
+      <p className="caption">
+        Optional tools for your own work on this device. Subscription-backed engines must follow
+        the provider's rules and cannot supply pooled inference for your organization.
+      </p>
       <p className="prose small">{DISCLOSURE}</p>
       <details>
         <summary>Controls and limits</summary>
@@ -1169,18 +1177,18 @@ export function AIConnections({
             </section>
           );
         })}
-        {/* Model-API routes: the company's own provider accounts, not installed engines. Shown
-            only when the app was launched with DIOMEDES_OWNER_ROUTES=1; customers never connect a
-            provider, because the Nectovia Agent runs on Nectovia's own route. */}
+        {/* Provider configuration still requires the host's owner-route authority. Expanding
+            Advanced changes visibility only; it never grants a payer or routing permission. */}
         {ownerRoutes && (
-          <>
+          <details>
+            <summary>Advanced: provider accounts and routing</summary>
             <AwsBedrockSetup settings={settings} save={save} busy={busy} />
             <AzureOpenAISetup settings={settings} save={save} busy={busy} />
             <OpenRouterSetup settings={settings} save={save} busy={busy} />
             <GoogleVertexSetup settings={settings} save={save} busy={busy} />
             {/* The owner's tier map: the one place that decides which route serves each tier. */}
             <TierSetup settings={settings} save={save} busy={busy} />
-          </>
+          </details>
         )}
       </div>
     </div>
@@ -1233,18 +1241,12 @@ export default function AISetup({ settings, save, busy, onContinue, onBack }: AI
   return (
     <div className="ai-setup">
       <h1>Connect an AI service</h1>
-      {freePlan ? (
+      {freePlan && (
         <p className="prose" data-agent-included="free">
           You're on the free version, so the Nectovia Agent isn't included. Connect your own AI tool
           below. Conversations run on {CONVERSATION_ENGINE_NAMES}; the others take on project work.
         </p>
-      ) : (
-        <p className="prose" data-agent-included>
-          The Nectovia Agent is included with Business and needs no setup. The tools below are optional:
-          connect one only if you want it for Work.
-        </p>
       )}
-      <CodexSetup settings={settings} save={save} busy={busy} />
       <AIConnections
         settings={settings}
         save={save}
@@ -1252,6 +1254,7 @@ export default function AISetup({ settings, save, busy, onContinue, onBack }: AI
         onConnections={setConnections}
         openTest={openTest}
       />
+      <CodexSetup settings={settings} save={save} busy={busy} />
       {skipError !== null && (
         <p className="ai-alert" role="alert">
           {skipError}

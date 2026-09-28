@@ -1,12 +1,12 @@
-# Managed Diomedes Agent access and allowance
+# Managed Nectovia Agent access and allowance
 
-PB-2026-09-10.1 | Engineering proposal; candidate price, not public approval.
+PB-2026-09-10.1 engineering contract, commercial terms reconciled to NC-2026-09-28.1.
 
 ## Offer and meaning
 
-Candidate: $300/month per organization with $100 of eligible managed inference. Preserve approved price anchors until explicitly replaced. Implement an inactive versioned plan definition, not a global constant or live checkout. Seat, host, location, support and storage limits need approved values before sale.
+The current [pricing and service scope](../../business/PRICING_STRATEGY_2026-09-15.md) governs approved prices, grants and commercial limits. Nectovia-managed inference is the default and preferred path. Included allowance is consumed first, then authorized additional managed usage at Nectovia's current usage rate. A policy decision does not activate checkout or certify a deployed service.
 
-Recommended meaning: a USD allowance debited by documented eligible upstream inference charges under a recorded rate card. It is not withdrawable money, provider account credit, a fixed token count or a guaranteed number of jobs. If using marked-up internal credits later, say so; do not describe $100 of those as $100 upstream API spend.
+Credits measure cumulative eligible usage under the recorded customer rate card. They are not withdrawable money, provider account credit, a fixed token count or a guaranteed number of jobs. Keep provider costs, internal pricing formulas and provider-to-credit derivations in private commercial records. Customers receive the applicable customer rate, authorized limit and an accurate usage statement and invoice.
 
 Account for setup, generation, billed reasoning/caching, reviewers, advisors and corrections. Explicitly classify embeddings, tool services and other fees as included or excluded. Use integer micro-USD or decimal money. Provider cost, allowance consumption and invoices remain separate. Local calls do not debit managed API credit; BYO charges do not silently switch payer.
 
@@ -14,7 +14,7 @@ Account for setup, generation, billed reasoning/caching, reviewers, advisors and
 
 Company keys remain server-side. Validate identity, membership, organization entitlement, data route and budget before dispatch. Bind short-lived authorization to tenant/audience/request; a client-supplied paid flag or organization ID is not authority. Do not create a generic unauthenticated API proxy.
 
-Keep authorized subscription-native and BYO routes separate; personal subscriptions are not resale inventory. Verify actual provider service/data terms before activation. No provider is commercially selected by this document. The website's contact database is not an entitlement backend.
+Customer-owned commercial API/cloud credentials are optional Advanced or contract-specific routes, not the default. They do not grant entitlement or debit Nectovia-funded credits. Consumer, Pro, Max, Team, Business and similar subscriptions cannot fund pooled organization-wide Agent inference. A provider-permitted subscription-backed external engine remains limited to its licensed user/device. No credential extraction, sharing or implicit payer fallback. Verify actual provider terms before activation. The website's contact database is not an entitlement backend.
 
 Use the approved backend where it exists after Opus. Otherwise build a working local/test ledger plus a narrow gateway interface and display hosted mode as unavailable. Missing credentials do not justify simulated paid readiness.
 
@@ -30,7 +30,7 @@ A billing platform is not the real-time spend gate. Stripe documents asynchronou
 
 ## Lifecycle
 
-Recommended defaults, pending commercial approval: pooled organization allowance per billing period; no rollover or auto-overage unless explicitly sold; lower admin/member/task caps; warnings and stop-new-managed-calls at exhaustion. Waiting, an approved purchase or an organization-permitted local/BYO route are explicit choices. No silent payer/privacy change.
+Use the included organization allowance first, then recorded authorized purchases. Additional managed usage requires an organization-authorized customer rate, billing period and finite monthly charge cap; default off. Alert at 75%, 90% and 100% of allowance and authorized cap, including pending/uncertain holds, and stop new calls at the limit. A higher job cap is not overage consent. No automatic overage, automatic top-up or silent payer/privacy change. Rollover/expiry terms remain separately scoped. Postpaid authorization, cap enforcement and notifications must exist together before postpaid usage is available; the current ledger spends only granted allowance and recorded purchases.
 
 Allocate each period once, even after duplicate invoice events. Reinstalling, new profiles, locations, models or members cannot reset credit. Upgrades, refunds, proration, chargebacks and service grants use adjustment events, not rewritten history. Payment cannot override a security suspension.
 
@@ -40,6 +40,6 @@ Offline Business features may eventually use bounded signed validity leases unde
 
 ## Economics and proof
 
-$300 minus full $100 usage leaves $200, or 66.7%, before all other costs—not profit. Assumed servicing costs of $40/$100/$200 leave $160/$100/$0 before acquisition and other excluded costs. These are scenarios, not forecasts. Measure cost per verified job, all calls/retries, setup usage, support and renewals.
+Company economics and negotiated pricing exceptions belong in the private commercial authority. Promotional credits and discounts affect company expenditure, not the customer debit, invoice or published grant. Keep estimated gross provider cost, expected promotions, confirmed credit application, customer debit and invoice distinct. Measure cost per verified job, all calls/retries, setup usage, support and renewals privately.
 
 Initial proof covers entitlement-versus-permission separation, concurrent reservations, idempotent settlement, uncertain responses, exhaustion, duplicate/out-of-order billing events, membership revocation and tenant-separated spend. Synthetic providers remain labeled. No live charges, company-key distribution or public checkout in the pre-GLM pass.

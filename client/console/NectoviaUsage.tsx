@@ -61,6 +61,7 @@ export function NectoviaUsageView({
       </p>
       {model.meter !== null && <UsageMeter value={model.meter} label={model.summary} />}
       {model.detail && <p className="caption ws-boundary">{model.detail}</p>}
+      {model.alert && <p className="caption ws-boundary" role="alert">{model.alert}</p>}
       {model.facts.length > 0 && (
         <dl className="ws-facts nu-facts">
           {model.facts.map((fact) => (
@@ -135,11 +136,19 @@ export function NectoviaUsage({
     void load(organizationId);
   }, [organizationId, load]);
 
-  // Freshness is relative to now; keep it honest while the panel stays open.
+  // Freshness still advances if a refresh is slow or cannot finish.
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 30_000);
     return () => clearInterval(timer);
   }, []);
+
+  // Refresh while the panel is open, waiting for the current read to finish before scheduling
+  // another. A failed read becomes unavailable; it never invents remaining funds.
+  useEffect(() => {
+    if (refreshing) return;
+    const timer = setTimeout(() => void load(organizationId), 30_000);
+    return () => clearTimeout(timer);
+  }, [organizationId, load, refreshing]);
 
   const shown: UsageState = state.organizationId === organizationId ? state : { state: 'loading', organizationId };
   return <NectoviaUsageView state={shown} now={now} refreshing={refreshing} onRefresh={() => void load(organizationId)} />;
