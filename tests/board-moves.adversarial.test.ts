@@ -73,6 +73,8 @@ const moved = (at: string, by: Owner, from: TaskState, to: TaskState): Task['mov
  * refusal. Mirrors the documented rules, not the implementation.
  */
 const expectedCommand = (to: BoardColumn, facts: BoardMoveFacts): string | null => {
+  if (to === 'Inbox') return null;
+  if (facts.from === 'Inbox') return to === 'Ready' ? 'accept' : null;
   if (to === 'Queued' || to === 'Working')
     return !facts.active &&
       !facts.slotBusy &&
@@ -128,6 +130,12 @@ describe('the move table, exhaustively', () => {
             // Start keeps its own admission checks; the table adds no confirmation.
             expect(move.confirm, tag).toBeNull();
             expect(move.pending, tag).toContain('Starting');
+          } else if (command === 'accept') {
+            // Inbox holds proposed work: Accept is the only move out, into Ready.
+            expect(move.label, tag).toBe('Accept task');
+            expect(move.pending, tag).toBe('Accepting...');
+            if (facts.autoStart) expect(move.confirm, tag).toContain('Automatic start');
+            else expect(move.confirm, tag).toBeNull();
           } else if (command === 'reopen') {
             expect(move.label, tag).toBe(from === 'Done' ? 'Reopen' : 'Move to Ready');
             // A reopen asks first exactly when automatic start is on here, since the queue may

@@ -12,6 +12,7 @@ import {
   identifyHarnessApproval,
 } from './harness/approval.js';
 import { NATIVE_LOOP_ENGINE } from '../shared/native-loop.js';
+import { isTaskPhaseIntent } from '../shared/task-phase.js';
 
 import {
   commandIdSchema as commandId,
@@ -316,6 +317,14 @@ export function validateApprovalReceipts(state: ProjectState) {
       throw incompatible();
     if (applied) {
       const write = execution.eventId ? events.get(execution.eventId) : undefined;
+      if (need.harness && isTaskPhaseIntent(need.harness.intent)) {
+        if (execution.state !== 'applied' || write?.kind !== 'task-handoff' ||
+            write.approvalId !== need.id || write.sessionId !== need.sessionId ||
+            write.taskId !== need.taskId || write.files.length !== 0)
+          throw incompatible();
+        commands.add(receipt.commandId);
+        continue;
+      }
       if (
         write?.kind !== 'changed' ||
         write.approvalId !== need.id ||

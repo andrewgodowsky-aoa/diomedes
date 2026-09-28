@@ -75,6 +75,9 @@ import { DELEGATION_LIMITS, SANDBOX_LIMITS, intersectScope, type SandboxManifest
 import { SandboxRefused, SandboxStore } from '../../sandbox/sandbox.js';
 import { ChangeSetService } from '../../sandbox/change-sets.js';
 import { DELEGATE_TOOL } from '../native-loop.js';
+import { proposeTask, workflowApiError } from '../../task-workflow.js';
+import { payloadDigest as taskProposalDigest } from '../../command-admission.js';
+import { createTaskPhaseGate } from '../../task-phase.js';
 
 /** A depth-2 helper's carve: fixed, so it can be the price of the tool that starts it. */
 const NESTED_UNITS = 4;
@@ -115,7 +118,7 @@ export const NATIVE_LOOP: CapabilityManifest = {
   label: 'Diomedes work loop',
   description:
     'Plan, act through registered tools under Trust, observe, and finish with a claim the task’s declared checks decide.',
-  tools: ['list_project_files', 'read_project_file', 'propose_write'],
+  tools: ['list_project_files', 'read_project_file', 'propose_write', 'propose_task'],
   requestedPermissions: ['write-project-file'],
   approvalPolicy: 'show-first',
   maxTurns: LOOP_LIMITS.maxTurns,
@@ -298,11 +301,80 @@ export function registerLoopTools(tools: ToolRegistry, store: Store, runs: RunSe
       return readFor(store, run.projectId, routeOf(run), context.input.path, scopeOf(run));
     },
   });
+  const proposal = scope.extend({
+    name: z.string().trim().min(1).max(200),
+    description: z.string().max(10_000),
+    output: z.string().trim().min(1).max(1000),
+  });
+  const proposalOutput = z.strictObject({ taskId: z.string(), inbox: z.literal(true) });
+  tools.register({
+    ...read,
+    name: 'propose_task',
+    description: 'Propose a separate child task for the person to accept in Inbox. This does not start it.',
+    effect: 'idempotent',
+    effectClass: 'idempotent-write',
+    schema: proposal,
+    outputSchema: proposalOutput,
+    targets: (input) => [`tasks/${input.projectId}/${input.runId}`],
+    execute: async (context) => {
+      const run = await ownRun(context, context.input, 'propose_task');
+      if (run.capabilityId !== NATIVE_LOOP.id || !run.taskId || !run.sessionId)
+        throw new ApiError(409, 'Only a task work loop can propose a child.');
+      return store.locked(async () => {
+        context.signal?.throwIfAborted();
+        const state = store.state(run.projectId);
+        const commandId = `proposal.${context.idempotencyKey}`;
+        const payloadDigest = taskProposalDigest(context.input);
+        const existing = state.tasks.find((task) => task.creationReceipt?.commandId === commandId);
+        if (existing) {
+          if (existing.creationReceipt!.payloadDigest !== payloadDigest)
+            throw new ApiError(409, 'This proposal identity already names a different task.');
+          return { taskId: existing.id, inbox: true as const };
+        }
+        const parent = state.tasks.find((task) => task.id === run.taskId);
+        const input = {
+          name: context.input.name,
+          description: context.input.description,
+          output: context.input.output,
+          parentTaskId: run.taskId!,
+          sessionId: run.sessionId!,
+          origin: parent?.origin,
+        };
+        const child = (() => {
+          try { return proposeTask(store, state, input); }
+          catch (error) { throw workflowApiError(error); }
+        })();
+        const event = state.history.at(-1)!;
+        child.creationReceipt = {
+          protocolVersion: 1, commandId, payloadDigest, projectId: run.projectId,
+          taskId: child.id, eventId: event.id, admittedAt: event.time,
+          actor: 'harness', scope: 'local-prototype',
+        };
+        await store.persist(state);
+        return { taskId: child.id, inbox: true as const };
+      });
+    },
+    reconcile: async ({ input, record }) => {
+      const task = store.state(input.projectId).tasks.find((item) =>
+        item.creationReceipt?.commandId === `proposal.${record.idempotencyKey}` &&
+        item.creationReceipt.payloadDigest === taskProposalDigest(input));
+      return task ? { applied: { taskId: task.id, inbox: true } } : 'not-applied';
+    },
+  });
 }
 
 /** What the model supplies for each loop tool; the host binds the rest. */
 export function loopBindings(store: Store): LoopToolBinding[] {
   return [
+    {
+      name: 'propose_task',
+      description: 'Propose a bounded child task only for a separate result. It waits in Inbox and cannot start itself.',
+      schema: z.strictObject({
+        name: z.string().trim().min(1).max(200), description: z.string().max(10_000),
+        output: z.string().trim().min(1).max(1000),
+      }),
+      bind: (input, run) => ({ ...(input as { name: string; description: string; output: string }), projectId: run.projectId, runId: run.id }),
+    },
     {
       name: 'list_project_files',
       description: 'List the project’s files by path.',
@@ -1166,6 +1238,7 @@ export function createLoopProcedure(deps: {
           model: input.model,
           sources: input.sources,
           stream: deps.stream ?? null,
+          enterPhase: createTaskPhaseGate({ store, runs, run, owner, principal }),
         }).run(runId, owner, input.goal, principal);
       } finally {
         beat();
@@ -1266,7 +1339,10 @@ export type LoopProcedure = ReturnType<typeof createLoopProcedure>;
  * computer, and only while the admitted route is on and still the connection
  * the run was admitted under. The same rule the model-API conversation runs keep.
  */
-export function loopEgressAuthorizer(services: () => Record<string, unknown> | undefined) {
+export function loopEgressAuthorizer(
+  services: () => Record<string, unknown> | undefined,
+  managedAccount?: (projectId: string) => string | null,
+) {
   return async (run: HarnessRun, intent: { destination: string; kind?: string }, phase: 'dispatch' | 'result') => {
     if (![NATIVE_LOOP.id, ...CHILD_CAPABILITIES].includes(run.capabilityId))
       throw new HarnessError('egress_denied', 'This run is not a Diomedes loop run.');
@@ -1274,6 +1350,12 @@ export function loopEgressAuthorizer(services: () => Record<string, unknown> | u
     if (intent.kind !== 'model') throw new HarnessError('egress_denied', 'A loop tool never sends anything outside this computer.');
     const input = run.input as { route?: unknown; accountRoute?: unknown } | null;
     const route = input?.route;
+    if (route === 'nectovia') {
+      if (run.capabilityId !== NATIVE_LOOP.id || !input?.accountRoute ||
+          managedAccount?.(run.projectId) !== input.accountRoute)
+        throw new HarnessError('egress_denied', 'The signed-in Nectovia account no longer matches this run.');
+      return;
+    }
     const settings = services();
     if (typeof route !== 'string' || settings?.[route] !== true)
       throw new HarnessError('egress_denied', 'This loop’s route is not switched on in Settings.');

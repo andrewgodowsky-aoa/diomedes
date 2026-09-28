@@ -1,6 +1,6 @@
 import type { Change, Need, Session, Task } from '../../shared/types';
 
-export type TaskColumn = 'Ready' | 'Queued' | 'Working' | 'Review' | 'Blocked' | 'Done';
+export type TaskColumn = 'Inbox' | 'Ready' | 'Queued' | 'Working' | 'Review' | 'Blocked' | 'Done';
 
 export const isActiveSession = (session: Session): boolean =>
   ['queued', 'working', 'waiting'].includes(session.state);
@@ -30,6 +30,8 @@ export function taskEvidence(
 
   if (active?.state === 'queued') return result('Queued', 'Waiting to start');
   if (active?.state === 'working') return result('Working', 'Run in progress');
+  if (task.workflow?.inbox) return result('Inbox', 'Accept this proposed task before it can run');
+  if (task.workflow?.pendingPhase) return result('Review', 'Approve the next phase to continue');
   if (openNeed) return result('Review', 'Needs your decision');
   if (active?.state === 'waiting') {
     if (pendingChanges || task.reason === 'changes-ready')

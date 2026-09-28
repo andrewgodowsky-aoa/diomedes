@@ -90,6 +90,11 @@ export function readyAt(
   changes: readonly Change[] = [],
 ): string | null {
   if (task.deletedAt || task.state !== 'todo') return null;
+  // A bounded workflow gates its own task: Inbox tasks wait for a person's
+  // acceptance and pending-phase tasks wait for phase approval, so neither
+  // starts on its own (shared/task-workflow.ts). The Board shows them where
+  // they wait; the queue simply has nothing to claim.
+  if (task.workflow?.inbox || task.workflow?.pendingPhase) return null;
   const own = sessions.filter((session) => session.taskId === task.id);
   if (own.some(isActiveSession)) return null;
   if (needs.some((need) => need.taskId === task.id && need.state === 'open')) return null;

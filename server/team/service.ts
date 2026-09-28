@@ -9,6 +9,7 @@ import type {
   TeamState,
 } from '../../shared/types.js';
 import { ApiError } from '../paths.js';
+import { emptyTaskWorkflow, taskWorkflowBlocker } from '../../shared/task-workflow.js';
 import { identifier, now, type Store } from '../store.js';
 import { migrateTeam } from '../store.js';
 import {
@@ -566,6 +567,7 @@ export class TeamService {
       owner: 'diomedes-with-ok',
     });
     task.createdBy = 'diomedes';
+    task.workflow = { ...emptyTaskWorkflow(), inbox: true };
     task.assignedTo = assignedTo;
     meta.blockedBy[task.id] = blocked;
     if (typeof args.idempotency_key === 'string' && args.idempotency_key.trim())
@@ -599,6 +601,10 @@ export class TeamService {
       throw new ApiError(400, 'Provide a task id.');
     const task = state.tasks.find((t) => t.id === args.task_id);
     if (!task) throw new ApiError(404, 'This task was not found.');
+    if (args.status !== undefined && args.status !== 'pending') {
+      const workflowBlocker = taskWorkflowBlocker(task);
+      if (workflowBlocker) throw new ApiError(409, workflowBlocker);
+    }
     let changed = false;
     let statusChange: TeamTaskStatus | null = null;
     if (args.description !== undefined && args.description !== null) {

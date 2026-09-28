@@ -1,13 +1,28 @@
 # DIOMEDES LIVE ROADMAP
 
-Roadmap version: 2026-09-25.2
-Last reconciled: September 25, 2026
+Roadmap version: 2026-09-27.1
+Last reconciled: September 27, 2026 (Board workflow sections synchronized with cloud)
 Product: Nectovia (named Diomedes until 2026-09-22)
 Company direction: Diomedes Systems
 Cloud canonical: 1bRhz3zQPXOYuVlt95U1EIkz7pcm1dtSsoBvkDrLR3zE
 Repository mirror: docs/DIOMEDES_LIVE_ROADMAP.md
 
 ## 1. Authority, current entry point and preservation
+
+**2026-09-27 Board workflow checkpoint.** The executable Board first slice is on
+main through PR #170. Andrew authorized finishing O44 and chose Full approval or
+Stop on phase change for task continuation. The `feature/board-workflows` source
+adds Inbox acceptance, native Plan/Build/Review handoffs through the existing
+approval system, bounded separate-output children, source-conversation links and
+managed Nectovia Board Work. Local verification and main integration are recorded
+separately. The exact
+evidence and accepted revision belong in
+`docs/implementation/2026-09-27-board-workflows.md`. This does not close a broader
+roadmap prompt, publish a desktop build or establish live-provider acceptance.
+Andrew's follow-up removes the Ask/Plan-only restriction on skill use. Task
+work can select a playbook from an active pack, with its version and digest
+pinned in the run; Build and Fix also accept playbook guidance. This changes
+neither action authority nor the pack's activation and integrity checks.
 
 Andrew's newest explicit decision governs intent; docs/DIOMEDES_CORE_PILLARS.md governs durable constraints; this roadmap governs strategy and sequencing; docs/DIOMEDES_PROJECT_MEMORY.md governs definitions; current source and fresh verification govern implemented reality. An assistant narrative, documentation approval or roadmap checkbox is not execution evidence.
 

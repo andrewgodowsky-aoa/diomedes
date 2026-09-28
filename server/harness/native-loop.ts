@@ -188,6 +188,15 @@ export interface NativeLoopOptions {
   readonly model: string | null;
   readonly sources?: readonly string[];
   /**
+   * Bounded task phase approval lane (`server/task-phase.ts`). The parent
+   * passes the gate for this run; the loop calls it after the durable plan
+   * record before the first act turn (`build`), and after the durable finish
+   * claim before `runtime.complete` (`review`). Absent runs exactly as
+   * before. Awaiting it may throw `Suspended` when the next phase parks for
+   * approval; the run then suspends with its records intact.
+   */
+  readonly enterPhase?: (phase: 'build' | 'review') => Promise<void>;
+  /**
    * H16: stream-time rules. Each model step attempt opens a watch the adapter's
    * streamed text is handed to; the step does not return until every firing is
    * recorded and handed on, so none is missed by the tool the answer proposes.
@@ -541,6 +550,9 @@ export class NativeLoop {
         () => z.json().parse({ v: 1, ...parsePlan(planText), from: 'model:plan' }) as unknown as LoopPlanRecord,
         principal,
       );
+      // Task phase lane: the plan phase is done and durable; entering build
+      // parks here under Stop on phase change, before any build model step.
+      await this.options.enterPhase?.('build');
       messages.push({ role: 'user', text: ACT_PROMPT });
 
       // 3–5. Act, observe, and possibly delegate, one turn at a time.
@@ -570,6 +582,9 @@ export class NativeLoop {
               z.json().parse({ v: 1, turn, claim, account: await reconciled() }) as unknown as LoopFinishRecord,
             principal,
           );
+          // Task phase lane: the finish claim is durable; entering review
+          // parks here under Stop on phase change, before the run completes.
+          await this.options.enterPhase?.('review');
           await this.runtime.complete(runId, owner, {
             loop: { finish: `finish:${turn}`, claim: finished.claim, verification: 'decided-by-declared-checks' },
           });

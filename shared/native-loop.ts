@@ -115,6 +115,8 @@ export interface LoopRunInput {
   readonly maxTurns: number;
   /** The H11 instruction section this run was admitted with, or empty. */
   readonly instructions: string;
+  /** Selected playbook version and digest; the exact delivered text is in instructions. */
+  readonly skill?: import('./capability-packs.js').SkillUse;
   /** The route a bounded sub-task may be handed to, chosen by the person. Null offers no delegation. */
   readonly delegate: {
     readonly route: string;

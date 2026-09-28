@@ -26,7 +26,8 @@ import {
 import type { Conversation, ProjectState, Route, Session } from '../shared/types.js';
 import { threadChoosesItsOwnModel, type AgentProfileService } from './agent-profiles.js';
 import { requireCloudSharing } from './cloud-sharing.js';
-import { NECTOVIA_WORK_REFUSED } from './engines/nectovia.js';
+import { taskWorkflowBlocker } from '../shared/task-workflow.js';
+import { CAPABILITY_PACKS, findSkill, isPackActive } from '../shared/capability-packs.js';
 import { withProfile, type NativeStartInput, type NativeWorkService } from './native-work.js';
 import { ApiError } from './paths.js';
 import { HOME_REFUSES_WORK, type Store } from './store.js';
@@ -51,6 +52,8 @@ export interface TaskExecutionDeps {
   running(projectId: string): boolean;
   /** The update refusal `admitWork` gives, or null. */
   updateClosing(): string | null;
+  /** Signed-in account and published tier, read without admitting paid work. */
+  managedChoice?(projectId: string, taskId: string): { model: string; accountRoute: string };
 }
 
 const ACTIVE: readonly Session['state'][] = ['queued', 'working', 'waiting'];
@@ -85,11 +88,20 @@ export async function taskExecutionView(
   if (store.isHomeProject(projectId)) block(HOME_REFUSES_WORK);
   const closing = deps.updateClosing();
   if (closing) block(closing);
-  if (route === NECTOVIA_ROUTE) block(NECTOVIA_WORK_REFUSED);
+  const workflowBlocker = taskWorkflowBlocker(task);
+  if (workflowBlocker) block(workflowBlocker);
+  const playbook = task.workflow?.skill;
+  if (playbook) {
+    const skill = findSkill(playbook.packId, playbook.skillId);
+    if (!skill) block('This skill does not exist.');
+    else if (!isPackActive(state.project.packs, playbook.packId))
+      block(`Turn on ${CAPABILITY_PACKS[playbook.packId].name} for this project before using ${skill.name}. It adds no permission.`);
+    else notes.push(`This task follows ${skill.name}; the playbook grants no additional permission.`);
+  }
   const document = task.sourceDocument ?? null;
   const sources = route !== 'sample' && document ? [document] : [];
-  if (route !== 'sample' && route !== NECTOVIA_ROUTE) {
-    if (store.settings.services?.[route] !== true)
+  if (route !== 'sample') {
+    if (route !== NECTOVIA_ROUTE && store.settings.services?.[route] !== true)
       block('Turn the selected engine on in Settings before using it.');
     try {
       requireCloudSharing(state, route, sources);
@@ -127,13 +139,32 @@ export async function taskExecutionView(
     effective: null,
   };
 
-  if (route === 'sample') {
+  if (route === NECTOVIA_ROUTE) {
+    if (listed) inert = 'Nectovia uses its managed model and work loop; saved provider profiles do not replace them.';
+    worker.note = 'The Diomedes work loop plans, acts and reviews within this task permission and limits.';
+    try {
+      if (!deps.managedChoice) throw new Error('Nectovia is unavailable in this host.');
+      const choice = deps.managedChoice(projectId, taskId);
+      model = { requested: choice.model, effort: null, selection: 'automatic' };
+    } catch (error) { block(message(error)); }
+    notes.push('Starting sends the instruction and selected documents to Nectovia. Account access and limits are checked again before each call.');
+  } else if (task.workflow) {
+    if (listed) inert = 'This task uses the Diomedes work loop; saved external worker profiles do not replace it.';
+    if (!['sample', 'aws-bedrock', 'azure-openai', 'openrouter', 'google-vertex'].includes(route))
+      block('This task requires the Diomedes work loop to enforce its phase settings. Choose a model API route.');
+    else if (route !== 'sample') {
+      const selected = store.settings.services?.[`${route}Model`];
+      model = { requested: typeof selected === 'string' ? selected : null, effort: null, selection: 'automatic' };
+      if (!selected || !store.settings.services?.[`${route}AccountRoute`]) block('Connect this route and choose its model in AI setup first.');
+    }
+    worker.note = 'The Diomedes work loop uses this task continuation and action-turn limit.';
+  } else if (route === 'sample') {
     if (listed) inert = 'The sample route runs a scripted worker, so saved profiles do not choose for it.';
     worker = {
       ...worker,
       note: 'The sample route runs a scripted worker. No Agent or model is involved and nothing is sent anywhere.',
     };
-  } else if (route !== NECTOVIA_ROUTE) {
+  } else {
     const applies = deps.profiles.applies(projectId, taskId, thread, requestedAgent);
     if (listed && !applies)
       inert = threadChoosesItsOwnModel(thread)

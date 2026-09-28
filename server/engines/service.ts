@@ -1993,9 +1993,21 @@ export class EngineService {
     },
     agent?: Pick<AgentWork, 'surface' | 'rootJobId'>,
   ): Promise<ModelSessionAdmission> {
-    // A loop on the Nectovia route is refused before the Agent gate is asked, so the service records
-    // no admission for work that would then be refused (NECTOVIA_LOOP_REFUSED says why).
-    if (route === NECTOVIA_ROUTE && agent?.surface === 'loop') throw new EngineError('ROUTE_REFUSED', NECTOVIA_LOOP_REFUSED);
+    // A loop on the Nectovia route is admitted only under its own stable root
+    // job (the loop's deterministic run id). Without one there is nothing the
+    // gateway can meter the steps under, so it is refused before the Agent gate
+    // is asked and the service records no admission (NECTOVIA_LOOP_REFUSED says
+    // why). With one it follows the ordinary managed admission below: the gate,
+    // the published policy, the pinned model/account and the month's guard.
+    // The gateway already admits `loop` (AGENT_SURFACES), checks the admission
+    // is current (15m) and pinned to the job, and accrues every step to the
+    // same job cap; the stale comment claiming otherwise lives in nectovia.ts.
+    if (
+      route === NECTOVIA_ROUTE &&
+      agent?.surface === 'loop' &&
+      (!agent?.rootJobId || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(agent.rootJobId))
+    )
+      throw new EngineError('ROUTE_REFUSED', NECTOVIA_LOOP_REFUSED);
     const api = this.modelApi;
     if (!api)
       throw new EngineError('RUNTIME_UNAVAILABLE', 'This model-API route is not available in this process.', true);
@@ -2449,6 +2461,15 @@ export class EngineService {
    * Admission is the route's own, read fresh; the credential opens here and the adapter is
    * bound to this run's job ledger, exactly as for a conversation turn. Nothing falls back to
    * another route, connection or payer.
+   *
+   * Nectovia is managed single-agent only: the wrapper below re-admits and
+   * re-opens immediately before every `complete` call, using the original
+   * runId as the root job, the pinned route/model/account and the same job
+   * ledger and stop signal. A captured credential or managed binding is never
+   * reused across steps, so a revoked membership, a moved policy or an emptied
+   * cap fails before the next dispatch. The descriptor (id, contract,
+   * capabilities) is the first admission's; only the call is fresh. No retries
+   * and no new ids on cap errors: the refusal propagates honestly.
    */
   async loopAdapter(
     route: ModelApiRoute,
@@ -2462,21 +2483,50 @@ export class EngineService {
       { ...request, requestId: request.runId, threadId: `loop-${request.runId}` },
       { surface: 'loop', rootJobId: request.runId },
     );
+    const ledger = await this.jobLedger(api, { projectId: request.projectId, requestId: request.runId, threadId: `loop-${request.runId}` });
     const { handle, secret } = await this.openModelApi(admission);
     const adapter = handle.adapter({
       model: admission.model,
       secret,
-      exposure: handle.exposure(
-        await this.jobLedger(api, { projectId: request.projectId, requestId: request.runId, threadId: `loop-${request.runId}` }),
-        request.runId,
-      ),
+      exposure: handle.exposure(ledger, request.runId),
       instructions: request.instructions,
       effort: 'medium',
       transport: api.transport,
     });
+    if (route !== NECTOVIA_ROUTE)
+      return {
+        ...adapter,
+        complete: (call, signal, stream) => adapter.complete(call, AbortSignal.any([signal, stop]), stream),
+      };
+    // Managed per-step path: re-admit, re-open and rebuild the call's adapter
+    // on every step. Route, model, account, job and ledger stay pinned to what
+    // the loop was admitted with; the token, policy, membership and cap are
+    // read again. Stale policy, expiry and revocation refuse here, unsent.
+    const pinned = { route, model: request.model, accountRoute: request.accountRoute, runId: request.runId, projectId: request.projectId, instructions: request.instructions };
     return {
       ...adapter,
-      complete: (call, signal, stream) => adapter.complete(call, AbortSignal.any([signal, stop]), stream),
+      complete: async (call, signal, stream) => {
+        const callSignal = AbortSignal.any([signal, stop]);
+        callSignal.throwIfAborted();
+        const fresh = await this.admitModelApi(
+          pinned.route,
+          { model: pinned.model, accountRoute: pinned.accountRoute, projectId: pinned.projectId, requestId: pinned.runId, threadId: `loop-${pinned.runId}` },
+          { surface: 'loop', rootJobId: pinned.runId },
+        );
+        if (fresh.model !== pinned.model || fresh.accountRoute !== pinned.accountRoute)
+          throw new EngineError('ACCOUNT_CHANGED', 'The Nectovia route changed after this loop was admitted. Nothing was sent.', true);
+        const opened = await this.openModelApi(fresh);
+        const step = opened.handle.adapter({
+          model: fresh.model,
+          secret: opened.secret,
+          exposure: opened.handle.exposure(ledger, pinned.runId),
+          instructions: pinned.instructions,
+          effort: 'medium',
+          transport: api.transport,
+        });
+        callSignal.throwIfAborted();
+        return step.complete(call, callSignal, stream);
+      },
     };
   }
   close() {

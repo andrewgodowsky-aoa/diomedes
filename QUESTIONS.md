@@ -638,8 +638,20 @@ Default: each stays as built.
 ### O44. The executable Board: what its first slice leaves open
 
 Raised 2026-09-27 with the executable Board (`docs/implementation/2026-09-27-executable-task-board.md`,
-branch `feature/executable-task-board`, not merged), which follows the 2026-09-26 research on
+branch `feature/executable-task-board`, merged in PR #170), which follows the 2026-09-26 research on
 Hermes' board.
+
+Andrew authorized finishing this slice on 2026-09-27. He chose task permissions:
+**Full approval** continues through the phases within existing permissions and
+limits; **Stop on phase change** asks before the next phase. The implementation
+on `feature/board-workflows` adds Inbox acceptance, Plan/Build/Review gates,
+bounded separate-output child tasks, source-conversation links and managed
+Nectovia Board Work. See `docs/implementation/2026-09-27-board-workflows.md`
+for the current verification and merge record. These changes are awaiting
+final verification and merge; the original open items below describe the first slice.
+Andrew also clarified that skills should be available beyond Ask and Plan.
+Task playbook selection and delivery through the existing pack loader are
+included in the continuation, without granting actions or picking another engine.
 
 1. **An Inbox before Ready.** The research proposes an Inbox column where tasks an agent made wait
    until a person accepts them. Today a task made from a conversation proposal the person chose

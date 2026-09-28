@@ -480,6 +480,7 @@ export function Shell({
   }, [onPaletteKey, openPalette]);
   // Live engine catalogues for the Models group, read exactly as the Picker does.
   useEffect(() => {
+    if (!paletteOpen) return;
     let alive = true;
     for (const id of ['codex', 'claude-code', 'opencode', 'oh-my-pi', 'cursor', 'devin'] as const) {
       const found = integrations.find((i) => i.id === id);
@@ -501,7 +502,7 @@ export function Shell({
     return () => {
       alive = false;
     };
-  }, [integrations, settings]);
+  }, [integrations, settings, paletteOpen]);
   useEffect(() => {
     setState(null);
     setScopeGrants([]);
@@ -2192,7 +2193,7 @@ export function Shell({
               onRename={() => setRenaming({ id: selected.id, name: threadName(selected, state) })}
               prepareSources={(m, text, doc) => messageSources(selected, m, text, doc)}
               skill={
-                skillDraft?.threadId === selected.id && (mode === 'ask' || mode === 'plan')
+                skillDraft?.threadId === selected.id
                   ? {
                       name: skillDraft.skill.name,
                       starter: skillDraft.skill.starter,
@@ -2219,7 +2220,7 @@ export function Shell({
                   r,
                   failing,
                   sources,
-                  skillDraft?.threadId === selected.id && (m === 'ask' || m === 'plan')
+                  skillDraft?.threadId === selected.id
                     ? skillDraft.skill.id
                     : undefined,
                   readAccess,
@@ -2351,6 +2352,16 @@ export function Shell({
               }}
               onOpenTeam={() => setView('Team')}
               onOpenThread={(task) => openTaskThread(task)}
+              onOpenOrigin={(task) => {
+                const source = task.origin;
+                if (!source || source.projectId !== projectId || !state?.conversations.some((thread) => thread.id === source.threadId)) {
+                  say('The source conversation is no longer available in this project.');
+                  return;
+                }
+                setSelectedId(source.threadId);
+                setView('Thread');
+                window.setTimeout(() => document.getElementById(`turn-${source.turnId}`)?.scrollIntoView({ block: 'center' }), 80);
+              }}
               onCreateTask={createTask}
               documents={documentsFor.current === projectId ? documents : []}
               documentsLoading={documentsLoading}

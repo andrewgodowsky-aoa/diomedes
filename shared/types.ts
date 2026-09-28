@@ -11,6 +11,7 @@ import type { AgentResolution } from './agents.js';
 import type { OriginSnapshot } from './attribution.js';
 import type { WorkspaceRef } from './workspaces.js';
 import type {
+  CapabilityPackId,
   InstructionDelivery,
   InstructionFileRecord,
   PackActivation,
@@ -189,6 +190,20 @@ export interface Task {
   creationReceipt?: TaskCreationReceipt;
   /** H17: what a finished run must satisfy. Absent means none declared: results read Not verified. */
   acceptance?: import('./verification.js').AcceptanceDeclaration;
+  /**
+   * Bounded backend workflow (shared/task-workflow.ts): the revision, the phase
+   * plan (plan/build/review), the continuation a person chose (Full approval or
+   * Stop on phase change) and the Inbox gate. Absent on every task written
+   * before workflows existed, which reads as no workflow: existing state is
+   * unchanged and the task runs exactly as before.
+   */
+  workflow?: TaskWorkflow;
+  /**
+   * Immutable origin of a runtime-proposed task: the project, thread, turn and
+   * run it came from. Absent on person-made and legacy tasks. Provenance, never
+   * authority: it names where the proposal came from and grants nothing.
+   */
+  origin?: TaskOrigin;
   createdBy: Owner;
   createdAt: string;
   assignedTo?: Slot | null;
@@ -217,8 +232,73 @@ export interface TaskCreationReceipt {
   readonly taskId: string;
   readonly eventId: string;
   readonly admittedAt: string;
-  readonly actor: 'local-client';
+  readonly actor: 'local-client' | 'harness';
   readonly scope: 'local-prototype';
+}
+/**
+ * One phase of a bounded task workflow, in order. A task moves plan, then
+ * build, then review; a handoff names the phase it moves to next.
+ */
+export type TaskWorkflowPhase = 'plan' | 'build' | 'review';
+/**
+ * What a person chose at the phase boundary. `full-approval` lets the agent
+ * proceed through phases within the existing scope and limits; the default
+ * `stop-on-phase-change` parks the next phase for the person's approval before
+ * continuing.
+ */
+export type TaskContinuation = 'full-approval' | 'stop-on-phase-change';
+/** One applied phase move, appended and never rewritten. */
+export interface TaskHandoff {
+  readonly at: string;
+  readonly by: Owner;
+  readonly from: TaskWorkflowPhase;
+  readonly to: TaskWorkflowPhase;
+  readonly reason: string;
+}
+/**
+ * Optional playbook guidance for a task: one builtin skill from an active
+ * project pack. Guidance only: it names the method the run should follow and
+ * grants nothing, activates nothing, and selects no model or engine.
+ * `prepareTaskSkill` (server/task-skills.ts, another lane) reads this field as
+ * `skill { packId, skillId }`.
+ */
+export interface TaskWorkflowSkill {
+  packId: CapabilityPackId;
+  skillId: string;
+}
+/**
+ * The bounded backend workflow on a task. Every field is optional at rest
+ * because tasks written before workflows existed carry none of it; readers use
+ * `workflowOf` (shared/task-workflow.ts) for the defaults. `revision` guards
+ * concurrent human edits: every mutation names the revision it saw.
+ */
+export interface TaskWorkflow {
+  revision: number;
+  phase: TaskWorkflowPhase;
+  /** The person's continuation choice; `stop-on-phase-change` until they say otherwise. */
+  continuation: TaskContinuation;
+  /** True while the task waits in the Inbox for a person's acceptance. Never auto-started. */
+  inbox: boolean;
+  /** The task this one was proposed or branched from, if any. */
+  parentTaskId?: string | null;
+  /** This task's own separate output; a child never inherits its parent's. */
+  output?: string | null;
+  /** Turn budget for the workflow, at most 16. Defaults to 8. */
+  maxTurns: number;
+  /** Optional playbook guidance; null until the person picks one. Never inherited by children. */
+  skill?: TaskWorkflowSkill | null;
+  /** The next phase an agent asked for under `stop-on-phase-change`, awaiting approval. */
+  pendingPhase?: TaskWorkflowPhase | null;
+  /** Why the pending phase was asked for; kept so approval records the full handoff. */
+  pendingReason?: string | null;
+  handoffs: TaskHandoff[];
+}
+/** Immutable origin of a runtime-proposed task. Provenance, never authority. */
+export interface TaskOrigin {
+  readonly projectId: string;
+  readonly threadId: string;
+  readonly turnId: string;
+  readonly runId?: string;
 }
 export interface Need {
   origin?: OriginSnapshot;
@@ -361,6 +441,8 @@ export interface WorkReceipt {
   readonly scope: 'local-prototype';
 }
 export interface Session {
+  /** Selected playbook guidance, pinned to the version and digest sent by this run. */
+  skill?: import('./capability-packs.js').SkillUse;
   origin?: OriginSnapshot;
   /**
    * Plain writing on the proposal a person reads: its summary and each prose file it writes

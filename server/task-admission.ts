@@ -57,7 +57,7 @@ const receiptSchema = z.strictObject({
     .string()
     .max(40)
     .refine((value) => Number.isFinite(Date.parse(value))),
-  actor: z.literal('local-client'),
+  actor: z.enum(['local-client', 'harness']),
   scope: z.literal('local-prototype'),
 });
 
@@ -76,6 +76,9 @@ export function validateTaskReceipts(state: ProjectState) {
     const parsed = receiptSchema.safeParse(task.creationReceipt);
     const receipt = parsed.success ? parsed.data : undefined;
     const event = receipt ? events.get(receipt.eventId) : undefined;
+    const harnessProposal = receipt?.actor === 'harness';
+    const parent = task.workflow?.parentTaskId;
+    const proposalSession = event?.sessionId && state.sessions.find((session) => session.id === event.sessionId);
     if (
       !receipt ||
       commands.has(receipt.commandId) ||
@@ -83,7 +86,9 @@ export function validateTaskReceipts(state: ProjectState) {
       receipt.taskId !== task.id ||
       event?.kind !== 'tasks-made' ||
       event.taskId !== task.id ||
-      event.actor !== 'you' ||
+      event.actor !== (harnessProposal ? 'diomedes' : 'you') ||
+      (harnessProposal && (!receipt.commandId.startsWith('proposal.') || task.createdBy !== 'diomedes' ||
+        !parent || !proposalSession || proposalSession.taskId !== parent)) ||
       event.time !== receipt.admittedAt
     )
       throw new Error(

@@ -31,6 +31,7 @@ import {
   type BoardMoveFacts,
 } from '../../shared/board-moves';
 import { TaskInspector, type InspectorMove } from './TaskInspector';
+import { api } from '../api';
 
 const ORDER: Column[] = [...BOARD_COLUMNS];
 type CommandMove = Extract<BoardMove, { kind: 'command' }>;
@@ -42,6 +43,7 @@ interface MoveRequest {
   sentence: string;
 }
 const WHY: Record<Column, string> = {
+  Inbox: 'Waiting for acceptance',
   Ready: 'Start explicitly to run',
   Queued: 'Admitted; waiting to start',
   Working: 'A run is in progress',
@@ -50,6 +52,7 @@ const WHY: Record<Column, string> = {
   Done: 'Completion evidence stays in the thread',
 };
 const EMPTY: Record<Column, string> = {
+  Inbox: 'Proposed tasks appear here.',
   Ready: 'Nothing is ready. New task adds one.',
   Queued: 'Nothing is queued.',
   Working: 'Nothing is running.',
@@ -119,6 +122,7 @@ export function BoardView({
   onMarkDone,
   onOpenTeam,
   onOpenThread,
+  onOpenOrigin,
   onCreateTask,
   onPolicyChange,
   technical = false,
@@ -361,6 +365,7 @@ export function BoardView({
     try {
       if (move.command === 'start') await handleStart(task);
       else if (move.command === 'stop') await onPause(task);
+      else if (move.command === 'accept') await api(`/projects/${project.id}/tasks/${task.id}/accept`, 'POST', { expectedRevision: task.workflow?.revision ?? 1 });
       else if (move.command === 'reopen') await onReopen(task);
       else await onMarkDone(task);
     } catch (error) {
@@ -849,6 +854,9 @@ export function BoardView({
         <TaskInspector
           projectId={project.id}
           task={inspected}
+          tasks={tasks}
+          onOpenTask={(task) => setInspectId(task.id)}
+          onOpenOrigin={inspected.origin?.projectId === project.id && onOpenOrigin ? () => { setInspectId(null); onOpenOrigin(inspected); } : undefined}
           column={columnOf(inspected)}
           detail={evidenceOf(inspected).detail}
           sessions={state.sessions}

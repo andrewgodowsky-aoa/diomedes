@@ -160,7 +160,7 @@ export class HarnessBridge {
     principal: HarnessPrincipal,
     codex?: { runId: string; input: CodexRunInput; admission: WorkAdmission },
     /** A procedure's admission-pinned run id and input, so a replay finds the same run. */
-    pinned?: { runId: string; input: Json },
+    pinned?: { runId: string; input: Json; admission?: WorkAdmission },
   ): Promise<Session> {
     if (this.closed) throw new ApiError(503, 'The local service is closing.');
     const capability = this.capabilityFor(capabilityId, codex !== undefined);
@@ -230,7 +230,7 @@ export class HarnessBridge {
     task.needId = null;
     // A run may reference only a durable Session. A failed run-file create leaves a
     // visible stopped Session, not an undiscoverable file writer.
-    this.store.recordWorkAdmission(projectId, session, codex?.admission);
+    this.store.recordWorkAdmission(projectId, session, codex?.admission ?? pinned?.admission);
     await this.store.persist(state);
     let createdRunId: string | undefined;
     try {

@@ -36,6 +36,7 @@ export type BoardProps = { project: Project; state: ProjectState; tasks: Task[];
   onMarkDone(task: Task): Promise<void>;
   /** Technical detail: only there does the task inspector offer the task's own profile choice (H09). */
   technical?: boolean;
+  onOpenOrigin?(task: Task): void;
   /** Rejects when the task was not made, so the board keeps the typed words. */
   onCreateTask(input: { name: string; description: string; sourceDocument?: string }): Promise<void>; };
 export type TeamProps = { project: Project; state: ProjectState; members: TeamMember[]; mail: MailboxMessage[]; runs: TeamRun[]; focusTaskId?: string; usage: UsageSnapshot[]; busy: boolean;

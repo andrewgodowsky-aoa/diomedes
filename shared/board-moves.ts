@@ -23,11 +23,11 @@
  *   accepted would still read as Review.
  */
 
-export const BOARD_COLUMNS = ['Ready', 'Queued', 'Working', 'Review', 'Blocked', 'Done'] as const;
+export const BOARD_COLUMNS = ['Inbox', 'Ready', 'Queued', 'Working', 'Review', 'Blocked', 'Done'] as const;
 export type BoardColumn = (typeof BOARD_COLUMNS)[number];
 
 /** The commands a move can ask for. Each one is a route the Board already calls. */
-export type BoardCommand = 'start' | 'stop' | 'reopen' | 'done';
+export type BoardCommand = 'start' | 'stop' | 'reopen' | 'done' | 'accept';
 
 export interface BoardMoveFacts {
   /** The column the task is projected into now. */
@@ -104,6 +104,10 @@ function reopenSentence(facts: BoardMoveFacts): string | null {
 export function boardMove(to: BoardColumn, facts: BoardMoveFacts): BoardMove {
   const { from } = facts;
   if (to === from) return { kind: 'none' };
+  if (to === 'Inbox') return { kind: 'refused', reason: 'Inbox holds proposed tasks until you accept them.' };
+  if (from === 'Inbox') return to === 'Ready'
+    ? { kind: 'command', command: 'accept', label: 'Accept task', pending: 'Accepting...', confirm: facts.autoStart ? 'Accept this task? Automatic start is on, so it may start within its granted scope.' : null }
+    : { kind: 'refused', reason: 'Accept this task into Ready first.' };
   if (to === 'Review') return { kind: 'refused', reason: REVIEW_BY_HAND };
   if (to === 'Blocked') return { kind: 'refused', reason: BLOCKED_BY_HAND };
 

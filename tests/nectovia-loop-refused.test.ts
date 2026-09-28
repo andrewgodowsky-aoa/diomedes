@@ -1,15 +1,22 @@
 /**
- * A work loop on the Nectovia route is refused before anything is admitted.
+ * Nectovia work loops through the real app with managed wiring.
  *
- * The loop start, a delegate named on it, the harness's loop admission seam and the loop's adapter
- * all refuse the `nectovia` route with one sentence, before the Agent gate asks the account service.
- * Before this, the loop seam admitted `{ surface: 'loop', rootJobId: null }` as managed work (a
- * recorded admission at the service) and only then refused it for having no job to meter under.
+ * The app now attaches `resolveManaged`/`readOnly`/`admitManaged` (app.ts),
+ * so a paid Juniper project offers Nectovia read-only with zero admissions
+ * and starts a managed single-agent loop under its deterministic run id. A
+ * replay of the same command id returns the same run and records nothing new;
+ * every admission for the run names the same root job. A conflicting
+ * user-supplied model/account, a delegate or team on either side, a missing
+ * stable job and a runtime with no model API all fail closed before anything
+ * is sent. A Free person and a business without the Agent are refused before
+ * any model call.
  *
- * The account service is the real control-plane handler over the faux store, in this process. No
- * gateway or provider call is made anywhere in this file.
+ * The account service is the real control-plane handler over the faux store,
+ * in this process, with its default offline scripted provider. Managed calls
+ * go through `cloud.handle` (counted); the BYO provider transport throws, so
+ * no live network or provider is used anywhere in this file.
  */
-import { afterEach, beforeEach, describe, expect, test } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -18,6 +25,8 @@ import type { AddressInfo } from 'node:net';
 import { createApp } from '../server/app';
 import { EngineService } from '../server/engines/service';
 import { NECTOVIA_LOOP_REFUSED } from '../server/engines/nectovia';
+import { NECTOVIA_LOOP_TEAM_REFUSED, loopRunId } from '../server/native-loop-routes';
+import { GPT6_LUNA } from '../shared/model-api.js';
 import { testOnlySecretBox } from '../server/connection-secrets';
 import { ControlPlaneClient } from '../server/accounts/client';
 import type { AccountBackend } from '../server/accounts/backend';
@@ -27,6 +36,7 @@ import type { AccountStateView } from '../shared/accounts';
 import type { Project } from '../shared/types';
 
 const headers = { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' };
+const MODEL = GPT6_LUNA.model;
 
 let root: string;
 let cloud: FauxCloud;
@@ -47,6 +57,10 @@ async function staffToken(email: string) {
 async function admissions() {
   return (await cloud.commercial.customer(await staffToken(DEMO_ACCOUNTS.staffBilling.email), juniper)).admissions.length;
 }
+async function admittedFor(rootJobId: string) {
+  const rows = (await cloud.commercial.customer(await staffToken(DEMO_ACCOUNTS.staffBilling.email), juniper)).admissions;
+  return rows.filter((row) => row.decision === 'admitted' && row.rootJobId === rootJobId);
+}
 const request = (route: string, method = 'GET', body?: unknown) =>
   fetch(`${base}/api${route}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
 async function api<T>(route: string, method = 'GET', body?: unknown): Promise<T> {
@@ -66,7 +80,7 @@ beforeEach(async () => {
     client: new ControlPlaneClient('http://faux.local', async (req) => {
       if (new URL(req.url).pathname.startsWith('/managed/v1/')) {
         gatewayCalls += 1;
-        return new Response(JSON.stringify({ error: { code: 'unexpected', message: 'No gateway call is made in this file.' } }), { status: 500 });
+        return cloud.handle(req);
       }
       return cloud.handle(req);
     }),
@@ -106,84 +120,208 @@ afterEach(async () => {
 async function projectWithTask() {
   const project = await api<Project>('/projects', 'POST', { name: 'Juniper loop' });
   await api(`/workspace/organizations/${juniper}/output`, 'POST', { projectId: project.id });
+  await allowSharing(project.id);
   const taskId = (await api<{ id: string }>(`/projects/${project.id}/tasks`, 'POST', { name: 'Check the order' })).id;
   return { projectId: project.id, taskId };
 }
-const start = (projectId: string, taskId: string, extra: Record<string, unknown>) =>
+async function allowSharing(projectId: string) {
+  const policy = await api<{ version: number }>(`/projects/${projectId}/cloud-sharing`);
+  await api(`/projects/${projectId}/cloud-sharing`, 'PUT', {
+    expectedVersion: policy.version, routes: ['nectovia'], documents: [],
+    shareConversationHistory: false, shareReviewPackets: false,
+  });
+}
+const start = (projectId: string, taskId: string, extra: Record<string, unknown>, commandId = `loop-${Math.random().toString(36).slice(2)}`) =>
   request(`/projects/${projectId}/loop/start`, 'POST', {
     protocolVersion: 1,
-    commandId: `loop-${Math.random().toString(36).slice(2)}`,
+    commandId,
     taskId,
     goal: 'Read the order and report the count.',
+    route: 'nectovia',
     consent: true,
     sources: [],
     ...extra,
   });
 
-describe('a Nectovia work loop is refused before admission', () => {
-  test('starting one: one plain sentence, and the service records nothing', async () => {
+describe('a paid Nectovia work loop through managed wiring', () => {
+  test('the route offers list it as available read-only without admitting anything', async () => {
+    const { projectId } = await projectWithTask();
+    const before = await admissions();
+    const offers = await api<{ routes: { route: string; admitted: boolean; model: string | null }[] }>(`/projects/${projectId}/loop/routes`);
+    const nectovia = offers.routes.find((row) => row.route === 'nectovia');
+    expect(nectovia, 'Nectovia is offered').toBeDefined();
+    expect(nectovia).toMatchObject({ admitted: true, model: MODEL });
+    expect(await admissions(), 'reading offers records nothing').toBe(before);
+    expect(gatewayCalls).toBe(0);
+    expect(providerCalls).toBe(0);
+  });
+
+  test('one paid start under its deterministic id; a replay admits nothing new on the same job', async () => {
     const { projectId, taskId } = await projectWithTask();
     const before = await admissions();
-    const refused = await start(projectId, taskId, { route: 'nectovia', model: 'us.openai.gpt-6-luna', accountRoute: `nectovia:${juniper}` });
-    expect(refused.status).toBe(409);
-    expect(await refused.json()).toEqual({ error: NECTOVIA_LOOP_REFUSED, code: 'loop_route_unsupported' });
+    const commandId = 'board-loop-paid-1';
+    const first = await start(projectId, taskId, {}, commandId);
+    const firstText = await first.text();
+    expect(first.status, firstText).toBe(200);
+    const firstJson = JSON.parse(firstText) as { runId: string; replayed: boolean };
+    expect(firstJson.runId).toBe(loopRunId(projectId, commandId));
+    expect(firstJson.replayed).toBe(false);
+    await vi.waitFor(async () => {
+      const run = await app.locals.harness.get(projectId, firstJson.runId);
+      expect(run.state, JSON.stringify(run.steps.map((step: { state: string; error?: unknown }) => ({ state: step.state, error: step.error })))).toBe('completed');
+    }, { timeout: 20_000 });
+    await app.locals.harness.bridge.flush();
+    await cloud.idle();
+    const completed = await app.locals.harness.get(projectId, firstJson.runId);
+    expect(completed.steps.filter((step: { intent: { kind: string } }) => step.intent.kind === 'model')).toHaveLength(2);
+    const admissionCount = await admissions();
+    expect(admissionCount, 'start and each model call record paid admission').toBeGreaterThan(before + 1);
+    const pinned = await admittedFor(firstJson.runId);
+    expect(pinned).toHaveLength(admissionCount - before);
+    for (const admission of pinned)
+      expect(admission).toMatchObject({ decision: 'admitted', routeKind: 'managed', surface: 'loop', organizationId: juniper });
+    expect(gatewayCalls).toBe(2);
+    expect(providerCalls).toBe(0);
 
-    // Not the Settings switch either: turning a `nectovia` switch on does not make it a loop route.
-    const store = app.locals.store;
-    await store.saveSettings({ ...store.settings, services: { ...(store.settings.services ?? {}), nectovia: true, nectoviaModel: 'us.openai.gpt-6-luna' } });
-    const again = await start(projectId, taskId, { route: 'nectovia' });
-    expect(again.status).toBe(409);
-    expect((await again.json()).error).toBe(NECTOVIA_LOOP_REFUSED);
+    const second = await start(projectId, taskId, {}, commandId);
+    const secondText = await second.text();
+    expect(second.status, secondText).toBe(200);
+    const secondJson = JSON.parse(secondText) as { runId: string; replayed: boolean };
+    expect(secondJson.runId).toBe(firstJson.runId);
+    expect(secondJson.replayed).toBe(true);
+    expect(await admissions(), 'a replay allocates no second job or paid admission').toBe(admissionCount);
+    expect(await admittedFor(firstJson.runId), 'every admission names the same root job').toHaveLength(pinned.length);
+    expect(gatewayCalls).toBe(2);
+    expect(providerCalls).toBe(0);
+  });
 
-    // A delegate named on the Nectovia route is refused the same way, on a loop that could start.
-    const delegated = await start(projectId, taskId, { route: 'native-fixture', delegate: { route: 'nectovia', model: 'us.openai.gpt-6-luna' } });
-    expect(delegated.status).toBe(409);
-    expect((await delegated.json()).error).toBe(NECTOVIA_LOOP_REFUSED);
-
+  test('a conflicting model or account is refused with nothing recorded', async () => {
+    const { projectId, taskId } = await projectWithTask();
+    const before = await admissions();
+    for (const extra of [{ model: 'us.openai.gpt-9-nova' }, { accountRoute: 'nectovia:org_other' }]) {
+      const refused = await start(projectId, taskId, extra);
+      expect(refused.status).toBe(409);
+      expect((await refused.json()) as { code: string }).toMatchObject({ code: 'route_refused' });
+    }
     expect(await admissions(), 'no admission was recorded').toBe(before);
     expect(gatewayCalls).toBe(0);
     expect(providerCalls).toBe(0);
   });
 
-  test('the route offers never list it', async () => {
-    const { projectId } = await projectWithTask();
-    const offers = await api<{ routes: { route: string }[] }>(`/projects/${projectId}/loop/routes`);
-    expect(offers.routes.map((row) => row.route)).not.toContain('nectovia');
+  test('Board Work uses the paid native loop and replays its durable Work receipt', async () => {
+    const { projectId, taskId } = await projectWithTask();
+    await api(`/projects/${projectId}/tasks/${taskId}/workflow`, 'PUT', {
+      expectedRevision: 1, continuation: 'full-approval', maxTurns: 4,
+    });
+    const commandId = 'managed-board-work';
+    const body = { protocolVersion: 1, commandId, taskId, route: 'nectovia', consent: true,
+      sources: [], instruction: 'Report the order count.' };
+    const session = await api<{ id: string; engine: { name: string }; receipt: { commandId: string } }>(
+      `/projects/${projectId}/work/start`, 'POST', body);
+    expect(session.engine.name).toBe('diomedes-loop');
+    expect(session.receipt.commandId).toBe(commandId);
+    const runId = loopRunId(projectId, commandId);
+    await vi.waitFor(async () => expect((await app.locals.harness.get(projectId, runId)).state).toBe('completed'), { timeout: 20_000 });
+    await app.locals.harness.bridge.flush();
+    await cloud.idle();
+    const state = app.locals.store.state(projectId);
+    expect(state.tasks.find((task: { id: string }) => task.id === taskId)!.workflow).toMatchObject({ phase: 'review', pendingPhase: null });
+    const beforeReplay = await admissions();
+    const replay = await api<{ id: string }>(`/projects/${projectId}/work/start`, 'POST', body);
+    expect(replay.id).toBe(session.id);
+    expect(state.sessions.filter((item: { taskId: string }) => item.taskId === taskId)).toHaveLength(1);
+    expect(await admissions()).toBe(beforeReplay);
+    expect(await admittedFor(runId)).toHaveLength(beforeReplay);
+    expect(gatewayCalls).toBe(2);
+    expect(providerCalls).toBe(0);
   });
 
-  test('the harness’s loop admission seam refuses it before the Agent gate asks the service', async () => {
+  test('a delegate or team beside Nectovia is refused the same way, on either side', async () => {
+    const { projectId, taskId } = await projectWithTask();
+    const before = await admissions();
+    // A Nectovia lead names no delegate and no team.
+    for (const extra of [
+      { delegate: { route: 'native-fixture' } },
+      { team: { scope: null, worker: { route: 'native-fixture' }, advisor: null } },
+    ]) {
+      const refused = await start(projectId, taskId, extra, `board-team-${Math.random().toString(36).slice(2)}`);
+      expect(refused.status).toBe(409);
+      expect(((await refused.json()) as { error: string }).error).toBe(NECTOVIA_LOOP_TEAM_REFUSED);
+    }
+    // Nothing names Nectovia as a delegate either, on a loop that could start.
+    const delegated = await start(projectId, taskId, { route: 'native-fixture', delegate: { route: 'nectovia', model: MODEL } });
+    expect(delegated.status).toBe(409);
+    expect(((await delegated.json()) as { error: string }).error).toBe(NECTOVIA_LOOP_REFUSED);
+    expect(await admissions(), 'no admission was recorded').toBe(before);
+    expect(gatewayCalls).toBe(0);
+    expect(providerCalls).toBe(0);
+  });
+
+  test('the harness loop seam refuses a null job before the Agent gate; a stable job admits on the same job', async () => {
     const { projectId } = await projectWithTask();
     const before = await admissions();
     await expect(
-      app.locals.harness.loop.admit('nectovia', { projectId, model: 'us.openai.gpt-6-luna', accountRoute: `nectovia:${juniper}` }),
+      app.locals.harness.loop.admit('nectovia', { projectId, model: MODEL, accountRoute: `nectovia:${juniper}` }),
     ).rejects.toThrow(NECTOVIA_LOOP_REFUSED);
     await expect(
-      engines.admitModelApi('nectovia', { projectId, model: 'us.openai.gpt-6-luna', accountRoute: `nectovia:${juniper}` }, { surface: 'loop', rootJobId: null }),
+      engines.admitModelApi('nectovia', { projectId, model: MODEL, accountRoute: `nectovia:${juniper}` }, { surface: 'loop', rootJobId: null }),
     ).rejects.toMatchObject({ code: 'ROUTE_REFUSED', message: NECTOVIA_LOOP_REFUSED });
-    expect(await admissions(), 'no admission was recorded').toBe(before);
+    expect(await admissions(), 'the null-job refusal recorded nothing').toBe(before);
+
+    const rootJobId = 'R0123456789ab';
+    const admitted = await engines.admitModelApi(
+      'nectovia',
+      { projectId, model: MODEL, accountRoute: `nectovia:${juniper}` },
+      { surface: 'loop', rootJobId },
+    );
+    expect(admitted).toMatchObject({ route: 'nectovia', model: MODEL, accountRoute: `nectovia:${juniper}` });
+    expect(admitted.managed?.rootJobId).toBe(rootJobId);
+    expect(await admissions(), 'the stable job recorded one admission').toBe(before + 1);
+    expect(await admittedFor(rootJobId), 'the admission is pinned to the stable job').toHaveLength(1);
+    expect(gatewayCalls, 'admission alone sends nothing').toBe(0);
+    expect(providerCalls).toBe(0);
   });
 
-  test('a loop run driven on it opens no adapter, admits nothing and sends nothing', async () => {
+  test('a loop run driven with no runtime stays unavailable and sends nothing', async () => {
     const { projectId } = await projectWithTask();
     const before = await admissions();
+    const bare = new EngineService(path.join(root, 'engines-bare'), { discover: async () => [] });
     await expect(
-      engines.loopAdapter(
+      bare.loopAdapter(
         'nectovia',
-        { projectId, runId: 'loop-run-1', model: 'us.openai.gpt-6-luna', accountRoute: `nectovia:${juniper}`, instructions: 'Check the order.' },
+        { projectId, runId: 'loop-run-1', model: MODEL, accountRoute: `nectovia:${juniper}`, instructions: 'Check the order.' },
         new AbortController().signal,
       ),
-    ).rejects.toMatchObject({ code: 'ROUTE_REFUSED', message: NECTOVIA_LOOP_REFUSED });
+    ).rejects.toMatchObject({ code: 'RUNTIME_UNAVAILABLE' });
     expect(await admissions()).toBe(before);
     expect(gatewayCalls).toBe(0);
+    expect(providerCalls).toBe(0);
   });
 
-  test('control: other Nectovia work still asks the service, so the count above would move', async () => {
-    const { projectId } = await projectWithTask();
+  test('a Free person and a business without the Agent are refused before any model call', async () => {
+    const { projectId, taskId } = await projectWithTask();
     const before = await admissions();
-    // The outcome after admission does not matter here; only that the gate asked the service.
-    await engines
-      .admitModelApi('nectovia', { projectId, model: 'us.openai.gpt-6-luna', accountRoute: `nectovia:${juniper}` }, { surface: 'conversation', rootJobId: 'turn-1' })
-      .catch(() => null);
-    expect(await admissions()).toBe(before + 1);
+
+    await api<AccountStateView>('/account/sign-in', 'POST', { email: DEMO_ACCOUNTS.free.email, password: FAUX_DEMO_PASSWORD, remember: false });
+    const freeProject = await api<Project>('/projects', 'POST', { name: 'Free loop' });
+    await allowSharing(freeProject.id);
+    const freeTask = (await api<{ id: string }>(`/projects/${freeProject.id}/tasks`, 'POST', { name: 'Check the order' })).id;
+    const freeRefused = await start(freeProject.id, freeTask, {});
+    expect([401, 403]).toContain(freeRefused.status);
+    expect(await admissions(), 'a Free refusal records no Juniper admission').toBe(before);
+
+    const harborOwner = await api<AccountStateView>('/account/sign-in', 'POST', { email: DEMO_ACCOUNTS.harborOwner.email, password: FAUX_DEMO_PASSWORD, remember: false });
+    const harborId = harborOwner.workspaces[0].organization.id;
+    const harborProject = await api<Project>('/projects', 'POST', { name: 'Harbor loop' });
+    await api(`/workspace/organizations/${harborId}/output`, 'POST', { projectId: harborProject.id });
+    await allowSharing(harborProject.id);
+    const harborTask = (await api<{ id: string }>(`/projects/${harborProject.id}/tasks`, 'POST', { name: 'Count hammers' })).id;
+    const harborRefused = await start(harborProject.id, harborTask, {});
+    expect(harborRefused.status).toBe(403);
+    expect(((await harborRefused.json()) as { code: string }).code).toBe('AGENT_NOT_INCLUDED');
+    expect(await admissions(), 'a Harbor refusal records no Juniper admission').toBe(before);
+
+    expect(gatewayCalls, 'refusals sent no model call').toBe(0);
+    expect(providerCalls).toBe(0);
   });
 });

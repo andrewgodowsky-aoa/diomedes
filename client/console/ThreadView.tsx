@@ -353,6 +353,7 @@ export function ThreadView({
             <div
               className={`turn ${t.role === 'you' ? 'you' : 'dio'}`}
               key={t.id || `${thread.id}:${i}`}
+              id={t.id ? `turn-${t.id}` : undefined}
               data-thread-point={t.role !== 'you' ? '' : undefined}
             >
               <div className="who">
