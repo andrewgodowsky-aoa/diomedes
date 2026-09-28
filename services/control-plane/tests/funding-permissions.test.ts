@@ -253,10 +253,10 @@ async function runGatewayPaths() {
     return response.status;
   };
 
-  const statuses = {
+  const outcomes = {
     first: await ask('run-1:1'),
     retry: await ask('run-1:2', 'run-1:1'),
-    refusedBeforeDispatch: await (async () => {
+    preDispatchRelease: await (async () => {
       // The scoped route passes this callback after reserving. Invoke that same
       // gateway boundary directly to cover its release without routing setup.
       const authority = await cloud.accounts.membership(token, organizationId);
@@ -270,7 +270,7 @@ async function runGatewayPaths() {
           maxMicroUsd: 1000, ceilingMicroUsd: 100000000 },
         async () => { throw new ManagedError(499, 'cancelled', 'The request was cancelled before dispatch.'); },
       )).rejects.toMatchObject({ status: 499, code: 'cancelled' });
-      return 499;
+      return true;
     })(),
     busy: await (async () => {
       answer = () => Response.json({ error: { message: 'Slow down.' } }, { status: 429 });
@@ -287,7 +287,7 @@ async function runGatewayPaths() {
   };
   const states = Object.fromEntries(cloud.store.snapshot().funding.attempts.map((row) => [row.id, row.state]));
   const periods = cloud.store.snapshot().funding.periods.filter((row) => row.organizationId === organizationId).map((row) => row.periodId);
-  return { statuses, states, periods, providerCalls: spy.calls.length, transactionLog, serviceLog };
+  return { outcomes, states, periods, providerCalls: spy.calls.length, transactionLog, serviceLog };
 }
 
 /** Replays each recorded call on the SQL adapter and returns the statements it sent. */
@@ -330,7 +330,7 @@ describe('cp_funding (scripts/funding-permissions.sql)', () => {
   it('grants exactly what PostgresFundingRepository runs on the gateway’s paths, and nothing else', async () => {
     const run = await runGatewayPaths();
     // The scenarios did what they are for.
-    expect(run.statuses).toEqual({ first: 200, retry: 200, busy: 429, failed: 503, refusedBeforeDispatch: 499, replayed: 409, read: 200 });
+    expect(run.outcomes).toEqual({ first: 200, retry: 200, busy: 429, failed: 503, preDispatchRelease: true, replayed: 409, read: 200 });
     expect(run.states).toEqual({ 'run-1:1': 'settled', 'run-1:2': 'settled', 'run-1:3': 'released', 'run-1:4': 'uncertain', 'run-1:5': 'released' });
     expect(run.periods).toEqual(['2026-09', '2026-10']);
     expect(run.providerCalls).toBe(4);
