@@ -15,6 +15,7 @@
  */
 import type { TaskState, Task, Session, ThreadPermission } from './types.js';
 import type { OriginSnapshot } from './attribution.js';
+import type { HardRestrictions, RoutingReceipt } from './routing-policy.js';
 
 export const HARNESS_CONTRACT_VERSION = 1 as const;
 
@@ -37,6 +38,8 @@ export interface HarnessLabel {
   integrity: 'trusted' | 'untrusted';
   confidentiality: 'public' | 'internal' | 'restricted';
   provenance: string[];
+  /** Host-attached source rules. Generated content cannot remove or replace these. */
+  sourceRestrictions?: HardRestrictions[];
 }
 
 export interface HarnessPrincipal {
@@ -126,7 +129,7 @@ export interface StepRecord {
   leaseFence: number;
   startedAt: string | null;
   endedAt: string | null;
-  error: { name: string; message: string } | null;
+  error: { name: string; message: string; managed?: RoutingReceipt } | null;
 }
 
 /**
@@ -276,12 +279,15 @@ export interface ModelRequest {
   messages: PortableMessage[];
   tools: ToolDescriptor[];
   transcript: ProviderTranscriptRef | null;
+  sourceRestrictions?: HardRestrictions[];
 }
 export type ModelResponse =
   | { type: 'final'; text: string }
   | { type: 'tool'; name: string; input: Json };
 export interface ModelResult {
   response: ModelResponse;
+  /** Immutable gateway receipts; current configuration never rewrites these. */
+  managed?: RoutingReceipt;
   transcript?: ProviderTranscriptRef | null;
   /** Cache counts are parts of `inputTokens` (`nectovia-usage/1`), kept apart when reported. */
   usage?: { inputTokens?: number; outputTokens?: number; cacheReadTokens?: number; cacheWriteTokens?: number } | null;

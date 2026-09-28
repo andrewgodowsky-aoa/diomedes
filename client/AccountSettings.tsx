@@ -8,6 +8,7 @@ import { useAccount } from './AccountGate';
 import { Button } from './components';
 import { PlansLink } from './console/FreePlanNotice';
 import { ManagedInferencePolicy } from './ManagedInferencePolicy';
+import { RoutingPreferences } from './console/RoutingPreferences';
 
 /**
  * Settings, Account: who is signed in, and each business they belong to as
@@ -92,6 +93,7 @@ export function AccountSettings() {
           </p>
         </>
       )}
+      <RoutingPreferences />
       <h2>Your businesses</h2>
       {state.workspaces.length === 0 &&
         (state.plan?.agent === 'free' ? (

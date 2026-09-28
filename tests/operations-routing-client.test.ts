@@ -15,6 +15,10 @@ import { AccountRoutingSession } from '../server/accounts/routing-session';
 import type { AccountSessionService } from '../server/accounts/session';
 import type { WorkspaceService } from '../server/workspaces';
 import type { ModelMessage } from 'ai';
+import type { ModelRequest } from '../shared/harness';
+import { createNectoviaModelAdapter } from '../server/harness/nectovia-model-adapter';
+import { FileModelTranscripts } from '../server/harness/model-transcripts';
+import { validatePrepared } from '../server/harness/native-agent';
 
 let cloud: FauxCloud, client: ControlPlaneClient, exposure: SpendExposure, directory: string;
 let token: string, staff: string, org: string, connectionId: string, policy: NectoviaPolicy;
@@ -102,6 +106,44 @@ async function respond(transform?: (response: Response) => Promise<Response>,
     } });
 }
 describe('published account policy at the desktop model boundary', () => {
+  it.each([true, false])('passes derived source restrictions through the real Nectovia adapter (destination allowed=%s)', async allowed => {
+    const job = `adapter-source-${allowed ? 'allowed' : 'refused'}`;
+    const scope = { kind: 'organization' as const, id: org };
+    const admission = await client.admitScopedAgent(token, scope, { surface: 'conversation', routeKind: 'managed', rootJobId: job });
+    let refusal: unknown;
+    const bound = createNectoviaModelAdapter({ base: client.base, account: { policy: () => policy, refreshPolicy: refreshed },
+      connectionId, model: 'fixture-non-luna', token, card: nectoviaRateCard('fixture-non-luna', policy), exposure,
+      managed: { admissionId: admission.admissionId, organizationId: org, scope, policyRevision: policy.revision,
+        routing: policy.resolved, tier: 'efficient', usageClass: 'metered-work', rootJobId: job, sourceRestrictions: [STRICT_RESTRICTIONS] },
+      transcripts: new FileModelTranscripts(path.join(directory, 'transcripts'), 'nectovia'), instructions: 'Use only the synthetic source.',
+      effort: 'low', limits: CONVERSATION_LIMITS, transport: async (url, init) => {
+        const request = new Request(url, init); gatewayRequests.push(request);
+        const response = await cloud.handle(request);
+        if (!response.ok) refusal = await response.clone().json();
+        return response;
+      } });
+    const rule = { ...STRICT_RESTRICTIONS, allowedConnections: [allowed ? connection.id : 'another-source-destination'] };
+    const request: ModelRequest = { runId: job, capabilityId: 'routing-fixture', tools: [], transcript: null,
+      messages: [{ role: 'user', text: 'Answer from this derived source.' }], sourceRestrictions: [rule] };
+    const signal = new AbortController().signal;
+    const prepared = validatePrepared(request, await bound.prepare!(request, signal));
+    await bound.validatePrepared!(prepared);
+    expect(bound.enforcesSourceRestrictions).toBe(true);
+    if (allowed) {
+      const result = await bound.complete(prepared, signal);
+      expect(result.response).toEqual({ type: 'final', text: 'A complete answer.' });
+      expect(result.managed).toMatchObject({ attempts: [{ state: 'settled', routing: { routeId: 'primary' } }] });
+      expect(sent).toEqual(['primary']);
+    } else {
+      await expect(bound.complete(prepared, signal)).rejects.toThrow();
+      expect(refusal).toMatchObject({ error: { code: 'no_compliant_route' } });
+      expect(sent).toHaveLength(0);
+      expect(cloud.store.snapshot().funding.attempts).toHaveLength(0);
+    }
+    expect(gatewayRequests).toHaveLength(1);
+    expect(JSON.parse(gatewayRequests[0].headers.get('x-nectovia-source-restrictions')!)).toEqual([STRICT_RESTRICTIONS, rule]);
+  });
+
   const checkpoint = (encrypted: string): ModelMessage => ({ role: 'assistant', content: [{ type: 'reasoning', text: '',
     providerOptions: { openai: { itemId: 'rs_checkpoint', reasoningEncryptedContent: encrypted } } }] });
   it('derives the native route header from the SDK checkpoint rather than calling it portable', async () => {

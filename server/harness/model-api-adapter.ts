@@ -15,6 +15,7 @@
  * conversation.
  */
 import type { ModelMessage } from 'ai';
+import { mergeSourceRestrictions, routingReceiptSchema, type HardRestrictions } from '../../shared/routing-policy.js';
 import type { AdapterRouteContract } from '../../shared/adapter-contract.js';
 import type { Json, ModelRequest, ModelResult, PortableMessage, ToolDescriptor } from '../../shared/harness.js';
 import { ModelApiError, type RespondResult, type StreamSinks } from '../engines/model-api-core.js';
@@ -107,6 +108,7 @@ export interface ModelApiAdapterSpec {
   profile: Record<string, unknown>;
   transcripts: ModelTranscripts;
   notes: string[];
+  sourceRestrictionPolicy?: 'gateway';
   /** One provider exchange. */
   respond(
     input: {
@@ -114,6 +116,7 @@ export interface ModelApiAdapterSpec {
       tools: readonly ToolDescriptor[];
       attempt: ExposureAttempt;
       signal: AbortSignal;
+      sourceRestrictions?: HardRestrictions[];
     } & StreamSinks,
   ): Promise<RespondResult>;
   /** The raw preview sinks this turn's calls feed. */
@@ -166,6 +169,9 @@ export function createModelApiAdapter(spec: ModelApiAdapterSpec): ModelAdapter &
       return { role: message.role, content: message.text };
     });
   const boundProfile = (request: ModelRequest) => {
+    const restrictions = mergeSourceRestrictions(request.sourceRestrictions ?? []);
+    if (restrictions.length && spec.sourceRestrictionPolicy !== 'gateway')
+      throw new ModelApiError(`${prefix}_source_policy_unverified`, 'This route cannot enforce the source privacy restrictions. Nothing was sent.', false);
     const bound = (request as Prepared).modelApiProfile?.profileHash;
     if (bound !== undefined && bound !== profileHash)
       throw new ModelApiError(
@@ -230,6 +236,7 @@ export function createModelApiAdapter(spec: ModelApiAdapterSpec): ModelAdapter &
       messages: request.messages,
       tools: request.tools,
       transcript: request.transcript,
+      ...(request.sourceRestrictions?.length ? { sourceRestrictions: request.sourceRestrictions } : {}),
       profileHash,
     });
   return {
@@ -237,6 +244,7 @@ export function createModelApiAdapter(spec: ModelApiAdapterSpec): ModelAdapter &
     version: spec.sdk,
     contract: spec.contract,
     destination: 'external',
+    ...(spec.sourceRestrictionPolicy === 'gateway' ? { enforcesSourceRestrictions: true as const } : {}),
     profileHash,
     capabilities: () => ({
       engineId: spec.route,
@@ -293,6 +301,7 @@ export function createModelApiAdapter(spec: ModelApiAdapterSpec): ModelAdapter &
       const result = await spec.respond({
         messages,
         tools: request.tools,
+        ...(request.sourceRestrictions?.length ? { sourceRestrictions: request.sourceRestrictions } : {}),
         attempt,
         signal,
         onDelta,
@@ -323,9 +332,13 @@ export function createModelApiAdapter(spec: ModelApiAdapterSpec): ModelAdapter &
         messages: [...messages, ...result.responseMessages],
         pendingTool,
       });
+      const raw = result.rawUsage;
+      const managed = spec.sourceRestrictionPolicy === 'gateway' && raw && typeof raw === 'object' && !Array.isArray(raw) && 'nectovia' in raw
+        ? routingReceiptSchema.parse(raw.nectovia) : null;
       return {
         response,
         transcript,
+        ...(managed ? { managed } : {}),
         usage: {
           inputTokens: result.usage.inputTokens,
           outputTokens: result.usage.outputTokens,

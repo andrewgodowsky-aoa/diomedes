@@ -150,3 +150,134 @@ normalizer; the two suites then passed all 58 tests with no stderr, and CP
 type checking passed. The slot released at 08:51:23 UTC. Original red/green
 logs, exits and source hashes are in `test-results/operations-routing-normalization/`.
 The integration and UI acceptance gaps above remain open.
+
+## Conversation receipt and derived-history review
+
+The fifth bounded read-only Muse review completed at 09:36:58 UTC, exit 0.
+The route and high-effort variant were confirmed against the live OpenCode Go
+inventory before dispatch; no fallback was used. The reviewer inspected the
+authored reader/view/tests and repair artifacts against the frozen b4 driver
+objects, whose nine handoff blobs also match the composed 8ce dependency.
+It ran no checks and made no edits.
+
+No new reachable defect was reported. Parent reconciliation confirmed the
+actual selectHistory/compaction shapes, native carried-history distinction,
+writing-helper ancestry, project/tenant/command checks, immutable turn cursor,
+and model-only receipt boundaries. The report does not turn the intentionally
+unapplied repairs into verified implementation.
+
+Missing historical thread/command identities or an unavailable model child
+stop the affected page or follow-up. Dropping unverifiable source restrictions
+would be unsafe; this compatibility limit is explicit. Historical formats
+outside the inspected driver, browser behavior and runtime acceptance remain
+unverified. A work-run id cannot currently enter a conversation lineage; the
+review's possible future id-prefix tightening is not a current defect.
+
+Raw read-only review evidence: `test-results/operations-routing-receipt-review.log`,
+SHA256 `66FB41C2ACAA0DDB1AC5F95296AA97D5EE52373E01065AC8A308659E06E5CE47`.
+
+## Executed harness failure evidence
+
+The first original-source run used `slot_mul2707v_a539be5c`, from 09:42:36
+through 09:42:45 UTC: nine failures and thirteen passes of 22, exit 1.
+The omitted original Nectovia adapter section was then applied separately.
+The complete-original run used `slot_mul2f7uk_981a09c8`, 09:48:59 through
+09:49:04 UTC, with the same nine failures and thirteen passes, exit 1.
+Both before/after manifests matched all 1,472 frozen source files. Both slots
+were released before any edits. No broad checks ran in either window.
+
+The failures reproduce non-gateway receipt trust, malformed/oversized source
+error mapping, guarded conversation and writing-helper propagation, direct
+intent ancestry, failed-step receipt loss, malformed successful receipts and
+tool content displayed as billing evidence. The suite instantiates generic
+and synthetic adapters, so the separate Nectovia integration section did not
+cause or mask those assertions. The exact test file is unchanged for green.
+
+The seven-file repair is now applied and held for its focused green/type window.
+Current source hashes match `test-results/operations-routing-harness-green-freeze.json`
+(SHA256 `D9199DF84A5C0BC9523264A50BFCF14450E561911C5DE6E095BF283BC28375B4`).
+Original logs and manifests are preserved separately in
+`test-results/operations-routing-harness-red-20260928-094236/` and
+`test-results/operations-routing-harness-complete-red-20260928-094859/`.
+
+The repaired run used `slot_mul2re7p_d722f2b0`, 09:58:27 through 09:58:56 UTC:
+all 22 harness cases passed, followed by root TypeScript exit 2. All 1,472 source
+hashes remained unchanged. The compiler identified two test-fixture signatures:
+the synthetic egress authorizer must return a promise, and the journey's account
+client requires an explicit fetch transport. Both fixtures are now corrected;
+no production source changed for these errors. The next focused rerun is pending.
+The journey error is the client constructor, not the `turnRunId` call.
+Evidence: `test-results/operations-routing-harness-green-20260928-095827/`.
+
+The fixture-only rerun used `slot_mul3bi5u_73fe79bf`, 10:14:05 through 10:14:33
+UTC: all 22 harness cases passed and root TypeScript exited 0. All 1,472 source
+hashes matched before and after. No other checks ran in this window.
+Evidence: `test-results/operations-routing-harness-types-20260928-101405/`.
+The source freeze was `operations-routing-harness-types-freeze.json`, SHA256
+`2947F7F6A5B1A1888ED02634C268634A36995966F1864601C9A91D68752FAD47`.
+
+After release, three owned test files gained the recorded follow-ups: two old
+protocol cases, a cancellation-during-dispatch-write reproducer, two actual
+Nectovia adapter source-rule cases, and the direct OpenRouter ZDR guard case.
+Those six additional cases are authored and unrun; production remains unchanged
+until the cancellation reproducer records its result.
+
+The sixth bounded independent review used role `verifier`,
+`opencode-go/muse-spark-1.3-contributor`, OpenCode Go, `ask` mode and the live
+catalogue's `high` variant. The live inventory reported active tool access,
+1,048,576 context and 131,072 output limits. No fallback, edits or checks were
+used. The reviewer found the timing hypothesis reachable and the proposed
+funding transition correct, conditional on the four stated ordering controls.
+Parent reconciliation clarified runScoped as the immediate-abort link target
+and placed the explicit 499 branch before circuit/fallback logic. The fixture
+proves only an abort during the dispatch write, before attempt-try entry; later
+cancellation relies on signal-respecting transport. No new production repair
+was applied from the review. Raw output is
+`test-results/operations-routing-cancellation-review.log`.
+
+The first attempt to acquire the granted six-case diagnostic slot was denied
+by the tool: `needs-you-rule` already held `slot_mul3kca9_7bf9c4a7`. No test or
+production mutation ran and no other owner's slot was released. The diagnostic
+remains queued against the unchanged `operations-routing-followup-red-freeze.json`.
+
+The renewed diagnostic used `slot_mul3pe34_bc6f002f`, 10:24:53 through 10:24:59
+UTC. Control-plane selected cases: one intended cancellation failure, two
+protocol passes, fifteen filtered skips, exit 1. The first failed assertion
+observed one provider transport invocation instead of zero; its response and
+ledger showed a settled 14 micro-USD charge after cancellation. Subsequent
+cancelled-state assertions are not independently proven by that red. Root
+selected cases: both real Nectovia source-rule cases and the direct OpenRouter
+ZDR guard passed, thirty filtered skips, exit 0. All 1,472 source hashes matched.
+Original evidence: `test-results/operations-routing-followup-red-20260928-102453/`.
+
+After slot release, the reviewed runScoped-only repair was applied. It links an
+already-aborted request, checks before invoking the provider, parks the committed
+hold, then returns 499 with its receipt before any cooldown or backup. Tests are
+unchanged. The current integration green is queued under manifest
+`test-results/operations-routing-integration-green-freeze.json`, SHA256
+`4BA6BD0162AD3BC34E6B83F49987A2ACF493F091B737E53B8FD0571F271F0E43`.
+The cancellation review log SHA256 is
+`FCD02A2696DD61F67CDDDFC813A9E1C561C4EF74876BEF0A7E5135B41EAA543D`.
+
+The composed integration green used `slot_mul3zois_a07a619e`, 10:32:53 through
+10:33:34 UTC. All 77 control-plane tests passed (18 scoped dispatch, 31 bindings,
+28 policy), followed by CP TypeScript exit 0. All 55 root tests passed (22
+harness, 17 routing client, 16 OpenRouter), followed by root TypeScript exit 0.
+There were no skips or SDK stderr. All 1,472 source hashes matched before and
+after. The cancellation test reached every assertion: zero sends/backups,
+499/cancelled, one committed uncertain attempt, no settlement and no cooldown.
+Original evidence: `test-results/operations-routing-integration-green-20260928-103253/`.
+
+After release, the unrun browser test's composer locator was corrected to the
+actual accessible label, `Message this thread`. Product code is unchanged by
+that fixture correction. The Operations checks, both builds and first browser
+journey remain pending under a new two-repository freeze.
+
+The first browser grant was placed on hold by the coordinator before acquisition
+after PR #176 moved main to `1af37e0` and introduced another migration 009 plus
+overlapping account files. No command from that five-command window ran.
+The 1,498-file app/Operations freeze remains unchanged, SHA256
+`CF61DB513184D4F35D9BFBB527989756B84DFBEDC094C991CD9D9BA36F2F7E8B`.
+Actual migration application state and the exact-main composition must be
+reconciled before any current-main acceptance claim. No migration history is
+rewritten on the assumption that a merge implies deployment or application.

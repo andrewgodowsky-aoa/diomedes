@@ -8,6 +8,7 @@
  * are Nectovia's own, exactly as on every model-API route. The gateway supplies
  * the next step and meters it; it never runs a tool.
  */
+import { mergeSourceRestrictions } from '../../shared/routing-policy.js';
 import type { AdapterRouteContract } from '../../shared/adapter-contract.js';
 import { NECTOVIA_ROUTE } from '../../shared/model-api.js';
 import { admitJobStep, CONVERSATION_LIMITS, type RespondLimits, type StreamSinks } from '../engines/model-api-core.js';
@@ -85,6 +86,7 @@ export function createNectoviaModelAdapter(options: NectoviaModelAdapterOptions)
       rateCard: options.card.version,
     },
     transcripts: options.transcripts,
+    sourceRestrictionPolicy: 'gateway',
     notes: [
       'One streamed Responses call per model step to the account service’s managed gateway, store:false, SDK retries off, one tool call at most; tools are descriptors run only by the harness.',
       'The session’s bearer token and the Agent admission are attached only to the gateway’s responses path; redirects are refused. No provider credential exists on this computer.',
@@ -108,7 +110,7 @@ export function createNectoviaModelAdapter(options: NectoviaModelAdapterOptions)
         account: options.account,
         connectionId: options.connectionId,
         model: options.model,
-        managed,
+        managed: { ...managed, sourceRestrictions: mergeSourceRestrictions(managed.sourceRestrictions ?? [], call.sourceRestrictions ?? []) },
         token: options.token,
         card: options.card,
         exposure: options.exposure,

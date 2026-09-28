@@ -38,16 +38,17 @@ import {
   readToolsNote,
   type ReadToolDeps,
 } from './capabilities/read-scope-tools.js';
-import { NativeAgent, type ModelAdapter } from './native-agent.js';
+import { NativeAgent, sourceRules, type ModelAdapter } from './native-agent.js';
+import type { HardRestrictions } from '../../shared/routing-policy.js';
 import { REWRITE_INSTRUCTIONS, repairWriting } from '../plain-writing.js';
-import { digest, HarnessError } from './policy.js';
+import { checkedSourceRules, digest, HarnessError } from './policy.js';
 import { RunService, Suspended, type StepContext, type StepDefinition } from './run-service.js';
 import { ToolRegistry } from './tools.js';
 import { PLAYBOOK_TOOL, registerPlaybookTool } from './capabilities/pack-playbooks.js';
 import { TEAM_TOOL_NAMES } from '../../shared/team-routes.js';
 import { NECTOVIA_ROUTE } from '../../shared/model-api.js';
 import { contextMessage } from '../engines/contract.js';
-import { carriedRun } from './conversation-history.js';
+import { answeredTurns, carriedRun } from './conversation-history.js';
 import { artifactSteps, unrecordedArtifacts } from './artifact-steps.js';
 import type { CompactionRecord, ContextAccount, HistorySelection } from '../../shared/context-accounting.js';
 import { accountContext, reconcileContext, selectHistory, stablePrefix } from './context-assembly.js';
@@ -198,6 +199,7 @@ interface TurnHistory {
   carried: number;
   selection: HistorySelection | null;
   compaction: CompactionRecord | null;
+  sourceRestrictions: HardRestrictions[];
 }
 
 const COMPOSE_SEPARATOR = '\n\n---\n\n';
@@ -272,6 +274,7 @@ function sharingGuarded(adapter: ModelAdapter, check: () => void): ModelAdapter 
     version: adapter.version,
     destination: adapter.destination,
     contract: adapter.contract,
+    ...(adapter.enforcesSourceRestrictions ? { enforcesSourceRestrictions: true as const } : {}),
     capabilities: () => adapter.capabilities(),
     ...(adapter.prepare ? { prepare: async (value, signal) => {
       check();
@@ -683,7 +686,28 @@ export class ModelSessionRuns {
     // Past the bounds, the newest and most relevant messages go and the rest are summarised
     // (H18, `context-assembly.ts`); within them, exactly the bounded history.
     const selected = selectHistory({ carried, own: run, exclude: turnId, message: input.prompt });
+    const parents = carried ? [carried, run] : [run];
+    const contributors = selected.selection
+      ? [...selected.selection.included, ...(selected.compaction?.turns.slice(0, selected.compaction.listed ?? selected.compaction.turns.length) ?? [])]
+      : answeredTurns(parents, turnId);
+    const restrictions: HardRestrictions[][] = [];
+    for (const contributor of contributors) {
+      const parent = parents.find(item => item.id === contributor.runId);
+      if (!parent || parent.projectId !== run.projectId || parent.tenantId !== run.tenantId)
+        throw new HarnessError('invalid_lineage', 'The source history belongs to another account or project.');
+      restrictions.push(sourceRules(parent));
+      if (parent.capabilityId !== MODEL_CONVERSATION_CAPABILITY.id) continue;
+      const step = parent.steps.find(item => item.intent.stepId === contributor.stepId);
+      const input = step?.intent.input;
+      if (!input || typeof input !== 'object' || Array.isArray(input) || typeof input.requestId !== 'string')
+        throw new HarnessError('invalid_lineage', 'The source history has no verifiable command identity.');
+      const child = await this.turnRun(run.projectId, parent.id, input.requestId);
+      if (!child || child.projectId !== parent.projectId || child.tenantId !== parent.tenantId)
+        throw new HarnessError('invalid_lineage', 'The source history has no verifiable model record.');
+      restrictions.push(sourceRules(child));
+    }
     return {
+      sourceRestrictions: checkedSourceRules('invalid_lineage', ...restrictions),
       text: selected.text,
       carried: carried ? (selected.messages.get(carried.id) ?? 0) : 0,
       selection: selected.selection,
@@ -806,7 +830,7 @@ export class ModelSessionRuns {
         // it carries from.
         const history: TurnHistory = this.historyPolicy(input.projectId, route)
           ? await this.history(run!, turnId, input)
-          : { text: '', carried: 0, selection: null, compaction: null };
+          : { text: '', carried: 0, selection: null, compaction: null, sourceRestrictions: [] };
         this.sharingPolicy(input.projectId, input.documents.map((doc) => doc.path), history.text.length > 0, route);
         const preview = request.activity?.(context, turnId);
         // Pairs the host's finished/failed report with the call the model announced as started.
@@ -929,6 +953,7 @@ export class ModelSessionRuns {
             check();
             text = await agent.run(childId, this.owner, composed.text, principal, {
               maxTurns: MODEL_TURN_CAPABILITY.maxTurns,
+              sourceRestrictions: history.sourceRestrictions,
             });
           } catch (error) {
             await preview?.finish().catch(() => undefined);
@@ -1016,6 +1041,10 @@ export class ModelSessionRuns {
       rewrite: adapter
         ? async (prompt) => {
             const repairId = `${where.childId}-writing`;
+            const source = await this.runs.get(where.childId);
+            if (source.projectId !== input.projectId || source.tenantId !== where.principal.tenantId)
+              throw new HarnessError('invalid_lineage', 'The writing helper source belongs to another account or project.');
+            const sourceRestrictions = sourceRules(source);
             const registry = sourceTools([]);
             await this.runs.start({
               id: repairId,
@@ -1038,6 +1067,7 @@ export class ModelSessionRuns {
             await this.runs.claim(repairId, this.owner, 120_000);
             return new NativeAgent(this.runs, await adapter(), registry).run(repairId, this.owner, prompt, where.principal, {
               maxTurns: 1,
+              sourceRestrictions,
             });
           }
         : undefined,

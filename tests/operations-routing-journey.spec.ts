@@ -70,7 +70,7 @@ test.beforeAll(async () => {
       adapter: () => { throw new Error('No external engine in this fixture.'); } }),
     reviewerAdapter: null, observation: null, secretBox: testOnlySecretBox(), ownerRoutes: false,
     modelApiTransport: async () => { throw new Error('A managed request must use the account gateway.'); },
-    accounts: { backend: { client: new ControlPlaneClient(fixture.url),
+    accounts: { backend: { client: new ControlPlaneClient(fixture.url, request => fetch(request)),
       view: () => ({ kind: 'faux', label: FAUX_BACKEND_LABEL, url: fixture!.url, reason: null, signIn: 'password' }), close: async () => {} } },
   });
   const dist = path.resolve('dist');
@@ -145,8 +145,8 @@ test('publishes in Operations, accepts customer privacy, and preserves a non-Lun
   await customer.getByRole('button', { name: 'Close settings', exact: true }).click();
   const completed = customer.waitForResponse(response => response.request().method() === 'POST' &&
     response.url().endsWith(`/threads/${home.threadId}/messages`));
-  await customer.getByRole('textbox', { name: 'Message Nectovia', exact: true }).fill('Confirm the configured model works.');
-  await customer.getByRole('textbox', { name: 'Message Nectovia', exact: true }).press('Enter');
+  await customer.getByRole('textbox', { name: 'Message this thread', exact: true }).fill('Confirm the configured model works.');
+  await customer.getByRole('textbox', { name: 'Message this thread', exact: true }).press('Enter');
   const response = await completed, answer = await response.json() as MessageResult;
   expect(response.ok(), JSON.stringify(answer)).toBe(true);
   await expect(customer.getByText('Operations selected this model.', { exact: true })).toBeVisible();

@@ -12,7 +12,10 @@ deployment acceptance is claimed.
   `feature/operations-routing`, base `0f2038402f58772400916ab00059d8121d2e3b35`
 - Operations: `F:/Diomedes/diomedes-ops-wt/operations-routing`,
   `feature/operations-routing`, base `06195b18da87365d9ebbef8045b01be508f86bf2`
-- Pillars, Roadmap and Project Memory: 2026-09-27.1.
+- Composed repository Pillars, Roadmap and Project Memory: 2026-09-27.2.
+  Andrew's newer Personal-only Individual direction takes precedence over
+  older solo-business wording: an Individual policy never funds a Business
+  workspace, including a business with one member.
 - Local work authorized. Publication, paid probes and credential-policy changes
   retain their separate authorization requirements.
 
@@ -34,27 +37,61 @@ deployment acceptance is claimed.
 
 Andrew authorized coordinating file handoffs while preserving existing work.
 Routing's source paths are claimed under the pinned coordination tool. The
-app/service delta is claimed at provisional PR #169 commit
-`b4a1e92f74fe0938d8c7a43ba36b8f1cd1636957`; its full committed dependency must
-be composed after its owner's next exact head and verification status are
-known. This feature worktree is the composition venue. All heavy checks use
+app/service delta was claimed at provisional PR #169 commit
+`b4a1e92f74fe0938d8c7a43ba36b8f1cd1636957`. On 2026-09-28 at 09:27 UTC,
+local merge `2b231c80cfd2dd9c6a7534e2ecf9e772f6db9c19` composed the complete
+frozen dependency `8ce831400fb4329ea06aec5cf85609638eb938e8`, itself based on
+merged policy main `2e6c7850eb28491ea662fe2f36b68d5ac41ddbea`. That engine
+dependency remains provisional while its owner verifies the combined source.
+This feature worktree is the composition venue. All heavy checks use
 the pinned exclusive slot; no other owner's current run is acceptance here.
 
 Four harness paths have handoff `handoff_mukyfrs1_47802fe4`, and the failed-step
 receipt writer in `run-service.ts` has `handoff_mukykscp_6f84c258`. They are
-frozen at that same dependency but must be claimed only after composition.
+frozen at that same dependency and were claimed after composition.
 Session ancestry has `handoff_mukzkaq0_a55758ab`. ThreadView is frozen at the
 same provisional dependency under `handoff_mul05now_ee237af1`. AccountSettings
 is frozen at provisional PR #174 commit
 `634266f5f6b95182b051fd11f7e4a1e441d2dc0f` under
 `handoff_mul05m83_3a236699`; its existing funding disclosure remains separate
-from customer routing/privacy consent. No dirty peer source is imported.
+from customer routing/privacy consent. No dirty peer source was imported.
+
+All nine engine handoff blobs matched their frozen b4 source exactly; the
+AccountSettings blob matched the merged policy candidate. The five merge
+conflicts were in routing-owned files: Nectovia transport, its adapter,
+commercial routing, the managed registry and shared model definitions. The
+resolution retained dynamic routing and the older published Luna binding,
+while preserving the dependency's reasoning-summary negotiation and registry
+validation. Those resolutions require this feature's own checks.
+
+Main moved after those gates: the shared `origin/main` now records
+`1af37e085ef24fc6c92d6b2b8510fc52a504bd1b`, the PR #176 merge of
+`a194ad8663c6d744c83d92ac09e0d91cafe0a653` onto `2e6c785`. That change is
+not imported here. It overlaps the six routing-owned account paths and adds
+`009_individual_plans.sql`. The coordinator reports that Individual 009 has
+already been applied to staging. The earlier proposal to renumber that file is
+withdrawn: applied history must remain immutable. The proposed forward path
+appends routing as 010, subject to the pending source-direction decision.
+Operations main also moved to `d0d04da058e7e9fdaeb89f6b28da2ad933f678de`
+(PR #6), overlapping this feature's Customers, API and staff bridge files.
+That source is not imported either. The coordinator has been notified.
+The current test results remain valid only for their recorded candidate, not
+for the new main or a future composed tree. No deployment or migration claim
+is inferred from the merge.
+
+The original desktop, harness and conversation-view patches are now applied.
+Both original-source harness runs recorded nine failures and thirteen passes.
+The seven-file repair then passed all 22 cases on unchanged source. Root type
+checking found two test-fixture signatures; after correction the 10:14 UTC
+rerun passed all 22 cases and root TypeScript. Original logs, exits and
+1,472-file manifests are retained in the harness folders documented in the
+review record.
 
 ## Provider readiness
 
 | Provider | Existing managed generation on base | New binding | Fixture tested | Live tested | Packaged | Deployed |
 | --- | --- | --- | --- | --- | --- | --- |
-| AWS Bedrock | Luna Responses only | Implemented: approved Responses/Chat, Converse, Messages | Responses, Converse, Messages tools/usage; Mantle authentication | No | No | No |
+| AWS Bedrock | Luna Responses only | Implemented: approved Responses/Chat, Converse, Messages | All four protocols, tools/usage; protocol-specific Mantle authentication | No | No | No |
 | Azure | None | Implemented: v1 Responses/Chat with deployment identity | Both protocols, tools/usage | No | No | No |
 | Vertex | None | Implemented: GenerateContent and Anthropic Messages | Both protocols, tools/usage/native state | No | No | No |
 | OpenRouter | Jev evaluations only | Implemented: Chat with exact downstream and attribution | Tools/usage, downstream refusal | No | No | No |
@@ -65,16 +102,27 @@ prove this company's account meets them.
 
 ## Current implementation and acceptance gaps (2026-09-28)
 
-The source is a local candidate, not an accepted feature. At 08:51:23 UTC,
-control-plane type checking and the two policy/provider suites passed: 58 tests,
-no SDK errors. Operations type checking passed on its unchanged candidate at
-08:36:43 UTC. Other integration, browser and database checks remain unrun.
+The source is a local candidate, not an accepted feature. The current composed
+integration run at 10:32:53-10:33:34 UTC passed all 77 control-plane cases,
+all 55 desktop/harness cases, and both TypeScript checks. No skips, SDK stderr
+or source drift occurred. Evidence is retained in
+`test-results/operations-routing-integration-green-20260928-103253/`.
+Operations type checking passed on its unchanged checkpoint at 08:36:43 UTC;
+its full bridge tests, the browser journey, broader compatibility and real
+database checks remain pending.
 
 The original diagnostic preserved five type errors and three fixture failures.
 The next run passed but exposed SDK errors that its assertions missed. Stronger
 assertions reproduced nine failures; adding the required creation timestamp to
 normalized response events made all 58 tests pass cleanly. Red/green logs and
 source hashes are in `test-results/operations-routing-normalization/`.
+
+A later regression reproduced cancellation during the real dispatch write:
+the original gateway still invoked transport and settled synthetic usage.
+The reviewed repair observes already-aborted requests before the provider call,
+retains the committed hold, and returns cancellation before adding a provider
+cooldown or using a backup. Its full assertions pass in the composed run.
+The earlier red and the independent review remain in the review record.
 
 - `shared/routing-policy.ts`: scoped revisions, hard restrictions, customer
   consent, server connections, model bindings, qualification, prices,
@@ -95,8 +143,9 @@ source hashes are in `test-results/operations-routing-normalization/`.
   ordered backups, evidence/configuration, scope details, preview/history and
   staff-only bridge calls. Renderer credentials remain absent.
 - Customer `RoutingPreferences.tsx` and `ManagedRoutingReceipt.tsx`: consent and
-  existing run details. Mounting and durable harness propagation still depend
-  on the unapplied integration patches below.
+  existing run details. Both customer mounts are applied. Durable propagation,
+  failure receipts and the conversation reader pass the 22-case composed
+  harness suite; the browser journey remains unrun.
 
 After a host restart, claims were recovered under PID 67556. Andrew reconfirmed
 routing ownership of six paths overlapping the separately active Individual tier feature:
@@ -107,12 +156,15 @@ composition. This candidate's Individual billing identity
 is `billing_scopes`, not a fabricated Business organization; the paid plan must
 compose with this same authority.
 
-Routing's `009-scoped-routing.sql` remains the account foundation. The separate
-Individual grant migration also numbered 009 must become 010 during composition;
-it is not part of this candidate. `persons.id` names a person, while
-`billing_scopes(id, tenant_id, person_id)` names the one commercial account.
-Grant, access-revision, admission and funding writes must use that account's id
-and distinct tenant id, with SQL enforcing the relationship.
+The frozen candidate still contains `009-scoped-routing.sql`. New main's
+already-applied Individual 009 takes that migration number; adapting to main
+requires routing 010. `persons.id` names the access holder, while
+`billing_scopes(id, tenant_id, person_id)` names the funded commercial account.
+Main's person grants/access/admissions already use `tenant_id = person_id`.
+Source review supports using that same tenant key on the new Individual billing
+scope while keeping its distinct `individual_*` account ID. Historical person
+records must remain unchanged, and current person access and funded usage must
+both authorize a managed dispatch. This reconciliation is proposed, not applied.
 `commercial.ts` exports `ensureIndividualAccount(tx, verifiedPerson, at)` for
 both customer initialization and the later paid-plan provisioning path. It uses
 the same per-person transaction lock and creates no entitlement, credits or
@@ -121,16 +173,17 @@ routing screen has never opened. Grant-first and setup-first order must converge
 in composition tests. The helper is below routing in the import graph, avoiding
 a runtime import cycle with commercial grant code.
 
-`operations-routing-handoff/desktop.patch` and `harness.patch` are still
-unapplied pending dependency composition. The customer Account view mount is
-also pending its owner's handoff. Source-inheritance and failed-step receipt
-regressions are prepared for red-first validation once those writers are owned.
-These are required integration work; fixture results alone cannot close them.
+`operations-routing-handoff/desktop.patch`, `harness.patch` and the customer
+mount patch were applied after dependency composition and the recorded claims.
+Source-inheritance and failed-step receipt regressions reproduced failures
+before `harness-repairs.patch` was applied and passed afterward. The source
+review and harness results do not close the browser, database or provider gates.
 
 The gateway and desktop now carry failure receipts as well as successful
 fallback receipts. Validated all-released failures release the local hold;
-unresolved attempts retain it. The durable failed-step writer still needs its
-handoff applied and its restart regression run. All these new cases are unrun.
+unresolved attempts retain it. The durable failed-step writer's restart
+regression and real desktop-to-gateway client suite pass on the composed source.
+The browser receipt view still needs its journey check.
 
 ## Migration and behavioral rollback
 
@@ -148,12 +201,15 @@ source rules and cooldowns receive only their mutable column grants. The
 funding writer continues using the existing ledger tables and receives no
 scope or customer consent permissions. No migration or grant has been run.
 
-The separate Individual candidate must renumber its later migration to 010,
-use `ensureIndividualAccount` inside staff issuance before any routing-screen
-visit, and use that stored tenant for grants, access, admission, pins and
-revocation. Person id, Individual account id and tenant id are distinct. Its
-refusal of managed-inference grants until personal funding exists remains.
-That separate candidate is not imported or repaired by this checkpoint.
+The source-direction decision now concerns adaptation to already-merged
+Individual code. Preserve its migration 009 and historical person records;
+append routing 010 if that path is selected. Reuse `ensureIndividualAccount`
+inside authorized staff issuance before any routing-screen visit, reconcile
+lock ordering, and make the person grant plus explicit funded agreement the
+managed admission boundary. Retain Personal BYO behavior and refuse all Business
+coverage through Individual. See `operations-routing-handoff/main-composition-notes.md`
+for the source evidence and required upgrade tests. None of this main composition
+has been applied by the frozen checkpoint.
 
 The real PostgreSQL routing suite requires a new database named
 `b01_validation_operations_routing_*`, an explicitly supplied test URL and,
@@ -161,6 +217,20 @@ for Neon, a pinned nonproduction branch and exact endpoint. It refuses an
 existing schema and performs no schema reset. It exercises pre-009 upgrade,
 idempotence, organization backfill/trigger, restricted role locks, concurrent
 Individual creation, consent CAS, durable reads and denied mutations.
+
+At 09:31 UTC no PostgreSQL server/client or Docker executable was available on
+PATH, no PostgreSQL service was present, and no routing test database URL,
+approved isolated branch or expected endpoint was configured. No database was
+created and no production connection was used as a substitute.
+
+A later read-only Neon inventory found one project, `small-wave-81999606`
+(`diomedes`), with only `br-old-star-aepf7zk6`, named `production`, marked
+primary and default. There is no existing isolated branch to bind this test to.
+No branch, database, role or credential was created or changed. The remaining
+database dependency is an explicitly approved isolated branch and a new empty
+`b01_validation_operations_routing_*` database with a direct owner connection;
+the test also needs the exact branch id and expected hostname. Credentials belong
+in the test process environment, never in this report or a committed file.
 
 Roll back routing behavior by publishing a qualified single primary with
 fallback disabled, or by creating a new rollback revision from still-eligible

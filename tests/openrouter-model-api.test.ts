@@ -340,6 +340,31 @@ describe('refusals before anything is sent', () => {
     for (const value of bad) expect(openRouterConnectionSchema.safeParse(value).success).toBe(false);
   });
 
+  test('the guarded fetch preserves an explicit endpoint ZDR requirement before attaching the key', async () => {
+    const net = transport([() => answer()]);
+    const entry = { ...CONNECTION.models[0], upstreams: ['anthropic/strict-fixture'], zdr: true };
+    const saved = openRouterConnectionSchema.parse({ ...CONNECTION, models: [entry] });
+    const binding = openRouterBinding(saved, saved.models[0]);
+    let dispatched = 0;
+    const guarded = guardedStreamFetch({ prefix: 'openrouter', label: 'OpenRouter', ...binding.guard,
+      secret: SECRET, maxRequestBytes: 10_000, maxResponseBytes: 10_000, signal: new AbortController().signal,
+      transport: net.fetch, onDispatch: () => { dispatched++; }, onEnvelope: () => undefined });
+    const provider = { only: ['anthropic/strict-fixture'], allow_fallbacks: false, require_parameters: true, data_collection: 'deny' };
+    const body = { model: MODEL, stream: true, usage: { include: true }, provider: { ...provider, zdr: true } };
+    const url = `${OPENROUTER_BASE_URL}/chat/completions`;
+    for (const changed of [provider, { ...provider, zdr: false }]) {
+      const error = await failure(guarded(url, { method: 'POST', body: JSON.stringify({ ...body, provider: changed }) }));
+      expect(error.code).toBe('openrouter_request_refused');
+      expect(error.dispatched).toBe(false);
+    }
+    expect(net.sent).toHaveLength(0); expect(dispatched).toBe(0);
+    const response = await guarded(url, { method: 'POST', body: JSON.stringify(body) });
+    await response.text();
+    expect(net.sent).toHaveLength(1); expect(dispatched).toBe(1);
+    expect(net.sent[0].body.provider).toEqual(body.provider);
+    expect(net.sent[0].headers.get('authorization')).toBe(`Bearer ${SECRET}`);
+  });
+
   test('the guarded fetch refuses another destination or a widened body before the key is attached', async () => {
     const net = transport([]);
     let dispatched = 0;

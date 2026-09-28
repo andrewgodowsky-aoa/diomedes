@@ -8,6 +8,9 @@ import type { BrowserIdentity } from './accounts/browser-identity.js';
 import { browserSignIn } from './accounts/deployment.js';
 import { mountAccountSessionRoutes } from './accounts/routes.js';
 import { AccountSessionService } from './accounts/session.js';
+import { AccountRoutingSession } from './accounts/routing-session.js';
+import { routingPreferenceWriteSchema } from '../shared/routing-policy.js';
+import { conversationRoutingReceipts } from './harness/routing-receipts.js';
 import { mountPhoneRelayRoutes } from './relay/routes.js';
 import { PhoneRelayService } from './relay/service.js';
 import { createObservation, type ObservationOptions } from './observability/runtime.js';
@@ -819,6 +822,7 @@ export async function createApp(options: AppOptions) {
         options.accounts.identity && signInExpected ? { identity: options.accounts.identity, expect: signInExpected } : null,
       )
     : null;
+  const accountRouting = accountSession ? new AccountRoutingSession(accountSession, workspaces) : null;
   // "Reach this computer from your phone": outbound only, and only while the setting is on.
   const phoneRelay = accountSession ? new PhoneRelayService(accountSession, store.dataDir, options.secretBox ?? null) : null;
   // Built before the account session starts, so a resumed sign-in is already seen by it.
@@ -841,10 +845,13 @@ export async function createApp(options: AppOptions) {
     // Each business's setup is then read from the account service, outside the lock, and
     // awaited, so the first view after a sign-in shows the business's setup as it stands.
     accountSession.onProjection(async (projection) => {
+      accountRouting!.invalidate();
       await store.locked(() => workspaces.project(projection));
       observation?.scopes.observeContext();
       void phoneRelay?.sync();
       await workspaces.refreshSetups();
+      // Refresh outside the store lock. Sign-out clears the cache and sends nothing.
+      await accountRouting!.refreshAccess();
     });
     // Signing out, switching accounts or forgetting one removes this computer's phone access first.
     accountSession.onRelease((personId, signedIn) => phoneRelay!.release(personId, signedIn));
@@ -858,7 +865,7 @@ export async function createApp(options: AppOptions) {
     const testAccount = env.DIOMEDES_TEST_MODE === '1' ? (env.DIOMEDES_TEST_ACCOUNT ?? '').trim() : '';
     if (testAccount && !accountSession.signedIn())
       await accountSession.signIn({ email: testAccount, password: FAUX_DEMO_PASSWORD, remember: false });
-    engines.agentGate = new AccountAgentGate(accountSession, workspaces);
+    engines.agentGate = new AccountAgentGate(accountSession, workspaces, accountRouting!);
   }
   if (observation) engines.observation = observation.scopes;
   const agentGate = engines.agentGate instanceof AccountAgentGate ? engines.agentGate : null;
@@ -874,9 +881,10 @@ export async function createApp(options: AppOptions) {
           base: accountSession.backend.client.base,
           signedIn: () => accountSession.signedIn(),
           token: () => accountSession.token(),
-          policy: () => accountSession.policy(),
-          refreshPolicy: () => accountSession.refreshPolicy(),
-          organizationFor: (projectId) => agentGate.organizationFor(projectId),
+          policy: (projectId = null) => accountRouting!.policy(projectId),
+          refreshPolicy: (projectId = null) => accountRouting!.refresh(projectId),
+          organizationFor: (projectId) => accountRouting!.scopeFor(projectId)?.id ?? null,
+          scopeFor: (projectId) => accountRouting!.scopeFor(projectId),
           fetch: (input, init) => accountSession.backend.client.send(new Request(input, init)),
         }
       : null;
@@ -1469,9 +1477,13 @@ export async function createApp(options: AppOptions) {
   harness.loop.attachVerification(verification);
   // H14: team roles resolve their H09 profiles and Agents at admission; H08 retries a loop.
   const loopRoutes = mountNativeLoopRoutes(app, store, harness, verification, { profiles: agentProfiles, agents }, ownerRules, {
-    resolveManaged: (projectId, taskId) => managedLoopChoice(projectId, taskId),
-    readOnly: (projectId) => {
+    resolveManaged: async (projectId, taskId) => {
+      await accountRouting?.refresh(projectId);
+      return managedLoopChoice(projectId, taskId);
+    },
+    readOnly: async (projectId) => {
       try {
+        await accountRouting?.refresh(projectId);
         return { admitted: true, model: managedLoopChoice(projectId).model, reason: null };
       } catch (error) {
         return { admitted: false, model: null, reason: error instanceof Error ? error.message : 'Nectovia is unavailable.' };
@@ -2681,6 +2693,7 @@ export async function createApp(options: AppOptions) {
     }
     const command = parseWorkCommand(supplied);
     const b = command?.request ?? supplied;
+    if (b.route === NECTOVIA_ROUTE && nectoviaAccount?.signedIn()) await nectoviaAccount.refreshPolicy(projectId);
     const state = store.state(projectId);
     const taskId = asString(b.taskId, 'a task', 100);
     const requestedTask = state.tasks.find((task) => task.id === taskId && !task.deletedAt);
@@ -3578,16 +3591,17 @@ export async function createApp(options: AppOptions) {
   const managedLoopChoice = (projectId: string, taskId?: string) => {
     const accountRoute = nectoviaAccountFor(projectId);
     const organizationId = nectoviaAccount!.organizationFor(projectId)!;
-    const entitlement = accountSession?.entitlement(organizationId);
-    if (!entitlement?.agent)
-      throw new EngineError(AGENT_NOT_INCLUDED, entitlement?.reason || 'This business does not include the Nectovia Agent.', false);
-    if (!entitlement.managedInference)
-      throw new EngineError(AGENT_NOT_INCLUDED, 'This business does not include managed AI usage.', false);
+    const scope = accountRouting?.scopeFor(projectId);
+    const entitlement = scope?.kind === 'organization' ? accountSession?.entitlement(organizationId) : null;
+    if (!scope || !accountRouting?.includes(scope, 'nectovia-agent'))
+      throw new EngineError(AGENT_NOT_INCLUDED, entitlement?.reason || 'This account does not include the Nectovia Agent.', false);
+    if (!accountRouting.includes(scope, 'managed-inference'))
+      throw new EngineError(AGENT_NOT_INCLUDED, 'This account does not include managed AI usage.', false);
     const thread = taskId ? store.state(projectId).conversations.find((item) => item.taskId === taskId) : undefined;
     const tier = nectoviaTier({
       style: jobCaps.tierFor(projectId, thread?.id ?? null),
       signedIn: nectoviaAccount?.signedIn() ?? false,
-      policy: nectoviaAccount?.policy() ?? null,
+      policy: nectoviaAccount?.policy(projectId) ?? null,
     });
     if (tier.outcome !== 'run' || !tier.model) throw new ApiError(409, tier.reason);
     return { model: tier.model, accountRoute };
@@ -3676,7 +3690,7 @@ export async function createApp(options: AppOptions) {
       return nectoviaTier({
         style: jobTierOf(styleOf(conversation)),
         signedIn: nectoviaAccount?.signedIn() ?? false,
-        policy: nectoviaAccount?.policy() ?? null,
+        policy: nectoviaAccount?.policy(projectId) ?? null,
         text: options.text ?? null,
       });
     if (conversation?.requested?.model) return null;
@@ -3891,12 +3905,28 @@ export async function createApp(options: AppOptions) {
    * account service's published policy; why a message would be refused, if it would; and
    * whether AI setup shows the owner's own provider routes. Read-only.
    */
+  app.get('/api/account/routing', route(async (req) => {
+    if (!accountRouting) throw new ApiError(503, 'The account service is not available.');
+    const projectId = typeof req.query.project === 'string' ? req.query.project : null;
+    if (projectId) store.state(projectId);
+    return accountRouting.preference(projectId);
+  }, false));
+  app.post('/api/account/routing', route(async (req) => {
+    if (!accountRouting) throw new ApiError(503, 'The account service is not available.');
+    const projectId = typeof req.query.project === 'string' ? req.query.project : null;
+    if (projectId) store.state(projectId);
+    const input = routingPreferenceWriteSchema.safeParse(body(req));
+    if (!input.success) throw new ApiError(400, 'Review the routing preference and explicitly accept its privacy limits.');
+    return accountRouting.accept(projectId, input.data);
+  }, false));
   app.get(
     '/api/ai/nectovia',
-    route(async (): Promise<NectoviaRouteView> => {
+    route(async (req): Promise<NectoviaRouteView> => {
+      const projectId = typeof req.query.project === 'string' ? req.query.project : null;
+      if (projectId) store.state(projectId);
       const signedIn = nectoviaAccount?.signedIn() ?? false;
       const policy = signedIn
-        ? (nectoviaAccount!.policy() ?? (await nectoviaAccount!.refreshPolicy()))
+        ? await nectoviaAccount!.refreshPolicy(projectId)
         : null;
       return {
         route: NECTOVIA_ROUTE,
@@ -4373,6 +4403,20 @@ export async function createApp(options: AppOptions) {
     if (!engines.modelSessions) throw new ApiError(503, 'The conversation runtime is unavailable.');
     return engines.modelSessions;
   };
+  app.get('/api/projects/:id/threads/:threadId/routing-attempts', route(async req => {
+    const projectId = id(req), threadId = String(req.params.threadId);
+    const thread = store.state(projectId).conversations.find(item => item.id === threadId);
+    if (!thread) throw new ApiError(404, 'This thread was not found.');
+    if (req.query.before !== undefined && typeof req.query.before !== 'string')
+      throw new ApiError(400, 'Choose a recorded page of run details.');
+    if (!engines.modelSessions) return { entries: [], nextBefore: null };
+    return conversationRoutingReceipts({
+      projectId, threadId, before: req.query.before,
+      lineageIds: (thread.lineages ?? []).filter(lineage => lineage.runId.startsWith('model-')).map(lineage => lineage.runId),
+      models: engines.modelSessions, runs: harness.runs,
+    });
+  }, false));
+
   /**
    * A conversation run this build cannot read: its file is damaged, or a newer build wrote it
    * before a downgrade. The file is left exactly as it is.
@@ -4551,8 +4595,11 @@ export async function createApp(options: AppOptions) {
     return false;
   };
   const interactionHost: InteractionHost = {
-    resolve: (projectId, threadId, command, options) =>
-      store.locked(async () => {
+    resolve: async (projectId, threadId, command, options) => {
+      const thread = store.state(projectId).conversations.find(item => item.id === threadId);
+      if (routed(projectId, thread)?.engine === NECTOVIA_ROUTE && nectoviaAccount?.signedIn())
+        await nectoviaAccount.refreshPolicy(projectId);
+      return store.locked(async () => {
         // The runs of this thread this build could not read, found while the command is located.
         const unreadable = new Set<string>();
         const locateAny = conversationLocator(unreadable);
@@ -4641,8 +4688,7 @@ export async function createApp(options: AppOptions) {
         // applies; a tier whose route cannot run is refused by name before anything is sent.
         // A Nectovia conversation's model is the published policy's; when this session has not
         // read one yet, it asks once before the tier resolves.
-        if (routed(projectId, thread).engine === NECTOVIA_ROUTE && nectoviaAccount?.signedIn() && !nectoviaAccount.policy())
-          await nectoviaAccount.refreshPolicy();
+        // The account's routing snapshot was refreshed before entering the store lock.
         const conversationRoute = threadRoute(projectId, thread, {
           mode: command.mode,
           text: command.text,
@@ -4965,7 +5011,8 @@ export async function createApp(options: AppOptions) {
             onReasoning: (frame: ReasoningPreview) => store.emit('engine-reasoning', frame),
           },
         };
-      }),
+      });
+    },
     answerFormat: (projectId, threadId, commandId, guard) =>
       store.locked(async () => {
         // Clone first, as `resolve` does: a failed persist must leave nothing half retired.

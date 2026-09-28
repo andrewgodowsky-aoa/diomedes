@@ -911,9 +911,14 @@ export class ManagedInferenceService {
         // From dispatch onward an error must never imply that all attempts were free.
         headers.set('X-Nectovia-Charge', 'uncertain');
         const abort = new AbortController();
-        const onAbort = () => abort.abort(); request.signal.addEventListener('abort', onAbort, { once: true });
+        const onAbort = () => abort.abort();
+        if (request.signal.aborted) onAbort();
+        else request.signal.addEventListener('abort', onAbort, { once: true });
         let upstream: Response | undefined, category: FailureKind = 'timeout';
         try {
+          // The dispatch write awaited I/O. Its committed hold must be retained,
+          // but an already-cancelled request must not invoke a provider transport.
+          abort.signal.throwIfAborted();
           upstream = await within(callManagedProvider({ route, connection, credential, body: forwarded, signal: abort.signal, scopeKey: routingScopeKey(h.scope) }, this.options.bindingTransport), this.idleTimeoutMs, () => abort.abort());
           if (!upstream.ok) {
             const status = upstream.status;
@@ -969,9 +974,13 @@ export class ManagedInferenceService {
         } catch (error) {
           abort.abort();
           category = error instanceof BindingError ? 'configuration' : 'timeout';
-          await this.park(ref, error instanceof BindingError ? error.message : 'The provider may have received the request, but no output or usage was confirmed.');
+          await this.park(ref, request.signal.aborted
+            ? 'The request was cancelled after its dispatch record committed; usage has not been reconciled.'
+            : error instanceof BindingError ? error.message : 'The provider may have received the request, but no output or usage was confirmed.');
         }
         request.signal.removeEventListener('abort', onAbort);
+        if (request.signal.aborted)
+          throw new ManagedError(499, 'cancelled', 'The request was cancelled. Its recorded attempt retains any uncertain cost.');
         if (['quota', 'capacity', 'health', 'timeout'].includes(category)) await this.options.commercial.transaction(tx =>
           tx.saveCircuit(route.id, route.revision, new Date(this.now() + 30_000).toISOString(), `This model returned ${category}; the next funded request after the cooldown checks recovery.`));
         if (request.signal.aborted || !mayFailOver({ kind: category, enabled: policy.fallbackEnabled, maxAttempts: policy.maxAttempts,

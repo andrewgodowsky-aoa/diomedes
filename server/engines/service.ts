@@ -2265,9 +2265,9 @@ export class EngineService {
       throw new EngineError('ROUTE_REFUSED', 'This work has no job Nectovia can meter it under. Nothing was sent.', true);
     const tier = await this.managedTier(input);
     const label = WORK_STYLE_LABELS[tier];
-    let policy = account.policy();
+    let policy = account.policy(input.projectId ?? null);
     if (!policy || policy.revision !== admitted.policyRevision)
-      policy = (await account.refreshPolicy().catch(() => null)) ?? policy;
+      policy = await account.refreshPolicy(input.projectId ?? null);
     if (!policy) throw new EngineError('ROUTE_REFUSED', NECTOVIA_UNAVAILABLE, true);
     const published = policy.tiers[tier];
     if (!published)
@@ -2281,12 +2281,14 @@ export class EngineService {
     const managed: ManagedAdmission = {
       admissionId: admitted.admissionId,
       organizationId: admitted.organizationId,
+      scope: admitted.scope,
+      routing: policy.resolved,
       policyRevision: policy.revision,
       tier,
       usageClass: usageClassFor(admitted.surface),
       rootJobId,
     };
-    const handle = await modelApiRoute(api, NECTOVIA_ROUTE, { managed });
+    const handle = await modelApiRoute(api, NECTOVIA_ROUTE, { managed, projectId: input.projectId });
     if (!handle.connected) throw new EngineError(AGENT_SIGN_IN_REQUIRED, NECTOVIA_SIGN_IN, false);
     if (handle.accountRoute !== input.accountRoute)
       throw new EngineError('ACCOUNT_CHANGED', 'This conversation belongs to another business. Send the message again from this one.');
@@ -3039,7 +3041,10 @@ async function modelApiRoute(api: ModelApiServices, route: ModelApiRoute, work: 
       if (!services || !account?.signedIn() || !organizationId) return { connected: false, route, names };
       const now = services.now ?? (() => new Date());
       const connectionId = nectoviaConnectionId(organizationId, now());
-      const published = Object.values(account.policy()?.tiers ?? {}).flatMap((entry) => (entry ? [entry.model] : []));
+      const policy = work.managed?.routing ? { revision: work.managed.routing.revision, tiers: work.managed.routing.tiers, resolved: work.managed.routing }
+        : account.policy(work.projectId ?? null);
+      const scopedAccount = { policy: () => account.policy(work.projectId ?? null), refreshPolicy: () => account.refreshPolicy(work.projectId ?? null) };
+      const published = Object.values(policy?.tiers ?? {}).flatMap((entry) => (entry ? [entry.model] : []));
       const managed = () => {
         if (!work.managed)
           throw new EngineError('ROUTE_REFUSED', 'This Nectovia call has no admission, so nothing was sent.', true);
@@ -3062,7 +3067,7 @@ async function modelApiRoute(api: ModelApiServices, route: ModelApiRoute, work: 
         expiresAt: null,
         serving: [...new Set(published)].join(', ') || 'no published model',
         serves: (model) => published.includes(model),
-        card: (model) => nectoviaRateCard(model),
+        card: (model) => nectoviaRateCard(model, policy),
         credential: {
           check: async () => (account.signedIn() ? null : NECTOVIA_SIGN_IN),
           open: async () => {
@@ -3075,12 +3080,12 @@ async function modelApiRoute(api: ModelApiServices, route: ModelApiRoute, work: 
         adapter: (options) =>
           createNectoviaModelAdapter({
             base: account.base,
-            account,
+            account: scopedAccount,
             connectionId,
             model: options.model,
             managed: managed(),
             token: options.secret,
-            card: nectoviaRateCard(options.model),
+            card: nectoviaRateCard(options.model, policy),
             // This route's `exposure()` is the local ledger itself, so what arrives is one.
             exposure: options.exposure as SpendExposure,
             transcripts: services.transcripts,
@@ -3093,11 +3098,11 @@ async function modelApiRoute(api: ModelApiServices, route: ModelApiRoute, work: 
         respond: ({ sinks, secret, transport: given, ...options }) =>
           respondNectovia({
             base: account.base,
-            account,
+            account: scopedAccount,
             connectionId,
             managed: managed(),
             token: secret,
-            card: nectoviaRateCard(options.model),
+            card: nectoviaRateCard(options.model, policy),
             transport: transport(given),
             now,
             ...options,

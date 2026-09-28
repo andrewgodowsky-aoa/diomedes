@@ -106,6 +106,47 @@ beforeEach(async () => {
 afterEach(async () => { await cloud.idle(); vi.restoreAllMocks(); });
 
 describe('Operations publication through authenticated funded dispatch', () => {
+  it.each([null, 'nectovia-managed/1'])('refuses protocol %s before reserving or sending a versioned route', async protocol => {
+    await publish('primary', true);
+    const req = await request();
+    if (protocol === null) req.headers.delete('x-nectovia-protocol');
+    else req.headers.set('x-nectovia-protocol', protocol);
+    const reserve = vi.spyOn(cloud.funding, 'reserve');
+    const response = await cloud.handle(req);
+    expect(response.status).toBe(426);
+    expect(await response.json()).toMatchObject({ error: { code: 'client_update_required' } });
+    expect(reserve).not.toHaveBeenCalled();
+    expect(sends).toHaveLength(0);
+    expect(cloud.store.snapshot().funding.attempts).toHaveLength(0);
+  });
+
+  it('stops cancellation during the dispatch write before provider transport or fallback', async () => {
+    await publish('primary', true);
+    const cancel = new AbortController();
+    const req = new Request(await request(), { signal: cancel.signal });
+    const markDispatched = cloud.funding.markDispatched.bind(cloud.funding);
+    vi.spyOn(cloud.funding, 'markDispatched').mockImplementationOnce(async ref => {
+      const result = await markDispatched(ref);
+      cancel.abort();
+      return result;
+    });
+    const response = await cloud.handle(req);
+    const body = await response.text();
+    await cloud.idle();
+    // The real exclusive dispatch record committed, so its hold remains truthful
+    // even though this process can prevent the imminent provider transport.
+    expect(sends, body).toHaveLength(0);
+    expect(response.status, body).toBe(499);
+    expect(JSON.parse(body)).toMatchObject({ error: { code: 'cancelled' }, nectovia: {
+      attempts: [{ state: 'uncertain', routing: { routeId: 'primary', ordinal: 1 } }], allowanceDebitMicroUsd: 0,
+    } });
+    const state = cloud.store.snapshot();
+    expect(state.funding.attempts).toHaveLength(1);
+    expect(state.funding.attempts[0]).toMatchObject({ state: 'uncertain', dispatchedAt: at });
+    expect(state.funding.settlements).toHaveLength(0);
+    expect(state.commercial.circuits).toEqual({});
+  });
+
   it('does not display or dispatch global routes through an override without a versioned configuration', async () => {
     expect((await publish()).status).toBe(201);
     await cloud.store.commercial.transaction(async tx => {

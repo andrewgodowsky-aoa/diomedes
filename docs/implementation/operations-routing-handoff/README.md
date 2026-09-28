@@ -1,8 +1,10 @@
 # Desktop routing handoff
 
-Unapplied patch. App/service ownership has transferred to this feature under
+Applied locally after composition; focused verification is in progress. App/service ownership transferred to this feature under
 `handoff_mukxudp0_eb0e8b54` and `claim_mukxvns8_c7d3cc5a`. The full committed
-dependency must be composed before this delta is applied. This artifact is not
+dependency was composed in merge `2b231c80` from provisional engine `8ce83140`
+and merged policy main `2e6c785`. The original target blobs remain unchanged
+from the frozen handoffs below. This artifact is not
 a tested or accepted desktop implementation.
 
 `desktop.patch` binds to candidate
@@ -43,20 +45,31 @@ durable receipt. Both applications must first be built from the composed source.
 No browser journey has run. The test slot and remaining UI/harness handoffs are
 required before that work.
 
-`conversation-receipts.patch` is an unapplied source delta after `desktop.patch`
-and the complete PR #169/#174 dependencies. It mounts the separate customer
+`conversation-receipts.patch` was applied after `desktop.patch`
+and the complete frozen PR #169/#174 dependencies. It mounts the separate customer
 privacy form, and a read-only projection of existing conversation child-run
 receipts in the Console. `server/harness/routing-receipts.ts` and the on-demand
 view are authored independently; neither is accepted by the earlier CP gates.
 The reader checks project, thread, tenant and command identity, ignores tool
 content, includes writing-helper attempts and pages by immutable turn identity.
 The journey now requires the route, revisions and settlement to be visible after
-reload, as well as present on disk. All these additions remain unrun.
+reload, as well as present on disk. The receipt reader passes the repaired
+harness cases; browser behavior remains unrun.
 
-`harness-repairs.patch` is prepared for application only after the original
-root harness regressions have run red on the composed dependency plus
-`harness.patch`. It retains rules on direct model intents and derived history,
+The complete original `harness.patch` is applied. Its Nectovia adapter section
+was found missing during composition and applied as a separate diff; the earlier
+claim that it was already present was incorrect. The 22-case harness suite ran
+on both the partial and complete original compositions, each with nine failures
+and thirteen passes. The suite does not instantiate the Nectovia adapter, so
+both runs reproduced the same repair defects. Source hashes stayed unchanged.
+
+`harness-repairs.patch` is now applied after those recorded reds. It retains
+rules on direct model intents and derived history,
 preserves the wrapper's enforcement capability, validates successful receipts,
 records only model-failure receipts, and rejects tool content in the receipt
 view. Its error mapping uses the existing harness contract. No tool effect,
-budget, lease or run-state transition is redefined. This artifact is untested.
+budget, lease or run-state transition is redefined. Its green run passed all
+22 cases at 09:58 UTC. Root type checking then found two test-fixture signatures;
+their corrected rerun passed all 22 cases and root TypeScript at 10:14 UTC.
+See `review-record.md` for the
+original logs, unchanged-source manifests and remaining acceptance limits.

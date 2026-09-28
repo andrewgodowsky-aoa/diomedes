@@ -31,6 +31,7 @@ import { formatOrigin, originForSession, originForTurn } from '../attribution-di
 import { ContextUsed } from './ContextUsed';
 import { ApprovalStatus, time } from '../components';
 import { RunInspector } from '../workbench/RunInspector';
+import { ThreadManagedRoutingDetails } from './ManagedRoutingReceipt';
 import { taskEvidence } from '../workbench/task-evidence';
 import { controlProfiles } from '../api';
 import { routeDisplayName } from '../../shared/engines';
@@ -695,6 +696,9 @@ export function ThreadView({
               controls={(live ?? last) ? (profiles?.[(live ?? last)!.id] ?? null) : null}
               receipts={controlReceipts}
             />
+          )}
+          {projectId && thread.lineages?.some(lineage => lineage.runId.startsWith('model-')) && (
+            <ThreadManagedRoutingDetails key={`${projectId}/${thread.id}`} projectId={projectId} threadId={thread.id} refreshKey={`${thread.turns.length}:${busy}`} />
           )}
           {projectId && task && (
             <ChangeReview

@@ -36,7 +36,7 @@ let runtimeClock: number;
 const drivers: ModelSessionRuns[] = [];
 // The trusted fixture host permits only the synthetic adapter used in this file.
 const openRuntime = () => new RunService(new FileRunStore(directory), { clock: () => runtimeClock,
-  authorizeEgress: (_runId, intent) => {
+  authorizeEgress: async (_runId, intent) => {
     if (intent.kind !== 'model' || intent.name !== 'fixture') throw new Error('Only the synthetic model is authorized.');
   } });
 

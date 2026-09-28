@@ -9,6 +9,7 @@ const credits = (value: number) => formatCredits(micro(value));
 /** Uses durable model-step receipts, never current policy or locally estimated balances. */
 export function ManagedRoutingReceipt({ run }: { run: HarnessRun }) {
   const steps = run.steps.flatMap(step => {
+    if (step.intent.kind !== 'model') return [];
     const output = step.output;
     const saved = output && typeof output === 'object' && !Array.isArray(output) ? output.managed : undefined;
     const failed = step.error && 'managed' in step.error ? step.error.managed : undefined;
