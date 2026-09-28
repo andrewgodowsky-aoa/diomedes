@@ -555,6 +555,10 @@ a {
 .button:hover:not(:disabled) {
   background: var(--dm-raised);
 }
+/* A link out drawn as a control, such as See plans. */
+a.button {
+  text-decoration: none;
+}
 /* One primary action per screen at most: a 1 px --light border with --light
    text on a quiet ground. Never a filled block, so nothing hard-codes a dark
    colour and ember/paper keep working. */

@@ -109,6 +109,8 @@ export interface DiomedesPageProps {
   artifactScope?: string | null;
   /** Saves an artifact into the scoped project's Files. Absent on All projects, which has no folder. */
   onSaveArtifact?(record: ArtifactRecord): Promise<SaveOutcome>;
+  /** The free-version notice, above the conversation, while the host says to show it. */
+  plan?: ReactNode;
   /** The progress report that opens the conversation, when the scheme draws one. */
   brief?: ReactNode;
   /** The page's art, beside the conversation, when the scheme draws it. */
@@ -210,6 +212,7 @@ export function Diomedes({
   onNewProject,
   artifactScope = null,
   onSaveArtifact,
+  plan,
   brief,
   art,
   menu = null,
@@ -284,6 +287,7 @@ export function Diomedes({
 
             <div className="transcript">
               <div className="col">
+                {plan}
                 {brief}
                 {turns.map((turn, index) => (
                   <div className={`turn ${turn.role === 'you' ? 'you' : 'dio'}`} key={turn.id}>

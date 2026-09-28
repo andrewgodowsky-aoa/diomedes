@@ -12,6 +12,7 @@ import type { WorkspaceView } from '../../shared/workspaces';
 import { api, automationDetail, listAutomations, runAutomation } from '../api';
 import { Mark } from '../components';
 import { AttentionList, ScheduleSection } from './AutomationSchedule';
+import { PlansLink, useFreePlan } from './FreePlanNotice';
 import './automations.css';
 
 /**
@@ -539,6 +540,7 @@ function Row({
 }
 
 export function AutomationsPage(props: AutomationsPageProps) {
+  const freePlan = useFreePlan();
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -703,15 +705,25 @@ export function AutomationsPage(props: AutomationsPageProps) {
         </div>
       )}
       {loading && !loaded && !error && <p role="status">Reading automations...</p>}
-      {loaded?.kind === 'personal' && (
-        <div className="auto-empty">
-          <h2>Personal has no automations</h2>
-          <p>
-            Automations are set up per business workspace. Switch to a business under Change
-            workspace to see what runs for it.
-          </p>
-        </div>
-      )}
+      {/* On the free version there's no business to switch to: automations come with a plan. */}
+      {loaded?.kind === 'personal' &&
+        (freePlan ? (
+          <div className="auto-empty">
+            <h2>Automations are part of a paid plan</h2>
+            <p>You're on the free version. With a plan, work like the weekly brief runs on a schedule.</p>
+            <PlansLink plan={freePlan} className="auto-plans">
+              See plans
+            </PlansLink>
+          </div>
+        ) : (
+          <div className="auto-empty">
+            <h2>Personal has no automations</h2>
+            <p>
+              Automations are set up per business workspace. Switch to a business under Change
+              workspace to see what runs for it.
+            </p>
+          </div>
+        ))}
       {list && (
         <>
           {stale && loaded?.kind === 'business' && (

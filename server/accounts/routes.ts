@@ -10,6 +10,7 @@
  *   POST  /api/account/organizations/:id/invitation-codes/:codeId/revoke
  *   PATCH /api/account/organizations/:id/members/:personId
  *   POST  /api/account/invitation-codes/redeem
+ *   POST  /api/account/plan-notice                       the free-version notice: remind me later, or don't remind me again
  *
  * Mounted after the loopback, origin and client-header guards, and before any
  * other /api route. The account service decides every permission; these routes
@@ -38,6 +39,7 @@ const codeBody = z.strictObject({
 });
 const memberBody = z.strictObject({ role, state: z.enum(['active', 'revoked']) });
 const redeemBody = z.strictObject({ code: z.string().trim().min(4).max(40) });
+const planNoticeBody = z.strictObject({ choice: z.enum(['later', 'never']) });
 const id = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/);
 
 function parse<T>(schema: z.ZodType<T>, value: unknown): T {
@@ -114,6 +116,7 @@ export function mountAccountSessionRoutes(app: Express, session: AccountSessionS
       return { organization: { id: joined.organization.id, name: joined.organization.name }, role: joined.membership.role, account: session.state() };
     }),
   );
+  router.post('/plan-notice', route(async (req) => session.answerPlanNotice(parse(planNoticeBody, req.body).choice)));
   app.use('/api/account', router);
 
   // Everything else under /api needs a signed-in person. The renderer shows the

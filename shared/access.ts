@@ -309,9 +309,56 @@ export const AGENT_NOT_INCLUDED_REASON =
   'The Nectovia Agent is part of a Business plan. You can still use your workspace and your own AI tools directly.';
 export const AGENT_PERSONAL_REASON =
   'The Nectovia Agent works for a business. Switch to a business workspace that includes it, or use your own AI tools directly.';
+
+// --- the free version ----------------------------------------------------------
+
+/**
+ * The free version (Andrew, 2026-09-27). Anyone signed in keeps the harness for good: projects,
+ * the workspace, the task board, a project's own instruction files and conversations on their own
+ * AI. Only what Nectovia itself brings is paid: the Agent, company-funded AI usage, business rules,
+ * automations and phone access. Paid access is any active subscription, a business plan or
+ * (phase 2) an individual one the person owns. A business never pays for someone's personal work.
+ *
+ * "Their own AI" means a direct engine that runs its own loop, such as a native Claude session.
+ * A model-API route on the person's own key runs Nectovia's own loop, which is the Agent, so it
+ * stays paid (Pillar 12 amendment 2026-09-25.1: a customer-funded route never unlocks it).
+ */
+export const AGENT_FREE_VERSION_REASON =
+  "You're on the free version of Nectovia, so the Nectovia Agent isn't available here. Nothing was sent.";
+/** The free-version refusal with what the person can do about it, when the host knows. */
+export function freeVersionRefusal(hint: string | null): string {
+  return hint
+    ? `You're on the free version of Nectovia, so the Nectovia Agent isn't available here. ${hint} Nothing was sent.`
+    : AGENT_FREE_VERSION_REASON;
+}
+/** Where "Sign up for a plan" opens until a checkout exists. `NECTOVIA_PLANS_URL` replaces it. */
+export const PLANS_URL = 'https://diomedes.net/pricing';
+/** How long "Remind me later" hides the free-version notice. */
+export const PLAN_NOTICE_SNOOZE_DAYS = 7;
+/**
+ * Whether the signed-in person holds the Agent through any active subscription. `unknown` while
+ * a business they belong to has not had its access read, so nothing is claimed either way.
+ */
+export type AgentPlanState = 'paid' | 'free' | 'unknown';
+export type PlanNoticeChoice = 'later' | 'never';
+/** What the free version keeps and what a plan adds, in the words the notice lists them. */
+export const FREE_ABILITIES: readonly string[] = Object.freeze([
+  'Projects, files and your workspace',
+  'The task board',
+  'Conversations and work on your own AI tools',
+  "Your projects' own instruction files",
+]);
+export const PAID_ABILITIES: readonly string[] = Object.freeze([
+  'The Nectovia Agent',
+  'Included AI usage, with nothing to connect',
+  'Business rules and trigger rules',
+  'Automations',
+  'Phone access',
+]);
+
 /** The sentence a person reads when their business's plan does not include owner rules. */
 export const OWNER_RULES_NOT_INCLUDED_REASON =
-  "Business rules are part of a Business plan. They're kept, but they don't reach the work until the business includes them.";
+  "Business rules are part of a paid plan. They're kept, but they don't reach the work until a plan includes them.";
 /** The sentence a person reads when their business's plan does not include phone access. */
 export const PHONE_RELAY_NOT_INCLUDED_REASON =
-  'Reaching this computer from your phone is part of a Business plan.';
+  'Reaching this computer from your phone is part of a paid plan.';

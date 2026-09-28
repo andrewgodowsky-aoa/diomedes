@@ -172,7 +172,10 @@ describe('customer accounts in the desktop host', () => {
     const refusedBody = await refused.text();
     expect(refused.status, refusedBody).toBe(403);
     expect(JSON.parse(refusedBody)).toMatchObject({ code: 'AGENT_NOT_INCLUDED' });
-    expect(refusedBody).toMatch(/business/i);
+    // A working connection is not a plan: a model key runs the Agent's own loop. The person reads
+    // that they are on the free version, never that they should find a business (2026-09-27).
+    expect(refusedBody).toMatch(/free version of Nectovia/);
+    expect(refusedBody).not.toMatch(/business/i);
     expect(sent).toBe(0);
 
     // The business owner explicitly links this existing project before an Employee uses it.

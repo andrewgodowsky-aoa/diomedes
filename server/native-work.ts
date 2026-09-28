@@ -398,12 +398,6 @@ export class NativeWorkService {
     },
     /** Exact-model Agent profiles (H09). Absent leaves route and model to the caller. */
     private profiles?: AgentProfileService,
-    /**
-     * Whether the work's business holds 'owner-rules' (Andrew, 2026-09-25),
-     * resolved through the account session the way the Agent gate does. The
-     * default passes everything through, the embedded-host behaviour.
-     */
-    private ownerRulesIncluded: (projectId: string | null) => boolean = () => true,
   ) {}
   running(projectId: string) {
     return this.runs.has(projectId);
@@ -585,7 +579,6 @@ export class NativeWorkService {
       budgetBytes: instructionSectionBudget(bytes),
       allowedDocuments: cloudSharing(state).documents,
       workPaths: sources.map((source) => source.path),
-      ownerRulesIncluded: this.ownerRulesIncluded(projectId),
     });
     const team = input.team;
     const member = team

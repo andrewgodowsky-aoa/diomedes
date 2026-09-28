@@ -263,7 +263,7 @@ import {
   type ModelApiRoute,
   type NectoviaRouteView,
 } from '../shared/model-api.js';
-import { OWNER_RULES_FEATURE } from '../shared/access.js';
+import { AGENT_FREE_VERSION_REASON, freeVersionRefusal, OWNER_RULES_FEATURE } from '../shared/access.js';
 import {
   NECTOVIA_SIGN_IN,
   NECTOVIA_UNAVAILABLE,
@@ -843,6 +843,10 @@ export async function createApp(options: AppOptions) {
     await phoneRelay?.init();
     await accountSession.init();
     const env = options.accounts?.env ?? process.env;
+    // Where "Sign up for a plan" opens: the pricing page until a checkout exists. Only an https
+    // address replaces it.
+    const plansUrl = (env.NECTOVIA_PLANS_URL ?? '').trim();
+    if (/^https:\/\/[^\s]+$/.test(plansUrl)) accountSession.plansUrl = plansUrl;
     const testAccount = env.DIOMEDES_TEST_MODE === '1' ? (env.DIOMEDES_TEST_ACCOUNT ?? '').trim() : '';
     if (testAccount && !accountSession.signedIn())
       await accountSession.signIn({ email: testAccount, password: FAUX_DEMO_PASSWORD, remember: false });
@@ -869,8 +873,10 @@ export async function createApp(options: AppOptions) {
         }
       : null;
   /**
-   * Owner-written rules are a paid ability (Andrew, 2026-09-25): they reach work only while
-   * the business that work belongs to holds 'owner-rules'. The business is the one the Agent
+   * Owner-written rules are a paid ability (Andrew, 2026-09-25): the Console's rules and trigger
+   * rules reach work only while the business that work belongs to holds 'owner-rules'. A
+   * project's own instruction files are not among them; they reach every engine, free version
+   * included (Andrew, 2026-09-27). The business is the one the Agent
    * gate resolves — the project's owner, else the active Business workspace — so Personal
    * gets none. With accounts off everything passes through, exactly like the Agent gate.
    */
@@ -1112,7 +1118,6 @@ export async function createApp(options: AppOptions) {
     agents,
     changeReview,
     agentProfiles,
-    ownerRules,
   );
   const harness = createHarnessHost({
     store,
@@ -1274,6 +1279,9 @@ export async function createApp(options: AppOptions) {
   const app = express();
   app.locals.allowsCodexSignInReference = (destination: string) =>
     codexSetup.allowsReference(destination);
+  // "Sign up for a plan" opens the one address the account session names, and nothing else.
+  app.locals.allowsPlansReference = (destination: string) =>
+    accountSession !== null && destination === accountSession.plansUrl;
   // The port this service listens on, learned from the first request's socket (listen(0)
   // in tests picks it late). A wake has no request of its own, so it uses the remembered one.
   let listeningPort: number | undefined;
@@ -3480,7 +3488,10 @@ export async function createApp(options: AppOptions) {
   const nectoviaAccountFor = (projectId: string): string => {
     if (!nectoviaAccount?.signedIn()) throw new EngineError(AGENT_SIGN_IN_REQUIRED, NECTOVIA_SIGN_IN, false);
     const organizationId = nectoviaAccount.organizationFor(projectId);
-    if (!organizationId) throw new EngineError(AGENT_NOT_INCLUDED, AGENT_PROJECT_UNLINKED, false);
+    if (!organizationId) {
+      const reason = agentGate?.unpaidReason(projectId) ?? AGENT_PROJECT_UNLINKED;
+      throw new EngineError(AGENT_NOT_INCLUDED, reason === AGENT_FREE_VERSION_REASON ? freeVersionRefusal(freeHint()) : reason, false);
+    }
     return nectoviaAccountRoute(organizationId);
   };
   /** Whether a route takes a send: Nectovia has no switch; every other route is turned on in Settings. */
@@ -3511,10 +3522,48 @@ export async function createApp(options: AppOptions) {
    * pin, when set, wins over the map and says so. Null when no tier applies, so the caller
    * keeps the thread's recorded route. A refusal names the tier and its route.
    */
+  /**
+   * The conversation as its next request sees it (Andrew, 2026-09-27). A thread on Nectovia by
+   * default, in a project no subscription pays for, runs on the person's own AI: AI setup's
+   * default engine, when that is a conversation route. The stored thread is not changed, so a
+   * subscription brings Nectovia back with nothing to migrate. A thread the person put on
+   * Nectovia themselves is never moved, and one with no own AI to run on stays on Nectovia; both
+   * are refused in plain words when they send. With accounts off everything is paid.
+   */
+  const routed = <T extends Conversation | null | undefined>(projectId: string, conversation: T): T => {
+    if (!conversation || conversation.engine !== NECTOVIA_ROUTE || conversation.engineChoice === 'person') return conversation;
+    if (!agentGate || agentGate.paidFor(projectId)) return conversation;
+    const own = store.settings.services?.defaultEngine;
+    return isFreeConversationRoute(own) ? { ...conversation, engine: own } : conversation;
+  };
+  /**
+   * A route the free version holds a conversation on: a direct engine that runs its own loop. A
+   * model-API route, on anyone's key, runs Nectovia's own loop, which is the Agent and is paid.
+   */
+  const isFreeConversationRoute = (route: unknown): route is Route =>
+    isConversationRoute(route) && !isModelApiRoute(route);
+  /**
+   * What a person on the free version is told when a conversation is refused. It never suggests
+   * installing or choosing an engine; the only thing it suggests is a plan (Andrew, 2026-09-27).
+   * It may still name the engine the person already chose, to say what that engine can't do.
+   */
+  const freeHint = (): string => {
+    const own = store.settings.services?.defaultEngine;
+    if (isModelApiRoute(own))
+      return 'A model key of your own also runs through the Nectovia Agent, so it needs a plan too. Sign up for a plan to talk here.';
+    if (isRoute(own) && own !== 'sample' && !isFreeConversationRoute(own))
+      return `${routeDisplayName(own)} can't hold a conversation yet, but it can still do Build and Fix work. Sign up for a plan to talk here.`;
+    return 'Sign up for a plan to talk here.';
+  };
   const tierFor = (
-    conversation: Conversation | null | undefined,
+    projectId: string,
+    unrouted: Conversation | null | undefined,
     options: RunHints = {},
   ): TierResolution | null => {
+    const conversation = routed(projectId, unrouted);
+    // A tier routes to Nectovia's policy or to a model-API route; both are the Agent. Where no
+    // subscription pays for it, no tier applies and the thread keeps its own engine.
+    if (conversation?.engine !== NECTOVIA_ROUTE && agentGate && !agentGate.paidFor(projectId)) return null;
     // A Nectovia conversation's tier is answered by the account service's published policy, on
     // Nectovia: neither a model pin nor the owner's tier map moves it. No style is Efficient.
     if (conversation?.engine === NECTOVIA_ROUTE)
@@ -3546,7 +3595,8 @@ export async function createApp(options: AppOptions) {
     conversation: Conversation | null | undefined,
     options: RunHints = {},
   ): Route => {
-    const tier = tierFor(conversation, options);
+    conversation = routed(projectId, conversation);
+    const tier = tierFor(projectId, conversation, options);
     // Nectovia's own refusals (nobody signed in, a project no business owns) come before any tier's.
     if (tier?.route === NECTOVIA_ROUTE) nectoviaAccountFor(projectId);
     if (tier?.outcome === 'refuse') throw new ApiError(409, tier.reason);
@@ -3567,7 +3617,7 @@ export async function createApp(options: AppOptions) {
   ): (RunChoice & { reason: string }) | null => {
     // On Nectovia the published policy's model for the tier is the only choice there is.
     if (engine === NECTOVIA_ROUTE) {
-      const tier = tierFor(conversation, options);
+      const tier = tierFor(projectId, conversation, options);
       return tier?.outcome === 'run' && tier.route === engine
         ? { model: tier.model, ...(tier.effort ? { effort: tier.effort } : {}), selection: 'automatic', reason: tier.reason }
         : null;
@@ -3578,7 +3628,7 @@ export async function createApp(options: AppOptions) {
     // The owner's tier map decides the model on the tier's own route. A caller that named
     // another engine itself (a team member's own route, a native Claude session) keeps the
     // style's choice within that engine; the route was not the tier's to decide there.
-    const tier = tierFor(conversation, options);
+    const tier = tierFor(projectId, conversation, options);
     if (tier?.outcome === 'run' && tier.route === engine)
       return {
         model: tier.model,
@@ -3771,8 +3821,8 @@ export async function createApp(options: AppOptions) {
       const style = styleOf(thread);
       // A tier decides the route and the model; its answer is shown as it would be sent,
       // including a refusal, which reads as a choice the owner has to make.
-      const tier = tierFor(thread, { mode: thread.mode });
-      const engine = tier ? (tier.route as Route) : selectedEngine(store.settings, state.project, thread);
+      const tier = tierFor(projectId, thread, { mode: thread.mode });
+      const engine = tier ? (tier.route as Route) : selectedEngine(store.settings, state.project, routed(projectId, thread));
       const source = isWorkStyle(thread.workStyle)
         ? 'thread'
         : isWorkStyle(store.settings.services?.workStyle)
@@ -3835,11 +3885,11 @@ export async function createApp(options: AppOptions) {
         if (!thread) throw new ApiError(404, 'This thread was not found.');
         const style = styleOf(thread);
         // The preflight reads the route the tier would send on, never the recorded one.
-        const tier = tierFor(thread, { mode: thread.mode });
+        const tier = tierFor(projectId, thread, { mode: thread.mode });
         const engine =
           tier?.outcome === 'run'
             ? (tier.route as Route)
-            : selectedEngine(store.settings, state.project, thread);
+            : selectedEngine(store.settings, state.project, routed(projectId, thread));
         if (engine === 'sample') return { tenant: 'local', managed: false, mode: thread.mode, style, workStyle: null };
         // A conversation on company-managed inference is its business's preflight, never the owner's.
         const managed = engine === NECTOVIA_ROUTE;
@@ -3937,7 +3987,6 @@ export async function createApp(options: AppOptions) {
           sourceBytes: documents.reduce((bytes, document) => bytes + Buffer.byteLength(document.text), 0),
           workPaths: documents.map((document) => document.path),
           allowedDocuments: cloudSharing(state).documents,
-          ownerRulesIncluded: ownerRules(projectId),
         });
         return {
           projectId,
@@ -4476,7 +4525,7 @@ export async function createApp(options: AppOptions) {
         // applies; a tier whose route cannot run is refused by name before anything is sent.
         // A Nectovia conversation's model is the published policy's; when this session has not
         // read one yet, it asks once before the tier resolves.
-        if (thread.engine === NECTOVIA_ROUTE && nectoviaAccount?.signedIn() && !nectoviaAccount.policy())
+        if (routed(projectId, thread).engine === NECTOVIA_ROUTE && nectoviaAccount?.signedIn() && !nectoviaAccount.policy())
           await nectoviaAccount.refreshPolicy();
         const conversationRoute = threadRoute(projectId, thread, {
           mode: command.mode,
@@ -4552,7 +4601,6 @@ export async function createApp(options: AppOptions) {
           sourceBytes: documents.reduce((bytes, document) => bytes + Buffer.byteLength(document.text), 0),
           workPaths: documents.map((document) => document.path),
           allowedDocuments: cloudSharing(state).documents,
-          ownerRulesIncluded: ownerRules(projectId),
         });
         // One current lineage per mode. Retiring one and admitting its replacement are a single
         // mutation, and the next generation counts every entry the thread ever had.
@@ -4575,7 +4623,7 @@ export async function createApp(options: AppOptions) {
         // starts. Its file stays exactly as it is.
         if (current && unreadable.has(current.runId)) retire('terminated', 'unreadable');
         // The tier the thread is on now, which names a retirement a tier change causes.
-        const tier = tierFor(thread, { mode: command.mode, text: command.text });
+        const tier = tierFor(projectId, thread, { mode: command.mode, text: command.text });
         const tierName = tier?.outcome === 'run' ? WORK_STYLE_LABELS[tier.style] : undefined;
         // A lineage belongs to one route. Choosing another route starts the next generation;
         // the earlier run stays as evidence under its own driver.
@@ -5550,7 +5598,6 @@ export async function createApp(options: AppOptions) {
                 ),
                 allowedDocuments: cloudSharing(store.state(projectId)).documents,
                 workPaths: prepared.documents.map((doc) => doc.path),
-                ownerRulesIncluded: ownerRules(projectId),
               })
             ).section;
       const instructionsForRequest = [
@@ -5993,7 +6040,6 @@ export async function createApp(options: AppOptions) {
               sourceBytes,
               workPaths: draft.sources.map((source) => relativeName(source.path)),
               allowedDocuments: cloudSharing(state).documents,
-              ownerRulesIncluded: ownerRules(projectId),
             })
           : undefined;
       return meteredPlan(threadId, route, model, {

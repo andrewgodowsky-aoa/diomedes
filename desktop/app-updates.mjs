@@ -443,6 +443,9 @@ const SETUP_REFERENCES = [
   // mechanism, so a studio on this computer is named here or it does not open.
   // Byte-identical to WEBSITE_STUDIO_URL in server/website-studio.ts.
   'http://127.0.0.1:4400/',
+  // "Sign up for a plan" on the free version (Andrew, 2026-09-27). Byte-identical to PLANS_URL
+  // in shared/access.ts; a NECTOVIA_PLANS_URL override is answered by the host instead.
+  'https://diomedes.net/pricing',
 ];
 
 /** The pinned official Windows x64 engine artefacts, reviewed 2026-09-10. */

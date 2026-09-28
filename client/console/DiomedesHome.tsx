@@ -31,9 +31,16 @@ import {
 import { mintCommandId } from '../work-start';
 import type { JobTier } from '../../shared/job-caps';
 import type { MessageResult } from '../../shared/conversation';
-import { CONVERSATION_DEFAULT_ROUTE } from '../../shared/engines';
+import {
+  CONVERSATION_DEFAULT_ROUTE,
+  isConversationRoute,
+  isExternalEngine,
+  isRoute,
+} from '../../shared/engines';
 import { NECTOVIA_ROUTE, type NectoviaRouteView } from '../../shared/model-api';
-import { SIGN_IN_REQUIRED_EVENT } from '../AccountGate';
+import { SIGN_IN_REQUIRED_EVENT, useAccount } from '../AccountGate';
+import { AccountPlanNotice } from './FreePlanNotice';
+import { readThreadRoute } from './thread-send';
 import type { Conversation, Project, ProjectState, Route, Turn } from '../../shared/types';
 import type { WorkStyle } from '../../shared/work-style';
 import { Diomedes } from './Diomedes';
@@ -194,14 +201,37 @@ export function DiomedesHome(props: DiomedesHomeProps) {
   const [signInRefusal, setSignInRefusal] = useState<string | null>(null);
   // The Nectovia route as the host sees it: the published model the caption names.
   const [nectovia, setNectovia] = useState<NectoviaRouteView | null>(null);
+  // The route the host says a thread's next request runs on, kept with the thread it was read for:
+  // an answer about a thread no longer on screen is never used.
+  const [hostRoute, setHostRoute] = useState<{ key: string; route: string } | null>(null);
+  const planAgent = useAccount()?.state.plan?.agent ?? null;
+  // On the free version a thread on Nectovia by default runs on the person's own AI tool, and the
+  // stored thread still says Nectovia (server/app.ts `routed`). Once a thread exists the host's
+  // answer names that tool. Before the first send there's no thread to ask about, so the free
+  // version's own tool is named the way the host will choose it: AI setup's default engine, when
+  // it's an AI tool that can hold a conversation. Null keeps the recorded route.
+  const ownTool = props.services?.defaultEngine;
+  const answering: string | null =
+    (route ?? CONVERSATION_DEFAULT_ROUTE) !== NECTOVIA_ROUTE
+      ? null
+      : binding
+        ? hostRoute?.key === `${binding.projectId}|${binding.threadId}`
+          ? hostRoute.route
+          : null
+        : planAgent === 'free' && isExternalEngine(ownTool) && isConversationRoute(ownTool)
+          ? ownTool
+          : null;
+  const substitute = answering !== NECTOVIA_ROUTE && isRoute(answering) ? answering : null;
   // The route the next message takes, by the host's rules, and the one the line and the refusal
   // name. A refusal reads it after the provisioner may have moved the thread, so it is a ref too.
-  const next = nextRoute({
-    engine: route,
-    workStyle,
-    requestedModel: pinnedModel,
-    services: props.services,
-  });
+  const next =
+    substitute ??
+    nextRoute({
+      engine: route,
+      workStyle,
+      requestedModel: pinnedModel,
+      services: props.services,
+    });
   const nextRef = useRef(next);
   nextRef.current = next;
   /** The job-cap decision on screen, and how to answer the send waiting on it. */
@@ -238,6 +268,22 @@ export function DiomedesHome(props: DiomedesHomeProps) {
       current = false;
     };
   }, []);
+  // The bound thread's route as the host resolves it, asked again whenever something that could
+  // move it changes, a plan arriving or lapsing included. A failed read keeps the recorded route.
+  const boundProject = binding?.projectId ?? null;
+  const boundThread = binding?.threadId ?? null;
+  useEffect(() => {
+    if (!boundProject || !boundThread) return;
+    const request = new AbortController();
+    const key = `${boundProject}|${boundThread}`;
+    void readThreadRoute(boundProject, boundThread, request.signal).then(
+      (view) => {
+        if (!request.signal.aborted) setHostRoute({ key, route: view.route });
+      },
+      () => undefined,
+    );
+    return () => request.abort();
+  }, [boundProject, boundThread, route, workStyle, pinnedModel, planAgent]);
   useEffect(() => {
     const es = new EventSource('/api/events');
     // The binding is read when the frame arrives: a frame that lands after the page has moved
@@ -740,8 +786,9 @@ export function DiomedesHome(props: DiomedesHomeProps) {
     }
   };
 
-  // What the caption names without a tier: the recorded route, or the default a first send takes.
-  const effective = route ?? CONVERSATION_DEFAULT_ROUTE;
+  // What the caption names without a tier: the recorded route, or the default a first send takes,
+  // unless the free version answers on the person's own AI tool instead.
+  const effective = substitute ?? route ?? CONVERSATION_DEFAULT_ROUTE;
 
   /**
    * Reads the transcript again once "Update this conversation" has added its note. The outcome
@@ -836,6 +883,7 @@ export function DiomedesHome(props: DiomedesHomeProps) {
         onSaveArtifact={
           scopeId !== null && binding ? (record) => saveArtifact(binding.projectId, record) : undefined
         }
+        plan={<AccountPlanNotice />}
         brief={
           props.scheme === 'nectovia' ? (
             <HomeBrief projects={projects} onOpen={props.onOpenWork} />

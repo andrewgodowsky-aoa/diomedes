@@ -14,6 +14,7 @@ const SHARED_LINKS = [
   'https://platform.openai.com/api-keys',
   'https://github.com/andrewgodowsky-aoa/diomedes/releases',
   'http://127.0.0.1:4400/',
+  'https://diomedes.net/pricing',
 ];
 
 describe('desktop shell engine setup references', () => {

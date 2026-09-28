@@ -417,6 +417,25 @@
   padding: 18px 0;
   border-block: 1px solid var(--hair);
 }
+/* See plans, on the free version: the page's compact bordered control, as a link out. */
+.console .auto-empty .auto-plans {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  margin-top: 12px;
+  padding: 5px 11px;
+  border: 1px solid var(--hair-2);
+  border-radius: var(--rb);
+  color: var(--t1);
+  text-decoration: none;
+}
+.console .auto-empty .auto-plans:hover {
+  background: var(--raised);
+}
+.console .auto-empty .auto-plans:focus-visible {
+  outline: 2px solid var(--light);
+  outline-offset: 2px;
+}
 .console .auto-hidden {
   position: absolute;
   width: 1px;

@@ -65,7 +65,7 @@ export const MANAGED_EVALUATION_PORT_ID = 'nectovia-managed-evaluation';
 /** The feature every Diomedes-funded call needs, the preflight included (shared/access.ts). */
 export const MANAGED_INFERENCE_FEATURE: AccessFeature = 'managed-inference';
 /** The gateway's own sentence for a plan without included AI usage. */
-export const MANAGED_EVALUATION_NOT_INCLUDED = 'Included AI usage is part of a Business plan, so nothing was sent.';
+export const MANAGED_EVALUATION_NOT_INCLUDED = 'Included AI usage is part of a paid plan, so nothing was sent.';
 /** The most of the gateway's answer this computer reads. The validator keeps 65,536 bytes of it. */
 const MAX_ANSWER_BYTES = 262_144;
 /** Statuses at which the gateway's own error body, with no charge named, means it held and sent nothing. */
