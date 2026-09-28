@@ -8,11 +8,15 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { ManagedRoutingReceipt } from '../client/console/ManagedRoutingReceipt';
 import type { CapabilityManifest, HarnessLabel, HarnessPrincipal, ModelRequest, ModelResult } from '../shared/harness';
 import { STRICT_RESTRICTIONS, type RoutingReceipt } from '../shared/routing-policy';
+import { micro } from '../shared/managed-usage';
 import { FileRunStore, NativeAgent, RunService, ToolRegistry, type ModelAdapter } from '../server/harness/index';
 import { validatePrepared } from '../server/harness/native-agent';
 import { joinLabels } from '../server/harness/policy';
 import { routeContractFor } from '../server/harness/route-contract';
 import { ModelSessionRuns } from '../server/harness/model-session-run';
+import { createModelApiAdapter } from '../server/harness/model-api-adapter';
+import { FileModelTranscripts } from '../server/harness/model-transcripts';
+import { conversationRoutingReceipts } from '../server/harness/routing-receipts';
 import type { TextRequest } from '../server/engines/contract';
 
 const principal: HarnessPrincipal = { id: 'worker', tenantId: 'account-one', projectId: 'project-one', capabilities: [], identityGeneration: 1 };
@@ -87,6 +91,26 @@ function conversationTurn(driver: ModelSessionRuns, bound: ModelAdapter, request
 }
 
 describe('source privacy through the existing durable native loop', () => {
+  it.each([false, true])('trusts provider usage receipt metadata only at the authenticated gateway boundary (gateway=%s)', async gateway => {
+    const bound = createModelApiAdapter({ route: 'fixture', prefix: 'fixture', label: 'Synthetic provider', sdk: 'fixture', protocol: 'fixture',
+      contract: routeContractFor('native-fixture'), connectionId: 'fixture', revision: 1, requestedModel: 'fixture-model', profile: {}, notes: [],
+      transcripts: new FileModelTranscripts(path.join(directory, 'transcripts'), 'fixture'),
+      ...(gateway ? { sourceRestrictionPolicy: 'gateway' as const } : {}),
+      respond: async ({ attempt }) => {
+        const usage = { inputTokens: 1, outputTokens: 1, reasoningTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
+        return { outcome: { kind: 'final', text: 'Complete.' }, rawUsage: { nectovia: receipt }, usage,
+          responseId: 'fixture-response', reportedModel: 'fixture-model', providerRequestId: null,
+          responseMessages: [{ role: 'assistant', content: 'Complete.' }], warnings: 0,
+          reservation: { id: 'fixture-reservation', connectionId: 'fixture', route: 'fixture', modelId: 'fixture-model', rateCardVersion: 'fixture',
+            attempt, jobId: 'run', maxMicroUsd: micro(4), state: 'settled', createdAt: '2026-09-28T00:00:00Z', resolvedAt: '2026-09-28T00:00:01Z',
+            uncertainAt: null, uncertainReason: null, settledMicroUsd: micro(4), usage, band: 'short', overCeiling: false,
+            providerRequestId: null, reconciledFrom: 'response', note: null } };
+      } });
+    const result = await bound.complete({ runId: 'run', capabilityId: capability.id, messages: [{ role: 'user', text: 'Read.' }],
+      tools: [], transcript: null }, new AbortController().signal);
+    expect(result.managed).toEqual(gateway ? receipt : undefined);
+  });
+
   it('keeps source rules when labels join and refuses context preparation that removes them', () => {
     const other: HarnessLabel = { ...label, integrity: 'untrusted', provenance: ['other'], sourceRestrictions: [] };
     expect(joinLabels(label, other)).toMatchObject({ integrity: 'untrusted', sourceRestrictions: [STRICT_RESTRICTIONS] });
@@ -171,6 +195,42 @@ describe('source privacy through the existing durable native loop', () => {
     expect(requests).toHaveLength(2);
     expect(requests[1].runId).toMatch(/-writing$/);
     expect(requests[1].sourceRestrictions).toEqual([STRICT_RESTRICTIONS]);
+  });
+
+  it('reads ordinary conversation receipts from child model steps without returning prompt content', async () => {
+    const driver = conversationDriver();
+    await conversationTurn(driver, adapter(async () => final()), 'receipt');
+    const page = await conversationRoutingReceipts({ projectId: principal.projectId, threadId: 'thread', lineageIds: ['conversation'], models: driver, runs: service });
+    expect(page.entries).toEqual([expect.objectContaining({ stepId: 'model:0', receipt })]);
+    expect(page.nextBefore).toBeNull();
+    expect(JSON.stringify(page)).not.toContain('Read the recorded work.');
+    await expect(conversationRoutingReceipts({ projectId: principal.projectId, threadId: 'other-thread', lineageIds: ['conversation'], models: driver, runs: service }))
+      .rejects.toMatchObject({ status: 409 });
+  });
+
+  it.each(['project', 'tenant', 'command'] as const)('refuses a conversation child with mismatched %s before exposing a receipt', async fault => {
+    const driver = conversationDriver();
+    await conversationTurn(driver, adapter(async () => final()), 'receipt');
+    const child = structuredClone((await driver.turnRun(principal.projectId, 'conversation', 'receipt'))!);
+    if (fault === 'project') child.projectId = 'other-project';
+    else if (fault === 'tenant') child.tenantId = 'other-tenant';
+    else child.input = { conversationRunId: 'conversation', commandId: 'other-command' };
+    await expect(conversationRoutingReceipts({ projectId: principal.projectId, threadId: 'thread', lineageIds: ['conversation'],
+      models: { get: driver.get.bind(driver), turnRun: async () => child }, runs: service }))
+      .rejects.toMatchObject({ status: 409 });
+  });
+
+  it('pages immutable conversation receipts across newly appended messages without repeats', async () => {
+    const driver = conversationDriver(), bound = adapter(async () => final());
+    for (let index = 0; index < 21; index++)
+      await conversationTurn(driver, bound, `receipt-${index}`, { mode: index === 0 ? 'start' : 'follow-up' });
+    const input = { projectId: principal.projectId, threadId: 'thread', lineageIds: ['conversation'], models: driver, runs: service };
+    const latest = await conversationRoutingReceipts(input);
+    expect(latest.entries).toHaveLength(20); expect(latest.nextBefore).toBeTypeOf('string');
+    await conversationTurn(driver, bound, 'new-receipt', { mode: 'follow-up' });
+    const earlier = await conversationRoutingReceipts({ ...input, before: latest.nextBefore });
+    expect(earlier.entries).toHaveLength(1); expect(earlier.nextBefore).toBeNull();
+    expect(new Set([...latest.entries, ...earlier.entries].map(entry => entry.runId)).size).toBe(21);
   });
 
   it('persists directly supplied source restrictions even when an adapter has no preparation step', async () => {

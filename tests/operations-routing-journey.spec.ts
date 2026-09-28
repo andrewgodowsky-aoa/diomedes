@@ -14,6 +14,7 @@ import { FAUX_BACKEND_LABEL } from '../services/control-plane/src/faux/cloud';
 import { FAUX_DEMO_PASSWORD } from '../services/control-plane/src/faux/seed';
 import { fixtureBinding, startRoutingFixture } from '../docs/implementation/operations-routing-handoff/fixture-server';
 import type { MessageResult } from '../shared/conversation';
+import { turnRunId } from '../server/harness/model-session-run';
 
 test.describe.configure({ mode: 'serial' });
 let fixture: Awaited<ReturnType<typeof startRoutingFixture>> | undefined;
@@ -150,12 +151,18 @@ test('publishes in Operations, accepts customer privacy, and preserves a non-Lun
   expect(response.ok(), JSON.stringify(answer)).toBe(true);
   await expect(customer.getByText('Operations selected this model.', { exact: true })).toBeVisible();
   await fixture!.cloud.idle();
-  const stored = JSON.parse(await fs.readFile(path.join(root, 'data', 'projects', home.projectId, 'harness', 'runs', `${answer.runId}.json`), 'utf8'));
+  const stored = JSON.parse(await fs.readFile(path.join(root, 'data', 'projects', home.projectId, 'harness', 'runs', `${turnRunId(answer.runId, answer.commandId)}.json`), 'utf8'));
   expect(stored.steps).toEqual(expect.arrayContaining([expect.objectContaining({ output: expect.objectContaining({ managed: expect.objectContaining({
     attempts: expect.arrayContaining([expect.objectContaining({ state: 'settled', routing: expect.objectContaining({ scopeKey: `organization:${organization}`,
       routeId: 'journey-primary', model: 'fixture-non-luna', policyRevision: 2, priceVersion: 'fixture-price' }) })]),
   }) }) })]));
   await customer.reload();
   await expect(customer.getByText('Operations selected this model.', { exact: true })).toBeVisible();
+  await customer.getByText('AI run details', { exact: true }).click();
+  const details = customer.getByRole('region', { name: 'Conversation managed AI attempts' });
+  await expect(details.getByText('azure-openai / fixture-non-luna', { exact: true })).toBeVisible();
+  await expect(details).toContainText('Policy 2; global 2; account 0; privacy 1.');
+  await expect(details).toContainText('Route journey-primary revision 1; price fixture-price.');
+  await expect(details).toContainText('settled');
   await customer.screenshot({ path: info.outputPath('customer-response.png'), fullPage: true });
 });

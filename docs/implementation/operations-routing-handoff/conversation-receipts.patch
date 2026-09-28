@@ -1,0 +1,43 @@
+diff --git a/server/app.ts b/server/app.ts
+--- a/server/app.ts
++++ b/server/app.ts
+@@ -11,1 +11,2 @@
+ import { routingPreferenceWriteSchema } from '../shared/routing-policy.js';
++import { conversationRoutingReceipts } from './harness/routing-receipts.js';
+@@ -4405,2 +4405,16 @@
+     return engines.modelSessions;
+   };
++  app.get('/api/projects/:id/threads/:threadId/routing-attempts', route(async req => {
++    const projectId = id(req), threadId = String(req.params.threadId);
++    const thread = store.state(projectId).conversations.find(item => item.id === threadId);
++    if (!thread) throw new ApiError(404, 'This thread was not found.');
++    if (req.query.before !== undefined && typeof req.query.before !== 'string')
++      throw new ApiError(400, 'Choose a recorded page of run details.');
++    if (!engines.modelSessions) return { entries: [], nextBefore: null };
++    return conversationRoutingReceipts({
++      projectId, threadId, before: req.query.before,
++      lineageIds: (thread.lineages ?? []).filter(lineage => lineage.runId.startsWith('model-')).map(lineage => lineage.runId),
++      models: engines.modelSessions, runs: harness.runs,
++    });
++  }, false));
++
+diff --git a/client/AccountSettings.tsx b/client/AccountSettings.tsx
+--- a/client/AccountSettings.tsx
++++ b/client/AccountSettings.tsx
+@@ -10,1 +10,2 @@
+ import { ManagedInferencePolicy } from './ManagedInferencePolicy';
++import { RoutingPreferences } from './console/RoutingPreferences';
+@@ -96,1 +97,2 @@
++      <RoutingPreferences />
+       <h2>Your businesses</h2>
+diff --git a/client/console/ThreadView.tsx b/client/console/ThreadView.tsx
+--- a/client/console/ThreadView.tsx
++++ b/client/console/ThreadView.tsx
+@@ -33,1 +33,2 @@
+ import { RunInspector } from '../workbench/RunInspector';
++import { ThreadManagedRoutingDetails } from './ManagedRoutingReceipt';
+@@ -709,1 +710,4 @@
++          {projectId && thread.lineages?.some(lineage => lineage.runId.startsWith('model-')) && (
++            <ThreadManagedRoutingDetails key={`${projectId}/${thread.id}`} projectId={projectId} threadId={thread.id} refreshKey={`${thread.turns.length}:${busy}`} />
++          )}
+           {projectId && task && (

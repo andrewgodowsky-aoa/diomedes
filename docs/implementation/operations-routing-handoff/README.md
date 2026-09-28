@@ -42,3 +42,21 @@ uses the real staff bridge and provider binding, and records screenshots and a
 durable receipt. Both applications must first be built from the composed source.
 No browser journey has run. The test slot and remaining UI/harness handoffs are
 required before that work.
+
+`conversation-receipts.patch` is an unapplied source delta after `desktop.patch`
+and the complete PR #169/#174 dependencies. It mounts the separate customer
+privacy form, and a read-only projection of existing conversation child-run
+receipts in the Console. `server/harness/routing-receipts.ts` and the on-demand
+view are authored independently; neither is accepted by the earlier CP gates.
+The reader checks project, thread, tenant and command identity, ignores tool
+content, includes writing-helper attempts and pages by immutable turn identity.
+The journey now requires the route, revisions and settlement to be visible after
+reload, as well as present on disk. All these additions remain unrun.
+
+`harness-repairs.patch` is prepared for application only after the original
+root harness regressions have run red on the composed dependency plus
+`harness.patch`. It retains rules on direct model intents and derived history,
+preserves the wrapper's enforcement capability, validates successful receipts,
+records only model-failure receipts, and rejects tool content in the receipt
+view. Its error mapping uses the existing harness contract. No tool effect,
+budget, lease or run-state transition is redefined. This artifact is untested.

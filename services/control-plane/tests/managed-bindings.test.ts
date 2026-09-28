@@ -120,6 +120,7 @@ describe('real managed provider transports at the Responses SDK boundary', () =>
   });
   it.each([
     ['aws-bedrock', 'responses', () => sse(responsesEvents)],
+    ['aws-bedrock', 'chat-completions', () => sse(chatEvents())],
     ['aws-bedrock', 'converse', () => aws(converseEvents)],
     ['aws-bedrock', 'messages', () => aws(messageEvents, true)],
     ['azure-openai', 'responses', () => sse(responsesEvents)],

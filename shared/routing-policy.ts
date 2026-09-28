@@ -250,6 +250,13 @@ export const routingReceiptSchema = z.strictObject({
 });
 export type RoutingReceipt = z.infer<typeof routingReceiptSchema>;
 
+/** Read-only projection of existing model-step receipts for one conversation page. */
+export const routingReceiptPageSchema = z.strictObject({
+  entries: z.array(z.strictObject({ runId: id, stepId: z.string().min(1).max(200), receipt: routingReceiptSchema })).max(200),
+  nextBefore: z.string().min(1).max(400).nullable(),
+});
+export type RoutingReceiptPage = z.infer<typeof routingReceiptPageSchema>;
+
 export interface RequestEnvelope {
   inputTokens: number; outputTokens: number; tools: boolean; images: boolean; reasoning: boolean;
   /** Provider-native state must remain on the exact model and connection. */
