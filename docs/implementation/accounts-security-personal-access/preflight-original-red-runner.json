@@ -18,7 +18,20 @@
   "processStartRuntimeType": "System.DateTime",
   "parseStringComparisonMatched": false,
   "directTypedCastComparisonMatched": true,
-  "correction": "Cast the JSON timestamp directly to DateTimeOffset, preserving fractional seconds and all existing slot owner checks.",
+  "initialCorrection": "Cast the JSON timestamp directly to DateTimeOffset, preserving fractional seconds and all existing slot owner checks.",
+  "finalCorrection": "At the architect's request, use supported ConvertFrom-Json -DateKind String and compare parsed UTC ticks.",
+  "offSlotOwnershipCheck": {
+    "exactReleasedOwnSlot": true,
+    "normalizedTrailingZero": true,
+    "refusesChangedPid": true,
+    "refusesChangedRole": true,
+    "refusesChangedHost": true,
+    "refusesChangedWorktree": true,
+    "refusesChangedProcessStart": true,
+    "refusesChangedSlotId": true,
+    "powershellVersion": "7.6.5",
+    "applicationOrDependencyExecution": false
+  },
   "productSourceOrTestChanges": false,
   "classification": "Runner preflight failure; not a dependency-install or test failure, and not original RED evidence."
 }

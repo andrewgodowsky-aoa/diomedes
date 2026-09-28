@@ -17,10 +17,10 @@ $personalRecord = Join-Path $personalEvidence "$Name.json"
 if ((Test-Path -LiteralPath $personalLog) -or (Test-Path -LiteralPath $personalRecord)) { throw 'Evidence name already used' }
 
 function Assert-PersonalOwner {
-  $held = Get-Content -Raw -LiteralPath (Join-Path $personalRoot 'slot/heavy.json') | ConvertFrom-Json
+  $held = Get-Content -Raw -LiteralPath (Join-Path $personalRoot 'slot/heavy.json') | ConvertFrom-Json -DateKind String
   if ($held.slotId -ne $Slot -or $held.owner.pid -ne 67556 -or $held.owner.role -ne 'astra' -or
       $held.owner.host -ne 'Andrews-Desktop' -or $held.owner.worktree -ne $personalWorktree -or
-      [DateTimeOffset]$held.owner.processStart -ne [DateTimeOffset]::Parse('2026-09-28T06:26:04.4976080Z')) {
+      [DateTimeOffset]::Parse($held.owner.processStart).UtcTicks -ne [DateTimeOffset]::Parse('2026-09-28T06:26:04.4976080Z').UtcTicks) {
     throw 'Own slot identity does not match'
   }
   if ((git -C $personalWorktree rev-parse HEAD) -ne $Candidate) { throw 'Candidate moved' }
