@@ -248,9 +248,10 @@ export function renderReadme(manifest: OrganizationExportManifest): string {
 
 /** Keys whose values this app or the account service generated: ids, who acted, times and digests. */
 const GENERATED_KEY = /^(?:id|ids|by|at|digest|[a-z]+(?:Id|Ids|By|At|Digest))$/;
+// A random id, bare or with its kind in front (person_..., relay_device_..., project:...).
+const GENERATED_UUID = /^(?:[a-z][a-z0-9]*[_:.-])*[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const GENERATED_VALUE: readonly RegExp[] = [
-  // A random id, bare or with its kind in front (person_…, relay_device_…, project:…).
-  /^(?:[a-z][a-z0-9]*[_:.-])*[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+  GENERATED_UUID,
   // A digest, or an invitation code's id (the first 16 characters of its hash).
   /^(?:[a-z0-9]+:)?[0-9a-f]{16,128}$/i,
   // A time.
@@ -272,6 +273,8 @@ export function secretLikePaths(value: unknown, root = '$'): string[] {
   const visit = (node: unknown, at: string, key: string | null) => {
     if (typeof node === 'string' || typeof node === 'number' || typeof node === 'bigint') {
       const text = String(node);
+      // Audit records use this multi-word key. Only UUIDs qualify here; a bare card number does not.
+      if (key === 'actorPersonId' && GENERATED_UUID.test(text)) return;
       if (key !== null && GENERATED_KEY.test(key) && generated(text)) return;
       if (containsSecretLikeText(text)) found.push(at);
       return;

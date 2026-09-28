@@ -258,6 +258,16 @@ describe('the credential check', () => {
     expect(secretLikePaths({ id: 'sk_live_0123456789abcdefghijkl' })).toEqual(['$.id']);
   });
 
+  test('an audit actor UUID remains exportable when its digits resemble a card', () => {
+    expect(secretLikePaths({ events: [{ actorPersonId: unlucky }] })).toEqual([]);
+  });
+
+  test('an audit actor field still refuses card numbers and credentials', () => {
+    for (const actorPersonId of [digits, Number(digits), 'sk_live_0123456789abcdefghijkl'])
+      expect(secretLikePaths({ actorPersonId })).toEqual(['$.actorPersonId']);
+    expect(secretLikePaths({ name: unlucky })).toEqual(['$.name']);
+  });
+
   test('finds a key in a name, a card number in an answer (as text or a number), and a field named like a key', () => {
     const answer = payload();
     answer.people[1] = { ...answer.people[1], name: 'Sam sk_live_0123456789abcdefghijkl' };
