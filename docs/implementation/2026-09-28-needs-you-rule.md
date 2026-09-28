@@ -14,7 +14,7 @@
 - Base: 66334d512ef51c808d460b6e177690d87ecfaaa0 (origin/main when the work began).
 - Coordination: part 1a held claims `claim_mukuohc7_860bccdd`, `claim_mukutfgw_d3b1af86`,
   `claim_mukvnyhc_abc901ee` and `claim_mukzvyxg_abd59771`, released after fd3154e; part 1b holds
-  `claim_mul0b0o3_320d7ae4`, released with its commit. Two integrator hot files changed under
+  `claim_mul0b0o3_320d7ae4`, released after its commits. Two integrator hot files changed under
   owner overrides: `server/store.ts` (journaled 2026-09-28T06:12:26Z) and, in part 1b,
   `shared/types.ts` (widened 08:49:24Z). `client/console/Shell.tsx` is held by PR169-RESUMED and
   is not touched; its part is a patch for the integrator.
@@ -154,6 +154,11 @@ Part 1b, on fd3154e plus part 1b:
 - `npx vite build`: built.
 - `npx playwright test tests/ui.spec.ts tests/native-ui.spec.ts tests/field.spec.ts`: 36 passed.
 - `git apply --check` of the Shell patch against the committed `client/console/Shell.tsx`: applies.
+- The home's list, rendered: the real `HomeBrief` with sample projects, on a page that loads the
+  built stylesheets in the built-in Nectovia scheme, at 1265 px and at 800 px (the desktop
+  window's minimum). Nothing wraps at either width. The second line reads at 8.45:1, the red
+  Check at 6.03:1 and the amber Review at 9.18:1, and every button's box sits inside its row's
+  lines.
 
 The two evidence screenshots the browser run rewrites were restored after each run.
 
@@ -185,6 +190,6 @@ and the Board read the same rule, and the home names the newest three with a but
 
 ## Build, publication and deployment status
 
-Committed locally on `feature/needs-you-rule` in two commits: fd3154e (part 1a) and the commit
-that adds part 1b to this record. Nothing is pushed, merged, released or deployed, and no
-version changed. The Shell patch is not applied anywhere.
+Committed locally on `feature/needs-you-rule`: fd3154e (part 1a), 2adca0a (part 1b) and the
+commit that records the rendered check of the home's list. Nothing is pushed, merged, released
+or deployed, and no version changed. The Shell patch is not applied anywhere.
