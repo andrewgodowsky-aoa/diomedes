@@ -106,8 +106,14 @@ export function App() {
   } | null>(null);
   const [search, setSearch] = useState(false);
   const [sectionRequest, setSectionRequest] = useState<{ section: string; n: number } | null>(null);
-  // A Console screen asked for from the Diomedes home, taken once by Shell (D4).
-  const [viewRequest, setViewRequest] = useState<{ view: ShellView; n: number } | null>(null);
+  // A Console screen asked for from the Diomedes home, taken once by Shell (D4). A waiting item
+  // also names its task or Need, for the Shell to open once the project has loaded.
+  const [viewRequest, setViewRequest] = useState<{
+    view: ShellView;
+    n: number;
+    taskId?: string;
+    needId?: string;
+  } | null>(null);
   // Why a home row opened nothing, said where the person pressed it.
   const [homeNotice, setHomeNotice] = useState('');
   /**
@@ -928,6 +934,19 @@ export function App() {
                   onOpenWork={(projectId) => {
                     const target = projects.find((p) => p.id === projectId);
                     if (target) openProject(target);
+                  }}
+                  onOpenWaiting={(projectId, item) => {
+                    const target = projects.find((p) => p.id === projectId);
+                    if (!target) return;
+                    // The Board holds every waiting task; the Shell opens the item itself
+                    // once it reads the named task or Need.
+                    setViewRequest((last) => ({
+                      view: 'Board',
+                      n: (last?.n ?? 0) + 1,
+                      ...(item.taskId ? { taskId: item.taskId } : {}),
+                      ...(item.needId ? { needId: item.needId } : {}),
+                    }));
+                    openProject(target);
                   }}
                   scheme={paintedScheme}
                   services={settings?.services}

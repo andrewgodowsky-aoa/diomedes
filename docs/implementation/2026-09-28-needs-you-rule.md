@@ -4,19 +4,20 @@
 
 - Feature: needs-you-rule. Item 1 of Andrew's 2026-09-28 build order, the critique's P0/P1:
   "Home, ledger and Board agree on what's waiting, with each item named and its buttons right
-  there." This lane is part 1a, the rule and every reader of it. Part 1b, the home naming each
-  item with its buttons, follows.
+  there." Part 1a (fd3154e) is the rule and every reader of it. Part 1b names each waiting item
+  on the home, with its button.
 - Prompt ID: none. Andrew's choice in chat.
 - Owner: Claude (Opus 5.5), session 0eb01d3d-0a26-4fd3-89e4-6a8a3a80ac7d, coordination seat
   opus, process 39060.
 - Branch: feature/needs-you-rule.
 - Worktree: F:/Diomedes/diomedes-wt/needs-you-rule.
 - Base: 66334d512ef51c808d460b6e177690d87ecfaaa0 (origin/main when the work began).
-- Coordination: claims `claim_mukuohc7_860bccdd`, `claim_mukutfgw_d3b1af86`,
-  `claim_mukvnyhc_abc901ee` and `claim_mukzvyxg_abd59771`, released with the commit. One
-  integrator hot file changed: `server/store.ts` (an import and one line), under an owner
-  override journaled 2026-09-28T06:12:26Z. `client/console/Shell.tsx` is held by PR169-RESUMED
-  and is not touched.
+- Coordination: part 1a held claims `claim_mukuohc7_860bccdd`, `claim_mukutfgw_d3b1af86`,
+  `claim_mukvnyhc_abc901ee` and `claim_mukzvyxg_abd59771`, released after fd3154e; part 1b holds
+  `claim_mul0b0o3_320d7ae4`, released with its commit. Two integrator hot files changed under
+  owner overrides: `server/store.ts` (journaled 2026-09-28T06:12:26Z) and, in part 1b,
+  `shared/types.ts` (widened 08:49:24Z). `client/console/Shell.tsx` is held by PR169-RESUMED and
+  is not touched; its part is a patch for the integrator.
 
 ## The problem
 
@@ -55,6 +56,9 @@ logic is unchanged.
 `evidenceTone` gives every point one colour per state: amber waits on you, red failed, the
 accent is running, grey is done, and nothing else takes a colour.
 
+`counts.waitingForYou` keeps the raw open-Need count. Nothing on screen reads it, so no surface
+shows it beside the rule's count.
+
 ## Who reads it
 
 | Surface | Before | Now |
@@ -67,12 +71,31 @@ accent is running, grey is done, and nothing else takes a colour.
 | Plan bars | Only a failed run red; a run that went wrong still ahead | Review waits (amber); failed or went wrong fails (red) |
 | Home project line, spine | "Needs your OK" | "Needs you", since it now covers review and failures too |
 | Ledger ages | Since the task was added | The Board's `ageOf`: since it last moved, with the same title |
+| Project status `waiting` (1b) | Did not exist | The newest three items by name; absent when nothing waits |
+| Home report (1b) | A count per project | Up to three items by name across projects, each with one button; a project row counts only what the list leaves out |
+
+## The home names what waits (part 1b)
+
+Each project's status now carries its newest three waiting items by name (`WaitingItem` in
+`shared/types.ts`, filled by `refreshCounts`). The home's report reads them: under "Waiting on
+you" it lists the newest three across every project, each with its label, what it waits on, the
+project, and one button. An approval or work to review says Review; a failure says Check and is
+red. A project row below counts only the items the list leaves out ("Two more things are
+waiting on you."), and a project whose items are all named is not called quiet.
+
+The button asks the Console to open that project on the Board and names the task or the Need.
+The Shell change that opens the item itself is
+`docs/implementation/2026-09-28-needs-you-shell.patch`, returned to the integrator because
+PR169-RESUMED holds `client/console/Shell.tsx`. With it, a Need opens in the thread where it is
+decided, scrolled into view, and a task opens its own thread. Until it lands, the button opens
+the project on the Board, where the task waits in Review or Blocked.
 
 ## What is not implemented
 
-- **Part 1b.** The home names up to three items with their buttons and a link straight to each.
-  It needs an optional list of waiting items on the project status in `shared/types.ts` (a hot
-  file) and a route that opens a project on a given task.
+- **Opening the item itself.** The Shell patch above waits on the integrator; until then an
+  item opens its project on the Board.
+- **Approve and Decline on the home.** Each item carries one button that goes to it. Deciding
+  from the home itself belongs with the approval card (item 2) and is Andrew's call.
 - **Automation attention in the server's count.** The client adds it to the overview from the
   automations host. Putting it in `status.needsYou` needs a `server/app.ts` change (a hot file).
 - **Inbox proposals.** Left out until Andrew decides whether accepting a proposed task counts.
@@ -101,11 +124,18 @@ accent is running, grey is done, and nothing else takes a colour.
   now keeps its waiting mark (it was expected to clear). F15-F16 now checks that the mark
   clears once Keep all settles the change. Its comment said the Console could not keep or undo
   a waiting change; the task's thread does, through `ChangeDiffs`.
+- `tests/home-brief.test.ts` (1b): the newest three across projects are named, a project row
+  counts only the rest, a project whose items are all named is not quiet, a status that names
+  none keeps the old sentence, and each item renders one button (Review, or Check in red for a
+  failure).
+- `tests/needs-you.test.ts` (1b): the store's status names both waiting items, and a project
+  with nothing waiting carries no list.
 
 ## Verification
 
-Run in this worktree on base 66334d5 plus this change, each step under the coordination heavy
-slot, on 2026-09-28:
+Each step ran in this worktree under the coordination heavy slot on 2026-09-28.
+
+Part 1a, at fd3154e (base 66334d5 plus part 1a):
 
 - `npx tsc --noEmit`: clean, before and after the spec change.
 - The 16 affected test files (`npx vitest run --maxWorkers=4 <files>`): 334 passed.
@@ -116,6 +146,15 @@ slot, on 2026-09-28:
   (22 passed, 13 not run behind it in the serial file). After the spec change, on a fresh
   build: 36 passed.
 
+Part 1b, on fd3154e plus part 1b:
+
+- `npx tsc --noEmit`: clean.
+- The 16 affected test files: 337 passed.
+- `npx vitest run --maxWorkers=4`: 493 files; 8,255 tests passed and 4 skipped, of 8,259.
+- `npx vite build`: built.
+- `npx playwright test tests/ui.spec.ts tests/native-ui.spec.ts tests/field.spec.ts`: 36 passed.
+- `git apply --check` of the Shell patch against the committed `client/console/Shell.tsx`: applies.
+
 The two evidence screenshots the browser run rewrites were restored after each run.
 
 ## PILLAR IMPACT
@@ -124,7 +163,8 @@ The two evidence screenshots the browser run rewrites were restored after each r
   holds every decision and exception, and nothing that waits on no one. Evidence: the exclusion
   test and the store test.
 - **Advances 04 (information where the worker needs it).** The home's number, the ledger and
-  the Board now agree. Part 1b puts the items and their buttons on the home itself.
+  the Board now agree, and the home names what waits with a button for each. Evidence: the
+  home-brief tests.
 - **Advances 08 (deterministic work stays fast).** A pure projection over records; no model.
 - **Risk to 06.** A failed run now raises the home's count until someone starts it again,
   reopens it or marks it done. If failures are frequent, the count could read as babysitting.
@@ -133,16 +173,18 @@ The two evidence screenshots the browser run rewrites were restored after each r
 ## ROADMAP IMPACT
 
 No status change while the branch is unmerged. When it merges, the critique's "one needs-you
-rule" is implemented in source (part 1a), with part 1b open.
+rule" is implemented in source, with the home naming what waits; opening the item itself waits
+on the integrator's Shell patch.
 
 ## Proposed project-memory patch
 
 After "Needs you owns decisions", add: "What counts is one rule (`shared/needs-you.ts`): open
 approvals, work to review, and runs that failed or went wrong. A run waiting on its engine and a
 task record with no run behind it wait on no one. The home, the ledger, the activity overview
-and the Board read the same rule."
+and the Board read the same rule, and the home names the newest three with a button for each."
 
 ## Build, publication and deployment status
 
-Committed locally on `feature/needs-you-rule`, in the commit that adds this record. Nothing is
-pushed, merged, released or deployed, and no version changed.
+Committed locally on `feature/needs-you-rule` in two commits: fd3154e (part 1a) and the commit
+that adds part 1b to this record. Nothing is pushed, merged, released or deployed, and no
+version changed. The Shell patch is not applied anywhere.

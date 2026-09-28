@@ -1,4 +1,4 @@
-import type { Project } from '../../shared/types';
+import type { Project, WaitingItem } from '../../shared/types';
 import { projectProgress } from './progress-bars';
 import type { SegmentInput } from './segment-bar-model';
 
@@ -25,12 +25,21 @@ export interface BriefRow {
   progress: SegmentInput | null;
 }
 
+/** One thing waiting on the person, named, with the project it is in. */
+export interface BriefItem {
+  projectId: string;
+  projectName: string;
+  item: WaitingItem;
+}
+
 export interface HomeBriefModel {
   /** Today's date and time, in the person's own locale. */
   date: string;
   greeting: string;
   /** The one accent phrase in the heading: what most needs saying. */
   accent: string;
+  /** What waits on the person, by name: the newest across every project, at most BRIEF_ITEMS. */
+  waiting: BriefItem[];
   rows: BriefRow[];
   /** Rows left out to keep the report short. */
   more: number;
@@ -40,6 +49,8 @@ export interface HomeBriefModel {
 
 /** The report stops at this many rows; the rail lists every project. */
 export const BRIEF_ROWS = 5;
+/** The home names at most this many waiting items; each project's row counts the rest. */
+export const BRIEF_ITEMS = 3;
 
 const WORDS = ['No', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten'];
 
@@ -62,17 +73,20 @@ export function briefDate(now: Date, locale?: string): string {
   return `${day} · ${time}`;
 }
 
-function rowFor(project: Project): BriefRow | null {
+/** `named` is how many of the project's waiting items the list above already names. */
+function rowFor(project: Project, named: number): BriefRow | null {
   const status = project.status;
   if (!status) return null;
   const progress = projectProgress(project);
   const base = { projectId: project.id, name: project.name, progress };
-  if (status.needsYou > 0)
+  // A named item is not counted twice: the row says only what the list leaves out.
+  const unnamed = status.needsYou - named;
+  if (unnamed > 0)
     return {
       ...base,
       state: 'attn',
       label: 'Needs you',
-      sentence: `${countWord(status.needsYou)} ${status.needsYou === 1 ? 'thing is' : 'things are'} waiting on you.`,
+      sentence: `${countWord(unnamed)} ${named > 0 ? 'more ' : ''}${unnamed === 1 ? 'thing is' : 'things are'} waiting on you.`,
     };
   if (status.working > 0)
     return {
@@ -96,14 +110,41 @@ function rowFor(project: Project): BriefRow | null {
 
 const ORDER: Record<BriefState, number> = { attn: 0, live: 1, done: 2 };
 
+const dated = (iso: string): number | null => {
+  const ms = Date.parse(iso);
+  return Number.isFinite(ms) ? ms : null;
+};
+
+/** Newest first; an undated item goes last, and a tie keeps the projects' order. */
+function byNewest(a: BriefItem, b: BriefItem): number {
+  const left = dated(a.item.at);
+  const right = dated(b.item.at);
+  if (left === right) return 0;
+  if (left === null) return 1;
+  if (right === null) return -1;
+  return right - left;
+}
+
 export function homeBrief(
   projects: readonly Project[],
   now: Date,
   locale?: string,
 ): HomeBriefModel {
   const present = projects.filter((project) => !project.missing);
+  const waiting = present
+    .flatMap((project) =>
+      (project.status?.waiting ?? []).map((item) => ({
+        projectId: project.id,
+        projectName: project.name,
+        item,
+      })),
+    )
+    .sort(byNewest)
+    .slice(0, BRIEF_ITEMS);
+  const namedIn = (projectId: string) =>
+    waiting.filter((entry) => entry.projectId === projectId).length;
   const all = present
-    .map((project) => ({ project, row: rowFor(project) }))
+    .map((project) => ({ project, row: rowFor(project, namedIn(project.id)) }))
     .filter((item): item is { project: Project; row: BriefRow } => item.row !== null)
     .sort(
       (a, b) =>
@@ -132,9 +173,13 @@ export function homeBrief(
     date: briefDate(now, locale),
     greeting: greetingFor(now.getHours()),
     accent,
+    waiting,
     rows: all.slice(0, BRIEF_ROWS),
     more: Math.max(0, all.length - BRIEF_ROWS),
-    quiet: present.length - all.length,
+    // A project whose waiting items are all named above is not quiet, though it has no row.
+    quiet: present.filter(
+      (project) => namedIn(project.id) === 0 && !all.some((row) => row.projectId === project.id),
+    ).length,
   };
 }
 

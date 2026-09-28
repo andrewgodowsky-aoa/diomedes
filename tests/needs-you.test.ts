@@ -141,8 +141,16 @@ describe("the server counts the same rule in a project's status", () => {
       engine.state = 'working';
       state.sessions.push(run(engine.id, 'waiting', { id: 'S-engine', sample: true }));
     });
-    const listed = (await store.projects()).find((item) => item.id === project.id);
+    const quiet = await store.createProject('Harbor');
+    const projects = await store.projects();
+    const listed = projects.find((item) => item.id === project.id);
     expect(listed?.status.needsYou).toBe(2);
+    // Named for the home, newest first; a project with nothing waiting names nothing.
+    expect(listed?.status.waiting?.map((item) => item.label).sort()).toEqual([
+      'Check the catering quote',
+      'Order ribeye',
+    ]);
+    expect(projects.find((item) => item.id === quiet.id)?.status.waiting).toBeUndefined();
     expect(listed?.counts.waitingForYou).toBe(0);
     expect(listed?.status.needsYou).toBe(needsYou(store.state(project.id)).length);
   });

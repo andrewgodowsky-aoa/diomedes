@@ -1,4 +1,4 @@
-import type { Change, Need, Session, Task } from './types.js';
+import type { Change, Need, Session, Task, WaitingItem } from './types.js';
 import { taskEvidence, type TaskEvidence } from './task-evidence.js';
 
 /**
@@ -19,21 +19,13 @@ import { taskEvidence, type TaskEvidence } from './task-evidence.js';
  * A projection over the records, like `taskEvidence`: nothing is stored.
  */
 
-export type NeedsYouKind = 'approval' | 'review' | 'failed';
+export type NeedsYouKind = WaitingItem['kind'];
 
-export interface NeedsYouItem {
-  /** `need:<id>` or `task:<id>`, the ids the activity overview gives its rows. */
-  id: string;
-  kind: NeedsYouKind;
-  /** The task's name, or the Need's own words when it has no task. */
-  label: string;
-  detail: string;
-  taskId?: string;
-  needId?: string;
-  sessionId?: string;
-  /** ISO time the item is dated by, or '' when no record carries one. */
-  at: string;
-}
+/** One item, in the shape a project's status carries (`WaitingItem` in `shared/types.ts`). */
+export type NeedsYouItem = WaitingItem;
+
+/** How many items a project's status names. Its count is always the whole. */
+export const WAITING_NAMED = 3;
 
 export interface NeedsYouRecords {
   tasks: readonly Task[];

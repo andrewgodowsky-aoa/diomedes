@@ -41,7 +41,14 @@ import { NECTOVIA_ROUTE, type NectoviaRouteView } from '../../shared/model-api';
 import { SIGN_IN_REQUIRED_EVENT, useAccount } from '../AccountGate';
 import { AccountPlanNotice } from './FreePlanNotice';
 import { readThreadRoute } from './thread-send';
-import type { Conversation, Project, ProjectState, Route, Turn } from '../../shared/types';
+import type {
+  Conversation,
+  Project,
+  ProjectState,
+  Route,
+  Turn,
+  WaitingItem,
+} from '../../shared/types';
 import type { WorkStyle } from '../../shared/work-style';
 import { Diomedes } from './Diomedes';
 import {
@@ -89,6 +96,8 @@ export interface DiomedesHomeProps {
   onNewProject(): void;
   /** Go to the project where work that started is running. */
   onOpenWork(projectId: string): void;
+  /** Open one thing waiting on the person where it is decided (the brief's named items). */
+  onOpenWaiting?(projectId: string, item: WaitingItem): void;
   /** The person's detail level. Technical also shows each tool call's tool and detail. */
   detail?: 'guided' | 'standard' | 'technical';
   /**
@@ -886,7 +895,11 @@ export function DiomedesHome(props: DiomedesHomeProps) {
         plan={<AccountPlanNotice />}
         brief={
           props.scheme === 'nectovia' ? (
-            <HomeBrief projects={projects} onOpen={props.onOpenWork} />
+            <HomeBrief
+              projects={projects}
+              onOpen={props.onOpenWork}
+              onOpenWaiting={props.onOpenWaiting}
+            />
           ) : undefined
         }
         art={props.scheme === 'nectovia' ? <HomeArt /> : undefined}
