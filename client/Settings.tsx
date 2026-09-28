@@ -186,8 +186,10 @@ export function SettingsPage({
     const controller = new AbortController();
     const ids = catalogKey ? catalogKey.split('\n').map((row) => JSON.parse(row)[0] as string) : [];
     setCatalogs({});
-    for (const engine of ids) {
-      void (async () => {
+    let next = 0;
+    const inspectNext = async () => {
+      while (live && !controller.signal.aborted && next < ids.length) {
+        const engine = ids[next++];
         try {
           const catalog = await api<EngineCatalog>(`/engines/${engine}/models`, 'GET', undefined, controller.signal);
           // One slow installation must not hide the choices from ready engines.
@@ -195,8 +197,12 @@ export function SettingsPage({
         } catch {
           // A failed refresh leaves this engine without selectable stale choices.
         }
-      })();
-    }
+      }
+    };
+    // Native inspections can be slow. Leave browser connections available for
+    // permissions, connection status and other page controls while they run.
+    void inspectNext();
+    void inspectNext();
     return () => {
       live = false;
       // Superseded inspections must not occupy the browser's connection pool
