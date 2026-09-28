@@ -49,3 +49,9 @@ The prepared `verify.ps1` runner requires an exact candidate and own slot, check
 ## Remaining work
 
 After the architect reviews original RED/control evidence, formally hand off the owned production scope and compose the complete earlier session lifecycle delta with PR176. Preserve Personal access, nullable admissions and all 45 earlier audit cases. Repair only reproduced remaining failures, then run the new cases and selected existing Individual/admission controls under a separate grant. Broader coverage, independent hostile review, the other 16 old v6 mutation proposals, exact composed-head gates and any later merge/publication remain separate open work.
+
+## Runner preflight correction
+
+The architect granted the three-command window on clean `41b1a02ead34c4848aa4210bd7df73e37ac5d9c3`. Own slot `slot_mul6b7ie_ed1b31c0` was acquired at 11:37:50.534Z, but the runner refused its slot guard before starting npm or opening the command log. The outer controller released the slot successfully at 11:38:15.953Z. No dependency directory, install log, test execution or production change resulted.
+
+PowerShell's `ConvertFrom-Json` materialized `owner.processStart` as a `System.DateTime`. Passing that value to `DateTimeOffset.Parse(string)` first formatted it as a string and lost fractional precision. Reading the actual released slot record reproduced a false comparison through Parse and a true comparison through a direct DateTimeOffset cast. The one-line runner correction preserves the typed timestamp; slot ID, role, host, PID, worktree and exact instant checks remain required. This is verification setup correction, not RED evidence or a product repair. `preflight-original-red-runner.json` records the attempt; no command log is claimed for a command that never started. The 15 frozen source/test/configuration hashes remain unchanged. A separate retry grant is requested.
