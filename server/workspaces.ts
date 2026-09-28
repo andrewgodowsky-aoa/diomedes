@@ -363,6 +363,15 @@ export class WorkspaceService {
   }
 
   /**
+   * This business's plan, for a paid feature's own check, or null on a host with no account
+   * service, where nothing is sold. Every desktop and development run has one. Unlike
+   * `entitlementOf`, it asks nothing of the person signed in here, so a scheduled slot can ask it.
+   */
+  planOf(organizationId: string): EntitlementView | null {
+    return this.accounts ? this.entitlementFor(organizationId) : null;
+  }
+
+  /**
    * Mirror what the account service says about the signed-in person. The caller
    * holds the store lock. Null means nobody is signed in: the local person
    * returns, and every mirrored business reads as someone else's.
