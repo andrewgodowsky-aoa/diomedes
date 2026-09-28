@@ -32,6 +32,13 @@ export const INDIVIDUAL_PLAN_LABEL = 'Individual' as const;
 
 /** Shown wherever the plan is offered or issued. Exact wording (Andrew, 2026-09-28). */
 export const INDIVIDUAL_ELIGIBILITY_SENTENCE = "Businesses beyond a sole proprietorship aren't eligible for this plan.";
+/**
+ * The plan and a business are kept apart (Andrew, 2026-09-28): a member of a business never uses their
+ * own Individual plan for that business's work, even one they pay for themselves. The coverage rule
+ * enforces it; this sentence says it wherever the plan is offered or issued.
+ */
+export const INDIVIDUAL_SEPARATION_SENTENCE =
+  "It covers your own work only. If you belong to a business, that business's work runs on the business's plan, even if you would pay for this one yourself.";
 
 /** A catalog plan: a template, and whether it is issued to an organization or to a person. */
 export type CatalogPlan = PlanTemplate & { scope: 'organization' | 'person' };
@@ -42,7 +49,7 @@ export const INDIVIDUAL_PLAN: CatalogPlan = Object.freeze({
   features: Object.freeze(['nectovia-agent', 'maintained-profiles', 'owner-rules', 'phone-relay']) as readonly AccessFeature[],
   termDays: 31,
   customerVisible: true,
-  note: `A person's own monthly subscription, issued to a person and never to a business. ${INDIVIDUAL_ELIGIBILITY_SENTENCE} Included AI usage is not part of it yet.`,
+  note: `A person's own monthly subscription, issued to a person and never to a business. ${INDIVIDUAL_ELIGIBILITY_SENTENCE} ${INDIVIDUAL_SEPARATION_SENTENCE} Included AI usage is not part of it yet.`,
   scope: 'person',
 });
 

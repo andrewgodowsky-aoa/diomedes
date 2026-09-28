@@ -683,7 +683,7 @@ Default: each stays as built.
 Raised 2026-09-28 with the Individual plan (`docs/implementation/2026-09-28-individual-tier.md`,
 branch `feature/individual-tier`).
 
-1. **Credits.** 500 a month is assumed from the 2026-09-27 decision. Nothing allocates them yet:
+1. **Credits.** Decided: 1,000 a month (Andrew, 2026-09-28 04:01 EDT). Nothing allocates them yet:
    funding is kept per business, and funding a person is phase 2b.
 2. **The member threshold.** `INDIVIDUAL_MAX_ACTIVE_MEMBERS` defaults to 1, so an Individual plan
    covers a business only while its holder is the only active member. Is 1 right?

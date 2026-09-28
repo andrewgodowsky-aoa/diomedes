@@ -10,7 +10,10 @@ pushed or migrated in production.
 - The Individual plan is **$200 a month**, a person's own subscription. This supersedes the $250
   figure of 2026-09-27. The app carries no dollar figure for it anywhere; the public site's pricing
   registry is the pricing authority.
-- **500 credits a month**, unchanged from 2026-09-27, and not wired in this phase.
+- **1,000 credits a month** (Andrew, 2026-09-28 04:01 EDT; it was 500 on 2026-09-27), not wired in this
+  phase. The plan and a business are kept apart: a member of a business never uses their own Individual
+  plan for that business's work, even one they pay for themselves. The coverage rule enforces it, and
+  INDIVIDUAL_SEPARATION_SENTENCE says it wherever the plan is offered or issued.
 - The plan is **issued to a person, never to an organization**. The eligibility sentence, shown
   wherever the plan is offered or issued, is exact: "Businesses beyond a sole proprietorship aren't
   eligible for this plan."
