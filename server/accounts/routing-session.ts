@@ -1,6 +1,8 @@
 /** Ephemeral, person-and-scope-bound routing cache. The control plane remains authoritative. */
 import { z } from 'zod';
 import { SIGN_IN_REQUIRED } from '../../shared/accounts.js';
+import { AGENT_FEATURE, AGENT_FREE_VERSION_REASON } from '../../shared/access.js';
+import { AGENT_PERSONAL_INDIVIDUAL_REASON, MANAGED_USAGE_NOT_INCLUDED_PERSONAL } from '../../shared/individual-plan.js';
 import { routingScopeKey, type AccountScope, type IndividualAccount, type RoutingPreferenceWrite } from '../../shared/routing-policy.js';
 import type { AccessFeature } from '../../shared/access.js';
 import type { EntitlementView } from '../../shared/workspaces.js';
@@ -9,7 +11,7 @@ import { EngineError } from '../engines/process.js';
 import { ApiError } from '../paths.js';
 import type { WorkspaceService } from '../workspaces.js';
 import { refusedMembership, type AccountSessionService } from './session.js';
-import type { AdmittedAgentWork, AgentWork } from './agent-gate.js';
+import { MANAGED_USAGE_NOT_INCLUDED, type AdmittedAgentWork, type AgentWork } from './agent-gate.js';
 
 const admissionSchema = z.object({ admissionId: z.string().min(1), validUntil: z.iso.datetime(),
   decision: z.discriminatedUnion('admitted', [
@@ -113,6 +115,15 @@ export class AccountRoutingSession {
       (this.individualAccess.value.validUntil === null || Date.parse(this.individualAccess.value.validUntil) > this.now()) &&
       this.individualAccess.value.features.includes(feature);
   }
+  /** A known Personal plan refusal can precede model selection; unknown access goes to admission. */
+  personalRefusal(projectId: string | null): string | null {
+    const scope = this.scopeFor(projectId), access = this.individualAccess;
+    if (scope?.kind !== 'individual' || !access || access.until <= this.now()) return null;
+    if (access.value.state === 'none')
+      return this.session.agentPlan() === 'free' ? AGENT_FREE_VERSION_REASON : AGENT_PERSONAL_INDIVIDUAL_REASON;
+    if (access.value.state === 'expired' || access.value.state === 'revoked') return access.value.reason;
+    return null;
+  }
   async admit(work: AgentWork): Promise<AdmittedAgentWork> {
     try {
       await this.refresh(work.projectId);
@@ -123,6 +134,16 @@ export class AccountRoutingSession {
     }
     const scope = this.scopeFor(work.projectId), person = this.current();
     if (!scope || !person) throw new EngineError('AGENT_NOT_INCLUDED', 'This work has no authorized account. Nothing was sent.', false);
+    // Known plan limits are refused before a service admission is recorded. Unknown
+    // access still goes to the service, which may return a definitive revocation.
+    if (scope.kind === 'individual') {
+      if (this.individualAccess?.value.state === 'none')
+        throw admissionRefusal('agent_not_included', this.personalRefusal(work.projectId) ?? AGENT_PERSONAL_INDIVIDUAL_REASON);
+      if (work.routeKind === 'managed' && this.includes(scope, AGENT_FEATURE) && !this.includes(scope, 'managed-inference'))
+        throw admissionRefusal('managed_inference_not_included', MANAGED_USAGE_NOT_INCLUDED_PERSONAL);
+    } else if (work.routeKind === 'managed' && this.session.includes(scope.id, AGENT_FEATURE) &&
+        !this.session.includes(scope.id, 'managed-inference'))
+      throw admissionRefusal('managed_inference_not_included', MANAGED_USAGE_NOT_INCLUDED);
     let raw: unknown;
     try {
       raw = await this.session.call(token => this.session.backend.client.admitScopedAgent(token, scope,

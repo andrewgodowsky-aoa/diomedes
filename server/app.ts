@@ -3716,6 +3716,11 @@ export async function createApp(options: AppOptions) {
     options: RunHints = {},
   ): Route => {
     conversation = routed(projectId, conversation);
+    if (conversation?.engine === NECTOVIA_ROUTE) {
+      const reason = accountRouting?.personalRefusal(projectId);
+      if (reason) throw new EngineError(AGENT_NOT_INCLUDED,
+        reason === AGENT_FREE_VERSION_REASON ? freeVersionRefusal(freeHint()) : reason, false);
+    }
     const tier = tierFor(projectId, conversation, options);
     // Nectovia's own refusals (nobody signed in, a project no business owns) come before any tier's.
     if (tier?.route === NECTOVIA_ROUTE) nectoviaAccountFor(projectId);
