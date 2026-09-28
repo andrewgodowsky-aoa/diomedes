@@ -195,13 +195,13 @@ describe('task phase gate on the real run service', () => {
     const tampered = structuredClone(step.intent);
     (tampered.input as Record<string, unknown>).phase = 'review';
     const need = phaseNeed(taskId, run.id, step.intent);
-    need.approval = identifyHarnessApproval(projectId, phaseNeed(taskId, run.id, step.intent));
+    need.approval = identifyHarnessApproval(projectId, need);
     need.harness = { runId: run.id, intent: tampered };
     expect(() => harnessWrites(projectId, need)).toThrow(/no longer matches/i);
 
     // The same intent aimed at another project is refused.
     const crossProject = phaseNeed(taskId, run.id, step.intent);
-    crossProject.approval = identifyHarnessApproval(projectId, phaseNeed(taskId, run.id, step.intent));
+    crossProject.approval = identifyHarnessApproval(projectId, crossProject);
     expect(() => harnessWrites('another-project', crossProject)).toThrow(/inconsistent/i);
     expect(() => identifyHarnessApproval('another-project', phaseNeed(taskId, run.id, step.intent))).toThrow(
       /inconsistent/i,
@@ -314,16 +314,17 @@ describe('task phase approval identity', () => {
 
     const base = phaseNeed(taskId, run.id, step.intent);
     const identified = identifyHarnessApproval(projectId, base);
-    const need = phaseNeed(taskId, run.id, step.intent);
+    const need = structuredClone(base);
     need.approval = identified;
     expect(harnessWrites(projectId, need)).toEqual([]);
-    // The phase identity is its own: a second identification agrees, and a
-    // different phase disagrees on both digests.
-    const again = identifyHarnessApproval(projectId, phaseNeed(taskId, run.id, step.intent));
+    // Replay the same recorded Need, including createdAt: a newly created Need
+    // can have a different expiry and therefore a different proposal digest.
+    const again = identifyHarnessApproval(projectId, structuredClone(base));
     expect(again).toEqual(identified);
     const other = structuredClone(step.intent);
     (other.input as Record<string, unknown>).phase = 'review';
-    const otherNeed = phaseNeed(taskId, run.id, other);
+    const otherNeed = structuredClone(base);
+    otherNeed.harness!.intent = other;
     const otherIdentity = identifyHarnessApproval(projectId, otherNeed);
     expect(otherIdentity.actionDigest).not.toBe(identified.actionDigest);
     expect(otherIdentity.baseDigest).not.toBe(identified.baseDigest);
@@ -356,7 +357,7 @@ describe('task phase approval identity', () => {
     const permitted = { ...structuredClone(step.intent), permission: 'write-project-file' };
     expect(isTaskPhaseIntent(permitted)).toBe(false);
     const valid = phaseNeed(taskId, run.id, step.intent);
-    valid.approval = identifyHarnessApproval(projectId, phaseNeed(taskId, run.id, step.intent));
+    valid.approval = identifyHarnessApproval(projectId, valid);
     valid.files = ['Harness report.md'];
     expect(() => harnessWrites(projectId, valid)).toThrow(/inconsistent/i);
   });

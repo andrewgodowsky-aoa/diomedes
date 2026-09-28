@@ -57,7 +57,7 @@ runs before live model work. Local scripted fixtures are verification only.
 
 ## Verification ledger
 
-The validated source tree is `2f417c6c7ad88d52aaf7f7cb9dc0389875067fe8`.
+The final validated source tree is `439fa9ebf9b657f96dc9f620a3f2dce2ce687b5a`.
 Runtime and test sources stayed unchanged through the final gates. Later edits
 only synchronize this evidence record and canonical document status; generated
 browser screenshots are retained in ignored local evidence.
@@ -65,9 +65,10 @@ browser screenshots are retained in ignored local evidence.
 | Check | Final result | Local log |
 | --- | --- | --- |
 | Seven repaired regression suites | 132 passed, 0 failed, 0 skipped | `evidence/board-final-focused.log` |
-| Full root Vitest, four workers | 491 files passed; 8,241 tests passed, 0 failed, 4 skipped | `evidence/board-final-vitest.log` |
-| TypeScript and Vite build | Passed | `evidence/board-final-build.log` |
-| Required UI, native UI, Field, Board and workflow browser suites | 46 passed, 0 failed, 0 skipped | `evidence/board-final-browser.log` |
+| Phase approval fixture correction | 10 passed, 0 failed, 0 skipped | `evidence/board-phase-fixture-focused.log` |
+| Full root Vitest, four workers | 491 files passed; 8,241 tests passed, 0 failed, 4 skipped | `evidence/board-phase-fixture-full.log` |
+| TypeScript and Vite build | Passed | `evidence/board-phase-fixture-build.log` |
+| Required UI, native UI, Field, Board and workflow browser suites | 46 passed, 0 failed, 0 skipped | `evidence/board-phase-fixture-browser.log` |
 
 The first combined root run found stale route/tool/limit assertions, one wrong
 product name, a missing-task consent fixture and a scoped-work timeout. The
@@ -75,12 +76,24 @@ assertions, name and fixture were repaired. The unchanged scoped-work suite
 passed both focused and full runs with reduced worker contention. Historical
 failure logs remain in local evidence and are not counted as passing gates.
 
+The first macOS and Windows CI runs on `44eb78e` found one test-fixture clock dependency:
+the identity replay assertion created two distinct Needs one millisecond apart.
+Their expiry and proposal digest correctly differed. The fixture now replays
+the same recorded Need, and the changed-phase check preserves the timestamp to
+isolate the phase change. Application code did not change. The focused approval
+suite, full local suite, build and browser gates above all passed after this
+correction. GitHub checks
+and the accepted head remain recorded on PR #172.
+
 Independent review through OpenCode Go Muse Spark 1.3 (model-default effort,
 read-only, no fallback) found and then confirmed repairs for the team-wake
 workflow bypass and deleted-child restore limits. The final repair review
 reported no remaining blocking findings. The integrator owns runtime checks.
 The minor child-button note was also resolved by sharing the backend's lifetime
 count and depth blocker with the panel.
+The separate fixture review (`ses_f1a792765ffeksD0sp16ma5uG1`, same model and
+read-only scope) confirmed that the correction preserves the positive and
+negative assertions, with no blocking findings.
 
 The Board decision sections were synchronized into the cloud Roadmap and
 Project Memory through revision-checked native document edits. Readback verified
