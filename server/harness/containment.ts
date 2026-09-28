@@ -171,7 +171,9 @@ export interface ContainedWriteOptions {
   beforeCommit?: (absolute: string) => Promise<void>;
 }
 
-const sameEntry = (a: { dev: number; ino: number }, b: { dev: number; ino: number }) => a.dev === b.dev && a.ino === b.ino;
+// File identifiers can exceed Number's exact range (including on NTFS). Every
+// compared stat must preserve the original integer, before any comparison.
+const sameEntry = (a: { dev: bigint; ino: bigint }, b: { dev: bigint; ino: bigint }) => a.dev === b.dev && a.ino === b.ino;
 
 /**
  * Write one declared project file. The folder must already exist; the file is
@@ -184,18 +186,18 @@ export async function containedWrite(root: string, spelled: string, text: string
   const max = options.maxBytes ?? 1024 * 1024;
   if (bytes.byteLength > max) throw refuse('payload_too_large', `The text is ${bytes.byteLength} bytes; the limit is ${max}.`);
   const folder = path.dirname(found.absolute);
-  const checkedFolder = await fs.lstat(folder).catch(() => null);
+  const checkedFolder = await fs.lstat(folder, { bigint: true }).catch(() => null);
   if (!checkedFolder?.isDirectory()) throw refuse('path_invalid', 'The folder for this file does not exist.');
   const realFolder = await fs.realpath(folder);
-  const existing = await fs.lstat(found.absolute).catch(() => null);
+  const existing = await fs.lstat(found.absolute, { bigint: true }).catch(() => null);
   if (existing && !existing.isFile()) throw refuse('path_link', 'Only a plain file can be replaced.');
   const temp = path.join(folder, `.diomedes-${randomBytes(8).toString('hex')}.tmp`);
   const handle = await fs.open(temp, 'wx');
-  let written: { dev: number; ino: number };
+  let written: { dev: bigint; ino: bigint };
   try {
     await handle.writeFile(bytes);
     await handle.sync();
-    written = await handle.stat();
+    written = await handle.stat({ bigint: true });
   } finally {
     await handle.close();
   }
@@ -208,10 +210,10 @@ export async function containedWrite(root: string, spelled: string, text: string
     // Re-check between the write and the commit: the folder is the same plain
     // folder, still inside the root; the target is absent or a plain file; the
     // temporary file is the one written.
-    const folderNow = await fs.lstat(folder).catch(() => null);
+    const folderNow = await fs.lstat(folder, { bigint: true }).catch(() => null);
     const realNow = await fs.realpath(folder).catch(() => null);
-    const tempNow = await fs.lstat(temp).catch(() => null);
-    const targetNow = await fs.lstat(found.absolute).catch(() => null);
+    const tempNow = await fs.lstat(temp, { bigint: true }).catch(() => null);
+    const targetNow = await fs.lstat(found.absolute, { bigint: true }).catch(() => null);
     folderIntact = Boolean(folderNow?.isDirectory() && !folderNow.isSymbolicLink() && sameEntry(folderNow, checkedFolder) && realNow === realFolder);
     if (
       !folderNow ||
@@ -231,7 +233,7 @@ export async function containedWrite(root: string, spelled: string, text: string
     throw error;
   }
   await fs.rename(temp, found.absolute);
-  const landed = await fs.lstat(found.absolute).catch(() => null);
+  const landed = await fs.lstat(found.absolute, { bigint: true }).catch(() => null);
   if (!landed || !sameEntry(landed, written))
     throw new HarnessError('path_changed', 'The file changed while it was being written; its outcome is not certain.', true);
   return { relative: found.relative, bytes: bytes.byteLength };
