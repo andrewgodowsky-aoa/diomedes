@@ -4,13 +4,13 @@
  * (tests/fixtures/codex-app-server.mjs): real child processes speaking the pinned 0.153.4
  * JSON-RPC over stdio. No Codex binary or ChatGPT account is reached.
  */
-import { afterEach, beforeEach, expect, test } from 'vitest';
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { createIntegrations, createRpcClient } from '../server/integrations';
+import { createIntegrations, createRpcClient, type CodexConversationPort } from '../server/integrations';
 import type { TextRequest } from '../server/engines/contract';
 import {
   CODEX_ACCOUNT_ROUTE,
@@ -145,6 +145,30 @@ test('thinking reaches the sink, and summaries are asked for only while one list
   expect(answer.text).not.toContain('Weighing');
   await session.turn(request());
   expect((await starts()).map((call) => call.params.summary)).toEqual(['auto', 'none']);
+});
+
+test('a runtime update closes the retired process and resumes the saved thread on the replacement', async () => {
+  const original = port();
+  let updated = false, opens = 0, closes = 0;
+  const session = await openCodexSession({ ...original, open: async (scope, signal) => {
+    const process = await original.open(scope, signal);
+    const first = ++opens === 1;
+    return new Proxy(process, { get(target, key, receiver) {
+      if (key === 'closed' && first && updated) return true;
+      if (key === 'version' && !first) return '99.0.0-preview.1';
+      if (key === 'close') return async () => { closes++; await target.close(); };
+      return Reflect.get(target, key, receiver);
+    } });
+  } }, request(), { observedVersion: '0.153.4', onCheckpoint: async () => {} });
+  sessions.push(session);
+  await session.turn(request());
+  const saved = session.checkpoint.nativeSessionId;
+  updated = true;
+  expect(await session.turn(request())).toMatchObject({ version: '99.0.0-preview.1' });
+  expect(session.checkpoint.nativeSessionId).toBe(saved);
+  expect(opens).toBe(2);
+  expect(closes).toBe(1);
+  expect((await calls()).filter(call => call.method === 'thread/resume').map(call => call.params.threadId)).toEqual([saved]);
 });
 
 test('after a restart the conversation continues its saved thread on a new process', async () => {
@@ -313,6 +337,24 @@ test('a tool outside the read boundary stops the turn and ends its process', asy
   expect(session.checkpoint.state).toBe('idle');
 });
 
+test('a fork checks the saved account before the native process touches its source thread', async () => {
+  const first = await open();
+  await first.turn(request());
+  const saved = first.checkpoint;
+  await first.close();
+  const before = (await calls()).length;
+  await control({ plan: 'pro' });
+  await expect(open({ restore: saved, fork: true }, {}, { threadId: 'thread-fork' }))
+    .rejects.toMatchObject({ code: 'ACCOUNT_CHANGED' });
+  const after = (await calls()).slice(before);
+  expect(after.some(call => call.method === 'account/read')).toBe(true);
+  expect(after.filter(call => /^(thread|turn)\//.test(call.method))).toEqual([]);
+  await control({});
+  await expect(open({ restore: { ...saved, account: null }, fork: true }, {}, { threadId: 'thread-fork' }))
+    .rejects.toMatchObject({ code: 'SESSION_INVALID' });
+  expect(await calls()).toHaveLength(before + after.length);
+});
+
 test('a restart during a turn keeps a confirmed thread, and the next message says the earlier one was not completed', async () => {
   const first = await open();
   await first.turn(request());
@@ -356,4 +398,31 @@ test('a turn answers with the model Codex reported, never the one requested (dec
   const answer = await session.turn(request({ model: 'requested-alias' }));
   expect(answer.model).toBe('fixture-codex-model');
   expect(session.checkpoint.reportedModel).toBe('fixture-codex-model');
+});
+
+test('missing runtime model metadata stays unknown instead of promoting the requested model', async () => {
+  await control({ omitModel: true });
+  const session = await open({}, {}, { model: 'requested-alias' });
+  const answer = await session.turn(request({ model: 'requested-alias' }));
+  expect(answer.model).toBe('');
+  expect(session.checkpoint.reportedModel).toBeNull();
+});
+
+test('failed cleanup stays observable and keeps the owned process available for a retry', async () => {
+  const failure = Object.assign(new Error('Owned process cleanup failed'), { code: 'NATIVE_CLEANUP_FAILED' });
+  const close = vi.fn<() => Promise<void>>().mockRejectedValueOnce(failure).mockResolvedValue(undefined);
+  const fake: CodexConversationPort = {
+    open: async () => ({
+      version: '99.0.0', closed: false, account: async () => 'fixture-account',
+      thread: async () => { throw new Error('No turn expected'); },
+      turn: async () => { throw new Error('No turn expected'); },
+      interrupt: async () => false, close,
+    }),
+    fork: async () => { throw new Error('No fork expected'); },
+  };
+  const session = await openCodexSession(fake, request(), { observedVersion: '99.0.0', onCheckpoint: async () => {} });
+  sessions.push(session);
+  await expect(session.close()).rejects.toBe(failure);
+  await expect(session.close()).resolves.toBeUndefined();
+  expect(close).toHaveBeenCalledTimes(2);
 });

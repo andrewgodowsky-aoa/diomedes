@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { AwsConnectionView } from '../shared/model-api';
+import { MODEL_API_NAMES } from '../shared/model-api';
 import type { Settings } from '../shared/types';
 import { ApiError, api } from './api';
 import {
@@ -134,9 +135,9 @@ export function AwsBedrockSetup({
   const showForm = !!view && view.protectedStorage && (!connection || editing || connection.credential.expired);
 
   return (
-    <section className="service" aria-label="AWS Bedrock (GPT-6 Luna)">
+    <section className="service" aria-label={MODEL_API_NAMES['aws-bedrock']}>
       <div className="row">
-        <h3>AWS Bedrock (GPT-6 Luna)</h3>
+        <h3>{MODEL_API_NAMES['aws-bedrock']}</h3>
         {awsIsDefault(settings.services) && <span className="caption push-right">Default</span>}
       </div>
       <p className="caption ai-route">

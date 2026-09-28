@@ -50,6 +50,8 @@ async function fixture() {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'diomedes acp runtime '));
   roots.push(root);
   const env: Record<string, string> = { ACP_FIXTURE_LOG: path.join(root, 'methods.log') };
+  /** The Cursor version installed now; a test that updates Cursor in place changes it. */
+  const installed = { version: '2026.08.11' };
   const adapter = new CursorAdapter(path.join(root, 'agent'), root, {
     spawn: (_file, _args, options) =>
       spawn(process.execPath, [FIXTURE], {
@@ -58,7 +60,7 @@ async function fixture() {
       }) as ChildProcessWithoutNullStreams,
     capture: (async (options: { args: string[] }) =>
       options.args.includes('--version')
-        ? { code: 0, stdout: '2026.08.11-e8db854' }
+        ? { code: 0, stdout: `${installed.version}-e8db854` }
         : {
             code: 0,
             stdout: JSON.stringify({ status: 'authenticated', isAuthenticated: true }),
@@ -91,7 +93,7 @@ async function fixture() {
     input: request,
     admit: async () => ({
       location: 'cursor',
-      version: '2026.08.11',
+      version: installed.version,
       model: request.model,
       accountRoute: request.accountRoute,
     }),
@@ -99,7 +101,7 @@ async function fixture() {
   });
   const methods = async () =>
     (await fs.readFile(env.ACP_FIXTURE_LOG, 'utf8').catch(() => '')).split('\n').filter(Boolean);
-  return { root, env, driverFor, turn, methods };
+  return { root, env, driverFor, turn, methods, installed };
 }
 const runId = acpSessionRunId('cursor')('p1', 'lineage-1');
 
@@ -132,6 +134,36 @@ describe('kept Cursor conversation over the native conversation driver', () => {
       engine: { id: 'cursor', version: '2026.08.11' },
       model: { requested: 'fixture-model', reported: 'fixture-model', source: 'runtime' },
     });
+    expect(streamChecks(run).filter((check) => check.outcome === 'failed')).toEqual([]);
+  });
+
+  it('a follow-up on the live connection continues when Cursor updates itself between turns', async () => {
+    const f = await fixture();
+    const { driver, runs } = f.driverFor();
+    const first = await driver.request(f.turn('start', runId, input('first')));
+    // Cursor updates itself in place while the conversation stays connected: admission and the
+    // next turn's own process both find the newer version.
+    f.installed.version = '2026.08.18';
+    const second = await driver.request(f.turn('follow-up', runId, input('second')));
+    expect(second.response?.text).toBe('answer after 1 earlier turns');
+    expect(second.nativeSession).toEqual(first.nativeSession);
+    expect(second.continuity).toBeUndefined();
+    const run = await runs.get(runId);
+    expect(checkpointOf(run)).toMatchObject({
+      nativeSessionId: first.nativeSession!.opaqueRef,
+      state: 'idle',
+      origin: 'loaded',
+      cliVersion: '2026.08.18',
+      turns: 2,
+    });
+    // Each answer is attributed to the version that gave it.
+    expect(run.steps.filter((step) => step.intent.kind === 'model').map((step) => step.origin)).toMatchObject([
+      { engine: { id: 'cursor', version: '2026.08.11' } },
+      { engine: { id: 'cursor', version: '2026.08.18' } },
+    ]);
+    const methods = await f.methods();
+    expect(methods.filter((method) => method === 'session/new')).toHaveLength(1);
+    expect(methods.filter((method) => method === 'session/load')).toHaveLength(1);
     expect(streamChecks(run).filter((check) => check.outcome === 'failed')).toEqual([]);
   });
 

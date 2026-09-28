@@ -62,7 +62,7 @@ export const rateCardKeyFor = (key: Uint8Array, version: string) =>
  * (`AWS_RETIRED_MODELS`) is not listed: nothing is sent on a connection saved for one.
  */
 export const CATALOG_MODELS: Readonly<Record<'aws-bedrock' | 'google-vertex', readonly string[]>> = Object.freeze({
-  'aws-bedrock': Object.freeze(['us.openai.gpt-6-luna']),
+  'aws-bedrock': Object.freeze(['us.openai.gpt-5.6-luna', 'us.openai.gpt-6-luna']),
   'google-vertex': Object.freeze(['gemini-3.8-flash']),
 });
 

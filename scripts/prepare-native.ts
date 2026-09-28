@@ -4,19 +4,13 @@ import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CODEX_PROTOCOL_VERSION, nativeEnvironment } from '../server/integrations.js';
+import { currentCodexRuntime, nativeEnvironment } from '../server/integrations.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const destination = path.join(root, '.data', 'native-runtime');
-// These three matching, already-installed Windows x64 binaries passed the
-// sandbox protocol and read-only write-denial proof. Version text alone cannot
-// detect an old helper next to a newer codex.exe.
-const verifiedHashes: Record<string, string> = {
-  'codex.exe': 'a1cf6360ca71918d5466bc3a32d9f18b7044c9128756d1949e715d277b88c9b6',
-  'codex-command-runner.exe': '08b56828cca57c83d14f03eb9ec62c73a2cd6648248cc731ae8fedd5fa3ae566',
-  'codex-windows-sandbox-setup.exe':
-    '682cf7b351a871f3479b78fe3b7ea7348554de655bd98b0f322cef2d006a8d62',
-};
+// Copy a coherent installed build. Record its bytes for this package; execution
+// independently proves the selected runtime's capabilities and sandbox.
+const requiredFiles = ['codex.exe', 'codex-command-runner.exe', 'codex-windows-sandbox-setup.exe'];
 
 const missing = (error: unknown) =>
   error instanceof Error && 'code' in error && error.code === 'ENOENT';
@@ -41,7 +35,7 @@ async function candidateFolders(): Promise<string[]> {
     throw new Error('Usage: npm run prepare-native -- [--source <installed-runtime-folder>]');
   }
   if (supplied.length) return [path.resolve(supplied[1])];
-  const folders = new Set<string>();
+  const folders = new Set<string>([path.dirname(currentCodexRuntime().executable)]);
   if (process.env.LOCALAPPDATA) {
     const installed = path.join(process.env.LOCALAPPDATA, 'OpenAI', 'Codex', 'bin');
     if (await exists(installed)) {
@@ -62,7 +56,7 @@ async function candidateFolders(): Promise<string[]> {
 
 async function matchingRuntime(folder: string): Promise<Record<string, string> | null> {
   const files: Record<string, string> = {};
-  for (const [name, expected] of Object.entries(verifiedHashes)) {
+  for (const name of requiredFiles) {
     const adjacent = path.join(folder, name);
     const packaged = path.join(path.dirname(folder), 'codex-resources', name);
     const source = (await exists(adjacent))
@@ -70,14 +64,17 @@ async function matchingRuntime(folder: string): Promise<Record<string, string> |
       : name !== 'codex.exe' && (await exists(packaged))
         ? packaged
         : null;
-    if (!source || (await digest(source)) !== expected) return null;
+    if (!source) return null;
     files[name] = source;
   }
+  for (const entry of await fs.readdir(folder, { withFileTypes: true }))
+    if (entry.isFile() && /^codex(?:-[a-z0-9]+)+\.exe$/i.test(entry.name) && !files[entry.name])
+      files[entry.name] = path.join(folder, entry.name);
   return files;
 }
 
 async function version(executable: string): Promise<string> {
-  // Only launch after every file has matched the known-good hashes.
+  // This is an explicitly selected installed executable, not a downloaded script.
   const child = spawn(executable, ['--version'], {
     windowsHide: true,
     env: nativeEnvironment(),
@@ -102,9 +99,73 @@ async function version(executable: string): Promise<string> {
       resolve(code);
     });
   });
-  if (exit !== 0 || output.trim() !== `codex-cli ${CODEX_PROTOCOL_VERSION}`)
-    throw new Error('The installed executable did not report the proven Codex protocol version.');
-  return output.trim();
+  const reported = output.trim().match(/^codex-cli ([0-9A-Za-z.+-]{1,100})$/)?.[1];
+  if (exit !== 0 || !reported)
+    throw new Error('The installed executable did not report its Codex runtime version.');
+  return reported;
+}
+
+export async function prepareInstalledRuntime({
+  sourceFiles, destination: targetFolder, readVersion = version, copyFile = fs.copyFile,
+}: {
+  sourceFiles: Record<string, string>;
+  destination: string;
+  readVersion?: (executable: string) => Promise<string>;
+  copyFile?: typeof fs.copyFile;
+}) {
+  const entries = Object.entries(sourceFiles);
+  if (requiredFiles.some((name) => !sourceFiles[name]) || entries.some(([name]) => !/^codex(?:-[a-z0-9]+)*\.exe$/i.test(name)))
+    throw new Error('Invalid selected runtime file set.');
+  const expected = new Map<string, string>();
+  const identity = async (file: string) => {
+    const stat = await fs.stat(file, { bigint: true });
+    return [stat.dev, stat.ino, stat.size, stat.mtimeNs, stat.ctimeNs].join(':');
+  };
+  const identities = new Map<string, string>();
+  for (const [name, source] of entries) identities.set(name, await identity(source));
+  // Capture the whole selected set before copying any file or asking its version.
+  for (const [name, source] of entries) expected.set(name, await digest(source));
+  const parent = path.dirname(path.resolve(targetFolder));
+  await fs.mkdir(parent, { recursive: true });
+  const staging = await fs.mkdtemp(path.join(parent, '.native-runtime-'));
+  try {
+    for (const [name, source] of entries) {
+      await copyFile(source, path.join(staging, name));
+      if (await digest(path.join(staging, name)) !== expected.get(name))
+        throw new Error('Selected runtime changed during preparation: ' + name);
+    }
+    // Run only the private staged executable: the version describes these bytes.
+    const reportedVersion = await readVersion(path.join(staging, 'codex.exe'));
+    if (!/^[0-9A-Za-z.+-]{1,100}$/.test(reportedVersion))
+      throw new Error('Invalid staged runtime version.');
+    for (const [name, source] of entries) {
+      if (await identity(source) !== identities.get(name) || await digest(source) !== expected.get(name) ||
+          await digest(path.join(staging, name)) !== expected.get(name))
+        throw new Error('Selected runtime changed during preparation: ' + name);
+    }
+    await fs.mkdir(targetFolder, { recursive: true });
+    const files = [];
+    for (const [name, source] of entries) {
+      const target = path.join(targetFolder, name);
+      await fs.copyFile(path.join(staging, name), target);
+      files.push({ name, source, destination: target, sha256: expected.get(name)!, copied: true });
+    }
+    // Verify the entire destination after every copy, before publishing its manifest.
+    for (const file of files)
+      if (await digest(file.destination) !== file.sha256)
+        throw new Error('Copied runtime verification failed for ' + file.name);
+    const manifest = {
+      preparedAt: new Date().toISOString(), version: reportedVersion,
+      scope: 'Snapshot of the selected installed runtime; connection-time capability and isolation checks remain required.',
+      files,
+    };
+    await fs.writeFile(path.join(targetFolder, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
+    return manifest;
+  } finally {
+    if (path.dirname(path.resolve(staging)) !== parent || !path.basename(staging).startsWith('.native-runtime-'))
+      throw new Error('Refusing to remove an unexpected runtime staging directory.');
+    await fs.rm(staging, { recursive: true, force: true });
+  }
 }
 
 async function main() {
@@ -120,43 +181,15 @@ async function main() {
   }
   if (!sourceFiles) {
     throw new Error(
-      `No matching, already-installed Codex ${CODEX_PROTOCOL_VERSION} runtime and Windows sandbox helpers were found. Nothing was downloaded or installed. Supply --source with an installed runtime folder containing the verified build.`,
+      'No installed Codex runtime with its Windows sandbox helpers was found. Supply --source with an installed runtime folder.',
     );
   }
-  const reportedVersion = await version(sourceFiles['codex.exe']);
-  await fs.mkdir(destination, { recursive: true });
-  const files = [];
-  for (const [name, source] of Object.entries(sourceFiles)) {
-    const target = path.join(destination, name);
-    const unchanged = (await exists(target)) && (await digest(target)) === verifiedHashes[name];
-    if (!unchanged) await fs.copyFile(source, target);
-    const sha256 = await digest(target);
-    if (sha256 !== verifiedHashes[name])
-      throw new Error(
-        `Copied runtime verification failed for ${name}. Native execution must remain disabled.`,
-      );
-    files.push({ name, source, destination: target, sha256, copied: !unchanged });
-  }
-  await fs.mkdir(path.join(root, 'evidence'), { recursive: true });
-  const manifestPath = path.join(root, 'evidence', 'native-runtime-manifest.json');
-  await fs.writeFile(
-    manifestPath,
-    `${JSON.stringify(
-      {
-        preparedAt: new Date().toISOString(),
-        version: reportedVersion,
-        scope:
-          'Local copy of three matching installed binaries; no global installation or credential changes.',
-        files,
-      },
-      null,
-      2,
-    )}\n`,
-  );
+  const manifest = await prepareInstalledRuntime({ sourceFiles, destination });
+  const manifestPath = path.join(destination, 'manifest.json');
   console.log(
-    `Prepared native Codex ${CODEX_PROTOCOL_VERSION} and matching Windows sandbox helpers in ${destination}.`,
+    `Prepared native Codex ${manifest.version} and its Windows sandbox helpers in ${destination}.`,
   );
-  console.log(`All three SHA-256 hashes verified. Manifest: ${manifestPath}`);
+  console.log(`All copied file hashes verified. Manifest: ${manifestPath}`);
 }
 
-await main();
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main();

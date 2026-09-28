@@ -128,6 +128,7 @@ async function runtime(options: { connectionLifetimeMs?: number } = {}) {
     closed = 0;
   let duringTurn: (() => Promise<void>) | undefined;
   let fail = false;
+  let installedVersion = '2.1.252';
   const sessionOptions: ClaudeSessionOptions[] = [];
   const request = (
     mode: ClaudeSessionTurn['mode'],
@@ -141,7 +142,7 @@ async function runtime(options: { connectionLifetimeMs?: number } = {}) {
     input: { ...input, requestId: id },
     admit: async () => ({
       location: 'fixture',
-      version: '2.1.252',
+      version: installedVersion,
       model: input.model,
       accountRoute: input.accountRoute,
     }),
@@ -222,6 +223,7 @@ async function runtime(options: { connectionLifetimeMs?: number } = {}) {
     fail: () => {
       fail = true;
     },
+    update: (version: string) => { installedVersion = version; },
   };
 }
 
@@ -237,6 +239,19 @@ test('sequential turns share the process and durable replays never dispatch or c
   collision.input.prompt = 'changed';
   await expect(f.driver.request(collision)).rejects.toMatchObject({ code: 'intent_mismatch' });
   expect(f.counters().sent).toBe(2);
+  await f.driver.closeAll();
+});
+
+test('an installation update does not discard the reply from an already connected process', async () => {
+  const f = await runtime();
+  await f.driver.request(f.request('start', 'one'));
+  f.update('3.0.0-preview.1');
+  const result = await f.driver.request(f.request('follow-up', 'two'));
+  expect(result.response).toMatchObject({ text: 'answer', version: '2.1.252', requestId: 'two' });
+  expect(f.counters()).toMatchObject({ opened: 1, sent: 2 });
+  expect((await f.runs.get('native')).used.modelCalls).toBe(2);
+  expect((await f.runs.get('native')).steps.filter(step => step.intent.kind === 'model').at(-1)?.origin)
+    .toMatchObject({ engine: { id: 'claude-code', version: '2.1.252' } });
   await f.driver.closeAll();
 });
 

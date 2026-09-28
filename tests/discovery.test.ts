@@ -201,12 +201,12 @@ describe('binary engine discovery', () => {
     expect(cursor).toMatchObject({
       found: true,
       status: 'Installed',
-      detail: 'Cursor 2026.08.11 is installed. Diomedes cannot run it yet.',
+      detail: 'Cursor 2026.08.11-e8db854 is installed. Diomedes cannot run it yet.',
       location: 'C:\\tools\\agent.cmd',
       available: false,
       adapter: 'planned',
     });
-    expect(cursor.installedVersion).toBe('2026.08.11');
+    expect(cursor.installedVersion).toBe('2026.08.11-e8db854');
     expect(ran).toEqual(['C:\\tools\\agent.cmd']);
   });
 
@@ -388,11 +388,9 @@ describe('codex drift notice', () => {
       .getIntegrationStatuses({ refresh: true })
       .then((statuses) => statuses.find((entry) => entry.id === 'codex')!.detail);
 
-  it('appends the drift sentence when the installed copy differs', async () => {
+  it('does not promise a fixed bundled version when another runtime is installed', async () => {
     const detail = await driftDetail('9.9.9');
-    expect(detail).toContain(
-      `Codex 9.9.9 is also installed on this computer; Diomedes uses its own proven ${CODEX_PROTOCOL_VERSION} copy.`,
-    );
+    expect(detail).not.toContain('uses its own proven');
   });
 
   it('does not append the sentence when versions match or nothing is installed', async () => {

@@ -26,7 +26,7 @@ import { createApp } from '../server/app';
 import { EngineService } from '../server/engines/service';
 import { NECTOVIA_LOOP_REFUSED } from '../server/engines/nectovia';
 import { NECTOVIA_LOOP_TEAM_REFUSED, loopRunId } from '../server/native-loop-routes';
-import { GPT6_LUNA } from '../shared/model-api.js';
+import { MANAGED_LUNA } from '../shared/model-api.js';
 import { testOnlySecretBox } from '../server/connection-secrets';
 import { ControlPlaneClient } from '../server/accounts/client';
 import type { AccountBackend } from '../server/accounts/backend';
@@ -36,7 +36,7 @@ import type { AccountStateView } from '../shared/accounts';
 import type { Project } from '../shared/types';
 
 const headers = { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' };
-const MODEL = GPT6_LUNA.model;
+const MODEL = MANAGED_LUNA.model;
 
 let root: string;
 let cloud: FauxCloud;

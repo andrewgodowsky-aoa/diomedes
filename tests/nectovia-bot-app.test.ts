@@ -180,15 +180,15 @@ beforeEach(async () => {
   refuseWith = null;
   cloud = await createFauxCloud({ file: null, passwordIterations: 1_000 });
   await seedDemo(cloud);
-  // The Routing role qualifies GPT-6 Luna and publishes it for Efficient and Focused. Thorough
+  // The Routing role qualifies GPT-5.6 Luna and publishes it for Efficient and Focused. Thorough
   // stays unrouted. (The faux seed alone still names GPT-5.6 Luna for Efficient.)
   const routing = await staffToken(DEMO_ACCOUNTS.staffRouting.email);
-  const luna = (await cloud.commercial.routes(routing)).routes.find((row) => row.id === 'aws-luna-6')!;
+  const luna = (await cloud.commercial.routes(routing)).routes.find((row) => row.id === 'aws-luna-5-6')!;
   await cloud.commercial.saveRoute(routing, {
-    id: 'aws-luna-6',
+    id: 'aws-luna-5-6',
     provider: 'aws-bedrock',
-    model: 'us.openai.gpt-6-luna',
-    label: 'GPT-6 Luna',
+    model: 'us.openai.gpt-5.6-luna',
+    label: 'GPT-5.6 Luna',
     region: 'us',
     processing: 'AWS Bedrock US inference profile.',
     status: 'qualified',
@@ -196,8 +196,8 @@ beforeEach(async () => {
     baseRevision: luna.revision,
   });
   await cloud.commercial.publishPolicy(routing, {
-    tiers: { efficient: 'aws-luna-6', focused: 'aws-luna-6', thorough: null },
-    note: 'Test fixture: GPT-6 Luna for Efficient and Focused.',
+    tiers: { efficient: 'aws-luna-5-6', focused: 'aws-luna-5-6', thorough: null },
+    note: 'Test fixture: GPT-5.6 Luna for Efficient and Focused.',
     baseRevision: 1,
   });
   backend = {
@@ -248,8 +248,8 @@ describe('the Nectovia bot', () => {
       refusal: null,
       policyRevision: 2,
       tiers: {
-        efficient: { model: 'us.openai.gpt-6-luna', label: 'GPT-6 Luna' },
-        focused: { model: 'us.openai.gpt-6-luna', label: 'GPT-6 Luna' },
+        efficient: { model: 'us.openai.gpt-5.6-luna', label: 'GPT-5.6 Luna' },
+        focused: { model: 'us.openai.gpt-5.6-luna', label: 'GPT-5.6 Luna' },
         thorough: null,
       },
     });
@@ -257,7 +257,7 @@ describe('the Nectovia bot', () => {
     const style = await api<{ route: string; resolution: { model: string; effort: string } | null }>(
       `/projects/${binding.projectId}/threads/${binding.threadId}/work-style`,
     );
-    expect(style).toMatchObject({ route: 'nectovia', resolution: { model: 'us.openai.gpt-6-luna', effort: 'low' } });
+    expect(style).toMatchObject({ route: 'nectovia', resolution: { model: 'us.openai.gpt-5.6-luna', effort: 'low' } });
 
     const sent = await say(binding, 'm-owner', 'How many loaves are on order?');
     const text = await sent.text();
@@ -281,7 +281,7 @@ describe('the Nectovia bot', () => {
         'x-nectovia-usage-class': 'included-chat',
         'x-nectovia-policy-revision': '2',
       });
-      expect(call.body).toMatchObject({ model: 'us.openai.gpt-6-luna', store: false, reasoning: { effort: 'low' } });
+      expect(call.body).toMatchObject({ model: 'us.openai.gpt-5.6-luna', store: false, reasoning: { effort: 'low' } });
     }
     // The admission the gateway was given is the one the service recorded for this business.
     const billing = await staffToken(DEMO_ACCOUNTS.staffBilling.email);
@@ -352,7 +352,7 @@ describe('the Nectovia bot', () => {
     const answered = await say(binding, 'm-focused', 'How many loaves are on order?');
     expect(answered.status, await answered.clone().text()).toBe(200);
     expect(gateway.at(-1)!.headers['x-nectovia-tier']).toBe('focused');
-    expect(gateway.at(-1)!.body).toMatchObject({ model: 'us.openai.gpt-6-luna', reasoning: { effort: 'medium' } });
+    expect(gateway.at(-1)!.body).toMatchObject({ model: 'us.openai.gpt-5.6-luna', reasoning: { effort: 'medium' } });
 
     const before = gateway.length;
     await api(`/projects/${binding.projectId}/threads/${binding.threadId}`, 'PUT', { workStyle: 'thorough' });

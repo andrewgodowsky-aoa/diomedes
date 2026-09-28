@@ -398,11 +398,7 @@ export async function openOpenCodeSession<S extends OpenCodeServer>(
       restore.scopeDigest !== scopeDigest
     )
       throw new EngineError('SESSION_MISMATCH', 'The saved OpenCode session belongs to a different scope.');
-    if (restore.cliVersion !== options.observedVersion)
-      throw new EngineError(
-        'SESSION_MISMATCH',
-        `This OpenCode session was saved by OpenCode ${restore.cliVersion}; ${options.observedVersion} is installed now. Start a new conversation.`,
-      );
+    // No version gate (2026-09-23): an OpenCode that updated since this was saved continues it.
     if (restore.state !== 'idle')
       throw new EngineError('RECONCILE_REQUIRED', 'The saved OpenCode turn outcome is uncertain.', true);
     if (!restore.nativeSessionId)

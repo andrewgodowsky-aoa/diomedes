@@ -2,7 +2,7 @@ import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { engineCatalog, forgetCatalog, isKnownChoice } from '../server/models';
+import { codexCatalog, codexModelsFromRpc, engineCatalog, forgetCatalog, isKnownChoice, recordEngineCatalog } from '../server/models';
 
 /**
  * The catalogue is read from the engine's own cache, so these tests write a
@@ -15,6 +15,7 @@ let previous: string | undefined;
 function writeCache(value: unknown) {
   fs.writeFileSync(path.join(home, 'models_cache.json'), JSON.stringify(value), 'utf8');
   forgetCatalog();
+  recordEngineCatalog(codexCatalog());
 }
 
 beforeEach(() => {
@@ -58,6 +59,21 @@ const older = {
 };
 
 describe('engine catalogue', () => {
+  it('never treats a cache written by another runtime as active model availability', () => {
+    writeCache({ client_version: '999.0.0', models: [astra] });
+    forgetCatalog();
+    expect(engineCatalog('codex').models).toEqual([]);
+    const models = codexModelsFromRpc([{ model: 'gpt-6-luna', displayName: 'GPT-6 Luna', hidden: false,
+      supportedReasoningEfforts: [{ reasoningEffort: 'medium', description: 'Balanced' }], defaultReasoningEffort: 'medium', instructions: 'must not cross' }]);
+    recordEngineCatalog({ engine: 'codex', models, detail: 'Active process' });
+    expect(engineCatalog('codex').models.map(m => m.slug)).toEqual(['gpt-6-luna']);
+    expect(engineCatalog('codex').models[0].defaultEffort).toBe('medium');
+    expect(isKnownChoice('codex', 'gpt-6-luna', 'medium')).toBe(true);
+    expect(isKnownChoice('codex', 'gpt-6-luna', 'ultra')).toBe(false);
+    expect(JSON.stringify(engineCatalog('codex'))).not.toContain('must not cross');
+    recordEngineCatalog({ engine: 'codex', models: [], detail: 'Account changed' });
+    expect(isKnownChoice('codex', 'gpt-6-luna', 'medium')).toBe(false);
+  });
   it('reads the models the engine lists, best first, with their own ladders', () => {
     writeCache({ models: [older, astra] });
     const catalog = engineCatalog('codex');
@@ -87,12 +103,12 @@ describe('engine catalogue', () => {
   });
 
   it('says so plainly when there is no cache, and when it cannot be read', () => {
-    const missing = engineCatalog('codex');
+    const missing = codexCatalog();
     expect(missing.models).toEqual([]);
     expect(missing.detail).toMatch(/has not written its list yet/);
     fs.writeFileSync(path.join(home, 'models_cache.json'), 'not json', 'utf8');
     forgetCatalog();
-    const broken = engineCatalog('codex');
+    const broken = codexCatalog();
     expect(broken.models).toEqual([]);
     expect(broken.detail).toMatch(/could not be read/);
   });

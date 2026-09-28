@@ -100,6 +100,7 @@ import {
   codexConversations,
   forkCodexThread,
   getIntegrationStatuses,
+  refreshCodexCatalog,
   steerCodex,
   type CodexIntegration,
   type NativeTeamOptions,
@@ -107,7 +108,7 @@ import {
 import { CodexControls } from './codex-controls.js';
 import { MODES, modeOf } from './modes.js';
 import { fakeCodexSnapshot, usageService } from './usage.js';
-import { engineCatalog, isKnownChoice } from './models.js';
+import { codexCatalog, engineCatalog, isKnownChoice, recordEngineCatalog } from './models.js';
 import { ReviewerService, type ReviewerAdapter } from './trust/reviewer.js';
 import { codexReviewerAdapter } from './trust/codex-reviewer.js';
 import { VerificationService } from './verification/service.js';
@@ -1942,7 +1943,7 @@ export async function createApp(options: AppOptions) {
   );
   app.get(
     '/api/ai/install/:engine',
-    route(async (req) => installer.offer(externalEngine(req)), false),
+    route(async (req) => installer.refreshOffer(externalEngine(req)), false),
   );
   app.post(
     '/api/ai/install/:engine',
@@ -2170,6 +2171,14 @@ export async function createApp(options: AppOptions) {
       const engine = String(req.params.engineId);
       if (!/^[a-z][a-z0-9-]{0,39}$/.test(engine))
         throw new ApiError(400, 'That is not an engine name.');
+      if (engine === 'codex') {
+        // Browser fixtures own this explicit test home. Production never trusts
+        // a cache another Codex process could have written for a different build.
+        if (process.env.DIOMEDES_TEST_MODE === '1') recordEngineCatalog(codexCatalog());
+        else await refreshCodexCatalog();
+      } else if (isExternalEngine(engine)) {
+        await engines.check(engine);
+      }
       return engineCatalog(engine);
     }),
   );
@@ -5107,9 +5116,9 @@ export async function createApp(options: AppOptions) {
             route: answeredBy,
             helper: {
               engine: answeredBy,
-              model: result.model,
+              model: result.model || null,
               version: result.version,
-              verified: modelAnswer ? recorded?.origin?.model.source === 'runtime' : true,
+              verified: modelAnswer ? recorded?.origin?.model.source === 'runtime' : Boolean(result.model),
             },
             // H18: what went into this answer's context, as the turn recorded it.
             ...(recordedContext(recorded) ? { context: recordedContext(recorded)! } : {}),
@@ -5120,14 +5129,14 @@ export async function createApp(options: AppOptions) {
                 // and no requested model or account.
                 directOrigin({
                   engine: answeredBy,
-                  reportedModel: result.model,
+                  reportedModel: result.model || null,
                   version: result.version,
                   executorId: answeredBy,
                 }))
               : directOrigin({
                   engine: answeredBy,
                   requestedModel: resolved.input.model,
-                  reportedModel: result.model,
+                  reportedModel: result.model || null,
                   version: result.version,
                   accountRoute: resolved.input.accountRoute,
                   executorId: answeredBy,

@@ -413,7 +413,7 @@ export class CodexEngineAdapter {
               );
           },
         });
-        if (!result.threadId || result.version !== CODEX_PROTOCOL_VERSION)
+        if (!result.threadId || !result.version || result.version.length > 100)
           throw new HarnessError(
             'unproven_provider',
             'The provider result lacks a supported transcript identity.',

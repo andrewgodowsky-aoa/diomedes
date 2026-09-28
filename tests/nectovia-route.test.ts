@@ -11,7 +11,7 @@ import type { ModelMessage } from 'ai';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { ToolDescriptor } from '../shared/harness.js';
 import { micro } from '../shared/managed-usage.js';
-import { GPT6_LUNA, MODEL_API_PROVIDERS, MODEL_API_ROUTES, NECTOVIA_ROUTE } from '../shared/model-api.js';
+import { MANAGED_LUNA, MODEL_API_PROVIDERS, MODEL_API_ROUTES, NECTOVIA_ROUTE } from '../shared/model-api.js';
 import { exposureAttempt } from '../server/engines/aws-bedrock.js';
 import { CONVERSATION_LIMITS, ModelApiError, WORK_LIMITS } from '../server/engines/model-api-core.js';
 import {
@@ -87,7 +87,7 @@ const envelope = (output: Item[], extra: Item = {}) => ({
   object: 'response',
   created_at: 1_790_000_000,
   status: 'completed',
-  model: GPT6_LUNA.model,
+  model: MANAGED_LUNA.model,
   output,
   usage: USAGE,
   incomplete_details: null,
@@ -127,7 +127,7 @@ function contractProblems(body: Record<string, unknown>): string[] {
     'include', 'max_output_tokens', 'store', 'stream', 'text',
   ]);
   for (const key of Object.keys(body)) if (!allowed.has(key)) problems.push(`unsupported field ${key}`);
-  if (body.model !== GPT6_LUNA.model) problems.push('model');
+  if (body.model !== MANAGED_LUNA.model) problems.push('model');
   if (body.store !== undefined && body.store !== false) problems.push('store');
   if (body.stream !== undefined && body.stream !== true) problems.push('stream');
   if (body.parallel_tool_calls !== undefined && body.parallel_tool_calls !== false) problems.push('parallel_tool_calls');
@@ -139,7 +139,7 @@ function contractProblems(body: Record<string, unknown>): string[] {
     if (key !== 'effort' && !(key === 'summary' && ['auto', 'concise', 'detailed', null].includes((body.reasoning as Item).summary as string | null)))
       problems.push(`reasoning.${key}`);
   const max = body.max_output_tokens;
-  if (max !== undefined && (!Number.isInteger(max) || (max as number) < 1 || (max as number) > GPT6_LUNA.maxOutputTokens))
+  if (max !== undefined && (!Number.isInteger(max) || (max as number) < 1 || (max as number) > MANAGED_LUNA.maxOutputTokens))
     problems.push('max_output_tokens');
   const tools = (body.tools as Item[] | undefined) ?? [];
   if (tools.length > 64) problems.push('tools: more than 64');
@@ -177,7 +177,7 @@ let run = 0;
 const envKey = process.env.OPENAI_API_KEY;
 const policy = (tiers: Partial<NectoviaPolicy['tiers']> = {}): NectoviaPolicy => ({
   revision: 8,
-  tiers: { efficient: { model: GPT6_LUNA.model, label: 'GPT-6 Luna' }, focused: null, thorough: null, ...tiers },
+  tiers: { efficient: { model: MANAGED_LUNA.model, label: 'GPT-5.6 Luna' }, focused: null, thorough: null, ...tiers },
 });
 
 beforeEach(async () => {
@@ -204,10 +204,10 @@ function call(
     base: BASE,
     account: { refreshPolicy: async () => policy() },
     connectionId: CONNECTION,
-    model: GPT6_LUNA.model,
+    model: MANAGED_LUNA.model,
     managed: MANAGED,
     token: TOKEN,
-    card: nectoviaRateCard(GPT6_LUNA.model),
+    card: nectoviaRateCard(MANAGED_LUNA.model),
     exposure,
     attempt: exposureAttempt(`run-${run}`, 'model@1', messages),
     instructions: 'You are Nectovia. Answer from what you were given.',
@@ -236,10 +236,10 @@ describe('the route identity', () => {
     expect(MODEL_API_PROVIDERS).not.toContain(NECTOVIA_ROUTE);
     const entry = {
       v: 1,
-      id: 'aws-luna-6',
+      id: 'aws-luna-5-6',
       provider: 'aws-bedrock',
-      model: GPT6_LUNA.model,
-      label: GPT6_LUNA.label,
+      model: MANAGED_LUNA.model,
+      label: MANAGED_LUNA.label,
       region: 'us',
       processing: 'AWS Bedrock US inference profile.',
       status: 'qualified',
@@ -289,7 +289,7 @@ describe('the request the real SDK sends to the gateway', () => {
     // `type: 'message'`, and the developer message's content is a plain string.
     expect(contractProblems(sent.body)).toEqual([]);
     expect(sent.body).toEqual({
-      model: GPT6_LUNA.model,
+      model: MANAGED_LUNA.model,
       input: [
         { role: 'developer', content: 'You are Nectovia. Answer from what you were given.' },
         { role: 'user', content: [{ type: 'input_text', text: 'How many loaves are on order?' }] },
@@ -303,7 +303,7 @@ describe('the request the real SDK sends to the gateway', () => {
     });
 
     // Settled on the local guard from the usage the gateway passed through, at the registry's price.
-    const expected = usageCost(nectoviaRateCard(GPT6_LUNA.model), {
+    const expected = usageCost(nectoviaRateCard(MANAGED_LUNA.model), {
       inputTokens: 1_200,
       cacheReadTokens: 200,
       cacheWriteTokens: 0,
@@ -312,7 +312,7 @@ describe('the request the real SDK sends to the gateway', () => {
     }).microUsd;
     expect(result.reservation.state).toBe('settled');
     expect(result.reservation.settledMicroUsd).toBe(expected);
-    expect(result.reservation.rateCardVersion).toBe('aws-bedrock-gpt-6-luna-us-2026-09-25.1');
+    expect(result.reservation.rateCardVersion).toBe('aws-bedrock-gpt-5.6-luna-us-2026-09-28.1');
     expect(result.providerRequestId).toBe('gw-attempt-1');
   });
 
@@ -420,8 +420,8 @@ describe('the request the real SDK sends to the gateway', () => {
   test("Work's longer limits are held to Nectovia's own 16,000-token output cap", async () => {
     const net = gateway([() => answer(envelope([message('Done.')]))]);
     await call(net.fetch, { limits: WORK_LIMITS });
-    expect(WORK_LIMITS.maxOutputTokens).toBeGreaterThan(GPT6_LUNA.maxOutputTokens);
-    expect(net.sent[0].body.max_output_tokens).toBe(GPT6_LUNA.maxOutputTokens);
+    expect(WORK_LIMITS.maxOutputTokens).toBeGreaterThan(MANAGED_LUNA.maxOutputTokens);
+    expect(net.sent[0].body.max_output_tokens).toBe(MANAGED_LUNA.maxOutputTokens);
   });
 
   test('a model this computer has no price for is refused before anything is held or sent', async () => {
@@ -460,12 +460,12 @@ describe("the gateway's refusals, in the conversation's words", () => {
   });
 
   test('a 409 policy_changed reads the policy again once and names the model the tier runs now', async () => {
-    const refresh = vi.fn(async () => policy({ efficient: { model: GPT6_LUNA.model, label: 'GPT-6 Luna (2)' } }));
+    const refresh = vi.fn(async () => policy({ efficient: { model: MANAGED_LUNA.model, label: 'GPT-5.6 Luna (2)' } }));
     const net = gateway([() => refusal(409, 'policy_changed', 'The published policy changed.')]);
     const error = await failure(call(net.fetch, { account: { refreshPolicy: refresh } }));
     expect(refresh).toHaveBeenCalledTimes(1);
     expect(error.code).toBe('nectovia_policy_changed');
-    expect(error.message).toBe('Nectovia now runs Efficient on GPT-6 Luna (2). Nothing was charged. Send your message again to use it.');
+    expect(error.message).toBe('Nectovia now runs Efficient on GPT-5.6 Luna (2). Nothing was charged. Send your message again to use it.');
     expect(error.evidence.reservation?.state).toBe('released');
     // Nothing is retried, on this route or any other.
     expect(net.sent).toHaveLength(1);

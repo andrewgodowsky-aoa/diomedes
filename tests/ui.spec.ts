@@ -4,6 +4,7 @@ import path from 'node:path';
 import type {
   Change,
   DocumentContent,
+  IntegrationStatus,
   Project,
   ProjectState,
   Settings,
@@ -1248,13 +1249,12 @@ test('Engine choices: the list comes from the engine, and the levels follow the 
   expect(listed.ok()).toBe(true);
   const catalog: { models: { slug: string }[] } = await listed.json();
   expect(catalog.models.map((m) => m.slug)).toEqual(['gpt-6-astra', 'gpt-5.5']);
-  // An engine with no list says so rather than offering an invented one.
+  // An unknown engine has no list; installed engines now refresh on each request.
   const none: { models: unknown[]; detail: string } = await (
-    await page.request.get('/api/engines/claude-code/models')
+    await page.request.get('/api/engines/unavailable-fixture/models')
   ).json();
   expect(none.models).toEqual([]);
-  // Which sentence depends on the machine: discovery may find Claude Code missing,
-  // unchecked, or installed without a model list. Each explains the empty list.
+  // Unknown engines explain their empty list instead of inventing choices.
   expect(none.detail).toMatch(/Check|check|not checked|Not checked|Install this tool|does not report its choices/);
 
   const on = await page.request.put('/api/settings', {
@@ -1262,6 +1262,27 @@ test('Engine choices: the list comes from the engine, and the levels follow the 
     data: { services: { codex: true } },
   });
   expect(on.ok()).toBe(true);
+  const integrationResponse = await page.request.get('/api/integrations');
+  expect(integrationResponse.ok()).toBe(true);
+  const body = await integrationResponse.json() as { integrations: IntegrationStatus[] };
+  // Own the two installations this case exercises, including a page-triggered
+  // discovery refresh. Never start a real installed tool through route.fetch.
+  body.integrations = body.integrations.map((item) => item.id === 'codex'
+    ? { ...item, found: true, available: true, adapter: 'ready', status: 'Ready', signIn: 'signed-in' }
+    : item.id === 'claude-code'
+      ? { ...item, found: true, adapter: 'ready', status: 'Ready' }
+      : { ...item, found: false, available: false, status: 'Not installed' });
+  await page.route(/\/api\/integrations(?:\?.*)?$/, (route) => route.fulfill({ json: body }));
+  // Keep another engine's catalog pending. ChatGPT's choices must render
+  // independently instead of waiting for every local tool to finish checking.
+  let releaseCatalog!: () => void;
+  const pendingCatalog = new Promise<void>((resolve) => { releaseCatalog = resolve; });
+  let heldCatalog = false;
+  await page.route('**/api/engines/claude-code/models', async (route) => {
+    heldCatalog = true;
+    await pendingCatalog;
+    await route.fulfill({ json: { engine: 'claude-code', models: [] } });
+  });
   await page.goto('/');
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   await page
@@ -1271,7 +1292,12 @@ test('Engine choices: the list comes from the engine, and the levels follow the 
 
   // Choosing brings that choice's own level with it, and its own ladder.
   const choice = page.getByLabel('Default choice');
-  await expect(choice).toBeVisible();
+  try {
+    await expect.poll(() => heldCatalog).toBe(true);
+    await expect(choice).toBeVisible();
+  } finally {
+    releaseCatalog();
+  }
   await choice.selectOption('gpt-6-astra');
   const level = page.getByLabel('Default reasoning level');
   await expect(level).toHaveValue('medium');

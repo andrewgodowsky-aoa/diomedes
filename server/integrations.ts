@@ -33,10 +33,12 @@ import {
 } from './engines/read-scope.js';
 import { routeContractFor } from './harness/route-contract.js';
 import type { CodexCapabilities, NativeThreadRecord } from '../shared/codex-thread.js';
+import { resolveCodexRuntime, verifyCodexProtocol, type CodexRuntime } from './engines/codex-runtime.js';
+import { codexModelsFromRpc, recordEngineCatalog } from './models.js';
 
-// Protocol generated from the installed 0.153.4 CLI. An upgrade needs a new
-// isolation proof, particularly for the experimental empty-environments field.
-export const CODEX_PROTOCOL_VERSION = '0.153.4';
+// Protocol identity is independent of the vendor build. Every selected runtime
+// must acknowledge the isolation policy before a turn is admitted.
+export const CODEX_PROTOCOL_VERSION = 'app-server';
 export const CODEX_CONTEXT_POLICY = 'diomedes-text-only-v1';
 export interface CodexTextContext {
   prompt: string;
@@ -72,10 +74,12 @@ export function codexContextHash(input: CodexTextContext): string {
 const dataRoot =
   process.env.DIOMEDES_DATA_DIR ?? fileURLToPath(new URL('../.data/', import.meta.url));
 export const CODEX_WORKSPACE = path.join(dataRoot, 'native-readonly');
-export const CODEX_EXECUTABLE = path.join(
-  process.env.DIOMEDES_RUNTIME_DIR ?? path.join(dataRoot, 'native-runtime'),
-  process.platform === 'win32' ? 'codex.exe' : 'codex',
-);
+export const currentCodexRuntime = () => resolveCodexRuntime({ dataRoot });
+const processRuntimes = new WeakMap<NativeRpc, CodexRuntime>();
+const runtimeIsCurrent = (client: NativeRpc) => {
+  const selected = processRuntimes.get(client);
+  return !selected || selected.identity === currentCodexRuntime().identity;
+};
 const LOCALAI_STATUS_URL = 'http://127.0.0.1:8080/localai/status';
 const RPC_TIMEOUT_MS = 20_000;
 const TURN_TIMEOUT_MS = 120_000;
@@ -473,11 +477,11 @@ export function createRpcClient(
  * proof included, so a runtime that was never prepared (or was removed) is refused as that, which
  * spec decision 5 reads as a gone engine, and never as a sandbox that couldn't start.
  */
-async function requireNativeRuntime(): Promise<void> {
-  await fs.access(CODEX_EXECUTABLE).catch(() => {
+async function requireNativeRuntime(runtime: CodexRuntime): Promise<void> {
+  await fs.access(runtime.executable).catch(() => {
     throw new IntegrationError(
       'NATIVE_NOT_INSTALLED',
-      'The matched native Codex runtime has not been prepared for Diomedes.',
+      'Codex is not installed at the selected location. Install it or check the connection again.',
     );
   });
 }
@@ -489,9 +493,13 @@ async function startNative(env?: NodeJS.ProcessEnv, extra?: JsonObject): Promise
       'This native adapter has been verified on Windows only.',
     );
   await fs.mkdir(CODEX_WORKSPACE, { recursive: true });
-  await requireNativeRuntime();
+  const runtime = currentCodexRuntime();
+  await requireNativeRuntime(runtime);
+  await verifyCodexProtocol(runtime, nativeEnvironment());
+  // Prove the very same executable we will launch, including its sandbox helpers.
+  await verifyWindowsSandbox(runtime);
   const child = spawn(
-    CODEX_EXECUTABLE,
+    runtime.executable,
     ['app-server', '--listen', 'stdio://', ...configArgs(extra)],
     {
       cwd: CODEX_WORKSPACE,
@@ -501,10 +509,13 @@ async function startNative(env?: NodeJS.ProcessEnv, extra?: JsonObject): Promise
       stdio: ['pipe', 'pipe', 'pipe'],
     },
   );
-  return createRpcClient(child);
+  const client = createRpcClient(child);
+  processRuntimes.set(client, runtime);
+  return client;
 }
 
-async function verifyWindowsSandbox(): Promise<void> {
+let sandboxRuntimeProof: { identity: string; at: number } | undefined;
+async function verifyWindowsSandbox(runtime = currentCodexRuntime()): Promise<void> {
   if (process.platform !== 'win32')
     throw new IntegrationError(
       'PLATFORM_UNPROVEN',
@@ -512,12 +523,14 @@ async function verifyWindowsSandbox(): Promise<void> {
     );
   await fs.mkdir(CODEX_WORKSPACE, { recursive: true });
   // The proof runs the runtime, so a missing runtime is reported before it is tried.
-  await requireNativeRuntime();
+  await requireNativeRuntime(runtime);
+  if (sandboxRuntimeProof?.identity === runtime.identity && Date.now() - sandboxRuntimeProof.at < 60_000) return;
+  sandboxRuntimeProof = undefined;
   const sentinel = path.join(CODEX_WORKSPACE, `denied-write-${randomUUID()}.txt`);
   const escaped = sentinel.replaceAll("'", "''");
   const command = `try { [System.IO.File]::WriteAllText('${escaped}', 'Diomedes sandbox probe'); Write-Output 'WRITE_ALLOWED'; exit 93 } catch [System.UnauthorizedAccessException] { Write-Output 'WRITE_DENIED'; exit 0 } catch { Write-Output 'PROBE_FAILED'; exit 94 }`;
   const child = spawn(
-    CODEX_EXECUTABLE,
+    runtime.executable,
     [
       'sandbox',
       '--permission-profile',
@@ -578,6 +591,9 @@ async function verifyWindowsSandbox(): Promise<void> {
         'The native Windows read-only sandbox did not pass its write-denial proof. Ask and Plan are blocked until the matched runtime is repaired.',
       );
     }
+    if (runtime.identity !== currentCodexRuntime().identity)
+      throw new IntegrationError('RUNTIME_CHANGED', 'Codex updated during its connection check. Check it again.');
+    sandboxRuntimeProof = { identity: runtime.identity, at: Date.now() };
   } finally {
     if (timer) clearTimeout(timer);
     await killOwnedProcess(child);
@@ -614,12 +630,36 @@ async function initialize(client: NativeRpc): Promise<string> {
   );
   client.notify('initialized');
   const userAgent = String(result.userAgent || '');
-  if (!userAgent.includes(`/${CODEX_PROTOCOL_VERSION} `))
+  const version = userAgent.match(/^[^/\s]+\/([^\s/]{1,100})(?:\s|$)/)?.[1];
+  if (!version)
     throw new IntegrationError(
       'PROTOCOL_UNPROVEN',
-      'This Codex version has not passed the Diomedes isolation proof.',
+      'Codex did not report its runtime identity during initialization.',
     );
-  return CODEX_PROTOCOL_VERSION;
+  return version;
+}
+async function readCodexModels(client: NativeRpc) {
+  try {
+    const rows: unknown[] = [];
+    const seen = new Set<string>();
+    let cursor: string | undefined;
+    do {
+      const response = object(await client.request('model/list', { limit: 100, ...(cursor ? { cursor } : {}) }));
+      if (!Array.isArray(response.data))
+        throw new IntegrationError('MODEL_CATALOG_UNAVAILABLE', 'Codex did not report its model choices. Check the connection again.');
+      rows.push(...response.data);
+      cursor = typeof response.nextCursor === 'string' && response.nextCursor ? response.nextCursor : undefined;
+      if (cursor && (seen.has(cursor) || rows.length > 1000))
+        throw new IntegrationError('MODEL_CATALOG_UNAVAILABLE', 'Codex returned an incomplete model list.');
+      if (cursor) seen.add(cursor);
+    } while (cursor);
+    const catalog = { engine: 'codex', models: codexModelsFromRpc(rows), detail: 'Reported by the active Codex runtime for this ChatGPT account.' };
+    recordEngineCatalog(catalog);
+    return catalog;
+  } catch (error) {
+    recordEngineCatalog({ engine: 'codex', models: [], detail: 'The active Codex model list is unavailable. Check the connection again.' });
+    throw error;
+  }
 }
 async function requireChatGpt(client: NativeRpc) {
   const result = object(await client.request('account/read', { refreshToken: false }));
@@ -776,10 +816,12 @@ export interface CodexTurnInput {
   onTurn?(turnId: string): void;
 }
 export interface CodexConversationPort {
-  /** Starts and proves an owned app-server: the sandbox, the pinned protocol and a ChatGPT account. */
+  /** Current runtime/account/model metadata; no generation or thread is started. */
+  inspect?(): Promise<{ version: string; location: string }>;
+  /** Starts and proves an owned app-server: isolation capabilities and a ChatGPT account. */
   open(scope: ReadScope | undefined, signal?: AbortSignal): Promise<CodexConversationProcess>;
   /** Branches a kept thread (`thread/fork`, through H02's `forkCodexThread`). */
-  fork(threadId: string): Promise<CodexForkAnswer>;
+  fork(threadId: string, expectedAccount: string): Promise<CodexForkAnswer>;
 }
 
 export function createIntegrations(overrides: Partial<IntegrationDependencies> = {}) {
@@ -816,7 +858,7 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
     if (!held) return undefined;
     warm = undefined;
     clearTimeout(held.timer);
-    if (scope !== undefined && held.scope !== scope) {
+    if ((scope !== undefined && held.scope !== scope) || !runtimeIsCurrent(held.client)) {
       await held.client.close().catch(() => {});
       return undefined;
     }
@@ -869,8 +911,7 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
       enabled: false,
       signIn: 'unknown',
       adapter: 'ready',
-      provenVersion: CODEX_PROTOCOL_VERSION,
-      location: CODEX_EXECUTABLE,
+      location: currentCodexRuntime().executable,
       status: 'Disconnected',
       detail: 'Native account and isolation checks have not completed.',
       capabilities: [],
@@ -906,15 +947,18 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
         // Keep whatever the service last reported.
       }
       await requireChatGpt(client);
+      await readCodexModels(client);
       status.signIn = 'signed-in';
       status.status = 'Checking read-only boundary';
       await runSandboxProof();
+      status.provenVersion = status.version;
       status.available = true;
       status.status = 'Ready';
       status.detail =
         'Native ChatGPT account connected. Windows write-denial proof passed. Ask, Plan, and Work proposals use an isolated text-only context; Diomedes applies approved file proposals.';
       status.capabilities = ['ask', 'plan', 'work-proposals', 'native-chatgpt', 'read-only'];
     } catch (error) {
+      recordEngineCatalog({ engine: 'codex', models: [], detail: 'Check the current Codex connection and account.' });
       status.status =
         error instanceof IntegrationError && error.code.startsWith('SANDBOX')
           ? 'Read-only boundary unavailable'
@@ -1031,11 +1075,6 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
           location: discovery.codex.location,
           installedVersion: discovery.codex.installedVersion,
           disclosure: [...codex.disclosure, ...discovery.codex.disclosure],
-        };
-      } else if (extra && extra !== CODEX_PROTOCOL_VERSION) {
-        codexEntry = {
-          ...codex,
-          detail: `${codex.detail} Codex ${extra} is also installed on this computer; Diomedes uses its own proven ${CODEX_PROTOCOL_VERSION} copy.`,
         };
       }
       const byId = new Map(discovery.engines.map((entry) => [entry.id, entry]));
@@ -1206,6 +1245,14 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
         'A custom OpenAI provider is configured. The native ChatGPT route cannot be proven and will not run.',
       );
     }
+    if (!runtimeIsCurrent(client))
+      throw new IntegrationError('RUNTIME_CHANGED', 'Codex updated before this turn. Reconnect to use the current runtime.');
+    const catalog = await readCodexModels(client);
+    if (requestedModel) {
+      const model = catalog.models.find(entry => entry.slug === requestedModel);
+      if (!model || (requestedEffort && !model.efforts.some(entry => entry.id === requestedEffort)))
+        throw new IntegrationError('MODEL_UNAVAILABLE', 'The active Codex runtime does not offer the selected model and reasoning setting for this account. Select an available choice.');
+    }
     // No turn works in the project folder: a read turn has no file tool and its
     // documents arrive inline. The sandbox stays read-only either way.
     const threadStart: JsonObject = {
@@ -1320,7 +1367,7 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
             );
           }
           if (input.team && entry.name === 'diomedes_team') {
-            // The pinned 0.153.4 schema defines connected as the runtime-ready
+            // The protocol schema defines connected as the runtime-ready
             // state. Starting permits only a bounded re-list, never a turn.
             teamStarting = entry.runtimeStatus === 'starting';
             return (
@@ -1366,7 +1413,9 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
     let lastPart: string | null = null;
     let deadline: NodeJS.Timeout | undefined;
     let removeListener: (() => void) | undefined;
+    let fail!: (error: unknown) => void;
     const completed = new Promise<string>((resolve, reject) => {
+      fail = reject;
       if (!input.unbounded)
         deadline = setTimeout(
           () =>
@@ -1375,7 +1424,7 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
             ),
           dependencies.turnTimeoutMs,
         );
-      removeListener = client.onNotification((method, params) => {
+      const receive = (method: string, params: JsonObject) => {
         if (method === 'diomedes/error') {
           reject(new IntegrationError('NATIVE_DISCONNECTED', String(params.message || 'The Codex connection closed.')));
           return;
@@ -1517,6 +1566,13 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
             .slice(0, 350);
           reject(new IntegrationError('TURN_FAILED', `${nativeMessage} No fallback was used.`));
         }
+      };
+      removeListener = client.onNotification((method, params) => {
+        try { receive(method, params); } catch (error) {
+          // Provider notifications arrive on child stdout. A rejected output callback fails
+          // this turn, never the host's event handler or another conversation.
+          reject(error);
+        }
       });
     });
     // Attach a rejection handler before anything awaits the turn, so a disconnect
@@ -1524,6 +1580,7 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
     void completed.catch(() => {});
     return {
       completed,
+      fail,
       model: () => reportedModel,
       ended: () => ending,
       dispose: () => {
@@ -1911,12 +1968,15 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
    * No turn is sent: Codex copies the thread it kept, and the new thread is held
    * to the same read-only policy as a started one. The process is closed after.
    */
-  async function forkCodexThread(input: { threadId: string }): Promise<CodexForkAnswer> {
+  async function forkCodexThread(input: { threadId: string; expectedAccount?: string }): Promise<CodexForkAnswer> {
     await proveSandbox();
     const client = await dependencies.createClient();
     try {
       const version = await initialize(client);
-      await requireChatGpt(client);
+      const account = await requireChatGpt(client);
+      // Check on the process that will make the fork, before any thread operation.
+      if (input.expectedAccount !== undefined && account !== input.expectedAccount)
+        throw new IntegrationError('ACCOUNT_CHANGED', 'The ChatGPT account changed. No fork was made.');
       const capabilities = await probeCodexCapabilities(client);
       if (!capabilities.fork)
         return {
@@ -1997,8 +2057,23 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
       await client.close();
     }
   }
+  async function refreshCodexCatalog() {
+    const client = await dependencies.createClient();
+    try {
+      const version = await initialize(client);
+      await requireChatGpt(client);
+      const catalog = await readCodexModels(client);
+      return { ...catalog, version, location: processRuntimes.get(client)?.executable ?? currentCodexRuntime().executable };
+    } catch (error) {
+      recordEngineCatalog({ engine: 'codex', models: [], detail: 'Check the ChatGPT connection to refresh its choices.' });
+      throw error;
+    } finally {
+      await client.close();
+    }
+  }
   /** A kept ChatGPT conversation's process (spec 3.2), built from the same pieces as `askCodex`. */
   const codexConversations: CodexConversationPort = {
+    inspect: refreshCodexCatalog,
     async open(scope, signal) {
       if (scope && readAccessOf(scope) === 'project')
         throw new IntegrationError(
@@ -2033,12 +2108,19 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
       let running: { watch: TurnWatch; turnId: string | null } | undefined;
       const close = async () => {
         closed = true;
-        await client.close().catch(() => {});
+        try {
+          await client.close();
+        } catch (error) {
+          // A failed close may leave the native process alive and send no disconnect notification.
+          // End its waiter with the failure, and keep explicit cleanup failures observable.
+          running?.watch.fail(error);
+          throw error;
+        }
       };
       return {
         version,
         get closed() {
-          return closed;
+          return closed || !runtimeIsCurrent(client);
         },
         account: () => requireChatGpt(client),
         async thread(input) {
@@ -2086,7 +2168,7 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
           const current: { watch: TurnWatch; turnId: string | null } = { watch, turnId: null };
           running = current;
           // An abort ends the process, which ends the turn: the caller asked for an interrupt first.
-          const onAbort = () => void close();
+          const onAbort = () => void close().catch(() => {}); // The turn waiter receives cleanup failures.
           input.signal.addEventListener('abort', onAbort, { once: true });
           try {
             const turnId = await startTurn(client, {
@@ -2138,12 +2220,13 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
         close,
       };
     },
-    fork: (threadId) => forkCodexThread({ threadId }),
+    fork: (threadId, expectedAccount) => forkCodexThread({ threadId, expectedAccount }),
   };
   return {
     getIntegrationStatuses,
     askCodex,
     readCodexAccountRoute,
+    refreshCodexCatalog,
     closeWarm,
     steerCodex,
     forkCodexThread,
@@ -2170,6 +2253,7 @@ interface TurnWatchInput {
 }
 interface TurnWatch {
   readonly completed: Promise<string>;
+  fail(error: unknown): void;
   model(): string | undefined;
   ended(): 'completed' | 'interrupted' | 'failed' | null;
   dispose(): void;
@@ -2199,6 +2283,7 @@ const integrations = createIntegrations({
 export const getIntegrationStatuses = integrations.getIntegrationStatuses;
 export const askCodex = integrations.askCodex;
 export const readCodexAccountRoute = integrations.readCodexAccountRoute;
+export const refreshCodexCatalog = integrations.refreshCodexCatalog;
 /** Closes the kept app-server, if any. The service calls this on shutdown. */
 export const closeWarmCodex = integrations.closeWarm;
 export const steerCodex = integrations.steerCodex;
