@@ -4,7 +4,7 @@ import os from 'node:os';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { spawn, type ChildProcess } from 'node:child_process';
-import { EngineInstaller, managedBinary } from '../server/engines/install.js';
+import { EngineInstaller, managedBinary, verifyManagedBinary } from '../server/engines/install.js';
 import { loginCommand, NativeLogin, prepareOmpConfiguration } from '../server/engines/login.js';
 const roots: string[] = [];
 const verifiedPayload = 'verified official fixture';
@@ -33,7 +33,16 @@ async function setup() {
   return root;
 }
 describe('selected official installation and native login', () => {
-  it('shows current-release discovery offers without changing the host', async () => {
+  it.each(['claude-code', 'opencode', 'oh-my-pi'] as const)('does not activate %s from matching unreviewed metadata and bytes', async engine => {
+    const root = await setup();
+    const installer = new EngineInstaller(root, { platform: 'win32', arch: 'x64',
+      fetch: releaseFetch(async () => new Response(verifiedPayload)),
+      extract: async (_archive, output) => { await fs.writeFile(output, verifiedPayload); },
+    });
+    await expect(installer.install(engine, true)).rejects.toMatchObject({ code: 'INSTALL_CHECKSUM' });
+    await expect(fs.access(managedBinary(root, engine))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+  it('shows reviewed-release offers without changing the host', async () => {
     const root = await setup(),
       fetcher = vi.fn<typeof fetch>();
     const installer = new EngineInstaller(root, { fetch: fetcher, platform: 'win32', arch: 'x64' });
@@ -45,7 +54,7 @@ describe('selected official installation and native login', () => {
         destination: managedBinary(root, engine),
       });
       expect(offer.source).toMatch(/^https:/);
-      expect(offer.version).toBe('current');
+      expect(offer.version).toMatch(/^\d+\.\d+\.\d+$/);
       expect(offer.publisher).toBeTruthy();
       expect(offer.dependencies.length).toBeGreaterThan(0);
       expect(offer.privileges).toContain('No elevation');
@@ -72,7 +81,7 @@ describe('selected official installation and native login', () => {
       await expect(installer.install('opencode', true)).rejects.toMatchObject({
         code: 'INSTALL_CHECKSUM',
       });
-    expect(fetcher).toHaveBeenCalledTimes(4);
+    expect(fetcher).toHaveBeenCalledTimes(2);
     expect(extract).not.toHaveBeenCalled();
     expect(await fs.readdir(path.join(root, 'installed'))).toEqual([]);
   });
@@ -101,7 +110,7 @@ describe('selected official installation and native login', () => {
     await expect(
       installer.install('oh-my-pi', true, undefined, { repair: true }),
     ).rejects.toMatchObject({ code: 'INSTALL_CHECKSUM' });
-    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(fetcher).toHaveBeenCalledTimes(1);
     // The bad copy is set aside inside Diomedes's own tree, not deleted and
     // not left where anything could run it.
     const kept = await fs.readdir(path.dirname(file));
@@ -226,21 +235,24 @@ describe('selected official installation and native login', () => {
     });
     expect(await fs.readdir(path.join(root, 'installed'))).toEqual([]);
   });
-  it('refreshes vendor releases without a source update and preserves the previous installation', async () => {
+  it('does not let a new vendor release replace the reviewed guided-install identity', async () => {
     const root = await setup();
     let version = '99.1.0';
     const installer = new EngineInstaller(root, { platform: 'win32', arch: 'x64',
       fetch: releaseFetch(async () => new Response(verifiedPayload), () => version) });
-    expect((await installer.refreshOffer('oh-my-pi')).version).toBe('99.1.0');
+    expect((await installer.refreshOffer('oh-my-pi')).version).toBe('18.0.6');
     version = '99.2.0';
-    await installer.install('oh-my-pi', true);
-    const oldFile = managedBinary(root, 'oh-my-pi');
-    expect(oldFile).toContain('99.1.0');
-    expect((await installer.refreshOffer('oh-my-pi')).version).toBe('99.2.0');
-    await installer.install('oh-my-pi', true);
-    expect(managedBinary(root, 'oh-my-pi')).toContain('99.2.0');
-    expect(await fs.readFile(oldFile, 'utf8')).toBe(verifiedPayload);
-    await fs.access(managedBinary(root, 'oh-my-pi'));
+    expect((await installer.refreshOffer('oh-my-pi')).version).toBe('18.0.6');
+    await expect(installer.install('oh-my-pi', true)).rejects.toMatchObject({ code: 'INSTALL_CHECKSUM' });
+    await expect(fs.access(managedBinary(root, 'oh-my-pi'))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('a matching local receipt cannot bless an unreviewed executable', async () => {
+    const root = await setup(), directory = path.join(root, 'installed/oh-my-pi');
+    await fs.mkdir(path.join(directory, '18.0.6'), { recursive: true });
+    await fs.writeFile(path.join(directory, '18.0.6/omp.exe'), verifiedPayload);
+    await fs.writeFile(path.join(directory, 'current.json'), JSON.stringify({ version: '18.0.6', sha256: fixtureDigest }));
+    await expect(verifyManagedBinary(root, 'oh-my-pi')).rejects.toMatchObject({ code: 'INSTALL_CHECKSUM' });
   });
 
   it('keeps provider login native and rejects an undisclosed action', async () => {

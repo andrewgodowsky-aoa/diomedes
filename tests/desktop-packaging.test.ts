@@ -153,7 +153,9 @@ describe('FD01 same desktop packaging entry point', () => {
       await fs.mkdir(output, { recursive: true });
       return [output];
     });
-    await packageDesktop({ root, hostPlatform: 'win32', hostArch: 'x64' }, { ...deps, collectNotices });
+    await packageDesktop({ root, hostPlatform: 'win32', hostArch: 'x64' }, {
+      ...deps, collectNotices, verifyNativePublisher: async () => {},
+    });
     expect(deps.packager).toHaveBeenCalledOnce();
     expect(licenseSnapshot()).toBe(before);
     const info = JSON.parse(await fs.readFile(path.join(root, 'evidence/windows-release/build-info.json'), 'utf8'));
@@ -168,7 +170,9 @@ describe('FD01 same desktop packaging entry point', () => {
       await notices(path.dirname(output), condition === 'stale' ? { ...runtime, version: '0.153.4' } : runtime);
       if (condition === 'changed') await fs.writeFile(path.join(output, 'codex-LICENSE.txt'), 'changed after collection');
     });
-    await expect(packageDesktop({ root, hostPlatform: 'win32', hostArch: 'x64' }, { ...deps, collectNotices }))
+    await expect(packageDesktop({ root, hostPlatform: 'win32', hostArch: 'x64' }, {
+      ...deps, collectNotices, verifyNativePublisher: async () => {},
+    }))
       .rejects.toThrow(condition === 'stale' ? 'do not match the selected snapshot' : 'notice verification failed');
     expect(deps.build).not.toHaveBeenCalled();
     expect(deps.packager).not.toHaveBeenCalled();
@@ -305,6 +309,14 @@ describe('FD01 same desktop packaging entry point', () => {
     await expect(
       packageDesktop({ root, hostPlatform: 'win32', hostArch: 'x64' }, deps),
     ).rejects.toThrow('Native runtime hash mismatch: codex.exe');
+    expect(deps.build).not.toHaveBeenCalled();
+    expect(deps.packager).not.toHaveBeenCalled();
+  });
+
+  it('refuses matching but unsigned runtime bytes before any build or packaging work', async () => {
+    const { root, deps } = await fixture();
+    await windowsRuntime(root);
+    await expect(packageDesktop({ root, hostPlatform: 'win32', hostArch: 'x64' }, deps)).rejects.toThrow(/publisher/);
     expect(deps.build).not.toHaveBeenCalled();
     expect(deps.packager).not.toHaveBeenCalled();
   });

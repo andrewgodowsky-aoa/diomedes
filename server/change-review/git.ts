@@ -643,14 +643,22 @@ export function diffGitSnapshots(
   const prefix = subdir ? `${subdir}/` : '';
   const projected = prefix
     ? entries
-        .filter((entry) => entry.path.startsWith(prefix))
-        .map((entry) => ({
-          ...entry,
-          path: entry.path.slice(prefix.length),
-          renamedFrom: entry.renamedFrom?.startsWith(prefix)
-            ? entry.renamedFrom.slice(prefix.length)
-            : null,
-        }))
+        .flatMap((entry): ChangeEntry[] => {
+          if (entry.path.startsWith(prefix)) return [{
+            ...entry,
+            path: entry.path.slice(prefix.length),
+            renamedFrom: entry.renamedFrom?.startsWith(prefix)
+              ? entry.renamedFrom.slice(prefix.length)
+              : null,
+          }];
+          // Git names a rename by its destination. Moving outside the project
+          // still removes its source from this review's scope.
+          if (entry.kind === 'renamed' && entry.renamedFrom?.startsWith(prefix)) return [{
+            ...entry, path: entry.renamedFrom.slice(prefix.length), kind: 'deleted',
+            renamedFrom: null, afterSha: null, modeAfter: null, sizeAfter: null,
+          }];
+          return [];
+        })
     : entries;
   return projected.sort((a, b) => a.path.localeCompare(b.path));
 }

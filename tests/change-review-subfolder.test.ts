@@ -6,7 +6,7 @@ import { execFileSync } from 'node:child_process';
 import { Store, hash } from '../server/store.js';
 import { activatePack } from '../server/capability-packs.js';
 import { ChangeReviewService } from '../server/change-review/service.js';
-import { diffGitSnapshots, type GitWorktreeFile } from '../server/change-review/git.js';
+import { diffGitSnapshots, prepareGit, snapshotGit, type GitWorktreeFile } from '../server/change-review/git.js';
 import type { ChangeReviewRecord } from '../shared/change-manifest.js';
 
 const cleanups: (() => Promise<void>)[] = [];
@@ -187,6 +187,26 @@ describe('change review for a project below the repository root', () => {
       id: 'git:apps/project/.renamed.txt', path: '.renamed.txt',
       kind: 'renamed', renamedFrom: '.review.txt', source: 'git',
     });
+    expect(manifest.changes[0].textEvidence.text).toContain('committed before');
+  });
+
+  test('moving a Git-only file out of the project remains a readable removal', async () => {
+    const f = await fixture();
+    const repository = (await prepareGit(f.repo))!;
+    const before = await snapshotGit(repository);
+    f.git('mv', '--', f.repoPath('.review.txt'), 'apps/project-sibling/.review.txt');
+    const after = await snapshotGit(repository);
+    if (!before.captured || !after.captured) throw new Error('Fixture Git snapshot unavailable');
+    const projected = diffGitSnapshots(before.files, after.files, [], 'apps/project');
+    expect(projected).toHaveLength(1);
+    expect(projected[0]).toMatchObject({ path: '.review.txt', kind: 'deleted', renamedFrom: null, afterSha: null, modeAfter: null });
+    const manifest = await f.manifest();
+    expect(manifest.changes).toHaveLength(1);
+    expect(manifest.changes[0]).toMatchObject({
+      path: '.review.txt', kind: 'deleted', renamedFrom: null, source: 'git',
+      afterSha: null,
+    });
+    expect(manifest.changes[0].textEvidence.kind).toBe('excerpt');
     expect(manifest.changes[0].textEvidence.text).toContain('committed before');
   });
 });

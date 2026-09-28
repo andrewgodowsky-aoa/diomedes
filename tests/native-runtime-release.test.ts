@@ -8,11 +8,15 @@ import { currentNativeRelease, acquireNativeRuntime } from '../scripts/release-s
 // @ts-expect-error Build-time executable JavaScript module.
 import { readNativeRuntimeManifest } from '../scripts/package-desktop.mjs';
 import { prepareInstalledRuntime } from '../scripts/prepare-native.js';
+import { verifyNativePublisher } from '../scripts/release-support/verify-native-publisher.mjs';
 
 const roots: string[] = [];
 afterEach(async () => { for (const root of roots.splice(0)) await fs.rm(root, { recursive: true, force: true }); });
 const payload = 'synthetic native binary';
 const digest = createHash('sha256').update(payload).digest('hex');
+// Synthetic binary fixtures have no real publisher. Only success-path tests
+// replace this external verification boundary; attack tests use the default.
+const verifyFixturePublisher = vi.fn(async (_file: string) => {});
 const metadata = () => ({ tag_name: 'rust-v99.0.0', assets: ['codex', 'codex-command-runner', 'codex-windows-sandbox-setup'].map(base => ({
   name: base + '-x86_64-pc-windows-msvc.exe', size: Buffer.byteLength(payload), digest: 'sha256:' + digest,
   browser_download_url: 'https://github.com/openai/codex/releases/download/rust-v99.0.0/' + base + '-x86_64-pc-windows-msvc.exe',
@@ -23,10 +27,10 @@ test('a future official release is resolved once and all packaged bytes bind to 
   roots.push(root);
   const fetcher = vi.fn(async () => Response.json(metadata()));
   const dest = path.join(root, '.data/native-runtime');
-  await acquireNativeRuntime({ dest, cache: path.join(root, 'cache'), fetcher,
+  await acquireNativeRuntime({ dest, cache: path.join(root, 'cache'), fetcher, verifyPublisher: verifyFixturePublisher,
     fetchTo: async (_url: string, file: string) => fs.writeFile(file, payload) });
   expect(fetcher).toHaveBeenCalledTimes(1);
-  expect(await readNativeRuntimeManifest(root)).toEqual({ version: '99.0.0', hashes: {
+  expect(await readNativeRuntimeManifest(root, verifyFixturePublisher)).toEqual({ version: '99.0.0', hashes: {
     'codex.exe': digest, 'codex-command-runner.exe': digest, 'codex-windows-sandbox-setup.exe': digest,
   } });
 });
@@ -51,6 +55,18 @@ test('a failed artifact verification leaves the previous package snapshot intact
   expect(await fs.readdir(dest)).toEqual(['codex.exe']);
 });
 
+test('matching attacker-controlled release bytes and metadata do not establish publisher trust', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'diomedes-runtime-untrusted-'));
+  roots.push(root);
+  const dest = path.join(root, '.data/native-runtime');
+  await fs.mkdir(dest, { recursive: true });
+  await fs.writeFile(path.join(dest, 'codex.exe'), 'previous snapshot');
+  await expect(acquireNativeRuntime({ dest, cache: path.join(root, 'cache'), fetcher: async () => Response.json(metadata()),
+    fetchTo: async (_url: string, file: string) => fs.writeFile(file, payload) })).rejects.toThrow(/publisher/);
+  expect(await fs.readFile(path.join(dest, 'codex.exe'), 'utf8')).toBe('previous snapshot');
+  expect(await fs.readdir(dest)).toEqual(['codex.exe']);
+});
+
 async function installedFixture() {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'diomedes-installed-snapshot-'));
   roots.push(root);
@@ -68,6 +84,14 @@ async function installedFixture() {
   return { root, sourceFiles, destination };
 }
 
+test('untrusted installed bytes are refused before the version command can execute', async () => {
+  const { sourceFiles, destination } = await installedFixture();
+  const readVersion = vi.fn(async () => '99.0.0');
+  await expect(prepareInstalledRuntime({ sourceFiles, destination, readVersion })).rejects.toThrow(/publisher/);
+  expect(readVersion).not.toHaveBeenCalled();
+  expect(await fs.readFile(path.join(destination, 'codex.exe'), 'utf8')).toBe('previous executable');
+});
+
 test('installed preparation reads the version from the private copied executable', async () => {
   const { sourceFiles, destination } = await installedFixture();
   const readVersion = vi.fn(async (file: string) => {
@@ -75,9 +99,9 @@ test('installed preparation reads the version from the private copied executable
     expect(await fs.readFile(file, 'utf8')).toBe('build A: codex.exe');
     return '99.0.0';
   });
-  await prepareInstalledRuntime({ sourceFiles, destination, readVersion });
+  await prepareInstalledRuntime({ sourceFiles, destination, readVersion, verifyPublisher: verifyFixturePublisher });
   expect(readVersion).toHaveBeenCalledOnce();
-  const manifest = await readNativeRuntimeManifest(path.dirname(path.dirname(destination)));
+  const manifest = await readNativeRuntimeManifest(path.dirname(path.dirname(destination)), verifyFixturePublisher);
   expect(manifest.version).toBe('99.0.0');
   for (const [name, hash] of Object.entries(manifest.hashes))
     expect(createHash('sha256').update(await fs.readFile(path.join(destination, name))).digest('hex')).toBe(hash);
@@ -85,7 +109,7 @@ test('installed preparation reads the version from the private copied executable
 
 test('an update after version observation refuses the mixed snapshot and preserves the previous one', async () => {
   const { root, sourceFiles, destination } = await installedFixture();
-  await expect(prepareInstalledRuntime({ sourceFiles, destination, readVersion: async () => {
+  await expect(prepareInstalledRuntime({ sourceFiles, destination, verifyPublisher: verifyFixturePublisher, readVersion: async () => {
     for (const [name, source] of Object.entries(sourceFiles)) await fs.writeFile(source, 'build B: ' + name);
     return '98.0.0';
   } })).rejects.toThrow('changed during preparation');
@@ -96,7 +120,7 @@ test('an update after version observation refuses the mixed snapshot and preserv
 
 test('a helper replaced between copies is refused before activating any new file', async () => {
   const { sourceFiles, destination } = await installedFixture();
-  await expect(prepareInstalledRuntime({ sourceFiles, destination, readVersion: async () => '99.0.0',
+  await expect(prepareInstalledRuntime({ sourceFiles, destination, verifyPublisher: verifyFixturePublisher, readVersion: async () => '99.0.0',
     copyFile: async (source, target, mode) => {
       await fs.copyFile(source, target, mode);
       if (source === sourceFiles['codex.exe']) await fs.writeFile(sourceFiles['codex-command-runner.exe'], 'build B helper');
@@ -104,4 +128,21 @@ test('a helper replaced between copies is refused before activating any new file
   })).rejects.toThrow('changed during preparation');
   expect(await fs.readFile(path.join(destination, 'manifest.json'), 'utf8')).toBe('previous manifest');
   expect(await fs.readFile(path.join(destination, 'codex.exe'), 'utf8')).toBe('previous executable');
+});
+
+test.each([
+  { status: 'NotSigned', subject: null },
+  { status: 'HashMismatch', subject: 'CN="OpenAI OpCo, LLC", O="OpenAI OpCo, LLC", L=San Francisco, S=California, C=US' },
+  { status: 'Valid', subject: 'CN=Another Publisher, C=US' },
+])('refuses a native signature without both chain validity and the pinned publisher: $status', async signature => {
+  await expect(verifyNativePublisher('codex.exe', async () => signature)).rejects.toThrow(/publisher/);
+});
+
+test('packaging rejects a forged manifest even when every untrusted byte matches its declared digest', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'diomedes-package-untrusted-'));
+  roots.push(root);
+  const dest = path.join(root, '.data/native-runtime');
+  await acquireNativeRuntime({ dest, cache: path.join(root, 'cache'), fetcher: async () => Response.json(metadata()),
+    verifyPublisher: verifyFixturePublisher, fetchTo: async (_url: string, file: string) => fs.writeFile(file, payload) });
+  await expect(readNativeRuntimeManifest(root)).rejects.toThrow(/publisher/);
 });

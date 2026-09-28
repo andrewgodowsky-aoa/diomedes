@@ -5,6 +5,7 @@ import path from 'node:path';
 import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
+import { verifyNativePublisher } from './verify-native-publisher.mjs';
 
 // Build-time fallback only. Installed native runtimes take precedence at run time.
 // Resolve the official current release once, then bind every downloaded file to
@@ -55,7 +56,7 @@ async function download(url, file) {
 export async function acquireNativeRuntime({
   dest = path.join(root, '.data', 'native-runtime'),
   cache = path.join(root, 'test-results', 'native-runtime-source'),
-  release, fetcher = fetch, fetchTo = download,
+  release, fetcher = fetch, fetchTo = download, verifyPublisher = verifyNativePublisher,
 } = {}) {
   const selected = release ?? await currentNativeRelease(fetcher);
   await fs.mkdir(cache, { recursive: true });
@@ -68,6 +69,7 @@ export async function acquireNativeRuntime({
       await fetchTo(entry.url, target);
       if ((await fs.stat(target)).size !== entry.bytes || await sha256File(target) !== entry.sha256)
         throw new Error('Official Codex asset checksum mismatch: ' + entry.name);
+      await verifyPublisher(target);
     }
     await fs.mkdir(dest, { recursive: true });
     for (const entry of selected.files) {

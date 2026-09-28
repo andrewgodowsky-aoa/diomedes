@@ -72,7 +72,7 @@ export class AccountRoutingSession {
     const owner = projectId === null ? null : this.workspaces.projectOwner(projectId);
     if (owner) return { kind: 'organization', id: owner.organizationId };
     const active = this.workspaces.active();
-    if (active.kind === 'business') return projectId === null ? { kind: 'organization', id: active.organizationId } : null;
+    if (projectId === null && active.kind === 'business') return { kind: 'organization', id: active.organizationId };
     return this.individual ? { kind: 'individual', id: this.individual.id } : null;
   }
   private assertScope(projectId: string | null, person: string | null, scope: AccountScope) {
@@ -94,7 +94,12 @@ export class AccountRoutingSession {
     const snapshot = await this.session.call(token => this.session.backend.client.scopedRoutingPolicy(token, scope));
     const value: NectoviaPolicy = snapshot.legacy
       ? await this.session.call(token => this.session.backend.client.routingPolicy(token))
-      : { revision: snapshot.revision, tiers: snapshot.tiers, resolved: snapshot };
+      : { revision: snapshot.revision, tiers: snapshot.tiers, resolved: snapshot,
+        reasoningSummaries: {
+          efficient: snapshot.tiers.efficient?.reasoningSummaries === true,
+          focused: snapshot.tiers.focused?.reasoningSummaries === true,
+          thorough: snapshot.tiers.thorough?.reasoningSummaries === true,
+        } };
     this.assertScope(projectId, person, scope);
     if (!this.individualAccess || this.individualAccess.until <= this.now() || scope.kind === 'individual') await this.refreshAccess();
     this.assertScope(projectId, person, scope);

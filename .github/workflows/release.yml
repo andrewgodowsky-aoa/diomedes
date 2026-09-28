@@ -113,9 +113,9 @@ jobs:
         working-directory: services/control-plane
       - name: Gate 1 of 4, TypeScript
         run: node node_modules/typescript/bin/tsc --noEmit
-      # Both archives are checked before anything is packaged; nothing below
-      # downloads a runtime unverified.
-      - name: Native runtime from the published v0.1.11 archive (pinned hashes)
+      # Codex requires a valid signature from the pinned OpenAI publisher as
+      # well as matching release digests, before any executable can run.
+      - name: Current native runtime with independent publisher verification
         run: node scripts/release-support/acquire-native-runtime.mjs
       - name: Electron archive (SHASUMS256 and the locked checksums must agree)
         run: node scripts/release-support/acquire-electron-archive.mjs --platform win32 --arch x64 --dir "${{ runner.temp }}\electron-zips"

@@ -106,7 +106,7 @@ async function respond(transform?: (response: Response) => Promise<Response>,
     } });
 }
 describe('published account policy at the desktop model boundary', () => {
-  it('runs funded Personal work through scoped host admission and the real non-Luna adapter without inventing a Business', async () => {
+  it.each(['personal', 'business'] as const)('keeps funded Personal work on its account with %s selected', async selected => {
     const person = (await cloud.accounts.signIn(token)).person;
     const billing = (await api('POST', '/auth/sign-in', '', { email: 'billing@diomedes.test', password: FAUX_DEMO_PASSWORD })).accessToken;
     await api('POST', `/ops/people/${person.id}/grants`, billing,
@@ -118,14 +118,16 @@ describe('published account policy at the desktop model boundary', () => {
       consentVersion: 'NC-SETUP-2026-09-27.1', exceptions: [], acknowledge: true });
     const session = { personId: () => person.id, backend: { client },
       call: <T>(fn: (value: string) => Promise<T>) => fn(token) } as unknown as AccountSessionService;
-    const workspaces = { projectOwner: () => null, active: () => ({ kind: 'personal' }) } as unknown as WorkspaceService;
+    const workspaces = { projectOwner: () => null, active: () => selected === 'business'
+      ? { kind: 'business', organizationId: org } : { kind: 'personal' } } as unknown as WorkspaceService;
+    const projectId = selected === 'business' ? 'unowned-personal-project' : null;
     const routing = new AccountRoutingSession(session, workspaces), job = 'personal-client-job';
-    const admission = await routing.admit({ phase: 'admit', surface: 'conversation', projectId: null, rootJobId: job, routeKind: 'managed' });
+    const admission = await routing.admit({ phase: 'admit', surface: 'conversation', projectId, rootJobId: job, routeKind: 'managed' });
     expect(admission).toMatchObject({ scope, organizationId: null, personId: person.id });
-    const personalPolicy = routing.policy()!;
+    const personalPolicy = routing.policy(projectId)!;
     const messages: ModelMessage[] = [{ role: 'user', content: 'Hello from Personal.' }];
     const result = await respondNectovia({ base: client.base,
-      account: { policy: () => routing.policy(), refreshPolicy: () => routing.refresh() },
+      account: { policy: () => routing.policy(projectId), refreshPolicy: () => routing.refresh(projectId) },
       connectionId, model: 'fixture-non-luna', managed: { admissionId: admission.admissionId,
         organizationId: scope.id, scope, policyRevision: personalPolicy.revision, routing: personalPolicy.resolved,
         tier: 'efficient', usageClass: 'metered-work', rootJobId: job },
@@ -144,6 +146,21 @@ describe('published account policy at the desktop model boundary', () => {
     expect(state.funding.jobs.find(row => row.rootJobId === job)).toMatchObject({ organizationId: scope.id, tenantId: person.id });
     expect(state.commercial.personalAdmissions.find(row => row.id === admission.admissionId))
       .toMatchObject({ billingAccountId: scope.id, tenantId: person.id, personId: person.id });
+  });
+
+  it('preserves per-tier summary support from an authenticated scoped policy', async () => {
+    const individual = await client.individualAccount(token);
+    const snapshot = await client.scopedRoutingPolicy(token, { kind: 'organization', id: org });
+    snapshot.tiers.efficient!.reasoningSummaries = true;
+    snapshot.tiers.focused!.reasoningSummaries = false;
+    snapshot.tiers.thorough = null;
+    vi.spyOn(client, 'scopedRoutingPolicy').mockResolvedValue(snapshot);
+    const session = { personId: () => individual.personId, backend: { client },
+      call: <T>(fn: (value: string) => Promise<T>) => fn(token) } as unknown as AccountSessionService;
+    const workspaces = { projectOwner: () => ({ organizationId: org }), active: () => ({ kind: 'personal' }) } as unknown as WorkspaceService;
+    const routing = new AccountRoutingSession(session, workspaces);
+    expect((await routing.refresh('owned-project'))?.reasoningSummaries)
+      .toEqual({ efficient: true, focused: false, thorough: false });
   });
 
   it.each([true, false])('passes derived source restrictions through the real Nectovia adapter (destination allowed=%s)', async allowed => {

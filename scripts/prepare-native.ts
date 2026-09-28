@@ -5,6 +5,7 @@ import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { currentCodexRuntime, nativeEnvironment } from '../server/integrations.js';
+import { verifyNativePublisher } from './release-support/verify-native-publisher.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const destination = path.join(root, '.data', 'native-runtime');
@@ -107,11 +108,13 @@ async function version(executable: string): Promise<string> {
 
 export async function prepareInstalledRuntime({
   sourceFiles, destination: targetFolder, readVersion = version, copyFile = fs.copyFile,
+  verifyPublisher = verifyNativePublisher,
 }: {
   sourceFiles: Record<string, string>;
   destination: string;
   readVersion?: (executable: string) => Promise<string>;
   copyFile?: typeof fs.copyFile;
+  verifyPublisher?: (file: string) => Promise<void>;
 }) {
   const entries = Object.entries(sourceFiles);
   if (requiredFiles.some((name) => !sourceFiles[name]) || entries.some(([name]) => !/^codex(?:-[a-z0-9]+)*\.exe$/i.test(name)))
@@ -134,6 +137,8 @@ export async function prepareInstalledRuntime({
       if (await digest(path.join(staging, name)) !== expected.get(name))
         throw new Error('Selected runtime changed during preparation: ' + name);
     }
+    // Authenticate every executable before even the version probe may execute.
+    for (const [name] of entries) await verifyPublisher(path.join(staging, name));
     // Run only the private staged executable: the version describes these bytes.
     const reportedVersion = await readVersion(path.join(staging, 'codex.exe'));
     if (!/^[0-9A-Za-z.+-]{1,100}$/.test(reportedVersion))

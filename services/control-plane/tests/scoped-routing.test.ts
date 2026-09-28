@@ -8,6 +8,7 @@ import { createFauxCloud, type FauxCloud } from '../src/faux/cloud.js';
 import { seedDemo, DEMO_ACCOUNTS, FAUX_DEMO_PASSWORD, type DemoAccount } from '../src/faux/seed.js';
 import { STRICT_RESTRICTIONS, type AccountScope, type ModelBinding, type ProviderConnection } from '../../../shared/routing-policy.js';
 import { micro } from '../../../shared/managed-usage.js';
+import { RoutingService } from '../src/routing.js';
 
 const at = '2026-09-28T00:00:00.000Z', until = '2026-10-28T00:00:00.000Z';
 let clock: number, cloud: FauxCloud, owner: string, routing: string, billing: string, orgA: string, orgB: string;
@@ -113,6 +114,31 @@ beforeEach(async () => {
 afterEach(async () => { await cloud.idle(); vi.restoreAllMocks(); });
 
 describe('Operations publication through authenticated funded dispatch', () => {
+  it('reports summary support only for the selected registered provider route', async () => {
+    expect((await publish()).status).toBe(201);
+    const model = 'us.openai.gpt-5.6-luna';
+    const aws: ProviderConnection = { id: 'aws-fixture', revision: 1, provider: 'aws-bedrock', label: 'Synthetic AWS',
+      secretRef: 'BEDROCK_API_KEY', payer: 'company', account: 'fixture', enabled: true, region: 'us-east-1',
+      endpointFamily: 'runtime', allowedProfiles: [model], modelProtocols: { [model]: ['responses'] } };
+    await cloud.store.run(async draft => {
+      const route = draft.commercial.routes.find(row => row.id === 'primary')!;
+      route.provider = 'aws-bedrock'; route.region = 'us'; route.model = model;
+      const b = route.binding!;
+      b.connectionId = aws.id; b.protocol = 'responses'; b.modelVersion = model; b.deployment = null;
+      b.privacy!.modelVersion = model; b.privacy!.protocol = 'responses';
+      b.privacy!.allowedRetentionModes = ['none']; b.privacy!.effectiveRetentionMode = 'none';
+    });
+    const service = new RoutingService(cloud.accounts, cloud.store.commercial, () => clock);
+    const env = { ...bindings, BEDROCK_API_KEY: 'synthetic-key', MANAGED_CONNECTIONS: JSON.stringify([connection, aws]) };
+    const scope = { kind: 'organization' as const, id: orgA };
+    const supported = await service.snapshot(owner, scope, env);
+    expect(supported.tiers.efficient).toMatchObject({ entryId: 'primary', reasoningSummaries: true });
+    // An unregistered Azure model must not inherit the registered AWS capability.
+    expect((await publish('backup', false, { kind: 'global' }, 2, 2)).status).toBe(201);
+    expect((await service.snapshot(owner, scope, env)).tiers.efficient)
+      .toMatchObject({ entryId: 'backup', reasoningSummaries: false });
+  });
+
   it('new-main: provisions one person-bound billing identity when the plan is issued before setup', async () => {
     const { person } = await personPlan();
     await Promise.all([personPlan(owner, 'Concurrent plan A'), personPlan(owner, 'Concurrent plan B')]);

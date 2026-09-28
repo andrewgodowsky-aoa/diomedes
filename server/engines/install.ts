@@ -29,6 +29,22 @@ const RELEASES = {
     account: 'Uses the selected native oh-my-pi account; credentials stay with oh-my-pi.' },
 } satisfies Record<ManagedEngine, Omit<Release, 'version' | 'sha256'>>;
 
+// Release metadata is discovery, not an independent trust anchor. Keep guided
+// downloads on reviewed artifact pins until the vendor has a verified signing
+// identity. This does not restrict a person's own native installation.
+const REVIEWED_RELEASES = {
+  'claude-code': { version: '2.1.252',
+    source: 'https://downloads.claude.ai/claude-code-releases/2.1.252/win32-x64/claude.exe',
+    sha256: 'fe688ecde90d65fff0b2dd097597439774116077d80a3c1e131a7e47db307b1a' },
+  opencode: { version: '1.18.4',
+    source: 'https://github.com/anomalyco/opencode/releases/download/v1.18.4/opencode-windows-x64-baseline.zip',
+    sha256: '3bfb70c41d0278221d1fbc58efe77f79615491252498ff3f5a82db64266234e0' },
+  'oh-my-pi': { version: '18.0.6',
+    source: 'https://github.com/can1357/oh-my-pi/releases/download/v18.0.6/omp-windows-x64.exe',
+    sha256: '9f458a9bc68170a1e27768f7af6bb183f773d14d596fe6fa9283d43ba34d71e2' },
+} satisfies Record<ManagedEngine, Pick<Release, 'version' | 'source' | 'sha256'>>;
+const reviewedRelease = (engine: ManagedEngine): Release => ({ ...RELEASES[engine], ...REVIEWED_RELEASES[engine] });
+
 export async function currentEngineRelease(engine: ManagedEngine, fetcher: typeof fetch = fetch, signal?: AbortSignal): Promise<Release> {
   const definition = RELEASES[engine];
   const get = async (url: string) => {
@@ -69,9 +85,8 @@ export async function currentEngineRelease(engine: ManagedEngine, fetcher: typeo
   return { ...definition, version, source, sha256 };
 }
 const receiptPath = (root: string, engine: string) => path.join(root, 'installed', engine, 'current.json');
-// Migration receipts for private copies shipped before current.json existed.
-// These verify existing bytes only; they never select a download or restrict a
-// subsequently installed version. New installations always write their receipt.
+// Independently reviewed executable digests also authenticate existing private
+// copies. A writable local receipt cannot authorize new executable bytes.
 const legacyReceipts: Record<string, { version: string; sha256: string }> = {
   'claude-code': { version: '2.1.252', sha256: 'fe688ecde90d65fff0b2dd097597439774116077d80a3c1e131a7e47db307b1a' },
   opencode: { version: '1.18.4', sha256: '104eb783e554bfd29d1bdd241952e948ecb6462fe1ebc4dfb04742a8b9154014' },
@@ -96,14 +111,13 @@ export function managedBinary(root: string, engine: ExternalEngine) {
   if (engine === 'cursor' || engine === 'devin')
     throw new EngineError('INSTALL_UNSUPPORTED', 'Install this engine through its official installer, then recheck.');
   const receipt = installedReceipt(root, engine);
-  return path.join(root, 'installed', engine, receipt?.version ?? 'current', RELEASES[engine].binary);
+  return path.join(root, 'installed', engine, receipt?.version ?? REVIEWED_RELEASES[engine].version, RELEASES[engine].binary);
 }
 export async function verifyManagedBinary(root: string, engine: ExternalEngine) {
   if (engine === 'cursor' || engine === 'devin')
     throw new EngineError('INSTALL_UNSUPPORTED', 'This engine is managed by its own installer.');
   const file = managedBinary(root, engine);
-  // An artifact receipt freezes the selected download's bytes, not future engine
-  // versions. Updates have their own current official metadata and receipt.
+  // Check against reviewed bytes as well as the writable local receipt.
   const receipt = installedReceipt(root, engine);
   const digest = createHash('sha256');
   let bytes = 0;
@@ -113,7 +127,8 @@ export async function verifyManagedBinary(root: string, engine: ExternalEngine) 
       throw new EngineError('INSTALL_CHECKSUM', 'The managed executable exceeded its verified size limit.');
     digest.update(chunk);
   }
-  if (!receipt || digest.digest('hex') !== receipt.sha256)
+  const trusted = legacyReceipts[engine];
+  if (!receipt || receipt.version !== trusted.version || receipt.sha256 !== trusted.sha256 || digest.digest('hex') !== trusted.sha256)
     throw new EngineError('INSTALL_CHECKSUM', 'The managed executable differs from its installation receipt. Repair the private copy before rechecking.');
 }
 export async function extractOpenCode(
@@ -222,7 +237,7 @@ export class EngineInstaller {
         detail:
           'Install Devin Desktop or the Devin CLI, then check this computer again. Diomedes does not install Devin.',
       };
-    const release = this.offers.get(engine) ?? { ...RELEASES[engine], version: 'current' };
+    const release = this.offers.get(engine) ?? reviewedRelease(engine);
     const available =
       (this.deps.platform ?? process.platform) === 'win32' &&
       (this.deps.arch ?? process.arch) === 'x64';
@@ -241,13 +256,17 @@ export class EngineInstaller {
       account: release.account,
       available,
       detail: available
-        ? 'Checks the current official release and verifies the selected download before activation. Sign-in is a separate action.'
+        ? 'Installs the displayed reviewed version after verifying its download. Sign-in is a separate action.'
         : 'Guided installation supports Windows x64. Install the native tool for your platform and recheck.',
     };
   }
   async refreshOffer(engine: ExternalEngine): Promise<InstallOffer> {
-    if (engine !== 'cursor' && engine !== 'devin' && this.offer(engine).available)
-      this.offers.set(engine, await currentEngineRelease(engine, this.deps.fetch));
+    if (engine !== 'cursor' && engine !== 'devin' && this.offer(engine).available) {
+      const discovered = await currentEngineRelease(engine, this.deps.fetch);
+      const reviewed = reviewedRelease(engine);
+      this.offers.set(engine, discovered.version === reviewed.version && discovered.sha256 === reviewed.sha256
+        ? discovered : reviewed);
+    }
     return this.offer(engine);
   }
   /**
@@ -305,7 +324,7 @@ export class EngineInstaller {
           await quarantine(previous);
         }
       }
-      const release = this.offers.get(engine) ?? await currentEngineRelease(engine, this.deps.fetch, signal);
+      const release = this.offers.get(engine) ?? reviewedRelease(engine);
       const destination = path.join(this.root, 'installed', engine, release.version, release.binary);
       if (verifiedPrevious && previous === destination)
         return { detail: 'This managed version is already installed. Recheck its connection.' };
@@ -362,6 +381,8 @@ export class EngineInstaller {
       const binaryDigest = createHash('sha256');
       for await (const bytes of createReadStream(binary)) binaryDigest.update(bytes);
       const receipt = { version: release.version, sha256: binaryDigest.digest('hex'), source: release.source, artifactSha256: release.sha256 };
+      if (receipt.sha256 !== legacyReceipts[engine].sha256)
+        throw new EngineError('INSTALL_CHECKSUM', 'The executable does not match the reviewed release. Nothing was activated.');
       try { await fs.link(binary, destination); } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
         // Recover an interrupted activation only when the existing bytes match
