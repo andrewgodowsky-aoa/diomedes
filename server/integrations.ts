@@ -465,7 +465,11 @@ export function createRpcClient(
       if (!closing) {
         fail(new IntegrationError('NATIVE_CLOSED', 'The Codex connection was closed.'));
         listeners.clear();
-        closing = stop();
+        closing = stop().catch((error) => {
+          // Keep RPC retired, but let a later close retry the owned process stop.
+          closing = null;
+          throw error;
+        });
       }
       return closing;
     },

@@ -10,7 +10,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { createIntegrations, createRpcClient, type CodexConversationPort } from '../server/integrations';
+import { createIntegrations, createRpcClient, killOwnedProcess, type CodexConversationPort } from '../server/integrations';
 import type { TextRequest } from '../server/engines/contract';
 import {
   CODEX_ACCOUNT_ROUTE,
@@ -425,4 +425,65 @@ test('failed cleanup stays observable and keeps the owned process available for 
   await expect(session.close()).rejects.toBe(failure);
   await expect(session.close()).resolves.toBeUndefined();
   expect(close).toHaveBeenCalledTimes(2);
+});
+
+test('a real RPC cleanup failure can be retried through the session without reopening requests', async () => {
+  const child = spawn(process.execPath, [FIXTURE], {
+    env: { PATH: process.env.PATH, CODEX_FIXTURE_DIR: dir },
+    stdio: ['pipe', 'pipe', 'pipe'],
+    detached: process.platform !== 'win32',
+    windowsHide: true,
+  });
+  const failure = new Error('Synthetic first stop failure');
+  const stop = vi.fn<() => Promise<void>>()
+    .mockRejectedValueOnce(failure)
+    .mockImplementation(() => killOwnedProcess(child));
+  const client = createRpcClient(child, stop);
+  const createClient = vi.fn(async () => client);
+  try {
+    const integration = createIntegrations({
+      platform: 'win32', verifySandbox: async () => {}, createClient,
+    });
+    const session = await openCodexSession(integration.codexConversations, request(), {
+      observedVersion: '0.153.4', onCheckpoint: async () => {},
+    });
+    sessions.push(session);
+    const notifications = vi.fn();
+    client.onNotification(notifications);
+    const write = vi.spyOn(child.stdin, 'write');
+    const pending = client.request('account/read', {}).then(() => null, (error: unknown) => error);
+    const writesBeforeClose = write.mock.calls.length;
+
+    const first = session.close();
+    const concurrent = session.close();
+    const rpcClose = client.close();
+    expect(client.close()).toBe(rpcClose);
+    expect(await Promise.allSettled([first, concurrent])).toEqual([
+      { status: 'rejected', reason: failure }, { status: 'rejected', reason: failure },
+    ]);
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(await pending).toMatchObject({ code: 'NATIVE_CLOSED' });
+    expect(alive(child.pid!)).toBe(true);
+    await expect(client.request('account/read', {})).rejects.toMatchObject({ code: 'NATIVE_CLOSED' });
+    client.notify('initialized');
+    expect(write).toHaveBeenCalledTimes(writesBeforeClose);
+
+    const retry = await Promise.allSettled([session.close(), session.close()]);
+    expect(stop).toHaveBeenCalledTimes(2);
+    expect(retry).toEqual([
+      { status: 'fulfilled', value: undefined }, { status: 'fulfilled', value: undefined },
+    ]);
+    expect(child.exitCode !== null || child.signalCode !== null).toBe(true);
+    await expect(client.request('account/read', {})).rejects.toBeDefined();
+    client.notify('initialized');
+    expect(write).toHaveBeenCalledTimes(writesBeforeClose);
+    expect(notifications).toHaveBeenCalledTimes(1);
+    await session.close();
+    await client.close();
+    expect(stop).toHaveBeenCalledTimes(2);
+    expect(createClient).toHaveBeenCalledTimes(1);
+  } finally {
+    // The red run must not leave the fixture alive behind the cached rejection.
+    await killOwnedProcess(child);
+  }
 });
