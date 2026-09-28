@@ -1,6 +1,6 @@
 # Account security with Personal access
 
-Status: test-only checkpoint; every new test and dependency command is UNRUN.
+Status: test-only candidate. Original Personal run: three intended failures and four passing controls; production remains unchanged. Repair, composition and green are pending.
 
 Base: `1af37e085ef24fc6c92d6b2b8510fc52a504bd1b` (PR176, Individual plans).
 Branch: `feature/accounts-security-personal-access`.
@@ -57,3 +57,23 @@ The architect granted the three-command window on clean `41b1a02ead34c4848aa4210
 PowerShell's `ConvertFrom-Json` materialized `owner.processStart` as a `System.DateTime`. Passing that value to `DateTimeOffset.Parse(string)` first formatted it as a string and lost fractional precision. Reading the actual released slot record reproduced a false comparison through Parse and a true comparison through a direct DateTimeOffset cast. The one-line runner correction preserves the typed timestamp; slot ID, role, host, PID, worktree and exact instant checks remain required. This is verification setup correction, not RED evidence or a product repair. `preflight-original-red-runner.json` records the attempt; no command log is claimed for a command that never started. The 15 frozen source/test/configuration hashes remain unchanged. A separate retry grant is requested.
 
 The architect requested explicit raw-string handling and an off-slot ownership check before retry. PowerShell 7.6.5 supports `ConvertFrom-Json -DateKind String`, so the final runner uses that option and compares parsed UTC ticks. A read-only check of the released own-slot sample accepted its exact timestamp and its equivalent trailing-zero spelling; changing PID, role, host, worktree, process-start instant or slot ID was refused in each of six controls. These eight predicate checks passed without acquiring a slot or running npm, application code or tests. All 15 frozen hashes still match.
+
+## Original Personal RED/control, 2026-09-28
+
+The architect reviewed the corrected runner and granted the same three-command window on clean `5c5d3e61d1f8e50896f5bbd7465606603ecd3e25`. Production still equals base `1af37e0`; the test file still has the original `3fa9cb5c...` working hash. Own slot `slot_mul6gmw6_52c63bc0` was acquired at 11:42:03.750Z and released successfully at 11:43:36.133Z. The pinned journal records acquisition/release at lines 1301 and 1303; slot history line 961 records the complete ownership window.
+
+| Original record and log | UTC start to finish | Result |
+| --- | --- | --- |
+| install-root-original-red | 11:42:16.7814829-11:42:28.0044056 | Locked install succeeded, 427 packages, exit 0. |
+| install-control-plane-original-red | 11:43:04.7355931-11:43:07.8565396 | Locked install succeeded, 108 packages, exit 0. |
+| red-personal-original-main | 11:43:32.3818648-11:43:35.4565844 | Three intended assertion failures, four passed, no skipped cases, seven total; original exit 1. |
+
+All 15 frozen input hashes matched before and after each command. Every command ran separately and its originals were read before advancing. The two dependency installs used the existing lockfiles without lifecycle scripts, audit or funding requests; no package declaration or lockfile changed.
+
+Both replacement rows reached test line 173 and returned a refresh projection instead of the required 401/sign_in_required refusal. Their real held response, original bearer, included old grant, actual new native SID and token, same/different person, and replacement access-not-included preconditions all passed. The later current-person, bearer, access and projection assertions were not reached in these red rows, so this run does not establish those downstream preservation claims.
+
+The wrong-person admission row reached line 223: the session returned `admitted: true` instead of `entitlement_unknown`. Before that assertion, the test confirmed a real 200 admitted service answer pinned to the signed-in person's null Personal scope, then changed only its person pin. The later request count, uncached dispatch and correct-answer recovery assertions were not reached for this row.
+
+The four controls passed: unchanged delayed refresh with one projection, correctly pinned Personal admission with cache reuse, business pins refused for Personal work, and null Personal pins refused for business work. Both scope controls confirmed fresh service requests on dispatch and success after restoring correct pins. There were no setup errors, hangs, timeouts or parse errors counted as RED.
+
+Only the three granted commands ran; no production repair, lifecycle composition, typecheck, existing Individual covering suite, mutation or broader gate followed. The originals were sent to the architect and independent reviewer for reconciliation. The old security branch remains clean at `609305d`; source/test handoff and composed-candidate acceptance remain pending.

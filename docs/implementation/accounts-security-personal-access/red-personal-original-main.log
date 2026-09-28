@@ -1,0 +1,84 @@
+
+ RUN  v3.2.7 F:/Diomedes/diomedes-wt/accounts-security-personal-access
+
+ ❯ tests/accounts-security-personal-access.test.ts (7 tests | 3 failed) 634ms
+   × a delayed Personal access refresh belongs to its initiating sign-in > refuses after a new native sign-in by the same person replaces it 142ms
+     → expected { value: { backend: 'cloud', …(3) } } to match object { error: { status: 401, …(1) } }
+(5 matching properties omitted from actual)
+   × a delayed Personal access refresh belongs to its initiating sign-in > refuses after a new native sign-in by the another person replaces it 110ms
+     → expected { value: { backend: 'cloud', …(3) } } to match object { error: { status: 401, …(1) } }
+(5 matching properties omitted from actual)
+   ✓ a delayed Personal access refresh belongs to its initiating sign-in > applies a delayed reply and projects exactly once when the sign-in is unchanged 60ms
+   × Personal admissions are pinned to the initiating person and scope > refuses another person in valid Personal pins and asks again instead of caching it 92ms
+     → expected { admitted: true, …(6) } to match object { admitted: false, …(1) }
+(6 matching properties omitted from actual)
+   ✓ Personal admissions are pinned to the initiating person and scope > accepts its own Personal admission and reuses that decision for a fresh same-work dispatch 63ms
+   ✓ Personal admissions are pinned to the initiating person and scope > refuses and does not cache the other scope for Personal work 109ms
+   ✓ Personal admissions are pinned to the initiating person and scope > refuses and does not cache the other scope for business work 56ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/accounts-security-personal-access.test.ts > a delayed Personal access refresh belongs to its initiating sign-in > refuses after a new native sign-in by the same person replaces it
+ FAIL  tests/accounts-security-personal-access.test.ts > a delayed Personal access refresh belongs to its initiating sign-in > refuses after a new native sign-in by the another person replaces it
+AssertionError: expected { value: { backend: 'cloud', …(3) } } to match object { error: { status: 401, …(1) } }
+(5 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "error": {
+-     "details": {
+-       "code": "sign_in_required",
++   "value": {
++     "backend": "cloud",
++     "organizations": [],
++     "person": {
++       "createdAt": "2026-09-28T11:43:34.552Z",
++       "id": "person_378cfd65-ecb3-4308-9c4f-f5e71dace562",
++       "name": "Jordan Lee",
+      },
+-     "status": 401,
++     "reason": "refresh",
+    },
+  }
+
+ ❯ tests/accounts-security-personal-access.test.ts:173:27
+    171|       await pending;
+    172|     }
+    173|     expect(await pending).toMatchObject({ error: { status: 401, detail…
+       |                           ^
+    174|     expect(session.state().person?.id).toBe(next.state.person!.id);
+    175|     expect(await session.token()).toBe(next.token);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  tests/accounts-security-personal-access.test.ts > Personal admissions are pinned to the initiating person and scope > refuses another person in valid Personal pins and asks again instead of caching it
+AssertionError: expected { admitted: true, …(6) } to match object { admitted: false, …(1) }
+(6 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "admitted": false,
+-   "code": "entitlement_unknown",
++   "admitted": true,
+  }
+
+ ❯ tests/accounts-security-personal-access.test.ts:223:19
+    221|     expect(originals).toHaveLength(1);
+    222|     expect(originals[0]).toMatchObject({ status: 200, answer: { decisi…
+    223|     expect(first).toMatchObject({ admitted: false, code: 'entitlement_…
+       |                   ^
+    224|     expect(admissionRequests()).toHaveLength(1);
+    225|     await expect(admit(null, 'dispatch')).resolves.toMatchObject({ adm…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  3 failed | 4 passed (7)
+   Start at  07:43:33
+   Duration  2.16s (transform 429ms, setup 0ms, collect 1.01s, tests 634ms, environment 0ms, prepare 113ms)
+
