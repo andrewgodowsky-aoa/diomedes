@@ -199,7 +199,7 @@ describe('a Diomedes loop on Google Vertex AI through the real host', () => {
     // Five calls, all to the project's global endpoint; the plan call offered no tools.
     expect(seen.map((request) => request.url)).toEqual(Array(5).fill(STREAM_URL));
     expect(declared(seen[0].body)).toEqual([]);
-    expect(declared(seen[1].body)).toEqual(['list_project_files', 'propose_write', 'read_project_file']);
+    expect(declared(seen[1].body)).toEqual(['list_project_files', 'propose_task', 'propose_write', 'read_project_file']);
     // The unshared file never left the computer; the refusal is what Gemini was told.
     expect(JSON.stringify(seen.map((request) => request.body))).not.toContain('Payroll');
     expect(JSON.stringify(seen[2].body.contents)).toContain('not shared with google-vertex');

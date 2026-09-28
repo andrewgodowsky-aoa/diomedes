@@ -5,6 +5,10 @@ import type { WriteInput } from '../store.js';
 import { relativeName } from '../paths.js';
 import { digest } from './policy.js';
 import { payloadDigest } from '../command-admission.js';
+import {
+  isTaskPhaseIntent,
+  taskPhaseInputSchema,
+} from '../../shared/task-phase.js';
 
 export const FIXTURE_ENGINE = 'native-fixture';
 export const CODEX_ENGINE = 'codex-harness';
@@ -29,6 +33,25 @@ export function harnessWrites(projectId: string, need: Need): WriteInput[] {
   if (!binding || !need.approval || digest(binding.intent) !== need.approval.actionDigest)
     throw new Error('The harness approval no longer matches its step intent.');
   const intent: StepIntent = binding.intent;
+  // Task phase lane: the exact `continue_task_phase` transform carries no
+  // files and writes no bytes, so it admits zero writes — but only for the
+  // narrow validated shape: waiting stop-mode approval, the strict phase
+  // schema, the same project/run/task identity, and empty files and preview.
+  // Anything else falls through to the write checks below, unchanged.
+  if (isTaskPhaseIntent(intent)) {
+    if (intent.approval !== true)
+      throw new Error('This task phase step is not waiting for approval.');
+    const input = taskPhaseInputSchema.parse(intent.input);
+    if (
+      input.projectId !== projectId ||
+      input.runId !== binding.runId ||
+      input.taskId !== need.taskId ||
+      need.files?.length !== 0 ||
+      need.preview?.length !== 0
+    )
+      throw new Error('The task phase approval has inconsistent project, run, task or scope.');
+    return [];
+  }
   if (
     intent.name !== 'propose_write' ||
     intent.kind !== 'tool' ||
@@ -53,6 +76,49 @@ export function identifyHarnessApproval(
   projectId: string, need: Need, sources: ApprovalIdentity['sources'] = need.approval?.sources ?? [],
 ): ApprovalIdentity {
   if (!need.harness) throw new Error('A harness intent binding is required.');
+  // Task phase lane: its own approval identity, with a base digest that pins
+  // the exact phase input (project, run, task, phase) rather than file bytes.
+  // Distinct `type` tags keep it from ever colliding with a write identity.
+  if (isTaskPhaseIntent(need.harness.intent)) {
+    const input = taskPhaseInputSchema.parse(need.harness.intent.input);
+    if (input.projectId !== projectId || input.runId !== need.harness.runId || input.taskId !== need.taskId)
+      throw new Error('The task phase approval has inconsistent project, run or task.');
+    const actionDigest = digest(need.harness.intent);
+    const expiresAt = new Date(Date.parse(need.createdAt) + 60 * 60 * 1000).toISOString();
+    const baseDigest = payloadDigest({
+      type: 'task-phase-base',
+      projectId,
+      runId: input.runId,
+      taskId: input.taskId,
+      phase: input.phase,
+      ...(sources.length ? { sources } : {}),
+    });
+    return {
+      protocolVersion: 1,
+      actionDigest,
+      baseDigest,
+      expiresAt,
+      sources,
+      proposalDigest: payloadDigest({
+        type: 'task-phase-proposal',
+        protocolVersion: 1,
+        projectId,
+        approvalId: need.id,
+        taskId: need.taskId,
+        sessionId: need.sessionId,
+        createdAt: need.createdAt,
+        expiresAt,
+        actionDigest,
+        baseDigest,
+        binding: need.harness,
+        what: need.what,
+        why: need.why,
+        consequence: need.consequence,
+        files: need.files,
+        preview: need.preview,
+      }),
+    };
+  }
   const actionDigest = digest(need.harness.intent);
   const expiresAt = new Date(Date.parse(need.createdAt) + 60 * 60 * 1000).toISOString();
   const baseDigest = payloadDigest({

@@ -158,10 +158,12 @@ describe('H16 Console: the loop routes a start control may offer', () => {
     await seed();
     const { status, data } = await project<{ routes: LoopRouteOffer[] }>('/loop/routes');
     expect(status).toBe(200);
-    expect(data.routes.map((offer) => offer.route)).toEqual(['native-fixture', 'aws-bedrock', 'azure-openai', 'openrouter', 'google-vertex']);
+    expect(data.routes.map((offer) => offer.route)).toEqual(['native-fixture', 'aws-bedrock', 'azure-openai', 'openrouter', 'google-vertex', 'nectovia']);
     expect(data.routes[0]).toMatchObject({ route: 'native-fixture', admitted: true, sends: false, model: null, reason: null });
-    for (const offer of data.routes.slice(1))
+    for (const offer of data.routes.slice(1, -1))
       expect(offer).toMatchObject({ admitted: false, sends: true, reason: 'Turn the selected route on in Settings before using it.' });
+    expect(data.routes.at(-1)).toMatchObject({ route: 'nectovia', admitted: false, sends: true, model: null,
+      reason: 'Sign in to use the Nectovia Agent.' });
   });
 
   test("a model-API route that is on is admitted by the route's own admission, and its refusal is quoted", async () => {

@@ -7,6 +7,7 @@
 import type { Need } from '../../shared/types.js';
 import type { OriginSnapshot } from '../../shared/attribution.js';
 import type { HarnessRun, RunPresentation, StepRecord } from '../../shared/harness.js';
+import { isTaskPhaseIntent, taskPhaseInputSchema } from '../../shared/task-phase.js';
 
 const describeIntent = (step: StepRecord): string =>
   step.intent.name ?? step.intent.permission ?? step.intent.stepId;
@@ -134,6 +135,27 @@ export function needFromWaitingStep(
   origin?: OriginSnapshot;
 } {
   const input = step.intent.input;
+  // Task phase lane: the gate asks to continue the task into its next phase
+  // within the already-granted scope — never a read, never a write of its
+  // own. The wording names the phase and the preserved permissions, so the
+  // person approves exactly this continuation and nothing else.
+  if (isTaskPhaseIntent(step.intent)) {
+    const parsed = taskPhaseInputSchema.safeParse(step.intent.input);
+    const phase = parsed.success ? parsed.data.phase : null;
+    const label = phase === 'build' ? 'Build' : phase === 'review' ? 'Review' : 'the next phase';
+    const held = heldBy(run, step);
+    return {
+      runId: run.id,
+      intentHash: step.intentHash,
+      ...(step.origin === undefined ? {} : { origin: step.origin }),
+      what: `Continue this task to ${label}?`,
+      why: held
+        ? `A rule held this before it ran: ${held.reason} Nothing happens until you say go ahead, and your OK covers exactly this continuation and nothing else.`
+        : 'The agent finished this phase and asks to continue to the next one, staying within its granted files, services and spend. Nothing happens until you say go ahead, and your OK covers exactly this continuation and nothing else.',
+      consequence: `This continues the task to ${label} within its existing file, service and spend permissions. It moves the task\u2019s phase marker and records the move in History; it grants nothing new and writes no files itself.`,
+      files: [],
+    };
+  }
   const files =
     input && typeof input === 'object' && !Array.isArray(input) && Array.isArray(input.files)
       ? input.files.filter((f): f is string => typeof f === 'string')

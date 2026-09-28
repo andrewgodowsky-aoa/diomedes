@@ -861,8 +861,10 @@ describe('request and filesystem boundaries (continued)', () => {
       text: 'test',
     });
     expect(consent.data.consentRequired).toBe(true);
+    const task = await request(`/projects/${id}/tasks`, 'POST', { name: 'Consent check' });
+    expect(task.status).toBe(200);
     expect(
-      (await request(`/projects/${id}/work/start`, 'POST', { route: 'codex', taskId: 'T1' }))
+      (await request(`/projects/${id}/work/start`, 'POST', { route: 'codex', taskId: task.data.id }))
         .status,
     ).toBe(409);
   });

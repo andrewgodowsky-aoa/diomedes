@@ -121,6 +121,7 @@ export default defineConfig({
     'context-used.spec.ts',
     'ready-queue-ui.spec.ts',
     'task-board-ui.spec.ts',
+    'task-workflow-ui.spec.ts',
     'pack-lifecycle-ui.spec.ts',
     'remembered-approvals-ui.spec.ts',
     'editor-guard-ui.spec.ts',

@@ -227,8 +227,11 @@ describe('the selected skill rides in the host-assembled instruction section', (
       expect(() => ask(store.state(id), { skillId: item.id, mode: item.mode, budgetBytes: instructionSectionBudget(128_000) })).not.toThrow();
 
     expect(() => ask(store.state(id), { budgetBytes: 1024 })).toThrow(/never cut part way/);
-    expect(() => ask(store.state(id), { mode: 'build' })).toThrow(/runs in Ask or Plan/);
-    expect(() => ask(store.state(id), { mode: 'fix' })).toThrow(/runs in Ask or Plan/);
+    // Andrew 2026-09-27: skills run in Ask, Plan, Build, Fix and Work with the
+    // same terms and budget. PackSkill.mode stays the recommended launch Mode.
+    for (const mode of ['build', 'fix', 'work'] as const)
+      expect(() => ask(store.state(id), { mode })).not.toThrow();
+    expect(() => ask(store.state(id), { mode: 'auto' })).toThrow(/Ask, Plan, Build, Fix or Work/);
     expect(() => ask(store.state(id), { skillId: 'wire-money' })).toThrow(/does not exist/);
   });
 });
@@ -415,29 +418,20 @@ describe('the ask route', () => {
     expect(after.records.at(-1)).toMatchObject({ outcome: 'unloaded', packId: PACK });
   });
 
-  test('refuses a skill in Build, and Build proposals are parsed exactly as before with the pack on', async () => {
+  test.each(['build', 'fix'] as const)('%s sends the chosen playbook and preserves the exact proposal contract', async (mode) => {
     const { api, generate, projectId, threadId } = await fixture();
     await api(`/projects/${projectId}/packs/${PACK}/activate`, 'POST', {});
     const target = `/projects/${projectId}`;
     const withSkill = await api(`${target}/ask`, 'POST', {
       text: 'Create a note',
-      mode: 'build',
+      mode,
       route: 'claude-code',
       threadId,
       consent: true,
       skill: 'invoice-chase',
+      ...(mode === 'fix' ? { failing: { text: 'The invoice note is missing.' } } : {}),
     });
-    expect(withSkill.status).toBe(400);
-    expect(generate).not.toHaveBeenCalled();
-
-    const start = await api(`${target}/ask`, 'POST', {
-      text: 'Create a note',
-      mode: 'build',
-      route: 'claude-code',
-      threadId,
-      consent: true,
-    });
-    expect(start.status).toBe(200);
+    expect(withSkill.status).toBe(200);
     let state: ProjectState = (await api(`${target}/state`)).data;
     for (let n = 0; n < 200 && !state.needs.some((need) => need.state === 'open'); n++) {
       await new Promise((resolve) => setTimeout(resolve, 10));
@@ -447,7 +441,11 @@ describe('the ask route', () => {
     expect(need?.preview?.[0].after).toBe('Reviewed text');
     const prompt = generate.mock.calls.at(-1)![0].prompt;
     expect(prompt).toContain('Return STRICT JSON only');
-    expect(prompt).not.toContain('PLAYBOOK');
+    expect(prompt).toContain('--- BEGIN PLAYBOOK invoice-chase ---');
+    expect(generate).toHaveBeenCalledOnce();
+    const turn = state.conversations.find((item) => item.id === threadId)!.turns.find((item) => item.role === 'you')!;
+    expect(turn.skill).toMatchObject({ skillId: 'invoice-chase', digest: expect.stringMatching(/^sha256:/) });
+    expect(state.sessions.at(-1)?.skill).toEqual(turn.skill);
   });
 });
 

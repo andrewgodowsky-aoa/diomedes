@@ -9,6 +9,7 @@ import { api } from '../api';
 import { Modal } from '../components';
 import { VerificationBadge, verificationFor } from './Verification';
 import './task-inspector.css';
+import { TaskWorkflowPanel } from './TaskWorkflowPanel';
 
 /** What `GET /projects/:id/agent-profiles` returns for one profile (H09). */
 interface ProfileOption {
@@ -69,6 +70,9 @@ export interface InspectorMove {
 export interface TaskInspectorProps {
   projectId: string;
   task: Task;
+  tasks: readonly Task[];
+  onOpenTask(task: Task): void;
+  onOpenOrigin?(): void;
   column: BoardColumn;
   /** The projection's one line for this task (client/workbench/task-evidence.ts). */
   detail: string;
@@ -253,6 +257,9 @@ export function TaskInspector(props: TaskInspectorProps) {
             )}
           </section>
           <aside className="ti-controls" aria-label="How it runs">
+            <TaskWorkflowPanel key={task.id} projectId={projectId} task={task} tasks={props.tasks}
+              busy={props.busy || own.some((run) => ['queued', 'working', 'waiting'].includes(run.state))}
+              onOpenTask={props.onOpenTask} onOpenOrigin={props.onOpenOrigin} onReview={props.onReview} />
             {viewIssue && (
               <p className="ti-issue" role="alert">
                 {viewIssue}

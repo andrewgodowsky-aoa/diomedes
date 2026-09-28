@@ -2,15 +2,18 @@
  * H13 routes: start a Diomedes work loop on a task, and read it back.
  *
  * Starting is admission and nothing more. It checks, in order: the task, the
- * route (the scripted fixture or a Diomedes-owned model-API route; an external
- * engine drives its own loop and is not offered here, and the Nectovia route is
- * refused before anything is admitted), that the route is on,
- * the person's consent to send, the project's sharing grant for every selected
- * file, and the route's own admission (connection, model, credential, spend
- * cap). A delegate route, when the person names one, is admitted the same way
- * now and again when the loop hands it work. The run is created through the
- * bridge with its admission pinned, so a replay of the same command id returns
- * the same run and admits nothing new.
+ * route (the scripted fixture, a Diomedes-owned model-API route, or Nectovia
+ * managed single-agent only; an external engine drives its own loop and is not
+ * offered here), that the route is on (the Settings switch, except Nectovia
+ * which bypasses it and resolves its managed model/account through the
+ * `managed` dependency below), the person's consent to send, the project's
+ * sharing grant for every selected file, and the route's own admission
+ * (connection, model, credential, spend cap; for Nectovia the Agent gate's
+ * managed admission under the loop's deterministic run id). A delegate route,
+ * when the person names one, is admitted the same way now and again when the
+ * loop hands it work; Nectovia never runs with a delegate or a team. The run
+ * is created through the bridge with its admission pinned, so a replay of the
+ * same command id returns the same run and admits nothing new.
  *
  * Reading projects the loop from its steps (`shared/native-loop.ts`) and the
  * finish from H17's four-state projection of the task's declared checks. No
@@ -57,6 +60,10 @@ import {
 } from '../shared/team-delegation.js';
 import type { Route, Session } from '../shared/types.js';
 import { OWNER_RULES_NOT_INCLUDED_REASON } from '../shared/access.js';
+import { taskWorkflowBlocker } from '../shared/task-workflow.js';
+import type { WorkAdmission } from './work-admission.js';
+import type { PackContributions } from './pack-contributions.js';
+import { prepareTaskSkill } from './task-skills.js';
 
 const routeName = z.string().min(1).max(40);
 /** One team role as the person names it: an Agent, and either an H09 profile or a route. */
@@ -127,6 +134,35 @@ export interface TeamAdmission {
   readonly agents: AgentRegistry;
 }
 
+/**
+ * Nectovia managed loop dependencies, supplied by the parent (app.ts) from the
+ * signed-in account and its published tier. All read-only unless they admit:
+ * `resolveManaged` names the managed model/account without recording a paid
+ * admission; `readOnly` answers the routes offer the same way; `admitManaged`
+ * records the paid managed admission under the loop's deterministic run id.
+ * Absent: Nectovia loop starts fail closed and the routes offer reads
+ * unavailable, never admitted. Never a BYO provider or payer.
+ */
+export interface NectoviaManagedLoopDeps {
+  resolveManaged?: (
+    projectId: string,
+    taskId: string,
+  ) => Promise<{ model: string; accountRoute: string } | null> | { model: string; accountRoute: string } | null;
+  readOnly?: (
+    projectId: string,
+  ) => Promise<{ admitted: boolean; model: string | null; reason: string | null }> | { admitted: boolean; model: string | null; reason: string | null };
+  admitManaged?: (
+    projectId: string,
+    runId: string,
+    input: { model: string; accountRoute: string },
+    taskId: string,
+  ) => Promise<{ model: string; accountRoute: string }>;
+}
+
+/** Nectovia runs single-agent only: no delegate and no team beside it. */
+export const NECTOVIA_LOOP_TEAM_REFUSED =
+  'Nectovia loops run single-agent only, so a delegate or a team cannot join one. Nothing was sent.';
+
 const WORKER_AGENT = 'diomedes.general';
 const ADVISOR_AGENT = 'diomedes.architect';
 /** What a lead hands each role, in preference order; the Agent must accept one of them. */
@@ -147,6 +183,16 @@ export function mountNativeLoopRoutes(
    * default passes everything through, the embedded-host behaviour.
    */
   ownerRules: (projectId: string | null) => boolean = () => true,
+  /**
+   * Nectovia managed loop wiring (optional). The parent supplies
+   * `resolveManaged` from the signed-in account and its published tier, and
+   * optionally `admitManaged`/`readOnly`. Extra params stay trailing so
+   * existing callers keep working. `startLocked` also accepts an optional
+   * `managedAdmission` extra (see below) for a Work receipt the parent may
+   * record in app after bridge admission.
+   */
+  managed: NectoviaManagedLoopDeps | null = null,
+  contributions: (() => PackContributions) | null = null,
 ) {
   const handle =
     (action: (req: Request) => Promise<unknown>) => async (req: Request, res: Response, next: NextFunction) => {
@@ -167,13 +213,46 @@ export function mountNativeLoopRoutes(
     requested: { model?: string | null; accountRoute?: string | null },
     sources: readonly string[],
     consent: boolean,
+    opts: { taskId?: string | null; runId?: string | null } = {},
   ) => {
     if (!loopRoute(route))
       throw new ApiError(400, 'A Diomedes loop runs on the fixture route or a model-API route. An external engine keeps its own loop.', {
         code: 'loop_route_unsupported',
       });
     if (route === LOOP_FIXTURE_ROUTE) return { model: null, accountRoute: null };
-    if (route === NECTOVIA_ROUTE) throw new ApiError(409, NECTOVIA_LOOP_REFUSED, { code: 'loop_route_unsupported' });
+    if (route === NECTOVIA_ROUTE) {
+      // Managed single-agent only. The Settings service switch is bypassed for
+      // Nectovia ONLY: the model/account come from the managed dependency, set
+      // by the parent from the signed-in account and its published tier. A
+      // user-supplied model/account that conflicts is refused (no BYO, no
+      // payer switch); nothing falls back to another provider.
+      if (!consent)
+        throw new ApiError(
+          409,
+          'Your goal and the files the loop reads will be sent to Nectovia. Confirm before sending.',
+          { consentRequired: true },
+        );
+      requireCloudSharing(store.state(projectId), route, sources);
+      const resolved = opts.taskId ? await managed?.resolveManaged?.(projectId, opts.taskId) : null;
+      if (!resolved)
+        throw new ApiError(409, 'Sign in to use the Nectovia Agent.', { code: 'route_refused' });
+      if (requested.model != null && requested.model !== resolved.model)
+        throw new ApiError(409, 'The Nectovia model is managed. Send without choosing one.', { code: 'route_refused' });
+      if (requested.accountRoute != null && requested.accountRoute !== resolved.accountRoute)
+        throw new ApiError(409, 'The Nectovia account is managed. Send without choosing one.', { code: 'route_refused' });
+      try {
+        // Paid managed admission under the loop's deterministic run id, when
+        // the parent supplied the seam. Without it this stays read-only and
+        // the per-step adapter admits with the real run id; never a null job.
+        if (managed?.admitManaged && opts.runId)
+          return await managed.admitManaged(projectId, opts.runId, resolved, opts.taskId!);
+        return resolved;
+      } catch (error) {
+        if (error instanceof ApiError) throw error;
+        if (error instanceof EngineError && (error.code === AGENT_NOT_INCLUDED || error.code === AGENT_SIGN_IN_REQUIRED)) throw error;
+        throw new ApiError(409, error instanceof Error ? error.message : 'This route refused the loop.', { code: 'route_refused' });
+      }
+    }
     if (services()[route] !== true) throw new ApiError(409, 'Turn the selected route on in Settings before using it.');
     if (!consent)
       throw new ApiError(
@@ -247,6 +326,7 @@ export function mountNativeLoopRoutes(
         fallback: pick.fallback ? `${pick.fallback.fromName}: ${pick.fallback.reason}` : null,
       };
     }
+    if (route === NECTOVIA_ROUTE) throw refuse(NECTOVIA_LOOP_TEAM_REFUSED, 'team_route_unsupported');
     const admitted = await admitRoute(projectId, route, { model, accountRoute }, scope, consent);
     const wanted = agentId ?? (kind === 'advisor' ? ADVISOR_AGENT : WORKER_AGENT);
     const agent: AgentDefinition | undefined = teamAdmission
@@ -312,6 +392,8 @@ export function mountNativeLoopRoutes(
     const scope = team.scope ?? [];
     for (const role of [team.worker, team.advisor]) {
       if (!role) continue;
+      if (role.route === NECTOVIA_ROUTE)
+        throw new ApiError(409, NECTOVIA_LOOP_TEAM_REFUSED, { code: 'team_route_unsupported' });
       const again = await admitRoute(projectId, role.route, { model: role.model, accountRoute: role.accountRoute }, scope, consent);
       if (again.model !== role.model)
         throw new ApiError(409, `This team's ${role === team.worker ? 'worker' : 'advisor'} used ${role.model}, which its route would not use now, so it was not retried.`, {
@@ -328,7 +410,7 @@ export function mountNativeLoopRoutes(
   const startLocked = async (
     projectId: string,
     body: LoopStartRequest,
-    extra: { retryOf?: TeamRetry | null; team?: TeamConfig | null } = {},
+    extra: { retryOf?: TeamRetry | null; team?: TeamConfig | null; admission?: WorkAdmission } = {},
   ): Promise<{ runId: string; session: Session | null; replayed: boolean }> => {
     const { commandId, ...payload } = body;
     const commandDigest = digest(payload);
@@ -348,16 +430,34 @@ export function mountNativeLoopRoutes(
     }
     const task = state.tasks.find((item) => item.id === body.taskId && !item.deletedAt);
     if (!task) throw new ApiError(404, 'This task was not found.');
+    const workflowBlocker = taskWorkflowBlocker(task);
+    if (workflowBlocker) throw new ApiError(409, workflowBlocker, { code: 'task_workflow_blocked' });
+    if (state.sessions.some((session) => ['queued', 'working', 'waiting'].includes(session.state)))
+      throw new ApiError(409, 'This project already has work in progress.');
+    if (task.workflow && body.maxTurns !== undefined && body.maxTurns > task.workflow.maxTurns)
+      throw new ApiError(409, 'This loop exceeds the task turn limit.', { code: 'task_turn_limit' });
     const sources = [...new Set((body.sources ?? []).map((source) => relativeName(source)))];
     const applyScope = body.applyScope
       ? [...new Set(body.applyScope.map((entry) => (entry.trim() === '.' ? '.' : relativeName(entry))))]
       : null;
     const consent = body.consent === true;
-    const admitted = await admitRoute(projectId, body.route, body, sources, consent);
+    // Nectovia is managed single-agent only: a lead on it names no delegate
+    // and no team, and nothing names it as a delegate. Never another payer.
+    if (body.route === NECTOVIA_ROUTE && (body.delegate || body.team || extra.team))
+      throw new ApiError(409, NECTOVIA_LOOP_TEAM_REFUSED, { code: 'loop_route_unsupported' });
+    if (body.delegate?.route === NECTOVIA_ROUTE)
+      throw new ApiError(409, NECTOVIA_LOOP_REFUSED, { code: 'loop_route_unsupported' });
+    if (task.workflow?.skill && !contributions)
+      throw new ApiError(409, 'This host cannot load the selected task playbook.');
+    const skill = contributions
+      ? await prepareTaskSkill(contributions(), state, task, runId, instructionSectionBudget(0))
+      : null;
+    const admitted = await admitRoute(projectId, body.route, body, sources, consent, { taskId: task.id, runId });
     let delegate: LoopRunInput['delegate'] = null;
     if (body.delegate?.profileId) {
       // The person's H09 profile fixes the delegate's route and exact model, by H09's own rules.
       const role = await admitRole(projectId, task.id, 'worker', { profileId: body.delegate.profileId }, body, [], consent);
+      if (role.route === NECTOVIA_ROUTE) throw new ApiError(409, NECTOVIA_LOOP_REFUSED, { code: 'loop_route_unsupported' });
       delegate = { route: role.route, model: role.model, accountRoute: role.accountRoute, profile: role.profile };
     } else if (body.delegate?.route) {
       const child = await admitRoute(projectId, body.delegate.route, body.delegate, [], consent);
@@ -374,7 +474,7 @@ export function mountNativeLoopRoutes(
       state,
       routeId: body.route,
       agentRole: 'Diomedes work loop',
-      budgetBytes: instructionSectionBudget(0),
+      budgetBytes: Math.max(0, instructionSectionBudget(0) - (skill ? skill.use.bytes + 2 : 0)),
       ...(cloud ? { allowedDocuments: cloudSharing(state).documents } : {}),
       workPaths: sources,
     });
@@ -385,8 +485,9 @@ export function mountNativeLoopRoutes(
       route: body.route,
       model: admitted.model,
       accountRoute: admitted.accountRoute,
-      maxTurns: body.maxTurns ?? LOOP_LIMITS.defaultTurns,
-      instructions: instructions.section ?? '',
+      maxTurns: body.maxTurns ?? task.workflow?.maxTurns ?? LOOP_LIMITS.defaultTurns,
+      instructions: [instructions.section, skill?.section].filter(Boolean).join('\n\n'),
+      ...(skill ? { skill: skill.use } : {}),
       delegate,
       sources,
       ...(applyScope ? { applyScope } : {}),
@@ -401,10 +502,11 @@ export function mountNativeLoopRoutes(
       body.goal,
       localHarnessPrincipal(projectId),
       undefined,
-      { runId, input: input as unknown as Json },
+      { runId, input: input as unknown as Json, admission: extra.admission },
     );
     const saved = store.state(projectId).sessions.find((item) => item.id === session.id);
     if (saved) {
+      if (skill) saved.skill = skill.use;
       if (instructions.delivery) saved.instructions = instructions.delivery;
       // What shipped product knowledge went with it, as a Work run records it (native-work.ts).
       saved.productKnowledge = instructions.productKnowledge;
@@ -431,6 +533,8 @@ export function mountNativeLoopRoutes(
   /**
    * The routes a Console start control may offer, each with the start route's own admission
    * read now: on in Settings, then the route's connection, model, credential and spend cap.
+   * Nectovia bypasses the Settings switch and is read through the managed
+   * read-only dependency only: nothing is admitted, sent or recorded here.
    * Consent and the project's sharing grant depend on what the person picks, so the start
    * itself still asks for them. Read-only: nothing is admitted, sent or recorded.
    */
@@ -449,7 +553,7 @@ export function mountNativeLoopRoutes(
           reason: null,
         },
       ];
-      // Loops run on the owner's provider routes; the Nectovia route answers conversations.
+      // Loops run on the owner's provider routes and on Nectovia managed single-agent.
       for (const route of MODEL_API_PROVIDERS) {
         const offer = { route, label: MODEL_API_NAMES[route], sends: true };
         if (services()[route] !== true) {
@@ -467,6 +571,28 @@ export function mountNativeLoopRoutes(
             ...offer,
             admitted: false,
             model,
+            reason: harness.redact(error instanceof Error ? error.message : 'This route refused the loop.'),
+          });
+        }
+      }
+      // Nectovia managed, read-only: the managed dependency names the model or
+      // the reason, without recording a paid admission. No gateway or provider
+      // call is made here.
+      {
+        const offer = { route: NECTOVIA_ROUTE, label: MODEL_API_NAMES[NECTOVIA_ROUTE], sends: true };
+        try {
+          const read = await managed?.readOnly?.(projectId);
+          if (read) routes.push({ ...offer, ...read });
+          else {
+            const resolved = await managed?.resolveManaged?.(projectId, '');
+            routes.push({ ...offer, admitted: Boolean(resolved), model: resolved?.model ?? null,
+              reason: resolved ? null : 'Sign in to use the Nectovia Agent.' });
+          }
+        } catch (error) {
+          routes.push({
+            ...offer,
+            admitted: false,
+            model: null,
             reason: harness.redact(error instanceof Error ? error.message : 'This route refused the loop.'),
           });
         }

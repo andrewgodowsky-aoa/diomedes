@@ -12,8 +12,10 @@
  * Triggers are hints a model reads, never commands the host parses
  * (`shared/capability-packs.ts`). Loading a playbook grants nothing: it is a
  * read of pack data, and the playbook's own terms say it acts on nothing.
- * Offered only in Ask and Plan, the Modes a skill runs in, and only for packs
- * whose playbooks this build runs.
+ * Offered in Ask, Plan, Build, Fix and Work (SKILL_COMPATIBLE_MODES, Andrew
+ * 2026-09-27), the runtime Modes a skill runs in, and only for packs whose
+ * playbooks this build runs. `PackSkill.mode` stays the recommended launch
+ * Mode; the guard here is runtime compatibility, not a contract change.
  */
 import { z } from 'zod';
 import { isCapabilityPackId } from '../../../shared/capability-packs.js';
@@ -21,7 +23,7 @@ import { renderIndex, type RegisteredPackIndex } from '../../../shared/pack-cont
 import type { PackContributions } from '../../pack-contributions.js';
 import { ApiError } from '../../paths.js';
 import type { Store } from '../../store.js';
-import { SKILL_PREAMBLE } from '../instruction-delivery.js';
+import { isSkillCompatibleMode, SKILL_PREAMBLE } from '../instruction-delivery.js';
 import { ToolRegistry } from '../tools.js';
 
 export const PLAYBOOK_TOOL = 'load_playbook';
@@ -91,7 +93,8 @@ export function registerPlaybookTool(registry: ToolRegistry, access: PlaybookAcc
 /**
  * The playbook access one conversation message gets, or nothing: pinned now,
  * from the Project state as the message is admitted. Empty when no pack with
- * playbooks is on, or the Mode is not one a playbook runs in.
+ * playbooks is on, or the runtime Mode is not one a playbook runs in
+ * (SKILL_COMPATIBLE_MODES: ask, plan, build, fix, work).
  */
 export async function playbookAccess(
   contributions: PackContributions,
@@ -99,7 +102,7 @@ export async function playbookAccess(
   runKey: string,
   mode: string,
 ): Promise<{ playbooks?: PlaybookAccess }> {
-  if (mode !== 'ask' && mode !== 'plan') return {};
+  if (!isSkillCompatibleMode(mode)) return {};
   const pin = await contributions.admit(state, runKey);
   const runnable: RegisteredPackIndex[] = pin.indexes.filter((index) => isCapabilityPackId(index.packId));
   const index = renderIndex(runnable, 'workflow');

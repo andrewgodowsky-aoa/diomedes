@@ -562,6 +562,21 @@ export interface AssembledSkill {
 }
 
 /**
+ * The runtime Modes a skill section may ride in.
+ *
+ * Andrew's 2026-09-27 decision: skills are not restricted to Ask/Plan. A
+ * skill runs in Ask, Plan, Build, Fix or Work with the same response-format,
+ * input, no-authority and outward-send terms and the same whole-or-nothing
+ * size budget. `PackSkill.mode` (shared/capability-packs.ts) stays the
+ * recommended launch Mode and is unchanged here.
+ */
+export const SKILL_COMPATIBLE_MODES = ['ask', 'plan', 'build', 'fix', 'work'] as const;
+export type SkillCompatibleMode = (typeof SKILL_COMPATIBLE_MODES)[number];
+export function isSkillCompatibleMode(mode: string): mode is SkillCompatibleMode {
+  return (SKILL_COMPATIBLE_MODES as readonly string[]).includes(mode);
+}
+
+/**
  * The instruction section for one selected skill, or a refusal that says why.
  *
  * The same four properties as the project-instruction section above, applied
@@ -571,9 +586,11 @@ export interface AssembledSkill {
  *    has not turned on is refused, not quietly delivered. Activation is still
  *    not authority: the section says in its own words that it changes nothing
  *    Diomedes will do.
- * 2. **Read-and-draft Modes only.** Build and Fix write through the proposal
- *    path, whose contract this section must never sit beside, so a skill there
- *    is refused before anything is read or sent.
+ * 2. **Read-and-draft terms in every compatible runtime Mode.** Ask, Plan,
+ *    Build, Fix and Work (SKILL_COMPATIBLE_MODES, Andrew 2026-09-27) all carry
+ *    the same response-format, input, no-authority and outward-send terms.
+ *    `PackSkill.mode` stays the recommended launch Mode. Build and Fix still
+ *    write through the proposal path, whose contract this section never changes.
  * 3. **Whole or not at all.** A playbook that does not fit the room the
  *    selected documents leave is refused by name; it is never cut part way.
  * 4. **Host-authored, never the person's words.** The section rides in the
@@ -595,8 +612,11 @@ export function assembleSkillSection(input: {
   const manifest = CAPABILITY_PACKS[input.packId];
   const skill = findSkill(input.packId, input.skillId);
   if (!manifest || !skill) throw new ApiError(404, 'This skill does not exist.');
-  if (input.mode !== 'ask' && input.mode !== 'plan')
-    throw new ApiError(400, `${skill.name} runs in Ask or Plan. Switch the mode, or remove the skill.`);
+  if (!isSkillCompatibleMode(input.mode))
+    throw new ApiError(
+      400,
+      `${skill.name} runs in Ask, Plan, Build, Fix or Work. Switch the mode, or remove the skill.`,
+    );
   if (!isPackActive(input.state.project.packs, input.packId))
     throw new ApiError(
       409,

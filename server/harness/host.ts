@@ -436,7 +436,7 @@ export function createHarnessHost({
   const modelRun = (capabilityId: string) =>
     (MODEL_SESSION_CAPABILITIES as readonly string[]).includes(capabilityId);
   // H13 loop runs and their delegates: the admitted route must be on and still selected.
-  const loopAuthorize = loopEgressAuthorizer(() => store.settings.services);
+  const loopAuthorize = loopEgressAuthorizer(() => store.settings.services, nectoviaAccount);
   const loopRun = (capabilityId: string) => capabilityId === NATIVE_LOOP.id || CHILD_CAPABILITIES.includes(capabilityId);
   const runs: HostRunService = new HostRunService(files, {
     clock: Date.now,

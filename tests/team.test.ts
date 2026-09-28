@@ -296,6 +296,21 @@ describe('team MCP endpoint', () => {
       );
 
       const store: Store = app.locals.store;
+      // Agent-created tasks wait in the Inbox: work is refused until the person accepts.
+      const gated = await helperMcp.call('team_task_update', {
+        task_id: created.data.task.id,
+        status: 'in_progress',
+      });
+      expect(gated.ok).toBe(false);
+      expect(gated.data.error).toContain('Inbox');
+      const revision = await store.locked(async () => {
+        const state = store.state(id);
+        return state.tasks.find((t) => t.id === created.data.task.id)!.workflow!.revision;
+      });
+      const accepted = await request(`/projects/${id}/tasks/${created.data.task.id}/accept`, 'POST', {
+        expectedRevision: revision,
+      });
+      expect(accepted.status).toBe(200);
       await store.locked(async () => {
         const state = store.state(id);
         state.needs.push({

@@ -398,10 +398,9 @@ test('the execution view names the Nectovia refusal instead of hiding it', async
   await store().persist(state);
   const view = await execution(task.id);
   // No Settings switch governs the Nectovia route, so it is never reported as turned off.
+  // Readiness needs a signed-in paid account: without one the view names that, not Build/Fix.
   expect(view.route).toMatchObject({ id: 'nectovia', on: true });
-  expect(view.blockers).toContain(
-    'The Nectovia Agent answers in the conversation. Build and Fix are not on it yet, so nothing was sent.',
-  );
+  expect(view.blockers.join('\n')).toContain('Sign in to use the Nectovia Agent.');
 });
 
 test('a Board Start on a route that is off is named before it is sent', async () => {

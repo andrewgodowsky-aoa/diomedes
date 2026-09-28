@@ -275,3 +275,26 @@
     transition: none;
   }
 }
+.console .task-inspector .ti-workflow {
+  padding-bottom: 16px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--hair);
+  min-width: 0;
+}
+.console .task-inspector .ti-workflow label {
+  display: grid;
+  gap: 6px;
+  margin: 10px 0;
+  min-width: 0;
+}
+.console .task-inspector .ti-workflow input,
+.console .task-inspector .ti-workflow select {
+  min-width: 0;
+  width: 100%;
+  font: inherit;
+}
+.console .task-inspector .ti-workflow small {
+  display: block;
+  overflow-wrap: anywhere;
+  color: var(--t2);
+}

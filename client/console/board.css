@@ -198,7 +198,7 @@
 }
 .console .columns {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 0 20px;
   padding: 8px 32px 24px 56px;
   overflow: auto;
@@ -432,7 +432,7 @@
   }
 }
 .console .columns.compact {
-  grid-template-columns: repeat(6, minmax(210px, 1fr));
+  grid-template-columns: repeat(7, minmax(210px, 1fr));
 } /* one-line rows need room; the board scrolls sideways before a title breaks */
 .console .columns.compact .crow {
   grid-template-columns: 14px minmax(8ch, 1fr) minmax(0, auto);

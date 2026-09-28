@@ -57,6 +57,7 @@ import type {
   Mode,
   Owner,
   ProjectState,
+  Task,
   Session,
   Settings,
   TaskState,
@@ -110,6 +111,8 @@ import { ReviewerService, type ReviewerAdapter } from './trust/reviewer.js';
 import { codexReviewerAdapter } from './trust/codex-reviewer.js';
 import { VerificationService } from './verification/service.js';
 import { mountNativeLoopRoutes } from './native-loop-routes.js';
+import { mountTaskWorkflowRoutes } from './task-workflow.js';
+import { taskWorkflowBlocker, workflowOf } from '../shared/task-workflow.js';
 import { NATIVE_LOOP_ENGINE } from '../shared/native-loop.js';
 import { mountVerificationRoutes } from './verification/routes.js';
 import { codexVerificationReviewer, type VerificationReviewerAdapter } from './verification/reviewer.js';
@@ -1454,7 +1457,26 @@ export async function createApp(options: AppOptions) {
   // H13: the Diomedes work loop's finish gate runs the task's declared checks through H17's verifier.
   harness.loop.attachVerification(verification);
   // H14: team roles resolve their H09 profiles and Agents at admission; H08 retries a loop.
-  const loopRoutes = mountNativeLoopRoutes(app, store, harness, verification, { profiles: agentProfiles, agents }, ownerRules);
+  const loopRoutes = mountNativeLoopRoutes(app, store, harness, verification, { profiles: agentProfiles, agents }, ownerRules, {
+    resolveManaged: (projectId, taskId) => managedLoopChoice(projectId, taskId),
+    readOnly: (projectId) => {
+      try {
+        return { admitted: true, model: managedLoopChoice(projectId).model, reason: null };
+      } catch (error) {
+        return { admitted: false, model: null, reason: error instanceof Error ? error.message : 'Nectovia is unavailable.' };
+      }
+    },
+    admitManaged: async (projectId, runId, input, taskId) => {
+      const thread = store.state(projectId).conversations.find((item) => item.taskId === taskId);
+      // Pin the task thread's tier before the adapter resumes under the loop id.
+      await jobCaps.scope(projectId, runId, thread?.id ?? null);
+      const admitted = await engines.admitModelApi(NECTOVIA_ROUTE,
+        { ...input, projectId, requestId: runId, threadId: thread?.id },
+        { surface: 'loop', rootJobId: runId });
+      return { model: admitted.model, accountRoute: admitted.accountRoute };
+    },
+  }, () => packLifecycle.contributions);
+  mountTaskWorkflowRoutes(app, store);
   mountWorkspaceRoutes(app, store, workspaces, configuration, automations);
   mountAutomationRoutes(app, store, automations);
   mountThemeRoutes(app, store, themes, customization);
@@ -2401,7 +2423,7 @@ export async function createApp(options: AppOptions) {
    * message, so the protocol check, the receipt replay and the journal entry are the ones a
    * person's task goes through. Nothing here is duplicated elsewhere.
    */
-  const createTaskFrom = async (projectId: string, b: Record<string, unknown>) => {
+  const createTaskFrom = async (projectId: string, b: Record<string, unknown>, origin?: Task['origin']) => {
     refuseHomeWork(projectId);
     const state = store.state(projectId);
     const command = parseTaskCommand(b);
@@ -2432,6 +2454,7 @@ export async function createApp(options: AppOptions) {
       }),
       ...(sourceDocument !== undefined ? { sourceDocument } : {}),
     });
+    if (origin) task.origin = structuredClone(origin);
     const entry = store.addEntry(state, {
       kind: 'tasks-made',
       sentence: `You made a task: ${task.name}`,
@@ -2474,6 +2497,10 @@ export async function createApp(options: AppOptions) {
         state = store.state(id(req)),
         task = state.tasks.find((t) => t.id === req.params.taskId);
       if (!task) throw new ApiError(404, 'This task was not found.');
+      if (b.state !== undefined) {
+        const blocked = taskWorkflowBlocker(task);
+        if (blocked) throw new ApiError(409, blocked, { code: 'task_workflow_blocked' });
+      }
       if (b.name !== undefined) task.name = asString(b.name, 'a task name', 200);
       if (b.description !== undefined) {
         if (typeof b.description !== 'string' || b.description.length > 10000)
@@ -2617,6 +2644,12 @@ export async function createApp(options: AppOptions) {
     if (isUpdateClosing())
       throw new ApiError(409, 'The app update is accepted. New work pauses until restart.');
     if (supplied.capabilityId !== undefined) {
+      const task = store.state(projectId).tasks.find((item) => item.id === supplied.taskId && !item.deletedAt);
+      if (task) {
+        const blocked = taskWorkflowBlocker(task);
+        if (blocked) throw new ApiError(409, blocked, { code: 'task_workflow_blocked' });
+        if (task.workflow) throw new ApiError(409, 'This task requires the Diomedes work loop to enforce its phase settings.');
+      }
       if (supplied.protocolVersion !== undefined || supplied.commandId !== undefined)
         throw new ApiError(400, 'Saved Work commands for native fixtures are not available yet.');
       return harness.bridge.start(
@@ -2631,6 +2664,8 @@ export async function createApp(options: AppOptions) {
     const b = command?.request ?? supplied;
     const state = store.state(projectId);
     const taskId = asString(b.taskId, 'a task', 100);
+    const requestedTask = state.tasks.find((task) => task.id === taskId && !task.deletedAt);
+    if (!requestedTask) throw new ApiError(404, 'This task was not found.');
     const threadId =
       b.threadId === undefined || b.threadId === null
         ? undefined
@@ -2651,14 +2686,16 @@ export async function createApp(options: AppOptions) {
             text: typeof b.instruction === 'string' ? b.instruction : null,
           })
         : choice(b.route, ROUTES, 'service');
-    if (selectedRoute === NECTOVIA_ROUTE) throw new ApiError(409, NECTOVIA_WORK_REFUSED);
+    const useLoop = selectedRoute === NECTOVIA_ROUTE || Boolean(requestedTask.workflow);
+    if (useLoop && selectedRoute !== 'sample' && !isModelApiRoute(selectedRoute))
+      throw new ApiError(409, 'This task requires the Diomedes work loop to enforce its phase settings. Choose a model API route.');
     const team = teamForThread(projectId, threadId, port, selectedRoute);
     if (command && team)
       throw new ApiError(409, 'Saved Work commands for team helpers are not available yet.', {
         code: 'unsupported_work_target',
       });
     if (selectedRoute !== 'sample') {
-      if (store.settings.services?.[selectedRoute] !== true)
+      if (selectedRoute !== NECTOVIA_ROUTE && store.settings.services?.[selectedRoute] !== true)
         throw new ApiError(409, 'Turn the selected engine on in Settings before using it.');
       if (b.consent !== true)
         throw new ApiError(
@@ -2685,6 +2722,27 @@ export async function createApp(options: AppOptions) {
       );
       if (previous) return structuredClone(previous);
       store.checkWorkReceiptCapacity(projectId);
+    }
+    const workflowBlocker = taskWorkflowBlocker(requestedTask);
+    if (workflowBlocker) throw new ApiError(409, workflowBlocker, { code: 'task_workflow_blocked' });
+    if (useLoop) {
+      if (team || (b.agentId && b.agentId !== 'auto'))
+        throw new ApiError(409, 'This task runs in the Diomedes work loop. A separate team or worker selection cannot join it.');
+      const start = () => loopRoutes.startLocked(projectId, {
+        protocolVersion: 1,
+        commandId: command?.admission.commandId ?? identifier('loop-work-'),
+        taskId,
+        route: selectedRoute === 'sample' ? 'native-fixture' : selectedRoute,
+        goal: typeof b.instruction === 'string' && b.instruction.trim()
+          ? asString(b.instruction, 'an instruction', 16000)
+          : requestedTask.description || requestedTask.name,
+        sources: Array.isArray(b.sources) ? b.sources.map(relativeName) : [],
+        consent: b.consent === true,
+        maxTurns: workflowOf(requestedTask).maxTurns,
+      }, { admission: command?.admission });
+      const result = commit ? await commit(start) : await start();
+      if (!result.session) throw new ApiError(409, 'The saved loop no longer has its session.');
+      return result.session;
     }
     if (selectedRoute !== 'sample') {
       return nativeWork.start(projectId, taskId, {
@@ -2920,6 +2978,7 @@ export async function createApp(options: AppOptions) {
             // What `admitWork` asks for when no profile decides a Board Start.
             choice: (engine, projectId, thread) =>
               nativeChoice(engine, projectId, thread, { mode: 'build', text: null }),
+            managedChoice: (projectId, taskId) => managedLoopChoice(projectId, taskId),
             queue: (projectId) => readyScheduler.view(projectId),
             running: (projectId) => work.running(projectId) || nativeWork.running(projectId),
             updateClosing: () =>
@@ -3493,6 +3552,23 @@ export async function createApp(options: AppOptions) {
       throw new EngineError(AGENT_NOT_INCLUDED, reason === AGENT_FREE_VERSION_REASON ? freeVersionRefusal(freeHint()) : reason, false);
     }
     return nectoviaAccountRoute(organizationId);
+  };
+  const managedLoopChoice = (projectId: string, taskId?: string) => {
+    const accountRoute = nectoviaAccountFor(projectId);
+    const organizationId = nectoviaAccount!.organizationFor(projectId)!;
+    const entitlement = accountSession?.entitlement(organizationId);
+    if (!entitlement?.agent)
+      throw new EngineError(AGENT_NOT_INCLUDED, entitlement?.reason || 'This business does not include the Nectovia Agent.', false);
+    if (!entitlement.managedInference)
+      throw new EngineError(AGENT_NOT_INCLUDED, 'This business does not include managed AI usage.', false);
+    const thread = taskId ? store.state(projectId).conversations.find((item) => item.taskId === taskId) : undefined;
+    const tier = nectoviaTier({
+      style: jobCaps.tierFor(projectId, thread?.id ?? null),
+      signedIn: nectoviaAccount?.signedIn() ?? false,
+      policy: nectoviaAccount?.policy() ?? null,
+    });
+    if (tier.outcome !== 'run' || !tier.model) throw new ApiError(409, tier.reason);
+    return { model: tier.model, accountRoute };
   };
   /** Whether a route takes a send: Nectovia has no switch; every other route is turned on in Settings. */
   const routeOn = (route: string) => route === NECTOVIA_ROUTE || store.settings.services?.[route] === true;
@@ -5063,7 +5139,7 @@ export async function createApp(options: AppOptions) {
               name: command.name,
               description: command.description,
               owner: 'diomedes-with-ok',
-            })
+            }, { projectId: source.projectId, threadId: source.threadId, turnId: projectedTurnIds(hash(turnIdentityText(source.runId, source.commandId))!).user, runId: source.runId })
           ).id,
         }));
       }),
@@ -5168,6 +5244,7 @@ export async function createApp(options: AppOptions) {
       wake?: boolean;
       mode?: 'build' | 'fix';
       failing?: { document?: string; text?: string };
+      skillId?: string;
     },
     held = false,
   ) => {
@@ -5177,6 +5254,15 @@ export async function createApp(options: AppOptions) {
     const engine = input.engine ?? 'codex';
     const run = async () => {
       const state = store.state(projectId);
+      const boundTaskId = taskId ?? (attachedTo.kind === 'task' ? attachedTo.ref
+        : state.conversations.find((item) => item.id === threadId)?.taskId);
+      const boundTask = state.tasks.find((item) => item.id === boundTaskId && !item.deletedAt);
+      if (boundTask?.workflow) {
+        const blocker = taskWorkflowBlocker(boundTask);
+        throw new ApiError(409, blocker ?? 'Start this task from the Board so its phase permissions and turn limit are enforced.', {
+          code: 'task_workflow_blocked', taskId: boundTask.id,
+        });
+      }
       requireCloudSharing(state, engine, sources, wake === true);
       if (
         state.sessions.some((session) => ['queued', 'working', 'waiting'].includes(session.state))
@@ -5242,11 +5328,21 @@ export async function createApp(options: AppOptions) {
         if (failing.text) lines.push(`- Report (untrusted material): ${failing.text}`);
         instruction = `${text}\n\n${lines.join('\n')}`;
       }
+      const userTurnId = identifier('U');
+      const loadedSkill = input.skillId === undefined ? undefined : await packLifecycle.contributions.load(
+        await packLifecycle.contributions.admit(state, userTurnId),
+        { packId: 'diomedes.small-business', kind: 'workflow', id: input.skillId },
+        { reason: 'chosen', state },
+      );
+      const skill = input.skillId === undefined ? undefined : assembleSkillSection({
+        state, packId: 'diomedes.small-business', skillId: input.skillId, mode: runMode,
+        budgetBytes: instructionSectionBudget(0), loaded: loadedSkill,
+      });
       if (!wake) {
         // A wake carries team mail that the thread already shows; only a person's own
         // message becomes a turn of theirs.
         const youTurn: Turn = {
-          id: identifier('U'),
+          id: userTurnId,
           role: 'you',
           mode: runMode,
           text,
@@ -5255,6 +5351,7 @@ export async function createApp(options: AppOptions) {
           ...(await turnSourceVersions(store, projectId, sources)),
           route: engine,
           ...(attempt ? { attempt } : {}),
+          ...(skill ? { skill: skill.use } : {}),
         };
         conversation.turns.push(youTurn);
         touchThread(conversation, youTurn.at, state.tasks);
@@ -5288,6 +5385,7 @@ export async function createApp(options: AppOptions) {
         mode: runMode,
         requested: choice,
         agentId: conversation.requested?.agent ?? null,
+        ...(skill ? { skill } : {}),
       });
       const storedSession = store.state(projectId).sessions.find((item) => item.id === session.id)!;
       storedSession.permission = conversation.permission ?? 'show-first';
@@ -5470,6 +5568,7 @@ export async function createApp(options: AppOptions) {
           team: teamForThread(projectId, threadId, req.socket.localPort, serviceRoute),
           mode,
           ...(failing ? { failing } : {}),
+          ...(skillId ? { skillId } : {}),
         });
       const prepared = await store.locked(async () => {
         const state = store.state(projectId);

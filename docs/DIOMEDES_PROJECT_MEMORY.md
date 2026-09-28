@@ -1,7 +1,7 @@
 # DIOMEDES PROJECT MEMORY — CANONICAL
 
-Version: 2026-09-25.2
-Last reconciled: September 25, 2026
+Version: 2026-09-27.1
+Last reconciled: September 27, 2026 (Board workflow definitions synchronized with cloud)
 Cloud canonical: 13wYjK1BhEsGzc_yhpRtBz62pGmLxwdwq8pVqe1i4eKw
 Repository mirror: docs/DIOMEDES_PROJECT_MEMORY.md
 
@@ -12,6 +12,36 @@ Andrew's newest explicit decision → Core Pillars → live roadmap → this def
 The complete previous repository body is preserved at docs/reference/DIOMEDES_PROJECT_MEMORY_PRE_AUTOMATIONS_2026-09-19.md (unchanged except that retired Diomedes price figures were struck from both archives on 2026-09-19); the previous roadmap is docs/reference/DIOMEDES_ROADMAP_PRE_AUTOMATIONS_2026-09-19.md. The cloud memory snapshot is https://docs.google.com/document/d/1rDyz3L4RqBEiZM39-nuk-8AZjs3UYkAfjQnSMqDRAfo/edit and cloud roadmap snapshot is https://docs.google.com/document/d/18I5Y384mPcbT70AuH-N3wZA8cFodLq7xxczfAcC96bk/edit . Detailed non-conflicting requirements remain incorporated from these bodies and docs/reference/DIOMEDES_PROJECT_MEMORY_BASE_2026-09-10.2.md. Their old status, version, price-candidate, release and worker-assignment wording is historical, not an instruction to restart completed work or replace current decisions. Read relevant detail on demand.
 
 Current Automations specification: docs/product/2026-09-19-automations.md, version 2026-09-19.1; cloud https://docs.google.com/document/d/1iOf_-0c1ft5w-KhJpp1eOXLMGzo8QVYHWQKJg9YYp5o/edit . It consolidates BUS-10 and OPS-08–OPS-10. The earlier detached draft/proposed-amendment handoffs are superseded for planning status, not evidence that the feature has shipped.
+
+## Task permissions and Board workflows
+
+Andrew's 2026-09-27 decision gives tasks a continuation permission. **Full approval**
+lets the assigned agent continue through Plan, Build and Review within its existing
+scope and limits. **Stop on phase change** requires the person's approval before
+the next phase. This permission does not grant file access, service consent,
+paid Agent access or a higher spending cap. A workflow phase is separate from
+the Board column, which projects task, run and approval records.
+
+Agent-proposed tasks wait in Inbox until accepted. Acceptance makes a task ready;
+it does not start work. A child names its own separate result, stays within its
+parent's continuation and action-turn limits, receives no copied grants and also
+waits in Inbox. Each task can create at most four children, with two child levels.
+Deletion does not replenish that limit, and deleted children retain their limits
+when restored.
+Source conversations are immutable links captured at creation when available.
+
+Andrew also clarified on 2026-09-27 that skills are not limited to Ask and Plan.
+A task may select a reusable playbook from an active project pack for Work;
+Build and Fix may use the same guidance. Its exact pack version and digest are
+recorded at admission. The playbook changes the method, never the task's
+permissions, response format or spending limits. Children choose their own
+playbook rather than inheriting a method intended for another result.
+
+Nectovia Board Work uses the native single-agent loop with the signed-in business,
+published model and task-thread tier. Every call checks paid authority and the
+original job's limits. Manual board access does not require paid Agent access.
+Implementation and acceptance status are recorded in
+`docs/implementation/2026-09-27-board-workflows.md`; this definition is not a release claim.
 
 ## Automations — stable meanings and truthful state
 
