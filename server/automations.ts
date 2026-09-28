@@ -65,6 +65,7 @@ import {
   type StoredOccurrences,
   type TriggerOccurrence,
 } from '../shared/automations.js';
+import { AUTOMATIONS_NOT_INCLUDED_REASON } from '../shared/access.js';
 import {
   CATCH_UP_CHOICES,
   DEFAULT_CATCH_UP_MINUTES,
@@ -562,11 +563,13 @@ export class AutomationService {
         here: this.assignedHere(definition),
       },
       mayControl: canConfigureOrganization(this.workspaces.membershipOf(organization.id)),
-      enableBlocked: !current
-        ? 'Save a schedule first.'
-        : setup && setup.facts.state === 'incomplete'
-          ? setup.facts.message
-          : null,
+      enableBlocked:
+        this.planRefusal(organization.id)?.reason ??
+        (!current
+          ? 'Save a schedule first.'
+          : setup && setup.facts.state === 'incomplete'
+            ? setup.facts.message
+            : null),
       recorded,
       acts: [...definition.acts].reverse().slice(0, 20),
     };
@@ -754,7 +757,9 @@ export class AutomationService {
           : await this.occurrenceView(labelled);
     const hostState = this.hostState();
     const here = this.assignedHere(definition);
-    const blocked = this.scheduleBlocked(definition, occurrences);
+    // A plan that has ended blocks a schedule that is on at once, before a slot records it.
+    const unpaid = this.planRefusal(organization.id);
+    const blocked = unpaid ?? this.scheduleBlocked(definition, occurrences);
     const status = automationLabel({
       trigger: definition.control.state === 'off' ? 'manual' : 'schedule',
       setup: setup.facts,
@@ -846,8 +851,9 @@ export class AutomationService {
       status,
       lastResult,
       freshness,
-      run:
-        setup.facts.state !== 'ready'
+      run: unpaid
+        ? { allowed: false, reason: unpaid.reason }
+        : setup.facts.state !== 'ready'
           ? { allowed: false, reason: setup.facts.message }
           : status.label === 'running'
             ? { allowed: false, reason: 'It is running now.' }
@@ -937,6 +943,22 @@ export class AutomationService {
     };
   }
 
+  // --- the plan -------------------------------------------------------------------
+
+  /**
+   * Why this business's Automations may not start, or null when they may. They are part of a
+   * paid plan (Andrew, 2026-09-28: "automations are paid plans only"), so the business's plan
+   * must include the Nectovia Agent, as every plan does. A plan the account service has not
+   * answered for yet starts nothing, in that answer's own words. A host with no account service
+   * sells nothing and so asks for no plan.
+   */
+  private planRefusal(organizationId: string): { code: string; reason: string } | null {
+    const plan = this.workspaces.planOf(organizationId);
+    if (!plan || plan.agent) return null;
+    if (plan.state === 'unknown') return { code: 'plan_unknown', reason: plan.reason };
+    return { code: 'plan_not_included', reason: AUTOMATIONS_NOT_INCLUDED_REASON };
+  }
+
   // --- admission: one path for a press and a slot -------------------------------
 
   /**
@@ -1014,7 +1036,9 @@ export class AutomationService {
 
     const id = occurrenceIdFor(organizationId, trigger.commandId);
     const runId = runIdFor(id);
-    const blocked = gate?.() ?? null;
+    // A slot rechecks the authority it recorded first. Then the plan, for a press and a slot
+    // alike; either refusal skips setup, since nothing may start.
+    const blocked = gate?.() ?? this.planRefusal(organizationId);
     let setup: Setup | null = null;
     if (!blocked)
       try {
@@ -1639,6 +1663,10 @@ export class AutomationService {
     let sentence: string;
     let inFlight: OccurrenceView | null = null;
     const grant = async (): Promise<ScheduleGrant> => {
+      // Turning a schedule on or resuming it is what the plan decides. Saving, pausing and
+      // turning it off are not: they start nothing.
+      const unpaid = this.planRefusal(organizationId);
+      if (unpaid) throw refuse(403, unpaid.reason, unpaid.code);
       const setup = await this.setup(organizationId);
       if (setup.facts.state === 'incomplete')
         throw refuse(409, setup.facts.message, 'setup_incomplete');
