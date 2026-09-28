@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "base": "1af37e085ef24fc6c92d6b2b8510fc52a504bd1b",
+  "status": "UNRUN test-only Personal original RED/control candidate",
+  "staticCaseInventory": 7,
+  "sha256": {
+    "server/accounts/session.ts": "2c1c4faa68968fcd93eaa179200dedb7051d063555306b71f1dec974d782d806",
+    "server/accounts/client.ts": "035ffc4439b517913ed06fa2f60644ee49355cb9365a2b53862282e7742b8097",
+    "server/accounts/agent-gate.ts": "4546f6a4adb1cc82135fbe67b6b515f926887df4165a72dff8a1a0ea05ebd9db",
+    "shared/individual-plan.ts": "6fac2928f663b7acc0184bda5239c49f27d5135ef82a1b756573f4c080b7b06f",
+    "services/control-plane/src/commercial.ts": "ff6af0ddc7f2e6b75b4b0bdba4074a8c3b7af8e7195066bf2263887da4e5c074",
+    "services/control-plane/src/commercial-postgres.ts": "bf41a3f434e6d2f02e2fc662a1442d9fe1c98a01132992a2beedbfd5aed8ffea",
+    "services/control-plane/src/faux/store.ts": "1d5259f0fe77e84088fe17a70878c97eaac6572f261db3e6804ed3968b8f35ab",
+    "tests/accounts-security-personal-access.test.ts": "3fa9cb5cf0cb2928d62b77ff4ee981162db63a54e7b0bb5a1e436c8172b98471",
+    "tests/individual-plan.test.ts": "2ddb78d573d08c86286706e55594cd91dd7dddf2f520eb3d95f636ed78ff67cc",
+    "tests/agent-admission-answer.test.ts": "6c7ce1b95ff7ce56d8035f6e031119b167c3244c735eaf1eff73e46afff5daf1",
+    "package.json": "c0c91739473286fefe33278a7c47df955175065934d623fc137acb273af26707",
+    "package-lock.json": "708e3f4671d6a96c6d88ef0a874c5122e256fc1d9052c69c8e2fe862bf951b8f",
+    "services/control-plane/package.json": "895ae554b3f928eba9026f5dc10c5ca882ce0b0d4c5cd7fda0ecc84987c15061",
+    "services/control-plane/package-lock.json": "ac0e6e79bc6909be5eb86e69ec2245c1a5ae3744f77970e878ff0b2b15e4f40e",
+    "vitest.config.ts": "4ada0f94dd53cfb142cae6a8d82a5eeb5bcac537274f66f7fedb8efa0488d20d"
+  }
+}
