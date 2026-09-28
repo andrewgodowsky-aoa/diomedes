@@ -9,25 +9,13 @@ import type {
 } from '../../shared/types';
 import { formatOrigin, originForSession } from '../attribution-display';
 import { OriginLine, time } from '../components';
-import { taskEvidence, type TaskColumn } from '../workbench/task-evidence';
-
-function ageOf(iso: string): string {
-  const mins = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
-  if (mins < 60) return `${mins} m`;
-  const hours = Math.round(mins / 60);
-  if (hours < 24) return `${hours} h`;
-  return `${Math.round(hours / 24)} d`;
-}
+import { taskEvidence } from '../workbench/task-evidence';
+import { evidenceTone, needsYou } from '../../shared/needs-you';
+// The Board's own reading, so a task's age is the same number on both: since it last moved.
+import { ageOf } from './BoardView';
 
 function clockOf(iso: string): string {
   return new Date(iso).toTimeString().slice(0, 5);
-}
-
-function pointFor(column: TaskColumn): string {
-  if (column === 'Working') return 'live';
-  if (column === 'Review' || column === 'Blocked') return 'attn';
-  if (column === 'Done') return 'done';
-  return '';
 }
 
 interface LedgerProps {
@@ -70,6 +58,8 @@ export function Ledger({
     .map((item) => ({ task: item, evidence: projection(item) }))
     .filter((item) => item.evidence.column !== 'Done');
   const focus = task ? projection(task) : null;
+  // The one needs-you rule: the same items the home counts and the Board marks.
+  const waiting = needsYou(state);
   const worker = (item: Task, session: Session | null) =>
     session
       ? formatOrigin(originForSession(session)).label
@@ -102,12 +92,12 @@ export function Ledger({
       {task && focus && (
         <div className="focus" aria-label="This thread's work">
           <div className="t">
-            <span className={`pt ${pointFor(focus.column)}`} />
+            <span className={`pt ${evidenceTone(focus)}`} />
             {task.name}
           </div>
           <div className="m">
-            <span className="mono">
-              {focus.detail}, {ageOf(task.createdAt)}
+            <span className="mono" title={ageOf(task).title}>
+              {focus.detail}, {ageOf(task).short}
             </span>
             <button type="button" onClick={onBoard}>
               Board
@@ -137,9 +127,11 @@ export function Ledger({
         <ul>
           {open.map(({ task: t, evidence }) => (
             <li key={t.id}>
-              <span className={`pt ${pointFor(evidence.column)}`} />
+              <span className={`pt ${evidenceTone(evidence)}`} />
               {t.name}
-              <span className="mono lc">{ageOf(t.createdAt)}</span>
+              <span className="mono lc" title={ageOf(t).title}>
+                {ageOf(t).short}
+              </span>
               <span className="sub">
                 {worker(t, evidence.session)} · {evidence.detail}
               </span>
@@ -149,19 +141,28 @@ export function Ledger({
       </section>
       <section id="secNeeds">
         <h3>
-          Needs you <span className="mono">{openNeeds.length ? openNeeds.length : ''}</span>
+          Needs you <span className="mono">{waiting.length ? waiting.length : ''}</span>
         </h3>
         <ul>
-          {openNeeds.length ? (
-            openNeeds.map((n) => (
-              <li key={n.id}>
-                <span className="pt attn" />
-                <span>{n.what}</span>
-                <button type="button" onClick={() => onReviewNeed(n)}>
-                  Review
-                </button>
-              </li>
-            ))
+          {waiting.length ? (
+            waiting.map((item) => {
+              const need = item.needId ? openNeeds.find((n) => n.id === item.needId) : undefined;
+              return (
+                <li key={item.id}>
+                  <span className={`pt ${item.kind === 'failed' ? 'fail' : 'attn'}`} />
+                  <span title={item.detail}>{need ? need.what : item.label}</span>
+                  {need ? (
+                    <button type="button" onClick={() => onReviewNeed(need)}>
+                      Review
+                    </button>
+                  ) : (
+                    <button type="button" onClick={onBoard}>
+                      Board
+                    </button>
+                  )}
+                </li>
+              );
+            })
           ) : (
             <li className="quiet">Nothing right now</li>
           )}

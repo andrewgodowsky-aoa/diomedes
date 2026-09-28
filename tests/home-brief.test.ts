@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { HomeArt } from '../client/console/HomeArt';
 import { HomeBrief } from '../client/console/HomeBrief';
 import {
+  BRIEF_ITEMS,
   BRIEF_ROWS,
   briefDate,
   countWord,
@@ -23,7 +24,7 @@ import {
   takeSignature,
 } from '../client/console/home-signature';
 import { motionAllowed, readMotionFacts, type MotionFacts } from '../client/console/nectovia-motion';
-import type { Project } from '../shared/types';
+import type { Project, WaitingItem } from '../shared/types';
 
 // The agent home's report and signature (Home.dc.html). The report is a pure
 // view model over each project's own status record; the signature is a
@@ -164,6 +165,77 @@ describe('the report in plain words', () => {
       }
     }
     expect(lines.filter((line) => DASH_OR_BANG.test(line))).toEqual([]);
+  });
+});
+
+describe('what waits on the person, by name', () => {
+  const item = (id: string, time: string, over: Partial<WaitingItem> = {}): WaitingItem => ({
+    id: `task:${id}`,
+    kind: 'review',
+    label: `Task ${id}`,
+    detail: 'Changes to review',
+    taskId: id,
+    at: time,
+    ...over,
+  });
+  const kestrel = project(
+    'kestrel',
+    {
+      needsYou: 4,
+      working: 1,
+      waiting: [
+        item('a', '2026-09-22T07:50:00Z'),
+        item('b', '2026-09-22T06:00:00Z'),
+        item('c', '2026-09-22T05:00:00Z'),
+      ],
+    },
+    { name: 'Kestrel' },
+  );
+  const harbor = project(
+    'harbor',
+    { needsYou: 1, waiting: [item('d', '2026-09-22T07:00:00Z', { kind: 'failed', detail: 'Run failed' })] },
+    { name: 'Harbor' },
+  );
+
+  it('names the newest three across projects, and a project row counts only the rest', () => {
+    const model = homeBrief([kestrel, harbor, project('still')], morning);
+    expect(model.waiting.map((entry) => [entry.projectId, entry.item.taskId])).toEqual([
+      ['kestrel', 'a'],
+      ['harbor', 'd'],
+      ['kestrel', 'b'],
+    ]);
+    expect(model.waiting.length).toBeLessThanOrEqual(BRIEF_ITEMS);
+    // Kestrel waits on four and two are named; Harbor's one is named, so it has no row.
+    expect(model.rows.map((row) => [row.projectId, row.sentence])).toEqual([
+      ['kestrel', 'Two more things are waiting on you.'],
+    ]);
+    // Harbor is named above, so only the project with nothing at all is quiet.
+    expect(model.quiet).toBe(1);
+    expect(model.accent).toBe('Five things need you.');
+  });
+
+  it('counts every waiting item in its row when a status names none', () => {
+    const model = homeBrief([project('old', { needsYou: 2 })], morning);
+    expect(model.waiting).toEqual([]);
+    expect(model.rows[0].sentence).toBe('Two things are waiting on you.');
+  });
+
+  it('gives each item one button named for what the person does, red for a failure', () => {
+    const opened: string[] = [];
+    const html = renderToStaticMarkup(
+      createElement(HomeBrief, {
+        projects: [kestrel, harbor],
+        onOpen: () => undefined,
+        onOpenWaiting: (projectId: string, entry: WaitingItem) => opened.push(`${projectId}:${entry.id}`),
+        now: morning,
+      }),
+    );
+    expect(html).toContain('<h3>Waiting on you</h3>');
+    expect(html).toContain('aria-label="Review Task a in Kestrel"');
+    expect(html).toContain('aria-label="Check Task d in Harbor"');
+    expect(html).toContain('<li class="nv-row fail">');
+    expect(html).toContain('Changes to review · Kestrel');
+    expect(opened).toEqual([]);
   });
 });
 

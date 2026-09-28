@@ -128,7 +128,7 @@ export function boardFor(input: BoardInput): Board | null {
   const kept = input.tasks.filter((task) => !task.deletedAt);
   const step = (task: Task): BoardStep => {
     const seen = taskEvidence(task, input.sessions, needs, changes);
-    return { taskId: task.id, label: task.name, state: stepState(seen.column, seen.session), detail: seen.detail };
+    return { taskId: task.id, label: task.name, state: stepState(seen), detail: seen.detail };
   };
   const groups: BoardGroup[] = [];
   const counted = new Set<string>();

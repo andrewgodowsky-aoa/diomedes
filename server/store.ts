@@ -7,6 +7,7 @@ import { validateAgentResolutions } from './agents.js';
 import { upgradeCloudSharing } from './cloud-sharing.js';
 import { applicationOrigin, formatOrigin, type OriginSnapshot } from '../shared/attribution.js';
 import { diomedesThread } from '../shared/diomedes-thread.js';
+import { needsYou, WAITING_NAMED } from '../shared/needs-you.js';
 import { CONVERSATION_DEFAULT_ROUTE, HOST_TEST_PROJECT } from '../shared/engines.js';
 import { CODEX_ENGINE, FIXTURE_ENGINE, harnessWrites } from './harness/approval.js';
 import { NATIVE_LOOP_ENGINE } from '../shared/native-loop.js';
@@ -850,8 +851,13 @@ export class Store extends EventEmitter {
       waitingForYou: state.needs.filter((n) => n.state === 'open').length,
       historyToday: state.history.filter((h) => h.time.slice(0, 10) === today).length,
     };
+    const waiting = needsYou(state);
     state.project.status = {
-      needsYou: state.project.counts.waitingForYou,
+      // The one needs-you rule: open approvals, work to review and failed runs, the same
+      // items the Board and the ledger mark. counts.waitingForYou stays the raw open-Need count.
+      needsYou: waiting.length,
+      // The newest few by name, for the home; a project with nothing waiting carries none.
+      ...(waiting.length ? { waiting: waiting.slice(0, WAITING_NAMED) } : {}),
       working: state.project.counts.running,
       tasksDone: state.tasks.filter((t) => t.state === 'done').length,
       tasksTotal: state.tasks.length,

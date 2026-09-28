@@ -173,7 +173,7 @@ interface ShellProps {
    * Automations row). `n` identifies one request, which is taken once and then
    * said to be taken, so it never reopens the screen on a later visit.
    */
-  viewRequest?: { view: ShellView; n: number } | null;
+  viewRequest?: { view: ShellView; n: number; taskId?: string; needId?: string } | null;
   onViewRequestTaken?: () => void;
 }
 
@@ -523,12 +523,18 @@ export function Shell({
   }, [load, report]);
   // After the reset above, so a request made on the way in is what shows.
   const takenView = useRef<number | null>(null);
+  // Keep the requested item until its own project has loaded.
+  const pendingItem = useRef<{ projectId: string; needId?: string; taskId?: string } | null>(null);
   useEffect(() => {
     if (!viewRequest || viewRequest.n === takenView.current) return;
     takenView.current = viewRequest.n;
     setView(viewRequest.view);
+    pendingItem.current =
+      viewRequest.needId || viewRequest.taskId
+        ? { projectId, needId: viewRequest.needId, taskId: viewRequest.taskId }
+        : null;
     onViewRequestTaken?.();
-  }, [viewRequest, onViewRequestTaken]);
+  }, [viewRequest, onViewRequestTaken, projectId]);
   useEffect(() => {
     const es = new EventSource('/api/events');
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -793,6 +799,26 @@ export function Shell({
       setSelectedId(threads[0].id);
     }
   }, [state, selectedId, threads.length]);
+  // A named waiting item takes precedence over the default newest thread.
+  useEffect(() => {
+    const item = pendingItem.current;
+    if (!item || !state || state.project.id !== item.projectId) return;
+    pendingItem.current = null;
+    const need = item.needId
+      ? state.needs.find((n) => n.id === item.needId && n.state === 'open')
+      : undefined;
+    if (need) {
+      reviewElsewhere(need);
+      return;
+    }
+    const thread = item.taskId
+      ? state.conversations.find((c) => c.taskId === item.taskId)
+      : undefined;
+    if (thread) {
+      setSelectedId(thread.id);
+      setView('Thread');
+    }
+  }, [state, viewRequest]);
   const selected = selectedId
     ? (state?.conversations.find((c) => c.id === selectedId) ?? null)
     : null;

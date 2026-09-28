@@ -409,7 +409,8 @@ describe('task, approval, sample worker, and review flow', () => {
     current = await until(id, (s) => s.sessions[0].state === 'done');
     expect(current.changes).toHaveLength(2);
     expect(current.changes.every((c) => c.changedSince === null)).toBe(true);
-    expect(current.project.status.needsYou).toBe(0);
+    // The run is done, but its changes wait on the person until they are kept or undone.
+    expect(current.project.status.needsYou).toBe(1);
     expect(
       (
         await request(`/projects/${id}/review/all`, 'POST', {
@@ -418,7 +419,9 @@ describe('task, approval, sample worker, and review flow', () => {
         })
       ).status,
     ).toBe(200);
-    expect((await state(id)).tasks[0].state).toBe('done');
+    current = await state(id);
+    expect(current.tasks[0].state).toBe('done');
+    expect(current.project.status.needsYou).toBe(0);
   });
   test('declines file creation while continuing the recorded plan update', async () => {
     await request('/settings', 'PUT', { permissions: { changingFiles: false } });

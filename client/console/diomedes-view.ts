@@ -68,7 +68,7 @@ function timeLabel(iso: string, now: number): string {
  * reason, kept local here because this module cannot import a `.tsx`.
  */
 function projectSub(p: Project): { text: string; tone?: 'attn' | 'live' } {
-  if (p.status?.needsYou) return { text: 'Needs your OK', tone: 'attn' };
+  if (p.status?.needsYou) return { text: 'Needs you', tone: 'attn' };
   if (p.status?.working) {
     return { text: `Working on ${p.status.working} task${p.status.working === 1 ? '' : 's'}`, tone: 'live' };
   }
