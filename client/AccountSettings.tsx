@@ -7,6 +7,7 @@ import { api } from './api';
 import { useAccount } from './AccountGate';
 import { Button } from './components';
 import { PlansLink } from './console/FreePlanNotice';
+import { ManagedInferencePolicy } from './ManagedInferencePolicy';
 
 /**
  * Settings, Account: who is signed in, and each business they belong to as
@@ -163,6 +164,7 @@ function BusinessCard({ workspace, onChanged }: { workspace: AccountWorkspaceVie
             </ul>
           )}
           <p className="caption">Plans are changed by Diomedes Systems. Reply to your invoice or write to hello@diomedes.net.</p>
+          {agent?.included && <ManagedInferencePolicy />}
         </div>
       )}
       <PhoneRelayRow organizationId={workspace.organization.id} />

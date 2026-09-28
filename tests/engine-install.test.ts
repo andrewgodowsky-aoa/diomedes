@@ -1,11 +1,29 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { EngineInstaller, managedBinary } from '../server/engines/install.js';
 import { loginCommand, NativeLogin, prepareOmpConfiguration } from '../server/engines/login.js';
 const roots: string[] = [];
+const verifiedPayload = 'verified official fixture';
+const fixtureDigest = createHash('sha256').update(verifiedPayload).digest('hex');
+function releaseFetch(download: typeof fetch, version = () => '99.1.0'): typeof fetch {
+  return async (url, options) => {
+    const address = String(url), selected = version();
+    if (address.endsWith('/claude-code-releases/latest')) return new Response(selected);
+    if (address.endsWith('/manifest.json'))
+      return Response.json({ version: selected, platforms: { 'win32-x64': { binary: 'claude.exe', checksum: fixtureDigest } } });
+    if (address.endsWith('/releases/latest')) {
+      const repo = address.includes('/anomalyco/') ? 'anomalyco/opencode' : 'can1357/oh-my-pi';
+      const name = repo.startsWith('anomalyco/') ? 'opencode-windows-x64-baseline.zip' : 'omp-windows-x64.exe';
+      return Response.json({ tag_name: 'v' + selected, assets: [{ name, digest: 'sha256:' + fixtureDigest,
+        browser_download_url: 'https://github.com/' + repo + '/releases/download/v' + selected + '/' + name }] });
+    }
+    return download(url, options);
+  };
+}
 afterEach(async () => {
   for (const root of roots.splice(0)) await fs.rm(root, { recursive: true, force: true });
 });
@@ -15,7 +33,7 @@ async function setup() {
   return root;
 }
 describe('selected official installation and native login', () => {
-  it('shows complete pinned offers without accessing the network or changing the host', async () => {
+  it('shows current-release discovery offers without changing the host', async () => {
     const root = await setup(),
       fetcher = vi.fn<typeof fetch>();
     const installer = new EngineInstaller(root, { fetch: fetcher, platform: 'win32', arch: 'x64' });
@@ -27,7 +45,7 @@ describe('selected official installation and native login', () => {
         destination: managedBinary(root, engine),
       });
       expect(offer.source).toMatch(/^https:/);
-      expect(offer.source).toContain(offer.version);
+      expect(offer.version).toBe('current');
       expect(offer.publisher).toBeTruthy();
       expect(offer.dependencies.length).toBeGreaterThan(0);
       expect(offer.privileges).toContain('No elevation');
@@ -43,7 +61,7 @@ describe('selected official installation and native login', () => {
   it('rejects mismatched downloads before extraction or activation, then permits a deliberate retry', async () => {
     const root = await setup(),
       extract = vi.fn(),
-      fetcher = vi.fn<typeof fetch>(async () => new Response('wrong release'));
+      fetcher = vi.fn<typeof fetch>(releaseFetch(async () => new Response('wrong release')));
     const installer = new EngineInstaller(root, {
       fetch: fetcher,
       extract,
@@ -54,7 +72,7 @@ describe('selected official installation and native login', () => {
       await expect(installer.install('opencode', true)).rejects.toMatchObject({
         code: 'INSTALL_CHECKSUM',
       });
-    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(fetcher).toHaveBeenCalledTimes(4);
     expect(extract).not.toHaveBeenCalled();
     expect(await fs.readdir(path.join(root, 'installed'))).toEqual([]);
   });
@@ -76,14 +94,14 @@ describe('selected official installation and native login', () => {
       file = managedBinary(root, 'oh-my-pi');
     await fs.mkdir(path.dirname(file), { recursive: true });
     await fs.writeFile(file, 'fixture tampered managed binary');
-    const fetcher = vi.fn<typeof fetch>(async () => new Response('not the pinned release'));
+    const fetcher = vi.fn<typeof fetch>(releaseFetch(async () => new Response('wrong official artifact')));
     const installer = new EngineInstaller(root, { fetch: fetcher, platform: 'win32', arch: 'x64' });
-    // Repair takes the normal pinned path: the download must still match the
+    // Repair resolves the official release: the download must still match the
     // reviewed digest, so a wrong payload activates nothing.
     await expect(
       installer.install('oh-my-pi', true, undefined, { repair: true }),
     ).rejects.toMatchObject({ code: 'INSTALL_CHECKSUM' });
-    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(fetcher).toHaveBeenCalledTimes(2);
     // The bad copy is set aside inside Diomedes's own tree, not deleted and
     // not left where anything could run it.
     const kept = await fs.readdir(path.dirname(file));
@@ -125,7 +143,7 @@ describe('selected official installation and native login', () => {
   it('never writes over a copy it set aside earlier, within the same millisecond', async () => {
     const root = await setup(),
       file = managedBinary(root, 'oh-my-pi');
-    const fetcher = vi.fn<typeof fetch>(async () => new Response('not the pinned release'));
+    const fetcher = vi.fn<typeof fetch>(releaseFetch(async () => new Response('wrong official artifact')));
     const installer = new EngineInstaller(root, { fetch: fetcher, platform: 'win32', arch: 'x64' });
     vi.useFakeTimers({ toFake: ['Date'] });
     try {
@@ -175,13 +193,13 @@ describe('selected official installation and native login', () => {
       file = managedBinary(root, 'claude-code');
     await fs.mkdir(path.dirname(file), { recursive: true });
     await fs.writeFile(file, 'fixture tampered claude');
-    const fetcher: typeof fetch = async (_url, options) =>
+    const fetcher: typeof fetch = releaseFetch(async (_url, options) =>
       new Promise((_resolve, reject) => {
         options?.signal?.addEventListener('abort', () => reject(new Error('aborted')), {
           once: true,
         });
         controller.abort();
-      });
+      }));
     const installer = new EngineInstaller(root, { fetch: fetcher, platform: 'win32', arch: 'x64' });
     await expect(
       installer.install('claude-code', true, controller.signal, { repair: true }),
@@ -195,19 +213,36 @@ describe('selected official installation and native login', () => {
   it('cancels a waiting download and leaves no activated or partial installation', async () => {
     const root = await setup(),
       controller = new AbortController();
-    const fetcher: typeof fetch = async (_url, options) =>
+    const fetcher: typeof fetch = releaseFetch(async (_url, options) =>
       new Promise((_resolve, reject) => {
         options?.signal?.addEventListener('abort', () => reject(new Error('aborted')), {
           once: true,
         });
         controller.abort();
-      });
+      }));
     const installer = new EngineInstaller(root, { fetch: fetcher, platform: 'win32', arch: 'x64' });
     await expect(installer.install('claude-code', true, controller.signal)).rejects.toMatchObject({
       code: 'CANCELLED',
     });
     expect(await fs.readdir(path.join(root, 'installed'))).toEqual([]);
   });
+  it('refreshes vendor releases without a source update and preserves the previous installation', async () => {
+    const root = await setup();
+    let version = '99.1.0';
+    const installer = new EngineInstaller(root, { platform: 'win32', arch: 'x64',
+      fetch: releaseFetch(async () => new Response(verifiedPayload), () => version) });
+    expect((await installer.refreshOffer('oh-my-pi')).version).toBe('99.1.0');
+    version = '99.2.0';
+    await installer.install('oh-my-pi', true);
+    const oldFile = managedBinary(root, 'oh-my-pi');
+    expect(oldFile).toContain('99.1.0');
+    expect((await installer.refreshOffer('oh-my-pi')).version).toBe('99.2.0');
+    await installer.install('oh-my-pi', true);
+    expect(managedBinary(root, 'oh-my-pi')).toContain('99.2.0');
+    expect(await fs.readFile(oldFile, 'utf8')).toBe(verifiedPayload);
+    await fs.access(managedBinary(root, 'oh-my-pi'));
+  });
+
   it('keeps provider login native and rejects an undisclosed action', async () => {
     expect(loginCommand('claude-code')).toContain('--claudeai');
     expect(loginCommand('claude-code')).not.toContain('--console');

@@ -26,7 +26,7 @@
  */
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import type { Json } from '../../shared/harness.js';
 import {
@@ -38,7 +38,7 @@ import {
   type SandboxManifest,
 } from '../../shared/sandbox.js';
 import { ApiError, relativeName } from '../paths.js';
-import type { Store } from '../store.js';
+import { jsonWrite, type Store } from '../store.js';
 import { containedPath, containedSpawn, containedWrite, type SpawnLimits } from '../harness/containment.js';
 import { validateRunId } from '../harness/run-store.js';
 import { HarnessError, digest } from '../harness/policy.js';
@@ -89,18 +89,6 @@ export interface CreateSpec {
   readonly role: 'delegate' | 'worker';
   readonly base: SandboxBase;
   readonly scope: readonly string[] | null;
-}
-
-async function atomicJson(target: string, value: unknown) {
-  const temp = `${target}.${randomBytes(6).toString('hex')}.tmp`;
-  const handle = await fs.open(temp, 'wx');
-  try {
-    await handle.writeFile(JSON.stringify(value, null, 2));
-    await handle.sync();
-  } finally {
-    await handle.close();
-  }
-  await fs.rename(temp, target);
 }
 
 /** Every plain file under a folder, by relative name; links and junctions are reported, never followed. */
@@ -238,7 +226,7 @@ export class SandboxStore {
       state: 'creating',
       files: [],
     };
-    await atomicJson(path.join(dir, 'manifest.json'), manifest);
+    await jsonWrite(path.join(dir, 'manifest.json'), manifest);
     const files = await this.source(spec.projectId, spec.base, spec.scope);
     const snapshot: SandboxFile[] = [];
     for (const file of files) {
@@ -251,7 +239,7 @@ export class SandboxStore {
       snapshot.push({ path: file.path, sha: sha256(file.bytes), bytes: file.bytes.byteLength });
     }
     const open: SandboxManifest = { ...manifest, state: 'open', files: snapshot };
-    await atomicJson(path.join(dir, 'manifest.json'), open);
+    await jsonWrite(path.join(dir, 'manifest.json'), open);
     return open;
   }
 
@@ -265,7 +253,7 @@ export class SandboxStore {
   }
   private async propose(projectId: string, runId: string, relative: string) {
     const list = await this.proposed(projectId, runId);
-    if (!list.includes(relative)) await atomicJson(path.join(this.dir(projectId, runId), 'proposed.json'), [...list, relative]);
+    if (!list.includes(relative)) await jsonWrite(path.join(this.dir(projectId, runId), 'proposed.json'), [...list, relative]);
   }
   /** Mark paths as asked of a person, for a depth-2 child's proposals merged into this copy. */
   async markProposed(projectId: string, runId: string, paths: readonly string[]) {
@@ -331,7 +319,7 @@ export class SandboxStore {
   /** The copy is no longer needed once its change set is recorded; the manifest stays until the tree is swept. */
   async collected(manifest: SandboxManifest) {
     const dir = this.dir(manifest.projectId, manifest.runId);
-    await atomicJson(path.join(dir, 'manifest.json'), { ...manifest, state: 'collected' });
+    await jsonWrite(path.join(dir, 'manifest.json'), { ...manifest, state: 'collected' });
     await fs.rm(path.join(dir, 'work'), { recursive: true, force: true });
     await fs.rm(path.join(dir, 'snapshot'), { recursive: true, force: true });
   }

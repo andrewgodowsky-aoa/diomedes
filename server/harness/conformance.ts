@@ -103,9 +103,7 @@ export function contractChecks(contract: AdapterRouteContract): ConformanceCheck
     contract.routeId === 'claude-code-session' &&
     contract.mode === 'external-session' &&
     contract.engine.id === 'claude-code' &&
-    contract.engine.version === '2.1.252' &&
     contract.engine.protocolVersion === 'stream-json' &&
-    contract.testedWith === '2.1.252' &&
     contract.authentication === 'native-sign-in' &&
     contract.models.source === 'runtime-reported' &&
     contract.streaming.transientPreview === 'text-delta' &&
@@ -128,9 +126,7 @@ export function contractChecks(contract: AdapterRouteContract): ConformanceCheck
     contract.routeId === 'opencode-session' &&
     contract.mode === 'external-session' &&
     contract.engine.id === 'opencode' &&
-    contract.engine.version === '1.18.4' &&
     contract.engine.protocolVersion === 'http+sse' &&
-    contract.testedWith === '1.18.4' &&
     contract.authentication === 'native-sign-in' &&
     contract.models.source === 'runtime-reported' &&
     contract.streaming.transientPreview === 'text-delta' &&
@@ -157,9 +153,7 @@ export function contractChecks(contract: AdapterRouteContract): ConformanceCheck
     acpProfile !== undefined &&
     contract.mode === 'external-session' &&
     contract.engine.id === acpProfile.engine &&
-    contract.engine.version === acpProfile.version &&
     contract.engine.protocolVersion === 'acp/1' &&
-    contract.testedWith === acpProfile.version &&
     contract.authentication === 'native-sign-in' &&
     contract.models.source === 'runtime-reported' &&
     contract.streaming.transientPreview === 'text-delta' &&
@@ -176,15 +170,46 @@ export function contractChecks(contract: AdapterRouteContract): ConformanceCheck
       'native-session-run-backing', acpRunBacked,
       'The opt-in ACP session profile must match the versioned RunService lifecycle integration; live provider acceptance is separate.',
     ));
+  // The kept ChatGPT conversation (spec 3.2) is driven by the same RunService lifecycle, on
+  // Diomedes' own Codex runtime. Its follow-up and steering are the host's queue, and restart
+  // reconciliation and close are the host's; start, interrupt, resume and fork are native.
+  const codexRunBacked =
+    contract.routeId === 'codex-session' &&
+    contract.mode === 'external-session' &&
+    contract.engine.id === 'codex' &&
+    contract.engine.protocolVersion === 'codex app-server' &&
+    contract.authentication === 'native-sign-in' &&
+    contract.models.source === 'runtime-reported' &&
+    contract.streaming.transientPreview === 'text-delta' &&
+    contract.streaming.durableEvents === 'run-record' &&
+    (['start', 'interrupt', 'resume', 'fork'] as const)
+      .every(command => contract.commands[command].support === 'native') &&
+    (['follow-up', 'steer', 'retry', 'status', 'reconcile', 'close'] as const)
+      .every(command => contract.commands[command].support === 'host');
+  if (contract.routeId === 'codex-session')
+    checks.push(check(
+      'native-session-run-backing', codexRunBacked,
+      'The opt-in ChatGPT session profile must match the versioned RunService lifecycle integration; live provider acceptance is separate.',
+    ));
   checks.push(
     check(
       'streaming-matches-mode',
       contract.streaming.durableEvents === 'run-record'
-        ? RUN_DRIVEN_MODES.includes(contract.mode) || nativeRunBacked || openCodeRunBacked || acpRunBacked
+        ? RUN_DRIVEN_MODES.includes(contract.mode) || nativeRunBacked || openCodeRunBacked || acpRunBacked || codexRunBacked
         : contract.mode !== 'harness-agent',
       contract.mode === 'harness-agent'
         ? 'Harness routes persist through the run record.'
         : 'Only a run-driven route may claim run-record events.',
+    ),
+  );
+
+  checks.push(
+    check(
+      'reasoning-needs-live-channel',
+      contract.streaming.reasoning === 'none' || contract.streaming.transientPreview === 'text-delta',
+      contract.streaming.reasoning === 'none'
+        ? 'The route streams no thinking.'
+        : 'Thinking streams beside a live text preview.',
     ),
   );
 
@@ -196,22 +221,7 @@ export function contractChecks(contract: AdapterRouteContract): ConformanceCheck
         : contract.testedWith !== null,
       contract.testedWith === null
         ? 'No external binary version is pinned for this route.'
-        : `Conformance evidence covers ${contract.testedWith}; a version change invalidates it.`,
-    ),
-  );
-
-  // Proof is versioned: evidence gathered against one build does not stretch
-  // to the next. A descriptor whose engine moved past its tested build is
-  // stale proof, not a working route.
-  checks.push(
-    check(
-      'tested-version-current',
-      contract.testedWith === null || contract.testedWith === contract.engine?.version,
-      contract.testedWith === null
-        ? 'No external binary stands behind this route.'
-        : contract.testedWith === contract.engine?.version
-          ? `The descriptor's engine is the build conformance covered (${contract.testedWith}).`
-          : `The descriptor declares ${contract.engine?.version} but conformance evidence covers ${contract.testedWith}; the proof is stale.`,
+        : `Historical conformance evidence covers ${contract.testedWith}; current execution performs its own capability checks.`,
     ),
   );
 

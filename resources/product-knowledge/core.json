@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "id": "diomedes-core",
-  "version": "2026-09-20.1",
+  "version": "2026-09-27.1",
   "buildVersion": "0.2.1",
   "title": "Diomedes installed product and route knowledge",
   "qualification": {
@@ -18,6 +18,7 @@
     "route:harness-runtime",
     "route:sample",
     "route:codex",
+    "route:codex-session",
     "route:claude-code",
     "route:claude-code-session",
     "route:opencode",
@@ -33,6 +34,7 @@
     { "routeId": "harness-runtime", "contractVersion": 1, "engineVersion": "1" },
     { "routeId": "sample", "contractVersion": 1, "engineVersion": "0.1.0" },
     { "routeId": "codex", "contractVersion": 1, "engineVersion": "0.153.4" },
+    { "routeId": "codex-session", "contractVersion": 1, "engineVersion": "0.153.4" },
     { "routeId": "claude-code", "contractVersion": 1, "engineVersion": "2.1.252" },
     { "routeId": "claude-code-session", "contractVersion": 1, "engineVersion": "2.1.252" },
     { "routeId": "opencode", "contractVersion": 1, "engineVersion": "1.18.4" },
@@ -112,6 +114,12 @@
       "scopes": ["route:claude-code-session"],
       "text": "The opt-in Claude Code session route holds one persistent process across turns, so follow-up, resume and fork are native there; active-turn steering and provider reconciliation are refused, and a session turn carries only ask or plan mode.",
       "sources": ["server/harness/route-contract.ts", "server/engines/claude-session-routes.ts"]
+    },
+    {
+      "id": "route-codex-session",
+      "scopes": ["route:codex-session"],
+      "text": "The ChatGPT conversation route keeps one Codex thread per conversation on Diomedes' own Codex runtime. Each conversation has its own app-server process, which ends after five idle minutes, and the next message resumes the saved thread. A message sent while ChatGPT answers is queued as the next turn, Stop interrupts with a bounded wait, fork copies the thread, and a turn carries only read-only tools.",
+      "sources": ["server/harness/route-contract.ts", "server/engines/codex-session.ts"]
     },
     {
       "id": "route-switch",

@@ -172,7 +172,13 @@ export interface ModelSessionTurn {
   activity?(
     context: StepContext,
     stepId: string,
-  ): { onDelta(text: string): void; onToolActivity(raw: RawToolActivity): void; finish(): Promise<void> };
+  ): {
+    onDelta(text: string): void;
+    onToolActivity(raw: RawToolActivity): void;
+    /** Raw thinking chunks, fenced to the same attempt; absent where the route declares none. */
+    onReasoningDelta?(text: string): void;
+    finish(): Promise<void>;
+  };
 }
 export interface ModelSessionTurnResult {
   runId: string;
@@ -810,6 +816,9 @@ export class ModelSessionRuns {
         const sinks: StreamSinks | undefined = preview
           ? {
               onDelta: (text) => preview.onDelta(text),
+              onReasoningDelta: preview.onReasoningDelta
+                ? (text) => preview.onReasoningDelta?.(text)
+                : undefined,
               onToolActivity: (raw) => {
                 if (raw.phase === 'started') announced = { callId: raw.callId, tool: raw.tool };
                 else if (announced?.callId === raw.callId) announced = null;

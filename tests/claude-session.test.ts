@@ -53,6 +53,7 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
   if(mode==='unknown') { emit({type:'future_completion',session_id:session,status:'success'}); return process.exit(0); }
   if(mode==='permission') return setTimeout(()=>emit({type:'control_request',request_id:'permission-1',request:{subtype:'can_use_tool',tool_name:'Bash',input:{command:'echo forbidden'}}}),75);
   if(mode==='child') emit({type:'assistant',parent_tool_use_id:'child-1',message:{model:'claude-test',content:[{type:'text',text:'child is not a grant'}]}});
+  if(mode==='thinking') { emit({type:'stream_event',session_id:session,event:{delta:{type:'thinking_delta',thinking:'Weighing '}}}); emit({type:'stream_event',session_id:session,event:{delta:{type:'thinking_delta',thinking:'the menu.'}}}); }
   emit({type:'stream_event',session_id:session,event:{delta:{type:'text_delta',text:'Answer'}}});
   if(mode==='auth') return emit({type:'result',uuid:'result-'+count,subtype:'error_during_execution',is_error:true,session_id:session,errors:['authentication expired']});
   result(); if(mode==='duplicate') result();
@@ -117,6 +118,24 @@ describe('Claude persistent native transport', () => {
       expect(f.launches).toHaveLength(1);
       expect(f.launches[0]).not.toContain('--no-session-persistence');
       expect(f.checkpoints.at(-1)?.state).toBe('idle');
+    } finally {
+      await session.close();
+    }
+  });
+  it('streams thinking to its own sink and keeps it out of the answer', async () => {
+    const f = await fixture('thinking');
+    const session = await f.adapter.openSession(request, f.options);
+    try {
+      const deltas: string[] = [];
+      const thoughts: string[] = [];
+      const result = await session.turn({
+        ...request,
+        onDelta: (text) => deltas.push(text),
+        onReasoningDelta: (text) => thoughts.push(text),
+      });
+      expect(thoughts).toEqual(['Weighing ', 'the menu.']);
+      expect(deltas).toEqual(['Answer']);
+      expect(result.text).toBe('Answer 1');
     } finally {
       await session.close();
     }

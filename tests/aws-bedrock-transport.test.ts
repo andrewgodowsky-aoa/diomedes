@@ -298,6 +298,30 @@ describe('the streamed exchange', () => {
     expect(net.sent).toHaveLength(1);
   });
 
+  test('with a thinking sink, summaries are asked for and stream apart from the answer', async () => {
+    const summarized: Item = {
+      ...reasoning(),
+      summary: [{ type: 'summary_text', text: 'Counting the delivery lines.' }],
+    };
+    const net = transport([() => json(envelope([summarized, message('Six napkins were short.')]))]);
+    const thoughts: string[] = [];
+    const deltas: string[] = [];
+    const result = await call(net.fetch, {
+      onDelta: (text) => deltas.push(text),
+      onReasoningDelta: (text) => thoughts.push(text),
+    });
+    expect((net.sent[0].body.reasoning as Record<string, unknown>).summary).toBe('auto');
+    expect(thoughts.join('')).toBe('Counting the delivery lines.');
+    expect(deltas.join('')).toBe('Six napkins were short.');
+    expect(result.outcome).toEqual({ kind: 'final', text: 'Six napkins were short.' });
+  });
+
+  test('without a thinking sink, no summary is asked for', async () => {
+    const net = transport([() => json(envelope([reasoning(), message('Six napkins were short.')]))]);
+    await call(net.fetch);
+    expect((net.sent[0].body.reasoning as Record<string, unknown>).summary ?? null).toBeNull();
+  });
+
   test('a tool call is announced once as started, with a plain summary and the arguments as detail', async () => {
     const net = transport([() => json(envelope([reasoning(), functionCall('call_1', 'read_source', '{"path":"delivery.txt"}')]))]);
     const activity: RawToolActivity[] = [];

@@ -1,11 +1,44 @@
 # DIOMEDES LIVE ROADMAP
 
-Roadmap version: 2026-09-27.1
-Last reconciled: September 27, 2026 (Board workflow sections synchronized with cloud)
+Roadmap version: 2026-09-27.2
+Last reconciled: engine and provider checkpoint below
 Product: Nectovia (named Diomedes until 2026-09-22)
 Company direction: Diomedes Systems
 Cloud canonical: 1bRhz3zQPXOYuVlt95U1EIkz7pcm1dtSsoBvkDrLR3zE
 Repository mirror: docs/DIOMEDES_LIVE_ROADMAP.md
+
+Engine and provider checkpoint
+
+Connected native engines follow their current installations and authenticated model catalogues. Vendor version equality is not an admission gate. Recheck capabilities, account, isolation and artifact identity after updates; refresh model and reasoning choices in the app. A failed check withdraws stale choices and does not silently select a different model or payer.
+
+Free accounts may update task boards manually and use eligible direct connected engines. Nectovia Agent execution, including Board supervision, requires a paid Nectovia entitlement regardless of subscription, ACP, API or local inference. Managed calls retain the account tier's allowance and company spending ceiling. This preserves the Individual and Business definitions below.
+
+Andrew selected GPT-5.6 Luna temporarily for the managed AWS route while GPT-6 access is unresolved. Both Luna models still reject this account after activation. A tiny Haiku control returned BEDROCK_OK through the same existing AWS key, with 14 input and 8 output tokens and thinking disabled. That proves Anthropic connectivity only; it does not qualify Luna or change the production Agent model. AWS case 179055771300245 contains the evidence.
+
+The native ChatGPT subscription route successfully starts and resumes GPT-6 Luna using the current Codex runtime, including Stop acknowledgement and a same-thread resume after process restart. These calls produced no reasoning-summary text. Thinking display and full installed-desktop acceptance remain unproved.
+
+PR #171 (free harness and paid Agent boundary) and PR #172 (Board workflows) are merged. PR #169 remains the integration candidate; final source gates, exact merge and the required Luna provider proof are tracked separately. No desktop release or new paid-provider production acceptance is claimed. Implementation record: docs/implementation/2026-09-27-engine-capability-discovery.md.
+
+## Board task permissions and playbooks
+
+Board implementation status: merged into main through PR #172 at 0f2038402f58772400916ab00059d8121d2e3b35 on 2026-09-28 UTC. The merged tree matches the tested candidate. Windows CI: 8,242 passed, 3 skipped; Apple Silicon CI: 8,224 passed, 21 skipped. Local browser checks: 46 passed. Live paid-provider route verification remains tracked separately in PR #169; this is not a packaged desktop release.
+
+The first Board slice is on main through PR #170. The follow-up implements Andrew's task continuation choices: Full approval lets an agent cross Plan, Build and Review within existing authority; Stop on phase change requires the person's approval before continuing. Neither choice grants file access, service consent, paid Agent access or a higher spending cap.
+
+Agent-proposed tasks wait in Inbox until a person accepts them. Acceptance makes a task ready without starting it. Children name a separate result, inherit continuation and turn ceilings, receive no copied grants and also wait in Inbox. A parent can create four children over its lifetime, with at most two child levels. Deletion does not replenish the limit or permit restored children to exceed their parent's limits.
+
+Nectovia Board Start uses the existing native single-agent loop, published model and task-thread tier. Every model call checks paid authority and the original job limits. Direct Build/Fix and team wakes cannot bypass a configured task's workflow. Manual Board access remains separate from paid Agent execution.
+
+Andrew clarified that skills should not be restricted to Ask and Plan. Tasks may select a reusable playbook from an active project pack for Work; Build and Fix may use the same guidance. The admitted pack version, digest and instruction text are recorded. Playbooks change the method, not permissions or limits. Source-conversation links and live Board updates use existing conversation and event records.
+
+Evidence record: docs/implementation/2026-09-27-board-workflows.md on feature/board-workflows. Local fixture and browser checks do not establish live-provider, installed-desktop or release acceptance. This Board update preserves the NC-IF and self-configuring direction below and does not close a broader numbered roadmap prompt.
+
+## NC-IF-2026-09-27.1 — Individual entitlement and full-computer access workstream
+Owner-approved direction: Individual $200/month with 1,000 credits; eligible personal/qualifying solo sole-proprietor Agent use; Business for organizational operations. The Agent requires a Nectovia entitlement regardless of managed/BYO/local/subscription inference. Replace operative Business-only Agent and superseded Solo definitions, while retaining current non-conflicting Business/service prices.
+Settings must support genuine project/selected-folders/full-computer scope, explicit sensitive-file access, supported host execution and no-repeated-local-confirmation standing grants. Keep narrow defaults without making them immutable. Scope, approval policy, engine sandbox, network/data handling and remote/unattended authority are distinct. Preserve OS/vendor constraints, renderer isolation, server identity/tenant/billing authority and truthful limits of unrestricted same-user shell.
+Implementation order: source/ownership reconciliation; Individual license-use and feature grants; period-idempotent billing/funding; host computer grants; actual file tools/preview handling; native engine/kept-session propagation; Settings/Account UX; Board/remote/privacy/migrations; independent 72-case acceptance and packaged platform proof; site/docs/release handoff. The packet NC-IF-2026-09-27.1 contains the specification, research and ten ordered prompts. These are required tests, not passed results.
+Source observation: app dd43c358fd29140a2429692bf80cbbfd0bef351d includes Board slice 1 via PR #170. Draft PR #169 and feature/free-harness-paid-agent require current coordination; refresh all worktree claims. Do not create parallel accounts, runtime, board or funding authorities. Main merges can deploy the Worker, so this documentation update does not authorize merge, deployment, live payment changes or host-wide tests on real personal data.
+Unresolved launch values include exact Business seats/hosts/cloud quotas, payment/offline grace, final legal/cure terms and supported native engine/platform proof. Implement independent offline work with explicit configuration; do not fabricate values or block every slice on missing production credentials.
 
 ## 1. Authority, current entry point and preservation
 

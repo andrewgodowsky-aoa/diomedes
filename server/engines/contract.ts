@@ -2,6 +2,8 @@ import type { TeamCarriageOptions } from '../team/carriage.js';
 import type {
   AdapterRouteContract,
   RawToolActivity,
+  ReasoningPreview,
+  ReasoningRecord,
   ToolActivity,
   TransientPreview,
 } from '../../shared/adapter-contract.js';
@@ -81,6 +83,18 @@ export interface TextRequest {
    */
   onToolActivity?: (raw: RawToolActivity) => void;
   /**
+   * Caller-facing thinking: stamped, redacted, byte-bounded frames from `reasoningSink` in
+   * shared/adapter-contract.ts. A preview only; the reply keeps one finished record instead.
+   */
+  onReasoning?: (frame: ReasoningPreview) => void;
+  /**
+   * Adapter-facing raw thinking sink, set only by EngineService when it wraps `onReasoning` on a
+   * route that declares `streaming.reasoning: 'reasoning-delta'`. A caller-supplied one is
+   * refused, as `onDelta` is. An adapter calls it with each thinking chunk; thinking never
+   * joins the answer and never fails it.
+   */
+  onReasoningDelta?: (text: string) => void;
+  /**
    * Read-only tools for an Ask or Plan turn: the project folder, web search and
    * the owner's approved MCP read tools (server/engines/read-scope.ts). Set only
    * by the host from its own project record, never from a client or a model.
@@ -153,6 +167,11 @@ export interface TextResponse {
   threadId: string;
   projectId: string;
   requestId: string;
+  /**
+   * The finished thinking, set only by EngineService from what this attempt streamed. It is
+   * never part of the run record, so a replayed answer has none.
+   */
+  reasoning?: ReasoningRecord;
 }
 export interface AdapterInspection {
   authentication: 'signed-in' | 'signed-out' | 'unknown';

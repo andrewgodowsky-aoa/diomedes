@@ -8,6 +8,8 @@ import type { EverythingItem } from './Everything';
 import { Rail } from './Rail';
 import { useWorkingWord, workingLine } from './working-words';
 import { toolRunning, type ToolLine } from './engine-activity';
+import type { LiveThinking } from './engine-reasoning';
+import { Thinking } from './Thinking';
 import { ToolActivityList } from './ToolActivity';
 import { TurnBody } from './TurnBody';
 import { ArtifactPane } from './ArtifactPane';
@@ -50,7 +52,7 @@ export interface DiomedesPageProps {
    * The answer to the message in flight as it streams, with its tool calls. Display only; the
    * recorded answer replaces it. Null while nothing has started.
    */
-  live?: { text: string; activity: readonly ToolLine[] } | null;
+  live?: { text: string; activity: readonly ToolLine[]; thinking?: LiveThinking | null } | null;
   /** The Technical detail level: tool calls also name their tool and open to their detail. */
   technical?: boolean;
   restriction: Restriction;
@@ -223,7 +225,10 @@ export function Diomedes({
   // Only a message in flight streams, and what streamed is shown under it. The waiting line
   // stays until text arrives, stepping aside while a tool call is already saying what it does.
   const streamed = pending ? live : null;
-  const waiting = pending && !streamed?.text && !toolRunning(streamed?.activity);
+  const waiting = pending && !streamed?.text && !toolRunning(streamed?.activity) && !streamed?.thinking?.text;
+  // The engine's thinking on the answer on its way; a lost stream shows none.
+  const liveThinking =
+    streamed?.thinking && streamed.thinking.position !== 'lost' && streamed.thinking.text ? streamed.thinking : null;
   const pendingWord = useWorkingWord('thinking it over', waiting);
   // The artifact panel: this page has no third column, so it opens over the page.
   const artifacts = useArtifactSelection(scopeId, artifactScope, turns);
@@ -298,12 +303,17 @@ export function Diomedes({
                       {turn.role === 'you' ? (
                         paragraphs(turn.text).map((p, i) => <p key={i}>{p}</p>)
                       ) : (
-                        <TurnBody
-                          text={turn.text}
-                          artifactAt={(block) => artifacts.index.forBlock(turnKeyOf(turn, index), block)}
-                          onOpenArtifact={artifacts.open}
-                          openKey={artifacts.openKey}
-                        />
+                        <>
+                          {turn.thinking && (
+                            <Thinking text={turn.thinking.text} ms={turn.thinking.ms} shortened={turn.thinking.shortened} />
+                          )}
+                          <TurnBody
+                            text={turn.text}
+                            artifactAt={(block) => artifacts.index.forBlock(turnKeyOf(turn, index), block)}
+                            onOpenArtifact={artifacts.open}
+                            openKey={artifacts.openKey}
+                          />
+                        </>
                       )}
                     </div>
                   </div>
@@ -328,11 +338,18 @@ export function Diomedes({
                 )}
                 {/* Not a `.turn`: it is a preview of an answer, not a recorded one, and the
                     transcript's turns stay exactly what the record holds. */}
-                {streamed && (streamed.text || streamed.activity.length > 0) && (
+                {streamed && (streamed.text || streamed.activity.length > 0 || liveThinking) && (
                   <div className="dio-live">
                     <div className="who">
                       <b>{speakerName('diomedes')}</b>
                     </div>
+                    {liveThinking && (
+                      <Thinking
+                        text={liveThinking.text}
+                        ms={liveThinking.endedAt === null ? null : liveThinking.endedAt - liveThinking.since}
+                        live
+                      />
+                    )}
                     <ToolActivityList lines={streamed.activity} technical={technical} />
                     {streamed.text && (
                       <div className="body">

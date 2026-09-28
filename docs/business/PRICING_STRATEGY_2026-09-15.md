@@ -1,11 +1,12 @@
 # Nectovia pricing and service scope
 
-Version: NC-2026-09-22.1, reconciled 2026-09-23. Date: September 23, 2026 (first issued September 15, 2026; commercial reconciliation September 22, 2026).
-Status: commercial direction and implementation direction, not proof of a deployed paid service. Nothing in this document is live or funded.
+Version: NC-2026-09-28.1. Commercial inference policy reconciled with current GitHub main and the canonical Drive pricing/service-scope document. First issued September 15, 2026.
+Status: approved commercial direction, not proof of deployed billing or provider qualification.
+Canonical commercial authority: [Nectovia pricing and service scope](https://docs.google.com/document/d/1OrjI7NCBf4YRt2TGgBvPS52GW8LM3hgXCnN6lp7sxIQ/edit). This public repository omits private company economics.
 
 Nectovia is the product. Diomedes is the company. Customer-facing product text says Nectovia; company, legal and repository identifiers keep Diomedes.
 
-This document is reconciled against Andrew's decisions of 2026-09-23, which supersede source package NC-2026-09-22.1 and PR #35 where they differ. Rules those decisions replaced are kept, with what replaced them, under "Superseded 2026-09-23" at the end. Nothing in that section is operative. Retired prices are deleted rather than kept, because Git is the archive; no price changed on 2026-09-23. Basis for the offers and grants: Andrew's September 22 directions and `diomedes-site/src/data/pricing.ts` at `8c1dcef76a166df40a6226377b5be2a471c7dbdc`. Do not restore historical decisions as current offers.
+Andrew's current managed-inference decision and the canonical Drive Individual amendment replace the stale funding and Solo terms here. Other existing offer/service anchors are preserved. The September 23 routing decisions continue to supersede source package NC-2026-09-22.1 and PR #35 where they differ. Nothing under "Superseded 2026-09-23" is operative. Historical source and qualification observations below are dated evidence, not current release certification.
 
 Every term here is **approved** (an owner decision, with its date), **proposed** (not approved; never build or sell it as an entitlement), **withdrawn** (the owner rejected it) or **superseded** (replaced by a newer approved rule, named beside it). An approved commercial term is not an implemented or qualified one.
 
@@ -15,7 +16,10 @@ Every term here is **approved** (an owner decision, with its date), **proposed**
 |---|---|---|
 | Recurring offers, published prices and monthly grants (Starter 500, Business 1,000, Managed 3,000 / 5,000 / 8,000; Managed grants are totals) | approved | Owner direction 2026-09-22; website registry `8c1dcef` |
 | Professional service anchors and the $100–$150/hour delivery floor | approved | Owner direction 2026-09-22; website registry `8c1dcef` |
-| Credits measure cumulative eligible usage; internal $0.10 of eligible inference per credit | approved | Owner direction 2026-09-22 |
+| Credits measure cumulative eligible usage under the recorded rate card | approved | Owner direction 2026-09-22; public wording reconciled 2026-09-28 |
+| Managed inference preferred; included allowance first; authorized additional usage at Nectovia's current usage rate | approved | Owner direction 2026-09-28 |
+| Organization-authorized monthly extra-usage cap; alerts at 75%, 90% and 100%; no silent overage | approved policy; postpaid enforcement not implemented | Owner direction 2026-09-28 |
+| Customer-owned commercial API/cloud credentials only through Advanced or a specific contract; no pooled subscription-funded Agent work | approved | Owner direction 2026-09-28 |
 | Literal 1,000-request quota and universal tiny per-request ceiling | withdrawn | Owner direction 2026-09-22 |
 | Customers see only the tiers Efficient / Focused / Thorough; the owner maps each tier to a route in AI setup | approved | Owner decision 2026-09-23 |
 | Owner-only model override for testing | approved | Owner decision 2026-09-23 |
@@ -28,20 +32,19 @@ Every term here is **approved** (an owner decision, with its date), **proposed**
 | Pre-send warning when likely use exceeds the cap: move up a tier, or go over for that one job | approved | Owner decision 2026-09-23 |
 | Single suggested 20-credit default job cap | superseded | Replaced by owner decision 2026-09-23 |
 | Jev pathway is OpenRouter | approved (route not live-qualified) | Owner decision 2026-09-23 |
-| Web search uses the subscription engines (Claude Code / Codex); no paid search API | approved | Owner decision 2026-09-23 |
+| Subscription-backed external engines may supply search only for their licensed user/device where the provider permits it; no pooled organizational subscription use | approved | Owner decisions 2026-09-23 and 2026-09-28 |
 | Threads allow Build and Fix on the model-API routes | approved | Owner decision 2026-09-23 |
 | Product name Nectovia; company name Diomedes | approved | Owner decision 2026-09-23 |
 | Provider routes exist because each provider gave trial credits; the company's provider-credit dashboard is private and never customer-facing | approved | Owner decision 2026-09-23 |
 | Usage contract `nectovia-usage/1` (token totals, unknown usage, three domains, five separate values) | approved | Owner decision 2026-09-23 |
 | Three-quantity accounting (provider cost / allowance debit / invoice) | superseded (the three stay distinct inside the five values) | Extended by `nectovia-usage/1`, owner decision 2026-09-23 |
-| Solo at $99/month for one person, not sellable | approved (owner direction; `sellable: false`) | Owner direction 2026-09-22 |
-| Solo monthly grant (published grant null; 250 credits is a working proposal only) | proposed | NC-2026-09-22.1; still open 2026-09-23 |
+| Individual at $200/month with 1,000 monthly credits for one named person; launch eligibility and availability require verification | approved direction | Canonical Drive NC-IF-2026-09-27.1; replaces Solo proposal |
 | $500 Business Plus / 2,000 credits | proposed | Assistant proposal; still open 2026-09-23 |
 | Included everyday Luna chat on eligible Managed plans, and its debit class | proposed | Owner direction 2026-09-22; still open 2026-09-23 |
 | Meta Contributor consent route | proposed | NC-2026-09-22.1; still open 2026-09-23 |
 | Plan-document parity question | open (proposed) | Owner list 2026-09-23 |
 | Live-provider qualification of every route | open: no route has had a live call | Owner list 2026-09-23 |
-| Rate, context, concurrency and seat limits; top-up prices; included-chat safeguards | proposed | NC-2026-09-22.1 |
+| Context, concurrency and seat limits; rollover/expiry terms; included-chat safeguards | proposed | Unresolved terms retained; managed extra-usage policy is settled below |
 | Supabase migration | not authorized | NC-2026-09-22.1 |
 
 ## Commercial principle
@@ -64,13 +67,13 @@ Starter excludes custom connectors/API development, bespoke integrations, substa
 
 Fractional AI Ops starts at $2,000/month for contracted professional time and a prioritized improvement backlog. It does not automatically bundle Business or AI credits. Work already covered by Managed is not billed twice.
 
-### Solo: owner direction versus proposal
+### Individual: current commercial direction
 
-Andrew directs a $99/month offering for one person with light personal or solo-business work. Its credit grant is **proposed, not approved**. The working economics proposal is 250 credits/month, not an active entitlement. Keep the production grant unset (null) and sellable false until allowance, user/host limits and billing are approved.
+The canonical Drive amendment NC-IF-2026-09-27.1 approves Individual at $200/month with 1,000 monthly credits for one named human. It replaces the former Solo proposal. Preserve current launch safeguards until checkout, contractual eligibility and runtime entitlement are verified; a document does not activate a plan.
 
-Draft positioning: For one person: everyday questions, writing, research and light business administration. For shared operations, maintained connections or recurring operational workflows, choose Business or Managed.
+Individual covers personal work and qualifying solo sole-proprietor work. Staffed-business or employer operations and persistent client-organizational deployments require Business even when one person signs in. Product entitlement, inference payer and computer permissions remain separate.
 
-Solo does not include team operations, maintained POS/scheduling/inventory integrations, unattended operational responsibility, custom connectors, on-site work or human design services. Suitability follows actual workload and responsibility, not merely whether a customer has a street address. Free self-managed local/BYO use remains; Solo is an optional managed-inference purchase. The previously suggested $500 Business Plus / 2,000-credit offer remains an assistant **proposal**, not an approved plan.
+Individual does not add team operations, maintained integrations, on-site work or human design services. Free direct-engine/local use remains separate. Customer-owned commercial API/cloud routes are Advanced or contract-specific; subscription-backed external engines remain personal and terms-bound. The previously suggested Business Plus offer remains unapproved.
 
 ## Professional service anchors
 
@@ -95,9 +98,31 @@ The existing first three-location restaurant design-partner exception is preserv
 
 A $500 hardware/model assessment may be credited toward qualifying Private AI work started within 30 days. Up to $500 of a paid audit may be credited toward a qualifying pilot within 30 days where stated in the accepted quote. Credits do not stack unless approved and do not charge the same fee twice. Other internal strategic Private AI ranges are scope guidance, not new public constants.
 
+## Managed inference and additional usage
+
+Nectovia-managed inference is the default and preferred funding path for paid Nectovia Agent work. Diomedes Systems manages qualified commercial API/cloud routes. Use the included monthly allowance first, then previously purchased managed usage. Additional eligible managed usage is billed at **Nectovia's current usage rate** under the applicable, recorded customer rate card.
+
+Extra usage is opt-in. An active organization owner or an explicitly authorized billing administrator must accept the applicable rate, currency, billing period and a finite monthly charge cap before it can run. Default authorization is off. Record the actor, organization, rate revision, cap, effective period and revocation. A task approval, plan purchase, higher job cap or exhausted allowance is not overage consent. No automatic top-up, silent renewal of a one-time authorization, retroactive rate change or implicit payer switch.
+
+Warn at 75%, 90% and 100% of the included allowance and, when enabled, the authorized extra-usage cap. Count settled usage plus pending and uncertain reservations. Before each call, enforce the job limit, available funds and applicable organization charge cap atomically. At the cap, stop new managed calls; an alert is not permission to exceed it. Preserve reservations across retries, workers, restarts and period changes.
+
+Private company economics, provider costs, promotional balances, markup formulas and credit-to-provider-cost derivations are not public plan copy, customer API fields or invoice explanations. The private commercial rate card records standard pricing and any approved negotiated contract exception. Customers still receive an understandable usage statement, the applicable customer rate, their authorized limit and an accurate invoice. Existing charges keep their recorded customer rate.
+
+Provider promotional credits and discounts belong to company economics. They do not create a customer discount, lower the customer's debit or invoice, increase the published allowance or erase gross provider cost evidence. Expected promotions and confirmed applications remain distinct.
+
+Implementation boundary: current funding admission consumes the monthly allowance before verified purchased top-ups and refuses unfunded calls. It does not implement postpaid organization overage authorization, charge-cap enforcement or cap notifications. Keep postpaid overage unavailable until all of those are enforced by the server. Account/AI Setup may explain the policy and direct an authorized customer to arrange additional usage; it must not offer an unenforced activation switch. The usage panel's allowance warnings are advisory and do not grant funds.
+
+## Advanced accounts and external engines
+
+Customer-owned commercial API or cloud credentials remain supported only as an optional **Advanced / contract-specific** route. Do not recommend that customers buy inference elsewhere during normal setup or make a provider-key form the primary action. Preserve supported configurations and explicit payer selection; neither a key nor a cloud account grants Nectovia entitlement. This usage is billed by the customer's provider and does not debit Nectovia-funded credits. A failure never silently falls back to another payer.
+
+Consumer, Pro, Max, Team, Business and similar subscription accounts must not fund pooled or shared organization-wide Nectovia Agent inference, including workers, background jobs and search. A provider-permitted subscription-backed external engine may serve only its licensed user on that user's device. The engine owns authentication; no extraction, proxying or sharing of its subscription credentials. This is a Nectovia product boundary, not a claim that providers prohibit all business use of their products.
+
+Entitlement, payer, processing policy, provider cost, customer debit and invoice remain separate decisions and records. Advanced visibility does not authorize routing changes, spending, broader data access or subscription pooling. Ordinary customers still select work tiers rather than provider models.
+
 ## Credits and parent-job caps
 
-Credits measure cumulative eligible AI usage, not a task or model-call count. A job can consume fractional credits or many credits. Include authorized planner, worker, reviewer, advisor, billed reasoning, cache and eligible correction usage. The current website conversion is internally $0.10 of eligible inference per credit; do not render the internal dollar allowance as public plan copy.
+Credits measure cumulative eligible AI usage, not a task or model-call count. A job can consume fractional credits or many credits. Include authorized planner, worker, reviewer, advisor, billed reasoning, cache and eligible correction usage under the applicable rate card. Do not publish the internal provider-cost conversion as plan copy.
 
 Accounting follows the usage contract `nectovia-usage/1` below. Production accounting uses integer micro-USD and a versioned rate card. Cloud promotional credits lower company cash expenditure, not the customer's published grant or the gross provider cost record. Do not discount the funded-usage portion under the existing 30% founding discount; only its eligible non-usage component is discounted.
 
@@ -109,7 +134,7 @@ Accounting follows the usage contract `nectovia-usage/1` below. Production accou
 | Focused | 50 credits |
 | Thorough | 100 credits |
 
-The cap is an approval/safety limit, not a flat fee or monthly request quota. Before sending, when the likely use of a job exceeds its tier's cap, a warning dialog appears and offers two choices: move the job up a tier, or go over the cap for that one job. Going over applies to that job only; it does not change the tier's cap or the next job's cap. Nothing overruns a cap without that pre-send choice.
+The cap is an approval/safety limit, not a flat fee or monthly request quota. Before sending, when likely use exceeds it, offer a higher tier or an explicitly approved finite cap for that one job. The change does not alter the next job's cap, authorize organization overage or increase remaining funds. Nothing overruns a cap without that pre-send choice.
 
 Reserve conservatively before each paid child operation against both the job budget and organization funds. Delegation, retries, forks, resumed messages and billing reset cannot reset the cap or refund uncertain spend.
 
@@ -148,11 +173,11 @@ Every tier may delegate suitable bounded steps to cheaper qualified models, incl
 
 Threads allow Build and Fix on the model-API routes (approved 2026-09-23), within the same Mode authority and Trust mediation as every other route.
 
-Web search uses the subscription engines, Claude Code and Codex (approved 2026-09-23). There is no paid search API.
+Subscription-backed external engines may supply web search only for their licensed user/device where the provider permits it. They cannot fund shared organizational Agent search. If no qualified, authorized search route exists, refuse it; this policy does not authorize a new paid search API.
 
 The provider routes exist because each provider gave trial credits (approved 2026-09-23). Which provider credits the company holds, and how much remains, lives only in the company's private provider-credit dashboard, which is never customer-facing. Credits from one provider never pay for another provider's route.
 
-Managed inference is the recommended default. Supporting managed inference is not permission to obstruct BYO or silently charge the company when a personal route fails.
+Managed inference is the default and preferred path. Supported customer-owned API/cloud configuration belongs under Advanced or a specific contract; never switch its payer implicitly.
 
 ## Meta Contributor consent (PROPOSED)
 
@@ -180,7 +205,7 @@ Show settled monthly debit divided by the month's included grant as the monthly 
 
 ## Existing service responsibilities and design scope
 
-Business retains its design consultation and first look, plus up to two revisions each subscription year for the agreed initial design or major updates, and customer-operated Design Center. Internal planning target: roughly two initial hours and one hour per revision, not a customer hour promise. Managed adds a session every two months inside its stated support allowance. New brand creation, print, signage, photography and design for other software remain separate. Solo does not inherit these human services.
+Business retains its design consultation and first look, plus up to two revisions each subscription year for the agreed initial design or major updates, and customer-operated Design Center. Internal planning target: roughly two initial hours and one hour per revision, not a customer hour promise. Managed adds a session every two months inside its stated support allowance. New brand creation, print, signage, photography and design for other software remain separate. Individual does not inherit these human services.
 
 Managed covers named systems, agreed checks, compatibility triage, routine repairs and limited support. Third-party outages, major redesigns, new integrations, credential-policy changes and material rebuilds can require a new scope. No unstaffed 24/7 response, automatic SLA, security certification or guarantee that vendors never change. Travel/site time and direct expenses are quoted; no assumed free geographic radius. Customers supply lawful data/access, approve authority and provide a responsible owner.
 
@@ -194,7 +219,7 @@ TypeSafe Jev is a bounded advisory/evaluation model, reached through OpenRouter 
 
 The account-control-plane subset already uses WorkOS and a Neon-specific PostgreSQL adapter. Keep it in this rollout. The reported $300 Supabase offer is a reason to evaluate an appropriate later storage need, not permission to migrate identity, data or the ledger. No second task/run source of truth or automatic cloud upload of customer documents.
 
-At inspected app main `c10b7b2fa3ba12e9bba9373ac3ff82db8447b820`, the bounded AWS route still identifies GPT-5.6 Luna. The approved routes (GPT-6 Luna, Gemini 3.8 Flash, GPT-6 Sol, Jev on OpenRouter) have had no live call and are not qualified. New model versions, multi-provider customer funding, the tier caps and warning dialog, the usage contract, paid metering and, if approved, Contributor consent, included chat and Solo need independent acceptance. Existing `sellable: false` safeguards remain until the relevant gates pass. This documentation change does not run application tests or prove deployment.
+The earlier routing observation at `c10b7b2fa3ba12e9bba9373ac3ff82db8447b820` is historical and does not establish today's provider qualification. This reconciliation inspected main `66334d512ef51c808d460b6e177690d87ecfaaa0`: funded reservation/settlement and purchased top-ups exist; postpaid organization overage does not. Preserve launch safeguards and require separate acceptance for billing activation, Individual eligibility, live routes and any proposed Contributor or included-chat benefit. Source verification is recorded in `../implementation/2026-09-28-managed-inference-policy.md`; it is not deployment evidence.
 
 Implementation handoff: `../implementation/2026-09-22-nectovia-routing-handoff.md`. The September 22 amended unified execution package carries detailed role prompts and source evidence; where it differs from the 2026-09-23 decisions recorded here, this document wins. Preserve active claims and original completion records.
 

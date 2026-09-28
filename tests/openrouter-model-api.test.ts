@@ -203,6 +203,20 @@ describe('the request the real SDK sends to OpenRouter', () => {
     expect(result.servedBy).toBe('Anthropic');
   });
 
+  test('thinking a model returns streams to the thinking sink, apart from the answer; nothing new is asked for', async () => {
+    const net = transport([() => answer({ reasoning: 'Weighing it.' })]);
+    const thoughts: string[] = [];
+    const deltas: string[] = [];
+    const result = await call(net.fetch, {
+      onDelta: (text) => deltas.push(text),
+      onReasoningDelta: (text) => thoughts.push(text),
+    });
+    expect(thoughts.join('')).toBe('Weighing it.');
+    expect(deltas.join('')).toBe('Soup and a sandwich.');
+    expect(result.outcome).toEqual({ kind: 'final', text: 'Soup and a sandwich.' });
+    expect(net.sent[0].body).not.toHaveProperty('reasoning');
+  });
+
   test('a tool call streams as started activity; the tool reaches OpenRouter as a function descriptor', async () => {
     const net = transport([
       () => answer({ text: '', toolCalls: [{ id: 'call_or_1', name: 'read_source', arguments: '{"path":"menu.md"}' }] }),

@@ -8,15 +8,38 @@ import { execFileSync } from 'node:child_process';
 import { buildDesktopAuth } from './build-desktop-auth.mjs';
 import { checkReleaseVersion } from './packaged-release-check.mjs';
 
-// The three reviewed Windows x64 native-runtime files, by the SHA-256 every
-// release since 0.1.1 has shipped. scripts/release-support/acquire-native-runtime.mjs
-// checks a download against these same values.
-export const WINDOWS_NATIVE_RUNTIME_SHA256 = Object.freeze({
-  'codex.exe': 'a1cf6360ca71918d5466bc3a32d9f18b7044c9128756d1949e715d277b88c9b6',
-  'codex-command-runner.exe': '08b56828cca57c83d14f03eb9ec62c73a2cd6648248cc731ae8fedd5fa3ae566',
-  'codex-windows-sandbox-setup.exe':
-    '682cf7b351a871f3479b78fe3b7ea7348554de655bd98b0f322cef2d006a8d62',
-});
+/** A package records its selected runtime snapshot; future builds resolve afresh. */
+export async function readNativeRuntimeManifest(root) {
+  const manifest = JSON.parse(await fs.readFile(path.join(root, '.data/native-runtime/manifest.json'), 'utf8'));
+  if (typeof manifest.version !== 'string' || !/^[0-9A-Za-z.+-]{1,100}$/.test(manifest.version) ||
+      !Array.isArray(manifest.files) || manifest.files.length > 20)
+    throw new Error('Invalid native runtime manifest. Run prepare-native first.');
+  const hashes = {};
+  for (const file of manifest.files) {
+    if (!/^codex(?:-[a-z0-9]+)*\.exe$/i.test(file.name) || !/^[a-f0-9]{64}$/.test(file.sha256) || hashes[file.name])
+      throw new Error('Invalid native runtime file identity.');
+    hashes[file.name] = file.sha256;
+  }
+  for (const name of ['codex.exe', 'codex-command-runner.exe', 'codex-windows-sandbox-setup.exe'])
+    if (!hashes[name]) throw new Error(`Native runtime is missing ${name}.`);
+  return { version: manifest.version, hashes };
+}
+
+/** License files must describe the same snapshot that this package bundles. */
+export async function verifyNativeNotices(root, runtime) {
+  const directory = path.join(root, 'licenses');
+  const receipt = JSON.parse(await fs.readFile(path.join(directory, 'NATIVE_RUNTIME.json'), 'utf8'));
+  const entries = value => Object.entries(value ?? {}).sort(([a], [b]) => a.localeCompare(b));
+  if (receipt.version !== runtime.version || JSON.stringify(entries(receipt.hashes)) !== JSON.stringify(entries(runtime.hashes)))
+    throw new Error('Native runtime notices do not match the selected snapshot.');
+  for (const name of ['codex-LICENSE.txt', 'codex-NOTICE.txt', 'THIRD_PARTY_NOTICES.md', 'DEPENDENCIES.txt']) {
+    const expected = receipt.notices?.[name];
+    const actual = createHash('sha256').update(await fs.readFile(path.join(directory, name))).digest('hex');
+    if (!/^[a-f0-9]{64}$/.test(expected) || actual !== expected)
+      throw new Error('Native runtime notice verification failed: ' + name);
+  }
+  return receipt;
+}
 
 /**
  * The deployed account service and the WorkOS client a packaged build signs customers in to, read
@@ -134,6 +157,13 @@ export async function packageDesktop(options = {}, dependencies = {}) {
     throw new Error(
       "macOS packaging is blocked pending review of the installed packager's automatic ad-hoc Framework signing for ASAR integrity. This work order authorizes no signing; do not disable integrity. Installed-engine discovery is unaffected. The release workflow accepts it explicitly with DIOMEDES_MAC_ADHOC_FRAMEWORK_RESIGN=accept.",
     );
+  const nativeManifest = platform === 'win32' ? await readNativeRuntimeManifest(root) : null;
+  if (nativeManifest) {
+    // Refuse changed binaries before generating notices or packaging anything.
+    for (const [name, expected] of Object.entries(nativeManifest.hashes))
+      if (sha256(await fs.readFile(path.join(root, '.data/native-runtime', name))) !== expected)
+        throw new Error(`Native runtime hash mismatch: ${name}. Run prepare-native first.`);
+  }
   async function sourceSnapshot() {
     const files = [];
     async function visit(relative) {
@@ -162,6 +192,7 @@ export async function packageDesktop(options = {}, dependencies = {}) {
       'LICENSE',
       'scripts/package-desktop.mjs',
       'scripts/build-desktop-auth.mjs',
+      'scripts/collect-package-notices.mjs',
     ])
       files.push({ path: name, sha256: sha256(await fs.readFile(path.join(root, name))) });
     return files.sort((a, b) => a.path.localeCompare(b.path));
@@ -190,6 +221,7 @@ export async function packageDesktop(options = {}, dependencies = {}) {
     'LICENSE',
     'scripts/package-desktop.mjs',
     'scripts/build-desktop-auth.mjs',
+    'scripts/collect-package-notices.mjs',
   ];
   const dirty = git(
     'git',
@@ -213,6 +245,15 @@ export async function packageDesktop(options = {}, dependencies = {}) {
       await fs.copyFile(path.join(root, 'desktop', helper), path.join(stage, helper));
     await fs.cp(path.join(root, 'dist'), path.join(stage, 'dist'), { recursive: true });
     await fs.cp(path.join(root, 'licenses'), path.join(stage, 'licenses'), { recursive: true });
+    if (nativeManifest) {
+      // Generated notices belong to this derived package, never the checkout.
+      const collectNotices = dependencies.collectNotices ?? ((output) => execFileSync(
+        process.execPath, [path.join(root, 'scripts/collect-package-notices.mjs'), '--output', output],
+        { cwd: root, windowsHide: true, stdio: 'inherit', timeout: 120_000 },
+      ));
+      await collectNotices(path.join(stage, 'licenses'));
+    }
+    const nativeNotices = nativeManifest ? await verifyNativeNotices(stage, nativeManifest) : null;
     await fs.cp(path.join(root, 'resources'), path.join(stage, 'resources'), { recursive: true });
     await fs.copyFile(path.join(root, 'LICENSE'), path.join(stage, 'LICENSE'));
     await fs.writeFile(
@@ -227,7 +268,7 @@ export async function packageDesktop(options = {}, dependencies = {}) {
     );
     const runtime = path.join(stage, 'native-runtime');
     await fs.mkdir(runtime);
-    const hashes = platform === 'win32' ? { ...WINDOWS_NATIVE_RUNTIME_SHA256 } : {};
+    const hashes = nativeManifest?.hashes ?? {};
     for (const [name, expected] of Object.entries(hashes)) {
       const bytes = await fs.readFile(path.join(root, '.data/native-runtime', name));
       if (createHash('sha256').update(bytes).digest('hex') !== expected)
@@ -260,7 +301,7 @@ export async function packageDesktop(options = {}, dependencies = {}) {
       electronVersion,
       nativeRuntime:
         platform === 'win32'
-          ? { version: '0.153.4', sha256: hashes }
+          ? { version: nativeManifest.version, sha256: hashes, notices: nativeNotices.notices }
           : {
               bundled: false,
               sha256: hashes,

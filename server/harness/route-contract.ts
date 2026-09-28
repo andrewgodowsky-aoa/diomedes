@@ -4,9 +4,9 @@
  *
  * Every entry is a declaration of what the route can honestly do — the
  * commands it answers natively, the ones the host composes, and the ones it
- * does not have at all. A descriptor is evidence-shaped: `testedWith` is the
- * version the adapter was verified against, and a version drift invalidates
- * the proof rather than stretching it.
+ * does not have at all. A descriptor is evidence-shaped: `engine.version` and
+ * `testedWith` name the version the adapter was verified against. These are historical evidence, not a
+ * build allowlist: dispatch proves the selected runtime's capabilities.
  *
  * This registry is the single source for adapter route contracts. The
  * `TextEngineAdapter` implementations expose their entry as `.contract`;
@@ -138,7 +138,7 @@ const ACP_SESSION_CONTRACT = (engine: 'cursor' | 'devin', name: string, version:
         `Ends the conversation's transport; ${name}'s session store stays in the conversation's private folder for an explicit resume.`,
       ),
     }),
-    { transientPreview: 'text-delta', durableEvents: 'run-record' },
+    { transientPreview: 'text-delta', reasoning: 'reasoning-delta', durableEvents: 'run-record' },
     { source: 'runtime-reported' },
     'native-sign-in',
     version,
@@ -177,7 +177,7 @@ export const ROUTE_CONTRACTS: Record<string, AdapterRouteContract> = Object.free
         'Ends the owned transport; only a known idle session may later be explicitly resumed.',
       ),
     }),
-    { transientPreview: 'text-delta', durableEvents: 'run-record' },
+    { transientPreview: 'text-delta', reasoning: 'reasoning-delta', durableEvents: 'run-record' },
     { source: 'runtime-reported' },
     'native-sign-in',
     '2.1.252',
@@ -214,10 +214,50 @@ export const ROUTE_CONTRACTS: Record<string, AdapterRouteContract> = Object.free
         'Ends the owned server; the OpenCode session stays in OpenCode’s store for an explicit resume.',
       ),
     }),
-    { transientPreview: 'text-delta', durableEvents: 'run-record' },
+    { transientPreview: 'text-delta', reasoning: 'reasoning-delta', durableEvents: 'run-record' },
     { source: 'runtime-reported' },
     'native-sign-in',
     '1.18.4',
+  ),
+  // --- the kept ChatGPT conversation (spec 3.2), on Diomedes' own Codex runtime --------
+  'codex-session': contract(
+    'codex-session',
+    'external-session',
+    { id: 'codex', version: '0.153.4', protocolVersion: 'codex app-server' },
+    commands({
+      start: native(
+        "Opt-in kept ChatGPT conversation on Diomedes' own Codex app-server; each turn is a fenced RunService step whose thread id is saved before turn/start.",
+      ),
+      'follow-up': host(
+        "Each message continues the saved thread: on the conversation's own process, or with thread/resume on a new one after the idle time; never mid-turn.",
+      ),
+      steer: host(
+        'Queued by Diomedes while a turn runs and sent as the next turn once it finishes; turn/steer is never used.',
+      ),
+      interrupt: native(
+        'turn/interrupt, a bounded wait for Codex to end the turn, then the owned process tree is ended; the checkpoint records which happened.',
+      ),
+      resume: native(
+        'After a restart the saved thread is continued with thread/resume on a new process; a thread Codex no longer has starts fresh and the turn says so.',
+      ),
+      retry: host(
+        'Duplicate command IDs replay durable outcomes; unknown dispatches refuse redispatch.',
+      ),
+      fork: native(
+        'thread/fork of a saved idle thread starts a child run in the same lineage; no hidden state is copied into the run record.',
+      ),
+      status: host('Durable run state and transport presence; no provider status is invented.'),
+      reconcile: host(
+        'A turn a restart interrupted is recorded as not completed and never resent; a confirmed thread stays resumable, anything else is marked as unable to resume.',
+      ),
+      close: host(
+        "Diomedes ends the conversation's process; the thread stays in Codex's store for an explicit resume.",
+      ),
+    }),
+    { transientPreview: 'text-delta', reasoning: 'reasoning-delta', durableEvents: 'run-record' },
+    { source: 'runtime-reported' },
+    'native-sign-in',
+    '0.153.4',
   ),
   // --- the kept ACP conversations (H05): one shared ACP session layer --------
   'cursor-session': ACP_SESSION_CONTRACT('cursor', 'Cursor', '2026.08.11'),
@@ -228,7 +268,7 @@ export const ROUTE_CONTRACTS: Record<string, AdapterRouteContract> = Object.free
     'harness-agent',
     { id: 'native-fixture', version: '1', protocolVersion: 'harness-v1' },
     HARNESS_COMMANDS('The scripted fixture model drives the loop.'),
-    { transientPreview: 'none', durableEvents: 'run-record' },
+    { transientPreview: 'none', reasoning: 'none', durableEvents: 'run-record' },
     { source: 'fixed' },
     'development-fixture',
     null,
@@ -236,9 +276,9 @@ export const ROUTE_CONTRACTS: Record<string, AdapterRouteContract> = Object.free
   'codex-report': contract(
     'codex-report',
     'harness-agent',
-    { id: 'codex', version: '0.153.4', protocolVersion: 'codex app-server 0.153.4' },
+    { id: 'codex', version: '0.153.4', protocolVersion: 'codex app-server' },
     HARNESS_COMMANDS('The Codex app-server session is the model adapter.'),
-    { transientPreview: 'none', durableEvents: 'run-record' },
+    { transientPreview: 'none', reasoning: 'none', durableEvents: 'run-record' },
     { source: 'runtime-reported' },
     'native-sign-in',
     '0.153.4',
@@ -248,7 +288,7 @@ export const ROUTE_CONTRACTS: Record<string, AdapterRouteContract> = Object.free
     'harness-agent',
     { id: 'diomedes-harness', version: '1', protocolVersion: 'harness-v1' },
     HARNESS_COMMANDS('The in-process run service itself.'),
-    { transientPreview: 'none', durableEvents: 'run-record' },
+    { transientPreview: 'none', reasoning: 'none', durableEvents: 'run-record' },
     { source: 'none' },
     'none',
     null,
@@ -270,7 +310,7 @@ export const ROUTE_CONTRACTS: Record<string, AdapterRouteContract> = Object.free
       reconcile: unsupported('Nothing external can outlive the worker.'),
       close: native('Stopping the worker ends it.'),
     }),
-    { transientPreview: 'none', durableEvents: 'host-record' },
+    { transientPreview: 'none', reasoning: 'none', durableEvents: 'host-record' },
     { source: 'none' },
     'none',
     null,
@@ -279,7 +319,7 @@ export const ROUTE_CONTRACTS: Record<string, AdapterRouteContract> = Object.free
   codex: contract(
     'codex',
     'external-session',
-    { id: 'codex', version: '0.153.4', protocolVersion: 'codex app-server 0.153.4' },
+    { id: 'codex', version: '0.153.4', protocolVersion: 'codex app-server' },
     commands({
       start: native('askCodex dispatches a turn over the app-server session.'),
       'follow-up': unsupported(
@@ -296,7 +336,7 @@ export const ROUTE_CONTRACTS: Record<string, AdapterRouteContract> = Object.free
       reconcile: host('On reconnect the thread state is re-read; nothing is regenerated.'),
       close: native('The owned app-server process is terminated.'),
     }),
-    { transientPreview: 'none', durableEvents: 'host-record' },
+    { transientPreview: 'none', reasoning: 'none', durableEvents: 'host-record' },
     { source: 'runtime-reported' },
     'native-sign-in',
     '0.153.4',
@@ -307,7 +347,7 @@ export const ROUTE_CONTRACTS: Record<string, AdapterRouteContract> = Object.free
     'single-turn-text',
     { id: 'claude-code', version: '2.1.252', protocolVersion: 'stream-json' },
     TEXT_ROUTE_COMMANDS('Claude Code'),
-    { transientPreview: 'text-delta', durableEvents: 'run-record' },
+    { transientPreview: 'text-delta', reasoning: 'reasoning-delta', durableEvents: 'run-record' },
     { source: 'runtime-reported' },
     'native-sign-in',
     '2.1.252',
@@ -317,7 +357,7 @@ export const ROUTE_CONTRACTS: Record<string, AdapterRouteContract> = Object.free
     'single-turn-text',
     { id: 'opencode', version: '1.18.4', protocolVersion: 'http+sse' },
     TEXT_ROUTE_COMMANDS('OpenCode'),
-    { transientPreview: 'text-delta', durableEvents: 'run-record' },
+    { transientPreview: 'text-delta', reasoning: 'reasoning-delta', durableEvents: 'run-record' },
     { source: 'runtime-reported' },
     'native-sign-in',
     '1.18.4',
@@ -327,7 +367,7 @@ export const ROUTE_CONTRACTS: Record<string, AdapterRouteContract> = Object.free
     'single-turn-text',
     { id: 'oh-my-pi', version: '18.0.6', protocolVersion: 'stream-json' },
     TEXT_ROUTE_COMMANDS('oh-my-pi'),
-    { transientPreview: 'text-delta', durableEvents: 'run-record' },
+    { transientPreview: 'text-delta', reasoning: 'none', durableEvents: 'run-record' },
     { source: 'runtime-reported' },
     'native-sign-in',
     '18.0.6',
@@ -337,7 +377,7 @@ export const ROUTE_CONTRACTS: Record<string, AdapterRouteContract> = Object.free
     'single-turn-text',
     { id: 'cursor', version: '2026.08.11', protocolVersion: 'acp/1' },
     TEXT_ROUTE_COMMANDS('Cursor'),
-    { transientPreview: 'text-delta', durableEvents: 'run-record' },
+    { transientPreview: 'text-delta', reasoning: 'reasoning-delta', durableEvents: 'run-record' },
     { source: 'runtime-reported' },
     'native-sign-in',
     '2026.08.11',
@@ -347,7 +387,7 @@ export const ROUTE_CONTRACTS: Record<string, AdapterRouteContract> = Object.free
     'single-turn-text',
     { id: 'devin', version: '3000.10.23', protocolVersion: 'acp/1' },
     TEXT_ROUTE_COMMANDS('Devin'),
-    { transientPreview: 'text-delta', durableEvents: 'run-record' },
+    { transientPreview: 'text-delta', reasoning: 'reasoning-delta', durableEvents: 'run-record' },
     { source: 'runtime-reported' },
     'native-sign-in',
     '3000.10.23',

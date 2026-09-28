@@ -30,11 +30,17 @@ class FakeNative implements NativeRpc {
   nextCursor: string | null = null;
   items: Params[] = [];
   turnModel: string | null = null;
+  runtimeVersion = '0.153.4';
+  models = ['native-model', 'synthetic-model', 'gpt-6-astra', 'gpt-6-luna'];
   request = vi.fn(async (method: string, params: Params): Promise<unknown> => {
     this.calls.push({ method, params });
     switch (method) {
       case 'initialize':
-        return { userAgent: 'diomedes/0.153.4 (Windows 10)' };
+        return { userAgent: `diomedes/${this.runtimeVersion} (Windows 10)` };
+      case 'model/list':
+        return { data: this.models.map(model => ({ model, displayName: model, hidden: false,
+          supportedReasoningEfforts: ['low', 'medium', 'high', 'ultra'].map(effort => ({ reasoningEffort: effort, description: effort })),
+          defaultReasoningEffort: 'medium' })), nextCursor: null };
       case 'account/read':
         return {
           requiresOpenaiAuth: true,
@@ -124,8 +130,55 @@ const request = {
   documents: [{ path: 'plan.md', text: 'A synthetic project plan.' }],
 };
 
+describe('kept Codex process cleanup', () => {
+  it('reports a failed close instead of treating the owned process as stopped', async () => {
+    const integration = setup();
+    const failure = new IntegrationError('NATIVE_CLEANUP_FAILED', 'Owned process cleanup failed');
+    integration.client.close = vi.fn().mockRejectedValue(failure);
+    const process = await integration.codexConversations.open(undefined);
+    await expect(process.close()).rejects.toBe(failure);
+    expect(process.closed).toBe(true); // Retired from use, not proof of process termination.
+    integration.client.close = vi.fn().mockResolvedValue(undefined);
+    await expect(process.close()).resolves.toBeUndefined();
+  });
+
+  it('settles an aborted turn with the cleanup failure even when no disconnect notification arrives', async () => {
+    const integration = setup();
+    integration.client.complete = false;
+    const failure = new IntegrationError('NATIVE_CLEANUP_FAILED', 'Owned process cleanup failed');
+    integration.client.close = vi.fn().mockRejectedValue(failure);
+    const process = await integration.codexConversations.open(undefined);
+    const controller = new AbortController();
+    const running = process.turn({
+      threadId: 'synthetic-thread', prompt: 'Synthetic check', summaries: false,
+      signal: controller.signal, onTurn: () => controller.abort(),
+    });
+    await expect(running).rejects.toBe(failure);
+    expect(integration.client.close).toHaveBeenCalledOnce();
+  });
+});
+
 describe('host-bound Codex context dispatch', () => {
   const context = { ...request, instructions: 'Use only these synthetic documents.', model: 'synthetic-model', effort: 'low' };
+  it('accepts a new runtime and a newly reported model without a version allowlist', async () => {
+    const integration = setup();
+    integration.client.runtimeVersion = '99.3.0-alpha.1';
+    integration.client.models.push('newly-released-model');
+    const answer = await integration.askCodex({ ...context, model: 'newly-released-model', beforeDispatch: async () => {} });
+    expect(answer.version).toBe('99.3.0-alpha.1');
+    expect(integration.client.calls.find(call => call.method === 'thread/start')?.params.config).toMatchObject({ model: 'newly-released-model' });
+  });
+  it('refuses a withdrawn explicit model before creating a thread or consuming a call', async () => {
+    const integration = setup();
+    integration.client.models = ['native-model'];
+    await expect(integration.askCodex({ ...context, beforeDispatch: async () => {} })).rejects.toMatchObject({ code: 'MODEL_UNAVAILABLE' });
+    expect(integration.client.calls.some(call => call.method === 'thread/start' || call.method === 'turn/start')).toBe(false);
+  });
+  it('refuses an effort the selected model does not advertise', async () => {
+    const integration = setup();
+    await expect(integration.askCodex({ ...context, effort: 'unsupported', beforeDispatch: async () => {} })).rejects.toMatchObject({ code: 'MODEL_UNAVAILABLE' });
+    expect(integration.client.calls.some(call => call.method === 'turn/start')).toBe(false);
+  });
   it('checks the exact account and context before thread and turn dispatch', async () => {
     const integration = setup();
     const route = await integration.readCodexAccountRoute();

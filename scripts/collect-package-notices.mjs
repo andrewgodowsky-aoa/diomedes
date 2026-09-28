@@ -1,25 +1,18 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
+import { createReadStream } from 'node:fs';
+import { readNativeRuntimeManifest } from './package-desktop.mjs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
-const licenseDir = path.join(root, 'licenses');
+const args = process.argv.slice(2);
+if (args.length && (args.length !== 2 || args[0] !== '--output' || !args[1]))
+  throw new Error('Usage: collect-package-notices.mjs [--output <directory>]');
+const licenseDir = args.length ? path.resolve(args[1]) : path.join(root, 'licenses');
 const lockPath = path.join(root, 'package-lock.json');
 
-const codexFiles = [
-  {
-    output: 'codex-LICENSE.txt',
-    url: 'https://raw.githubusercontent.com/openai/codex/rust-v0.153.4/LICENSE',
-    sha256: 'd17f227e4df5da1600391338865ce0f3055211760a36688f816941d58232d8dc',
-  },
-  {
-    output: 'codex-NOTICE.txt',
-    url: 'https://raw.githubusercontent.com/openai/codex/rust-v0.153.4/NOTICE',
-    sha256: '9d71575ecfd9a843fc1677b0efb08053c6ba9fd686a0de1a6f5382fd3c220915',
-  },
-];
 
 const fontNotices = new Map([
   ['@fontsource/big-shoulders-display', 'big-shoulders-display.txt'],
@@ -38,39 +31,15 @@ const vendoredFonts = [
   },
 ];
 
-const nativeRuntime = [
-  {
-    name: 'codex.exe',
-    bytes: 295408944,
-    localSha256: 'a1cf6360ca71918d5466bc3a32d9f18b7044c9128756d1949e715d277b88c9b6',
-    releaseAsset: 'codex-x86_64-pc-windows-msvc.exe',
-    releaseAssetBytes: 295408944,
-    releaseAssetSha256: '444a3f0008050605cae73cd9b7a2dcac61294062dfaab56dd20430fd6498518b',
-  },
-  {
-    name: 'codex-command-runner.exe',
-    bytes: 8204592,
-    localSha256: '08b56828cca57c83d14f03eb9ec62c73a2cd6648248cc731ae8fedd5fa3ae566',
-    releaseAsset: 'codex-command-runner-x86_64-pc-windows-msvc.exe',
-    releaseAssetBytes: 8204592,
-    releaseAssetSha256: '3eb267dc1f0d1d80efeacc26a211f26ed0f414466d32a2aa7304a8a0beec170c',
-  },
-  {
-    name: 'codex-windows-sandbox-setup.exe',
-    bytes: 15413040,
-    localSha256: '682cf7b351a871f3479b78fe3b7ea7348554de655bd98b0f322cef2d006a8d62',
-    releaseAsset: 'codex-windows-sandbox-setup-x86_64-pc-windows-msvc.exe',
-    releaseAssetBytes: 15413040,
-    releaseAssetSha256: '0c3eeb7cee8d2bc4c8644def3c818e8b06760979572dcedc919c38d0f38f64c4',
-  },
-];
 
 function sha256(bytes) {
   return createHash('sha256').update(bytes).digest('hex');
 }
 
 async function sha256File(filePath) {
-  return sha256(await fs.readFile(filePath));
+  const hash = createHash('sha256');
+  for await (const chunk of createReadStream(filePath)) hash.update(chunk);
+  return hash.digest('hex');
 }
 
 async function exists(filePath) {
@@ -102,26 +71,19 @@ async function curl(url) {
   });
 }
 
-async function ensurePinnedCodexFiles() {
+async function ensureCodexFiles(version) {
   const provenance = [];
-  for (const file of codexFiles) {
+  for (const name of ['LICENSE', 'NOTICE']) {
+    const file = {
+      output: 'codex-' + name + '.txt',
+      url: 'https://raw.githubusercontent.com/openai/codex/rust-v' + version + '/' + name,
+    };
+    // These generated files describe the selected package snapshot. A missing
+    // upstream tag fails instead of substituting another version's notices.
     const downloaded = await curl(file.url);
-    const downloadedHash = sha256(downloaded);
-    if (downloadedHash !== file.sha256) {
-      throw new Error(
-        `Pinned ${file.output} hash mismatch: expected ${file.sha256}, received ${downloadedHash}.`,
-      );
-    }
-    const outputPath = path.join(licenseDir, file.output);
-    if (await exists(outputPath)) {
-      const existingHash = await sha256File(outputPath);
-      if (existingHash !== file.sha256) {
-        throw new Error(`Refusing to overwrite modified notice file: ${outputPath}`);
-      }
-    } else {
-      await fs.writeFile(outputPath, downloaded);
-    }
-    provenance.push({ ...file, bytes: downloaded.length });
+    if (downloaded.length > 2_000_000) throw new Error('Codex notice exceeded its size limit.');
+    await fs.writeFile(path.join(licenseDir, file.output), downloaded);
+    provenance.push({ ...file, sha256: sha256(downloaded), bytes: downloaded.length });
   }
   return provenance;
 }
@@ -258,7 +220,9 @@ if (lock.packages['']?.version !== packageManifest.version) {
   );
 }
 
-const codexProvenance = await ensurePinnedCodexFiles();
+const selectedRuntime = await readNativeRuntimeManifest(root);
+const codexProvenance = await ensureCodexFiles(selectedRuntime.version);
+const nativeRuntime = [];
 const vendoredFontProvenance = [];
 for (const font of vendoredFonts) {
   const bytes = await fs.readFile(path.join(root, font.source));
@@ -296,20 +260,11 @@ for (const node of graph.nodes) {
   });
 }
 
-for (const runtime of nativeRuntime) {
-  const runtimePath = path.join(root, '.data', 'native-runtime', runtime.name);
+for (const [name, expected] of Object.entries(selectedRuntime.hashes)) {
+  const runtimePath = path.join(root, '.data', 'native-runtime', name);
   const actual = await sha256File(runtimePath);
-  if (actual !== runtime.localSha256) {
-    throw new Error(
-      `Native runtime hash drift for ${runtime.name}: expected ${runtime.localSha256}, got ${actual}.`,
-    );
-  }
-  const runtimeStat = await fs.stat(runtimePath);
-  if (runtimeStat.size !== runtime.bytes) {
-    throw new Error(
-      `Native runtime size drift for ${runtime.name}: expected ${runtime.bytes}, got ${runtimeStat.size}.`,
-    );
-  }
+  if (actual !== expected) throw new Error('Native runtime changed after preparation: ' + name);
+  nativeRuntime.push({ name, bytes: (await fs.stat(runtimePath)).size, sha256: actual });
 }
 
 const electronManifest = JSON.parse(
@@ -362,7 +317,7 @@ Generated by \`${path.relative(root, fileURLToPath(import.meta.url)).replaceAll(
 
 ## Diomedes application license
 
-The Diomedes source tree carries a proprietary all-rights-reserved notice in the repository root `LICENSE`. The exact root license text follows so the packaged \`licenses\` directory carries it:
+The Diomedes source tree carries a proprietary all-rights-reserved notice in the repository root \`LICENSE\`. The exact root license text follows so the packaged \`licenses\` directory carries it:
 
 ----- BEGIN DIOMEDES LICENSE -----
 ${rootLicense}
@@ -382,20 +337,15 @@ ${markdownList(vendoredFontProvenance.map((font) => `\`${font.output}\`: ${font.
 
 ## OpenAI Codex native runtime
 
-Diomedes currently packages three locally pinned native executables. \`codex.exe --version\` was separately observed as \`codex-cli 0.153.4\`. The exact upstream tag files downloaded by this collector are:
+Diomedes packages the runtime snapshot recorded by preparation: Codex \`${selectedRuntime.version}\`. Installed engines are discovered independently at connection time; this record does not restrict their versions. The upstream tag files downloaded for this snapshot are:
 
 ${markdownList(codexProvenance.map((file) => `\`${file.output}\`: ${file.url}, ${file.bytes} bytes, SHA-256 \`${file.sha256}\``))}
 
-The official \`rust-v0.153.4\` release workflow documents that the Windows Codex package contains \`codex-command-runner.exe\` and \`codex-windows-sandbox-setup.exe\` alongside the main binary. However, the three local hashes do **not** match the corresponding raw GitHub release-asset hashes observed through \`https://api.github.com/repos/openai/codex/releases/tags/rust-v0.153.4\` on September 9, 2026:
+The package's executable bytes were verified against its preparation manifest:
 
-${markdownList(
-  nativeRuntime.map(
-    (runtime) =>
-      `\`${runtime.name}\`: local ${runtime.bytes} bytes, \`${runtime.localSha256}\`; official asset \`${runtime.releaseAsset}\`, ${runtime.releaseAssetBytes} bytes, \`${runtime.releaseAssetSha256}\``,
-  ),
-)}
+${markdownList(nativeRuntime.map((runtime) => `\`${runtime.name}\`: ${runtime.bytes} bytes, SHA-256 \`${runtime.sha256}\``))}
 
-Matching names, sizes, and reported version do not prove identical provenance. Signing or another distribution transformation could explain different bytes, but that has not been established. The upstream root LICENSE and NOTICE are included; an exact source-artifact chain and any generated Rust/vendor notices for these local bytes remain a public-redistribution gap.
+These hashes identify the packaged files. A copy from an installed desktop build does not itself establish equivalence with a GitHub release asset. Retain the preparation manifest and any upstream artifact digests with the package; the matching upstream LICENSE and NOTICE alone do not establish a complete Rust/vendor notice chain.
 
 ## Electron and Chromium
 
@@ -433,8 +383,19 @@ ${group.text}
 await fs.writeFile(path.join(licenseDir, 'DEPENDENCIES.txt'), `${dependencyText}\n`, 'utf8');
 await fs.writeFile(path.join(licenseDir, 'THIRD_PARTY_NOTICES.md'), `${thirdPartyText}\n`, 'utf8');
 
+// Publish the binding only after every generated file is complete. Packaging
+// verifies this receipt again against the actual license files in its stage.
+const noticeHashes = {};
+for (const name of ['codex-LICENSE.txt', 'codex-NOTICE.txt', 'THIRD_PARTY_NOTICES.md', 'DEPENDENCIES.txt'])
+  noticeHashes[name] = await sha256File(path.join(licenseDir, name));
+if (JSON.stringify(await readNativeRuntimeManifest(root)) !== JSON.stringify(selectedRuntime))
+  throw new Error('Native runtime snapshot changed while collecting notices.');
+await fs.writeFile(path.join(licenseDir, 'NATIVE_RUNTIME.json'), JSON.stringify({
+  ...selectedRuntime, notices: noticeHashes,
+}, null, 2) + '\n');
+
 console.log(`Production package paths: ${dependencyRows.length}`);
 console.log(`Collected unique license/notice texts: ${noticeGroups.length}`);
 console.log(`Missing top-level license texts: ${missingLicenseText.length}`);
 console.log(`package-lock SHA-256: ${sha256(lockBytes)}`);
-console.log('Codex LICENSE/NOTICE pins: verified');
+console.log(`Codex ${selectedRuntime.version} LICENSE/NOTICE provenance recorded`);

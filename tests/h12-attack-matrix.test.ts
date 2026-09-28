@@ -183,21 +183,52 @@ describe('write_file: time-of-check to time-of-use', () => {
     expect((await fs.readdir(path.join(root, 'docs'))).filter((name) => name.endsWith('.tmp'))).toEqual([]);
   });
 
-  test('a landed file that is not the one written leaves the write uncertain, never retried on a guess', async () => {
+  test.each([false, true])('a replaced file stays uncertain with large identity=%s, never retried on a guess', async (largeIdentity) => {
     const rename = fs.rename.bind(fs);
+    const lstat = fs.lstat.bind(fs);
+    const open = fs.open.bind(fs);
     const target = path.join(root, 'docs', 'a.md');
+    const originalId = 2n ** 60n;
+    const replacementId = originalId + 1n;
+    let replaced = false;
+    // NTFS identifiers are 64-bit values. These distinct identities become the
+    // same Number, so the write must ask the filesystem for bigint identities.
+    const statSpy = largeIdentity ? vi.spyOn(fs, 'lstat').mockImplementation(async (file, options) => {
+      const stat = await lstat(file, options);
+      if (String(file).endsWith('.tmp') || (file === target && replaced)) {
+        const ino = replaced && file === target ? replacementId : originalId;
+        Object.defineProperty(stat, 'ino', { value: typeof stat.ino === 'bigint' ? ino : Number(ino) });
+      }
+      return stat;
+    }) : undefined;
+    const openSpy = largeIdentity ? vi.spyOn(fs, 'open').mockImplementation(async (...args) => {
+      const handle = await open(...args);
+      if (String(args[0]).endsWith('.tmp')) {
+        const stat = handle.stat.bind(handle);
+        vi.spyOn(handle, 'stat').mockImplementation(async (options) => {
+          const result = await stat(options);
+          Object.defineProperty(result, 'ino', { value: typeof result.ino === 'bigint' ? originalId : Number(originalId) });
+          return result;
+        });
+      }
+      return handle;
+    }) : undefined;
     const spy = vi.spyOn(fs, 'rename').mockImplementation(async (from, to) => {
       await rename(from, to);
       if (to !== target) return;
       // Someone replaces the file in the instant after the rename.
       await fs.writeFile(`${to}.other`, 'someone else');
       await rename(`${to}.other`, to);
+      replaced = true;
     });
     try {
       await expect(write({ path: 'docs/a.md', text: 'hello' })).rejects.toMatchObject({ code: 'path_changed' });
     } finally {
       spy.mockRestore();
+      statSpy?.mockRestore();
+      openSpy?.mockRestore();
     }
+    expect(replaced).toBe(true);
     const [written] = (await service.get('r')).steps;
     expect(written.state).toBe('reconcile_required');
     expect(written.effects!.at(-1)).toMatchObject({ tool: 'write_file', targets: ['docs/a.md'], status: 'uncertain' });

@@ -24,6 +24,7 @@ import { RunService, Suspended, type StepContext, type StepDefinition } from './
 import { boundedHistory, carriedRun } from './conversation-history.js';
 import { artifactSteps, unrecordedArtifacts } from './artifact-steps.js';
 import { repairWriting } from '../plain-writing.js';
+import { baselineRedact } from '../secrets.js';
 
 /** A first prompt that carries an earlier conversation, laid out as the model-API driver lays out history. */
 export const carriedPrompt = (history: string, prompt: string) =>
@@ -68,7 +69,7 @@ export interface SessionCheckpointFacts {
  * steering are not.
  */
 export interface NativeSessionProfile<C extends SessionCheckpointFacts> {
-  engine: 'claude-code' | 'opencode' | 'cursor' | 'devin';
+  engine: 'claude-code' | 'opencode' | 'cursor' | 'devin' | 'codex';
   label: string;
   capability: CapabilityManifest;
   /** Validates a saved checkpoint for this engine and returns its payload. Throws `invalid_checkpoint`. */
@@ -194,6 +195,8 @@ export interface ClaudeSessionTurn<C extends SessionCheckpointFacts = ClaudeSess
   runId: string;
   sourceRunId?: string;
   input: TextRequest;
+  /** Additional route secrets, scrubbed before an answer enters durable evidence or replay. */
+  redact?(text: string): string;
   /**
    * H03: when a turn is already running on this run, wait behind it (`profile.steering`) instead
    * of being refused as busy. The wait is shown in `status` and ends with this turn's own result,
@@ -213,6 +216,8 @@ export interface ClaudeSessionTurn<C extends SessionCheckpointFacts = ClaudeSess
     onDelta(text: string): void;
     /** The adapter-facing tool activity sink, fenced to the same attempt as `onDelta`. */
     onToolActivity?: TextRequest['onToolActivity'];
+    /** The adapter-facing thinking sink, fenced to the same attempt; absent where the route declares none. */
+    onReasoningDelta?: TextRequest['onReasoningDelta'];
     finish(): Promise<void>;
   };
 }
@@ -1075,6 +1080,8 @@ export class ClaudeSessionRuns<C extends SessionCheckpointFacts = ClaudeSessionC
           onPreview: undefined,
           onActivity: undefined,
           onToolActivity: undefined,
+          onReasoning: undefined,
+          onReasoningDelta: undefined,
         },
         {
           observedVersion: admission.version,
@@ -1189,12 +1196,14 @@ export class ClaudeSessionRuns<C extends SessionCheckpointFacts = ClaudeSessionC
                 onPreview: undefined,
                 onActivity: undefined,
                 onToolActivity: preview?.onToolActivity,
+                onReasoning: undefined,
+                onReasoningDelta: preview?.onReasoningDelta,
               });
               if (
                 result.projectId !== input.projectId ||
                 result.threadId !== input.threadId ||
                 result.requestId !== input.requestId ||
-                result.version !== admission.version
+                typeof result.version !== 'string' || !result.version.trim() || result.version.length > 100
               )
                 throw new EngineError(
                   'IDENTITY_MISMATCH',
@@ -1208,7 +1217,12 @@ export class ClaudeSessionRuns<C extends SessionCheckpointFacts = ClaudeSessionC
                 connection.session.checkpoint.state === 'idle'
               )
                 interrupted = true;
-              else throw error;
+              else {
+                // A failed turn still shows what it wrote, as a finished one does; its own error
+                // is the one reported.
+                await preview?.finish().catch(() => undefined);
+                throw error;
+              }
             }
             await preview?.finish();
             // Plain writing, inside the step so a replay and the next message's history read the
@@ -1216,8 +1230,9 @@ export class ClaudeSessionRuns<C extends SessionCheckpointFacts = ClaudeSessionC
             // engine's own session, which the person did not send (server/plain-writing.ts).
             let writing: Json | undefined;
             if (result) {
+              const safeText = baselineRedact(result.text);
               const repaired = await repairWriting({
-                text: result.text,
+                text: request.redact ? request.redact(safeText) : safeText,
                 options: {
                   userTexts: [input.prompt, ...input.documents.map((doc) => doc.text)],
                   ownerPhrases: input.writing?.phrases ?? [],
@@ -1229,11 +1244,11 @@ export class ClaudeSessionRuns<C extends SessionCheckpointFacts = ClaudeSessionC
             context.reportOrigin?.({
               protocolVersion: 1,
               mode: 'direct',
-              engine: { id: this.profile.engine, version: admission.version },
+              engine: { id: this.profile.engine, version: result?.version ?? admission.version },
               model: {
                 requested: input.model,
-                reported: connection.session.checkpoint.reportedModel,
-                source: connection.session.checkpoint.reportedModel ? 'runtime' : 'not-recorded',
+                reported: result?.model || null,
+                source: result?.model ? 'runtime' : 'not-recorded',
               },
               accountRoute: input.accountRoute,
             });
@@ -1624,6 +1639,7 @@ export class ClaudeSessionRuns<C extends SessionCheckpointFacts = ClaudeSessionC
           signal: undefined,
           onPreview: undefined,
           onActivity: undefined,
+          onReasoning: undefined,
         };
         const result = await this.request({
           ...base,

@@ -144,6 +144,41 @@ describe('the Nectovia usage bar', () => {
     const html = render(ready());
     expect(html).toMatch(/<button[^>]*>Refresh<\/button>/);
   });
+
+  it.each([749, 750, 899, 900, 999, 1000])('warns at the allowance thresholds: %s credits committed', (committed) => {
+    const state = ready({ settledMonthlyMicroUsd: c(committed - 100), pendingMonthlyMicroUsd: c(60), uncertainMonthlyMicroUsd: c(40) });
+    const model = usageBarModel(state, now);
+    if (committed < 750) {
+      expect(model.alert).toBeNull();
+    } else {
+      expect(model.alert).toContain(committed >= 1000 ? 'No monthly credits remain' : committed >= 900 ? '90%' : '75%');
+      expect(render(state)).toContain('role="alert"');
+      expect(model.alert).toContain('never starts automatically');
+    }
+  });
+
+  it('purchased usage does not postpone the monthly allowance warning', () => {
+    const model = usageBarModel(ready({ settledMonthlyMicroUsd: c(900) }, { purchasedMicroUsd: c(5000) }), now);
+    expect(model.alert).toContain('90%');
+  });
+
+  it('never presents a stale or unknown allowance warning as current', () => {
+    expect(usageBarModel(ready({ settledMonthlyMicroUsd: c(950) }, {}, { observedAt: '2026-10-15T11:00:00.000Z' }), now).alert).toBeNull();
+    expect(usageBarModel({ state: 'unavailable', organizationId: 'org_a', reason: 'Offline' }, now).alert).toBeNull();
+  });
+
+  it('reports exhaustion after a withdrawal without claiming the withdrawn credits were spent', () => {
+    const model = usageBarModel(ready({ settledMonthlyMicroUsd: c(100), correctionWithdrawalsMicroUsd: c(900) }), now);
+    expect(model.alert).toContain('No monthly credits remain');
+    expect(model.summary).toContain('10%');
+  });
+
+  it('keeps granted corrections available even when the original monthly grant is fully used', () => {
+    const model = usageBarModel(ready({ settledMonthlyMicroUsd: c(1000), correctionGrantsMicroUsd: c(200) }), now);
+    expect(model.alert).toContain('100%');
+    expect(model.alert).not.toContain('No monthly credits remain');
+    expect(model.facts.find((fact) => fact.term === 'Available this month')?.value).toBe('200 credits');
+  });
 });
 
 describe('a usage response only paints the organization it was asked for', () => {

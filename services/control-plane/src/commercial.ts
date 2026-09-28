@@ -47,6 +47,7 @@ import { AccountError } from './errors.js';
 import { modelBindingSchema, routingScopeSchema, routingConfigurationSchema, hardRestrictionsSchema, bindingProblems, type IndividualAccount } from '../../../shared/routing-policy.js';
 import type { RoutingTransaction } from './routing.js';
 import { approvedConnections } from './managed-bindings.js';
+import { registryRow } from './managed-providers.js';
 import type { FundingService } from './funding.js';
 
 export const COMMERCIAL_VERSION = 1 as const;
@@ -494,9 +495,19 @@ export class CommercialService {
     await this.accounts.signIn(token);
     return this.repository.transaction(async (tx) => {
       const policy = await tx.policy();
+      const tiers: TierPolicy['tiers'] = policy?.tiers ?? { efficient: null, focused: null, thorough: null };
+      const routes = policy ? await tx.routes() : [];
+      // This gateway accepts reasoning summaries (managed-inference.ts), and a desktop asks for them
+      // only for its own tier, only when the upstream serving it is proven to accept them.
+      const reasoningSummaries = Object.fromEntries(
+        POLICY_TIERS.map((tier) => {
+          const entry = routes.find((row) => row.id === tiers[tier]?.entryId);
+          return [tier, entry ? registryRow(entry)?.reasoningSummaries === true : false];
+        }),
+      ) as Record<PolicyTier, boolean>;
       return policy
-        ? { revision: policy.revision, publishedAt: policy.publishedAt, tiers: policy.tiers }
-        : { revision: 0, publishedAt: null, tiers: { efficient: null, focused: null, thorough: null } };
+        ? { revision: policy.revision, publishedAt: policy.publishedAt, tiers: policy.tiers, reasoningSummaries }
+        : { revision: 0, publishedAt: null, tiers, reasoningSummaries };
     });
   }
 

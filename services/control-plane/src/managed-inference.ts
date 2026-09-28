@@ -255,7 +255,8 @@ function validate(value: unknown): ResponsesBody {
     if (typeof reasoning.effort !== 'string') invalid('reasoning.effort', 'reasoning.effort must be low, medium or high.');
     if (!['low', 'medium', 'high'].includes(reasoning.effort as string))
       unsupported('reasoning.effort', `reasoning.effort ${String(reasoning.effort)} is not accepted; use low, medium or high.`);
-    if ('summary' in reasoning && reasoning.summary !== null) unsupported('reasoning.summary', 'reasoning.summary is not accepted; leave it out or null.');
+    if ('summary' in reasoning && reasoning.summary !== null && !['auto', 'concise', 'detailed'].includes(reasoning.summary as string))
+      unsupported('reasoning.summary', 'reasoning.summary may be auto, concise, detailed or null.');
   }
   if (value.include !== undefined) {
     if (!Array.isArray(value.include)) invalid('include', 'include must be a list.');

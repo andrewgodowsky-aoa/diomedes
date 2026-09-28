@@ -11,7 +11,9 @@ import type {
 } from '../../shared/types';
 import type { EngineConnection } from '../../shared/engines';
 import type { AwsConnectionView } from '../../shared/model-api';
+import { MANAGED_LUNA } from '../../shared/model-api';
 import { EXTERNAL_ENGINES, isExternalEngine, routeDisplayName } from '../../shared/engines';
+import { isFoundEngine } from '../../shared/conversation-engines';
 import { freshness } from '../../shared/connection-policy';
 import { routeCaption } from '../../shared/engine-routes';
 import { MODE_CEILING, effortFor } from '../../shared/effort';
@@ -68,15 +70,7 @@ function available(id: string, integrations: IntegrationStatus[], settings: Sett
  * route is not this route's account.
  */
 export function signedIn(connection: EngineConnection | undefined): connection is EngineConnection {
-  return (
-    !!connection &&
-    connection.installation === 'found' &&
-    connection.compatibility === 'supported' &&
-    connection.authentication === 'signed-in' &&
-    connection.models.length > 0 &&
-    !connection.repair &&
-    !connection.routeIssue
-  );
+  return isFoundEngine(connection);
 }
 
 /**
@@ -98,12 +92,8 @@ export function connectionState(connection: EngineConnection, nowMs = Date.now()
  * catalogues plus Sample work; the choice PUTs `requested` on the thread
  * exactly as the Console did.
  *
- * Two sources, because the two families report differently. Codex keeps a
- * catalogue on disk that `GET /engines/codex/models` projects. An external
- * engine reports its models during the sign-in check, and
- * `GET /ai/status` is where that answer is kept — the same read AI setup makes,
- * so the thread offers exactly the models Settings > Engines just listed
- * instead of an empty menu beside a connected account.
+ * Opening the menu checks the selected installations again. Catalogues come
+ * from their current account and runtime, including updates made outside the app.
  */
 export function Picker({
   thread,
@@ -125,31 +115,36 @@ export function Picker({
   const root = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    if (!open) return;
     let alive = true;
-    for (const id of ENGINE_IDS) {
-      if (isExternalEngine(id)) continue;
-      if (!available(id, integrations, settings)) continue;
-      api<EngineCatalog>(`/engines/${id}/models`)
+    const controller = new AbortController();
+    const checks = ENGINE_IDS.filter((id) => available(id, integrations, settings) || settings.services?.[id] === true).map((id) =>
+      api<EngineCatalog>(`/engines/${id}/models`, 'GET', undefined, controller.signal)
         .then((catalog) => {
           if (alive) setCatalogs((prev) => ({ ...prev, [id]: catalog }));
         })
         .catch(() => {
           if (alive)
             setCatalogs((prev) => ({ ...prev, [id]: { engine: id, models: [], detail: '' } }));
-        });
-    }
+        }),
+    );
+    void Promise.all(checks).then(async () => {
+      if (!alive) return;
+      const rows = await engineConnections(controller.signal);
+      if (alive) setConnections(Object.fromEntries(rows.map((row) => [row.engine, row])));
+    }).catch(() => { if (alive) setConnections({}); });
     return () => {
       alive = false;
+      controller.abort();
     };
-  }, [integrations, settings]);
+  }, [open, integrations, settings]);
 
-  // Read on mount and again when the menu opens: the sign-in check runs in
-  // Settings, so the roster this component was mounted with is older than the
-  // account it is meant to describe. The read is answered from memory and
-  // starts no process.
+  // Read the closed menu's initial roster. While open, the refresh above owns
+  // connection updates so an older read cannot overwrite its newer result.
   useEffect(() => {
     let alive = true;
-    void engineConnections()
+    const controller = new AbortController();
+    if (!open) void engineConnections(controller.signal)
       .then((rows) => {
         if (!alive) return;
         setConnections(Object.fromEntries(rows.map((row) => [row.engine, row])));
@@ -159,7 +154,7 @@ export function Picker({
       });
     // The AWS route is a company account, not an installed engine: its own view says
     // whether anything blocks a send, and the menu offers it only when nothing does.
-    void api<AwsConnectionView>('/ai/model-api/aws-bedrock')
+    void api<AwsConnectionView>('/ai/model-api/aws-bedrock', 'GET', undefined, controller.signal)
       .then((view) => {
         if (alive) setAws(view);
       })
@@ -168,13 +163,14 @@ export function Picker({
       });
     // Azure OpenAI and OpenRouter follow the same rule, each from its own view.
     for (const id of PROVIDER_ROUTES)
-      void api<ProviderView>(`/ai/model-api/${id}`)
+      void api<ProviderView>(`/ai/model-api/${id}`, 'GET', undefined, controller.signal)
         .then((view) => {
           if (alive) setProviders((prev) => ({ ...prev, [id]: view }));
         })
         .catch(() => undefined);
     return () => {
       alive = false;
+      controller.abort();
     };
   }, [open]);
 
@@ -201,8 +197,9 @@ export function Picker({
   }
 
   function modelsFor(id: string): EngineModel[] {
+    if (catalogs[id]) return catalogs[id]!.models;
     if (isExternalEngine(id)) return connections[id]?.models ?? [];
-    return catalogs[id]?.models ?? [];
+    return [];
   }
 
   const offeredIds = ENGINE_IDS.filter(offered);
@@ -356,7 +353,7 @@ export function Picker({
                     aria-checked={route === 'aws-bedrock'}
                     onClick={() => choose(null, 'aws-bedrock')}
                   >
-                    <span>GPT-6 Luna</span>
+                    <span>{MANAGED_LUNA.label}</span>
                     <span className="id">{aws.connection.model}</span>
                     <small>Within the spend limit set in Settings</small>
                   </button>

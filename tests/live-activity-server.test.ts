@@ -23,7 +23,8 @@ import type {
 import type { ClaudeSessionCheckpoint } from '../server/engines/claude-session.js';
 import { routeContractFor } from '../server/harness/route-contract.js';
 import { hash, type Store } from '../server/store.js';
-import { toolActivitySchema } from '../shared/adapter-contract.js';
+import { LIVE_REDACTION, toolActivitySchema } from '../shared/adapter-contract.js';
+import { baselineRedact } from '../server/secrets.js';
 import type { IntegrationStatus } from '../shared/types.js';
 
 const ENGINE = 'claude-code' as const;
@@ -32,7 +33,7 @@ const ACCOUNT = 'claude-code:claude.ai';
 const MODEL = 'sonnet';
 const headers = { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' };
 
-type Frame = Record<string, unknown> & { channel: 'text' | 'activity' };
+type Frame = Record<string, unknown> & { channel: 'text' | 'activity' | 'reasoning' };
 
 let root: string;
 let app: Awaited<ReturnType<typeof createApp>> | undefined;
@@ -94,6 +95,7 @@ async function open(adapter: TextEngineAdapter) {
     discover: async () => [installed],
     version: async () => VERSION,
     adapter: () => adapter,
+    redactFor: () => baselineRedact,
   });
   app = await createApp({
     dataDir: path.join(root, 'data'),
@@ -112,6 +114,9 @@ async function open(adapter: TextEngineAdapter) {
   );
   store().on('engine-activity', (frame: Record<string, unknown>) =>
     frames.push({ ...structuredClone(frame), channel: 'activity' }),
+  );
+  store().on('engine-reasoning', (frame: Record<string, unknown>) =>
+    frames.push({ ...structuredClone(frame), channel: 'reasoning' }),
   );
 }
 
@@ -165,6 +170,70 @@ describe('thread Ask on an external engine', () => {
       };
     },
   };
+
+  test.each(['text', 'reasoning'] as const)('a tool between %s fragments cannot expose a split key through HTTP Store events', async channel => {
+    await open({
+      ...adapter,
+      generate: async input => {
+        const write = channel === 'text' ? input.onDelta : input.onReasoningDelta;
+        write?.('Credential sk-abcde');
+        input.onToolActivity?.({ callId: 'c1', phase: 'started', tool: 'read_file', summary: 'Reading menu.md' });
+        write?.('fghijk is private.');
+        return {
+          projectId: input.projectId, threadId: input.threadId, requestId: input.requestId,
+          model: MODEL, version: VERSION, text: 'No credential in the answer.',
+        };
+      },
+    });
+    const project = await store().locked(() => store().createProject('Split credential'));
+    store().settings.services = { 'claude-code': true, 'claude-codeModel': MODEL, 'claude-codeAccountRoute': ACCOUNT };
+    await store().saveSettings(store().settings);
+    await api(`/projects/${project.id}/cloud-sharing`, 'PUT', {
+      expectedVersion: 0, routes: [ENGINE], documents: [], shareConversationHistory: false, shareReviewPackets: false,
+    });
+    await api(`/projects/${project.id}/ask`, 'POST', { text: 'Read the menu', route: ENGINE, mode: 'ask', consent: true });
+    const live = frames.filter(frame => frame.channel === channel).map(frame => frame.text ?? '').join('');
+    expect(live).toBe('Credential [redacted] is private.');
+    expect(JSON.stringify(frames)).not.toContain('sk-abcde');
+    expect(frames.filter(frame => frame.channel === 'activity')).toHaveLength(1);
+  });
+
+  test.each(['text', 'activity'] as const)('the HTTP turn refuses %s queue overflow even if the transport catches callback errors', async channel => {
+    let sent = 0, caught = false;
+    await open({
+      ...adapter,
+      generate: async input => {
+        sent++;
+        input.onReasoningDelta?.('An incomplete thought');
+        try {
+          const count = channel === 'text' ? 40 : LIVE_REDACTION.pendingFrames + 1;
+          for (let i = 0; i < count; i++) {
+            if (channel === 'text') input.onDelta?.('word '.repeat(12_000));
+            else input.onToolActivity?.({ callId: 'c', phase: 'started', tool: 'read', summary: 'Read' });
+          }
+        } catch { caught = true; }
+        return {
+          projectId: input.projectId, threadId: input.threadId, requestId: input.requestId,
+          model: MODEL, version: VERSION, text: 'This must not be accepted.',
+        };
+      },
+    });
+    const project = await store().locked(() => store().createProject('Refused output'));
+    store().settings.services = { 'claude-code': true, 'claude-codeModel': MODEL, 'claude-codeAccountRoute': ACCOUNT };
+    await store().saveSettings(store().settings);
+    await api(`/projects/${project.id}/cloud-sharing`, 'PUT', {
+      expectedVersion: 0, routes: [ENGINE], documents: [], shareConversationHistory: false, shareReviewPackets: false,
+    });
+    const response = await fetch(`${base}/api/projects/${project.id}/ask`, {
+      method: 'POST', headers,
+      body: JSON.stringify({ text: 'Read the menu', route: ENGINE, mode: 'ask', consent: true }),
+    });
+    expect(sent).toBe(1);
+    // Text uses onInvalid rather than throwing; activity reports overflow synchronously.
+    expect(caught).toBe(channel === 'activity');
+    expect(response.ok).toBe(false);
+    expect(await response.text()).not.toContain('This must not be accepted.');
+  });
 
   test('emits engine-activity frames stamped with the same run as the streamed text', async () => {
     await open(adapter);

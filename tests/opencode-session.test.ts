@@ -120,6 +120,23 @@ describe('kept OpenCode session transport', () => {
     expect((await f.log()).filter((line) => line === 'POST /session')).toHaveLength(1);
   });
 
+  it('streams reasoning parts to the thinking sink and keeps them out of the answer', async () => {
+    const f = await fixture();
+    f.state.mode = 'think';
+    const session = await f.openSession(request('first'));
+    const thoughts: string[] = [];
+    const deltas: string[] = [];
+    const result = await session.turn({
+      ...request('first'),
+      onDelta: (text) => deltas.push(text),
+      onReasoningDelta: (text) => thoughts.push(text),
+    });
+    expect(thoughts).toEqual(['Weighing the menu. ', 'Checking prices.']);
+    expect(result.text.startsWith('answer:first')).toBe(true);
+    expect(result.text).not.toContain('Weighing');
+    expect(deltas.join('')).toBe(result.text);
+  });
+
   it('refuses a turn outside the scope it was opened with, and a second turn while one runs', async () => {
     const f = await fixture();
     f.state.mode = 'slow';
@@ -204,6 +221,26 @@ describe('kept OpenCode session transport', () => {
     expect(await f.log()).toContain(`GET /session/${checkpoint.nativeSessionId}`);
   });
 
+  it('resumes a session saved by an older version of OpenCode, on the version installed now', async () => {
+    const f = await fixture();
+    const first = await f.openSession(request('first'));
+    await first.turn(request('first'));
+    // Saved before OpenCode updated itself.
+    const checkpoint = { ...first.checkpoint, cliVersion: '1.18.3' };
+    await first.close();
+    const resumed = await f.openSession(request('later'), { restore: checkpoint });
+    expect(resumed.checkpoint).toMatchObject({
+      nativeSessionId: checkpoint.nativeSessionId,
+      lineageId: checkpoint.lineageId,
+      origin: 'resumed',
+      cliVersion: OPENCODE_VERSION,
+    });
+    expect(resumed.continuity).toEqual({ origin: 'resumed', detail: null });
+    const answer = await resumed.turn(request('later'));
+    expect(answer.text).toBe(`answer:later (turn 2 of ${checkpoint.nativeSessionId})`);
+    expect(answer.version).toBe(OPENCODE_VERSION);
+  });
+
   it('a session OpenCode no longer has starts fresh, and says so', async () => {
     const f = await fixture();
     const first = await f.openSession(request('first'));
@@ -251,17 +288,17 @@ describe('kept OpenCode session transport', () => {
     expect((await f.log()).filter((line) => line === 'POST /session')).toHaveLength(1);
   });
 
-  it('refuses to resume across a version change, another scope, or with no saved session', async () => {
+  it('refuses to resume another scope or account route, or with no saved session', async () => {
     const f = await fixture();
     const first = await f.openSession(request('first'));
     await first.turn(request('first'));
     const checkpoint = first.checkpoint;
     await first.close();
     await expect(
-      f.openSession(request('x'), { restore: { ...checkpoint, cliVersion: '1.18.3' } }),
+      f.openSession({ ...request('x'), instructions: 'Other instructions.' }, { restore: checkpoint }),
     ).rejects.toMatchObject({ code: 'SESSION_MISMATCH' });
     await expect(
-      f.openSession({ ...request('x'), instructions: 'Other instructions.' }, { restore: checkpoint }),
+      f.openSession(request('x'), { restore: { ...checkpoint, accountRoute: 'opencode:another-account' } }),
     ).rejects.toMatchObject({ code: 'SESSION_MISMATCH' });
     await expect(
       f.openSession(request('x'), { restore: { ...checkpoint, nativeSessionId: null } }),

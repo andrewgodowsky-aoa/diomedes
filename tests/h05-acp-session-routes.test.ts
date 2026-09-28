@@ -31,6 +31,8 @@ let server: Server | undefined;
 let base: string;
 let project: Project;
 let thread: Conversation;
+/** The Cursor version installed now; a test that updates Cursor in place changes it. */
+let installed: string;
 async function request(route: string, method = 'GET', body?: unknown) {
   return fetch(`${base}/api${route}`, {
     method,
@@ -85,19 +87,19 @@ const service = () =>
         capabilities: [],
         signIn: 'unknown',
         adapter: 'planned',
-        installedVersion: TESTED_VERSIONS.cursor,
+        installedVersion: installed,
         location: process.execPath,
         disclosure: [],
       },
     ],
-    version: async () => TESTED_VERSIONS.cursor,
+    version: async () => installed,
     adapter: (_engine, _location, cwd) =>
       new CursorAdapter(path.join(root, 'agent'), cwd, {
         spawn: (_file, _args, options) =>
           spawn(process.execPath, [FIXTURE], options) as ChildProcessWithoutNullStreams,
         capture: (async (options: { args: string[] }) =>
           options.args.includes('--version')
-            ? { code: 0, stdout: '2026.08.11-e8db854' }
+            ? { code: 0, stdout: `${installed}-e8db854` }
             : {
                 code: 0,
                 stdout: JSON.stringify({ status: 'authenticated', isAuthenticated: true }),
@@ -108,6 +110,7 @@ const service = () =>
   });
 beforeEach(async () => {
   root = await fs.mkdtemp(path.join(os.tmpdir(), 'diomedes-h05-http-'));
+  installed = TESTED_VERSIONS.cursor;
   await open(service());
   await api('/ai/discover', 'POST', { consent: true });
   await api('/ai/check/cursor', 'POST', {});
@@ -241,4 +244,25 @@ test('a Stop while the question is open expires the Need; nothing can be sent fo
     resolution: 'go-ahead',
   });
   expect(late.status).toBe(409);
+});
+
+test('after Cursor updates itself, a restarted host resumes the same ACP session on the version installed now', async () => {
+  // The conversation starts on an older Cursor, which then updates itself in place.
+  installed = '2026.08.04';
+  const first = await api<ClaudeSessionTurnResult>(endpoint(), 'POST', command('first'));
+  expect(first.response?.text).toBe('answer after 0 earlier turns');
+  await api(`${endpoint()}/${first.runId}/close`, 'POST', { commandId: 'close-one' });
+  await close();
+  installed = TESTED_VERSIONS.cursor;
+  await open(service());
+  const resumed = await api<ClaudeSessionTurnResult>(`${endpoint()}/${first.runId}/resume`, 'POST', command('resumed'));
+  expect(resumed.nativeSession).toEqual(first.nativeSession);
+  expect(resumed.continuity).toBeUndefined();
+  expect(resumed.response?.text).toBe('answer after 1 earlier turns');
+  const recorded = (app.locals.store as Store)
+    .state(project.id)
+    .conversations.find((item) => item.id === thread.id)!;
+  expect(recorded.turns.map((turn) => turn.text)).toEqual(['first', first.response!.text, 'resumed', resumed.response!.text]);
+  expect(recorded.turns[1]).toMatchObject({ origin: { engine: { id: 'cursor', version: '2026.08.04' } } });
+  expect(recorded.turns[3]).toMatchObject({ origin: { engine: { id: 'cursor', version: TESTED_VERSIONS.cursor } } });
 });

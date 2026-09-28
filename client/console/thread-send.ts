@@ -4,7 +4,7 @@ import {
   sendMessage,
   type DispatchIdentity,
 } from '../conversation-send';
-import { isRoute } from '../../shared/engines';
+import { isKeptSessionRoute, isRoute, type KeptSessionRoute } from '../../shared/engines';
 import { isModelApiRoute, MODEL_API_NAMES, type ModelApiRoute } from '../../shared/model-api';
 import type { ConversationMode, MessageResult } from '../../shared/conversation';
 import type { Conversation, Mode, Route } from '../../shared/types';
@@ -15,9 +15,11 @@ import type { ReadAccess } from '../../shared/read-access';
  *
  * A thread's next request runs on the route the host resolves for it: the owner's tier map
  * when a tier applies, else the route the thread is recorded on. Ask, Plan and Automatic on a
- * model-API route answer through the conversation (`conversation-send.ts`), which holds that
- * route's lineage, read tools and tool activity; the direct request path refuses them there.
- * Build and Fix, and every other route, keep the direct request path.
+ * model-API route or a kept-session engine (ChatGPT, OpenCode, Cursor, Devin) answer through
+ * the conversation (`conversation-send.ts`), which holds that route's lineage or the engine's
+ * kept session, its read tools and its tool activity. Claude Code project threads keep the
+ * direct request path (O38), Build and Fix keep it on every route, and so does a playbook
+ * message on a kept-session engine, because the conversation takes no playbook yet.
  */
 
 /** What `GET /projects/:id/threads/:threadId/work-style` says about the route, and nothing more. */
@@ -30,11 +32,15 @@ export interface ThreadRouteView {
 
 export type ThreadSendPlan =
   | { kind: 'refuse'; reason: string }
-  | { kind: 'conversation'; route: ModelApiRoute; mode: ConversationMode }
+  | { kind: 'conversation'; route: ModelApiRoute | KeptSessionRoute; mode: ConversationMode }
   | { kind: 'direct'; route: Route };
 
 const conversationMode = (mode: Mode): ConversationMode | null =>
   mode === 'ask' || mode === 'plan' || mode === 'auto' ? mode : null;
+
+/** The routes whose Ask, Plan and Automatic answer through the conversation. */
+const throughConversation = (route: string): route is ModelApiRoute | KeptSessionRoute =>
+  isModelApiRoute(route) || isKeptSessionRoute(route);
 
 /** Reads the route the host resolves for this thread now. A failed read sends nothing. */
 export async function readThreadRoute(
@@ -63,14 +69,18 @@ export async function readThreadRoute(
 export function planThreadSend(view: ThreadRouteView, mode: Mode, skill?: string): ThreadSendPlan {
   if (view.refusal) return { kind: 'refuse', reason: view.refusal };
   const conversational = conversationMode(mode);
-  if (isModelApiRoute(view.route) && conversational) {
+  if (throughConversation(view.route) && conversational) {
     // The conversation takes no playbook, and dropping one silently would send a different
-    // request from the one the person composed.
-    if (skill)
+    // request from the one the person composed. A kept-session engine ran playbooks on the
+    // direct request path before its conversation existed, so that message keeps it; a
+    // model-API route's conversation refuses the playbook.
+    if (skill) {
+      if (isKeptSessionRoute(view.route)) return { kind: 'direct', route: view.route };
       return {
         kind: 'refuse',
         reason: `Playbooks do not run in ${MODEL_API_NAMES[view.route]} conversations yet. Remove the playbook to send this message.`,
       };
+    }
     return { kind: 'conversation', route: view.route, mode: conversational };
   }
   if (!isRoute(view.route))
@@ -120,7 +130,7 @@ export async function conversationSources(
   );
 }
 
-/** One Ask, Plan or Automatic message on a model-API thread, through the conversation. */
+/** One Ask, Plan or Automatic message on a model-API or kept-session thread, through the conversation. */
 export async function sendThreadConversation(input: {
   projectId: string;
   threadId: string;

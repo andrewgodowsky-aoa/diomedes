@@ -170,7 +170,10 @@ describe('a private repair that could not finish', () => {
     fs.mkdirSync(path.dirname(destination), { recursive: true });
     fs.writeFileSync(destination, 'a private copy whose bytes no longer match');
     const installer = new EngineInstaller(serviceRoot, {
-      fetch: vi.fn<typeof fetch>(async () => new Response('not the pinned release')),
+      fetch: vi.fn<typeof fetch>(async (url) => String(url).endsWith('/releases/latest')
+        ? Response.json({ tag_name: 'v99.1.0', assets: [{ name: 'omp-windows-x64.exe', digest: 'sha256:' + 'a'.repeat(64),
+          browser_download_url: 'https://github.com/can1357/oh-my-pi/releases/download/v99.1.0/omp-windows-x64.exe' }] })
+        : new Response('not the verified release')),
       platform: 'win32',
       arch: 'x64',
     });

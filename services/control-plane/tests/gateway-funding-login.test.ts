@@ -147,7 +147,8 @@ describe('the managed gateway’s funding login', () => {
     expect(tablesOn(DATABASE_URL)).toContain('credit_periods');
     const policy = await handler()(routingPolicy(), gatewayEnv);
     expect(policy.status).toBe(200);
-    expect(tablesOn(DATABASE_URL)).toEqual(['credit_periods', 'tier_policies']);
+    // route_entries: each published tier's upstream, for its proven reasoning-summaries line.
+    expect(tablesOn(DATABASE_URL)).toEqual(['credit_periods', 'tier_policies', 'route_entries']);
     expect(statementsOn(FUNDING_URL)).toEqual([]);
   });
 });
