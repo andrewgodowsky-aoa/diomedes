@@ -48,14 +48,16 @@ async function durableWrite(target: string, bytes: string) {
     await handle.close();
   }
   // Windows can temporarily deny replacement while a reader or scanner has the
-  // destination open. Retry only this atomic rename; never repeat a handler or
-  // remove the old record. Permanent failures still surface with the temp intact.
+  // destination open. A short-lived reader can outlast the former 300 ms retry
+  // window. Backoff delays total 1.55 seconds across the same six attempts.
+  // Retry only this atomic rename; never repeat a handler or remove the old
+  // record. Permanent failures still surface with the temp intact.
   for (let attempt = 0; ; attempt++) {
     try { await fs.rename(temp, target); break; }
     catch (error) {
       if (process.platform !== 'win32' || attempt >= 5 || !(error instanceof Error) ||
           !('code' in error) || !['EPERM', 'EACCES', 'EBUSY'].includes(String(error.code))) throw error;
-      await delay(20 * (attempt + 1));
+      await delay(50 * 2 ** attempt);
     }
   }
 }
