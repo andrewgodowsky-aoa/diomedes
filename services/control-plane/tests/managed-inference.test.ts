@@ -282,8 +282,10 @@ describe('route resolution', () => {
   it('answers 503 route_unavailable, naming no provider, for a route outside the registry', async () => {
     const { token, admission } = await employee();
     const routing = await signIn('staffRouting');
-    expect((await call('POST', '/ops/routing/publish', routing, { tiers: { efficient: 'aws-luna-6', focused: 'aws-luna-5-6', thorough: 'aws-luna-5-6' }, note: 'Unqualified GPT-6 fixture.', baseRevision: 1 })).status).toBe(201);
-    const refused = await refusal(await ask({ token, admission, revision: '2', body: chatBody({ model: 'us.openai.gpt-6-luna' }) }));
+    expect((await call('POST', '/ops/routes', routing, { id: 'fixture-unregistered', provider: 'aws-bedrock', model: 'fixture-unregistered',
+      label: 'Unregistered fixture', region: 'us', processing: 'Synthetic only', status: 'qualified', evidence: 'Synthetic only' })).status).toBe(200);
+    expect((await call('POST', '/ops/routing/publish', routing, { tiers: { efficient: 'fixture-unregistered', focused: 'aws-luna-5-6', thorough: 'aws-luna-5-6' }, note: 'Unregistered transport fixture.', baseRevision: 1 })).status).toBe(201);
+    const refused = await refusal(await ask({ token, admission, revision: '2', body: chatBody({ model: 'fixture-unregistered' }) }));
     expect(refused).toEqual({ status: 503, code: 'route_unavailable', message: 'Nectovia’s model service is not available right now.' });
     expectNothingSentOrHeld();
   });
@@ -341,6 +343,7 @@ describe('an entitled Business call', () => {
     expect(read.status).toBe(200);
     expect(read.body).toEqual({
       attemptId: 'run-1:1', state: 'settled', providerCostMicroUsd: SCRIPTED_COST, allowanceDebitMicroUsd: SCRIPTED_COST,
+      routing: null, heldMicroUsd: 0,
       usage: { inputTokens: 900, cacheReadTokens: 100, cacheWriteTokens: 0, outputTokens: 40, reasoningTokens: 8 },
     });
   });

@@ -339,10 +339,10 @@ export function managedHeaders(): Headers {
 export function managedErrorResponse(error: unknown, headers: Headers = managedHeaders(), receipt?: RoutingReceipt): Response {
   let refusal: ManagedError;
   if (error instanceof ManagedError) refusal = error;
-  else if (error instanceof AccountError) refusal = new ManagedError(error.status, error.code ?? 'scope_forbidden', error.message);
   else if (error instanceof FundingError && error.code === 'company_ceiling') refusal = ceilingReached();
   else if (error instanceof FundingError)
     refusal = new ManagedError(PAYMENT_REFUSALS.has(error.code) ? 402 : error.status, error.code, error.message);
+  else if (error instanceof AccountError) refusal = new ManagedError(error.status, error.code ?? 'scope_forbidden', error.message);
   else {
     console.error(JSON.stringify({ event: 'managed-gateway-unavailable' }));
     refusal = new ManagedError(503, 'unavailable', 'Nectovia’s account service is unavailable. Try again shortly.', { 'Retry-After': '5' });
@@ -745,7 +745,13 @@ export class ManagedInferenceService {
       const individual = request.headers.get('X-Nectovia-Scope-Kind') === 'individual';
       const organizationId = header(request.headers, individual ? 'X-Nectovia-Account' : 'X-Nectovia-Organization', isAccountId);
       const { tenantId } = await authorizeScope(this.options.accounts, this.options.commercial, token,
-        { kind: individual ? 'individual' : 'organization', id: organizationId });
+        { kind: individual ? 'individual' : 'organization', id: organizationId }).catch(error => {
+          if (error instanceof AccountError && error.status === 401)
+            throw new ManagedError(401, 'sign_in_required', 'Your Nectovia sign-in has ended. Sign in again to continue.');
+          if (error instanceof AccountError && error.status === 403 && !individual)
+            throw new ManagedError(403, 'not_a_member', 'You are not an active member of this business.');
+          throw error;
+        });
       const found = RUN_ID.test(attemptId)
         ? await this.options.fundingReads.transaction(async (tx) => ({
             attempt: await tx.attempt(tenantId, attemptId),
