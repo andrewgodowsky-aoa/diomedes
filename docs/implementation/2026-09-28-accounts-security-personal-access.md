@@ -1,6 +1,6 @@
 # Account security with Personal access
 
-Status: test-only candidate. Original Personal run: three intended failures and four passing controls; production remains unchanged. Repair, composition and green are pending.
+Status: composed source repair prepared; GREEN is UNRUN. Original Personal run had three intended failures and four passing controls on unchanged main. Composition and the two reproduced guards are now applied; acceptance remains pending.
 
 Base: `1af37e085ef24fc6c92d6b2b8510fc52a504bd1b` (PR176, Individual plans).
 Branch: `feature/accounts-security-personal-access`.
@@ -77,3 +77,24 @@ The wrong-person admission row reached line 223: the session returned `admitted:
 The four controls passed: unchanged delayed refresh with one projection, correctly pinned Personal admission with cache reuse, business pins refused for Personal work, and null Personal pins refused for business work. Both scope controls confirmed fresh service requests on dispatch and success after restoring correct pins. There were no setup errors, hangs, timeouts or parse errors counted as RED.
 
 Only the three granted commands ran; no production repair, lifecycle composition, typecheck, existing Individual covering suite, mutation or broader gate followed. The originals were sent to the architect and independent reviewer for reconciliation. The old security branch remains clean at `609305d`; source/test handoff and composed-candidate acceptance remain pending.
+
+## Complete session composition and reproduced repairs
+
+The architect independently reconciled the original three failures/four controls and authorized transfer and repair. The old clean `609305d` worktree remains locked and unchanged. Old source claim `claim_mukvkpr2_a99794d0` and grouped test/docs claim `claim_mukvkkfd_a33f5ff0` were released with explicit transfer notes. New-main claims are `claim_mul6m9n7_80550d8a` for session.ts and `claim_mul6nf6i_8d4a47ae` for the historical root audit test; the Personal test/docs claim remains held. The pinned journal records this handoff at 11:47:41.123Z. No verification slot was held during the edits.
+
+The complete `66334d5..8adcb9d` session delta applied without conflicts: 180 added/62 removed lines. It retains Current ownership, serialized remembered writes, pending sign-in cancellation, SID-bound native renewal, scoped Forget, per-cleanup closing markers and N2 stable native re-reads. Before adding new guards, the composed session blob was `ace30f28da22eec5746a920844c4bf71e96aca6d`. A read-only comparison found the exact ordered added/removed-line payload of main's Personal delta retained: the same 55 added/14 removed lines as `66334d5..1af37e0`, with no extra difference versus the old security source. This is source composition evidence, not runtime proof.
+
+Only the two reproduced Personal boundaries were then changed:
+
+- After `reload()` awaits access loading, assert that its captured Current is still installed before constructing or publishing a refresh projection.
+- Capture the initiating Current in `admitAgent()` and require the returned admission's person pin to match its person ID, in addition to the existing nullable organization-scope check. An unreadable answer follows the existing refusal/uncached path.
+
+Final source delta versus new main is 188 added/68 removed lines in session.ts only. Personal access reads, Individual plan behavior and nullable Personal routes remain present. Individual migration 009, staff/commercial implementations and all other owners' account/routing files are unchanged. The exact historical 45-case audit was imported through apply_patch: Git blob `09559956881960bb32f49166a3c2f43dbdc8a9ae`, matching old `609305d`, and working SHA256 `bad22282cbf598ec5226587786ec214c5a151c25ebc608018a61efa4152335ce`. The seven new test cases remain unchanged at `3fa9cb5c...`.
+
+Prepared source SHA256: `2307ed7db08887e04926c595db5722beefa3629e8b1d3fcc239fa640e6881b19`. `composed-green-freeze.json` binds the 16 source/test/configuration inputs. The runner now accepts an explicit freeze filename so original RED inputs remain immutable. Proposed next commands, each serial and separately inspected under a future architect grant:
+
+1. `vitest run tests/accounts-security-personal-access.test.ts tests/accounts-security-audit.test.ts --maxWorkers=1 --minWorkers=1` (52 statically enumerated cases).
+2. `vitest run tests/individual-plan.test.ts tests/agent-admission-answer.test.ts --maxWorkers=1 --minWorkers=1` (existing Individual and admission controls).
+3. `tsc --noEmit` at the root.
+
+All three are UNRUN on the composed source. Source inspection found that some legacy positive admission fixtures use synthetic `person_1`; any resulting covering failure must be reproduced and corrected in the fixture under its own claim, never by weakening the person guard. The independent reviewer agreed with the two proposed boundaries; applied-source review and fresh verification remain required. This candidate is not merged, pushed, deployed or DONE.

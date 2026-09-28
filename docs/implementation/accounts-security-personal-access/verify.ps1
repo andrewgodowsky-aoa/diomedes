@@ -2,6 +2,7 @@ param(
   [Parameter(Mandatory)][ValidatePattern('^[a-z0-9-]+$')][string]$Name,
   [Parameter(Mandatory)][string]$Slot,
   [Parameter(Mandatory)][ValidatePattern('^[a-f0-9]{40}$')][string]$Candidate,
+  [ValidatePattern('^[a-z0-9-]+\.json$')][string]$Freeze = 'original-red-freeze.json',
   [ValidateSet('root', 'control-plane')][string]$Area = 'root',
   [Parameter(Mandatory)][string]$Executable,
   [string[]]$Arguments = @()
@@ -11,7 +12,7 @@ $PSNativeCommandUseErrorActionPreference = $false
 $personalWorktree = 'F:/Diomedes/diomedes-wt/accounts-security-personal-access'
 $personalRoot = 'F:/Diomedes/diomedes/.git/diomedes-coordination/unified-20260913'
 $personalEvidence = Join-Path $personalWorktree 'docs/implementation/accounts-security-personal-access'
-$personalFreeze = Get-Content -Raw -LiteralPath (Join-Path $personalEvidence 'original-red-freeze.json') | ConvertFrom-Json
+$personalFreeze = Get-Content -Raw -LiteralPath (Join-Path $personalEvidence $Freeze) | ConvertFrom-Json
 $personalLog = Join-Path $personalEvidence "$Name.log"
 $personalRecord = Join-Path $personalEvidence "$Name.json"
 if ((Test-Path -LiteralPath $personalLog) -or (Test-Path -LiteralPath $personalRecord)) { throw 'Evidence name already used' }
