@@ -31,6 +31,8 @@ export interface UsageBarModel {
   readonly freshness: string | null;
   readonly stale: boolean;
   readonly reconciliation: string | null;
+  /** Current allowance warnings include reservations, not just settled usage. */
+  readonly alert: string | null;
 }
 
 const credits = (amount: MicroUsd) => `${formatCredits(amount)} ${amount === 100_000 ? 'credit' : 'credits'}`;
@@ -62,7 +64,7 @@ function freshnessOf(observedAt: string, now: number): { text: string; stale: bo
 const percentText = (value: number) => (Number.isInteger(value) ? `${value}%` : `${value.toFixed(1).replace(/\.0$/, '')}%`);
 
 export function usageBarModel(state: UsageState, now: number): UsageBarModel {
-  const empty = { percent: null, meter: null, facts: [], resets: null, freshness: null, stale: false, reconciliation: null };
+  const empty = { percent: null, meter: null, facts: [], resets: null, freshness: null, stale: false, reconciliation: null, alert: null };
   if (state.state === 'loading') return { ...empty, status: 'loading', summary: 'Checking usage…', detail: null };
   if (state.state === 'not-connected') return { ...empty, status: 'not-connected', summary: 'Not connected', detail: state.reason };
   if (state.state === 'unavailable') return { ...empty, status: 'unavailable', summary: 'Unavailable', detail: state.reason };
@@ -102,6 +104,16 @@ export function usageBarModel(state: UsageState, now: number): UsageBarModel {
       machine: usage.lastReceipt.receiptRef,
     });
   const fresh = freshnessOf(usage.observedAt, now);
+  const committedPercent = usage.grantedMicroUsd > 0
+    ? (usage.settledMicroUsd + usage.pendingMicroUsd + usage.uncertainMicroUsd) / usage.grantedMicroUsd * 100
+    : null;
+  let alert: string | null = null;
+  if (!fresh.stale && committedPercent !== null && (committedPercent >= 75 || usage.availableMicroUsd === 0)) {
+    const warning = usage.availableMicroUsd === 0
+      ? 'No monthly credits remain available.'
+      : `At least ${committedPercent >= 100 ? '100%' : committedPercent >= 90 ? '90%' : '75%'} of your monthly allowance is used or reserved.`;
+    alert = `${warning} Additional managed usage requires an authorized spending cap and never starts automatically. Only previously purchased usage can continue after the allowance is exhausted.`;
+  }
   return {
     status: 'ready',
     percent: usage.usedPercent,
@@ -113,6 +125,7 @@ export function usageBarModel(state: UsageState, now: number): UsageBarModel {
     freshness: fresh.text,
     stale: fresh.stale,
     reconciliation: usage.reconciliation,
+    alert,
   };
 }
 

@@ -7,6 +7,7 @@ import type { AddressInfo } from 'node:net';
 import { createApp } from '../server/app';
 import type { Project } from '../shared/types';
 import type { WorkspaceView } from '../shared/workspaces';
+import { creditAmount, micro, projectUsage } from '../shared/managed-usage';
 import { reopenLastProject } from './fixtures/landing';
 
 /**
@@ -192,6 +193,47 @@ test('Nectovia usage says not connected and draws no figure', async ({ page }) =
   await expect(section.getByRole('progressbar')).toHaveCount(0);
   await expect(section).not.toContainText('0%');
   await expect(section.getByRole('button', { name: 'Refresh' })).toBeEnabled();
+});
+
+test('allowance warnings refresh while open and include pending and uncertain work', async ({ page }) => {
+  const at = new Date('2026-10-15T12:00:00.000Z');
+  await page.clock.install({ time: at });
+  let reserved = 250;
+  let reads = 0;
+  await page.route('**/api/workspace/organizations/*/usage', async (route) => {
+    const organizationId = new URL(route.request().url()).pathname.split('/').at(-2)!;
+    reads += 1;
+    await route.fulfill({ json: {
+      state: 'ready', organizationId,
+      projection: projectUsage({
+        organizationId,
+        period: {
+          periodId: '2026-10', planId: 'business', grantedMicroUsd: creditAmount(1000),
+          startsAt: '2026-10-01T00:00:00.000Z', endsAt: '2026-11-01T00:00:00.000Z',
+          rateCardVersion: 'fixture',
+        },
+        totals: {
+          settledMonthlyMicroUsd: creditAmount(500), pendingMonthlyMicroUsd: creditAmount(200),
+          uncertainMonthlyMicroUsd: creditAmount(reserved - 200), correctionGrantsMicroUsd: micro(0),
+          correctionWithdrawalsMicroUsd: micro(0), settledTopUpMicroUsd: micro(0),
+        },
+        topUp: { purchasedMicroUsd: micro(0), heldMicroUsd: micro(0), settledMicroUsd: micro(0) },
+        lastReceipt: null, observedAt: at.toISOString(),
+      }),
+    } });
+  });
+  await openPanel(page);
+  const section = page.locator('.ws-section', { has: page.getByRole('heading', { name: 'Nectovia usage' }) });
+  await expect(section.getByRole('alert')).toContainText('75%');
+  reserved = 400;
+  await page.clock.fastForward(31_000);
+  await expect(section.getByRole('alert')).toContainText('90%');
+  expect(reads).toBeGreaterThanOrEqual(2);
+  reserved = 500;
+  await page.clock.fastForward(31_000);
+  await expect(section.getByRole('alert')).toContainText('No monthly credits remain available');
+  await expect(section.getByRole('alert')).toContainText('requires an authorized spending cap');
+  await expect(section.getByRole('alert')).toContainText('never starts automatically');
 });
 
 test('the panel holds together in a narrow window with a long name', async ({ page }) => {

@@ -132,10 +132,33 @@ async function openEngines(page: Page) {
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   await page.getByRole('button', { name: /^(Engines|Helpers on this computer)$/ }).click();
   await expect(page.getByRole('heading', { name: /^(Engines|Helpers on this computer)$/, level: 1 })).toBeVisible();
+  const advanced = page.locator('details').filter({ has: page.locator('summary', { hasText: 'Advanced: provider accounts and routing' }) });
+  await expect(advanced).not.toHaveAttribute('open');
+  await advanced.locator(':scope > summary').click();
   const card = page.getByRole('region', { name: 'Google Vertex AI' });
   await expect(card, 'the Vertex card is mounted in AI setup').toBeVisible();
   return card;
 }
+
+test('managed usage stays preferred in Engines and Account, with commercial credentials under Advanced', async ({ page }) => {
+  await page.route(BASE, (route) => route.fulfill({ json: detected }));
+  await openEngines(page);
+  const policy = page.getByRole('region', { name: 'Nectovia-managed AI', exact: true });
+  await expect(policy).toContainText("Nectovia's current usage rate");
+  await expect(policy).toContainText('monthly spending cap');
+  await expect(policy).toContainText('never starts automatically');
+  const advanced = policy.locator('details');
+  await expect(advanced).not.toHaveAttribute('open');
+  await advanced.locator('summary').click();
+  await expect(advanced).toContainText('optional, contract-specific');
+  await expect(advanced).toContainText('cannot fund shared organization-wide');
+  await expect(policy).not.toContainText(/markup|provider cost|\$0\./i);
+  await page.getByRole('button', { name: 'Account', exact: true }).click();
+  const accountPolicy = page.getByRole('region', { name: 'Nectovia-managed AI', exact: true }).first();
+  await expect(accountPolicy).toBeVisible();
+  await expect(accountPolicy).toContainText('included allowance is used first');
+  await expect(accountPolicy.locator('details')).not.toHaveAttribute('open');
+});
 
 test('connect: sign-in found, exact body sent, payer and the five cost figures shown, no secret on screen', async ({ page }) => {
   let view: unknown = detected;
