@@ -1,6 +1,6 @@
 # Account security with Personal access
 
-Status: composed security audit passed all 52 cases. Covering checks then found three stale positive admission fixtures (37/40 passed); root TypeScript is UNRUN. Acceptance remains pending.
+Status: the composed security audit passed 52/52; corrected Individual/admission covering passed 41/41; root TypeScript passed. These are separate author runs, not one full-suite result. Independent final review, mutation sensitivity and integration acceptance remain pending.
 
 Base: `1af37e085ef24fc6c92d6b2b8510fc52a504bd1b` (PR176, Individual plans).
 Branch: `feature/accounts-security-personal-access`.
@@ -121,3 +121,16 @@ Original GREEN/covering artifacts were committed first at `5af1207ba27d72f14e176
 The helper now reads the actual person ID from its successful sign-in for canned valid admissions. The malformed-policy and other-business variants use that same ID, preserving their single intended fault; the missing-person variant still omits it. Every existing assertion remains. One additional Business wrong-person matrix row copies an otherwise valid admitted answer and changes only its person pin. The shared matrix already requires refusal, another request on dispatch and success when the correct service answer returns. Its shape therefore differs from the valid positive controls only at the intended pin.
 
 Working test SHA256 is `06bcaf4f4fe4780f4c7ece4b709c7ad3ee81fd5686e867d21a1fc6cdaa7726df`. Production, the seven Personal cases and the historical 45 cases are unchanged, so the earlier 52/52 result remains bound to those same bytes. `composed-covering-v2-freeze.json` preserves all 16 inputs for the next request: the Individual/admission covering pair (41 statically enumerated rows) and root TypeScript, serially. Both commands are UNRUN on this corrected fixture. No slot was acquired for this preparation and no source guard was changed.
+
+## Corrected covering and root TypeScript
+
+The architect reviewed clean `79dbe2f51ac935c351eed9c521a0bd79933400b5`, the exact test-only correction and all 16 matching inputs, then granted two serial commands. Own slot `slot_mul73d16_7afc38eb` was acquired at 11:59:44.058Z and released successfully at 12:00:44.925Z. Journal lines 1322-1323 and slot-history line 965 record its ownership and release.
+
+| Original record and log | UTC start to finish | Actual result |
+| --- | --- | --- |
+| covering-individual-admissions-v2 | 11:59:57.1533955-12:00:01.5372154 | All 41 passed: 25 admission-answer cases and 16 Individual cases; no failures/skips; exit 0. |
+| typecheck-personal-v2 | 12:00:22.6339947-12:00:44.3210221 | Root TypeScript exit 0; original log is empty. |
+
+All 16 hashes matched before and after both commands. The corrected canned positives now pass, including cache replacement and both expiry controls. The additional Business wrong-person row passes refusal, uncached dispatch and correct-answer recovery. The source and the separate 52 passing audit cases have not changed since their run; they were not redundantly rerun in this slot. The earlier failed covering originals remain intact.
+
+Live read-only checks after this window found old security HEAD `609305d` still clean and origin/main still `1af37e0`. No source mutation, further test, build, browser, live database/provider, push, merge or deployment occurred. The independent reviewer has the exact candidate and originals; final review and integration acceptance are still separate. The proposed two new Personal guard-removal pairs are documented in `personal-guard-mutation-plan.md`; their candidate hashes were calculated only in memory and both probes remain UNRUN. The older 16 v6 mutation proposals and broader/exact combined-head gates remain architect work, with no active test slot held by this author.
