@@ -4,7 +4,7 @@ import pg from 'pg';
 import { Client as NeonClient } from '@neondatabase/serverless';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { AccountService } from '../src/account-service.js';
-import { PostgresRepository, type ClientFactory, type SqlClient } from '../src/postgres.js';
+import { PostgresRepository, type ClientFactory } from '../src/postgres.js';
 import { PostgresCommercialRepository } from '../src/commercial-postgres.js';
 import { RoutingService } from '../src/routing.js';
 import { migrate, type Migration } from '../src/migrations.js';
@@ -74,17 +74,27 @@ describe.skipIf(!ownerUrl)('scoped routing on an isolated real PostgreSQL databa
     originalAdmission = admissionText;
     expect(await migrate(ownerFactory, migrations)).toEqual([10]);
     runtimeRole = `cp_routing_runtime_${randomBytes(6).toString('hex')}`;
-    await query(ownerFactory, `CREATE ROLE ${runtimeRole} NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS`);
+    const runtimePassword = randomBytes(32).toString('hex');
+    await query(ownerFactory, `CREATE ROLE ${runtimeRole} LOGIN PASSWORD '${runtimePassword}' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS`);
     const permissions = await readFile(new URL('../scripts/runtime-permissions.sql', import.meta.url), 'utf8');
     await query(ownerFactory, permissions.replace(/\bcp_runtime\b/g, runtimeRole));
-    runtimeFactory = () => {
-      const client = ownerFactory();
-      return { connect: async () => { await client.connect(); await client.query(`SET ROLE ${runtimeRole}`); },
-        query: client.query.bind(client), end: client.end.bind(client), on: client.on?.bind(client) } satisfies SqlClient;
-    };
+    // Connect as the restricted login itself, without relying on the migration
+    // owner's ability to SET ROLE or granting the fixture any role membership.
+    const runtimeUrl = new URL(ownerUrl!);
+    runtimeUrl.username = runtimeRole;
+    runtimeUrl.password = runtimePassword;
+    runtimeFactory = local ? () => new pg.Client({ connectionString: runtimeUrl.href, connectionTimeoutMillis: 5000 })
+      : () => new NeonClient({ connectionString: runtimeUrl.href, connectionTimeoutMillis: 5000 });
     accounts = new AccountService(new PostgresRepository(runtimeFactory), verifier, { now: () => now });
     routing = new RoutingService(accounts, new PostgresCommercialRepository(runtimeFactory), () => now);
   }, 60_000);
+
+  it('runs as an unprivileged login without inherited role memberships', async () => {
+    expect((await runtime('SELECT current_user AS name, rolsuper, rolcreatedb, rolcreaterole, rolreplication, rolbypassrls FROM pg_roles WHERE rolname=current_user')).rows)
+      .toEqual([{ name: runtimeRole, rolsuper: false, rolcreatedb: false, rolcreaterole: false, rolreplication: false, rolbypassrls: false }]);
+    expect((await runtime('SELECT 1 FROM pg_auth_members WHERE member=(SELECT oid FROM pg_roles WHERE rolname=current_user)')).rows)
+      .toEqual([]);
+  });
 
   it('backfills only identities for existing organizations and grant holders without creating access or funding', async () => {
     expect((await runtime("SELECT id,kind,person_id FROM control_plane.billing_scopes WHERE kind='organization'")).rows)
