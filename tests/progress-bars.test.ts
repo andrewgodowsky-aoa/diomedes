@@ -101,15 +101,14 @@ describe('a project counted as a bar', () => {
 
 describe("a plan's tasks counted as a bar on the Board", () => {
   it('maps each Board column to the segment it draws', () => {
-    expect(stepState('Done', null)).toBe('done');
-    expect(stepState('Working', null)).toBe('active');
-    expect(stepState('Review', null)).toBe('blocked');
+    expect(stepState({ column: 'Done', wait: null })).toBe('done');
+    expect(stepState({ column: 'Working', wait: null })).toBe('active');
+    expect(stepState({ column: 'Review', wait: 'review' })).toBe('blocked');
     // Blocked is the Board's word for "not moving", not "waiting on you": no amber.
-    expect(stepState('Blocked', { state: 'waiting' })).toBe('pending');
-    expect(stepState('Blocked', null)).toBe('pending');
-    expect(stepState('Blocked', { state: 'failed' })).toBe('failed');
-    expect(stepState('Queued', { state: 'queued' })).toBe('pending');
-    expect(stepState('Ready', null)).toBe('pending');
+    expect(stepState({ column: 'Blocked', wait: null })).toBe('pending');
+    expect(stepState({ column: 'Blocked', wait: 'failed' })).toBe('failed');
+    expect(stepState({ column: 'Queued', wait: null })).toBe('pending');
+    expect(stepState({ column: 'Ready', wait: null })).toBe('pending');
   });
 
   it('names a plan by its file, whatever folder it is in', () => {
@@ -173,7 +172,7 @@ describe("a plan's tasks counted as a bar on the Board", () => {
  * new Blocked reason cannot arrive without a line below saying what colour it draws.
  */
 function blockedDetailsInSource(): Set<string> {
-  const source = readFileSync(new URL('../client/workbench/task-evidence.ts', import.meta.url), 'utf8');
+  const source = readFileSync(new URL('../shared/task-evidence.ts', import.meta.url), 'utf8');
   const details = new Set<string>();
   for (const call of source.matchAll(/result\(\s*'Blocked',((?:'[^']*'|[^;'])*)\)\s*;/g))
     for (const literal of call[1].matchAll(/'([A-Z][^']*)'/g)) details.add(literal[1]);
@@ -184,14 +183,15 @@ const need = (taskId: string): Need => ({ id: `n-${taskId}`, taskId, state: 'ope
 const change = (taskId: string): Change => ({ id: `c-${taskId}`, taskId, state: 'waiting' }) as unknown as Change;
 
 describe('amber on a plan bar means a person is needed', () => {
-  // Each case is a record that files the task under Blocked, and the segment it must draw. Only
-  // a failed run is a failure; nothing here waits on the person, so none of it is amber.
+  // Each case is a record that files the task under Blocked, and the segment it must draw. A run
+  // that failed or went wrong is a failure (the one needs-you rule); nothing here is a decision
+  // waiting on the person, so none of it is amber.
   const blocked: Array<{ detail: string; task: Task; sessions: Session[]; segment: string }> = [
     {
       detail: 'Check the run before retrying',
       task: task('a', { state: 'waiting', reason: 'went-wrong' }),
       sessions: [session('a', 'waiting')],
-      segment: 'pending',
+      segment: 'failed',
     },
     {
       detail: 'Run is waiting',
@@ -204,23 +204,24 @@ describe('amber on a plan bar means a person is needed', () => {
       detail: 'Stopped; check the run before retrying',
       task: task('d', { state: 'waiting', reason: 'went-wrong' }),
       sessions: [session('d', 'stopped')],
-      segment: 'pending',
+      segment: 'failed',
     },
     { detail: 'No active run recorded', task: task('e', { state: 'working' }), sessions: [], segment: 'pending' },
     {
       detail: 'Check the task record',
       task: task('f', { state: 'waiting', reason: 'went-wrong' }),
       sessions: [],
-      segment: 'pending',
+      segment: 'failed',
     },
+    { detail: 'Check the task record', task: task('k', { state: 'waiting' }), sessions: [], segment: 'pending' },
   ];
 
-  it('draws every Blocked reason task-evidence can give as pending, or failed for a failed run', () => {
+  it('draws every Blocked reason task-evidence can give as pending, or failed for a run that failed or went wrong', () => {
     for (const { detail, task: item, sessions, segment } of blocked) {
       const seen = taskEvidence(item, sessions);
       expect(seen.column, detail).toBe('Blocked');
       expect(seen.detail).toBe(detail);
-      expect(stepState(seen.column, seen.session), detail).toBe(segment);
+      expect(stepState(seen), detail).toBe(segment);
     }
   });
 
@@ -242,7 +243,7 @@ describe('amber on a plan bar means a person is needed', () => {
     for (const { detail, seen } of waiting) {
       expect(seen.column, detail).toBe('Review');
       expect(seen.detail).toBe(detail);
-      expect(stepState(seen.column, seen.session), detail).toBe('blocked');
+      expect(stepState(seen), detail).toBe('blocked');
     }
   });
 
@@ -254,7 +255,8 @@ describe('amber on a plan bar means a person is needed', () => {
     ];
     const sessions = [session('p2', 'waiting'), session('p3', 'stopped')];
     const groups = planGroups(tasks, (t) => taskEvidence(t, sessions));
-    expect(groups[0].steps.map((step) => step.state)).toEqual(['blocked', 'pending', 'pending']);
+    // p3 stopped after it went wrong: a failure, red, not amber.
+    expect(groups[0].steps.map((step) => step.state)).toEqual(['blocked', 'pending', 'failed']);
   });
 });
 

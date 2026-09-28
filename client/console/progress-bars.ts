@@ -1,5 +1,5 @@
-import type { Project, Session, Task } from '../../shared/types';
-import type { TaskColumn } from '../workbench/task-evidence';
+import type { Project, Task } from '../../shared/types';
+import type { TaskEvidence } from '../workbench/task-evidence';
 import type { SegmentInput, SegmentState, SegmentStep } from './segment-bar-model';
 
 /**
@@ -30,17 +30,18 @@ export function projectProgress(project: Pick<Project, 'status'>): SegmentInput 
 /**
  * One task's place in its plan, read from the same projection the Board's
  * columns render (`taskEvidence`), never from `task.state` alone: done is done,
- * a run in progress is active, a failed run is a failure, and the rest is
- * still ahead. The needs-you colour means a person is needed, so only Review
- * takes it: an open Need, or changes or a task record waiting on the person.
- * The Board's Blocked column also holds a run waiting on its engine, a task
- * with no run recorded and a stopped run, and none of those waits on anyone.
+ * a run in progress is active, and the rest follows the one needs-you rule. The
+ * needs-you colour means a person is needed, so only a task waiting on them
+ * takes it (Review: an open Need, or changes or a task record to review). A run
+ * that failed or went wrong draws as a failure. The Board's Blocked column also
+ * holds a run waiting on its engine and a task with no run recorded, and
+ * neither waits on anyone, so both are still ahead.
  */
-export function stepState(column: TaskColumn, session: Pick<Session, 'state'> | null): SegmentState {
-  if (column === 'Done') return 'done';
-  if (column === 'Working') return 'active';
-  if (column === 'Review') return 'blocked';
-  if (column === 'Blocked' && session?.state === 'failed') return 'failed';
+export function stepState(seen: Pick<TaskEvidence, 'column' | 'wait'>): SegmentState {
+  if (seen.column === 'Done') return 'done';
+  if (seen.column === 'Working') return 'active';
+  if (seen.wait === 'review') return 'blocked';
+  if (seen.wait === 'failed') return 'failed';
   return 'pending';
 }
 
@@ -66,7 +67,7 @@ export function planName(plan: string): string {
  */
 export function planGroups(
   tasks: readonly Task[],
-  evidence: (task: Task) => { column: TaskColumn; session: Pick<Session, 'state'> | null },
+  evidence: (task: Task) => Pick<TaskEvidence, 'column' | 'wait'>,
 ): PlanGroup[] {
   const byPlan = new Map<string, Task[]>();
   for (const task of tasks) {
@@ -88,10 +89,7 @@ export function planGroups(
     groups.push({
       plan,
       name: planName(plan),
-      steps: ordered.map((task) => {
-        const seen = evidence(task);
-        return { label: task.name, state: stepState(seen.column, seen.session) };
-      }),
+      steps: ordered.map((task) => ({ label: task.name, state: stepState(evidence(task)) })),
     });
   }
   return groups.sort((a, b) => a.name.localeCompare(b.name) || a.plan.localeCompare(b.plan));

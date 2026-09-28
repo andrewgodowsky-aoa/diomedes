@@ -588,19 +588,20 @@ test('F11-F13: work asks twice, decline skips creation, and the remaining change
   expect(workEntry?.files[0].after).toBeTruthy();
   expect(state.history.filter((entry) => entry.kind === 'decision')).toHaveLength(2);
   await expect(notice).toHaveCount(0);
+  // The decision is made, but the remaining change still waits on the person's review, so the
+  // project keeps its waiting mark until the change is kept or undone (F15-F16).
   await openProjects(page).getByRole('button', { name: 'Projects', exact: true }).click();
   await expect(
     openProjects(page).getByRole('button', { name: /Harbor Street/ }).locator('.mark.waiting'),
-  ).toHaveCount(0);
+  ).toBeVisible();
 });
 
 test('F15-F16: Review keeps the changed file and History exposes the recorded change', async ({
   page,
 }, testInfo) => {
   await openProject(page);
-  // The Console has no Review page and no Keep or Undo control for a waiting
-  // change; its thread shows the change (What changed) but cannot settle it.
-  // Keep all is driven through the route the Workbook's Review page called.
+  // The task's thread keeps or undoes a waiting change (ChangeDiffs); here Keep all goes
+  // through the review route directly.
   const waiting = (await projectState(page)).changes.filter((change) => change.state === 'waiting');
   expect(waiting).toHaveLength(1);
   const keep = await page.request.post(`/api/projects/${projectId}/review/all`, {
@@ -635,6 +636,11 @@ test('F15-F16: Review keeps the changed file and History exposes the recorded ch
   expect(workEntry.files[0].before).toBeTruthy();
   expect(workEntry.files[0].after).toBeTruthy();
   expect(workEntry.files[0].before).not.toBe(workEntry.files[0].after);
+  // Kept: nothing waits on the person now, so the project's tab loses its waiting mark.
+  await openProjects(page).getByRole('button', { name: 'Projects', exact: true }).click();
+  await expect(
+    openProjects(page).getByRole('button', { name: /Harbor Street/ }).locator('.mark.waiting'),
+  ).toHaveCount(0);
 });
 
 test('F07-F08: restore and undo recover both versions; newer edits are a conflict', async ({

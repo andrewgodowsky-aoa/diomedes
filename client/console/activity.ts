@@ -1,17 +1,17 @@
-import type { Conversation, HistoryEntry, Need, ProjectState, Session, Task } from '../../shared/types';
+import type { Conversation, HistoryEntry, ProjectState, Session, Task } from '../../shared/types';
+import { needsYou as waitingOnYou, type NeedsYouItem } from '../../shared/needs-you';
 import { taskEvidence } from '../workbench/task-evidence';
 
 /**
- * The project activity projection: Working, Needs you, Ready for review and
- * Finished recently, derived from the authoritative task, run, Need, change
- * and History records.
+ * The project activity projection: Working, Needs you and Finished recently,
+ * derived from the authoritative task, run, Need, change and History records.
  *
  * It is a projection, not a lifecycle. Nothing here is stored, nothing here
  * admits or starts work, and no row exists that the underlying records do not
  * already justify. `taskEvidence` stays the one place a task's column is
- * decided (`client/workbench/task-evidence.ts`); this module groups its answer
- * one level up and adds the two things a task cannot say for itself: an open
- * Need, and how long ago a finished task finished.
+ * decided, and `needsYou` the one place what waits on the person is decided
+ * (both in `shared/`, so the server counts the same thing); this module groups
+ * their answers one level up and adds how long ago a finished task finished.
  *
  * "Recently" is a display parameter, never a retention rule: the window bounds
  * what is listed and prunes nothing (decision 10).
@@ -26,6 +26,8 @@ export interface ActivityRow {
   sessionId?: string;
   /** A row that opens a Console screen rather than a thread or the Board. */
   view?: 'Automations';
+  /** A failed run is red among the amber rows; every other row takes its section's colour. */
+  tone?: 'fail';
   /** ISO time the row is dated by, or '' when no record carries one. */
   at: string;
 }
@@ -33,6 +35,11 @@ export interface ActivityRow {
 export interface ProjectActivity {
   working: ActivityRow[];
   needsYou: ActivityRow[];
+  /**
+   * Always empty since the one needs-you rule (2026-09-28): work to review
+   * waits on the person, so it lists under `needsYou`. Kept only for the
+   * Shell's emptiness check; drop it with that check.
+   */
   readyForReview: ActivityRow[];
   finishedRecently: ActivityRow[];
 }
@@ -88,21 +95,26 @@ function finishedAt(task: Task, session: Session | null, history: readonly Histo
   return latest([move?.at, session?.endedAt, lastEntryFor(history, task.id)?.time]);
 }
 
-function needRow(
-  need: Need,
-  state: ProjectState,
-  session: Session | undefined,
-): ActivityRow {
-  const task = state.tasks.find((item) => item.id === need.taskId) ?? null;
-  const threadId = session?.threadId ?? (task ? threadForTask(state.conversations, task.id) : undefined);
+/**
+ * One needs-you item as a row. An approval opens the thread its run belongs
+ * to; a task's review or failure opens the task's own thread.
+ */
+function waitingRow(item: NeedsYouItem, state: ProjectState): ActivityRow {
+  const session = item.sessionId
+    ? state.sessions.find((candidate) => candidate.id === item.sessionId)
+    : undefined;
+  const threadId =
+    (item.kind === 'approval' ? session?.threadId : undefined) ??
+    (item.taskId ? threadForTask(state.conversations, item.taskId) : undefined);
   return {
-    id: `need:${need.id}`,
-    label: task ? task.name : need.what,
-    detail: task ? need.what : need.why || need.what,
-    ...(task ? { taskId: task.id } : {}),
+    id: item.id,
+    label: item.label,
+    detail: item.detail,
+    ...(item.taskId ? { taskId: item.taskId } : {}),
     ...(threadId ? { threadId } : {}),
-    ...(need.sessionId ? { sessionId: need.sessionId } : {}),
-    at: need.createdAt ?? '',
+    ...(item.sessionId ? { sessionId: item.sessionId } : {}),
+    ...(item.kind === 'failed' ? { tone: 'fail' as const } : {}),
+    at: item.at,
   };
 }
 
@@ -126,7 +138,7 @@ function taskRow(
 }
 
 /**
- * Group the project's current work under the four human headings. `now` is a
+ * Group the project's current work under the three human headings. `now` is a
  * parameter so the window is testable and never depends on the clock at the
  * moment a component happens to render. `attention` carries the open
  * automation attention items for this project (Automations Milestone B), read
@@ -138,43 +150,23 @@ export function projectActivity(
   attention: readonly ActivityRow[] = [],
 ): ProjectActivity {
   const working: ActivityRow[] = [];
-  const needsYou: ActivityRow[] = [];
-  const readyForReview: ActivityRow[] = [];
+  const needsYou = waitingOnYou(state).map((item) => waitingRow(item, state));
   const finishedRecently: ActivityRow[] = [];
-
-  const open = state.needs.filter((need) => need.state === 'open');
-  const tasksWithOpenNeed = new Set(open.map((need) => need.taskId));
-
-  for (const need of open) {
-    needsYou.push(needRow(need, state, state.sessions.find((item) => item.id === need.sessionId)));
-  }
   needsYou.push(...attention);
 
   for (const task of state.tasks) {
     if (task.deletedAt) continue;
     const evidence = taskEvidence(task, state.sessions, state.needs, state.changes);
     const session = evidence.session;
-    if (evidence.column === 'Queued' || evidence.column === 'Working') {
-      // Only an actual run makes a task Working; a task record that says
-      // 'working' with no session is a stale mirror and evidence says Blocked.
+    // Only an actual run makes a task Working; a task record that says
+    // 'working' with no session is a stale mirror and evidence says Blocked.
+    // A run waiting on its engine is still a run, so it lists here.
+    if (
+      evidence.column === 'Queued' ||
+      evidence.column === 'Working' ||
+      (evidence.column === 'Blocked' && evidence.active && !evidence.wait)
+    ) {
       working.push(taskRow(task, evidence.detail, session, state, session?.startedAt ?? ''));
-      continue;
-    }
-    if (evidence.column === 'Blocked') {
-      // Including task.reason 'went-wrong': a task that went wrong is
-      // precisely a thing that needs a person.
-      needsYou.push(
-        taskRow(task, evidence.detail, session, state, latest([session?.endedAt, session?.startedAt])),
-      );
-      continue;
-    }
-    if (evidence.column === 'Review') {
-      // The open Need already has its own row; two rows for one decision
-      // would say the same thing twice.
-      if (tasksWithOpenNeed.has(task.id)) continue;
-      readyForReview.push(
-        taskRow(task, evidence.detail, session, state, latest([session?.endedAt, session?.startedAt])),
-      );
       continue;
     }
     if (evidence.column === 'Done') {
@@ -188,12 +180,11 @@ export function projectActivity(
 
   working.sort(byNewest);
   needsYou.sort(byNewest);
-  readyForReview.sort(byNewest);
   finishedRecently.sort(byNewest);
   return {
     working,
     needsYou,
-    readyForReview,
+    readyForReview: [],
     finishedRecently: finishedRecently.slice(0, RECENT_LIMIT),
   };
 }

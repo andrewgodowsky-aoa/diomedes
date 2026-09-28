@@ -68,12 +68,12 @@ describe('projectActivity groups the project by what a person has to do', () => 
     expect(activity.needsYou[0].label).toBe('Draft the notice');
     expect(activity.needsYou[0].detail).toBe('change the opening hours');
     expect(activity.needsYou[0].taskId).toBe('task');
-    // The Need row is the decision; the task must not repeat it under review.
+    // The Need row is the decision; the task must not repeat it.
     expect(activity.readyForReview).toEqual([]);
     expect(activity.working).toEqual([]);
   });
 
-  it('lists a waiting run with changes under Ready for review', () => {
+  it('lists a waiting run with changes under Needs you, because a review waits on the person', () => {
     const activity = projectActivity(
       stateFixture({
         tasks: [taskFixture({ state: 'waiting', reason: 'changes-ready' })],
@@ -82,9 +82,24 @@ describe('projectActivity groups the project by what a person has to do', () => 
       }),
       NOW,
     );
-    expect(labels(activity.readyForReview)).toEqual(['Draft the notice']);
-    expect(activity.readyForReview[0].detail).toBe('Changes to review');
+    expect(labels(activity.needsYou)).toEqual(['Draft the notice']);
+    expect(activity.needsYou[0].detail).toBe('Changes to review');
+    expect(activity.needsYou[0].tone).toBeUndefined();
     expect(activity.working).toEqual([]);
+    // One needs-you rule: nothing is left under a second heading that means the same thing.
+    expect(activity.readyForReview).toEqual([]);
+  });
+
+  it('lists a run waiting on its engine under Working, not Needs you', () => {
+    const activity = projectActivity(
+      stateFixture({
+        tasks: [taskFixture({ state: 'working' })],
+        sessions: [sessionFixture({ state: 'waiting', startedAt: ago(60_000) })],
+      }),
+      NOW,
+    );
+    expect(labels(activity.working)).toEqual(['Draft the notice']);
+    expect(activity.working[0].detail).toBe('Run is waiting');
     expect(activity.needsYou).toEqual([]);
   });
 
@@ -132,8 +147,8 @@ describe('projectActivity groups the project by what a person has to do', () => 
       NOW,
     );
     expect(activity.working).toEqual([]);
-    expect(labels(activity.needsYou)).toEqual(['Draft the notice']);
-    expect(activity.needsYou[0].detail).toBe('No active run recorded');
+    // A record with no run behind it waits on no one: the Board shows it, Needs you does not.
+    expect(activity.needsYou).toEqual([]);
   });
 
   it('puts a task that went wrong under Needs you rather than dropping it', () => {
@@ -146,6 +161,7 @@ describe('projectActivity groups the project by what a person has to do', () => 
     );
     expect(labels(activity.needsYou)).toEqual(['Draft the notice']);
     expect(activity.needsYou[0].detail).toBe('Check the run before retrying');
+    expect(activity.needsYou[0].tone).toBe('fail');
   });
 
   it('caps Finished recently at ten rows, newest first', () => {
