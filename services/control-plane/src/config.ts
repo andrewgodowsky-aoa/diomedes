@@ -1,3 +1,5 @@
+import { readIndividualCoverage, type IndividualCoverage } from '../../../shared/individual-plan.js';
+
 export interface Configuration {
   environment: 'local' | 'staging' | 'production';
   origins: readonly string[];
@@ -24,6 +26,13 @@ export interface Configuration {
   staffProblem?: SettingProblem;
   /** Why a FUNDING_DATABASE_URL that was set is refused. A rule name only. */
   fundingProblem?: string;
+  /**
+   * INDIVIDUAL_MAX_ACTIVE_MEMBERS: the most active members a business may have for a person's
+   * Individual plan to cover it. Unset or blank is 1 (the sole proprietor). Any other value that is
+   * not a whole number of at least 1 refuses the configuration, as the MANAGED_* settings refuse
+   * the gateway: a threshold that ignored a typo would not be a threshold. Absent reads as the default.
+   */
+  individual?: IndividualCoverage;
 }
 
 /**
@@ -157,8 +166,14 @@ export function configuration(env: Record<string, unknown>): Configuration {
     const funding = fundingUrl(env.FUNDING_DATABASE_URL, database);
     const identity = { clientId, issuer, audience, apiKey };
     const staff = staffIdentity(env, identity, environment);
+    setting = 'INDIVIDUAL_MAX_ACTIVE_MEMBERS';
+    const raw = env.INDIVIDUAL_MAX_ACTIVE_MEMBERS;
+    if (raw !== undefined && raw !== null && typeof raw !== 'string' && typeof raw !== 'number') throw refuse('whole-number');
+    let individual: IndividualCoverage;
+    try { individual = readIndividualCoverage(raw as string | number | undefined | null); }
+    catch { throw refuse('whole-number'); }
     return { environment: environment as Configuration['environment'], origins, databaseUrl, fundingDatabaseUrl: funding.url, identity,
-      staffIdentity: staff.identity,
+      staffIdentity: staff.identity, individual,
       ...(staff.problem ? { staffProblem: staff.problem } : {}),
       ...(funding.problem ? { fundingProblem: funding.problem } : {}) };
   } catch (error) {

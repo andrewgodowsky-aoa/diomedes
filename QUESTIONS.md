@@ -678,6 +678,21 @@ included in the continuation, without granting actions or picking another engine
 
 Default: each stays as built.
 
+### O45. The Individual plan: what phase 2a leaves open
+
+Raised 2026-09-28 with the Individual plan (`docs/implementation/2026-09-28-individual-tier.md`,
+branch `feature/individual-tier`).
+
+1. **Credits.** 500 a month is assumed from the 2026-09-27 decision. Nothing allocates them yet:
+   funding is kept per business, and funding a person is phase 2b.
+2. **The member threshold.** `INDIVIDUAL_MAX_ACTIVE_MEMBERS` defaults to 1, so an Individual plan
+   covers a business only while its holder is the only active member. Is 1 right?
+3. **Included usage before person funding.** An Individual grant carries no included AI usage,
+   and staff are refused if they try to add it. Should any Individual grant carry included usage
+   before person funding exists, for example as a courtesy? Andrew's call.
+
+Default: each stays as built.
+
 ## Resolved
 
 ### R14. Task priority: order, due dates, labels and who edits (raised by OS-DISC-01 section 5)

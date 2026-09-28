@@ -38,6 +38,8 @@ const grantSummarySchema = z.strictObject({
   validFrom: time,
   validUntil: time,
   state: slug,
+  /** The owner's own Individual grant, shown beside the business's when it covers a sole proprietor. */
+  scope: z.literal('person').optional(),
 });
 
 /** The owner's access view, as `GET /account/organizations/:id/access` answers it. */
@@ -61,6 +63,8 @@ export const accessViewSchema = z.strictObject({
   revision: z.number().int().min(0),
   grants: z.array(grantSummarySchema).max(10_000).nullable(),
   checkedAt: time,
+  /** Present when the owner's own Individual plan covers the business (2026-09-28). */
+  coveredBy: z.literal('individual').optional(),
 });
 
 /** What the desktop accepts back from `GET /account/organizations/:id/export`. */

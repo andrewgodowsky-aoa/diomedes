@@ -43,3 +43,9 @@ GRANT SELECT, INSERT ON control_plane.tier_policies, control_plane.ops_audit,
 -- 006 staff keys (2026-09-26): the Worker only reads a key's hash to sign staff
 -- in. Registering and withdrawing keys is the schema owner's, for now.
 GRANT SELECT ON control_plane.staff_keys TO cp_runtime;
+-- 009 Individual plans (2026-09-28): a person's own grants and access
+-- revision, as feature_grants and organization_access are granted above (the
+-- upserts need UPDATE; the grant trigger still allows only a revoke-once).
+-- Personal admissions are append-only, like agent_admissions.
+GRANT SELECT, INSERT, UPDATE ON control_plane.person_feature_grants, control_plane.person_access TO cp_runtime;
+GRANT SELECT, INSERT ON control_plane.personal_agent_admissions TO cp_runtime;

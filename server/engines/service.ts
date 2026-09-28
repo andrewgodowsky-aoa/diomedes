@@ -133,6 +133,7 @@ import type { SpendExposure } from '../spend-exposure.js';
 import { NECTOVIA_ROUTE, type ModelApiRoute } from '../../shared/model-api.js';
 import { WORK_STYLE_LABELS } from '../../shared/work-style.js';
 import { routeUnavailable } from '../../shared/route-unavailable.js';
+import { MANAGED_USAGE_NOT_INCLUDED_PERSONAL } from '../../shared/individual-plan.js';
 import {
   AGENT_NOT_INCLUDED,
   AGENT_SIGN_IN_REQUIRED,
@@ -2118,9 +2119,13 @@ export class EngineService {
         `Nectovia now runs ${label} on ${published.label}. Nothing was sent. Send your message again to use it.`,
         true,
       );
+    // Personal work under an Individual plan has no business to fund the company route yet; the gate
+    // refuses it first, and this keeps a personal admission from ever reaching the gateway.
+    const organizationId = admitted.organizationId;
+    if (organizationId === null) throw new EngineError(AGENT_NOT_INCLUDED, MANAGED_USAGE_NOT_INCLUDED_PERSONAL, false);
     const managed: ManagedAdmission = {
       admissionId: admitted.admissionId,
-      organizationId: admitted.organizationId,
+      organizationId,
       policyRevision: policy.revision,
       tier,
       usageClass: usageClassFor(admitted.surface),

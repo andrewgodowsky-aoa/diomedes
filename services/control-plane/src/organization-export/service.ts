@@ -21,7 +21,7 @@
  * Each part is read on its own, so a change that lands during an export can
  * show in one part and not yet in another.
  */
-import type { AccessView } from '../../../../shared/access.js';
+import type { CoveredAccessView } from '../../../../shared/individual-plan.js';
 import {
   EXPORT_HISTORY_LIMIT,
   ORGANIZATION_EXPORT_VERSION,
@@ -62,7 +62,7 @@ export interface OrganizationExportRepository {
 
 /** The owner's own views, from the services that already answer them. */
 export interface OrganizationExportViews {
-  access(token: string, organizationId: string): Promise<AccessView>;
+  access(token: string, organizationId: string): Promise<CoveredAccessView>;
   devices(token: string, organizationId: string): Promise<RelayDevicesAnswer>;
 }
 
