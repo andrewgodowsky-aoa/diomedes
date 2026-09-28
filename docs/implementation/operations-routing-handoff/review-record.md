@@ -281,3 +281,64 @@ The 1,498-file app/Operations freeze remains unchanged, SHA256
 Actual migration application state and the exact-main composition must be
 reconciled before any current-main acceptance claim. No migration history is
 rewritten on the assumption that a merge implies deployment or application.
+
+## New-main original failure record
+
+After Andrew chose adaptation, local checkpoint
+`e730317e89ddb49ccac7dcb54d3fa7e66f92896a` preserved the old-base candidate.
+The mechanical app merge imports `1af37e0` into that checkpoint; staged tree
+`ea7c0821c4926ed98ef65db010150b210f25e10a` includes five new regressions.
+Routing migration is 010; Individual 009 is unchanged. The independent security
+repair has not been imported or changed.
+
+The coordinator granted one original-failure command. Own slot
+`slot_mul5p9nw_c91f8594` ran from 11:20:46.915 through 11:20:50.165 UTC and
+was released immediately. `scoped-routing.test.ts -t new-main:` exited 1 with
+five intended failures, zero passes and eighteen filtered skips (23 total).
+
+| Regression | First observed failure |
+| --- | --- |
+| Plan issuance before setup creates one billing identity | No Individual account was created. |
+| Active person plan permits scoped Personal BYO | Admission was refused. |
+| Funding alone cannot substitute for person access | Gateway returned 200 and settled synthetic 14 micro-USD. |
+| Person revocation invalidates an already issued admission | Gateway returned 200 and settled synthetic 14 micro-USD. |
+| Individual never covers a one-member Business | Business access reported Agent included. |
+
+Later assertions after those first failures were not reached and are not proven
+by this red run. No setup failure or unrelated type/build check is counted as a
+regression. All 1,473 frozen source hashes matched before and after. Freeze SHA256:
+`6E738A4212CFD3E7C4B3404EA1F97DB99E8EF122E41A0C7ED965AC877CD184B2`.
+Original logs, before/after hashes and result are retained under
+`test-results/operations-routing-main-red-20260928-112046/`.
+
+## New-main focused green and fixture type repair
+
+Coordinator-authorized slot `slot_mul6lydw_3bed14cd` ran the four focused
+commands from 11:46:11.951 to 11:46:51.714 UTC. It was released immediately.
+App staged tree `3581acbc502d8cb02fa84f810266a15b0755b3ce` and Operations
+tree `17557e6820d5446576d80d5d87419e8581b7b8c7` were frozen under manifest
+`64097A7DFC30733FCC3CF28629E0473B99289D53E35F06670C8693B7D153CBB8`.
+All 1,499 source hashes remained unchanged.
+
+- Control plane: 49/49 passed, no skips (scoped routing 23, Individual 13,
+  migrations 13). All five original regression cases now pass.
+- Desktop: 34/34 passed, no skips (routing client 18, Individual 16), including
+  scoped Personal host admission through a real non-Luna binding and funding receipt.
+- Both typechecks exited 2 at the same two assignments in the authored real
+  PostgreSQL fixture: unvalidated `unknown` query values assigned to string snapshots.
+  No other type errors were reported.
+
+Original logs, exits and before/after hashes:
+`test-results/operations-routing-main-green-20260928-114611/`.
+The subsequent fixture-only repair validates both database values as strings before
+saving them. It changes no application behavior.
+
+The authorized two-command rerun used slot `slot_mul6p6sj_b7f304eb` from
+11:48:42.817 to 11:49:09.195 UTC. Control-plane and root TypeScript both exited 0.
+All 1,499 hashes were unchanged under manifest
+`124CBA6550999D0619BD5CDA7D0407A797F06CF8A13D58D6EFDCAA0DBB09BD2D`;
+app tree `ad94ef32645d51af46b686bd29b2993cc847a9fe`, same Operations tree.
+Exactly one source file differs from the 83-test green run: the unrun PostgreSQL
+fixture. Logs: `test-results/operations-routing-main-types-20260928-114842/`.
+The slot is released. The real database fixture remains unexecuted; these checks
+do not establish migration/privilege, browser, packaged or deployed acceptance.

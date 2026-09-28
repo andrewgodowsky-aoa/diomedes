@@ -67,14 +67,15 @@ validation. Those resolutions require this feature's own checks.
 Main moved after those gates: the shared `origin/main` now records
 `1af37e085ef24fc6c92d6b2b8510fc52a504bd1b`, the PR #176 merge of
 `a194ad8663c6d744c83d92ac09e0d91cafe0a653` onto `2e6c785`. That change is
-not imported here. It overlaps the six routing-owned account paths and adds
+imported in the local composition after Andrew chose adaptation. It overlaps six routing-owned account paths and adds
 `009_individual_plans.sql`. The coordinator reports that Individual 009 has
 already been applied to staging. The earlier proposal to renumber that file is
-withdrawn: applied history must remain immutable. The proposed forward path
-appends routing as 010, subject to the pending source-direction decision.
+withdrawn: applied history remains immutable. The local forward path
+appends routing as 010.
 Operations main also moved to `d0d04da058e7e9fdaeb89f6b28da2ad933f678de`
 (PR #6), overlapping this feature's Customers, API and staff bridge files.
-That source is not imported either. The coordinator has been notified.
+That source is also imported locally. Nine app conflicts are resolved; Operations
+merged without conflicts. The merge commits and post-repair gates remain pending.
 The current test results remain valid only for their recorded candidate, not
 for the new main or a future composed tree. No deployment or migration claim
 is inferred from the merge.
@@ -156,17 +157,21 @@ composition. This candidate's Individual billing identity
 is `billing_scopes`, not a fabricated Business organization; the paid plan must
 compose with this same authority.
 
-The frozen candidate still contains `009-scoped-routing.sql`. New main's
-already-applied Individual 009 takes that migration number; adapting to main
-requires routing 010. `persons.id` names the access holder, while
+The historical checkpoint contains `009-scoped-routing.sql`. The local composition
+preserves main's already-applied Individual 009 and renames routing to 010.
+`persons.id` names the access holder, while
 `billing_scopes(id, tenant_id, person_id)` names the funded commercial account.
 Main's person grants/access/admissions already use `tenant_id = person_id`.
 Source review supports using that same tenant key on the new Individual billing
 scope while keeping its distinct `individual_*` account ID. Historical person
 records must remain unchanged, and current person access and funded usage must
-both authorize a managed dispatch. This reconciliation is proposed, not applied.
+both authorize a managed dispatch. This reconciliation is locally implemented;
+its five original regressions failed before repair and passed afterward. The
+focused composition passed 49 control-plane and 34 desktop tests; both typechecks
+passed after a fixture-only string-validation repair. Exact evidence is recorded
+in `operations-routing-handoff/review-record.md`.
 `commercial.ts` exports `ensureIndividualAccount(tx, verifiedPerson, at)` for
-both customer initialization and the later paid-plan provisioning path. It uses
+both customer initialization and the staff person-plan provisioning path. It uses
 the same per-person transaction lock and creates no entitlement, credits or
 Business organization. Provisioning must call it before grants even when the
 routing screen has never opened. Grant-first and setup-first order must converge
@@ -187,13 +192,13 @@ The browser receipt view still needs its journey check.
 
 ## Migration and behavioral rollback
 
-`009-scoped-routing.sql` backfills only existing organization scope identities,
-adds real Individual identities and append-only preferences, scopes policy
+`010-scoped-routing.sql` backfills existing organization identities and Individual
+identities for existing 009 grant holders, adds append-only preferences, scopes policy
 revision keys, and retains job source constraints and model cooldowns. Existing
 policy JSON, customer consent, grants and balances are not synthesized or
 rewritten. Ledger account/tenant relationships remain compound foreign keys.
 
-The migration runner includes 009. Schema migration does not assume runtime
+The migration runner retains unchanged Individual 009 and appends routing 010. Schema migration does not assume runtime
 roles exist or change their privileges. Apply the separately reviewed
 `runtime-permissions.sql` after the migration: scoped authority locks need
 column-level UPDATE on `billing_scopes.kind`; consent remains append-only;
@@ -201,22 +206,23 @@ source rules and cooldowns receive only their mutable column grants. The
 funding writer continues using the existing ledger tables and receives no
 scope or customer consent permissions. No migration or grant has been run.
 
-The source-direction decision now concerns adaptation to already-merged
-Individual code. Preserve its migration 009 and historical person records;
-append routing 010 if that path is selected. Reuse `ensureIndividualAccount`
-inside authorized staff issuance before any routing-screen visit, reconcile
-lock ordering, and make the person grant plus explicit funded agreement the
-managed admission boundary. Retain Personal BYO behavior and refuse all Business
-coverage through Individual. See `operations-routing-handoff/main-composition-notes.md`
-for the source evidence and required upgrade tests. None of this main composition
-has been applied by the frozen checkpoint.
+Andrew chose adaptation to the merged Individual code. The local repair reuses
+`ensureIndividualAccount` inside authorized staff issuance before setup, locks the
+person before their billing scope, and requires the person grant plus explicit funded
+agreement for managed admission and dispatch. It retains Personal BYO and refuses
+every Business through Individual. New Personal admissions name the billing scope
+while retaining their person tenant; historical 009 records are not rewritten.
+See `operations-routing-handoff/main-composition-notes.md` for the source boundary,
+original failure evidence and pending acceptance gates.
 
 The real PostgreSQL routing suite requires a new database named
 `b01_validation_operations_routing_*`, an explicitly supplied test URL and,
 for Neon, a pinned nonproduction branch and exact endpoint. It refuses an
-existing schema and performs no schema reset. It exercises pre-009 upgrade,
-idempotence, organization backfill/trigger, restricted role locks, concurrent
-Individual creation, consent CAS, durable reads and denied mutations.
+existing schema and performs no schema reset. It is authored to exercise upgrade
+from 009, preservation of person grant/admission record text and revisions,
+idempotence, identity backfills, restricted role locks, concurrent Individual
+creation, scoped Personal admission, consent CAS, durable reads and denied mutations.
+It has not run against a real database.
 
 At 09:31 UTC no PostgreSQL server/client or Docker executable was available on
 PATH, no PostgreSQL service was present, and no routing test database URL,

@@ -17,7 +17,10 @@ describe('Agent project attribution', () => {
       projectOwner,
       active: () => ({ kind: 'business', organizationId: business }),
     };
-    return { gate: new AccountAgentGate({ admitAgent, agentPlan } as never, workspaces as never), admitAgent };
+    // No Individual plan of the person's own, and it has been read.
+    const personalIncludes = () => false;
+    const personalUnknown = () => false;
+    return { gate: new AccountAgentGate({ admitAgent, agentPlan, personalIncludes, personalUnknown } as never, workspaces as never), admitAgent };
   }
 
   it('uses the recorded project owner even when another business is active', () => {

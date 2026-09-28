@@ -14,7 +14,7 @@ import type { AccountService } from './account-service.js';
 import { AccountError } from './errors.js';
 import { approvedConnections, connectionCredential, connectionView } from './managed-bindings.js';
 import type { CommercialRepository, CommercialTransaction, Operator, TierPolicy } from './commercial.js';
-import { entitlementFromGrants, agentAdmissionInput, featureGrantSchema, revokeGrantInput, ensureIndividualAccount } from './commercial.js';
+import { entitlementFromGrants, individualEntitlement, agentAdmissionInput, featureGrantSchema, revokeGrantInput, ensureIndividualAccount } from './commercial.js';
 import type { FundingService } from './funding.js';
 
 /** Implemented on the same transaction as route/policy/grant writes, in Postgres and the faux store. */
@@ -93,6 +93,14 @@ export class RoutingService {
     const row = scope.kind === 'organization' ? await tx.organizationRecord(scope.id) : await tx.individual(scope.id);
     if (!row) throw new AccountError(404, 'That account was not found.');
   }
+  private async individualForWrite(tx: CommercialTransaction, id: string) {
+    const account = await tx.individual(id);
+    if (!account) throw new AccountError(404, 'That Individual account was not found.');
+    // Match grant-first provisioning: always lock the person before the account.
+    await tx.lockPerson(account.personId);
+    await tx.lockOrganization(id);
+    return account;
+  }
   async individual(token: string) {
     const actor = await this.accounts.signIn(token);
     return this.repository.transaction(tx => ensureIndividualAccount(tx, actor.person, this.at()));
@@ -105,24 +113,29 @@ export class RoutingService {
     const actor = await authorizeScope(this.accounts, this.repository, token, scope);
     return this.repository.transaction(async tx => {
       if (!await tx.scopeRole(scope, actor.person.id)) throw new AccountError(403, 'Account access was withdrawn.');
-      return entitlementFromGrants(await tx.grants(scope.id), await tx.accessRevision(scope.id), this.at());
+      return scope.kind === 'individual' ? individualEntitlement(tx, scope.id, actor.person.id, this.at())
+        : entitlementFromGrants(await tx.grants(scope.id), await tx.accessRevision(scope.id), this.at());
     });
   }
   async admit(token: string, scope: AccountScope, raw: unknown) {
     const input = agentAdmissionInput.parse(raw), actor = await authorizeScope(this.accounts, this.repository, token, scope);
     return this.repository.transaction(async tx => {
       if (!await tx.scopeRole(scope, actor.person.id)) throw new AccountError(403, 'Account access was withdrawn.');
-      const revision = await tx.accessRevision(scope.id), at = this.at();
-      const view = entitlementFromGrants(await tx.grants(scope.id), revision, at), policy = await effectivePolicy(tx, scope);
-      const included = decideAgentAdmission({ workspace: scope.kind === 'individual' ? 'individual' : 'business', member: true, entitlement: snapshotFromView(view), at });
+      const at = this.at();
+      const view = scope.kind === 'individual' ? await individualEntitlement(tx, scope.id, actor.person.id, at)
+        : entitlementFromGrants(await tx.grants(scope.id), await tx.accessRevision(scope.id), at);
+      const revision = view.revision, policy = await effectivePolicy(tx, scope);
+      const included = decideAgentAdmission({ workspace: scope.kind === 'individual' ? 'personal' : 'business', member: true,
+        entitlement: snapshotFromView(view), ...(scope.kind === 'individual' ? { individual: snapshotFromView(view) } : {}), at });
       const decision = included.admitted && input.routeKind === 'managed' && !view.managedInference
         ? { admitted: false as const, code: 'managed_inference_not_included', reason: 'This account does not include managed AI usage. Nothing was sent.' } : included;
-      const record = { id: `agent_admission_${crypto.randomUUID()}`, at, organizationId: scope.id, tenantId: actor.tenantId,
+      const record = { id: `agent_admission_${crypto.randomUUID()}`, at, tenantId: actor.tenantId,
         personId: actor.person.id, surface: input.surface, routeKind: input.routeKind, decision: decision.admitted ? 'admitted' as const : 'refused' as const,
         code: decision.admitted ? null : decision.code, planId: view.plan === 'none' ? null : view.plan,
         accessRevision: revision, policyRevision: policy.effective?.revision ?? 0, rootJobId: input.rootJobId ?? null };
-      await tx.saveAdmission(record);
-      return { admissionId: record.id, decision, pins: { scope, organizationId: scope.id, tenantId: actor.tenantId, personId: actor.person.id,
+      if (scope.kind === 'individual') await tx.savePersonalAdmission({ ...record, billingAccountId: scope.id });
+      else await tx.saveAdmission({ ...record, organizationId: scope.id });
+      return { admissionId: record.id, decision, pins: { scope, organizationId: scope.kind === 'organization' ? scope.id : null, tenantId: actor.tenantId, personId: actor.person.id,
         planId: record.planId, accessRevision: revision, policyRevision: record.policyRevision, rootJobId: record.rootJobId }, validUntil: new Date(this.now() + 60_000).toISOString() };
     });
   }
@@ -132,7 +145,7 @@ export class RoutingService {
       await this.operator(tx, person.id, 'customers.read');
       const rows = [];
       for (const account of await tx.individuals(query.trim().toLowerCase().slice(0, 100), 200))
-        rows.push({ account, entitlement: entitlementFromGrants(await tx.grants(account.id), await tx.accessRevision(account.id), this.at()) });
+        rows.push({ account, entitlement: await individualEntitlement(tx, account.id, account.personId, this.at()) });
       return rows;
     });
   }
@@ -142,7 +155,8 @@ export class RoutingService {
       await this.operator(tx, person.id, 'customers.read');
       const account = await tx.individual(id); if (!account) throw new AccountError(404, 'That Individual account was not found.');
       const grants = await tx.grants(id);
-      return { account, grants, entitlement: entitlementFromGrants(grants, await tx.accessRevision(id), this.at()), admissions: await tx.admissions(id, 50) };
+      return { account, grants, entitlement: await individualEntitlement(tx, id, account.personId, this.at()),
+        admissions: await tx.personalAdmissions(account.personId, 50) };
     });
     return detail;
   }
@@ -152,17 +166,17 @@ export class RoutingService {
     if (!this.funding) throw new AccountError(503, 'The funding writer is not configured.');
     if (Date.parse(input.validUntil) <= this.now()) throw new AccountError(422, 'The agreement must end in the future.');
     const grant = await this.repository.transaction(async tx => {
-      await tx.lockOrganization(id);
+      const account = await this.individualForWrite(tx, id);
       const actor = await this.operator(tx, person.id, 'grants.write'); await this.operator(tx, person.id, 'funding.write');
-      const account = await tx.individual(id); if (!account || account.state !== 'active') throw new AccountError(404, 'That Individual account is unavailable.');
+      if (account.state !== 'active') throw new AccountError(404, 'That Individual account is unavailable.');
       const existing = (await tx.grants(id)).find(g => g.source === 'service-agreement' && g.reference === input.reference);
       if (existing) {
         if (existing.state !== 'active' || existing.validUntil !== input.validUntil) throw new AccountError(409, 'This agreement reference has different recorded terms.');
         return existing;
       }
       const row = featureGrantSchema.parse({ v: 1, id: `grant_${crypto.randomUUID()}`, organizationId: id, tenantId: account.tenantId,
-        planId: null, features: ['nectovia-agent', 'managed-inference'], source: 'service-agreement', reference: input.reference,
-        note: 'Individual paid agreement. Monthly credits are recorded separately.', validFrom: this.at(), validUntil: input.validUntil,
+        planId: null, features: ['managed-inference'], source: 'service-agreement', reference: input.reference,
+        note: 'Managed usage agreement. Personal Agent access is granted separately to the person.', validFrom: this.at(), validUntil: input.validUntil,
         state: 'active', issuedAt: this.at(), issuedBy: person.id, revokedAt: null, revokedBy: null, revokedReason: null });
       await tx.saveGrant(row); await tx.bumpAccessRevision(id, account.tenantId);
       await tx.audit({ id: `audit_${crypto.randomUUID()}`, at: this.at(), actorPersonId: person.id, actorRole: actor.role,
@@ -177,7 +191,7 @@ export class RoutingService {
   async revokeIndividualAgreement(token: string, id: string, grantId: string, raw: unknown) {
     const input = revokeGrantInput.parse(raw), person = (await this.accounts.signIn(token)).person;
     return this.repository.transaction(async tx => {
-      await tx.lockOrganization(id);
+      await this.individualForWrite(tx, id);
       const actor = await this.operator(tx, person.id, 'grants.write');
       const account = await tx.individual(id), grant = (await tx.grants(id)).find(g => g.id === grantId);
       if (!account || !grant) throw new AccountError(404, 'That Individual agreement was not found.');

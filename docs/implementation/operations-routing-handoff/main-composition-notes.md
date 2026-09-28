@@ -1,10 +1,59 @@
 # Main composition notes
 
-Read-only source reconciliation, 2026-09-28. No main import, migration edit,
-database mutation or acceptance run follows from this document. The coordinator
-is holding the browser window while the owner chooses how to handle PR #176.
+Andrew chose adaptation to new main on 2026-09-28. The earlier source review
+below is preserved as the rationale; it is followed here by execution evidence.
+The old-base source and docs are preserved in checkpoint
+`e730317e89ddb49ccac7dcb54d3fa7e66f92896a`, with the original CF61 manifest and
+test logs unchanged. The candidate manifest alongside this note describes that
+old-base checkpoint; it is not a manifest for the later composition.
 
-## Exact source boundary
+Exact app main `1af37e0` and Operations main `d0d04da` have been imported in
+their existing isolated feature worktrees. Nine app conflicts were resolved;
+Operations merged mechanically without conflicts. Routing SQL is now 010.
+Individual 009 retains SHA256
+`540f7bb22cc183175984fcdcf8e82718a7b093ec77d09329656ddd68196e5886`.
+Security-owned `session.ts` remains the imported main blob
+`6bada7aee2cf5758223c1a0bde6cccafb9441c6f`; no security repair is applied here.
+
+The original authority regressions ran on staged tree
+`ea7c0821c4926ed98ef65db010150b210f25e10a` before the source repair. Five failed
+at their intended assertions; eighteen unrelated cases were filtered out.
+Evidence: `test-results/operations-routing-main-red-20260928-112046/`.
+All 1,473 source hashes remained unchanged. This is original-failure evidence,
+not acceptance of the mechanical composition. Database, build, browser and
+provider checks remain separately gated.
+
+## Narrow repair after the original failures
+
+The local repair provisions Individual billing identity under `tenantId = personId`
+when staff issues a person grant, without issuing access or credits from the identity
+helper. Person-first lock order is shared with explicit usage-agreement writes.
+Migration 010 also creates identities for existing 009 grant holders so Operations
+can find them before setup; it preserves their original grant and admission records.
+The real PostgreSQL upgrade fixture now writes the pre-010 schema directly, preserves
+record text/revisions and exercises a scoped Personal admission after the upgrade.
+That database fixture is authored, not executed.
+
+Scoped access, admission and gateway dispatch require current person-plan access.
+Managed Personal work also needs a current managed-usage agreement on its billing
+scope. New Personal admissions use the existing append-only Personal table, name
+their billing account explicitly and return a null Business organization id. Legacy
+Personal admission refuses managed requests with `scoped_admission_required`.
+Business access/admission no longer reads a person's Individual grant at any member
+count. Operations describes Personal access and usage funding separately.
+
+The five original regression cases are unchanged. Additional focused checks cover
+legacy managed refusal, immutable 009 history and the Personal host-to-provider
+path with normalized response, scope headers and funding attribution. The focused
+run passed 49 control-plane and 34 desktop tests. Both typechecks passed after
+explicit string validation in the unrun PostgreSQL fixture. Exact failures,
+repairs, frozen hashes and successful rerun are in `review-record.md`.
+Security-owned session composition and all broader/browser/database/provider
+gates remain separate.
+
+## Prior source review (before the repair above)
+
+### Exact source boundary
 
 - Routing candidate: `2b231c80cfd2dd9c6a7534e2ecf9e772f6db9c19` plus the owned
   working changes recorded in the integration and browser manifests.

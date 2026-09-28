@@ -23,7 +23,7 @@
  * Pure and dependency-free: type imports only. The account service's Worker
  * bundles this file.
  */
-import type { AccessView } from './access.js';
+import type { CoveredAccessView } from './individual-plan.js';
 import type { OrganizationSetupRecord } from './organization-setup.js';
 import type { MemberRole, MembershipState } from './workspaces.js';
 
@@ -101,7 +101,7 @@ export interface OrganizationAccountExport {
   people: ExportedPerson[];
   invitations: ExportedInvitation[];
   /** The plan, as the owner's access view shows it. */
-  access: AccessView;
+  access: CoveredAccessView;
   /** Phones' computers, or why there are none to list. */
   devices: { included: true; devices: ExportedDevice[] } | { included: false; reason: string };
   setupRevisions: ExportedSetupRevision[];

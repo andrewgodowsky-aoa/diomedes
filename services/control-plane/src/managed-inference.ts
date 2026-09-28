@@ -45,8 +45,10 @@ import { decideAgentAdmission, snapshotFromView } from '../contract/contract.js'
 import type { AccountService } from './account-service.js';
 import {
   entitlementFromGrants,
+  individualEntitlement,
   grantState,
   type AdmissionRecord,
+  type PersonalAdmissionRecord,
   type CommercialRepository,
   type FeatureGrant,
   type RouteEntry,
@@ -1090,15 +1092,17 @@ export class ManagedInferenceService {
     const tenantId = member.tenantId;
     const at = this.at();
     const state = await this.options.commercial.transaction(async (tx) => ({
-      admission: await tx.admission(tenantId, h.admissionId),
+      admission: h.scope.kind === 'individual' ? await tx.personalAdmission(tenantId, h.admissionId) : await tx.admission(tenantId, h.admissionId),
       grants: await tx.grants(h.organizationId),
       accessRevision: await tx.accessRevision(h.organizationId),
+      individual: h.scope.kind === 'individual' ? await individualEntitlement(tx, h.scope.id, member.person.id, at) : null,
       policy: await tx.policy(),
       routes: await tx.routes(),
     }));
     this.checkAdmission(state.admission, { person: member.person, tenantId }, h);
-    const view = entitlementFromGrants(state.grants, state.accessRevision, at);
-    const decision = decideAgentAdmission({ workspace: h.scope.kind === 'individual' ? 'individual' : 'business', member: true, entitlement: snapshotFromView(view), at });
+    const view = state.individual ?? entitlementFromGrants(state.grants, state.accessRevision, at);
+    const decision = decideAgentAdmission({ workspace: h.scope.kind === 'individual' ? 'personal' : 'business', member: true,
+      entitlement: snapshotFromView(view), ...(h.scope.kind === 'individual' ? { individual: snapshotFromView(view) } : {}), at });
     if (!decision.admitted) throw new ManagedError(403, 'agent_not_included', decision.reason);
     // Every call here is Diomedes-funded, so it also needs included AI usage ('managed-inference'),
     // read from the same current grants. A month's credit period outlives the grant that funded it,
@@ -1274,11 +1278,14 @@ export class ManagedInferenceService {
     }
   }
 
-  private checkAdmission(record: AdmissionRecord | undefined, member: { person: { id: string }; tenantId: string }, h: JobHeaders) {
+  private checkAdmission(record: AdmissionRecord | PersonalAdmissionRecord | undefined, member: { person: { id: string }; tenantId: string }, h: JobHeaders) {
     const now = this.now();
     const at = record ? Date.parse(record.at) : Number.NaN;
     const current = at <= now + 5_000 && now - at <= ADMISSION_WINDOW_MS;
-    if (!record || record.organizationId !== h.organizationId || record.tenantId !== member.tenantId ||
+    const scopeMatches = record && (h.scope.kind === 'individual'
+      ? 'billingAccountId' in record && record.billingAccountId === h.scope.id && record.tenantId === member.person.id
+      : 'organizationId' in record && record.organizationId === h.organizationId);
+    if (!record || !scopeMatches || record.tenantId !== member.tenantId ||
         record.personId !== member.person.id || record.decision !== 'admitted' || record.routeKind !== 'managed' || !current ||
         (record.rootJobId !== null && record.rootJobId !== h.jobId))
       throw new ManagedError(403, 'admission_invalid', 'This work has no current admission to Nectovia’s managed model service. Ask for admission again, then retry.');

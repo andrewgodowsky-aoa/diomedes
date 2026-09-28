@@ -170,7 +170,8 @@ export async function startFauxCloud(options: {
     const fromEnvironment = Object.fromEntries(SPEND_SETTINGS.filter((name) => process.env[name] !== undefined).map((name) => [name, process.env[name]!]));
     const managed = { ...options.managed, settings: { ...fromEnvironment, ...options.managed?.settings } };
     const cloud = await createFauxCloud({ file, allowedOrigins: options.allowedOrigins, passwordIterations: options.passwordIterations,
-      identity: options.identity, managed, liveBedrockApiKey, liveOpenRouterApiKey, now: options.now });
+      identity: options.identity, managed, liveBedrockApiKey, liveOpenRouterApiKey, now: options.now,
+      individualMaxActiveMembers: process.env.INDIVIDUAL_MAX_ACTIVE_MEMBERS });
     const seed = options.seed ? await seedDemo(cloud) : null;
     const port = options.port ?? FAUX_CLOUD_PORT;
     const server = http.createServer(async (req, res) => {

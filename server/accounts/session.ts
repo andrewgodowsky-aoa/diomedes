@@ -42,6 +42,7 @@ import {
   type AgentPlanState,
   type PlanNoticeChoice,
 } from '../../shared/access.js';
+import { noIndividualAccess, personIncludes, type PersonAccessView } from '../../shared/individual-plan.js';
 import type { OrganizationSetupWrite, SetupFetchOutcome, SetupWriteOutcome } from '../../shared/organization-setup.js';
 import {
   NO_ENTITLEMENT_VIEW,
@@ -71,7 +72,7 @@ export type AgentSurface = 'conversation' | 'work' | 'team' | 'loop' | 'automati
 export type AgentRouteKind = 'managed' | 'byo' | 'local' | 'external-engine';
 
 export type AgentDecision =
-  | { admitted: true; admissionId: string; organizationId: string; personId: string; planId: string | null; policyRevision: number; validUntil: string }
+  | { admitted: true; admissionId: string; organizationId: string | null; personId: string; planId: string | null; policyRevision: number; validUntil: string }
   | { admitted: false; code: string; reason: string };
 
 const MAX_REMEMBERED = 12;
@@ -123,6 +124,13 @@ function accessAnswer(answer: unknown, organizationId: string): AccessView | nul
   return parsed.success && parsed.data.organizationId === organizationId ? (answer as AccessView) : null;
 }
 
+/** `GET /account/access`: the person's own Individual access. Another person's answer is no answer. */
+const personAccessSchema = accessAnswerSchema.omit({ organizationId: true }).extend({ personId: z.string() });
+function personAccessAnswer(answer: unknown, personId: string): PersonAccessView | null {
+  const parsed = personAccessSchema.safeParse(answer);
+  return parsed.success && parsed.data.personId === personId ? (answer as PersonAccessView) : null;
+}
+
 /**
  * The fields of a `POST /account/organizations/:id/agent-admissions` answer this host reads. A
  * refusal needs its code and the sentence the person reads. An admission needs the record the
@@ -137,7 +145,7 @@ const admissionGrantSchema = z.object({
   admissionId: z.string().min(1),
   decision: z.object({ admitted: z.literal(true) }),
   pins: z.object({
-    organizationId: z.string(),
+    organizationId: z.string().nullable(),
     personId: z.string().min(1),
     planId: z.string().nullable(),
     policyRevision: z.number().int().nonnegative(),
@@ -149,7 +157,7 @@ type AdmissionAnswer =
   | { admitted: true; admissionId: string; personId: string; planId: string | null; policyRevision: number; validUntil: string };
 
 /** The service's admission decision for this business, or null when it did not give one. */
-function admissionAnswer(answer: unknown, organizationId: string): AdmissionAnswer | null {
+function admissionAnswer(answer: unknown, organizationId: string | null): AdmissionAnswer | null {
   const refused = admissionRefusalSchema.safeParse(answer);
   if (refused.success) return refused.data.decision;
   const admitted = admissionGrantSchema.safeParse(answer);
@@ -218,6 +226,8 @@ interface Current {
   signedInAt: string;
   organizations: { organization: Organization; membership: Membership }[];
   access: Map<string, AccessView | null>;
+  /** The person's own Individual access. Null: not read yet, or the read failed. */
+  personAccess: PersonAccessView | null;
   /** Businesses whose access read the service refused because the person is not a member. */
   notMember: Set<string>;
   policy: RoutingPolicyAnswer | null;
@@ -508,6 +518,7 @@ export class AccountSessionService {
       signedInAt: this.at(),
       organizations: session.organizations,
       access: new Map(),
+      personAccess: null,
       notMember: new Set(),
       policy: null,
       browser: false,
@@ -718,6 +729,7 @@ export class AccountSessionService {
         signedInAt: this.at(),
         organizations: page.organizations,
         access: new Map(),
+        personAccess: null,
         notMember: new Set(),
         policy: null,
         browser: true,
@@ -755,6 +767,7 @@ export class AccountSessionService {
     // never answered as inactive: `entitlement()` reports it as `unknown` (PH-07 R3-1). The one
     // failure that is an answer is the service's own membership refusal (R3-2).
     const notMember = new Set<string>();
+    const person = this.readPersonAccess(current);
     const answers = await Promise.all(
       active.map(async (row) => {
         try {
@@ -766,8 +779,22 @@ export class AccountSessionService {
       }),
     );
     current.access = new Map(answers);
+    current.personAccess = await person;
     current.notMember = notMember;
     current.policy = await this.backend.client.routingPolicy(current.accessToken).catch(() => current.policy);
+  }
+
+  /**
+   * The person's own Individual access, read beside the businesses'. A failed or unreadable read is
+   * null (unknown). A service from before Individual plans answers its own "not found": none.
+   */
+  private async readPersonAccess(current: Current): Promise<PersonAccessView | null> {
+    try {
+      return personAccessAnswer(await this.backend.client.personAccess(current.accessToken), current.personId);
+    } catch (error) {
+      const old = (error instanceof ControlPlaneError || error instanceof ApiError) && error.status === 404 && error.message === ROUTE_NOT_FOUND;
+      return old ? noIndividualAccess(current.personId, this.at()) : null;
+    }
   }
 
   /** Read the person's businesses and access again. `project: false` leaves the registry to the caller. */
@@ -853,7 +880,8 @@ export class AccountSessionService {
    * With no answer from the service, the Agent does not start.
    */
   async admitAgent(input: {
-    organizationId: string;
+    /** Null: Personal work, admitted under the person's own Individual plan. */
+    organizationId: string | null;
     surface: AgentSurface;
     routeKind: AgentRouteKind;
     rootJobId: string | null;
@@ -861,17 +889,15 @@ export class AccountSessionService {
   }): Promise<AgentDecision> {
     if (!this.current) return { admitted: false, code: SIGN_IN_REQUIRED, reason: 'Sign in to use the Nectovia Agent.' };
     // The route kind is part of the key: a managed admission and a BYO one are different records.
-    const key = `${this.current.personId}|${input.organizationId}|${input.surface}|${input.routeKind}|${input.rootJobId ?? ''}`;
+    const key = `${this.current.personId}|${input.organizationId ?? 'personal'}|${input.surface}|${input.routeKind}|${input.rootJobId ?? ''}`;
     const cached = this.admissions.get(key);
     if (input.phase === 'dispatch' && cached && cached.until > this.now()) return cached.decision;
     let reply: unknown;
     try {
+      const body = { surface: input.surface, routeKind: input.routeKind, rootJobId: input.rootJobId };
+      const organizationId = input.organizationId;
       reply = await this.call((token) =>
-        this.backend.client.admitAgent(token, input.organizationId, {
-          surface: input.surface,
-          routeKind: input.routeKind,
-          rootJobId: input.rootJobId,
-        }),
+        organizationId === null ? this.backend.client.admitPersonalAgent(token, body) : this.backend.client.admitAgent(token, organizationId, body),
       );
     } catch (error) {
       this.admissions.delete(key);
@@ -884,7 +910,9 @@ export class AccountSessionService {
       return {
         admitted: false,
         code: 'entitlement_unknown',
-        reason: 'The account service could not be reached, so the Nectovia Agent could not confirm this business includes it. Nothing was sent.',
+        reason: input.organizationId === null
+          ? 'The account service could not be reached, so the Nectovia Agent could not confirm your plan includes it. Nothing was sent.'
+          : 'The account service could not be reached, so the Nectovia Agent could not confirm this business includes it. Nothing was sent.',
       };
     }
     const answer = admissionAnswer(reply, input.organizationId);
@@ -1019,13 +1047,15 @@ export class AccountSessionService {
   /**
    * Whether the signed-in person holds the Nectovia Agent through any subscription. A business
    * counts while the person is an active member of it and its plan includes the Agent; one whose
-   * access has not been read yet makes the answer `unknown`, never `free`. Phase 2 adds the
-   * person's own individual subscription here.
+   * access has not been read yet makes the answer `unknown`, never `free`. The person's own
+   * Individual plan counts too (2026-09-28).
    */
   agentPlan(): AgentPlanState {
     const current = this.current;
     if (!current) return 'free';
-    let unknown = false;
+    if (personIncludes(current.personAccess)) return 'paid';
+    // The person's own plan unread is unknown, unless a business already answers paid below.
+    let unknown = current.personAccess === null || current.personAccess.state === 'unknown';
     for (const row of current.organizations) {
       if (row.membership.state !== 'active' || current.notMember.has(row.organization.id)) continue;
       const access = current.access.get(row.organization.id);
@@ -1058,6 +1088,17 @@ export class AccountSessionService {
     this.planNotices = { ...this.planNotices, [current.personId]: { choice, at: this.at() } };
     await durableWrite(this.planNoticeFile, JSON.stringify(this.planNotices, null, 2));
     return this.state();
+  }
+
+  /** True when the named feature is in the person's own Individual access (Personal and unlinked work). */
+  personalIncludes(feature: string = AGENT_FEATURE): boolean {
+    return personIncludes(this.current?.personAccess, feature as never);
+  }
+
+  /** Signed in, and the person's own Individual access has no answer yet: the admission decides. */
+  personalUnknown(): boolean {
+    const current = this.current;
+    return current !== null && (current.personAccess === null || current.personAccess.state === 'unknown');
   }
 
   /** True when the named feature is in the business's current access. */

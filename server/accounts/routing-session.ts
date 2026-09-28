@@ -15,7 +15,7 @@ const admissionSchema = z.object({ admissionId: z.string().min(1), validUntil: z
     z.object({ admitted: z.literal(false), code: z.string(), reason: z.string() }),
   ]),
   pins: z.object({ scope: z.object({ kind: z.enum(['organization', 'individual']), id: z.string() }),
-    organizationId: z.string(), tenantId: z.string(), personId: z.string(), planId: z.string().nullable(),
+    organizationId: z.string().nullable(), tenantId: z.string(), personId: z.string(), planId: z.string().nullable(),
     accessRevision: z.number().int(), policyRevision: z.number().int(), rootJobId: z.string().nullable() }),
 });
 
@@ -34,7 +34,7 @@ export class AccountRoutingSession {
     if (!person) return null;
     if (this.individual) return this.individual;
     const row = await this.session.call(token => this.session.backend.client.individualAccount(token));
-    if (this.current() !== person || row.personId !== person)
+    if (this.current() !== person || row.personId !== person || row.tenantId !== person)
       throw new EngineError('ACCOUNT_CHANGED', 'The signed-in account changed. Nothing was sent.', false);
     return this.individual = row;
   }
@@ -110,12 +110,13 @@ export class AccountRoutingSession {
     this.assertScope(work.projectId, person, scope);
     const parsed = admissionSchema.safeParse(raw);
     if (!parsed.success || this.current() !== person || parsed.data.pins.personId !== person || parsed.data.pins.scope.kind !== scope.kind ||
-        parsed.data.pins.scope.id !== scope.id || parsed.data.pins.organizationId !== scope.id || parsed.data.pins.rootJobId !== work.rootJobId ||
+        parsed.data.pins.scope.id !== scope.id || parsed.data.pins.organizationId !== (scope.kind === 'organization' ? scope.id : null) ||
+        (scope.kind === 'individual' && parsed.data.pins.tenantId !== person) || parsed.data.pins.rootJobId !== work.rootJobId ||
         Date.parse(parsed.data.validUntil) <= this.now())
       throw new EngineError('ACCOUNT_CHANGED', 'The account service did not return a current admission for this work. Nothing was sent.', false);
     const answer = parsed.data;
     if (!answer.decision.admitted) throw new EngineError('AGENT_NOT_INCLUDED', answer.decision.reason, false);
-    return { admissionId: answer.admissionId, organizationId: scope.id, scope, personId: person,
+    return { admissionId: answer.admissionId, organizationId: answer.pins.organizationId, scope, personId: person,
       planId: answer.pins.planId, policyRevision: answer.pins.policyRevision, routeKind: work.routeKind ?? 'byo', surface: work.surface,
       validUntil: answer.validUntil };
   }

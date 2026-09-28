@@ -206,7 +206,8 @@ export const bindKeyFor = (surface: string, rootJobId: string) => `${surface}:${
 export function decideObservationEligibility(input: EligibilityInput): EligibilityDecision {
   const { operator, admission, work } = input;
   if (operator.mode === 'off') return deny('observation-off');
-  if (!admission) return deny('no-admission');
+  // Personal work under an Individual plan has no business to observe for; it reads as no admission.
+  if (!admission || admission.organizationId === null) return deny('no-admission');
   if (!work.rootJobId) return deny('no-root-job');
   if (!isObservedRoute(work.route)) return deny('route-not-observable');
   const payer: ObservedPayer | null =

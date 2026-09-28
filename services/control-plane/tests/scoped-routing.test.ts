@@ -50,6 +50,13 @@ async function call(method: string, pathname: string, token?: string, body?: unk
 }
 async function signIn(who: DemoAccount) { return (await call('POST', '/auth/sign-in', undefined,
   { email: DEMO_ACCOUNTS[who].email, password: FAUX_DEMO_PASSWORD })).body.accessToken as string; }
+async function personPlan(token = owner, reference = 'Synthetic Personal plan') {
+  const person = (await cloud.accounts.signIn(token)).person;
+  const result = await call('POST', `/ops/people/${person.id}/grants`, billing,
+    { planId: 'individual', source: 'internal-test', reference, note: '', validUntil: until });
+  expect(result.status, JSON.stringify(result.body)).toBe(201);
+  return { person, grant: result.body.grant };
+}
 const scopePath = (s: AccountScope) => `${s.kind}/${s.id}`;
 async function preference(scope: AccountScope, token = owner) {
   const result = await call('POST', `/account/routing/${scopePath(scope)}/preference`, token, { scope, baseRevision: 0,
@@ -106,6 +113,74 @@ beforeEach(async () => {
 afterEach(async () => { await cloud.idle(); vi.restoreAllMocks(); });
 
 describe('Operations publication through authenticated funded dispatch', () => {
+  it('new-main: provisions one person-bound billing identity when the plan is issued before setup', async () => {
+    const { person } = await personPlan();
+    await Promise.all([personPlan(owner, 'Concurrent plan A'), personPlan(owner, 'Concurrent plan B')]);
+    const state = cloud.store.snapshot();
+    const accounts = state.commercial.individuals.filter(account => account.personId === person.id);
+    expect(accounts).toHaveLength(1);
+    expect(accounts[0]).toMatchObject({ tenantId: person.id, personId: person.id });
+    expect(accounts[0].id).not.toBe(person.id);
+    expect(state.accounts.organizations.some(org => org.record.id === accounts[0].id)).toBe(false);
+    expect(state.funding.periods.filter(period => period.organizationId === accounts[0].id)).toHaveLength(0);
+    expect((await call('POST', '/account/individual', owner, {})).body.id).toBe(accounts[0].id);
+  });
+
+  it('new-main: a person plan admits scoped Personal BYO without inventing managed usage', async () => {
+    await personPlan();
+    const individual = (await call('POST', '/account/individual', owner, {})).body;
+    const path = `/account/routing/individual/${individual.id}/admit`;
+    const byo = await call('POST', path, owner, { surface: 'conversation', routeKind: 'byo', rootJobId: 'personal-byo' });
+    expect(byo.body.decision).toMatchObject({ admitted: true, planId: 'individual' });
+    expect(byo.body.pins).toMatchObject({ organizationId: null, scope: { kind: 'individual', id: individual.id } });
+    const managed = await call('POST', path, owner, { surface: 'conversation', routeKind: 'managed', rootJobId: 'personal-managed' });
+    expect(managed.body.decision).toMatchObject({ admitted: false, code: 'managed_inference_not_included' });
+    expect(sends).toHaveLength(0);
+    expect(cloud.store.snapshot().funding.attempts).toHaveLength(0);
+  });
+
+  it('new-main: a funded agreement cannot substitute for the current person plan', async () => {
+    const individual = (await call('POST', '/account/individual', owner, {})).body;
+    const scope: AccountScope = { kind: 'individual', id: individual.id };
+    expect((await call('POST', `/ops/individuals/${scope.id}/grants`, billing,
+      { reference: 'Usage agreement without Agent access', validUntil: until, credits: 100 })).status).toBe(201);
+    await preference(scope); await publish();
+    const response = await cloud.handle(await request(scope));
+    expect(response.status, await response.text()).toBe(403);
+    expect(sends).toHaveLength(0);
+    expect(cloud.store.snapshot().funding.attempts).toHaveLength(0);
+  });
+
+  it('new-main: revoking the person plan invalidates an already issued funded admission before send', async () => {
+    const { person, grant } = await personPlan();
+    const individual = (await call('POST', '/account/individual', owner, {})).body;
+    const scope: AccountScope = { kind: 'individual', id: individual.id };
+    expect((await call('POST', `/ops/individuals/${scope.id}/grants`, billing,
+      { reference: 'Usage with Personal access', validUntil: until, credits: 100 })).status).toBe(201);
+    await preference(scope); await publish();
+    const pending = await request(scope);
+    expect((await call('POST', `/ops/people/${person.id}/grants/${grant.id}/revoke`, billing,
+      { reason: 'Person access withdrawn before dispatch' })).status).toBe(200);
+    const response = await cloud.handle(pending);
+    expect(response.status, await response.text()).toBe(403);
+    expect(sends).toHaveLength(0);
+    expect(cloud.store.snapshot().funding.attempts).toHaveLength(0);
+  });
+
+  it('new-main: an Individual plan never covers a one-member Business', async () => {
+    const harbor = await signIn('harborOwner');
+    await personPlan(harbor);
+    const person = (await cloud.accounts.signIn(harbor)).person;
+    const membership = cloud.store.snapshot().accounts.memberships.find(m => m.record.personId === person.id)!;
+    const organizationId = membership.record.organizationId;
+    const access = await call('GET', `/account/organizations/${organizationId}/access`, harbor);
+    expect(access.body.agent.included).toBe(false);
+    expect(access.body).not.toHaveProperty('coveredBy');
+    const admission = await call('POST', `/account/organizations/${organizationId}/agent-admissions`, harbor,
+      { surface: 'conversation', routeKind: 'byo', rootJobId: 'business-with-one-member' });
+    expect(admission.body.decision.admitted).toBe(false);
+  });
+
   it.each([null, 'nectovia-managed/1'])('refuses protocol %s before reserving or sending a versioned route', async protocol => {
     await publish('primary', true);
     const req = await request();
@@ -189,6 +264,7 @@ describe('Operations publication through authenticated funded dispatch', () => {
     expect(cloud.store.snapshot().funding.attempts).toMatchObject([{ state: 'released', dispatchedAt: null }]);
   });
   it('requires versioned setup for a newly paid Individual and rechecks a withdrawn agreement', async () => {
+    await personPlan();
     const individual = (await call('POST', '/account/individual', owner, {})).body;
     const scope: AccountScope = { kind: 'individual', id: individual.id };
     const grant = await call('POST', `/ops/individuals/${scope.id}/grants`, billing, { reference: 'Synthetic agreement', validUntil: until, credits: 100 });
@@ -210,6 +286,7 @@ describe('Operations publication through authenticated funded dispatch', () => {
     expect((await publish('primary', false, { kind: 'global' }, 2, 2)).status).toBe(201);
   });
   it('isolates two organizations and the same person paid Individual, and resets an override to inheritance', async () => {
+    await personPlan();
     const individual = (await call('POST', '/account/individual', owner, {})).body;
     const personal: AccountScope = { kind: 'individual', id: individual.id };
     expect(cloud.store.snapshot().accounts.organizations.some(o => o.record.id === personal.id)).toBe(false);

@@ -669,6 +669,24 @@ included in the continuation, without granting actions or picking another engine
 
 Default: each stays as built.
 
+### O45. The Individual plan: what phase 2a leaves open
+
+Raised 2026-09-28 with the Individual plan (`docs/implementation/2026-09-28-individual-tier.md`,
+branch `feature/individual-tier`).
+
+1. **Credits.** Decided: 1,000 a month (Andrew, 2026-09-28 04:01 EDT). Automatic recurring
+   allocation remains unwired. Operations routing adds an explicit managed-usage agreement and
+   a separate Individual billing account; it does not invent a monthly allocation.
+2. **Business coverage.** Settled by Andrew's latest decision: Individual covers Personal work
+   only. Every Business needs its own Business plan, including a sole proprietorship or a
+   one-member Business. The legacy member-threshold setting cannot grant Business access.
+3. **Managed Personal work.** The routing composition requires both a current person-plan grant
+   and a separately funded usage agreement. A person grant alone, including courtesy access,
+   cannot authorize company-funded inference. Revoking either authority stops new dispatches.
+
+These describe the local routing composition; its verification and publication are recorded
+separately in `docs/implementation/2026-09-28-operations-routing.md`.
+
 ## Resolved
 
 ### R16. Kept-session engines hold Console conversations (raised as O19 and O39 item 1)
@@ -861,9 +879,12 @@ This answers the first half of O10 (which provider and key, paid by whom, under 
 A search call therefore never needs a ledger line of its own and never rides on a model route's
 spend hold.
 
-Still open, carried from O10: whether an approved connector's MCP server is launched through a
-shell on Windows. The host client spawns the owner's `command` directly, so a `.cmd` launcher such
-as `npx` needs its full path or a `node` command line in `read-connectors.json`.
+The Prompt12 Windows-launcher candidate has coordinator-reported fixture evidence for direct
+Node and four owned `.cmd` forms: absolute paths and extensionless PATH lookup, each in
+`node_modules/.bin` and an ordinary directory. Those checks cover literal arguments and shell
+output. They do not establish installed `npx`, percent-variable or delayed-expansion behavior,
+or real-provider safety. Acceptance still requires review and verification on the composed source;
+the earlier blanket full-path requirement is not a conclusion supported by these fixtures.
 
 ### R7. History retention was configured and not enforced (raised as O5)
 

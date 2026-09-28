@@ -106,6 +106,46 @@ async function respond(transform?: (response: Response) => Promise<Response>,
     } });
 }
 describe('published account policy at the desktop model boundary', () => {
+  it('runs funded Personal work through scoped host admission and the real non-Luna adapter without inventing a Business', async () => {
+    const person = (await cloud.accounts.signIn(token)).person;
+    const billing = (await api('POST', '/auth/sign-in', '', { email: 'billing@diomedes.test', password: FAUX_DEMO_PASSWORD })).accessToken;
+    await api('POST', `/ops/people/${person.id}/grants`, billing,
+      { planId: 'individual', source: 'internal-test', reference: 'Synthetic person plan', note: '' });
+    const individual = await client.individualAccount(token), scope = { kind: 'individual' as const, id: individual.id };
+    await api('POST', `/ops/individuals/${individual.id}/grants`, billing,
+      { reference: 'Synthetic managed usage', validUntil: new Date(Date.now() + 3_600_000).toISOString(), credits: 100 });
+    await client.acceptRoutingPreference(token, { scope, baseRevision: 0, profile: 'strict', restrictions: STRICT_RESTRICTIONS,
+      consentVersion: 'NC-SETUP-2026-09-27.1', exceptions: [], acknowledge: true });
+    const session = { personId: () => person.id, backend: { client },
+      call: <T>(fn: (value: string) => Promise<T>) => fn(token) } as unknown as AccountSessionService;
+    const workspaces = { projectOwner: () => null, active: () => ({ kind: 'personal' }) } as unknown as WorkspaceService;
+    const routing = new AccountRoutingSession(session, workspaces), job = 'personal-client-job';
+    const admission = await routing.admit({ phase: 'admit', surface: 'conversation', projectId: null, rootJobId: job, routeKind: 'managed' });
+    expect(admission).toMatchObject({ scope, organizationId: null, personId: person.id });
+    const personalPolicy = routing.policy()!;
+    const messages: ModelMessage[] = [{ role: 'user', content: 'Hello from Personal.' }];
+    const result = await respondNectovia({ base: client.base,
+      account: { policy: () => routing.policy(), refreshPolicy: () => routing.refresh() },
+      connectionId, model: 'fixture-non-luna', managed: { admissionId: admission.admissionId,
+        organizationId: scope.id, scope, policyRevision: personalPolicy.revision, routing: personalPolicy.resolved,
+        tier: 'efficient', usageClass: 'metered-work', rootJobId: job },
+      token, card: nectoviaRateCard('fixture-non-luna', personalPolicy), exposure, attempt: exposureAttempt(job, 'step-1', messages),
+      instructions: 'Answer the request.', messages, tools: [], effort: 'low', limits: CONVERSATION_LIMITS,
+      signal: new AbortController().signal, transport: async (url, init) => {
+        const request = new Request(url, init); gatewayRequests.push(request); return cloud.handle(request);
+      } });
+    expect(result.outcome).toMatchObject({ kind: 'final', text: 'A complete answer.' });
+    expect(result.rawUsage).toMatchObject({ nectovia: { attempts: [{ state: 'settled', routing: { scopeKey: `individual:${scope.id}` } }] } });
+    expect(sent).toEqual(['primary']);
+    expect(gatewayRequests[0].headers.get('x-nectovia-account')).toBe(scope.id);
+    expect(gatewayRequests[0].headers.get('x-nectovia-organization')).toBeNull();
+    const state = cloud.store.snapshot();
+    expect(state.accounts.organizations.some(row => row.record.id === scope.id)).toBe(false);
+    expect(state.funding.jobs.find(row => row.rootJobId === job)).toMatchObject({ organizationId: scope.id, tenantId: person.id });
+    expect(state.commercial.personalAdmissions.find(row => row.id === admission.admissionId))
+      .toMatchObject({ billingAccountId: scope.id, tenantId: person.id, personId: person.id });
+  });
+
   it.each([true, false])('passes derived source restrictions through the real Nectovia adapter (destination allowed=%s)', async allowed => {
     const job = `adapter-source-${allowed ? 'allowed' : 'refused'}`;
     const scope = { kind: 'organization' as const, id: org };

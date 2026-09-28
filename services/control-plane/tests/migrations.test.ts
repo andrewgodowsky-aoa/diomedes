@@ -60,7 +60,7 @@ describe('versioned migration protocol', () => {
 });
 
 describe('versioned migration source files', () => {
-  const names = ['001_accounts.sql', '002_commercial.sql', '003_funded_jobs.sql', '004_usage_contract.sql', '005_customer_access.sql', '006_staff_keys.sql', '007_relay_devices.sql', '008_organization_setup.sql', '009-scoped-routing.sql'];
+  const names = ['001_accounts.sql', '002_commercial.sql', '003_funded_jobs.sql', '004_usage_contract.sql', '005_customer_access.sql', '006_staff_keys.sql', '007_relay_devices.sql', '008_organization_setup.sql', '009_individual_plans.sql', '010-scoped-routing.sql'];
   const load = () => Promise.all(names.map(async (name, index) => {
     const sql = await readFile(new URL(`../migrations/${name}`, import.meta.url), 'utf8');
     return { version: index + 1, name, sql, sha256: createHash('sha256').update(sql).digest('hex') };
@@ -155,5 +155,31 @@ describe('versioned migration source files', () => {
     expect(keys.sql).toContain('CREATE TRIGGER staff_key_tombstone BEFORE UPDATE');
     expect(keys.sql).not.toMatch(/\bkey text|secret|password/i);
     expect(keys.sql.trim().endsWith('REVOKE ALL ON ALL FUNCTIONS IN SCHEMA control_plane FROM PUBLIC;')).toBe(true);
+  });
+
+  it('009 issues Individual grants to a person, revoke-once, and keeps personal admissions apart from a business', async () => {
+    const individual = (await load()).find((file) => file.name === '009_individual_plans.sql')!;
+    expect(individual.version).toBe(9);
+    expect(individual.sql).not.toMatch(/\b(DROP\s+TABLE|DELETE\s+FROM|TRUNCATE|DROP\s+SCHEMA|ALTER\s+TABLE)\b/i);
+    for (const table of ['person_feature_grants', 'person_access', 'personal_agent_admissions'])
+      expect(individual.sql).toContain(`CREATE TABLE control_plane.${table}`);
+    // A person's grant names a person, never an organization; the existing admissions table is untouched.
+    expect(individual.sql).toMatch(/person_id text NOT NULL REFERENCES control_plane\.persons\(id\)/);
+    expect(individual.sql).not.toMatch(/\n  organization_id |REFERENCES control_plane\.organizations/);
+    expect(individual.sql).toContain('CREATE TRIGGER person_feature_grant_tombstone BEFORE UPDATE');
+    expect(individual.sql).toContain('CREATE TRIGGER personal_agent_admission_append_only BEFORE UPDATE OR DELETE');
+    expect(individual.sql).toMatch(/Code and tests only: no production\s+-- migration/);
+    expect(individual.sql.trim().endsWith('REVOKE ALL ON ALL FUNCTIONS IN SCHEMA control_plane FROM PUBLIC;')).toBe(true);
+  });
+
+  it('keeps the applied Individual migration immutable and upgrades its exact history with routing 010 only', async () => {
+    const files = await load();
+    expect(files[8]).toMatchObject({ version: 9, name: '009_individual_plans.sql',
+      sha256: '540f7bb22cc183175984fcdcf8e82718a7b093ec77d09329656ddd68196e5886' });
+    expect(files[9]).toMatchObject({ version: 10, name: '010-scoped-routing.sql' });
+    const db = database(files.slice(0, 9));
+    expect(await migrate(db.factory, files)).toEqual([10]);
+    expect(db.calls).not.toContain(files[8].sql);
+    expect(await migrate(db.factory, files)).toEqual([]);
   });
 });

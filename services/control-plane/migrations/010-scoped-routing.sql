@@ -1,4 +1,5 @@
--- Operations-controlled routing. Apply as migration owner, never from a request.
+-- Operations-controlled routing, following immutable Individual migration 009.
+-- Apply as migration owner, never from a request.
 -- Existing policy bytes and balances are retained. No route, qualification,
 -- Individual subscription, credit or customer consent is invented here.
 
@@ -13,11 +14,31 @@ CREATE TABLE control_plane.billing_scopes (
   UNIQUE(person_id),
   FOREIGN KEY(organization_id,tenant_id) REFERENCES control_plane.organizations(id,tenant_id),
   CHECK (((kind='organization' AND organization_id IS NOT NULL AND organization_id=id AND person_id IS NULL AND record IS NULL)
-      OR (kind='individual' AND organization_id IS NULL AND person_id IS NOT NULL
+      OR (kind='individual' AND organization_id IS NULL AND person_id IS NOT NULL AND tenant_id=person_id
           AND id LIKE 'individual_%' AND record IS NOT NULL AND record->>'id'=id AND record->>'tenantId'=tenant_id AND record->>'personId'=person_id)) IS TRUE)
 );
 INSERT INTO control_plane.billing_scopes(id,tenant_id,kind,organization_id)
   SELECT id,tenant_id,'organization',id FROM control_plane.organizations;
+
+-- Existing 009 grant holders must be discoverable by Operations before they
+-- open setup. These are identities only: preserve every grant and balance.
+WITH holders AS (SELECT DISTINCT person_id FROM control_plane.person_feature_grants),
+identities AS (
+  SELECT 'individual_' || gen_random_uuid()::text AS id, p.id AS person_id, p.record->>'name' AS name
+    FROM control_plane.persons p JOIN holders h ON h.person_id=p.id
+)
+INSERT INTO control_plane.billing_scopes(id,tenant_id,kind,person_id,record)
+  SELECT id,person_id,'individual',person_id,jsonb_build_object(
+    'id',id,'tenantId',person_id,'personId',person_id,'name',name,'state','active',
+    'createdAt',to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
+  FROM identities;
+
+-- Preserve 009's person records and append-only history. New scoped admissions
+-- can bind to a billing account; historical Personal admissions keep NULL here.
+ALTER TABLE control_plane.personal_agent_admissions ADD COLUMN billing_account_id text
+  GENERATED ALWAYS AS (record->>'billingAccountId') STORED;
+ALTER TABLE control_plane.personal_agent_admissions ADD CONSTRAINT personal_admission_billing_scope
+  FOREIGN KEY(billing_account_id,tenant_id) REFERENCES control_plane.billing_scopes(id,tenant_id);
 
 CREATE FUNCTION control_plane.register_organization_billing_scope() RETURNS trigger
   LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,control_plane AS $$

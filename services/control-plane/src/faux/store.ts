@@ -26,6 +26,8 @@ import {
   auditEventSchema,
   featureGrantSchema,
   operatorSchema,
+  personFeatureGrantSchema,
+  personalAdmissionRecordSchema,
   routeEntrySchema,
   tierPolicySchema,
   type AdmissionRecord,
@@ -34,6 +36,8 @@ import {
   type CommercialTransaction,
   type FeatureGrant,
   type Operator,
+  type PersonFeatureGrant,
+  type PersonalAdmissionRecord,
   type RouteEntry,
   type TierPolicy,
 } from '../commercial.js';
@@ -63,6 +67,10 @@ export interface CommercialState {
   operators: Operator[];
   audit: AuditEvent[];
   admissions: AdmissionRecord[];
+  /** Individual grants (migration 009). */
+  personGrants: PersonFeatureGrant[];
+  personAccessRevisions: Record<string, { tenantId: string; revision: number }>;
+  personalAdmissions: PersonalAdmissionRecord[];
 }
 
 export interface FauxCloudState {
@@ -100,6 +108,10 @@ const commercialSchema = z.strictObject({
   operators: z.array(operatorSchema).max(1_000),
   audit: z.array(auditEventSchema).max(LOG_LIMIT),
   admissions: z.array(admissionRecordSchema).max(LOG_LIMIT),
+  // Stores written before Individual plans existed have none yet.
+  personGrants: z.array(personFeatureGrantSchema).max(100_000).default([]),
+  personAccessRevisions: z.record(z.string(), z.strictObject({ tenantId: z.string(), revision: z.number().int().min(0) })).default({}),
+  personalAdmissions: z.array(personalAdmissionRecordSchema).max(LOG_LIMIT).default([]),
 });
 
 const relaySchema = z.strictObject({ devices: z.array(relayDeviceSchema).max(100_000) });
@@ -113,7 +125,11 @@ export function emptyFauxCloudState(now = new Date().toISOString()): FauxCloudSt
     seeded: null,
     accounts: emptyAccountState(),
     identity: emptyFauxIdentity(),
-    commercial: { individuals: [], routingPreferences: [], jobRestrictions: {}, circuits: {}, grants: [], accessRevisions: {}, routes: [], policies: [], operators: [], audit: [], admissions: [] },
+    commercial: {
+      individuals: [], routingPreferences: [], jobRestrictions: {}, circuits: {},
+      grants: [], accessRevisions: {}, routes: [], policies: [], operators: [], audit: [], admissions: [],
+      personGrants: [], personAccessRevisions: {}, personalAdmissions: [],
+    },
     funding: emptyFundingState(),
     relay: { devices: [] },
     organizationSetups: [],
@@ -125,6 +141,7 @@ function validate(state: FauxCloudState): FauxCloudState {
   const cap = LOG_LIMIT;
   if (state.commercial.admissions.length > cap) state.commercial.admissions = state.commercial.admissions.slice(-cap);
   if (state.commercial.audit.length > cap) state.commercial.audit = state.commercial.audit.slice(-cap);
+  if ((state.commercial.personalAdmissions?.length ?? 0) > cap) state.commercial.personalAdmissions = state.commercial.personalAdmissions.slice(-cap);
   return {
     v: 1,
     faux: true,
@@ -282,6 +299,42 @@ class FauxCommercialTransaction implements CommercialTransaction {
     if (!person) return undefined;
     const subject = this.subjectOf(personId);
     return { person: person as Person, issuer: subject.issuer, subject: subject.subject };
+  }
+  async lockPerson() {}
+  async personGrants(personId: string) { return this.c.personGrants.filter((row) => row.personId === personId); }
+  async savePersonGrant(row: PersonFeatureGrant) {
+    if (!this.state.accounts.persons.some((item) => item.id === row.personId) || row.tenantId !== row.personId)
+      throw new Error('An Individual grant belongs to an existing person.');
+    const index = this.c.personGrants.findIndex((old) => old.id === row.id);
+    if (index < 0) this.c.personGrants.push(row);
+    else {
+      const old = this.c.personGrants[index];
+      // The same rule migration 009's trigger enforces: revoked once, never edited otherwise.
+      const { state: _a, revokedAt: _b, revokedBy: _c, revokedReason: _d, ...before } = old;
+      const { state: _e, revokedAt: _f, revokedBy: _g, revokedReason: _h, ...after } = row;
+      if (old.state === 'revoked' || JSON.stringify(before) !== JSON.stringify(after))
+        throw new Error('A feature grant only changes by being revoked once.');
+      this.c.personGrants[index] = row;
+    }
+  }
+  async personAccessRevision(personId: string) { return this.c.personAccessRevisions[personId]?.revision ?? 0; }
+  async bumpPersonAccessRevision(personId: string, tenantId: string) {
+    const next = (this.c.personAccessRevisions[personId]?.revision ?? 0) + 1;
+    this.c.personAccessRevisions[personId] = { tenantId, revision: next };
+    return next;
+  }
+  async savePersonalAdmission(row: PersonalAdmissionRecord) { this.c.personalAdmissions.push(row); }
+  async personalAdmission(tenantId: string, id: string) {
+    return this.c.personalAdmissions.find(row => row.tenantId === tenantId && row.id === id);
+  }
+  async personalAdmissions(personId: string, limit: number) {
+    return newestFirst(this.c.personalAdmissions.filter((row) => row.personId === personId)).slice(0, limit);
+  }
+  async organizationActiveMembers(organizationId: string) {
+    return this.state.accounts.memberships.filter((item) => item.record.organizationId === organizationId && item.record.state === 'active').length;
+  }
+  async personAudit(personId: string, limit: number) {
+    return newestFirst(this.c.audit.filter((row) => row.organizationId === null && row.targetKind === 'person-grant' && row.detail.personId === personId)).slice(0, limit);
   }
 }
 

@@ -34,6 +34,11 @@ describe('the free-version notice', () => {
     expect(html).toContain('aria-disabled="true"');
   });
 
+  it('names no price for any plan, the Individual plan included (hidden once one is active: tests/individual-plan.test.ts)', () => {
+    const html = renderToStaticMarkup(createElement(FreePlanNotice, { plan, onChoice: () => undefined }));
+    expect(html).not.toMatch(/\$\s?\d/);
+  });
+
   it('shows nothing without an account (accounts off)', () => {
     expect(renderToStaticMarkup(createElement(AccountPlanNotice))).toBe('');
   });

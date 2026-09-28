@@ -483,10 +483,15 @@ export function decideAdmission(view: AdmissionView): AdmissionDecision {
  */
 export interface AgentAdmissionView {
   /** Personal work has no organization to hold the Agent. */
-  readonly workspace: 'personal' | 'business' | 'individual';
+  readonly workspace: 'personal' | 'business';
   readonly member: boolean;
   readonly entitlement: EntitlementSnapshot;
   readonly at: string;
+  /**
+   * Personal work only: the person's own Individual entitlement (2026-09-28). A business's
+   * entitlement never admits Personal work; only this snapshot can, when it includes the Agent.
+   */
+  readonly individual?: EntitlementSnapshot;
 }
 
 export type AgentAdmissionCode =
@@ -515,11 +520,15 @@ export function decideAgentAdmission(view: AgentAdmissionView): AgentAdmissionDe
     code,
     reason,
   });
-  if (view.workspace === 'personal')
+  if (view.workspace === 'personal') {
+    const own = view.individual ? snapshotAt(view.individual, view.at) : null;
+    if (own?.state === 'active' && (own.features ?? []).includes(AGENT_FEATURE_ID))
+      return { admitted: true, planId: own.planId, revision: own.revision, validUntil: own.expiresAt };
     return refuse(
       'personal_workspace',
       'The Nectovia Agent works for a business. Switch to a business workspace that includes it, or use your own AI tools directly.',
     );
+  }
   if (!view.member)
     return refuse('not_a_member', 'No active membership binds this person to this business.');
   const entitlement = snapshotAt(view.entitlement, view.at);

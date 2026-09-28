@@ -16,6 +16,7 @@ import {
   agentAdmissionInput,
   changeStaffInput,
   issueGrantInput,
+  issuePersonGrantInput,
   publishPolicyInput,
   revokeGrantInput,
   rollbackPolicyInput,
@@ -121,7 +122,8 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
   const readConfiguration = options.configuration ?? configuration;
   const createCommercial = options.createCommercial ?? ((config: Configuration, accounts: AccountService) =>
     new CommercialService(accounts, new PostgresCommercialRepository(neonClientFactory(config.databaseUrl)),
-      new FundingService(new PostgresFundingRepository(neonClientFactory(config.databaseUrl)))));
+      new FundingService(new PostgresFundingRepository(neonClientFactory(config.databaseUrl))),
+      config.individual ? { coverage: config.individual } : {}));
   const createRouting = options.createRouting ?? ((config: Configuration, accounts: AccountService) =>
     new RoutingService(accounts, new PostgresCommercialRepository(neonClientFactory(config.databaseUrl)), Date.now,
       config.fundingDatabaseUrl ? new FundingService(new PostgresFundingRepository(neonClientFactory(config.fundingDatabaseUrl))) : null));
@@ -259,6 +261,11 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
         return json(await createCommercial(config, accounts).access(token, match[1]));
       if ((match = route('/account/organizations/:id/agent-admissions').exec(pathname)) && method === 'POST')
         return json(await createCommercial(config, accounts).admitAgent(token, match[1], await body(request, agentAdmissionInput)));
+      // --- the person's own Individual plan -------------------------------------------------
+      if (pathname === '/account/access' && method === 'GET')
+        return json(await createCommercial(config, accounts).personAccess(token));
+      if (pathname === '/account/agent-admissions' && method === 'POST')
+        return json(await createCommercial(config, accounts).admitPersonalAgent(token, await body(request, agentAdmissionInput)));
 
       // --- the business setup, kept for the organization (ORG-01) --------------------------
       if ((match = route('/account/organizations/:id/setup').exec(pathname)) && method === 'GET')
@@ -347,6 +354,11 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
         if (pathname === '/ops/staff' && method === 'POST') return json(await ops.addStaff(token, await body(request, addStaffInput)), 201);
         if ((match = route('/ops/staff/:id').exec(pathname)) && method === 'PATCH') return json(await ops.changeStaff(token, match[1], await body(request, changeStaffInput)));
         if (pathname === '/ops/people' && method === 'GET') return json(await ops.people(token, url.searchParams.get('q') ?? ''));
+        if ((match = route('/ops/people/:id').exec(pathname)) && method === 'GET') return json(await ops.person(token, match[1]));
+        if ((match = route('/ops/people/:id/grants').exec(pathname)) && method === 'POST')
+          return json(await ops.issuePersonGrant(token, match[1], await body(request, issuePersonGrantInput)), 201);
+        if ((match = route('/ops/people/:id/grants/:id/revoke').exec(pathname)) && method === 'POST')
+          return json(await ops.revokePersonGrant(token, match[1], match[2], await body(request, revokeGrantInput)));
         if (pathname === '/ops/audit' && method === 'GET') {
           const limit = url.searchParams.get('limit');
           return json(await ops.audit(token, { organizationId: url.searchParams.get('organizationId') ?? undefined, limit: limit ? Number(limit) : undefined }));
@@ -387,6 +399,8 @@ export type GatewayEnv = WorkerEnv & {
   STAFF_WORKOS_API_KEY?: string;
   MANAGED_SPEND_CEILING_MICRO_USD?: string | number;
   MANAGED_MAX_OUTPUT_TOKENS?: string | number;
+  /** How many active members a business may have for an Individual plan to cover it. Blank: 1. */
+  INDIVIDUAL_MAX_ACTIVE_MEMBERS?: string | number;
 };
 
 const fetchHandler = createHandler();
