@@ -1,4 +1,34 @@
-# Desktop routing handoff
+# Operations routing handoff
+
+The forward composition with the merged Individual and security changes is
+recorded in [combined-acceptance.md](combined-acceptance.md). Its app source
+checkpoint is `a23b27ed65b90ef697c78e48f4f58792d5f55fa9`; Operations remains
+`fdd73a74b87bcbcf0ddec123cf78117efcf8fa8a`. The source checkpoints below
+pin the routing owner's earlier handoff and its exact manifest.
+
+Current local code is app `dae3a4b60feef2baec1ce15defcb3542c3c5a41c` and
+Operations `fdd73a74b87bcbcf0ddec123cf78117efcf8fa8a`. Both include the new
+Individual main commits. Two Business/Personal browser journeys, root TypeScript
+and both builds pass on the exact app tree `e810433d10d0f26480b9cc23d92ebd0ea31f0f46`.
+Operations production bytes remain the browser-tested `e8366b4`; its subsequent
+single-file fixture repair passes all 24 Operations tests with no skips.
+The Home receipt mount was repaired after a real failing browser assertion.
+The separate plan and managed-usage agreement retain Personal-only scope.
+
+Start with [finish.md](finish.md), [coverage.md](coverage.md) and
+[source-candidate.json](source-candidate.json). The latter lists exact committed
+files for the current source checkpoints. `candidate-manifest.json` describes
+the historical old-base checkpoint and must not be used as the current manifest.
+The real PostgreSQL gate and funded live-provider, packaged and deployed
+acceptance remain unverified. See [review-record.md](review-record.md) for
+original failures, bounded checks and independent review.
+
+The following sections preserve the earlier patch handoffs and their status
+at the time they were written. Their pending/unrun wording is historical;
+the current records above supersede it. Do not apply these patches again to
+the composed checkpoint.
+
+## Historical desktop patch handoff
 
 Applied locally after composition; focused verification is in progress. App/service ownership transferred to this feature under
 `handoff_mukxudp0_eb0e8b54` and `claim_mukxvns8_c7d3cc5a`. The full committed

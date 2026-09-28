@@ -1,50 +1,59 @@
 # Operations routing coverage
 
-This is a source-to-requirement record, not feature acceptance. Paths below are
-relative to the app repository unless prefixed `Operations:`. Historical checks
-apply only to their recorded source manifests. `review-record.md` retains their
-original failures, repairs, counts, logs and review limitations.
+Current local source: app `dae3a4b60feef2baec1ce15defcb3542c3c5a41c`
+(tree `e810433d10d0f26480b9cc23d92ebd0ea31f0f46`), Operations
+`fdd73a74b87bcbcf0ddec123cf78117efcf8fa8a`
+(tree `e44e9737138a02b53ded7ab5ea5bf466df0a4560`).
+Operations production source is unchanged from reviewed and browser-tested `e8366b4`;
+the later commit repairs one test fixture and passes the full 24-case suite.
+These include app main `1af37e0` and Operations main `d0d04da`.
+The engine dependency `8ce83140` is already an ancestor; do not replay it.
 
-Current composition: app `2b231c80cfd2dd9c6a7534e2ecf9e772f6db9c19`, including
-provisional engine dependency `8ce831400fb4329ea06aec5cf85609638eb938e8` and
-merged policy main `2e6c7850eb28491ea662fe2f36b68d5ac41ddbea`, plus the owned
-working changes. Operations checkpoint: `f97e0b5b6944247426097b50a8cf48ad8cfa289d`.
+This is source and local verification evidence. It does not establish real
+PostgreSQL migration/privileges, funded provider readiness, packaging, deployment
+or final merged acceptance. Paths below are relative to the app unless prefixed
+`Operations:`. See [finish.md](finish.md) for the handoff and
+[source-candidate.json](source-candidate.json) for exact committed file identities.
+Historical failures and checks retain their original manifests in
+[review-record.md](review-record.md); counts from separate runs are not added.
 
-The composed focused run at 10:32 UTC passed 77 control-plane tests, 55 root
-tests and both TypeScript checks with no skips, SDK errors or source drift.
-Evidence: `test-results/operations-routing-integration-green-20260928-103253/`;
-the source manifest SHA256 is
-`4BA6BD0162AD3BC34E6B83F49987A2ACF493F091B737E53B8FD0571F271F0E43`.
-This run predates composition with main `1af37e0` / PR #176. That main introduces
-Individual migration 009 and overlapping account code; its integration remains
-pending. Operations main `d0d04da058e7e9fdaeb89f6b28da2ad933f678de` / PR #6
-also adds Individual administration and overlaps three routing paths; it is not
-imported into the Operations checkpoint. The browser and Operations window is
-held before acquisition.
-
-| Requested behavior | Implementation | Meaningful verification and current limit |
+| Requested behavior | Implementation | Meaningful verification and remaining limit |
 | --- | --- | --- |
-| Global, organization and Individual policy; inherit/reset; independent revisions | `shared/routing-policy.ts`, control-plane `routing.ts`, `commercial.ts`, `commercial-postgres.ts`, `faux/store.ts` | The 18 passing scoped tests exercise two organizations plus the same person's funded Individual, inheritance/reset, CAS and rollback. Real PostgreSQL persistence remains unverified. |
-| Identity, membership, roles and paid admission | Control-plane `routing.ts`, `commercial.ts`, `worker.ts`; desktop `accounts/routing-session.ts` and `agent-gate.ts` | Scoped tests cover forbidden publication, member consent, forged scope and revoked agreement. Client tests cover late results after account switches. The separate Personal-only paid-plan candidate still needs composition. |
-| Customer consent remains separate from staff routing and funding disclosure | `shared/routing-policy.ts`, `routing.ts`, `client/console/RoutingPreferences.tsx`, `client/AccountSettings.tsx` | Scoped customer-profile and staff-refusal cases pass. The composed Operations suite and browser consent journey remain unrun. NC-SETUP-2026-09-27.1 is distinct from NC-2026-09-28.1. |
-| Approved connections and configurable model/protocol bindings | Control-plane `managed-bindings.ts`, `routing.ts`, `worker.ts`; `Operations: src/Routing.tsx` | Real transport fixtures exercise AWS Responses/Chat/Converse/Messages, Azure Responses/Chat, Vertex GenerateContent/Messages and OpenRouter Chat. All four providers still lack live qualification and funded-call evidence. |
-| Endpoint, credential and downstream restrictions | `managed-bindings.ts`, `server/engines/openrouter.ts` | The 31 binding cases pass through allowlisted-host, redirect, credential, scope, endpoint-attribution and tool-withholding checks. All 16 direct OpenRouter cases pass, including explicit ZDR preservation and refusal before credentials/network when weakened. |
-| Strict, accepted exceptions and source rules precede ranking | `shared/routing-policy.ts`, control-plane `routing.ts` and `managed-inference.ts` | The 28 policy tests and scoped fixtures pass evidence-expiry/mismatch, geography, privacy, quality, zero-quota and before-send exclusions on the composed candidate. Live provider qualification remains separate. |
-| Conservative same-or-lower estimate; one job cap | `shared/routing-policy.ts`, `funding.ts`, `managed-inference.ts`, `server/spend-exposure.ts` | Passing policy cases include cache/long-context rates and fees. Passing scoped cases preserve the original cap, keep uncertain primary cost and reserve backups independently. |
-| Bounded, model-specific failover without refusal or partial-response replay | `managed-inference.ts`, `managed-bindings.ts`, `managed-normalization.ts` | Scoped cases pass capacity, cooldown, uncertain-hold, partial-output and refusal checks; bindings pass native-state isolation. Dispatch-write cancellation was reproduced (one unintended send and settlement), repaired and verified: zero sends/backups, 499, committed uncertain hold, no settlement or cooldown. |
-| Derived restrictions through tools, follow-ups, carried context and writing repair | `shared/harness.ts`, `server/harness/{native-agent,policy,model-api-adapter,model-session-run,nectovia-model-adapter}.ts` | All 22 repaired harness cases pass, retaining their nine-failure original record. Two additional cases instantiate the real Nectovia ModelAdapter through the account gateway: an eligible restriction succeeds, and a disallowed connection stops before provider send/reservation. |
-| Dynamic authenticated prices/capabilities and old-client handling | `server/engines/nectovia.ts`, `server/engines/service.ts`, `server/accounts/routing-session.ts`, control-plane `routing.ts` and `managed-inference.ts` | All 17 client cases pass, including non-Luna responses, snapshot expiry and receipt attribution. Missing and v1 protocol cases both return 426 before reserve/send on a versioned route. |
-| Durable successful/failed receipts in ordinary conversation and task details | `server/harness/{run-service,routing-receipts}.ts`, `server/app.ts`, `client/console/{ThreadView,ManagedRoutingReceipt}.tsx`, `client/workbench/RunInspector.tsx` | Repaired harness passes restart, identity checks, immutable pagination, model-only receipt trust and malformed receipt cases. The browser must still demonstrate the receipt after reload. |
-| Staff bridge and credential isolation | `Operations: electron/service.mjs`, `src/Routing.tsx`, `src/Customers.tsx`, `src/api.ts` | Operations type checking passed on the checkpoint. Existing staff-key/bridge tests and the new real-bridge routing fixture need the composed app run. No renderer token or provider secret is added. |
-| Persistence, migration and runtime privileges | Candidate `009-scoped-routing.sql`, `commercial-postgres.ts`, migration runner, runtime/funding permissions | The real PostgreSQL suite is authored and refuses production/existing schemas. Read-only Neon inventory found only the production branch; no local PostgreSQL or approved isolated target is available. Main now owns Individual migration 009, so routing migration numbering and account identity must be reconciled without rewriting applied history. Real migration, privileges and concurrency remain unverified. |
-| Complete staff-to-customer journey | `tests/operations-routing-journey.spec.ts`, `fixture-server.ts`, `journey.config.ts` | Authored journey starts the real Operations bridge, publishes routes, accepts customer privacy, uses the actual Azure binding and desktop SDK, then reloads the stored receipt. Build, browser run and screenshot inspection are pending. |
+| Global, organization and Individual policy; inherit/reset; independent revisions | `shared/routing-policy.ts`, control-plane `routing.ts`, `commercial.ts`, `commercial-postgres.ts`, `faux/store.ts` | Scoped fixtures cover two organizations and the same person's Individual, CAS, preview, rollback, inherit/reset and forged scope. The current 23-case scoped suite passes in the 83-test main-composition run. Real PostgreSQL persistence remains unverified. |
+| Identity, membership, roles and Personal-only paid admission | Control-plane `commercial.ts`, `routing.ts`, `worker.ts`; desktop `accounts/routing-session.ts`, `agent-gate.ts`, `engines/service.ts` | Five intended new-main regressions were reproduced and repaired. Person access and explicit usage funding are both required for managed Personal work. Funding alone grants no access; one-member Business is excluded. Identity provisioning creates no grant or balance. The Personal browser journey verifies separate plan and usage agreement. |
+| Customer privacy remains separate from staff routing and funding | `shared/routing-policy.ts`, `routing.ts`, `client/console/RoutingPreferences.tsx`, `client/AccountSettings.tsx` | Scoped tests cover consent, authorized scope ownership and staff refusal. Both browser journeys accept and persist Strict revision 1. NC-SETUP-2026-09-27.1 and NC-2026-09-28.1 remain distinct. |
+| Approved connections and configurable model/protocol bindings | Control-plane `managed-bindings.ts`, `routing.ts`, `worker.ts`; `Operations: src/Routing.tsx` | Transport fixtures exercise AWS Responses/Chat/Converse/Messages, Azure Responses/Chat, Vertex GenerateContent/Messages and OpenRouter Chat, including tools and usage. The browser uses the actual Azure binding with synthetic loopback transport. No provider has funded live qualification evidence. |
+| Endpoint, credential and downstream restrictions | `managed-bindings.ts`, `server/engines/openrouter.ts` | The recorded 31 binding cases cover host allowlists, redirects, credentials, scope, served-route attribution and tool withholding. The 16 direct OpenRouter cases include ZDR preservation and refusal before credentials/network when weakened. No secret values enter the renderer. |
+| Strict, accepted exceptions and source rules precede ranking | `shared/routing-policy.ts`, `routing.ts`, `managed-inference.ts` | Recorded policy/scoped fixtures cover stale or mismatched evidence, geography, privacy, quality, zero quota, and before-send primary/backup exclusions. Real account privacy and quota qualification remain separate. |
+| Conservative same-or-lower estimates and one job cap | `shared/routing-policy.ts`, `funding.ts`, `managed-inference.ts`, `server/spend-exposure.ts` | Policy cases compare cache/long-context rates and fees. Scoped cases preserve the original cap, retain uncertain primary costs and reserve backup attempts independently. Promotional offsets remain separate from debit. |
+| Bounded, model-specific failover; no refusal or partial-response replay | `managed-inference.ts`, `managed-bindings.ts`, `managed-normalization.ts` | Capacity, cooldown, uncertain-hold, partial-output, refusal and incompatible native-state fixtures pass. A dispatch-write cancellation originally sent and settled; the repaired regression proves zero sends/backups, 499, retained uncertain hold, no settlement or cooldown. |
+| Derived restrictions through tools, follow-ups, carried context and writing repair | `shared/harness.ts`, `server/harness/{native-agent,policy,model-api-adapter,model-session-run,nectovia-model-adapter}.ts` | The recorded 22-case harness green retains its original nine-failure evidence. Two real Nectovia ModelAdapter cases prove a permitted request succeeds and a forbidden connection stops before reservation/provider send. |
+| Dynamic authenticated prices/capabilities and deliberate old-client refusal | `server/engines/nectovia.ts`, `engines/service.ts`, `accounts/routing-session.ts`, control-plane `routing.ts`, `managed-inference.ts` | Current 18 client cases pass, including non-Luna Personal host dispatch, snapshot expiry and receipt attribution. Missing/v1 protocol requests return 426 before reserve/send for versioned routes. The real browser route needs no hardcoded Luna rate entry. |
+| Durable successful/failed receipts in Home, conversation and task details | `server/harness/{run-service,routing-receipts}.ts`, `server/app.ts`, `client/console/{DiomedesHome,ThreadView,ManagedRoutingReceipt}.tsx`, `client/workbench/RunInspector.tsx` | Harness fixtures cover restart, immutable pagination, identity, model-only trust and malformed receipts. The browser reproduced a missing Home mount after successful persistence. The repair reuses the existing receipt view; both Business and Personal details survive reload. Resetting Personal routing does not rewrite its old receipt. |
+| Operations controls, staff bridge and credential isolation | `Operations: electron/service.mjs`, `src/{Routing,Customers,Admin,api}.tsx/ts` | Operations typecheck and build pass. Both browser journeys use the actual staff bridge. After formal test ownership transfer, the fixture owns its own unqualified route and compares rollback to captured initial tiers. Full Operations rerun: 24/24 passed, no skips; the original 22-pass/2-fail run is retained. Independent frontend/bridge source review passed. |
+| Persistence, migration and runtime privileges | Immutable `009_individual_plans.sql`, additive `010-scoped-routing.sql`, `commercial-postgres.ts`, migration runner and permission SQL | Source tests enforce unchanged 009 and ordered migration history. The authored PostgreSQL suite covers pre-010 grants/admissions, identity-only backfill, repeat application, concurrency, restart and restricted roles. It has no approved disposable target and has not run. No migration was applied by this lane. |
+| Complete staff-to-customer journey | `tests/operations-routing-journey.spec.ts`, handoff `fixture-server.ts` and `journey.config.ts` | Two browser tests pass against the real bridge, persisted faux policy, authenticated account, gateway, actual Azure binding and normalized runtime response. Business and Personal retain distinct policy/admission/funding. Both UIs and persisted receipts were inspected. This uses synthetic transport and disposable local data. |
 
-The 132-test result above is one current composed run, not a sum of historical
-suite totals. Six follow-up cases now pass within it. Broader repository gates,
-Operations checks, the browser journey and real PostgreSQL acceptance remain
-pending. The only source change after that run is the unrun journey's composer
-locator correction. Its two-repository browser freeze has SHA256
-`CF61DB513184D4F35D9BFBB527989756B84DFBEDC094C991CD9D9BA36F2F7E8B`.
-This record does not mark the feature DONE, merged, packaged, deployed or
-live-tested. The work order contains the provisional migration/behavioral
-rollback plan and provider readiness matrix.
+## Recorded gates
+
+- Old-base composed run, 10:32 UTC: 77 control-plane and 55 root tests passed,
+  both typechecks passed; no skips. This predates the Individual main merge.
+- Main-composition run, 11:46 UTC: 49 control-plane and 34 root tests passed,
+  no skips. Both typechecks initially found two unrun PostgreSQL fixture
+  assignments; explicit string validation repaired them. Both passed at 11:48.
+- Response-contract repair, 12:23 UTC: 58/58 passed and control-plane TypeScript
+  passed. It restores funding HTTP 402 and Business membership error contracts
+  while updating registry fixtures to use an actually unregistered route.
+- Final local browser run, 12:54-12:55 UTC: 2/2 passed, root TypeScript and both
+  application builds passed. All 1,499 frozen source hashes were unchanged.
+  The exact staged tree is the committed `dae3a4b` tree above.
+- Operations fixture rerun, 13:21 UTC: 24/24 passed, no skips, four files. App
+  executable source was unchanged; the only change among 1,499 frozen files was
+  the reviewed Operations test. Its exact tree is now committed as `fdd73a7`.
+- Coordinator reported the same 2/2 browser result and both builds on combined
+  `6e9ebba`, including separately owned security fixes. That is a separate
+  integration checkout and evidence stream, not a test run on this branch.
+
+Current source is not marked DONE. The real database gate,
+final combined review/gates and separately authorized live,
+packaged and deployed acceptance remain explicit.

@@ -1,5 +1,22 @@
 # Main composition notes
 
+Current local source is app `dae3a4b60feef2baec1ce15defcb3542c3c5a41c` and
+Operations `fdd73a74b87bcbcf0ddec123cf78117efcf8fa8a`. The main adaptations
+were committed as app `a9bbe8c` and Operations `e8366b4`. The later response
+contract repair is `da04d6a`; the two-journey fixture and Home receipt mount
+are `dae3a4b`. The final local browser run passed both journeys, root TypeScript
+and both builds against the exact `dae3a4b` tree. See `finish.md` and
+`source-candidate.json` for current identities. The later Operations test-only
+repair `fdd73a7` passes 24/24 while retaining production bytes from `e8366b4`;
+the chronological source reviews
+below retain their original scope and acceptance limits.
+
+The coordinator separately composed the security-owned session repair and
+reported both browser journeys and builds passing on `6e9ebba`. That source
+is not imported into this lane. Its combined checks and independent review
+remain the coordinator's evidence; neither historical results nor this lane's
+local run substitute for exact combined acceptance.
+
 Andrew chose adaptation to new main on 2026-09-28. The earlier source review
 below is preserved as the rationale; it is followed here by execution evidence.
 The old-base source and docs are preserved in checkpoint
@@ -48,8 +65,8 @@ path with normalized response, scope headers and funding attribution. The focuse
 run passed 49 control-plane and 34 desktop tests. Both typechecks passed after
 explicit string validation in the unrun PostgreSQL fixture. Exact failures,
 repairs, frozen hashes and successful rerun are in `review-record.md`.
-Security-owned session composition and all broader/browser/database/provider
-gates remain separate.
+Security-owned session composition and broader/database/provider gates remain
+separate. The later local browser result is recorded above and in the review record.
 
 ## Prior source review (before the repair above)
 

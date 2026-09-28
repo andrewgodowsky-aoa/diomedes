@@ -1,7 +1,17 @@
 # Operations-controlled routing
 
-Status: implementation in progress. No production, funded-provider, package or
-deployment acceptance is claimed.
+Forward composition on merged Individual main, with the security repair, is
+recorded in [combined-acceptance.md](operations-routing-handoff/combined-acceptance.md).
+The composed app source checkpoint is `a23b27ed65b90ef697c78e48f4f58792d5f55fa9`.
+The routing owner checkpoint below and its source manifest remain separate evidence.
+
+Status: local source implemented and committed; Business and Personal browser
+journeys pass. Final combined acceptance remains open. No production,
+funded-provider, real database, package or deployment acceptance is claimed.
+Current code: app `dae3a4b60feef2baec1ce15defcb3542c3c5a41c`, Operations
+`fdd73a74b87bcbcf0ddec123cf78117efcf8fa8a`. Current handoff, exact file identities,
+coverage and limits are in `operations-routing-handoff/finish.md` and
+`operations-routing-handoff/source-candidate.json`.
 
 ## Work order
 
@@ -24,8 +34,8 @@ deployment acceptance is claimed.
 | Requirement | Existing authority and intended change |
 | --- | --- |
 | Published defaults and account overrides | Extend CommercialService and its PostgreSQL/faux transactions; preserve compare-and-set, audit and append-only policy revisions. |
-| Customer privacy | Reuse NC-SETUP-2026-09-27.1 definitions in a shared account preference contract. Main has no implementation of those profiles. Operations reads this authority; it cannot change consent. |
-| Individual identity and funding | Main's Personal workspace has no hosted tenant and commercial grants require organizations. Resolve the minimum real Individual contract before admission; do not fabricate a Business organization. |
+| Customer privacy | Reuse NC-SETUP-2026-09-27.1 through one shared account preference contract, composed with the policy/setup dependency. Operations reads this authority; it cannot change consent. |
+| Individual identity and funding | Reuse main's paid person grant and append a Personal-only billing scope with tenant equal to person. Managed Personal work requires the person plan and a separate funded usage agreement. Identity creation issues neither. |
 | Catalog and four providers | Replace the managed registry's code-only generation table with validated model bindings to approved server connections. Existing AWS Responses transport, endpoint guards and normalization are the starting points. |
 | Privacy and price eligibility | Intersect mandatory, customer and source requirements before ranking. Bind evidence to the actual connection/model/protocol/features and versioned price. |
 | Failover and accounting | Extend ManagedInferenceService's existing FundingService lifecycle. Every attempt keeps the root job and its own reservation; uncertain cost remains held. |
@@ -75,7 +85,11 @@ appends routing as 010.
 Operations main also moved to `d0d04da058e7e9fdaeb89f6b28da2ad933f678de`
 (PR #6), overlapping this feature's Customers, API and staff bridge files.
 That source is also imported locally. Nine app conflicts are resolved; Operations
-merged without conflicts. The merge commits and post-repair gates remain pending.
+merged without conflicts. App merge `a9bbe8c` and Operations merge `e8366b4`
+record this adaptation. Five original authority regressions were reproduced,
+repaired and passed in the 83-test main-composition run; both typechecks then
+passed after a fixture-only correction. Later browser and response-contract
+results are recorded below.
 The current test results remain valid only for their recorded candidate, not
 for the new main or a future composed tree. No deployment or migration claim
 is inferred from the merge.
@@ -103,14 +117,28 @@ prove this company's account meets them.
 
 ## Current implementation and acceptance gaps (2026-09-28)
 
-The source is a local candidate, not an accepted feature. The current composed
-integration run at 10:32:53-10:33:34 UTC passed all 77 control-plane cases,
-all 55 desktop/harness cases, and both TypeScript checks. No skips, SDK stderr
-or source drift occurred. Evidence is retained in
-`test-results/operations-routing-integration-green-20260928-103253/`.
-Operations type checking passed on its unchanged checkpoint at 08:36:43 UTC;
-its full bridge tests, the browser journey, broader compatibility and real
-database checks remain pending.
+The source is a local candidate, not an accepted feature. The final local UI
+run at 12:54:49-12:55:32 UTC passed both Business and Personal journeys,
+root TypeScript and both application builds. All 1,499 frozen source hashes
+were unchanged; staged tree `e810433d10d0f26480b9cc23d92ebd0ea31f0f46` is now
+the committed `dae3a4b` tree. Evidence:
+`test-results/operations-routing-personal-ui-20260928-125449/`.
+The preceding response-contract run passed 58/58 and control-plane TypeScript.
+The main adaptation passed 49 control-plane and 34 root tests; both typechecks
+passed after explicit database-fixture string validation.
+
+The earlier 10:32 run passed 77 control-plane and 55 desktop/harness cases
+plus both typechecks on the old-base composition. Its original evidence in
+`test-results/operations-routing-integration-green-20260928-103253/` remains
+historical, not a fresh run on current main. Do not add these separate totals.
+The full Operations suite originally recorded 22 passed and 2 stale fixture
+failures. After formal handoff, a dedicated synthetic unqualified route and
+rollback comparison to captured original tiers repaired the test. The full
+rerun passed 24/24 with no skips on the exact tree now committed as `fdd73a7`.
+Operations production bytes are unchanged; both the original failure and green
+logs remain under `test-results/operations-routing-{ui-diagnostic,ops-green}-*`.
+Real PostgreSQL, final combined gates/review, funded providers, packaging and
+deployment remain separate acceptance requirements.
 
 The original diagnostic preserved five type errors and three fixture failures.
 The next run passed but exposed SDK errors that its assertions missed. Stronger
@@ -144,9 +172,10 @@ The earlier red and the independent review remain in the review record.
   ordered backups, evidence/configuration, scope details, preview/history and
   staff-only bridge calls. Renderer credentials remain absent.
 - Customer `RoutingPreferences.tsx` and `ManagedRoutingReceipt.tsx`: consent and
-  existing run details. Both customer mounts are applied. Durable propagation,
-  failure receipts and the conversation reader pass the 22-case composed
-  harness suite; the browser journey remains unrun.
+  existing run details. Home, ThreadView and RunInspector mount the existing
+  receipt projection. Durable propagation, failure receipts and the conversation
+  reader pass the recorded harness suite. Both browser journeys show actual
+  routing details after reload; Personal reset preserves its historical receipt.
 
 After a host restart, claims were recovered under PID 67556. Andrew reconfirmed
 routing ownership of six paths overlapping the separately active Individual tier feature:
