@@ -268,13 +268,14 @@ export const defaults = (): Settings => ({
  * a reader that holds `state.json` for the microseconds of one read - the
  * desktop client, a backup or indexing service, a second Diomedes, a test
  * polling the file - makes this rename fail with EPERM while nothing is wrong.
- * The next attempt succeeds. Without the retry a single unlucky read turns a
+ * A later attempt can succeed. Without the retry a single unlucky read turns a
  * durable write into a thrown error, and because every state write runs inside
  * `locked()`, that throw reloads the last state from disk and fails the person's
  * run: the proposal they were about to be shown is discarded for a collision
  * nobody needed to see. `FileRunStore` already guards its run records this way
  * (server/harness/run-store.ts); project state never got the same guard.
- * Attempts are bounded and the final failure is still raised, so a real
+ * Six attempts use 1.55 seconds of backoff: a short-lived reader can
+ * outlast a 300 ms retry window. The final failure is still raised, so a real
  * permission fault is reported rather than retried into silence.
  *
  * `guard` is re-run before every attempt, not once: it is the caller's
@@ -300,7 +301,7 @@ async function replaceFile(temp: string, target: string, guard?: () => Promise<v
         !['EPERM', 'EACCES', 'EBUSY'].includes(String(error.code))
       )
         throw error;
-      await new Promise((resolve) => setTimeout(resolve, 20 * (attempt + 1)));
+      await new Promise((resolve) => setTimeout(resolve, 50 * 2 ** attempt));
     }
   }
 }
