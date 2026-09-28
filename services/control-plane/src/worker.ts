@@ -399,7 +399,7 @@ export type GatewayEnv = WorkerEnv & {
   STAFF_WORKOS_API_KEY?: string;
   MANAGED_SPEND_CEILING_MICRO_USD?: string | number;
   MANAGED_MAX_OUTPUT_TOKENS?: string | number;
-  /** How many active members a business may have for an Individual plan to cover it. Blank: 1. */
+  /** Legacy configuration only. Individual never covers a Business, at any member count. */
   INDIVIDUAL_MAX_ACTIVE_MEMBERS?: string | number;
 };
 

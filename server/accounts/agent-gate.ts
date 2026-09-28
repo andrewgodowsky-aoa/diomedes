@@ -152,7 +152,7 @@ export class AccountAgentGate implements AgentGatePort {
       this.session.includes(organizationId, AGENT_FEATURE) &&
       !this.session.includes(organizationId, MANAGED_INFERENCE)
     )
-      // A sole proprietor covered by their own Individual plan reads the plan's own sentence.
+      // Preserve the explanation for historical access snapshots; current Business grants stand alone.
       throw usageRefusal(isPersonPlan(this.session.entitlement(organizationId)?.plan) ? MANAGED_USAGE_NOT_INCLUDED_PERSONAL : MANAGED_USAGE_NOT_INCLUDED);
     const decision = await this.session.admitAgent({
       organizationId,
