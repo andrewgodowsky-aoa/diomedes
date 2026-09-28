@@ -1,6 +1,6 @@
 # Account security with Personal access
 
-Status: composed source repair prepared; GREEN is UNRUN. Original Personal run had three intended failures and four passing controls on unchanged main. Composition and the two reproduced guards are now applied; acceptance remains pending.
+Status: composed security audit passed all 52 cases. Covering checks then found three stale positive admission fixtures (37/40 passed); root TypeScript is UNRUN. Acceptance remains pending.
 
 Base: `1af37e085ef24fc6c92d6b2b8510fc52a504bd1b` (PR176, Individual plans).
 Branch: `feature/accounts-security-personal-access`.
@@ -98,3 +98,18 @@ Prepared source SHA256: `2307ed7db08887e04926c595db5722beefa3629e8b1d3fcc239fa64
 3. `tsc --noEmit` at the root.
 
 All three are UNRUN on the composed source. Source inspection found that some legacy positive admission fixtures use synthetic `person_1`; any resulting covering failure must be reproduced and corrected in the fixture under its own claim, never by weakening the person guard. The independent reviewer agreed with the two proposed boundaries; applied-source review and fresh verification remain required. This candidate is not merged, pushed, deployed or DONE.
+
+## Composed audit GREEN and covering stop
+
+The architect reviewed the applied diff and all 16 hashes on clean `38fd5648e1b5c630f0b045f72d5b4bda10ce9785`, found no concrete blocker to the bounded gate, and granted the three serial commands. Own slot `slot_mul6vagk_137f56a0` was acquired at 11:53:27.477Z and released successfully at 11:54:19.659Z after the second command failed. Journal lines 1317-1318 and slot-history line 964 bind the window. All 16 source/test/configuration hashes matched before and after each command.
+
+| Original record and log | UTC start to finish | Actual result |
+| --- | --- | --- |
+| green-personal-and-audit-v1 | 11:53:42.1328208-11:53:49.8316752 | All 52 passed (45 historical audit, seven Personal), no skips/failures; exit 0. |
+| covering-individual-admissions-v1 | 11:54:14.3941796-11:54:18.9880911 | 37 passed, three failed, 40 total, no skips; exit 1. |
+
+The seven Personal cases now reach the assertions that original RED stopped before: replacement current identity/bearer/access and projection preservation, wrong-person refusal followed by uncached re-asking and correct-answer recovery. The unchanged historical 45-case audit also passed on these composed bytes. This is author-executed offline verification, not independent execution or full application acceptance.
+
+The covering run passed all 16 existing Individual cases and 21 of 24 admission-answer cases. Three synthetic positive admissions were refused: cache replacement at line 127, the 60-second cap at 177, and the shorter expiry at 188 (the latter read no validUntil from a refusal, producing NaN). All use the helper whose pins name `person_1`, not the actual signed-in person. The real-service cache control passed. These originals reproduce the stale fixture issue anticipated during source inspection; the production guard is not weakened.
+
+Execution stopped immediately and released the slot. Root TypeScript did not run. The proposed separate fixture correction captures the actual signed-in person ID for the base admission and its malformed-policy/wrong-organization variants, preserving each negative case's intended fault and all existing expectations. That file requires its own ownership claim before editing. Source remains frozen at `2307ed7d...`; fixture repair, covering rerun, TypeScript, independent final review and broader/composed gates remain pending.
