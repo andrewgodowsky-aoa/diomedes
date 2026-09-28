@@ -27,10 +27,9 @@ export interface Configuration {
   /** Why a FUNDING_DATABASE_URL that was set is refused. A rule name only. */
   fundingProblem?: string;
   /**
-   * INDIVIDUAL_MAX_ACTIVE_MEMBERS: the most active members a business may have for a person's
-   * Individual plan to cover it. Unset or blank is 1 (the sole proprietor). Any other value that is
-   * not a whole number of at least 1 refuses the configuration, as the MANAGED_* settings refuse
-   * the gateway: a threshold that ignored a typo would not be a threshold. Absent reads as the default.
+   * Legacy INDIVIDUAL_MAX_ACTIVE_MEMBERS remains parseable for existing deployments. Its value
+   * grants no Business coverage: an Individual plan covers Personal work only. Unset or blank reads
+   * as 1; a configured value must be a whole number of at least 1.
    */
   individual?: IndividualCoverage;
 }

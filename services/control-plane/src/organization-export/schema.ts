@@ -38,7 +38,7 @@ const grantSummarySchema = z.strictObject({
   validFrom: time,
   validUntil: time,
   state: slug,
-  /** The owner's own Individual grant, shown beside the business's when it covers a sole proprietor. */
+  /** Legacy person-grant scope remains readable; it grants no Business coverage. */
   scope: z.literal('person').optional(),
 });
 
@@ -63,7 +63,7 @@ export const accessViewSchema = z.strictObject({
   revision: z.number().int().min(0),
   grants: z.array(grantSummarySchema).max(10_000).nullable(),
   checkedAt: time,
-  /** Present when the owner's own Individual plan covers the business (2026-09-28). */
+  /** Legacy field remains readable; new access views do not assert Individual Business coverage. */
   coveredBy: z.literal('individual').optional(),
 });
 
