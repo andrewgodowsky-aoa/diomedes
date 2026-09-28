@@ -299,6 +299,33 @@ test('a business on a plan runs them: Run once is admitted and its schedule turn
   expect((await api<AutomationList>(list)).summary.scheduled).toBe(1);
 });
 
+test("a one-person business runs them under its owner's Individual plan", async () => {
+  // Harbor Hardware has no business plan and one active member, so its owner's Individual plan
+  // covers it: the business's access view reads the Individual plan, Agent included.
+  const holder = await cloud.accounts.signIn(await staffToken(DEMO_ACCOUNTS.harborOwner.email));
+  await cloud.commercial.issuePersonGrant(
+    await staffToken(DEMO_ACCOUNTS.staffBilling.email),
+    holder.person.id,
+    { planId: 'individual', source: 'subscription', reference: 'inv_individual', note: '' },
+  );
+  await signIn(DEMO_ACCOUNTS.harborOwner.email);
+  const { automation, list } = await configureBrief(orgs.harbor);
+  expect((await api<AutomationDetail>(automation)).automation.run).toEqual({
+    allowed: true,
+    reason: null,
+  });
+  const pressed = await api<RunOnceResult>(`${automation}/run`, 'POST', {
+    commandId: 'harbor-individual-run-once',
+  });
+  expect(pressed.occurrence.admission.state).toBe('admitted');
+  await service().settled(pressed.occurrence);
+  const saved = await saveSchedule(automation);
+  expect(saved.automation.schedule.enableBlocked).toBeNull();
+  const response = await turnOn(automation, saved.automation.schedule.generation);
+  expect(response.status).toBe(200);
+  expect((await api<AutomationList>(list)).summary.scheduled).toBe(1);
+});
+
 test('a schedule turned on under a plan starts nothing once the plan ends, and says why', async () => {
   await signIn(DEMO_ACCOUNTS.owner.email);
   const { project, automation, list } = await configureBrief(orgs.juniper);
