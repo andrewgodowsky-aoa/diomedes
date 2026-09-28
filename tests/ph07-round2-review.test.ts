@@ -124,7 +124,11 @@ let base: string;
 let sink: MemoryObservationSink;
 /** When set, answers the faux account service's requests instead of the service (null passes through). */
 let intercept: ((request: Request) => Promise<Response> | null) | null;
-const isAdmission = (request: Request) => request.method === 'POST' && new URL(request.url).pathname.endsWith('/agent-admissions');
+const isAdmission = (request: Request) => {
+  if (request.method !== 'POST') return false;
+  const path = new URL(request.url).pathname;
+  return path.endsWith('/agent-admissions') || /^\/account\/routing\/(organization|individual)\/[^/]+\/admit$/.test(path);
+};
 
 const operator = (internal: string[], overrides: Partial<ObservationOperatorConfig> = {}): ObservationOperatorConfig => ({
   mode: 'memory',

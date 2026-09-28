@@ -1,12 +1,14 @@
 /** Ephemeral, person-and-scope-bound routing cache. The control plane remains authoritative. */
 import { z } from 'zod';
+import { SIGN_IN_REQUIRED } from '../../shared/accounts.js';
 import { routingScopeKey, type AccountScope, type IndividualAccount, type RoutingPreferenceWrite } from '../../shared/routing-policy.js';
 import type { AccessFeature } from '../../shared/access.js';
 import type { EntitlementView } from '../../shared/workspaces.js';
 import type { NectoviaPolicy } from '../engines/nectovia.js';
 import { EngineError } from '../engines/process.js';
+import { ApiError } from '../paths.js';
 import type { WorkspaceService } from '../workspaces.js';
-import type { AccountSessionService } from './session.js';
+import { refusedMembership, type AccountSessionService } from './session.js';
 import type { AdmittedAgentWork, AgentWork } from './agent-gate.js';
 
 const admissionSchema = z.object({ admissionId: z.string().min(1), validUntil: z.iso.datetime(),
@@ -18,6 +20,16 @@ const admissionSchema = z.object({ admissionId: z.string().min(1), validUntil: z
     organizationId: z.string().nullable(), tenantId: z.string(), personId: z.string(), planId: z.string().nullable(),
     accessRevision: z.number().int(), policyRevision: z.number().int(), rootJobId: z.string().nullable() }),
 });
+
+function admissionRefusal(code: string, reason: string) {
+  const refusal = new EngineError(code === SIGN_IN_REQUIRED ? 'SIGN_IN_REQUIRED' : 'AGENT_NOT_INCLUDED', reason, false);
+  Object.defineProperty(refusal, 'refusalCode', { value: code, enumerable: false });
+  return refusal;
+}
+
+function refusedBusinessScope(error: unknown) {
+  return refusedMembership(error) || (error instanceof ApiError && error.status === 403 && error.details.code === 'scope_forbidden');
+}
 
 export class AccountRoutingSession {
   private person: string | null = null;
@@ -102,11 +114,28 @@ export class AccountRoutingSession {
       this.individualAccess.value.features.includes(feature);
   }
   async admit(work: AgentWork): Promise<AdmittedAgentWork> {
-    await this.refresh(work.projectId);
+    try {
+      await this.refresh(work.projectId);
+    } catch (error) {
+      if (this.scopeFor(work.projectId)?.kind === 'organization' && refusedBusinessScope(error))
+        throw admissionRefusal('not_a_member', 'You are not a member of this business, so the Nectovia Agent cannot work for it.');
+      throw error;
+    }
     const scope = this.scopeFor(work.projectId), person = this.current();
     if (!scope || !person) throw new EngineError('AGENT_NOT_INCLUDED', 'This work has no authorized account. Nothing was sent.', false);
-    const raw = await this.session.call(token => this.session.backend.client.admitScopedAgent(token, scope,
-      { surface: work.surface, routeKind: work.routeKind ?? 'byo', rootJobId: work.rootJobId }));
+    let raw: unknown;
+    try {
+      raw = await this.session.call(token => this.session.backend.client.admitScopedAgent(token, scope,
+        { surface: work.surface, routeKind: work.routeKind ?? 'byo', rootJobId: work.rootJobId }));
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401)
+        throw admissionRefusal(SIGN_IN_REQUIRED, error.message);
+      if (scope.kind === 'organization' && refusedBusinessScope(error))
+        throw admissionRefusal('not_a_member', 'You are not a member of this business, so the Nectovia Agent cannot work for it.');
+      throw admissionRefusal('entitlement_unknown', scope.kind === 'individual'
+        ? 'The account service could not be reached, so the Nectovia Agent could not confirm your plan includes it. Nothing was sent.'
+        : 'The account service could not be reached, so the Nectovia Agent could not confirm this business includes it. Nothing was sent.');
+    }
     this.assertScope(work.projectId, person, scope);
     const parsed = admissionSchema.safeParse(raw);
     if (!parsed.success || this.current() !== person || parsed.data.pins.personId !== person || parsed.data.pins.scope.kind !== scope.kind ||
@@ -115,7 +144,7 @@ export class AccountRoutingSession {
         Date.parse(parsed.data.validUntil) <= this.now())
       throw new EngineError('ACCOUNT_CHANGED', 'The account service did not return a current admission for this work. Nothing was sent.', false);
     const answer = parsed.data;
-    if (!answer.decision.admitted) throw new EngineError('AGENT_NOT_INCLUDED', answer.decision.reason, false);
+    if (!answer.decision.admitted) throw admissionRefusal(answer.decision.code, answer.decision.reason);
     return { admissionId: answer.admissionId, organizationId: answer.pins.organizationId, scope, personId: person,
       planId: answer.pins.planId, policyRevision: answer.pins.policyRevision, routeKind: work.routeKind ?? 'byo', surface: work.surface,
       validUntil: answer.validUntil };
