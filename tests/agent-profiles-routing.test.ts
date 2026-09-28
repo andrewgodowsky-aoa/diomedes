@@ -10,7 +10,7 @@ import path from 'node:path';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createApp } from '../server/app.js';
-import { forgetCatalog } from '../server/models.js';
+import { codexCatalog, forgetCatalog, recordEngineCatalog } from '../server/models.js';
 import type { NativeGenerator } from '../server/native-work.js';
 import { threadChoosesItsOwnModel } from '../server/agent-profiles.js';
 import { runtimeModelDifference } from '../shared/agent-profiles.js';
@@ -304,6 +304,7 @@ describe('routing preferences and fallback', () => {
       }),
     );
     forgetCatalog();
+    recordEngineCatalog(codexCatalog());
     const unlisted = await profile({ name: 'Unlisted model' });
     const deeper = await profile({ name: 'Too deep', model: 'gpt-5.5', effort: 'xhigh' });
     const offline = await profile({ name: 'Offline', engine: 'opencode', model: 'glm-9' });

@@ -204,6 +204,9 @@ export interface PreviewRejection {
 export const LIVE_REDACTION = Object.freeze({
   holdChars: 32,
   wordChars: 256,
+  /** Bounds on output waiting behind another channel, measured in UTF-16 units and places. */
+  pendingChars: 2 * 1024 * 1024,
+  pendingFrames: 8192,
 });
 
 /** Past this, a window no clean cut has shortened is redacted again only once it grows by a quarter. */
@@ -304,31 +307,134 @@ function streamRedaction(redact: (text: string) => string) {
   };
 }
 
+/** A place in the attempt's output order, released only after its channel has redacted it. */
+interface LiveChannel {
+  reserve(chars: number): (deliver: () => void) => void;
+  fail(message: string): never;
+}
+
 /**
- * One attempt's live channels, kept in the order the engine produced them. A text or thinking
- * sink holds back the newest part of its stream (`LIVE_REDACTION`), and anything on another channel
- * of the same attempt first shows what the others hold: a tool line never overtakes the text
- * written before it, and an answer never overtakes its thinking. So at most one channel holds text
- * at a time, and `flush` shows it when the attempt ends, before the channels close.
+ * One attempt's live channels, kept in producer order. Switching channels is not an end-of-text
+ * boundary: a secret can continue after a tool notification. Later frames wait for earlier text
+ * to become safe, or for the attempt to finish. Stop discards the held text through each sink.
  */
 export interface LiveOrder {
-  /** Joins a channel by its flush, and returns what the channel calls before it sends anything. */
-  join(flush: () => void): () => void;
+  join(flush: () => void, options?: { optional?: boolean }): LiveChannel;
   /** Shows what every channel still holds. */
   flush(): void;
 }
 
 export function liveOrder(): LiveOrder {
   const channels: (() => void)[] = [];
+  const pending: { chars: number; deliver?: () => void }[] = [];
+  let pendingChars = 0;
+  let failure: Error | undefined;
+  let draining = false;
+  const drain = () => {
+    if (draining) return;
+    draining = true;
+    try {
+      while (pending[0]?.deliver) {
+        const place = pending.shift()!;
+        pendingChars -= place.chars;
+        place.deliver!();
+      }
+    } finally {
+      draining = false;
+    }
+  };
   return {
-    join(flush) {
+    join(flush, options) {
       channels.push(flush);
-      return () => {
-        for (const channel of channels) if (channel !== flush) channel();
+      const fail = (message: string): never => {
+        const error = Object.assign(new Error(message), { code: 'OUTPUT_LIMIT' });
+        if (!options?.optional) failure ??= error;
+        throw error;
+      };
+      return {
+        fail,
+        reserve(chars) {
+          if (failure) throw failure;
+          if (pending.length >= LIVE_REDACTION.pendingFrames || pendingChars + chars > LIVE_REDACTION.pendingChars)
+            fail('Too many live frames are waiting for redaction.');
+          const place: { chars: number; deliver?: () => void } = { chars };
+          pending.push(place);
+          pendingChars += chars;
+          let released = false;
+          return (deliver: () => void) => {
+            if (released) return;
+            released = true;
+            place.deliver = deliver;
+            drain();
+          };
+        },
       };
     },
     flush() {
+      // A transport may catch a callback error; it cannot turn a refused stream into success.
+      if (failure) throw failure;
       for (const channel of channels) channel();
+    },
+  };
+}
+
+/**
+ * Redact each channel as one stream while preserving the original chunk positions across channels.
+ * A redaction spanning a chunk boundary is emitted with the later chunk; no partial credential is
+ * emitted with the earlier one. Clean cuts bound the raw window, as in `streamRedaction`.
+ */
+function orderedRedaction(redact: (text: string) => string, channel: LiveChannel, emit: (text: string) => void) {
+  let text = '';
+  let released = 0;
+  let read = 0;
+  const chunks: { end: number; release: (deliver: () => void) => void }[] = [];
+  const settle = (final: boolean) => {
+    let cut = text.length;
+    if (!final) {
+      const floor = Math.max(0, text.length - LIVE_REDACTION.wordChars);
+      let word = text.length;
+      while (word > floor && !WHITESPACE.test(text[word - 1])) word -= 1;
+      cut = Math.min(text.length - LIVE_REDACTION.holdChars, word);
+      if (!chunks.length || chunks[0].end > cut) return;
+      if (text.length > SLOW_WINDOW_CHARS && text.length < read + read / 4) return;
+    }
+    read = text.length;
+    const whole = redact(text);
+    const safeEnd = final ? whole.length : sharedPrefix(whole, redact(text.slice(0, cut)));
+    let consumed = 0;
+    while (chunks.length && chunks[0].end <= cut) {
+      const chunk = chunks.shift()!;
+      let end = Math.min(safeEnd, sharedPrefix(whole, redact(text.slice(0, chunk.end))));
+      const last = whole.charCodeAt(end - 1);
+      if (last >= 0xd800 && last <= 0xdbff) end -= 1;
+      end = Math.max(released, end);
+      const piece = whole.slice(released, end);
+      released = end;
+      consumed = chunk.end;
+      chunk.release(() => { if (piece) emit(piece); });
+    }
+    if (final || (consumed && whole === whole.slice(0, released) + redact(text.slice(consumed)))) {
+      text = final ? '' : text.slice(consumed);
+      for (const chunk of chunks) chunk.end -= consumed;
+      released = 0;
+      read = text.length;
+    }
+  };
+  return {
+    push(chunk: string) {
+      if (text.length + chunk.length > LIVE_REDACTION.pendingChars)
+        channel.fail('The live redaction window exceeded its limit.');
+      const release = channel.reserve(chunk.length);
+      text += chunk;
+      chunks.push({ end: text.length, release });
+      settle(false);
+    },
+    flush: () => settle(true),
+    drop() {
+      for (const chunk of chunks.splice(0)) chunk.release(() => {});
+      text = '';
+      released = 0;
+      read = 0;
     },
   };
 }
@@ -349,7 +455,7 @@ export interface PreviewSink {
  *
  * With a redaction, the stream is redacted as one piece across chunk
  * boundaries: its newest part is held back (`LIVE_REDACTION`) until more text
- * arrives, another channel of the attempt speaks (`order`), or `flush` is
+ * arrives, or `flush` is
  * called as the attempt ends. A release longer than one frame is split into
  * frames within the budget. Without one, each chunk is one frame, as it comes.
  * A poisoned or stopped stream never shows what it held.
@@ -411,25 +517,46 @@ export function previewSink(options: {
   };
   /** Released text, in frames within the budget. */
   const release = (text: string) => {
+    if (poisoned || options.signal?.aborted) return;
     for (const piece of splitBytes(text, OUTPUT_DELTA.maxChunkBytes)) if (!send(piece)) return;
   };
+  let ordered: ReturnType<typeof orderedRedaction> | undefined;
   const flush = () => {
+    if (ordered) return poisoned || options.signal?.aborted ? ordered.drop() : ordered.flush();
     if (!held) return;
     if (poisoned || options.signal?.aborted) return held.drop();
     release(held.flush());
   };
-  const releaseOthers = options.order?.join(flush);
+  const channel = options.order?.join(flush);
+  if (redact && channel) ordered = orderedRedaction(redact, channel, release);
   const sink = ((raw: string) => {
     if (poisoned || options.signal?.aborted) return;
-    releaseOthers?.();
     if (!redact || !held) {
-      send(raw);
+      if (channel) channel.reserve(raw.length)(() => { if (!poisoned && !options.signal?.aborted) send(raw); });
+      else send(raw);
       return;
     }
     // The adapter's bound is still one chunk, measured after redaction. The chunk then joins the
     // rest of the stream, so a secret split across chunks is redacted whole.
-    if (!stamp(redact(raw))) return held.drop();
-    release(held.push(raw));
+    let clean: string;
+    try { clean = redact(raw); } catch (error) {
+      poisoned = true;
+      ordered?.drop();
+      held.drop();
+      throw error;
+    }
+    if (!stamp(clean)) { ordered?.drop(); return held.drop(); }
+    if (ordered) {
+      try { ordered.push(raw); } catch (error) {
+        poisoned = true;
+        ordered.drop();
+        held.drop();
+        if (!(error instanceof Error) || !('code' in error) || error.code !== 'OUTPUT_LIMIT') throw error;
+        const failure: PreviewRejection = { code: 'OUTPUT_LIMIT', reason: error.message };
+        if (options.onInvalid) options.onInvalid(failure);
+        else throw error;
+      }
+    } else release(held.push(raw));
   }) as PreviewSink;
   sink.flush = flush;
   return sink;
@@ -493,12 +620,11 @@ export function activitySink(options: {
   readonly redact?: (text: string) => string;
   readonly onActivity?: (frame: ToolActivity) => void;
   readonly signal?: AbortSignal;
-  /** The attempt's other live channels: what they hold is shown before this tool line. */
+  /** The attempt's other live channels: this line waits until earlier text is safe. */
   readonly order?: LiveOrder;
 }): (raw: RawToolActivity) => void {
   let seq = 0;
-  // Activity holds nothing back; it only releases what the text and thinking channels hold.
-  const releaseOthers = options.order?.join(() => undefined);
+  const channel = options.order?.join(() => undefined);
   const clean = (text: string, max: number) => {
     const redacted = (options.redact ? options.redact(text) : text)
       .replace(/[\u0000-\u0008\u000b-\u001f\u007f‪-‮]/g, '')
@@ -507,7 +633,6 @@ export function activitySink(options: {
   };
   return (raw: RawToolActivity) => {
     if (options.signal?.aborted) return;
-    releaseOthers?.();
     const summary = clean(raw.summary || raw.tool, 300);
     const detail = raw.detail === undefined ? undefined : clean(raw.detail, 4000);
     const frame = {
@@ -523,7 +648,9 @@ export function activitySink(options: {
     const parsed = toolActivitySchema.safeParse(frame);
     if (!parsed.success) return;
     seq += 1;
-    options.onActivity?.(parsed.data);
+    const deliver = () => { if (!options.signal?.aborted) options.onActivity?.(parsed.data); };
+    if (channel) channel.reserve(JSON.stringify(parsed.data).length)(deliver);
+    else deliver();
   };
 }
 
@@ -617,12 +744,14 @@ export function reasoningSink(options: {
   let seq = 0;
   let raw = '';
   let overflow = false;
+  let poisoned = false;
   let lastAt: number | null = null;
   const clean = (text: string) =>
     (options.redact ? options.redact(text) : text).replace(UNSAFE_CHARACTERS, '');
   const held = options.redact ? streamRedaction(options.redact) : undefined;
   /** Redacted text as frames: stripped, split to the frame budget, and never failing anything. */
   const send = (text: string) => {
+    if (poisoned || options.signal?.aborted) return;
     for (const piece of splitBytes(text.replace(UNSAFE_CHARACTERS, ''), REASONING.maxChunkBytes)) {
       const parsed = reasoningPreviewSchema.safeParse({
         kind: 'reasoning-delta',
@@ -644,28 +773,47 @@ export function reasoningSink(options: {
     try {
       return release();
     } catch {
+      poison();
       return '';
     }
   };
+  let ordered: ReturnType<typeof orderedRedaction> | undefined;
+  const poison = () => {
+    // A later chunk cannot safely restart after its secret prefix was discarded.
+    poisoned = true;
+    raw = '';
+    held?.drop();
+    ordered?.drop();
+  };
   const flush = () => {
+    if (ordered) {
+      if (poisoned || options.signal?.aborted) return ordered.drop();
+      try { ordered.flush(); } catch { poison(); }
+      return;
+    }
     if (!held) return;
-    if (options.signal?.aborted) return held.drop();
+    if (poisoned || options.signal?.aborted) return held.drop();
     send(redacted(() => held.flush()));
   };
-  const releaseOthers = options.order?.join(flush);
+  const channel = options.order?.join(flush, { optional: true });
+  if (options.redact && channel) ordered = orderedRedaction(options.redact, channel, send);
   const sink = ((chunk: string) => {
-    if (options.signal?.aborted || typeof chunk !== 'string' || !chunk) return;
-    releaseOthers?.();
+    if (poisoned || options.signal?.aborted || typeof chunk !== 'string' || !chunk) return;
     lastAt = now();
     const room = MAX_RAW_REASONING_CHARS - raw.length;
     if (chunk.length > room) overflow = true;
     if (room > 0) raw += chunk.slice(0, room);
-    send(held ? redacted(() => held.push(chunk)) : chunk);
+    if (ordered) {
+      try { ordered.push(chunk); } catch { poison(); }
+    } else if (channel) {
+      try { channel.reserve(chunk.length)(() => send(chunk)); } catch { poison(); }
+    }
+    else send(held ? redacted(() => held.push(chunk)) : chunk);
   }) as ReasoningSink;
   sink.flush = flush;
   sink.finish = () => {
-    if (lastAt === null) return null;
-    const whole = clean(raw).trim();
+    if (poisoned || lastAt === null) return null;
+    const whole = redacted(() => clean(raw)).trim();
     if (!whole) return null;
     const [kept = ''] = splitBytes(whole, REASONING.maxSavedBytes);
     const text = kept.replace(/[\ud800-\udbff]$/, '');
@@ -751,8 +899,9 @@ const id = z.string().min(1).max(200);
 /**
  * The descriptor every route carries. All ten commands are required keys —
  * an absent answer is not an answer — and no eleventh command may appear.
- * `testedWith` is the exact version the conformance evidence covers; a
- * version change invalidates the proof rather than stretching it.
+ * `testedWith` records the historical build covered by fixture evidence.
+ * Current execution checks protocol capabilities and records its observed build;
+ * a vendor update alone never invalidates a conversation or grants authority.
  */
 export const adapterRouteContractSchema = z.strictObject({
   contractVersion: z.literal(ADAPTER_CONTRACT_VERSION),

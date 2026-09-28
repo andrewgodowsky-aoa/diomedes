@@ -14,14 +14,14 @@
  *
  * On this computer it is an ordinary model-API route: the same guarded
  * transport, the same one streamed Responses exchange through the same SDK as
- * the AWS route (the gateway forwards the SDK's body to GPT-6 Luna on Bedrock),
+ * the AWS route (the gateway forwards the SDK's body to GPT-5.6 Luna on Bedrock),
  * and the same local spend ledger. That ledger is a guard, never the balance:
  * the gateway's funding ledger is the authority, and nothing here shows a
  * local figure as what the business has left.
  */
 import { createOpenAI } from '@ai-sdk/openai';
 import { creditAmount, publishedMonthlyGrant, type JobTier, type UsageClass } from '../../shared/managed-usage.js';
-import { GPT6_LUNA, NECTOVIA_ROUTE } from '../../shared/model-api.js';
+import { MANAGED_LUNA, NECTOVIA_ROUTE } from '../../shared/model-api.js';
 import type { TierResolution } from '../../shared/tier-map.js';
 import { classifyTask, WORK_STYLE_LABELS, type WorkStyle } from '../../shared/work-style.js';
 import { digest } from '../harness/policy.js';
@@ -141,20 +141,20 @@ export async function ensureNectoviaGuard(
  * so no call on this route can settle in a long band.
  */
 export function nectoviaRateCard(model: string): ModelRateCard {
-  if (model !== GPT6_LUNA.model)
+  if (model !== MANAGED_LUNA.model)
     throw new ModelApiError(
       'nectovia_rate_card_missing',
       'Nectovia published a model this version of the app has no price for. Nothing was sent. Update Nectovia to use it.',
       false,
     );
   return {
-    version: GPT6_LUNA.rateCard,
+    version: MANAGED_LUNA.rateCard,
     route: NECTOVIA_ROUTE,
     modelId: model,
-    source: `${GPT6_LUNA.source} Nectovia's local guard; the account service's ledger is the authority.`,
-    shortContextMaxInputTokens: GPT6_LUNA.maxInputTokens,
-    short: { ...GPT6_LUNA.rates },
-    long: { ...GPT6_LUNA.rates },
+    source: `${MANAGED_LUNA.source} Nectovia's local guard; the account service's ledger is the authority.`,
+    shortContextMaxInputTokens: MANAGED_LUNA.maxInputTokens,
+    short: { ...MANAGED_LUNA.rates },
+    long: { ...MANAGED_LUNA.rates },
   };
 }
 
@@ -166,7 +166,7 @@ export function nectoviaRateCard(model: string): ModelRateCard {
 export function nectoviaLimits(limits: RespondLimits): RespondLimits {
   return {
     ...limits,
-    maxOutputTokens: Math.min(limits.maxOutputTokens, GPT6_LUNA.maxOutputTokens),
+    maxOutputTokens: Math.min(limits.maxOutputTokens, MANAGED_LUNA.maxOutputTokens),
     maxRequestBytes: Math.min(limits.maxRequestBytes, 262_144),
   };
 }

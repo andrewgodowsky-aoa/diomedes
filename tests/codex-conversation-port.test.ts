@@ -9,6 +9,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { LIVE_REDACTION, liveOrder, previewSink } from '../shared/adapter-contract';
+import { baselineRedact } from '../server/secrets';
 import {
   createIntegrations,
   createRpcClient,
@@ -101,6 +103,22 @@ test('reasoning summaries reach the thinking sink, a new part as a new paragraph
   expect(answer.text).not.toContain('Weighing');
   expect(deltas.join('')).not.toContain('Weighing');
   expect((await calls()).find((call) => call.method === 'turn/start')?.params.summary).toBe('auto');
+});
+
+test('a live output overflow from real child stdout rejects its turn without escaping the host event handler', async () => {
+  await control({ stream: 'Synthetic output', hold: true });
+  const on = await open();
+  const opened = await on.thread(thread);
+  const order = liveOrder();
+  order.join(() => {}).reserve(LIVE_REDACTION.pendingChars);
+  const sink = previewSink({
+    identity: { projectId: 'P', threadId: 'T', requestId: 'R', runId: 'run', stepId: 'text', attempt: 1, fence: 1 },
+    redact: baselineRedact, order,
+  });
+  await expect(turn(on, opened.threadId, { onDelta: sink })).rejects.toMatchObject({ code: 'OUTPUT_LIMIT' });
+  await on.close();
+  expect(on.closed).toBe(true);
+  expect((await calls()).filter(call => call.method === 'turn/start')).toHaveLength(1);
 });
 
 test('a new process continues a saved thread, and a thread Codex no longer has starts fresh and names it', async () => {

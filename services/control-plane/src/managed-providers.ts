@@ -50,19 +50,19 @@ export interface ProviderRegistryRow {
 const row = (value: ProviderRegistryRow): ProviderRegistryRow =>
   Object.freeze({ ...value, rate: Object.freeze({ ...value.rate }), requestIdHeaders: Object.freeze([...value.requestIdHeaders]) });
 
-/** AWS model card for OpenAI GPT-6 Luna, US Geo cross-Region profile, checked 2026-09-25. */
+/** AWS agreement offer-bklbyf2ewuawu, GPT-5.6 Luna US Geo standard prices, checked 2026-09-28. */
 export const MANAGED_PROVIDERS: readonly ProviderRegistryRow[] = Object.freeze([
   row({
     provider: 'aws-bedrock',
     region: 'us',
-    model: 'us.openai.gpt-6-luna',
+    model: 'us.openai.gpt-5.6-luna',
     endpoint: 'https://bedrock-runtime.us-east-1.amazonaws.com/openai/v1/responses',
     rate: {
-      version: 'aws-bedrock-gpt-6-luna-us-2026-09-25.1',
-      inputMicroUsdPerMillion: 110_000,
-      cacheReadMicroUsdPerMillion: 11_000,
-      cacheWriteMicroUsdPerMillion: 137_500,
-      outputMicroUsdPerMillion: 550_000,
+      version: 'aws-bedrock-gpt-5.6-luna-us-2026-09-28.1',
+      inputMicroUsdPerMillion: 220_000,
+      cacheReadMicroUsdPerMillion: 22_000,
+      cacheWriteMicroUsdPerMillion: 275_000,
+      outputMicroUsdPerMillion: 1_320_000,
     },
     maxOutputTokens: 16_000,
     credential: 'BEDROCK_API_KEY',

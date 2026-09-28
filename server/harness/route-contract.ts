@@ -4,9 +4,9 @@
  *
  * Every entry is a declaration of what the route can honestly do — the
  * commands it answers natively, the ones the host composes, and the ones it
- * does not have at all. A descriptor is evidence-shaped: `testedWith` is the
- * version the adapter was verified against, and a version drift invalidates
- * the proof rather than stretching it.
+ * does not have at all. A descriptor is evidence-shaped: `engine.version` and
+ * `testedWith` name the version the adapter was verified against. These are historical evidence, not a
+ * build allowlist: dispatch proves the selected runtime's capabilities.
  *
  * This registry is the single source for adapter route contracts. The
  * `TextEngineAdapter` implementations expose their entry as `.contract`;
@@ -223,7 +223,7 @@ export const ROUTE_CONTRACTS: Record<string, AdapterRouteContract> = Object.free
   'codex-session': contract(
     'codex-session',
     'external-session',
-    { id: 'codex', version: '0.153.4', protocolVersion: 'codex app-server 0.153.4' },
+    { id: 'codex', version: '0.153.4', protocolVersion: 'codex app-server' },
     commands({
       start: native(
         "Opt-in kept ChatGPT conversation on Diomedes' own Codex app-server; each turn is a fenced RunService step whose thread id is saved before turn/start.",
@@ -276,7 +276,7 @@ export const ROUTE_CONTRACTS: Record<string, AdapterRouteContract> = Object.free
   'codex-report': contract(
     'codex-report',
     'harness-agent',
-    { id: 'codex', version: '0.153.4', protocolVersion: 'codex app-server 0.153.4' },
+    { id: 'codex', version: '0.153.4', protocolVersion: 'codex app-server' },
     HARNESS_COMMANDS('The Codex app-server session is the model adapter.'),
     { transientPreview: 'none', reasoning: 'none', durableEvents: 'run-record' },
     { source: 'runtime-reported' },
@@ -319,7 +319,7 @@ export const ROUTE_CONTRACTS: Record<string, AdapterRouteContract> = Object.free
   codex: contract(
     'codex',
     'external-session',
-    { id: 'codex', version: '0.153.4', protocolVersion: 'codex app-server 0.153.4' },
+    { id: 'codex', version: '0.153.4', protocolVersion: 'codex app-server' },
     commands({
       start: native('askCodex dispatches a turn over the app-server session.'),
       'follow-up': unsupported(

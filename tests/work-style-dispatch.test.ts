@@ -6,7 +6,7 @@ import path from 'node:path';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createApp } from '../server/app.js';
-import { forgetCatalog } from '../server/models.js';
+import { codexCatalog, forgetCatalog, recordEngineCatalog } from '../server/models.js';
 
 /**
  * WorkStyle at dispatch: the model and level a ChatGPT request is actually sent
@@ -57,6 +57,7 @@ async function request(route: string, method = 'GET', body?: unknown) {
 function writeCatalog(models: unknown[]) {
   fs.writeFileSync(path.join(home, 'models_cache.json'), JSON.stringify({ models }), 'utf8');
   forgetCatalog();
+  recordEngineCatalog(codexCatalog());
 }
 async function project() {
   await request('/settings', 'PUT', { services: { codex: true } });

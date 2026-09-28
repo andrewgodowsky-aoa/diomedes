@@ -132,12 +132,12 @@ describe('first-run AI setup and the existing Work pipeline', () => {
       createElement(AIConnections, { settings: initial, save: async () => {}, ownerRoutes: false }),
     );
     expect(customer.match(/<section class="service"/g)).toHaveLength(5);
-    for (const label of ['Tiers', 'AWS Bedrock (GPT-6 Luna)', 'Azure OpenAI', 'OpenRouter', 'Google Vertex AI'])
+    for (const label of ['Tiers', 'AWS Bedrock (GPT-5.6 Luna)', 'Azure OpenAI', 'OpenRouter', 'Google Vertex AI'])
       expect(customer).not.toContain(`aria-label="${label}"`);
     expect(markup).toContain('aria-label="Tiers"');
     expect(markup).toContain('aria-label="Cursor"');
     expect(markup).toContain('aria-label="Devin"');
-    expect(markup).toContain('aria-label="AWS Bedrock (GPT-6 Luna)"');
+    expect(markup).toContain('aria-label="AWS Bedrock (GPT-5.6 Luna)"');
     expect(markup).toContain('aria-label="Azure OpenAI"');
     expect(markup).toContain('aria-label="OpenRouter"');
     expect(

@@ -1,9 +1,9 @@
 /**
  * The direct AWS Bedrock Responses route (SDKR-AWS-01, amended by SDKR-CONN-02).
  *
- * One route, pinned end to end: the Bedrock runtime's OpenAI-compatible
+ * One explicitly selected route: the Bedrock runtime's OpenAI-compatible
  * Responses endpoint in us-east-1, the Geo inference profile
- * `us.openai.gpt-6-luna`, the company's own AWS account, `store: false`, one
+ * `us.openai.gpt-5.6-luna`, the company's own AWS account, `store: false`, one
  * provider exchange per call and no fallback of any kind. There is no Gateway,
  * no bare model string, no ambient `OPENAI_API_KEY` or AWS environment
  * variable, no SDK retry and no SDK tool executor: every tool the model may
@@ -34,7 +34,7 @@ import type { ModelMessage } from 'ai';
 import { z } from 'zod';
 import type { ToolDescriptor } from '../../shared/harness.js';
 import { micro } from '../../shared/managed-usage.js';
-import { GPT6_LUNA } from '../../shared/model-api.js';
+import { MANAGED_LUNA } from '../../shared/model-api.js';
 import { digest, HarnessError } from '../harness/policy.js';
 import type { ExposureAttempt, ModelRateCard, SpendExposure } from '../spend-exposure.js';
 import { jsonWrite } from '../store.js';
@@ -69,18 +69,18 @@ export const AWS_BEDROCK_ROUTE = 'aws-bedrock' as const;
 /** The exact dependency pair this route was written and tested against. */
 export const AWS_BEDROCK_SDK = 'ai@7.0.107+@ai-sdk/openai@4.0.71';
 export const AWS_BEDROCK_PROTOCOL = 'openai-responses';
-export const AWS_LUNA_MODEL = GPT6_LUNA.model;
+export const AWS_LUNA_MODEL = MANAGED_LUNA.model;
 /**
  * Models an earlier version saved a connection for. Such a record is read as retired: the
  * owner reconnects, and nothing is sent on it or silently moved to the current model.
  */
-export const AWS_RETIRED_MODELS: readonly string[] = ['us.openai.gpt-5.6-luna'];
+export const AWS_RETIRED_MODELS: readonly string[] = ['us.openai.gpt-6-luna'];
 export const AWS_RECONNECT =
-  'The saved AWS Bedrock connection is for GPT-5.6 Luna, which this version no longer runs. Reconnect AWS Bedrock with GPT-6 Luna in AI setup.';
+  'The saved AWS Bedrock connection is for GPT-6 Luna, which this version no longer runs. Reconnect AWS Bedrock with GPT-5.6 Luna in AI setup.';
 /**
  * The runtime endpoint the Luna model card pairs with the Geo profile. The
  * Luna-specific Mantle base (`bedrock-mantle…/openai/v1`, model
- * `openai.gpt-6-luna`) is a different route with its own identity; it is not
+ * `openai.gpt-5.6-luna`) is a different route with its own identity; it is not
  * accepted here and is never substituted.
  */
 export const AWS_RESPONSES_ENDPOINTS = {
@@ -98,18 +98,18 @@ export const AWS_VETTED_MODELS: Record<AwsRegion, readonly string[]> = {
 
 /**
  * List prices from the AWS model card for the US Geo profile, from the one registry row
- * (`GPT6_LUNA`) the Nectovia route's local guard prices with: an application estimate of
- * gross cost, never an invoice and never a statement about promotional credit. The row has
- * no long-context price, so a long input is priced at the same band.
+ * (`MANAGED_LUNA`) the Nectovia route's local guard prices with: an application estimate of
+ * gross cost, never an invoice and never a statement about promotional credit.
+ * The owner's route uses the published higher band for long-context input.
  */
 export const AWS_LUNA_RATE_CARD: ModelRateCard = {
-  version: GPT6_LUNA.rateCard,
+  version: MANAGED_LUNA.rateCard,
   route: AWS_BEDROCK_ROUTE,
   modelId: AWS_LUNA_MODEL,
-  source: GPT6_LUNA.source,
-  shortContextMaxInputTokens: GPT6_LUNA.maxInputTokens,
-  short: { ...GPT6_LUNA.rates },
-  long: { ...GPT6_LUNA.rates },
+  source: MANAGED_LUNA.source,
+  shortContextMaxInputTokens: MANAGED_LUNA.maxInputTokens,
+  short: { ...MANAGED_LUNA.rates },
+  long: { ...MANAGED_LUNA.longRates },
 };
 
 // --- the connection record ------------------------------------------------------

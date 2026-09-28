@@ -63,9 +63,10 @@ import {
   type ClaudeSessionTurn,
   type SessionCheckpointFacts,
 } from '../harness/claude-session-run.js';
-import { CODEX_PROTOCOL_VERSION, type CodexConversationPort } from '../integrations.js';
+import type { CodexConversationPort } from '../integrations.js';
 import {
   CODEX_ACCOUNT_ROUTE,
+  codexSessionError,
   openCodexSession,
   type CodexSessionCheckpoint,
 } from './codex-session.js';
@@ -505,7 +506,7 @@ export class EngineService {
             'VERSION_UNKNOWN',
             'The tool could not report its version. Check its dependencies.',
           );
-        const match = result.stdout.match(/\b\d+\.\d+\.\d+\b/);
+        const match = result.stdout.match(/\b\d+\.\d+(?:\.\d+)?(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?/);
         if (!match)
           throw new EngineError('VERSION_UNKNOWN', 'The installed version could not be verified.');
         return match[0];
@@ -635,7 +636,7 @@ export class EngineService {
       enumerated
         .filter((row) => row.engine === engine)
         .map((row) => ({ file: row.path, source: 'system' as const, context: row.context }));
-    // Managed artifacts are pinned Windows executables, never Mac installations.
+    // Managed artifacts have Windows installation receipts, never Mac installations.
     if (this.deps.platform === 'win32') try {
       const file = managedBinary(this.root, engine);
       await fs.access(file);
@@ -805,7 +806,7 @@ export class EngineService {
         const hit = found.find((row) => row.id === engine && row.found);
         if (!hit && inventory.some((row) => row.source === 'managed' && row.integrity === 'verified' && row.protocol === 'passed'))
           this.discoveryDisclosure.set(engine, [
-            'Discovery: observed on win32 via managed-installation; pinned artifact verified and version probed.',
+            'Discovery: observed on win32 via managed-installation; installation receipt verified and version probed.',
           ]);
         this.scanned.set(engine, {
           inventory,
@@ -1661,16 +1662,17 @@ export class EngineService {
             );
           if (
             adapter.contract.routeId !== engine ||
-            adapter.contract.engine.version !== TESTED_VERSIONS[engine]
+            adapter.contract.engine.id !== engine
           )
             throw new EngineError(
               'CONTRACT_MISMATCH',
-              'The adapter descriptor does not name this route and its proven build.',
+              'The adapter descriptor does not name this route and engine.',
               true,
             );
           return {
             engine,
             location: value.location!,
+            version: value.version!,
             model: selected.model,
             accountRoute: selected.accountRoute,
           } satisfies TextAdmission;
@@ -1768,8 +1770,7 @@ export class EngineService {
           if (
             result.projectId !== input.projectId ||
             result.threadId !== input.threadId ||
-            result.requestId !== input.requestId ||
-            result.version !== TESTED_VERSIONS[engine]
+            result.requestId !== input.requestId
           )
             throw new EngineError(
               'IDENTITY_MISMATCH',
@@ -1778,7 +1779,9 @@ export class EngineService {
             );
           if (previewFailures.length)
             throw new EngineError('OUTPUT_LIMIT', previewFailures[0].reason, true);
-          return result;
+          // Version attribution comes from this installation's fresh admission,
+          // not the adapter author's historical verification build.
+          return { ...result, version: admission.version };
         },
       });
       const reasoning = thinking?.finish() ?? null;
@@ -1889,10 +1892,20 @@ export class EngineService {
               false,
               'provider-auth',
             );
-          // Diomedes' own proven runtime: every process it opens reports this version.
+          // Observe the current installation. The process that executes the turn
+          // reports its version again; saved evidence never freezes future builds.
+          const observed = await (async () => {
+            try {
+              if (conversations.inspect) return await conversations.inspect();
+              const process = await conversations.open(undefined);
+              try { return { location: 'diomedes-codex', version: process.version }; }
+              finally { await process.close(); }
+            } catch (error) {
+              throw codexSessionError(error, false);
+            }
+          })();
           return {
-            location: 'diomedes-codex',
-            version: CODEX_PROTOCOL_VERSION,
+            ...observed,
             model: input.model,
             accountRoute: CODEX_ACCOUNT_ROUTE,
           };
@@ -1956,12 +1969,12 @@ export class EngineService {
       if (
         adapter.id !== engine ||
         persistent.sessionContract.routeId !== route.routeId ||
-        persistent.sessionContract.engine.version !== TESTED_VERSIONS[engine] ||
+        persistent.sessionContract.engine.id !== engine ||
         !gate.admitted
       )
         throw new EngineError(
           'CONTRACT_MISMATCH',
-          'The native session contract does not match this route and build.',
+          'The native session contract does not match this route and protocol.',
         );
       declared = persistent.sessionContract;
       return persistent;
@@ -1972,6 +1985,7 @@ export class EngineService {
         runId,
         sourceRunId,
         input,
+        redact: this.deps.redactFor?.(route.engine),
         ...(options.queued ? { queued: true } : {}),
         admit: transport
           ? async (signal) => {
@@ -3198,6 +3212,7 @@ function modelApiError(error: unknown): unknown {
 interface TextAdmission {
   engine: ExternalEngine;
   location: string;
+  version: string;
   model: string;
   accountRoute: string;
 }

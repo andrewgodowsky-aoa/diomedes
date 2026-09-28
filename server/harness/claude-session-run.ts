@@ -24,6 +24,7 @@ import { RunService, Suspended, type StepContext, type StepDefinition } from './
 import { boundedHistory, carriedRun } from './conversation-history.js';
 import { artifactSteps, unrecordedArtifacts } from './artifact-steps.js';
 import { repairWriting } from '../plain-writing.js';
+import { baselineRedact } from '../secrets.js';
 
 /** A first prompt that carries an earlier conversation, laid out as the model-API driver lays out history. */
 export const carriedPrompt = (history: string, prompt: string) =>
@@ -194,6 +195,8 @@ export interface ClaudeSessionTurn<C extends SessionCheckpointFacts = ClaudeSess
   runId: string;
   sourceRunId?: string;
   input: TextRequest;
+  /** Additional route secrets, scrubbed before an answer enters durable evidence or replay. */
+  redact?(text: string): string;
   /**
    * H03: when a turn is already running on this run, wait behind it (`profile.steering`) instead
    * of being refused as busy. The wait is shown in `status` and ends with this turn's own result,
@@ -1200,7 +1203,7 @@ export class ClaudeSessionRuns<C extends SessionCheckpointFacts = ClaudeSessionC
                 result.projectId !== input.projectId ||
                 result.threadId !== input.threadId ||
                 result.requestId !== input.requestId ||
-                result.version !== admission.version
+                typeof result.version !== 'string' || !result.version.trim() || result.version.length > 100
               )
                 throw new EngineError(
                   'IDENTITY_MISMATCH',
@@ -1227,8 +1230,9 @@ export class ClaudeSessionRuns<C extends SessionCheckpointFacts = ClaudeSessionC
             // engine's own session, which the person did not send (server/plain-writing.ts).
             let writing: Json | undefined;
             if (result) {
+              const safeText = baselineRedact(result.text);
               const repaired = await repairWriting({
-                text: result.text,
+                text: request.redact ? request.redact(safeText) : safeText,
                 options: {
                   userTexts: [input.prompt, ...input.documents.map((doc) => doc.text)],
                   ownerPhrases: input.writing?.phrases ?? [],
@@ -1240,11 +1244,11 @@ export class ClaudeSessionRuns<C extends SessionCheckpointFacts = ClaudeSessionC
             context.reportOrigin?.({
               protocolVersion: 1,
               mode: 'direct',
-              engine: { id: this.profile.engine, version: admission.version },
+              engine: { id: this.profile.engine, version: result?.version ?? admission.version },
               model: {
                 requested: input.model,
-                reported: connection.session.checkpoint.reportedModel,
-                source: connection.session.checkpoint.reportedModel ? 'runtime' : 'not-recorded',
+                reported: result?.model || null,
+                source: result?.model ? 'runtime' : 'not-recorded',
               },
               accountRoute: input.accountRoute,
             });

@@ -6,7 +6,7 @@
  * is untouched by anything the child writes; the copy is bounded, survives a
  * restart with its snapshot intact, and is removed with its tree.
  */
-import { afterEach, beforeEach, describe, expect, test } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -63,6 +63,7 @@ beforeEach(async () => {
   step = 0;
 });
 afterEach(async () => {
+  vi.restoreAllMocks();
   await fs.rm(base, { recursive: true, force: true });
 });
 
@@ -124,6 +125,40 @@ describe('scope and budget rules', () => {
 });
 
 describe('a child writes only its copy', () => {
+  test.skipIf(!WINDOWS).each(['EPERM', 'EACCES', 'EBUSY'])('sandbox metadata survives a transient Windows %s replacement failure', async code => {
+    const rename = fs.rename.bind(fs);
+    let attempts = 0;
+    vi.spyOn(fs, 'rename').mockImplementation(async (from, to) => {
+      if (String(to).endsWith('manifest.json') && ++attempts === 2)
+        throw Object.assign(new Error('Sharing violation'), { code, syscall: 'rename' });
+      return rename(from, to);
+    });
+    const { manifest } = await child(['Menu']);
+    expect(manifest.state).toBe('open');
+    expect(attempts).toBe(3);
+    expect(await sandboxes.read(projectId, manifest.runId)).toMatchObject({ state: 'open' });
+    await projectUnchanged();
+  });
+
+  test('a permanent sandbox metadata replacement failure preserves the prior manifest and removes the temporary file', async () => {
+    const rename = fs.rename.bind(fs);
+    const failure = Object.assign(new Error('Persistent sharing violation'), { code: 'EPERM', syscall: 'rename' });
+    let attempts = 0;
+    let target = '';
+    vi.spyOn(fs, 'rename').mockImplementation(async (from, to) => {
+      if (String(to).endsWith('manifest.json')) {
+        target = String(to);
+        if (++attempts > 1) throw failure;
+      }
+      return rename(from, to);
+    });
+    await expect(child(['Menu'])).rejects.toBe(failure);
+    expect(attempts).toBe(WINDOWS ? 7 : 2);
+    expect(JSON.parse(await fs.readFile(target, 'utf8')).state).toBe('creating');
+    expect((await fs.readdir(path.dirname(target))).filter(name => name.endsWith('.tmp'))).toEqual([]);
+    await projectUnchanged();
+  });
+
   test('the copy holds its scope; a write lands in the copy and the project is untouched', async () => {
     const { manifest, tools } = await child(['Menu']);
     expect(manifest.state).toBe('open');

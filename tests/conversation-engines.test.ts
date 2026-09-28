@@ -27,6 +27,7 @@ import { forgetCatalog } from '../server/models';
 import { routeContractFor } from '../server/harness/route-contract';
 import { keptSessionOfRun } from '../server/conversation-sessions';
 import { hash, type Store } from '../server/store';
+import { baselineRedact, secretScrubber } from '../server/secrets';
 import type { MessageResult } from '../shared/conversation';
 import { sessionControls, type ThreadSessionView } from '../shared/session-controls';
 import type { Conversation, Project } from '../shared/types';
@@ -140,6 +141,7 @@ describe('ChatGPT, and a thread moved between ChatGPT and Claude Code', () => {
   let codexDir: string;
   /** What the Claude Code session was sent, turn by turn. */
   let claudeTurns: TextRequest[];
+  let claudeAnswer: string;
   const calls = async () =>
     (await fs.readFile(path.join(codexDir, 'calls.jsonl'), 'utf8'))
       .trim()
@@ -188,7 +190,7 @@ describe('ChatGPT, and a thread moved between ChatGPT and Claude Code', () => {
           claudeTurns.push(turn);
           checkpoint = { ...checkpoint, state: 'busy', requests: [...checkpoint.requests, { id: turn.requestId, digest: hash(turn.prompt)! }] };
           await options.onCheckpoint(checkpoint, signal);
-          const text = 'Soup and bread.';
+          const text = claudeAnswer;
           turn.onDelta?.(text);
           checkpoint = {
             ...checkpoint,
@@ -207,6 +209,7 @@ describe('ChatGPT, and a thread moved between ChatGPT and Claude Code', () => {
   beforeEach(async () => {
     codexDir = path.join(root, 'codex');
     claudeTurns = [];
+    claudeAnswer = 'Soup and bread.';
     await fs.mkdir(codexDir, { recursive: true });
     // The model list a signed-in ChatGPT keeps: a conversation's model must be on it.
     const codexHome = path.join(root, 'codex-home');
@@ -241,11 +244,13 @@ describe('ChatGPT, and a thread moved between ChatGPT and Claude Code', () => {
           }),
         ),
     });
+    await codex.refreshCodexCatalog();
     await boot(
       new EngineService(path.join(root, 'engines'), {
         discover: async () => [installed('claude-code')],
         version: async () => TESTED_VERSIONS['claude-code'],
         adapter: () => claude(),
+        redactFor: () => text => secretScrubber(['private-fixture-credential'])(baselineRedact(text)),
       }),
       codex,
     );
@@ -278,6 +283,46 @@ describe('ChatGPT, and a thread moved between ChatGPT and Claude Code', () => {
       reportedModel: 'fixture-codex-model',
     });
     expect(answeredOn(on)).toEqual(['codex', 'codex']);
+  });
+
+  test('a ChatGPT answer without runtime model metadata is unverified in the saved thread and evidence', async () => {
+    await fs.writeFile(path.join(codexDir, 'control.json'), JSON.stringify({ omitModel: true }));
+    const on = await threadOn('codex');
+    const answer = await send(on, 'm-unknown-model', 'What is on the lunch menu?');
+    expect(answer.answerText).toContain('Fixture answer');
+    const turn = recorded(on).turns.find(turn => turn.role === 'assistant')!;
+    expect(turn.helper).toMatchObject({ model: null, verified: false });
+    expect(turn.origin?.model).toMatchObject({ reported: null, source: 'not-recorded' });
+    expect(await view(on)).toMatchObject({ reportedModel: null });
+    const data = path.join(root, 'data');
+    const origins: unknown[] = [];
+    for (const entry of await fs.readdir(data, { recursive: true, withFileTypes: true })) {
+      if (!entry.isFile() || !entry.name.endsWith('.json')) continue;
+      const text = await fs.readFile(path.join(entry.parentPath, entry.name), 'utf8');
+      if (text.includes('m-unknown-model') && text.includes('"origin"')) origins.push(JSON.parse(text));
+    }
+    expect(origins.length).toBeGreaterThan(0);
+    expect(JSON.stringify(origins)).not.toContain('"source":"runtime"');
+  });
+
+  test('provider-only secrets are absent from live output, HTTP answers, saved threads, replay, and run evidence', async () => {
+    const secrets = ['sk-provider-output-0123456789', 'private-fixture-credential'];
+    claudeAnswer = `Provider emitted ${secrets.join(' and ')}.`;
+    const on = await threadOn('claude-code');
+    const frames: { text?: string }[] = [];
+    (app.locals.store as Store).on('engine-text', frame => frames.push(frame));
+    const answer = await send(on, 'm-secret-answer', 'What is on the lunch menu?');
+    const replay = await send(on, 'm-secret-answer', 'What is on the lunch menu?');
+    expect(answer.answerText).toBe('Provider emitted [redacted] and [redacted].');
+    expect(replay.answerText).toBe(answer.answerText);
+    expect(frames.map(frame => frame.text ?? '').join('')).toContain('[redacted]');
+    const surfaces = [JSON.stringify(answer), JSON.stringify(replay), JSON.stringify(recorded(on)), JSON.stringify(frames)];
+    const data = path.join(root, 'data');
+    for (const entry of await fs.readdir(data, { recursive: true, withFileTypes: true })) {
+      if (entry.isFile()) surfaces.push(await fs.readFile(path.join(entry.parentPath, entry.name), 'utf8'));
+    }
+    for (const secret of secrets) expect(surfaces.filter(surface => surface.includes(secret))).toEqual([]);
+    expect(claudeTurns).toHaveLength(1);
   });
 
   test('ChatGPT signed out while its thread waits: the next message is refused in its own words, nothing is sent, and the thread keeps ChatGPT', async () => {
@@ -315,7 +360,7 @@ describe('ChatGPT, and a thread moved between ChatGPT and Claude Code', () => {
     expect(refused.status).toBe(409);
     expect(await refused.text()).toContain('Reading the whole project folder is not available on this route.');
     expect(recorded(on).lineages ?? []).toEqual([]);
-    expect(await fs.readFile(path.join(codexDir, 'calls.jsonl'), 'utf8').catch(() => '')).toBe('');
+    expect((await calls()).filter(call => /^(thread|turn)\//.test(call.method))).toEqual([]);
   });
 
   test('a thread moved from ChatGPT to Claude Code and back opens a new lineage each time, and nothing crosses engines', async () => {

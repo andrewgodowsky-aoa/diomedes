@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import type { CodexSetupView } from '../shared/codex-setup.js';
 import type { IntegrationStatus } from '../shared/types.js';
 import {
-  CODEX_EXECUTABLE,
+  currentCodexRuntime,
   createCodexLoginClient,
   getIntegrationStatuses,
   type NativeRpc,
@@ -40,7 +40,7 @@ export class CodexSetup {
       supported: process.platform === 'win32',
       installed: async () => {
         try {
-          return (await fs.stat(CODEX_EXECUTABLE)).isFile();
+          return (await fs.stat(currentCodexRuntime().executable)).isFile();
         } catch (error) {
           if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return false;
           throw error;

@@ -48,9 +48,14 @@ async function fixture(engine: Engine = 'cursor', written?: string[]) {
     }
     return child;
   };
+  /** The version `--version` reports; a test that updates the engine in place changes it. */
+  const installed: { version: string } = { version: VERSIONS[engine] };
   const capture = async (options: { args: string[] }) =>
     options.args.includes('--version')
-      ? { code: 0, stdout: engine === 'cursor' ? '2026.08.11-e8db854' : 'devin 3000.10.23' }
+      ? {
+          code: 0,
+          stdout: engine === 'cursor' ? `${installed.version}-e8db854` : `devin ${installed.version}`,
+        }
       : { code: 0, stdout: JSON.stringify({ status: 'authenticated', isAuthenticated: true }) };
   const deps = {
     spawn: launch,
@@ -73,7 +78,7 @@ async function fixture(engine: Engine = 'cursor', written?: string[]) {
     });
   const methods = async () =>
     (await fs.readFile(env.ACP_FIXTURE_LOG, 'utf8').catch(() => '')).split('\n').filter(Boolean);
-  return { root, env, adapter, open, saved, methods };
+  return { root, env, adapter, open, saved, methods, installed };
 }
 
 const input = (engine: Engine, requestId: string, prompt = requestId): TextRequest => ({
@@ -167,6 +172,51 @@ describe.each(['cursor', 'devin'] as const)('kept ACP conversation — %s', (eng
     expect(again.checkpoint).toMatchObject({ origin: 'restarted-fresh', lostSessionId: lostId });
     expect(again.checkpoint.nativeSessionId).not.toBe(lostId);
     expect(again.continuity.detail).toMatch(/no longer had the saved session/);
+  });
+
+  it('continues a session saved by an older version of the engine, on the version installed now', async () => {
+    const f = await fixture(engine);
+    const first = await f.open();
+    await first.turn(input(engine, 'r1', 'first'));
+    const id = first.checkpoint.nativeSessionId;
+    // Saved before the engine updated itself; the fixture reports only the version installed now.
+    const older = engine === 'cursor' ? '2026.08.04' : '3000.09.30';
+    const restored = await f.open({ ...first.checkpoint, cliVersion: older });
+    const answer = await restored.turn(input(engine, 'r2', 'second'));
+    expect(answer.text).toBe('answer after 1 earlier turns');
+    expect(answer.version).toBe(VERSIONS[engine]);
+    expect(restored.checkpoint).toMatchObject({
+      nativeSessionId: id,
+      origin: 'loaded',
+      cliVersion: VERSIONS[engine],
+      turns: 2,
+    });
+    expect(restored.continuity).toEqual({ origin: 'loaded', detail: null });
+    expect((await f.methods()).filter((method) => method === 'session/load')).toHaveLength(1);
+  });
+
+  it('continues a connected conversation when the engine updates itself between turns', async () => {
+    const f = await fixture(engine);
+    const session = await f.open();
+    await session.turn(input(engine, 'r1', 'first'));
+    const id = session.checkpoint.nativeSessionId;
+    // The engine updates itself in place while the conversation stays connected, so the next
+    // turn's own process reports a newer version.
+    const newer = engine === 'cursor' ? '2026.08.18' : '3000.11.06';
+    f.installed.version = newer;
+    const answer = await session.turn(input(engine, 'r2', 'second'));
+    expect(answer.text).toBe('answer after 1 earlier turns');
+    expect(answer.version).toBe(newer);
+    expect(session.checkpoint).toMatchObject({
+      nativeSessionId: id,
+      origin: 'loaded',
+      cliVersion: newer,
+      turns: 2,
+    });
+    // The saved record names the version that answered, so a restart continues on it.
+    expect(f.saved.at(-1)).toMatchObject({ state: 'idle', cliVersion: newer, turns: 2 });
+    expect(session.continuity).toEqual({ origin: 'loaded', detail: null });
+    expect((await f.methods()).filter((method) => method === 'session/load')).toHaveLength(1);
   });
 
   it('Stop sends session/cancel and records that the agent acknowledged it', async () => {
@@ -414,17 +464,16 @@ describe('kept ACP conversation — review F: a question is a person\'s, for one
     expect(sent).toEqual([{ outcome: { outcome: 'cancelled' } }, { outcome: { outcome: 'cancelled' } }]);
   });
 
-  it('a saved session is continued only on the engine, scope and version it was saved with', async () => {
+  it('a saved session is continued only on the engine, account route and scope it was saved with', async () => {
     const f = await fixture('cursor');
     const first = await f.open();
     await first.turn(input('cursor', 'r1', 'first'));
     const saved = first.checkpoint;
     await expect(f.open({ ...saved, engine: 'devin' })).rejects.toMatchObject({ code: 'SESSION_MISMATCH' });
-    await expect(f.open({ ...saved, scopeDigest: 'another scope' })).rejects.toMatchObject({ code: 'SESSION_MISMATCH' });
-    await expect(f.open({ ...saved, cliVersion: '2026.01.01' })).rejects.toMatchObject({
+    await expect(f.open({ ...saved, accountRoute: 'cursor:another-account' })).rejects.toMatchObject({
       code: 'SESSION_MISMATCH',
-      message: expect.stringMatching(/saved by Cursor 2026\.01\.01; 2026\.08\.11 is installed now/),
     });
+    await expect(f.open({ ...saved, scopeDigest: 'another scope' })).rejects.toMatchObject({ code: 'SESSION_MISMATCH' });
     await expect(f.open({ ...saved, state: 'busy' })).rejects.toMatchObject({ code: 'RECONCILE_REQUIRED' });
   });
 

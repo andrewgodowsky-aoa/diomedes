@@ -16,7 +16,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, expect, test } from 'vitest';
 import type { ModelRequest } from '../shared/harness.js';
 import { micro } from '../shared/managed-usage.js';
-import { GPT6_LUNA, MODEL_API_ROUTES, type ModelApiRoute } from '../shared/model-api.js';
+import { MANAGED_LUNA, MODEL_API_ROUTES, type ModelApiRoute } from '../shared/model-api.js';
 import { AWS_LUNA_MODEL, AWS_LUNA_RATE_CARD, AWS_RESPONSES_ENDPOINTS, type AwsConnection } from '../server/engines/aws-bedrock.js';
 import { azureEndpoint, azureRateCard, type AzureConnection } from '../server/engines/azure-openai.js';
 import { vertexBaseUrl, vertexRateCard, type VertexConnection } from '../server/engines/google-vertex.js';
@@ -166,7 +166,7 @@ const MANAGED: ManagedAdmission = {
 /** The gateway's answer: the efficient tier's upstream accepts summaries. */
 const NECTOVIA_POLICY: NectoviaPolicy = {
   revision: 8,
-  tiers: { efficient: { model: GPT6_LUNA.model, label: 'GPT-6 Luna' }, focused: null, thorough: null },
+  tiers: { efficient: { model: MANAGED_LUNA.model, label: 'GPT-5.6 Luna' }, focused: null, thorough: null },
   reasoningSummaries: { efficient: true, focused: false, thorough: false },
 };
 
@@ -272,10 +272,10 @@ const ROWS: Record<ModelApiRoute, Row> = {
         base: 'https://accounts.nectovia.test',
         account: { refreshPolicy: async () => NECTOVIA_POLICY, policy: () => NECTOVIA_POLICY },
         connectionId: NECTOVIA_CONNECTION,
-        model: GPT6_LUNA.model,
+        model: MANAGED_LUNA.model,
         managed: MANAGED,
         token: 'session-access-token-test-only-0123456789',
-        card: nectoviaRateCard(GPT6_LUNA.model),
+        card: nectoviaRateCard(MANAGED_LUNA.model),
         exposure,
         transcripts: transcripts('nectovia'),
         instructions: INSTRUCTIONS,
@@ -283,7 +283,7 @@ const ROWS: Record<ModelApiRoute, Row> = {
         transport: fetch,
         ...sinks,
       }),
-    answer: (thinking, text) => responses(GPT6_LUNA.model, thinking, text, { 'x-nectovia-attempt': 'gw-attempt-1' }),
+    answer: (thinking, text) => responses(MANAGED_LUNA.model, thinking, text, { 'x-nectovia-attempt': 'gw-attempt-1' }),
     asked: summaryAsked,
   },
 };

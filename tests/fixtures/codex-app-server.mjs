@@ -62,6 +62,7 @@ const policy = {
   sandbox: { type: 'readOnly', networkAccess: false },
   approvalPolicy: 'never',
 };
+const reportedPolicy = () => ({ ...policy, model: control().omitModel ? null : MODEL });
 /** Threads this process has loaded. A kept one is also on disk. */
 const loaded = new Map();
 let active = null;
@@ -123,7 +124,7 @@ function complete() {
   });
   notify('turn/completed', {
     threadId: thread.id,
-    turn: { id: turn.turnId, status: 'completed', model: MODEL },
+    turn: { id: turn.turnId, status: 'completed', ...(control().omitModel ? {} : { model: MODEL }) },
   });
 }
 
@@ -165,6 +166,9 @@ function beginTurn(params) {
 
 const handlers = {
   initialize: () => ({ userAgent: 'codex_fixture/0.153.4 (fixture; stdio)' }),
+  'model/list': () => ({ data: [MODEL, 'requested-alias'].map(model => ({ model, hidden: false,
+    supportedReasoningEfforts: ['low', 'medium', 'high'].map(effort => ({ reasoningEffort: effort, description: effort })),
+    defaultReasoningEffort: 'medium' })), nextCursor: null }),
   'account/read': () =>
     control().signedOut
       ? { requiresOpenaiAuth: true, account: { type: 'apiKey' } }
@@ -179,14 +183,14 @@ const handlers = {
       messages: [],
     };
     save(thread);
-    return { thread: { id: thread.id }, ...policy };
+    return { thread: { id: thread.id }, ...reportedPolicy() };
   },
   'thread/resume': (params, id) => {
     if (typeof params.threadId !== 'string')
       return refuse(id, 'Invalid request: missing field `threadId`');
     const thread = find(params.threadId);
     if (!thread) return refuse(id, `no rollout found for thread id ${params.threadId}`);
-    return { thread: { id: thread.id }, ...policy };
+    return { thread: { id: thread.id }, ...reportedPolicy() };
   },
   'thread/fork': (params, id) => {
     if (typeof params.threadId !== 'string')

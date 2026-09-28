@@ -46,6 +46,14 @@ describe('route descriptors', () => {
     }
   });
 
+  it.each(['claude-code-session', 'opencode-session', 'codex-session', 'cursor-session', 'devin-session'])(
+    'accepts a new vendor build with the same protocol on %s', route => {
+      const contract = structuredClone(ROUTE_CONTRACTS[route]);
+      contract.engine.version = '9000.1.1-preview';
+      expect(contractChecks(contract).filter(check => check.outcome === 'failed')).toEqual([]);
+    },
+  );
+
   it('all five real adapter families carry descriptors', () => {
     for (const engine of EXTERNAL_ENGINES) {
       const contract = ROUTE_CONTRACTS[engine];
@@ -87,12 +95,11 @@ describe('route descriptors', () => {
     expect(contractChecks(contract).find(check => check.id === 'native-session-run-backing')?.outcome).toBe('failed');
   });
 
-  it.each(['route', 'engine', 'version', 'protocol', 'mode', 'steer', 'resume', 'stream', 'auth', 'model'] as const)(
+  it.each(['route', 'engine', 'protocol', 'mode', 'steer', 'resume', 'stream', 'auth', 'model'] as const)(
     'does not extend native session backing across %s drift', drift => {
       const contract = structuredClone(ROUTE_CONTRACTS['claude-code-session']);
       if (drift === 'route') contract.routeId = 'unproven-native-session';
       if (drift === 'engine') contract.engine.id = 'other-engine';
-      if (drift === 'version') contract.engine.version = contract.testedWith = '2.1.253';
       if (drift === 'protocol') contract.engine.protocolVersion = 'unknown';
       if (drift === 'mode') contract.mode = 'single-turn-text';
       if (drift === 'steer') contract.commands.steer.support = 'native';
@@ -128,12 +135,11 @@ describe('the OpenCode session route descriptor (H04)', () => {
     expect(ROUTE_CONTRACTS.opencode.commands['follow-up'].support).toBe('unsupported');
   });
 
-  it.each(['route', 'engine', 'version', 'protocol', 'mode', 'steer', 'resume', 'stream', 'auth', 'model'] as const)(
+  it.each(['route', 'engine', 'protocol', 'mode', 'steer', 'resume', 'stream', 'auth', 'model'] as const)(
     'does not extend native session backing across %s drift', (drift) => {
       const contract = structuredClone(ROUTE_CONTRACTS['opencode-session']);
       if (drift === 'route') contract.routeId = 'unproven-native-session';
       if (drift === 'engine') contract.engine.id = 'other-engine';
-      if (drift === 'version') contract.engine.version = contract.testedWith = '1.18.5';
       if (drift === 'protocol') contract.engine.protocolVersion = 'unknown';
       if (drift === 'mode') contract.mode = 'single-turn-text';
       // A claimed native steering channel is exactly what this route has not proven.
@@ -153,7 +159,7 @@ describe('the ChatGPT session route descriptor', () => {
     const contract = ROUTE_CONTRACTS['codex-session'];
     expect(contract).toMatchObject({
       mode: 'external-session',
-      engine: { id: 'codex', version: '0.153.4', protocolVersion: 'codex app-server 0.153.4' },
+      engine: { id: 'codex', version: '0.153.4', protocolVersion: 'codex app-server' },
       streaming: { transientPreview: 'text-delta', reasoning: 'reasoning-delta', durableEvents: 'run-record' },
       models: { source: 'runtime-reported' },
       authentication: 'native-sign-in',
@@ -177,13 +183,12 @@ describe('the ChatGPT session route descriptor', () => {
     expect(ROUTE_CONTRACTS.codex.streaming.reasoning).toBe('none');
   });
 
-  it.each(['route', 'engine', 'version', 'protocol', 'mode', 'steer', 'resume', 'stream', 'auth', 'model'] as const)(
+  it.each(['route', 'engine', 'protocol', 'mode', 'steer', 'resume', 'stream', 'auth', 'model'] as const)(
     'does not extend native session backing across %s drift',
     (drift) => {
       const contract = structuredClone(ROUTE_CONTRACTS['codex-session']);
       if (drift === 'route') contract.routeId = 'unproven-native-session';
       if (drift === 'engine') contract.engine.id = 'other-engine';
-      if (drift === 'version') contract.engine.version = contract.testedWith = '0.153.5';
       if (drift === 'protocol') contract.engine.protocolVersion = 'unknown';
       if (drift === 'mode') contract.mode = 'single-turn-text';
       // A claimed native steering channel is exactly what this route never uses.
@@ -227,12 +232,11 @@ describe.each([
     expect(ROUTE_CONTRACTS[engine].commands.resume.support).toBe('unsupported');
   });
 
-  it.each(['route', 'engine', 'version', 'protocol', 'mode', 'steer', 'fork', 'resume', 'reconcile', 'stream', 'auth', 'model'] as const)(
+  it.each(['route', 'engine', 'protocol', 'mode', 'steer', 'fork', 'resume', 'reconcile', 'stream', 'auth', 'model'] as const)(
     'does not extend native session backing across %s drift', (drift) => {
       const contract = structuredClone(ROUTE_CONTRACTS[routeId]);
       if (drift === 'route') contract.routeId = 'unproven-native-session';
       if (drift === 'engine') contract.engine.id = 'other-engine';
-      if (drift === 'version') contract.engine.version = contract.testedWith = '9999.1.1';
       if (drift === 'protocol') contract.engine.protocolVersion = 'acp/2';
       if (drift === 'mode') contract.mode = 'single-turn-text';
       // ACP v1 has neither a steering channel nor a fork of a saved session.

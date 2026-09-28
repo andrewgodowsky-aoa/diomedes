@@ -215,7 +215,7 @@ async function packagingFixture() {
   const root = await temporaryRoot();
   for (const folder of ['client', 'server', 'shared', 'desktop', 'fixtures/harness', 'licenses', 'resources', 'dist', 'scripts', 'node_modules/electron', '.data/native-runtime', 'cache'])
     await fs.mkdir(path.join(root, folder), { recursive: true });
-  for (const file of ['desktop/main.mjs', 'desktop/app-updates.mjs', 'desktop/update-helper.mjs', 'desktop/fresh-start.mjs', 'desktop/diomedes.ico', 'desktop/service.ts', 'fixtures/harness/report-lines.txt', 'LICENSE', 'package-lock.json', 'scripts/package-desktop.mjs', 'scripts/build-desktop-auth.mjs', 'dist/index.html'])
+  for (const file of ['desktop/main.mjs', 'desktop/app-updates.mjs', 'desktop/update-helper.mjs', 'desktop/fresh-start.mjs', 'desktop/diomedes.ico', 'desktop/service.ts', 'fixtures/harness/report-lines.txt', 'LICENSE', 'package-lock.json', 'scripts/package-desktop.mjs', 'scripts/build-desktop-auth.mjs', 'scripts/collect-package-notices.mjs', 'dist/index.html'])
     await fs.writeFile(path.join(root, file), `independent fixture ${file}`);
   for (const file of ['desktop/native-auth.ts', 'desktop/native-auth-preload.ts'])
     await fs.writeFile(path.join(root, file), 'export const fixture = true;');
@@ -279,6 +279,10 @@ describe('FD01 independent packaging contract (substituted packager, not Mac pro
 
   it('preserves the default Windows hash refusal before any real packaging or network work', async () => {
     const { root, deps } = await packagingFixture();
+    await fs.writeFile(path.join(root, '.data/native-runtime/manifest.json'), JSON.stringify({
+      version: '999.1.0', files: ['codex.exe', 'codex-command-runner.exe', 'codex-windows-sandbox-setup.exe']
+        .map(name => ({ name, sha256: 'a'.repeat(64) })),
+    }));
     await expect(packageDesktop({ root, hostPlatform: 'win32', hostArch: 'x64' }, deps)).rejects.toThrow('Native runtime hash mismatch: codex.exe');
     expect(deps.build).not.toHaveBeenCalled();
     expect(deps.packager).not.toHaveBeenCalled();

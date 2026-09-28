@@ -41,9 +41,9 @@ export type TierMap = Record<WorkStyle, TierAssignment>;
 /**
  * The AWS Bedrock route's one model today (`AWS_LUNA_MODEL` in
  * server/engines/aws-bedrock.ts; a test asserts the two spellings agree). The
- * owner calls it GPT-6 Luna; the connection serves this id and it is never renamed.
+ * owner calls it GPT-5.6 Luna; the connection serves this id and it is never renamed.
  */
-export const TIER_AWS_LUNA_MODEL = 'us.openai.gpt-6-luna';
+export const TIER_AWS_LUNA_MODEL = 'us.openai.gpt-5.6-luna';
 /**
  * The Google Vertex AI route's id, as the Vertex branch names it. Not yet in
  * `MODEL_API_ROUTES` on every build, so it is a plain string here.
@@ -56,8 +56,8 @@ export const TIER_VERTEX_ROUTE = 'google-vertex';
 export const TIER_GEMINI_FLASH_MODEL = 'gemini-3.8-flash';
 
 /**
- * The defaults the owner set on 2026-09-23, with Efficient moved to GPT-6 Luna
- * on 2026-09-25 when its AWS model id and price were recorded. GPT-6 Sol on AWS
+ * The defaults the owner set on 2026-09-23, with Efficient returned to GPT-5.6 Luna
+ * on 2026-09-27 while GPT-6 Luna's AWS access is investigated. GPT-6 Sol on AWS
  * Bedrock is not qualified yet, so Thorough has no model: it is refused by name
  * until the owner chooses one. GPT-6 Sol is named in the copy and never sent.
  * This map routes the owner's own routes; a Nectovia conversation's tier is
@@ -82,13 +82,13 @@ export function tierRouteName(route: string): string {
  * sent is the map's model id, and a tier without one is refused.
  */
 export const TIER_INTENT: Record<WorkStyle, string> = {
-  efficient: 'GPT-6 Luna',
+  efficient: 'GPT-5.6 Luna',
   focused: 'Gemini 3.8 Flash',
   thorough: 'GPT-6 Sol',
 };
 /** One line per tier default for AI setup, saying what runs today and what is intended. */
 export const TIER_DEFAULT_NOTES: Record<WorkStyle, string> = {
-  efficient: 'GPT-6 Luna on AWS Bedrock.',
+  efficient: 'GPT-5.6 Luna on AWS Bedrock.',
   focused: 'Gemini 3.8 Flash on Google Vertex AI.',
   thorough: 'Meant for GPT-6 Sol on AWS Bedrock, which is not qualified yet. No model is sent until you choose one.',
 };

@@ -1,5 +1,33 @@
 # Harness host integration changes, 2026-09-09
 
+## Current engine compatibility amendment, 2026-09-27
+
+Vendor build equality no longer admits or refuses native/subscription engines.
+Current installation, authenticated model catalogue, protocol capabilities,
+account route, isolation and executable identity determine admission. Earlier
+entries below describing exact version equality are historical evidence.
+The app refreshes models and reasoning options after engine changes; a stale
+choice is refused without selecting a different model or payer. See
+[engine discovery and provider evidence](../implementation/2026-09-27-engine-capability-discovery.md).
+
+The owner selected GPT-5.6 Luna temporarily for managed AWS calls. Both Luna
+models still fail account access; a separate tiny Haiku call succeeded through
+the existing key. Paid Nectovia Agent entitlement remains independent of the
+inference engine or payer, and free accounts retain manual Board access.
+
+The current candidate also closes gaps identified while reviewing the earlier
+conversation driver: a fork checks its saved account on the same process before
+any thread operation; cleanup failures remain observable; and an absent runtime
+model report remains unverified. Native answers now pass the route's redaction
+before durable evidence, history and replay. Live channels reserve output order
+without flushing incomplete text when another channel speaks. Safe text still
+streams; frames behind an incomplete channel can wait until the attempt ends.
+Stop discards those held frames. Final checks remain pending for these amendments.
+
+Sandbox metadata uses the existing durable JSON writer and its bounded Windows
+sharing-error retry. A permanent failure preserves the prior manifest, removes
+the temporary file and remains a failure; no tool operation is retried.
+
 Continuation: [NR-02/NR-03 changes and proof](NR02_NR03_VERIFICATION_2026-09-09.md).
 The descriptions below apply to the earlier packet, not every subsequent source change.
 
@@ -237,3 +265,58 @@ under `baselineRedact`, and covers the hold's bounds, budgets, surrogate pairs, 
 order. Split secrets also run through `generate`, the ChatGPT kept session, model-API
 conversations and the ChatGPT Ask path, and a failing Claude Code kept-session turn shows its
 held text. Fixture and unit proof; no live run is needed for this change.
+
+## Kept sessions continue across engine updates, 2026-09-27
+
+Review finding M-3 of the engine conversations branch. Branch
+`feature/session-restore-across-updates`, stacked on `feature/codex-conversation-driver`.
+
+- A saved OpenCode, Cursor or Devin conversation now resumes after the engine updated itself, as
+  a ChatGPT or Claude Code conversation already did. `openOpenCodeSession` and `openAcpSession`
+  refused a checkpoint saved under another engine version with `SESSION_MISMATCH`, which the
+  conversation service reads as a changed scope. After every engine update, the next message
+  therefore started a fresh engine session with a note saying the settings had changed. Both
+  version equality checks are gone (engines are version-agnostic since 2026-09-23). The account,
+  route, lineage and scope checks stay.
+- A restored Cursor or Devin checkpoint now records the version installed now, as an OpenCode
+  or Claude Code resume already did. Each ACP turn compares the version the CLI reports with the
+  saved one, so without this the first turn after an update would be refused after its answer
+  had arrived.
+- Not changed: that per-turn comparison still refuses a turn when the engine updates between two
+  turns of a conversation that stays connected (`AcpNativeSession.run`).
+
+`tests/opencode-session.test.ts` and `tests/acp-session.test.ts` (Cursor and Devin) continue a
+session saved under an older version. `tests/h04-opencode-session-routes.test.ts` and
+`tests/h05-acp-session-routes.test.ts` update the engine between two runs of the app and resume
+over HTTP, and the answer is attributed to the version installed now. The two tests that pinned
+the refusal no longer list the version, and now also check the account route. Fixture proof only.
+
+## A connected Cursor or Devin conversation continues across an engine update, 2026-09-27
+
+Follow-up to review finding M-3. Branch `feature/acp-live-engine-update`, stacked on
+`feature/session-restore-across-updates` (5c9dcc7).
+
+- A Cursor or Devin conversation that stays connected now continues when the engine updates
+  itself between two of its turns. Each ACP turn starts its own process and reads `--version`
+  again, and `AcpNativeSession.run` refused a turn whose version differed from the one the
+  conversation was opened with (`SESSION_MISMATCH`). The refusal came after the agent had
+  answered, so the answer was dropped and the message failed with a 409 naming both versions.
+  The run was left needing reconciliation, so the next message retired the conversation with the
+  note that it had stopped and could not be picked up again, and started a fresh engine session.
+- The turn now adopts the version the CLI reported, and the saved checkpoint records it, as a
+  Claude Code resume already does. This replaces the "Not changed" line of the section above.
+  Every other check stays, including the driver's identity check (`result.version !==
+  admission.version` in `server/harness/claude-session-run.ts`): admission and the turn read the
+  same installation, so both name the new version and the answer is attributed to it.
+- Not changed, for Andrew to decide: that driver check still refuses the first message on a live
+  OpenCode or Claude Code connection after the engine updated itself in place. Those sessions
+  report the version they were opened with while admission finds the new one, so the answer is
+  dropped, the run is parked as `reconcile_required`, and the message fails with "The native
+  response did not match this request." The next message then starts the conversation fresh with
+  the same note.
+
+`tests/acp-session.test.ts` (Cursor and Devin) and `tests/acp-session-runtime.test.ts` (Cursor
+through the driver, with admission and the turn both finding the newer version) update the engine
+between two turns of one connected conversation. The second turn continues the same session with
+`session/load`, and the checkpoint and the answer's attribution name the newer version. All three
+failed on the old check before the fix. Fixture proof only.

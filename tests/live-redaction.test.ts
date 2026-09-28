@@ -2,7 +2,7 @@
  * Live frames are redacted across chunk boundaries. Engines stream answers and thinking in small
  * token chunks, so a secret a model echoes almost always arrives in pieces; the sinks redact the
  * stream's text as one piece and hold back its newest part until more of it arrives, the attempt
- * moves to another channel, or the attempt ends (`shared/adapter-contract.ts`, `LIVE_REDACTION`).
+ * ends (`shared/adapter-contract.ts`, `LIVE_REDACTION`). Channel switches never end a redaction window.
  */
 import { describe, expect, test } from 'vitest';
 import {
@@ -272,6 +272,161 @@ describe('one attempt keeps its live channels in order', () => {
       else merged.push([channel, text]);
       return merged;
     }, []);
+
+  test.each(['text', 'thinking'] as const)('a tool between %s chunks cannot expose a split credential', channel => {
+    const order = liveOrder();
+    const events: [string, string][] = [];
+    const text = previewSink({ identity, redact: baselineRedact, order, onPreview: frame => events.push(['text', frame.text]) });
+    const thinking = reasoningSink({ identity, redact: baselineRedact, order, onReasoning: frame => events.push(['thinking', frame.text]) });
+    const tools = activitySink({ identity, redact: baselineRedact, order, onActivity: frame => events.push(['tool', frame.summary]) });
+    const sink = channel === 'text' ? text : thinking;
+    sink('Credential sk-abcde');
+    tools({ callId: 'c1', phase: 'started', tool: 'read', summary: 'Reading menu.md' });
+    expect(events).toEqual([]);
+    sink('fghijk is private.');
+    order.flush();
+    const shown = events.filter(([kind]) => kind === channel).map(([, value]) => value).join('');
+    expect(shown).toBe('Credential [redacted] is private.');
+    expect(JSON.stringify(events)).not.toContain('sk-abcde');
+    expect(runs(events)).toEqual([
+      [channel, 'Credential '], ['tool', 'Reading menu.md'], [channel, '[redacted] is private.'],
+    ]);
+    if (channel === 'thinking') expect(thinking.finish()?.text).toBe(shown);
+  });
+
+  test('switching repeatedly between text, thinking and tools preserves each channel redaction window', () => {
+    const order = liveOrder();
+    const events: [string, string][] = [];
+    const text = previewSink({ identity, redact: scrub, order, onPreview: frame => events.push(['text', frame.text]) });
+    const thinking = reasoningSink({ identity, redact: scrub, order, onReasoning: frame => events.push(['thinking', frame.text]) });
+    const tools = activitySink({ identity, redact: scrub, order, onActivity: frame => events.push(['tool', frame.summary]) });
+    for (const [i, char] of Array.from(`Before ${KEY} after.`).entries()) {
+      text(char);
+      thinking(char);
+      tools({ callId: `c${i}`, phase: 'finished', tool: 'read', summary: `Read ${i}` });
+    }
+    order.flush();
+    for (const channel of ['text', 'thinking'])
+      expect(events.filter(([kind]) => kind === channel).map(([, value]) => value).join('')).toBe('Before [redacted] after.');
+    expect(events.filter(([kind]) => kind === 'tool')).toHaveLength(`Before ${KEY} after.`.length);
+    expect(JSON.stringify(events)).not.toContain(KEY);
+  });
+
+  test('Stop discards both held text and tool frames queued behind it', () => {
+    const control = new AbortController();
+    const order = liveOrder();
+    const events: string[] = [];
+    const text = previewSink({ identity, redact: scrub, signal: control.signal, order, onPreview: frame => events.push(frame.text) });
+    const tools = activitySink({ identity, redact: scrub, signal: control.signal, order, onActivity: frame => events.push(frame.summary) });
+    text('Still being written');
+    tools({ callId: 'c1', phase: 'started', tool: 'read', summary: 'Reading menu.md' });
+    control.abort();
+    order.flush();
+    expect(events).toEqual([]);
+  });
+
+  test('a long ordered text stream still releases safe output before the attempt ends', () => {
+    const order = liveOrder();
+    const frames: TransientPreview[] = [];
+    const sink = previewSink({ identity, redact: scrub, order, onPreview: frame => frames.push(frame) });
+    const answer = 'Tomato soup, bread and coffee are ready. '.repeat(200);
+    for (const chunk of pieces(answer, 7)) sink(chunk);
+    expect(joined(frames).length).toBeGreaterThan(answer.length - 100);
+    expect(answer.startsWith(joined(frames))).toBe(true);
+    order.flush();
+    expect(joined(frames)).toBe(answer);
+    expect(frames.map(frame => frame.seq)).toEqual(dense(frames));
+  });
+
+  test('output held behind an incomplete channel is bounded and fails explicitly', () => {
+    const order = liveOrder();
+    const frames: TransientPreview[] = [];
+    const thinking = reasoningSink({ identity, redact: scrub, order });
+    const text = previewSink({ identity, redact: scrub, order, onPreview: frame => frames.push(frame) });
+    thinking('Still thinking');
+    const chunk = 'word '.repeat(12_000);
+    expect(() => {
+      for (let i = 0; i < 40; i++) text(chunk);
+    }).toThrow('waiting for redaction');
+    expect(frames).toEqual([]);
+    expect(() => order.flush()).toThrow('waiting for redaction');
+  });
+
+  test('thinking never restarts a partial redaction window after interleaved queue overflow', () => {
+    const order = liveOrder();
+    const frames: ReasoningPreview[] = [];
+    const thinking = reasoningSink({ identity, redact: baselineRedact, order, onReasoning: frame => frames.push(frame) });
+    const tools = activitySink({ identity, order });
+    thinking('Credential sk-abcde');
+    for (let i = 0; i < LIVE_REDACTION.pendingFrames - 1; i++)
+      tools({ callId: 'c', phase: 'started', tool: 'read', summary: 'Read' });
+    expect(() => thinking('fghijk')).not.toThrow();
+    thinking('lmnopqrstuvwxyz is private.');
+    order.flush();
+    expect(frames).toEqual([]);
+    expect(thinking.finish()).toBeNull();
+  });
+
+  test('a throwing redactor discards subsequent thinking and the saved partial record', () => {
+    const order = liveOrder();
+    const frames: ReasoningPreview[] = [];
+    let broken = false;
+    const thinking = reasoningSink({ identity, order, onReasoning: frame => frames.push(frame), redact: text => {
+      if (broken) throw new Error('Redaction failed');
+      return baselineRedact(text);
+    } });
+    thinking('Credential sk-abcde');
+    broken = true;
+    thinking('fghijk followed by enough text to trigger a redaction pass.');
+    broken = false;
+    thinking('lmnopqrstuvwxyz is private.');
+    order.flush();
+    expect(frames).toEqual([]);
+    expect(thinking.finish()).toBeNull();
+  });
+
+  test('ordered thinking without a redactor also discards on overflow without failing the answer', () => {
+    const order = liveOrder();
+    order.join(() => {}).reserve(LIVE_REDACTION.pendingChars);
+    const frames: ReasoningPreview[] = [];
+    const thinking = reasoningSink({ identity, order, onReasoning: frame => frames.push(frame) });
+    expect(() => thinking('No room')).not.toThrow();
+    thinking('Later output');
+    expect(() => order.flush()).not.toThrow();
+    expect(frames).toEqual([]);
+    expect(thinking.finish()).toBeNull();
+  });
+
+  test('preview overflow uses the host refusal callback and cannot be swallowed into a successful finish', () => {
+    const order = liveOrder();
+    order.join(() => {}).reserve(LIVE_REDACTION.pendingChars);
+    const failures: PreviewRejection[] = [];
+    const frames: TransientPreview[] = [];
+    const text = previewSink({ identity, redact: scrub, order,
+      onInvalid: failure => failures.push(failure), onPreview: frame => frames.push(frame) });
+    expect(() => text('No room')).not.toThrow();
+    text('Later text must stay discarded');
+    expect(failures).toEqual([{ code: 'OUTPUT_LIMIT', reason: expect.stringContaining('waiting for redaction') }]);
+    expect(frames).toEqual([]);
+    expect(() => order.flush()).toThrow('waiting for redaction');
+  });
+
+  test('a failed preview redactor discards the partial window before later callbacks or finish', () => {
+    const order = liveOrder();
+    const frames: TransientPreview[] = [];
+    let broken = false;
+    const text = previewSink({ identity, order, onPreview: frame => frames.push(frame), redact: value => {
+      if (broken) throw new Error('Redaction failed');
+      return baselineRedact(value);
+    } });
+    text('Credential sk-abcde');
+    broken = true;
+    expect(() => text('fghijk')).toThrow('Redaction failed');
+    broken = false;
+    text('lmnopqrstuvwxyz is private.');
+    order.flush();
+    expect(frames).toEqual([]);
+  });
 
   test('held text is shown before a later tool line, and thinking before the answer', () => {
     const order = liveOrder();

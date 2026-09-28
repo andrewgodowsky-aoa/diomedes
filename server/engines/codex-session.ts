@@ -107,7 +107,7 @@ const codeOf = (error: unknown) => (error as { code?: unknown } | null)?.code;
  * A failure from the port as the `EngineError` every kept-session route renders (409 with its
  * code). Read by `code` alone, so this module never imports server/integrations.ts at run time.
  */
-function asEngineError(error: unknown, sent: boolean): unknown {
+export function codexSessionError(error: unknown, sent: boolean): unknown {
   if (error instanceof EngineError || !(error instanceof Error)) return error;
   const code = codeOf(error);
   if (typeof code !== 'string') return error;
@@ -271,8 +271,8 @@ export class CodexNativeSession {
       await this.save();
       return {
         text: answer.text,
-        // The model Codex reported answers for the turn (decision 8); the requested one is a fallback.
-        model: answer.model ?? live.model ?? input.model,
+        // A selection is not runtime evidence (decision 8). Empty means Codex did not report a model.
+        model: answer.model ?? live.model ?? '',
         version: live.process.version,
         projectId: input.projectId,
         threadId: input.threadId,
@@ -291,7 +291,7 @@ export class CodexNativeSession {
         await this.save().catch(() => undefined);
       }
       if (stop || signal.aborted) throw Object.assign(stopped(), { stopOutcome: stop ?? 'killed' });
-      throw asEngineError(error, sent);
+      throw codexSessionError(error, sent);
     }
   }
   /**
@@ -301,6 +301,9 @@ export class CodexNativeSession {
   private async connect(signal?: AbortSignal): Promise<Live> {
     this.disarm();
     if (!this.live || this.live.process.closed) {
+      // An updater can retire an otherwise live process. Close it before opening
+      // the replacement, then resume the saved native thread on the current build.
+      await this.live?.process.close();
       this.live = undefined;
       const opened = await this.port.open(this.scope, signal);
       if (signal?.aborted || this.closed) {
@@ -326,7 +329,7 @@ export class CodexNativeSession {
       await this.connect();
     } catch (error) {
       await this.drop();
-      throw asEngineError(error, false);
+      throw codexSessionError(error, false);
     } finally {
       this.arm();
     }
@@ -374,8 +377,10 @@ export class CodexNativeSession {
     this.idle = setTimeout(() => {
       this.idle = undefined;
       if (this.active || this.live !== live) return;
-      this.live = undefined;
-      void live.process.close().catch(() => undefined);
+      // Keep ownership if cleanup fails; the next connect or explicit close retries it.
+      void live.process.close().then(() => {
+        if (this.live === live) this.live = undefined;
+      }).catch(() => undefined);
     }, this.tuning.idleMs);
   }
   private disarm() {
@@ -385,8 +390,8 @@ export class CodexNativeSession {
   /** Ends the live process, if any. The thread stays in Codex's store for the next turn. */
   private async drop() {
     const live = this.live;
-    this.live = undefined;
-    await live?.process.close().catch(() => undefined);
+    await live?.process.close();
+    if (this.live === live) this.live = undefined;
   }
 }
 
@@ -460,11 +465,13 @@ export async function openCodexSession(
     turns: 0,
   };
   if (restore && options.fork) {
+    if (!restore.account)
+      throw new EngineError('SESSION_INVALID', 'This saved conversation has no confirmed ChatGPT account to fork.');
     let forked: CodexForkAnswer;
     try {
-      forked = await port.fork(restore.nativeSessionId!);
+      forked = await port.fork(restore.nativeSessionId!, restore.account);
     } catch (error) {
-      throw asEngineError(error, false);
+      throw codexSessionError(error, false);
     }
     if (forked.state !== 'forked') throw new EngineError('COMMAND_UNSUPPORTED', forked.reason);
     saved = {

@@ -1,9 +1,40 @@
 # DIOMEDES PROJECT MEMORY — CANONICAL
 
-Version: 2026-09-27.1
-Last reconciled: September 27, 2026 (Board workflow definitions synchronized with cloud)
+Version: 2026-09-27.2
+Last reconciled: engine and provider checkpoint below
 Cloud canonical: 13wYjK1BhEsGzc_yhpRtBz62pGmLxwdwq8pVqe1i4eKw
 Repository mirror: docs/DIOMEDES_PROJECT_MEMORY.md
+
+Engine and provider checkpoint
+
+Connected native engines follow their current installations and authenticated model catalogues. Vendor version equality is not an admission gate. Recheck capabilities, account, isolation and artifact identity after updates; refresh model and reasoning choices in the app. A failed check withdraws stale choices and does not silently select a different model or payer.
+
+Free accounts may update task boards manually and use eligible direct connected engines. Nectovia Agent execution, including Board supervision, requires a paid Nectovia entitlement regardless of subscription, ACP, API or local inference. Managed calls retain the account tier's allowance and company spending ceiling. This preserves the Individual and Business definitions below.
+
+Andrew selected GPT-5.6 Luna temporarily for the managed AWS route while GPT-6 access is unresolved. Both Luna models still reject this account after activation. A tiny Haiku control returned BEDROCK_OK through the same existing AWS key, with 14 input and 8 output tokens and thinking disabled. That proves Anthropic connectivity only; it does not qualify Luna or change the production Agent model. AWS case 179055771300245 contains the evidence.
+
+The native ChatGPT subscription route successfully starts and resumes GPT-6 Luna using the current Codex runtime, including Stop acknowledgement and a same-thread resume after process restart. These calls produced no reasoning-summary text. Thinking display and full installed-desktop acceptance remain unproved.
+
+PR #171 (free harness and paid Agent boundary) and PR #172 (Board workflows) are merged. PR #169 remains the integration candidate; final source gates, exact merge and the required Luna provider proof are tracked separately. No desktop release or new paid-provider production acceptance is claimed. Implementation record: docs/implementation/2026-09-27-engine-capability-discovery.md.
+
+## Task continuation permissions and Board workflow definitions
+
+Board implementation status: merged into main through PR #172 at 0f2038402f58772400916ab00059d8121d2e3b35 on 2026-09-28 UTC. The merged tree matches the tested candidate. Windows CI: 8,242 passed, 3 skipped; Apple Silicon CI: 8,224 passed, 21 skipped. Local browser checks: 46 passed. Live paid-provider route verification remains tracked separately in PR #169; this is not a packaged desktop release.
+
+Full approval authorizes the assigned agent to continue between Plan, Build and Review within its existing scope and limits. Stop on phase change requires the person's approval before the next phase. A workflow phase is separate from the Board column, which projects task, run and approval records. Continuation does not grant file access, service consent, paid Agent access or additional spending.
+
+An agent-proposed task waits in Inbox. Acceptance makes it ready without starting work. A child names a separate result, stays within its parent's continuation and action-turn ceilings and receives no copied grants. Each parent may create four children over its lifetime, at most two levels deep. Deleted children retain their limits for restore, and deletion does not replenish the child count. Source-conversation links are captured when available at creation.
+
+Task skills are reusable playbooks from active project packs. Andrew's clarification removes an Ask/Plan-only restriction: Work, Build and Fix may use this guidance. Admission records the exact pack version and digest. A playbook changes the method, not action authority, response format or spending limits. A child selects its own playbook.
+
+Nectovia Board Work uses the existing native single-agent loop with the signed-in business, published model and task-thread tier. Each call checks paid Agent authority and the original job limits. Manual Board access does not require paid Agent access. Existing Trust rules still govern file writes. The implementation and test record is docs/implementation/2026-09-27-board-workflows.md; this definition is not a release claim.
+
+## NC-IF-2026-09-27.1 — Recorded owner decisions and implementation packet
+Andrew accepted Individual at $200/month with 1,000 monthly credits. Nectovia entitlement unlocks the Agent; supported external subscriptions/APIs/local models may power paid Agent work but do not unlock it. Business remains $300 per organization/month with 1,000 credits. Individual covers personal and qualifying solo sole-proprietor work; staffed-business, employer and persistent client-organizational deployments require Business even with one login. Preserve ordinary freelance deliverables and strong personal multi-agent/board/automation capabilities.
+Andrew also requested genuinely configurable full-computer file access from Settings, including choosing risky behavior and no repeated local approval prompts. Model scope, operation rights, confirmation policy, sensitive-file choices, sandbox, data/network route and unattended/remote authority separately. Broader explicit human grants are supported; they do not imply automatic indexing/upload, root/admin power, bypass of OS/vendor limits, another tenant's cloud authority or a free paid Agent. Unrestricted same-user shell cannot be advertised as a complete sandbox, secret barrier, tamper-proof audit or universal undo mechanism.
+The implementation specification and ten ordered prompts are in packet NC-IF-2026-09-27.1, with 72 required acceptance scenarios. Source review was at dd43c358fd29140a2429692bf80cbbfd0bef351d; no product tests, production payments, live provider calls or broad host-permission changes were executed by this research. Native session/read-scope and current Board admission must be extended, not replaced by parallel systems.
+The proposed exact solo definition, ordinary 14-day correction period, engine/platform matrix and unspecified launch limits remain reviewable implementation/legal details. Do not police eligibility by scanning private prompts/files. Current LICENSE at the inspected commit is all-rights-reserved inspection-only source; historical cloud Apache wording is not authority to invent present licensing rights. Preserve any actual prior/third-party rights and obtain explicit license review.
+Canonical pricing, Pillars, Roadmap and this memory are being amended in place; repository mirrors must be synchronized source-aware by the builder. This is documentation direction and an implementation handoff, not proof of release or permission to merge/deploy the Worker.
 
 ## Authority and reading order
 

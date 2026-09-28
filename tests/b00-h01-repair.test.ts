@@ -518,12 +518,12 @@ describe('H01: EngineService dispatch is bound by the carried contract', () => {
       });
     },
   );
-  it('refuses a descriptor bound to a different route or an unproven build', async () => {
+  it('refuses a descriptor bound to a different route or engine', async () => {
     for (const contract of [
       { ...structuredClone(routeContractFor('opencode')), routeId: 'devin' },
       {
         ...structuredClone(routeContractFor('opencode')),
-        engine: { id: 'opencode', version: '0.0.0-unproven', protocolVersion: 'http+sse' },
+        engine: { id: 'devin', version: '0.0.0-unproven', protocolVersion: 'http+sse' },
       },
     ]) {
       const service = await engineFixture('opencode', {
@@ -768,11 +768,10 @@ describe('H01: conformance checks reject false completion and drifted proof', ()
     const check = streamChecks(corrupted).find((c) => c.id === 'lastseq-matches-stream');
     expect(check?.outcome).toBe('failed');
   });
-  it('a descriptor whose engine moved past its proof fails tested-version-current', () => {
+  it('a newer vendor build does not invalidate an unchanged adapter contract', () => {
     const descriptor = structuredClone(routeContractFor('devin'));
     descriptor.engine.version = '9999.0.0';
-    const check = contractChecks(descriptor).find((c) => c.id === 'tested-version-current');
-    expect(check?.outcome).toBe('failed');
+    expect(contractChecks(descriptor).filter((c) => c.outcome === 'failed')).toEqual([]);
   });
   it('every shipped descriptor still passes contract conformance', () => {
     for (const [routeId, contract] of Object.entries(ROUTE_CONTRACTS)) {
