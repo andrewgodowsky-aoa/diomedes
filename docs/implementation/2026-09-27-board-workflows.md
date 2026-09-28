@@ -57,10 +57,11 @@ runs before live model work. Local scripted fixtures are verification only.
 
 ## Verification ledger
 
-The final validated source tree is `439fa9ebf9b657f96dc9f620a3f2dce2ce687b5a`.
-Runtime and test sources stayed unchanged through the final gates. Later edits
-only synchronize this evidence record and canonical document status; generated
-browser screenshots are retained in ignored local evidence.
+Application and test sources match validated tree
+`439fa9ebf9b657f96dc9f620a3f2dce2ce687b5a`. They stayed unchanged through the final
+gates. Later edits only update this evidence record and the macOS build heap
+setting described below; generated browser screenshots are retained in ignored
+local evidence.
 
 | Check | Final result | Local log |
 | --- | --- | --- |
@@ -84,6 +85,15 @@ isolate the phase change. Application code did not change. The focused approval
 suite, full local suite, build and browser gates above all passed after this
 correction. GitHub checks
 and the accepted head remain recorded on PR #172.
+
+On corrected head `7edb20c`, macOS completed the full suite with 8,224 passed,
+21 platform skips and zero failed tests. Its earlier build step exhausted Node's
+automatic roughly 2 GB heap during root type checking. The macOS build step now
+sets a 4 GB heap explicitly; test-worker memory settings and application code
+are unchanged. Workflow YAML parsing passed. Local Node v22.23.2 already reports
+the same 4,144 MiB total V8 heap limit with and without the explicit 4,096 MiB
+old-space setting, so the passing local builds used the same ceiling. The
+hosted build must pass on the updated head before merging.
 
 Independent review through OpenCode Go Muse Spark 1.3 (model-default effort,
 read-only, no fallback) found and then confirmed repairs for the team-wake

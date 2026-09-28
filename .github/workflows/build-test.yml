@@ -92,6 +92,10 @@ jobs:
       # Build must type-check and compile without attempting desktop packaging.
       # Run it before tests so the no-package check describes this step alone.
       - run: npm run build
+        env:
+          # Root type checking exceeded this runner's automatic 2 GB Node heap.
+          # Give the build 4 GB; the separate test workers keep their own limits.
+          NODE_OPTIONS: --max-old-space-size=4096
       - name: Build produced no desktop package
         run: test ! -e release
       # Two workers on a three-core runner. It runs even when the build step
