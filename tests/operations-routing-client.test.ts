@@ -206,7 +206,7 @@ describe('published account policy at the desktop model boundary', () => {
   it.each(['admission', 'preference', 'acceptance'] as const)('rejects a late %s result after switching the active account', async operation => {
     const individual = await client.individualAccount(token);
     let activeOrganization = org;
-    const session = { personId: () => individual.personId, backend: { client },
+    const session = { personId: () => individual.personId, backend: { client }, includes: () => false,
       call: <T>(fn: (value: string) => Promise<T>) => fn(token) } as unknown as AccountSessionService;
     const workspaces = { projectOwner: () => null, active: () => ({ kind: 'business', organizationId: activeOrganization }) } as unknown as WorkspaceService;
     const routing = new AccountRoutingSession(session, workspaces);
