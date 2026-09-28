@@ -13,11 +13,12 @@
 - Worktree: F:/Diomedes/diomedes-wt/needs-you-rule.
 - Base: 66334d512ef51c808d460b6e177690d87ecfaaa0 (origin/main when the work began).
 - Coordination: part 1a held claims `claim_mukuohc7_860bccdd`, `claim_mukutfgw_d3b1af86`,
-  `claim_mukvnyhc_abc901ee` and `claim_mukzvyxg_abd59771`, released after fd3154e; part 1b holds
-  `claim_mul0b0o3_320d7ae4`, released after its commits. Two integrator hot files changed under
-  owner overrides: `server/store.ts` (journaled 2026-09-28T06:12:26Z) and, in part 1b,
-  `shared/types.ts` (widened 08:49:24Z). `client/console/Shell.tsx` is held by PR169-RESUMED and
-  is not touched; its part is a patch for the integrator.
+  `claim_mukvnyhc_abc901ee` and `claim_mukzvyxg_abd59771`, released after fd3154e; part 1b held
+  `claim_mul0b0o3_320d7ae4` and, for this record's correction, `claim_mul1bug3_d630c1d1`, each
+  released after its commits. Two integrator hot files changed under owner overrides:
+  `server/store.ts` (journaled 2026-09-28T06:12:26Z) and, in part 1b, `shared/types.ts` (widened
+  08:49:24Z). `client/console/Shell.tsx` is held by PR169-RESUMED and is not touched; its part is
+  a patch for the integrator.
 
 ## The problem
 
@@ -154,11 +155,15 @@ Part 1b, on fd3154e plus part 1b:
 - `npx vite build`: built.
 - `npx playwright test tests/ui.spec.ts tests/native-ui.spec.ts tests/field.spec.ts`: 36 passed.
 - `git apply --check` of the Shell patch against the committed `client/console/Shell.tsx`: applies.
+  It also applies to PR169's working copy at b4a1e92, where the file has changed since 66334d5.
 - The home's list, rendered: the real `HomeBrief` with sample projects, on a page that loads the
-  built stylesheets in the built-in Nectovia scheme, at 1265 px and at 800 px (the desktop
-  window's minimum). Nothing wraps at either width. The second line reads at 8.45:1, the red
-  Check at 6.03:1 and the amber Review at 9.18:1, and every button's box sits inside its row's
-  lines.
+  built stylesheets in the built-in Nectovia scheme, with the rail and the art column in place.
+  At 800 px (the desktop window's minimum), 1000 px and 1440 px nothing wraps. At 1101 and
+  1280 px the art column takes 360 and 419 px, and a long item's text wraps to a second line, as
+  the project rows under it already do: both lists share one row grid, whose label column takes
+  its full 150 px first. The second line reads at 8.45:1, the red Check at 6.03:1 and the amber
+  Review at 9.18:1. At 800 and 1101 px every button's box sits between its row's lines, 3 px
+  under the top one.
 
 The two evidence screenshots the browser run rewrites were restored after each run.
 
@@ -190,6 +195,6 @@ and the Board read the same rule, and the home names the newest three with a but
 
 ## Build, publication and deployment status
 
-Committed locally on `feature/needs-you-rule`: fd3154e (part 1a), 2adca0a (part 1b) and the
-commit that records the rendered check of the home's list. Nothing is pushed, merged, released
+Committed locally on `feature/needs-you-rule`: fd3154e (part 1a), 2adca0a (part 1b) and two
+commits that record the rendered check of the home's list. Nothing is pushed, merged, released
 or deployed, and no version changed. The Shell patch is not applied anywhere.
