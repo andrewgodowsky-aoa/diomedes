@@ -33,6 +33,8 @@ import { AGENT_FEATURE, AGENT_FREE_VERSION_REASON, AGENT_PERSONAL_REASON, FEATUR
 import { EngineError } from '../engines/process.js';
 import type { WorkspaceService } from '../workspaces.js';
 import type { AccountSessionService, AgentRouteKind, AgentSurface } from './session.js';
+import type { AccountRoutingSession } from './routing-session.js';
+import type { AccountScope } from '../../shared/routing-policy.js';
 
 export const AGENT_NOT_INCLUDED = 'AGENT_NOT_INCLUDED';
 export const AGENT_SIGN_IN_REQUIRED = 'SIGN_IN_REQUIRED';
@@ -63,6 +65,7 @@ export interface AgentWork {
 export interface AdmittedAgentWork {
   readonly admissionId: string;
   readonly organizationId: string;
+  readonly scope?: AccountScope;
   readonly personId: string;
   readonly planId: string | null;
   /** The routing tier policy revision the service admitted under. Not a telemetry policy. */
@@ -83,6 +86,7 @@ export class AccountAgentGate implements AgentGatePort {
   constructor(
     private readonly session: AccountSessionService,
     private readonly workspaces: Pick<WorkspaceService, 'projectOwner' | 'active'>,
+    private readonly routing?: AccountRoutingSession,
   ) {}
 
   /** The business this work is for, or null for Personal. */
@@ -101,6 +105,8 @@ export class AccountAgentGate implements AgentGatePort {
    * Phase 2 adds the person's own individual subscription.
    */
   paidFor(projectId: string | null): boolean {
+    const scope = this.routing?.scopeFor(projectId);
+    if (scope?.kind === 'individual') return this.routing!.mayHaveAgent(scope);
     const organizationId = this.organizationFor(projectId);
     if (!organizationId) return false;
     return this.session.entitlement(organizationId)?.state === 'unknown' || this.session.includes(organizationId, AGENT_FEATURE);
@@ -113,6 +119,7 @@ export class AccountAgentGate implements AgentGatePort {
   }
 
   async check(work: AgentWork): Promise<AdmittedAgentWork> {
+    if (this.routing) return this.routing.admit(work);
     const organizationId = this.organizationFor(work.projectId);
     if (!organizationId) throw new EngineError(AGENT_NOT_INCLUDED, this.unpaidReason(work.projectId), false);
     const routeKind = work.routeKind ?? 'byo';

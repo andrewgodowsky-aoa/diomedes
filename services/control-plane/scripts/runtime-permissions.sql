@@ -43,3 +43,13 @@ GRANT SELECT, INSERT ON control_plane.tier_policies, control_plane.ops_audit,
 -- 006 staff keys (2026-09-26): the Worker only reads a key's hash to sign staff
 -- in. Registering and withdrawing keys is the schema owner's, for now.
 GRANT SELECT ON control_plane.staff_keys TO cp_runtime;
+-- 009 scoped routing: Individual identities and customer consent append through
+-- the account service. FOR SHARE needs UPDATE on one column; kind cannot change
+-- to another value without violating the billing scope's identity constraint.
+GRANT SELECT, INSERT ON control_plane.billing_scopes,
+  control_plane.account_routing_preferences TO cp_runtime;
+GRANT UPDATE (kind) ON control_plane.billing_scopes TO cp_runtime;
+GRANT SELECT, INSERT ON control_plane.routing_job_constraints,
+  control_plane.managed_route_circuits TO cp_runtime;
+GRANT UPDATE (restrictions) ON control_plane.routing_job_constraints TO cp_runtime;
+GRANT UPDATE (until_at, reason) ON control_plane.managed_route_circuits TO cp_runtime;

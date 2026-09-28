@@ -32,6 +32,9 @@ import { OrganizationSetupService } from './organization-setup/service.js';
 import { PostgresOrganizationSetupRepository } from './organization-setup/postgres.js';
 import { organizationSetupWriteSchema } from './organization-setup/schema.js';
 import { OrganizationExportService } from './organization-export/service.js';
+import { RoutingService, preferenceInputSchema, individualAgreementInput } from './routing.js';
+import { scopedPublicationSchema, scopedRollbackSchema, type AccountScope } from '../../../shared/routing-policy.js';
+import { approvedConnections, discoverConnectionModels } from './managed-bindings.js';
 import { PostgresOrganizationExportRepository } from './organization-export/postgres.js';
 
 /** The phone relay's per-business hub, bound as RELAY_HUB (both wrangler.jsonc files). */
@@ -68,6 +71,7 @@ const route = (pattern: string) => new RegExp(`^${pattern.replace(/:id/g, ID)}$`
 const QUERY_RULES: { path: RegExp; keys: Record<string, (value: string) => boolean> }[] = [
   { path: /^\/account\/session$/, keys: { after: (value) => accountId.safeParse(value).success } },
   { path: /^\/ops\/customers$/, keys: { q: (value) => value.length <= 100 } },
+  { path: /^\/ops\/individuals$/, keys: { q: (value) => value.length <= 100 } },
   { path: /^\/ops\/people$/, keys: { q: (value) => value.length <= 100 } },
   { path: /^\/ops\/audit$/, keys: { organizationId: (value) => accountId.safeParse(value).success, limit: (value) => /^[1-9][0-9]{0,2}$/.test(value) } },
 ];
@@ -84,6 +88,7 @@ export interface HandlerOptions {
   /** Test and faux-cloud seam. The Worker entry always reads its own environment. */
   configuration?: (env: Record<string, unknown>) => Configuration;
   createCommercial?: (config: Configuration, accounts: AccountService) => CommercialService;
+  createRouting?: (config: Configuration, accounts: AccountService) => RoutingService;
   /** Test and faux-cloud seam for the managed gateway: the scripted provider instead of Bedrock. */
   createManaged?: (config: Configuration, accounts: AccountService) => ManagedInferenceService;
   /** Test and faux-cloud seam for the phone relay: the faux store and an in-process hub. */
@@ -117,6 +122,9 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
   const createCommercial = options.createCommercial ?? ((config: Configuration, accounts: AccountService) =>
     new CommercialService(accounts, new PostgresCommercialRepository(neonClientFactory(config.databaseUrl)),
       new FundingService(new PostgresFundingRepository(neonClientFactory(config.databaseUrl)))));
+  const createRouting = options.createRouting ?? ((config: Configuration, accounts: AccountService) =>
+    new RoutingService(accounts, new PostgresCommercialRepository(neonClientFactory(config.databaseUrl)), Date.now,
+      config.fundingDatabaseUrl ? new FundingService(new PostgresFundingRepository(neonClientFactory(config.fundingDatabaseUrl))) : null));
   const createManaged = options.createManaged ?? ((config: Configuration, accounts: AccountService) => {
     // Every funding read and write the gateway makes runs as cp_funding
     // (FUNDING_DATABASE_URL), never as the Worker login, which may only read
@@ -280,6 +288,19 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
 
       if (pathname === '/account/routing-policy' && method === 'GET')
         return json(await createCommercial(config, accounts).routingPolicy(token));
+      if (pathname === '/account/individual' && method === 'POST') return json(await createRouting(config, accounts).individual(token));
+      if ((match = new RegExp(`^/account/routing/(organization|individual)/${ID}/(policy|preference|admit|access)$`).exec(pathname))) {
+        const scope: AccountScope = { kind: match[1] as AccountScope['kind'], id: match[2] }, routing = createRouting(config, accounts);
+        if (match[3] === 'policy' && method === 'GET') return json(await routing.snapshot(token, scope, env));
+        if (match[3] === 'access' && method === 'GET') return json(await routing.access(token, scope));
+        if (match[3] === 'preference' && method === 'GET') return json(await routing.preference(token, scope));
+        if (match[3] === 'preference' && method === 'POST') {
+          const input = await body(request, preferenceInputSchema);
+          if (input.scope.kind !== scope.kind || input.scope.id !== scope.id) throw new AccountError(422, 'The scope in this request does not match the address.');
+          return json(await routing.acceptPreference(token, input));
+        }
+        if (match[3] === 'admit' && method === 'POST') return json(await routing.admit(token, scope, await body(request, agentAdmissionInput)));
+      }
 
       // --- Diomedes staff (Operations app). The bearer is a registered staff key. ---------
       // Every route but sign-out checks the staff role itself. Sign-out retires the key's
@@ -289,7 +310,26 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
           await accounts.revokeLocalSession(token); return new Response(null, { status: 204, headers });
         }
         const ops = createCommercial(config, accounts);
+        const routing = createRouting(config, accounts);
         if (pathname === '/ops/me' && method === 'GET') return json(await ops.me(token));
+        if (pathname === '/ops/individuals' && method === 'GET') return json(await routing.individuals(token, url.searchParams.get('q') ?? ''));
+        if ((match = route('/ops/individuals/:id').exec(pathname)) && method === 'GET') return json(await routing.individualDetail(token, match[1]));
+        if ((match = route('/ops/individuals/:id/grants').exec(pathname)) && method === 'POST') return json(await routing.issueIndividualAgreement(token, match[1], await body(request, individualAgreementInput)), 201);
+        if ((match = route('/ops/individuals/:id/grants/:id/revoke').exec(pathname)) && method === 'POST')
+          return json(await routing.revokeIndividualAgreement(token, match[1], match[2], await body(request, revokeGrantInput)));
+        if (pathname === '/ops/routing/scopes/global' && method === 'GET') return json(await routing.view(token, { kind: 'global' }, env));
+        if ((match = new RegExp(`^/ops/routing/scopes/(organization|individual)/${ID}$`).exec(pathname)) && method === 'GET')
+          return json(await routing.view(token, { kind: match[1] as AccountScope['kind'], id: match[2] }, env));
+        if (pathname === '/ops/routing/scopes/preview' && method === 'POST') return json(await routing.preview(token, await body(request, scopedPublicationSchema), env));
+        if (pathname === '/ops/routing/scopes/publish' && method === 'POST') return json(await routing.publish(token, await body(request, scopedPublicationSchema), env), 201);
+        if (pathname === '/ops/routing/scopes/rollback' && method === 'POST') return json(await routing.publish(token, await body(request, scopedRollbackSchema), env, true), 201);
+        if ((match = route('/ops/connections/:id/models').exec(pathname)) && method === 'GET') {
+          const staff = await ops.me(token);
+          if (!staff.permissions.includes('routes.write')) throw new AccountError(403, 'Routing permission is required.');
+          const connection = approvedConnections(env).find(c => c.id === match![1]);
+          if (!connection) throw new AccountError(404, 'That approved connection was not found.');
+          return json(await discoverConnectionModels(connection, env));
+        }
         if (pathname === '/ops/customers' && method === 'GET') return json(await ops.customers(token, url.searchParams.get('q') ?? ''));
         if ((match = route('/ops/customers/:id').exec(pathname)) && method === 'GET') return json(await ops.customer(token, match[1]));
         if ((match = route('/ops/customers/:id/grants').exec(pathname)) && method === 'POST')
@@ -299,7 +339,7 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
         if ((match = route('/ops/customers/:id/funding').exec(pathname)) && method === 'POST')
           return json(await ops.addFunding(token, match[1], await body(request, addFundingInput)), 201);
         if (pathname === '/ops/routing' && method === 'GET') return json(await ops.routes(token));
-        if (pathname === '/ops/routes' && method === 'POST') return json(await ops.saveRoute(token, await body(request, saveRouteInput)));
+        if (pathname === '/ops/routes' && method === 'POST') return json(await ops.saveRoute(token, await body(request, saveRouteInput), env));
         if (pathname === '/ops/routing/preview' && method === 'POST') return json(await ops.previewPolicy(token, await body(request, publishPolicyInput)));
         if (pathname === '/ops/routing/publish' && method === 'POST') return json(await ops.publishPolicy(token, await body(request, publishPolicyInput)), 201);
         if (pathname === '/ops/routing/rollback' && method === 'POST') return json(await ops.rollbackPolicy(token, await body(request, rollbackPolicyInput)), 201);

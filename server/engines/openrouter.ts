@@ -52,7 +52,7 @@ export const OPENROUTER_CONNECTION_ID = 'openrouter-1';
 /** `vendor/model`, no `:variant`: a suffix such as `:free`, `:online` or `:nitro` changes terms or routing. */
 export const OPENROUTER_MODEL = /^[a-z0-9][a-z0-9._-]{0,63}\/[a-z0-9][a-z0-9._-]{0,127}$/;
 /** An upstream endpoint slug as `provider.only` takes it, e.g. `openai`, `azure`, `amazon-bedrock`. */
-export const OPENROUTER_UPSTREAM = /^[a-z0-9][a-z0-9.-]{0,63}$/;
+export const OPENROUTER_UPSTREAM = /^[a-z0-9][a-z0-9._-]{0,63}(?:\/[a-z0-9][a-z0-9._-]{0,63})?$/;
 
 // --- the connection record ------------------------------------------------------
 
@@ -65,6 +65,8 @@ export const openRouterModelSchema = z.strictObject({
   /** The only upstream endpoints this model may run on. Never empty: an empty list means "any". */
   upstreams: z.array(z.string().regex(OPENROUTER_UPSTREAM)).min(1).max(8),
   rates: declaredRatesSchema,
+  /** Endpoint-level ZDR filter, distinct from the no-training data-collection policy. */
+  zdr: z.boolean().optional(),
 });
 export type OpenRouterModel = z.infer<typeof openRouterModelSchema>;
 
@@ -133,6 +135,7 @@ export function openRouterPreferences(entry: OpenRouterModel) {
     allow_fallbacks: false,
     require_parameters: true,
     data_collection: 'deny' as const,
+    ...(entry.zdr === undefined ? {} : { zdr: entry.zdr }),
   };
 }
 
@@ -324,6 +327,7 @@ function inspectOpenRouterBody(entry: OpenRouterModel) {
           allow_fallbacks: provider.allow_fallbacks,
           require_parameters: provider.require_parameters,
           data_collection: provider.data_collection,
+          ...(entry.zdr === undefined ? {} : { zdr: provider.zdr }),
         })
       : null;
     if (
@@ -335,14 +339,14 @@ function inspectOpenRouterBody(entry: OpenRouterModel) {
       body.stream !== true ||
       record(body.usage)?.include !== true ||
       canonical !== expected ||
-      keys.join(',') !== 'allow_fallbacks,data_collection,only,require_parameters'
+      keys.join(',') !== `allow_fallbacks,data_collection,only,require_parameters${entry.zdr === undefined ? '' : ',zdr'}`
     )
       throw refuseBody();
   };
 }
 
 export function openRouterBinding(connection: OpenRouterConnection, entry: OpenRouterModel): RouteBinding {
-  const allowed = new Set(entry.upstreams.map(upstreamSlug));
+  const allowed = new Set(entry.upstreams.map(s => s.includes('/') ? s : upstreamSlug(s)));
   return {
     route: OPENROUTER_ROUTE,
     prefix: 'openrouter',
@@ -388,7 +392,7 @@ export function openRouterBinding(connection: OpenRouterConnection, entry: OpenR
           message: `OpenRouter answered with ${reported ?? 'an unreported model'}, not ${entry.id}. The answer was not used.`,
         };
       const served = classified.servedBy;
-      if (!served || !allowed.has(upstreamSlug(served)))
+      if (!served || !allowed.has(served.includes('/') ? served : upstreamSlug(served)))
         return {
           code: 'openrouter_endpoint_refused',
           message: `OpenRouter ran this call on ${served ?? 'an unreported endpoint'}, which is not one of this model’s allowed endpoints. The answer was not used.`,

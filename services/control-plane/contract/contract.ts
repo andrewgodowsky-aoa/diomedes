@@ -483,7 +483,7 @@ export function decideAdmission(view: AdmissionView): AdmissionDecision {
  */
 export interface AgentAdmissionView {
   /** Personal work has no organization to hold the Agent. */
-  readonly workspace: 'personal' | 'business';
+  readonly workspace: 'personal' | 'business' | 'individual';
   readonly member: boolean;
   readonly entitlement: EntitlementSnapshot;
   readonly at: string;

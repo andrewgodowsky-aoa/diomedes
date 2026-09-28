@@ -44,9 +44,24 @@ import { decideAgentAdmission, snapshotFromView, type AgentAdmissionDecision } f
 import type { AccountService } from './account-service.js';
 import { accountId, NO_IDENTITY_DIRECTORY, type IdentityDirectory } from './domain.js';
 import { AccountError } from './errors.js';
+import { modelBindingSchema, routingScopeSchema, routingConfigurationSchema, hardRestrictionsSchema, bindingProblems, type IndividualAccount } from '../../../shared/routing-policy.js';
+import type { RoutingTransaction } from './routing.js';
+import { approvedConnections } from './managed-bindings.js';
 import type { FundingService } from './funding.js';
 
 export const COMMERCIAL_VERSION = 1 as const;
+
+/** Reuse this in paid-plan provisioning before grants, even if setup has never opened.
+ * The caller supplies a verified person inside its commercial transaction. Creation grants no access or credits. */
+export async function ensureIndividualAccount(tx: CommercialTransaction, person: Pick<Person, 'id' | 'name'>, at: string) {
+  await tx.lockOrganization(`individual:${person.id}`);
+  const current = await tx.individualFor(person.id);
+  if (current) return current;
+  const row: IndividualAccount = { id: `individual_${crypto.randomUUID()}`, tenantId: `tenant_${crypto.randomUUID()}`,
+    personId: person.id, name: person.name, state: 'active', createdAt: at };
+  await tx.saveIndividual(row);
+  return row;
+}
 
 /** The three tiers, restated so the Worker bundle does not load the UI's work-style module. */
 export const POLICY_TIERS = ['efficient', 'focused', 'thorough'] as const;
@@ -99,6 +114,7 @@ export const routeEntrySchema = z.strictObject({
   revision: epoch,
   updatedAt: time,
   updatedBy: accountId,
+  binding: modelBindingSchema.optional(),
 });
 export type RouteEntry = z.infer<typeof routeEntrySchema>;
 
@@ -125,6 +141,10 @@ export const tierPolicySchema = z.strictObject({
   note: z.string().trim().min(1).max(1000),
   publishedAt: time,
   publishedBy: accountId,
+  scope: routingScopeSchema.optional(),
+  routing: routingConfigurationSchema.optional(),
+  inherit: z.boolean().optional(),
+  mandatory: hardRestrictionsSchema.optional(),
 });
 export type TierPolicy = z.infer<typeof tierPolicySchema>;
 
@@ -187,7 +207,7 @@ export type AdmissionRecord = z.infer<typeof admissionRecordSchema>;
 // --- persistence -------------------------------------------------------------------
 
 /** Database operations only. Never a provider call, never a retry. */
-export interface CommercialTransaction {
+export interface CommercialTransaction extends RoutingTransaction {
   /** Serializes grant writes and access-revision bumps for one organization. */
   lockOrganization(organizationId: string): Promise<void>;
   grants(organizationId: string): Promise<FeatureGrant[]>;
@@ -198,9 +218,11 @@ export interface CommercialTransaction {
   saveRoute(row: RouteEntry): Promise<void>;
   /** Serializes policy publication so two publishers cannot both build on one base. */
   lockPolicy(): Promise<void>;
-  policy(revision?: number): Promise<TierPolicy | undefined>;
-  policies(limit: number): Promise<TierPolicy[]>;
+  policy(revision?: number, scopeKey?: string): Promise<TierPolicy | undefined>;
+  policies(limit: number, scopeKey?: string): Promise<TierPolicy[]>;
   savePolicy(row: TierPolicy): Promise<void>;
+  /** Serializes staff authority checks and role changes, including the last-admin check. */
+  lockStaff(): Promise<void>;
   operator(personId: string): Promise<Operator | undefined>;
   operators(): Promise<Operator[]>;
   saveOperator(row: Operator): Promise<void>;
@@ -321,6 +343,7 @@ export const saveRouteInput = z.strictObject({
   evidence: text(1000),
   /** The revision the editor read; a stale editor is refused, never merged. Omit for a new entry. */
   baseRevision: epoch.optional(),
+  binding: modelBindingSchema.optional(),
 });
 export const publishPolicyInput = z.strictObject({
   tiers: z.strictObject({
@@ -479,14 +502,28 @@ export class CommercialService {
 
   // --- staff --------------------------------------------------------------------------
 
-  private async staff(token: string, permission: StaffPermission) {
-    const session = await this.accounts.signIn(token);
-    const operator = await this.repository.transaction((tx) => tx.operator(session.person.id));
+  private async staffOperator(tx: CommercialTransaction, personId: string, permission: StaffPermission) {
+    const operator = await tx.operator(personId);
     if (!operator || operator.state !== 'active')
       throw new AccountError(403, 'This account is not a Diomedes staff account.');
     if (!staffCan(operator.role, permission))
       throw new AccountError(403, `The ${operator.role} role cannot do this. Ask a Diomedes admin.`);
+    return operator;
+  }
+
+  private async staff(token: string, permission: StaffPermission) {
+    const session = await this.accounts.signIn(token);
+    const operator = await this.repository.transaction((tx) => this.staffOperator(tx, session.person.id, permission));
     return { person: session.person, operator };
+  }
+
+  private async writeStaff<T>(token: string, action: (tx: CommercialTransaction, actor: { person: Person; operator: Operator }) => Promise<T>) {
+    const actor = await this.staff(token, 'staff.write');
+    return this.repository.transaction(async (tx) => {
+      await tx.lockStaff();
+      const operator = await this.staffOperator(tx, actor.person.id, 'staff.write');
+      return action(tx, { person: actor.person, operator });
+    });
   }
 
   private async audited(tx: CommercialTransaction, actor: { person: Person; operator: Operator }, event: Omit<AuditEvent, 'id' | 'at' | 'actorPersonId' | 'actorRole'>) {
@@ -691,7 +728,7 @@ export class CommercialService {
    * unqualified or retired, or have its provider or model changed, until a
    * new policy stops using it: the policy names what customers run on.
    */
-  async saveRoute(token: string, input: z.infer<typeof saveRouteInput>) {
+  async saveRoute(token: string, input: z.infer<typeof saveRouteInput>, env: Readonly<Record<string, unknown>> = {}) {
     const parsed = saveRouteInput.safeParse(input);
     if (!parsed.success) throw new AccountError(422, 'A route needs an id, provider, model id, name and status.');
     const actor = await this.staff(token, 'routes.write');
@@ -699,14 +736,29 @@ export class CommercialService {
       throw new AccountError(422, 'Say what qualified this route: a live proof, a run or a dated account check.');
     return this.repository.transaction(async (tx) => {
       await tx.lockPolicy();
+      await tx.lockStaff();
+      actor.operator = await this.staffOperator(tx, actor.person.id, 'routes.write');
       const existing = (await tx.routes()).find((row) => row.id === parsed.data.id);
+      if (parsed.data.binding) {
+        const connection = approvedConnections(env).find(c => c.id === parsed.data.binding!.connectionId);
+        if (!connection) throw new AccountError(422, 'Select an approved company connection.');
+        const problems = bindingProblems({ ...parsed.data, revision: existing?.revision ?? 0 }, connection);
+        if (problems.length) throw new AccountError(422, problems.map(p => p.message).join(' '));
+        const identity = (r: typeof parsed.data) => JSON.stringify([r.provider, r.model, r.binding?.connectionId, r.binding?.connectionRevision,
+          r.binding?.modelVersion, r.binding?.protocol, r.binding?.deployment, r.binding?.upstreamEndpoint]);
+        if (existing?.binding && identity(existing) !== identity(parsed.data)) {
+          for (const key of ['privacy', 'qualification', 'access'] as const)
+            if (parsed.data.binding[key] !== null && JSON.stringify(parsed.data.binding[key]) === JSON.stringify(existing.binding[key]))
+              throw new AccountError(422, `Changing the binding requires fresh ${key} evidence or an explicitly unverified state.`);
+        }
+      } else if (existing?.binding) throw new AccountError(422, 'A versioned binding cannot be removed. Retire the route instead.');
       if (existing && parsed.data.baseRevision !== existing.revision)
         throw new AccountError(409, 'Someone changed this route since you opened it. Reload and try again.');
       if (!existing && parsed.data.baseRevision !== undefined)
         throw new AccountError(409, 'That route no longer exists. Reload and try again.');
       const policy = await tx.policy();
       const inUse = policy ? POLICY_TIERS.filter((tier) => policy.tiers[tier]?.entryId === parsed.data.id) : [];
-      if (existing && inUse.length && (parsed.data.status !== 'qualified' || parsed.data.provider !== existing.provider || parsed.data.model !== existing.model))
+      if (existing && !existing.binding && inUse.length && (parsed.data.status !== 'qualified' || parsed.data.provider !== existing.provider || parsed.data.model !== existing.model))
         throw new AccountError(409, `This route serves ${inUse.join(', ')} in the current policy. Publish a policy without it first.`);
       const { baseRevision: _base, ...fields } = parsed.data;
       const row: RouteEntry = { v: 1, ...fields, revision: (existing?.revision ?? 0) + 1, updatedAt: this.at(), updatedBy: actor.person.id };
@@ -764,6 +816,7 @@ export class CommercialService {
     return this.repository.transaction(async (tx) => {
       await tx.lockPolicy();
       const current = await tx.policy();
+      if (current?.routing) throw new AccountError(409, 'Use the scoped routing editor for this versioned policy.');
       if ((current?.revision ?? 0) !== parsed.data.baseRevision)
         throw new AccountError(409, `The policy is now revision ${current?.revision ?? 0}. Review it and publish again.`);
       const row: TierPolicy = {
@@ -787,6 +840,7 @@ export class CommercialService {
     return this.repository.transaction(async (tx) => {
       await tx.lockPolicy();
       const current = await tx.policy();
+      if (current?.routing) throw new AccountError(409, 'Use scoped rollback so current account restrictions are checked.');
       if ((current?.revision ?? 0) !== parsed.data.baseRevision)
         throw new AccountError(409, `The policy is now revision ${current?.revision ?? 0}. Review it and try again.`);
       const target = await tx.policy(parsed.data.toRevision);
@@ -823,8 +877,7 @@ export class CommercialService {
   async addStaff(token: string, input: z.infer<typeof addStaffInput>) {
     const parsed = addStaffInput.safeParse(input);
     if (!parsed.success) throw new AccountError(422, 'Choose a person and a staff role.');
-    const actor = await this.staff(token, 'staff.write');
-    return this.repository.transaction(async (tx) => {
+    return this.writeStaff(token, async (tx, actor) => {
       if (!(await tx.person(parsed.data.personId))) throw new AccountError(404, 'That person has no account yet. They sign in once first.');
       if (await tx.operator(parsed.data.personId)) throw new AccountError(409, 'That person is already on staff. Change their role instead.');
       const at = this.at();
@@ -838,8 +891,7 @@ export class CommercialService {
   async changeStaff(token: string, personId: string, input: z.infer<typeof changeStaffInput>) {
     const parsed = changeStaffInput.safeParse(input);
     if (!parsed.success) throw new AccountError(422, 'Choose a staff role and state.');
-    const actor = await this.staff(token, 'staff.write');
-    return this.repository.transaction(async (tx) => {
+    return this.writeStaff(token, async (tx, actor) => {
       const existing = await tx.operator(personId);
       if (!existing) throw new AccountError(404, 'That person is not on staff.');
       // There is always an active admin, so staff administration can never lock itself out.

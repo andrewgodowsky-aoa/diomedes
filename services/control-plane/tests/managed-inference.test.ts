@@ -274,7 +274,7 @@ describe('route resolution', () => {
   it('refuses a tier the policy leaves empty with 409 tier_unrouted', async () => {
     const { token, admission } = await employee();
     const routing = await signIn('staffRouting');
-    expect((await call('POST', '/ops/routing/publish', routing, { tiers: { efficient: 'aws-luna-6', focused: 'aws-luna-6', thorough: null }, note: 'Hold Thorough.', baseRevision: 1 })).status).toBe(201);
+    expect((await call('POST', '/ops/routing/publish', routing, { tiers: { efficient: 'aws-luna-5-6', focused: 'aws-luna-5-6', thorough: null }, note: 'Hold Thorough.', baseRevision: 1 })).status).toBe(201);
     expect(await refusal(await ask({ token, admission, tier: 'thorough', revision: '2' }))).toMatchObject({ status: 409, code: 'tier_unrouted' });
     expectNothingSentOrHeld();
   });
@@ -282,8 +282,8 @@ describe('route resolution', () => {
   it('answers 503 route_unavailable, naming no provider, for a route outside the registry', async () => {
     const { token, admission } = await employee();
     const routing = await signIn('staffRouting');
-    expect((await call('POST', '/ops/routing/publish', routing, { tiers: { efficient: 'aws-luna-5-6', focused: 'aws-luna-6', thorough: 'aws-luna-6' }, note: 'Back to 5.6.', baseRevision: 1 })).status).toBe(201);
-    const refused = await refusal(await ask({ token, admission, revision: '2', body: chatBody({ model: 'us.openai.gpt-5.6-luna' }) }));
+    expect((await call('POST', '/ops/routing/publish', routing, { tiers: { efficient: 'aws-luna-6', focused: 'aws-luna-5-6', thorough: 'aws-luna-5-6' }, note: 'Unqualified GPT-6 fixture.', baseRevision: 1 })).status).toBe(201);
+    const refused = await refusal(await ask({ token, admission, revision: '2', body: chatBody({ model: 'us.openai.gpt-6-luna' }) }));
     expect(refused).toEqual({ status: 503, code: 'route_unavailable', message: 'Nectovia’s model service is not available right now.' });
     expectNothingSentOrHeld();
   });
@@ -313,7 +313,7 @@ describe('an entitled Business call', () => {
     expect(response.status).toBe(200);
     expect(response.headers.get('content-type')).toMatch(/^text\/event-stream/);
     expect(response.headers.get('x-nectovia-attempt')).toBe('run-1:1');
-    expect(response.headers.get('x-nectovia-route')).toBe('aws-luna-6');
+    expect(response.headers.get('x-nectovia-route')).toBe('aws-luna-5-6');
     expect(response.headers.get('x-nectovia-model')).toBe(LUNA.model);
     expect(response.headers.get('x-nectovia-rate-card')).toBe(LUNA.rate.version);
     const clientBytes = await readAll(response.body);
@@ -326,9 +326,10 @@ describe('an entitled Business call', () => {
 
     await cloud.idle();
     const [attempt] = attempts();
-    expect(attempt).toMatchObject({ id: 'run-1:1', state: 'settled', route: 'aws-luna-6', rootJobId: 'run-1', usageClass: 'included-chat', rateSnapshot: LUNA.rate });
+    expect(attempt).toMatchObject({ id: 'run-1:1', state: 'settled', route: 'aws-luna-5-6', rootJobId: 'run-1', usageClass: 'included-chat', rateSnapshot: LUNA.rate });
     const [settlement] = settlements();
-    expect(SCRIPTED_COST).toBe(112);
+    // (800 uncached * .22 + 100 cached * .022 + 40 output * 1.32) micro-USD.
+    expect(SCRIPTED_COST).toBe(231);
     expect(settlement).toMatchObject({ providerCostMicroUsd: SCRIPTED_COST, allowanceDebitMicroUsd: SCRIPTED_COST, reconciledFrom: 'response',
       receiptRef: expect.stringMatching(/^resp_/), usage: { inputTokens: 900, cacheReadTokens: 100, cacheWriteTokens: 0, outputTokens: 40, reasoningTokens: 8 } });
     const after = await available(owner);
@@ -353,8 +354,8 @@ describe('an entitled Business call', () => {
     expect(response.status).toBe(200);
     expect(spy.calls[0].body.max_output_tokens).toBe(16_000);
     const bound = inputTokenBound(new TextEncoder().encode(raw).byteLength, body.input.length);
-    // GPT-6 Luna: max(input 110,000, cache write 137,500, cache read 11,000) = 137,500.
-    const ceiling = Math.ceil((bound * 137_500 + 16_000 * 550_000) / 1_000_000);
+    // GPT-5.6 Luna: cache write is the largest input price, 275,000 micro-USD per million.
+    const ceiling = Math.ceil((bound * 275_000 + 16_000 * 1_320_000) / 1_000_000);
     expect(attempts()[0].maxMicroUsd).toBe(ceiling);
     await readAll(response.body);
   });
@@ -386,7 +387,7 @@ describe('an entitled Business call', () => {
     expect(settlements()[0]).toMatchObject({ providerCostMicroUsd: cost, usage: { cacheWriteTokens: bound } });
     expect(cost).toBeLessThanOrEqual(attempt.maxMicroUsd);
     // Priced at the fresh-input rate, the hold would have been too small for this call.
-    expect(cost).toBeGreaterThan(Math.ceil((bound * 110_000 + 4_096 * 550_000) / 1_000_000));
+    expect(cost).toBeGreaterThan(Math.ceil((bound * 220_000 + 4_096 * 1_320_000) / 1_000_000));
   });
 
   it('carries the desktop’s own SDK loop offline: a tool call, its result, then the answer', async () => {
@@ -523,7 +524,7 @@ describe('provider failures', () => {
     const tenantId = (await call('GET', `/ops/customers/${orgs.juniper}`, await signIn('staffSupport'))).body.organization.tenantId as string;
     const ref = { tenantId, organizationId: orgs.juniper, attemptId: 'probe:1' };
     await cloud.funding.openJob({ tenantId, organizationId: orgs.juniper, rootJobId: 'probe', runRef: 'probe', parentRunRef: null, tier: 'efficient', capMicroUsd: null });
-    await cloud.funding.reserve({ ...ref, rootJobId: 'probe', parentAttemptId: null, kind: 'generation', route: 'aws-luna-6', requestDigest: 'a'.repeat(64),
+    await cloud.funding.reserve({ ...ref, rootJobId: 'probe', parentAttemptId: null, kind: 'generation', route: 'aws-luna-5-6', requestDigest: 'a'.repeat(64),
       rateSnapshot: LUNA.rate, maxMicroUsd: creditAmount(1), usageClass: 'included-chat' });
     await cloud.funding.markDispatched(ref);
     await expect(cloud.funding.release(ref)).rejects.toMatchObject({ code: 'dispatched_hold' });
@@ -644,6 +645,39 @@ describe('stream passthrough', () => {
   });
 });
 
+describe('reasoning summaries', () => {
+  it('are asked of the provider as the body asks, and their summary events reach the client byte for byte', async () => {
+    const { token, admission } = await employee();
+    let providerBytes = new Uint8Array();
+    let forwarded: unknown;
+    answer = async (request) => {
+      forwarded = (request.body as { reasoning?: unknown }).reasoning;
+      const scriptedBytes = Buffer.from(await readAll((await scriptedAnswer(request)).body));
+      // Summary events go in before the reasoning item is done, where a provider streams them.
+      const at = scriptedBytes.indexOf(Buffer.from('event: response.output_item.done'));
+      expect(at).toBeGreaterThan(0);
+      const text = 'Counting the loaves’ standing orders.';
+      const summary = [
+        { type: 'response.reasoning_summary_part.added', item_id: 'rs_summary', output_index: 0, summary_index: 0, part: { type: 'summary_text', text: '' } },
+        { type: 'response.reasoning_summary_text.delta', item_id: 'rs_summary', output_index: 0, summary_index: 0, delta: text },
+        { type: 'response.reasoning_summary_part.done', item_id: 'rs_summary', output_index: 0, summary_index: 0, part: { type: 'summary_text', text } },
+      ].map((event) => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join('');
+      providerBytes = new Uint8Array(Buffer.concat([scriptedBytes.subarray(0, at), Buffer.from(summary), scriptedBytes.subarray(at)]));
+      // Cut inside the summary's ’ as well, so the gateway cannot be re-encoding what it forwards.
+      const quote = Buffer.from(providerBytes).indexOf(Buffer.from('’'));
+      const pieces = [providerBytes.slice(0, quote + 1), providerBytes.slice(quote + 1, quote + 2), providerBytes.slice(quote + 2)];
+      return new Response(chunkedStream(pieces), { status: 200, headers: { 'content-type': 'text/event-stream' } });
+    };
+    const response = await ask({ token, admission, body: chatBody({ reasoning: { effort: 'low', summary: 'auto' } }) });
+    expect(response.status).toBe(200);
+    const clientBytes = await readAll(response.body);
+    expect(forwarded).toEqual({ effort: 'low', summary: 'auto' });
+    expect(Buffer.from(clientBytes).equals(Buffer.from(providerBytes))).toBe(true);
+    await cloud.idle();
+    expect(settlements()[0]).toMatchObject({ providerCostMicroUsd: SCRIPTED_COST });
+  });
+});
+
 // --- section 7: out of credit --------------------------------------------------------------------
 
 describe('out of credit', () => {
@@ -674,7 +708,7 @@ describe('out of credit', () => {
     const tenantId = (await call('GET', `/ops/customers/${orgs.juniper}`, await signIn('staffSupport'))).body.organization.tenantId as string;
     await cloud.funding.openJob({ tenantId, organizationId: orgs.juniper, rootJobId: 'run-1', runRef: 'run-1', parentRunRef: null, tier: 'efficient', capMicroUsd: null });
     await cloud.funding.reserve({ tenantId, organizationId: orgs.juniper, attemptId: 'earlier', rootJobId: 'run-1', parentAttemptId: null, kind: 'generation',
-      route: 'aws-luna-6', requestDigest: 'b'.repeat(64), rateSnapshot: LUNA.rate, maxMicroUsd: creditAmount(20) - 1_000 as never, usageClass: 'included-chat' });
+      route: 'aws-luna-5-6', requestDigest: 'b'.repeat(64), rateSnapshot: LUNA.rate, maxMicroUsd: creditAmount(20) - 1_000 as never, usageClass: 'included-chat' });
     expect(await refusal(await ask({ token, admission }))).toMatchObject({ status: 402, code: 'cap_request_required' });
     expect(spy.calls).toHaveLength(0);
   });

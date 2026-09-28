@@ -35,7 +35,7 @@ export const NECTOVIA_MODEL_CONTRACT: AdapterRouteContract = modelApiContract({
 
 export interface NectoviaModelAdapterOptions extends StreamSinks {
   base: string;
-  account: Pick<NectoviaAccount, 'refreshPolicy'>;
+  account: Pick<NectoviaAccount, 'refreshPolicy'> & Partial<Pick<NectoviaAccount, 'policy'>>;
   connectionId: string;
   model: string;
   managed: ManagedAdmission;
@@ -53,7 +53,7 @@ export interface NectoviaModelAdapterOptions extends StreamSinks {
 }
 
 export function createNectoviaModelAdapter(options: NectoviaModelAdapterOptions): ModelAdapter & { profileHash: string } {
-  const limits = nectoviaLimits(options.limits ?? CONVERSATION_LIMITS);
+  const limits = nectoviaLimits(options.limits ?? CONVERSATION_LIMITS, options.managed.routing, options.managed.tier);
   const { managed } = options;
   return createModelApiAdapter({
     route: NECTOVIA_ROUTE,
@@ -74,6 +74,8 @@ export function createNectoviaModelAdapter(options: NectoviaModelAdapterOptions)
       sdk: NECTOVIA_SDK,
       gateway: `${options.base}/managed/v1`,
       organizationId: managed.organizationId,
+      scope: managed.scope ?? { kind: 'organization', id: managed.organizationId },
+      sourceRestrictions: managed.sourceRestrictions ?? [],
       model: options.model,
       tier: managed.tier,
       instructions: digest(options.instructions),

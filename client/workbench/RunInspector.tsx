@@ -24,6 +24,7 @@ import {
 } from '../../shared/agent-profiles';
 import { NATIVE_LOOP_CAPABILITY } from '../../shared/native-loop';
 import { LoopInspector } from '../console/LoopInspector';
+import { ManagedRoutingReceipt } from '../console/ManagedRoutingReceipt';
 import { SupervisionSection } from '../console/Supervision';
 import './workbench.css';
 
@@ -371,7 +372,7 @@ function SessionInspector({
               <>
                 <p>Snapshot at {snapshot.at}</p>
                 {snapshot.run ? (
-                  <HarnessEvidence run={snapshot.run} projectId={projectId} revision={revision} />
+                  <><ManagedRoutingReceipt run={snapshot.run} /><HarnessEvidence run={snapshot.run} projectId={projectId} revision={revision} /></>
                 ) : (
                   <p>
                     No detailed Runtime record is linked to this session. Tool and budget evidence

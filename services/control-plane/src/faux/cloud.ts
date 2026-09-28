@@ -31,6 +31,7 @@ import { z } from 'zod';
 import type { Configuration } from '../config.js';
 import { AccountService } from '../account-service.js';
 import { bootstrapFirstAdmin, CommercialService } from '../commercial.js';
+import { RoutingService } from '../routing.js';
 import { AccountError } from '../errors.js';
 import { FundingService, UsageService } from '../funding.js';
 import { ManagedInferenceService, SPEND_SETTINGS, spendControls, type SpendSetting } from '../managed-inference.js';
@@ -77,6 +78,8 @@ export interface FauxCloudOptions {
   managed?: {
     /** The transport the Bedrock caller uses. Default: `scriptedResponsesFetch`. */
     transport?: typeof globalThis.fetch;
+    /** Approved synthetic configuration for transport tests; never populated from user credentials. */
+    bindings?: Readonly<Record<string, unknown>>;
     /** What the gateway reads as BEDROCK_API_KEY. Null: no key is configured. */
     credential?: string | null;
     idleTimeoutMs?: number;
@@ -199,6 +202,7 @@ export async function createFauxCloud(options: FauxCloudOptions): Promise<FauxCl
     : options.managed?.evaluationCredential === undefined ? FAUX_SCRIPTED_CREDENTIAL : options.managed.evaluationCredential;
   // The environment the gateway reads its keys and spend settings from, as the Worker's would be.
   const managedEnv: Record<string, unknown> = {
+    ...options.managed?.bindings,
     ...Object.fromEntries(SPEND_SETTINGS.filter((name) => settings[name] !== undefined).map((name) => [name, settings[name]])),
     ...(credential === null ? {} : { BEDROCK_API_KEY: credential }),
     ...(evaluationCredential === null ? {} : { OPENROUTER_API_KEY: evaluationCredential }),
@@ -209,6 +213,7 @@ export async function createFauxCloud(options: FauxCloudOptions): Promise<FauxCl
     funding,
     fundingReads: store.funding,
     caller: bedrockResponsesCaller(options.managed?.transport ?? (live ? undefined : scriptedResponsesFetch({ now }))),
+    bindingTransport: options.managed?.transport ?? scriptedResponsesFetch({ now }),
     evaluationCaller: openRouterDecisionsCaller(options.managed?.evaluationTransport ?? (liveEvaluations ? undefined : scriptedDecisionsFetch())),
     now,
     idleTimeoutMs: options.managed?.idleTimeoutMs,
@@ -228,6 +233,7 @@ export async function createFauxCloud(options: FauxCloudOptions): Promise<FauxCl
     {
       configuration: () => config,
       createCommercial: () => commercial,
+      createRouting: () => new RoutingService(accounts, store.commercial, now, funding),
       createManaged: () => managed,
       createRelay: () => relay,
       createOrganizationSetup: () => organizationSetups,
