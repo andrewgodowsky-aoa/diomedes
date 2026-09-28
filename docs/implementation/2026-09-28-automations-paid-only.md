@@ -129,7 +129,8 @@ control-plane handler in-process:
 
 ## Proposed CHANGES.md entry
 
-`docs/harness/CHANGES.md` is claimed by the #169 lane. Add this at composition:
+Only the #169 lane adds entries to `docs/harness/CHANGES.md` now, so this entry goes in with
+whichever of this work and #169 lands second:
 
 ```
 ## Automations need a paid plan, 2026-09-28

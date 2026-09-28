@@ -34,7 +34,8 @@ read-connector fixtures. It ran under slot `slot_mul4b9br_e92406f6`, from 10:41:
 
 - Root `tsc --noEmit`: passed.
 - `tests/automations-paid-plan.test.ts`: 5 of 5 passed.
-- This record is the only file added after the recheck.
+- Only documents changed after the recheck: this record, and one line of the paid-only write-up
+  saying when its CHANGES.md entry goes in.
 
 **Why the full run carries over:**
 
