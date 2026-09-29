@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import { createDiscovery, defaultDiscoveryDeps, type DiscoveryDeps } from '../server/discovery.js';
 import { createIntegrations } from '../server/integrations.js';
 import { EngineService, TESTED_VERSIONS } from '../server/engines/service.js';
@@ -9,6 +10,7 @@ import { routeContractFor } from '../server/harness/route-contract.js';
 import * as discoveryModule from '../server/discovery.js';
 import { managedBinary } from '../server/engines/install.js';
 import * as installModule from '../server/engines/install.js';
+import { EngineError } from '../server/engines/process.js';
 
 const ok = (stdout = '') => ({ stdout, stderr: '', code: 0, timedOut: false });
 const offline = (async () => {
@@ -33,6 +35,60 @@ function mac(overrides: Partial<DiscoveryDeps> = {}): DiscoveryDeps {
 }
 
 describe('FD01 observed macOS discovery through existing consumers', () => {
+  it.each(['discovery', 'account check'] as const)(
+    'does not authenticate a receipt-selected replacement before launching the earlier file during %s',
+    async (stage) => {
+      const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'managed-selection-')));
+      roots.push(root);
+      const selected = managedBinary(root, 'claude-code');
+      const replacement = path.join(root, 'installed/claude-code/99.1.0/claude.exe');
+      await fs.mkdir(path.dirname(selected), { recursive: true });
+      await fs.mkdir(path.dirname(replacement), { recursive: true });
+      await fs.writeFile(selected, 'unreviewed selected fixture');
+      await fs.writeFile(replacement, 'reviewed replacement fixture');
+      const hash = (bytes: string) => createHash('sha256').update(bytes).digest('hex');
+      const selectedHash = hash('unreviewed selected fixture');
+      const replacementHash = hash('reviewed replacement fixture');
+      let enforce = stage === 'discovery';
+      // Synthetic reviewed bytes substitute for a vendor executable; the files,
+      // receipt switch, selected identity and service launch boundary are real.
+      const verifyManaged = vi.fn(async (
+        engine: 'claude-code' | 'opencode' | 'oh-my-pi' | 'cursor' | 'devin',
+        file?: string,
+        observedSha256?: string,
+      ) => {
+        if (!enforce) return;
+        await fs.writeFile(path.join(root, 'installed/claude-code/current.json'),
+          JSON.stringify({ version: '99.1.0', sha256: replacementHash }));
+        const checked = file ?? managedBinary(root, engine);
+        const digest = createHash('sha256').update(await fs.readFile(checked)).digest('hex');
+        if (digest !== replacementHash || (observedSha256 && observedSha256 !== digest))
+          throw new EngineError('INSTALL_CHECKSUM', 'Selected fixture is not reviewed.');
+      });
+      const version = vi.fn(async () => TESTED_VERSIONS['claude-code']);
+      const inspect = vi.fn(async () => ({ authentication: 'signed-in' as const,
+        accountRoute: 'claude-code:fixture', models: [], detail: 'Synthetic account.' }));
+      const service = new EngineService(root, {
+        platform: 'win32', discover: async () => [], enumerate: async () => [],
+        version, verifyManaged,
+        adapter: engine => ({ id: engine, contract: routeContractFor(engine), inspect,
+          generate: async () => { throw new Error('No generation in this fixture.'); } }),
+      });
+      await service.discover(true);
+      if (stage === 'account check') {
+        verifyManaged.mockClear(); version.mockClear(); enforce = true;
+        await expect(service.check('claude-code')).rejects.toMatchObject({ code: 'INSTALL_CHECKSUM' });
+      } else {
+        expect(service.status().find(row => row.engine === 'claude-code')?.candidates).toEqual([
+          expect.objectContaining({ integrity: 'failed', protocol: 'unknown' }),
+        ]);
+      }
+      expect(verifyManaged).toHaveBeenCalledWith('claude-code', await fs.realpath(selected), selectedHash);
+      expect(version).not.toHaveBeenCalled();
+      expect(inspect).not.toHaveBeenCalled();
+    },
+  );
+
   it('does not claim a managed observation when its pinned artifact fails verification', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fd01-managed-refusal-'));
     roots.push(root);

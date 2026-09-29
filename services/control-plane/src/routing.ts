@@ -12,8 +12,7 @@ import {
 } from '../../../shared/routing-policy.js';
 import type { AccountService } from './account-service.js';
 import { AccountError } from './errors.js';
-import { approvedConnections, connectionCredential, connectionView } from './managed-bindings.js';
-import { registryRow } from './managed-providers.js';
+import { approvedConnections, connectionCredential, connectionView, supportsReasoningSummaries } from './managed-bindings.js';
 import type { CommercialRepository, CommercialTransaction, Operator, TierPolicy } from './commercial.js';
 import { entitlementFromGrants, individualEntitlement, agentAdmissionInput, featureGrantSchema, revokeGrantInput, ensureIndividualAccount } from './commercial.js';
 import type { FundingService } from './funding.js';
@@ -252,7 +251,7 @@ export class RoutingService {
         const catalogEntry = entry && routes.find(r => r.id === entry.id);
         tiers[tier] = entry && binding && catalogEntry ? { entryId: entry.id, entryRevision: entry.revision, model: entry.model,
           label: catalogEntry.label, provider: entry.provider, price: binding.price, capabilities: binding.capabilities,
-          reasoningSummaries: registryRow(catalogEntry)?.reasoningSummaries === true, guardPrices: selected.candidates.map(c => c.route.binding!.price),
+          reasoningSummaries: supportsReasoningSummaries(catalogEntry, selected.candidates[0].connection), guardPrices: selected.candidates.map(c => c.route.binding!.price),
           fallbackEnabled: configured.fallbackEnabled, maxAttempts: configured.maxAttempts } : null;
         exclusions[tier] = selected.excluded;
       }

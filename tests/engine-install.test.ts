@@ -255,6 +255,28 @@ describe('selected official installation and native login', () => {
     await expect(verifyManagedBinary(root, 'oh-my-pi')).rejects.toMatchObject({ code: 'INSTALL_CHECKSUM' });
   });
 
+  it('checks the selected executable after the installation receipt moves to another version', async () => {
+    const root = await setup(), selected = managedBinary(root, 'claude-code');
+    await fs.mkdir(path.dirname(selected), { recursive: true });
+    await fs.writeFile(selected, verifiedPayload);
+    await fs.writeFile(path.join(root, 'installed/claude-code/current.json'),
+      JSON.stringify({ version: '99.1.0', sha256: fixtureDigest }));
+    // The new receipt's file does not exist. Verification must still check the
+    // selected file and refuse its unreviewed bytes, rather than follow it.
+    await expect(verifyManagedBinary(root, 'claude-code', selected, fixtureDigest))
+      .rejects.toMatchObject({ code: 'INSTALL_CHECKSUM' });
+  });
+
+  it('checks bytes through an equivalent directory alias instead of rejecting its spelling', async () => {
+    const root = await setup(), selected = managedBinary(root, 'claude-code');
+    await fs.mkdir(path.dirname(selected), { recursive: true });
+    await fs.writeFile(selected, verifiedPayload);
+    const alias = path.join(root, 'selected-alias');
+    await fs.symlink(path.dirname(selected), alias, 'junction');
+    await expect(verifyManagedBinary(root, 'claude-code', path.join(alias, 'claude.exe'), fixtureDigest))
+      .rejects.toMatchObject({ code: 'INSTALL_CHECKSUM' });
+  });
+
   it('keeps provider login native and rejects an undisclosed action', async () => {
     expect(loginCommand('claude-code')).toContain('--claudeai');
     expect(loginCommand('claude-code')).not.toContain('--console');

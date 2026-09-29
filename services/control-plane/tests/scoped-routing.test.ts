@@ -16,10 +16,15 @@ let sends: { url: string; body: Record<string, unknown> }[], answer: (deployment
 const connection: ProviderConnection = { id: 'azure-fixture', revision: 1, provider: 'azure-openai', label: 'Synthetic Azure',
   secretRef: 'AZURE_OPENAI_API_KEY', payer: 'company', account: 'fixture-account', enabled: true,
   resource: 'fixture-resource', apiVersion: 'v1', deployments: ['primary', 'backup', 'other'] };
-const bindings = { MANAGED_CONNECTIONS: JSON.stringify([connection]), AZURE_OPENAI_API_KEY: 'fixture-company-secret' };
+const awsConnection: ProviderConnection = { id: 'aws-fixture', revision: 1, provider: 'aws-bedrock', label: 'Synthetic AWS',
+  secretRef: 'BEDROCK_API_KEY', payer: 'company', account: 'fixture-account', enabled: true,
+  region: 'us-east-1', endpointFamily: 'runtime', allowedProfiles: ['us.openai.gpt-5.6-luna', 'us.openai.gpt-6-luna'],
+  modelProtocols: { 'us.openai.gpt-5.6-luna': ['responses', 'chat-completions'], 'us.openai.gpt-6-luna': ['responses'] } };
+const bindings = { MANAGED_CONNECTIONS: JSON.stringify([connection, awsConnection]),
+  AZURE_OPENAI_API_KEY: 'fixture-company-secret', BEDROCK_API_KEY: 'fixture-aws-secret' };
 const transport: typeof fetch = async (url, init) => {
   const body = JSON.parse(String(init?.body)); sends.push({ url: String(url), body });
-  expect(new Headers(init?.headers).get('api-key')).toBe('fixture-company-secret');
+  if (!String(url).includes('bedrock-runtime')) expect(new Headers(init?.headers).get('api-key')).toBe('fixture-company-secret');
   expect(init?.redirect).toBe('manual'); return answer(String(body.model));
 };
 const events = (items: unknown[]) => new Response(items.map(e => `data: ${JSON.stringify(e)}\n\n`).join(''),
@@ -77,6 +82,16 @@ async function editRoute(id: string, change: (b: ModelBinding) => void) {
   const result = await call('POST', '/ops/routes', routing, { ...fields, binding: b, baseRevision: revision });
   expect(result.status, JSON.stringify(result.body)).toBe(200);
 }
+async function addAwsRoute(id: string, model: string, protocol: ModelBinding['protocol'] = 'responses') {
+  const b = binding(id);
+  b.connectionId = awsConnection.id; b.protocol = protocol; b.deployment = null; b.modelVersion = model;
+  b.capabilities.reasoning = true;
+  b.privacy = { ...b.privacy!, modelVersion: model, protocol, features: ['text', 'tools', 'reasoning'],
+    allowedRetentionModes: ['none'], effectiveRetentionMode: 'none' };
+  const result = await call('POST', '/ops/routes', routing, { id, provider: 'aws-bedrock', model, label: id,
+    region: 'us', processing: 'Transport fixture only', status: 'qualified', evidence: 'Transport fixture only', binding: b });
+  expect(result.status, JSON.stringify(result.body)).toBe(200);
+}
 async function request(scope: AccountScope = { kind: 'organization', id: orgA }, opts: { job?: string; attempt?: string; token?: string; headers?: Record<string, string> } = {}) {
   const token = opts.token ?? owner, job = opts.job ?? 'routing-job';
   const admission = await call('POST', `/account/routing/${scopePath(scope)}/admit`, token, { surface: 'conversation', routeKind: 'managed', rootJobId: job });
@@ -114,6 +129,39 @@ beforeEach(async () => {
 afterEach(async () => { await cloud.idle(); vi.restoreAllMocks(); });
 
 describe('Operations publication through authenticated funded dispatch', () => {
+  it('does not advertise Responses summaries for a registered model using Chat Completions', async () => {
+    await addAwsRoute('aws-chat', 'us.openai.gpt-5.6-luna', 'chat-completions');
+    expect((await publish('aws-chat')).status).toBe(201);
+    const snapshot = await call('GET', `/account/routing/organization/${orgA}/policy`, owner);
+    expect(snapshot.body.tiers.efficient).toMatchObject({ entryId: 'aws-chat', reasoningSummaries: false });
+  });
+
+  it('removes optional summary on an unsupported fallback while retaining reasoning effort', async () => {
+    await addAwsRoute('aws-supported', 'us.openai.gpt-5.6-luna');
+    await addAwsRoute('aws-unsupported', 'us.openai.gpt-6-luna');
+    const published = await call('POST', '/ops/routing/scopes/publish', routing, { scope: { kind: 'global' }, baseRevision: 1,
+      baseGlobalRevision: 1, routing: { efficient: { ...tier('aws-supported'), backups: ['aws-unsupported'], fallbackEnabled: true, maxAttempts: 2 },
+        focused: tier('aws-supported'), thorough: tier('aws-supported') }, note: 'Synthetic publication' });
+    expect(published.status, JSON.stringify(published.body)).toBe(201);
+    answer = model => model === 'us.openai.gpt-5.6-luna' ? new Response(null, { status: 503 })
+      : (sends.at(-1)?.body.reasoning as Record<string, unknown> | undefined)?.summary
+        ? new Response(null, { status: 400 })
+        : events([
+          { type: 'response.output_text.delta', delta: 'Recorded answer.' },
+          { type: 'response.completed', response: { id: 'fixture-response', model, status: 'completed', output: [],
+            usage: { input_tokens: 100, output_tokens: 12, output_tokens_details: { reasoning_tokens: 2 } } } },
+        ]);
+    const original = await request();
+    const payload = await original.clone().json() as Record<string, unknown>;
+    const result = await completed(new Request(original, { body: JSON.stringify({ ...payload, reasoning: { effort: 'low', summary: 'auto' } }) }));
+    expect(sends.map(s => s.body.model)).toEqual(['us.openai.gpt-5.6-luna', 'us.openai.gpt-6-luna']);
+    expect(sends[0].body.reasoning).toEqual({ effort: 'low', summary: 'auto' });
+    expect(sends[1].body.reasoning).toEqual({ effort: 'low' });
+    expect(result.response.headers.get('x-nectovia-route')).toBe('aws-unsupported');
+    expect(result.body).toContain('"fallbackReason":"capacity"');
+    expect(cloud.store.snapshot().funding.attempts.map(a => a.state)).toEqual(['uncertain', 'settled']);
+  });
+
   it('reports summary support only for the selected registered provider route', async () => {
     expect((await publish()).status).toBe(201);
     const model = 'us.openai.gpt-5.6-luna';

@@ -59,7 +59,7 @@ import { accountId, type AccountMembershipSnapshot } from './domain.js';
 import { AccountError } from './errors.js';
 import { PRIVATE_RESTRICTIONS, hardRestrictionsSchema, resolveRoutingCandidates, mayFailOver, routingScopeKey,
   type AccountScope, type RequestEnvelope, type FailureKind, type RoutingReceipt } from '../../../shared/routing-policy.js';
-import { approvedConnections, callManagedProvider, connectionCredential, providerBody, prepareManagedProvider, nativeRouteId } from './managed-bindings.js';
+import { approvedConnections, callManagedProvider, connectionCredential, providerBody, prepareManagedProvider, nativeRouteId, supportsReasoningSummaries } from './managed-bindings.js';
 import { BindingError, canonicalJson, sseObjects } from './managed-normalization.js';
 import { authorizeScope, effectivePolicy, defaultEnvelope, routesWithCircuits } from './routing.js';
 import { FundingError, RELEASABLE_REFUSALS, type AttemptRef, type FundingRepository, type FundingService } from './funding.js';
@@ -874,7 +874,16 @@ export class ManagedInferenceService {
         const binding = route.binding!;
         const credential = connectionCredential(connection, env);
         if (!credential) throw new ManagedError(503, 'credential_unavailable', 'The selected company connection has no usable credential.');
-        const forwarded = { ...body, model: route.model, max_output_tokens: outputTokens };
+        const forwarded: { -readonly [K in keyof ResponsesBody]: ResponsesBody[K] } = {
+          ...body, model: route.model, max_output_tokens: outputTokens,
+        };
+        // Re-evaluate optional summaries for every actual attempt, including backups.
+        if (!supportsReasoningSummaries(route, connection) && isObject(forwarded.reasoning)) {
+          const reasoning = { ...forwarded.reasoning };
+          delete reasoning.summary;
+          if (Object.keys(reasoning).length) forwarded.reasoning = reasoning;
+          else delete forwarded.reasoning;
+        }
         let priced = fresh;
         let actualEnvelope = envelope;
         try {

@@ -203,6 +203,8 @@ export async function packageDesktop(options = {}, dependencies = {}) {
       'scripts/package-desktop.mjs',
       'scripts/build-desktop-auth.mjs',
       'scripts/collect-package-notices.mjs',
+      'scripts/release-support/verify-native-publisher.mjs',
+      'scripts/release-support/acquire-native-runtime.mjs',
     ])
       files.push({ path: name, sha256: sha256(await fs.readFile(path.join(root, name))) });
     return files.sort((a, b) => a.path.localeCompare(b.path));
@@ -232,6 +234,8 @@ export async function packageDesktop(options = {}, dependencies = {}) {
     'scripts/package-desktop.mjs',
     'scripts/build-desktop-auth.mjs',
     'scripts/collect-package-notices.mjs',
+    'scripts/release-support/verify-native-publisher.mjs',
+    'scripts/release-support/acquire-native-runtime.mjs',
   ];
   const dirty = git(
     'git',

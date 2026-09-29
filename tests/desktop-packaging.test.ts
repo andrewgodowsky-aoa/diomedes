@@ -36,7 +36,7 @@ async function fixture() {
     'fixtures/harness',
     'licenses', 'resources',
     'dist',
-    'scripts',
+    'scripts/release-support',
     'node_modules/electron',
     '.data/native-runtime',
     'electron-zips',
@@ -53,6 +53,7 @@ async function fixture() {
     'LICENSE',
     'package-lock.json',
     'scripts/package-desktop.mjs', 'scripts/build-desktop-auth.mjs', 'scripts/collect-package-notices.mjs',
+    'scripts/release-support/verify-native-publisher.mjs', 'scripts/release-support/acquire-native-runtime.mjs',
     'dist/index.html',
   ])
     await fs.writeFile(path.join(root, file), `fixture ${file}`);
