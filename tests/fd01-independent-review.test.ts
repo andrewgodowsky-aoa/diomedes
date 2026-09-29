@@ -167,9 +167,9 @@ describe('FD01 independent observed discovery and hostile output', () => {
     const version = vi.fn(async () => TESTED_VERSIONS['claude-code']);
     const service = new EngineService(root, { platform: 'win32', version });
     await service.discover(true);
-    expect(verify).toHaveBeenCalledWith(root, 'claude-code');
     // The runtime resolves Windows RUNNER~1 aliases before probing a file.
     const canonicalManaged = await fs.realpath(managed);
+    expect(verify).toHaveBeenCalledWith(root, 'claude-code', canonicalManaged, sha(await fs.readFile(managed)));
     expect(version).toHaveBeenCalledWith(canonicalManaged);
     const entry = service.integration('claude-code', false);
     expect(entry).toMatchObject({ found: true, location: canonicalManaged });
@@ -213,9 +213,9 @@ describe('FD01 independent real child-process probe boundary', () => {
 interface PackageCall { dir: string; out: string; platform: string; arch: string; extraResource: string[]; [key: string]: unknown }
 async function packagingFixture() {
   const root = await temporaryRoot();
-  for (const folder of ['client', 'server', 'shared', 'desktop', 'fixtures/harness', 'licenses', 'resources', 'dist', 'scripts', 'node_modules/electron', '.data/native-runtime', 'cache'])
+  for (const folder of ['client', 'server', 'shared', 'desktop', 'fixtures/harness', 'licenses', 'resources', 'dist', 'scripts/release-support', 'node_modules/electron', '.data/native-runtime', 'cache'])
     await fs.mkdir(path.join(root, folder), { recursive: true });
-  for (const file of ['desktop/main.mjs', 'desktop/app-updates.mjs', 'desktop/update-helper.mjs', 'desktop/fresh-start.mjs', 'desktop/diomedes.ico', 'desktop/service.ts', 'fixtures/harness/report-lines.txt', 'LICENSE', 'package-lock.json', 'scripts/package-desktop.mjs', 'scripts/build-desktop-auth.mjs', 'scripts/collect-package-notices.mjs', 'dist/index.html'])
+  for (const file of ['desktop/main.mjs', 'desktop/app-updates.mjs', 'desktop/update-helper.mjs', 'desktop/fresh-start.mjs', 'desktop/diomedes.ico', 'desktop/service.ts', 'fixtures/harness/report-lines.txt', 'LICENSE', 'package-lock.json', 'scripts/package-desktop.mjs', 'scripts/build-desktop-auth.mjs', 'scripts/collect-package-notices.mjs', 'scripts/release-support/verify-native-publisher.mjs', 'scripts/release-support/acquire-native-runtime.mjs', 'dist/index.html'])
     await fs.writeFile(path.join(root, file), `independent fixture ${file}`);
   for (const file of ['desktop/native-auth.ts', 'desktop/native-auth-preload.ts'])
     await fs.writeFile(path.join(root, file), 'export const fixture = true;');
@@ -257,11 +257,11 @@ describe('FD01 independent packaging contract (substituted packager, not Mac pro
     for (const entry of manifest.files) expect(sha(await fs.readFile(path.join(output, entry.path)))).toBe(entry.sha256);
   });
 
-  it('refuses packaging if a source input changes during bundling', async () => {
+  it.each(['server/changed.ts', 'scripts/release-support/verify-native-publisher.mjs', 'scripts/release-support/acquire-native-runtime.mjs'])('refuses packaging if %s changes during bundling', async (changed) => {
     const { root, options, deps } = await packagingFixture();
     deps.build.mockImplementation(async (call) => {
       await fs.writeFile(call.outfile, 'fixture bundle');
-      await fs.writeFile(path.join(root, 'server/changed.ts'), 'changed during bundle');
+      await fs.writeFile(path.join(root, changed), 'changed during bundle');
     });
     await expect(packageDesktop(options, deps)).rejects.toThrow('Build inputs changed while packaging');
     expect(deps.packager).not.toHaveBeenCalled();

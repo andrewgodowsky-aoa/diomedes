@@ -5,6 +5,7 @@ import {
 } from '../../../shared/routing-policy.js';
 import { BindingError, canonicalJson, normalizeProviderResponse, type NativeCheckpoint } from './managed-normalization.js';
 import type { ResponsesBody } from './managed-inference.js';
+import { MANAGED_PROVIDERS } from './managed-providers.js';
 import { readBytes } from './crypto.js';
 
 type Obj = Record<string, unknown>;
@@ -74,6 +75,13 @@ export function providerEndpoint(route: CatalogRoute, connection: ProviderConnec
   }
   const host = connection.ingress === 'global' ? 'openrouter.ai' : `${connection.ingress}.openrouter.ai`;
   return `https://${host}/api/v1/chat/completions`;
+}
+
+/** Summary support belongs to the reviewed endpoint, not just the model name. */
+export function supportsReasoningSummaries(route: CatalogRoute, connection: ProviderConnection): boolean {
+  return MANAGED_PROVIDERS.some(registry => registry.reasoningSummaries === true &&
+    registry.provider === route.provider && registry.model === route.model &&
+    providerEndpoint(route, connection) === registry.endpoint);
 }
 
 interface Message { role: 'system' | 'user' | 'assistant' | 'tool'; content: unknown; callId?: string; tool?: { id: string; name: string; arguments: string }; native?: Obj[]; nativeTools?: NativeCheckpoint['tools'] }

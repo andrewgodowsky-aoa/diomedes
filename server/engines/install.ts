@@ -113,10 +113,10 @@ export function managedBinary(root: string, engine: ExternalEngine) {
   const receipt = installedReceipt(root, engine);
   return path.join(root, 'installed', engine, receipt?.version ?? REVIEWED_RELEASES[engine].version, RELEASES[engine].binary);
 }
-export async function verifyManagedBinary(root: string, engine: ExternalEngine) {
+export async function verifyManagedBinary(root: string, engine: ExternalEngine, selectedFile?: string, observedSha256?: string) {
   if (engine === 'cursor' || engine === 'devin')
     throw new EngineError('INSTALL_UNSUPPORTED', 'This engine is managed by its own installer.');
-  const file = managedBinary(root, engine);
+  const file = selectedFile ?? managedBinary(root, engine);
   // Check against reviewed bytes as well as the writable local receipt.
   const receipt = installedReceipt(root, engine);
   const digest = createHash('sha256');
@@ -128,7 +128,9 @@ export async function verifyManagedBinary(root: string, engine: ExternalEngine) 
     digest.update(chunk);
   }
   const trusted = legacyReceipts[engine];
-  if (!receipt || receipt.version !== trusted.version || receipt.sha256 !== trusted.sha256 || digest.digest('hex') !== trusted.sha256)
+  const actualSha256 = digest.digest('hex');
+  if (!receipt || receipt.version !== trusted.version || receipt.sha256 !== trusted.sha256 || actualSha256 !== trusted.sha256 ||
+      (observedSha256 !== undefined && actualSha256 !== observedSha256))
     throw new EngineError('INSTALL_CHECKSUM', 'The managed executable differs from its installation receipt. Repair the private copy before rechecking.');
 }
 export async function extractOpenCode(

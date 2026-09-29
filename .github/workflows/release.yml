@@ -248,6 +248,8 @@ jobs:
       - name: Package
         run: npm run package:mac
         env:
+          # Match the Mac CI build; TypeScript exceeds Node's default 2 GiB heap.
+          NODE_OPTIONS: --max-old-space-size=4096
           DIOMEDES_ELECTRON_ZIP_DIR: ${{ runner.temp }}/electron-zips
           DIOMEDES_MAC_ADHOC_FRAMEWORK_RESIGN: accept
       # Andrew, 2026-09-25: publish macOS with an ad-hoc whole-bundle signature (QUESTIONS.md O43,

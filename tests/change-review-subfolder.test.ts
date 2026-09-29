@@ -109,9 +109,39 @@ describe('change review for a project below the repository root', () => {
     ], [], 'apps/project');
     expect(entries).toHaveLength(1);
     expect(entries[0]).toMatchObject({
-      id: 'git:apps/project/notes.txt', path: 'notes.txt', renamedFrom: null,
-      beforeSha: 'head', afterSha: 'raw',
+      id: 'git:apps/project/notes.txt', path: 'notes.txt', kind: 'added', renamedFrom: null,
+      beforeSha: null, afterSha: 'raw', modeBefore: null,
     });
+  });
+
+  test.each([null, 'apps/project'])('a dirty internal rename retains its source baseline with scope %s', subdir => {
+    const source: GitWorktreeFile = {
+      path: 'apps/project/old.txt', x: '.', y: 'M',
+      headMode: '100644', indexMode: '100644', worktreeMode: '100755',
+      headSha: 'committed-source', stagedSha: 'staged-source', blobSha: 'dirty-source',
+      renamedFrom: null, binary: false,
+    };
+    const destination: GitWorktreeFile = { ...source, path: 'apps/project/new.txt', x: 'R', y: '.',
+      stagedSha: 'moved-content', blobSha: 'moved-content', renamedFrom: source.path };
+    const entries = diffGitSnapshots([source], [destination], [], subdir);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ kind: 'renamed', beforeSha: 'dirty-source', afterSha: 'moved-content',
+      modeBefore: '100755', renamedFrom: subdir ? 'old.txt' : source.path });
+  });
+
+  test.each(['R', 'C'] as const)('a dirty source moved or copied out keeps its baseline without a duplicate row (%s)', status => {
+    const source: GitWorktreeFile = {
+      path: 'apps/project/.review.txt', x: '.', y: 'M',
+      headMode: '100644', indexMode: '100644', worktreeMode: '100755',
+      headSha: 'committed-source', stagedSha: 'committed-source', blobSha: 'dirty-source',
+      renamedFrom: null, binary: false,
+    };
+    const destination: GitWorktreeFile = { ...source, path: 'apps/project-sibling/.review.txt', x: status, y: '.',
+      stagedSha: 'moved-content', blobSha: null, renamedFrom: source.path };
+    const entries = diffGitSnapshots([source], [destination], [], 'apps/project');
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ path: '.review.txt', kind: status === 'R' ? 'deleted' : 'modified',
+      beforeSha: 'dirty-source', afterSha: null, ...(status === 'R' ? { modeBefore: '100755', modeAfter: null } : {}) });
   });
 
   test.each(['recorded', 'observed'] as const)(

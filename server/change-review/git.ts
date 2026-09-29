@@ -91,8 +91,9 @@ export function effectiveGitMode(file: {
   worktreeMode: string | null;
 }): string | null {
   if (file.worktreeMode !== null && file.worktreeMode !== file.headMode)
-    return file.worktreeMode;
-  return file.indexMode ?? file.headMode;
+    return file.worktreeMode === '000000' ? null : file.worktreeMode;
+  const mode = file.indexMode ?? file.headMode;
+  return mode === '000000' ? null : mode;
 }
 
 export interface GitSnapshot {
@@ -518,6 +519,7 @@ export async function snapshotGit(env: GitEnvironment): Promise<GitProbe> {
 
 const KIND_BY_STATUS: Record<string, ChangeEntry['kind']> = {
   A: 'added',
+  C: 'added',
   M: 'modified',
   D: 'deleted',
   R: 'renamed',
@@ -526,7 +528,7 @@ const KIND_BY_STATUS: Record<string, ChangeEntry['kind']> = {
 };
 
 function entryKind(file: GitWorktreeFile): ChangeEntry['kind'] {
-  if (file.renamedFrom) return 'renamed';
+  if (file.x === 'R' || file.y === 'R') return 'renamed';
   const code = file.y !== '.' ? file.y : file.x;
   return KIND_BY_STATUS[code] ?? 'modified';
 }
@@ -574,9 +576,12 @@ export function diffGitSnapshots(
   subdir: string | null = null,
 ): ChangeEntry[] {
   const beforeMap = new Map(before.map((f) => [f.path, f]));
+  const renamedSources = new Set(after.filter(f => f.x === 'R' || f.y === 'R').map(f => f.renamedFrom));
   const entries: ChangeEntry[] = [];
   for (const file of after) {
-    const was = beforeMap.get(file.path);
+    const renamed = file.x === 'R' || file.y === 'R';
+    const copied = file.x === 'C' || file.y === 'C';
+    const was = beforeMap.get(file.path) ?? (renamed && file.renamedFrom ? beforeMap.get(file.renamedFrom) : undefined);
     if (was && sameFile(was, file)) continue;
     // A path dirty at baseline in exactly the same state is pre-existing.
     // When the baseline never listed the path it was clean then — a tracked
@@ -588,14 +593,14 @@ export function diffGitSnapshots(
       kind: entryKind(file),
       attribution: 'observed',
       source: 'git',
-      beforeSha: was ? (was.blobSha ?? was.headSha) : file.headSha,
-      afterSha: file.blobSha,
+      beforeSha: was ? (was.blobSha ?? was.stagedSha ?? was.headSha) : copied ? null : file.headSha,
+      afterSha: file.blobSha ?? (renamed || copied ? file.stagedSha : null),
       sizeBefore: null,
       sizeAfter: null,
       addedLines: null,
       removedLines: null,
       binary: file.binary,
-      modeBefore: was ? effectiveGitMode(was) : file.headMode,
+      modeBefore: was ? effectiveGitMode(was) : copied || file.headMode === '000000' ? null : file.headMode,
       modeAfter: effectiveGitMode(file),
       renamedFrom: file.renamedFrom,
       textEvidence: EMPTY_TEXT_EVIDENCE,
@@ -610,14 +615,14 @@ export function diffGitSnapshots(
   // e.g. work committed or reverted mid-run.
   const afterMap = new Map(after.map((f) => [f.path, f]));
   for (const file of before) {
-    if (afterMap.has(file.path)) continue;
+    if (afterMap.has(file.path) || renamedSources.has(file.path)) continue;
     entries.push({
       id: `git:${file.path}`,
       path: file.path,
       kind: 'modified',
       attribution: 'observed',
       source: 'git',
-      beforeSha: file.blobSha,
+      beforeSha: file.blobSha ?? file.stagedSha ?? file.headSha,
       afterSha: null,
       sizeBefore: null,
       sizeAfter: null,
@@ -646,6 +651,9 @@ export function diffGitSnapshots(
         .flatMap((entry): ChangeEntry[] => {
           if (entry.path.startsWith(prefix)) return [{
             ...entry,
+            ...(entry.renamedFrom && !entry.renamedFrom.startsWith(prefix)
+              ? { kind: 'added' as const, beforeSha: null, modeBefore: null }
+              : {}),
             path: entry.path.slice(prefix.length),
             renamedFrom: entry.renamedFrom?.startsWith(prefix)
               ? entry.renamedFrom.slice(prefix.length)
@@ -656,6 +664,11 @@ export function diffGitSnapshots(
           if (entry.kind === 'renamed' && entry.renamedFrom?.startsWith(prefix)) return [{
             ...entry, path: entry.renamedFrom.slice(prefix.length), kind: 'deleted',
             renamedFrom: null, afterSha: null, modeAfter: null, sizeAfter: null,
+            binary: beforeMap.get(entry.renamedFrom)?.binary ?? entry.binary,
+            evidence: [
+              ...entry.evidence.filter(ref => !(ref.kind === 'git-record' && ref.record.startsWith('mode:'))),
+              { kind: 'git-record', record: `mode:${entry.modeBefore ?? 'untracked'}->gone`, path: entry.renamedFrom },
+            ],
           }];
           return [];
         })

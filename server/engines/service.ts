@@ -207,7 +207,7 @@ export interface EngineServiceDeps {
   /** This computer's answer for one file: its real path, size and bytes. */
   identify?(file: string): Promise<FileIdentity | null>;
   /** The reviewed-release digest check for Diomedes's own private copy. */
-  verifyManaged?(engine: ExternalEngine): Promise<void>;
+  verifyManaged?(engine: ExternalEngine, file: string, observedSha256: string): Promise<void>;
   /** The packaged build this diagnostic came from. The integrator wires it. */
   buildId?(): string;
 }
@@ -523,7 +523,7 @@ export class EngineService {
       ...(this.nativeDiscovery
         ? { enumerate: (scope?: DiscoveryScope) => createDiscovery().installations(scope) }
         : {}),
-      verifyManaged: (engine) => verifyManagedBinary(root, engine),
+      verifyManaged: (engine, file, observedSha256) => verifyManagedBinary(root, engine, file, observedSha256),
       identify: (file) => readIdentity(file),
       ...deps,
     };
@@ -710,7 +710,7 @@ export class EngineService {
       // The reviewed digest decides before anything launches. A private copy
       // whose bytes changed is never asked for its version.
       try {
-        await this.deps.verifyManaged!(engine);
+        await this.deps.verifyManaged!(engine, identity.path, identity.sha256);
       } catch (error) {
         return {
           ...base,
@@ -1067,12 +1067,18 @@ export class EngineService {
     if (!saved.location)
       throw new EngineError('NOT_INSTALLED', 'The tool was not found. Check this computer again.');
     try {
-      if (await this.isManaged(engine, saved)) await this.deps.verifyManaged!(engine);
+      let file = saved.location;
+      if (await this.isManaged(engine, saved)) {
+        const identity = await this.identify(file);
+        if (!identity) throw new EngineError('INSTALL_CHECKSUM', 'The selected managed executable could not be verified.');
+        file = identity.path;
+        await this.deps.verifyManaged!(engine, file, identity.sha256);
+      }
       // Any version the tool reports is accepted; a failed probe throws VERSION_UNKNOWN.
-      const version = await this.deps.version(saved.location, signal);
+      const version = await this.deps.version(file, signal);
       const cwd = path.join(this.root, engine);
       await fs.mkdir(cwd, { recursive: true });
-      const result = await this.deps.adapter(engine, saved.location, cwd).inspect(signal);
+      const result = await this.deps.adapter(engine, file, cwd).inspect(signal);
       const value = this.save({
         ...saved,
         ...result,
