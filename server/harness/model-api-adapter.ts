@@ -15,6 +15,7 @@
  * conversation.
  */
 import type { ModelMessage } from 'ai';
+import { mergeSourceRestrictions, routingReceiptSchema, type HardRestrictions } from '../../shared/routing-policy.js';
 import type { AdapterRouteContract } from '../../shared/adapter-contract.js';
 import type { Json, ModelRequest, ModelResult, PortableMessage, ToolDescriptor } from '../../shared/harness.js';
 import { ModelApiError, type RespondResult, type StreamSinks } from '../engines/model-api-core.js';
@@ -22,9 +23,31 @@ import type { ExposureAttempt } from '../spend-exposure.js';
 import type { ModelTranscripts } from './model-transcripts.js';
 import type { ModelAdapter } from './native-agent.js';
 import { copy, digest } from './policy.js';
+import type { ModelApiRoute } from '../../shared/model-api.js';
 
 const unsupported = (note: string) => ({ support: 'unsupported' as const, note });
 const host = (note: string) => ({ support: 'host' as const, note });
+
+/**
+ * Which model-API routes stream their model's thinking (`streaming.reasoning`). One entry per
+ * route, so a provider that refuses reasoning summaries declares `none` on its own line. Each
+ * route's contract and EngineService both read it.
+ */
+export const MODEL_API_REASONING: Readonly<
+  Record<ModelApiRoute, AdapterRouteContract['streaming']['reasoning']>
+> = Object.freeze({
+  // Bedrock's acceptance of reasoning.summary is proven only by the paid Luna proof; if it
+  // refuses the summary, this one entry goes back to 'none'.
+  'aws-bedrock': 'reasoning-delta',
+  // No summary is asked for on any deployment until a live proof shows Azure accepts
+  // reasoning.summary on the reasoning models people deploy: a refusal would fail every watched reply.
+  'azure-openai': 'none',
+  // Maps only the reasoning its models return; nothing new is asked for (require_parameters).
+  openrouter: 'reasoning-delta',
+  'google-vertex': 'reasoning-delta',
+  // Asks for summaries only when the gateway's routing policy says it accepts them.
+  nectovia: 'reasoning-delta',
+});
 
 /** The route contract every model-API route shares; only its identity and wording differ. */
 export function modelApiContract(route: {
@@ -58,7 +81,11 @@ export function modelApiContract(route: {
       ),
       close: host('There is no provider process or session to close.'),
     },
-    streaming: { transientPreview: 'text-delta', durableEvents: 'run-record' },
+    streaming: {
+      transientPreview: 'text-delta',
+      reasoning: MODEL_API_REASONING[route.routeId as ModelApiRoute] ?? 'none',
+      durableEvents: 'run-record',
+    },
     models: { source: 'runtime-reported' },
     authentication: 'host-credential',
     testedWith: route.sdk,
@@ -81,6 +108,7 @@ export interface ModelApiAdapterSpec {
   profile: Record<string, unknown>;
   transcripts: ModelTranscripts;
   notes: string[];
+  sourceRestrictionPolicy?: 'gateway';
   /** One provider exchange. */
   respond(
     input: {
@@ -88,6 +116,7 @@ export interface ModelApiAdapterSpec {
       tools: readonly ToolDescriptor[];
       attempt: ExposureAttempt;
       signal: AbortSignal;
+      sourceRestrictions?: HardRestrictions[];
     } & StreamSinks,
   ): Promise<RespondResult>;
   /** The raw preview sinks this turn's calls feed. */
@@ -140,6 +169,9 @@ export function createModelApiAdapter(spec: ModelApiAdapterSpec): ModelAdapter &
       return { role: message.role, content: message.text };
     });
   const boundProfile = (request: ModelRequest) => {
+    const restrictions = mergeSourceRestrictions(request.sourceRestrictions ?? []);
+    if (restrictions.length && spec.sourceRestrictionPolicy !== 'gateway')
+      throw new ModelApiError(`${prefix}_source_policy_unverified`, 'This route cannot enforce the source privacy restrictions. Nothing was sent.', false);
     const bound = (request as Prepared).modelApiProfile?.profileHash;
     if (bound !== undefined && bound !== profileHash)
       throw new ModelApiError(
@@ -204,6 +236,7 @@ export function createModelApiAdapter(spec: ModelApiAdapterSpec): ModelAdapter &
       messages: request.messages,
       tools: request.tools,
       transcript: request.transcript,
+      ...(request.sourceRestrictions?.length ? { sourceRestrictions: request.sourceRestrictions } : {}),
       profileHash,
     });
   return {
@@ -211,6 +244,7 @@ export function createModelApiAdapter(spec: ModelApiAdapterSpec): ModelAdapter &
     version: spec.sdk,
     contract: spec.contract,
     destination: 'external',
+    ...(spec.sourceRestrictionPolicy === 'gateway' ? { enforcesSourceRestrictions: true as const } : {}),
     profileHash,
     capabilities: () => ({
       engineId: spec.route,
@@ -267,10 +301,12 @@ export function createModelApiAdapter(spec: ModelApiAdapterSpec): ModelAdapter &
       const result = await spec.respond({
         messages,
         tools: request.tools,
+        ...(request.sourceRestrictions?.length ? { sourceRestrictions: request.sourceRestrictions } : {}),
         attempt,
         signal,
         onDelta,
         onToolActivity: spec.sinks?.onToolActivity,
+        onReasoningDelta: spec.sinks?.onReasoningDelta,
       });
       let response: ModelResult['response'];
       let portable: PortableMessage;
@@ -296,9 +332,13 @@ export function createModelApiAdapter(spec: ModelApiAdapterSpec): ModelAdapter &
         messages: [...messages, ...result.responseMessages],
         pendingTool,
       });
+      const raw = result.rawUsage;
+      const managed = spec.sourceRestrictionPolicy === 'gateway' && raw && typeof raw === 'object' && !Array.isArray(raw) && 'nectovia' in raw
+        ? routingReceiptSchema.parse(raw.nectovia) : null;
       return {
         response,
         transcript,
+        ...(managed ? { managed } : {}),
         usage: {
           inputTokens: result.usage.inputTokens,
           outputTokens: result.usage.outputTokens,

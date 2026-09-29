@@ -27,7 +27,7 @@ export const isModelApiProvider = (value: unknown): value is ModelApiProvider =>
   typeof value === 'string' && (MODEL_API_PROVIDERS as readonly string[]).includes(value);
 
 export const MODEL_API_NAMES: Record<ModelApiRoute, string> = {
-  'aws-bedrock': 'AWS Bedrock (GPT-6 Luna)',
+  'aws-bedrock': 'AWS Bedrock (GPT-5.6 Luna)',
   'azure-openai': 'Azure OpenAI',
   openrouter: 'OpenRouter',
   'google-vertex': 'Google Vertex AI (Gemini 3.8 Flash)',
@@ -35,22 +35,31 @@ export const MODEL_API_NAMES: Record<ModelApiRoute, string> = {
 };
 
 /**
- * GPT-6 Luna on Bedrock, as the managed gateway's provider registry lists it (contract section 4):
+ * The owner's temporary managed selection while GPT-6 Luna's AWS access is unresolved:
  * the US Geo inference profile, its rate card and Nectovia's own output cap. Kept in one place so
  * the owner's AWS route and the Nectovia route's local guard price a call alike.
  */
-export const GPT6_LUNA = {
-  model: 'us.openai.gpt-6-luna',
-  label: 'GPT-6 Luna',
-  rateCard: 'aws-bedrock-gpt-6-luna-us-2026-09-25.1',
+export const MANAGED_LUNA = {
+  model: 'us.openai.gpt-5.6-luna',
+  label: 'GPT-5.6 Luna',
+  rateCard: 'aws-bedrock-gpt-5.6-luna-us-2026-09-28.1',
   /** Whole micro-USD per million tokens. */
-  rates: { input: 110_000, cacheRead: 11_000, cacheWrite: 137_500, output: 550_000 },
+  rates: { input: 220_000, cacheRead: 22_000, cacheWrite: 275_000, output: 1_320_000 },
+  longRates: { input: 440_000, cacheRead: 44_000, cacheWrite: 550_000, output: 1_980_000 },
   /** Nectovia's own limit on one answer's output, not a claim about the model's maximum. */
   maxOutputTokens: 16_000,
   /** The gateway refuses input past this bound rather than guess a long-context price. */
   maxInputTokens: 272_000,
   source:
-    'AWS Bedrock model card, OpenAI GPT-6 Luna, US Geo profile list prices per 1M tokens, checked 2026-09-25. Estimate only.',
+    'AWS Bedrock GPT-5.6 Luna agreement offer-bklbyf2ewuawu, US Geo standard prices per 1M tokens, checked 2026-09-28. Estimate only.',
+} as const;
+
+/** Compatibility for policies published before versioned routing; no new qualification is implied. */
+export const GPT6_LUNA = {
+  model: 'us.openai.gpt-6-luna', label: 'GPT-6 Luna', rateCard: 'aws-bedrock-gpt-6-luna-us-2026-09-25.1',
+  rates: { input: 110_000, cacheRead: 11_000, cacheWrite: 137_500, output: 550_000 },
+  maxOutputTokens: 16_000, maxInputTokens: 272_000,
+  source: 'Legacy published AWS Bedrock GPT-6 Luna US Geo price snapshot, 2026-09-25. Estimate only.',
 } as const;
 
 /**

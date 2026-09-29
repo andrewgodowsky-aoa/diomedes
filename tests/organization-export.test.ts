@@ -204,7 +204,8 @@ describe("the Business owner's export (OPS-05)", () => {
       release();
     }
     const response = await pending;
-    expect(response.status).toBe(403);
+    expect(response.status).toBe(401);
+    expect(await response.json()).toMatchObject({ code: 'sign_in_required' });
     expect(await exportsIn(project)).toEqual([]);
   });
 

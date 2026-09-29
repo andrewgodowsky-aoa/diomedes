@@ -6,7 +6,7 @@ import path from 'node:path';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createApp } from '../server/app.js';
-import { forgetCatalog } from '../server/models.js';
+import { codexCatalog, forgetCatalog, recordEngineCatalog } from '../server/models.js';
 import { createJevAdvisor, type JevAdvisor } from '../server/harness/jev-advisor.js';
 import {
   scriptedEvaluationPort,
@@ -71,6 +71,7 @@ async function start(jevAdvisor?: JevAdvisor) {
     'utf8',
   );
   forgetCatalog();
+  recordEngineCatalog(codexCatalog());
   await fsp.mkdir(path.join(process.cwd(), 'test-results'), { recursive: true });
   const temp = await fsp.mkdtemp(path.join(process.cwd(), 'test-results', 'preflight-'));
   app = await createApp({

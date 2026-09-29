@@ -518,12 +518,12 @@ describe('H01: EngineService dispatch is bound by the carried contract', () => {
       });
     },
   );
-  it('refuses a descriptor bound to a different route or an unproven build', async () => {
+  it('refuses a descriptor bound to a different route or engine', async () => {
     for (const contract of [
       { ...structuredClone(routeContractFor('opencode')), routeId: 'devin' },
       {
         ...structuredClone(routeContractFor('opencode')),
-        engine: { id: 'opencode', version: '0.0.0-unproven', protocolVersion: 'http+sse' },
+        engine: { id: 'devin', version: '0.0.0-unproven', protocolVersion: 'http+sse' },
       },
     ]) {
       const service = await engineFixture('opencode', {
@@ -580,7 +580,8 @@ describe('H01: the preview contract is byte-bounded, stamped and redacted', () =
       onPreview: (frame) => frames.push(frame),
     });
     sink('token secret-ABC123 inside');
-    expect(frames[0].text).toBe('token [redacted] inside');
+    sink.flush();
+    expect(frames.map((frame) => frame.text).join('')).toBe('token [redacted] inside');
   });
   it('an over-budget frame is an error, never a truncation', () => {
     const frames: TransientPreview[] = [];
@@ -637,7 +638,10 @@ describe('H01: EngineService emits stamped, redacted preview frames', () => {
     );
     const frames: TransientPreview[] = [];
     await service.generate('opencode', request({ onPreview: (frame: TransientPreview) => frames.push(frame) }));
-    expect(frames.map((frame) => frame.seq)).toEqual([1, 2]);
+    // A redacted stream is framed by what is safe to show, not by the adapter's chunks, and is
+    // redacted as the one text a person reads, "first secret-XYZsecond": the pattern takes the word.
+    expect(frames.map((frame) => frame.seq)).toEqual(frames.map((_frame, index) => index + 1));
+    expect(frames.map((frame) => frame.text).join('')).toBe('first [redacted]');
     expect(frames[0]).toMatchObject({
       kind: 'text-delta',
       projectId: 'p',
@@ -647,8 +651,30 @@ describe('H01: EngineService emits stamped, redacted preview frames', () => {
       stepId: 'text:dispatch',
       attempt: 1,
       fence: 1,
-      text: 'first [redacted]',
     });
+  });
+  it('redacts a secret the adapter split across deltas', async () => {
+    const service = await engineFixture(
+      'opencode',
+      {
+        generate: async (input) => {
+          input.onDelta?.('first secr');
+          input.onDelta?.('et-XYZ and more');
+          return {
+            projectId: input.projectId,
+            threadId: input.threadId,
+            requestId: input.requestId,
+            model: input.model,
+            text: 'done',
+            version: TESTED_VERSIONS.opencode,
+          };
+        },
+      },
+      { redactFor: () => (text: string) => text.replace(/secret-[A-Za-z0-9]+/g, '[redacted]') },
+    );
+    const frames: TransientPreview[] = [];
+    await service.generate('opencode', request({ onPreview: (frame: TransientPreview) => frames.push(frame) }));
+    expect(frames.map((frame) => frame.text).join('')).toBe('first [redacted] and more');
   });
   it('refuses the response when the adapter violated the preview bound', async () => {
     const service = await engineFixture('opencode', {
@@ -742,11 +768,10 @@ describe('H01: conformance checks reject false completion and drifted proof', ()
     const check = streamChecks(corrupted).find((c) => c.id === 'lastseq-matches-stream');
     expect(check?.outcome).toBe('failed');
   });
-  it('a descriptor whose engine moved past its proof fails tested-version-current', () => {
+  it('a newer vendor build does not invalidate an unchanged adapter contract', () => {
     const descriptor = structuredClone(routeContractFor('devin'));
     descriptor.engine.version = '9999.0.0';
-    const check = contractChecks(descriptor).find((c) => c.id === 'tested-version-current');
-    expect(check?.outcome).toBe('failed');
+    expect(contractChecks(descriptor).filter((c) => c.outcome === 'failed')).toEqual([]);
   });
   it('every shipped descriptor still passes contract conformance', () => {
     for (const [routeId, contract] of Object.entries(ROUTE_CONTRACTS)) {

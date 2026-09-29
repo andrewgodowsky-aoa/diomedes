@@ -22,6 +22,7 @@ import {
 } from './commercial.js';
 import { recordSchemas } from './domain.js';
 import { inTransaction, type ClientFactory, type SqlClient } from './postgres.js';
+import { individualAccountSchema, routingPreferenceSchema, hardRestrictionsSchema, routingScopeKey, type IndividualAccount, type RoutingPreference, type AccountScope, type HardRestrictions } from '../../../shared/routing-policy.js';
 
 const like = (query: string) => `%${query.replace(/[\\%_]/g, (char) => `\\${char}`)}%`;
 
@@ -63,18 +64,71 @@ class PostgresCommercialTransaction implements CommercialTransaction {
   async lockPolicy() {
     await this.client.query('SELECT pg_advisory_xact_lock(474946082902)');
   }
-  async policy(revision?: number): Promise<TierPolicy | undefined> {
+  async policy(revision?: number, scopeKey = 'global'): Promise<TierPolicy | undefined> {
     const result = revision === undefined
-      ? await this.client.query('SELECT record FROM control_plane.tier_policies ORDER BY revision DESC LIMIT 1')
-      : await this.client.query('SELECT record FROM control_plane.tier_policies WHERE revision=$1', [revision]);
+      ? await this.client.query('SELECT record FROM control_plane.tier_policies WHERE scope_key=$1 ORDER BY revision DESC LIMIT 1', [scopeKey])
+      : await this.client.query('SELECT record FROM control_plane.tier_policies WHERE scope_key=$1 AND revision=$2', [scopeKey, revision]);
     return result.rows.length ? tierPolicySchema.parse(result.rows[0].record) : undefined;
   }
-  async policies(limit: number) {
-    const result = await this.client.query('SELECT record FROM control_plane.tier_policies ORDER BY revision DESC LIMIT $1', [limit]);
+  async policies(limit: number, scopeKey = 'global') {
+    const result = await this.client.query('SELECT record FROM control_plane.tier_policies WHERE scope_key=$1 ORDER BY revision DESC LIMIT $2', [scopeKey, limit]);
     return result.rows.map((row) => tierPolicySchema.parse(row.record));
   }
   async savePolicy(row: TierPolicy) {
-    await this.client.query('INSERT INTO control_plane.tier_policies(revision,record) VALUES ($1,$2::jsonb)', [row.revision, JSON.stringify(row)]);
+    await this.client.query('INSERT INTO control_plane.tier_policies(scope_key,revision,record) VALUES ($1,$2,$3::jsonb)', [routingScopeKey(row.scope ?? { kind: 'global' }), row.revision, JSON.stringify(row)]);
+  }
+  async individual(id: string) {
+    const result = await this.client.query("SELECT record FROM control_plane.billing_scopes WHERE kind='individual' AND id=$1", [id]);
+    return result.rows.length ? individualAccountSchema.parse(result.rows[0].record) : undefined;
+  }
+  async individualFor(personId: string) {
+    const result = await this.client.query("SELECT record FROM control_plane.billing_scopes WHERE kind='individual' AND person_id=$1", [personId]);
+    return result.rows.length ? individualAccountSchema.parse(result.rows[0].record) : undefined;
+  }
+  async individuals(query: string, limit: number) {
+    const result = await this.client.query("SELECT record FROM control_plane.billing_scopes WHERE kind='individual' AND ($1='' OR lower(record->>'name') LIKE $2 OR id=$1) ORDER BY id LIMIT $3", [query, like(query), limit]);
+    return result.rows.map(r => individualAccountSchema.parse(r.record));
+  }
+  async saveIndividual(row: IndividualAccount) {
+    await this.client.query("INSERT INTO control_plane.billing_scopes(id,tenant_id,kind,person_id,record) VALUES($1,$2,'individual',$3,$4::jsonb)", [row.id, row.tenantId, row.personId, JSON.stringify(row)]);
+  }
+  async scopeRole(scope: AccountScope, personId: string) {
+    if (scope.kind === 'individual') {
+      const result = await this.client.query("SELECT record FROM control_plane.billing_scopes WHERE kind='individual' AND id=$1 AND person_id=$2 FOR SHARE", [scope.id, personId]);
+      return result.rows.length && individualAccountSchema.parse(result.rows[0].record).state === 'active' ? 'owner' as const : null;
+    }
+    await this.client.query('SELECT id FROM control_plane.organizations WHERE id=$1 FOR SHARE', [scope.id]);
+    const result = await this.client.query('SELECT record FROM control_plane.memberships WHERE organization_id=$1 AND person_id=$2 FOR SHARE', [scope.id, personId]);
+    if (!result.rows.length) return null;
+    const member = recordSchemas.membership.parse(result.rows[0].record);
+    return member.state === 'active' ? member.role : null;
+  }
+  async routingPreference(scopeKey: string) {
+    const result = await this.client.query('SELECT record FROM control_plane.account_routing_preferences WHERE scope_key=$1 ORDER BY revision DESC LIMIT 1', [scopeKey]);
+    return result.rows.length ? routingPreferenceSchema.parse(result.rows[0].record) : undefined;
+  }
+  async saveRoutingPreference(row: RoutingPreference) {
+    await this.client.query('INSERT INTO control_plane.account_routing_preferences(scope_key,revision,account_id,accepted_by,record) VALUES($1,$2,$3,$4,$5::jsonb)',
+      [routingScopeKey(row.scope), row.revision, row.scope.id, row.acceptedBy, JSON.stringify(row)]);
+  }
+  async restrictJob(scopeKey: string, jobId: string, restrictions: readonly HardRestrictions[]) {
+    await this.client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [JSON.stringify(['routing-job', scopeKey, jobId])]);
+    const result = await this.client.query('SELECT restrictions FROM control_plane.routing_job_constraints WHERE scope_key=$1 AND job_id=$2', [scopeKey, jobId]);
+    const existing = result.rows.length ? z.array(hardRestrictionsSchema).parse(result.rows[0].restrictions) : [];
+    const union = [...new Map([...existing, ...restrictions].map(r => [JSON.stringify(r), r])).values()];
+    if (union.length > 128) throw new Error('Too many distinct source restrictions for one job.');
+    await this.client.query('INSERT INTO control_plane.routing_job_constraints(scope_key,job_id,restrictions) VALUES($1,$2,$3::jsonb) ON CONFLICT(scope_key,job_id) DO UPDATE SET restrictions=EXCLUDED.restrictions', [scopeKey, jobId, JSON.stringify(union)]);
+    return union;
+  }
+  async circuit(routeId: string, routeRevision: number) {
+    const result = await this.client.query('SELECT until_at,reason FROM control_plane.managed_route_circuits WHERE route_id=$1 AND route_revision=$2', [routeId, routeRevision]);
+    return result.rows.length ? { until: new Date(result.rows[0].until_at as string).toISOString(), reason: z.string().parse(result.rows[0].reason) } : undefined;
+  }
+  async saveCircuit(routeId: string, routeRevision: number, until: string, reason: string) {
+    await this.client.query('INSERT INTO control_plane.managed_route_circuits(route_id,route_revision,until_at,reason) VALUES($1,$2,$3,$4) ON CONFLICT(route_id,route_revision) DO UPDATE SET until_at=EXCLUDED.until_at,reason=EXCLUDED.reason', [routeId, routeRevision, until, reason]);
+  }
+  async lockStaff() {
+    await this.client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [JSON.stringify(['commercial-staff'])]);
   }
   async operator(personId: string): Promise<Operator | undefined> {
     const result = await this.client.query('SELECT record FROM control_plane.operators WHERE person_id=$1', [personId]);
@@ -177,6 +231,10 @@ class PostgresCommercialTransaction implements CommercialTransaction {
   async savePersonalAdmission(row: PersonalAdmissionRecord) {
     await this.client.query('INSERT INTO control_plane.personal_agent_admissions(tenant_id,id,person_id,at,record) VALUES ($1,$2,$3,$4,$5::jsonb)',
       [row.tenantId, row.id, row.personId, row.at, JSON.stringify(row)]);
+  }
+  async personalAdmission(tenantId: string, id: string) {
+    const result = await this.client.query('SELECT record FROM control_plane.personal_agent_admissions WHERE tenant_id=$1 AND id=$2', [tenantId, id]);
+    return result.rows.length ? personalAdmissionRecordSchema.parse(result.rows[0].record) : undefined;
   }
   async personalAdmissions(personId: string, limit: number) {
     const result = await this.client.query('SELECT record FROM control_plane.personal_agent_admissions WHERE person_id=$1 ORDER BY at DESC LIMIT $2', [personId, limit]);

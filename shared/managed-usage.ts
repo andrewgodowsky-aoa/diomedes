@@ -841,6 +841,12 @@ export interface RateSnapshot {
   readonly outputMicroUsdPerMillion: number;
   readonly cacheReadMicroUsdPerMillion: number;
   readonly cacheWriteMicroUsdPerMillion: number;
+  /** Absent on v1 receipts: reasoning then has the ordinary output rate and no request fee. */
+  readonly reasoningMicroUsdPerMillion?: number;
+  readonly requestFeeMicroUsd?: number;
+  readonly longContext?: readonly (Omit<RateSnapshot, 'version' | 'longContext' | 'routing'> & { aboveInputTokens: number })[];
+  /** Immutable dispatch attribution, stored with the existing funded reservation. */
+  readonly routing?: NonNullable<import('./routing-policy.js').RoutingReceipt['attempts'][number]['routing']>;
 }
 
 /**
@@ -928,13 +934,16 @@ export function validateProviderUsage(
  * priced again.
  */
 export function usageCost(rate: RateSnapshot, usage: UsageCounts): MicroUsd {
+  const band = [...(rate.longContext ?? [])].sort((a, b) => b.aboveInputTokens - a.aboveInputTokens)
+    .find(b => usage.inputTokens > b.aboveInputTokens) ?? rate;
   const fresh = freshInputTokens(usage);
   const scaled =
-    BigInt(fresh) * BigInt(rate.inputMicroUsdPerMillion) +
-    BigInt(usage.cacheReadTokens) * BigInt(rate.cacheReadMicroUsdPerMillion) +
-    BigInt(usage.cacheWriteTokens) * BigInt(rate.cacheWriteMicroUsdPerMillion) +
-    BigInt(usage.outputTokens) * BigInt(rate.outputMicroUsdPerMillion);
-  const cost = (scaled + 999_999n) / 1_000_000n;
+    BigInt(fresh) * BigInt(band.inputMicroUsdPerMillion) +
+    BigInt(usage.cacheReadTokens) * BigInt(band.cacheReadMicroUsdPerMillion) +
+    BigInt(usage.cacheWriteTokens) * BigInt(band.cacheWriteMicroUsdPerMillion) +
+    BigInt(usage.outputTokens - usage.reasoningTokens) * BigInt(band.outputMicroUsdPerMillion) +
+    BigInt(usage.reasoningTokens) * BigInt(band.reasoningMicroUsdPerMillion ?? band.outputMicroUsdPerMillion);
+  const cost = (scaled + 999_999n) / 1_000_000n + BigInt(band.requestFeeMicroUsd ?? 0);
   if (cost > BigInt(MAX_MONEY_MICRO_USD))
     throw new RangeError('That usage cannot be priced exactly; reconcile it by hand.');
   return micro(Number(cost));

@@ -67,6 +67,7 @@ export function teamRoutes(scripts: Partial<Record<Purpose, Script>>, log: StubL
 
 /** Wait for `ms`, or reject when the call is aborted. */
 export function pause(ms: number, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.reject(new Error('aborted'));
   return new Promise((resolve, reject) => {
     const timer = setTimeout(resolve, ms);
     signal.addEventListener(

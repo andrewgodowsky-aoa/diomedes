@@ -935,6 +935,9 @@ export class OpenCodeAdapter implements PersistentTextAdapter<OpenCodeSessionChe
     // delta that arrives before its announcement is recovered from the
     // part's full text when that part is next updated.
     const textParts = new Map<string, string>();
+    // Reasoning parts, tracked the same way: a delta counts only for a part already announced as
+    // reasoning, and an update without a delta gives what that part has that was not streamed.
+    const reasoningParts = new Map<string, string>();
     try {
       for (;;) {
         const part = await reader.read();
@@ -1053,6 +1056,20 @@ export class OpenCodeAdapter implements PersistentTextAdapter<OpenCodeSessionChe
             assistantMessageId &&
             text(partValue.messageID) === assistantMessageId
           ) {
+            if (partType === 'reasoning') {
+              const partId = text(partValue.id);
+              if (!partId) continue;
+              const prior = reasoningParts.get(partId) ?? '';
+              const delta = text(props.delta);
+              let next = delta;
+              if (!delta) {
+                const full = text(partValue.text);
+                next = full.startsWith(prior) ? full.slice(prior.length) : '';
+              }
+              reasoningParts.set(partId, prior + next);
+              if (next) input.onReasoningDelta?.(next);
+              continue;
+            }
             if (partType !== 'text') continue;
             const partId = text(partValue.id);
             if (partId && !textParts.has(partId)) textParts.set(partId, '');
@@ -1086,6 +1103,19 @@ export class OpenCodeAdapter implements PersistentTextAdapter<OpenCodeSessionChe
               answer += delta;
               textParts.set(text(props.partID), (textParts.get(text(props.partID)) ?? '') + delta);
               input.onDelta?.(delta);
+            }
+          }
+          if (
+            kind === 'message.part.delta' &&
+            assistantMessageId &&
+            text(props.messageID) === assistantMessageId &&
+            text(props.field) === 'text' &&
+            reasoningParts.has(text(props.partID))
+          ) {
+            const delta = text(props.delta);
+            if (delta) {
+              reasoningParts.set(text(props.partID), (reasoningParts.get(text(props.partID)) ?? '') + delta);
+              input.onReasoningDelta?.(delta);
             }
           }
           if (

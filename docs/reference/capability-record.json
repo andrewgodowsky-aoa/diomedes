@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
   "kind": "diomedes-capability-record",
-  "appVersion": "0.2.1",
+  "appVersion": "0.2.2",
   "generatedFrom": {
-    "commit": "ac23f3b5c2a222eb154f8275ed0b587efe0aee72",
+    "commit": "2206b9921811bf1ae64946db6a4fee25f915e978",
     "note": "The commit checked out when this file was written. The commit that carries the file is its child."
   },
   "states": {

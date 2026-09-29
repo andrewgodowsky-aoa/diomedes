@@ -136,6 +136,8 @@ class TeamAppServer implements NativeRpc {
     switch (method) {
       case 'initialize':
         return { userAgent: 'diomedes/0.153.4 (Windows 10)' };
+      case 'model/list':
+        return { data: [{ id: 'native-model', model: 'native-model', supportedReasoningEfforts: [{ reasoningEffort: 'medium' }] }], nextCursor: null };
       case 'account/read':
         return { requiresOpenaiAuth: true, account: { type: 'chatgpt' } };
       case 'config/read':

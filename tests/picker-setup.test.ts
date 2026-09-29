@@ -147,10 +147,7 @@ describe('the model list a signed-in engine offers the thread', () => {
       checkedAt: null,
     });
     expect(await integration()).toMatchObject({ found: false, available: false });
-    expect((await call('/engines/opencode/models')).data).toMatchObject({
-      engine: 'opencode',
-      models: [],
-    });
+    expect((await call('/engines/opencode/models')).data).toMatchObject({ code: 'NOT_INSTALLED' });
   });
 
   it('reports the account route and the engine-reported models on /ai/status', async () => {
@@ -195,7 +192,7 @@ describe('the model list a signed-in engine offers the thread', () => {
     const { call, connection, connect, inspect } = await fixture();
     await connect();
     expect((await connection()).models).toHaveLength(2);
-    inspect.mockResolvedValueOnce({
+    inspect.mockResolvedValue({
       authentication: 'signed-out',
       accountRoute: null,
       models: [],

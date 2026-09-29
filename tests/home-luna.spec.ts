@@ -14,7 +14,7 @@ import { FAUX_SCRIPTED_CREDENTIAL } from '../services/control-plane/src/managed-
 import { shareAfter } from './fixtures/cloud-sharing-grant';
 import { gateway, linkHome, linkToBusiness, nectoviaAccounts } from './fixtures/nectovia-home';
 
-// The Diomedes page on GPT-6 Luna, end to end in a real browser and with no Claude installed at
+// The Diomedes page on GPT-5.6 Luna, end to end in a real browser and with no Claude installed at
 // all: the engine service discovers nothing, so there is no login to fall back to. A Diomedes
 // conversation answers on Nectovia, the company-managed route: the Business owner the app signs
 // in at start (test mode) sends through the real account service and its real managed gateway,
@@ -95,7 +95,7 @@ const answers = (page: Page) => page.locator('.turn.dio .body');
 const routeControl = (page: Page) => page.getByRole('combobox', { name: 'Route' });
 const styleControl = (page: Page) => page.getByRole('combobox', { name: 'Style' });
 /** What the caption names a Nectovia conversation by: the route and the model its policy publishes. */
-const NECTOVIA_CAPTION = 'Nectovia (GPT-6 Luna)';
+const NECTOVIA_CAPTION = 'Nectovia (GPT-5.6 Luna)';
 /** The person routes the Home conversation: a choice the provisioner keeps. */
 async function routeHome(engine: string) {
   const bound = await home();
@@ -232,7 +232,7 @@ test.afterEach(() => {
   expect(pageErrors, 'The interface must not throw uncaught browser errors').toEqual([]);
 });
 
-test('the home conversation opens on Nectovia (GPT-6 Luna) and answers with nothing connected and no Claude login', async ({
+test('the home conversation opens on Nectovia (GPT-5.6 Luna) and answers with nothing connected and no Claude login', async ({
   page,
 }) => {
   await open(page);
@@ -314,7 +314,7 @@ test('the owner\'s AWS route, chosen but not configured, refuses by name, and no
     const gatewayBefore = gateway.length;
     await say(page, 'Are you there?');
     await expect(page.getByRole('alert')).toHaveText(
-      'Connect AWS Bedrock (GPT-6 Luna) and choose its model in AI setup first.',
+      'Connect AWS Bedrock (GPT-5.6 Luna) and choose its model in AI setup first.',
     );
     await expect(composer(page)).toHaveValue('Are you there?');
     await expect(page.locator('.dio-card')).toHaveCount(0);

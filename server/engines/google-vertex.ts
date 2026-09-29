@@ -641,8 +641,8 @@ export function inspectVertexBody(text: string) {
         return refuse('offered a tool Google would run itself');
   }
   const config = (body.generationConfig ?? {}) as Record<string, unknown>;
-  const thinking = (config.thinkingConfig ?? {}) as Record<string, unknown>;
-  if (thinking.includeThoughts === true) return refuse('asked for visible thinking');
+  // Visible thinking is allowed: thought parts stream to their own channel and classifyVertex keeps
+  // them out of the answer. Every other refusal stands.
   if (config.candidateCount !== undefined && config.candidateCount !== 1) return refuse('asked for several answers');
 }
 
@@ -663,6 +663,8 @@ export function vertexBinding(
   connection: VertexConnection,
   effort: 'low' | 'medium' | 'high',
   callIdBase: string,
+  /** Whether a thinking sink is listening: thought parts are asked for only then. */
+  summaries: boolean,
 ): RouteBinding {
   let sequence = 0;
   return {
@@ -692,7 +694,7 @@ export function vertexBinding(
     },
     providerOptions: {
       vertex: {
-        thinkingConfig: { thinkingLevel: THINKING[effort], includeThoughts: false },
+        thinkingConfig: { thinkingLevel: THINKING[effort], includeThoughts: summaries },
       },
     },
     classify: (envelope) => classifyVertex(envelope, callIdBase),
@@ -734,7 +736,10 @@ export async function respondVertex(
   requireCurrentVertexCard(input.card, (input.now ?? (() => new Date()))());
   const { connection: _connection, effort, ...rest } = input;
   const callIdBase = `vtx-${input.attempt.requestDigest.slice(0, 12)}-${input.attempt.attempt}`;
-  return respondStream({ ...rest, binding: vertexBinding(connection, effort, callIdBase) });
+  return respondStream({
+    ...rest,
+    binding: vertexBinding(connection, effort, callIdBase, Boolean(rest.onReasoningDelta)),
+  });
 }
 
 /** True when this process could read an ADC file right now. Detection grants nothing. */

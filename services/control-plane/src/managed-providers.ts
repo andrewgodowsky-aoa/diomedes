@@ -39,28 +39,44 @@ export interface ProviderRegistryRow {
   readonly credential: 'BEDROCK_API_KEY';
   /** Where the provider puts its request id, for a receipt when the stream carries no response id. */
   readonly requestIdHeaders: readonly string[];
+  /**
+   * Whether this upstream is proven to accept `reasoning.summary`. A tier it serves is published as
+   * accepting summaries only with this line; absent, no desktop asks, because a provider or model
+   * that refuses the option would fail every watched reply (spec 4.2).
+   */
+  readonly reasoningSummaries?: boolean;
 }
 
 const row = (value: ProviderRegistryRow): ProviderRegistryRow =>
   Object.freeze({ ...value, rate: Object.freeze({ ...value.rate }), requestIdHeaders: Object.freeze([...value.requestIdHeaders]) });
 
-/** AWS model card for OpenAI GPT-6 Luna, US Geo cross-Region profile, checked 2026-09-25. */
+/** AWS agreement offer-bklbyf2ewuawu, GPT-5.6 Luna US Geo standard prices, checked 2026-09-28. */
 export const MANAGED_PROVIDERS: readonly ProviderRegistryRow[] = Object.freeze([
   row({
     provider: 'aws-bedrock',
     region: 'us',
-    model: 'us.openai.gpt-6-luna',
+    model: 'us.openai.gpt-5.6-luna',
     endpoint: 'https://bedrock-runtime.us-east-1.amazonaws.com/openai/v1/responses',
     rate: {
-      version: 'aws-bedrock-gpt-6-luna-us-2026-09-25.1',
-      inputMicroUsdPerMillion: 110_000,
-      cacheReadMicroUsdPerMillion: 11_000,
-      cacheWriteMicroUsdPerMillion: 137_500,
-      outputMicroUsdPerMillion: 550_000,
+      version: 'aws-bedrock-gpt-5.6-luna-us-2026-09-28.1',
+      inputMicroUsdPerMillion: 220_000,
+      cacheReadMicroUsdPerMillion: 22_000,
+      cacheWriteMicroUsdPerMillion: 275_000,
+      outputMicroUsdPerMillion: 1_320_000,
     },
     maxOutputTokens: 16_000,
     credential: 'BEDROCK_API_KEY',
     requestIdHeaders: ['x-amzn-requestid', 'x-request-id'],
+    // Pending the paid Luna proof, which gates the merge and so this Worker's deploy. If Bedrock
+    // refuses the summary, this line and the desktop's AWS entry in MODEL_API_REASONING go together.
+    reasoningSummaries: true,
+  }),
+  // An existing v1 policy is not republished by this migration. Its exact original binding remains.
+  row({ provider: 'aws-bedrock', region: 'us', model: 'us.openai.gpt-6-luna',
+    endpoint: 'https://bedrock-runtime.us-east-1.amazonaws.com/openai/v1/responses',
+    rate: { version: 'aws-bedrock-gpt-6-luna-us-2026-09-25.1', inputMicroUsdPerMillion: 110_000,
+      cacheReadMicroUsdPerMillion: 11_000, cacheWriteMicroUsdPerMillion: 137_500, outputMicroUsdPerMillion: 550_000 },
+    maxOutputTokens: 16_000, credential: 'BEDROCK_API_KEY', requestIdHeaders: ['x-amzn-requestid', 'x-request-id'],
   }),
 ]);
 

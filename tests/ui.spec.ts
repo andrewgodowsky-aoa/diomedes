@@ -4,6 +4,7 @@ import path from 'node:path';
 import type {
   Change,
   DocumentContent,
+  IntegrationStatus,
   Project,
   ProjectState,
   Settings,
@@ -560,9 +561,23 @@ test('F11-F13: work asks twice, decline skips creation, and the remaining change
     fullPage: true,
     animations: 'disabled',
   });
-  await harborTab.click();
+  const appearance = (await readSettings(page)).appearance;
+  const useHome = await page.request.put('/api/settings', {
+    headers: HEADERS,
+    data: { appearance: { ...appearance, package: 'nectovia' } },
+  });
+  expect(useHome.ok()).toBe(true);
+  await page.getByRole('button', { name: 'Nectovia', exact: true }).click();
+  const approvalItem = (await projectState(page)).project.status?.waiting?.find(
+    (item) => item.taskId === waitingTask.id && item.kind === 'approval',
+  );
+  expect(approvalItem).toBeTruthy();
+  await page.getByRole('button', {
+    name: `Review ${approvalItem!.label} in ${(await projectState(page)).project.name}`,
+    exact: true,
+  }).click();
   await expect(railOf(page)).toBeVisible();
-  await reviewFromBoard(page, waitingTask.name);
+  await expect(page.locator('#scrThread')).toBeVisible();
   await expect(notice).toBeVisible();
   await expect(notice.getByRole('button', { name: 'Go ahead', exact: true })).toBeVisible();
   await expect(
@@ -588,19 +603,34 @@ test('F11-F13: work asks twice, decline skips creation, and the remaining change
   expect(workEntry?.files[0].after).toBeTruthy();
   expect(state.history.filter((entry) => entry.kind === 'decision')).toHaveLength(2);
   await expect(notice).toHaveCount(0);
+  // The decision is made, but the remaining change still waits on the person's review, so the
+  // project keeps its waiting mark until the change is kept or undone (F15-F16).
   await openProjects(page).getByRole('button', { name: 'Projects', exact: true }).click();
   await expect(
     openProjects(page).getByRole('button', { name: /Harbor Street/ }).locator('.mark.waiting'),
-  ).toHaveCount(0);
+  ).toBeVisible();
+  // Review work still needs attention, but no approval is waiting for an OK.
+  await expect(page.locator('.strip-status')).toContainText('your attention.');
+  await expect(page.locator('.strip-status')).not.toContainText('your OK');
+  await page.getByRole('button', { name: 'Nectovia', exact: true }).click();
+  const reviewItem = (await projectState(page)).project.status?.waiting?.find(
+    (item) => item.taskId === waitingTask.id && item.kind === 'review',
+  );
+  expect(reviewItem).toBeTruthy();
+  await page.getByRole('button', {
+    name: `Review ${reviewItem!.label} in ${(await projectState(page)).project.name}`,
+    exact: true,
+  }).click();
+  await expect(page.locator('#scrThread')).toBeVisible();
+  await expect(notice).toHaveCount(0);
 });
 
 test('F15-F16: Review keeps the changed file and History exposes the recorded change', async ({
   page,
 }, testInfo) => {
   await openProject(page);
-  // The Console has no Review page and no Keep or Undo control for a waiting
-  // change; its thread shows the change (What changed) but cannot settle it.
-  // Keep all is driven through the route the Workbook's Review page called.
+  // The task's thread keeps or undoes a waiting change (ChangeDiffs); here Keep all goes
+  // through the review route directly.
   const waiting = (await projectState(page)).changes.filter((change) => change.state === 'waiting');
   expect(waiting).toHaveLength(1);
   const keep = await page.request.post(`/api/projects/${projectId}/review/all`, {
@@ -635,6 +665,11 @@ test('F15-F16: Review keeps the changed file and History exposes the recorded ch
   expect(workEntry.files[0].before).toBeTruthy();
   expect(workEntry.files[0].after).toBeTruthy();
   expect(workEntry.files[0].before).not.toBe(workEntry.files[0].after);
+  // Kept: nothing waits on the person now, so the project's tab loses its waiting mark.
+  await openProjects(page).getByRole('button', { name: 'Projects', exact: true }).click();
+  await expect(
+    openProjects(page).getByRole('button', { name: /Harbor Street/ }).locator('.mark.waiting'),
+  ).toHaveCount(0);
 });
 
 test('F07-F08: restore and undo recover both versions; newer edits are a conflict', async ({
@@ -1248,13 +1283,12 @@ test('Engine choices: the list comes from the engine, and the levels follow the 
   expect(listed.ok()).toBe(true);
   const catalog: { models: { slug: string }[] } = await listed.json();
   expect(catalog.models.map((m) => m.slug)).toEqual(['gpt-6-astra', 'gpt-5.5']);
-  // An engine with no list says so rather than offering an invented one.
+  // An unknown engine has no list; installed engines now refresh on each request.
   const none: { models: unknown[]; detail: string } = await (
-    await page.request.get('/api/engines/claude-code/models')
+    await page.request.get('/api/engines/unavailable-fixture/models')
   ).json();
   expect(none.models).toEqual([]);
-  // Which sentence depends on the machine: discovery may find Claude Code missing,
-  // unchecked, or installed without a model list. Each explains the empty list.
+  // Unknown engines explain their empty list instead of inventing choices.
   expect(none.detail).toMatch(/Check|check|not checked|Not checked|Install this tool|does not report its choices/);
 
   const on = await page.request.put('/api/settings', {
@@ -1262,6 +1296,27 @@ test('Engine choices: the list comes from the engine, and the levels follow the 
     data: { services: { codex: true } },
   });
   expect(on.ok()).toBe(true);
+  const integrationResponse = await page.request.get('/api/integrations');
+  expect(integrationResponse.ok()).toBe(true);
+  const body = await integrationResponse.json() as { integrations: IntegrationStatus[] };
+  // Own the two installations this case exercises, including a page-triggered
+  // discovery refresh. Never start a real installed tool through route.fetch.
+  body.integrations = body.integrations.map((item) => item.id === 'codex'
+    ? { ...item, found: true, available: true, adapter: 'ready', status: 'Ready', signIn: 'signed-in' }
+    : item.id === 'claude-code'
+      ? { ...item, found: true, adapter: 'ready', status: 'Ready' }
+      : { ...item, found: false, available: false, status: 'Not installed' });
+  await page.route(/\/api\/integrations(?:\?.*)?$/, (route) => route.fulfill({ json: body }));
+  // Keep another engine's catalog pending. ChatGPT's choices must render
+  // independently instead of waiting for every local tool to finish checking.
+  let releaseCatalog!: () => void;
+  const pendingCatalog = new Promise<void>((resolve) => { releaseCatalog = resolve; });
+  let heldCatalog = false;
+  await page.route('**/api/engines/claude-code/models', async (route) => {
+    heldCatalog = true;
+    await pendingCatalog;
+    await route.fulfill({ json: { engine: 'claude-code', models: [] } });
+  });
   await page.goto('/');
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   await page
@@ -1271,7 +1326,12 @@ test('Engine choices: the list comes from the engine, and the levels follow the 
 
   // Choosing brings that choice's own level with it, and its own ladder.
   const choice = page.getByLabel('Default choice');
-  await expect(choice).toBeVisible();
+  try {
+    await expect.poll(() => heldCatalog).toBe(true);
+    await expect(choice).toBeVisible();
+  } finally {
+    releaseCatalog();
+  }
   await choice.selectOption('gpt-6-astra');
   const level = page.getByLabel('Default reasoning level');
   await expect(level).toHaveValue('medium');

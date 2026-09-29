@@ -1,7 +1,6 @@
 /**
  * The Individual plan (2026-09-28): a person's own subscription, issued to a person and never to a
- * business. It covers the person's Personal work, and a business only while its active members are
- * within INDIVIDUAL_MAX_ACTIVE_MEMBERS (1 by default: the sole proprietor). Faux cloud, in memory.
+ * business. It covers Personal work only, regardless of any legacy member threshold. Faux cloud, in memory.
  */
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createFauxCloud, type FauxCloud } from '../src/faux/cloud.js';
@@ -64,7 +63,7 @@ describe('the Individual plan in the catalog', () => {
     expect(INDIVIDUAL_PLAN).toMatchObject({ id: 'individual', label: 'Individual', scope: 'person', termDays: 31, customerVisible: true });
     expect(INDIVIDUAL_PLAN.features).toEqual(['nectovia-agent', 'maintained-profiles', 'owner-rules', 'phone-relay']);
     expect(INDIVIDUAL_PLAN.note).toContain(INDIVIDUAL_ELIGIBILITY_SENTENCE);
-    expect(INDIVIDUAL_ELIGIBILITY_SENTENCE).toBe("Businesses beyond a sole proprietorship aren't eligible for this plan.");
+    expect(INDIVIDUAL_ELIGIBILITY_SENTENCE).toBe('Individual covers Personal work only. Every Business workspace needs its own Business plan, including a sole proprietorship.');
     expect(INDIVIDUAL_PLAN.note).not.toMatch(/\$|\d+\s*(a|per)\s*month/);
     expect(planCatalog().map((plan) => plan.id)).toEqual([...PLAN_TEMPLATES.map((plan) => plan.id), 'individual']);
     expect(planCatalog().filter((plan) => plan.scope === 'person').map((plan) => plan.id)).toEqual(['individual']);
@@ -82,7 +81,8 @@ describe('the Individual plan in the catalog', () => {
     expect(configuration({ ...validEnv, INDIVIDUAL_MAX_ACTIVE_MEMBERS: '3' }).individual).toEqual({ maxActiveMembers: 3 });
     expect(() => configuration({ ...validEnv, INDIVIDUAL_MAX_ACTIVE_MEMBERS: 'many' })).toThrow();
     expect(individualCovers({ grantActive: true, organizationActiveMembers: null, maxActiveMembers: 1 })).toBe(true);
-    expect(individualCovers({ grantActive: true, organizationActiveMembers: 1, maxActiveMembers: 1 })).toBe(true);
+    expect(individualCovers({ grantActive: true, organizationActiveMembers: 1, maxActiveMembers: 1 })).toBe(false);
+    expect(individualCovers({ grantActive: true, organizationActiveMembers: 1, maxActiveMembers: 100_000 })).toBe(false);
     expect(individualCovers({ grantActive: true, organizationActiveMembers: 2, maxActiveMembers: 1 })).toBe(false);
     expect(individualCovers({ grantActive: false, organizationActiveMembers: null, maxActiveMembers: 1 })).toBe(false);
   });
@@ -169,6 +169,14 @@ describe('issuing and withdrawing an Individual grant', () => {
 });
 
 describe('Personal work under an Individual plan', () => {
+  it('requires scoped admission for managed work even when the legacy Personal endpoint sees an active plan', async () => {
+    await issue('free');
+    const refused = await admitPersonal('free', 'managed');
+    expect(refused.status).toBe(200);
+    expect(refused.body.decision).toMatchObject({ admitted: false, code: 'scoped_admission_required' });
+    expect(cloud.store.snapshot().funding.attempts).toHaveLength(0);
+  });
+
   it('admits Personal work with a grant and refuses it without one, recording both', async () => {
     const refused = await admitPersonal('free');
     expect(refused.status).toBe(200);
@@ -194,28 +202,31 @@ describe('Personal work under an Individual plan', () => {
   });
 });
 
-describe('a business an Individual plan covers', () => {
-  it('covers a sole proprietor: the access view and admission read the Individual plan', async () => {
+describe('Business authority remains separate from Individual', () => {
+  it('refuses a sole proprietor Business in access, admission and export despite a person plan', async () => {
     // Harbor Hardware has one active member, its owner, and no plan of its own.
     const before = await call('GET', `/account/organizations/${orgs.harbor}/access`, await token('harborOwner'));
     expect(before.body).toMatchObject({ state: 'none', agent: { included: false } });
     expect(before.body).not.toHaveProperty('coveredBy');
     await issue('harborOwner');
     const access = await call('GET', `/account/organizations/${orgs.harbor}/access`, await token('harborOwner'));
-    expect(access.body).toMatchObject({ state: 'active', planId: 'individual', planLabel: 'Individual', coveredBy: 'individual', agent: { included: true } });
-    expect(access.body.revision).toBe(before.body.revision + 1);
-    expect(access.body.grants).toEqual([expect.objectContaining({ planId: 'individual', scope: 'person' })]);
+    expect(access.body).toMatchObject({ state: 'none', planId: null, agent: { included: false } });
+    expect(access.body).not.toHaveProperty('coveredBy');
+    expect(access.body.revision).toBe(before.body.revision);
+    expect(access.body.grants).toEqual([]);
     const admission = await call('POST', `/account/organizations/${orgs.harbor}/agent-admissions`, await token('harborOwner'),
       { surface: 'work', routeKind: 'byo' });
-    expect(admission.body.decision).toMatchObject({ admitted: true, planId: 'individual' });
+    expect(admission.body.decision.admitted).toBe(false);
     const record = await call('GET', `/ops/customers/${orgs.harbor}`, await token('staffSupport'));
-    expect(record.body.admissions[0]).toMatchObject({ decision: 'admitted', planId: 'individual', coverage: 'individual' });
-    // The owner's export carries the covered view, and the desktop's strict reader accepts it.
+    expect(record.body.admissions[0]).toMatchObject({ decision: 'refused', planId: null });
+    expect(record.body.admissions[0]).not.toHaveProperty('coverage');
+    // The export retains the Business's own authority.
     const exported = await call('GET', `/account/organizations/${orgs.harbor}/export`, await token('harborOwner'));
     expect(exported.status).toBe(200);
     const read = organizationAccountExportSchema.safeParse(exported.body);
     expect(read.success).toBe(true);
-    expect(exported.body.access).toMatchObject({ coveredBy: 'individual', planId: 'individual' });
+    expect(exported.body.access).toMatchObject({ planId: null, agent: { included: false } });
+    expect(exported.body.access).not.toHaveProperty('coveredBy');
   });
 
   it('does not cover a business with two active members, and changes nothing where the business plan has the Agent', async () => {
@@ -243,13 +254,14 @@ describe('a business an Individual plan covers', () => {
     expect(two.body).not.toHaveProperty('coveredBy');
   });
 
-  it('covers two active members when the threshold is 2', async () => {
+  it('does not revive Business coverage when the legacy threshold is 2', async () => {
     await setup('2');
     await issue('harborOwner');
     const code = await call('POST', `/account/organizations/${orgs.harbor}/invitation-codes`, await token('harborOwner'), { role: 'member', ttlMs: 3_600_000 });
     await call('POST', '/account/invitation-codes/redeem', await token('free'), { code: code.body.code });
     const access = await call('GET', `/account/organizations/${orgs.harbor}/access`, await token('harborOwner'));
-    expect(access.body).toMatchObject({ state: 'active', planId: 'individual', coveredBy: 'individual' });
+    expect(access.body).toMatchObject({ state: 'none', planId: null, agent: { included: false } });
+    expect(access.body).not.toHaveProperty('coveredBy');
     // The member without an Individual plan of their own is not covered by the owner's.
     const member = await call('GET', `/account/organizations/${orgs.harbor}/access`, await token('free'));
     expect(member.body).toMatchObject({ state: 'none', agent: { included: false } });

@@ -6,6 +6,8 @@
  * other way round.
  */
 import { createHash } from 'node:crypto';
+import { z } from 'zod';
+import { hardRestrictionsSchema, mergeSourceRestrictions, type HardRestrictions } from '../../shared/routing-policy.js';
 import type { HarnessLabel, HarnessPrincipal, StepIntent } from '../../shared/harness.js';
 
 export class HarnessError extends Error {
@@ -50,6 +52,19 @@ export function units(value: unknown, what = 'This value'): number {
   return value;
 }
 
+/** Keep invalid source metadata inside the harness's structured error boundary. */
+export function checkedSourceRules(code: string, ...sets: readonly unknown[]): HardRestrictions[] {
+  const parsed = sets.map(set => {
+    const value = z.array(hardRestrictionsSchema).max(32).safeParse(set);
+    if (!value.success) throw new HarnessError(code, 'Source privacy restrictions are malformed or exceed the supported bound.');
+    return value.data;
+  });
+  try { return mergeSourceRestrictions(...parsed); }
+  catch (error) {
+    if (error instanceof RangeError) throw new HarnessError(code, error.message);
+    throw error;
+  }
+}
 const LEVELS = ['public', 'internal', 'restricted'] as const;
 
 export function validateLabel(label: unknown): asserts label is HarnessLabel {
@@ -66,6 +81,10 @@ export function validateLabel(label: unknown): asserts label is HarnessLabel {
     !l.provenance.every((p) => typeof p === 'string')
   )
     throw new HarnessError('invalid_label', 'Invalid label.');
+  if (l.sourceRestrictions !== undefined) {
+    if (!Array.isArray(l.sourceRestrictions)) throw new HarnessError('invalid_label', 'Invalid source restrictions.');
+    checkedSourceRules('invalid_label', l.sourceRestrictions);
+  }
 }
 
 /** Conservative join: least integrity, most restrictive confidentiality, union of provenance. */
@@ -83,6 +102,7 @@ export function joinLabels(...labels: HarnessLabel[]): HarnessLabel {
     integrity: labels.some((l) => l.integrity === 'untrusted') ? 'untrusted' : 'trusted',
     confidentiality: LEVELS[Math.max(...labels.map((l) => LEVELS.indexOf(l.confidentiality)))],
     provenance: [...new Set(labels.flatMap((l) => l.provenance))],
+    ...(labels.some(l => l.sourceRestrictions?.length) ? { sourceRestrictions: checkedSourceRules('invalid_label', ...labels.map(l => l.sourceRestrictions ?? [])) } : {}),
   };
 }
 

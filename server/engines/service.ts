@@ -37,9 +37,15 @@ import { secretFingerprint } from '../connection-secrets.js';
 import {
   activitySink,
   commandGate,
+  liveOrder,
   previewSink,
+  reasoningSink,
+  type AdapterRouteContract,
   type PreviewRejection,
+  type ReasoningSink,
 } from '../../shared/adapter-contract.js';
+import { routeContractFor } from '../harness/route-contract.js';
+import { MODEL_API_REASONING } from '../harness/model-api-adapter.js';
 import type {
   PersistentTextAdapter,
   TextEngineAdapter,
@@ -53,9 +59,17 @@ import type { OpenCodeSessionCheckpoint } from './opencode-session.js';
 import type { AcpSessionCheckpoint, AcpSessionEngine } from './acp-session.js';
 import {
   ClaudeSessionRuns,
+  type ClaudeSessionAdmission,
   type ClaudeSessionTurn,
   type SessionCheckpointFacts,
 } from '../harness/claude-session-run.js';
+import type { CodexConversationPort } from '../integrations.js';
+import {
+  CODEX_ACCOUNT_ROUTE,
+  codexSessionError,
+  openCodexSession,
+  type CodexSessionCheckpoint,
+} from './codex-session.js';
 import { HarnessError } from '../harness/policy.js';
 import { TEXT_DISPATCH_STEP, textRunId, type TextDispatch } from '../harness/text-route.js';
 import { digest } from '../harness/policy.js';
@@ -133,6 +147,7 @@ import type { SpendExposure } from '../spend-exposure.js';
 import { NECTOVIA_ROUTE, type ModelApiRoute } from '../../shared/model-api.js';
 import { WORK_STYLE_LABELS } from '../../shared/work-style.js';
 import { routeUnavailable } from '../../shared/route-unavailable.js';
+import { ENGINE_GONE_CODES, engineGoneSentence } from '../../shared/conversation-engines.js';
 import { MANAGED_USAGE_NOT_INCLUDED_PERSONAL } from '../../shared/individual-plan.js';
 import {
   AGENT_NOT_INCLUDED,
@@ -188,7 +203,7 @@ export interface EngineServiceDeps {
    * The preview contract's redaction: any secret the caller knows is in scope
    * for this engine's deltas. Applied before the frame is measured or emitted.
    */
-  redactFor?(engine: ExternalEngine): (text: string) => string;
+  redactFor?(engine: ExternalEngine | ModelApiRoute | 'codex'): (text: string) => string;
   /** This computer's answer for one file: its real path, size and bytes. */
   identify?(file: string): Promise<FileIdentity | null>;
   /** The reviewed-release digest check for Diomedes's own private copy. */
@@ -443,6 +458,10 @@ export class EngineService {
   /** The kept ACP conversations (H05); attaching them does not change generate() either. */
   cursorSessions?: ClaudeSessionRuns<AcpSessionCheckpoint>;
   devinSessions?: ClaudeSessionRuns<AcpSessionCheckpoint>;
+  /** The kept ChatGPT conversation driver (spec 3.2); the app attaches it. */
+  codexSessions?: ClaudeSessionRuns<CodexSessionCheckpoint>;
+  /** The processes a kept ChatGPT conversation runs on (`server/integrations.ts`); the app attaches it. */
+  codexConversations?: CodexConversationPort;
   /** The model-API conversation driver (CD-01 Decision 5's second driver). The app attaches it. */
   modelSessions?: ModelSessionRuns;
   /** Connection record, protected credential, spend ledger and private transcripts for model-API routes. */
@@ -488,7 +507,7 @@ export class EngineService {
             'VERSION_UNKNOWN',
             'The tool could not report its version. Check its dependencies.',
           );
-        const match = result.stdout.match(/\b\d+\.\d+\.\d+\b/);
+        const match = result.stdout.match(/\b\d+\.\d+(?:\.\d+)?(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?/);
         if (!match)
           throw new EngineError('VERSION_UNKNOWN', 'The installed version could not be verified.');
         return match[0];
@@ -618,7 +637,7 @@ export class EngineService {
       enumerated
         .filter((row) => row.engine === engine)
         .map((row) => ({ file: row.path, source: 'system' as const, context: row.context }));
-    // Managed artifacts are pinned Windows executables, never Mac installations.
+    // Managed artifacts have Windows installation receipts, never Mac installations.
     if (this.deps.platform === 'win32') try {
       const file = managedBinary(this.root, engine);
       await fs.access(file);
@@ -788,7 +807,7 @@ export class EngineService {
         const hit = found.find((row) => row.id === engine && row.found);
         if (!hit && inventory.some((row) => row.source === 'managed' && row.integrity === 'verified' && row.protocol === 'passed'))
           this.discoveryDisclosure.set(engine, [
-            'Discovery: observed on win32 via managed-installation; pinned artifact verified and version probed.',
+            'Discovery: observed on win32 via managed-installation; installation receipt verified and version probed.',
           ]);
         this.scanned.set(engine, {
           inventory,
@@ -1589,7 +1608,7 @@ export class EngineService {
     this.running.set(key, controller);
     const signal = AbortSignal.any([controller.signal, ...(input.signal ? [input.signal] : [])]);
     try {
-      if (input.onDelta || input.onToolActivity)
+      if (input.onDelta || input.onToolActivity || input.onReasoningDelta)
         throw new EngineError(
           'PREVIEW_CONTRACT',
           'Preview frames reach the caller through onPreview and onActivity; the raw adapter sinks are not caller-facing.',
@@ -1597,6 +1616,8 @@ export class EngineService {
         );
       const runId = textRunId(input.projectId, input.requestId);
       const previewFailures: PreviewRejection[] = [];
+      // The latest attempt's thinking; a replayed outcome streams none and keeps none.
+      let thinking: ReasoningSink | undefined;
       const outcome = await dispatch<TextAdmission, TextResponse>({
         runId,
         intent: {
@@ -1642,16 +1663,17 @@ export class EngineService {
             );
           if (
             adapter.contract.routeId !== engine ||
-            adapter.contract.engine.version !== TESTED_VERSIONS[engine]
+            adapter.contract.engine.id !== engine
           )
             throw new EngineError(
               'CONTRACT_MISMATCH',
-              'The adapter descriptor does not name this route and its proven build.',
+              'The adapter descriptor does not name this route and engine.',
               true,
             );
           return {
             engine,
             location: value.location!,
+            version: value.version!,
             model: selected.model,
             accountRoute: selected.accountRoute,
           } satisfies TextAdmission;
@@ -1692,19 +1714,35 @@ export class EngineService {
             attempt: context.attempt,
             fence: context.fence,
           };
+          // Text and thinking hold back their newest part until it is safe to redact
+          // (LIVE_REDACTION); the attempt's order keeps every channel as the engine wrote it.
+          const order = liveOrder();
           const onDelta = previewSink({
             identity,
             redact: this.deps.redactFor?.(engine),
             onPreview: (frame) => publish(() => input.onPreview?.(frame)),
             onInvalid: (failure) => previewFailures.push(failure),
             signal: attemptSignal,
+            order,
           });
           const onToolActivity = activitySink({
             identity,
             redact: this.deps.redactFor?.(engine),
             onActivity: (frame) => publish(() => input.onActivity?.(frame)),
             signal: attemptSignal,
+            order,
           });
+          // Thinking only where the route declares it, on the same ordered, fenced queue as text.
+          thinking =
+            input.onReasoning && adapter.contract.streaming.reasoning === 'reasoning-delta'
+              ? reasoningSink({
+                  identity,
+                  redact: this.deps.redactFor?.(engine),
+                  onReasoning: (frame) => publish(() => input.onReasoning?.(frame)),
+                  signal: attemptSignal,
+                  order,
+                })
+              : undefined;
           let result: TextResponse;
           try {
             result = await adapter.generate({
@@ -1713,8 +1751,12 @@ export class EngineService {
               onDelta,
               onActivity: undefined,
               onToolActivity,
+              onReasoning: undefined,
+              onReasoningDelta: thinking,
             });
           } finally {
+            // What the channels still hold is shown before they close.
+            order.flush();
             accepting = false;
             // Drain ordered publications before the step can commit or fail.
             await pending;
@@ -1729,8 +1771,7 @@ export class EngineService {
           if (
             result.projectId !== input.projectId ||
             result.threadId !== input.threadId ||
-            result.requestId !== input.requestId ||
-            result.version !== TESTED_VERSIONS[engine]
+            result.requestId !== input.requestId
           )
             throw new EngineError(
               'IDENTITY_MISMATCH',
@@ -1739,10 +1780,13 @@ export class EngineService {
             );
           if (previewFailures.length)
             throw new EngineError('OUTPUT_LIMIT', previewFailures[0].reason, true);
-          return result;
+          // Version attribution comes from this installation's fresh admission,
+          // not the adapter author's historical verification build.
+          return { ...result, version: admission.version };
         },
       });
-      return { ...outcome.result, runId: outcome.run.id };
+      const reasoning = thinking?.finish() ?? null;
+      return { ...outcome.result, runId: outcome.run.id, ...(reasoning ? { reasoning } : {}) };
     } catch (error) {
       throw seamError(error);
     } finally {
@@ -1779,6 +1823,8 @@ export class EngineService {
     runId: string,
     input: TextRequest,
     sourceRunId?: string,
+    /** Wait behind a running turn (the route's steer queue) instead of being refused. */
+    options: { queued?: boolean } = {},
   ) {
     return this.nativeTurn(
       { engine: 'opencode', routeId: 'opencode-session', driver: this.opencodeSessions, name: 'OpenCode' },
@@ -1786,6 +1832,7 @@ export class EngineService {
       runId,
       input,
       sourceRunId,
+      options,
     );
   }
   /**
@@ -1812,9 +1859,66 @@ export class EngineService {
       sourceRunId,
     );
   }
+  /**
+   * The kept ChatGPT conversation (spec 3.2): the same contract gate, fenced preview queue and
+   * driver lifecycle as the other kept sessions, on Diomedes' own Codex runtime. ChatGPT isn't one
+   * of the scanned engines: its profile opens the conversation's process and checks its ChatGPT
+   * account before a turn is recorded, so a refusal there is known not sent.
+   */
+  async codexSession(
+    mode: ClaudeSessionTurn['mode'],
+    runId: string,
+    input: TextRequest,
+    sourceRunId?: string,
+    /** Wait behind a running turn (the route's steer queue) instead of being refused. */
+    options: { queued?: boolean } = {},
+  ) {
+    const conversations = this.codexConversations;
+    return this.nativeTurn(
+      { engine: 'codex', routeId: 'codex-session', driver: this.codexSessions, name: 'ChatGPT' },
+      mode,
+      runId,
+      input,
+      sourceRunId,
+      options,
+      {
+        contract: routeContractFor('codex-session'),
+        admit: async () => {
+          if (!conversations)
+            throw new EngineError('RUNTIME_UNAVAILABLE', 'The ChatGPT conversation runtime is not attached.');
+          if (input.accountRoute !== CODEX_ACCOUNT_ROUTE)
+            throw new EngineError(
+              'ACCOUNT_CHANGED',
+              'The ChatGPT account route changed. Select it again.',
+              false,
+              'provider-auth',
+            );
+          // Observe the current installation. The process that executes the turn
+          // reports its version again; saved evidence never freezes future builds.
+          const observed = await (async () => {
+            try {
+              if (conversations.inspect) return await conversations.inspect();
+              const process = await conversations.open(undefined);
+              try { return { location: 'diomedes-codex', version: process.version }; }
+              finally { await process.close(); }
+            } catch (error) {
+              throw codexSessionError(error, false);
+            }
+          })();
+          return {
+            ...observed,
+            model: input.model,
+            accountRoute: CODEX_ACCOUNT_ROUTE,
+          };
+        },
+        open: (_admission, request, sessionOptions) =>
+          openCodexSession(conversations!, request, sessionOptions),
+      },
+    );
+  }
   private async nativeTurn<C extends SessionCheckpointFacts>(
     route: {
-      engine: 'claude-code' | 'opencode' | AcpSessionEngine;
+      engine: 'claude-code' | 'opencode' | AcpSessionEngine | 'codex';
       routeId: string;
       driver: ClaudeSessionRuns<C> | undefined;
       name: string;
@@ -1824,14 +1928,34 @@ export class EngineService {
     input: TextRequest,
     sourceRunId?: string,
     options: { queued?: boolean } = {},
+    /**
+     * A route whose sessions aren't opened through a scanned engine's adapter (ChatGPT): its own
+     * admission and opener, under its declared contract and the same command gate.
+     */
+    transport?: {
+      contract: AdapterRouteContract;
+      admit(signal?: AbortSignal): Promise<ClaudeSessionAdmission>;
+      open: ClaudeSessionTurn<C>['open'];
+    },
   ) {
     const driver = route.driver;
     if (!driver)
       throw new EngineError('RUNTIME_UNAVAILABLE', 'The native session runtime is not attached.');
-    if (input.onDelta || input.onToolActivity)
+    if (input.onDelta || input.onToolActivity || input.onReasoningDelta)
       throw new EngineError('PREVIEW_CONTRACT', 'Use the bounded onPreview and onActivity channels.');
+    // What the route declares, read from the adapter admission resolved for this request.
+    let declared: AdapterRouteContract | undefined;
+    let thinking: ReasoningSink | undefined;
+    /** Only a scanned engine opens through an adapter; ChatGPT opens through its transport. */
+    const scanned = () => {
+      const engine = route.engine;
+      if (engine === 'codex')
+        throw new EngineError('COMMAND_UNSUPPORTED', 'This adapter has no native session transport.');
+      return engine;
+    };
     const adapterAt = (location: string) => {
-      const adapter = this.deps.adapter(route.engine, location, path.join(this.root, route.engine));
+      const engine = scanned();
+      const adapter = this.deps.adapter(engine, location, path.join(this.root, engine));
       if (
         !('openSession' in adapter) ||
         typeof adapter.openSession !== 'function' ||
@@ -1844,44 +1968,59 @@ export class EngineService {
       const persistent = adapter as PersistentTextAdapter<C>;
       const gate = commandGate(persistent.sessionContract, mode);
       if (
-        adapter.id !== route.engine ||
+        adapter.id !== engine ||
         persistent.sessionContract.routeId !== route.routeId ||
-        persistent.sessionContract.engine.version !== TESTED_VERSIONS[route.engine] ||
+        persistent.sessionContract.engine.id !== engine ||
         !gate.admitted
       )
         throw new EngineError(
           'CONTRACT_MISMATCH',
-          'The native session contract does not match this route and build.',
+          'The native session contract does not match this route and protocol.',
         );
+      declared = persistent.sessionContract;
       return persistent;
     };
     try {
-      return await driver.request({
+      const result = await driver.request({
         mode,
         runId,
         sourceRunId,
         input,
+        redact: this.deps.redactFor?.(route.engine),
         ...(options.queued ? { queued: true } : {}),
-        admit: async (signal) => {
-          await this.discover(true);
-          await this.check(route.engine, signal);
-          const selected = this.selection(route.engine, input.model);
-          if (selected.accountRoute !== input.accountRoute)
-            throw new EngineError(
-              'ACCOUNT_CHANGED',
-              `The ${route.name} account route changed. Select it again.`,
-            );
-          const value = this.connections.get(route.engine)!;
-          adapterAt(value.location!);
-          return {
-            location: value.location!,
-            version: value.version!,
-            model: selected.model,
-            accountRoute: selected.accountRoute,
-          };
-        },
-        open: (admission, request, options) =>
-          adapterAt(admission.location).openSession(request, options),
+        admit: transport
+          ? async (signal) => {
+              if (!commandGate(transport.contract, mode).admitted)
+                throw new EngineError(
+                  'CONTRACT_MISMATCH',
+                  'The native session contract does not match this route and build.',
+                );
+              declared = transport.contract;
+              return transport.admit(signal);
+            }
+          : async (signal) => {
+              const engine = scanned();
+              await this.discover(true);
+              await this.check(engine, signal);
+              const selected = this.selection(engine, input.model);
+              if (selected.accountRoute !== input.accountRoute)
+                throw new EngineError(
+                  'ACCOUNT_CHANGED',
+                  `The ${route.name} account route changed. Select it again.`,
+                );
+              const value = this.connections.get(engine)!;
+              adapterAt(value.location!);
+              return {
+                location: value.location!,
+                version: value.version!,
+                model: selected.model,
+                accountRoute: selected.accountRoute,
+              };
+            },
+        open: transport
+          ? transport.open
+          : (admission, request, options) =>
+              adapterAt(admission.location).openSession(request, options),
         preview: (context, stepId) => {
           let accepting = true;
           let pending = Promise.resolve();
@@ -1910,9 +2049,11 @@ export class EngineService {
             attempt: context.attempt,
             fence: context.fence,
           };
+          const order = liveOrder();
           const onDelta = previewSink({
             identity,
             signal,
+            order,
             redact: this.deps.redactFor?.(route.engine),
             onInvalid: (invalid) => {
               failure = { error: new EngineError('OUTPUT_LIMIT', invalid.reason, true) };
@@ -1922,13 +2063,28 @@ export class EngineService {
           const onToolActivity = activitySink({
             identity,
             signal,
+            order,
             redact: this.deps.redactFor?.(route.engine),
             onActivity: (frame) => publish(() => input.onActivity?.(frame)),
           });
+          thinking =
+            input.onReasoning &&
+            (declared ?? routeContractFor(route.routeId)).streaming.reasoning === 'reasoning-delta'
+              ? reasoningSink({
+                  identity,
+                  signal,
+                  order,
+                  redact: this.deps.redactFor?.(route.engine),
+                  onReasoning: (frame) => publish(() => input.onReasoning?.(frame)),
+                })
+              : undefined;
           return {
             onDelta,
             onToolActivity,
+            onReasoningDelta: thinking,
             finish: async () => {
+              // What the channels still hold is shown before they close.
+              order.flush();
               accepting = false;
               await pending;
               if (failure) throw failure.error;
@@ -1936,8 +2092,12 @@ export class EngineService {
           };
         },
       });
+      const reasoning = thinking?.finish() ?? null;
+      return reasoning && result.response
+        ? { ...result, response: { ...result.response, reasoning } }
+        : result;
     } catch (error) {
-      throw seamError(error);
+      throw seamError(engineGone(route.engine, error) ?? error);
     }
   }
   /**
@@ -2106,9 +2266,9 @@ export class EngineService {
       throw new EngineError('ROUTE_REFUSED', 'This work has no job Nectovia can meter it under. Nothing was sent.', true);
     const tier = await this.managedTier(input);
     const label = WORK_STYLE_LABELS[tier];
-    let policy = account.policy();
+    let policy = account.policy(input.projectId ?? null);
     if (!policy || policy.revision !== admitted.policyRevision)
-      policy = (await account.refreshPolicy().catch(() => null)) ?? policy;
+      policy = await account.refreshPolicy(input.projectId ?? null);
     if (!policy) throw new EngineError('ROUTE_REFUSED', NECTOVIA_UNAVAILABLE, true);
     const published = policy.tiers[tier];
     if (!published)
@@ -2119,19 +2279,21 @@ export class EngineService {
         `Nectovia now runs ${label} on ${published.label}. Nothing was sent. Send your message again to use it.`,
         true,
       );
-    // Personal work under an Individual plan has no business to fund the company route yet; the gate
-    // refuses it first, and this keeps a personal admission from ever reaching the gateway.
-    const organizationId = admitted.organizationId;
+    // The gateway's legacy account field carries an explicit billing scope for Personal work.
+    // The admission itself keeps organizationId null; no Business identity is synthesized.
+    const organizationId = admitted.scope?.id ?? admitted.organizationId;
     if (organizationId === null) throw new EngineError(AGENT_NOT_INCLUDED, MANAGED_USAGE_NOT_INCLUDED_PERSONAL, false);
     const managed: ManagedAdmission = {
       admissionId: admitted.admissionId,
       organizationId,
+      scope: admitted.scope,
+      routing: policy.resolved,
       policyRevision: policy.revision,
       tier,
       usageClass: usageClassFor(admitted.surface),
       rootJobId,
     };
-    const handle = await modelApiRoute(api, NECTOVIA_ROUTE, { managed });
+    const handle = await modelApiRoute(api, NECTOVIA_ROUTE, { managed, projectId: input.projectId });
     if (!handle.connected) throw new EngineError(AGENT_SIGN_IN_REQUIRED, NECTOVIA_SIGN_IN, false);
     if (handle.accountRoute !== input.accountRoute)
       throw new EngineError('ACCOUNT_CHANGED', 'This conversation belongs to another business. Send the message again from this one.');
@@ -2203,10 +2365,11 @@ export class EngineService {
     const api = this.modelApi;
     if (!driver || !api)
       throw new EngineError('RUNTIME_UNAVAILABLE', 'The model-API conversation runtime is not attached.', true);
-    if (input.onDelta || input.onToolActivity)
+    if (input.onDelta || input.onToolActivity || input.onReasoningDelta)
       throw new EngineError('PREVIEW_CONTRACT', 'Use the bounded onPreview and onActivity channels.');
     try {
-      return await driver.request({
+      let thinking: ReasoningSink | undefined;
+      const result = await driver.request({
         mode,
         runId,
         route,
@@ -2219,13 +2382,22 @@ export class EngineService {
         // The caller's channels, stamped with the turn step's identity and published only while
         // that exact attempt still owns its lease.
         activity:
-          input.onPreview || input.onActivity
+          input.onPreview || input.onActivity || input.onReasoning
             ? (context, stepId) => {
                 const signal = AbortSignal.any([context.signal, ...(input.signal ? [input.signal] : [])]);
-                const sinks = fencedSinks(input, { runId, stepId, attempt: context.attempt, fence: context.fence }, context, signal);
+                const sinks = fencedSinks(
+                  input,
+                  { runId, stepId, attempt: context.attempt, fence: context.fence },
+                  context,
+                  signal,
+                  MODEL_API_REASONING[route] === 'reasoning-delta',
+                  this.deps.redactFor?.(route),
+                );
+                thinking = sinks.onReasoningDelta;
                 return {
                   onDelta: (text) => sinks.onDelta?.(text),
                   onToolActivity: (raw) => sinks.onToolActivity?.(raw),
+                  onReasoningDelta: sinks.onReasoningDelta,
                   finish: sinks.finish,
                 };
               }
@@ -2247,6 +2419,10 @@ export class EngineService {
           };
         },
       });
+      const reasoning = thinking?.finish() ?? null;
+      return reasoning && result.response
+        ? { ...result, response: { ...result.response, reasoning } }
+        : result;
     } catch (error) {
       await this.noteJobStop(error);
       throw seamError(modelApiError(error));
@@ -2261,7 +2437,7 @@ export class EngineService {
     const key = `${input.projectId}:${input.threadId}`;
     if (this.running.has(key))
       throw new EngineError('REQUEST_ACTIVE', 'This thread already has a request in progress. Wait for it or cancel it.');
-    if (input.onDelta || input.onToolActivity)
+    if (input.onDelta || input.onToolActivity || input.onReasoningDelta)
       throw new EngineError('PREVIEW_CONTRACT', 'Use the bounded onPreview and onActivity channels.');
     // A team turn on this route runs through generateModelApiTools; this one offers no tools.
     if (input.team)
@@ -2411,7 +2587,7 @@ export class EngineService {
     const key = `${input.projectId}:${input.threadId}`;
     if (this.running.has(key))
       throw new EngineError('REQUEST_ACTIVE', 'This thread already has a request in progress. Wait for it or cancel it.');
-    if (input.onDelta || input.onToolActivity)
+    if (input.onDelta || input.onToolActivity || input.onReasoningDelta)
       throw new EngineError('PREVIEW_CONTRACT', 'Use the bounded onPreview and onActivity channels.');
     if (input.team || input.readScope)
       throw new EngineError('POLICY_MISMATCH', 'A model-API team turn carries its tools in the host registry only.', true);
@@ -2870,7 +3046,10 @@ async function modelApiRoute(api: ModelApiServices, route: ModelApiRoute, work: 
       if (!services || !account?.signedIn() || !organizationId) return { connected: false, route, names };
       const now = services.now ?? (() => new Date());
       const connectionId = nectoviaConnectionId(organizationId, now());
-      const published = Object.values(account.policy()?.tiers ?? {}).flatMap((entry) => (entry ? [entry.model] : []));
+      const policy = work.managed?.routing ? { revision: work.managed.routing.revision, tiers: work.managed.routing.tiers, resolved: work.managed.routing }
+        : account.policy(work.projectId ?? null);
+      const scopedAccount = { policy: () => account.policy(work.projectId ?? null), refreshPolicy: () => account.refreshPolicy(work.projectId ?? null) };
+      const published = Object.values(policy?.tiers ?? {}).flatMap((entry) => (entry ? [entry.model] : []));
       const managed = () => {
         if (!work.managed)
           throw new EngineError('ROUTE_REFUSED', 'This Nectovia call has no admission, so nothing was sent.', true);
@@ -2893,7 +3072,7 @@ async function modelApiRoute(api: ModelApiServices, route: ModelApiRoute, work: 
         expiresAt: null,
         serving: [...new Set(published)].join(', ') || 'no published model',
         serves: (model) => published.includes(model),
-        card: (model) => nectoviaRateCard(model),
+        card: (model) => nectoviaRateCard(model, policy),
         credential: {
           check: async () => (account.signedIn() ? null : NECTOVIA_SIGN_IN),
           open: async () => {
@@ -2906,12 +3085,12 @@ async function modelApiRoute(api: ModelApiServices, route: ModelApiRoute, work: 
         adapter: (options) =>
           createNectoviaModelAdapter({
             base: account.base,
-            account,
+            account: scopedAccount,
             connectionId,
             model: options.model,
             managed: managed(),
             token: options.secret,
-            card: nectoviaRateCard(options.model),
+            card: nectoviaRateCard(options.model, policy),
             // This route's `exposure()` is the local ledger itself, so what arrives is one.
             exposure: options.exposure as SpendExposure,
             transcripts: services.transcripts,
@@ -2924,11 +3103,11 @@ async function modelApiRoute(api: ModelApiServices, route: ModelApiRoute, work: 
         respond: ({ sinks, secret, transport: given, ...options }) =>
           respondNectovia({
             base: account.base,
-            account,
+            account: scopedAccount,
             connectionId,
             managed: managed(),
             token: secret,
-            card: nectoviaRateCard(options.model),
+            card: nectoviaRateCard(options.model, policy),
             transport: transport(given),
             now,
             ...options,
@@ -2942,14 +3121,18 @@ async function modelApiRoute(api: ModelApiServices, route: ModelApiRoute, work: 
 /**
  * A caller's preview and activity channels, stamped with one fenced attempt's identity: text
  * through `previewSink`, tool activity through `activitySink`, both published in order and only
- * while that attempt still owns its lease. `finish` stops accepting, drains, and reports a
- * contract violation or a publication failure.
+ * while that attempt still owns its lease. `finish` shows what the channels still hold back, stops
+ * accepting, drains, and reports a contract violation or a publication failure.
  */
 function fencedSinks(
   input: TextRequest,
   identity: { runId: string; stepId: string; attempt: number; fence: number },
   context: { publishPreview: (publish: () => void) => Promise<void> },
   signal: AbortSignal,
+  /** Whether the route declares thinking (`streaming.reasoning`). Work turns pass false. */
+  reasoning = false,
+  /** The route's redaction (`redactFor`), applied to every frame and to the saved thinking. */
+  redact?: (text: string) => string,
 ) {
   let accepting = true;
   let pending = Promise.resolve();
@@ -2968,10 +3151,13 @@ function fencedSinks(
       });
   };
   const stamped = { projectId: input.projectId, threadId: input.threadId, requestId: input.requestId, ...identity };
+  const order = liveOrder();
   const onDelta = input.onPreview
     ? previewSink({
         identity: stamped,
         signal,
+        order,
+        redact,
         onInvalid: (invalid) => {
           failure ??= { error: new EngineError('OUTPUT_LIMIT', invalid.reason, true) };
         },
@@ -2979,12 +3165,30 @@ function fencedSinks(
       })
     : undefined;
   const onToolActivity = input.onActivity
-    ? activitySink({ identity: stamped, signal, onActivity: (frame) => publish(() => input.onActivity?.(frame)) })
+    ? activitySink({
+        identity: stamped,
+        signal,
+        order,
+        redact,
+        onActivity: (frame) => publish(() => input.onActivity?.(frame)),
+      })
     : undefined;
+  const onReasoningDelta =
+    reasoning && input.onReasoning
+      ? reasoningSink({
+          identity: stamped,
+          signal,
+          order,
+          redact,
+          onReasoning: (frame) => publish(() => input.onReasoning?.(frame)),
+        })
+      : undefined;
   return {
     onDelta,
     onToolActivity,
+    onReasoningDelta,
     finish: async () => {
+      order.flush();
       accepting = false;
       await pending;
       if (failure) throw failure.error;
@@ -3018,8 +3222,26 @@ function modelApiError(error: unknown): unknown {
 interface TextAdmission {
   engine: ExternalEngine;
   location: string;
+  version: string;
   model: string;
   accountRoute: string;
+}
+
+/**
+ * Spec decision 5: a kept conversation whose engine is no longer found on this computer is
+ * refused in that engine's own words, and only when nothing was sent. Every other refusal keeps
+ * its own sentence. One code per meaning, both answered 409, so a caller reads them alike.
+ */
+function engineGone(engine: string, error: unknown): EngineError | null {
+  if (!(error instanceof EngineError) || error.ambiguous) return null;
+  const gone = ENGINE_GONE_CODES[error.code];
+  if (!gone) return null;
+  return new EngineError(
+    gone === 'not-installed' ? 'NOT_INSTALLED' : 'AUTH_REQUIRED',
+    engineGoneSentence(engine, gone),
+    false,
+    error.stage,
+  );
 }
 
 /**

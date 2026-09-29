@@ -138,7 +138,7 @@ describe('a plan group', () => {
     expect(steps.map((step) => step.state)).toEqual(['done', 'active', 'blocked', 'failed']);
     for (const [index, step] of steps.entries()) {
       const seen = taskEvidence(tasks[index], sessions, needs, changes);
-      expect(step.state).toBe(stepState(seen.column, seen.session));
+      expect(step.state).toBe(stepState(seen));
       expect(step.detail).toBe(seen.detail);
     }
     expect(steps[2].detail).toBe('Needs your decision');

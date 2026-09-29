@@ -31,9 +31,9 @@ let pageErrors: string[] = [];
  * What the caption names a Nectovia conversation by: the route's display name and the label the
  * account service publishes for Efficient (client/console/DiomedesHome.tsx passes
  * `nectovia.tiers.efficient.label`; client/console/Diomedes.tsx `routeName` writes
- * "Nectovia (<label>)"). The faux seed publishes GPT-6 Luna.
+ * "Nectovia (<label>)"). The faux seed publishes GPT-5.6 Luna.
  */
-const NECTOVIA_CAPTION = 'Nectovia (GPT-6 Luna)';
+const NECTOVIA_CAPTION = 'Nectovia (GPT-5.6 Luna)';
 
 const gate = () => {
   let release!: () => void;

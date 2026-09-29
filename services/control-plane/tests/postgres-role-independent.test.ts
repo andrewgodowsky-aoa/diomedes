@@ -33,7 +33,7 @@ describe.skipIf(!ownerUrl)('Independent real Neon runtime role qualification', (
         !/^\/b01_validation_[a-z0-9_]+$/.test(parsed.pathname))
       throw new Error('An explicitly pinned disposable Neon database is required.');
     // The complete original migration/concurrency suite must run first, and must have applied every migration.
-    const files = (await readdir(new URL('../migrations/', import.meta.url))).filter((name) => /^\d{3}_[a-z0-9_]+\.sql$/.test(name));
+    const files = (await readdir(new URL('../migrations/', import.meta.url))).filter((name) => /^\d{3}[-_][a-z0-9_-]+\.sql$/.test(name));
     const migrated = await query(ownerUrl!, 'SELECT count(*)::int AS count FROM control_plane.schema_migrations');
     expect(migrated.rows[0].count).toBe(files.length);
     const password = randomBytes(32).toString('hex');

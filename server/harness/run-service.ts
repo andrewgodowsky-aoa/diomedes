@@ -12,6 +12,7 @@
  */
 import { randomBytes } from 'node:crypto';
 import type { OriginSnapshot } from '../../shared/attribution.js';
+import { routingReceiptSchema } from '../../shared/routing-policy.js';
 import type {
   CapabilityManifest,
   Destination,
@@ -278,10 +279,13 @@ export class RunService {
     this.authorizeEgress = options.authorizeEgress;
   }
 
-  private describeError(error: unknown): { name: string; message: string } {
+  private describeError(error: unknown, model = false): NonNullable<StepRecord['error']> {
+    const managed = model && error !== null && typeof error === 'object' && 'managed' in error
+      ? routingReceiptSchema.safeParse(error.managed) : null;
     return {
       name: error instanceof Error ? this.redact(error.name).slice(0, 128) : 'Error',
       message: this.redact(error instanceof Error ? error.message : String(error)).slice(0, 2000),
+      ...(managed?.success ? { managed: managed.data } : {}),
     };
   }
 
@@ -1115,7 +1119,7 @@ export class RunService {
               : 'retry_wait';
           s.state = state;
           s.endedAt = this.now();
-          s.error = this.describeError(error);
+          s.error = this.describeError(error, intent.kind === 'model');
           const record = lastEffect(s);
           if (record?.status === 'intended' && record.attempt === s.attempt) {
             record.status = state === 'reconcile_required' ? 'uncertain' : 'failed';

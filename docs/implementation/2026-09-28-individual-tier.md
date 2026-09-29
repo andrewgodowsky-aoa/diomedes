@@ -2,8 +2,9 @@
 
 Feature: individual-tier. Branch `feature/individual-tier`, worktree
 `F:/Diomedes/diomedes-wt/individual-tier`, owner Andrew Godowsky. Base: origin/main 66334d5.
-Frozen contract: `CONTRACT-individual-tier.md` (orchestrator scratchpad). Nothing here is committed,
-pushed or migrated in production.
+Original contract: `CONTRACT-individual-tier.md` (orchestrator scratchpad). The phase-2a source was
+merged in PR #176 at main `1af37e0`. The Operations routing composition described below is local
+and unverified until its own recorded gates pass; this note makes no deployment claim.
 
 ## Andrew's decisions (2026-09-28, owner-decision record)
 
@@ -14,28 +15,23 @@ pushed or migrated in production.
   phase. The plan and a business are kept apart: a member of a business never uses their own Individual
   plan for that business's work, even one they pay for themselves. The coverage rule enforces it, and
   INDIVIDUAL_SEPARATION_SENTENCE says it wherever the plan is offered or issued.
-- The plan is **issued to a person, never to an organization**. The eligibility sentence, shown
-  wherever the plan is offered or issued, is exact: "Businesses beyond a sole proprietorship aren't
-  eligible for this plan."
+- The latest decision is **Personal only**, issued to a person. Every Business workspace needs
+  its own Business plan, including a sole proprietorship or a one-member Business. This supersedes
+  the phase-2a member-threshold exception.
 
 ## The coverage rule
 
-An active Individual grant covers:
-
-1. the person's Personal work and projects not linked to a business, and
-2. a business workspace only while the grant holder is one of at most `INDIVIDUAL_MAX_ACTIVE_MEMBERS`
-   active members of it (blank means 1: the sole proprietor).
-
-A business with more active members than the threshold is not covered, whatever its plan. A
-business whose own plan includes the Agent reads exactly what it did before: the Individual grant
-is read only when the business's own grants do not include the Agent. The threshold is a
-control-plane setting, read like the MANAGED_* settings: blank is the default, anything that is not
-a whole number of at least 1 refuses the configuration.
+An active Individual grant covers the person's Personal work and projects not linked to a
+Business. Business admission reads only that Business's own grants. The existing
+`INDIVIDUAL_MAX_ACTIVE_MEMBERS` configuration remains parseable for compatibility but cannot
+enable Business coverage at any value.
 
 What the Individual grant carries in this phase: `nectovia-agent`, `maintained-profiles`,
-`owner-rules`, `phone-relay`. Included AI usage (`managed-inference`) is not part of it, because
-funding is organization-keyed. The company route refuses covered work with a personal sentence, and
-staff are refused if they try to add included usage to a person's grant.
+`owner-rules`, `phone-relay`. Included AI usage (`managed-inference`) is not part of the person
+grant. Managed Personal work additionally needs the separate, explicit funded usage agreement
+introduced by routing 010. Neither authority can replace the other. The legacy Personal admission
+path retains its managed-route refusal; compatible clients use scoped admission with an explicit
+Individual billing account and a null Business organization id.
 
 ## What was built
 
@@ -47,9 +43,8 @@ staff are refused if they try to add included usage to a person's grant.
   own, so their rows use the person id as the tenant id (a CHECK holds them equal). `cp_runtime`
   gets read and write on the grants and revision tables and read and append on personal admissions.
   `CommercialService` gains `personAccess`, `admitPersonalAgent`, `person`, `issuePersonGrant` and
-  `revokePersonGrant`; `access` and `admitAgent` fall back to a covering Individual grant (the view
-  says `coveredBy: 'individual'`, the admission record `coverage: 'individual'`, and the revision is
-  the business's plus the person's); `issueGrant` refuses a person plan; `me()` returns the catalog
+  `revokePersonGrant`; `access` and `admitAgent` now read only Business grants. Historical
+  `coveredBy` and `coverage` fields remain readable but grant no new authority. `issueGrant` refuses a person plan; `me()` returns the catalog
   with scopes; `people()` adds each membership's business name and the person's Individual state.
   `decideAgentAdmission` takes an optional `individual` snapshot for Personal work; a business's
   snapshot still never admits Personal work.
@@ -61,25 +56,32 @@ staff are refused if they try to add included usage to a person's grant.
   none, so the free-version notice still shows there. The gate admits Personal and unlinked work
   under an Individual plan through `POST /account/agent-admissions`, and refuses the company route
   with `MANAGED_USAGE_NOT_INCLUDED_PERSONAL`.
+- Routing 010 retains the applied 009 bytes. It creates a distinct billing identity under
+  `tenant_id = person_id` for existing grant holders; new grant issuance provisions the same
+  identity before setup. It grants no access or credits. New Personal admissions record that
+  billing identity alongside their existing person/tenant identity, without rewriting old records.
+  Scoped admission and every managed dispatch read current person access plus the current usage
+  agreement. Operations shows Personal access and managed usage separately.
 
 ## What phase 2b must add
 
-- Person funding: a person-keyed funding account and credit periods, then the Individual credits row
-  in `MONTHLY_CREDIT_GRANTS` (`shared/managed-usage.ts`) and `managed-inference` in the template.
+- Automatic recurring Individual credit allocation remains separate from routing's explicit
+  usage-agreement path. Do not infer 1,000 allocated credits from the approved plan amount.
 - Fold `INDIVIDUAL_PLAN` into `PLAN_TEMPLATES` once `shared/access.ts` is free, and retire
   `planCatalog()`'s concatenation.
 - A faux seed subscriber (`services/control-plane/src/faux/seed.ts` was not edited here).
-- The Operations app's person page (a separate lane) and the pillar amendment below.
+- The Operations person page arrived in PR #6 and is retained in the routing composition.
+  Canonical product-document reconciliation is owned by the coordinator.
 
 ## Proposed patch for docs/DIOMEDES_CORE_PILLARS.md (not applied)
 
 Add to the amendment list:
 
 > - **2026-09-28.1 (minor, Andrew's explicit decision):** the Individual plan is $200 a month, a
->   person's own subscription; a sole proprietor may hold it; businesses beyond a sole
->   proprietorship aren't eligible. Cloud synchronisation pending.
+>   person's own subscription for Personal work only. Every Business workspace needs its own
+>   Business plan, including a sole proprietorship. Cloud synchronisation is separately coordinated.
 
-## Gates (this worktree, 2026-09-28; source: the command output in the implementer's session)
+## Historical phase-2a gates (not routing-composition acceptance)
 
 - `npx tsc --noEmit` (root): no errors.
 - `npm run typecheck` (services/control-plane): no errors.

@@ -780,6 +780,8 @@ export interface AcpTurn {
   text: string;
   model: string;
   onDelta?: TextRequest['onDelta'];
+  /** Thinking chunks of the prompted turn; they never join `text`. */
+  onReasoningDelta?: TextRequest['onReasoningDelta'];
   prompting: boolean;
 }
 
@@ -867,6 +869,13 @@ export function acpSessionUpdate(
   if (rpc.sessionId && params.sessionId !== rpc.sessionId)
     throw protocolError(profile, 'reported a different session.');
   if (kind === 'current_mode_update') policy.onModeUpdate?.(text(update.currentModeId));
+  if (kind === 'agent_thought_chunk') {
+    // Thinking is narration: text inside the prompted turn goes to its own channel and anything
+    // else is dropped. It never joins the answer and never stops the turn.
+    const content = record(update.content);
+    if (turn?.prompting && content.type === 'text' && typeof content.text === 'string' && content.text)
+      turn.onReasoningDelta?.(content.text);
+  }
   if (kind === 'agent_message_chunk') {
     if (!turn?.prompting || !rpc.sessionId)
       throw protocolError(profile, 'returned text outside the requested turn.');

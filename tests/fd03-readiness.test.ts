@@ -260,6 +260,15 @@ describe('FD03 readiness projection', () => {
     expect(route.axes.verified.detail).toContain('No trusted validated evidence');
   });
 
+  test('the shipped knowledge names the ChatGPT conversation route, its contract and one statement', async () => {
+    const knowledge = await loadShippedProductKnowledge({ buildVersion: packageInfo.version, now: at });
+    expect(knowledge.conflicts).toEqual([]);
+    const core = knowledge.resources[0].resource;
+    expect(core.scopes).toContain('route:codex-session');
+    expect(core.routes).toContainEqual({ routeId: 'codex-session', contractVersion: 1, engineVersion: '0.153.4' });
+    expect(core.statements.filter((statement) => statement.scopes.includes('route:codex-session'))).toHaveLength(1);
+  });
+
   test('a resource that labels its own qualification verified still cannot make the verified axis yes', async () => {
     const knowledge = await loadProductKnowledge({ root: await fixture(), buildVersion, now: at });
     const route = projectReadiness({

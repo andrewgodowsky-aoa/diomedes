@@ -242,7 +242,6 @@ export class AcpNativeSession {
     return promise;
   }
   private async run(input: TextRequest, controller: AbortController): Promise<TextResponse> {
-    const name = this.runner.profile.name;
     const signal = AbortSignal.any([controller.signal, ...(input.signal ? [input.signal] : [])]);
     const interrupted = this.saved.origin === 'recovered' && this.saved.interruptedRequestId !== null;
     const approvedCalls = new Map<string, string>();
@@ -283,15 +282,12 @@ export class AcpNativeSession {
     };
     try {
       const { response, version } = await this.runner.run({ ...input, signal }, keep);
-      if (version !== this.saved.cliVersion)
-        throw new EngineError(
-          'SESSION_MISMATCH',
-          `${name} reported version ${version} during the turn; this conversation was opened with ${this.saved.cliVersion}.`,
-          true,
-        );
       this.latest = { origin: this.saved.origin, interrupted };
       this.saved = {
         ...this.saved,
+        // No version gate (2026-09-23): an engine that updated itself between two turns continues
+        // the conversation, which now runs on the version this turn reported.
+        cliVersion: version,
         state: 'idle',
         reportedModel: response.model,
         interruptedRequestId: null,
@@ -463,11 +459,7 @@ export async function openAcpSession(
         'SESSION_MISMATCH',
         `The saved ${name} session belongs to a different scope.`,
       );
-    if (restore.cliVersion !== options.observedVersion)
-      throw new EngineError(
-        'SESSION_MISMATCH',
-        `This ${name} session was saved by ${name} ${restore.cliVersion}; ${options.observedVersion} is installed now. Start a new conversation.`,
-      );
+    // No version gate (2026-09-23): an engine that updated since this was saved continues it.
     if (restore.state !== 'idle')
       throw new EngineError(
         'RECONCILE_REQUIRED',
@@ -480,7 +472,8 @@ export async function openAcpSession(
         `This conversation has no confirmed ${name} session.`,
       );
   }
-  const saved: AcpSessionCheckpoint = restore ?? {
+  // A restored session resumes across engine updates; it now runs on the installed version.
+  const saved: AcpSessionCheckpoint = restore ? { ...restore, cliVersion: options.observedVersion } : {
     version: 1,
     engine: runner.engine,
     nativeSessionId: null,

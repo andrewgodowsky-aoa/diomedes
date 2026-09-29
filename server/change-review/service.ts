@@ -543,7 +543,8 @@ export class ChangeReviewService {
           const file = baselineByPath.get(entry.path);
           if (file) before = await this.retainedText(projectId, file.sha);
           if (before === null && gitEnv) {
-            const gitFile = gitBaselineByPath.get(entry.path);
+            const repositoryPath = gitEnv.subdir ? `${gitEnv.subdir}/${entry.path}` : entry.path;
+            const gitFile = gitBaselineByPath.get(repositoryPath);
             // A baseline row carries its staged/HEAD blob ids; a path that was
             // clean at baseline has no row — its entry's beforeSha is then the
             // committed HEAD blob, which the object store can still serve.
@@ -660,9 +661,12 @@ export class ChangeReviewService {
           const probe = await snapshotGit(gitEnv);
           if (probe.captured) {
             const before = baseline.git.files as readonly GitWorktreeFile[];
-            gitObserved = diffGitSnapshots(before, probe.files, [
-              { kind: 'git-record', record: `head:${probe.head ?? 'none'}` },
-            ]).filter((entry) => !claimed.has(entry.path));
+            gitObserved = diffGitSnapshots(
+              before,
+              probe.files,
+              [{ kind: 'git-record', record: `head:${probe.head ?? 'none'}` }],
+              gitEnv.subdir,
+            ).filter((entry) => !claimed.has(entry.path));
             for (const entry of gitObserved) claimed.add(entry.path);
           }
         }

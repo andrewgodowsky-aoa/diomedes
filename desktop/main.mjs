@@ -63,7 +63,7 @@ if (process.env.DIOMEDES_DESKTOP_PROFILE)
   app.setPath('userData', process.env.DIOMEDES_DESKTOP_PROFILE);
 const dataDir = process.env.DIOMEDES_DATA_DIR ?? path.join(app.getPath('userData'), 'data');
 process.env.DIOMEDES_DATA_DIR = dataDir;
-process.env.DIOMEDES_RUNTIME_DIR ??= path.join(process.resourcesPath, 'native-runtime');
+process.env.DIOMEDES_BUNDLED_RUNTIME_DIR ??= path.join(process.resourcesPath, 'native-runtime');
 let window;
 let appUrl;
 let server;

@@ -27,6 +27,7 @@ let cloud: FauxCloud;
 let orgs: { juniper: string; harbor: string };
 let dir: string;
 let clock: number;
+let personId: string;
 let answer: (() => Response) | null;
 let asked: number;
 
@@ -39,7 +40,7 @@ const json = (status: number, value: unknown) =>
 const admitted = (validUntil: string, overrides: Record<string, unknown> = {}) => ({
   admissionId: 'agent_admission_00000000-0000-4000-8000-000000000001',
   decision: { admitted: true, planId: 'business', revision: 1, validUntil: null },
-  pins: { organizationId: orgs.juniper, tenantId: 't', personId: 'person_1', planId: 'business', accessRevision: 1, policyRevision: 3, rootJobId: 'job-1' },
+  pins: { organizationId: orgs.juniper, tenantId: 't', personId, planId: 'business', accessRevision: 1, policyRevision: 3, rootJobId: 'job-1' },
   validUntil,
   ...overrides,
 });
@@ -59,7 +60,9 @@ async function signedIn() {
   };
   const session = new AccountSessionService(backend, dir, null, () => clock);
   await session.init();
-  await session.signIn({ email: 'owner@juniper.test', password: FAUX_DEMO_PASSWORD, remember: false });
+  const state = await session.signIn({ email: 'owner@juniper.test', password: FAUX_DEMO_PASSWORD, remember: false });
+  expect(state.signedIn).toBe(true);
+  personId = state.person!.id;
   return session;
 }
 const admit = (session: AccountSessionService, phase: 'admit' | 'dispatch' = 'admit') =>
@@ -68,6 +71,7 @@ const admit = (session: AccountSessionService, phase: 'admit' | 'dispatch' = 'ad
 beforeEach(async () => {
   dir = await fs.mkdtemp(path.join(os.tmpdir(), 'diomedes-admission-answer-'));
   clock = Date.now();
+  personId = '';
   answer = null;
   asked = 0;
   cloud = await createFauxCloud({ file: null, passwordIterations: 1_000 });
@@ -92,12 +96,16 @@ describe('a malformed admission answer is a refusal', () => {
     'admitted with pins missing personId': () =>
       json(200, admitted(inAMinute(), { pins: { organizationId: orgs.juniper, planId: 'business', policyRevision: 3 } })),
     'admitted with a policyRevision that is not a number': () =>
-      json(200, admitted(inAMinute(), { pins: { organizationId: orgs.juniper, personId: 'person_1', planId: 'business', policyRevision: '3' } })),
+      json(200, admitted(inAMinute(), { pins: { organizationId: orgs.juniper, personId, planId: 'business', policyRevision: '3' } })),
     'validUntil is not a time': () => json(200, admitted('soon')),
     'validUntil is missing': () => json(200, { ...admitted(inAMinute()), validUntil: undefined }),
     'validUntil is a number': () => json(200, admitted(inAMinute(), { validUntil: clock + 60_000 })),
     'admitted for another business': () =>
-      json(200, admitted(inAMinute(), { pins: { organizationId: orgs.harbor, personId: 'person_1', planId: 'business', policyRevision: 3 } })),
+      json(200, admitted(inAMinute(), { pins: { organizationId: orgs.harbor, personId, planId: 'business', policyRevision: 3 } })),
+    'admitted for another person in the same business': () => {
+      const grant = admitted(inAMinute());
+      return json(200, { ...grant, pins: { ...grant.pins, personId: 'person_someone_else' } });
+    },
     'refused without a reason': () => json(200, { ...admitted(inAMinute()), decision: { admitted: false, code: 'agent_not_included' } }),
     'refused without a code': () => json(200, { ...admitted(inAMinute()), decision: { admitted: false, reason: 'No.' } }),
   };

@@ -1,6 +1,6 @@
 /**
  * The Nectovia route: the bot's conversation on company-managed inference
- * (contract `nectovia-managed/1`, section 6,
+ * (legacy contract `nectovia-managed/1`, section 6,
  * docs/implementation/2026-09-25-managed-inference-gateway.md).
  *
  * The customer connects no provider. Each call goes to the account service's
@@ -14,15 +14,18 @@
  *
  * On this computer it is an ordinary model-API route: the same guarded
  * transport, the same one streamed Responses exchange through the same SDK as
- * the AWS route (the gateway forwards the SDK's body to GPT-6 Luna on Bedrock),
- * and the same local spend ledger. That ledger is a guard, never the balance:
+ * the AWS route, and the same local spend ledger. A versioned account snapshot
+ * supplies the configured model's conservative prices and capabilities; the
+ * gateway binds the actual provider and records every attempt. That ledger is
+ * a guard, never the balance:
  * the gateway's funding ledger is the authority, and nothing here shows a
  * local figure as what the business has left.
  */
 import { createOpenAI } from '@ai-sdk/openai';
 import { creditAmount, publishedMonthlyGrant, type JobTier, type UsageClass } from '../../shared/managed-usage.js';
-import { GPT6_LUNA, NECTOVIA_ROUTE } from '../../shared/model-api.js';
+import { GPT6_LUNA, MANAGED_LUNA, NECTOVIA_ROUTE } from '../../shared/model-api.js';
 import type { TierResolution } from '../../shared/tier-map.js';
+import { routingPriceSchema, routingReceiptSchema, routingScopeKey, type ResolvedRoutingSnapshot, type AccountScope, type HardRestrictions, type RoutingReceipt } from '../../shared/routing-policy.js';
 import { classifyTask, WORK_STYLE_LABELS, type WorkStyle } from '../../shared/work-style.js';
 import { digest } from '../harness/policy.js';
 import { attemptIdFor, type ExposureSummary, type ModelRateCard, type SpendExposure } from '../spend-exposure.js';
@@ -54,6 +57,9 @@ export const NECTOVIA_UNAVAILABLE = "Nectovia's model service isn't available ri
 export interface NectoviaPolicy {
   revision: number;
   tiers: Record<JobTier, { model: string; label: string } | null>;
+  /** Per tier, whether the gateway accepts reasoning summaries for it. Absent: none is asked for. */
+  reasoningSummaries?: Partial<Record<JobTier, boolean>>;
+  resolved?: ResolvedRoutingSnapshot;
 }
 
 /**
@@ -66,11 +72,12 @@ export interface NectoviaAccount {
   signedIn(): boolean;
   /** The session's current bearer token, rotated when it is close to expiring. */
   token(): Promise<string>;
-  policy(): NectoviaPolicy | null;
+  policy(projectId?: string | null): NectoviaPolicy | null;
   /** Ask the account service for its published policy again, once. */
-  refreshPolicy(): Promise<NectoviaPolicy | null>;
+  refreshPolicy(projectId?: string | null): Promise<NectoviaPolicy | null>;
   /** The business the work belongs to, or null for Personal work. */
   organizationFor(projectId: string | null): string | null;
+  scopeFor?(projectId: string | null): AccountScope | null;
   /** The account service's own transport, so an in-process test service is reached the same way. */
   readonly fetch?: typeof globalThis.fetch;
 }
@@ -88,6 +95,10 @@ export interface ManagedAdmission {
   usageClass: UsageClass;
   /** The run the admission was pinned to: every call of the work names it as its job. */
   rootJobId: string;
+  scope?: AccountScope;
+  /** Authenticated per-account snapshot, never a model table from the owner settings. */
+  routing?: ResolvedRoutingSnapshot;
+  sourceRestrictions?: HardRestrictions[];
 }
 
 /** The effort each tier asks for. The route does not change by tier; the effort does. */
@@ -138,21 +149,40 @@ export async function ensureNectoviaGuard(
  * One band: the gateway refuses input past 272,000 tokens rather than guess a long-context price,
  * so no call on this route can settle in a long band.
  */
-export function nectoviaRateCard(model: string): ModelRateCard {
-  if (model !== GPT6_LUNA.model)
+export function nectoviaRateCard(model: string, policy?: NectoviaPolicy | null): ModelRateCard {
+  const snapshot = policy?.resolved;
+  if (snapshot) {
+    if (Date.parse(snapshot.validUntil) <= Date.now()) throw new ModelApiError('nectovia_policy_changed', 'Refresh this account routing snapshot before continuing.', false);
+    const entries = Object.values(snapshot.tiers).filter(t => t?.model === model);
+    if (!entries.length) throw new ModelApiError('nectovia_rate_card_missing', 'The account has no current price for this model.', false);
+    const prices = entries.flatMap(t => t!.guardPrices).map(p => routingPriceSchema.parse(p));
+    if (!prices.length || prices.some(p => Date.parse(p.validUntil) <= Date.now())) throw new ModelApiError('nectovia_policy_changed', 'The account price evidence expired. Refresh before continuing.', false);
+    const bands = prices.flatMap(p => [p, ...p.longContext]);
+    const attempts = Math.max(...entries.map(t => t!.maxAttempts));
+    const rates = { input: Math.max(...bands.map(b => b.inputMicroUsdPerMillion)) * attempts,
+      output: Math.max(...bands.flatMap(b => [b.outputMicroUsdPerMillion, b.reasoningMicroUsdPerMillion])) * attempts,
+      cacheRead: Math.max(...bands.map(b => b.cacheReadMicroUsdPerMillion)) * attempts,
+      cacheWrite: Math.max(...bands.map(b => b.cacheWriteMicroUsdPerMillion)) * attempts };
+    return { version: `managed2:${snapshot.globalRevision}:${snapshot.scopeRevision}:${digest(prices).slice(0, 20)}`,
+      route: NECTOVIA_ROUTE, modelId: model, source: 'Authenticated account snapshot. Conservative local exposure across permitted attempts; server receipts are the actual charges.',
+      shortContextMaxInputTokens: Math.max(...entries.map(t => t!.capabilities.contextTokens)), short: rates, long: rates,
+      requestFeeMicroUsd: Math.max(...bands.map(b => b.requestFeeMicroUsd)) * attempts };
+  }
+  const legacy = model === GPT6_LUNA.model ? GPT6_LUNA : MANAGED_LUNA;
+  if (model !== legacy.model)
     throw new ModelApiError(
       'nectovia_rate_card_missing',
       'Nectovia published a model this version of the app has no price for. Nothing was sent. Update Nectovia to use it.',
       false,
     );
   return {
-    version: GPT6_LUNA.rateCard,
+    version: legacy.rateCard,
     route: NECTOVIA_ROUTE,
     modelId: model,
-    source: `${GPT6_LUNA.source} Nectovia's local guard; the account service's ledger is the authority.`,
-    shortContextMaxInputTokens: GPT6_LUNA.maxInputTokens,
-    short: { ...GPT6_LUNA.rates },
-    long: { ...GPT6_LUNA.rates },
+    source: `${legacy.source} Nectovia's local guard; the account service's ledger is the authority.`,
+    shortContextMaxInputTokens: legacy.maxInputTokens,
+    short: { ...legacy.rates },
+    long: { ...legacy.rates },
   };
 }
 
@@ -161,10 +191,11 @@ export function nectoviaRateCard(model: string): ModelRateCard {
  * limit, and the request stays small enough that the gateway's input bound
  * (`inputTokenBound`, 272,000 tokens) is never the thing that refuses it.
  */
-export function nectoviaLimits(limits: RespondLimits): RespondLimits {
+export function nectoviaLimits(limits: RespondLimits, snapshot?: ResolvedRoutingSnapshot, tier?: JobTier): RespondLimits {
+  const entry = tier ? snapshot?.tiers[tier] : null;
   return {
     ...limits,
-    maxOutputTokens: Math.min(limits.maxOutputTokens, GPT6_LUNA.maxOutputTokens),
+    maxOutputTokens: Math.min(limits.maxOutputTokens, entry?.capabilities.outputTokens ?? MANAGED_LUNA.maxOutputTokens),
     maxRequestBytes: Math.min(limits.maxRequestBytes, 262_144),
   };
 }
@@ -264,6 +295,11 @@ export function nectoviaBinding(input: {
   attemptId: () => string | null;
   /** The attempt this call retries, when it is a retry. */
   parentAttemptId?: string | null;
+  /** Ask for reasoning summaries: a thinking sink listens and the gateway says it accepts them. */
+  summaries: boolean;
+  routing?: ResolvedRoutingSnapshot;
+  nativeRouteId?: string;
+  onReceipt?: (receipt: RoutingReceipt) => void;
 }): RouteBinding {
   const baseUrl = `${input.base}/managed/v1`;
   const { managed } = input;
@@ -275,7 +311,9 @@ export function nectoviaBinding(input: {
     headers.delete('openai-organization');
     headers.delete('openai-project');
     headers.set('authorization', `Bearer ${token}`);
-    headers.set('x-nectovia-organization', managed.organizationId);
+    const scope = managed.scope ?? { kind: 'organization', id: managed.organizationId };
+    if (scope.kind === 'individual') { headers.delete('x-nectovia-organization'); headers.set('x-nectovia-account', scope.id); headers.set('x-nectovia-scope-kind', 'individual'); }
+    else headers.set('x-nectovia-organization', scope.id);
     headers.set('x-nectovia-admission', managed.admissionId);
     headers.set('x-nectovia-job', managed.rootJobId);
     headers.set('x-nectovia-attempt', attempt);
@@ -283,6 +321,20 @@ export function nectoviaBinding(input: {
     headers.set('x-nectovia-tier', managed.tier);
     headers.set('x-nectovia-usage-class', managed.usageClass);
     headers.set('x-nectovia-policy-revision', String(managed.policyRevision));
+    const snapshot = input.routing ?? managed.routing;
+    if (managed.sourceRestrictions?.length && !snapshot)
+      throw new ModelApiError('nectovia_source_policy_unverified', 'These sources need a versioned routing policy with verified privacy evidence. Nothing was sent.', false);
+    if (snapshot) {
+      if (snapshot.scope.kind !== scope.kind || snapshot.scope.id !== scope.id || Date.parse(snapshot.validUntil) <= Date.now())
+        throw new ModelApiError('nectovia_policy_changed', 'The routing snapshot is expired or belongs to another account.', false);
+      headers.set('x-nectovia-protocol', snapshot.protocol);
+      headers.set('x-nectovia-global-revision', String(snapshot.globalRevision)); headers.set('x-nectovia-scope-revision', String(snapshot.scopeRevision));
+      headers.set('x-nectovia-preference-revision', String(snapshot.preferenceRevision));
+      headers.set('x-nectovia-route-revision', String(snapshot.tiers[managed.tier]?.entryRevision ?? 0));
+      headers.set('x-nectovia-checkpoint', input.nativeRouteId ? 'native' : 'portable');
+      if (input.nativeRouteId) headers.set('x-nectovia-native-route', input.nativeRouteId);
+      if (managed.sourceRestrictions?.length) headers.set('x-nectovia-source-restrictions', JSON.stringify(managed.sourceRestrictions));
+    }
   };
   return {
     route: NECTOVIA_ROUTE,
@@ -304,18 +356,35 @@ export function nectoviaBinding(input: {
     // Exactly the AWS route's options: the gateway forwards this body to the same model.
     providerOptions: {
       openai: {
-        forceReasoning: true,
+        forceReasoning: (input.routing ?? managed.routing)?.tiers[managed.tier]?.capabilities.reasoning !== false,
         systemMessageMode: 'developer',
         include: ['reasoning.encrypted_content'],
-        reasoningEffort: input.effort,
-        reasoningSummary: null,
+        ...((input.routing ?? managed.routing)?.tiers[managed.tier]?.capabilities.reasoning === false ? {} : { reasoningEffort: input.effort }),
+        reasoningSummary: input.summaries ? 'auto' : null,
         store: false,
         parallelToolCalls: false,
       },
     },
     classify: (envelope) => {
       const { readable, body } = responsesBody(envelope);
-      return { readable, classified: readable ? classifyEnvelope(body) : null };
+      const classified = readable ? classifyEnvelope(body) : null;
+      const snapshot = input.routing ?? managed.routing;
+      if (classified && (snapshot && envelope.status < 400 || body && typeof body === 'object' && 'nectovia' in body)) {
+        const parsed = routingReceiptSchema.safeParse(body && typeof body === 'object' && 'nectovia' in body ? body.nectovia : undefined);
+        if (!parsed.success) throw new ModelApiError('nectovia_receipt_invalid', 'The gateway did not return a valid attempt record. Its cost remains reserved.', true);
+        const receipt = parsed.data;
+        if (snapshot && receipt.attempts.some((attempt, index) => {
+          const route = attempt.routing;
+          return !route || route.scopeKey !== routingScopeKey(snapshot.scope) || route.requestGroup !== input.attemptId() ||
+            route.ordinal !== index + 1 || route.policyRevision !== snapshot.revision || route.globalRevision !== snapshot.globalRevision ||
+            route.scopeRevision !== snapshot.scopeRevision || route.preferenceRevision !== snapshot.preferenceRevision;
+        })) throw new ModelApiError('nectovia_receipt_invalid', 'The gateway attempt record does not match this account and request. Its cost remains reserved.', true);
+        input.onReceipt?.(receipt);
+        classified.rawUsage = { ...classified.usage, nectovia: receipt };
+        const actual = receipt.attempts.at(-1)?.routing;
+        if (actual?.routeId) classified.servedBy = `${actual.provider}/${actual.model} (${actual.routeId})`;
+      }
+      return { readable, classified };
     },
     usage: responsesUsage,
     releasableStatuses: GATEWAY_RELEASABLE,
@@ -331,7 +400,11 @@ export function nectoviaBinding(input: {
 export async function respondNectovia(
   input: {
     base: string;
-    account: Pick<NectoviaAccount, 'refreshPolicy'>;
+    /**
+     * `policy` says whether the gateway accepts reasoning summaries. A caller without it (the Work
+     * loop, which has no thinking sink) never asks for them.
+     */
+    account: Pick<NectoviaAccount, 'refreshPolicy'> & Partial<Pick<NectoviaAccount, 'policy'>>;
     connectionId: string;
     model: string;
     managed: ManagedAdmission;
@@ -349,7 +422,26 @@ export async function respondNectovia(
     now?: () => Date;
   } & StreamSinks,
 ): Promise<RespondResult> {
+  const snapshot = input.managed.routing ?? input.account.policy?.()?.resolved;
+  const nativeRoutes = new Set<string>();
+  for (const message of snapshot ? input.messages : []) {
+    if (message.role !== 'assistant' || !Array.isArray(message.content)) continue;
+    for (const part of message.content) {
+      if (part.type !== 'reasoning') continue;
+      const encrypted = part.providerOptions?.openai?.reasoningEncryptedContent;
+      if (typeof encrypted !== 'string' || !encrypted) continue;
+      const match = /^nectovia-native-v1:([A-Za-z0-9][A-Za-z0-9._:-]{0,127}):[^:]+$/.exec(encrypted);
+      if (!match) throw new ModelApiError('nonportable_continuation', 'This reasoning checkpoint is not bound to a managed route. Resume from portable history.', false);
+      nativeRoutes.add(match[1]);
+    }
+  }
+  if (nativeRoutes.size > 1)
+    throw new ModelApiError('nonportable_continuation', 'This conversation contains checkpoints from different routes. Resume from portable history.', false);
   let attemptId: string | null = null;
+  let gatewayCharge: string | null = null;
+  let gatewayReceipt: RoutingReceipt | null = null;
+  const withReceipt = (failure: ModelApiError) => gatewayReceipt ? Object.assign(failure, { managed: gatewayReceipt }) : failure;
+  const allAttemptsReleased = () => gatewayReceipt !== null && gatewayReceipt.attempts.every(attempt => attempt.state === 'released');
   // A retry is the next attempt number of the same step, and names the attempt before it.
   const parentAttemptId =
     input.attempt.attempt > 1
@@ -362,32 +454,66 @@ export async function respondNectovia(
       attemptId = reservation.id;
       return reservation;
     },
-    release: (...args) => input.exposure.release(...args),
+    release: (id, reason) => gatewayCharge === 'uncertain' && !allAttemptsReleased()
+      ? input.exposure.markUncertain(id, 'The gateway recorded a potentially charged attempt. Its local hold remains until reconciliation.')
+      : input.exposure.release(id, reason),
     markUncertain: (...args) => input.exposure.markUncertain(...args),
-    settle: (...args) => input.exposure.settle(...args),
+    settle: (id, detail) => {
+      const raw = detail.raw as { nectovia?: { heldMicroUsd?: unknown } } | undefined;
+      const held = gatewayReceipt?.heldMicroUsd ?? raw?.nectovia?.heldMicroUsd;
+      // The shared error path can settle reported usage without passing raw
+      // metadata. Use the validated receipt captured during classification;
+      // an interrupted versioned response without one remains uncertain.
+      if ((snapshot && gatewayReceipt === null) || (typeof held === 'number' && held > 0))
+        return input.exposure.markUncertain(id, 'The gateway has not reconciled every attempt. The complete local hold remains reserved.');
+      return input.exposure.settle(id, detail);
+    },
     ...(input.exposure.beforeDispatch ? { beforeDispatch: (hold) => input.exposure.beforeDispatch!(hold) } : {}),
   };
   const { base, account, connectionId, model, managed, token, effort, limits, ...rest } = input;
   try {
     return await respondStream({
       ...rest,
+      transport: async (url, init) => {
+        const response = await (input.transport ?? globalThis.fetch)(url, init);
+        gatewayCharge = response.headers.get('x-nectovia-charge');
+        return response;
+      },
       exposure,
       secret: token,
-      limits: nectoviaLimits(limits),
-      binding: nectoviaBinding({ base, connectionId, model, effort, managed, attemptId: () => attemptId, parentAttemptId }),
+      limits: nectoviaLimits(limits, snapshot, managed.tier),
+      binding: nectoviaBinding({
+        base,
+        connectionId,
+        model,
+        effort,
+        managed,
+        attemptId: () => attemptId,
+        parentAttemptId,
+        routing: snapshot,
+        nativeRouteId: nativeRoutes.values().next().value,
+        onReceipt: receipt => { gatewayReceipt = receipt; },
+        // Ask for summaries only from a gateway that says it accepts them.
+        summaries: Boolean(rest.onReasoningDelta) && account.policy?.()?.reasoningSummaries?.[managed.tier] === true,
+      }),
     });
   } catch (error) {
-    if (!(error instanceof ModelApiError) || error.code !== 'nectovia_policy_changed') throw error;
+    if (error instanceof ModelApiError && error.code === 'nectovia_receipt_invalid' && attemptId)
+      await input.exposure.markUncertain(attemptId, error.message);
+    if (error instanceof ModelApiError && gatewayCharge === 'uncertain' && !allAttemptsReleased())
+      throw withReceipt(new ModelApiError(error.code, 'Nectovia could not complete this request. A recorded attempt may have incurred a charge; its cost remains reserved. Review the run before retrying.', error.dispatched, error.evidence));
+    if (!(error instanceof ModelApiError)) throw error;
+    if (error.code !== 'nectovia_policy_changed') throw withReceipt(error);
     const policy = await account.refreshPolicy().catch(() => null);
     const now = policy?.tiers[managed.tier] ?? null;
-    throw new ModelApiError(
+    throw withReceipt(new ModelApiError(
       error.code,
       now
         ? `Nectovia now runs ${tierName(managed.tier)} on ${now.label}. Nothing was charged. Send your message again to use it.`
         : `${tierName(managed.tier)} has no Nectovia model right now. Nothing was charged. Choose another tier.`,
       error.dispatched,
       error.evidence,
-    );
+    ));
   }
 }
 

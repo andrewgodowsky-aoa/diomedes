@@ -103,10 +103,14 @@ function routeCapabilities(
       const evidence = snapshot.validatedEvidence?.find(
         (item) => item.kind === 'route' && item.id === contract.routeId,
       );
+      // Contract versions describe historical coverage. An observed installation
+      // can update independently; its proof must name the build actually observed.
+      const evidenceEngineVersion = runtime ? runtime.version : contract.engine.version;
       const evidenceMatches =
+        typeof evidenceEngineVersion === 'string' && evidenceEngineVersion.length > 0 &&
         evidence?.buildVersion === snapshot.build.version &&
         evidence.contractVersion === contract.contractVersion &&
-        evidence.engineVersion === contract.engine.version;
+        evidence.engineVersion === evidenceEngineVersion;
       const evidenceFresh = evidence
         ? isFreshAt(now, evidence.validatedAt, evidence.staleAfterMs)
         : false;

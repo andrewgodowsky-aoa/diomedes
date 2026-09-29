@@ -1,93 +1,135 @@
 import fs from 'node:fs/promises';
-import { createReadStream } from 'node:fs';
+import { createReadStream, existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import type { ExternalEngine } from '../../shared/types.js';
 import type { InstallOffer } from '../../shared/engines.js';
 import { capture, engineEnvironment, EngineError, psQuote, stopped } from './process.js';
 
-// Exact official Windows assets reviewed 2026-09-10. Never resolve 'latest'.
-// Claude: downloads.claude.ai/claude-code-releases/2.1.252/manifest.json.
-// GitHub: release asset SHA-256 digests for the corresponding tagged releases.
+type ManagedEngine = Exclude<ExternalEngine, 'cursor' | 'devin'>;
+interface Release {
+  version: string;
+  publisher: string;
+  binary: string;
+  source: string;
+  sha256: string;
+  archive: boolean;
+  account: string;
+}
+// Publisher locations are stable; vendor versions are resolved at offer time.
 const RELEASES = {
-  'claude-code': {
-    version: '2.1.252',
-    publisher: 'Anthropic',
-    binary: 'claude.exe',
-    source: 'https://downloads.claude.ai/claude-code-releases/2.1.252/win32-x64/claude.exe',
-    sha256: 'fe688ecde90d65fff0b2dd097597439774116077d80a3c1e131a7e47db307b1a',
-    archive: false,
-    account: 'Sign in with a Claude subscription through Claude Code. No API billing fallback.',
-  },
-  opencode: {
-    version: '1.18.4',
-    publisher: 'Anomaly / OpenCode',
-    binary: 'opencode.exe',
-    source:
-      'https://github.com/anomalyco/opencode/releases/download/v1.18.4/opencode-windows-x64-baseline.zip',
-    sha256: '3bfb70c41d0278221d1fbc58efe77f79615491252498ff3f5a82db64266234e0',
-    archive: true,
-    account:
-      'The initial adapter uses an OpenCode Go account. Zen and other billing routes are separate.',
-  },
-  'oh-my-pi': {
-    version: '18.0.6',
-    publisher: 'can1357 / oh-my-pi',
-    binary: 'omp.exe',
-    source: 'https://github.com/can1357/oh-my-pi/releases/download/v18.0.6/omp-windows-x64.exe',
-    sha256: '9f458a9bc68170a1e27768f7af6bb183f773d14d596fe6fa9283d43ba34d71e2',
-    archive: false,
-    account:
-      'Uses a separate native oh-my-pi profile with an OpenAI API key configured in models.yml. API billing is separate from ChatGPT; credentials stay with oh-my-pi.',
-  },
-} satisfies Record<
-  Exclude<ExternalEngine, 'cursor' | 'devin'>,
-  {
-    version: string;
-    publisher: string;
-    binary: string;
-    source: string;
-    sha256: string;
-    archive: boolean;
-    account: string;
-  }
->;
+  'claude-code': { publisher: 'Anthropic', binary: 'claude.exe', archive: false,
+    source: 'https://downloads.claude.ai/claude-code-releases/latest',
+    account: 'Sign in with a Claude subscription through Claude Code. No API billing fallback.' },
+  opencode: { publisher: 'Anomaly / OpenCode', binary: 'opencode.exe', archive: true,
+    source: 'https://api.github.com/repos/anomalyco/opencode/releases/latest',
+    account: 'Uses the selected native OpenCode account. Other billing routes remain separate.' },
+  'oh-my-pi': { publisher: 'can1357 / oh-my-pi', binary: 'omp.exe', archive: false,
+    source: 'https://api.github.com/repos/can1357/oh-my-pi/releases/latest',
+    account: 'Uses the selected native oh-my-pi account; credentials stay with oh-my-pi.' },
+} satisfies Record<ManagedEngine, Omit<Release, 'version' | 'sha256'>>;
 
+// Release metadata is discovery, not an independent trust anchor. Keep guided
+// downloads on reviewed artifact pins until the vendor has a verified signing
+// identity. This does not restrict a person's own native installation.
+const REVIEWED_RELEASES = {
+  'claude-code': { version: '2.1.252',
+    source: 'https://downloads.claude.ai/claude-code-releases/2.1.252/win32-x64/claude.exe',
+    sha256: 'fe688ecde90d65fff0b2dd097597439774116077d80a3c1e131a7e47db307b1a' },
+  opencode: { version: '1.18.4',
+    source: 'https://github.com/anomalyco/opencode/releases/download/v1.18.4/opencode-windows-x64-baseline.zip',
+    sha256: '3bfb70c41d0278221d1fbc58efe77f79615491252498ff3f5a82db64266234e0' },
+  'oh-my-pi': { version: '18.0.6',
+    source: 'https://github.com/can1357/oh-my-pi/releases/download/v18.0.6/omp-windows-x64.exe',
+    sha256: '9f458a9bc68170a1e27768f7af6bb183f773d14d596fe6fa9283d43ba34d71e2' },
+} satisfies Record<ManagedEngine, Pick<Release, 'version' | 'source' | 'sha256'>>;
+const reviewedRelease = (engine: ManagedEngine): Release => ({ ...RELEASES[engine], ...REVIEWED_RELEASES[engine] });
+
+export async function currentEngineRelease(engine: ManagedEngine, fetcher: typeof fetch = fetch, signal?: AbortSignal): Promise<Release> {
+  const definition = RELEASES[engine];
+  const get = async (url: string) => {
+    const response = await fetcher(url, { redirect: 'error', signal: AbortSignal.any([AbortSignal.timeout(15_000), ...(signal ? [signal] : [])]),
+      headers: { Accept: 'application/json', 'User-Agent': 'Diomedes' } });
+    if (!response.ok) throw new EngineError('INSTALL_METADATA', 'The current official release could not be checked.');
+    const text = await response.text();
+    if (text.length > 2_000_000) throw new EngineError('INSTALL_METADATA', 'The official release metadata exceeded its limit.');
+    return text;
+  };
+  let version: string, source: string, sha256: string;
+  if (engine === 'claude-code') {
+    version = (await get(definition.source)).trim();
+    if (!/^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$/.test(version))
+      throw new EngineError('INSTALL_METADATA', 'The official release did not report a usable version.');
+    const base = 'https://downloads.claude.ai/claude-code-releases/' + version;
+    const manifest = JSON.parse(await get(base + '/manifest.json'));
+    const asset = manifest.platforms?.['win32-x64'];
+    if (manifest.version !== version || asset?.binary !== 'claude.exe')
+      throw new EngineError('INSTALL_METADATA', 'The official release identity was inconsistent.');
+    source = base + '/win32-x64/claude.exe';
+    sha256 = asset.checksum;
+  } else {
+    const release = JSON.parse(await get(definition.source));
+    if (!/^v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$/.test(release.tag_name) || !Array.isArray(release.assets))
+      throw new EngineError('INSTALL_METADATA', 'The official release did not report a usable version.');
+    version = release.tag_name.slice(1);
+    const name = engine === 'opencode' ? 'opencode-windows-x64-baseline.zip' : 'omp-windows-x64.exe';
+    const repo = engine === 'opencode' ? 'anomalyco/opencode' : 'can1357/oh-my-pi';
+    source = 'https://github.com/' + repo + '/releases/download/' + release.tag_name + '/' + name;
+    const asset = release.assets.find((entry: { name: string }) => entry.name === name);
+    if (asset?.browser_download_url !== source || !/^sha256:[a-f0-9]{64}$/.test(asset?.digest ?? ''))
+      throw new EngineError('INSTALL_METADATA', 'The official release did not publish a verified Windows download.');
+    sha256 = asset.digest.slice(7);
+  }
+  if (!/^[a-f0-9]{64}$/.test(sha256))
+    throw new EngineError('INSTALL_METADATA', 'The official release did not publish its checksum.');
+  return { ...definition, version, source, sha256 };
+}
+const receiptPath = (root: string, engine: string) => path.join(root, 'installed', engine, 'current.json');
+// Independently reviewed executable digests also authenticate existing private
+// copies. A writable local receipt cannot authorize new executable bytes.
+const legacyReceipts: Record<string, { version: string; sha256: string }> = {
+  'claude-code': { version: '2.1.252', sha256: 'fe688ecde90d65fff0b2dd097597439774116077d80a3c1e131a7e47db307b1a' },
+  opencode: { version: '1.18.4', sha256: '104eb783e554bfd29d1bdd241952e948ecb6462fe1ebc4dfb04742a8b9154014' },
+  'oh-my-pi': { version: '18.0.6', sha256: '9f458a9bc68170a1e27768f7af6bb183f773d14d596fe6fa9283d43ba34d71e2' },
+};
+function installedReceipt(root: string, engine: string): { version: string; sha256: string } | null {
+  try {
+    const receipt = JSON.parse(readFileSync(receiptPath(root, engine), 'utf8'));
+    if (!/^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$/.test(receipt.version) || !/^[a-f0-9]{64}$/.test(receipt.sha256))
+      throw new EngineError('INSTALL_CHECKSUM', 'The installed artifact receipt could not be verified.');
+    return receipt;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      const legacy = legacyReceipts[engine];
+      return legacy && existsSync(path.join(root, 'installed', engine, legacy.version, RELEASES[engine as ManagedEngine].binary))
+        ? legacy : null;
+    }
+    throw error;
+  }
+}
 export function managedBinary(root: string, engine: ExternalEngine) {
-  if (engine === 'cursor')
-    throw new EngineError('INSTALL_UNSUPPORTED', 'Install Cursor from cursor.com, then recheck.');
-  if (engine === 'devin')
-    throw new EngineError('INSTALL_UNSUPPORTED', 'Install Devin, then recheck.');
-  const release = RELEASES[engine];
-  return path.join(root, 'installed', engine, release.version, release.binary);
+  if (engine === 'cursor' || engine === 'devin')
+    throw new EngineError('INSTALL_UNSUPPORTED', 'Install this engine through its official installer, then recheck.');
+  const receipt = installedReceipt(root, engine);
+  return path.join(root, 'installed', engine, receipt?.version ?? REVIEWED_RELEASES[engine].version, RELEASES[engine].binary);
 }
 export async function verifyManagedBinary(root: string, engine: ExternalEngine) {
-  if (engine === 'cursor')
-    throw new EngineError('INSTALL_UNSUPPORTED', 'Cursor is not managed by Diomedes.');
-  if (engine === 'devin')
-    throw new EngineError('INSTALL_UNSUPPORTED', 'Devin is not managed by Diomedes.');
-  // OpenCode's ZIP digest and its extracted executable digest are different.
-  // This executable digest was obtained only after verifying the pinned ZIP.
-  const expected =
-    engine === 'opencode'
-      ? '104eb783e554bfd29d1bdd241952e948ecb6462fe1ebc4dfb04742a8b9154014'
-      : RELEASES[engine].sha256;
+  if (engine === 'cursor' || engine === 'devin')
+    throw new EngineError('INSTALL_UNSUPPORTED', 'This engine is managed by its own installer.');
+  const file = managedBinary(root, engine);
+  // Check against reviewed bytes as well as the writable local receipt.
+  const receipt = installedReceipt(root, engine);
   const digest = createHash('sha256');
   let bytes = 0;
-  for await (const chunk of createReadStream(managedBinary(root, engine))) {
+  for await (const chunk of createReadStream(file)) {
     bytes += chunk.length;
     if (bytes > 350_000_000)
-      throw new EngineError(
-        'INSTALL_CHECKSUM',
-        'The managed executable changed. It was not launched. Restore the reviewed installation before rechecking.',
-      );
+      throw new EngineError('INSTALL_CHECKSUM', 'The managed executable exceeded its verified size limit.');
     digest.update(chunk);
   }
-  if (digest.digest('hex') !== expected)
-    throw new EngineError(
-      'INSTALL_CHECKSUM',
-      'The managed executable changed. It was not launched. Restore the reviewed installation before rechecking.',
-    );
+  const trusted = legacyReceipts[engine];
+  if (!receipt || receipt.version !== trusted.version || receipt.sha256 !== trusted.sha256 || digest.digest('hex') !== trusted.sha256)
+    throw new EngineError('INSTALL_CHECKSUM', 'The managed executable differs from its installation receipt. Repair the private copy before rechecking.');
 }
 export async function extractOpenCode(
   archive: string,
@@ -153,6 +195,7 @@ async function quarantine(destination: string): Promise<string> {
 
 export class EngineInstaller {
   private active = new Set<ExternalEngine>();
+  private offers = new Map<ManagedEngine, Release>();
   constructor(
     readonly root: string,
     private deps: {
@@ -170,7 +213,7 @@ export class EngineInstaller {
         engine,
         publisher: 'Cursor',
         source: 'https://cursor.com',
-        version: '2026.08.11',
+        version: 'current',
         destination: 'Chosen by the Cursor installer',
         dependencies: [],
         privileges: 'Managed by the Cursor installer.',
@@ -184,7 +227,7 @@ export class EngineInstaller {
         engine,
         publisher: 'Cognition',
         source: 'https://devin.ai',
-        version: '3000.10.23',
+        version: 'current',
         destination: 'Chosen by the Devin installer',
         dependencies: [],
         privileges: 'Managed by the Devin installer.',
@@ -194,7 +237,7 @@ export class EngineInstaller {
         detail:
           'Install Devin Desktop or the Devin CLI, then check this computer again. Diomedes does not install Devin.',
       };
-    const release = RELEASES[engine];
+    const release = this.offers.get(engine) ?? reviewedRelease(engine);
     const available =
       (this.deps.platform ?? process.platform) === 'win32' &&
       (this.deps.arch ?? process.arch) === 'x64';
@@ -203,7 +246,7 @@ export class EngineInstaller {
       publisher: release.publisher,
       source: release.source,
       version: release.version,
-      destination: managedBinary(this.root, engine),
+      destination: path.join(this.root, 'installed', engine, release.version, release.binary),
       dependencies: [
         'Windows x64',
         ...(release.archive ? ['Windows PowerShell (included with Windows)'] : []),
@@ -213,9 +256,18 @@ export class EngineInstaller {
       account: release.account,
       available,
       detail: available
-        ? 'Downloads only this pinned official release and verifies its SHA-256 before activation. Sign-in is a separate action.'
+        ? 'Installs the displayed reviewed version after verifying its download. Sign-in is a separate action.'
         : 'Guided installation supports Windows x64. Install the native tool for your platform and recheck.',
     };
+  }
+  async refreshOffer(engine: ExternalEngine): Promise<InstallOffer> {
+    if (engine !== 'cursor' && engine !== 'devin' && this.offer(engine).available) {
+      const discovered = await currentEngineRelease(engine, this.deps.fetch);
+      const reviewed = reviewedRelease(engine);
+      this.offers.set(engine, discovered.version === reviewed.version && discovered.sha256 === reviewed.sha256
+        ? discovered : reviewed);
+    }
+    return this.offer(engine);
   }
   /**
    * `repair` replaces a private copy that failed its digest. It only ever acts
@@ -238,16 +290,16 @@ export class EngineInstaller {
     if (this.active.has(engine))
       throw new EngineError('INSTALL_ACTIVE', 'This tool already has an installation in progress.');
     if (signal?.aborted) throw stopped();
-    const release = RELEASES[engine],
-      destination = managedBinary(this.root, engine);
     this.active.add(engine);
     let staging: string | undefined;
     try {
+      const previous = managedBinary(this.root, engine);
+      let verifiedPrevious = false;
       // A completed version is reused. Never overwrite an existing executable.
       try {
-        await fs.access(destination);
+        await fs.access(previous);
         await (this.deps.verify ?? verifyManagedBinary)(this.root, engine);
-        return { detail: 'This managed version is already installed. Recheck its connection.' };
+        verifiedPrevious = true;
       } catch (error) {
         const missing = error instanceof Error && 'code' in error && error.code === 'ENOENT';
         if (!missing) {
@@ -269,9 +321,13 @@ export class EngineInstaller {
           // Set it aside inside Diomedes's own installed/ tree, still never
           // launched, so the destination is either empty or verified — never
           // half-written — if the replacement is interrupted.
-          await quarantine(destination);
+          await quarantine(previous);
         }
       }
+      const release = this.offers.get(engine) ?? reviewedRelease(engine);
+      const destination = path.join(this.root, 'installed', engine, release.version, release.binary);
+      if (verifiedPrevious && previous === destination)
+        return { detail: 'This managed version is already installed. Recheck its connection.' };
       const installRoot = path.join(this.root, 'installed');
       await fs.mkdir(installRoot, { recursive: true });
       staging = await fs.mkdtemp(path.join(installRoot, '.download-'));
@@ -322,7 +378,23 @@ export class EngineInstaller {
           ? stopped()
           : new EngineError('INSTALL_TIMEOUT', 'Installation timed out before activation.');
       await fs.mkdir(path.dirname(destination), { recursive: true });
-      await fs.link(binary, destination);
+      const binaryDigest = createHash('sha256');
+      for await (const bytes of createReadStream(binary)) binaryDigest.update(bytes);
+      const receipt = { version: release.version, sha256: binaryDigest.digest('hex'), source: release.source, artifactSha256: release.sha256 };
+      if (receipt.sha256 !== legacyReceipts[engine].sha256)
+        throw new EngineError('INSTALL_CHECKSUM', 'The executable does not match the reviewed release. Nothing was activated.');
+      try { await fs.link(binary, destination); } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+        // Recover an interrupted activation only when the existing bytes match
+        // this newly verified official artifact. Never overwrite another copy.
+        const existing = createHash('sha256');
+        for await (const bytes of createReadStream(destination)) existing.update(bytes);
+        if (existing.digest('hex') !== receipt.sha256)
+          throw new EngineError('INSTALL_CHECKSUM', 'The destination differs from the current official release. Nothing was activated.');
+      }
+      const pendingReceipt = path.join(staging, 'receipt.json');
+      await fs.writeFile(pendingReceipt, JSON.stringify(receipt, null, 2) + '\n');
+      await fs.rename(pendingReceipt, receiptPath(this.root, engine));
       return { detail: 'The selected version is installed. Check sign-in and models next.' };
     } catch (error) {
       if (signal?.aborted) throw stopped();

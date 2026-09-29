@@ -211,12 +211,26 @@ function requireRate(rate: RateSnapshot): RateSnapshot {
   if (!rate || typeof rate.version !== 'string' || !rate.version || rate.version.length > 120 ||
       counts.some((count) => typeof count !== 'number' || !Number.isSafeInteger(count) || count < 0 || count > 1_000_000_000))
     throw new FundingError(422, 'A reservation needs the exact rate snapshot it is priced under.', 'invalid_rate');
+  const extra = [rate.reasoningMicroUsdPerMillion, rate.requestFeeMicroUsd].filter(x => x !== undefined);
+  if (extra.some(x => !Number.isSafeInteger(x) || x! < 0 || x! > 1_000_000_000) || (rate.longContext?.length ?? 0) > 16)
+    throw new FundingError(422, 'The extended rate snapshot is invalid.', 'invalid_rate');
+  const longContext = rate.longContext?.map(b => {
+    if (!Number.isSafeInteger(b.aboveInputTokens) || b.aboveInputTokens < 0) throw new FundingError(422, 'The price threshold is invalid.', 'invalid_rate');
+    const { version: _version, ...rates } = requireRate({ ...b, version: rate.version, longContext: undefined, routing: undefined });
+    return { ...rates, aboveInputTokens: b.aboveInputTokens };
+  });
+  if (rate.routing && (JSON.stringify(rate.routing).length > 4096 || Object.values(rate.routing).some(x => typeof x === 'object' && x !== null)))
+    throw new FundingError(422, 'The routing receipt is invalid.', 'invalid_rate');
   return {
     version: rate.version,
     inputMicroUsdPerMillion: rate.inputMicroUsdPerMillion,
     outputMicroUsdPerMillion: rate.outputMicroUsdPerMillion,
     cacheReadMicroUsdPerMillion: rate.cacheReadMicroUsdPerMillion,
     cacheWriteMicroUsdPerMillion: rate.cacheWriteMicroUsdPerMillion,
+    ...(rate.reasoningMicroUsdPerMillion === undefined ? {} : { reasoningMicroUsdPerMillion: rate.reasoningMicroUsdPerMillion }),
+    ...(rate.requestFeeMicroUsd === undefined ? {} : { requestFeeMicroUsd: rate.requestFeeMicroUsd }),
+    ...(longContext === undefined ? {} : { longContext }),
+    ...(rate.routing === undefined ? {} : { routing: { ...rate.routing } }),
   };
 }
 
@@ -313,6 +327,25 @@ export class FundingService {
         rateCardVersion: RATE_CARD_V1.version, grantedMicroUsd: granted, startsAt, endsAt, sourceGrantId, allocatedAt: this.at() };
       await tx.savePeriod(row);
       return row;
+    });
+  }
+
+  /** Explicit paid Individual agreement; no default plan, price, balance or renewal is inferred. */
+  async allocateAgreementPeriod(input: { tenantId: string; organizationId: string; periodId: string; sourceGrantId: string; amountMicroUsd: MicroUsd }): Promise<CreditPeriodRow> {
+    const tenantId = requireId(input.tenantId, 'tenant'), organizationId = requireId(input.organizationId, 'account');
+    const sourceGrantId = requireId(input.sourceGrantId, 'grant'), granted = requireMoney(input.amountMicroUsd, 'agreed credits');
+    const { startsAt, endsAt } = monthBounds(input.periodId);
+    return this.repository.transaction(async tx => {
+      await tx.lockOrganization(tenantId, organizationId);
+      const existing = await tx.period(tenantId, organizationId, input.periodId);
+      if (existing) {
+        if (existing.sourceGrantId !== sourceGrantId || existing.grantedMicroUsd !== granted || existing.planId !== 'individual-agreement')
+          throw new FundingError(409, 'This month already has different funding. Apply an explicit correction instead.', 'period_conflict');
+        return existing;
+      }
+      const row: CreditPeriodRow = { tenantId, organizationId, periodId: input.periodId, planId: 'individual-agreement',
+        rateCardVersion: RATE_CARD_V1.version, grantedMicroUsd: granted, startsAt, endsAt, sourceGrantId, allocatedAt: this.at() };
+      await tx.savePeriod(row); return row;
     });
   }
 

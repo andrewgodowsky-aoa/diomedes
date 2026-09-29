@@ -62,6 +62,24 @@ function projectModel(raw: unknown): EngineModel | null {
 
 let cached: { key: string; catalog: EngineCatalog } | null = null;
 const externalCatalogs = new Map<string, EngineCatalog>();
+/** Project only public picker fields from the selected app-server's model/list. */
+export function codexModelsFromRpc(rows: unknown[]): EngineModel[] {
+  return rows.map(raw => {
+    if (!raw || typeof raw !== 'object') return null;
+    const row = raw as Record<string, unknown>;
+    return projectModel({
+      slug: row.model,
+      display_name: row.displayName,
+      description: row.description,
+      visibility: row.hidden === true ? 'hidden' : 'list',
+      supported_reasoning_levels: Array.isArray(row.supportedReasoningEfforts)
+        ? row.supportedReasoningEfforts.map(option => option && typeof option === 'object'
+          ? { effort: option.reasoningEffort, description: option.description } : null)
+        : [],
+      default_reasoning_level: row.defaultReasoningEffort,
+    });
+  }).filter((model): model is EngineModel => model !== null).slice(0, MAX_MODELS);
+}
 /** Only a completed, bounded adapter inspection supplies these catalogues. */
 export function recordEngineCatalog(catalog: EngineCatalog): void {
   externalCatalogs.set(catalog.engine, structuredClone(catalog));
@@ -116,9 +134,11 @@ function order(rows: unknown[], model: EngineModel): number {
 
 /** Only Codex reports a catalogue in this version; the rest say so plainly. */
 export function engineCatalog(engine: string): EngineCatalog {
-  if (engine === 'codex') return codexCatalog();
   const external = externalCatalogs.get(engine);
   if (external) return structuredClone(external);
+  if (engine === 'codex') return {
+    engine, models: [], detail: 'Check the ChatGPT connection to read the active runtime\'s choices.',
+  };
   if (engine === 'sample')
     return { engine, models: [], detail: 'Sample work is deterministic and has no choices.' };
   return { engine, models: [], detail: 'This engine does not report its choices to Diomedes yet.' };
@@ -134,4 +154,5 @@ export function isKnownChoice(engine: string, model: string, effort: string | nu
 /** Reset between tests; the catalogue is otherwise cached on the file's mtime. */
 export function forgetCatalog(): void {
   cached = null;
+  externalCatalogs.clear();
 }

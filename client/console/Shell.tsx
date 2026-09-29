@@ -54,6 +54,7 @@ import { Rail, type RailItem } from './Rail';
 import { ThreadView } from './ThreadView';
 import { ThreadMenu } from './ThreadMenu';
 import { readRecordedArtifacts } from './artifact-evidence';
+import { endThinking, stepThinking, type LiveThinking } from './engine-reasoning';
 import { acceptPreview, type PreviewPosition } from './engine-text-preview';
 import {
   discardPendingMessage,
@@ -172,7 +173,7 @@ interface ShellProps {
    * Automations row). `n` identifies one request, which is taken once and then
    * said to be taken, so it never reopens the screen on a later visit.
    */
-  viewRequest?: { view: ShellView; n: number } | null;
+  viewRequest?: { view: ShellView; n: number; taskId?: string; needId?: string } | null;
   onViewRequestTaken?: () => void;
 }
 
@@ -370,6 +371,10 @@ export function Shell({
     engine: string;
     /** Tool calls on the same run, applied by `acceptActivity`. */
     activity: ActivityState | null;
+    /** The engine's thinking on the same run, folded at the first answer text. */
+    thinking: LiveThinking | null;
+    /** When the started frame arrived, for how long the engine thought. */
+    startedAt: number;
   } | null>(null);
   // Live tool calls for work runs in this project, by request id (a work run's
   // session id). Ephemeral: a run card shows them only while the run is live.
@@ -518,12 +523,18 @@ export function Shell({
   }, [load, report]);
   // After the reset above, so a request made on the way in is what shows.
   const takenView = useRef<number | null>(null);
+  // Keep the requested item until its own project has loaded.
+  const pendingItem = useRef<{ projectId: string; needId?: string; taskId?: string } | null>(null);
   useEffect(() => {
     if (!viewRequest || viewRequest.n === takenView.current) return;
     takenView.current = viewRequest.n;
     setView(viewRequest.view);
+    pendingItem.current =
+      viewRequest.needId || viewRequest.taskId
+        ? { projectId, needId: viewRequest.needId, taskId: viewRequest.taskId }
+        : null;
     onViewRequestTaken?.();
-  }, [viewRequest, onViewRequestTaken]);
+  }, [viewRequest, onViewRequestTaken, projectId]);
   useEffect(() => {
     const es = new EventSource('/api/events');
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -598,6 +609,8 @@ export function Shell({
           text: '',
           engine: askEngine.current ?? '',
           activity: null,
+          thinking: null,
+          startedAt: Date.now(),
         });
         return;
       }
@@ -617,7 +630,9 @@ export function Shell({
         setStreaming((prev) => {
           if (!prev || prev.requestId !== data.requestId) return prev;
           const next = (prev.text + accepted.text).slice(0, MAX_STREAM_CHARS);
-          return next === prev.text ? prev : { ...prev, text: next };
+          // The first answer text folds the thinking above it.
+          const thinking = endThinking(prev.thinking, Date.now());
+          return next === prev.text && thinking === prev.thinking ? prev : { ...prev, text: next, thinking };
         });
         return;
       }
@@ -662,6 +677,32 @@ export function Shell({
       }
     };
     es.addEventListener('engine-activity', onEngineActivity as EventListener);
+    // Thinking on the ask on screen: a frame counts only for its exact project, request, run and
+    // thread, like its text. Narration only; the saved reply keeps the record.
+    const onEngineReasoning = (ev: Event) => {
+      let data: { projectId?: unknown; threadId?: unknown; requestId?: unknown; runId?: unknown } | null;
+      try {
+        data = JSON.parse((ev as MessageEvent).data);
+      } catch {
+        return;
+      }
+      if (
+        !data ||
+        data.projectId !== currentId.current ||
+        streamingId.current == null ||
+        data.requestId !== streamingId.current ||
+        data.runId !== streamingRunId.current ||
+        data.threadId !== askThreadId.current
+      )
+        return;
+      const requestId = streamingId.current;
+      setStreaming((prev) => {
+        if (!prev || prev.requestId !== requestId) return prev;
+        const thinking = stepThinking(prev.thinking, data, prev.startedAt);
+        return thinking === prev.thinking ? prev : { ...prev, thinking };
+      });
+    };
+    es.addEventListener('engine-reasoning', onEngineReasoning as EventListener);
     return () => {
       clearTimeout(timer);
       es.close();
@@ -758,6 +799,26 @@ export function Shell({
       setSelectedId(threads[0].id);
     }
   }, [state, selectedId, threads.length]);
+  // A named waiting item takes precedence over the default newest thread.
+  useEffect(() => {
+    const item = pendingItem.current;
+    if (!item || !state || state.project.id !== item.projectId) return;
+    pendingItem.current = null;
+    const need = item.needId
+      ? state.needs.find((n) => n.id === item.needId && n.state === 'open')
+      : undefined;
+    if (need) {
+      reviewElsewhere(need);
+      return;
+    }
+    const thread = item.taskId
+      ? state.conversations.find((c) => c.taskId === item.taskId)
+      : undefined;
+    if (thread) {
+      setSelectedId(thread.id);
+      setView('Thread');
+    }
+  }, [state, viewRequest]);
   const selected = selectedId
     ? (state?.conversations.find((c) => c.id === selectedId) ?? null)
     : null;
@@ -893,6 +954,7 @@ export function Shell({
           text: streaming.text,
           engine: streaming.engine,
           activity: streaming.activity?.lines,
+          thinking: streaming.thinking,
         }
       : undefined;
   // A conversation message this thread sent and never had confirmed, read from the shared claim

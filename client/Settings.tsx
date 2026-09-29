@@ -169,33 +169,45 @@ export function SettingsPage({
     };
   }, []);
   // What each engine says it can run. Only engines with a ready adapter are
-  // asked, and the key is the id list so an unchanged roster does not refetch.
+  // asked. Recheck after an installation or account observation changes too.
   const [catalogs, setCatalogs] = useState<Record<string, EngineCatalog>>({});
   const catalogKey = useMemo(
     () =>
       integrations
-        .filter((s) => s.adapter === 'ready' && s.kind !== 'sample')
-        .map((s) => s.id)
-        .join(','),
-    [integrations],
+        .filter((s) => s.adapter === 'ready' && s.kind !== 'sample' &&
+          (s.found || s.available || settings.services?.[s.id] === true))
+        .map((s) => [s.id, s.installedVersion ?? s.version, s.location, s.status, s.signIn])
+        .map((row) => JSON.stringify(row))
+        .join('\n'),
+    [integrations, settings.services],
   );
   useEffect(() => {
     let live = true;
-    const ids = catalogKey ? catalogKey.split(',') : [];
-    void Promise.all(
-      ids.map(async (engine) => {
+    const controller = new AbortController();
+    const ids = catalogKey ? catalogKey.split('\n').map((row) => JSON.parse(row)[0] as string) : [];
+    setCatalogs({});
+    let next = 0;
+    const inspectNext = async () => {
+      while (live && !controller.signal.aborted && next < ids.length) {
+        const engine = ids[next++];
         try {
-          return [engine, await api<EngineCatalog>(`/engines/${engine}/models`)] as const;
+          const catalog = await api<EngineCatalog>(`/engines/${engine}/models`, 'GET', undefined, controller.signal);
+          // One slow installation must not hide the choices from ready engines.
+          if (live) setCatalogs((current) => ({ ...current, [engine]: catalog }));
         } catch {
-          return null;
+          // A failed refresh leaves this engine without selectable stale choices.
         }
-      }),
-    ).then((rows) => {
-      if (!live) return;
-      setCatalogs(Object.fromEntries(rows.filter((r) => r !== null)));
-    });
+      }
+    };
+    // Native inspections can be slow. Leave browser connections available for
+    // permissions, connection status and other page controls while they run.
+    void inspectNext();
+    void inspectNext();
     return () => {
       live = false;
+      // Superseded inspections must not occupy the browser's connection pool
+      // while a newer runtime/account observation waits for its own catalog.
+      controller.abort();
     };
   }, [catalogKey]);
   const chosenText = (key: string): string => {

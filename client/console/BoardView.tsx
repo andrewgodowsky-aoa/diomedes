@@ -13,6 +13,7 @@ import './board.css';
 import { TaskDocumentSelect } from './TaskDocumentSelect';
 import { SegmentBar } from './SegmentBar';
 import { planGroups } from './progress-bars';
+import { evidenceTone } from '../../shared/needs-you';
 import { VerificationBadge, verificationFor } from './Verification';
 import { taskDocumentProblem } from '../../shared/task-sources';
 import { readableFileName } from '../../shared/display-names';
@@ -69,14 +70,6 @@ function selForTask(taskId: string): string {
     // Fall through to the raw id; the query simply misses.
   }
   return `[data-task-point="${taskId}"]`;
-}
-
-function pointClass(column: Column): string {
-  if (column === 'Working') return 'live';
-  if (column === 'Review') return 'attn';
-  if (column === 'Blocked') return 'fail';
-  if (column === 'Done') return 'done';
-  return '';
 }
 
 /**
@@ -1035,7 +1028,7 @@ function TaskRow({
       {...(queued ? { 'data-queue-why': queued.why } : {})}
     >
       <span
-        className={`pt ${pointClass(column)}`}
+        className={`pt ${evidenceTone(evidence)}`}
         data-task-point={task.id}
         {...(focus ? { 'data-focus-point': '' } : {})}
       />

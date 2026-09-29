@@ -571,6 +571,7 @@ export function diffGitSnapshots(
   before: readonly GitWorktreeFile[],
   after: readonly GitWorktreeFile[],
   evidence: readonly ChangeEvidenceRef[],
+  subdir: string | null = null,
 ): ChangeEntry[] {
   const beforeMap = new Map(before.map((f) => [f.path, f]));
   const entries: ChangeEntry[] = [];
@@ -637,5 +638,27 @@ export function diffGitSnapshots(
       ],
     });
   }
-  return entries.sort((a, b) => a.path.localeCompare(b.path));
+  // Project display paths only after the repository comparison. IDs, hashes and
+  // evidence continue to name the original Git entries, including saved baselines.
+  const prefix = subdir ? `${subdir}/` : '';
+  const projected = prefix
+    ? entries
+        .flatMap((entry): ChangeEntry[] => {
+          if (entry.path.startsWith(prefix)) return [{
+            ...entry,
+            path: entry.path.slice(prefix.length),
+            renamedFrom: entry.renamedFrom?.startsWith(prefix)
+              ? entry.renamedFrom.slice(prefix.length)
+              : null,
+          }];
+          // Git names a rename by its destination. Moving outside the project
+          // still removes its source from this review's scope.
+          if (entry.kind === 'renamed' && entry.renamedFrom?.startsWith(prefix)) return [{
+            ...entry, path: entry.renamedFrom.slice(prefix.length), kind: 'deleted',
+            renamedFrom: null, afterSha: null, modeAfter: null, sizeAfter: null,
+          }];
+          return [];
+        })
+    : entries;
+  return projected.sort((a, b) => a.path.localeCompare(b.path));
 }

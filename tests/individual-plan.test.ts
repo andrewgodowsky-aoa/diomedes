@@ -1,7 +1,7 @@
 /**
  * The Individual plan at the host (2026-09-28): a person's own subscription admits their Personal
- * work and projects no business owns, and a business only while they are its sole active member.
- * It does not include the company route yet, so managed work is refused in the person's words.
+ * work and projects no business owns. Every Business requires its own plan.
+ * The legacy gate has no managed-usage agreement, so it refuses the company route.
  *
  * The account service is the real control-plane handler over the faux store, in this process, read
  * through the desktop's own client and session. Nothing leaves this process.
@@ -162,18 +162,17 @@ describe('Personal work under an Individual plan', () => {
   });
 });
 
-describe('a business an Individual plan covers', () => {
-  test('a sole proprietor business reads the Individual plan through its access view and is admitted', async () => {
+describe('Business authority remains separate from Individual', () => {
+  test('a sole proprietor Business needs its own plan for BYO and managed Agent work', async () => {
     await issueIndividual('harborOwner');
     const session = await signedIn('harborOwner');
     const entitlement = session.entitlement(orgs.harbor);
-    expect(entitlement).toMatchObject({ state: 'active', plan: 'individual', planLabel: 'Individual', agent: true, managedInference: false });
+    expect(entitlement).toMatchObject({ state: 'none', plan: 'none', agent: false, managedInference: false });
     const gate = gateFor(session, orgs.harbor);
-    expect(gate.paidFor(null)).toBe(true);
-    await expect(gate.check(work({ surface: 'work' }))).resolves.toMatchObject({ organizationId: orgs.harbor, planId: 'individual' });
-    // The company route is still the business's included usage, which this plan does not carry.
+    expect(gate.paidFor(null)).toBe(false);
+    expect(await refusal(gate.check(work({ surface: 'work' })))).toMatchObject({ code: AGENT_NOT_INCLUDED });
     expect(await refusal(gate.check(work({ routeKind: 'managed', rootJobId: 'job-3' }))))
-      .toMatchObject({ code: AGENT_NOT_INCLUDED, message: MANAGED_USAGE_NOT_INCLUDED_PERSONAL });
+      .toMatchObject({ code: AGENT_NOT_INCLUDED });
   });
 });
 
@@ -196,7 +195,7 @@ describe('the Individual row of the paid-abilities matrix', () => {
     { who: 'free', individual: true, where: 'personal', route: 'byo', admitted: true },
     { who: 'free', individual: true, where: 'personal', route: 'managed', admitted: false },
     { who: 'free', individual: false, where: 'personal', route: 'byo', admitted: false },
-    { who: 'harborOwner', individual: true, where: 'harbor', route: 'byo', admitted: true },
+    { who: 'harborOwner', individual: true, where: 'harbor', route: 'byo', admitted: false },
     { who: 'harborOwner', individual: false, where: 'harbor', route: 'byo', admitted: false },
     { who: 'owner', individual: true, where: 'juniper', route: 'byo', admitted: true },
     { who: 'owner', individual: false, where: 'personal', route: 'byo', admitted: false },

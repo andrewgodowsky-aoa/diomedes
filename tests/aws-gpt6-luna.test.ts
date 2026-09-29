@@ -1,8 +1,8 @@
 /**
- * The owner's AWS Bedrock route on GPT-6 Luna (bot-mode item 7). The route's model,
- * its price card and the saved connection's model literal move to GPT-6 Luna
+ * The owner's AWS Bedrock route on GPT-5.6 Luna (bot-mode item 7). The route's model,
+ * its price card and the saved connection's model literal move to GPT-5.6 Luna
  * together, from the one registry row the Nectovia route prices with. A connection
- * an earlier version saved for GPT-5.6 Luna is not a crash and not a silent
+ * an earlier version saved for GPT-6 Luna is not a crash and not a silent
  * substitution: the view and a send both say to reconnect, nothing is sent, and the
  * reconnect keeps the connection's revision increasing so no old result can land.
  */
@@ -27,9 +27,9 @@ import {
 import { testOnlySecretBox } from '../server/connection-secrets';
 import { HarnessError } from '../server/harness/policy';
 import type { Store } from '../server/store';
-import { GPT6_LUNA, MODEL_API_NAMES, type AwsConnectionView } from '../shared/model-api';
+import { MANAGED_LUNA, MODEL_API_NAMES, type AwsConnectionView } from '../shared/model-api';
 
-const RETIRED = 'us.openai.gpt-5.6-luna';
+const RETIRED = 'us.openai.gpt-6-luna';
 const at = '2026-09-20T12:00:00.000Z';
 
 const saved = (modelId: string, revision = 3): Record<string, unknown> => ({
@@ -51,31 +51,31 @@ async function writeRecord(dataDir: string, record: Record<string, unknown>) {
   await fs.writeFile(path.join(dataDir, 'connections', `${AWS_BEDROCK_ROUTE}.json`), JSON.stringify(record));
 }
 
-describe('the route names GPT-6 Luna everywhere at once', () => {
+describe('the route names GPT-5.6 Luna everywhere at once', () => {
   test('model, price card and display name come from the registry row', () => {
-    expect(AWS_LUNA_MODEL).toBe('us.openai.gpt-6-luna');
-    expect(AWS_LUNA_MODEL).toBe(GPT6_LUNA.model);
-    expect(MODEL_API_NAMES[AWS_BEDROCK_ROUTE]).toBe('AWS Bedrock (GPT-6 Luna)');
-    const band = { input: 110_000, cacheRead: 11_000, cacheWrite: 137_500, output: 550_000 };
+    expect(AWS_LUNA_MODEL).toBe('us.openai.gpt-5.6-luna');
+    expect(AWS_LUNA_MODEL).toBe(MANAGED_LUNA.model);
+    expect(MODEL_API_NAMES[AWS_BEDROCK_ROUTE]).toBe('AWS Bedrock (GPT-5.6 Luna)');
+    const band = { input: 220_000, cacheRead: 22_000, cacheWrite: 275_000, output: 1_320_000 };
     expect(AWS_LUNA_RATE_CARD).toEqual({
-      version: 'aws-bedrock-gpt-6-luna-us-2026-09-25.1',
+      version: 'aws-bedrock-gpt-5.6-luna-us-2026-09-28.1',
       route: AWS_BEDROCK_ROUTE,
-      modelId: 'us.openai.gpt-6-luna',
-      source: expect.stringContaining('GPT-6 Luna'),
+      modelId: 'us.openai.gpt-5.6-luna',
+      source: expect.stringContaining('GPT-5.6 Luna'),
       shortContextMaxInputTokens: 272_000,
       short: band,
-      // The registry has no long-context price, so a long input is priced at the same band.
-      long: band,
+      // The owner route uses the agreement's higher long-context prices.
+      long: { input: 440_000, cacheRead: 44_000, cacheWrite: 550_000, output: 1_980_000 },
     });
   });
 
-  test('the saved connection accepts GPT-6 Luna and nothing older', () => {
+  test('the saved connection accepts only the selected GPT-5.6 Luna model', () => {
     expect(awsConnectionSchema.safeParse(saved(AWS_LUNA_MODEL)).success).toBe(true);
     expect(awsConnectionSchema.safeParse(saved(RETIRED)).success).toBe(false);
   });
 });
 
-describe('a connection saved for GPT-5.6 Luna', () => {
+describe('a connection saved for GPT-6 Luna', () => {
   let dir: string;
   beforeEach(async () => {
     dir = await fs.mkdtemp(path.join(os.tmpdir(), 'diomedes-aws-gpt6-'));
@@ -93,7 +93,7 @@ describe('a connection saved for GPT-5.6 Luna', () => {
     expect(error).toBeInstanceOf(HarnessError);
     expect(error).toMatchObject({ code: 'connection_retired', message: AWS_RECONNECT, retired: { revision: 3, createdAt: at } });
     expect(AWS_RECONNECT).toMatch(/Reconnect AWS Bedrock/);
-    expect(AWS_RECONNECT).toMatch(/GPT-6 Luna/);
+    expect(AWS_RECONNECT).toMatch(/GPT-5.6 Luna/);
   });
 
   test('a record that is wrong in any other way is still unreadable, not retired', async () => {

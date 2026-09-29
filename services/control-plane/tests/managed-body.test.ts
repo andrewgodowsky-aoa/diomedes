@@ -42,6 +42,15 @@ const readFile = tool({
 });
 
 describe('the body the real SDK sends is inside the allowlist', () => {
+  it('accepts the body the SDK sends when a thinking sink asks for reasoning summaries', async () => {
+    const { bodies, model } = capturing();
+    const summaries = { openai: { ...AWS_BINDING_PROVIDER_OPTIONS.openai, reasoningSummary: 'auto' } };
+    await streamText({ model, prompt: 'Hello.', maxRetries: 0, providerOptions: summaries as never }).text;
+    expect(bodies).toHaveLength(1);
+    expect((bodies[0].reasoning as Record<string, unknown>).summary).toBe('auto');
+    expect(validateResponsesBody(bodies[0])).toMatchObject({ ok: true });
+  });
+
   it('accepts both turns of a tool loop: the first request, and the one carrying the prior call, its reasoning and its result', async () => {
     const { bodies, model } = capturing();
     const common = {
@@ -158,11 +167,15 @@ describe('everything outside the allowlist is refused by name', () => {
     ['another include', { include: ['file_search_call.results'] }, 'include'],
     ['an extra include', { include: ['reasoning.encrypted_content', 'message.output_text.logprobs'] }, 'include'],
     ['an unlisted effort', { reasoning: { effort: 'minimal' } }, 'reasoning.effort'],
-    ['a reasoning summary', { reasoning: { effort: 'low', summary: 'auto' } }, 'reasoning.summary'],
+    ['an unknown reasoning summary', { reasoning: { effort: 'low', summary: 'everything' } }, 'reasoning.summary'],
     ['text verbosity', { text: { format: { type: 'text' }, verbosity: 'low' } }, 'text.verbosity'],
     ['json_object output', { text: { format: { type: 'json_object' } } }, 'text.format.type'],
   ])('refuses %s', (_label, extra, field) => {
     expect(refusal({ ...base(), ...extra })).toMatchObject({ ok: false, code: 'unsupported_field', field });
+  });
+
+  it.each(['auto', 'concise', 'detailed', null])('accepts a reasoning summary of %s', (summary) => {
+    expect(validateResponsesBody({ ...base(), reasoning: { effort: 'high', summary } })).toMatchObject({ ok: true });
   });
 
   it.each([

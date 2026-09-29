@@ -62,8 +62,13 @@ describe('the committed releases.json', () => {
       expect(release.platforms).toEqual(release.version === '0.2.0' ? ['windows', 'macos'] : ['windows']);
   });
 
-  it('publishes 0.2.1 on top for Windows and macOS, the release this build ships as', () => {
-    const [first] = COMMITTED.releases;
+  it('keeps the new build in draft while offering 0.2.1 as the latest stable release', () => {
+    const [candidate, first] = COMMITTED.releases;
+    const builtVersion = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
+    expect(candidate.version).toBe(builtVersion);
+    expect(candidate.channel).toBe('draft');
+    expect(candidate.platforms).toEqual(['windows', 'macos']);
+    expect(publishedRelease(COMMITTED, candidate.version)).toBeNull();
     expect(first.version).toBe('0.2.1');
     expect(first.channel).toBe('stable');
     expect(first.platforms).toEqual(['windows', 'macos']);

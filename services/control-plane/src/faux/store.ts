@@ -19,6 +19,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
+import { individualAccountSchema, routingPreferenceSchema, hardRestrictionsSchema, routingScopeKey, type IndividualAccount, type RoutingPreference, type AccountScope, type HardRestrictions } from '../../../../shared/routing-policy.js';
 import type { Membership, Organization, Person } from '../../../../shared/workspaces.js';
 import {
   admissionRecordSchema,
@@ -55,6 +56,10 @@ import { emptyFundingState, StateFundingTransaction, type FundingState } from '.
 import { emptyFauxIdentity, fauxIdentityStateSchema, type FauxIdentityState } from './identity.js';
 
 export interface CommercialState {
+  individuals: IndividualAccount[];
+  routingPreferences: RoutingPreference[];
+  jobRestrictions: Record<string, HardRestrictions[]>;
+  circuits: Record<string, { until: string; reason: string }>;
   grants: FeatureGrant[];
   accessRevisions: Record<string, { tenantId: string; revision: number }>;
   routes: RouteEntry[];
@@ -92,6 +97,10 @@ export interface RelayState {
 const LOG_LIMIT = 20_000;
 
 const commercialSchema = z.strictObject({
+  individuals: z.array(individualAccountSchema).max(100_000).default([]),
+  routingPreferences: z.array(routingPreferenceSchema).max(100_000).default([]),
+  jobRestrictions: z.record(z.string(), z.array(hardRestrictionsSchema).max(128)).default({}),
+  circuits: z.record(z.string(), z.strictObject({ until: z.iso.datetime(), reason: z.string().max(100) })).default({}),
   grants: z.array(featureGrantSchema).max(100_000),
   accessRevisions: z.record(z.string(), z.strictObject({ tenantId: z.string(), revision: z.number().int().min(0) })),
   routes: z.array(routeEntrySchema).max(500),
@@ -117,6 +126,7 @@ export function emptyFauxCloudState(now = new Date().toISOString()): FauxCloudSt
     accounts: emptyAccountState(),
     identity: emptyFauxIdentity(),
     commercial: {
+      individuals: [], routingPreferences: [], jobRestrictions: {}, circuits: {},
       grants: [], accessRevisions: {}, routes: [], policies: [], operators: [], audit: [], admissions: [],
       personGrants: [], personAccessRevisions: {}, personalAdmissions: [],
     },
@@ -157,6 +167,7 @@ class FauxCommercialTransaction implements CommercialTransaction {
   constructor(private readonly state: FauxCloudState) {}
   private get c() { return this.state.commercial; }
   async lockOrganization() {}
+  async lockStaff() {}
   async grants(organizationId: string) { return this.c.grants.filter((row) => row.organizationId === organizationId); }
   async saveGrant(row: FeatureGrant) {
     const index = this.c.grants.findIndex((old) => old.id === row.id);
@@ -183,15 +194,41 @@ class FauxCommercialTransaction implements CommercialTransaction {
     if (index < 0) this.c.routes.push(row); else this.c.routes[index] = row;
   }
   async lockPolicy() {}
-  async policy(revision?: number) {
-    if (revision !== undefined) return this.c.policies.find((row) => row.revision === revision);
-    return [...this.c.policies].sort((a, b) => b.revision - a.revision)[0];
+  async policy(revision?: number, scopeKey = 'global') {
+    const rows = this.c.policies.filter(r => routingScopeKey(r.scope ?? { kind: 'global' }) === scopeKey);
+    if (revision !== undefined) return rows.find(row => row.revision === revision);
+    return rows.sort((a, b) => b.revision - a.revision)[0];
   }
-  async policies(limit: number) { return [...this.c.policies].sort((a, b) => b.revision - a.revision).slice(0, limit); }
+  async policies(limit: number, scopeKey = 'global') { return this.c.policies.filter(r => routingScopeKey(r.scope ?? { kind: 'global' }) === scopeKey).sort((a, b) => b.revision - a.revision).slice(0, limit); }
   async savePolicy(row: TierPolicy) {
-    if (this.c.policies.some((old) => old.revision === row.revision)) throw new Error('Published tier policies are append-only.');
+    if (this.c.policies.some(old => old.revision === row.revision && routingScopeKey(old.scope ?? { kind: 'global' }) === routingScopeKey(row.scope ?? { kind: 'global' }))) throw new Error('Published tier policies are append-only.');
     this.c.policies.push(row);
   }
+  async individual(id: string) { return this.c.individuals.find(r => r.id === id); }
+  async individualFor(personId: string) { return this.c.individuals.find(r => r.personId === personId); }
+  async individuals(query: string, limit: number) { return this.c.individuals.filter(r => !query || contains(r.name, query) || r.id === query).slice(0, limit); }
+  async saveIndividual(row: IndividualAccount) {
+    if (this.c.individuals.some(r => r.id === row.id || r.personId === row.personId)) throw new Error('Individual account already exists.');
+    this.c.individuals.push(row);
+  }
+  async scopeRole(scope: AccountScope, personId: string) {
+    if (scope.kind === 'individual') return this.c.individuals.some(r => r.id === scope.id && r.personId === personId && r.state === 'active') ? 'owner' as const : null;
+    const member = this.state.accounts.memberships.find(r => r.record.organizationId === scope.id && r.record.personId === personId)?.record;
+    return member?.state === 'active' && this.state.accounts.organizations.some(r => r.record.id === scope.id) ? member.role : null;
+  }
+  async routingPreference(key: string) { return this.c.routingPreferences.filter(r => routingScopeKey(r.scope) === key).sort((a, b) => b.revision - a.revision)[0]; }
+  async saveRoutingPreference(row: RoutingPreference) {
+    if (this.c.routingPreferences.some(r => routingScopeKey(r.scope) === routingScopeKey(row.scope) && r.revision === row.revision)) throw new Error('Routing preference history is append-only.');
+    this.c.routingPreferences.push(row);
+  }
+  async restrictJob(scopeKey: string, jobId: string, restrictions: readonly HardRestrictions[]) {
+    const key = JSON.stringify([scopeKey, jobId]);
+    const union = [...new Map([...(this.c.jobRestrictions[key] ?? []), ...restrictions].map(r => [JSON.stringify(r), r])).values()];
+    if (union.length > 128) throw new Error('Too many distinct source restrictions for one job.');
+    this.c.jobRestrictions[key] = union; return union;
+  }
+  async circuit(routeId: string, routeRevision: number) { return this.c.circuits[JSON.stringify([routeId, routeRevision])]; }
+  async saveCircuit(routeId: string, routeRevision: number, until: string, reason: string) { this.c.circuits[JSON.stringify([routeId, routeRevision])] = { until, reason }; }
   async operator(personId: string) { return this.c.operators.find((row) => row.personId === personId); }
   async operators() { return [...this.c.operators]; }
   async saveOperator(row: Operator) {
@@ -287,6 +324,9 @@ class FauxCommercialTransaction implements CommercialTransaction {
     return next;
   }
   async savePersonalAdmission(row: PersonalAdmissionRecord) { this.c.personalAdmissions.push(row); }
+  async personalAdmission(tenantId: string, id: string) {
+    return this.c.personalAdmissions.find(row => row.tenantId === tenantId && row.id === id);
+  }
   async personalAdmissions(personId: string, limit: number) {
     return newestFirst(this.c.personalAdmissions.filter((row) => row.personId === personId)).slice(0, limit);
   }
