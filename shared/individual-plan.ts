@@ -5,10 +5,9 @@
  * an organization. It covers the person's Personal work and projects not linked to a business.
  * Business work always needs its own Business authority, including a one-member business.
  *
- * Included AI usage ('managed-inference') is not part of the person plan. The grant carries
- * the Agent, maintained profiles, owner rules and phone access. Managed Personal work additionally
- * requires a current, separately funded usage agreement on the person's Individual billing scope.
- * The legacy admission path cannot establish that agreement and refuses managed work.
+ * The full Individual plan includes 1,000 monthly credits on its own billing scope. Limited
+ * feature grants retain their explicit scope. Legacy admission has no billing-scope pin and
+ * continues to refuse managed work; scoped admission and dispatch check current person access.
  *
  * This module sits beside shared/access.ts rather than inside it while another lane holds that file.
  * Phase 2b folds INDIVIDUAL_PLAN into PLAN_TEMPLATES. The app shows no price for any plan: the public
@@ -42,13 +41,24 @@ export const INDIVIDUAL_SEPARATION_SENTENCE =
 /** A catalog plan: a template, and whether it is issued to an organization or to a person. */
 export type CatalogPlan = PlanTemplate & { scope: 'organization' | 'person' };
 
+/** The complete phase-2a template, retained to recognize existing subscriptions without rewriting grants. */
+const INDIVIDUAL_ACCESS_FEATURES: readonly AccessFeature[] = Object.freeze([
+  'nectovia-agent', 'maintained-profiles', 'owner-rules', 'phone-relay',
+]);
+
+/** Limited feature overrides are not silently upgraded to the complete Individual offer. */
+export function individualIncludesMonthlyCredits(grant: { planId: string | null; features: readonly string[] }): boolean {
+  return grant.planId === INDIVIDUAL_PLAN_ID && grant.features.includes(AGENT_FEATURE) &&
+    (grant.features.includes('managed-inference') || INDIVIDUAL_ACCESS_FEATURES.every(feature => grant.features.includes(feature)));
+}
+
 export const INDIVIDUAL_PLAN: CatalogPlan = Object.freeze({
   id: INDIVIDUAL_PLAN_ID,
   label: INDIVIDUAL_PLAN_LABEL,
-  features: Object.freeze(['nectovia-agent', 'maintained-profiles', 'owner-rules', 'phone-relay']) as readonly AccessFeature[],
+  features: Object.freeze([...INDIVIDUAL_ACCESS_FEATURES, 'managed-inference']) as readonly AccessFeature[],
   termDays: 31,
   customerVisible: true,
-  note: `A person's own monthly subscription, issued to a person and never to a business. ${INDIVIDUAL_ELIGIBILITY_SENTENCE} ${INDIVIDUAL_SEPARATION_SENTENCE} Included AI usage is not part of it yet.`,
+  note: `A person's own monthly subscription, with 1,000 monthly credits on their Individual account. ${INDIVIDUAL_ELIGIBILITY_SENTENCE} ${INDIVIDUAL_SEPARATION_SENTENCE}`,
   scope: 'person',
 });
 
@@ -153,9 +163,9 @@ export type CoveredAccessView = Omit<AccessView, 'grants'> & {
 export const AGENT_PERSONAL_INDIVIDUAL_REASON =
   "The Nectovia Agent isn't part of your personal work here. It comes with an Individual plan of your own, or with a business workspace that includes it. Nothing was sent.";
 
-/** Legacy Personal admission cannot establish a managed-usage agreement. */
+/** Legacy Personal admission cannot bind a managed request to its Individual billing scope. */
 export const MANAGED_USAGE_NOT_INCLUDED_PERSONAL =
-  "Included AI usage isn't part of the Individual plan yet, so the Nectovia Agent can't answer on the company route here. Your own connections still work. Nothing was sent.";
+  'Managed Personal work requires Individual account routing and setup. Refresh your account in a current app to continue. Nothing was sent.';
 
 /** Staff tried to issue the Individual plan to a business. */
 export const INDIVIDUAL_PLAN_NOT_FOR_BUSINESS =

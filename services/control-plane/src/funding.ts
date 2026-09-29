@@ -71,6 +71,7 @@ export class FundingError extends AccountError {
 
 export interface CreditPeriodRow {
   tenantId: string;
+  /** Historical name: the Business or Individual billing-scope id, never the UI's selected workspace. */
   organizationId: string;
   periodId: string;
   planId: string;
@@ -78,7 +79,7 @@ export interface CreditPeriodRow {
   grantedMicroUsd: MicroUsd;
   startsAt: string;
   endsAt: string;
-  /** The verified entitlement grant this allocation came from. */
+  /** The original person grant for Individual, or account feature grant for Business/explicit agreements. */
   sourceGrantId: string;
   allocatedAt: string;
 }
@@ -305,7 +306,9 @@ export class FundingService {
 
   /**
    * Record a month's grant from a verified entitlement grant. Only published
-   * plan grants can fund a period; Solo and proposed rows cannot. Server-only.
+   * plan grants can fund a period; Solo and proposed rows cannot. Individual
+   * uses the verified person's own billing scope and person grant. The database
+   * binds that source without copying a grant into a Business. Server-only.
    */
   async allocatePeriod(input: { tenantId: string; organizationId: string; periodId: string; planId: string; sourceGrantId: string }): Promise<CreditPeriodRow> {
     const tenantId = requireId(input.tenantId, 'tenant');

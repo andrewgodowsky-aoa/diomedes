@@ -60,7 +60,7 @@ describe('versioned migration protocol', () => {
 });
 
 describe('versioned migration source files', () => {
-  const names = ['001_accounts.sql', '002_commercial.sql', '003_funded_jobs.sql', '004_usage_contract.sql', '005_customer_access.sql', '006_staff_keys.sql', '007_relay_devices.sql', '008_organization_setup.sql', '009_individual_plans.sql', '010-scoped-routing.sql'];
+  const names = ['001_accounts.sql', '002_commercial.sql', '003_funded_jobs.sql', '004_usage_contract.sql', '005_customer_access.sql', '006_staff_keys.sql', '007_relay_devices.sql', '008_organization_setup.sql', '009_individual_plans.sql', '010-scoped-routing.sql','011_individual_funding.sql'];
   const load = () => Promise.all(names.map(async (name, index) => {
     const sql = await readFile(new URL(`../migrations/${name}`, import.meta.url), 'utf8');
     return { version: index + 1, name, sql, sha256: createHash('sha256').update(sql).digest('hex') };
@@ -172,13 +172,13 @@ describe('versioned migration source files', () => {
     expect(individual.sql.trim().endsWith('REVOKE ALL ON ALL FUNCTIONS IN SCHEMA control_plane FROM PUBLIC;')).toBe(true);
   });
 
-  it('keeps the applied Individual migration immutable and upgrades its exact history with routing 010 only', async () => {
+  it('keeps the applied Individual migration immutable and upgrades its exact history with additive routing and funding migrations', async () => {
     const files = await load();
     expect(files[8]).toMatchObject({ version: 9, name: '009_individual_plans.sql',
       sha256: '540f7bb22cc183175984fcdcf8e82718a7b093ec77d09329656ddd68196e5886' });
     expect(files[9]).toMatchObject({ version: 10, name: '010-scoped-routing.sql' });
     const db = database(files.slice(0, 9));
-    expect(await migrate(db.factory, files)).toEqual([10]);
+    expect(await migrate(db.factory, files)).toEqual([10, 11]);
     expect(db.calls).not.toContain(files[8].sql);
     expect(await migrate(db.factory, files)).toEqual([]);
   });

@@ -1,0 +1,13 @@
+
+ RUN  v3.2.7 /Users/andrewgodowsky/.codex/worktrees/dio-128-individual-funding/Diomedes/services/control-plane
+
+ ✓ tests/individual-funding-postgres.integration.test.ts (8 tests) 1609ms
+ ✓ tests/scoped-routing-postgres.integration.test.ts (6 tests) 704ms
+ ✓ tests/postgres.integration.test.ts (13 tests) 1493ms
+   ✓ REAL PostgreSQL (explicit disposable database only) > migrates an empty DB, then upgrades a prior version and is idempotent  485ms
+
+ Test Files  3 passed (3)
+      Tests  27 passed (27)
+   Start at  05:52:11
+   Duration  4.84s (transform 237ms, setup 19ms, collect 581ms, tests 3.80s, environment 0ms, prepare 119ms)
+
