@@ -467,7 +467,9 @@ describe('independent packaging provenance', () => {
       await fs.mkdir(path.join(stage, dir));
     const inputs = ['desktop/native-auth.ts', 'desktop/native-auth-storage.ts', 'desktop/native-auth-preload.ts',
       'shared/native-auth.ts', 'client/console/NativeAccount.tsx', 'scripts/build-desktop-auth.mjs',
-      'scripts/package-desktop.mjs', 'scripts/collect-package-notices.mjs', 'package.json', 'package-lock.json', 'LICENSE'];
+      'scripts/package-desktop.mjs', 'scripts/collect-package-notices.mjs',
+      'scripts/release-support/verify-native-publisher.mjs', 'scripts/release-support/acquire-native-runtime.mjs',
+      'package.json', 'package-lock.json', 'LICENSE'];
     for (const file of inputs) {
       await fs.mkdir(path.dirname(path.join(stage, file)), { recursive: true });
       await fs.copyFile(path.join(repo, file), path.join(stage, file));
