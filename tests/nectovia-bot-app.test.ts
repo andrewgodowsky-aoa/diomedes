@@ -24,7 +24,7 @@ import { NECTOVIA_SIGN_IN, NECTOVIA_UNAVAILABLE } from '../server/engines/nectov
 import { testOnlySecretBox } from '../server/connection-secrets';
 import { ControlPlaneClient } from '../server/accounts/client';
 import type { AccountBackend } from '../server/accounts/backend';
-import { AGENT_PROJECT_UNLINKED } from '../server/accounts/agent-gate';
+import { AGENT_PERSONAL_INDIVIDUAL_REASON } from '../shared/individual-plan';
 import { PLANS_URL } from '../shared/access';
 
 /** The free-version refusal, whatever it goes on to suggest. */
@@ -215,15 +215,15 @@ afterEach(async () => {
 });
 
 describe('the Nectovia bot', () => {
-  test('a selected business cannot pay for unlinked Home; an owner must link it first', async () => {
+  test('unlinked Home stays Personal until an owner explicitly links it to Business', async () => {
     const owner = await signIn(DEMO_ACCOUNTS.owner.email);
     const organizationId = owner.workspaces[0].organization.id;
     const binding = await home();
     const refused = await say(binding, 'm-unlinked', 'How many loaves are on order?');
     expect(refused.status).toBe(403);
-    // The owner is already working in the business, so the refusal names the missing link, not
-    // a workspace to switch to.
-    expect(await refused.json()).toMatchObject({ code: 'AGENT_NOT_INCLUDED', error: AGENT_PROJECT_UNLINKED });
+    // Selecting Business cannot change the payer of an unowned project. This
+    // person has no Individual plan, so Personal admission refuses the work.
+    expect(await refused.json()).toMatchObject({ code: 'AGENT_NOT_INCLUDED', error: AGENT_PERSONAL_INDIVIDUAL_REASON });
     expect(gateway).toHaveLength(0);
     expect(awsCalls).toBe(0);
 
@@ -233,6 +233,7 @@ describe('the Nectovia bot', () => {
     const answered = await say(binding, 'm-linked', 'How many loaves are on order?');
     expect(answered.status, await answered.clone().text()).toBe(200);
     expect(gateway.length).toBeGreaterThan(0);
+    expect(gateway[0].headers['x-nectovia-organization']).toBe(organizationId);
   });
 
   test('a Business owner’s Home message answers on nectovia through the managed gateway, with nothing connected', async () => {
