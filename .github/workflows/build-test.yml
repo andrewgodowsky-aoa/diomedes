@@ -9,6 +9,12 @@ on:
 permissions:
   contents: read
 
+# New commits supersede earlier runs of the same PR. Keep every main run as
+# evidence for the exact merged tree.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   local-gates:
     runs-on: windows-latest
