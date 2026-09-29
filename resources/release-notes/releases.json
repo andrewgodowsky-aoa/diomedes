@@ -3,13 +3,13 @@
   "releases": [
     {
       "version": "0.2.2",
-      "date": "2026-09-28",
-      "channel": "draft",
+      "date": "2026-09-29",
+      "channel": "stable",
       "platforms": [
         "windows",
         "macos"
       ],
-      "headline": "A release candidate with account security repairs, kept engine conversations, account routing preferences and clearer work that needs your attention.",
+      "headline": "Account security repairs, engine conversations that keep their sessions, account routing preferences and a clearer view of the work that needs you.",
       "sections": [
         {
           "title": "New",
@@ -21,14 +21,16 @@
         {
           "title": "Fixed",
           "items": [
-            "Home links open the task or approval they name. Needs you counts approvals, changes awaiting review and failed work consistently across the Console. Review work is described as needing attention rather than requiring an OK.",
+            "Home links open the task or approval they name. Needs you counts approvals, changes awaiting review and failed work the same way across the Console, and review work now reads as needing your attention.",
             "Account changes and sign-out cannot restore a stale session or borrow an admission made for another person. Streamed replies and thinking summaries redact secrets split across engine output chunks."
           ]
         },
         {
           "title": "Updating",
           "items": [
-            "This is a release candidate, separate from stable automatic updates. Existing project and settings locations are retained."
+            "Settings > App updates offers stable releases only. Nothing is downloaded, verified or installed until you confirm it, and a download is accepted only when its SHA-256 matches the digest the release publishes. An installed 0.1.7 or later on Windows can find this release when you press Check for updates.",
+            "An update from 0.2.0 or 0.2.1 keeps your settings, routes, saved keys, projects and conversations, and existing project and settings locations stay where they are.",
+            "On a Mac, Check for updates says when a newer version exists, and you download it from the release page; the app does not install it itself."
           ]
         },
         {
