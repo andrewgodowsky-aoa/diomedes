@@ -156,12 +156,12 @@ type AdmissionAnswer =
   | { admitted: false; code: string; reason: string }
   | { admitted: true; admissionId: string; personId: string; planId: string | null; policyRevision: number; validUntil: string };
 
-/** The service's admission decision for this business, or null when it did not give one. */
-function admissionAnswer(answer: unknown, organizationId: string | null): AdmissionAnswer | null {
+/** The service's admission decision for this person and workspace, or null when it did not give one. */
+function admissionAnswer(answer: unknown, organizationId: string | null, personId: string): AdmissionAnswer | null {
   const refused = admissionRefusalSchema.safeParse(answer);
   if (refused.success) return refused.data.decision;
   const admitted = admissionGrantSchema.safeParse(answer);
-  if (!admitted.success || admitted.data.pins.organizationId !== organizationId) return null;
+  if (!admitted.success || admitted.data.pins.organizationId !== organizationId || admitted.data.pins.personId !== personId) return null;
   const { admissionId, pins, validUntil } = admitted.data;
   return { admitted: true, admissionId, personId: pins.personId, planId: pins.planId, policyRevision: pins.policyRevision, validUntil };
 }
@@ -235,6 +235,8 @@ interface Current {
   browser: boolean;
   /** The WorkOS user a browser sign-in is for; null for a password sign-in. */
   subject: string | null;
+  /** Distinguishes a newer WorkOS sign-in by the same user from a token renewal. */
+  browserSessionId: string | null;
 }
 
 /** The desktop's WorkOS sign-in, and what its tokens must be for the account service. */
@@ -286,13 +288,23 @@ export class AccountSessionService {
   plansUrl: string = PLANS_URL;
   private planNotices: PlanNotices = {};
   private remembered: Remembered = empty();
+  /** Token rotation replaces a saved entry without creating a different sign-in. */
+  private readonly rememberedSignIns = new WeakMap<RememberedEntry, Current>();
   private current: Current | null = null;
+  /** A newer sign-in or sign-out invalidates work that is still awaiting an answer. */
+  private lifecycle = 0;
+  /** Forget cancels pending sign-ins for that person without cancelling another person's attempt. */
+  private forgotten: { lifecycle: number; people: Set<string> } | null = null;
+  private saving: Promise<void> = Promise.resolve();
   private rotating: Promise<void> | null = null;
   private readonly admissions = new Map<string, { decision: AgentDecision & { admitted: true }; until: number }>();
   private projector: (projection: AccountProjection | null) => Promise<void> = async () => {};
   private releaser: (personId: string, signedIn: boolean) => Promise<void> = async () => {};
   /** Why the last browser sign-in did not become a session, until the next attempt. */
   private browserFailure: string | null = null;
+  /** Native identity changes are separate from password or resume attempts that may fail. */
+  private browserChanges = 0;
+  private readonly closingBrowserSessions = new Set<{ sessionId: string }>();
   private following: Promise<void> = Promise.resolve();
 
   constructor(
@@ -364,13 +376,21 @@ export class AccountSessionService {
     if (last?.sealed && this.protectedStorage()) await this.resume(last.personId).catch(() => {});
     // A browser sign-in is kept by the identity itself. The session follows it from now on.
     if (this.browser) {
-      this.browser.identity.onChange(() => void this.followBrowser().catch(() => {}));
+      this.browser.identity.onChange(() => {
+        this.browserChanges++;
+        this.lifecycle++;
+        void this.followBrowser().catch(() => {});
+      });
       await this.followBrowser().catch(() => {});
     }
   }
 
-  private async save() {
-    await durableWrite(this.file, JSON.stringify(this.remembered, null, 2));
+  private save(): Promise<void> {
+    const bytes = JSON.stringify(this.remembered, null, 2);
+    const next = this.saving.then(() => durableWrite(this.file, bytes));
+    // A failed write reaches its caller, but must not prevent the next saved state from being written.
+    this.saving = next.catch(() => {});
+    return next;
   }
 
   // --- errors -----------------------------------------------------------------
@@ -391,6 +411,28 @@ export class AccountSessionService {
     return this.current;
   }
 
+  private assertCurrent(current: Current) {
+    if (this.current !== current) throw this.signedOutError();
+  }
+
+  private assertLifecycle(lifecycle: number) {
+    if (this.lifecycle !== lifecycle) throw this.signedOutError();
+  }
+
+  private assertSignIn(current: Current, lifecycle: number) {
+    this.assertLifecycle(lifecycle);
+    if (this.forgotten?.lifecycle === lifecycle && this.forgotten.people.has(current.personId)) throw this.signedOutError();
+    if (current.browserSessionId && [...this.closingBrowserSessions].some((closing) => closing.sessionId === current.browserSessionId))
+      throw this.signedOutError();
+  }
+
+  private markBrowserClosing(sessionId: string | null) {
+    // Each cleanup owns its marker, even when two cleanups are ending the same native session.
+    const closing = sessionId ? { sessionId } : null;
+    if (closing) this.closingBrowserSessions.add(closing);
+    return () => { if (closing) this.closingBrowserSessions.delete(closing); };
+  }
+
   // --- tokens -----------------------------------------------------------------
 
   private async rotate(current: Current) {
@@ -399,6 +441,7 @@ export class AccountSessionService {
     try {
       pair = await this.backend.client.refresh(current.refreshToken);
     } catch (error) {
+      this.assertCurrent(current);
       if (error instanceof ControlPlaneError && (error.status === 401 || error.status === 403)) {
         // The service ended this sign-in (signed out elsewhere, expired or revoked). A rotation can
         // run inside a locked workspace route, so the registry hears about it after this call returns.
@@ -425,13 +468,13 @@ export class AccountSessionService {
       // WorkOS could not be asked just now. The sign-in stands; this call does not go ahead.
       throw new ApiError(503, BROWSER_SENTENCES.unchecked, { code: 'unreachable' });
     }
+    this.assertCurrent(current);
     const claims = session ? checkBrowserToken(session.accessToken, this.browser!.expect, this.now()) : null;
-    // Ended, no longer for this service, or now another WorkOS user's: this person's session ends.
-    if (!session || !claims || claims.subject !== current.subject) {
+    // Ended, no longer for this service, or now a different WorkOS sign-in: this session ends.
+    if (!session || !claims || claims.subject !== current.subject || claims.sessionId !== current.browserSessionId) {
       await this.end(current.personId, false, true);
       throw new ApiError(401, 'Your sign-in ended. Sign in again.', { code: SIGN_IN_REQUIRED });
     }
-    if (this.current !== current) return;
     current.accessToken = session.accessToken;
     current.accessExpiresAt = claims.expiresAt;
     current.refreshExpiresAt = claims.expiresAt;
@@ -445,19 +488,27 @@ export class AccountSessionService {
       this.rotating = null;
     });
     await this.rotating;
-    return this.requireCurrent().accessToken;
+    this.assertCurrent(current);
+    return current.accessToken;
   }
 
   /** Call the service as the signed-in person; one retry after a rotation when the token was refused. */
   async call<T>(action: (token: string) => Promise<T>): Promise<T> {
-    const token = await this.token();
+    const current = this.requireCurrent();
+    const perform = async () => {
+      const token = await this.token();
+      const result = await action(token);
+      this.assertCurrent(current);
+      return result;
+    };
     try {
-      return await action(token);
+      return await perform();
     } catch (error) {
-      if (error instanceof ControlPlaneError && error.status === 401 && this.current) {
-        this.current.accessExpiresAt = new Date(0).toISOString();
+      this.assertCurrent(current);
+      if (error instanceof ControlPlaneError && error.status === 401) {
+        current.accessExpiresAt = new Date(0).toISOString();
         try {
-          return await action(await this.token());
+          return await perform();
         } catch (again) {
           this.refusal(again);
         }
@@ -482,28 +533,28 @@ export class AccountSessionService {
       }
     }
     const rest = this.remembered.accounts.filter((item) => !(item.personId === current.personId && item.backend === this.backendKey));
+    const entry: RememberedEntry = {
+      backend: this.backendKey,
+      personId: current.personId,
+      name: current.name,
+      email: current.email,
+      lastSignedInAt: current.signedInAt,
+      sealed,
+      sealedUntil: sealed ? current.refreshExpiresAt : null,
+    };
+    this.rememberedSignIns.set(entry, current);
     this.remembered = {
       v: 1,
       last: current.personId,
-      accounts: [
-        {
-          backend: this.backendKey,
-          personId: current.personId,
-          name: current.name,
-          email: current.email,
-          lastSignedInAt: current.signedInAt,
-          sealed,
-          sealedUntil: sealed ? current.refreshExpiresAt : null,
-        },
-        ...rest,
-      ].slice(0, MAX_REMEMBERED),
+      accounts: [entry, ...rest].slice(0, MAX_REMEMBERED),
     };
     await this.save();
   }
 
   // --- signing in and out -----------------------------------------------------
 
-  private async begin(pair: TokenPair, remember: boolean) {
+  private async begin(pair: TokenPair, remember: boolean, lifecycle: number) {
+    this.assertLifecycle(lifecycle);
     const session = await this.backend.client.session(pair.accessToken).catch((error) => this.refusal(error));
     const current: Current = {
       personId: session.person.id,
@@ -523,39 +574,49 @@ export class AccountSessionService {
       policy: null,
       browser: false,
       subject: null,
+      browserSessionId: null,
     };
-    await this.start(current, current.remember ? pair.refreshToken : null);
+    await this.start(current, current.remember ? pair.refreshToken : null, lifecycle);
   }
 
   /** Make `current` the signed-in person: read their access, remember them, tell the registry. */
-  private async start(current: Current, sealedRefreshToken: string | null) {
+  private async start(current: Current, sealedRefreshToken: string | null, lifecycle: number) {
+    this.assertSignIn(current, lifecycle);
+    await this.loadAccess(current);
+    this.assertSignIn(current, lifecycle);
     const previous = this.current;
     if (previous && previous.personId !== current.personId) {
       // Before the previous sign-in is revoked, while the service still answers as that person.
       await this.release(previous.personId, true);
+      this.assertSignIn(current, lifecycle);
       await this.revokeQuietly(previous);
     }
+    this.assertSignIn(current, lifecycle);
     this.current = current;
     this.admissions.clear();
-    await this.loadAccess(current);
     await this.keep(current, sealedRefreshToken);
+    this.assertSignIn(current, lifecycle);
+    this.assertCurrent(current);
     await this.projector(this.projection('sign-in'));
   }
 
   async signIn(input: { email: string; password: string; remember: boolean }) {
+    const lifecycle = ++this.lifecycle;
     const pair = await this.backend.client.signIn(input).catch((error) => this.refusal(error));
-    await this.begin(pair, input.remember);
+    await this.begin(pair, input.remember, lifecycle);
     return this.state();
   }
 
   async signUp(input: { name: string; email: string; password: string; remember: boolean }) {
+    const lifecycle = ++this.lifecycle;
     const pair = await this.backend.client.signUp(input).catch((error) => this.refusal(error));
-    await this.begin(pair, input.remember);
+    await this.begin(pair, input.remember, lifecycle);
     return this.state();
   }
 
   /** Sign in again from this computer's sealed sign-in, without a password. */
   async resume(personId: string) {
+    const lifecycle = ++this.lifecycle;
     const entry = this.entry(personId);
     if (!entry) throw new ApiError(404, 'This computer does not remember that account.', { code: 'unknown_account' });
     if (!entry.sealed || !this.protectedStorage())
@@ -571,13 +632,14 @@ export class AccountSessionService {
     try {
       pair = await this.backend.client.refresh(refreshToken);
     } catch (error) {
+      this.assertLifecycle(lifecycle);
       if (error instanceof ControlPlaneError && (error.status === 401 || error.status === 403)) {
         await this.dropSeal(personId);
         throw new ApiError(409, 'That sign-in has ended. Enter the password.', { code: 'password_required' });
       }
       this.refusal(error);
     }
-    await this.begin(pair, true);
+    await this.begin(pair, true, lifecycle);
     return this.state();
   }
 
@@ -601,32 +663,62 @@ export class AccountSessionService {
 
   private async end(personId: string, revoke: boolean, deferProjection = false) {
     const current = this.current;
-    if (current && current.personId === personId) {
-      if (revoke) {
-        await this.release(personId, true);
-        await this.revokeQuietly(current);
-      }
-      this.current = null;
-      this.admissions.clear();
+    if (!current || current.personId !== personId) return;
+    // A failed sign-in attempt does not replace the session whose cleanup is in progress.
+    if (revoke) {
+      await this.release(personId, true);
+      if (this.current !== current) return;
+      await this.revokeQuietly(current);
     }
-    await this.dropSeal(personId);
-    if (this.remembered.last === personId) {
-      this.remembered.last = null;
-      await this.save();
+    if (this.current !== current) return;
+    this.current = null;
+    this.admissions.clear();
+    // Clear this sign-in's saved state before yielding; later work may remember the same person again.
+    const entry = this.entry(personId);
+    if (entry) {
+      entry.sealed = null;
+      entry.sealedUntil = null;
     }
-    if (deferProjection) setImmediate(() => void this.projector(null).catch(() => {}));
-    else await this.projector(null);
+    if (this.remembered.last === personId) this.remembered.last = null;
+    await this.save();
+    const project = async () => {
+      if (this.current === null) await this.projector(null);
+    };
+    if (deferProjection) setImmediate(() => void project().catch(() => {}));
+    else await project();
   }
 
   async signOut() {
-    if (this.current) await this.end(this.current.personId, true);
-    // Signing out of a browser sign-in ends the WorkOS session too, and clears the one this computer
-    // keeps. While a sign-in is still in the browser, this cancels it.
-    if (this.browser && this.browserMode()) {
-      this.browserFailure = null;
-      await this.browser.identity.signOut().catch(() => {});
+    ++this.lifecycle;
+    const browserChanges = this.browserChanges;
+    const browserSessionId = this.current?.browserSessionId ?? null;
+    const finished = this.markBrowserClosing(browserSessionId);
+    try {
+      if (this.current) await this.end(this.current.personId, true);
+      // Signing out of a browser sign-in ends the WorkOS session too, and clears the one this computer
+      // keeps. While a sign-in is still in the browser, this cancels it.
+      await this.signOutBrowser(browserChanges, browserSessionId);
+      return this.state();
+    } finally { finished(); }
+  }
+
+  private async signOutBrowser(browserChanges: number, sessionId: string | null) {
+    const browser = this.browser;
+    if (!browser || !this.browserMode() || this.current) return;
+    while (this.browserChanges !== browserChanges) {
+      // Notifications include failed attempts. Check which session is kept before ending it.
+      if (!sessionId || browser.identity.status().status === 'signing-in') return;
+      const observedChanges = this.browserChanges;
+      const kept = await browser.identity.session();
+      if (this.current || browser.identity.status().status === 'signing-in') return;
+      // A notification during the read makes its answer stale, even when it kept the same session.
+      if (this.browserChanges !== observedChanges) continue;
+      const claims = kept ? checkBrowserToken(kept.accessToken, browser.expect, this.now()) : null;
+      if (kept && claims?.sessionId !== sessionId) return;
+      break;
     }
-    return this.state();
+    this.browserFailure = null;
+    await browser.identity.signOut().catch(() => {});
   }
 
   // --- signing in through the browser ------------------------------------------
@@ -643,7 +735,9 @@ export class AccountSessionService {
     const browser = this.browser;
     if (!browser || !this.browserMode()) throw new ApiError(409, BROWSER_SENTENCES.notSetUp, { code: 'browser_sign_in_unavailable' });
     if (this.current) return this.state();
+    const lifecycle = ++this.lifecycle;
     await this.followBrowser();
+    this.assertLifecycle(lifecycle);
     if (this.current || browser.identity.status().status !== 'signed-out') return this.state();
     this.browserFailure = null;
     try {
@@ -656,12 +750,14 @@ export class AccountSessionService {
 
   /** Follow the WorkOS sign-in, one step at a time: begin the session when it has one, end it when it has none. */
   private followBrowser(): Promise<void> {
-    const next = this.following.then(() => this.reconcileBrowser());
+    const lifecycle = this.lifecycle;
+    const next = this.following.then(() => this.reconcileBrowser(lifecycle));
     this.following = next.catch(() => {});
     return next;
   }
 
-  private async reconcileBrowser() {
+  private async reconcileBrowser(lifecycle: number) {
+    this.assertLifecycle(lifecycle);
     const browser = this.browser;
     if (!browser || !this.browserMode()) return;
     let session: BrowserSession | null;
@@ -669,9 +765,11 @@ export class AccountSessionService {
       session = await browser.identity.session();
     } catch {
       // A kept sign-in that could not be renewed just now is not a sign-out.
+      this.assertLifecycle(lifecycle);
       if (!this.current) this.browserFailure = BROWSER_SENTENCES.unchecked;
       return;
     }
+    this.assertLifecycle(lifecycle);
     if (!session) {
       // WorkOS keeps no session here: it was signed out, from this screen or the account panel.
       if (this.current?.browser) await this.end(this.current.personId, false);
@@ -680,24 +778,25 @@ export class AccountSessionService {
     const current = this.current;
     if (current?.browser) {
       if (current.accessToken === session.accessToken) return;
-      // The same WorkOS user with a newer token: the person and their workspace stay as they are.
+      // A newer token for the same WorkOS session preserves the person and their workspace.
       const claims = checkBrowserToken(session.accessToken, browser.expect, this.now());
-      if (claims && claims.subject === current.subject) {
+      if (claims && claims.subject === current.subject && claims.sessionId === current.browserSessionId) {
         current.accessToken = session.accessToken;
         current.accessExpiresAt = claims.expiresAt;
         current.refreshExpiresAt = claims.expiresAt;
         return;
       }
     }
-    await this.beginBrowser(browser, session);
+    await this.beginBrowser(browser, session, lifecycle);
   }
 
-  private async beginBrowser(browser: BrowserSignIn, session: BrowserSession) {
+  private async beginBrowser(browser: BrowserSignIn, session: BrowserSession, lifecycle: number) {
     const claims = checkBrowserToken(session.accessToken, browser.expect, this.now());
     if (!claims) {
       // Nothing is sent with a token meant for anything else. Ending it lets the next attempt start clean.
       this.browserFailure = BROWSER_SENTENCES.notForUs;
       if (this.current?.browser) await this.end(this.current.personId, false);
+      this.assertLifecycle(lifecycle);
       await browser.identity.signOut().catch(() => {});
       return;
     }
@@ -705,14 +804,17 @@ export class AccountSessionService {
     try {
       page = await this.backend.client.session(session.accessToken);
     } catch (error) {
+      this.assertLifecycle(lifecycle);
       if (error instanceof ControlPlaneError && (error.status === 401 || error.status === 403)) {
         // The service's refusal of this sign-in, in its own words when it has them (an unverified email).
         this.browserFailure = error.status === 403 ? error.message : BROWSER_SENTENCES.refused;
         if (this.current?.browser) await this.end(this.current.personId, false);
+        this.assertLifecycle(lifecycle);
         await browser.identity.signOut().catch(() => {});
       } else if (!this.current) this.browserFailure = BROWSER_SENTENCES.unreachable;
       return;
     }
+    this.assertLifecycle(lifecycle);
     this.browserFailure = null;
     await this.start(
       {
@@ -734,8 +836,10 @@ export class AccountSessionService {
         policy: null,
         browser: true,
         subject: claims.subject,
+        browserSessionId: claims.sessionId,
       },
       null,
+      lifecycle,
     );
   }
 
@@ -752,11 +856,25 @@ export class AccountSessionService {
 
   /** Remove an account from this computer's chooser, signing it out first when it is the current one. */
   async forget(personId: string) {
-    if (this.current?.personId === personId) await this.end(personId, true);
-    else await this.release(personId, false);
-    this.remembered.accounts = this.remembered.accounts.filter((item) => !(item.personId === personId && item.backend === this.backendKey));
-    await this.save();
-    return this.state();
+    const entry = this.entry(personId);
+    const rememberedSignIn = entry ? this.rememberedSignIns.get(entry) : undefined;
+    const current = this.current?.personId === personId ? this.current : null;
+    const browserChanges = this.browserChanges;
+    const browserSessionId = current?.browserSessionId ?? null;
+    const finished = this.markBrowserClosing(browserSessionId);
+    try {
+      if (this.forgotten?.lifecycle !== this.lifecycle) this.forgotten = { lifecycle: this.lifecycle, people: new Set() };
+      this.forgotten.people.add(personId);
+      if (current) await this.end(personId, true);
+      else await this.release(personId, false);
+      if (current?.browser) await this.signOutBrowser(browserChanges, browserSessionId);
+      // Remove refreshes of the affected sign-in, while preserving a later sign-in by the same person.
+      this.remembered.accounts = this.remembered.accounts.filter((item) =>
+        item !== entry && !(rememberedSignIn && item.backend === entry?.backend && this.rememberedSignIns.get(item) === rememberedSignIn),
+      );
+      await this.save();
+      return this.state();
+    } finally { finished(); }
   }
 
   // --- what the service says --------------------------------------------------
@@ -806,6 +924,7 @@ export class AccountSessionService {
     current.organizations = session.organizations;
     await this.token();
     await this.loadAccess(current);
+    this.assertCurrent(current);
     const projection = this.projection('refresh');
     if (options.project !== false) await this.projector(projection);
     return projection;
@@ -887,9 +1006,10 @@ export class AccountSessionService {
     rootJobId: string | null;
     phase: 'admit' | 'dispatch';
   }): Promise<AgentDecision> {
-    if (!this.current) return { admitted: false, code: SIGN_IN_REQUIRED, reason: 'Sign in to use the Nectovia Agent.' };
+    const current = this.current;
+    if (!current) return { admitted: false, code: SIGN_IN_REQUIRED, reason: 'Sign in to use the Nectovia Agent.' };
     // The route kind is part of the key: a managed admission and a BYO one are different records.
-    const key = `${this.current.personId}|${input.organizationId ?? 'personal'}|${input.surface}|${input.routeKind}|${input.rootJobId ?? ''}`;
+    const key = `${current.personId}|${input.organizationId ?? 'personal'}|${input.surface}|${input.routeKind}|${input.rootJobId ?? ''}`;
     const cached = this.admissions.get(key);
     if (input.phase === 'dispatch' && cached && cached.until > this.now()) return cached.decision;
     let reply: unknown;
@@ -915,7 +1035,7 @@ export class AccountSessionService {
           : 'The account service could not be reached, so the Nectovia Agent could not confirm this business includes it. Nothing was sent.',
       };
     }
-    const answer = admissionAnswer(reply, input.organizationId);
+    const answer = admissionAnswer(reply, input.organizationId, current.personId);
     // An answer this host cannot read is not a decision: the Agent does not start, nothing is cached,
     // and the next piece of work asks again. It is not a refusal of the business either.
     if (!answer) {

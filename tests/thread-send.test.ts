@@ -18,17 +18,18 @@ import type { Conversation } from '../shared/types';
 const on = (route: string, refusal: string | null = null): ThreadRouteView => ({ route, refusal });
 
 describe('planThreadSend', () => {
-  test('Ask, Plan and Automatic on a model-API route go through the conversation', () => {
-    for (const route of ['aws-bedrock', 'azure-openai', 'openrouter'] as const)
+  test('Ask, Plan and Automatic on a model-API route or a kept-session engine go through the conversation', () => {
+    for (const route of ['aws-bedrock', 'azure-openai', 'openrouter', 'codex', 'opencode', 'cursor', 'devin'] as const)
       for (const mode of ['ask', 'plan', 'auto'] as const)
         expect(planThreadSend(on(route), mode)).toEqual({ kind: 'conversation', route, mode });
   });
-  test('Build and Fix on a model-API route keep the direct request path', () => {
-    for (const mode of ['build', 'fix'] as const)
-      expect(planThreadSend(on('aws-bedrock'), mode)).toEqual({ kind: 'direct', route: 'aws-bedrock' });
+  test('Build and Fix keep the direct request path on a model-API route and on a kept-session engine', () => {
+    for (const route of ['aws-bedrock', 'codex', 'opencode', 'cursor', 'devin'] as const)
+      for (const mode of ['build', 'fix'] as const)
+        expect(planThreadSend(on(route), mode)).toEqual({ kind: 'direct', route });
   });
-  test('Claude Code, Codex, the external engines and the sample keep the direct path for every mode', () => {
-    for (const route of ['claude-code', 'codex', 'opencode', 'cursor', 'devin', 'sample'] as const)
+  test('Claude Code project threads (O38), oh-my-pi and the sample keep the direct path for every mode', () => {
+    for (const route of ['claude-code', 'oh-my-pi', 'sample'] as const)
       for (const mode of ['ask', 'plan', 'build', 'fix'] as const)
         expect(planThreadSend(on(route), mode)).toEqual({ kind: 'direct', route });
   });
@@ -42,6 +43,11 @@ describe('planThreadSend', () => {
     const planned = planThreadSend(on('openrouter'), 'ask', 'weekly-brief');
     expect(planned).toMatchObject({ kind: 'refuse' });
     if (planned.kind === 'refuse') expect(planned.reason).toMatch(/^Playbooks do not run in OpenRouter/);
+    // A kept-session engine ran playbooks on the direct request path before its conversation
+    // existed. The conversation takes no playbook yet, so that message keeps the direct path
+    // rather than being refused.
+    for (const route of ['codex', 'opencode', 'cursor', 'devin'] as const)
+      expect(planThreadSend(on(route), 'plan', 'weekly-brief')).toEqual({ kind: 'direct', route });
     // Elsewhere the playbook rides the direct path as before.
     expect(planThreadSend(on('claude-code'), 'ask', 'weekly-brief')).toEqual({ kind: 'direct', route: 'claude-code' });
   });

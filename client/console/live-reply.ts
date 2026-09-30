@@ -1,4 +1,5 @@
 import { acceptActivity, type ActivityState } from './engine-activity';
+import { endThinking, stepThinking, type LiveThinking } from './engine-reasoning';
 import { acceptPreview, type PreviewPosition } from './engine-text-preview';
 
 /** The one command a page is waiting on: the dispatch identity its send was issued. */
@@ -18,10 +19,14 @@ export interface LiveReply {
   text: string;
   position: PreviewPosition;
   activity: ActivityState | null;
+  /** When the started frame arrived, for how long the engine thought. */
+  startedAt: number;
+  /** The engine's thinking, shown above the reply until the saved answer replaces it. */
+  thinking: LiveThinking | null;
 }
 
 export type LiveEvent =
-  | { type: 'engine-text' | 'engine-activity'; data: unknown }
+  | { type: 'engine-text' | 'engine-activity' | 'engine-reasoning'; data: unknown }
   /** The events stream dropped: text frames may have been missed. */
   | { type: 'lost' };
 
@@ -36,12 +41,14 @@ const record = (value: unknown): value is Frame =>
  * when the event arrived, and null once it is waiting on nothing: a frame for any other
  * project, thread, command or run is dropped, and so is whatever was showing for a command the
  * page has moved on from. A missed text frame loses the preview (the durable answer replaces
- * it); tool lines keep going, since they are narration.
+ * it); tool lines keep going, since they are narration. Thinking rides the same run and folds
+ * at the first answer text; a lost stream loses it too.
  */
 export function stepLiveReply(
   state: LiveReply | null,
   binding: LiveBinding | null,
   event: LiveEvent,
+  now: number = Date.now(),
 ): LiveReply | null {
   if (!binding) return null;
   const current =
@@ -51,10 +58,16 @@ export function stepLiveReply(
     state.requestId === binding.requestId
       ? state
       : null;
-  if (event.type === 'lost')
-    return current && current.position !== 'lost'
-      ? { ...current, position: 'lost', text: '' }
+  if (event.type === 'lost') {
+    if (!current) return current;
+    const thinking =
+      current.thinking && current.thinking.position !== 'lost'
+        ? { ...current.thinking, position: 'lost' as const, text: '' }
+        : current.thinking;
+    return current.position !== 'lost' || thinking !== current.thinking
+      ? { ...current, position: 'lost', text: '', thinking }
       : current;
+  }
   const data = event.data;
   if (
     !record(data) ||
@@ -68,6 +81,11 @@ export function stepLiveReply(
     const activity = acceptActivity(current.activity, data);
     return activity === current.activity ? current : { ...current, activity };
   }
+  if (event.type === 'engine-reasoning') {
+    if (!current || data.runId !== current.runId) return current;
+    const thinking = stepThinking(current.thinking, data, current.startedAt);
+    return thinking === current.thinking ? current : { ...current, thinking };
+  }
   if (data.kind === 'started') {
     // The first run to start owns the reply; a second started frame changes nothing.
     if (current || typeof data.runId !== 'string' || !data.runId) return current;
@@ -77,6 +95,8 @@ export function stepLiveReply(
       text: '',
       position: null,
       activity: null,
+      startedAt: now,
+      thinking: null,
     };
   }
   if (!current || data.runId !== current.runId) return current;
@@ -85,7 +105,7 @@ export function stepLiveReply(
     if (accepted.kind === 'ignore') return current;
     if (accepted.kind === 'discard') return { ...current, position: 'lost', text: '' };
     const text = (current.text + accepted.text).slice(0, MAX_LIVE_CHARS);
-    return { ...current, position: accepted.cursor, text };
+    return { ...current, position: accepted.cursor, text, thinking: endThinking(current.thinking, now) };
   }
   // `ended` keeps what streamed on screen until the page reads the recorded answer.
   return current;

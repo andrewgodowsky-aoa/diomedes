@@ -574,6 +574,8 @@ export async function admitJobStep(input: {
 export interface StreamSinks {
   onDelta?: (text: string) => void;
   onToolActivity?: (raw: RawToolActivity) => void;
+  /** Raw thinking chunks. A preview only; never the answer. */
+  onReasoningDelta?: (text: string) => void;
 }
 
 /**
@@ -851,6 +853,14 @@ export async function respondStream(input: {
             input.onDelta?.(part.text);
           } catch {
             // The preview sink records its own contract failures.
+          }
+      } else if (part.type === 'reasoning-delta') {
+        // Thinking is a preview only: never the answer, never a failure.
+        if (part.text && !signal.aborted)
+          try {
+            input.onReasoningDelta?.(part.text);
+          } catch {
+            // The thinking sink drops what it cannot carry.
           }
       } else if (part.type === 'tool-call') {
         if (part.invalid || !offered.has(part.toolName) || signal.aborted) continue;

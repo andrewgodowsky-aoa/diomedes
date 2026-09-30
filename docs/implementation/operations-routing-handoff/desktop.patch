@@ -1,0 +1,262 @@
+diff --git a/server/app.ts b/server/app.ts
+--- a/server/app.ts
++++ b/server/app.ts
+@@ -8,6 +8,8 @@
+ import { browserSignIn } from './accounts/deployment.js';
+ import { mountAccountSessionRoutes } from './accounts/routes.js';
+ import { AccountSessionService } from './accounts/session.js';
++import { AccountRoutingSession } from './accounts/routing-session.js';
++import { routingPreferenceWriteSchema } from '../shared/routing-policy.js';
+ import { mountPhoneRelayRoutes } from './relay/routes.js';
+ import { PhoneRelayService } from './relay/service.js';
+ import { createObservation, type ObservationOptions } from './observability/runtime.js';
+@@ -819,6 +821,7 @@
+         options.accounts.identity && signInExpected ? { identity: options.accounts.identity, expect: signInExpected } : null,
+       )
+     : null;
++  const accountRouting = accountSession ? new AccountRoutingSession(accountSession, workspaces) : null;
+   // "Reach this computer from your phone": outbound only, and only while the setting is on.
+   const phoneRelay = accountSession ? new PhoneRelayService(accountSession, store.dataDir, options.secretBox ?? null) : null;
+   // Built before the account session starts, so a resumed sign-in is already seen by it.
+@@ -841,10 +844,13 @@
+     // Each business's setup is then read from the account service, outside the lock, and
+     // awaited, so the first view after a sign-in shows the business's setup as it stands.
+     accountSession.onProjection(async (projection) => {
++      accountRouting!.invalidate();
+       await store.locked(() => workspaces.project(projection));
+       observation?.scopes.observeContext();
+       void phoneRelay?.sync();
+       await workspaces.refreshSetups();
++      // Refresh outside the store lock. Sign-out clears the cache and sends nothing.
++      await accountRouting!.refreshAccess();
+     });
+     // Signing out, switching accounts or forgetting one removes this computer's phone access first.
+     accountSession.onRelease((personId, signedIn) => phoneRelay!.release(personId, signedIn));
+@@ -858,7 +864,7 @@
+     const testAccount = env.DIOMEDES_TEST_MODE === '1' ? (env.DIOMEDES_TEST_ACCOUNT ?? '').trim() : '';
+     if (testAccount && !accountSession.signedIn())
+       await accountSession.signIn({ email: testAccount, password: FAUX_DEMO_PASSWORD, remember: false });
+-    engines.agentGate = new AccountAgentGate(accountSession, workspaces);
++    engines.agentGate = new AccountAgentGate(accountSession, workspaces, accountRouting!);
+   }
+   if (observation) engines.observation = observation.scopes;
+   const agentGate = engines.agentGate instanceof AccountAgentGate ? engines.agentGate : null;
+@@ -874,9 +880,10 @@
+           base: accountSession.backend.client.base,
+           signedIn: () => accountSession.signedIn(),
+           token: () => accountSession.token(),
+-          policy: () => accountSession.policy(),
+-          refreshPolicy: () => accountSession.refreshPolicy(),
+-          organizationFor: (projectId) => agentGate.organizationFor(projectId),
++          policy: (projectId = null) => accountRouting!.policy(projectId),
++          refreshPolicy: (projectId = null) => accountRouting!.refresh(projectId),
++          organizationFor: (projectId) => accountRouting!.scopeFor(projectId)?.id ?? null,
++          scopeFor: (projectId) => accountRouting!.scopeFor(projectId),
+           fetch: (input, init) => accountSession.backend.client.send(new Request(input, init)),
+         }
+       : null;
+@@ -1469,9 +1476,13 @@
+   harness.loop.attachVerification(verification);
+   // H14: team roles resolve their H09 profiles and Agents at admission; H08 retries a loop.
+   const loopRoutes = mountNativeLoopRoutes(app, store, harness, verification, { profiles: agentProfiles, agents }, ownerRules, {
+-    resolveManaged: (projectId, taskId) => managedLoopChoice(projectId, taskId),
+-    readOnly: (projectId) => {
+-      try {
++    resolveManaged: async (projectId, taskId) => {
++      await accountRouting?.refresh(projectId);
++      return managedLoopChoice(projectId, taskId);
++    },
++    readOnly: async (projectId) => {
++      try {
++        await accountRouting?.refresh(projectId);
+         return { admitted: true, model: managedLoopChoice(projectId).model, reason: null };
+       } catch (error) {
+         return { admitted: false, model: null, reason: error instanceof Error ? error.message : 'Nectovia is unavailable.' };
+@@ -2681,6 +2692,7 @@
+     }
+     const command = parseWorkCommand(supplied);
+     const b = command?.request ?? supplied;
++    if (b.route === NECTOVIA_ROUTE && nectoviaAccount?.signedIn()) await nectoviaAccount.refreshPolicy(projectId);
+     const state = store.state(projectId);
+     const taskId = asString(b.taskId, 'a task', 100);
+     const requestedTask = state.tasks.find((task) => task.id === taskId && !task.deletedAt);
+@@ -3578,16 +3590,17 @@
+   const managedLoopChoice = (projectId: string, taskId?: string) => {
+     const accountRoute = nectoviaAccountFor(projectId);
+     const organizationId = nectoviaAccount!.organizationFor(projectId)!;
+-    const entitlement = accountSession?.entitlement(organizationId);
+-    if (!entitlement?.agent)
+-      throw new EngineError(AGENT_NOT_INCLUDED, entitlement?.reason || 'This business does not include the Nectovia Agent.', false);
+-    if (!entitlement.managedInference)
+-      throw new EngineError(AGENT_NOT_INCLUDED, 'This business does not include managed AI usage.', false);
++    const scope = accountRouting?.scopeFor(projectId);
++    const entitlement = scope?.kind === 'organization' ? accountSession?.entitlement(organizationId) : null;
++    if (!scope || !accountRouting?.includes(scope, 'nectovia-agent'))
++      throw new EngineError(AGENT_NOT_INCLUDED, entitlement?.reason || 'This account does not include the Nectovia Agent.', false);
++    if (!accountRouting.includes(scope, 'managed-inference'))
++      throw new EngineError(AGENT_NOT_INCLUDED, 'This account does not include managed AI usage.', false);
+     const thread = taskId ? store.state(projectId).conversations.find((item) => item.taskId === taskId) : undefined;
+     const tier = nectoviaTier({
+       style: jobCaps.tierFor(projectId, thread?.id ?? null),
+       signedIn: nectoviaAccount?.signedIn() ?? false,
+-      policy: nectoviaAccount?.policy() ?? null,
++      policy: nectoviaAccount?.policy(projectId) ?? null,
+     });
+     if (tier.outcome !== 'run' || !tier.model) throw new ApiError(409, tier.reason);
+     return { model: tier.model, accountRoute };
+@@ -3676,7 +3689,7 @@
+       return nectoviaTier({
+         style: jobTierOf(styleOf(conversation)),
+         signedIn: nectoviaAccount?.signedIn() ?? false,
+-        policy: nectoviaAccount?.policy() ?? null,
++        policy: nectoviaAccount?.policy(projectId) ?? null,
+         text: options.text ?? null,
+       });
+     if (conversation?.requested?.model) return null;
+@@ -3891,12 +3904,28 @@
+    * account service's published policy; why a message would be refused, if it would; and
+    * whether AI setup shows the owner's own provider routes. Read-only.
+    */
++  app.get('/api/account/routing', route(async (req) => {
++    if (!accountRouting) throw new ApiError(503, 'The account service is not available.');
++    const projectId = typeof req.query.project === 'string' ? req.query.project : null;
++    if (projectId) store.state(projectId);
++    return accountRouting.preference(projectId);
++  }, false));
++  app.post('/api/account/routing', route(async (req) => {
++    if (!accountRouting) throw new ApiError(503, 'The account service is not available.');
++    const projectId = typeof req.query.project === 'string' ? req.query.project : null;
++    if (projectId) store.state(projectId);
++    const input = routingPreferenceWriteSchema.safeParse(body(req));
++    if (!input.success) throw new ApiError(400, 'Review the routing preference and explicitly accept its privacy limits.');
++    return accountRouting.accept(projectId, input.data);
++  }, false));
+   app.get(
+     '/api/ai/nectovia',
+-    route(async (): Promise<NectoviaRouteView> => {
++    route(async (req): Promise<NectoviaRouteView> => {
++      const projectId = typeof req.query.project === 'string' ? req.query.project : null;
++      if (projectId) store.state(projectId);
+       const signedIn = nectoviaAccount?.signedIn() ?? false;
+       const policy = signedIn
+-        ? (nectoviaAccount!.policy() ?? (await nectoviaAccount!.refreshPolicy()))
++        ? await nectoviaAccount!.refreshPolicy(projectId)
+         : null;
+       return {
+         route: NECTOVIA_ROUTE,
+@@ -4551,8 +4580,11 @@
+     return false;
+   };
+   const interactionHost: InteractionHost = {
+-    resolve: (projectId, threadId, command, options) =>
+-      store.locked(async () => {
++    resolve: async (projectId, threadId, command, options) => {
++      const thread = store.state(projectId).conversations.find(item => item.id === threadId);
++      if (routed(projectId, thread)?.engine === NECTOVIA_ROUTE && nectoviaAccount?.signedIn())
++        await nectoviaAccount.refreshPolicy(projectId);
++      return store.locked(async () => {
+         // The runs of this thread this build could not read, found while the command is located.
+         const unreadable = new Set<string>();
+         const locateAny = conversationLocator(unreadable);
+@@ -4641,8 +4673,7 @@
+         // applies; a tier whose route cannot run is refused by name before anything is sent.
+         // A Nectovia conversation's model is the published policy's; when this session has not
+         // read one yet, it asks once before the tier resolves.
+-        if (routed(projectId, thread).engine === NECTOVIA_ROUTE && nectoviaAccount?.signedIn() && !nectoviaAccount.policy())
+-          await nectoviaAccount.refreshPolicy();
++        // The account's routing snapshot was refreshed before entering the store lock.
+         const conversationRoute = threadRoute(projectId, thread, {
+           mode: command.mode,
+           text: command.text,
+@@ -4965,7 +4996,8 @@
+             onReasoning: (frame: ReasoningPreview) => store.emit('engine-reasoning', frame),
+           },
+         };
+-      }),
++      });
++    },
+     answerFormat: (projectId, threadId, commandId, guard) =>
+       store.locked(async () => {
+         // Clone first, as `resolve` does: a failed persist must leave nothing half retired.
+diff --git a/server/engines/service.ts b/server/engines/service.ts
+--- a/server/engines/service.ts
++++ b/server/engines/service.ts
+@@ -2265,9 +2265,9 @@
+       throw new EngineError('ROUTE_REFUSED', 'This work has no job Nectovia can meter it under. Nothing was sent.', true);
+     const tier = await this.managedTier(input);
+     const label = WORK_STYLE_LABELS[tier];
+-    let policy = account.policy();
+-    if (!policy || policy.revision !== admitted.policyRevision)
+-      policy = (await account.refreshPolicy().catch(() => null)) ?? policy;
++    let policy = account.policy(input.projectId ?? null);
++    if (!policy || policy.revision !== admitted.policyRevision)
++      policy = await account.refreshPolicy(input.projectId ?? null);
+     if (!policy) throw new EngineError('ROUTE_REFUSED', NECTOVIA_UNAVAILABLE, true);
+     const published = policy.tiers[tier];
+     if (!published)
+@@ -2281,12 +2281,14 @@
+     const managed: ManagedAdmission = {
+       admissionId: admitted.admissionId,
+       organizationId: admitted.organizationId,
++      scope: admitted.scope,
++      routing: policy.resolved,
+       policyRevision: policy.revision,
+       tier,
+       usageClass: usageClassFor(admitted.surface),
+       rootJobId,
+     };
+-    const handle = await modelApiRoute(api, NECTOVIA_ROUTE, { managed });
++    const handle = await modelApiRoute(api, NECTOVIA_ROUTE, { managed, projectId: input.projectId });
+     if (!handle.connected) throw new EngineError(AGENT_SIGN_IN_REQUIRED, NECTOVIA_SIGN_IN, false);
+     if (handle.accountRoute !== input.accountRoute)
+       throw new EngineError('ACCOUNT_CHANGED', 'This conversation belongs to another business. Send the message again from this one.');
+@@ -3039,7 +3041,10 @@
+       if (!services || !account?.signedIn() || !organizationId) return { connected: false, route, names };
+       const now = services.now ?? (() => new Date());
+       const connectionId = nectoviaConnectionId(organizationId, now());
+-      const published = Object.values(account.policy()?.tiers ?? {}).flatMap((entry) => (entry ? [entry.model] : []));
++      const policy = work.managed?.routing ? { revision: work.managed.routing.revision, tiers: work.managed.routing.tiers, resolved: work.managed.routing }
++        : account.policy(work.projectId ?? null);
++      const scopedAccount = { policy: () => account.policy(work.projectId ?? null), refreshPolicy: () => account.refreshPolicy(work.projectId ?? null) };
++      const published = Object.values(policy?.tiers ?? {}).flatMap((entry) => (entry ? [entry.model] : []));
+       const managed = () => {
+         if (!work.managed)
+           throw new EngineError('ROUTE_REFUSED', 'This Nectovia call has no admission, so nothing was sent.', true);
+@@ -3062,7 +3067,7 @@
+         expiresAt: null,
+         serving: [...new Set(published)].join(', ') || 'no published model',
+         serves: (model) => published.includes(model),
+-        card: (model) => nectoviaRateCard(model),
++        card: (model) => nectoviaRateCard(model, policy),
+         credential: {
+           check: async () => (account.signedIn() ? null : NECTOVIA_SIGN_IN),
+           open: async () => {
+@@ -3075,12 +3080,12 @@
+         adapter: (options) =>
+           createNectoviaModelAdapter({
+             base: account.base,
+-            account,
++            account: scopedAccount,
+             connectionId,
+             model: options.model,
+             managed: managed(),
+             token: options.secret,
+-            card: nectoviaRateCard(options.model),
++            card: nectoviaRateCard(options.model, policy),
+             // This route's `exposure()` is the local ledger itself, so what arrives is one.
+             exposure: options.exposure as SpendExposure,
+             transcripts: services.transcripts,
+@@ -3093,11 +3098,11 @@
+         respond: ({ sinks, secret, transport: given, ...options }) =>
+           respondNectovia({
+             base: account.base,
+-            account,
++            account: scopedAccount,
+             connectionId,
+             managed: managed(),
+             token: secret,
+-            card: nectoviaRateCard(options.model),
++            card: nectoviaRateCard(options.model, policy),
+             transport: transport(given),
+             now,
+             ...options,

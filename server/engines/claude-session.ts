@@ -416,6 +416,9 @@ export class ClaudeNativeSession {
           const delta = record(record(frame.event).delta);
           if (delta.type === 'text_delta' && typeof delta.text === 'string')
             input.onDelta?.(delta.text);
+          // Thinking has its own channel and never joins the answer.
+          else if (delta.type === 'thinking_delta' && typeof delta.thinking === 'string')
+            input.onReasoningDelta?.(delta.thinking);
         }
         if (frame.type !== 'result') continue;
         if (typeof frame.uuid !== 'string')

@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs/promises';
+import { readFileSync, readdirSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 // @ts-expect-error The desktop packaging entry is an executable JavaScript module.
 import { packageDesktop } from '../scripts/package-desktop.mjs';
 import { deploymentFromWrangler } from '../server/accounts/deployment.js';
@@ -34,7 +36,7 @@ async function fixture() {
     'fixtures/harness',
     'licenses', 'resources',
     'dist',
-    'scripts',
+    'scripts/release-support',
     'node_modules/electron',
     '.data/native-runtime',
     'electron-zips',
@@ -50,7 +52,8 @@ async function fixture() {
     'fixtures/harness/report-lines.txt',
     'LICENSE',
     'package-lock.json',
-    'scripts/package-desktop.mjs', 'scripts/build-desktop-auth.mjs',
+    'scripts/package-desktop.mjs', 'scripts/build-desktop-auth.mjs', 'scripts/collect-package-notices.mjs',
+    'scripts/release-support/verify-native-publisher.mjs', 'scripts/release-support/acquire-native-runtime.mjs',
     'dist/index.html',
   ])
     await fs.writeFile(path.join(root, file), `fixture ${file}`);
@@ -90,7 +93,7 @@ async function fixture() {
       return [output];
     },
   );
-  const git = vi.fn((_command: string, args: string[]) =>
+  const git = vi.fn((_command: string, args: string[]): string =>
     args[0] === 'rev-parse' ? '80263205133c410d590549efd1c8f40cedf33b1c\n' : '',
   );
   return {
@@ -107,6 +110,75 @@ async function fixture() {
 }
 
 describe('FD01 same desktop packaging entry point', () => {
+  async function windowsRuntime(root: string) {
+    const hashes: Record<string, string> = {};
+    for (const name of ['codex.exe', 'codex-command-runner.exe', 'codex-windows-sandbox-setup.exe']) {
+      const bytes = 'future runtime: ' + name;
+      await fs.writeFile(path.join(root, '.data/native-runtime', name), bytes);
+      hashes[name] = createHash('sha256').update(bytes).digest('hex');
+    }
+    await fs.writeFile(path.join(root, '.data/native-runtime/manifest.json'), JSON.stringify({
+      version: '99.0.0', files: Object.entries(hashes).map(([name, sha256]) => ({ name, sha256 })),
+    }));
+    return { version: '99.0.0', hashes };
+  }
+  async function notices(root: string, runtime: { version: string; hashes: Record<string, string> }) {
+    const hashes: Record<string, string> = {};
+    for (const name of ['codex-LICENSE.txt', 'codex-NOTICE.txt', 'THIRD_PARTY_NOTICES.md', 'DEPENDENCIES.txt']) {
+      const bytes = 'notice for ' + runtime.version + ': ' + name;
+      await fs.writeFile(path.join(root, 'licenses', name), bytes);
+      hashes[name] = createHash('sha256').update(bytes).digest('hex');
+    }
+    await fs.writeFile(path.join(root, 'licenses/NATIVE_RUNTIME.json'), JSON.stringify({ ...runtime, notices: hashes }));
+  }
+
+  it('generates verified notices privately while preserving committed checkout inputs', async () => {
+    const { root, deps } = await fixture();
+    const runtime = await windowsRuntime(root);
+    await notices(root, { ...runtime, version: '0.153.4' });
+    const licenseSnapshot = () => JSON.stringify(readdirSync(path.join(root, 'licenses')).sort()
+      .map(name => [name, readFileSync(path.join(root, 'licenses', name), 'utf8')]));
+    const before = licenseSnapshot();
+    deps.git.mockImplementation((_command, args) => args[0] === 'rev-parse'
+      ? '80263205133c410d590549efd1c8f40cedf33b1c\n'
+      : licenseSnapshot() === before ? '' : ' M licenses/THIRD_PARTY_NOTICES.md\n');
+    const collectNotices = vi.fn(async (output: string) => {
+      expect(output).not.toBe(path.join(root, 'licenses'));
+      await notices(path.dirname(output), runtime);
+    });
+    deps.packager.mockImplementationOnce(async (options) => {
+      expect(collectNotices).toHaveBeenCalledOnce();
+      expect(await fs.readFile(path.join(options.dir, 'licenses/codex-NOTICE.txt'), 'utf8')).toContain('99.0.0');
+      expect(await fs.readdir(options.extraResource[0])).toEqual(Object.keys(runtime.hashes).sort());
+      const output = path.join(root, 'release/Diomedes-win32-x64');
+      await fs.mkdir(output, { recursive: true });
+      return [output];
+    });
+    await packageDesktop({ root, hostPlatform: 'win32', hostArch: 'x64' }, {
+      ...deps, collectNotices, verifyNativePublisher: async () => {},
+    });
+    expect(deps.packager).toHaveBeenCalledOnce();
+    expect(licenseSnapshot()).toBe(before);
+    const info = JSON.parse(await fs.readFile(path.join(root, 'evidence/windows-release/build-info.json'), 'utf8'));
+    expect(info.sourceStatus).toBe('committed');
+    expect(info.nativeRuntime.notices['codex-NOTICE.txt']).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it.each(['stale', 'changed'] as const)('refuses %s runtime notices before bundling', async (condition) => {
+    const { root, deps } = await fixture();
+    const runtime = await windowsRuntime(root);
+    const collectNotices = vi.fn(async (output: string) => {
+      await notices(path.dirname(output), condition === 'stale' ? { ...runtime, version: '0.153.4' } : runtime);
+      if (condition === 'changed') await fs.writeFile(path.join(output, 'codex-LICENSE.txt'), 'changed after collection');
+    });
+    await expect(packageDesktop({ root, hostPlatform: 'win32', hostArch: 'x64' }, {
+      ...deps, collectNotices, verifyNativePublisher: async () => {},
+    }))
+      .rejects.toThrow(condition === 'stale' ? 'do not match the selected snapshot' : 'notice verification failed');
+    expect(deps.build).not.toHaveBeenCalled();
+    expect(deps.packager).not.toHaveBeenCalled();
+  });
+
   it('stages the real source path for darwin/arm64 without Windows runtime carry-over', async () => {
     const { root, deps, options } = await fixture();
     await packageDesktop(options, deps);
@@ -231,9 +303,21 @@ describe('FD01 same desktop packaging entry point', () => {
   it('keeps the default Windows runtime hash gate before bundling or packaging', async () => {
     const { root, deps } = await fixture();
     await fs.writeFile(path.join(root, '.data/native-runtime/codex.exe'), 'unverified executable');
+    await fs.writeFile(path.join(root, '.data/native-runtime/manifest.json'), JSON.stringify({
+      version: '999.1.0', files: ['codex.exe', 'codex-command-runner.exe', 'codex-windows-sandbox-setup.exe']
+        .map(name => ({ name, sha256: 'a'.repeat(64) })),
+    }));
     await expect(
       packageDesktop({ root, hostPlatform: 'win32', hostArch: 'x64' }, deps),
     ).rejects.toThrow('Native runtime hash mismatch: codex.exe');
+    expect(deps.build).not.toHaveBeenCalled();
+    expect(deps.packager).not.toHaveBeenCalled();
+  });
+
+  it('refuses matching but unsigned runtime bytes before any build or packaging work', async () => {
+    const { root, deps } = await fixture();
+    await windowsRuntime(root);
+    await expect(packageDesktop({ root, hostPlatform: 'win32', hostArch: 'x64' }, deps)).rejects.toThrow(/publisher/);
     expect(deps.build).not.toHaveBeenCalled();
     expect(deps.packager).not.toHaveBeenCalled();
   });

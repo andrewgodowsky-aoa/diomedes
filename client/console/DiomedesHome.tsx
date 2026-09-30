@@ -41,7 +41,14 @@ import { NECTOVIA_ROUTE, type NectoviaRouteView } from '../../shared/model-api';
 import { SIGN_IN_REQUIRED_EVENT, useAccount } from '../AccountGate';
 import { AccountPlanNotice } from './FreePlanNotice';
 import { readThreadRoute } from './thread-send';
-import type { Conversation, Project, ProjectState, Route, Turn } from '../../shared/types';
+import type {
+  Conversation,
+  Project,
+  ProjectState,
+  Route,
+  Turn,
+  WaitingItem,
+} from '../../shared/types';
 import type { WorkStyle } from '../../shared/work-style';
 import { Diomedes } from './Diomedes';
 import {
@@ -55,6 +62,7 @@ import { HomeHistorySharing } from './HomeHistorySharing';
 import { JobCapWarning } from './JobCapWarning';
 import { ThreadMenu } from './ThreadMenu';
 import { NativeSessionControls } from './NativeSessionControls';
+import { ThreadManagedRoutingDetails } from './ManagedRoutingReceipt';
 import { readRecordedArtifacts } from './artifact-evidence';
 import { stepLiveReply, type LiveBinding, type LiveEvent, type LiveReply } from './live-reply';
 import { saveArtifact } from './artifact-save';
@@ -89,6 +97,8 @@ export interface DiomedesHomeProps {
   onNewProject(): void;
   /** Go to the project where work that started is running. */
   onOpenWork(projectId: string): void;
+  /** Open one thing waiting on the person where it is decided (the brief's named items). */
+  onOpenWaiting?(projectId: string, item: WaitingItem): void;
   /** The person's detail level. Technical also shows each tool call's tool and detail. */
   detail?: 'guided' | 'standard' | 'technical';
   /**
@@ -293,7 +303,7 @@ export function DiomedesHome(props: DiomedesHomeProps) {
       if (!bound) return;
       setLive((prev) => stepLiveReply(prev, bound, event));
     };
-    const frame = (type: 'engine-text' | 'engine-activity') => (ev: Event) => {
+    const frame = (type: 'engine-text' | 'engine-activity' | 'engine-reasoning') => (ev: Event) => {
       let data: unknown;
       try {
         data = JSON.parse((ev as MessageEvent).data);
@@ -304,11 +314,13 @@ export function DiomedesHome(props: DiomedesHomeProps) {
     };
     const onText = frame('engine-text');
     const onActivity = frame('engine-activity');
+    const onReasoning = frame('engine-reasoning');
     // A reconnect replays nothing, so a missed text frame loses the preview; the recorded
     // answer still replaces it.
     const onLost = () => step({ type: 'lost' });
     es.addEventListener('engine-text', onText);
     es.addEventListener('engine-activity', onActivity);
+    es.addEventListener('engine-reasoning', onReasoning);
     es.addEventListener('error', onLost);
     return () => es.close();
   }, []);
@@ -848,7 +860,7 @@ export function DiomedesHome(props: DiomedesHomeProps) {
         }}
         turns={turns}
         pending={pending}
-        live={live ? { text: live.text, activity: live.activity?.lines ?? [] } : null}
+        live={live ? { text: live.text, activity: live.activity?.lines ?? [], thinking: live.thinking } : null}
         technical={props.detail === 'technical'}
         restriction={restriction}
         onRestriction={setRestriction}
@@ -886,19 +898,33 @@ export function DiomedesHome(props: DiomedesHomeProps) {
         plan={<AccountPlanNotice />}
         brief={
           props.scheme === 'nectovia' ? (
-            <HomeBrief projects={projects} onOpen={props.onOpenWork} />
+            <HomeBrief
+              projects={projects}
+              onOpen={props.onOpenWork}
+              onOpenWaiting={props.onOpenWaiting}
+            />
           ) : undefined
         }
         art={props.scheme === 'nectovia' ? <HomeArt /> : undefined}
         session={
           binding ? (
-            <NativeSessionControls
-              projectId={binding.projectId}
-              threadId={binding.threadId}
-              mode={modeFor(restriction)}
-              answering={pending}
-              onAnswered={() => void reread(binding)}
-            />
+            <>
+              <NativeSessionControls
+                projectId={binding.projectId}
+                threadId={binding.threadId}
+                mode={modeFor(restriction)}
+                answering={pending}
+                onAnswered={() => void reread(binding)}
+              />
+              {turns.length > 0 && (
+                <ThreadManagedRoutingDetails
+                  key={`${binding.projectId}/${binding.threadId}`}
+                  projectId={binding.projectId}
+                  threadId={binding.threadId}
+                  refreshKey={`${turns.length}:${pending}`}
+                />
+              )}
+            </>
           ) : undefined
         }
         menu={

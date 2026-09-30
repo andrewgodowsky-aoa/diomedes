@@ -16,7 +16,7 @@ const FETCH_TIMEOUT_MS = 2500;
 export const HERMES_URL = 'http://127.0.0.1:8642/';
 export const OLLAMA_TAGS_URL = 'http://127.0.0.1:11434/api/tags';
 
-const VERSION_PATTERN = /\d+\.\d+(?:\.\d+)?/;
+const VERSION_PATTERN = /\d+\.\d+(?:\.\d+)?(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?/;
 
 const NO_START_DISCLOSURE = 'Diomedes does not start this service or send anything to it.';
 
@@ -39,7 +39,7 @@ export interface DiscoveryDeps {
 export interface DiscoveryResult {
   engines: IntegrationStatus[];
   codexInstalledVersion?: string;
-  /** Installed Codex is an observation, never a replacement for the proven bundled route. */
+  /** Installed Codex observation; native dispatch separately proves its active runtime. */
   codex?: IntegrationStatus;
 }
 

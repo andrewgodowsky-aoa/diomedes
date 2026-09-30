@@ -1,4 +1,5 @@
-import { test, expect, type Page, type Route } from '@playwright/test';
+import { test, expect, type Page, type Request, type Route } from '@playwright/test';
+import type { IntegrationStatus } from '../shared/types';
 
 /**
  * The Google Vertex AI card in Settings › Engines, against host views served from
@@ -139,6 +140,113 @@ async function openEngines(page: Page) {
   await expect(card, 'the Vertex card is mounted in AI setup').toBeVisible();
   return card;
 }
+
+test('slow engine catalogues leave room for Settings and stop queued checks when Settings closes', async ({ page }) => {
+  const engines = ['claude-code', 'codex', 'opencode', 'oh-my-pi', 'cursor', 'devin'];
+  const previous = await page.request.get('/api/settings');
+  expect(previous.ok()).toBe(true);
+  const previousCodex = (await previous.json()).services?.codex ?? false;
+  const response = await page.request.get('/api/integrations');
+  expect(response.ok()).toBe(true);
+  const roster = await response.json() as { integrations: IntegrationStatus[] };
+  roster.integrations = roster.integrations.map<IntegrationStatus>((item) => engines.includes(item.id)
+    ? { ...item, found: true, available: true, adapter: 'ready', status: 'Ready', signIn: 'signed-in' }
+    : { ...item, found: false, available: false, adapter: 'none', status: 'Not installed' })
+    .sort((left, right) => engines.indexOf(left.id) - engines.indexOf(right.id));
+  await page.route(/\/api\/integrations(?:\?.*)?$/, (route) => route.fulfill({ json: roster }));
+  await page.route(BASE, (route) => route.fulfill({ json: detected }));
+
+  const pending = new Map<Request, { engine: string; release: () => void; reject: () => void }>();
+  const cancelled = new Set<Request>();
+  const handlers = new Set<Promise<void>>();
+  const started = new Set<string>();
+  const releaseAll: (() => void)[] = [];
+  let closing = false;
+  const observeStart = (request: Request) => {
+    const match = new URL(request.url()).pathname.match(/^\/api\/engines\/([^/]+)\/models$/);
+    if (match) started.add(match[1]);
+  };
+  const observeFailure = (request: Request) => {
+    cancelled.add(request);
+    pending.delete(request);
+  };
+  page.on('request', observeStart);
+  page.on('requestfailed', observeFailure);
+  const serveCatalogue = async (route: Route) => {
+    const request = route.request();
+    const engine = new URL(request.url()).pathname.split('/')[3];
+    let release!: () => void;
+    let fail = false;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    releaseAll.push(release);
+    pending.set(request, { engine, release, reject: () => { fail = true; release(); } });
+    if (closing) release();
+    await held;
+    pending.delete(request);
+    try {
+      if (fail) await route.abort('failed');
+      else await route.fulfill({ json: {
+        engine,
+        models: [{ slug: 'fixture-model', name: 'Ready fixture model', description: '', defaultEffort: null, efforts: [] }],
+        detail: 'Held fixture catalogue.',
+      } });
+    } catch (error) {
+      if (!cancelled.has(request)) throw error;
+    }
+  };
+  await page.route('**/api/engines/*/models', async (route) => {
+    const handler = serveCatalogue(route);
+    handlers.add(handler);
+    try { await handler; } finally { handlers.delete(handler); }
+  });
+  try {
+    const enabled = await page.request.put('/api/settings', {
+      headers: { 'X-Diomedes-Client': '1' }, data: { services: { codex: true } },
+    });
+    expect(enabled.ok()).toBe(true);
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Settings', exact: true }).click();
+    // Assert scheduling before opening Engines, so RED names the request burst.
+    await expect.poll(() => pending.size).toBe(2);
+    expect([...pending.values()].map((item) => item.engine).sort()).toEqual(['claude-code', 'codex']);
+    await page.getByRole('button', { name: /^(Engines|Helpers on this computer)$/ }).click();
+    const advanced = page.locator('details').filter({ has: page.locator('summary', { hasText: 'Advanced: provider accounts and routing' }) });
+    await expect(advanced).not.toHaveAttribute('open');
+    await advanced.locator(':scope > summary').click();
+    // The owner view and card load while native discovery is still pending.
+    await expect(page.getByRole('region', { name: 'Google Vertex AI' })).toBeVisible();
+    // Either worker can advance; the second must not wait for the first.
+    [...pending.values()].find((item) => item.engine === 'codex')!.release();
+    await expect.poll(() => [...pending.values()].some((item) => item.engine === engines[2])).toBe(true);
+    expect([...pending.values()].some((item) => item.engine === 'claude-code')).toBe(true);
+    await expect(page.getByLabel('Default choice')).toContainText('Ready fixture model');
+    expect(started.size).toBe(3);
+    [...pending.values()].find((item) => item.engine === engines[2])!.reject();
+    await expect.poll(() => [...pending.values()].some((item) => item.engine === engines[3])).toBe(true);
+    expect(started.size).toBe(4);
+
+    closing = true;
+    await page.getByRole('button', { name: 'Projects', exact: true }).click();
+    await expect.poll(() => pending.size).toBe(0);
+    for (const release of releaseAll) release();
+    await Promise.all(handlers);
+    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+    expect(started.size).toBe(4);
+  } finally {
+    closing = true;
+    // Stop fetch producers while interception still owns every catalogue URL.
+    await page.goto('about:blank');
+    for (const release of releaseAll) release();
+    await Promise.all(handlers);
+    page.off('request', observeStart);
+    page.off('requestfailed', observeFailure);
+    await page.unrouteAll({ behavior: 'wait' });
+    const restored = await page.request.put('/api/settings', {
+      headers: { 'X-Diomedes-Client': '1' }, data: { services: { codex: previousCodex } },
+    });
+    expect(restored.ok()).toBe(true);
+  }
+});
 
 test('managed usage stays preferred in Engines and Account, with commercial credentials under Advanced', async ({ page }) => {
   await page.route(BASE, (route) => route.fulfill({ json: detected }));

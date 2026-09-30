@@ -130,6 +130,24 @@ export interface Settings {
   /** Plain writing: phrases the owner added to the shipped list (shared/plain-writing-rules.json). */
   plainWritingPhrases?: string[];
 }
+/**
+ * One thing waiting on the person, by name: an approval, work to review, or a run that failed
+ * or went wrong. `shared/needs-you.ts` decides what counts. A project's status carries the
+ * newest few, so the home can name them without loading every project.
+ */
+export interface WaitingItem {
+  /** `need:<id>` or `task:<id>`. */
+  id: string;
+  kind: 'approval' | 'review' | 'failed';
+  /** The task's name, or the Need's own words when it has no task. */
+  label: string;
+  detail: string;
+  taskId?: string;
+  needId?: string;
+  sessionId?: string;
+  /** ISO time the item is dated by, or '' when no record carries one. */
+  at: string;
+}
 export interface Project {
   ai?: { engine: Route; model: string | null };
   id: string;
@@ -141,7 +159,14 @@ export interface Project {
   references: string[];
   repository: { present: boolean };
   counts: { running: number; changesWaiting: number; waitingForYou: number; historyToday: number };
-  status: { needsYou: number; working: number; tasksDone: number; tasksTotal: number };
+  status: {
+    needsYou: number;
+    working: number;
+    tasksDone: number;
+    tasksTotal: number;
+    /** The newest `needsYou` items by name, at most three; absent when nothing waits. */
+    waiting?: WaitingItem[];
+  };
   missing?: boolean;
   /**
    * Capability packs this Project turned on or off, appended in order. Absent
@@ -602,6 +627,12 @@ export interface Turn {
    * it (a model-API route). Absent for an external engine, which manages its own context.
    */
   context?: ContextAccount;
+  /**
+   * The thinking the engine showed before this reply: redacted, at most 32 KiB, cut and marked
+   * when longer. Only the person reads it; it is never sent to an engine, carried into another
+   * conversation or shared. Absent on turns written before 2026-09-27 and where none came.
+   */
+  thinking?: import('./adapter-contract.js').ReasoningRecord;
 }
 /** A thread: a named conversation that belongs to a project and, optionally, to a task. */
 /**

@@ -12,7 +12,9 @@ import { HarnessError } from './harness/policy.js';
 import type { TextRequest } from './engines/contract.js';
 import { EngineError } from './engines/process.js';
 import type { EngineService } from './engines/service.js';
-import { isModelApiRoute, type ModelApiRoute } from '../shared/model-api.js';
+import { KEPT_SESSIONS, keptSessionOfRun, type KeptSessionEngines } from './conversation-sessions.js';
+import type { ConversationRoute } from '../shared/engines.js';
+import { isModelApiRoute } from '../shared/model-api.js';
 import { ApiError } from './paths.js';
 import type {
   ConversationUpdate,
@@ -21,6 +23,7 @@ import type {
   MessageResult,
 } from '../shared/conversation.js';
 import type { InteractionDecision } from '../shared/interaction.js';
+import type { ReasoningRecord } from '../shared/adapter-contract.js';
 import {
   admitInteraction,
   conversationCommandIds,
@@ -70,7 +73,7 @@ export interface ResolvedMessage {
   /** The one run this message lives on. Progress, execution and projection all name it. */
   runId: string;
   /** The route that answers it. Absent means the native Claude session, as before. */
-  route?: 'claude-code' | ModelApiRoute;
+  route?: ConversationRoute;
   action: TurnAction;
   /** True when this command was already answered: the record is read back and nothing is generated. */
   replay: boolean;
@@ -218,7 +221,14 @@ export interface InteractionHost {
   /** Idempotent transcript projection of a committed answer. */
   project(
     resolved: ResolvedMessage,
-    result: { runId: string; text: string; model: string; version: string },
+    result: {
+      runId: string;
+      text: string;
+      model: string;
+      version: string;
+      /** The finished thinking of the attempt that answered. A replay has none. */
+      thinking?: ReasoningRecord;
+    },
   ): Promise<void>;
   admissionContext(): Promise<{ homeProjectId: string | null; targetableProjectIds: string[] }>;
   /**
@@ -305,10 +315,7 @@ export class InteractionTurns {
   private readonly handling = new Map<string, number>();
 
   constructor(
-    private readonly engines: Pick<
-      EngineService,
-      'claudeSession' | 'nativeSessions' | 'modelSession' | 'modelSessions'
-    >,
+    private readonly engines: Pick<EngineService, 'modelSession' | 'modelSessions'> & KeptSessionEngines,
     private readonly host: InteractionHost,
   ) {}
 
@@ -340,16 +347,19 @@ export class InteractionTurns {
     return this.host.answerFormatPreview(projectId, threadId);
   }
 
-  /** The driver that owns a run. Model-API conversation runs are named `model-...`. */
+  /**
+   * The driver that owns a run: model-API conversation runs are named `model-...`, and every
+   * other run is the kept session its id names. A message that has no run yet is Claude's, as before.
+   */
   private driver(runId?: string): ConversationDriver {
     if (runId?.startsWith('model-')) {
       if (!this.engines.modelSessions)
         throw new ApiError(503, 'The model-API conversation runtime is unavailable.');
       return this.engines.modelSessions;
     }
-    if (!this.engines.nativeSessions)
-      throw new ApiError(503, 'The native conversation runtime is unavailable.');
-    return this.engines.nativeSessions;
+    const driver = (keptSessionOfRun(runId) ?? KEPT_SESSIONS['claude-code']).driver(this.engines);
+    if (!driver) throw new ApiError(503, 'The native conversation runtime is unavailable.');
+    return driver;
   }
 
   /** One turn on the route the host resolved. Nothing else chooses a driver. */
@@ -360,7 +370,9 @@ export class InteractionTurns {
         throw new ApiError(409, 'This conversation route does not support forking.');
       return this.engines.modelSession(route, resolved.action, resolved.runId, resolved.input);
     }
-    return this.engines.claudeSession(resolved.action, resolved.runId, resolved.input, undefined, { queued });
+    return KEPT_SESSIONS[route].turn(this.engines, resolved.action, resolved.runId, resolved.input, undefined, {
+      queued,
+    });
   }
 
   async message(
@@ -416,6 +428,7 @@ export class InteractionTurns {
         text: result.answerText ?? result.response.text,
         model: result.response.model,
         version: result.response.version,
+        ...(result.response.reasoning ? { thinking: result.response.reasoning } : {}),
       });
     // The outcome is read from what was recorded and from nothing else. A decision that was
     // never saved is not rebuilt in memory: the message reads as unresolved on every route.

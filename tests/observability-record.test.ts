@@ -4,7 +4,7 @@
  */
 import { describe, expect, test } from 'vitest';
 import type { AdmittedAgentWork } from '../server/accounts/agent-gate.js';
-import { AWS_LUNA_MODEL } from '../server/engines/aws-bedrock.js';
+import { AWS_LUNA_MODEL, AWS_RETIRED_MODELS } from '../server/engines/aws-bedrock.js';
 import { VERTEX_GEMINI_MODEL } from '../server/engines/google-vertex.js';
 import { exposureStepId } from '../server/harness/model-api-adapter.js';
 import type { ObservationOperatorConfig, ObservationScope } from '../server/observability/eligibility.js';
@@ -223,8 +223,8 @@ describe('identifiers', () => {
 });
 
 describe('sanitizers', () => {
-  test('the built-in catalog equals the engines’ own constants', () => {
-    expect(CATALOG_MODELS['aws-bedrock']).toEqual([AWS_LUNA_MODEL]);
+  test('the built-in catalog includes current and historical engine identifiers', () => {
+    expect(CATALOG_MODELS['aws-bedrock']).toEqual([AWS_LUNA_MODEL, ...AWS_RETIRED_MODELS]);
     expect(CATALOG_MODELS['google-vertex']).toEqual([VERTEX_GEMINI_MODEL]);
   });
 

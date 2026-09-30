@@ -15,34 +15,46 @@ import { providerSpy } from './support/managed.js';
 const LUNA = MANAGED_PROVIDERS[0];
 
 describe('the reviewed provider registry', () => {
-  it('holds exactly the contract row for GPT-6 Luna on Bedrock, and nothing staff can edit', () => {
-    expect(MANAGED_PROVIDERS).toHaveLength(1);
+  it('keeps the current and preserved legacy Bedrock bindings immutable', () => {
+    expect(MANAGED_PROVIDERS.map(row => row.model)).toEqual(['us.openai.gpt-5.6-luna', 'us.openai.gpt-6-luna']);
     expect(LUNA).toEqual({
       provider: 'aws-bedrock',
       region: 'us',
-      model: 'us.openai.gpt-6-luna',
+      model: 'us.openai.gpt-5.6-luna',
       endpoint: 'https://bedrock-runtime.us-east-1.amazonaws.com/openai/v1/responses',
       rate: {
-        version: 'aws-bedrock-gpt-6-luna-us-2026-09-25.1',
-        inputMicroUsdPerMillion: 110_000,
-        cacheReadMicroUsdPerMillion: 11_000,
-        cacheWriteMicroUsdPerMillion: 137_500,
-        outputMicroUsdPerMillion: 550_000,
+        version: 'aws-bedrock-gpt-5.6-luna-us-2026-09-28.1',
+        inputMicroUsdPerMillion: 220_000,
+        cacheReadMicroUsdPerMillion: 22_000,
+        cacheWriteMicroUsdPerMillion: 275_000,
+        outputMicroUsdPerMillion: 1_320_000,
       },
       maxOutputTokens: 16_000,
       credential: 'BEDROCK_API_KEY',
       requestIdHeaders: ['x-amzn-requestid', 'x-request-id'],
+      reasoningSummaries: true,
+    });
+    expect(MANAGED_PROVIDERS[1]).toEqual({
+      provider: 'aws-bedrock', region: 'us', model: 'us.openai.gpt-6-luna',
+      endpoint: 'https://bedrock-runtime.us-east-1.amazonaws.com/openai/v1/responses',
+      rate: { version: 'aws-bedrock-gpt-6-luna-us-2026-09-25.1', inputMicroUsdPerMillion: 110_000,
+        cacheReadMicroUsdPerMillion: 11_000, cacheWriteMicroUsdPerMillion: 137_500, outputMicroUsdPerMillion: 550_000 },
+      maxOutputTokens: 16_000, credential: 'BEDROCK_API_KEY', requestIdHeaders: ['x-amzn-requestid', 'x-request-id'],
     });
     expect(Object.isFrozen(MANAGED_PROVIDERS)).toBe(true);
-    expect(Object.isFrozen(LUNA)).toBe(true);
-    expect(Object.isFrozen(LUNA.rate)).toBe(true);
+    for (const row of MANAGED_PROVIDERS) {
+      expect(Object.isFrozen(row)).toBe(true);
+      expect(Object.isFrozen(row.rate)).toBe(true);
+      expect(Object.isFrozen(row.requestIdHeaders)).toBe(true);
+    }
   });
 
   it('matches a route only on provider, region and model together', () => {
-    expect(registryRow({ provider: 'aws-bedrock', region: 'us', model: 'us.openai.gpt-6-luna' })).toBe(LUNA);
-    expect(registryRow({ provider: 'aws-bedrock', region: null, model: 'us.openai.gpt-6-luna' })).toBeUndefined();
-    expect(registryRow({ provider: 'aws-bedrock', region: 'us', model: 'us.openai.gpt-5.6-luna' })).toBeUndefined();
-    expect(registryRow({ provider: 'azure-openai', region: 'us', model: 'us.openai.gpt-6-luna' })).toBeUndefined();
+    expect(registryRow({ provider: 'aws-bedrock', region: 'us', model: 'us.openai.gpt-5.6-luna' })).toBe(LUNA);
+    expect(registryRow({ provider: 'aws-bedrock', region: null, model: 'us.openai.gpt-5.6-luna' })).toBeUndefined();
+    expect(registryRow({ provider: 'aws-bedrock', region: 'us', model: 'us.openai.gpt-6-luna' })).toBe(MANAGED_PROVIDERS[1]);
+    expect(registryRow({ provider: 'aws-bedrock', region: 'us', model: 'fixture-unregistered' })).toBeUndefined();
+    expect(registryRow({ provider: 'azure-openai', region: 'us', model: 'us.openai.gpt-5.6-luna' })).toBeUndefined();
   });
 
   it('reads the credential from the environment by name, and only a usable one', () => {

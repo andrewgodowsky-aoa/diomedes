@@ -88,6 +88,8 @@ export interface ModelRateCard {
   shortContextMaxInputTokens: number;
   short: ModelRateBand;
   long: ModelRateBand;
+  /** Fixed route fees. Absent on existing cards; always included in both holds and local pricing. */
+  requestFeeMicroUsd?: number;
 }
 
 /**
@@ -387,6 +389,7 @@ export function validateRateCard(card: ModelRateCard): ModelRateCard {
   const boundary = (card as unknown as Record<string, unknown>).shortContextMaxInputTokens;
   if (!Number.isSafeInteger(boundary) || (boundary as number) <= 0)
     throw bad('its short-context boundary must be a positive whole number of tokens.');
+  if (card.requestFeeMicroUsd !== undefined && !isCount(card.requestFeeMicroUsd)) throw bad('its request fee must be a whole number of micro-USD.');
   return {
     version: label(card.version, 'version', LABEL_MAX),
     route: label(card.route, 'route', LABEL_MAX),
@@ -395,6 +398,7 @@ export function validateRateCard(card: ModelRateCard): ModelRateCard {
     shortContextMaxInputTokens: boundary as number,
     short: band(card.short, 'short'),
     long: band(card.long, 'long'),
+    ...(card.requestFeeMicroUsd === undefined ? {} : { requestFeeMicroUsd: card.requestFeeMicroUsd }),
   };
 }
 
@@ -415,7 +419,7 @@ function price(
     BigInt(usage.cacheWriteTokens) * BigInt(rates.cacheWrite) +
     BigInt(usage.outputTokens) * BigInt(rates.output);
   return {
-    microUsd: moneyFrom(ceilDiv(total, TOKENS_PER_RATE), 'invalid_usage', 'That usage'),
+    microUsd: moneyFrom(ceilDiv(total, TOKENS_PER_RATE) + BigInt(card.requestFeeMicroUsd ?? 0), 'invalid_usage', 'That usage'),
     band,
     usage,
   };
@@ -469,7 +473,7 @@ export function ceilingCost(
   const total =
     BigInt(bound.maxInputTokens) * BigInt(inputRate) +
     BigInt(bound.maxOutputTokens) * BigInt(outputRate);
-  return moneyFrom(ceilDiv(total, TOKENS_PER_RATE), 'invalid_bound', 'That bound');
+  return moneyFrom(ceilDiv(total, TOKENS_PER_RATE) + BigInt(valid.requestFeeMicroUsd ?? 0), 'invalid_bound', 'That bound');
 }
 
 // --- stored records -----------------------------------------------------------

@@ -1,0 +1,2009 @@
+{
+  "recordedAt": "2026-09-28T13:25:10.037Z",
+  "kind": "Local source checkpoints, not merged or deployed acceptance",
+  "accepted": false,
+  "published": false,
+  "documentationFollowup": "This manifest pins the source commits. The later documentation-only commit is recorded by the handoff, not self-referenced here.",
+  "hashConvention": "canonicalSha256 hashes Git blob bytes, independent of checkout line endings; evidence hashes cover actual saved bytes.",
+  "repositories": [
+    {
+      "name": "app",
+      "root": "F:/Diomedes/diomedes-wt/operations-routing",
+      "base": "1af37e085ef24fc6c92d6b2b8510fc52a504bd1b",
+      "sourceCommit": "dae3a4b60feef2baec1ce15defcb3542c3c5a41c",
+      "sourceTree": "e810433d10d0f26480b9cc23d92ebd0ea31f0f46",
+      "parents": [
+        "da04d6a91c53fc48beae99002b018dcb84425c62"
+      ],
+      "observedLocalOriginMain": "1af37e085ef24fc6c92d6b2b8510fc52a504bd1b",
+      "fileCount": 236,
+      "files": [
+        {
+          "path": "QUESTIONS.md",
+          "change": "M",
+          "blob": "254e66a708480249ac256226cc14ad8ddade017c",
+          "canonicalSha256": "f137af99da07f9970697fdd97f30276342a60ca27f802477071183a983ae237f"
+        },
+        {
+          "path": "client/AccountSettings.tsx",
+          "change": "M",
+          "blob": "017e674c3c9c0828c5fdcf478ab955fc95117568",
+          "canonicalSha256": "cc6e28bd0aa5597a188c802a43e714bd5474a163ed51ecc81fe9920424b3e6d6"
+        },
+        {
+          "path": "client/AwsBedrockSetup.tsx",
+          "change": "M",
+          "blob": "86707fab1c45446b4536747258326b8a64492501",
+          "canonicalSha256": "a91e21ebc12ca849a353003cc4e2166d48a438e800dd22edd90ab5a5ce781edb"
+        },
+        {
+          "path": "client/Settings.tsx",
+          "change": "M",
+          "blob": "bd5a1c080ddb729a4d13b5d967d026b106ddfac6",
+          "canonicalSha256": "066d3fe69166247cd9ae313427a3baaa6243f4dc9ded11c5a5c65da94460530b"
+        },
+        {
+          "path": "client/aws-bedrock-view.ts",
+          "change": "M",
+          "blob": "3495e6d69559ba83afcdfe3861a552278af491a3",
+          "canonicalSha256": "878f4a9ebcb437b2fcee7de957b82f6a8b0f8b71463eed131045b2fc85ea223e"
+        },
+        {
+          "path": "client/console/Diomedes.tsx",
+          "change": "M",
+          "blob": "e9f68588d0845c005873cc57f814e44f771e5ded",
+          "canonicalSha256": "2f3137c2a714109ab064435e7ad8ed06269865fb102e82284d91225fb8952c87"
+        },
+        {
+          "path": "client/console/DiomedesHome.tsx",
+          "change": "M",
+          "blob": "5d3bed9544e18fec5894f1802eeae7eca5db1deb",
+          "canonicalSha256": "8e76f73775988807dbc715043db466ba857bcc55bad688a09376494dbe73c487"
+        },
+        {
+          "path": "client/console/ManagedRoutingReceipt.tsx",
+          "change": "A",
+          "blob": "4ca070854e9c1da6e87d1338b93105819910e552",
+          "canonicalSha256": "8b2fcef52f52059a835c327834bae49552cc9a91b5a6952bc0480ce1f6331e8c"
+        },
+        {
+          "path": "client/console/Picker.tsx",
+          "change": "M",
+          "blob": "822a1a8cf7810eb7414aa885ed5a8c8ef7b6f149",
+          "canonicalSha256": "46c82a55a346f0edf554d2c975a11ec5f08d5e74c06cebdb8716918be07d4013"
+        },
+        {
+          "path": "client/console/RoutingPreferences.tsx",
+          "change": "A",
+          "blob": "e7e965fa4e9e792b6be60be506facc0cdeea4d6e",
+          "canonicalSha256": "100e3bf5e5c545d6f9d0180fdb6d0f410753c6f9dfe73fc1f7a25c9ce9dd07c6"
+        },
+        {
+          "path": "client/console/Shell.tsx",
+          "change": "M",
+          "blob": "6c0e90ca2b4bc4975dc27c3f1895097a986447b9",
+          "canonicalSha256": "1d69510b4e81c1fe757170c9e35bdad6ba88d3e1deff08ffa360860b18c9f05e"
+        },
+        {
+          "path": "client/console/Thinking.tsx",
+          "change": "A",
+          "blob": "6c141d8f4ddb7c5c6eae98184ff30474d54faa3c",
+          "canonicalSha256": "30f96cbf78930c470eeb39e43c10b17301a55dc23b5070fc4d65265c1fa5bebd"
+        },
+        {
+          "path": "client/console/ThreadView.tsx",
+          "change": "M",
+          "blob": "073e1088c017957e97b27a8ef76ede60c4377a8b",
+          "canonicalSha256": "80ec9decd9eba36d73e3ac7a379d495c7750600d306d7be895495408e00ffe12"
+        },
+        {
+          "path": "client/console/console.css",
+          "change": "M",
+          "blob": "55d579dd3fde43e6e569b2f31bc6f99fb1623a26",
+          "canonicalSha256": "13c9dd53fcdea90b547c910f3bcf1023e581ffb62d91acbed429f341d4719814"
+        },
+        {
+          "path": "client/console/engine-reasoning.ts",
+          "change": "A",
+          "blob": "edd71df337427c1adf013f6a1abe08171cd1dc08",
+          "canonicalSha256": "e6de96d36324e5fc7e6e83c13f607465598f852a6b3b1184b3930dda3082f389"
+        },
+        {
+          "path": "client/console/live-reply.ts",
+          "change": "M",
+          "blob": "9ec2f757d8e4ef04d253fa38b875f95d2a69d513",
+          "canonicalSha256": "942bc22d491e56e02bcde9fd2e158ae706c10ecbcbd8da28ce38370e4564cb75"
+        },
+        {
+          "path": "client/console/native-session-view.ts",
+          "change": "M",
+          "blob": "4a24000c597fce072cf2e5d87516674e39be4fe2",
+          "canonicalSha256": "9c0a6873de99af388885208c8f98850d353c4614e9fabe62c840660d33e15b78"
+        },
+        {
+          "path": "client/console/thread-send.ts",
+          "change": "M",
+          "blob": "5c11a35ef98fd7ca7ab5a2322531a43f5de2c945",
+          "canonicalSha256": "be03017fb37b39e745ead893dd0e317fec7a64956bbfb02026bbcc7e84f0f1b8"
+        },
+        {
+          "path": "client/workbench/RunInspector.tsx",
+          "change": "M",
+          "blob": "bb62245d82f34c6cbb4f5bae085c0d0e168c439d",
+          "canonicalSha256": "453e5350044a94a8d58a6f271c1121b4e0c2bb115c6ce4261dad9d7078994a5a"
+        },
+        {
+          "path": "desktop/main.mjs",
+          "change": "M",
+          "blob": "75daa8df04ac1974f273198b8cb9123bc7d835e8",
+          "canonicalSha256": "66067aad97614f800685a9b0e5417f8c3d2a0bc8c6f7a70ca0b19230f676094a"
+        },
+        {
+          "path": "docs/DIOMEDES_CORE_PILLARS.md",
+          "change": "M",
+          "blob": "8e6eea0f40ee30f4aee6b7b18d159e51997533ff",
+          "canonicalSha256": "66c8116d7a384263ffa94aacfdfc66da3556b13cd479e65c6dd599876c86ab20"
+        },
+        {
+          "path": "docs/DIOMEDES_LIVE_ROADMAP.md",
+          "change": "M",
+          "blob": "25357ecfe56dd1d2762276f3d2f64d194fd39643",
+          "canonicalSha256": "38bc545df839fa4c1eeae95516954cc087e0db31f3964a1d3fb68da227454340"
+        },
+        {
+          "path": "docs/DIOMEDES_PROJECT_MEMORY.md",
+          "change": "M",
+          "blob": "d3e776f8f018810fab3f09459ab31e8a239564ab",
+          "canonicalSha256": "3560930ae38377e02a76f3e9d0890c6274a36b888d56bca15ee24a26d40be539"
+        },
+        {
+          "path": "docs/harness/CHANGES.md",
+          "change": "M",
+          "blob": "79a01cdde3aaff0f219da341ac1786ce0b8ccc9e",
+          "canonicalSha256": "5f58fb4644b12b4612dace9751ebefb3c50a37c265a11f23d3031bb2f2a6908b"
+        },
+        {
+          "path": "docs/implementation/2026-09-20-core-agent-contract.md",
+          "change": "M",
+          "blob": "e88f98307c17cafeb42a2fdb168312a1b0536af8",
+          "canonicalSha256": "00294202d5c1db42e3a41ab54962a76e2c3158bddf78cb3ac7210446f1876c06"
+        },
+        {
+          "path": "docs/implementation/2026-09-25-managed-inference-gateway.md",
+          "change": "M",
+          "blob": "e1b89ec56a6e9faa2e7f9791b6cc021653a239d2",
+          "canonicalSha256": "e684fa6021927d7ca5b04e023fcf9a2203e0b31d2f4c012398eba44d3c1bd383"
+        },
+        {
+          "path": "docs/implementation/2026-09-27-engine-capability-discovery.md",
+          "change": "A",
+          "blob": "e49d41978bfe7b5a1400e28da2283d741a7db398",
+          "canonicalSha256": "0fd23ba3b6eb826aa321625e1193f17497ace0befdaa67a8f90de44906e866ba"
+        },
+        {
+          "path": "docs/implementation/2026-09-28-individual-tier.md",
+          "change": "M",
+          "blob": "06f71e5e5a0954daadf9bbebd6be82ada7723933",
+          "canonicalSha256": "ce0660ddc8086acfefb9db0f2dac9db1e0c62015534fde0662b01cf482cecc85"
+        },
+        {
+          "path": "docs/implementation/2026-09-28-operations-routing.md",
+          "change": "A",
+          "blob": "f81630475d8b9738ea2245fdc295effc2d65e001",
+          "canonicalSha256": "e2b617eadb75932e6c3afded63b8ff2047f025a9382bf63912e16f9d087f0a05"
+        },
+        {
+          "path": "docs/implementation/operations-routing-handoff/README.md",
+          "change": "A",
+          "blob": "9daeb392785b60044885621819037200f8baa257",
+          "canonicalSha256": "aa1dda25dcd2305b2e03651660a1452d13cdaa20d05f98f63b8cb135364977de"
+        },
+        {
+          "path": "docs/implementation/operations-routing-handoff/cancellation-review-brief.md",
+          "change": "A",
+          "blob": "cc3b999e1f952980a3424f5865aa101fc06d3961",
+          "canonicalSha256": "be7f5c2c75c720784557b92d91455d0c940ee65ecc9cb518067f3aa0176aaf6a"
+        },
+        {
+          "path": "docs/implementation/operations-routing-handoff/candidate-manifest.json",
+          "change": "A",
+          "blob": "771a6b27a1122e4094d7b15f8ee7f9721e0750d7",
+          "canonicalSha256": "a69e108e533aa01c3e2617a463e4469269c00532f08980d2ff61aff5b65bc51f"
+        },
+        {
+          "path": "docs/implementation/operations-routing-handoff/conversation-receipts.patch",
+          "change": "A",
+          "blob": "3633e12324e4b6c242793ab9320383f8df3293b8",
+          "canonicalSha256": "0aef99c24c2b4b7c03c78b92399a257e1c506d978103f24effb55bc484b5a3e0"
+        },
+        {
+          "path": "docs/implementation/operations-routing-handoff/coverage.md",
+          "change": "A",
+          "blob": "045ce3d417e2926753befdeed6bf64262ee12048",
+          "canonicalSha256": "cee6ff4496d03747893356a7e10ee6ab0f6089e9ff68de1d93a8471f8194626b"
+        },
+        {
+          "path": "docs/implementation/operations-routing-handoff/desktop.patch",
+          "change": "A",
+          "blob": "045e06202c255d5b1c6b166ac41c9d398b55cd44",
+          "canonicalSha256": "e9595c7b9b85274562a5ab74c6887e51aa6e440eee27a0b5a28f795892213f1c"
+        },
+        {
+          "path": "docs/implementation/operations-routing-handoff/fixture-server.ts",
+          "change": "A",
+          "blob": "315cbf97d82dc5a508add05e4d19942a4717b717",
+          "canonicalSha256": "a974d9ccff500d2e17479e84303f398bf1710b51ef4d0b99cc4c222a4af9c97d"
+        },
+        {
+          "path": "docs/implementation/operations-routing-handoff/harness-repairs.patch",
+          "change": "A",
+          "blob": "f35eccfa46d88902db60b83a43fd77883304a703",
+          "canonicalSha256": "382524311b7cc040cd6b9b22eb4a627566eec3758503212d35779f43c1940785"
+        },
+        {
+          "path": "docs/implementation/operations-routing-handoff/harness.patch",
+          "change": "A",
+          "blob": "41ec92c59fe2cc61a239c6adcd8d379472f62789",
+          "canonicalSha256": "5e944b385d90353c51771e7197e3dac29368defd14ec8853fc1302d4ca2dccf7"
+        },
+        {
+          "path": "docs/implementation/operations-routing-handoff/integration-followups.md",
+          "change": "A",
+          "blob": "ae25535c5de5d383924ed16d5d35a8d1c87c21eb",
+          "canonicalSha256": "4fdc52800a9c841ce181506476e557772714e8ddbbbd3bf5d313187c729ceade"
+        },
+        {
+          "path": "docs/implementation/operations-routing-handoff/journey.config.ts",
+          "change": "A",
+          "blob": "b415e6a7a05ae4c2051d1390e6f9c81f43824285",
+          "canonicalSha256": "908c83929de41b2a967f7e6c59065d34cf5ae9bdff0654a8e4042e121bf800e0"
+        },
+        {
+          "path": "docs/implementation/operations-routing-handoff/main-composition-notes.md",
+          "change": "A",
+          "blob": "06f36d3ca29ecab0919c75b8fae19a4ec99bf7f1",
+          "canonicalSha256": "4fa5cb5bb5197cda06232dcfb36d14eab9b0cf5f7692b99183a9bfc3b2ea96d9"
+        },
+        {
+          "path": "docs/implementation/operations-routing-handoff/receipt-review-brief.md",
+          "change": "A",
+          "blob": "9b0fcab7669d572d90bad0db8644d935310a0b08",
+          "canonicalSha256": "1e4f69182a3eb9eb60fac111fb6fd84f33d3f12145bd0882caff7815736527c4"
+        },
+        {
+          "path": "docs/implementation/operations-routing-handoff/review-record.md",
+          "change": "A",
+          "blob": "4f82667047554081d5f64d0e6654ff0a51c8a1b0",
+          "canonicalSha256": "3a27947b83dc498b544ab3d75ad00ec36ea8a25ef9d484293de7faab0219f746"
+        },
+        {
+          "path": "docs/implementation/operations-routing-handoff/run-focused-window.ps1",
+          "change": "A",
+          "blob": "8668c0b820ce84b25e22d063f743de2ada8748ca",
+          "canonicalSha256": "73c748030a04999980b27525168ba75ad5fa9356521a3334dc3311d0d3c46bbe"
+        },
+        {
+          "path": "docs/superpowers/plans/2026-09-27-engine-conversations.md",
+          "change": "A",
+          "blob": "febc5b4112d58c424046ee1fbabfe54fe77f6638",
+          "canonicalSha256": "04199e1bdb81ed4298dd11b64e259ca66402d0c65e241e5bab09550aaeca77ff"
+        },
+        {
+          "path": "docs/superpowers/plans/2026-09-27-reasoning-end-to-end.md",
+          "change": "A",
+          "blob": "0b3dcb27fdce8bf597e5715996c05c7c8bca510b",
+          "canonicalSha256": "e96b0b16125c8cc0f2a807f100ef60d61c826083407475d5e012f5677a92db68"
+        },
+        {
+          "path": "docs/superpowers/specs/2026-09-27-engine-conversations-and-reasoning-design.md",
+          "change": "A",
+          "blob": "a9ee0bfd718138c11b34c7c965ad5eb514393cb5",
+          "canonicalSha256": "0cdfa7f1742e6feb87e57f4831ade1d1942c6c6f8d8de2745ef04b9da7f42ac6"
+        },
+        {
+          "path": "evidence/codex-app-server-0.153.4/README.md",
+          "change": "M",
+          "blob": "0f778667e1a4af01f78aa6e92bac5e5185ff09f9",
+          "canonicalSha256": "69b8e7dc2ff95f30f47b704c2290f3aeb396e8f5b5a6c1101f33fa05f12501b1"
+        },
+        {
+          "path": "evidence/codex-app-server-0.153.4/ReasoningSummaryPartAddedNotification.json",
+          "change": "A",
+          "blob": "33debf2a2e4b3a83c88cc9cf3a7cbe7496e2b7f7",
+          "canonicalSha256": "c8dfcb82d773d0f5d297ae1a47749e2b719013e82030a3af5d4550f9feb8eed6"
+        },
+        {
+          "path": "evidence/codex-app-server-0.153.4/ReasoningSummaryTextDeltaNotification.json",
+          "change": "A",
+          "blob": "6f50a8403a3451b71268413eb91a08dfcffd5741",
+          "canonicalSha256": "895bdca00b4674634c25a5c4d1f82e55e65767d81ddcac4bb7b00aa3d438e62f"
+        },
+        {
+          "path": "evidence/codex-app-server-0.153.4/TurnCompletedNotification.json",
+          "change": "A",
+          "blob": "7db8c18c82325feee77876ed7172dae8125a4cd5",
+          "canonicalSha256": "78af2a37391e8e669a4020cb58593e4d3e378756ced79d5fec72374fa69fb94b"
+        },
+        {
+          "path": "evidence/codex-app-server-0.153.4/TurnInterruptParams.json",
+          "change": "A",
+          "blob": "9181428a10e17186272d2cdd74fc2c4f07c76504",
+          "canonicalSha256": "6dff382dae73d1dbc58406ed045605f647e7a49660e2540fbd2c6c24d60c5f2b"
+        },
+        {
+          "path": "evidence/codex-app-server-0.153.4/TurnInterruptResponse.json",
+          "change": "A",
+          "blob": "5d8a0f9ce22e0387218fd390c362de6a61247b8c",
+          "canonicalSha256": "531de6be06fe979b5963f249bab82498a175e614bf65ac12fb2e849dfe60bcf1"
+        },
+        {
+          "path": "evidence/codex-app-server-0.153.4/TurnStartParams.json",
+          "change": "A",
+          "blob": "2ba2e1f4830ad3639715e678e70df9640b7ff405",
+          "canonicalSha256": "a3835e8c1e942e4b358e1a670939b89918b16c4d13105a579899892b7ade6dea"
+        },
+        {
+          "path": "evidence/codex-app-server-0.153.4/TurnStartResponse.json",
+          "change": "A",
+          "blob": "95523694804b1aff90a733ed896475645ef517cb",
+          "canonicalSha256": "6fc49c3e5d0ce11a3a109ae194619b04d6e3ff98fa29bac683fdb754608958be"
+        },
+        {
+          "path": "playwright.config.ts",
+          "change": "M",
+          "blob": "2120aced32eefece52a31d1dc265ba28f8a2a44f",
+          "canonicalSha256": "6bc08c92a4546378a275fdd88f8aba6c19fd85ffb4a153503157f792d7ba3229"
+        },
+        {
+          "path": "resources/product-knowledge/core.json",
+          "change": "M",
+          "blob": "a32c56dfa0739dd059a4d4df05b51c556d8b9ffc",
+          "canonicalSha256": "c409a5b0b95b958206f19f49bb1c32ad673f6b33bad505f28979cfa2ae078293"
+        },
+        {
+          "path": "resources/product-knowledge/index.json",
+          "change": "M",
+          "blob": "bf7157107bf02b762be46e1c5b11aa0ca5621987",
+          "canonicalSha256": "881ad6a367a947f8f86c86b7c8523fe9c3cefbe5ca72a9b8b7b957c79603f1d1"
+        },
+        {
+          "path": "scripts/collect-package-notices.mjs",
+          "change": "M",
+          "blob": "cf7c49e3fe054e516c901d076aad8f806d0735ba",
+          "canonicalSha256": "c0cf1871af65f46b11d0432f6d6cfdf710a6ca29edb8916ec072a3ccf3762e63"
+        },
+        {
+          "path": "scripts/package-desktop.mjs",
+          "change": "M",
+          "blob": "6beeaf7a870a9574570d8b4e83207d2d71a06a3e",
+          "canonicalSha256": "ced7cef8c9b5ceaa639b2dc1aaddf3351a035de90b59d2550c413708883011e4"
+        },
+        {
+          "path": "scripts/prepare-native.ts",
+          "change": "M",
+          "blob": "654857165460e719c38e4b5e767afdbcb81107c2",
+          "canonicalSha256": "c087cd5c1ad56d26fb6d3828871d81fc7502118b40ace86916a4ce8568b0654e"
+        },
+        {
+          "path": "scripts/release-support/acquire-native-runtime.mjs",
+          "change": "M",
+          "blob": "edf6082a0b48963be2386f65e5c44ebf5ada757c",
+          "canonicalSha256": "659b09773aa731d858e554266eb9e01dab91c933020f9de274107c9af8dda9d2"
+        },
+        {
+          "path": "server/accounts/agent-gate.ts",
+          "change": "M",
+          "blob": "ffbc3a2eb2ed6b716f08b8b60f0bb0adae213665",
+          "canonicalSha256": "d9489f2068575be180707c094029190f8a5fa2542431a868dee1df58b61f569b"
+        },
+        {
+          "path": "server/accounts/client.ts",
+          "change": "M",
+          "blob": "bec9f56986d6869886ad7e3fc25c9c647e2ec1d4",
+          "canonicalSha256": "12beb20b35835e91ad83b5468aad29eab25b400411f4b8377c1aaca73614ea26"
+        },
+        {
+          "path": "server/accounts/routing-session.ts",
+          "change": "A",
+          "blob": "57e488806443191a29b5603711c777d523cd6cb1",
+          "canonicalSha256": "9d0b8a18d4d3de6da061b2c7bcb5db9c87556554185d8fc3ce33ba3078ce354b"
+        },
+        {
+          "path": "server/app.ts",
+          "change": "M",
+          "blob": "7a8cd98b6031c7c10a7b00666dac3c4979f3d2ef",
+          "canonicalSha256": "3c3698efe67b0e2f215dbeee86cf1ba93ef19d9361ee002f69f20d891d7a7283"
+        },
+        {
+          "path": "server/codex-setup.ts",
+          "change": "M",
+          "blob": "cd410466dfb53af07166ce10432e9645234744fe",
+          "canonicalSha256": "9b19619809d233a3c51d61456f54af6cedf3b4239f566a34423ad7c2ada44c29"
+        },
+        {
+          "path": "server/conversation-sessions.ts",
+          "change": "A",
+          "blob": "ad049e1e440625f9120193185e088e8f8aff1993",
+          "canonicalSha256": "1a917ecc1f9b66f2af2c6bf80a76ec552dcadfd395b4f9bda13e3b5637d4d71e"
+        },
+        {
+          "path": "server/discovery.ts",
+          "change": "M",
+          "blob": "7de8f0c5bb3e9a3c7bd1c36c836503cc8121b69e",
+          "canonicalSha256": "054a5eaafa898da45a2d0b00a6fc4d777f03c7d7930b9515912357b631560cce"
+        },
+        {
+          "path": "server/durable-controls-fixture.ts",
+          "change": "M",
+          "blob": "2a9a82683c28cc8a89b80f836ec2cab6c6dca567",
+          "canonicalSha256": "af1ab5a800d684d323c12f17c62794b92422e5a97a2fec9a55a4ea79c5680c82"
+        },
+        {
+          "path": "server/engines/acp-client.ts",
+          "change": "M",
+          "blob": "dad5fac943e229248449c92247eddacaaf8abe88",
+          "canonicalSha256": "f41a1a06ffd78f64a4ef784218c44973bc7d9fd0afc2964aaaa199b0c6de926d"
+        },
+        {
+          "path": "server/engines/acp-session.ts",
+          "change": "M",
+          "blob": "9ce786c2f3239b96918bf5f6c71c1a94b4018372",
+          "canonicalSha256": "82ff14a2e92f2fb84af91a79af5a470028c40eb886b4ac279ce0a54cce97b599"
+        },
+        {
+          "path": "server/engines/aws-bedrock.ts",
+          "change": "M",
+          "blob": "b0bc4c77c2cf283e0a10a777844c17fcad2f02d0",
+          "canonicalSha256": "cf5f7f8b9de8fe8f20209c20fd941c8b01091b9e690524cc2cac01e57d6a5dd6"
+        },
+        {
+          "path": "server/engines/azure-openai.ts",
+          "change": "M",
+          "blob": "fab634fd2f96d3226155351399436dba1a05b448",
+          "canonicalSha256": "45e45dc436037bbfb0b9442d0473aef2cdf3e2a8b9dd27873e2b5497efc4a26d"
+        },
+        {
+          "path": "server/engines/claude-session-routes.ts",
+          "change": "M",
+          "blob": "1e2c55c270d104565805f753f507c542535f1320",
+          "canonicalSha256": "c81489b586d4bc695ba11131eedc655d634a8bc7a4bbb9abfbd07437635889f2"
+        },
+        {
+          "path": "server/engines/claude-session.ts",
+          "change": "M",
+          "blob": "5e7a8f9393ad3c46904bb50d42d1aa8eb66b2a09",
+          "canonicalSha256": "19b58650dafcaaa08e4d6b40571386223d5ecd0c76e1d5bfe4bdf4432c1bb452"
+        },
+        {
+          "path": "server/engines/claude.ts",
+          "change": "M",
+          "blob": "6899caa7f61ba472421bc8f4ebf1c8e2c6158382",
+          "canonicalSha256": "a85f18880d8949ae2a72a18003287b6c4ac1c1a6e0ad20def33e368d2e66a7ca"
+        },
+        {
+          "path": "server/engines/codex-runtime.ts",
+          "change": "A",
+          "blob": "03101c47393dc73743061d935a07a16d878da9dd",
+          "canonicalSha256": "7e8eb6210c3c96692e539fb86815853565ba9aabda49daa5e26bb93dcf0809c0"
+        },
+        {
+          "path": "server/engines/codex-session.ts",
+          "change": "A",
+          "blob": "e4677e669926ff49b0f69ae7330ebbc5db1adab0",
+          "canonicalSha256": "72edd9cbb90db61ba1bc4d6c3a9ebaa7961fcd551e97f5b5898590c10247b776"
+        },
+        {
+          "path": "server/engines/contract.ts",
+          "change": "M",
+          "blob": "1a0e73c19b51cd378a13785e512a93bf5375eca2",
+          "canonicalSha256": "89289380a2e8c9a53635d34804b81c4e442f9e23ea629678a593283b87383a3b"
+        },
+        {
+          "path": "server/engines/cursor.ts",
+          "change": "M",
+          "blob": "41a870eff6d2b2c2ee89170576bc473903ba902b",
+          "canonicalSha256": "750a4567dbea52bc176b98e0a5cdb2081560587729dba7dfe374fca81139370a"
+        },
+        {
+          "path": "server/engines/devin.ts",
+          "change": "M",
+          "blob": "c5bc8a4eb0e376e194abf93a6d68e6c7eb397c84",
+          "canonicalSha256": "1d2777ddfe4c204d67476725f87dcc63c500bf9c000a112595981f902a732f22"
+        },
+        {
+          "path": "server/engines/google-vertex.ts",
+          "change": "M",
+          "blob": "a95f761aab83f1ee243af58a79da6b746ddd0d9e",
+          "canonicalSha256": "0d3b8defe75a1a523c93814f17dd1750505135b12a8750d3f2bfbdc4152a8773"
+        },
+        {
+          "path": "server/engines/install.ts",
+          "change": "M",
+          "blob": "1e7be13dd779c7fc57236e971aa234b4eabb1eb5",
+          "canonicalSha256": "93a272f9022f3096bca05d254f264e94cbdfb55578aa9cc69aac694b59f68a42"
+        },
+        {
+          "path": "server/engines/model-api-core.ts",
+          "change": "M",
+          "blob": "966859d2a7e7a66304593d6b0920644a2491a2dc",
+          "canonicalSha256": "1c88c0d8cf981ad9a5c248adb7a53c04ef2f00dea33fec0ed1e5bb0169ccfba6"
+        },
+        {
+          "path": "server/engines/nectovia.ts",
+          "change": "M",
+          "blob": "39d619981c3bbfabcdc4a617f7edfd9986003da5",
+          "canonicalSha256": "fab48d8e643a84325cc3bfd6a882b58022be16a33911c1e3aff900f6e1ba679e"
+        },
+        {
+          "path": "server/engines/opencode-session.ts",
+          "change": "M",
+          "blob": "9f1fa82b84114a316fc44f5e38f7d0b936f9f8e9",
+          "canonicalSha256": "b72fc879a412082782787882dbee4f1bc7c67d95b9d135ac27dc26f3c73a66da"
+        },
+        {
+          "path": "server/engines/opencode.ts",
+          "change": "M",
+          "blob": "cda3fc57d85c21420edeffd6e8ebd7d7dd7e672b",
+          "canonicalSha256": "bc4a21e4ca22c84c3f1bd84a9bd2daa9af69c6765d32813bd39a7b990550999c"
+        },
+        {
+          "path": "server/engines/openrouter.ts",
+          "change": "M",
+          "blob": "254b601c36c87c00fd12dd11c4559206a2ed3ff9",
+          "canonicalSha256": "813f78fbd2e174ab8a75e313c1d0fcf5f4699d500dd75a229d9335ff12f4ea11"
+        },
+        {
+          "path": "server/engines/service.ts",
+          "change": "M",
+          "blob": "364a84226450a2d06e8743ade40dc779abd7ef44",
+          "canonicalSha256": "81668c0d87e0d0f8badab70824d337942058ba67ad9e3dbeae91951e62bfe7c2"
+        },
+        {
+          "path": "server/harness/adapters.ts",
+          "change": "M",
+          "blob": "496150d7da790cfc83133f91ef2c8b11953c01b3",
+          "canonicalSha256": "07cd2ce6703ec9797d70fd25f42029d9aa1dcf4b7438df2a7c896988aeb7f793"
+        },
+        {
+          "path": "server/harness/aws-model-adapter.ts",
+          "change": "M",
+          "blob": "00cd42becb28786e0c29aa2be9687f3f168971bc",
+          "canonicalSha256": "1b343cfe778dcee83cb569d71e356f72440b2e3cff5f3bd44d5e2906010cc911"
+        },
+        {
+          "path": "server/harness/azure-model-adapter.ts",
+          "change": "M",
+          "blob": "b767a192fc0d1c2c3e85fae4504f1a32b3588fa9",
+          "canonicalSha256": "713c33a46c9a3f2c2eea37676efce43d9c4046d0b78909cf8715acfd49bcf6e6"
+        },
+        {
+          "path": "server/harness/claude-session-run.ts",
+          "change": "M",
+          "blob": "da6113ad25622464fe6f1dd3201e8b7695b45a6c",
+          "canonicalSha256": "6c46ce7832ec107f2278688a23655a8361eaa43564dfc6b974bdb26cdca66aa3"
+        },
+        {
+          "path": "server/harness/codex-engine.ts",
+          "change": "M",
+          "blob": "202228bf1535ff11a9a414f7dc020b0e09b66b6f",
+          "canonicalSha256": "74274e2141a554f76e0dd294c404055adf8b79739fe03e55522e34e4aa8dce85"
+        },
+        {
+          "path": "server/harness/codex-session-run.ts",
+          "change": "A",
+          "blob": "ee86f9bbe38069b324135b20021692bd78cf2fba",
+          "canonicalSha256": "d60a159039650f2fbce32a4f412e09e4b74a578d9ee3d5e30f69f9d254cf0511"
+        },
+        {
+          "path": "server/harness/conformance.ts",
+          "change": "M",
+          "blob": "11d94ace7a05f91b092b4c3ec35a29db4da668ea",
+          "canonicalSha256": "7aa131c58afc9776fcab2a26234314bd4c1ec8ec82472b5de609ceb51e189da2"
+        },
+        {
+          "path": "server/harness/host.ts",
+          "change": "M",
+          "blob": "5c6967d1e8f20c339e6231e60026bd80ff08c7f8",
+          "canonicalSha256": "05ad6211be49c2f1cf26ca823c562eb5eb1dd889ec2086fc9737826158eb50b8"
+        },
+        {
+          "path": "server/harness/model-api-adapter.ts",
+          "change": "M",
+          "blob": "116c5aa93c4683e3dc397195dbb6f92b6f5cfd57",
+          "canonicalSha256": "44567be9355efed96a9aa6c84cc8f898b9b3593b8369e95c272414a28d179934"
+        },
+        {
+          "path": "server/harness/model-session-run.ts",
+          "change": "M",
+          "blob": "e70f39dc67cee8fa744f7cc14ca35a814900ed13",
+          "canonicalSha256": "e7cb27d3d843c0d57e75f4a49fcc5280e37c14534769ef9b4a34091b44183ec0"
+        },
+        {
+          "path": "server/harness/native-agent.ts",
+          "change": "M",
+          "blob": "532665fe2e3d9f100770db037e55cc8cfa74aa6b",
+          "canonicalSha256": "cb2062588ae3162eaf6e670c15133a3a5a6909f48a9a7d6789028e443ed61b2c"
+        },
+        {
+          "path": "server/harness/nectovia-model-adapter.ts",
+          "change": "M",
+          "blob": "7c5357a5a37df67844ec8cc633383bc274ea5e19",
+          "canonicalSha256": "86dacd12bb67ec7284d7aa902001e16d8960b6edba2603b4bbd5a1a00a089560"
+        },
+        {
+          "path": "server/harness/opencode-session-run.ts",
+          "change": "M",
+          "blob": "302c5e80baa12e4c962346b5232edda1063ed339",
+          "canonicalSha256": "4ba290a77740bafc82ed91507d0151cfd932a5e85538c7b73ccbeb04d01d2e7c"
+        },
+        {
+          "path": "server/harness/openrouter-model-adapter.ts",
+          "change": "M",
+          "blob": "adbe56dbea4082d9df132707a60756a27ffe409b",
+          "canonicalSha256": "c81c9c138c677d1ca741a4449998676c5a3a1014a6c593f53b9e4aed1572bb13"
+        },
+        {
+          "path": "server/harness/policy.ts",
+          "change": "M",
+          "blob": "e62bd7be1d6c63c9b76c8c1809b5674e79972e60",
+          "canonicalSha256": "e967d0b939d1b8f89a7ac1be1d653532f7cd73a484e9d83e56e435b871594b33"
+        },
+        {
+          "path": "server/harness/route-contract.ts",
+          "change": "M",
+          "blob": "2f1c0dc9cd94e33a0d37ec60c9e94d8638fcd4c3",
+          "canonicalSha256": "9347da984ccf85e50892b099514b10b98cf20859d1bf86df0c09e4ca84ac9a1a"
+        },
+        {
+          "path": "server/harness/routing-receipts.ts",
+          "change": "A",
+          "blob": "93088f50d12d290996873f527e9ab5cacf1ec3cb",
+          "canonicalSha256": "8591da394d66add32f4fb2222e9036232b7656ab98b6b1fd088a42f21cab1eb0"
+        },
+        {
+          "path": "server/harness/run-service.ts",
+          "change": "M",
+          "blob": "09771a81708d18b1856b54c97eeddf361d4c76b2",
+          "canonicalSha256": "1e298f617d3c8f02a7b58f5b3abf44d89b2e1971f313e3b3851651fcf82341d6"
+        },
+        {
+          "path": "server/harness/text-route.ts",
+          "change": "M",
+          "blob": "4acc157f64730881348ea2e0032c38715db92681",
+          "canonicalSha256": "c570827f8a0f35c581262ca0c275905941a824b0519adcb41a6aef6ceeb38c75"
+        },
+        {
+          "path": "server/harness/vertex-model-adapter.ts",
+          "change": "M",
+          "blob": "8858fc8ec8d308eff273a27c61e22a0e8ed65468",
+          "canonicalSha256": "2fc84cc204e9639c9f833d06ad8edc22b2cc651d3c248c3348f451886fb8afa1"
+        },
+        {
+          "path": "server/integrations.ts",
+          "change": "M",
+          "blob": "e2926b49e2137c5004e6379ec1fc1ab78f26758d",
+          "canonicalSha256": "5da8b2d94bab00ba9bc561896a15fd3f6661a652824dd45ee8736b7076858963"
+        },
+        {
+          "path": "server/interaction-service.ts",
+          "change": "M",
+          "blob": "d2c526dbfce7a2f0aac1b1e38fec5f5dec51511b",
+          "canonicalSha256": "7ee6116c34aabcc2ce975f09948001447e2d074a811ffff95535fa8e6769f54f"
+        },
+        {
+          "path": "server/models.ts",
+          "change": "M",
+          "blob": "3aeb29689026ea4cea90f31b457a6b64c49d18cf",
+          "canonicalSha256": "d37013610946ba010350d67d47faeb2d0fdb666e6dbd7c59f29fedd35c2af3ba"
+        },
+        {
+          "path": "server/observability/sanitize.ts",
+          "change": "M",
+          "blob": "85a296aea838dc45af04cd074c8abefb02766a23",
+          "canonicalSha256": "4fd7437eae76c0ad84f022abd2ad0dca435a58dedc4b8dbe687765bedb73cc25"
+        },
+        {
+          "path": "server/readiness/projection.ts",
+          "change": "M",
+          "blob": "c359baefe1680ef6f4ccc3b2bd0db642888484d8",
+          "canonicalSha256": "8e5a3295bb178111b6466e1d15c715bc112cd813c7700f0c15f669e07afdd291"
+        },
+        {
+          "path": "server/sandbox/sandbox.ts",
+          "change": "M",
+          "blob": "ab85944e4090e5abe8eac1e9f59a160136a756da",
+          "canonicalSha256": "46df3331fbc2784565512e63270f11d3159d83c8d5baedc3a3c0554dcf0d5473"
+        },
+        {
+          "path": "server/spend-exposure.ts",
+          "change": "M",
+          "blob": "75ef47d6c72997c8ea9c3e5b94a88b8e18e2072f",
+          "canonicalSha256": "949947e191b44452a71b6d70f0a967c19649bee122671bb5eb08b526edf66aa9"
+        },
+        {
+          "path": "services/control-plane/migrations/010-scoped-routing.sql",
+          "change": "A",
+          "blob": "06b75139d7ae21d4026a59f415e62ea80aa006ad",
+          "canonicalSha256": "426c3373e9c3a6f9e5f4af6180710d4da4262ce9a834f4c61273a60ef27eb9f3"
+        },
+        {
+          "path": "services/control-plane/scripts/funding-permissions.sql",
+          "change": "M",
+          "blob": "62ae8afc71533194d1cf73040650790d286016e7",
+          "canonicalSha256": "0f97d059f32d41071e37294299f6592b9e9eb0d38f4ef78920034b8c4a74dd80"
+        },
+        {
+          "path": "services/control-plane/scripts/migrate.ts",
+          "change": "M",
+          "blob": "6580034844589b0c4fee7c40186d12f3ffc51de7",
+          "canonicalSha256": "512d61ef122c3fcd4e8ae1e5ddd051a10f6ea5a6d32f534347f76a5d1bfb8527"
+        },
+        {
+          "path": "services/control-plane/scripts/runtime-permissions.sql",
+          "change": "M",
+          "blob": "3e6911ac6e5db0c3b89c64c8eb92190f13485518",
+          "canonicalSha256": "a44344b03e66574a6a78c1949a06bbb6183ac98029fda3a2dd25738d9e8ab8b2"
+        },
+        {
+          "path": "services/control-plane/src/commercial-postgres.ts",
+          "change": "M",
+          "blob": "562cb776fcb91b1f15588c518e7a81b386a106f6",
+          "canonicalSha256": "53b53344d354c0ff6256943c081b4af04430cd6e1434edd35c86039797eb6ee2"
+        },
+        {
+          "path": "services/control-plane/src/commercial.ts",
+          "change": "M",
+          "blob": "01d403132c3b0e1066a708ddb4625f4c21a71063",
+          "canonicalSha256": "f5080bfbf2329e4fa520486547c67e727b168adbcdf1bd90f3028a0a8f580c10"
+        },
+        {
+          "path": "services/control-plane/src/faux/cloud.ts",
+          "change": "M",
+          "blob": "5f178699f445e3b0be5aea207c4b03af6bf0d99d",
+          "canonicalSha256": "a9756afc987e8e15895d1016e9f397ccee30c554667f3f97597c1ff9b6ef8198"
+        },
+        {
+          "path": "services/control-plane/src/faux/seed.ts",
+          "change": "M",
+          "blob": "d932d46d893f43afa4ed7ba5ad148053f605f319",
+          "canonicalSha256": "0d14c1c6a94f03e17781b1fa3c460cbeb0843008744d37e5894ddce827a8990a"
+        },
+        {
+          "path": "services/control-plane/src/faux/store.ts",
+          "change": "M",
+          "blob": "77624bc5df5199123427f65e0f1800e0086163fb",
+          "canonicalSha256": "1679a88eedd78a785160c9144dc0f4559d493dc53b78a65a2797dcb448e34cd5"
+        },
+        {
+          "path": "services/control-plane/src/funding.ts",
+          "change": "M",
+          "blob": "106ee4ac6f9bb71b13e08527938e004638d24174",
+          "canonicalSha256": "af0bc0152afec07417d87474a42bd0975a6b2a49cdcb18711b9b6d3c0c944e29"
+        },
+        {
+          "path": "services/control-plane/src/managed-bindings.ts",
+          "change": "A",
+          "blob": "b3a44459f4c17da0ab81cb99179cb1465b9b4fdc",
+          "canonicalSha256": "774c05a7d708d71290270fc853e061883f8f85d9f9bbd862f616a0fd7b773f1d"
+        },
+        {
+          "path": "services/control-plane/src/managed-inference.ts",
+          "change": "M",
+          "blob": "8826d7dc863de016cbd8334ec1f6a30edd3ba686",
+          "canonicalSha256": "f6359e93e5cb2aed15f4d898005e8309e3e66780764a60195b74a819fa574b13"
+        },
+        {
+          "path": "services/control-plane/src/managed-normalization.ts",
+          "change": "A",
+          "blob": "df427f1dbe9e7571925d013c018a250f8e0ee7c9",
+          "canonicalSha256": "0a20fbd548b4c13c42d9e4b0fce2a671ecfdbc991d2dacc98c3fe309658f1864"
+        },
+        {
+          "path": "services/control-plane/src/managed-providers.ts",
+          "change": "M",
+          "blob": "c7730948a73c231118cb65a9be51addc54d8e696",
+          "canonicalSha256": "ccdf1128b4876ba665695668afb78d41d86d308d1f9e4ea56c54f4aedb463eeb"
+        },
+        {
+          "path": "services/control-plane/src/routing.ts",
+          "change": "A",
+          "blob": "3a163753a559866f06da2e9f8498d4b3b8225658",
+          "canonicalSha256": "6f75891a1d45a44c3f7ac961852411d3299f78abc1c21e43a0c08276465d8834"
+        },
+        {
+          "path": "services/control-plane/src/worker.ts",
+          "change": "M",
+          "blob": "3056c79dbf692ba193d0cdcb0da391771b6f2c3e",
+          "canonicalSha256": "73e6fbd1002939c49e6f67f4c758a583175ecaa317da95fbd75cc086bd7c13bd"
+        },
+        {
+          "path": "services/control-plane/tests/customer-access.test.ts",
+          "change": "M",
+          "blob": "e6927de204172887e41cec10dc5e34ba44cf6d96",
+          "canonicalSha256": "31a046930bc96450d0b4361bba44c06a5df9c4a5e8244878712ed2b7a0df03d7"
+        },
+        {
+          "path": "services/control-plane/tests/gateway-funding-login.test.ts",
+          "change": "M",
+          "blob": "7c43a8895ccd3f7b808806b2d82ab5b3acb730e5",
+          "canonicalSha256": "3f6a2caad9ea6f8e680ee3c5dc428d78d70a4458a8e2a583e416a99630aaeda8"
+        },
+        {
+          "path": "services/control-plane/tests/individual-plans.test.ts",
+          "change": "M",
+          "blob": "ea060e02edbc9da0fecd68bfaa0dda578f022b2c",
+          "canonicalSha256": "89296ec3fdbc4a1c2a7291a92f327cacb76fc46af95a085fe7e25b70e259050c"
+        },
+        {
+          "path": "services/control-plane/tests/managed-bindings.test.ts",
+          "change": "A",
+          "blob": "5b11547d4c0d7528422684ee1e34735407ef8e26",
+          "canonicalSha256": "6ea1e6087e211c03a2848f1d4226ada529aefb69ab9b5b7a52561aefadf2f02b"
+        },
+        {
+          "path": "services/control-plane/tests/managed-body.test.ts",
+          "change": "M",
+          "blob": "01bfe4e22c4bf9363ee4ede5c8bb31b1fdf91f8c",
+          "canonicalSha256": "906538085a6c1579e88e82e436af4b79efbc0f41e2b60bc6c2e36fc24f5619ad"
+        },
+        {
+          "path": "services/control-plane/tests/managed-inference.test.ts",
+          "change": "M",
+          "blob": "dd825a797e0849f17b31a67287e9f2c0ebeaa0e4",
+          "canonicalSha256": "7015e70528ee046dadad3989cd3a6c38450282afee2b3f2224b1f2581daaf9f3"
+        },
+        {
+          "path": "services/control-plane/tests/managed-providers.test.ts",
+          "change": "M",
+          "blob": "572037622ce7cce0fd8bb46adb6db86c03b57d96",
+          "canonicalSha256": "a9dad9b0b2f7ca58b20e3df3102cd93845058c3bc673ddf1ec63652325f616de"
+        },
+        {
+          "path": "services/control-plane/tests/migrations.test.ts",
+          "change": "M",
+          "blob": "1829e768f23794849798885941c6cb4c51aa3281",
+          "canonicalSha256": "8050463c8c93233fc0aeed1df8e78201c8659697afdd1e122a32576a8cc30638"
+        },
+        {
+          "path": "services/control-plane/tests/operations-routing-policy.test.ts",
+          "change": "A",
+          "blob": "b1b63349439acd4f6169b4eaea209f42ecc55091",
+          "canonicalSha256": "eaa82cd81a2aa802bb1afce768fb45aeca1f68e40bdb940ae2f002a58659dffc"
+        },
+        {
+          "path": "services/control-plane/tests/postgres-role-independent.test.ts",
+          "change": "M",
+          "blob": "1ab2369b87d3658eae98d2134a5d8714f618616b",
+          "canonicalSha256": "2571fbb5fe5c5de9524ccb452b887296fd8ca571e2d3b212d2d65957d63b8d18"
+        },
+        {
+          "path": "services/control-plane/tests/postgres.integration.test.ts",
+          "change": "M",
+          "blob": "852490532a9ef5e95cfb65b8c884569e00c13181",
+          "canonicalSha256": "2f0dd7aa628ca6f91a1d90064cb4a7baa947e707bc2185a6e744de24b52ba8bd"
+        },
+        {
+          "path": "services/control-plane/tests/scoped-routing-postgres.integration.test.ts",
+          "change": "A",
+          "blob": "5a855cf2cc5b43b06cb814f9a5c2f4d615fb6058",
+          "canonicalSha256": "a0612992b9636c744e58b0317855ab11a0abe77ec77823c0f7516bc79d99613a"
+        },
+        {
+          "path": "services/control-plane/tests/scoped-routing.test.ts",
+          "change": "A",
+          "blob": "03dd40ed27eded9a263571062c6a686a5aaaaae4",
+          "canonicalSha256": "cf14e7246903911bc9fe52e0025e6224b63fd275a2d88ab33bb74e0b138bac45"
+        },
+        {
+          "path": "shared/adapter-contract.ts",
+          "change": "M",
+          "blob": "1ab24e6ac271c58463649f63e5d2064ff183f286",
+          "canonicalSha256": "0b24b5e604d1850b760cef84f98341aa276f8bcce650cb4dadcba23fa9090133"
+        },
+        {
+          "path": "shared/conversation-engines.ts",
+          "change": "A",
+          "blob": "e8de257dace45709ff3ae41761ec884fb8fd2d4b",
+          "canonicalSha256": "470793e73badf8abaadf5390e30fc8f6892bf91182e850ad683f67c39be79b26"
+        },
+        {
+          "path": "shared/engines.ts",
+          "change": "M",
+          "blob": "6c1f4c3544e3f2b301d37f332e4708582088bf30",
+          "canonicalSha256": "1172206defd8a97fbe9c7e3e1cbf8c2e2ec3e71bb9faf5b80e80a9e470355db2"
+        },
+        {
+          "path": "shared/harness.ts",
+          "change": "M",
+          "blob": "2d7cc6649aefe68c8fe48a114ada47978c1a2aa1",
+          "canonicalSha256": "3b1de9d690ae9ba13f6ffb56e6e18b308382b917408e2aaffd1da749ec9548b3"
+        },
+        {
+          "path": "shared/individual-plan.ts",
+          "change": "M",
+          "blob": "82ad64487a7b0306faecab681d1104fd21c615d9",
+          "canonicalSha256": "ee484ac291f5eb0d3de8d92f82fb3b427aacce7098152f6d4cae6b1bad79d076"
+        },
+        {
+          "path": "shared/managed-usage.ts",
+          "change": "M",
+          "blob": "b30c285cf2d510c5a1aa76bacd70c0101b52b51a",
+          "canonicalSha256": "ca7b77578b182a39108126f968c88469ffa24a088004f71073451c564df6e696"
+        },
+        {
+          "path": "shared/model-api.ts",
+          "change": "M",
+          "blob": "f7b3956ee989ad75a8ecc54fe2e5bc82c5ee1116",
+          "canonicalSha256": "2c5f9ba3b39c91055296d41dcb2f1daa17389d1ab8b7554eacc77b6df3075439"
+        },
+        {
+          "path": "shared/routing-policy.ts",
+          "change": "A",
+          "blob": "a01b10c7ff742ed4cb4014851c41e011d1677b4e",
+          "canonicalSha256": "c942ccd879258787574cc4df068d6b7b40b0ece8aec1e9a3a1f0dff30a52e325"
+        },
+        {
+          "path": "shared/tier-map.ts",
+          "change": "M",
+          "blob": "e77eeb11382014d947e3589938d354689f704c30",
+          "canonicalSha256": "2970efb4794dbea15fbf5d4044857a2d16b964ca97a2cfc070d28cdcc6dbacf1"
+        },
+        {
+          "path": "shared/types.ts",
+          "change": "M",
+          "blob": "3b3f6d8d31a73b2f55106e2b7ee064d99c19e2b1",
+          "canonicalSha256": "9e68f25ad94cd5bebada232c602da08a0e06d487bccc416cfaaf235bd12e4a0a"
+        },
+        {
+          "path": "tests/acp-session-runtime.test.ts",
+          "change": "M",
+          "blob": "70cf557c1c75af17470f5fcbd49d50e99491bd2b",
+          "canonicalSha256": "5fde31ddceeb25222fd4152f3a2615104b202e05242352272c341f206261515c"
+        },
+        {
+          "path": "tests/acp-session.test.ts",
+          "change": "M",
+          "blob": "80ad3766634d141c4214dd5379aaf7cd49923301",
+          "canonicalSha256": "407b8c59c61b3eb9425636a6cd4858400291ccb489974fd2ba1105265f196010"
+        },
+        {
+          "path": "tests/acp-thought-chunks.test.ts",
+          "change": "A",
+          "blob": "96b28eab71f566a8bf852058b663956573cbbbe9",
+          "canonicalSha256": "a17e8d5ae956e78c934a2076d77142695ad63d1844b4a16ba96a9797b8672708"
+        },
+        {
+          "path": "tests/agent-profiles-routing.test.ts",
+          "change": "M",
+          "blob": "0dddce0093c7ab8d3609b94c4ff43fee74ea08dd",
+          "canonicalSha256": "f5280c96b877dd4b9f22d7a3bab334b717c88e478bfa4a371584005d7af866e2"
+        },
+        {
+          "path": "tests/ai-setup-api.test.ts",
+          "change": "M",
+          "blob": "63ea052baf3793a2170a8fbd0366531d46203721",
+          "canonicalSha256": "397a22b2b22f3ac9ba64199d7eea4d02855bcb3abe63e729c2f41db4704ae662"
+        },
+        {
+          "path": "tests/aws-bedrock-transport.test.ts",
+          "change": "M",
+          "blob": "5d58c3c0fd252abd03dfde28f8108bd3d1e564fe",
+          "canonicalSha256": "4e30e2af8117d517817687a34b29d8af6f8de41809f5180998e024905f7e57fa"
+        },
+        {
+          "path": "tests/aws-bedrock-view.test.ts",
+          "change": "M",
+          "blob": "fca12cafb310286b235b3688dcd84bcefd55a2d4",
+          "canonicalSha256": "ba63b844e0ba32f3cdf1a3e42d38104f36e7d3d0b172716e04c32a607e17adda"
+        },
+        {
+          "path": "tests/aws-gpt6-luna.test.ts",
+          "change": "M",
+          "blob": "1720ef70d5b0e2e99ca45240067bf3c6c0c659f6",
+          "canonicalSha256": "b502321487d52cc0b8c3d0c66dceb12269d8a18ec3d4f3fa7d4cf38f79237e0c"
+        },
+        {
+          "path": "tests/azure-openai-model-api.test.ts",
+          "change": "M",
+          "blob": "aa995d224beb391cfe822d49460cdc973329da6e",
+          "canonicalSha256": "14ddc0606830147ba31f5ede6619c55fc7b0535cf7d6cd2b302a0a71154330ce"
+        },
+        {
+          "path": "tests/b00-h01-repair.test.ts",
+          "change": "M",
+          "blob": "dce5e00789d778a0acd3d2ccefd7222719d23f9c",
+          "canonicalSha256": "51fe12b24f4d5b9dee21d54a4c4d24049886ad2d6c8decbdea24b5f4b2fbc7fd"
+        },
+        {
+          "path": "tests/backend.test.ts",
+          "change": "M",
+          "blob": "92efe88c86db48e21361d6f9f430992c30898dec",
+          "canonicalSha256": "6ca33d61b335d82bb4381c5b83d21db4f2b8a8570c92a13a63e13522c1de694c"
+        },
+        {
+          "path": "tests/claude-adapter.test.ts",
+          "change": "M",
+          "blob": "1af4ba71cf20042b099ab11da69eca5d2bbca932",
+          "canonicalSha256": "a4419e0ec08d69530b434875c6cd258e7e290fb55d3f82e4f49a741a21aeea36"
+        },
+        {
+          "path": "tests/claude-session-runtime.test.ts",
+          "change": "M",
+          "blob": "64c14bfb3cf45d33bc8aa6fd5db579da67496b56",
+          "canonicalSha256": "eb915666b1e0746c7fdf2db82ebaf04d039d4fcb77105f36804c198e5bef076f"
+        },
+        {
+          "path": "tests/claude-session.test.ts",
+          "change": "M",
+          "blob": "57d78232b3309ded05182c33390494de9641c701",
+          "canonicalSha256": "92d5e44cb280e7aefc8be25edd8637bf8d0aea49084ea6454f04a916f3c04c80"
+        },
+        {
+          "path": "tests/codex-conversation-port.test.ts",
+          "change": "A",
+          "blob": "061f6edf4215c284e7bd133472e806e2e2c085e8",
+          "canonicalSha256": "849a55e469a7d452b9e415c09a97f8ab2a2b429e4ae91d55eb69ce02224d054f"
+        },
+        {
+          "path": "tests/codex-protocol-evidence.test.ts",
+          "change": "A",
+          "blob": "0f6f446d1d94bdee964ebb41360bf0592875942d",
+          "canonicalSha256": "12c35dd971d538582961c359bd1a61e8fb7fc13512716886c3ec731b56cf5637"
+        },
+        {
+          "path": "tests/codex-runtime-discovery.test.ts",
+          "change": "A",
+          "blob": "eb2ab69dcffacb0bcd83680dc357a27dfddd21c5",
+          "canonicalSha256": "796edb1ce526c0dccd14e72754e1d8db5eb47e4c36ec5d278eb713f56c798687"
+        },
+        {
+          "path": "tests/codex-session-runtime.test.ts",
+          "change": "A",
+          "blob": "b61bded278d69378021961a3c0e4ddae6c6e8d87",
+          "canonicalSha256": "7b1efa1af59355aa0f6e12c147660fc2666d4812f7bcf2c7ae77719d05627161"
+        },
+        {
+          "path": "tests/codex-session.test.ts",
+          "change": "A",
+          "blob": "0f80a5874842d6290c768b953bc1f583886f9643",
+          "canonicalSha256": "9602eb0c2c95018c6538a65620a570e988c85a26e38cc55d6d5e272616832dd8"
+        },
+        {
+          "path": "tests/conversation-engines.test.ts",
+          "change": "A",
+          "blob": "b8f2845460c7edc07e418150c534fb1ebdaa384d",
+          "canonicalSha256": "230b32d62c33c4f0624c69f5c89ad45d4e4ee974c4ef85f51c3cdcc21d419789"
+        },
+        {
+          "path": "tests/conversation-sessions.test.ts",
+          "change": "A",
+          "blob": "42c99c97e329987ad8755fd2e7aff8f5e1c0c42f",
+          "canonicalSha256": "403262e8a45aa422ad73fde6f9e79f397b1dfe62b05b48ba82a14b68f089deb7"
+        },
+        {
+          "path": "tests/delegate-sandbox.test.ts",
+          "change": "M",
+          "blob": "51a5136b2257b44ddb034e318c09eabcea491629",
+          "canonicalSha256": "6120b54583e6e1fb7c1a428139d2d4519aca8c07fb7265ff2854ab948ead4c8b"
+        },
+        {
+          "path": "tests/desktop-packaging.test.ts",
+          "change": "M",
+          "blob": "a83199e3dc9f1e99b17a4fb61aa6d70bdc7300f4",
+          "canonicalSha256": "d3103e13b547ac623e7d26709e46ccee935347fb56c1ba2066164fa0f53d1593"
+        },
+        {
+          "path": "tests/discovery.test.ts",
+          "change": "M",
+          "blob": "c542a48b71713ccd16de3dff1dbda84934fa4417",
+          "canonicalSha256": "b4957a91e8333034e0669f682f472c65f85fd17073ff411dfc2cc8464438cadd"
+        },
+        {
+          "path": "tests/engine-install.test.ts",
+          "change": "M",
+          "blob": "113799598585c733031fe03b54487cf6545e8e48",
+          "canonicalSha256": "96bb3065978ce4262b70fcc9681dc5b6e002ef7aaa1693d943be829252f30ece"
+        },
+        {
+          "path": "tests/engine-reasoning-client.test.ts",
+          "change": "A",
+          "blob": "a66f88d683d15b1ea3886864368710e4b347d454",
+          "canonicalSha256": "78c021a2ec260b8e373878ae16dea9701b53077c2b697e86169787b23fbe4ff1"
+        },
+        {
+          "path": "tests/engine-runtime-knowledge.test.ts",
+          "change": "A",
+          "blob": "8c3eacb15d5ee136b29a4fc731f3fcf0eeab9f4b",
+          "canonicalSha256": "9b20f6e9598bd957b8e23de724f325ecfd122ddfaa5f510954dd376ab934bcc1"
+        },
+        {
+          "path": "tests/fd01-independent-review.test.ts",
+          "change": "M",
+          "blob": "186c6920667fade99ef559f19995cd4659ad691f",
+          "canonicalSha256": "55c3c0013281abd228bb3eda494d8491248d38a0b925d5cde294ae66185d7789"
+        },
+        {
+          "path": "tests/fd03-readiness.test.ts",
+          "change": "M",
+          "blob": "b6d99ba96b0c9da606a19150c3dbf037936993b3",
+          "canonicalSha256": "fe97253fae84f0c860dfcd118823d594ba9df708f199e57c421cc6beb3e6eb09"
+        },
+        {
+          "path": "tests/fixtures/acp-agent.mjs",
+          "change": "M",
+          "blob": "f453ac5e68f580ce1cf3c16e3192913033b3ae94",
+          "canonicalSha256": "d40f124d181a28bc5e1dfa5ad2c6e76aa7d77252e7c4941c1308aca209520f41"
+        },
+        {
+          "path": "tests/fixtures/claude-stream-json.mjs",
+          "change": "M",
+          "blob": "9629db42cb205818bcf5d4a80b48c0d7d4d2f84a",
+          "canonicalSha256": "30b2ab03232104ee4edfe161e20bf9d547fdf02656f7b0c31814482f1269f751"
+        },
+        {
+          "path": "tests/fixtures/codex-app-server.mjs",
+          "change": "M",
+          "blob": "ea9c794b20b2e1861e20c500379ad4b33fd80aac",
+          "canonicalSha256": "f85fb1d39fbb357a13e090ce5592ac4d586995639d9f6eec523b6d04f6de1955"
+        },
+        {
+          "path": "tests/fixtures/model-api-streams.ts",
+          "change": "M",
+          "blob": "c30e34dba9300f6609292d0ab7e41ed3825e4825",
+          "canonicalSha256": "63c49e3a7b4ba52083b587ec2858098ea7c7d79c6b70d935c16cb5031c3af924"
+        },
+        {
+          "path": "tests/fixtures/opencode-session-server.mjs",
+          "change": "M",
+          "blob": "66cf7b55f9838758e3bd5609708ad7d1387452e5",
+          "canonicalSha256": "42cc9787bf1980e8386d6321ec40e4703e842dc7025e2b17766b4088e0ff6ed8"
+        },
+        {
+          "path": "tests/found-engines.test.ts",
+          "change": "A",
+          "blob": "da318cb1aba604370080e097cf52293cf007e29e",
+          "canonicalSha256": "235debf0a8798b19c24de67cb6c17e9710ae15aa35be307850f8bb50a90af589"
+        },
+        {
+          "path": "tests/google-vertex-model-api.test.ts",
+          "change": "M",
+          "blob": "05652c7d4fa265e93608102a6fe0e4e146bd34a1",
+          "canonicalSha256": "a9b27da8d6c1b0659b68c51840b54cb06435aed176c9c5f05c3952d65ac31c89"
+        },
+        {
+          "path": "tests/h01-conformance.test.ts",
+          "change": "M",
+          "blob": "84a5fe3aa3c340e623c5ca41777a93a93ffb20dd",
+          "canonicalSha256": "a640e2c0f623231440268be06ff5a14a0e86c0c7ed017b18eb8e5982b5f2f722"
+        },
+        {
+          "path": "tests/h04-opencode-session-routes.test.ts",
+          "change": "M",
+          "blob": "15b0ee12921e8d43d473c858b4c3e477146ca62d",
+          "canonicalSha256": "cc196458ebc846729a35421c9009815716bed965cbc747fa9d6486cd78509bc9"
+        },
+        {
+          "path": "tests/h05-acp-session-routes.test.ts",
+          "change": "M",
+          "blob": "6e6a2d72bbffae1ce590467f88e1a5755cc3b461",
+          "canonicalSha256": "e86e4276049ad8a26a919d5759106c246e7e11e02afc816dd575b70ed66a9ccf"
+        },
+        {
+          "path": "tests/home-conversation.test.ts",
+          "change": "M",
+          "blob": "a8a0e07206ee830bc07c88682e951948830cb542",
+          "canonicalSha256": "61e0ed944e137d92af92bc8c64e19fbea6c2e93d1e3bd62925a5ebe8c070d997"
+        },
+        {
+          "path": "tests/home-luna-routing.test.ts",
+          "change": "M",
+          "blob": "ab580ada4a6222ecc919dc71ff530c9909d9eb5b",
+          "canonicalSha256": "bbda2bc5c46e3a0a1b04b013b5f5a7bc0b4213b0d8c74bbdfd82dafa0949cf90"
+        },
+        {
+          "path": "tests/home-luna.spec.ts",
+          "change": "M",
+          "blob": "10f726a45bdee267a8bb98d65844e0878c9d4587",
+          "canonicalSha256": "99d036ffc1ab3aca4730ea8d375f471c1a9e06de275448a0f954c787310d6a85"
+        },
+        {
+          "path": "tests/home-route-ownership.review-20260921.spec.ts",
+          "change": "M",
+          "blob": "f919c4a795355f5f2c039a97b0d00208ecc33d07",
+          "canonicalSha256": "bccd5ba7c8e3018166cd6ceb7d49d33cc589c6f43eb174e55575c54cd19a95ea"
+        },
+        {
+          "path": "tests/hostile-binding-boundary.test.ts",
+          "change": "M",
+          "blob": "a66c766deec96d5158721cc37df40cbab2d0cc55",
+          "canonicalSha256": "c053de0504999d5848f7a4f72ae893acac1e1e18cc010c6de19d7e4af58972b9"
+        },
+        {
+          "path": "tests/individual-plan.test.ts",
+          "change": "M",
+          "blob": "0998606e6537e68187484d127141da842a7272e8",
+          "canonicalSha256": "1abd41a48dea35066c973176f4daa1dd0732d6888d3b96a9321450a22e05bfd7"
+        },
+        {
+          "path": "tests/integrations.test.ts",
+          "change": "M",
+          "blob": "e11c563223aed61e16d58d19126868458624c3c0",
+          "canonicalSha256": "6dfc7e2ce2dfe29b0440437523400c7c2550ee5b7a84eaec9c73313f4a3a11d8"
+        },
+        {
+          "path": "tests/jev-advisor-routes.test.ts",
+          "change": "M",
+          "blob": "2fb567975215227f832860568c51f697e27f19d7",
+          "canonicalSha256": "17b4039dd340415d4c0d89771662fcc14e3605bd484fbd61ca3dd6d50a3773a9"
+        },
+        {
+          "path": "tests/kept-session-thread-ui.spec.ts",
+          "change": "A",
+          "blob": "f9e48491fb747393f9234acc2f1ce971e7826c29",
+          "canonicalSha256": "23ff9edbf3fe5b7829bde0fbf30b99337c8f2e78d374a70813bbe75ac7b67de4"
+        },
+        {
+          "path": "tests/live-activity-server.test.ts",
+          "change": "M",
+          "blob": "f82a27cdcdee8cb5ce054831a85306693624118f",
+          "canonicalSha256": "1fdf41b708093e3fc200b1c5733b2d3b45d156b2f55ee7387e7f6eb5afaa9c38"
+        },
+        {
+          "path": "tests/live-reasoning-server.test.ts",
+          "change": "A",
+          "blob": "5ec47089f32f8683d84af0434cc44b4dd81b62fb",
+          "canonicalSha256": "e7c62493ce89736c5297e36eca4da880d9c4cf4e0e670d68e24e808a5c7f243e"
+        },
+        {
+          "path": "tests/live-redaction.test.ts",
+          "change": "A",
+          "blob": "2c3f8f2d69c86a3ceb2f96f39ff3d370f8cee0f7",
+          "canonicalSha256": "df874f11d95bb23a415692c539508324b2bc04b89e4e2bd1fa9e71278ef78a02"
+        },
+        {
+          "path": "tests/model-api-thinking.test.ts",
+          "change": "A",
+          "blob": "382bbb1de4f430d67923124f9f5690998fa73df7",
+          "canonicalSha256": "9f504386e7c5e99fd7bade79e676174833660f2b695ddd3c39708b177680df93"
+        },
+        {
+          "path": "tests/model-session-activity.test.ts",
+          "change": "M",
+          "blob": "07db408a91cb957336e27e3787507f73b0347e10",
+          "canonicalSha256": "6b8d49f4ba3b9fce0e2fa528398b8f14d9e6b38af89dee85df25ae5302f05fed"
+        },
+        {
+          "path": "tests/models.test.ts",
+          "change": "M",
+          "blob": "ed3cb720f3d53d9089a049b689bf9c9ba62303f1",
+          "canonicalSha256": "cf1adcb93cfb89810286299cc56c45a6eac531ced65ea35c76fa3964e21a6771"
+        },
+        {
+          "path": "tests/native-runtime-release.test.ts",
+          "change": "A",
+          "blob": "5c2a89743fa80a16d6c696afe7e380e7625608ca",
+          "canonicalSha256": "009e6f4d5b9ee8cae0105e6ccc3e0f76d32431b2afa6e70204e7b7f09197fa40"
+        },
+        {
+          "path": "tests/native-session-view.test.ts",
+          "change": "M",
+          "blob": "d6468ce93988a0d098ab9fcd6157fd5997c2823c",
+          "canonicalSha256": "d0fd6ae1db24c9249a58d4486ee14da5d1be139d73b079aa0eebc11e65f53791"
+        },
+        {
+          "path": "tests/native-sign-in-review-independent.test.ts",
+          "change": "M",
+          "blob": "b803967d87ca310980d3eaba18690dd2ecff0546",
+          "canonicalSha256": "bcbea44dda5bb1f25a3618c8670f03acd6357da06ed20374d272bc7ce4a8ad84"
+        },
+        {
+          "path": "tests/native-work.test.ts",
+          "change": "M",
+          "blob": "bd893ee87fe7e1202b68d94967f6b42b0d2819a8",
+          "canonicalSha256": "d1cc4d5c53a3ef014f42422407d4ac2c87d1bc8b149706d88f5383f76530b47b"
+        },
+        {
+          "path": "tests/nectovia-board-work.test.ts",
+          "change": "M",
+          "blob": "7e0fd5e20d5e7ff5e5035188523ab9e0fd6f47ed",
+          "canonicalSha256": "fc7742e353fb85ab8755b4b281ec8cbb816292d5095ab512afd89e1e464df5d4"
+        },
+        {
+          "path": "tests/nectovia-bot-app.test.ts",
+          "change": "M",
+          "blob": "845f68c7ed276edc363945a961fb6d4e81426bd3",
+          "canonicalSha256": "ff47d7e1e43c7b978abbba283ae6ee566598d5fcefd0e9274d4c38e268656604"
+        },
+        {
+          "path": "tests/nectovia-loop-refused.test.ts",
+          "change": "M",
+          "blob": "3e9820fddcfabfefd81304bce6f4a6f4ad3fe532",
+          "canonicalSha256": "0c8d0795a20fc7584e8142e6f1c2853161ed2c27c37f8891fe36e3dbc66bc402"
+        },
+        {
+          "path": "tests/nectovia-route.test.ts",
+          "change": "M",
+          "blob": "6c7a9a59139eb8b6f13353ac8aa45afd18f2fbe8",
+          "canonicalSha256": "a5223c11cf3d864b9cb250dbef780a52ffef85b3498091ce79f90cb5574566e6"
+        },
+        {
+          "path": "tests/observability-record.test.ts",
+          "change": "M",
+          "blob": "ea4c6c9c462cd68c294db4b2e4adbd87f55c2dea",
+          "canonicalSha256": "af2e9f6106a2b90bce38535897830953298b36965b899766e52a031abc7510e7"
+        },
+        {
+          "path": "tests/opencode-session.test.ts",
+          "change": "M",
+          "blob": "27a5dc696de1ebc49e50cc0b7c155cb6a1691891",
+          "canonicalSha256": "268d769e9da0656ee23184455a1c115f4045e1f94b209c01426c82b495dfd3ed"
+        },
+        {
+          "path": "tests/openrouter-model-api.test.ts",
+          "change": "M",
+          "blob": "1aaef41b2e8394707faeea1e9a400ce03034fa3d",
+          "canonicalSha256": "2fbd3ccf4509b029a7cd78c310f17d2dc0c74e74a4eadcbe20be73385b8c49bb"
+        },
+        {
+          "path": "tests/operations-routing-client.test.ts",
+          "change": "A",
+          "blob": "66169cf53e6dd2337c440dd7a603279c0a6157d4",
+          "canonicalSha256": "8c7506f0b009d3ab4fc8f8855a1c487b440032220a5135bfd9a9d7c09cfcea50"
+        },
+        {
+          "path": "tests/operations-routing-harness.test.ts",
+          "change": "A",
+          "blob": "69308545c1e855ab1a01c75c3a290e3e0e274ed7",
+          "canonicalSha256": "c8465348546669ce440c4dd8515877fc38dd78312eda2ae0e17ced69ea3ee650"
+        },
+        {
+          "path": "tests/operations-routing-journey.spec.ts",
+          "change": "A",
+          "blob": "6c3d6e828cefe2c6a18273b10ae92425d5fee4cc",
+          "canonicalSha256": "134381151b401bd5dae59423c137871e93cf720294c9a5ee8ed95c52dc83a355"
+        },
+        {
+          "path": "tests/paid-abilities-matrix.test.ts",
+          "change": "M",
+          "blob": "9ae8f3b23144261b224f1d0daf7f2be160948f29",
+          "canonicalSha256": "ee0c65267d945fb54ffa696ed47be7a691348f1023e9b803c8a1cf30c3568995"
+        },
+        {
+          "path": "tests/picker-setup.test.ts",
+          "change": "M",
+          "blob": "1a10e2d383c0c69560110b5d74089cc58ae20804",
+          "canonicalSha256": "076dea9737c1b499dc9bfefba30c8860a9230547c34a7dc0c0fc5dfd41323165"
+        },
+        {
+          "path": "tests/read-scope-binding.test.ts",
+          "change": "M",
+          "blob": "7245867b18474a104d5591a5feadd1a82bf71669",
+          "canonicalSha256": "5914fcff36166fcb41e2d3cab2298e87dccbb2051b784fd7ee1fffad508fed2f"
+        },
+        {
+          "path": "tests/read-scope-codex.test.ts",
+          "change": "M",
+          "blob": "33a7cf7eca8f49fd36941986e731e5248808e91e",
+          "canonicalSha256": "010bfebc30848e8d85f6865bbdc176dedc740959ea6e5d1575fbaf5313f8f2df"
+        },
+        {
+          "path": "tests/reasoning-conformance.test.ts",
+          "change": "A",
+          "blob": "13edf34ef0503b0781c42f918b6680b60cbfd61d",
+          "canonicalSha256": "c282725e8b73fb8917695a3eb9138cf2e4b0c1e072b184cb9cd6820886188348"
+        },
+        {
+          "path": "tests/reasoning-contract.test.ts",
+          "change": "A",
+          "blob": "0947c6a590ecea6d81499f4c6ac0e22968f8e8b5",
+          "canonicalSha256": "c561eb7856ef404af0969b3e531a82af2c1ee5ccc86125fb8c96b2f8f45672e6"
+        },
+        {
+          "path": "tests/reasoning-ui.spec.ts",
+          "change": "A",
+          "blob": "a036f2ccad0f00d3414276035483859cc384ee88",
+          "canonicalSha256": "d56dea0c784d117c4ed3004c205121b18beca9f65a683ffb2bf61290c3f883f4"
+        },
+        {
+          "path": "tests/swe2-independent-review.test.ts",
+          "change": "M",
+          "blob": "337d38e474e3344d65e131ab95437277e3ea9c06",
+          "canonicalSha256": "db41e3f35e5d32fbc2f734b472a5389b5b04b18091fd7395653d1669fa4795b9"
+        },
+        {
+          "path": "tests/thread-send.test.ts",
+          "change": "M",
+          "blob": "0f5a8d9a18524d004fdfb9af9bd944cdb58ceb3b",
+          "canonicalSha256": "dad60257c119d68bfa8997aded2ca9fc5a94e172d75b499b8e2ffe25192002d9"
+        },
+        {
+          "path": "tests/tier-setup-view.test.ts",
+          "change": "M",
+          "blob": "daae97d10a89b0af8d7769658a77b8f1ea44be3a",
+          "canonicalSha256": "2ee4881a9526f419bb2e6461a3e2b3f64bd3e2805c2fdf0eafefc18cf123316b"
+        },
+        {
+          "path": "tests/ui.spec.ts",
+          "change": "M",
+          "blob": "0816bfb516758353564436d62be08a5be24dfb58",
+          "canonicalSha256": "2706b9aa7c67f726ef67ec87202cd9b82603f30fd7160851b5ae4222bb849828"
+        },
+        {
+          "path": "tests/work-style-dispatch.test.ts",
+          "change": "M",
+          "blob": "ca4063867214863d717b01c264ddc1ea9c9e86c6",
+          "canonicalSha256": "43c7870bb3a920da180427ae4eab5080bbcd52d93d3ae24d0b43576dcfa805a7"
+        }
+      ],
+      "diffMeaning": "Complete composed delta from imported main, including inherited engine work. Not an authorship claim.",
+      "inheritedEngineDependency": "8ce831400fb4329ea06aec5cf85609638eb938e8"
+    },
+    {
+      "name": "operations",
+      "root": "F:/Diomedes/diomedes-ops-wt/operations-routing",
+      "base": "d0d04da058e7e9fdaeb89f6b28da2ad933f678de",
+      "sourceCommit": "fdd73a74b87bcbcf0ddec123cf78117efcf8fa8a",
+      "sourceTree": "e44e9737138a02b53ded7ab5ea5bf466df0a4560",
+      "parents": [
+        "e8366b42df6667d29554a09acd243528c73bedc9"
+      ],
+      "observedLocalOriginMain": "d0d04da058e7e9fdaeb89f6b28da2ad933f678de",
+      "fileCount": 8,
+      "productionReviewedAt": "e8366b42df6667d29554a09acd243528c73bedc9",
+      "files": [
+        {
+          "path": "electron/service.mjs",
+          "change": "M",
+          "blob": "94b19c10bcfa3d35a5f7ac4119aad14f2cb93021",
+          "canonicalSha256": "fbcb5b733a34409fdb94d8318ea3a4d94753c337e37abaf69bdca964c20d327b"
+        },
+        {
+          "path": "src/Admin.tsx",
+          "change": "M",
+          "blob": "d8fd6a2078652912b38d679bf55d1817f6aace50",
+          "canonicalSha256": "bcd27e343e163fae8a1e0d05033d942986a72d3e7a19b778e1ae6de5ee0dc8a3"
+        },
+        {
+          "path": "src/Customers.tsx",
+          "change": "M",
+          "blob": "8588fd40d0631dd2099917e76ffcb9de22121658",
+          "canonicalSha256": "0fbbf0df2ba2bbf739ea2424930864fc0803a4195bc32e5579365b0ca4124997"
+        },
+        {
+          "path": "src/Routing.tsx",
+          "change": "M",
+          "blob": "5996b9d67b99ca7a7c5eeb7501466665a32f6a91",
+          "canonicalSha256": "ec74378fd9ebc0e21f40f0c2125271d44d036bb38a866faf25f7609f0ccea24b"
+        },
+        {
+          "path": "src/api.ts",
+          "change": "M",
+          "blob": "630b7d625e369e3e79a6f8ed4ea3a9e7e4ba26af",
+          "canonicalSha256": "dfd73cfc3b3ffbfbb6a0ae1dd475a6d0d05a7876822f51d1979800be55c633d4"
+        },
+        {
+          "path": "src/operations-routing.css",
+          "change": "A",
+          "blob": "08bd89ad77d8394d036ecb263529675ca4c0ec8f",
+          "canonicalSha256": "1bf0a4adf2975a7eceddfbe005f11cdd345558fc1537f8d6422dbccd772618d5"
+        },
+        {
+          "path": "tests/ops-service.test.mjs",
+          "change": "M",
+          "blob": "39fc9b5c10fd45fc3b89e9c6963149f4f3fd8ba5",
+          "canonicalSha256": "9aa86d8a0f7e66ed54d6fd428400397805b8599b34b309da2d7d95b1bf0fdb20"
+        },
+        {
+          "path": "tests/routing.test.mjs",
+          "change": "A",
+          "blob": "a85ce944ad3a939294044e856ff3b365769891ee",
+          "canonicalSha256": "e087e7a0fafe61e828d63298760321557463cdf3226a46ed0e63564062a2172f"
+        }
+      ]
+    }
+  ],
+  "immutableIndividual009": {
+    "path": "services/control-plane/migrations/009_individual_plans.sql",
+    "blob": "a6da526ec52317a13f0a8b529b66508e9f39680b",
+    "workingSha256": "540f7bb22cc183175984fcdcf8e82718a7b093ec77d09329656ddd68196e5886"
+  },
+  "evidence": [
+    {
+      "directory": "F:/Diomedes/diomedes-wt/operations-routing/test-results/operations-routing-integration-green-20260928-103253",
+      "records": [
+        {
+          "file": "result.json",
+          "sha256": "3448c58ba3104cd7a1b5e33d5d61a805276ad3af71dbaf0395375fb6d95158a0",
+          "result": {
+            "slotId": "slot_mul3zois_a07a619e",
+            "head": "2b231c80cfd2dd9c6a7534e2ecf9e772f6db9c19",
+            "startedAt": "2026-09-28T10:32:53.5034590Z",
+            "endedAt": "2026-09-28T10:33:34.6119505Z",
+            "controlPlaneExitCode": 0,
+            "controlPlaneTypeExitCode": 0,
+            "clientExitCode": 0,
+            "rootTypeExitCode": 0,
+            "sourcesUnchanged": true,
+            "changedPaths": [],
+            "logs": "test-results/operations-routing-integration-green-20260928-103253"
+          }
+        }
+      ],
+      "logs": [
+        {
+          "file": "client.log",
+          "sha256": "b25b2457771c76d343adca07d6432fe07620f35f2bb970f6a38ee1f07a350a3a"
+        },
+        {
+          "file": "control-plane-tsc.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "file": "control-plane.log",
+          "sha256": "06af84b758dd2f475cd811499cbac2e945f61bb953e252a150a1037afdd69a0a"
+        },
+        {
+          "file": "root-tsc.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "directory": "F:/Diomedes/diomedes-wt/operations-routing/test-results/operations-routing-main-red-20260928-112046",
+      "records": [
+        {
+          "file": "result.json",
+          "sha256": "e792fb6d545b2ed8225c1bdb344700507dc1931cae67d19173bae8169f5f0590",
+          "result": {
+            "slotId": "slot_mul5p9nw_c91f8594",
+            "head": "e730317e89ddb49ccac7dcb54d3fa7e66f92896a",
+            "mergeHead": "1af37e085ef24fc6c92d6b2b8510fc52a504bd1b",
+            "stagedTree": "ea7c0821c4926ed98ef65db010150b210f25e10a",
+            "startedAt": "2026-09-28T11:20:46.9151692Z",
+            "endedAt": "2026-09-28T11:20:50.1650165Z",
+            "testExitCode": 1,
+            "sourceFiles": 1473,
+            "sourcesUnchanged": true,
+            "changedPaths": [],
+            "logs": "F:\\Diomedes\\diomedes-wt\\operations-routing\\test-results\\operations-routing-main-red-20260928-112046"
+          }
+        }
+      ],
+      "logs": [
+        {
+          "file": "control-plane.log",
+          "sha256": "2ecdabb4b75400abec21152978599a08a44f7ed2a5a87539a9da458e1517256d"
+        }
+      ]
+    },
+    {
+      "directory": "F:/Diomedes/diomedes-wt/operations-routing/test-results/operations-routing-main-green-20260928-114611",
+      "records": [
+        {
+          "file": "result.json",
+          "sha256": "37371b54bc6c81b46fa2bb73cec05a9a9a995c253e9d18f17cc421b236da066d",
+          "result": {
+            "slotId": "slot_mul6lydw_3bed14cd",
+            "manifest": "F:/Diomedes/diomedes-wt/operations-routing/test-results/operations-routing-main-green-freeze-v2.json",
+            "manifestSha256": "64097A7DFC30733FCC3CF28629E0473B99289D53E35F06670C8693B7D153CBB8",
+            "appHead": "e730317e89ddb49ccac7dcb54d3fa7e66f92896a",
+            "appMergeHead": "1af37e085ef24fc6c92d6b2b8510fc52a504bd1b",
+            "appTree": "3581acbc502d8cb02fa84f810266a15b0755b3ce",
+            "opsHead": "f97e0b5b6944247426097b50a8cf48ad8cfa289d",
+            "opsMergeHead": "d0d04da058e7e9fdaeb89f6b28da2ad933f678de",
+            "opsTree": "17557e6820d5446576d80d5d87419e8581b7b8c7",
+            "startedAt": "2026-09-28T11:46:11.9512132Z",
+            "endedAt": "2026-09-28T11:46:51.7141861Z",
+            "sourcesUnchanged": true,
+            "checks": [
+              {
+                "name": "control-plane-focused",
+                "startedAt": "2026-09-28T11:46:11.9662166Z",
+                "endedAt": "2026-09-28T11:46:17.3347178Z",
+                "exitCode": 0,
+                "log": "F:/Diomedes/diomedes-wt/operations-routing/test-results/operations-routing-main-green-20260928-114611/control-plane-focused.log"
+              },
+              {
+                "name": "desktop-focused",
+                "startedAt": "2026-09-28T11:46:17.3398869Z",
+                "endedAt": "2026-09-28T11:46:22.6597926Z",
+                "exitCode": 0,
+                "log": "F:/Diomedes/diomedes-wt/operations-routing/test-results/operations-routing-main-green-20260928-114611/desktop-focused.log"
+              },
+              {
+                "name": "control-plane-types",
+                "startedAt": "2026-09-28T11:46:22.6601279Z",
+                "endedAt": "2026-09-28T11:46:26.5172897Z",
+                "exitCode": 2,
+                "log": "F:/Diomedes/diomedes-wt/operations-routing/test-results/operations-routing-main-green-20260928-114611/control-plane-types.log"
+              },
+              {
+                "name": "desktop-types",
+                "startedAt": "2026-09-28T11:46:26.5175135Z",
+                "endedAt": "2026-09-28T11:46:51.3867158Z",
+                "exitCode": 2,
+                "log": "F:/Diomedes/diomedes-wt/operations-routing/test-results/operations-routing-main-green-20260928-114611/desktop-types.log"
+              }
+            ]
+          }
+        }
+      ],
+      "logs": [
+        {
+          "file": "control-plane-focused.log",
+          "sha256": "b35da059df77c72c9ba9367535a1ae464c741b0082d7a0e66e9b674ca4e68366"
+        },
+        {
+          "file": "control-plane-types.log",
+          "sha256": "d2b0c1f6760ef3ae7eb2cc57ca8c744d6417664f370fb32c9f91d306eb1b2b99"
+        },
+        {
+          "file": "desktop-focused.log",
+          "sha256": "c214eca8d4bfcb7eadc4fff5c7281fe841da0dafc2a6b43442995a72df8debc1"
+        },
+        {
+          "file": "desktop-types.log",
+          "sha256": "f50c5e8ad397911332a1551c49eeade5335d734dd4882c2e8cf820f4fa80a4d9"
+        }
+      ]
+    },
+    {
+      "directory": "F:/Diomedes/diomedes-wt/operations-routing/test-results/operations-routing-main-types-20260928-114842",
+      "records": [
+        {
+          "file": "result.json",
+          "sha256": "5abb6d644d5ee84ce6d8f270354d005badfd7ef4991325356f0f070ee9769fa3",
+          "result": {
+            "slotId": "slot_mul6p6sj_b7f304eb",
+            "manifest": "F:/Diomedes/diomedes-wt/operations-routing/test-results/operations-routing-main-types-freeze.json",
+            "manifestSha256": "124CBA6550999D0619BD5CDA7D0407A797F06CF8A13D58D6EFDCAA0DBB09BD2D",
+            "appHead": "e730317e89ddb49ccac7dcb54d3fa7e66f92896a",
+            "appMergeHead": "1af37e085ef24fc6c92d6b2b8510fc52a504bd1b",
+            "appTree": "ad94ef32645d51af46b686bd29b2993cc847a9fe",
+            "opsHead": "f97e0b5b6944247426097b50a8cf48ad8cfa289d",
+            "opsMergeHead": "d0d04da058e7e9fdaeb89f6b28da2ad933f678de",
+            "opsTree": "17557e6820d5446576d80d5d87419e8581b7b8c7",
+            "startedAt": "2026-09-28T11:48:42.8166403Z",
+            "endedAt": "2026-09-28T11:49:09.1948729Z",
+            "sourcesUnchanged": true,
+            "checks": [
+              {
+                "name": "control-plane-types",
+                "startedAt": "2026-09-28T11:48:42.8312690Z",
+                "endedAt": "2026-09-28T11:48:46.0118377Z",
+                "exitCode": 0,
+                "log": "F:/Diomedes/diomedes-wt/operations-routing/test-results/operations-routing-main-types-20260928-114842/control-plane-types.log"
+              },
+              {
+                "name": "desktop-types",
+                "startedAt": "2026-09-28T11:48:46.0161476Z",
+                "endedAt": "2026-09-28T11:49:08.8279843Z",
+                "exitCode": 0,
+                "log": "F:/Diomedes/diomedes-wt/operations-routing/test-results/operations-routing-main-types-20260928-114842/desktop-types.log"
+              }
+            ]
+          }
+        }
+      ],
+      "logs": [
+        {
+          "file": "control-plane-types.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "file": "desktop-types.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "directory": "F:/Diomedes/diomedes-wt/operations-routing/test-results/operations-routing-response-contract-20260928-122346",
+      "records": [
+        {
+          "file": "result.json",
+          "sha256": "b8c2751e3386a21c0e7e4c33b3ff825c6e79c49f2113fa8731cb0e3a3c0d1ccd",
+          "result": {
+            "slotId": "slot_mul7yaca_1634bd83",
+            "manifest": "F:/Diomedes/diomedes-wt/operations-routing/test-results/operations-routing-response-contract-freeze-v2.json",
+            "manifestSha256": "F9CDE4180D27B1CCDE5E6B863AA374E55D7791587B2A7209BA5842869696929D",
+            "appHead": "b4fdcf01f9c7508278853f414919a2939c5d781f",
+            "appTree": "3d2d94ada66bd28d2057cfb20ff37a51448d70dd",
+            "opsHead": "e8366b42df6667d29554a09acd243528c73bedc9",
+            "opsTree": "17557e6820d5446576d80d5d87419e8581b7b8c7",
+            "startedAt": "2026-09-28T12:23:46.9319637Z",
+            "endedAt": "2026-09-28T12:23:57.0131836Z",
+            "sourcesUnchanged": true,
+            "checks": [
+              {
+                "name": "managed-response-contract",
+                "startedAt": "2026-09-28T12:23:46.9447100Z",
+                "endedAt": "2026-09-28T12:23:53.1431821Z",
+                "exitCode": 0,
+                "log": "F:/Diomedes/diomedes-wt/operations-routing/test-results/operations-routing-response-contract-20260928-122346/managed-response-contract.log"
+              },
+              {
+                "name": "control-plane-types",
+                "startedAt": "2026-09-28T12:23:53.1475457Z",
+                "endedAt": "2026-09-28T12:23:56.6436618Z",
+                "exitCode": 0,
+                "log": "F:/Diomedes/diomedes-wt/operations-routing/test-results/operations-routing-response-contract-20260928-122346/control-plane-types.log"
+              }
+            ]
+          }
+        }
+      ],
+      "logs": [
+        {
+          "file": "control-plane-types.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "file": "managed-response-contract.log",
+          "sha256": "91a0f01b2f0a29468237e77f5fdad6c65f345db490f83290269aeea0f7363fc6"
+        }
+      ]
+    },
+    {
+      "directory": "F:/Diomedes/diomedes-wt/operations-routing/test-results/operations-routing-ui-diagnostic-20260928-120724",
+      "records": [
+        {
+          "file": "result.json",
+          "sha256": "65257d774471878b022cf2e78dac7a1842139e47b1f85e475b6505cee29630f3",
+          "result": {
+            "slotId": "slot_mul7d85y_bc67b532",
+            "manifest": "F:/Diomedes/diomedes-wt/operations-routing/test-results/operations-routing-ui-diagnostic-freeze.json",
+            "manifestSha256": "11060833487E8DF3EC581E2F121F67686763C7BC2758F6B9DEB73478EC55759F",
+            "appHead": "a9bbe8c2924cd95c88e9c92af9d5e97286be0ebb",
+            "appTree": "c14f2b4ec7c6e3c159f56b161470b0f96974754f",
+            "opsHead": "e8366b42df6667d29554a09acd243528c73bedc9",
+            "opsTree": "17557e6820d5446576d80d5d87419e8581b7b8c7",
+            "startedAt": "2026-09-28T12:07:24.3366053Z",
+            "endedAt": "2026-09-28T12:07:43.9713252Z",
+            "sourcesUnchanged": true,
+            "scope": "Routing diagnostic only, not combined acceptance",
+            "checks": [
+              {
+                "name": "app-build",
+                "startedAt": "2026-09-28T12:07:24.3534008Z",
+                "endedAt": "2026-09-28T12:07:34.1304334Z",
+                "exitCode": 0,
+                "log": "F:/Diomedes/diomedes-wt/operations-routing/test-results/operations-routing-ui-diagnostic-20260928-120724/app-build.log"
+              },
+              {
+                "name": "operations-types",
+                "startedAt": "2026-09-28T12:07:34.1352128Z",
+                "endedAt": "2026-09-28T12:07:35.5518594Z",
+                "exitCode": 0,
+                "log": "F:/Diomedes/diomedes-wt/operations-routing/test-results/operations-routing-ui-diagnostic-20260928-120724/operations-types.log"
+              },
+              {
+                "name": "operations-tests",
+                "startedAt": "2026-09-28T12:07:35.5522579Z",
+                "endedAt": "2026-09-28T12:07:43.6531727Z",
+                "exitCode": 1,
+                "log": "F:/Diomedes/diomedes-wt/operations-routing/test-results/operations-routing-ui-diagnostic-20260928-120724/operations-tests.log"
+              }
+            ]
+          }
+        }
+      ],
+      "logs": [
+        {
+          "file": "app-build.log",
+          "sha256": "1f462acd6391f65d884c1073c3efe55fdb0b46d1306c160c4cd5a618743fc8a1"
+        },
+        {
+          "file": "operations-tests.log",
+          "sha256": "e7d77a7e3c2e922ce48c2983e3b9ba9d0a3f86989672543dd15d6648ceacf472"
+        },
+        {
+          "file": "operations-types.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "directory": "F:/Diomedes/diomedes-wt/operations-routing/test-results/operations-routing-personal-ui-20260928-125449",
+      "records": [
+        {
+          "file": "result.json",
+          "sha256": "5bdf991dcd5d355de2ffa5900005c91be06721e133084876fc41b631d4d9c3df",
+          "result": {
+            "slotId": "slot_mul9277q_0bea3971",
+            "manifest": "F:/Diomedes/diomedes-wt/operations-routing/test-results/operations-routing-personal-ui-freeze-v6.json",
+            "manifestSha256": "F871EF300AB0C61B87F679660C33980AB25F2ABB9261752989E1E69A19569B94",
+            "appHead": "da04d6a91c53fc48beae99002b018dcb84425c62",
+            "appTree": "e810433d10d0f26480b9cc23d92ebd0ea31f0f46",
+            "opsHead": "e8366b42df6667d29554a09acd243528c73bedc9",
+            "opsTree": "17557e6820d5446576d80d5d87419e8581b7b8c7",
+            "startedAt": "2026-09-28T12:54:49.1208174Z",
+            "endedAt": "2026-09-28T12:55:32.3732836Z",
+            "sourcesUnchanged": true,
+            "scope": "Routing diagnostic only, not combined acceptance",
+            "browser": {
+              "path": "C:/Program Files/Google/Chrome/Application/chrome.exe",
+              "version": "153.0.8010.53",
+              "sha256": "E8BCE39747EA63C9C7D4306F7635D2916C9ECB0CF913FBCF5E7ACC4539B5B8A0"
+            },
+            "checks": [
+              {
+                "name": "app-types",
+                "startedAt": "2026-09-28T12:54:49.1390045Z",
+                "endedAt": "2026-09-28T12:55:11.4189871Z",
+                "exitCode": 0,
+                "log": "F:/Diomedes/diomedes-wt/operations-routing/test-results/operations-routing-personal-ui-20260928-125449/app-types.log"
+              },
+              {
+                "name": "app-build",
+                "startedAt": "2026-09-28T12:55:11.4261407Z",
+                "endedAt": "2026-09-28T12:55:19.5836154Z",
+                "exitCode": 0,
+                "log": "F:/Diomedes/diomedes-wt/operations-routing/test-results/operations-routing-personal-ui-20260928-125449/app-build.log"
+              },
+              {
+                "name": "operations-build",
+                "startedAt": "2026-09-28T12:55:19.5838867Z",
+                "endedAt": "2026-09-28T12:55:20.7009925Z",
+                "exitCode": 0,
+                "log": "F:/Diomedes/diomedes-wt/operations-routing/test-results/operations-routing-personal-ui-20260928-125449/operations-build.log"
+              },
+              {
+                "name": "routing-browser",
+                "startedAt": "2026-09-28T12:55:20.7012466Z",
+                "endedAt": "2026-09-28T12:55:32.0512528Z",
+                "exitCode": 0,
+                "log": "F:/Diomedes/diomedes-wt/operations-routing/test-results/operations-routing-personal-ui-20260928-125449/routing-browser.log"
+              }
+            ]
+          }
+        }
+      ],
+      "logs": [
+        {
+          "file": "app-build.log",
+          "sha256": "b05435419696944669eabb351356cd0a7ddcb4b9d25dda51f8467fe7b37be1e7"
+        },
+        {
+          "file": "app-types.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "file": "operations-build.log",
+          "sha256": "165d8a9284e6209b1f93cb86f91371a170dfb2b041310884f0ae341ada89f38b"
+        },
+        {
+          "file": "routing-browser.log",
+          "sha256": "72786a459aa1d748007a51880be95195dc2be2b1667e98ce735dbbb2a2ff3e8e"
+        }
+      ]
+    },
+    {
+      "directory": "F:/Diomedes/diomedes-wt/operations-routing/test-results/operations-routing-ops-green-20260928-132145",
+      "records": [
+        {
+          "file": "result.json",
+          "sha256": "49879dd6c1bd7c55a92a8a483e013d85e1dd1507821c9b0adacc11a93b13596e",
+          "result": {
+            "slotId": "slot_mula0u3p_ea50b71d",
+            "manifest": "F:/Diomedes/diomedes-wt/operations-routing/test-results/operations-routing-ops-fixture-freeze.json",
+            "manifestSha256": "433D0FF9F33D017CD12FD8AEE6999E83BF00E0EA2A1B3D057B7A5103240209E9",
+            "appHead": "dae3a4b60feef2baec1ce15defcb3542c3c5a41c",
+            "appCodeTree": "e810433d10d0f26480b9cc23d92ebd0ea31f0f46",
+            "opsHead": "e8366b42df6667d29554a09acd243528c73bedc9",
+            "opsTree": "e44e9737138a02b53ded7ab5ea5bf466df0a4560",
+            "startedAt": "2026-09-28T13:21:45.0881494Z",
+            "endedAt": "2026-09-28T13:21:53.6844783Z",
+            "exitCode": 0,
+            "sourcesUnchanged": true,
+            "log": "F:/Diomedes/diomedes-wt/operations-routing/test-results/operations-routing-ops-green-20260928-132145/operations-tests.log"
+          }
+        }
+      ],
+      "logs": [
+        {
+          "file": "operations-tests.log",
+          "sha256": "49161df1304bb4f711ac62bd8e5fa6d128294352d1ee6c33d93b9e770a5786b2"
+        }
+      ]
+    }
+  ],
+  "screenshots": [
+    {
+      "path": "F:/Diomedes/diomedes-wt/operations-routing/test-results/operations-routing-personal-ui-20260928-125449/browser-artifacts/operations-routing-journey-1aa26-utside-the-Business-account/operations-individual-policy.png",
+      "sha256": "61841f017dcde7473c65687c28c38d6c65fc310ca580aa47a381ac05272228ef"
+    },
+    {
+      "path": "F:/Diomedes/diomedes-wt/operations-routing/test-results/operations-routing-personal-ui-20260928-125449/browser-artifacts/operations-routing-journey-1aa26-utside-the-Business-account/personal-consent.png",
+      "sha256": "7ca827c72dab32bd15139204e96fe60baf8930615fb2619dfd7d06044b1f4ddd"
+    },
+    {
+      "path": "F:/Diomedes/diomedes-wt/operations-routing/test-results/operations-routing-personal-ui-20260928-125449/browser-artifacts/operations-routing-journey-1aa26-utside-the-Business-account/personal-response.png",
+      "sha256": "e65655e98f43872a91920fd5e8784dc6f885b38c6f3f7749c50fdbf357973bdb"
+    },
+    {
+      "path": "F:/Diomedes/diomedes-wt/operations-routing/test-results/operations-routing-personal-ui-20260928-125449/browser-artifacts/operations-routing-journey-d0428-rves-a-non-Luna-run-receipt/customer-consent.png",
+      "sha256": "32ccdcc95d3085dade2300dceca9efc8fa3dba34088dbdbf5e6b6299792741eb"
+    },
+    {
+      "path": "F:/Diomedes/diomedes-wt/operations-routing/test-results/operations-routing-personal-ui-20260928-125449/browser-artifacts/operations-routing-journey-d0428-rves-a-non-Luna-run-receipt/customer-response.png",
+      "sha256": "3c06d52423e73237508cfec979d141803de6c045c4c5572b05080f918b990642"
+    },
+    {
+      "path": "F:/Diomedes/diomedes-wt/operations-routing/test-results/operations-routing-personal-ui-20260928-125449/browser-artifacts/operations-routing-journey-d0428-rves-a-non-Luna-run-receipt/operations-policy.png",
+      "sha256": "7ea2bbb8fb84bef9b44e29bea151e7821cf7d81a016a7c8169bce005a3883f6a"
+    }
+  ],
+  "independentReviews": [
+    {
+      "sourceCommit": "a9bbe8c2924cd95c88e9c92af9d5e97286be0ebb",
+      "boundary": "Read-only app Personal identity, admission, funding and migration source; excludes security-owned session.ts",
+      "role": "verifier",
+      "model": "opencode-go/muse-spark-1.3-contributor",
+      "harness": "OpenCode ask/plan via ask-opencode.ps1",
+      "effort": "high",
+      "verdict": "PASS; no actionable correctness finding",
+      "fallbacks": [],
+      "log": "F:/Diomedes/diomedes-wt/operations-routing/test-results/individual-app-review.log",
+      "sha256": "432EA02212A3BE17B8EFDEAA5CBCEAD893A1A39C57B78D76A47A55B6396B71B6"
+    },
+    {
+      "sourceCommit": "e8366b42df6667d29554a09acd243528c73bedc9",
+      "boundary": "Read-only Operations frontend and bridge; backend, real database, funded providers, packaging and deployment excluded",
+      "role": "verifier",
+      "model": "opencode-go/muse-spark-1.3-contributor",
+      "harness": "OpenCode ask/plan via ask-opencode.ps1",
+      "effort": "high",
+      "availability": "opencode models opencode-go --verbose; active tools, high variant, context 1048576, output 131072",
+      "verdict": "PASS; no actionable frontend or bridge finding",
+      "fallbacks": [],
+      "slot": "slot_mul9ex0o_cda2aaa8",
+      "startedAt": "2026-09-28T13:05:06.7621144Z",
+      "endedAt": "2026-09-28T13:08:52.2979174Z",
+      "log": "F:/Diomedes/diomedes-wt/operations-routing/test-results/operations-ui-review.log",
+      "sha256": "3610832DE98C836A7E47F3077EA5C53E637E7125E697BC71365600A0C4D07B6C"
+    }
+  ],
+  "providerReadiness": [
+    {
+      "provider": "aws-bedrock",
+      "implemented": true,
+      "transportFixtureTested": true,
+      "fundedLiveTested": false,
+      "packaged": false,
+      "deployed": false
+    },
+    {
+      "provider": "azure-openai",
+      "implemented": true,
+      "transportFixtureTested": true,
+      "fundedLiveTested": false,
+      "packaged": false,
+      "deployed": false
+    },
+    {
+      "provider": "google-vertex",
+      "implemented": true,
+      "transportFixtureTested": true,
+      "fundedLiveTested": false,
+      "packaged": false,
+      "deployed": false
+    },
+    {
+      "provider": "openrouter",
+      "implemented": true,
+      "transportFixtureTested": true,
+      "fundedLiveTested": false,
+      "packaged": false,
+      "deployed": false
+    }
+  ],
+  "documentationFollowupPaths": [
+    "docs/implementation/2026-09-28-operations-routing.md",
+    "docs/implementation/operations-routing-handoff/README.md",
+    "docs/implementation/operations-routing-handoff/coverage.md",
+    "docs/implementation/operations-routing-handoff/finish.md",
+    "docs/implementation/operations-routing-handoff/main-composition-notes.md",
+    "docs/implementation/operations-routing-handoff/review-record.md",
+    "docs/implementation/operations-routing-handoff/source-candidate.json"
+  ]
+}

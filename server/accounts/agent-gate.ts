@@ -35,6 +35,8 @@ import { AGENT_PERSONAL_INDIVIDUAL_REASON, MANAGED_USAGE_NOT_INCLUDED_PERSONAL, 
 import { EngineError } from '../engines/process.js';
 import type { WorkspaceService } from '../workspaces.js';
 import type { AccountSessionService, AgentRouteKind, AgentSurface } from './session.js';
+import type { AccountRoutingSession } from './routing-session.js';
+import type { AccountScope } from '../../shared/routing-policy.js';
 
 export const AGENT_NOT_INCLUDED = 'AGENT_NOT_INCLUDED';
 export const AGENT_SIGN_IN_REQUIRED = 'SIGN_IN_REQUIRED';
@@ -66,6 +68,7 @@ export interface AdmittedAgentWork {
   readonly admissionId: string;
   /** Null for Personal work admitted under the person's own Individual plan. */
   readonly organizationId: string | null;
+  readonly scope?: AccountScope;
   readonly personId: string;
   readonly planId: string | null;
   /** The routing tier policy revision the service admitted under. Not a telemetry policy. */
@@ -93,6 +96,7 @@ export class AccountAgentGate implements AgentGatePort {
   constructor(
     private readonly session: AccountSessionService,
     private readonly workspaces: Pick<WorkspaceService, 'projectOwner' | 'active'>,
+    private readonly routing?: AccountRoutingSession,
   ) {}
 
   /** The business this work is for, or null for Personal. */
@@ -111,6 +115,8 @@ export class AccountAgentGate implements AgentGatePort {
    * owns have the Agent under the person's own Individual plan, or while that plan is not read yet.
    */
   paidFor(projectId: string | null): boolean {
+    const scope = this.routing?.scopeFor(projectId);
+    if (scope?.kind === 'individual') return this.routing!.mayHaveAgent(scope);
     const organizationId = this.organizationFor(projectId);
     // Personal work and projects no business owns: the person's own Individual plan, or not read yet.
     if (!organizationId) return this.session.personalIncludes(AGENT_FEATURE) || this.session.personalUnknown();
@@ -130,6 +136,7 @@ export class AccountAgentGate implements AgentGatePort {
   }
 
   async check(work: AgentWork): Promise<AdmittedAgentWork> {
+    if (this.routing) return this.routing.admit(work);
     const organizationId = this.organizationFor(work.projectId);
     const routeKind = work.routeKind ?? 'byo';
     if (!organizationId) {
@@ -145,7 +152,7 @@ export class AccountAgentGate implements AgentGatePort {
       this.session.includes(organizationId, AGENT_FEATURE) &&
       !this.session.includes(organizationId, MANAGED_INFERENCE)
     )
-      // A sole proprietor covered by their own Individual plan reads the plan's own sentence.
+      // Preserve the explanation for historical access snapshots; current Business grants stand alone.
       throw usageRefusal(isPersonPlan(this.session.entitlement(organizationId)?.plan) ? MANAGED_USAGE_NOT_INCLUDED_PERSONAL : MANAGED_USAGE_NOT_INCLUDED);
     const decision = await this.session.admitAgent({
       organizationId,

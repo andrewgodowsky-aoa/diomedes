@@ -341,14 +341,6 @@ route are re-read at admission, but it asks for no separate per-message `consent
 review proposes yes (the steer carries consent and re-runs the turn's cloud-sharing check). Default
 in the code today: no separate consent.
 
-### O19. Should OpenCode's kept session become a Console conversation route?
-
-Raised 2026-09-24 by `docs/implementation/2026-09-24-h04-opencode-sessions.md`. CD-01 Decision 5
-names Claude Code and the model-API routes as the only Console conversation drivers; admitting
-OpenCode amends it. The kept session is built and its API exposes exactly the controls its contract
-declares. Proposal: allow it, with the Console offering exactly `sessionControls(contract)`.
-Default: not wired; no Console screen offers OpenCode session controls.
-
 ### O20. Agent profiles: fallback and precedence
 
 Raised 2026-09-24 by `docs/implementation/2026-09-24-h09-agent-profiles.md`.
@@ -560,15 +552,14 @@ reconciliation) ship only on the Diomedes page. Project threads on Claude Code (
 Automatic) still use the single-turn direct path. Moving them would change how a thread's route is
 chosen (`planThreadSend`). Default: not moved.
 
-### O39. Kept Cursor and Devin conversations: a Console route, and when their folder is removed
+### O39. When a kept Cursor or Devin conversation's folder is removed
 
 Raised 2026-09-24 by `docs/implementation/2026-09-24-h05-cursor-acp-sessions.md` (PR #90, on main
-through batch 5, PR #107).
+through batch 5, PR #107). Andrew answered its first item (a Console route) on 2026-09-27, and it
+is now R16.
 
-1. Should the kept Cursor and Devin conversations become Console conversation routes? That would
-   amend CD-01 Decision 5, as O19 would for OpenCode. Default: an API route only.
-2. When should a kept conversation's private engine folder be removed? The resume needs it, and
-   deletion is designed, never a blunt switch (decision 10). Default: never removed automatically.
+When should a kept conversation's private engine folder be removed? The resume needs it, and
+deletion is designed, never a blunt switch (decision 10). Default: never removed automatically.
 
 Also recorded as defaults: only `fetch` and `think` asks and plan approvals reach a person, and
 anything that would write, execute or switch mode stays declined. A declined question lets the
@@ -683,17 +674,48 @@ Default: each stays as built.
 Raised 2026-09-28 with the Individual plan (`docs/implementation/2026-09-28-individual-tier.md`,
 branch `feature/individual-tier`).
 
-1. **Credits.** Decided: 1,000 a month (Andrew, 2026-09-28 04:01 EDT). Nothing allocates them yet:
-   funding is kept per business, and funding a person is phase 2b.
-2. **The member threshold.** `INDIVIDUAL_MAX_ACTIVE_MEMBERS` defaults to 1, so an Individual plan
-   covers a business only while its holder is the only active member. Is 1 right?
-3. **Included usage before person funding.** An Individual grant carries no included AI usage,
-   and staff are refused if they try to add it. Should any Individual grant carry included usage
-   before person funding exists, for example as a courtesy? Andrew's call.
+1. **Credits.** Decided: 1,000 a month (Andrew, 2026-09-28 04:01 EDT). Automatic recurring
+   allocation remains unwired. Operations routing adds an explicit managed-usage agreement and
+   a separate Individual billing account; it does not invent a monthly allocation.
+2. **Business coverage.** Settled by Andrew's latest decision: Individual covers Personal work
+   only. Every Business needs its own Business plan, including a sole proprietorship or a
+   one-member Business. The legacy member-threshold setting cannot grant Business access.
+3. **Managed Personal work.** The routing composition requires both a current person-plan grant
+   and a separately funded usage agreement. A person grant alone, including courtesy access,
+   cannot authorize company-funded inference. Revoking either authority stops new dispatches.
 
-Default: each stays as built.
+These describe the local routing composition; its verification and publication are recorded
+separately in `docs/implementation/2026-09-28-operations-routing.md`.
 
 ## Resolved
+
+### R16. Kept-session engines hold Console conversations (raised as O19 and O39 item 1)
+
+Decided by Andrew on 2026-09-27
+(`docs/superpowers/specs/2026-09-27-engine-conversations-and-reasoning-design.md`, Part 1 and
+section 9). It amends CD-01 Decision 5 (Round 12 of
+`docs/implementation/2026-09-20-core-agent-contract.md`).
+
+- **Routes.** A Console conversation runs on Claude Code, ChatGPT, OpenCode, Cursor, Devin or a
+  model-API route. ChatGPT, OpenCode, Cursor and Devin answer through their kept sessions, and
+  the Console offers exactly each route contract's `sessionControls(contract)`, as O19 proposed.
+  Home and project threads on those engines send Ask, Plan and Automatic through the
+  conversation. Build and Fix keep the direct path, and so do Claude Code project threads (O38).
+- **ChatGPT's kept session.** It runs on Diomedes' own Codex runtime, one app-server process per
+  conversation, and keeps its thread (`ephemeral: false`) so it can continue after a restart.
+  That writes the conversation, including the documents a turn reads, into the person's own
+  Codex history, as O17 item 1's default does for Work runs and H04 does for OpenCode.
+- **Found engines only.** A conversation offers an engine only when it's installed, compatible
+  and signed in on this computer, and no conversation surface suggests installing or choosing a
+  named engine. When none is found, the only suggestion is the Nectovia plan. AI setup keeps its
+  install and sign-in flows.
+- **A gone engine.** A saved thread whose engine is no longer installed or signed in is refused
+  in that engine's own words, with nothing sent, and keeps its engine.
+- **Free.** These engines are the person's own AI, so they're free (Pillar 12, amendment
+  2026-09-27.1, which lands with `feature/free-harness-paid-agent`). The Nectovia Agent stays
+  paid.
+- A kept conversation's private engine folder is still never removed automatically. That is
+  O39, which stays open.
 
 ### R14. Task priority: order, due dates, labels and who edits (raised by OS-DISC-01 section 5)
 
@@ -857,9 +879,12 @@ This answers the first half of O10 (which provider and key, paid by whom, under 
 A search call therefore never needs a ledger line of its own and never rides on a model route's
 spend hold.
 
-Still open, carried from O10: whether an approved connector's MCP server is launched through a
-shell on Windows. The host client spawns the owner's `command` directly, so a `.cmd` launcher such
-as `npx` needs its full path or a `node` command line in `read-connectors.json`.
+The Prompt12 Windows-launcher candidate has coordinator-reported fixture evidence for direct
+Node and four owned `.cmd` forms: absolute paths and extensionless PATH lookup, each in
+`node_modules/.bin` and an ordinary directory. Those checks cover literal arguments and shell
+output. They do not establish installed `npx`, percent-variable or delayed-expansion behavior,
+or real-provider safety. Acceptance still requires review and verification on the composed source;
+the earlier blanket full-path requirement is not a conclusion supported by these fixtures.
 
 ### R7. History retention was configured and not enforced (raised as O5)
 

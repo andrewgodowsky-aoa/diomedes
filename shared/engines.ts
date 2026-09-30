@@ -32,16 +32,29 @@ export function isRoute(value: unknown): value is Route {
  */
 export const CONVERSATION_DEFAULT_ROUTE: Route = NECTOVIA_ROUTE;
 /**
- * What a Diomedes conversation may run on: the native Claude Code session or a
- * model-API route. The Home thread update and the send path share this one
- * predicate so the two can never disagree about which routes a conversation
- * accepts.
+ * The engines whose conversation runs on their own kept session, in the order a person reads
+ * them: each keeps its own loop and its own tools, and the next message continues the same
+ * session (spec 3.1). Claude Code's conversation runs on its native session as well; its project
+ * threads keep the direct request path (O38), so it is named on its own wherever that differs.
  */
-export function isConversationRoute(value: unknown): value is 'claude-code' | ModelApiRoute {
-  return value === 'claude-code' || isModelApiRoute(value);
+export const KEPT_SESSION_ROUTES = ['codex', 'opencode', 'cursor', 'devin'] as const;
+export type KeptSessionRoute = (typeof KEPT_SESSION_ROUTES)[number];
+export function isKeptSessionRoute(value: unknown): value is KeptSessionRoute {
+  return KEPT_SESSION_ROUTES.some((id) => id === value);
+}
+/** A route a Diomedes conversation may run on: Claude Code, a kept-session engine or a model-API route. */
+export type ConversationRoute = 'claude-code' | KeptSessionRoute | ModelApiRoute;
+/**
+ * What a Diomedes conversation may run on: Claude Code's native session, a kept-session
+ * engine or a model-API route (CD-01 Decision 5, amended 2026-09-27). The Home thread update
+ * and the send path share this one predicate so the two can never disagree about which routes
+ * a conversation accepts.
+ */
+export function isConversationRoute(value: unknown): value is ConversationRoute {
+  return value === 'claude-code' || isKeptSessionRoute(value) || isModelApiRoute(value);
 }
 /** Every route a conversation accepts, in the order a person reads them. */
-export const CONVERSATION_ROUTES = ['claude-code', ...MODEL_API_ROUTES] as const;
+export const CONVERSATION_ROUTES = ['claude-code', ...KEPT_SESSION_ROUTES, ...MODEL_API_ROUTES] as const;
 export const ENGINE_NAMES: Record<ExternalEngine, string> = {
   'claude-code': 'Claude Code',
   opencode: 'OpenCode',

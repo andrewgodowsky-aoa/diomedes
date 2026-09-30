@@ -1,0 +1,516 @@
+{
+  "recordedAt": "2026-09-28T10:58:12.4967826Z",
+  "kind": "held local feature candidate",
+  "accepted": false,
+  "published": false,
+  "selfExcluded": "docs/implementation/operations-routing-handoff/candidate-manifest.json",
+  "repositories": [
+    {
+      "repository": "app",
+      "root": "F:/Diomedes/diomedes-wt/operations-routing",
+      "featureDiffBase": "8ce831400fb4329ea06aec5cf85609638eb938e8",
+      "head": "2b231c80cfd2dd9c6a7534e2ecf9e772f6db9c19",
+      "observedOriginMain": "1af37e085ef24fc6c92d6b2b8510fc52a504bd1b",
+      "workingTreeStatus": [
+        " M client/AccountSettings.tsx",
+        " M client/console/ManagedRoutingReceipt.tsx",
+        " M client/console/ThreadView.tsx",
+        " M docs/implementation/2026-09-28-operations-routing.md",
+        " M docs/implementation/operations-routing-handoff/README.md",
+        " M docs/implementation/operations-routing-handoff/review-record.md",
+        " M server/app.ts",
+        " M server/engines/service.ts",
+        " M server/harness/model-api-adapter.ts",
+        " M server/harness/model-session-run.ts",
+        " M server/harness/native-agent.ts",
+        " M server/harness/nectovia-model-adapter.ts",
+        " M server/harness/policy.ts",
+        " M server/harness/run-service.ts",
+        " M services/control-plane/src/managed-inference.ts",
+        " M services/control-plane/tests/scoped-routing.test.ts",
+        " M shared/harness.ts",
+        " M tests/openrouter-model-api.test.ts",
+        " M tests/operations-routing-client.test.ts",
+        " M tests/operations-routing-harness.test.ts",
+        " M tests/operations-routing-journey.spec.ts",
+        "?? docs/implementation/operations-routing-handoff/cancellation-review-brief.md",
+        "?? docs/implementation/operations-routing-handoff/candidate-manifest.json",
+        "?? docs/implementation/operations-routing-handoff/coverage.md",
+        "?? docs/implementation/operations-routing-handoff/integration-followups.md",
+        "?? docs/implementation/operations-routing-handoff/main-composition-notes.md"
+      ],
+      "files": [
+        {
+          "path": "client/AccountSettings.tsx",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\client\\AccountSettings.tsx",
+          "change": "M",
+          "sha256": "67CFDEB1BAEB6B173EBDCF2CEFE23E9E61479D57A389C194E0E51A0F7F55EF27"
+        },
+        {
+          "path": "client/console/ManagedRoutingReceipt.tsx",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\client\\console\\ManagedRoutingReceipt.tsx",
+          "change": "A",
+          "sha256": "8B2FCEF52F52059A835C327834BAE49552CC9A91B5A6952BC0480CE1F6331E8C"
+        },
+        {
+          "path": "client/console/RoutingPreferences.tsx",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\client\\console\\RoutingPreferences.tsx",
+          "change": "A",
+          "sha256": "100E3BF5E5C545D6F9D0180FDB6D0F410753C6F9DFE73FC1F7A25C9CE9DD07C6"
+        },
+        {
+          "path": "client/console/ThreadView.tsx",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\client\\console\\ThreadView.tsx",
+          "change": "M",
+          "sha256": "DF7374E96E9AE09EF67EFEFC2110800DD75E237E0B382073148DDE58872875E7"
+        },
+        {
+          "path": "client/workbench/RunInspector.tsx",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\client\\workbench\\RunInspector.tsx",
+          "change": "M",
+          "sha256": "C2D849741F4C9B634A8DB660E75F27F0E5A6AC9DD8A5B50FFD8FA5B110D27CFB"
+        },
+        {
+          "path": "docs/implementation/2026-09-28-operations-routing.md",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\docs\\implementation\\2026-09-28-operations-routing.md",
+          "change": "A",
+          "sha256": "3F480AE01CD2197FFAACAC0A484136E69EBF4EA70892CF310B9CF7484200A29F"
+        },
+        {
+          "path": "docs/implementation/operations-routing-handoff/cancellation-review-brief.md",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\docs\\implementation\\operations-routing-handoff\\cancellation-review-brief.md",
+          "change": "untracked",
+          "sha256": "BE7F5C2C75C720784557B92D91455D0C940EE65ECC9CB518067F3AA0176AAF6A"
+        },
+        {
+          "path": "docs/implementation/operations-routing-handoff/conversation-receipts.patch",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\docs\\implementation\\operations-routing-handoff\\conversation-receipts.patch",
+          "change": "A",
+          "sha256": "0AEF99C24C2B4B7C03C78B92399A257E1C506D978103F24EFFB55BC484B5A3E0"
+        },
+        {
+          "path": "docs/implementation/operations-routing-handoff/coverage.md",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\docs\\implementation\\operations-routing-handoff\\coverage.md",
+          "change": "untracked",
+          "sha256": "CEE6FF4496D03747893356A7E10EE6AB0F6089E9FF68DE1D93A8471F8194626B"
+        },
+        {
+          "path": "docs/implementation/operations-routing-handoff/desktop.patch",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\docs\\implementation\\operations-routing-handoff\\desktop.patch",
+          "change": "A",
+          "sha256": "E9595C7B9B85274562A5AB74C6887E51AA6E440EEE27A0B5A28F795892213F1C"
+        },
+        {
+          "path": "docs/implementation/operations-routing-handoff/fixture-server.ts",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\docs\\implementation\\operations-routing-handoff\\fixture-server.ts",
+          "change": "A",
+          "sha256": "A974D9CCFF500D2E17479E84303F398BF1710B51EF4D0B99CC4C222A4AF9C97D"
+        },
+        {
+          "path": "docs/implementation/operations-routing-handoff/harness-repairs.patch",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\docs\\implementation\\operations-routing-handoff\\harness-repairs.patch",
+          "change": "A",
+          "sha256": "382524311B7CC040CD6B9B22EB4A627566EEC3758503212D35779F43C1940785"
+        },
+        {
+          "path": "docs/implementation/operations-routing-handoff/harness.patch",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\docs\\implementation\\operations-routing-handoff\\harness.patch",
+          "change": "A",
+          "sha256": "5E944B385D90353C51771E7197E3DAC29368DEFD14EC8853FC1302D4CA2DCCF7"
+        },
+        {
+          "path": "docs/implementation/operations-routing-handoff/integration-followups.md",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\docs\\implementation\\operations-routing-handoff\\integration-followups.md",
+          "change": "untracked",
+          "sha256": "4FDC52800A9C841CE181506476E557772714E8DDBBBD3BF5D313187C729CEADE"
+        },
+        {
+          "path": "docs/implementation/operations-routing-handoff/journey.config.ts",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\docs\\implementation\\operations-routing-handoff\\journey.config.ts",
+          "change": "A",
+          "sha256": "B745C750B61B6BCA6273264EC4A32FDBDCC025DE068C1E873A3254D27464AF8D"
+        },
+        {
+          "path": "docs/implementation/operations-routing-handoff/main-composition-notes.md",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\docs\\implementation\\operations-routing-handoff\\main-composition-notes.md",
+          "change": "untracked",
+          "sha256": "649B783026854161CDCBD7A5A9300BB2ED91C020424CAB1FE1262D3E3EF469B0"
+        },
+        {
+          "path": "docs/implementation/operations-routing-handoff/README.md",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\docs\\implementation\\operations-routing-handoff\\README.md",
+          "change": "A",
+          "sha256": "AA1DDA25DCD2305B2E03651660A1452D13CDAA20D05F98F63B8CB135364977DE"
+        },
+        {
+          "path": "docs/implementation/operations-routing-handoff/receipt-review-brief.md",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\docs\\implementation\\operations-routing-handoff\\receipt-review-brief.md",
+          "change": "A",
+          "sha256": "1E4F69182A3EB9EB60FAC111FB6FD84F33D3F12145BD0882CAFF7815736527C4"
+        },
+        {
+          "path": "docs/implementation/operations-routing-handoff/review-record.md",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\docs\\implementation\\operations-routing-handoff\\review-record.md",
+          "change": "A",
+          "sha256": "5B6C171BC4088A31F587A4703BCF64415EDCB856BB20D03A556D2C76DC0E2E9A"
+        },
+        {
+          "path": "docs/implementation/operations-routing-handoff/run-focused-window.ps1",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\docs\\implementation\\operations-routing-handoff\\run-focused-window.ps1",
+          "change": "A",
+          "sha256": "73C748030A04999980B27525168BA75AD5FA9356521A3334DC3311D0D3C46BBE"
+        },
+        {
+          "path": "server/accounts/agent-gate.ts",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\server\\accounts\\agent-gate.ts",
+          "change": "M",
+          "sha256": "07DA52D75DA52823414C69320F6E77400A5DF0382FA73A14914A9FF6FC3348F1"
+        },
+        {
+          "path": "server/accounts/client.ts",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\server\\accounts\\client.ts",
+          "change": "M",
+          "sha256": "CAB7FCAE581CA25DC0D2D69C60F446561F29E79D0215C69C7A370CB3EDBCC638"
+        },
+        {
+          "path": "server/accounts/routing-session.ts",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\server\\accounts\\routing-session.ts",
+          "change": "A",
+          "sha256": "84E3DBC27B4B6E44DBBE34DB13A5CA6F9A7FC2739359D2205DE992587944D89A"
+        },
+        {
+          "path": "server/app.ts",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\server\\app.ts",
+          "change": "M",
+          "sha256": "F238F99DD82F39119FBD2708DA94547977D5BB739125DC5C9DE2C9EC23088242"
+        },
+        {
+          "path": "server/engines/nectovia.ts",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\server\\engines\\nectovia.ts",
+          "change": "M",
+          "sha256": "CAEB0E9075026FB54BC0923A85DF415ED4B21334B79D3DED8C933952E3F941FD"
+        },
+        {
+          "path": "server/engines/openrouter.ts",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\server\\engines\\openrouter.ts",
+          "change": "M",
+          "sha256": "7032A6B1309B326C6D6F3BC52EACCFC52F46F8246A20273ECD78E9F97B256A98"
+        },
+        {
+          "path": "server/engines/service.ts",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\server\\engines\\service.ts",
+          "change": "M",
+          "sha256": "CD64D4CF872F09F21702108B5A69432F6CB700F0668B1C6C8FE28A65A2263BEE"
+        },
+        {
+          "path": "server/harness/model-api-adapter.ts",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\server\\harness\\model-api-adapter.ts",
+          "change": "M",
+          "sha256": "E5CC6C6E1DC097B93B90B66416CF20D103060D35C9F82A5052CDEBBC0894D3A1"
+        },
+        {
+          "path": "server/harness/model-session-run.ts",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\server\\harness\\model-session-run.ts",
+          "change": "M",
+          "sha256": "CEFAC1A9EAA2A0762ECF7943F73E5E2E88881F8D7B18F2484D72177AD31E2A0B"
+        },
+        {
+          "path": "server/harness/native-agent.ts",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\server\\harness\\native-agent.ts",
+          "change": "M",
+          "sha256": "6F092376CC93585EC3B5F18BD3D77C9792CE26950F6998CE107184BF7F3C0852"
+        },
+        {
+          "path": "server/harness/nectovia-model-adapter.ts",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\server\\harness\\nectovia-model-adapter.ts",
+          "change": "M",
+          "sha256": "B8599C6202D8DE4DC7A9E90D2E7EE9C57F3E8B09ADC30576E83184C4B734625D"
+        },
+        {
+          "path": "server/harness/policy.ts",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\server\\harness\\policy.ts",
+          "change": "M",
+          "sha256": "FE9D6847175E0E0E934DCE3FEB77E0562A0B996D937B9617BD0B1C74A4FDCDD5"
+        },
+        {
+          "path": "server/harness/routing-receipts.ts",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\server\\harness\\routing-receipts.ts",
+          "change": "A",
+          "sha256": "8591DA394D66ADD32F4FB2222E9036232B7656AB98B6B1FD088A42F21CAB1EB0"
+        },
+        {
+          "path": "server/harness/run-service.ts",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\server\\harness\\run-service.ts",
+          "change": "M",
+          "sha256": "9B5073922BC9A5FCB18ECAAA056FB0FCFF11B143EEC686830377A2D5CF9C1B56"
+        },
+        {
+          "path": "server/spend-exposure.ts",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\server\\spend-exposure.ts",
+          "change": "M",
+          "sha256": "4A08242D78129E899314C1A549B3A6892F387AB7937790B45D3051F87BEE5FF2"
+        },
+        {
+          "path": "services/control-plane/contract/contract.ts",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\services\\control-plane\\contract\\contract.ts",
+          "change": "M",
+          "sha256": "972E4CD4A959EB12A83E669DF3B5AF79C37F7FA7DAC1915C237A289D5DEE4263"
+        },
+        {
+          "path": "services/control-plane/migrations/009-scoped-routing.sql",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\services\\control-plane\\migrations\\009-scoped-routing.sql",
+          "change": "A",
+          "sha256": "598CD1A2EF5D10CA51A6F26FF1C82347EF01E6C3DC247F035F415C3B3DE8A3FB"
+        },
+        {
+          "path": "services/control-plane/scripts/funding-permissions.sql",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\services\\control-plane\\scripts\\funding-permissions.sql",
+          "change": "M",
+          "sha256": "8A0A25C82491E3CDD33C430968A50D9DDF5D3ABB18182393D7520D714832561E"
+        },
+        {
+          "path": "services/control-plane/scripts/migrate.ts",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\services\\control-plane\\scripts\\migrate.ts",
+          "change": "M",
+          "sha256": "D4A9AABF9AD029E15BC625DB3EAACBB0D7F63345AFF74EFE80455E8D2BE2377C"
+        },
+        {
+          "path": "services/control-plane/scripts/runtime-permissions.sql",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\services\\control-plane\\scripts\\runtime-permissions.sql",
+          "change": "M",
+          "sha256": "1839FFDD9EBD66A701261498E6E5B5B58C145F8204B0B0BCB78951FED651D3F2"
+        },
+        {
+          "path": "services/control-plane/src/commercial-postgres.ts",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\services\\control-plane\\src\\commercial-postgres.ts",
+          "change": "M",
+          "sha256": "AD7314DEC0B5731C56F4AF32E563009EA97291A15CFD1FA9A746EBB1A692A25D"
+        },
+        {
+          "path": "services/control-plane/src/commercial.ts",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\services\\control-plane\\src\\commercial.ts",
+          "change": "M",
+          "sha256": "5F31269A87AEFAC2777895454983B9477E2128461D660B56742F4E984DDF283C"
+        },
+        {
+          "path": "services/control-plane/src/faux/cloud.ts",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\services\\control-plane\\src\\faux\\cloud.ts",
+          "change": "M",
+          "sha256": "3402A14077E7F3BD5C67F143D1A27E4360DAFA58444BB9AC4525F66CBB6890CD"
+        },
+        {
+          "path": "services/control-plane/src/faux/store.ts",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\services\\control-plane\\src\\faux\\store.ts",
+          "change": "M",
+          "sha256": "AF45EB10E9A264E8AA3143689F12D45A9C46DC5AF17CD1B59C3D460CDA2FC23C"
+        },
+        {
+          "path": "services/control-plane/src/funding.ts",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\services\\control-plane\\src\\funding.ts",
+          "change": "M",
+          "sha256": "28872E5843DBACD1073EAC735ACA0E5C1561682BD02F0DC7408CCB0227D4FAC7"
+        },
+        {
+          "path": "services/control-plane/src/managed-bindings.ts",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\services\\control-plane\\src\\managed-bindings.ts",
+          "change": "A",
+          "sha256": "774C05A7D708D71290270FC853E061883F8F85D9F9BBD862F616A0FD7B773F1D"
+        },
+        {
+          "path": "services/control-plane/src/managed-inference.ts",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\services\\control-plane\\src\\managed-inference.ts",
+          "change": "M",
+          "sha256": "A67AD6518D3F3E19E271CC0525B2FFABD2CC1E27C689A33EA7049A505FC41200"
+        },
+        {
+          "path": "services/control-plane/src/managed-normalization.ts",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\services\\control-plane\\src\\managed-normalization.ts",
+          "change": "A",
+          "sha256": "0A20FBD548B4C13C42D9E4B0FCE2A671ECFDBC991D2DACC98C3FE309658F1864"
+        },
+        {
+          "path": "services/control-plane/src/managed-providers.ts",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\services\\control-plane\\src\\managed-providers.ts",
+          "change": "M",
+          "sha256": "79A8AA86A2599C90CFCE55732311B4A297DA244ACF6EEBF2E6397A0F09EB33EC"
+        },
+        {
+          "path": "services/control-plane/src/routing.ts",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\services\\control-plane\\src\\routing.ts",
+          "change": "A",
+          "sha256": "260D6FD9837263952F5BA8A5FCEB68690CDC7F1F56DC04087F465C7801F864FC"
+        },
+        {
+          "path": "services/control-plane/src/worker.ts",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\services\\control-plane\\src\\worker.ts",
+          "change": "M",
+          "sha256": "0AC3A25C52A276CB0B83FC44C756449B8BFAA9E923015872830356CA8E1B67F3"
+        },
+        {
+          "path": "services/control-plane/tests/managed-bindings.test.ts",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\services\\control-plane\\tests\\managed-bindings.test.ts",
+          "change": "A",
+          "sha256": "6EA1E6087E211C03A2848F1D4226ADA529AEFB69AB9B5B7A52561AEFADF2F02B"
+        },
+        {
+          "path": "services/control-plane/tests/migrations.test.ts",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\services\\control-plane\\tests\\migrations.test.ts",
+          "change": "M",
+          "sha256": "F443A0B1F64E079143495330660977EB0EA6DAFE1E334061811C05647BFAF5C7"
+        },
+        {
+          "path": "services/control-plane/tests/operations-routing-policy.test.ts",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\services\\control-plane\\tests\\operations-routing-policy.test.ts",
+          "change": "A",
+          "sha256": "EAA82CD81A2AA802BB1AFCE768FB45AECA1F68E40BDB940AE2F002A58659DFFC"
+        },
+        {
+          "path": "services/control-plane/tests/postgres-role-independent.test.ts",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\services\\control-plane\\tests\\postgres-role-independent.test.ts",
+          "change": "M",
+          "sha256": "1740DE4FE46F0ABD2EC2B6B9BFB9528EA1274EEDD84F9CC9C3661F8F58229B32"
+        },
+        {
+          "path": "services/control-plane/tests/postgres.integration.test.ts",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\services\\control-plane\\tests\\postgres.integration.test.ts",
+          "change": "M",
+          "sha256": "3CD0EEDBC97657BDFB9A5A494171E15D3A790015114C9021529D4F7579C44D91"
+        },
+        {
+          "path": "services/control-plane/tests/scoped-routing-postgres.integration.test.ts",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\services\\control-plane\\tests\\scoped-routing-postgres.integration.test.ts",
+          "change": "A",
+          "sha256": "445A8F65B4AE285878A1FEE2DECDD5C66AFCDFC801B8B7BDBDE0A65471166755"
+        },
+        {
+          "path": "services/control-plane/tests/scoped-routing.test.ts",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\services\\control-plane\\tests\\scoped-routing.test.ts",
+          "change": "A",
+          "sha256": "24B6437AD0B59932CD3B0F96195DDE24581EFB43BDBBD9077B14104BA5B19EB3"
+        },
+        {
+          "path": "shared/harness.ts",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\shared\\harness.ts",
+          "change": "M",
+          "sha256": "4A9201BB914B77816896073C3607B301A0F5719B3F2C4D2CB04C7F2E01EB0D22"
+        },
+        {
+          "path": "shared/managed-usage.ts",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\shared\\managed-usage.ts",
+          "change": "M",
+          "sha256": "EE4BD1F3FC3161CCB81DA25E7044DABC4BBE564E96E40E897FBAF86593FC116D"
+        },
+        {
+          "path": "shared/model-api.ts",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\shared\\model-api.ts",
+          "change": "M",
+          "sha256": "1C8F4EA3EF901A0EF2965DBDBF84C80B658377FCF500465E43CBE1BECF53AAAE"
+        },
+        {
+          "path": "shared/routing-policy.ts",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\shared\\routing-policy.ts",
+          "change": "A",
+          "sha256": "C942CCD879258787574CC4DF068D6B7B40B0ECE8AEC1E9A3A1F0DFF30A52E325"
+        },
+        {
+          "path": "tests/openrouter-model-api.test.ts",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\tests\\openrouter-model-api.test.ts",
+          "change": "M",
+          "sha256": "1A19EB3701921FECDDB4AAE8FAD9159CD9D08F0C871DB646C72DA39E606C95EA"
+        },
+        {
+          "path": "tests/operations-routing-client.test.ts",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\tests\\operations-routing-client.test.ts",
+          "change": "A",
+          "sha256": "1B4F431330E2D43DC1BF411BA56FDBC2C171F38E0F622C1432A190139CBEA45B"
+        },
+        {
+          "path": "tests/operations-routing-harness.test.ts",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\tests\\operations-routing-harness.test.ts",
+          "change": "A",
+          "sha256": "C8465348546669CE440C4DD8515877FC38DD78312EDA2AE0E17CED69EA3EE650"
+        },
+        {
+          "path": "tests/operations-routing-journey.spec.ts",
+          "absolutePath": "F:\\Diomedes\\diomedes-wt\\operations-routing\\tests\\operations-routing-journey.spec.ts",
+          "change": "A",
+          "sha256": "7E9512A4AF12FD79AEF02827F198E08BB645138E716D50EA25A58D04B7A0DD75"
+        }
+      ]
+    },
+    {
+      "repository": "operations",
+      "root": "F:/Diomedes/diomedes-ops-wt/operations-routing",
+      "featureDiffBase": "06195b18da87365d9ebbef8045b01be508f86bf2",
+      "head": "f97e0b5b6944247426097b50a8cf48ad8cfa289d",
+      "observedOriginMain": "d0d04da058e7e9fdaeb89f6b28da2ad933f678de",
+      "workingTreeStatus": [],
+      "files": [
+        {
+          "path": "electron/service.mjs",
+          "absolutePath": "F:\\Diomedes\\diomedes-ops-wt\\operations-routing\\electron\\service.mjs",
+          "change": "M",
+          "sha256": "3CAB19A4FBF6B1ADC54A3B4A9A50C5540F23776B8C3239D3BA1A5B9F5D2B78C9"
+        },
+        {
+          "path": "src/api.ts",
+          "absolutePath": "F:\\Diomedes\\diomedes-ops-wt\\operations-routing\\src\\api.ts",
+          "change": "M",
+          "sha256": "180908B745E68D2812833E9CF6E112F304EDE34D6C0841A4C0913ED6DB0CDC63"
+        },
+        {
+          "path": "src/Customers.tsx",
+          "absolutePath": "F:\\Diomedes\\diomedes-ops-wt\\operations-routing\\src\\Customers.tsx",
+          "change": "M",
+          "sha256": "F248F79B53BA9B2AD021A8F9750520CCFC48A0AA8727003162A0193990177ACA"
+        },
+        {
+          "path": "src/operations-routing.css",
+          "absolutePath": "F:\\Diomedes\\diomedes-ops-wt\\operations-routing\\src\\operations-routing.css",
+          "change": "A",
+          "sha256": "1BF0A4ADF2975A7ECEDDFBE005F11CDD345558FC1537F8D6422DBCCD772618D5"
+        },
+        {
+          "path": "src/Routing.tsx",
+          "absolutePath": "F:\\Diomedes\\diomedes-ops-wt\\operations-routing\\src\\Routing.tsx",
+          "change": "M",
+          "sha256": "54E26FB0B08212ED62847C009FE3735E047E8DC775A6085F609E12D0DF4B4D1E"
+        },
+        {
+          "path": "tests/routing.test.mjs",
+          "absolutePath": "F:\\Diomedes\\diomedes-ops-wt\\operations-routing\\tests\\routing.test.mjs",
+          "change": "A",
+          "sha256": "E087E7A0FAFE61E828D63298760321557463CDF3226A46ED0E63564062A2172F"
+        }
+      ]
+    }
+  ],
+  "evidence": {
+    "focusedRun": "F:/Diomedes/diomedes-wt/operations-routing/test-results/operations-routing-integration-green-20260928-103253",
+    "controlPlaneTests": {
+      "passed": 77,
+      "failed": 0,
+      "skipped": 0
+    },
+    "rootFocusedTests": {
+      "passed": 55,
+      "failed": 0,
+      "skipped": 0
+    },
+    "typeChecks": {
+      "root": 0,
+      "controlPlane": 0
+    },
+    "focusedManifestSHA256": "4BA6BD0162AD3BC34E6B83F49987A2ACF493F091B737E53B8FD0571F271F0E43",
+    "heldBrowserManifestSHA256": "CF61DB513184D4F35D9BFBB527989756B84DFBEDC094C991CD9D9BA36F2F7E8B",
+    "remaining": [
+      "main and Individual authority composition across app and Operations",
+      "current composed Operations checks",
+      "broader repository gates",
+      "browser journey and screenshot inspection",
+      "real PostgreSQL migration and restricted-role checks",
+      "live qualification and funded provider probes",
+      "packaging and deployment"
+    ]
+  }
+}

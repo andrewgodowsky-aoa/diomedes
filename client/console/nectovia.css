@@ -832,6 +832,19 @@ html[data-motion-preset='none'] .console.diomedes .nv-band {
 :is(html, .dc-stage)[data-package='nectovia'] .console.diomedes .nv-row.attn .nv-open {
   color: var(--attn);
 }
+:is(html, .dc-stage)[data-package='nectovia']
+  .console.diomedes
+  .nv-row.fail
+  :is(.nv-label, .nv-open) {
+  color: var(--fail);
+}
+/* a waiting item's second line: what it waits on, and where */
+:is(html, .dc-stage)[data-package='nectovia'] .console.diomedes .nv-sub {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--dm-type-caption);
+  color: var(--t2);
+}
 :is(html, .dc-stage)[data-package='nectovia'] .console.diomedes .nv-open:hover {
   color: var(--t1);
   background: var(--raised);

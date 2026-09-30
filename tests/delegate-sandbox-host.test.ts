@@ -254,6 +254,12 @@ describe('the delegate’s route comes from an H09 profile', () => {
 });
 
 describe('Stop, depth and restart', () => {
+  test('a fixture pause rejects a Stop that happened before it began', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    await expect(pause(0, controller.signal)).rejects.toThrow('aborted');
+  });
+
   test('a delegate may hand one part on; Stop on the loop cancels the whole tree and removes its sandboxes', async () => {
     await close();
     await open(

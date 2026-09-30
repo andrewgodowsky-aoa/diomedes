@@ -12,8 +12,8 @@
  * and per prompt by the request text: `hang` waits for a cancel, `plan` presents
  * a plan with cursor/create_plan, `fetch` asks permission for a web fetch,
  * `edit` asks permission for a file edit, `fetchtwice` asks for one fetch call twice with two
- * addresses, `crashask` asks a question and exits before it is answered; anything else is answered with the
- * number of earlier turns this session holds.
+ * addresses, `crashask` asks a question and exits before it is answered, `think` streams thought chunks
+ * before its answer; anything else is answered with the number of earlier turns this session holds.
  *
  * Both Cursor's (`models.availableModels`) and Devin's (`configOptions`) session
  * shapes are returned, so each adapter reads its own.
@@ -161,6 +161,11 @@ async function prompt(frame) {
       return finish(`${kind} allowed and done`);
     }
     return finish(`${kind} ${answer.outcome?.outcome === 'selected' ? answer.outcome.optionId : answer.outcome?.outcome}`);
+  }
+  if (request.includes('think')) {
+    update(sessionId, { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: 'Weighing the menu. ' } });
+    update(sessionId, { sessionUpdate: 'agent_thought_chunk', content: { type: 'image', data: '', mimeType: 'image/png' } });
+    update(sessionId, { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: 'Checking prices.' } });
   }
   finish(`answer after ${session.history.length} earlier turns`);
 }

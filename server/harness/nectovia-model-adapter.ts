@@ -8,6 +8,7 @@
  * are Nectovia's own, exactly as on every model-API route. The gateway supplies
  * the next step and meters it; it never runs a tool.
  */
+import { mergeSourceRestrictions } from '../../shared/routing-policy.js';
 import type { AdapterRouteContract } from '../../shared/adapter-contract.js';
 import { NECTOVIA_ROUTE } from '../../shared/model-api.js';
 import { admitJobStep, CONVERSATION_LIMITS, type RespondLimits, type StreamSinks } from '../engines/model-api-core.js';
@@ -35,7 +36,8 @@ export const NECTOVIA_MODEL_CONTRACT: AdapterRouteContract = modelApiContract({
 
 export interface NectoviaModelAdapterOptions extends StreamSinks {
   base: string;
-  account: Pick<NectoviaAccount, 'refreshPolicy'>;
+  /** `policy` says, per tier, whether the gateway accepts reasoning summaries for this turn. */
+  account: Pick<NectoviaAccount, 'refreshPolicy'> & Partial<Pick<NectoviaAccount, 'policy'>>;
   connectionId: string;
   model: string;
   managed: ManagedAdmission;
@@ -53,7 +55,7 @@ export interface NectoviaModelAdapterOptions extends StreamSinks {
 }
 
 export function createNectoviaModelAdapter(options: NectoviaModelAdapterOptions): ModelAdapter & { profileHash: string } {
-  const limits = nectoviaLimits(options.limits ?? CONVERSATION_LIMITS);
+  const limits = nectoviaLimits(options.limits ?? CONVERSATION_LIMITS, options.managed.routing, options.managed.tier);
   const { managed } = options;
   return createModelApiAdapter({
     route: NECTOVIA_ROUTE,
@@ -74,6 +76,8 @@ export function createNectoviaModelAdapter(options: NectoviaModelAdapterOptions)
       sdk: NECTOVIA_SDK,
       gateway: `${options.base}/managed/v1`,
       organizationId: managed.organizationId,
+      scope: managed.scope ?? { kind: 'organization', id: managed.organizationId },
+      sourceRestrictions: managed.sourceRestrictions ?? [],
       model: options.model,
       tier: managed.tier,
       instructions: digest(options.instructions),
@@ -82,13 +86,14 @@ export function createNectoviaModelAdapter(options: NectoviaModelAdapterOptions)
       rateCard: options.card.version,
     },
     transcripts: options.transcripts,
+    sourceRestrictionPolicy: 'gateway',
     notes: [
       'One streamed Responses call per model step to the account service’s managed gateway, store:false, SDK retries off, one tool call at most; tools are descriptors run only by the harness.',
       'The session’s bearer token and the Agent admission are attached only to the gateway’s responses path; redirects are refused. No provider credential exists on this computer.',
       'The gateway meters each call against the business’s credits; the local ledger is a guard, never the balance.',
       'Stopping a call closes the HTTP read and leaves its local hold uncertain until the gateway’s record settles it.',
     ],
-    sinks: { onDelta: options.onDelta, onToolActivity: options.onToolActivity },
+    sinks: { onDelta: options.onDelta, onToolActivity: options.onToolActivity, onReasoningDelta: options.onReasoningDelta },
     admitStep: (call) =>
       admitJobStep({
         prefix: 'nectovia',
@@ -105,7 +110,7 @@ export function createNectoviaModelAdapter(options: NectoviaModelAdapterOptions)
         account: options.account,
         connectionId: options.connectionId,
         model: options.model,
-        managed,
+        managed: { ...managed, sourceRestrictions: mergeSourceRestrictions(managed.sourceRestrictions ?? [], call.sourceRestrictions ?? []) },
         token: options.token,
         card: options.card,
         exposure: options.exposure,

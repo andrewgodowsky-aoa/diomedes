@@ -2,8 +2,8 @@ import type { ActivityRow, ProjectActivity } from './activity';
 import { date, time } from '../components';
 
 /**
- * The four human headings over the project's current work: Working, Needs you,
- * Ready for review, Finished recently.
+ * The three human headings over the project's current work: Working, Needs you,
+ * Finished recently. Work to review is under Needs you (the one needs-you rule).
  *
  * It renders the projection in `activity.ts` and decides nothing itself. An
  * empty section is left out rather than shown as "none" (decision 4), and the
@@ -23,7 +23,6 @@ export function activitySections(activity: ProjectActivity): Section[] {
   return [
     { heading: 'Working', rows: activity.working, point: 'live' },
     { heading: 'Needs you', rows: activity.needsYou, point: 'attn' },
-    { heading: 'Ready for review', rows: activity.readyForReview, point: 'attn' },
     { heading: 'Finished recently', rows: activity.finishedRecently, point: 'done' },
   ].filter((section) => section.rows.length > 0);
 }
@@ -46,7 +45,7 @@ export function ActivityOverview({
             {section.rows.map((row) => (
               <li key={row.id}>
                 <button type="button" onClick={() => onOpenRow(row)}>
-                  <span className={`pt ${section.point}`} />
+                  <span className={`pt ${row.tone ?? section.point}`} />
                   <span className="nm">{row.label}</span>
                   <span className="sub">{row.detail}</span>
                   <span className="mono when">{when(row.at)}</span>

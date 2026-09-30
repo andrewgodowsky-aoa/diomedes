@@ -56,6 +56,9 @@ GRANT UPDATE (state, dispatched_at, resolved_at, uncertain_reason) ON control_pl
 -- saveSettlement(), "INSERT INTO control_plane.funding_settlements(...)" (settle).
 -- Never UPDATE: a settlement is written once.
 GRANT SELECT, INSERT ON control_plane.funding_settlements TO cp_funding;
+-- 009 Individual agreements allocate the same credit_periods through the
+-- existing funding writer. Scope, consent, routing and staff records remain
+-- on cp_runtime; foreign-key checks need no extra cp_funding table grants.
 -- credit_adjustments and credit_topups: SELECT only, for the correction sums in
 -- periodTotals() and the purchased sum in topUpTotals() (reserve).
 GRANT SELECT ON control_plane.credit_adjustments, control_plane.credit_topups TO cp_funding;

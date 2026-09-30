@@ -32,6 +32,8 @@ let base: string;
 let project: Project;
 let thread: Conversation;
 let fixtureMode: string;
+/** The OpenCode version installed now; a test that updates OpenCode in place changes it. */
+let installed: string;
 async function request(route: string, method = 'GET', body?: unknown) {
   return fetch(`${base}/api${route}`, {
     method,
@@ -85,12 +87,12 @@ const service = () =>
         capabilities: [],
         signIn: 'unknown',
         adapter: 'planned',
-        installedVersion: TESTED_VERSIONS.opencode,
+        installedVersion: installed,
         location: process.execPath,
         disclosure: [],
       },
     ],
-    version: async () => TESTED_VERSIONS.opencode,
+    version: async () => installed,
     adapter: (_engine, _location, cwd) =>
       new OpenCodeAdapter('opencode', cwd, {
         spawn: (_command, args, options) =>
@@ -104,6 +106,7 @@ beforeEach(async () => {
   vi.stubEnv('XDG_CACHE_HOME', path.join(os.tmpdir(), 'diomedes-no-opencode-cache'));
   vi.stubEnv('XDG_DATA_HOME', path.join(root, 'opencode-data'));
   fixtureMode = 'ok';
+  installed = TESTED_VERSIONS.opencode;
   await open(service());
   await api('/ai/discover', 'POST', { consent: true });
   await api('/ai/check/opencode', 'POST', {});
@@ -244,6 +247,26 @@ test('closed and restarted hosts resume the same OpenCode session only through e
   expect(fork.nativeSession?.opaqueRef).not.toBe(first.nativeSession?.opaqueRef);
   expect(fork.nativeSession?.lineageId).toBe(first.nativeSession?.lineageId);
   expect(fork.response?.text).toBe(`answer:forked (turn 3 of ${fork.nativeSession!.opaqueRef})`);
+});
+
+test('after OpenCode updates itself, a restarted host resumes the same session on the version installed now', async () => {
+  // The conversation starts on an older OpenCode, which then updates itself in place.
+  installed = '1.18.3';
+  const first = await api<ClaudeSessionTurnResult>(endpoint(), 'POST', command('start'));
+  await api(`${endpoint()}/${first.runId}/close`, 'POST', { commandId: 'close-one' });
+  await close();
+  installed = TESTED_VERSIONS.opencode;
+  await open(service());
+  const resumed = await api<ClaudeSessionTurnResult>(`${endpoint()}/${first.runId}/resume`, 'POST', command('resumed'));
+  expect(resumed.nativeSession).toEqual(first.nativeSession);
+  expect(resumed.continuity).toBeUndefined();
+  expect(resumed.response?.text).toBe(`answer:resumed (turn 2 of ${first.nativeSession!.opaqueRef})`);
+  const recorded = (app.locals.store as Store)
+    .state(project.id)
+    .conversations.find((item) => item.id === thread.id)!;
+  expect(recorded.turns.map((turn) => turn.text)).toEqual(['start', first.response!.text, 'resumed', resumed.response!.text]);
+  expect(recorded.turns[1]).toMatchObject({ origin: { engine: { id: 'opencode', version: '1.18.3' } } });
+  expect(recorded.turns[3]).toMatchObject({ origin: { engine: { id: 'opencode', version: TESTED_VERSIONS.opencode } } });
 });
 
 test('a fork the OpenCode build cannot make is refused with its reason', async () => {

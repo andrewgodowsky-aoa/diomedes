@@ -1,0 +1,184 @@
+diff --git a/shared/harness.ts b/shared/harness.ts
+--- a/shared/harness.ts
++++ b/shared/harness.ts
+@@ -129,1 +129,1 @@
+-  error: { name: string; message: string } | null;
++  error: { name: string; message: string; managed?: RoutingReceipt } | null;
+diff --git a/server/harness/policy.ts b/server/harness/policy.ts
+--- a/server/harness/policy.ts
++++ b/server/harness/policy.ts
+@@ -9,1 +9,2 @@
+-import { mergeSourceRestrictions } from '../../shared/routing-policy.js';
++import { z } from 'zod';
++import { hardRestrictionsSchema, mergeSourceRestrictions, type HardRestrictions } from '../../shared/routing-policy.js';
+@@ -54,1 +54,14 @@
++/** Keep invalid source metadata inside the harness's structured error boundary. */
++export function checkedSourceRules(code: string, ...sets: readonly unknown[]): HardRestrictions[] {
++  const parsed = sets.map(set => {
++    const value = z.array(hardRestrictionsSchema).max(32).safeParse(set);
++    if (!value.success) throw new HarnessError(code, 'Source privacy restrictions are malformed or exceed the supported bound.');
++    return value.data;
++  });
++  try { return mergeSourceRestrictions(...parsed); }
++  catch (error) {
++    if (error instanceof RangeError) throw new HarnessError(code, error.message);
++    throw error;
++  }
++}
+ const LEVELS = ['public', 'internal', 'restricted'] as const;
+@@ -73,1 +86,1 @@
+-    mergeSourceRestrictions(l.sourceRestrictions);
++    checkedSourceRules('invalid_label', l.sourceRestrictions);
+@@ -92,1 +105,1 @@
+-    ...(labels.some(l => l.sourceRestrictions?.length) ? { sourceRestrictions: mergeSourceRestrictions(...labels.map(l => l.sourceRestrictions ?? [])) } : {}),
++    ...(labels.some(l => l.sourceRestrictions?.length) ? { sourceRestrictions: checkedSourceRules('invalid_label', ...labels.map(l => l.sourceRestrictions ?? [])) } : {}),
+diff --git a/server/harness/native-agent.ts b/server/harness/native-agent.ts
+--- a/server/harness/native-agent.ts
++++ b/server/harness/native-agent.ts
+@@ -26,2 +26,2 @@
+-import { hardRestrictionsSchema, mergeSourceRestrictions, type HardRestrictions } from '../../shared/routing-policy.js';
+-import { copy, digest, HarnessError, units } from './policy.js';
++import { routingReceiptSchema, type HardRestrictions } from '../../shared/routing-policy.js';
++import { checkedSourceRules, copy, digest, HarnessError, units } from './policy.js';
+@@ -78,3 +78,5 @@
+-  const json = z.json().parse(after);
+-  const restrictions = z.array(hardRestrictionsSchema).max(32);
+-  const prior = restrictions.parse(before.sourceRestrictions ?? []), following = restrictions.parse(after.sourceRestrictions ?? []);
++  const parsed = z.json().safeParse(after);
++  if (!parsed.success) throw new HarnessError('invalid_prepared_context', 'Context assembly must return bounded plain JSON.');
++  const json = parsed.data;
++  const prior = checkedSourceRules('invalid_prepared_context', before.sourceRestrictions ?? []);
++  const following = checkedSourceRules('invalid_prepared_context', after.sourceRestrictions ?? []);
+@@ -100,2 +103,2 @@
+-function sourceRules(run: HarnessRun, before = run.steps.length): HardRestrictions[] {
+-  const sets: HardRestrictions[][] = [];
++export function sourceRules(run: HarnessRun, before = run.steps.length): HardRestrictions[] {
++  const sets: unknown[] = [];
+@@ -103,1 +106,10 @@
+     if (step.intent.label?.sourceRestrictions) sets.push(step.intent.label.sourceRestrictions);
++    if (step.intent.kind === 'model') {
++      const input = step.intent.input;
++      if (input && typeof input === 'object' && !Array.isArray(input)) {
++        if (input.sourceRestrictions !== undefined) sets.push(input.sourceRestrictions);
++        const request = input.request;
++        if (request && typeof request === 'object' && !Array.isArray(request) && request.sourceRestrictions !== undefined)
++          sets.push(request.sourceRestrictions);
++      }
++    }
+@@ -107,1 +119,1 @@
+-        sets.push(z.array(hardRestrictionsSchema).max(32).parse(output.sourceRestrictions));
++        sets.push(output.sourceRestrictions);
+@@ -110,1 +122,1 @@
+-  return mergeSourceRestrictions(...sets);
++  return checkedSourceRules('invalid_lineage', ...sets);
+@@ -217,1 +229,1 @@
+-      let inherited = mergeSourceRestrictions(options.sourceRestrictions ?? []);
++      let inherited = checkedSourceRules('invalid_source_restrictions', options.sourceRestrictions ?? []);
+@@ -224,1 +236,2 @@
+-        inherited = mergeSourceRestrictions(inherited, sourceRules(record));
++        if (record.projectId !== initial.projectId) throw new HarnessError('cross_project', 'Source ancestry belongs to another project.');
++        inherited = checkedSourceRules('invalid_lineage', inherited, sourceRules(record));
+@@ -230,1 +243,1 @@
+-        const restrictions = mergeSourceRestrictions(inherited, sourceRules(run, boundary < 0 ? run.steps.length : boundary));
++        const restrictions = checkedSourceRules('invalid_lineage', inherited, sourceRules(run, boundary < 0 ? run.steps.length : boundary));
+@@ -280,1 +293,2 @@
+                   tools: descriptors,
++                  ...(effective.sourceRestrictions?.length ? { sourceRestrictions: effective.sourceRestrictions } : {}),
+@@ -288,2 +302,5 @@
+             if (!result || !validResponse(result.response))
+               throw new HarnessError('invalid_model_response', 'Invalid model response schema.');
++            const managed = result.managed === undefined ? null : routingReceiptSchema.safeParse(result.managed);
++            if (managed && !managed.success)
++              throw new HarnessError('invalid_managed_receipt', 'The managed attempt receipt cannot be verified.');
+@@ -314,1 +331,1 @@
+-              ...(result.managed ? { managed: result.managed } : {}),
++              ...(managed?.success ? { managed: managed.data } : {}),
+diff --git a/server/harness/model-api-adapter.ts b/server/harness/model-api-adapter.ts
+--- a/server/harness/model-api-adapter.ts
++++ b/server/harness/model-api-adapter.ts
+@@ -308,2 +308,2 @@
+-      const managed = raw && typeof raw === 'object' && !Array.isArray(raw) && 'nectovia' in raw
++      const managed = spec.sourceRestrictionPolicy === 'gateway' && raw && typeof raw === 'object' && !Array.isArray(raw) && 'nectovia' in raw
+         ? routingReceiptSchema.parse(raw.nectovia) : null;
+diff --git a/server/harness/run-service.ts b/server/harness/run-service.ts
+--- a/server/harness/run-service.ts
++++ b/server/harness/run-service.ts
+@@ -14,1 +14,2 @@
+ import type { OriginSnapshot } from '../../shared/attribution.js';
++import { routingReceiptSchema } from '../../shared/routing-policy.js';
+@@ -281,4 +282,7 @@
+-  private describeError(error: unknown): { name: string; message: string } {
++  private describeError(error: unknown, model = false): NonNullable<StepRecord['error']> {
++    const managed = model && error !== null && typeof error === 'object' && 'managed' in error
++      ? routingReceiptSchema.safeParse(error.managed) : null;
+     return {
+       name: error instanceof Error ? this.redact(error.name).slice(0, 128) : 'Error',
+       message: this.redact(error instanceof Error ? error.message : String(error)).slice(0, 2000),
++      ...(managed?.success ? { managed: managed.data } : {}),
+@@ -1118,1 +1122,1 @@
+-          s.error = this.describeError(error);
++          s.error = this.describeError(error, intent.kind === 'model');
+diff --git a/server/harness/model-session-run.ts b/server/harness/model-session-run.ts
+--- a/server/harness/model-session-run.ts
++++ b/server/harness/model-session-run.ts
+@@ -41,3 +41,4 @@
+-import { NativeAgent, type ModelAdapter } from './native-agent.js';
++import { NativeAgent, sourceRules, type ModelAdapter } from './native-agent.js';
++import type { HardRestrictions } from '../../shared/routing-policy.js';
+ import { REWRITE_INSTRUCTIONS, repairWriting } from '../plain-writing.js';
+-import { digest, HarnessError } from './policy.js';
++import { checkedSourceRules, digest, HarnessError } from './policy.js';
+@@ -50,1 +51,1 @@
+-import { carriedRun } from './conversation-history.js';
++import { answeredTurns, carriedRun } from './conversation-history.js';
+@@ -195,1 +196,2 @@
+   compaction: CompactionRecord | null;
++  sourceRestrictions: HardRestrictions[];
+@@ -267,1 +269,2 @@
+     contract: adapter.contract,
++    ...(adapter.enforcesSourceRestrictions ? { enforcesSourceRestrictions: true as const } : {}),
+@@ -679,2 +682,23 @@
+     const selected = selectHistory({ carried, own: run, exclude: turnId, message: input.prompt });
++    const parents = carried ? [carried, run] : [run];
++    const contributors = selected.selection
++      ? [...selected.selection.included, ...(selected.compaction?.turns.slice(0, selected.compaction.listed ?? selected.compaction.turns.length) ?? [])]
++      : answeredTurns(parents, turnId);
++    const restrictions: HardRestrictions[][] = [];
++    for (const contributor of contributors) {
++      const parent = parents.find(item => item.id === contributor.runId);
++      if (!parent || parent.projectId !== run.projectId || parent.tenantId !== run.tenantId)
++        throw new HarnessError('invalid_lineage', 'The source history belongs to another account or project.');
++      restrictions.push(sourceRules(parent));
++      if (parent.capabilityId !== MODEL_CONVERSATION_CAPABILITY.id) continue;
++      const step = parent.steps.find(item => item.intent.stepId === contributor.stepId);
++      const input = step?.intent.input;
++      if (!input || typeof input !== 'object' || Array.isArray(input) || typeof input.requestId !== 'string')
++        throw new HarnessError('invalid_lineage', 'The source history has no verifiable command identity.');
++      const child = await this.turnRun(run.projectId, parent.id, input.requestId);
++      if (!child || child.projectId !== parent.projectId || child.tenantId !== parent.tenantId)
++        throw new HarnessError('invalid_lineage', 'The source history has no verifiable model record.');
++      restrictions.push(sourceRules(child));
++    }
+     return {
++      sourceRestrictions: checkedSourceRules('invalid_lineage', ...restrictions),
+@@ -808,1 +835,1 @@
+-          : { text: '', carried: 0, selection: null, compaction: null };
++          : { text: '', carried: 0, selection: null, compaction: null, sourceRestrictions: [] };
+@@ -935,1 +962,2 @@
+               maxTurns: MODEL_TURN_CAPABILITY.maxTurns,
++              sourceRestrictions: history.sourceRestrictions,
+@@ -1010,1 +1038,5 @@
+             const repairId = `${where.childId}-writing`;
++            const source = await this.runs.get(where.childId);
++            if (source.projectId !== input.projectId || source.tenantId !== where.principal.tenantId)
++              throw new HarnessError('invalid_lineage', 'The writing helper source belongs to another account or project.');
++            const sourceRestrictions = sourceRules(source);
+@@ -1031,1 +1063,2 @@
+               maxTurns: 1,
++              sourceRestrictions,
+diff --git a/client/console/ManagedRoutingReceipt.tsx b/client/console/ManagedRoutingReceipt.tsx
+--- a/client/console/ManagedRoutingReceipt.tsx
++++ b/client/console/ManagedRoutingReceipt.tsx
+@@ -11,1 +11,2 @@
+   const steps = run.steps.flatMap(step => {
++    if (step.intent.kind !== 'model') return [];

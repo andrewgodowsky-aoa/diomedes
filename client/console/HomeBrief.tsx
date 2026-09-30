@@ -1,13 +1,21 @@
-import type { Project } from '../../shared/types';
+import type { Project, WaitingItem } from '../../shared/types';
 import { SegmentBar } from './SegmentBar';
 import { homeBrief, quietLine, type BriefState } from './home-brief';
 
 const POINT: Record<BriefState, string> = { attn: 'attn', live: 'live', done: 'done' };
+/** The one button a waiting item carries, named for what the person does there. */
+const ACTION: Record<WaitingItem['kind'], string> = {
+  approval: 'Review',
+  review: 'Review',
+  failed: 'Check',
+};
 
 interface HomeBriefProps {
   projects: readonly Project[];
   /** Open the project a row is about. */
   onOpen(projectId: string): void;
+  /** Open one waiting item where it is decided. Without it, the item opens its project. */
+  onOpenWaiting?(projectId: string, item: WaitingItem): void;
   /** The moment the report is read at; the clock is the caller's. */
   now?: Date;
 }
@@ -19,7 +27,7 @@ interface HomeBriefProps {
  * own counts, its task tally as a segment bar, and a way into the project.
  * Drawn only in the Nectovia scheme (DiomedesHome decides).
  */
-export function HomeBrief({ projects, onOpen, now = new Date() }: HomeBriefProps) {
+export function HomeBrief({ projects, onOpen, onOpenWaiting, now = new Date() }: HomeBriefProps) {
   const model = homeBrief(projects, now);
   const closing = quietLine(model);
   return (
@@ -28,6 +36,40 @@ export function HomeBrief({ projects, onOpen, now = new Date() }: HomeBriefProps
       <h2 className="nv-greeting">
         {model.greeting} <span className="nv-accent">{model.accent}</span>
       </h2>
+      {model.waiting.length > 0 && (
+        <section className="nv-report">
+          <h3>Waiting on you</h3>
+          <ul>
+            {model.waiting.map(({ projectId, projectName, item }) => {
+              const tone = item.kind === 'failed' ? 'fail' : 'attn';
+              return (
+                <li key={`${projectId}:${item.id}`} className={`nv-row ${tone}`}>
+                  <span className={`pt ${tone}`} aria-hidden="true" />
+                  <span className="nv-label">
+                    {item.kind === 'failed' ? 'Failed' : 'Needs you'}
+                  </span>
+                  <span className="nv-what">
+                    <b>{item.label}</b>
+                    <span className="nv-sub">
+                      {item.detail} · {projectName}
+                    </span>
+                  </span>
+                  <button
+                    type="button"
+                    className="nv-open"
+                    aria-label={`${ACTION[item.kind]} ${item.label} in ${projectName}`}
+                    onClick={() =>
+                      onOpenWaiting ? onOpenWaiting(projectId, item) : onOpen(projectId)
+                    }
+                  >
+                    {ACTION[item.kind]}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
       {(model.rows.length > 0 || closing) && (
         // Named by its heading alone: a region and a heading answering to the
         // same words would read as two places to a screen reader.

@@ -7,6 +7,7 @@
  * is configured, to the deployed Worker. The account service is the authority
  * for every answer here; the desktop caches, it never decides.
  */
+import { z } from 'zod';
 import type { AccessView } from '../../shared/access.js';
 import type { PersonAccessView } from '../../shared/individual-plan.js';
 import type { OrganizationSetupAnswer, OrganizationSetupWrite } from '../../shared/organization-setup.js';
@@ -15,8 +16,16 @@ import { RELAY_DEVICE_HEADER } from '../../services/control-plane/src/relay/prot
 import type { DesktopCheckAnswer } from '../../services/control-plane/src/relay/service.js';
 import { organizationSetupAnswerSchema } from '../../services/control-plane/src/organization-setup/schema.js';
 import { organizationAccountExportSchema, type ReadOrganizationExport } from '../../services/control-plane/src/organization-export/schema.js';
+import { individualAccountSchema, resolvedRoutingSnapshotSchema, routingPreferenceSchema,
+  type AccountScope, type RoutingPreferenceWrite } from '../../shared/routing-policy.js';
 
 export type Fetcher = (request: Request) => Promise<Response>;
+
+const scopedEntitlementSchema = z.object({ plan: z.string(), planLabel: z.string().nullable(),
+  state: z.enum(['none', 'active', 'expired', 'revoked', 'unknown']), features: z.array(z.string()).max(100),
+  agent: z.boolean(), managedInference: z.boolean(), validFrom: z.iso.datetime().nullable(), validUntil: z.iso.datetime().nullable(),
+  revision: z.number().int().nonnegative(), source: z.enum(['none', 'account-service']), reason: z.string(),
+});
 
 export class ControlPlaneError extends Error {
   constructor(
@@ -50,6 +59,7 @@ export interface AgentAdmissionAnswer {
     | { admitted: true; planId: string | null; revision: number; validUntil: string | null }
     | { admitted: false; code: string; reason: string };
   pins: {
+    scope?: AccountScope;
     /** Null for Personal work admitted under the person's own Individual plan. */
     organizationId: string | null;
     tenantId: string;
@@ -66,6 +76,11 @@ export interface RoutingPolicyAnswer {
   revision: number;
   publishedAt: string | null;
   tiers: Record<'efficient' | 'focused' | 'thorough', { entryId: string; provider: string; model: string; label: string; entryRevision: number } | null>;
+  /**
+   * Per tier, whether the gateway accepts reasoning summaries for the upstream serving it. An older
+   * gateway leaves it out and is never asked for one.
+   */
+  reasoningSummaries?: Record<'efficient' | 'focused' | 'thorough', boolean>;
 }
 
 /** A computer registered for phone access. The service never answers its key. */
@@ -196,6 +211,29 @@ export class ControlPlaneClient {
   routingPolicy(token: string) {
     return this.call<RoutingPolicyAnswer>('GET', '/account/routing-policy', token);
   }
+  async individualAccount(token: string) {
+    return individualAccountSchema.parse(await this.call<unknown>('POST', '/account/individual', token, {}));
+  }
+  async scopedRoutingPolicy(token: string, scope: AccountScope) {
+    const answer = resolvedRoutingSnapshotSchema.safeParse(await this.call<unknown>('GET', `${this.scopePath(scope)}/policy`, token));
+    if (!answer.success || answer.data.scope.kind !== scope.kind || answer.data.scope.id !== scope.id)
+      throw new ControlPlaneError('The account service returned an unreadable routing snapshot.', 502, 'unreadable_answer');
+    return answer.data;
+  }
+  async routingPreference(token: string, scope: AccountScope) {
+    const answer = await this.call<unknown>('GET', `${this.scopePath(scope)}/preference`, token);
+    return answer === null ? null : routingPreferenceSchema.parse(answer);
+  }
+  async acceptRoutingPreference(token: string, input: RoutingPreferenceWrite) {
+    return routingPreferenceSchema.parse(await this.call<unknown>('POST', `${this.scopePath(input.scope)}/preference`, token, input));
+  }
+  admitScopedAgent(token: string, scope: AccountScope, input: { surface: string; routeKind: string; rootJobId?: string | null }) {
+    return this.call<AgentAdmissionAnswer>('POST', `${this.scopePath(scope)}/admit`, token, input);
+  }
+  async scopedAccess(token: string, scope: AccountScope) {
+    return scopedEntitlementSchema.parse(await this.call<unknown>('GET', `${this.scopePath(scope)}/access`, token));
+  }
+  private scopePath(scope: AccountScope) { return `/account/routing/${scope.kind}/${encodeURIComponent(scope.id)}`; }
   roster(token: string, organizationId: string) {
     return this.call<RosterAnswer>('GET', `/account/organizations/${encodeURIComponent(organizationId)}/roster`, token);
   }

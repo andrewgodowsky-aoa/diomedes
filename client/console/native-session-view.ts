@@ -1,3 +1,4 @@
+import { routeDisplayName } from '../../shared/engines';
 import type { ThreadSessionView } from '../../shared/session-controls';
 
 /**
@@ -14,11 +15,10 @@ export interface SessionLine {
   tone: 'quiet' | 'warn';
 }
 
-const ENGINE_NAMES: Record<string, string> = { 'claude-code': 'Claude Code', opencode: 'OpenCode' };
-
 export function sessionLine(view: ThreadSessionView | null): SessionLine | null {
   if (!view?.controls) return null;
-  const engine = ENGINE_NAMES[view.controls.engine.id] ?? view.controls.engine.id;
+  // Named as people read it (ChatGPT, never its route id), as the transcript names it.
+  const engine = routeDisplayName(view.controls.engine.id);
   // Only a model the engine itself reported is named; a requested alias is not attribution.
   const attribution = view.reportedModel ? `${engine} · ${view.reportedModel}` : engine;
   const continuity = view.continuity;

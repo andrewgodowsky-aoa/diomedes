@@ -245,6 +245,33 @@ describe('the request the real SDK sends to Azure', () => {
     expect((body.input as Item[])[0]).toMatchObject({ role: 'system' });
   });
 
+  test('with a thinking sink, a reasoning deployment asks for summaries and streams them apart from the answer', async () => {
+    const summarized: Item = { ...reasoning(), summary: [{ type: 'summary_text', text: 'Reading the menu first.' }] };
+    const net = transport([() => stream(envelope([summarized, message('Soup and a sandwich.')]))]);
+    const thoughts: string[] = [];
+    const deltas: string[] = [];
+    const result = await call(net.fetch, {
+      onDelta: (text) => deltas.push(text),
+      onReasoningDelta: (text) => thoughts.push(text),
+    });
+    expect((net.sent[0].body.reasoning as Record<string, unknown>).summary).toBe('auto');
+    expect(thoughts.join('')).toBe('Reading the menu first.');
+    expect(deltas.join('')).toBe('Soup and a sandwich.');
+    expect(result.outcome).toEqual({ kind: 'final', text: 'Soup and a sandwich.' });
+  });
+
+  test('without a thinking sink, a reasoning deployment asks for no summary', async () => {
+    const net = transport([() => stream(envelope([reasoning(), message('Soup and a sandwich.')]))]);
+    await call(net.fetch);
+    expect((net.sent[0].body.reasoning as Record<string, unknown>).summary ?? null).toBeNull();
+  });
+
+  test('a non-reasoning deployment sends no reasoning object even with a thinking sink', async () => {
+    const net = transport([() => stream(envelope([message('Soup.')], { model: 'gpt-4.1-mini' }))]);
+    await call(net.fetch, { model: 'gpt-4.1-mini', onReasoningDelta: () => undefined });
+    expect(net.sent[0].body.reasoning).toBeUndefined();
+  });
+
   test('a tool call streams as started activity with a plain summary; the tool reaches Azure as a descriptor', async () => {
     const net = transport([() => stream(envelope([reasoning(), functionCall('call_9', 'read_source', '{"path":"menu.md"}')]))]);
     const activity: RawToolActivity[] = [];
@@ -331,7 +358,7 @@ describe('refusals before anything is sent', () => {
   test('the guarded fetch refuses any other destination, query or body before the key is attached', async () => {
     const net = transport([]);
     let dispatched = 0;
-    const binding = azureBinding(CONNECTION, CONNECTION.deployments[0], 'low');
+    const binding = azureBinding(CONNECTION, CONNECTION.deployments[0], 'low', false);
     const guarded = guardedStreamFetch({
       prefix: 'azure',
       label: 'Azure',

@@ -129,15 +129,15 @@ beforeEach(async () => {
     },
   });
   orgs = (await seedDemo(cloud)).organizations!;
-  // The Routing role qualifies GPT-6 Luna and publishes it for Efficient and Focused, as in
+  // The Routing role qualifies GPT-5.6 Luna and publishes it for Efficient and Focused, as in
   // nectovia-bot-app.test.ts, so a Home message has a model to run on.
   const routing = await tokenFor(DEMO_ACCOUNTS.staffRouting.email);
-  const luna = (await cloud.commercial.routes(routing)).routes.find((row) => row.id === 'aws-luna-6')!;
+  const luna = (await cloud.commercial.routes(routing)).routes.find((row) => row.id === 'aws-luna-5-6')!;
   await cloud.commercial.saveRoute(routing, {
-    id: 'aws-luna-6',
+    id: 'aws-luna-5-6',
     provider: 'aws-bedrock',
-    model: 'us.openai.gpt-6-luna',
-    label: 'GPT-6 Luna',
+    model: 'us.openai.gpt-5.6-luna',
+    label: 'GPT-5.6 Luna',
     region: 'us',
     processing: 'AWS Bedrock US inference profile.',
     status: 'qualified',
@@ -145,8 +145,8 @@ beforeEach(async () => {
     baseRevision: luna.revision,
   });
   policy = await cloud.commercial.publishPolicy(routing, {
-    tiers: { efficient: 'aws-luna-6', focused: 'aws-luna-6', thorough: null },
-    note: 'Test fixture: GPT-6 Luna for Efficient and Focused.',
+    tiers: { efficient: 'aws-luna-5-6', focused: 'aws-luna-5-6', thorough: null },
+    note: 'Test fixture: GPT-5.6 Luna for Efficient and Focused.',
     baseRevision: 1,
   });
   const backend: AccountBackend = {

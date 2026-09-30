@@ -7,6 +7,7 @@ import { useAccount } from '../client/AccountGate';
 import { AccountSettings } from '../client/AccountSettings';
 import { ROLE_CAPABILITIES, type AccessView } from '../shared/access';
 import type { AccountStateView } from '../shared/accounts';
+import { MODEL_API_NAMES } from '../shared/model-api';
 import { defaults } from '../server/store';
 
 vi.mock('../client/AccountGate', async (original) => ({
@@ -35,13 +36,13 @@ describe('managed inference commercial presentation', () => {
     expect(html.indexOf('Nectovia-managed AI')).toBeLessThan(html.indexOf('External AI tools'));
     expect(html).toContain('<details><summary>Advanced: provider accounts and routing</summary>');
     expect(html).not.toMatch(/<details[^>]*\bopen/);
-    expect(html).toContain('aria-label="AWS Bedrock (GPT-6 Luna)"');
+    expect(html).toContain(`aria-label="${MODEL_API_NAMES['aws-bedrock']}"`);
   });
 
   it('does not turn Advanced information into customer provider authority', () => {
     const html = renderToStaticMarkup(createElement(AIConnections, { settings: defaults(), save: async () => {}, ownerRoutes: false }));
     expect(html).toContain('Advanced: organization-owned API or cloud account');
-    expect(html).not.toContain('aria-label="AWS Bedrock (GPT-6 Luna)"');
+    expect(html).not.toContain(`aria-label="${MODEL_API_NAMES['aws-bedrock']}"`);
     expect(html).not.toContain('aria-label="Tiers"');
   });
 

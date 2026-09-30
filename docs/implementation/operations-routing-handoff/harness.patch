@@ -1,0 +1,287 @@
+diff --git a/shared/harness.ts b/shared/harness.ts
+--- a/shared/harness.ts
++++ b/shared/harness.ts
+@@ -15,6 +15,7 @@
+  */
+ import type { TaskState, Task, Session, ThreadPermission } from './types.js';
+ import type { OriginSnapshot } from './attribution.js';
++import type { HardRestrictions, RoutingReceipt } from './routing-policy.js';
+ 
+ export const HARNESS_CONTRACT_VERSION = 1 as const;
+ 
+@@ -37,6 +38,8 @@
+   integrity: 'trusted' | 'untrusted';
+   confidentiality: 'public' | 'internal' | 'restricted';
+   provenance: string[];
++  /** Host-attached source rules. Generated content cannot remove or replace these. */
++  sourceRestrictions?: HardRestrictions[];
+ }
+ 
+ export interface HarnessPrincipal {
+@@ -276,12 +279,15 @@
+   messages: PortableMessage[];
+   tools: ToolDescriptor[];
+   transcript: ProviderTranscriptRef | null;
++  sourceRestrictions?: HardRestrictions[];
+ }
+ export type ModelResponse =
+   | { type: 'final'; text: string }
+   | { type: 'tool'; name: string; input: Json };
+ export interface ModelResult {
+   response: ModelResponse;
++  /** Immutable gateway receipts; current configuration never rewrites these. */
++  managed?: RoutingReceipt;
+   transcript?: ProviderTranscriptRef | null;
+   /** Cache counts are parts of `inputTokens` (`nectovia-usage/1`), kept apart when reported. */
+   usage?: { inputTokens?: number; outputTokens?: number; cacheReadTokens?: number; cacheWriteTokens?: number } | null;
+diff --git a/server/harness/native-agent.ts b/server/harness/native-agent.ts
+--- a/server/harness/native-agent.ts
++++ b/server/harness/native-agent.ts
+@@ -13,6 +13,7 @@
+   AdapterCapabilities,
+   Destination,
+   HarnessPrincipal,
++  HarnessRun,
+   Json,
+   ModelRequest,
+   ModelResponse,
+@@ -22,6 +23,7 @@
+ } from '../../shared/harness.js';
+ import { applicationOrigin, directOrigin } from '../../shared/attribution.js';
+ import { z } from 'zod';
++import { hardRestrictionsSchema, mergeSourceRestrictions, type HardRestrictions } from '../../shared/routing-policy.js';
+ import { copy, digest, HarnessError, units } from './policy.js';
+ import { RunService, Suspended } from './run-service.js';
+ import type { ToolRegistry } from './tools.js';
+@@ -44,6 +46,8 @@
+    * stream-time rules). It observes only: nothing it does changes the answer.
+    */
+   complete(request: ModelRequest, signal: AbortSignal, stream?: ModelStreamSink): Promise<ModelResult>;
++  /** Set only by a binding that intersects source rules before external inference. */
++  enforcesSourceRestrictions?: true;
+   /** Trusted context assembly runs in a durable pure step before final model authorization. */
+   prepare?(request: ModelRequest, signal: AbortSignal): Promise<ModelRequest>;
+   /** May refuse a stale prepared context; must not alter its already frozen bytes. */
+@@ -72,6 +76,10 @@
+ 
+ export function validatePrepared(before: ModelRequest, after: ModelRequest): ModelRequest {
+   const json = z.json().parse(after);
++  const restrictions = z.array(hardRestrictionsSchema).max(32);
++  const prior = restrictions.parse(before.sourceRestrictions ?? []), following = restrictions.parse(after.sourceRestrictions ?? []);
++  if (prior.some(rule => !following.some(next => digest(next) === digest(rule))))
++    throw new HarnessError('invalid_prepared_context', 'Context assembly cannot remove a source privacy restriction.');
+   if (
+     JSON.stringify(json).length > 262144 ||
+     after.runId !== before.runId ||
+@@ -88,6 +96,23 @@
+   return copy(after);
+ }
+ 
++/** Only host labels and the trusted context step can attach source restrictions.
++ * A tool's content/result is data, never a policy declaration. During replay,
++ * later observations cannot rewrite an earlier step's immutable input.
++ */
++function sourceRules(run: HarnessRun, before = run.steps.length): HardRestrictions[] {
++  const sets: HardRestrictions[][] = [];
++  for (const step of run.steps.slice(0, before)) {
++    if (step.intent.label?.sourceRestrictions) sets.push(step.intent.label.sourceRestrictions);
++    if (step.intent.kind === 'transform' && step.intent.name === 'prepare_model_context' && step.state === 'succeeded') {
++      const output = step.output;
++      if (output && typeof output === 'object' && !Array.isArray(output) && output.sourceRestrictions !== undefined)
++        sets.push(z.array(hardRestrictionsSchema).max(32).parse(output.sourceRestrictions));
++    }
++  }
++  return mergeSourceRestrictions(...sets);
++}
++
+ export function validResponse(value: unknown): value is ModelResponse {
+   const r = value as Partial<ModelResponse> | null;
+   if (!r || typeof r !== 'object') return false;
+@@ -139,7 +164,7 @@
+     owner: string,
+     prompt: string,
+     principal: HarnessPrincipal,
+-    options: { maxTurns?: number; maxCorrections?: number } = {},
++    options: { maxTurns?: number; maxCorrections?: number; sourceRestrictions?: HardRestrictions[] } = {},
+   ): Promise<string> {
+     const maxTurns = options.maxTurns ?? 8;
+     if (units(maxTurns, 'Turn limit') === 0)
+@@ -188,14 +213,28 @@
+         'This older trajectory has no per-step transcript reference; it requires reconciliation.',
+       );
+     try {
++      let inherited = mergeSourceRestrictions(options.sourceRestrictions ?? []);
++      const ancestors = new Set([initial.id]);
++      let parent = initial.parentRunId;
++      while (parent) {
++        if (ancestors.has(parent) || ancestors.size >= 32) throw new HarnessError('invalid_lineage', 'Source restriction ancestry cannot be verified.');
++        ancestors.add(parent);
++        const record = await this.runtime.get(parent);
++        if (record.tenantId !== initial.tenantId) throw new HarnessError('cross_tenant', 'Source ancestry belongs to another tenant.');
++        inherited = mergeSourceRestrictions(inherited, sourceRules(record));
++        parent = record.parentRunId;
++      }
+       for (let i = 0; i < maxTurns; i++) {
+         const run = await this.runtime.get(runId);
++        const boundary = run.steps.findIndex(step => step.intent.stepId === `context:${i}` || step.intent.stepId === `model:${i}`);
++        const restrictions = mergeSourceRestrictions(inherited, sourceRules(run, boundary < 0 ? run.steps.length : boundary));
+         const original: ModelRequest = {
+           runId,
+           capabilityId: run.capabilityId,
+           messages: copy(messages),
+           tools: copy(descriptors),
+           transcript: copy(transcript),
++          ...(restrictions.length ? { sourceRestrictions: restrictions } : {}),
+         };
+         const prepare = this.adapter.prepare?.bind(this.adapter);
+         const effective = prepare
+@@ -220,6 +259,8 @@
+               ),
+             )
+           : original;
++        if (effective.sourceRestrictions?.length && this.adapter.destination === 'external' && !this.adapter.enforcesSourceRestrictions)
++          throw new HarnessError('source_policy_unverified', 'This external adapter cannot enforce the source privacy restrictions.');
+         // Validation can deny replay after a rule or authority change. It never rewrites the saved context.
+         await this.adapter.validatePrepared?.(copy(effective));
+         const observed = await this.runtime.step<{
+@@ -269,6 +310,7 @@
+             return {
+               response: result.response,
+               usage: result.usage ?? null,
++              ...(result.managed ? { managed: result.managed } : {}),
+               ...(result.transcript
+                 ? {
+                     transcript: transcriptSchema.parse(result.transcript),
+diff --git a/server/harness/model-api-adapter.ts b/server/harness/model-api-adapter.ts
+--- a/server/harness/model-api-adapter.ts
++++ b/server/harness/model-api-adapter.ts
+@@ -15,6 +15,7 @@
+  * conversation.
+  */
+ import type { ModelMessage } from 'ai';
++import { mergeSourceRestrictions, routingReceiptSchema, type HardRestrictions } from '../../shared/routing-policy.js';
+ import type { AdapterRouteContract } from '../../shared/adapter-contract.js';
+ import type { Json, ModelRequest, ModelResult, PortableMessage, ToolDescriptor } from '../../shared/harness.js';
+ import { ModelApiError, type RespondResult, type StreamSinks } from '../engines/model-api-core.js';
+@@ -81,6 +82,7 @@
+   profile: Record<string, unknown>;
+   transcripts: ModelTranscripts;
+   notes: string[];
++  sourceRestrictionPolicy?: 'gateway';
+   /** One provider exchange. */
+   respond(
+     input: {
+@@ -88,6 +90,7 @@
+       tools: readonly ToolDescriptor[];
+       attempt: ExposureAttempt;
+       signal: AbortSignal;
++      sourceRestrictions?: HardRestrictions[];
+     } & StreamSinks,
+   ): Promise<RespondResult>;
+   /** The raw preview sinks this turn's calls feed. */
+@@ -140,6 +143,9 @@
+       return { role: message.role, content: message.text };
+     });
+   const boundProfile = (request: ModelRequest) => {
++    const restrictions = mergeSourceRestrictions(request.sourceRestrictions ?? []);
++    if (restrictions.length && spec.sourceRestrictionPolicy !== 'gateway')
++      throw new ModelApiError(`${prefix}_source_policy_unverified`, 'This route cannot enforce the source privacy restrictions. Nothing was sent.', false);
+     const bound = (request as Prepared).modelApiProfile?.profileHash;
+     if (bound !== undefined && bound !== profileHash)
+       throw new ModelApiError(
+@@ -204,6 +210,7 @@
+       messages: request.messages,
+       tools: request.tools,
+       transcript: request.transcript,
++      ...(request.sourceRestrictions?.length ? { sourceRestrictions: request.sourceRestrictions } : {}),
+       profileHash,
+     });
+   return {
+@@ -211,6 +218,7 @@
+     version: spec.sdk,
+     contract: spec.contract,
+     destination: 'external',
++    ...(spec.sourceRestrictionPolicy === 'gateway' ? { enforcesSourceRestrictions: true as const } : {}),
+     profileHash,
+     capabilities: () => ({
+       engineId: spec.route,
+@@ -267,6 +275,7 @@
+       const result = await spec.respond({
+         messages,
+         tools: request.tools,
++        ...(request.sourceRestrictions?.length ? { sourceRestrictions: request.sourceRestrictions } : {}),
+         attempt,
+         signal,
+         onDelta,
+@@ -296,9 +305,13 @@
+         messages: [...messages, ...result.responseMessages],
+         pendingTool,
+       });
++      const raw = result.rawUsage;
++      const managed = raw && typeof raw === 'object' && !Array.isArray(raw) && 'nectovia' in raw
++        ? routingReceiptSchema.parse(raw.nectovia) : null;
+       return {
+         response,
+         transcript,
++        ...(managed ? { managed } : {}),
+         usage: {
+           inputTokens: result.usage.inputTokens,
+           outputTokens: result.usage.outputTokens,
+diff --git a/server/harness/policy.ts b/server/harness/policy.ts
+--- a/server/harness/policy.ts
++++ b/server/harness/policy.ts
+@@ -6,6 +6,7 @@
+  * other way round.
+  */
+ import { createHash } from 'node:crypto';
++import { mergeSourceRestrictions } from '../../shared/routing-policy.js';
+ import type { HarnessLabel, HarnessPrincipal, StepIntent } from '../../shared/harness.js';
+ 
+ export class HarnessError extends Error {
+@@ -66,6 +67,10 @@
+     !l.provenance.every((p) => typeof p === 'string')
+   )
+     throw new HarnessError('invalid_label', 'Invalid label.');
++  if (l.sourceRestrictions !== undefined) {
++    if (!Array.isArray(l.sourceRestrictions)) throw new HarnessError('invalid_label', 'Invalid source restrictions.');
++    mergeSourceRestrictions(l.sourceRestrictions);
++  }
+ }
+ 
+ /** Conservative join: least integrity, most restrictive confidentiality, union of provenance. */
+@@ -83,6 +88,7 @@
+     integrity: labels.some((l) => l.integrity === 'untrusted') ? 'untrusted' : 'trusted',
+     confidentiality: LEVELS[Math.max(...labels.map((l) => LEVELS.indexOf(l.confidentiality)))],
+     provenance: [...new Set(labels.flatMap((l) => l.provenance))],
++    ...(labels.some(l => l.sourceRestrictions?.length) ? { sourceRestrictions: mergeSourceRestrictions(...labels.map(l => l.sourceRestrictions ?? [])) } : {}),
+   };
+ }
+ 
+diff --git a/server/harness/nectovia-model-adapter.ts b/server/harness/nectovia-model-adapter.ts
+--- a/server/harness/nectovia-model-adapter.ts
++++ b/server/harness/nectovia-model-adapter.ts
+@@ -8,6 +8,7 @@
+  * are Nectovia's own, exactly as on every model-API route. The gateway supplies
+  * the next step and meters it; it never runs a tool.
+  */
++import { mergeSourceRestrictions } from '../../shared/routing-policy.js';
+ import type { AdapterRouteContract } from '../../shared/adapter-contract.js';
+ import { NECTOVIA_ROUTE } from '../../shared/model-api.js';
+ import { admitJobStep, CONVERSATION_LIMITS, type RespondLimits, type StreamSinks } from '../engines/model-api-core.js';
+@@ -84,6 +85,7 @@
+       rateCard: options.card.version,
+     },
+     transcripts: options.transcripts,
++    sourceRestrictionPolicy: 'gateway',
+     notes: [
+       'One streamed Responses call per model step to the account service’s managed gateway, store:false, SDK retries off, one tool call at most; tools are descriptors run only by the harness.',
+       'The session’s bearer token and the Agent admission are attached only to the gateway’s responses path; redirects are refused. No provider credential exists on this computer.',
+@@ -107,7 +109,7 @@
+         account: options.account,
+         connectionId: options.connectionId,
+         model: options.model,
+-        managed,
++        managed: { ...managed, sourceRestrictions: mergeSourceRestrictions(managed.sourceRestrictions ?? [], call.sourceRestrictions ?? []) },
+         token: options.token,
+         card: options.card,
+         exposure: options.exposure,

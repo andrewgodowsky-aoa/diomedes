@@ -22,7 +22,7 @@ import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { EngineService } from '../server/engines/service';
 import { nectoviaConnectionId } from '../server/engines/nectovia';
-import { GPT6_LUNA, NECTOVIA_ROUTE } from '../shared/model-api.js';
+import { MANAGED_LUNA, NECTOVIA_ROUTE } from '../shared/model-api.js';
 import { dollars } from '../shared/managed-usage.js';
 import { SpendExposure } from '../server/spend-exposure.js';
 import { FileModelTranscripts } from '../server/harness/model-transcripts.js';
@@ -36,13 +36,13 @@ import { Store } from '../server/store';
 import { ApiError } from '../server/paths.js';
 import { responsesAnswer } from './fixtures/model-api-streams.js';
 
-const MODEL = GPT6_LUNA.model;
+const MODEL = MANAGED_LUNA.model;
 const ORG = 'org_juniper';
 const ACCOUNT_ROUTE = `${NECTOVIA_ROUTE}:${ORG}`;
 const TOKEN = 'session-access-token-test-only-0123456789';
 const BASE = 'https://accounts.nectovia.test';
 const NOW = new Date('2026-09-25T12:00:00.000Z');
-const POLICY = { revision: 7, tiers: { efficient: { model: MODEL, label: 'GPT-6 Luna' }, focused: null, thorough: null } } as any;
+const POLICY = { revision: 7, tiers: { efficient: { model: MODEL, label: 'GPT-5.6 Luna' }, focused: null, thorough: null } } as any;
 
 const USAGE = {
   input_tokens: 1_200,

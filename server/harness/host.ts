@@ -42,6 +42,7 @@ import {
   CURSOR_SESSION_PROFILE,
   DEVIN_SESSION_PROFILE,
 } from './acp-session-run.js';
+import { CODEX_SESSION_CAPABILITY, CODEX_SESSION_PROFILE } from './codex-session-run.js';
 import { MODEL_SESSION_CAPABILITIES, ModelSessionRuns, modelApiDispatchAuthorizer } from './model-session-run.js';
 import { AWS_BEDROCK_ROUTE } from '../engines/aws-bedrock.js';
 import { isModelApiRoute } from '../../shared/model-api.js';
@@ -429,6 +430,7 @@ export function createHarnessHost({
       CLAUDE_SESSION_CAPABILITY.id,
       OPENCODE_SESSION_CAPABILITY.id,
       ...ACP_SESSION_CAPABILITY_IDS,
+      CODEX_SESSION_CAPABILITY.id,
     ],
   );
   // Model-API conversation runs: the route must be on and the run's account route still selected.
@@ -449,6 +451,7 @@ export function createHarnessHost({
         run.capabilityId === ENGINE_TEXT_TURN.id ||
         run.capabilityId === CLAUDE_SESSION_CAPABILITY.id ||
         run.capabilityId === OPENCODE_SESSION_CAPABILITY.id ||
+        run.capabilityId === CODEX_SESSION_CAPABILITY.id ||
         ACP_SESSION_CAPABILITY_IDS.includes(run.capabilityId)
       )
         return textAuthorize(run, intent, phase);
@@ -512,6 +515,15 @@ export function createHarnessHost({
   };
   const cursorSessions = acpSessions(CURSOR_SESSION_PROFILE);
   const devinSessions = acpSessions(DEVIN_SESSION_PROFILE);
+  // The kept ChatGPT conversation (spec 3.2): the same driver, under ChatGPT's own profile and grant.
+  const codexSessions = new ClaudeSessionRuns(runs, { profile: CODEX_SESSION_PROFILE });
+  codexSessions.setSharingPolicy(
+    (projectId, documents, prior) =>
+      requireCloudSharing(store.state(projectId), 'codex', documents, prior, {
+        home: store.isHomeProject(projectId),
+      }),
+    (projectId) => sharesHistory(cloudSharing(store.state(projectId)), 'codex'),
+  );
   claudeSessions.setSharingPolicy(
     (projectId, documents, prior) =>
       requireCloudSharing(store.state(projectId), 'claude-code', documents, prior, {
@@ -626,6 +638,7 @@ export function createHarnessHost({
     opencodeSessions,
     cursorSessions,
     devinSessions,
+    codexSessions,
     /** Host-only until authenticated client admission is supplied by Trust.
      * Reuses the same command parser, collision check, receipt and Store lock. */
     startCodexReport(
@@ -713,6 +726,7 @@ export function createHarnessHost({
               run.capabilityId !== CLAUDE_SESSION_CAPABILITY.id &&
               run.capabilityId !== OPENCODE_SESSION_CAPABILITY.id &&
               !ACP_SESSION_CAPABILITY_IDS.includes(run.capabilityId) &&
+              run.capabilityId !== CODEX_SESSION_CAPABILITY.id &&
               !CHILD_CAPABILITIES.includes(run.capabilityId) &&
               !modelRun(run.capabilityId),
           ),
@@ -724,6 +738,7 @@ export function createHarnessHost({
         for (const run of saved) await opencodeSessions.recover(run);
         for (const run of saved) await cursorSessions.recover(run);
         for (const run of saved) await devinSessions.recover(run);
+        for (const run of saved) await codexSessions.recover(run);
         for (const run of saved) await modelSessions.recover(run);
         // Sandboxes whose loop has ended, including any a crash left behind, go now.
         await loop.sweep(project.id);
@@ -742,6 +757,7 @@ export function createHarnessHost({
       await opencodeSessions.closeAll();
       await cursorSessions.closeAll();
       await devinSessions.closeAll();
+      await codexSessions.closeAll();
       await modelSessions.closeAll();
       await bridge.close();
     },

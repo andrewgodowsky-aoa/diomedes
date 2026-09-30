@@ -100,7 +100,7 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? o
 
 /** What one project is doing, read from its own status record and nothing else. */
 function projectLine(p: Project): { text: string; tone?: 'attn' | 'live' } {
-  if (p.status?.needsYou) return { text: 'Needs your OK', tone: 'attn' };
+  if (p.status?.needsYou) return { text: 'Needs you', tone: 'attn' };
   if (p.status?.working)
     return { text: `Working on ${plural(p.status.working, 'task')}`, tone: 'live' };
   if (p.status?.tasksTotal)

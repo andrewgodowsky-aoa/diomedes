@@ -167,7 +167,8 @@ let sink: MemoryObservationSink;
 /** When set, answers the faux account service's requests instead of the service (null passes through). */
 let intercept: ((request: Request) => Promise<Response> | null) | null;
 const pathOf = (request: Request) => new URL(request.url).pathname;
-const isAdmission = (request: Request) => request.method === 'POST' && pathOf(request).endsWith('/agent-admissions');
+const isAdmission = (request: Request) => request.method === 'POST' &&
+  (pathOf(request).endsWith('/agent-admissions') || /^\/account\/routing\/(organization|individual)\/[^/]+\/admit$/.test(pathOf(request)));
 const isAccess = (request: Request) => request.method === 'GET' && /^\/account\/organizations\/[^/]+\/access$/.test(pathOf(request));
 
 const operator = (internal: string[], overrides: Partial<ObservationOperatorConfig> = {}): ObservationOperatorConfig => ({
@@ -799,7 +800,7 @@ describe('C refusalCode is invisible to the person', () => {
     'C1 every refusal the gate can raise gives the same status and the same body bytes with the field as without it, on the AWS route and on the Nectovia route',
     async () => {
       await open(memory([orgs.juniper]));
-      await signIn('owner@juniper.test');
+      const person = await signIn('owner@juniper.test');
       await switchTo(orgs.juniper);
       const awsTarget = await workingAws();
       const nectovia = await home();
@@ -808,8 +809,10 @@ describe('C refusalCode is invisible to the person', () => {
       const gate = engines.agentGate as AgentGatePort;
       const live = gate.check.bind(gate);
       let strip = false;
+      let rootJobId: string | null = null;
       const codes: (string | null)[] = [];
       gate.check = async (work: AgentWork) => {
+        rootJobId = work.rootJobId;
         try {
           return await live(work);
         } catch (error) {
@@ -822,7 +825,8 @@ describe('C refusalCode is invisible to the person', () => {
       const refusalBody = (code: string, reason: string) => ({
         admissionId: 'agent_admission_00000000-0000-4000-8000-000000000000',
         decision: { admitted: false, code, reason },
-        pins: { organizationId: orgs.juniper, tenantId: 't', personId: 'p', planId: 'business', accessRevision: 1, policyRevision: 1, rootJobId: null },
+        pins: { scope: { kind: 'organization', id: orgs.juniper }, organizationId: orgs.juniper,
+          tenantId: 't', personId: person.person!.id, planId: 'business', accessRevision: 1, policyRevision: 1, rootJobId },
         validUntil: new Date(Date.now() + 60_000).toISOString(),
       });
       const cases: Record<string, () => Response> = {
@@ -877,7 +881,12 @@ describe('C refusalCode is invisible to the person', () => {
       // The error bodies name only the gate's `code` (AGENT_NOT_INCLUDED or sign_in_required), never the service's.
       for (const [name, pair] of Object.entries(seen)) {
         const body = JSON.parse((pair.withField as { body: string }).body) as Record<string, unknown>;
-        expect(['AGENT_NOT_INCLUDED', 'sign_in_required'], name).toContain(body.code);
+        if (body.code !== undefined) expect(['AGENT_NOT_INCLUDED', 'sign_in_required'], name).toContain(body.code);
+        else {
+          // A Personal Nectovia turn can stop at route selection before it reaches the gate.
+          expect(name).toBe('personal / nectovia');
+          expect(typeof body.error).toBe('string');
+        }
         expect(JSON.stringify(body), name).not.toMatch(/refusalCode|entitlement_|not_a_member|personal_workspace|agent_not_included/);
       }
     },

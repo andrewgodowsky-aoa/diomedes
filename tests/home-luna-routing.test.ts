@@ -24,8 +24,8 @@ import { AWS_BEDROCK_ROUTE, AWS_LUNA_MODEL } from '../server/engines/aws-bedrock
 import { NECTOVIA_SIGN_IN } from '../server/engines/nectovia';
 import { testOnlySecretBox } from '../server/connection-secrets';
 import { identifier, now, type Store } from '../server/store';
-import { CONVERSATION_DEFAULT_ROUTE, isConversationRoute } from '../shared/engines';
-import type { AwsConnectionView } from '../shared/model-api';
+import { CONVERSATION_DEFAULT_ROUTE, CONVERSATION_ROUTES, isConversationRoute } from '../shared/engines';
+import { MODEL_API_ROUTES, type AwsConnectionView } from '../shared/model-api';
 import type { MessageResult } from '../shared/conversation';
 import type { Conversation, Project } from '../shared/types';
 import {
@@ -245,13 +245,13 @@ test('the shared conversation default names the company-managed Nectovia route',
   expect(CONVERSATION_DEFAULT_ROUTE).not.toBe(AWS_BEDROCK_ROUTE);
 });
 
-test('the conversation route predicate admits Claude Code and model-API routes only', () => {
-  expect(isConversationRoute('claude-code')).toBe(true);
-  expect(isConversationRoute('aws-bedrock')).toBe(true);
-  expect(isConversationRoute('nectovia')).toBe(true);
+test('the conversation route predicate admits Claude Code, the kept-session engines and model-API routes only', () => {
+  expect(CONVERSATION_ROUTES).toEqual(['claude-code', 'codex', 'opencode', 'cursor', 'devin', ...MODEL_API_ROUTES]);
+  for (const route of ['claude-code', 'codex', 'opencode', 'cursor', 'devin', 'aws-bedrock', 'nectovia'])
+    expect(isConversationRoute(route), route).toBe(true);
+  // oh-my-pi has no kept session yet (spec 2), and the sample route answers nothing.
+  expect(isConversationRoute('oh-my-pi')).toBe(false);
   expect(isConversationRoute('sample')).toBe(false);
-  expect(isConversationRoute('codex')).toBe(false);
-  expect(isConversationRoute('opencode')).toBe(false);
   expect(isConversationRoute('not-a-route')).toBe(false);
   expect(isConversationRoute(undefined)).toBe(false);
 });

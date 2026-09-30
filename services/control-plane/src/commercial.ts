@@ -38,14 +38,12 @@ import {
 import {
   AGENT_PERSONAL_INDIVIDUAL_REASON,
   BUSINESS_PLAN_NOT_FOR_PERSON,
-  INDIVIDUAL_COVERAGE_DEFAULTS,
   INDIVIDUAL_EXPIRED_REASON,
   INDIVIDUAL_NONE_REASON,
   INDIVIDUAL_PLAN_NOT_FOR_BUSINESS,
   INDIVIDUAL_REVOKED_REASON,
   catalogPlan,
   catalogPlanLabel,
-  individualCovers,
   isPersonPlan,
   planCatalog,
   type IndividualCoverage,
@@ -60,9 +58,25 @@ import { decideAgentAdmission, snapshotFromView, type AgentAdmissionDecision } f
 import type { AccountService } from './account-service.js';
 import { accountId, NO_IDENTITY_DIRECTORY, type IdentityDirectory } from './domain.js';
 import { AccountError } from './errors.js';
+import { modelBindingSchema, routingScopeSchema, routingConfigurationSchema, hardRestrictionsSchema, bindingProblems, type IndividualAccount } from '../../../shared/routing-policy.js';
+import type { RoutingTransaction } from './routing.js';
+import { approvedConnections } from './managed-bindings.js';
+import { registryRow } from './managed-providers.js';
 import type { FundingService } from './funding.js';
 
 export const COMMERCIAL_VERSION = 1 as const;
+
+/** Reuse this in paid-plan provisioning before grants, even if setup has never opened.
+ * The caller supplies a verified person inside its commercial transaction. Creation grants no access or credits. */
+export async function ensureIndividualAccount(tx: CommercialTransaction, person: Pick<Person, 'id' | 'name'>, at: string) {
+  await tx.lockPerson(person.id);
+  const current = await tx.individualFor(person.id);
+  if (current) return current;
+  const row: IndividualAccount = { id: `individual_${crypto.randomUUID()}`, tenantId: person.id,
+    personId: person.id, name: person.name, state: 'active', createdAt: at };
+  await tx.saveIndividual(row);
+  return row;
+}
 
 /** The three tiers, restated so the Worker bundle does not load the UI's work-style module. */
 export const POLICY_TIERS = ['efficient', 'focused', 'thorough'] as const;
@@ -143,6 +157,7 @@ export const routeEntrySchema = z.strictObject({
   revision: epoch,
   updatedAt: time,
   updatedBy: accountId,
+  binding: modelBindingSchema.optional(),
 });
 export type RouteEntry = z.infer<typeof routeEntrySchema>;
 
@@ -169,6 +184,10 @@ export const tierPolicySchema = z.strictObject({
   note: z.string().trim().min(1).max(1000),
   publishedAt: time,
   publishedBy: accountId,
+  scope: routingScopeSchema.optional(),
+  routing: routingConfigurationSchema.optional(),
+  inherit: z.boolean().optional(),
+  mandatory: hardRestrictionsSchema.optional(),
 });
 export type TierPolicy = z.infer<typeof tierPolicySchema>;
 
@@ -228,7 +247,7 @@ export const admissionRecordSchema = z.strictObject({
   accessRevision: epoch,
   policyRevision: epoch,
   rootJobId: z.string().max(128).nullable(),
-  /** Present when a person's Individual plan covered this business (a sole proprietor). */
+  /** Historical attribution only. New Business admissions never use an Individual plan. */
   coverage: z.enum(['plan', 'individual']).optional(),
 });
 export type AdmissionRecord = z.infer<typeof admissionRecordSchema>;
@@ -238,6 +257,8 @@ export const personalAdmissionRecordSchema = z.strictObject({
   id: accountId,
   at: time,
   personId: accountId,
+  /** Present only when admission is bound to the person's explicit billing scope. */
+  billingAccountId: accountId.optional(),
   tenantId: accountId,
   surface: z.enum(AGENT_SURFACES),
   routeKind: z.enum(ROUTE_KINDS),
@@ -253,7 +274,7 @@ export type PersonalAdmissionRecord = z.infer<typeof personalAdmissionRecordSche
 // --- persistence -------------------------------------------------------------------
 
 /** Database operations only. Never a provider call, never a retry. */
-export interface CommercialTransaction {
+export interface CommercialTransaction extends RoutingTransaction {
   /** Serializes grant writes and access-revision bumps for one organization. */
   lockOrganization(organizationId: string): Promise<void>;
   grants(organizationId: string): Promise<FeatureGrant[]>;
@@ -264,9 +285,11 @@ export interface CommercialTransaction {
   saveRoute(row: RouteEntry): Promise<void>;
   /** Serializes policy publication so two publishers cannot both build on one base. */
   lockPolicy(): Promise<void>;
-  policy(revision?: number): Promise<TierPolicy | undefined>;
-  policies(limit: number): Promise<TierPolicy[]>;
+  policy(revision?: number, scopeKey?: string): Promise<TierPolicy | undefined>;
+  policies(limit: number, scopeKey?: string): Promise<TierPolicy[]>;
   savePolicy(row: TierPolicy): Promise<void>;
+  /** Serializes staff authority checks and role changes, including the last-admin check. */
+  lockStaff(): Promise<void>;
   operator(personId: string): Promise<Operator | undefined>;
   operators(): Promise<Operator[]>;
   saveOperator(row: Operator): Promise<void>;
@@ -290,8 +313,9 @@ export interface CommercialTransaction {
   personAccessRevision(personId: string): Promise<number>;
   bumpPersonAccessRevision(personId: string, tenantId: string): Promise<number>;
   savePersonalAdmission(row: PersonalAdmissionRecord): Promise<void>;
+  personalAdmission(tenantId: string, id: string): Promise<PersonalAdmissionRecord | undefined>;
   personalAdmissions(personId: string, limit: number): Promise<PersonalAdmissionRecord[]>;
-  /** Active members of one business, for the Individual coverage rule. */
+  /** Active members of one Business, displayed to Operations staff. */
   organizationActiveMembers(organizationId: string): Promise<number>;
   /** Staff audit rows about one person's Individual grants, newest first. */
   personAudit(personId: string, limit: number): Promise<AuditEvent[]>;
@@ -389,6 +413,15 @@ export function personEntitlement(grants: readonly PersonFeatureGrant[], revisio
   return { ...view, planLabel, reason };
 }
 
+/** Personal access belongs to the person; managed usage additionally needs its own funded agreement. */
+export async function individualEntitlement(tx: CommercialTransaction, accountId: string, personId: string, at: string): Promise<EntitlementView> {
+  const person = personEntitlement(await tx.personGrants(personId), await tx.personAccessRevision(personId), at);
+  const usage = entitlementFromGrants(await tx.grants(accountId), await tx.accessRevision(accountId), at);
+  const managedInference = person.state === 'active' && person.agent && usage.state === 'active' && usage.managedInference;
+  return { ...person, revision: person.revision + usage.revision, managedInference,
+    features: [...person.features.filter(feature => feature !== 'managed-inference'), ...(managedInference ? ['managed-inference'] : [])] };
+}
+
 // --- inputs ----------------------------------------------------------------------------
 
 export const agentAdmissionInput = z.strictObject({
@@ -435,6 +468,7 @@ export const saveRouteInput = z.strictObject({
   evidence: text(1000),
   /** The revision the editor read; a stale editor is refused, never merged. Omit for a new entry. */
   baseRevision: epoch.optional(),
+  binding: modelBindingSchema.optional(),
 });
 export const publishPolicyInput = z.strictObject({
   tiers: z.strictObject({
@@ -461,7 +495,7 @@ export interface CommercialOptions {
   directory?: IdentityDirectory;
   /** A label for staff views: 'faux' for the local test service, else the deployment. */
   backend?: string;
-  /** When an Individual grant covers a business (INDIVIDUAL_MAX_ACTIVE_MEMBERS). */
+  /** Legacy configuration remains accepted; Individual never covers Business work. */
   coverage?: IndividualCoverage;
 }
 
@@ -470,7 +504,6 @@ const newId = (kind: string) => `${kind}_${crypto.randomUUID()}`;
 export class CommercialService {
   private readonly now: () => number;
   private readonly directory: IdentityDirectory;
-  private readonly coverage: IndividualCoverage;
   readonly backend: string;
 
   constructor(
@@ -482,24 +515,6 @@ export class CommercialService {
     this.now = options.now ?? Date.now;
     this.directory = options.directory ?? NO_IDENTITY_DIRECTORY;
     this.backend = options.backend ?? 'cloud';
-    this.coverage = options.coverage ?? { ...INDIVIDUAL_COVERAGE_DEFAULTS };
-  }
-
-  /**
-   * The caller's Individual plan, when it covers this business: the business's own grants do not
-   * include the Agent, the person holds an active Individual grant with it, and the business has no
-   * more active members than the threshold. Read only on that fallback, so a business whose own plan
-   * includes the Agent reads exactly what it always did.
-   */
-  private async individualFor(tx: CommercialTransaction, personId: string, organizationId: string, at: string) {
-    const grants = await tx.personGrants(personId);
-    if (!grants.length) return null;
-    const revision = await tx.personAccessRevision(personId);
-    const view = personEntitlement(grants, revision, at);
-    if (!(view.state === 'active' && view.agent)) return null;
-    const members = await tx.organizationActiveMembers(organizationId);
-    if (!individualCovers({ grantActive: true, organizationActiveMembers: members, maxActiveMembers: this.coverage.maxActiveMembers })) return null;
-    return { grants, revision, view };
   }
 
   private at() {
@@ -512,21 +527,17 @@ export class CommercialService {
   async access(token: string, organizationId: string): Promise<CoveredAccessView> {
     const snapshot = await this.accounts.membership(token, organizationId);
     const at = this.at();
-    const { grants, revision, personRevision, individual } = await this.repository.transaction(async (tx) => {
+    const { grants, revision } = await this.repository.transaction(async (tx) => {
       const grants = await tx.grants(organizationId);
       const revision = await tx.accessRevision(organizationId);
-      const personRevision = await tx.personAccessRevision(snapshot.person.id);
-      const own = entitlementFromGrants(grants, revision, at);
-      return { grants, revision, personRevision, individual: own.state === 'active' && own.agent ? null : await this.individualFor(tx, snapshot.person.id, organizationId, at) };
+      return { grants, revision };
     });
-    const view = individual ? individual.view : entitlementFromGrants(grants, revision, at);
+    const view = entitlementFromGrants(grants, revision, at);
     const role = snapshot.membership.role;
     const capabilities = ROLE_CAPABILITIES[role];
     const admission = decideAgentAdmission({ workspace: 'business', member: true, entitlement: snapshotFromView(view), at });
     const when = Date.parse(at);
-    // An owner sees the Individual grant beside the business's own, marked as the person's.
-    const summaries: (GrantSummary & { scope?: 'person' })[] = grants.map((grant) => summary(grant, when));
-    if (individual) summaries.push(...individual.grants.map((grant) => ({ ...summary(grant, when), planLabel: catalogPlanLabel(grant.planId), scope: 'person' as const })));
+    const summaries = grants.map((grant) => summary(grant, when));
     return {
       v: 1,
       organizationId,
@@ -540,12 +551,9 @@ export class CommercialService {
       agent: { included: admission.admitted, reason: admission.admitted ? '' : admission.reason },
       validFrom: view.validFrom,
       validUntil: view.validUntil,
-      // The business's revision plus this person's own. Both only grow, and the person's is always
-      // added, so the number never steps down when an Individual plan stops covering the business.
-      revision: revision + personRevision,
+      revision,
       grants: capabilities.seePlan ? summaries.sort((a, b) => (a.validUntil < b.validUntil ? 1 : -1)) : null,
       checkedAt: at,
-      ...(individual ? { coveredBy: 'individual' as const } : {}),
     };
   }
 
@@ -568,12 +576,8 @@ export class CommercialService {
     const snapshot = await this.accounts.membership(token, organizationId);
     const at = this.at();
     return this.repository.transaction(async (tx) => {
-      const ownRevision = await tx.accessRevision(organizationId);
-      const own = entitlementFromGrants(await tx.grants(organizationId), ownRevision, at);
-      // A sole proprietor's Individual plan covers the business when its own plan does not include the Agent.
-      const individual = own.state === 'active' && own.agent ? null : await this.individualFor(tx, snapshot.person.id, organizationId, at);
-      const view = individual ? individual.view : own;
-      const revision = ownRevision + (await tx.personAccessRevision(snapshot.person.id));
+      const revision = await tx.accessRevision(organizationId);
+      const view = entitlementFromGrants(await tx.grants(organizationId), revision, at);
       const policy = await tx.policy();
       const decision: AgentAdmissionDecision = decideAgentAdmission({
         workspace: 'business', member: true, entitlement: snapshotFromView(view), at,
@@ -592,7 +596,6 @@ export class CommercialService {
         accessRevision: revision,
         policyRevision: policy?.revision ?? 0,
         rootJobId: parsed.data.rootJobId ?? null,
-        ...(individual ? { coverage: 'individual' as const } : {}),
       };
       await tx.saveAdmission(record);
       return {
@@ -658,7 +661,9 @@ export class CommercialService {
       const contract = decideAgentAdmission({
         workspace: 'personal', member: true, entitlement: snapshotFromView(NO_ENTITLEMENT_VIEW), individual: snapshotFromView(view), at,
       });
-      const decision = contract.admitted ? contract
+      const decision = contract.admitted && parsed.data.routeKind === 'managed'
+        ? { admitted: false as const, code: 'scoped_admission_required', reason: 'Managed Personal work requires a current Nectovia client and scoped admission. Nothing was sent.' }
+        : contract.admitted ? contract
         : view.state === 'revoked' ? { admitted: false as const, code: 'entitlement_revoked', reason: INDIVIDUAL_REVOKED_REASON }
         : view.state === 'expired' ? { admitted: false as const, code: 'entitlement_expired', reason: INDIVIDUAL_EXPIRED_REASON }
         : { admitted: false as const, code: 'entitlement_none', reason: INDIVIDUAL_NONE_REASON };
@@ -702,22 +707,46 @@ export class CommercialService {
     await this.accounts.signIn(token);
     return this.repository.transaction(async (tx) => {
       const policy = await tx.policy();
+      const tiers: TierPolicy['tiers'] = policy?.tiers ?? { efficient: null, focused: null, thorough: null };
+      const routes = policy ? await tx.routes() : [];
+      // This gateway accepts reasoning summaries (managed-inference.ts), and a desktop asks for them
+      // only for its own tier, only when the upstream serving it is proven to accept them.
+      const reasoningSummaries = Object.fromEntries(
+        POLICY_TIERS.map((tier) => {
+          const entry = routes.find((row) => row.id === tiers[tier]?.entryId);
+          return [tier, entry ? registryRow(entry)?.reasoningSummaries === true : false];
+        }),
+      ) as Record<PolicyTier, boolean>;
       return policy
-        ? { revision: policy.revision, publishedAt: policy.publishedAt, tiers: policy.tiers }
-        : { revision: 0, publishedAt: null, tiers: { efficient: null, focused: null, thorough: null } };
+        ? { revision: policy.revision, publishedAt: policy.publishedAt, tiers: policy.tiers, reasoningSummaries }
+        : { revision: 0, publishedAt: null, tiers, reasoningSummaries };
     });
   }
 
   // --- staff --------------------------------------------------------------------------
 
-  private async staff(token: string, permission: StaffPermission) {
-    const session = await this.accounts.signIn(token);
-    const operator = await this.repository.transaction((tx) => tx.operator(session.person.id));
+  private async staffOperator(tx: CommercialTransaction, personId: string, permission: StaffPermission) {
+    const operator = await tx.operator(personId);
     if (!operator || operator.state !== 'active')
       throw new AccountError(403, 'This account is not a Diomedes staff account.');
     if (!staffCan(operator.role, permission))
       throw new AccountError(403, `The ${operator.role} role cannot do this. Ask a Diomedes admin.`);
+    return operator;
+  }
+
+  private async staff(token: string, permission: StaffPermission) {
+    const session = await this.accounts.signIn(token);
+    const operator = await this.repository.transaction((tx) => this.staffOperator(tx, session.person.id, permission));
     return { person: session.person, operator };
+  }
+
+  private async writeStaff<T>(token: string, action: (tx: CommercialTransaction, actor: { person: Person; operator: Operator }) => Promise<T>) {
+    const actor = await this.staff(token, 'staff.write');
+    return this.repository.transaction(async (tx) => {
+      await tx.lockStaff();
+      const operator = await this.staffOperator(tx, actor.person.id, 'staff.write');
+      return action(tx, { person: actor.person, operator });
+    });
   }
 
   private async audited(tx: CommercialTransaction, actor: { person: Person; operator: Operator }, event: Omit<AuditEvent, 'id' | 'at' | 'actorPersonId' | 'actorRole'>) {
@@ -931,7 +960,7 @@ export class CommercialService {
     };
   }
 
-  /** Issue an Individual grant to a person. Only a person-scoped plan; never included usage yet. */
+  /** Issue Personal Agent access. Managed usage has a separate billing-scope agreement. */
   async issuePersonGrant(token: string, personId: string, input: z.infer<typeof issuePersonGrantInput>) {
     const parsed = issuePersonGrantInput.safeParse(input);
     if (!parsed.success) throw new AccountError(422, 'A grant needs a plan, a source, a reference and dates.');
@@ -940,7 +969,7 @@ export class CommercialService {
     if (!plan) throw new AccountError(422, 'That plan is not in the catalog.');
     if (plan.scope !== 'person') throw new AccountError(422, BUSINESS_PLAN_NOT_FOR_PERSON);
     const features = [...new Set(parsed.data.features ?? plan.features)] as AccessFeature[];
-    // Funding is kept per business today, so a person's grant cannot carry included usage until person funding exists.
+    // Person-plan access and the separately funded managed-usage agreement are independent.
     if (features.includes('managed-inference'))
       throw new AccountError(422, "Included AI usage isn't part of the Individual plan yet, so it can't be issued with it.");
     if (!parsed.data.reference) throw new AccountError(422, 'Name the invoice, agreement or ticket this grant answers to.');
@@ -952,8 +981,9 @@ export class CommercialService {
     if (Date.parse(validUntil) <= Date.parse(validFrom) || Date.parse(validUntil) <= now)
       throw new AccountError(422, 'A grant must end after it starts, and after today.');
     return this.repository.transaction(async (tx) => {
-      if (!(await tx.person(personId))) throw new AccountError(404, 'That person was not found.');
-      await tx.lockPerson(personId);
+      const person = await tx.person(personId);
+      if (!person) throw new AccountError(404, 'That person was not found.');
+      await ensureIndividualAccount(tx, person.person, this.at());
       const row: PersonFeatureGrant = {
         v: 1, id: newId('grant'), personId, tenantId: personId, planId: plan.id, features, source: parsed.data.source,
         reference: parsed.data.reference, note: parsed.data.note, validFrom, validUntil, state: 'active',
@@ -1025,7 +1055,7 @@ export class CommercialService {
    * unqualified or retired, or have its provider or model changed, until a
    * new policy stops using it: the policy names what customers run on.
    */
-  async saveRoute(token: string, input: z.infer<typeof saveRouteInput>) {
+  async saveRoute(token: string, input: z.infer<typeof saveRouteInput>, env: Readonly<Record<string, unknown>> = {}) {
     const parsed = saveRouteInput.safeParse(input);
     if (!parsed.success) throw new AccountError(422, 'A route needs an id, provider, model id, name and status.');
     const actor = await this.staff(token, 'routes.write');
@@ -1033,14 +1063,29 @@ export class CommercialService {
       throw new AccountError(422, 'Say what qualified this route: a live proof, a run or a dated account check.');
     return this.repository.transaction(async (tx) => {
       await tx.lockPolicy();
+      await tx.lockStaff();
+      actor.operator = await this.staffOperator(tx, actor.person.id, 'routes.write');
       const existing = (await tx.routes()).find((row) => row.id === parsed.data.id);
+      if (parsed.data.binding) {
+        const connection = approvedConnections(env).find(c => c.id === parsed.data.binding!.connectionId);
+        if (!connection) throw new AccountError(422, 'Select an approved company connection.');
+        const problems = bindingProblems({ ...parsed.data, revision: existing?.revision ?? 0 }, connection);
+        if (problems.length) throw new AccountError(422, problems.map(p => p.message).join(' '));
+        const identity = (r: typeof parsed.data) => JSON.stringify([r.provider, r.model, r.binding?.connectionId, r.binding?.connectionRevision,
+          r.binding?.modelVersion, r.binding?.protocol, r.binding?.deployment, r.binding?.upstreamEndpoint]);
+        if (existing?.binding && identity(existing) !== identity(parsed.data)) {
+          for (const key of ['privacy', 'qualification', 'access'] as const)
+            if (parsed.data.binding[key] !== null && JSON.stringify(parsed.data.binding[key]) === JSON.stringify(existing.binding[key]))
+              throw new AccountError(422, `Changing the binding requires fresh ${key} evidence or an explicitly unverified state.`);
+        }
+      } else if (existing?.binding) throw new AccountError(422, 'A versioned binding cannot be removed. Retire the route instead.');
       if (existing && parsed.data.baseRevision !== existing.revision)
         throw new AccountError(409, 'Someone changed this route since you opened it. Reload and try again.');
       if (!existing && parsed.data.baseRevision !== undefined)
         throw new AccountError(409, 'That route no longer exists. Reload and try again.');
       const policy = await tx.policy();
       const inUse = policy ? POLICY_TIERS.filter((tier) => policy.tiers[tier]?.entryId === parsed.data.id) : [];
-      if (existing && inUse.length && (parsed.data.status !== 'qualified' || parsed.data.provider !== existing.provider || parsed.data.model !== existing.model))
+      if (existing && !existing.binding && inUse.length && (parsed.data.status !== 'qualified' || parsed.data.provider !== existing.provider || parsed.data.model !== existing.model))
         throw new AccountError(409, `This route serves ${inUse.join(', ')} in the current policy. Publish a policy without it first.`);
       const { baseRevision: _base, ...fields } = parsed.data;
       const row: RouteEntry = { v: 1, ...fields, revision: (existing?.revision ?? 0) + 1, updatedAt: this.at(), updatedBy: actor.person.id };
@@ -1098,6 +1143,7 @@ export class CommercialService {
     return this.repository.transaction(async (tx) => {
       await tx.lockPolicy();
       const current = await tx.policy();
+      if (current?.routing) throw new AccountError(409, 'Use the scoped routing editor for this versioned policy.');
       if ((current?.revision ?? 0) !== parsed.data.baseRevision)
         throw new AccountError(409, `The policy is now revision ${current?.revision ?? 0}. Review it and publish again.`);
       const row: TierPolicy = {
@@ -1121,6 +1167,7 @@ export class CommercialService {
     return this.repository.transaction(async (tx) => {
       await tx.lockPolicy();
       const current = await tx.policy();
+      if (current?.routing) throw new AccountError(409, 'Use scoped rollback so current account restrictions are checked.');
       if ((current?.revision ?? 0) !== parsed.data.baseRevision)
         throw new AccountError(409, `The policy is now revision ${current?.revision ?? 0}. Review it and try again.`);
       const target = await tx.policy(parsed.data.toRevision);
@@ -1157,8 +1204,7 @@ export class CommercialService {
   async addStaff(token: string, input: z.infer<typeof addStaffInput>) {
     const parsed = addStaffInput.safeParse(input);
     if (!parsed.success) throw new AccountError(422, 'Choose a person and a staff role.');
-    const actor = await this.staff(token, 'staff.write');
-    return this.repository.transaction(async (tx) => {
+    return this.writeStaff(token, async (tx, actor) => {
       if (!(await tx.person(parsed.data.personId))) throw new AccountError(404, 'That person has no account yet. They sign in once first.');
       if (await tx.operator(parsed.data.personId)) throw new AccountError(409, 'That person is already on staff. Change their role instead.');
       const at = this.at();
@@ -1172,8 +1218,7 @@ export class CommercialService {
   async changeStaff(token: string, personId: string, input: z.infer<typeof changeStaffInput>) {
     const parsed = changeStaffInput.safeParse(input);
     if (!parsed.success) throw new AccountError(422, 'Choose a staff role and state.');
-    const actor = await this.staff(token, 'staff.write');
-    return this.repository.transaction(async (tx) => {
+    return this.writeStaff(token, async (tx, actor) => {
       const existing = await tx.operator(personId);
       if (!existing) throw new AccountError(404, 'That person is not on staff.');
       // There is always an active admin, so staff administration can never lock itself out.

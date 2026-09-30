@@ -17,6 +17,7 @@
 //   stuck-abort  like slow, but an abort leaves the session busy
 //   no-fork      has no fork route (404), like a build without one
 //   wrong-model  reports a different model than the one requested
+//   think        streams a reasoning part before the answer, with the same `field: "text"` deltas
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -84,6 +85,12 @@ function prompt(sessionID, payload) {
   setTimeout(() => {
     send({ type: 'message.updated', properties: { info: { id: `msg_u${id}`, sessionID, role: 'user' } } });
     send(info());
+    if (mode === 'think') {
+      const reason = `reason_${id}`;
+      send({ type: 'message.part.updated', properties: { part: { id: reason, sessionID, messageID: id, type: 'reasoning', text: '' } } });
+      send({ type: 'message.part.delta', properties: { sessionID, messageID: id, partID: reason, field: 'text', delta: 'Weighing the menu. ' } });
+      send({ type: 'message.part.updated', properties: { part: { id: reason, sessionID, messageID: id, type: 'reasoning', text: 'Weighing the menu. Checking prices.' } } });
+    }
     send({ type: 'message.part.updated', properties: { part: { id: `part_${id}`, sessionID, messageID: id, type: 'text', text: '' } } });
     if (mode === 'slow' || mode === 'stuck-abort') {
       send({ type: 'message.part.delta', properties: { sessionID, messageID: id, partID: `part_${id}`, field: 'text', delta: 'Partial ' } });

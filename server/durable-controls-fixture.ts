@@ -40,7 +40,7 @@ export const CONTROL_FIXTURE_CONTRACT: AdapterRouteContract = Object.freeze({
     reconcile: unsupported('Nothing external can outlive the worker.'),
     close: native('Stopping the worker ends it.'),
   },
-  streaming: { transientPreview: 'none', durableEvents: 'host-record' },
+  streaming: { transientPreview: 'none', reasoning: 'none', durableEvents: 'host-record' },
   models: { source: 'none' },
   authentication: 'development-fixture',
   testedWith: null,

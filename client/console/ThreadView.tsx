@@ -31,6 +31,7 @@ import { formatOrigin, originForSession, originForTurn } from '../attribution-di
 import { ContextUsed } from './ContextUsed';
 import { ApprovalStatus, time } from '../components';
 import { RunInspector } from '../workbench/RunInspector';
+import { ThreadManagedRoutingDetails } from './ManagedRoutingReceipt';
 import { taskEvidence } from '../workbench/task-evidence';
 import { controlProfiles } from '../api';
 import { routeDisplayName } from '../../shared/engines';
@@ -49,6 +50,8 @@ import { ChangeDiffs } from './ChangeDiffs';
 import type { ReviewComment } from '../../shared/review-comments';
 import { useWorkingWord, workingLine } from './working-words';
 import { toolRunning, type ToolLine } from './engine-activity';
+import type { LiveThinking } from './engine-reasoning';
+import { Thinking } from './Thinking';
 import { ToolActivityList } from './ToolActivity';
 import { resolvedDetail, threadStyle, useWorkStyleView } from './WorkStylePicker';
 import { WORK_STYLE_LABELS } from '../../shared/work-style';
@@ -132,7 +135,13 @@ interface ThreadViewProps {
   onStopSession(id: string): void;
   onOpenBoard(): void;
   /** Live streamed text for a new external-engine Ask/Plan: ephemeral, never saved. */
-  streaming?: { requestId: string; text: string; engine: string; activity?: ToolLine[] };
+  streaming?: {
+    requestId: string;
+    text: string;
+    engine: string;
+    activity?: ToolLine[];
+    thinking?: LiveThinking | null;
+  };
   /** Live tool calls for a work run, by the run's session id. Ephemeral, never saved. */
   runActivity?: Readonly<Record<string, ToolLine[]>>;
   onCancelText?(): void;
@@ -323,8 +332,11 @@ export function ThreadView({
   // says what it is up to. Display only; nothing here is recorded. A tool
   // call in progress already says it, so the line waits behind it.
   const streamWaiting = Boolean(
-    streaming && !streaming.text && !toolRunning(streaming.activity),
+    streaming && !streaming.text && !toolRunning(streaming.activity) && !streaming.thinking?.text,
   );
+  // The engine's thinking on the answer on its way; a lost stream shows none.
+  const liveThinking =
+    streaming?.thinking && streaming.thinking.position !== 'lost' && streaming.thinking.text ? streaming.thinking : null;
   const streamWord = useWorkingWord(
     mode === 'plan' ? 'drafting the plan' : 'replying',
     streamWaiting,
@@ -339,6 +351,7 @@ export function ThreadView({
     streaming?.requestId,
     streaming?.text.length,
     streaming?.activity?.length,
+    streaming?.thinking?.text.length,
     controlReceipts.length,
   ]);
 
@@ -414,17 +427,22 @@ export function ThreadView({
                     )}
                   </>
                 ) : (
-                  <TurnBody
-                    text={t.text}
-                    session={live}
-                    artifactAt={
-                      artifacts &&
-                      ((block) => artifacts.forBlock(turnKeyOf(t, turnIndex.get(t) ?? 0), block))
-                    }
-                    onOpenArtifact={onOpenArtifact}
-                    openKey={openArtifactKey}
-                    cite={cite}
-                  />
+                  <>
+                    {t.thinking && (
+                      <Thinking text={t.thinking.text} ms={t.thinking.ms} shortened={t.thinking.shortened} />
+                    )}
+                    <TurnBody
+                      text={t.text}
+                      session={live}
+                      artifactAt={
+                        artifacts &&
+                        ((block) => artifacts.forBlock(turnKeyOf(t, turnIndex.get(t) ?? 0), block))
+                      }
+                      onOpenArtifact={onOpenArtifact}
+                      openKey={openArtifactKey}
+                      cite={cite}
+                    />
+                  </>
                 )}
               </div>
               {t.role !== 'you' && t.context && <ContextUsed account={t.context} />}
@@ -679,6 +697,9 @@ export function ThreadView({
               receipts={controlReceipts}
             />
           )}
+          {projectId && thread.lineages?.some(lineage => lineage.runId.startsWith('model-')) && (
+            <ThreadManagedRoutingDetails key={`${projectId}/${thread.id}`} projectId={projectId} threadId={thread.id} refreshKey={`${thread.turns.length}:${busy}`} />
+          )}
           {projectId && task && (
             <ChangeReview
               projectId={projectId}
@@ -754,6 +775,13 @@ export function ThreadView({
                   <b>{formatOrigin(undefined, { engine: streaming.engine }).primary}</b>
                   <span className="mono">live</span>
                 </div>
+                {liveThinking && (
+                  <Thinking
+                    text={liveThinking.text}
+                    ms={liveThinking.endedAt === null ? null : liveThinking.endedAt - liveThinking.since}
+                    live
+                  />
+                )}
                 <ToolActivityList lines={streaming.activity} technical={technical} />
                 <div className="body">
                   {streaming.text ? (

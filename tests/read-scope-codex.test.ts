@@ -22,6 +22,8 @@ class ScriptedNative implements NativeRpc {
     switch (method) {
       case 'initialize':
         return { userAgent: 'diomedes/0.153.4 (Windows 10)' };
+      case 'model/list':
+        return { data: [{ model: 'native-model', hidden: false }], nextCursor: null };
       case 'account/read':
         return { requiresOpenaiAuth: true, account: { type: 'chatgpt', email: 'x@example.invalid' } };
       case 'config/read':

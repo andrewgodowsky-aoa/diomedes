@@ -13,6 +13,7 @@ import type {
   AdapterCapabilities,
   Destination,
   HarnessPrincipal,
+  HarnessRun,
   Json,
   ModelRequest,
   ModelResponse,
@@ -22,7 +23,8 @@ import type {
 } from '../../shared/harness.js';
 import { applicationOrigin, directOrigin } from '../../shared/attribution.js';
 import { z } from 'zod';
-import { copy, digest, HarnessError, units } from './policy.js';
+import { routingReceiptSchema, type HardRestrictions } from '../../shared/routing-policy.js';
+import { checkedSourceRules, copy, digest, HarnessError, units } from './policy.js';
 import { RunService, Suspended } from './run-service.js';
 import type { ToolRegistry } from './tools.js';
 import { commandGate, type AdapterRouteContract } from '../../shared/adapter-contract.js';
@@ -44,6 +46,8 @@ export interface ModelAdapter {
    * stream-time rules). It observes only: nothing it does changes the answer.
    */
   complete(request: ModelRequest, signal: AbortSignal, stream?: ModelStreamSink): Promise<ModelResult>;
+  /** Set only by a binding that intersects source rules before external inference. */
+  enforcesSourceRestrictions?: true;
   /** Trusted context assembly runs in a durable pure step before final model authorization. */
   prepare?(request: ModelRequest, signal: AbortSignal): Promise<ModelRequest>;
   /** May refuse a stale prepared context; must not alter its already frozen bytes. */
@@ -71,7 +75,13 @@ const inspectionSchema = z.strictObject({
 });
 
 export function validatePrepared(before: ModelRequest, after: ModelRequest): ModelRequest {
-  const json = z.json().parse(after);
+  const parsed = z.json().safeParse(after);
+  if (!parsed.success) throw new HarnessError('invalid_prepared_context', 'Context assembly must return bounded plain JSON.');
+  const json = parsed.data;
+  const prior = checkedSourceRules('invalid_prepared_context', before.sourceRestrictions ?? []);
+  const following = checkedSourceRules('invalid_prepared_context', after.sourceRestrictions ?? []);
+  if (prior.some(rule => !following.some(next => digest(next) === digest(rule))))
+    throw new HarnessError('invalid_prepared_context', 'Context assembly cannot remove a source privacy restriction.');
   if (
     JSON.stringify(json).length > 262144 ||
     after.runId !== before.runId ||
@@ -86,6 +96,32 @@ export function validatePrepared(before: ModelRequest, after: ModelRequest): Mod
       'Context assembly cannot change scope, transcript or tool authority.',
     );
   return copy(after);
+}
+
+/** Only host labels and the trusted context step can attach source restrictions.
+ * A tool's content/result is data, never a policy declaration. During replay,
+ * later observations cannot rewrite an earlier step's immutable input.
+ */
+export function sourceRules(run: HarnessRun, before = run.steps.length): HardRestrictions[] {
+  const sets: unknown[] = [];
+  for (const step of run.steps.slice(0, before)) {
+    if (step.intent.label?.sourceRestrictions) sets.push(step.intent.label.sourceRestrictions);
+    if (step.intent.kind === 'model') {
+      const input = step.intent.input;
+      if (input && typeof input === 'object' && !Array.isArray(input)) {
+        if (input.sourceRestrictions !== undefined) sets.push(input.sourceRestrictions);
+        const request = input.request;
+        if (request && typeof request === 'object' && !Array.isArray(request) && request.sourceRestrictions !== undefined)
+          sets.push(request.sourceRestrictions);
+      }
+    }
+    if (step.intent.kind === 'transform' && step.intent.name === 'prepare_model_context' && step.state === 'succeeded') {
+      const output = step.output;
+      if (output && typeof output === 'object' && !Array.isArray(output) && output.sourceRestrictions !== undefined)
+        sets.push(output.sourceRestrictions);
+    }
+  }
+  return checkedSourceRules('invalid_lineage', ...sets);
 }
 
 export function validResponse(value: unknown): value is ModelResponse {
@@ -139,7 +175,7 @@ export class NativeAgent {
     owner: string,
     prompt: string,
     principal: HarnessPrincipal,
-    options: { maxTurns?: number; maxCorrections?: number } = {},
+    options: { maxTurns?: number; maxCorrections?: number; sourceRestrictions?: HardRestrictions[] } = {},
   ): Promise<string> {
     const maxTurns = options.maxTurns ?? 8;
     if (units(maxTurns, 'Turn limit') === 0)
@@ -188,14 +224,29 @@ export class NativeAgent {
         'This older trajectory has no per-step transcript reference; it requires reconciliation.',
       );
     try {
+      let inherited = checkedSourceRules('invalid_source_restrictions', options.sourceRestrictions ?? []);
+      const ancestors = new Set([initial.id]);
+      let parent = initial.parentRunId;
+      while (parent) {
+        if (ancestors.has(parent) || ancestors.size >= 32) throw new HarnessError('invalid_lineage', 'Source restriction ancestry cannot be verified.');
+        ancestors.add(parent);
+        const record = await this.runtime.get(parent);
+        if (record.tenantId !== initial.tenantId) throw new HarnessError('cross_tenant', 'Source ancestry belongs to another tenant.');
+        if (record.projectId !== initial.projectId) throw new HarnessError('cross_project', 'Source ancestry belongs to another project.');
+        inherited = checkedSourceRules('invalid_lineage', inherited, sourceRules(record));
+        parent = record.parentRunId;
+      }
       for (let i = 0; i < maxTurns; i++) {
         const run = await this.runtime.get(runId);
+        const boundary = run.steps.findIndex(step => step.intent.stepId === `context:${i}` || step.intent.stepId === `model:${i}`);
+        const restrictions = checkedSourceRules('invalid_lineage', inherited, sourceRules(run, boundary < 0 ? run.steps.length : boundary));
         const original: ModelRequest = {
           runId,
           capabilityId: run.capabilityId,
           messages: copy(messages),
           tools: copy(descriptors),
           transcript: copy(transcript),
+          ...(restrictions.length ? { sourceRestrictions: restrictions } : {}),
         };
         const prepare = this.adapter.prepare?.bind(this.adapter);
         const effective = prepare
@@ -220,6 +271,8 @@ export class NativeAgent {
               ),
             )
           : original;
+        if (effective.sourceRestrictions?.length && this.adapter.destination === 'external' && !this.adapter.enforcesSourceRestrictions)
+          throw new HarnessError('source_policy_unverified', 'This external adapter cannot enforce the source privacy restrictions.');
         // Validation can deny replay after a rule or authority change. It never rewrites the saved context.
         await this.adapter.validatePrepared?.(copy(effective));
         const observed = await this.runtime.step<{
@@ -242,6 +295,7 @@ export class NativeAgent {
                   provider: this.adapter.id,
                   messages: copy(messages),
                   tools: descriptors,
+                  ...(effective.sourceRestrictions?.length ? { sourceRestrictions: effective.sourceRestrictions } : {}),
                 } as unknown as Json),
           },
           async ({ signal, reportOrigin }) => {
@@ -249,6 +303,9 @@ export class NativeAgent {
             const result = await this.adapter.complete(copy(effective), signal);
             if (!result || !validResponse(result.response))
               throw new HarnessError('invalid_model_response', 'Invalid model response schema.');
+            const managed = result.managed === undefined ? null : routingReceiptSchema.safeParse(result.managed);
+            if (managed && !managed.success)
+              throw new HarnessError('invalid_managed_receipt', 'The managed attempt receipt cannot be verified.');
             // Provenance comes only from adapter/runtime metadata here: the
             // transcript model id when the adapter reports one, never from
             // generated prose or a model-returned JSON self-identification.
@@ -269,6 +326,7 @@ export class NativeAgent {
             return {
               response: result.response,
               usage: result.usage ?? null,
+              ...(managed?.success ? { managed: managed.data } : {}),
               ...(result.transcript
                 ? {
                     transcript: transcriptSchema.parse(result.transcript),

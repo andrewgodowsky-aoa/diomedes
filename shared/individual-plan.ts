@@ -2,14 +2,13 @@
  * The Individual plan (Andrew, 2026-09-28): a person's own subscription.
  *
  * A business plan is issued to an organization; the Individual plan is issued to a person, never to
- * an organization. It covers the person's Personal work and projects not linked to a business, and a
- * business workspace only while the holder is its only active member (the sole proprietor). The
- * member threshold is a control-plane setting, INDIVIDUAL_MAX_ACTIVE_MEMBERS, so it is data, not code.
+ * an organization. It covers the person's Personal work and projects not linked to a business.
+ * Business work always needs its own Business authority, including a one-member business.
  *
- * Included AI usage ('managed-inference') is not part of the plan yet: funding is keyed to an
- * organization today, and funding a person is a separate migration (phase 2b). So the grant carries
- * the Agent, maintained profiles, owner rules and phone access, and the company route refuses
- * Personal work in the person's own words.
+ * Included AI usage ('managed-inference') is not part of the person plan. The grant carries
+ * the Agent, maintained profiles, owner rules and phone access. Managed Personal work additionally
+ * requires a current, separately funded usage agreement on the person's Individual billing scope.
+ * The legacy admission path cannot establish that agreement and refuses managed work.
  *
  * This module sits beside shared/access.ts rather than inside it while another lane holds that file.
  * Phase 2b folds INDIVIDUAL_PLAN into PLAN_TEMPLATES. The app shows no price for any plan: the public
@@ -31,7 +30,7 @@ export const INDIVIDUAL_PLAN_ID = 'individual' as const;
 export const INDIVIDUAL_PLAN_LABEL = 'Individual' as const;
 
 /** Shown wherever the plan is offered or issued. Exact wording (Andrew, 2026-09-28). */
-export const INDIVIDUAL_ELIGIBILITY_SENTENCE = "Businesses beyond a sole proprietorship aren't eligible for this plan.";
+export const INDIVIDUAL_ELIGIBILITY_SENTENCE = 'Individual covers Personal work only. Every Business workspace needs its own Business plan, including a sole proprietorship.';
 /**
  * The plan and a business are kept apart (Andrew, 2026-09-28): a member of a business never uses their
  * own Individual plan for that business's work, even one they pay for themselves. The coverage rule
@@ -78,7 +77,7 @@ export function isPersonPlan(id: string | null | undefined): boolean {
 // --- coverage --------------------------------------------------------------------
 
 export interface IndividualCoverage {
-  /** The most active members a business may have for an Individual grant to cover it. */
+  /** Legacy configuration retained for compatibility; it never enables Business coverage. */
   maxActiveMembers: number;
 }
 
@@ -101,12 +100,10 @@ export function readIndividualCoverage(value: string | number | undefined | null
 /**
  * Whether an Individual grant covers a piece of work. `organizationActiveMembers` is null for
  * Personal work and projects not linked to a business, which an active grant always covers. A
- * business is covered only while its active members are within the threshold.
+ * business is never covered, regardless of the legacy member threshold.
  */
 export function individualCovers(input: { grantActive: boolean; organizationActiveMembers: number | null; maxActiveMembers: number }): boolean {
-  if (!input.grantActive) return false;
-  if (input.organizationActiveMembers === null) return true;
-  return input.organizationActiveMembers >= 1 && input.organizationActiveMembers <= input.maxActiveMembers;
+  return input.grantActive && input.organizationActiveMembers === null;
 }
 
 // --- the person's access view --------------------------------------------------------
@@ -142,9 +139,8 @@ export interface PersonAccessView {
 }
 
 /**
- * A business's access view as the service answers it now: `coveredBy` is present when the member's
- * own Individual plan covers the business, and the owner's grant list then marks that grant as the
- * person's with `scope: 'person'`.
+ * Historical Business snapshots may carry Individual attribution. Retain their readable shape;
+ * new Business access views never derive authority from a person's plan.
  */
 export type CoveredAccessView = Omit<AccessView, 'grants'> & {
   grants: readonly (GrantSummary & { scope?: 'person' })[] | null;
@@ -157,7 +153,7 @@ export type CoveredAccessView = Omit<AccessView, 'grants'> & {
 export const AGENT_PERSONAL_INDIVIDUAL_REASON =
   "The Nectovia Agent isn't part of your personal work here. It comes with an Individual plan of your own, or with a business workspace that includes it. Nothing was sent.";
 
-/** The company route, for work an Individual plan covers. Included usage is not part of the plan yet. */
+/** Legacy Personal admission cannot establish a managed-usage agreement. */
 export const MANAGED_USAGE_NOT_INCLUDED_PERSONAL =
   "Included AI usage isn't part of the Individual plan yet, so the Nectovia Agent can't answer on the company route here. Your own connections still work. Nothing was sent.";
 

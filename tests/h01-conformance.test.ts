@@ -46,6 +46,14 @@ describe('route descriptors', () => {
     }
   });
 
+  it.each(['claude-code-session', 'opencode-session', 'codex-session', 'cursor-session', 'devin-session'])(
+    'accepts a new vendor build with the same protocol on %s', route => {
+      const contract = structuredClone(ROUTE_CONTRACTS[route]);
+      contract.engine.version = '9000.1.1-preview';
+      expect(contractChecks(contract).filter(check => check.outcome === 'failed')).toEqual([]);
+    },
+  );
+
   it('all five real adapter families carry descriptors', () => {
     for (const engine of EXTERNAL_ENGINES) {
       const contract = ROUTE_CONTRACTS[engine];
@@ -55,14 +63,15 @@ describe('route descriptors', () => {
     }
   });
 
-  it('every route starts and closes; only Harness and the integrated Claude and OpenCode session routes fork', () => {
+  it('every route starts and closes; only Harness and the integrated Claude, OpenCode and ChatGPT session routes fork', () => {
     for (const [routeId, contract] of Object.entries(ROUTE_CONTRACTS)) {
       expect(contract.commands.start.support, routeId).toBe('native');
       expect(['native', 'host'], `${routeId} close`).toContain(contract.commands.close.support);
       if (
         contract.mode === 'harness-agent' ||
         routeId === 'claude-code-session' ||
-        routeId === 'opencode-session'
+        routeId === 'opencode-session' ||
+        routeId === 'codex-session'
       )
         expect(contract.commands.fork.support, routeId).toBe('native');
       else expect(contract.commands.fork.support, routeId).toBe('unsupported');
@@ -74,7 +83,7 @@ describe('route descriptors', () => {
     expect(contract).toMatchObject({
       mode: 'external-session',
       engine: { id: 'claude-code', version: '2.1.252', protocolVersion: 'stream-json' },
-      streaming: { transientPreview: 'text-delta', durableEvents: 'run-record' },
+      streaming: { transientPreview: 'text-delta', reasoning: 'reasoning-delta', durableEvents: 'run-record' },
       // H03: a message sent while Claude Code answers is the host's queue, never a native channel.
       commands: { fork: { support: 'native' }, steer: { support: 'host' }, reconcile: { support: 'unsupported' } },
     });
@@ -86,12 +95,11 @@ describe('route descriptors', () => {
     expect(contractChecks(contract).find(check => check.id === 'native-session-run-backing')?.outcome).toBe('failed');
   });
 
-  it.each(['route', 'engine', 'version', 'protocol', 'mode', 'steer', 'resume', 'stream', 'auth', 'model'] as const)(
+  it.each(['route', 'engine', 'protocol', 'mode', 'steer', 'resume', 'stream', 'auth', 'model'] as const)(
     'does not extend native session backing across %s drift', drift => {
       const contract = structuredClone(ROUTE_CONTRACTS['claude-code-session']);
       if (drift === 'route') contract.routeId = 'unproven-native-session';
       if (drift === 'engine') contract.engine.id = 'other-engine';
-      if (drift === 'version') contract.engine.version = contract.testedWith = '2.1.253';
       if (drift === 'protocol') contract.engine.protocolVersion = 'unknown';
       if (drift === 'mode') contract.mode = 'single-turn-text';
       if (drift === 'steer') contract.commands.steer.support = 'native';
@@ -111,7 +119,7 @@ describe('the OpenCode session route descriptor (H04)', () => {
     expect(contract).toMatchObject({
       mode: 'external-session',
       engine: { id: 'opencode', version: '1.18.4', protocolVersion: 'http+sse' },
-      streaming: { transientPreview: 'text-delta', durableEvents: 'run-record' },
+      streaming: { transientPreview: 'text-delta', reasoning: 'reasoning-delta', durableEvents: 'run-record' },
       models: { source: 'runtime-reported' },
       commands: {
         'follow-up': { support: 'native' },
@@ -127,12 +135,11 @@ describe('the OpenCode session route descriptor (H04)', () => {
     expect(ROUTE_CONTRACTS.opencode.commands['follow-up'].support).toBe('unsupported');
   });
 
-  it.each(['route', 'engine', 'version', 'protocol', 'mode', 'steer', 'resume', 'stream', 'auth', 'model'] as const)(
+  it.each(['route', 'engine', 'protocol', 'mode', 'steer', 'resume', 'stream', 'auth', 'model'] as const)(
     'does not extend native session backing across %s drift', (drift) => {
       const contract = structuredClone(ROUTE_CONTRACTS['opencode-session']);
       if (drift === 'route') contract.routeId = 'unproven-native-session';
       if (drift === 'engine') contract.engine.id = 'other-engine';
-      if (drift === 'version') contract.engine.version = contract.testedWith = '1.18.5';
       if (drift === 'protocol') contract.engine.protocolVersion = 'unknown';
       if (drift === 'mode') contract.mode = 'single-turn-text';
       // A claimed native steering channel is exactly what this route has not proven.
@@ -147,6 +154,57 @@ describe('the OpenCode session route descriptor (H04)', () => {
   );
 });
 
+describe('the ChatGPT session route descriptor', () => {
+  it("declares a kept conversation on Diomedes' own runtime whose follow-up and steering are the host queue", () => {
+    const contract = ROUTE_CONTRACTS['codex-session'];
+    expect(contract).toMatchObject({
+      mode: 'external-session',
+      engine: { id: 'codex', version: '0.153.4', protocolVersion: 'codex app-server' },
+      streaming: { transientPreview: 'text-delta', reasoning: 'reasoning-delta', durableEvents: 'run-record' },
+      models: { source: 'runtime-reported' },
+      authentication: 'native-sign-in',
+      testedWith: '0.153.4',
+      commands: {
+        start: { support: 'native' },
+        'follow-up': { support: 'host' },
+        steer: { support: 'host' },
+        interrupt: { support: 'native' },
+        resume: { support: 'native' },
+        retry: { support: 'host' },
+        fork: { support: 'native' },
+        status: { support: 'host' },
+        reconcile: { support: 'host' },
+        close: { support: 'host' },
+      },
+    });
+    expect(contractChecks(contract).find((check) => check.id === 'native-session-run-backing')?.outcome).toBe('passed');
+    // The one-shot ChatGPT route (Work) is unchanged by it: no follow-up and no thinking.
+    expect(ROUTE_CONTRACTS.codex.commands['follow-up'].support).toBe('unsupported');
+    expect(ROUTE_CONTRACTS.codex.streaming.reasoning).toBe('none');
+  });
+
+  it.each(['route', 'engine', 'protocol', 'mode', 'steer', 'resume', 'stream', 'auth', 'model'] as const)(
+    'does not extend native session backing across %s drift',
+    (drift) => {
+      const contract = structuredClone(ROUTE_CONTRACTS['codex-session']);
+      if (drift === 'route') contract.routeId = 'unproven-native-session';
+      if (drift === 'engine') contract.engine.id = 'other-engine';
+      if (drift === 'protocol') contract.engine.protocolVersion = 'unknown';
+      if (drift === 'mode') contract.mode = 'single-turn-text';
+      // A claimed native steering channel is exactly what this route never uses.
+      if (drift === 'steer') contract.commands.steer.support = 'native';
+      if (drift === 'resume') contract.commands.resume.support = 'host';
+      if (drift === 'stream') contract.streaming.durableEvents = 'host-record';
+      if (drift === 'auth') contract.authentication = 'host-credential';
+      if (drift === 'model') contract.models.source = 'fixed';
+      const failed = contractChecks(contract).filter((check) => check.outcome === 'failed');
+      expect(failed.map((check) => check.id)).toContain(
+        drift === 'route' ? 'streaming-matches-mode' : 'native-session-run-backing',
+      );
+    },
+  );
+});
+
 describe.each([
   ['cursor-session', 'cursor', '2026.08.11'],
   ['devin-session', 'devin', '3000.10.23'],
@@ -157,7 +215,7 @@ describe.each([
       mode: 'external-session',
       engine: { id: engine, version, protocolVersion: 'acp/1' },
       testedWith: version,
-      streaming: { transientPreview: 'text-delta', durableEvents: 'run-record' },
+      streaming: { transientPreview: 'text-delta', reasoning: 'reasoning-delta', durableEvents: 'run-record' },
       models: { source: 'runtime-reported' },
       commands: {
         'follow-up': { support: 'native' },
@@ -174,12 +232,11 @@ describe.each([
     expect(ROUTE_CONTRACTS[engine].commands.resume.support).toBe('unsupported');
   });
 
-  it.each(['route', 'engine', 'version', 'protocol', 'mode', 'steer', 'fork', 'resume', 'reconcile', 'stream', 'auth', 'model'] as const)(
+  it.each(['route', 'engine', 'protocol', 'mode', 'steer', 'fork', 'resume', 'reconcile', 'stream', 'auth', 'model'] as const)(
     'does not extend native session backing across %s drift', (drift) => {
       const contract = structuredClone(ROUTE_CONTRACTS[routeId]);
       if (drift === 'route') contract.routeId = 'unproven-native-session';
       if (drift === 'engine') contract.engine.id = 'other-engine';
-      if (drift === 'version') contract.engine.version = contract.testedWith = '9999.1.1';
       if (drift === 'protocol') contract.engine.protocolVersion = 'acp/2';
       if (drift === 'mode') contract.mode = 'single-turn-text';
       // ACP v1 has neither a steering channel nor a fork of a saved session.

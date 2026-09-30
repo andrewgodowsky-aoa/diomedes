@@ -69,8 +69,8 @@ export const ADAPTER_CAPABILITIES = {
   },
   codex: {
     engineId: 'codex',
-    engineVersion: '0.153.4',
-    protocolVersion: 'codex app-server 0.153.4',
+    engineVersion: 'runtime-reported',
+    protocolVersion: 'codex app-server',
     modelCalls: 'observed',
     toolCalls: 'observed',
     filesystemWrites: 'enforced',
@@ -80,7 +80,7 @@ export const ADAPTER_CAPABILITIES = {
     cancellability: 'observed',
     checkpointGranularity: 'task',
     notes: [
-      'Model calls happen inside the pinned app-server; Diomedes sees turn events and the reported model, it does not dispatch each call (server/integrations.ts askCodex).',
+      'Model calls happen inside the selected installed app-server; Diomedes sees turn events and the reported model, it does not dispatch each call (server/integrations.ts askCodex).',
       "Every tool feature is switched off in the thread configuration and the model has no shell or file tool; that inventory is the model's own report, not a protocol-level proof (evidence/codex-team-real-binary-2026-09-06.md, D8).",
       'An Ask or Plan turn may carry a host-set read scope (server/engines/read-scope.ts): the project folder, web search and owner-approved MCP read tools. With one, the thread works in the project folder, the shell tool is on under the same read-only, no-network sandbox, web_search is live and only approved MCP servers are enabled with their read tools. A command is accepted only when the runtime parses every action as a read, listing or search inside the folder. Fixture-verified only; no paid live read turn is claimed.',
       'Project files cannot be written by the engine: the Windows read-only sandbox passes a write-denial probe before each run, and a proposal is applied only by Store.writeRecorded after the person says go ahead.',
@@ -92,8 +92,8 @@ export const ADAPTER_CAPABILITIES = {
   },
   'codex-team': {
     engineId: 'codex',
-    engineVersion: '0.153.4',
-    protocolVersion: 'codex app-server 0.153.4 with diomedes_team MCP',
+    engineVersion: 'runtime-reported',
+    protocolVersion: 'codex app-server with diomedes_team MCP',
     modelCalls: 'observed',
     toolCalls: 'observed',
     filesystemWrites: 'enforced',

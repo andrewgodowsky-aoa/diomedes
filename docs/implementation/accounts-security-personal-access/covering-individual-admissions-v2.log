@@ -1,0 +1,11 @@
+
+ RUN  v3.2.7 F:/Diomedes/diomedes-wt/accounts-security-personal-access
+
+ ✓ tests/agent-admission-answer.test.ts (25 tests) 903ms
+ ✓ tests/individual-plan.test.ts (16 tests) 627ms
+
+ Test Files  2 passed (2)
+      Tests  41 passed (41)
+   Start at  07:59:57
+   Duration  3.54s (transform 477ms, setup 0ms, collect 1.20s, tests 1.53s, environment 0ms, prepare 161ms)
+
