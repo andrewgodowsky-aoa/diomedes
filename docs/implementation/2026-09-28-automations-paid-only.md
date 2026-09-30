@@ -72,12 +72,14 @@ It touches no `app.ts`, `session.ts` or client file.
      businesses unchanged.
    - This deliberately departs from owner rules and the phone relay, which are strict even there.
    - To reverse it, make `planOf` return `this.entitlementFor(organizationId)` unconditionally.
-4. **An Individual plan reaches Automations through the business it covers.** This was updated
-   after the Individual plan (#176) merged.
-   - Automations are set up per business workspace, and Personal has none.
-   - The Individual plan covers a business with one active member. That business's access view
-     then reads the Individual plan, Agent included, so the same check admits it.
-   - Harbor Hardware shows this in the tests, running them under its owner's Individual plan.
+4. **An Individual plan does not reach a business's Automations.** Main's rule is that
+   Individual covers Personal work only, and every business workspace, a sole proprietorship
+   included, needs its own Business plan.
+   - Automations are set up per business workspace, and Personal has none today.
+   - Individual-tier Automations wait on the person-level grant (phase 2b, Linear DIO-128), which
+     is not built.
+   - Harbor Hardware shows this in the tests: its owner holds an Individual person grant and
+     Harbor is still refused.
 5. **The generic Work path cannot start the weekly brief.** Its procedure begins with
    `weeklyBriefInputSchema.parse(run.input)`, and only an Automation admission pins that input.
    Anything else fails before a step runs.
@@ -106,8 +108,8 @@ control-plane handler in-process:
 - Juniper Street Bakery (Business): admitted. This is the control that shows the check does not
   over-block.
 - Juniper's schedule after its grant is revoked: blocked at once, and its slot is refused.
-- Harbor Hardware under its owner's Individual plan: admitted. That plan covers a one-person
-  business.
+- Harbor Hardware with its owner holding an Individual person grant: still refused. An Individual
+  plan does not cover a business workspace.
 
 ## Results, 2026-09-28, under the heavy slot
 
@@ -140,9 +142,9 @@ whichever of this work and #169 lands second:
   review). Run once and a scheduled slot are now refused and recorded in the server's words, and
   turning a schedule on or resuming it is refused with 403. The page says why before anyone
   presses anything, and a schedule still on when a plan ends reads Needs investigation at once.
-  A business's plan counts when it includes the Nectovia Agent, as every plan does, and a
-  one-person business its owner's Individual plan covers runs them too. A host with no account
-  service, which only tests build, asks for no plan.
+  A business's plan counts when it includes the Nectovia Agent, as every plan does. An
+  Individual plan does not reach a business's Automations, a one-person business included. A host
+  with no account service, which only tests build, asks for no plan.
 - Not changed: F02 (stopping the Agent and moving the default route at once on a confirmed
   downgrade) and F03 (every notice offers Don't remind me again and Remind me later) belong to
   the accounts-security lane's `session.ts` work.

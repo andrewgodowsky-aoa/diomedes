@@ -41,6 +41,7 @@ import {
   seedDemo,
 } from '../services/control-plane/src/faux/seed';
 import type { AccountStateView } from '../shared/accounts';
+import { AUTOMATIONS_NOT_INCLUDED_REASON } from '../shared/access';
 import { nextSlots, type AutomationSchedule } from '../shared/automation-schedule';
 import type {
   AutomationDetail,
@@ -299,9 +300,10 @@ test('a business on a plan runs them: Run once is admitted and its schedule turn
   expect((await api<AutomationList>(list)).summary.scheduled).toBe(1);
 });
 
-test("a one-person business runs them under its owner's Individual plan", async () => {
-  // Harbor Hardware has no business plan and one active member, so its owner's Individual plan
-  // covers it: the business's access view reads the Individual plan, Agent included.
+test("a one-person business holding an Individual person grant is still refused: Individual covers Personal work only", async () => {
+  // Harbor Hardware has no Business plan and one active member. Its owner's Individual plan does
+  // not reach a business workspace, a sole proprietorship included, so Automations stay paid-only
+  // for it until the person-level grant lands (phase 2b, DIO-128).
   const holder = await cloud.accounts.signIn(await staffToken(DEMO_ACCOUNTS.harborOwner.email));
   await cloud.commercial.issuePersonGrant(
     await staffToken(DEMO_ACCOUNTS.staffBilling.email),
@@ -309,21 +311,18 @@ test("a one-person business runs them under its owner's Individual plan", async 
     { planId: 'individual', source: 'subscription', reference: 'inv_individual', note: '' },
   );
   await signIn(DEMO_ACCOUNTS.harborOwner.email);
-  const { automation, list } = await configureBrief(orgs.harbor);
+  const harbor = (await api<WorkspaceView>('/workspace')).organizations.find(
+    (row) => row.organization.id === orgs.harbor,
+  )!;
+  expect(harbor.entitlement).toMatchObject({ state: 'none', agent: false });
+  // Sets Harbor up, then checks Run once is refused and recorded and turning the schedule on is
+  // blocked with a 403, the same as every other unpaid business.
+  await expectRefused(orgs.harbor);
+  const automation = `/workspace/organizations/${orgs.harbor}/automations/${encodeURIComponent(`brief:${orgs.harbor}`)}`;
   expect((await api<AutomationDetail>(automation)).automation.run).toEqual({
-    allowed: true,
-    reason: null,
+    allowed: false,
+    reason: AUTOMATIONS_NOT_INCLUDED_REASON,
   });
-  const pressed = await api<RunOnceResult>(`${automation}/run`, 'POST', {
-    commandId: 'harbor-individual-run-once',
-  });
-  expect(pressed.occurrence.admission.state).toBe('admitted');
-  await service().settled(pressed.occurrence);
-  const saved = await saveSchedule(automation);
-  expect(saved.automation.schedule.enableBlocked).toBeNull();
-  const response = await turnOn(automation, saved.automation.schedule.generation);
-  expect(response.status).toBe(200);
-  expect((await api<AutomationList>(list)).summary.scheduled).toBe(1);
 });
 
 test('a schedule turned on under a plan starts nothing once the plan ends, and says why', async () => {
