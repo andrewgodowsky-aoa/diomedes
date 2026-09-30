@@ -1424,6 +1424,17 @@ export class WorkspaceService {
   }
 
   /**
+   * Membership first, so an outsider gets the same refusal as a missing
+   * business, then the owner rule. Recording a billing event changes the
+   * allowance the whole business sees, so a plain member may not do it.
+   */
+  assertCanManageBilling(organizationId: string): void {
+    const { membership } = this.mine(organizationId);
+    if (!canAdministerMembers(membership))
+      throw refuse(403, 'Only an owner can record billing events for this workspace.', 'not_owner');
+  }
+
+  /**
    * The organization that owns a project, read from its active project access
    * resource (recorded when an owner links the project to the business).
    * Null when no organization, or more than one, claims it: an

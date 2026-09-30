@@ -78,6 +78,19 @@ async function makeOrganization(name: string): Promise<string> {
   return view.data.organizations.at(-1)!.organization.id;
 }
 
+function periodAllocated(eventId: string) {
+  return {
+    type: 'period.allocated',
+    eventId,
+    periodId: '2026-09',
+    planVersion: 'plan-x',
+    grantedMicroUsd: 100_000_000,
+    startsAt: '2026-09-01T00:00:00.000Z',
+    endsAt: '2026-10-01T00:00:00.000Z',
+    sequence: 1,
+  };
+}
+
 beforeEach(async () => {
   root = await fs.mkdtemp(path.join(os.tmpdir(), 'diomedes-allowance-'));
   await launch();
@@ -174,6 +187,42 @@ describe('one company cannot read or move another company’s money', () => {
     );
     expect(applied.status).toBe(404);
     expect(applied.data.code).toBe('organization_not_found');
+  });
+
+  test('a plain member cannot record a billing event, and the allowance does not move', async () => {
+    const organizationId = await makeOrganization('Fernbrook Joinery');
+    const invited = await request<{ code: string }>(
+      `/workspace/organizations/${organizationId}/invitations`,
+      'POST',
+      { role: 'member' },
+    );
+    expect(invited.status).toBe(200);
+    await restartAs('member');
+    const joined = await request('/workspace/organizations/join', 'POST', {
+      code: invited.data.code,
+    });
+    expect(joined.status).toBe(200);
+
+    const before = await request(`/workspace/organizations/${organizationId}/allowance`);
+    const applied = await request<{ code?: string }>(
+      `/workspace/organizations/${organizationId}/billing-events`,
+      'POST',
+      periodAllocated('evt_member'),
+    );
+    expect(applied.status).toBe(403);
+    expect(applied.data.code).toBe('not_owner');
+    const after = await request(`/workspace/organizations/${organizationId}/allowance`);
+    expect(after).toEqual(before);
+  });
+
+  test('an owner can still record a billing event', async () => {
+    const organizationId = await makeOrganization('Fernbrook Joinery');
+    const applied = await request<{ code?: string }>(
+      `/workspace/organizations/${organizationId}/billing-events`,
+      'POST',
+      periodAllocated('evt_owner'),
+    );
+    expect(applied.status).toBe(200);
   });
 
   test('an admission for a company you are not in is refused', async () => {
