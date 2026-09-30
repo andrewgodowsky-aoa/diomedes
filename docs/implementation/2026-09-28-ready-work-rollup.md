@@ -6,7 +6,7 @@
 - **Owner:** the Opus lane.
 - **Andrew, 2026-09-28 03:02 EDT:** "check over local commits and unpushed branches and such,
   combine as much as possible into one pr that can be pushed when i'm ready."
-- **Nothing is pushed.** Push, the PR and the merge wait for Andrew.
+- **Andrew, 2026-09-30:** "push dio 125". The merge waits for him.
 - **The Automations fix joins by a merge commit,** so the commit that was verified keeps its
   identity.
 
@@ -15,9 +15,26 @@
 | Work | Commit | State |
 | --- | --- | --- |
 | Automations need a paid plan (review F01) | `a07848e` | Verified alone on base `0f20384`: the new test 4 of 4, the 30 affected files, `tsc`, and a full root vitest of 492 of 492 files with 8,245 passed. Verified composed on `1af37e0` here; see Gates. |
-| The Individual plan and Automations | `3d13051`, `3abe8c8` (first built as `4c6ce72` and `ac8d5d2`) | A test that a one-person business runs Automations under its owner's Individual plan (#176), and the paid-only write-up's decision 4 updated to match. |
+| The Individual plan and Automations | `3d13051`, `3abe8c8`, corrected by `1129fa8` | First written when an Individual plan covered a one-person business. Main now says Individual covers Personal work only (`shared/individual-plan.ts:33`), so `1129fa8` turns the Harbor test into a refusal and rewrites decision 4. Individual-tier Automations wait on the person-level grant (DIO-128). |
+| Main, 2026-09-30 | `5b26be4` | origin/main `5f97d97` merged in, with no conflicts. |
 
 ## Gates
+
+**2026-09-30, on `5b26be4` (the rollup merged with origin/main `5f97d97`)**, under slot
+`slot_muon47q8_2489523c`, 21:51 to 21:59Z:
+
+- `npm ci` at the root: passed. Root `tsc --noEmit`: passed.
+- Full root vitest: 518 of 520 files, 8,649 passed, 2 failed, 5 skipped.
+  - `tests/automations-paid-plan.test.ts`: the Harbor case failed. Main refuses it by the
+    Personal-only rule, as it should. Corrected by `1129fa8`.
+  - `tests/automation-weekly-brief.test.ts`: one case failed on a Windows rename EPERM in the run
+    store's temp file under load. Alone it passes 8 of 8. The same file flaked the same way in a
+    full run on another branch that day, so it isn't this branch's change.
+- Vite build: passed. Playwright `ui`, `native-ui` and `field`: 36 passed. The two rewritten
+  evidence screenshots were restored.
+- After `1129fa8`: `tests/automations-paid-plan.test.ts` 5 of 5, `tsc --noEmit` clean.
+
+**Earlier record (2026-09-28, base `1af37e0`):**
 
 **The full run** was on the earlier composition `7e7f1a7` (tree `2bda312`), which also held the
 read-connector fixtures. It ran under slot `slot_mul4b9br_e92406f6`, from 10:41:54Z to 10:58:21Z:
