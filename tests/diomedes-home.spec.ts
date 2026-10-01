@@ -314,8 +314,9 @@ test('the page holds together on a narrow screen', async ({ page }) => {
 });
 
 test('a message the server refuses stays in the box', async ({ page }) => {
-  // Nectovia's gateway refuses this business's message before sending it anywhere: the month's
-  // credits are used. The words are the service's own, and nothing was charged.
+  // Nectovia's gateway refuses this business's message before sending it anywhere: its credits
+  // are used. The app is signed in as the business owner, so the sentence says to buy more, and
+  // nothing more was charged. The service's own words are not what the person reads.
   refusal.next = {
     status: 402,
     code: 'insufficient_allowance',
@@ -326,7 +327,9 @@ test('a message the server refuses stays in the box', async ({ page }) => {
     const calls = gateway.length;
     await say(page, 'Are you there?');
     // The refusal is Nectovia's, never a fallback it did not take.
-    await expect(page.getByRole('alert')).toHaveText("This business has used this month's 1,000 credits.");
+    await expect(page.getByRole('alert')).toHaveText(
+      'Your business is out of credits, so this stopped here. Buy more credits to keep going. Nothing more was charged.',
+    );
     await expect(composer(page)).toHaveValue('Are you there?');
     await expect(page.locator('.dio-card')).toHaveCount(0);
     expect(gateway.length).toBe(calls + 1);

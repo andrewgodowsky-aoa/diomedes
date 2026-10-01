@@ -98,7 +98,15 @@ export function presentRun(run: HarnessRun): RunPresentation {
             ? 'Waiting for data: a file it reads is missing, so nothing was written.'
             : 'Stopped because something went wrong. Nothing will be repeated on its own.',
       };
-    case 'cancelled':
+    case 'cancelled': {
+      // A work loop that ended because the business ran out of credits keeps the sentence the stop
+      // recorded: it says who can buy more, and that nothing more was charged.
+      const detail = (run.steps.find((s) => s.intent.stepId === 'stop:credits' && s.state === 'succeeded')?.output as
+        | { detail?: unknown }
+        | null
+        | undefined)?.detail;
+      if (typeof detail === 'string' && detail)
+        return { ...base, taskState: 'todo', reason: null, sessionState: 'stopped', sentence: detail };
       return uncertainStep
         ? {
             ...base,
@@ -115,6 +123,7 @@ export function presentRun(run: HarnessRun): RunPresentation {
             sessionState: 'stopped',
             sentence: `Stopped${run.cancelReason ? `: ${run.cancelReason}` : ''}.`,
           };
+    }
   }
 }
 

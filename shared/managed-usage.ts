@@ -962,6 +962,26 @@ export type ReserveRefusalCode =
   | 'insufficient_allowance'
   | 'cap_request_required';
 
+/**
+ * The gateway refusals that mean the business has no credits left to hold the next step against:
+ * the month's grant and its bought credits are used, or no billing period has a grant yet. The job
+ * cap (`cap_request_required`) is a different refusal and is not among them.
+ */
+export const OUT_OF_CREDITS_GATEWAY_CODES = ['insufficient_allowance', 'no_period'] as const;
+const OUT_OF_CREDITS_ERROR_CODES: ReadonlySet<string> = new Set(OUT_OF_CREDITS_GATEWAY_CODES.map((code) => `nectovia_${code}`));
+
+/**
+ * Whether a failed managed call was refused for want of credits before anything was inferred, with
+ * its local hold known released. That outcome is known, not uncertain: nothing more was charged,
+ * and the work ends at that step instead of being parked for reconciliation or retried. A refusal
+ * whose hold is not known released is never read this way.
+ */
+export function isOutOfCreditsRefusal(error: unknown): error is Error & { code: string } {
+  if (!(error instanceof Error)) return false;
+  const { code, evidence } = error as { code?: unknown; evidence?: { reservation?: { state?: unknown } | null } };
+  return typeof code === 'string' && OUT_OF_CREDITS_ERROR_CODES.has(code) && evidence?.reservation?.state === 'released';
+}
+
 export type ReserveDecision =
   | {
       readonly ok: true;

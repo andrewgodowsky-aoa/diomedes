@@ -71,6 +71,7 @@ import {
 import { DELEGATION_LIMITS, SANDBOX_LIMITS, carveBudget } from '../../shared/sandbox.js';
 import { accountContext, reconcileContext } from './context-assembly.js';
 import { isScriptedAdapter, validatePrepared, validResponse, type ModelAdapter } from './native-agent.js';
+import { isOutOfCreditsRefusal } from '../../shared/managed-usage.js';
 import { canonical, copy, HarnessError, units } from './policy.js';
 import { RunService, Suspended } from './run-service.js';
 import type { ToolRegistry } from './tools.js';
@@ -211,7 +212,7 @@ export interface NativeLoopOptions {
 
 export type LoopResult =
   | { readonly kind: 'finished'; readonly claim: string }
-  | { readonly kind: 'stopped'; readonly reason: 'turn-limit' | 'budget' | 'worker' };
+  | { readonly kind: 'stopped'; readonly reason: 'turn-limit' | 'budget' | 'worker' | 'credits' };
 
 const delegatedTask = z.strictObject({
   task: z.string().trim().min(1).max(LOOP_LIMITS.taskChars),
@@ -608,6 +609,18 @@ export class NativeLoop {
           error = stopping;
         }
       }
+      // The business has no credits left for the next step. The step that was refused is recorded as
+      // failed and the run ends right there: no retry, no other payer, and every step before it
+      // stays on the record. The person reads the sentence the refusal carried.
+      if (isOutOfCreditsRefusal(error)) {
+        try {
+          await this.stop(runId, owner, principal, 'credits', error.message, maxTurns, reconciled);
+          return { kind: 'stopped', reason: 'credits' };
+        } catch (stopping) {
+          if (stopping instanceof Suspended) throw stopping;
+          error = stopping;
+        }
+      }
       const refusal = budgetRefusal(error);
       if (refusal) {
         try {
@@ -653,10 +666,14 @@ export class NativeLoop {
     limit: number,
     reconciled: () => Promise<LoopStopRecord['account']>,
   ) {
+    // Out of credits is said whole, in the sentence the refusal carried (it is already a complete
+    // sentence for the person); the other stops are a reason followed by what it means for the goal.
     const detail =
-      reason === 'worker'
-        ? `Stopped: ${short}. The goal was not finished, so nothing was checked. Retry to run that worker again; workers that answered are not run twice.`
-        : `Stopped: ${short}. The goal was not finished, so nothing was checked.`;
+      reason === 'credits'
+        ? short
+        : reason === 'worker'
+          ? `Stopped: ${short}. The goal was not finished, so nothing was checked. Retry to run that worker again; workers that answered are not run twice.`
+          : `Stopped: ${short}. The goal was not finished, so nothing was checked.`;
     // Turns that reached a model call, from the record rather than a counter, so a replay agrees.
     const used = (await this.runtime.get(runId)).steps.filter(
       (step) => /^model:\d+$/.test(step.intent.stepId) && step.state === 'succeeded',
@@ -665,7 +682,14 @@ export class NativeLoop {
       runId,
       owner,
       {
-        id: reason === 'turn-limit' ? 'stop:turns' : reason === 'worker' ? 'stop:worker' : 'stop:budget',
+        id:
+          reason === 'turn-limit'
+            ? 'stop:turns'
+            : reason === 'worker'
+              ? 'stop:worker'
+              : reason === 'credits'
+                ? 'stop:credits'
+                : 'stop:budget',
         version: 'v1',
         kind: 'transform',
         effect: 'pure',
@@ -687,7 +711,7 @@ export class NativeLoop {
       },
       principal,
     );
-    await this.runtime.cancel(runId, short, principal);
+    await this.runtime.cancel(runId, reason === 'credits' ? 'out of credits' : short, principal);
   }
 
   /** Assignments and advice already on the record, so a replay counts the same way. */
