@@ -96,9 +96,21 @@ renders before the person has an Individual account.
 
 ## Verification
 
-Commands run on this Mac (Node 22, `NODE_OPTIONS=--max-old-space-size=4096`, real `TMPDIR`); the
-counts and logs are in `evidence/dio-128/2026-10-01/`. Suites that bind a local port were run
-outside the command sandbox. PostgreSQL is not installed on this Mac, so the three PostgreSQL
+Run on this Mac (Node 22, `NODE_OPTIONS=--max-old-space-size=4096`, real `TMPDIR`, Vitest at two
+workers) against commit `242e852`, in a detached checkout outside `.claude/` (the desktop path
+guard refuses `.claude`, so running the root suite inside a `.claude/worktrees/` checkout fails
+654 path-guard tests for reasons unrelated to this patch). Logs: `evidence/dio-128/2026-10-01/`.
+
+| Gate | Result |
+| --- | --- |
+| `npx tsc --noEmit` | pass |
+| `npx vitest run` | 525 files passed, 2 skipped; 8,668 tests passed, 32 skipped |
+| `npx vite build` | pass |
+| Playwright `ui`, `native-ui`, `field` | **not run**: the Chromium binary is not installed on this Mac; 13 failed at browser launch, 23 did not run |
+| control plane `npm run typecheck` | pass |
+| control plane `npm test` | 47 files passed, 5 skipped; 749 tests passed, 52 skipped |
+
+The Playwright gate is therefore outstanding. PostgreSQL is not installed on this Mac, so the three PostgreSQL
 suites (`individual-funding-postgres`, `postgres`, `scoped-routing-postgres`) were **skipped, not
 passed**. The new 012 cases in `individual-funding-postgres.integration.test.ts` and migration 012
 itself have therefore never run against a real database. That is the first gate before review
