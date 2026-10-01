@@ -101,6 +101,8 @@ describe('independent free harness and paid Agent boundaries at 05ef1b0', () => 
     expect(body.code).toBe('unreachable');
     // The true reason: the service could not be reached. It is not a refusal of the plan.
     expect(body.error).toContain('could not be reached');
+    // Like every other Agent refusal, it says nothing went out.
+    expect(body.error.endsWith(' Nothing was sent.')).toBe(true);
     expect(body.error).not.toMatch(/not included|free version|business/i);
     expect(f.calls.model).toBe(0);
     expect(f.calls.direct).toBe(0);
