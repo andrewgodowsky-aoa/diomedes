@@ -71,7 +71,7 @@ Fractional AI Ops starts at $2,000/month for contracted professional time and a 
 
 The canonical Drive amendment NC-IF-2026-09-27.1 approves Individual at $200/month with 1,000 monthly credits for one named human. It replaces the former Solo proposal. Preserve current launch safeguards until checkout, contractual eligibility and runtime entitlement are verified; a document does not activate a plan.
 
-Individual covers personal work and qualifying solo sole-proprietor work. Staffed-business or employer operations and persistent client-organizational deployments require Business even when one person signs in. Product entitlement, inference payer and computer permissions remain separate.
+Individual covers Personal work only. Every Business workspace needs its own Business plan, including a sole proprietorship. Staffed-business or employer operations and persistent client-organizational deployments require Business even when one person signs in. Updated 2026-09-30: this replaces the earlier rule that let Individual cover qualifying solo sole-proprietor work. Product entitlement, inference payer and computer permissions remain separate.
 
 Individual does not add team operations, maintained integrations, on-site work or human design services. Free direct-engine/local use remains separate. Customer-owned commercial API/cloud routes are Advanced or contract-specific; subscription-backed external engines remain personal and terms-bound. The previously suggested Business Plus offer remains unapproved.
 
