@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { creditAmount } from '../../shared/managed-usage';
 import { canManageMemberLimits, type Membership } from '../../shared/workspaces';
-import { api } from '../api';
+import { ApiError, api } from '../api';
 import { Button } from '../components';
 
 /**
@@ -62,6 +62,9 @@ export function decideCreditAsk(
     ...(decision.allowPurchased ? { allowPurchased: true } : {}),
   });
 }
+
+/** Nobody is signed in to an account service: there is nothing to list, and that is not a failure to report. */
+const signedOut = (error: unknown) => error instanceof ApiError && error.status === 401;
 
 const who = (role: string | undefined) => (role === 'admin' ? 'An admin' : role === 'owner' ? 'An owner' : 'A member');
 
@@ -175,7 +178,9 @@ export function CreditAsks({
   const read = () =>
     loadCreditAsks(organizationId, membership)
       .then(setAsks)
-      .catch((error) => reportRef.current(error));
+      .catch((error) => {
+        if (!signedOut(error)) reportRef.current(error);
+      });
 
   useEffect(() => {
     if (!allowed) return;
@@ -184,7 +189,9 @@ export function CreditAsks({
       .then((next) => {
         if (live) setAsks(next);
       })
-      .catch((error) => reportRef.current(error));
+      .catch((error) => {
+        if (!signedOut(error)) reportRef.current(error);
+      });
     return () => {
       live = false;
     };

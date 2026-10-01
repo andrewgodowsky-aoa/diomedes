@@ -92,7 +92,7 @@ describe('asking from the stop', () => {
 
   it('says one plain line once asked, and the words of the stop when the person cancels', async () => {
     plainWords(MEMBER_LIMIT_ASKED);
-    expect(MEMBER_LIMIT_ASKED).toBe('Asked. An owner or admin will see it in the workspace panel.');
+    expect(MEMBER_LIMIT_ASKED).toBe('Asked. An owner or admin will see it under Change workspace.');
     const send = vi.fn(async () => undefined);
     expect(await settleMemberLimitStop(stop, { ask: choosing('cancel').ask, send })).toBe(SAID);
     expect(send).not.toHaveBeenCalled();

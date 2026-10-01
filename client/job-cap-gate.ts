@@ -223,7 +223,7 @@ export const askForMoreFromStop = (projectId: string, commandId: string, kind: '
   );
 
 /** What the person reads once the ask is sent. */
-export const MEMBER_LIMIT_ASKED = 'Asked. An owner or admin will see it in the workspace panel.';
+export const MEMBER_LIMIT_ASKED = 'Asked. An owner or admin will see it under Change workspace.';
 
 /**
  * What happens at a member's limit stop, from the dialog to the line the person reads after it. The
