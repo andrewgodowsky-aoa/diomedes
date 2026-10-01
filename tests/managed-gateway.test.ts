@@ -345,7 +345,7 @@ describe('a person asking to reserve allowance directly (owner rule, 2026-09-30)
     expect(decision.admitted).toBe(false);
     if (decision.admitted) throw new Error('unreachable');
     expect(decision.code).toBe('direct_reservation_refused');
-    expect(decision.message).toMatch(/cannot reserve/i);
+    expect(decision.message).toMatch(/can’t reserve this business’s included usage/i);
     expect(ledger.summary(ORG, PERIOD).pendingMicroUsd).toBe(0);
   });
 
