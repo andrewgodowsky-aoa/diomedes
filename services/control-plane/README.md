@@ -91,6 +91,13 @@ GET /account/session, POST /account/organizations, POST
 /account/organizations/:id/invitations/accept, PATCH
 /account/organizations/:id/members/:personId, and POST /account/session/revoke.
 
+Every page of GET /account/session also carries `staff`: `{ role }` when the
+signed-in person has an active staff row, otherwise null. It is read from the
+staff table alone, never from an email domain, a plan or the request, and a read
+that fails answers null. The desktop uses it to let staff, and only staff,
+reserve and settle allowance directly; an older service that omits it reads as
+not staff.
+
 The cloud GET /account/session returns at most 25 active workspaces plus
 nextCursor (an organization ID or null). Continue with ?after=<nextCursor> until
 null; every page re-verifies the session and current membership. The cursor is

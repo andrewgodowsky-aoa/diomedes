@@ -1508,7 +1508,8 @@ export async function createApp(options: AppOptions) {
   mountAutomationRoutes(app, store, automations);
   mountThemeRoutes(app, store, themes, customization);
   mountCustomizationBenefitRoutes(app, store, workspaces, customization, customizationBenefit);
-  mountManagedUsageRoutes(app, store, ledger, gateway, billing, workspaces);
+  // Who is staff is the account service's word, asked at the time; an install without accounts has no staff.
+  mountManagedUsageRoutes(app, store, ledger, gateway, billing, workspaces, accountSession);
   mountConfigurationRoutes(app, store, workspaces, configuration, agents);
   // OPS-05: the Business owner's copy of the business's records, written into one of its projects.
   mountOrganizationExportRoute(app, { store, workspaces, configuration, accounts: accountSession, build: running.version });

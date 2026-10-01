@@ -5,13 +5,15 @@
  * can, but not nectovia subscribers unless they've paid for that api outright
  * (e.g. not our included usage)."
  *
- * This desktop app has no authoritative way to tell Diomedes staff from a
- * customer (the account session carries no staff marker), and its local
- * allowance ledger keeps one pool with no line for usage bought outright. So
- * until those two facts exist here, a person asking over HTTP to hold included
- * allowance is refused whatever their role in the business, owner included.
- * What stays as it was: a non-member still reads as absent, a route that costs
- * the allowance nothing still admits, and the app's own admission (no HTTP
+ * The account service now says which signed-in person is active Diomedes
+ * staff (an active staff row, never an email domain or anything in a request),
+ * so staff may reserve and settle. The local allowance ledger still keeps one
+ * pool with no line for usage bought outright, so nobody else can: a person
+ * asking over HTTP to hold or settle included allowance is refused whatever
+ * their role in the business, owner included, and so is staff whose row is
+ * disabled or whose standing cannot be read. What stays as it was: a
+ * non-member still reads as absent (staff included), a route that costs the
+ * allowance nothing still admits, and the app's own admission (no HTTP
  * caller) still holds allowance for a paid business.
  *
  * The route is mounted here over a real ledger and gateway with an invented
@@ -38,7 +40,9 @@ const AT = new Date().toISOString();
 const ORG = 'org_reserve';
 const PERIOD = AT.slice(0, 7);
 
-type Who = 'owner' | 'member' | 'outsider';
+// `staff` is an active staff row. `disabledStaff` is a person whose row is disabled, and
+// `unreadStaff` is staff the account service could not be asked about: both read as not staff.
+type Who = 'owner' | 'member' | 'outsider' | 'staff' | 'disabledStaff' | 'unreadStaff';
 
 let root = '';
 let server: Server | undefined;
@@ -107,7 +111,14 @@ beforeEach(async () => {
   } as unknown as WorkspaceService;
   const app = express();
   app.use(express.json());
-  mountManagedUsageRoutes(app, store, ledger, gateway, billing, workspaces);
+  // The host's own read of the signed-in person's standing, as AccountSessionService.staffRole() answers it.
+  const staff = {
+    staffRole: async () => {
+      if (who === 'unreadStaff') throw new Error('The account service did not answer.');
+      return who === 'staff' ? ('support' as const) : null;
+    },
+  };
+  mountManagedUsageRoutes(app, store, ledger, gateway, billing, workspaces, staff);
   app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     if (error instanceof ApiError) res.status(error.status).json({ error: error.message, ...error.details });
     else res.status(500).json({ error: String(error) });
@@ -149,6 +160,52 @@ describe('reserving included allowance over HTTP', () => {
       ask({ staff: true, internal: true, paid: true, purchased: true, directReservation: false, role: 'admin' }),
     );
     expect(answer.status).toBe(403);
+    expect(ledger.summary(ORG, PERIOD).pendingMicroUsd).toBe(0);
+  });
+
+  test('a body that names a staff role for itself changes nothing', async () => {
+    who = 'member';
+    const answer = await post(
+      'admit',
+      ask({ staffRole: 'admin', staff: { role: 'admin' }, directReservation: false, reservationId: 'res_forged' }),
+    );
+    expect(answer.status).toBe(403);
+    expect(answer.data.code).toBe('direct_reservation_refused');
+    expect(ledger.summary(ORG, PERIOD).pendingMicroUsd).toBe(0);
+  });
+
+  test('active staff reserve, and the hold is real', async () => {
+    who = 'staff';
+    const answer = await post('admit', ask({ reservationId: 'res_staff' }));
+    expect(answer.status).toBe(200);
+    expect(answer.data.admitted).toBe(true);
+    expect(answer.data.payer).toBe('managed');
+    expect(answer.data.reservation.id).toBe('res_staff');
+    expect(ledger.summary(ORG, PERIOD).pendingMicroUsd).toBe(dollars(1));
+  });
+
+  test('staff still meet every other gate: a call past the job cap is held to it', async () => {
+    who = 'staff';
+    const answer = await post('admit', ask({ maxMicroUsd: dollars(500), reservationId: 'res_big' }));
+    expect(answer.status).toBe(200);
+    expect(answer.data.admitted).toBe(false);
+    expect(answer.data.code).toBe('job_cap_reached');
+    expect(ledger.summary(ORG, PERIOD).pendingMicroUsd).toBe(0);
+  });
+
+  test('staff whose row is disabled are refused like anyone else, and nothing is held', async () => {
+    who = 'disabledStaff';
+    const answer = await post('admit', ask({ reservationId: 'res_disabled' }));
+    expect(answer.status).toBe(403);
+    expect(answer.data.code).toBe('direct_reservation_refused');
+    expect(ledger.summary(ORG, PERIOD).pendingMicroUsd).toBe(0);
+  });
+
+  test('when the account service cannot be asked, nobody is staff', async () => {
+    who = 'unreadStaff';
+    const answer = await post('admit', ask({ reservationId: 'res_unread' }));
+    expect(answer.status).toBe(403);
+    expect(answer.data.code).toBe('direct_reservation_refused');
     expect(ledger.summary(ORG, PERIOD).pendingMicroUsd).toBe(0);
   });
 
@@ -199,5 +256,131 @@ describe('reserving included allowance over HTTP', () => {
     });
     expect(admitted.admitted).toBe(true);
     expect(ledger.summary(ORG, PERIOD).pendingMicroUsd).toBe(dollars(1));
+  });
+});
+
+describe('settling included allowance over HTTP', () => {
+  const settle = (overrides: Record<string, unknown> = {}) => ({
+    reservationId: 'res_held',
+    providerCostMicroUsd: dollars(0.5),
+    allowanceDebitMicroUsd: dollars(0.5),
+    ...overrides,
+  });
+
+  // A hold the way the app takes one: through the gateway the host asks, with no direct flag.
+  async function holdOne() {
+    const gateway = new ManagedGateway({
+      ledger,
+      entitlementFor: () => paid,
+      tenantFor: () => 'tenant_reserve',
+      memberOf: () => true,
+      billingStatusFor: async () => ({ suspended: false, suspendedReason: null }),
+      jobCapFor: () => approvedJobCap('efficient'),
+      policyFor: () => ({ processing: 'may-leave', organizationRoute: 'managed' }),
+    });
+    const held = await gateway.admit({
+      organizationId: ORG,
+      personId: 'person_owner',
+      route: 'codex',
+      kind: 'generation',
+      parentTaskId: null,
+      maxMicroUsd: dollars(1),
+      requestDigest: 'digest-held',
+      reservationId: 'res_held',
+      periodId: PERIOD,
+      at: AT,
+    });
+    expect(held.admitted).toBe(true);
+    expect(ledger.summary(ORG, PERIOD).pendingMicroUsd).toBe(dollars(1));
+  }
+
+  test('an owner cannot settle, and the hold is left exactly as it was', async () => {
+    await holdOne();
+    who = 'owner';
+    const answer = await post('settle', settle());
+    expect(answer.status).toBe(403);
+    expect(answer.data.code).toBe('direct_settle_refused');
+    expect(answer.data.error).toMatch(/can’t settle this business’s usage yourself/i);
+    expect(answer.data.error).toMatch(/Nothing was changed\.$/);
+    const summary = ledger.summary(ORG, PERIOD);
+    expect(summary.pendingMicroUsd).toBe(dollars(1));
+    expect(summary.settledMicroUsd).toBe(0);
+  });
+
+  test('an employee cannot settle either', async () => {
+    await holdOne();
+    who = 'member';
+    const answer = await post('settle', settle());
+    expect(answer.status).toBe(403);
+    expect(answer.data.code).toBe('direct_settle_refused');
+    expect(ledger.summary(ORG, PERIOD).settledMicroUsd).toBe(0);
+  });
+
+  test('a body that calls itself staff or paid changes nothing', async () => {
+    await holdOne();
+    who = 'member';
+    const answer = await post(
+      'settle',
+      settle({ staff: true, staffRole: 'admin', internal: true, paid: true, purchased: true, role: 'admin' }),
+    );
+    expect(answer.status).toBe(403);
+    expect(ledger.summary(ORG, PERIOD).settledMicroUsd).toBe(0);
+  });
+
+  test('a refused settle does not say whether the body would have been valid', async () => {
+    await holdOne();
+    who = 'owner';
+    const answer = await post('settle', { reservationId: 'res_held' });
+    expect(answer.status).toBe(403);
+    expect(answer.data.code).toBe('direct_settle_refused');
+  });
+
+  test('staff whose row is disabled cannot settle', async () => {
+    await holdOne();
+    who = 'disabledStaff';
+    const answer = await post('settle', settle());
+    expect(answer.status).toBe(403);
+    expect(answer.data.code).toBe('direct_settle_refused');
+    expect(ledger.summary(ORG, PERIOD).settledMicroUsd).toBe(0);
+  });
+
+  test('when the account service cannot be asked, nobody can settle', async () => {
+    await holdOne();
+    who = 'unreadStaff';
+    const answer = await post('settle', settle());
+    expect(answer.status).toBe(403);
+    expect(answer.data.code).toBe('direct_settle_refused');
+  });
+
+  test('active staff can settle, and the hold becomes a settled charge', async () => {
+    await holdOne();
+    who = 'staff';
+    const answer = await post('settle', settle());
+    expect(answer.status).toBe(200);
+    expect(answer.data.reservationId).toBe('res_held');
+    const summary = ledger.summary(ORG, PERIOD);
+    expect(summary.pendingMicroUsd).toBe(0);
+    expect(summary.settledMicroUsd).toBe(dollars(0.5));
+  });
+
+  test('a non-member still reads as absent when settling', async () => {
+    who = 'outsider';
+    const answer = await post('settle', settle());
+    expect(answer.status).toBe(404);
+    expect(answer.data.code).toBe('organization_not_found');
+  });
+
+  test('the ledger itself still settles for an in-process caller', async () => {
+    await holdOne();
+    const charge = await ledger.settle({
+      reservationId: 'res_held',
+      organizationId: ORG,
+      providerCostMicroUsd: dollars(0.25),
+      allowanceDebitMicroUsd: dollars(0.25),
+      reconciledFrom: 'response',
+      at: AT,
+    });
+    expect(charge.allowanceDebitMicroUsd).toBe(dollars(0.25));
+    expect(ledger.summary(ORG, PERIOD).pendingMicroUsd).toBe(0);
   });
 });
