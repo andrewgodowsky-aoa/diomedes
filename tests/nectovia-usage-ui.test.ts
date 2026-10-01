@@ -17,7 +17,8 @@ import {
   type UsageState,
 } from '../shared/managed-usage';
 import { NectoviaUsageView } from '../client/console/NectoviaUsage';
-import { acceptsUsage, usageBarModel } from '../client/console/nectovia-usage-model';
+import { acceptsPersonalUsage, acceptsUsage, usageBarModel } from '../client/console/nectovia-usage-model';
+import type { PersonalUsageView } from '../shared/individual-plan';
 
 const c = (credits: number) => creditAmount(credits);
 const observedAt = '2026-10-15T12:00:00.000Z';
@@ -194,3 +195,47 @@ describe('a usage response only paints the organization it was asked for', () =>
     expect(acceptsUsage('org_b', forged)).toBe(false);
   });
 });
+
+describe('a person own Individual credits read as a billing period, not a calendar month (DIO-128)', () => {
+  const period = { periodId: 'individual:2026-09-30T15:00:00.000Z', planId: 'individual', grantedMicroUsd: c(1000),
+    startsAt: '2026-09-30T15:00:00.000Z', endsAt: '2026-10-30T15:00:00.000Z', rateCardVersion: 'rate-card-2026-09-10.1' };
+  const personal = (allocation: 'pending' | 'recorded', totals: Partial<PeriodTotals> = {}): UsageState => ({ state: 'ready', organizationId: 'individual_a',
+    projection: projectUsage({ organizationId: 'individual_a', period, totals: { ...zero, ...totals }, topUp: noTopUp, lastReceipt: null, observedAt, allocation }) });
+  const view = (usage: UsageState, renewal: PersonalUsageView['renewal'] = null): PersonalUsageView =>
+    ({ v: 1, personId: 'person_a', accountId: 'individual_a', usage, renewal, checkedAt: observedAt });
+
+  it('uses period-neutral words and the exact UTC end, and says a new allowance needs a renewal', () => {
+    const model = usageBarModel(personal('recorded', { settledMonthlyMicroUsd: c(250) }), now,
+      { kind: 'individual', renewal: { state: 'not-renewed', nextStartsAt: period.endsAt, nextEndsAt: '2026-11-30T15:00:00.000Z' } });
+    expect(model.summary).toBe('25% of this billing period’s 1,000 credits used');
+    expect(model.facts.map(fact => fact.term)).toEqual(['Used this billing period', 'Available this billing period']);
+    expect(model.resets).toBe('Current credits expire Oct 30, 2026, 15:00 UTC; a new allowance needs a renewal');
+    expect(JSON.stringify(model)).not.toMatch(/this month|Resets/);
+  });
+
+  it('says a paid renewal starts at the end, and promises nothing when the renewal state is unknown', () => {
+    expect(usageBarModel(personal('recorded'), now, { kind: 'individual', renewal: { state: 'renewed', nextStartsAt: period.endsAt, nextEndsAt: '2026-11-30T15:00:00.000Z' } }).resets)
+      .toBe('Current credits expire Oct 30, 2026, 15:00 UTC; the next billing period is paid for and starts then');
+    expect(usageBarModel(personal('recorded'), now, { kind: 'individual', renewal: null }).resets).toBe('Current credits expire Oct 30, 2026, 15:00 UTC');
+  });
+
+  it('shows a verified period before first use at its approved grant with nothing used', () => {
+    const model = usageBarModel(personal('pending'), now, { kind: 'individual', renewal: null });
+    expect(model).toMatchObject({ status: 'ready', percent: 0, summary: '0% of this billing period’s 1,000 credits used' });
+    expect(model.facts[1]).toEqual({ term: 'Available this billing period', value: '1,000 credits' });
+  });
+
+  it('keeps business usage on its calendar month wording', () => {
+    expect(usageBarModel(ready({ settledMonthlyMicroUsd: c(300) }), now).summary).toBe('30% of this month’s 1,000 credits used');
+  });
+
+  it('drops a Personal answer for another person, another account or an ended period', () => {
+    const shown = view(personal('recorded'));
+    expect(acceptsPersonalUsage(shown, 'person_a', now)).toBe(true);
+    expect(acceptsPersonalUsage(shown, 'person_b', now)).toBe(false);
+    expect(acceptsPersonalUsage({ ...shown, accountId: 'individual_b' }, 'person_a', now)).toBe(false);
+    expect(acceptsPersonalUsage(shown, 'person_a', Date.parse(period.endsAt))).toBe(false);
+    expect(acceptsPersonalUsage(view({ state: 'unavailable', organizationId: 'individual_a', reason: 'No plan.' }), 'person_a', now)).toBe(true);
+  });
+});
+

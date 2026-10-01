@@ -25,6 +25,8 @@ let dir: string;
 let admissions: string[];
 /** Replaces the answer to `GET /account/access` when set. */
 let personAnswer: (() => Response) | null;
+/** Rewrites the answer to `GET /account/usage` when set. */
+let usageAnswer: ((answer: any) => unknown) | null;
 
 const pathOf = (request: Request) => new URL(request.url).pathname;
 
@@ -48,6 +50,8 @@ async function signedIn(who: DemoAccount) {
     client: new ControlPlaneClient('http://faux.local', async (request) => {
       if (request.method === 'POST' && pathOf(request).endsWith('/agent-admissions')) admissions.push(pathOf(request));
       if (personAnswer && pathOf(request) === '/account/access') return personAnswer();
+      if (usageAnswer && pathOf(request) === '/account/usage')
+        return Response.json(usageAnswer(await (await cloud.handle(request)).json()));
       return cloud.handle(request);
     }),
     view: () => ({ kind: 'faux', label: FAUX_BACKEND_LABEL, url: null, reason: null, signIn: 'password' }),
@@ -74,6 +78,7 @@ beforeEach(async () => {
   dir = await fs.mkdtemp(path.join(os.tmpdir(), 'diomedes-individual-plan-'));
   admissions = [];
   personAnswer = null;
+  usageAnswer = null;
   cloud = await createFauxCloud({ file: null, passwordIterations: 1_000 });
   orgs = (await seedDemo(cloud)).organizations!;
 });
@@ -208,3 +213,40 @@ describe('the Individual row of the paid-abilities matrix', () => {
     expect(outcome).toBe(row.admitted);
   });
 });
+
+describe('the person own Individual credits (DIO-128)', () => {
+  test('shows a verified current period at its approved 1,000 credits and 0% before first use, and records nothing', async () => {
+    await issueIndividual('free');
+    const session = await signedIn('free');
+    const before = cloud.store.snapshot().funding;
+    const view = await session.personalUsage();
+    expect(view.usage.state).toBe('ready');
+    if (view.usage.state !== 'ready') throw new Error('Expected ready usage');
+    const grant = cloud.store.snapshot().commercial.personGrants[0];
+    expect(view.usage.projection).toMatchObject({ planId: 'individual', allocation: 'pending', grantedMicroUsd: 100_000_000, usedPercent: 0,
+      periodId: `individual:${grant.billingCycle!.startsAt}`, periodStartsAt: grant.billingCycle!.startsAt, resetsAt: grant.billingCycle!.endsAt });
+    expect(view.renewal).toMatchObject({ state: 'not-renewed', nextStartsAt: grant.billingCycle!.endsAt });
+    expect(view.accountId).toBe(view.usage.organizationId);
+    expect(cloud.store.snapshot().funding).toEqual(before);
+  });
+
+  test('never shows figures without an Individual account, and never as zero', async () => {
+    const view = await (await signedIn('free')).personalUsage();
+    expect(view).toMatchObject({ accountId: null, usage: { state: 'unavailable' }, renewal: null });
+  });
+
+  test('drops an answer for another person, another account or an ended period', async () => {
+    await issueIndividual('free');
+    for (const forge of [
+      (answer: any) => ({ ...answer, personId: 'person_someone_else' }),
+      (answer: any) => ({ ...answer, usage: { ...answer.usage, projection: { ...answer.usage.projection, organizationId: 'individual_other' } } }),
+      (answer: any) => ({ ...answer, usage: { ...answer.usage, projection: { ...answer.usage.projection, resetsAt: '2020-01-01T00:00:00.000Z' } } }),
+      (answer: any) => ({ ...answer, usage: { ...answer.usage, projection: { ...answer.usage.projection, planId: 'business' } } }),
+    ]) {
+      usageAnswer = forge;
+      const view = await (await signedIn('free')).personalUsage();
+      expect(view.usage).toMatchObject({ state: 'unavailable', reason: expect.stringMatching(/could not be verified/) });
+    }
+  });
+});
+

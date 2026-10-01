@@ -674,15 +674,26 @@ Default: each stays as built.
 Raised 2026-09-28 with the Individual plan (`docs/implementation/2026-09-28-individual-tier.md`,
 branch `feature/individual-tier`).
 
-1. **Credits.** Decided: 1,000 a month (Andrew, 2026-09-28 04:01 EDT). Automatic recurring
-   allocation remains unwired. Operations routing adds an explicit managed-usage agreement and
-   a separate Individual billing account; it does not invent a monthly allocation.
+1. **Credits.** Decided: 1,000 a month (Andrew, 2026-09-28 04:01 EDT), with no unused-credit
+   carryover (Andrew, 2026-09-29). The "automatic recurring allocation remains unwired" note
+   predates PR #180, which allocates lazily on first use; it is qualified by the reset-boundary
+   record below. Operations routing's explicit managed-usage agreement stays separate.
 2. **Business coverage.** Settled by Andrew's latest decision: Individual covers Personal work
    only. Every Business needs its own Business plan, including a sole proprietorship or a
    one-member Business. The legacy member-threshold setting cannot grant Business access.
 3. **Managed Personal work.** The routing composition requires both a current person-plan grant
    and a separately funded usage agreement. A person grant alone, including courtesy access,
    cannot authorize company-funded inference. Revoking either authority stops new dispatches.
+
+4. **Reset boundary.** Selected for implementation by Andrew on 2026-10-01 (he directed the
+   2026-09-30 recommendation to be built): subscription-anniversary calendar months in UTC.
+   Each verified monthly term gets exactly 1,000 credits, which expire at its exclusive end;
+   the next verified term starts at 0%. A renewal date alone grants nothing. Business and
+   explicit agreements keep UTC calendar months. Source:
+   `docs/implementation/2026-10-01-individual-reset-boundary.md`. Still open, separately:
+   rollout against the real database, the Operations and site changes in their own
+   repositories, self-service checkout and automated payment collection, and the canonical
+   Drive wording.
 
 These describe the local routing composition; its verification and publication are recorded
 separately in `docs/implementation/2026-09-28-operations-routing.md`.
