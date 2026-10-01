@@ -67,10 +67,12 @@ import {
   verifiedIndividualCycle,
   type IndividualBillingCycle,
 } from '../../../shared/individual-period.js';
-import { canAdministerMembers } from '../../../shared/workspaces.js';
+import { MEMBER_ROLES, canAdministerMembers, type MemberRole } from '../../../shared/workspaces.js';
+import { decideMemberUse, effectiveLimit, type Allowance } from '../../../shared/credit-allotments.js';
 import { AccountError } from './errors.js';
 import type { AccountMembershipSnapshot } from './domain.js';
 import type { AccountService } from './account-service.js';
+import type { AllotmentSettingsRow, AttemptPersonRow, LimitRequestRow, MemberLimitRow, MemberUsageRow } from './member-limits.js';
 
 /** A refusal with a stable code a runtime can branch on. */
 export class FundingError extends AccountError {
@@ -224,6 +226,27 @@ export interface FundingTransaction {
   expireTopUpHolds(tenantId: string, organizationId: string, at: string): Promise<void>;
   capRequest(tenantId: string, requestId: string): Promise<CapRequestRow | undefined>;
   saveCapRequest(row: CapRequestRow): Promise<void>;
+  /** Every limit a business has set, for roles and for people (migration 014). */
+  memberLimits(tenantId: string, organizationId: string): Promise<MemberLimitRow[]>;
+  /** Insert a limit, or change the mode and amount of the one already set for that role or person. */
+  saveMemberLimit(row: MemberLimitRow): Promise<void>;
+  allotmentSettings(tenantId: string, organizationId: string): Promise<AllotmentSettingsRow | undefined>;
+  saveAllotmentSettings(row: AllotmentSettingsRow): Promise<void>;
+  limitRequest(tenantId: string, requestId: string): Promise<LimitRequestRow | undefined>;
+  /** Insert a request, or record its decision. A request's terms are never rewritten. */
+  saveLimitRequest(row: LimitRequestRow): Promise<void>;
+  limitRequests(tenantId: string, organizationId: string, filter: { personId?: string; state?: LimitRequestRow['state'] }): Promise<LimitRequestRow[]>;
+  /** The approved requests that add room for this person now: the month's, and the one for this root job. */
+  approvedAllowances(tenantId: string, organizationId: string, personId: string, periodId: string, rootJobId: string): Promise<LimitRequestRow[]>;
+  /** Which person an attempt was reserved for. Written once, in the reserving transaction. */
+  saveAttemptPerson(row: AttemptPersonRow): Promise<void>;
+  /**
+   * What each person (or one person) holds or has settled in a period, from included and bought credits
+   * alike: funded attempts that name them, and their purchased-usage holds. Held work counts at its
+   * ceiling, settled work at cost, released and written-off work not at all. A purchased hold counts as
+   * held only while its lease runs past `at`, and a settled one counts its recorded debit, never what was absorbed.
+   */
+  memberUsage(tenantId: string, organizationId: string, period: CreditPeriodRow, personId: string | null, at: string): Promise<MemberUsageRow[]>;
   periodTotals(tenantId: string, organizationId: string, periodId: string): Promise<PeriodTotals>;
   /**
    * Purchased credits, and what is held or settled against them: funded attempts' top-up holds
@@ -274,13 +297,13 @@ const idPattern = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 export const RELEASABLE_REFUSALS: readonly number[] = Object.freeze([400, 401, 403, 404, 413, 422, 429]);
 const periodPattern = /^(\d{4})-(0[1-9]|1[0-2])$/;
 
-function requireId(value: unknown, field: string): string {
+export function requireId(value: unknown, field: string): string {
   if (typeof value !== 'string' || !idPattern.test(value))
     throw new FundingError(422, `A valid ${field} is required.`, 'invalid_request');
   return value;
 }
 
-function requireMoney(value: unknown, field: string, positive = true): MicroUsd {
+export function requireMoney(value: unknown, field: string, positive = true): MicroUsd {
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0 || (positive && value === 0))
     throw new FundingError(422, `Provide ${field} as a ${positive ? 'positive ' : ''}whole number of micro-USD.`, 'invalid_amount');
   return micro(value);
@@ -731,6 +754,15 @@ export class FundingService {
     kind: ChargeKind; route: string; requestDigest: string; rateSnapshot: RateSnapshot; maxMicroUsd: MicroUsd;
     usageClass: UsageClass; companyCeilingMicroUsd?: MicroUsd | null;
     /**
+     * The verified member this work is for, and their role. Given by the gateway from the membership it
+     * has just checked, never from a request. When present, the member's monthly limit is enforced here,
+     * under the organization lock, and the attempt is recorded against them. Left out, as for a personal
+     * workspace or a server-side caller, nothing is limited and nothing is attributed. Member limits
+     * apply to businesses only: given together with `individualCycle`, the member is ignored, because a
+     * personal Individual billing scope has no members.
+     */
+    member?: { personId: string; role: MemberRole };
+    /**
      * The verified Individual term resolved by the server from the person's current grant. Never a
      * client value. Without it, the attempt binds to the UTC calendar month (Business, agreements
      * and legacy Individual grants).
@@ -752,8 +784,13 @@ export class FundingService {
       throw new FundingError(409, 'That kind of charge is not run on included credits.', 'charge_not_admissible');
     const companyCeiling = input.companyCeilingMicroUsd === undefined || input.companyCeilingMicroUsd === null
       ? null : requireMoney(input.companyCeilingMicroUsd, 'the company spend ceiling', false);
+    const member = input.member === undefined ? null
+      : { personId: requireId(input.member.personId, 'person'), role: input.member.role };
+    if (member && !MEMBER_ROLES.includes(member.role)) throw new FundingError(422, 'A member has an owner, admin or member role.', 'invalid_request');
     const cycle = input.individualCycle === undefined ? null : verifiedIndividualCycle(input.individualCycle);
     if (input.individualCycle !== undefined && !cycle) throw new FundingError(422, 'That is not a verified Individual billing period.', 'invalid_period');
+    // A personal Individual billing scope has no members: nothing there is limited or attributed to a person.
+    const limitedMember = cycle ? null : member;
     return this.repository.transaction(async (tx) => {
       await tx.lockOrganization(tenantId, organizationId);
       // Read after the lock, so a reservation that waited past a period's end is judged at its end.
@@ -796,6 +833,10 @@ export class FundingService {
       });
       if (!decision.ok)
         throw new FundingError(decision.code === 'invalid_ceiling' ? 422 : 402, decision.reason, decision.code);
+      // The shared pool has the funds and the job has the room. Now the member's own monthly limit,
+      // read in the same transaction that holds the credits, so two steps by one member cannot both
+      // slip under it. A refusal throws and rolls everything back: nothing is held and nothing is sent.
+      if (limitedMember) await this.enforceMemberLimit(tx, { tenantId, organizationId, rootJobId, period, member: limitedMember, at, maxMicroUsd: input.maxMicroUsd, purchasedMicroUsd: decision.topUpHoldMicroUsd });
       if (companyCeiling !== null) {
         await tx.lockCompany();
         if (sumMoney([await tx.companySpend(), input.maxMicroUsd]) > companyCeiling)
@@ -808,8 +849,40 @@ export class FundingService {
         monthlyHoldMicroUsd: decision.monthlyHoldMicroUsd, topUpHoldMicroUsd: decision.topUpHoldMicroUsd, dispatchedAt: null,
       };
       await tx.saveAttempt(attempt);
+      if (limitedMember) await tx.saveAttemptPerson({ tenantId, attemptId, organizationId, personId: limitedMember.personId });
       return attempt;
     });
+  }
+
+  /**
+   * A member's monthly limit, checked for one reservation. The limit is the member's own setting, else
+   * their role's, else the plan default (`shared/credit-allotments.ts`); an owner or admin has none
+   * unless an owner set one. The member's usage is everything they hold or have settled this period, from
+   * included and bought credits, and the purchased holds they asked for count too. Approvals add room
+   * for this month and for this one job, and a step that would draw bought credits past the limit needs
+   * an approval that allows them.
+   */
+  private async enforceMemberLimit(tx: FundingTransaction, input: {
+    tenantId: string; organizationId: string; rootJobId: string; period: CreditPeriodRow; at: string;
+    member: { personId: string; role: MemberRole }; maxMicroUsd: MicroUsd; purchasedMicroUsd: MicroUsd;
+  }): Promise<void> {
+    const { tenantId, organizationId, period, member, at } = input;
+    const limit = effectiveLimit({
+      role: member.role, personId: member.personId, settings: await tx.memberLimits(tenantId, organizationId),
+      planId: period.planId, monthlyGrantMicroUsd: period.grantedMicroUsd,
+    });
+    if (limit.limitMicroUsd === null) return;
+    const usage = (await tx.memberUsage(tenantId, organizationId, period, member.personId, at))[0];
+    const approved = await tx.approvedAllowances(tenantId, organizationId, member.personId, period.periodId, input.rootJobId);
+    const allowance: Allowance = {
+      extraMicroUsd: sumMoney(approved.map((row) => row.extraMicroUsd ?? micro(0))),
+      allowPurchased: approved.some((row) => row.allowPurchased),
+    };
+    const decided = decideMemberUse({
+      limitMicroUsd: limit.limitMicroUsd, usedMicroUsd: micro((usage?.includedMicroUsd ?? 0) + (usage?.purchasedMicroUsd ?? 0)),
+      reserveMicroUsd: input.maxMicroUsd, purchasedMicroUsd: input.purchasedMicroUsd, allowance,
+    });
+    if (!decided.ok) throw new FundingError(402, decided.reason, decided.code);
   }
 
   /**

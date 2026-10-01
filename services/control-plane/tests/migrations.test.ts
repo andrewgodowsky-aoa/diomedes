@@ -60,7 +60,7 @@ describe('versioned migration protocol', () => {
 });
 
 describe('versioned migration source files', () => {
-  const names = ['001_accounts.sql', '002_commercial.sql', '003_funded_jobs.sql', '004_usage_contract.sql', '005_customer_access.sql', '006_staff_keys.sql', '007_relay_devices.sql', '008_organization_setup.sql', '009_individual_plans.sql', '010-scoped-routing.sql','011_individual_funding.sql','012_individual_subscription_periods.sql','013_purchased_usage_holds.sql'];
+  const names = ['001_accounts.sql', '002_commercial.sql', '003_funded_jobs.sql', '004_usage_contract.sql', '005_customer_access.sql', '006_staff_keys.sql', '007_relay_devices.sql', '008_organization_setup.sql', '009_individual_plans.sql', '010-scoped-routing.sql','011_individual_funding.sql','012_individual_subscription_periods.sql','013_purchased_usage_holds.sql','014_member_credit_limits.sql'];
   const load = () => Promise.all(names.map(async (name, index) => {
     const sql = await readFile(new URL(`../migrations/${name}`, import.meta.url), 'utf8');
     return { version: index + 1, name, sql, sha256: createHash('sha256').update(sql).digest('hex') };
@@ -178,7 +178,7 @@ describe('versioned migration source files', () => {
       sha256: '540f7bb22cc183175984fcdcf8e82718a7b093ec77d09329656ddd68196e5886' });
     expect(files[9]).toMatchObject({ version: 10, name: '010-scoped-routing.sql' });
     const db = database(files.slice(0, 9));
-    expect(await migrate(db.factory, files)).toEqual([10, 11, 12, 13]);
+    expect(await migrate(db.factory, files)).toEqual([10, 11, 12, 13, 14]);
     expect(db.calls).not.toContain(files[8].sql);
     expect(await migrate(db.factory, files)).toEqual([]);
   });
@@ -191,7 +191,7 @@ describe('versioned migration source files', () => {
     expect(periods).toMatchObject({ version: 12, name: '012_individual_subscription_periods.sql' });
     // An 011 database upgrades to 012 without replaying anything earlier.
     const db = database(files.slice(0, 11));
-    expect(await migrate(db.factory, files)).toEqual([12, 13]);
+    expect(await migrate(db.factory, files)).toEqual([12, 13, 14]);
     expect(db.calls).not.toContain(files[10].sql);
     expect(periods.sql.replace(/--.*$/gm, '')).not.toMatch(/\b(DROP\s+TABLE|DELETE\s+FROM|TRUNCATE|DROP\s+SCHEMA|UPDATE\s+control_plane)/i);
     expect(periods.sql).not.toMatch(/^\s*GRANT\b/im);
@@ -209,5 +209,35 @@ describe('versioned migration source files', () => {
     // Narrow, fixed-path functions with no public execution.
     expect(periods.sql.match(/SET search_path=pg_catalog/g)).toHaveLength(3);
     expect(periods.sql.trim().endsWith('REVOKE ALL ON ALL FUNCTIONS IN SCHEMA control_plane FROM PUBLIC;')).toBe(true);
+  });
+});
+
+describe('014 monthly credit limits for members', () => {
+  const load = () => readFile(new URL('../migrations/014_member_credit_limits.sql', import.meta.url), 'utf8');
+
+  it('is LF-only, additive, and leaves every earlier table as it was', async () => {
+    const sql = await load();
+    expect(sql.includes(String.fromCharCode(13))).toBe(false);
+    expect(sql).not.toMatch(/\b(DROP\s+TABLE|DELETE\s+FROM|TRUNCATE|DROP\s+SCHEMA|ALTER\s+TABLE|UPDATE\s+control_plane)\b/i);
+    expect([...sql.matchAll(/CREATE TABLE control_plane\.(\w+)/g)].map((match) => match[1]).sort())
+      .toEqual(['credit_allotment_settings', 'credit_attempt_people', 'credit_limit_requests', 'credit_member_limits']);
+    expect(sql.trim().endsWith('REVOKE ALL ON ALL TABLES IN SCHEMA control_plane FROM PUBLIC;')).toBe(true);
+  });
+
+  it('stores no credit figure nobody decided, and constrains what a limit and a request can be', async () => {
+    const sql = await load();
+    // Comments may say the word; no column carries a default value.
+    expect(sql.replace(/--.*/g, '')).not.toMatch(/\bDEFAULT\b/i);
+    expect(sql).toMatch(/limit_micro_usd bigint CHECK \(limit_micro_usd BETWEEN 0 AND 9007199254740991\)/);
+    // A limit row names a role or a person, and a limit has a number only when its mode is a limit.
+    expect(sql).toContain("subject_kind text NOT NULL CHECK (subject_kind IN ('role','person'))");
+    expect(sql).toContain("CHECK ((mode = 'limit') = (limit_micro_usd IS NOT NULL))");
+    // A request is decided once, and sized only when approved.
+    expect(sql).toContain("CHECK ((state = 'approved') = (extra_micro_usd IS NOT NULL))");
+    expect(sql).toContain("CHECK (state = 'approved' OR allow_purchased = false)");
+    // The hot funding tables are not altered: a person is recorded in a side table.
+    expect(sql).toMatch(/CREATE TABLE control_plane\.credit_attempt_people[\s\S]*REFERENCES control_plane\.funding_reservations\(tenant_id,reservation_id\)/);
+    // Every row belongs to one business within its own tenant.
+    expect([...sql.matchAll(/FOREIGN KEY \(organization_id,tenant_id\) REFERENCES control_plane\.organizations\(id,tenant_id\)/g)]).toHaveLength(4);
   });
 });

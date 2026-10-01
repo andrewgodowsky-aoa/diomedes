@@ -27,6 +27,7 @@ import { micro } from '../../../shared/managed-usage.js';
 import { FundingService, PurchasedUsageService, type FundingRepository } from '../src/funding.js';
 import { PostgresFundingTransaction } from '../src/funding-postgres.js';
 import { ManagedError, ManagedInferenceService } from '../src/managed-inference.js';
+import { MemberLimits, MemberLimitsService } from '../src/member-limits.js';
 import { MANAGED_PROVIDERS, bedrockResponsesCaller, scriptedResponsesFetch } from '../src/managed-providers.js';
 import type { SqlClient } from '../src/postgres.js';
 import { providerSpy, readAll, type ProviderRequest } from './support/managed.js';
@@ -36,10 +37,13 @@ const FUNDING_SQL = read('../scripts/funding-permissions.sql');
 const RUNTIME_SQL = read('../scripts/runtime-permissions.sql');
 const GATEWAY_SOURCE = read('../src/managed-inference.ts');
 const FUNDING_SOURCE = read('../src/funding.ts');
+const MEMBER_LIMITS_SOURCE = read('../src/member-limits.ts');
 
 /** The migration 002/003 funding tables. */
 const FUNDING_TABLES = ['credit_periods', 'funded_jobs', 'funded_job_refs', 'job_cap_requests', 'funding_accounts',
-  'funding_reservations', 'funding_settlements', 'credit_adjustments', 'credit_topups', 'credit_topup_holds'];
+  'funding_reservations', 'funding_settlements', 'credit_adjustments', 'credit_topups', 'credit_topup_holds',
+  // Migration 014: members' monthly limits.
+  'credit_attempt_people', 'credit_member_limits', 'credit_allotment_settings', 'credit_limit_requests'];
 
 // --- the grant file --------------------------------------------------------------------------
 
@@ -190,7 +194,9 @@ const GATEWAY_DIRECT_READS = new Set([...GATEWAY_SOURCE.matchAll(/this\.options\
 /** Purchased-usage holds (013) run on the same login: the FundingService methods PurchasedUsageService calls. */
 const PURCHASED_SERVICE_CALLS = names(FUNDING_SOURCE.slice(FUNDING_SOURCE.indexOf('export class PurchasedUsageService')), /this\.funding\.(\w+)\(/g);
 const SERVICE_CALLS = new Set([...GATEWAY_SERVICE_CALLS, ...PURCHASED_SERVICE_CALLS]);
-const STATIC_TRANSACTION_CALLS = new Set([...SERVICE_CALLS].flatMap((name) => [...transactionCalls(name)]).concat([...GATEWAY_DIRECT_READS]));
+/** Members' monthly limits (014) run on the same login: every FundingTransaction call member-limits.ts makes, in any branch. */
+const MEMBER_LIMIT_TRANSACTION_CALLS = names(MEMBER_LIMITS_SOURCE, /\btx\.(\w+)\(/g);
+const STATIC_TRANSACTION_CALLS = new Set([...SERVICE_CALLS].flatMap((name) => [...transactionCalls(name)]).concat([...GATEWAY_DIRECT_READS], [...MEMBER_LIMIT_TRANSACTION_CALLS]));
 
 // --- the gateway's paths, run -------------------------------------------------------------------
 
@@ -321,10 +327,31 @@ async function runGatewayPaths() {
   await purchased.release(token, organizationId, { holdId: 'hold-2' });
   await purchased.hold(token, organizationId, { holdId: 'hold-3', amountMicroUsd: 1_000_000, requestDigest: 'digest-3' });
   await purchased.renew(token, organizationId, { holdId: 'hold-3' });
+  // Members' monthly limits (014), run as the account Worker runs them on the same login: an owner sets a limit
+  // and who sees what, the member's next call is refused before anything is held, the member asks for one
+  // job and for the month, the owner approves both (the month with bought credits allowed), and each side reads.
+  const ownerSignIn = await cloud.handle(new Request('http://faux/auth/sign-in', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ email: DEMO_ACCOUNTS.owner.email, password: FAUX_DEMO_PASSWORD }),
+  }));
+  const ownerToken = (await ownerSignIn.json()).accessToken as string;
+  const limits = new MemberLimitsService(cloud.accounts, new MemberLimits(repository, { now }));
+  const memberId = (await cloud.accounts.signIn(token)).person.id;
+  await limits.limits(ownerToken, organizationId);
+  await limits.setLimit(ownerToken, organizationId, { subject: { kind: 'person', personId: memberId }, mode: 'limit', limitMicroUsd: 1 });
+  await limits.setSettings(ownerToken, organizationId, { adminsSeeMemberUsage: true });
+  const limited = await ask('run-1:6');
+  await limits.ask(token, organizationId, { requestId: 'ask-job', kind: 'job', jobId: 'run-1' });
+  await limits.ask(token, organizationId, { requestId: 'ask-month', kind: 'month', jobId: null });
+  await limits.decide(ownerToken, organizationId, 'ask-job', { approve: true });
+  await limits.decide(ownerToken, organizationId, 'ask-month', { approve: true, extraMicroUsd: 1_000_000, allowPurchased: true });
+  await limits.mine(token, organizationId);
+  await limits.requests(token, organizationId);
+  await limits.report(ownerToken, organizationId);
   const holds = Object.fromEntries(cloud.store.snapshot().funding.topUpHolds.map((row) => [row.holdId, row.state]));
   const states = Object.fromEntries(cloud.store.snapshot().funding.attempts.map((row) => [row.id, row.state]));
   const periods = cloud.store.snapshot().funding.periods.filter((row) => row.organizationId === organizationId).map((row) => row.periodId);
-  return { outcomes, states, holds, periods, providerCalls: spy.calls.length, transactionLog, serviceLog };
+  return { outcomes: { ...outcomes, limited }, states, holds, periods, providerCalls: spy.calls.length, transactionLog, serviceLog };
 }
 
 /** Replays each recorded call on the SQL adapter and returns the statements it sent. */
@@ -368,7 +395,7 @@ describe('cp_funding (scripts/funding-permissions.sql)', () => {
     const run = await runGatewayPaths();
     // The scenarios did what they are for.
     expect(run.outcomes).toEqual({ first: 200, retry: 200, busy: 429, failed: 503, preDispatchRelease: true, replayed: 409, read: 200,
-      personalFirstUse: ['individual:2026-10-02T09:00:00.000Z'] });
+      personalFirstUse: ['individual:2026-10-02T09:00:00.000Z'], limited: 402 });
     expect(run.states).toEqual({ 'run-1:1': 'settled', 'run-1:2': 'settled', 'run-1:3': 'released', 'run-1:4': 'uncertain', 'run-1:5': 'released',
       'personal-1:1': 'pending' });
     expect(run.periods).toEqual(['2026-09', '2026-10']);
@@ -397,6 +424,10 @@ describe('cp_funding (scripts/funding-permissions.sql)', () => {
     // The list, as the owner reviews it.
     expect(describeTables(grants.tables)).toEqual([
       'credit_adjustments: SELECT',
+      'credit_allotment_settings: SELECT, INSERT, UPDATE (admins_see_member_usage, members_see_own_usage, updated_at, updated_by)',
+      'credit_attempt_people: SELECT, INSERT',
+      'credit_limit_requests: SELECT, INSERT, UPDATE (allow_purchased, decided_at, decided_by, extra_micro_usd, period_id, state)',
+      'credit_member_limits: SELECT, INSERT, UPDATE (limit_micro_usd, mode, updated_at, updated_by)',
       'credit_periods: SELECT, INSERT',
       'credit_topup_holds: SELECT, INSERT, UPDATE (absorbed_micro_usd, debit_micro_usd, lease_until, released_by, resolved_at, state)',
       'credit_topups: SELECT',

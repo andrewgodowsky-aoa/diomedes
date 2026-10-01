@@ -35,6 +35,7 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { applicationOrigin, directOrigin } from '../../shared/attribution.js';
+import { MEMBER_LIMIT_REACHED } from '../../shared/credit-allotments.js';
 import type {
   HarnessBudget,
   HarnessPrincipal,
@@ -287,6 +288,10 @@ function budgetRefusal(error: unknown): string | null {
   const code = (error as { code?: unknown } | null)?.code;
   if (typeof code === 'string' && code.endsWith('_job_cap_reached'))
     return 'job spend cap reached';
+  // A person's own monthly limit would be passed by the next call. It stops the run the same way, and the
+  // person asks an owner or admin for more.
+  if (typeof code === 'string' && code.endsWith(`_${MEMBER_LIMIT_REACHED}`))
+    return 'member limit reached';
   return null;
 }
 
@@ -628,6 +633,8 @@ export class NativeLoop {
           const which =
             refusal === 'job spend cap reached'
               ? 'the job’s spend cap would be passed by the next call'
+              : refusal === 'member limit reached'
+                ? 'the monthly limit set for this person would be passed by the next call'
               : refusal.endsWith('model calls')
                 ? `model calls ${run.used.modelCalls} of ${run.budget.modelCalls}`
                 : refusal.endsWith('tool calls')

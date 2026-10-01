@@ -23,6 +23,7 @@
  */
 import { createOpenAI } from '@ai-sdk/openai';
 import { creditAmount, publishedMonthlyGrant, type JobTier, type UsageClass } from '../../shared/managed-usage.js';
+import { MEMBER_LIMIT_REACHED } from '../../shared/credit-allotments.js';
 import { GPT6_LUNA, MANAGED_LUNA, NECTOVIA_ROUTE } from '../../shared/model-api.js';
 import type { TierResolution } from '../../shared/tier-map.js';
 import { routingPriceSchema, routingReceiptSchema, routingScopeKey, type ResolvedRoutingSnapshot, type AccountScope, type HardRestrictions, type RoutingReceipt } from '../../shared/routing-policy.js';
@@ -260,6 +261,14 @@ export function gatewayRefusal(
       return {
         code: 'nectovia_cap_request_required',
         message: said ?? `This job has reached the ${tierName(tier)} cap. Nothing was charged.`,
+      };
+    case MEMBER_LIMIT_REACHED:
+      // A member's own monthly limit stopped this step (Andrew, 2026-10-01). The service's sentence says
+      // how many credits it needs and how many are set, and ends with who can approve more; this app
+      // turns the refusal into a stop the person can ask an owner or admin about.
+      return {
+        code: `nectovia_${MEMBER_LIMIT_REACHED}`,
+        message: said ?? 'This would go past the credits set for you this month. An owner or admin can approve more.',
       };
     case 'policy_changed':
       return {

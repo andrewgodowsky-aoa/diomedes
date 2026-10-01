@@ -285,7 +285,10 @@ import {
   type NectoviaAccount,
 } from './engines/nectovia.js';
 import { baselineRedact } from './secrets.js';
-import { EngineError } from './engines/process.js';
+import { EngineError, MEMBER_LIMIT } from './engines/process.js';
+import { MEMBER_LIMIT_REACHED } from '../shared/credit-allotments.js';
+import { mountCreditLimitRoutes } from './credit-limit-routes.js';
+import { mountCreditAskRoutes } from './credit-ask-routes.js';
 import { selectedEngine, selectedModel } from '../shared/ai-selection.js';
 import {
   ownerPinFrom,
@@ -1513,6 +1516,8 @@ export async function createApp(options: AppOptions) {
   mountCustomizationBenefitRoutes(app, store, workspaces, customization, customizationBenefit);
   // Who is staff is the account service's word, asked at the time; an install without accounts has no staff.
   mountManagedUsageRoutes(app, store, ledger, gateway, billing, workspaces, accountSession, accountSession);
+  // Members' monthly credit limits: the account service keeps and enforces them; this app asks as the signed-in person.
+  mountCreditLimitRoutes(app, workspaces, accountSession);
   mountConfigurationRoutes(app, store, workspaces, configuration, agents);
   // OPS-05: the Business owner's copy of the business's records, written into one of its projects.
   mountOrganizationExportRoute(app, { store, workspaces, configuration, accounts: accountSession, build: running.version });
@@ -6213,6 +6218,21 @@ export async function createApp(options: AppOptions) {
         : { reason: 'This route has no declared price for its model, so the cost is not known.' }),
     };
   };
+  // A member whose own monthly limit stopped a message asks an owner or admin from the stop itself. The
+  // project and the command are all the client names; the business and the account service's job are
+  // resolved here, from the project and from where the message ran.
+  mountCreditAskRoutes(app, {
+    organizationFor: (projectId) => agentGate?.organizationFor(projectId) ?? null,
+    locate: async (projectId, commandId) => {
+      for (const thread of store.state(projectId).conversations) {
+        const found = await interactionHost.locate(projectId, thread.id, commandId);
+        if (found) return { runId: found.runId };
+      }
+      return null;
+    },
+    session: accountSession ?? null,
+    workspaces,
+  });
   mountJobCapRoutes(app, {
     jobCaps,
     // The same route, style and model a send resolves, and the same limits the turn runs under.
@@ -6312,6 +6332,12 @@ export async function createApp(options: AppOptions) {
   });
   app.use('/api', (_req, _res, next) => next(new ApiError(404, 'This action was not found.')));
   const errorHandler: ErrorRequestHandler = (error: unknown, _req, res, _next) => {
+    if (error instanceof EngineError && error.code === MEMBER_LIMIT) {
+      // The person's own monthly limit would be passed by the next step. Nothing of it was sent; they ask
+      // an owner or admin for this job or for the month, the way a job over its cap asks.
+      res.status(402).json({ error: error.message, code: MEMBER_LIMIT_REACHED, ambiguous: false });
+      return;
+    }
     if (error instanceof EngineError && error.code === 'JOB_CAP') {
       // A job stopped before a step that would pass its cap. Nothing of that step was sent; the
       // person chooses a higher tier or going over once, and the message is sent as a new job.

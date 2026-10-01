@@ -376,6 +376,47 @@ grant, role or permission is widened. Rollback stops new Individual issuance
 and allocation and keeps the additive schema; once term reservations exist, do
 not return to a calendar-only writer.
 
+## Members' monthly credit limits (migration 014, 2026-10-01)
+
+Owner rule: one shared pool per business, included usage first and then bought
+credits. Every member also has a monthly limit on how much of it they may use,
+always on, reset with the plan period. A limit comes from the member's role
+with a per-person override. Owners and admins are unlimited within the pool
+unless an owner sets a limit for them. The default for a member is the whole
+plan allowance, read in one place (`PLAN_MEMBER_LIMIT_CREDITS` in
+`shared/credit-allotments.ts`, empty until tier numbers are decided).
+
+Where it is enforced: `FundingService.reserve`, in the same transaction and
+under the same organization lock as the pool and job-cap checks, after the
+idempotent replay. The gateway names the verified person and role; a request
+never does. Usage is what the person's attempts and purchased-usage holds hold
+or have settled in the period (`credit_attempt_people` records whose attempt
+it was). Limits are a business feature: a personal Individual billing scope has
+no members, so an Individual-term reservation is never limited or attributed to a
+person, and a business's member usage is counted in the same UTC calendar-month
+period its reservations bind to. A refusal is 402 `member_limit_reached` with a plain reason that says
+who can approve more, and nothing is held.
+
+Routes under `/account/organizations/:id/`, each as the signed-in member:
+
+- `GET credit-limits`, `POST credit-limits`, `POST credit-limits/settings`:
+  owners and admins read and set limits and who sees what. An admin limits only
+  members; only an owner changes who sees what.
+- `GET credit-usage/mine`: a person's own usage against their own limit,
+  never the pool or anyone else.
+- `GET credit-usage/members`: who used what, by member, in micro-USD.
+- `POST credit-limit-requests` `{ requestId, kind: 'job'|'month', jobId }`: a
+  member asks to go past the limit. The ask names no amount.
+- `GET credit-limit-requests`, `POST credit-limit-requests/:id/decision`: an
+  owner or admin approves or denies. One job raises that job by its own cap; a
+  month needs the approver's `extraMicroUsd`. `allowPurchased` lets the
+  approval draw on bought credits and is refused when none are free.
+
+These run as the funding login (FUNDING_DATABASE_URL) and answer 503 without
+it. `scripts/funding-permissions.sql` carries the grants for the four new
+tables; `cp_runtime` is unchanged. Migration 014 is additive and applies after
+011, 012 and 013.
+
 ## Runtime evidence and release
 
 `npm run test:runtime` requires CP_EVIDENCE_DIRECTORY and uses local workerd.

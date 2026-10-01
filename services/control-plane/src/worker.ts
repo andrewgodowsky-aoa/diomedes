@@ -8,6 +8,7 @@ import { StaffKeyVerifier, postgresStaffKeys } from './identity-staff-key.js';
 import { PostgresRepository, neonClientFactory } from './postgres.js';
 import { FundingService, PurchasedUsageService, UsageService, purchasedHoldInput, purchasedReleaseInput, purchasedRenewInput, purchasedSettleInput } from './funding.js';
 import { PostgresFundingRepository } from './funding-postgres.js';
+import { MemberLimits, MemberLimitsService, askRaiseInput, decideRaiseInput, setLimitInput, setSettingsInput } from './member-limits.js';
 import { PostgresCommercialRepository } from './commercial-postgres.js';
 import {
   CommercialService,
@@ -91,6 +92,8 @@ export interface HandlerOptions {
   createCommercial?: (config: Configuration, accounts: AccountService) => CommercialService;
   /** Test and faux-cloud seam for purchased-usage holds. The Worker entry always uses the funding login. */
   createPurchased?: (config: Configuration, accounts: AccountService) => Pick<PurchasedUsageService, 'balance' | 'hold' | 'settle' | 'release' | 'renew'>;
+  /** Test and faux-cloud seam for per-member credit limits. The Worker entry always uses the funding login. */
+  createLimits?: (config: Configuration, accounts: AccountService) => Pick<MemberLimitsService, 'limits' | 'setLimit' | 'setSettings' | 'mine' | 'report' | 'ask' | 'requests' | 'decide'>;
   createRouting?: (config: Configuration, accounts: AccountService) => RoutingService;
   /** Test and faux-cloud seam for the managed gateway: the scripted provider instead of Bedrock. */
   createManaged?: (config: Configuration, accounts: AccountService) => ManagedInferenceService;
@@ -134,6 +137,14 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
       throw new AccountError(503, 'Account service is unavailable. Try again later.');
     }
     return new PurchasedUsageService(accounts, new FundingService(new PostgresFundingRepository(neonClientFactory(config.fundingDatabaseUrl))));
+  });
+  // Limits and raise requests write funding rows too, so they run as the funding login as well.
+  const createLimits = options.createLimits ?? ((config: Configuration, accounts: AccountService) => {
+    if (config.fundingDatabaseUrl === null) {
+      console.error(JSON.stringify({ event: 'member-limits-funding-database-unavailable', setting: 'FUNDING_DATABASE_URL', rule: config.fundingProblem ?? 'not-set' }));
+      throw new AccountError(503, 'Account service is unavailable. Try again later.');
+    }
+    return new MemberLimitsService(accounts, new MemberLimits(new PostgresFundingRepository(neonClientFactory(config.fundingDatabaseUrl))));
   });
   const createRouting = options.createRouting ?? ((config: Configuration, accounts: AccountService) =>
     new RoutingService(accounts, new PostgresCommercialRepository(neonClientFactory(config.databaseUrl)), Date.now,
@@ -272,6 +283,23 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
         return json(await createPurchased(config, accounts).settle(token, match[1], await body(request, purchasedSettleInput)));
       if ((match = route('/account/organizations/:id/purchased-usage/releases').exec(pathname)) && method === 'POST')
         return json(await createPurchased(config, accounts).release(token, match[1], await body(request, purchasedReleaseInput)));
+      // --- per-member monthly credit limits: owners and admins set them and decide asks; a member asks and reads their own ---
+      if ((match = route('/account/organizations/:id/credit-limits').exec(pathname)) && method === 'GET')
+        return json(await createLimits(config, accounts).limits(token, match[1]));
+      if ((match = route('/account/organizations/:id/credit-limits').exec(pathname)) && method === 'POST')
+        return json(await createLimits(config, accounts).setLimit(token, match[1], await body(request, setLimitInput)));
+      if ((match = route('/account/organizations/:id/credit-limits/settings').exec(pathname)) && method === 'POST')
+        return json(await createLimits(config, accounts).setSettings(token, match[1], await body(request, setSettingsInput)));
+      if ((match = route('/account/organizations/:id/credit-usage/mine').exec(pathname)) && method === 'GET')
+        return json(await createLimits(config, accounts).mine(token, match[1]));
+      if ((match = route('/account/organizations/:id/credit-usage/members').exec(pathname)) && method === 'GET')
+        return json(await createLimits(config, accounts).report(token, match[1]));
+      if ((match = route('/account/organizations/:id/credit-limit-requests').exec(pathname)) && method === 'GET')
+        return json(await createLimits(config, accounts).requests(token, match[1]));
+      if ((match = route('/account/organizations/:id/credit-limit-requests').exec(pathname)) && method === 'POST')
+        return json(await createLimits(config, accounts).ask(token, match[1], await body(request, askRaiseInput)));
+      if ((match = route('/account/organizations/:id/credit-limit-requests/:id/decision').exec(pathname)) && method === 'POST')
+        return json(await createLimits(config, accounts).decide(token, match[1], match[2], await body(request, decideRaiseInput)));
       if ((match = route('/account/organizations/:id/purchased-usage/renewals').exec(pathname)) && method === 'POST')
         return json(await createPurchased(config, accounts).renew(token, match[1], await body(request, purchasedRenewInput)));
       if ((match = route('/account/organizations/:id/invitations').exec(pathname)) && method === 'POST')

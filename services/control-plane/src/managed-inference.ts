@@ -67,6 +67,8 @@ import { approvedConnections, callManagedProvider, connectionCredential, provide
 import { BindingError, canonicalJson, sseObjects } from './managed-normalization.js';
 import { authorizeScope, effectivePolicy, defaultEnvelope, routesWithCircuits } from './routing.js';
 import { FundingError, RELEASABLE_REFUSALS, type AttemptRef, type FundingRepository, type FundingService } from './funding.js';
+import { MEMBER_LIMIT_REACHED } from '../../../shared/credit-allotments.js';
+import type { MemberRole } from '../../../shared/workspaces.js';
 import {
   EVALUATION_PROVIDER,
   MANAGED_PROVIDERS,
@@ -331,7 +333,7 @@ const ceilingReached = () => new ManagedError(503, 'route_unavailable', CEILING_
 /** Why a call is refused when the business's current grants hold the Agent but not included AI usage. */
 export const MANAGED_USAGE_NOT_INCLUDED = `${FEATURE_LABELS['managed-inference']} isn’t part of this business’s plan, so the Nectovia Agent can’t answer here. Nothing was charged.`;
 /** The contract names these three funding refusals as 402, whatever status FundingService gives them. */
-const PAYMENT_REFUSALS: ReadonlySet<string> = new Set(['insufficient_allowance', 'cap_request_required', 'no_period']);
+const PAYMENT_REFUSALS: ReadonlySet<string> = new Set(['insufficient_allowance', 'cap_request_required', 'no_period', MEMBER_LIMIT_REACHED]);
 /** An evaluation no provider could take under the data policy: it reached no model and was released. */
 export const PROVIDER_POLICY_REFUSAL = 'No provider that meets Nectovia’s data policy can take this right now. Nothing was charged.';
 
@@ -791,7 +793,7 @@ export class ManagedInferenceService {
     // 1. Headers.
     const h = gatewayHeaders(request.headers);
     // 2 to 4. Membership, the stored admission and the entitlement.
-    const { tenantId, state } = await this.admitted(h);
+    const { tenantId, state, member } = await this.admitted(h);
     // 5. The body.
     const bytes = await this.readBody(request, MAX_REQUEST_BYTES);
     const parsed = parseBody(bytes);
@@ -823,7 +825,7 @@ export class ManagedInferenceService {
     // 8 to 10. The job, the hold (the input bound and the output cap) and the dispatch commit.
     const ref = await this.holdAndDispatch(h, tenantId, state.grants, {
       kind: 'generation', route: entry.id, requestDigest: await digest(canonicalJson(parsed)), rate: row.rate,
-      maxMicroUsd: holdFor(row.rate, bound, maxOutputTokens), ceilingMicroUsd: controls.ceilingMicroUsd,
+      maxMicroUsd: holdFor(row.rate, bound, maxOutputTokens), ceilingMicroUsd: controls.ceilingMicroUsd, member,
     });
     // 11. The call: the allowlisted body, with the route's model, store off, streaming,
     // and the output cap the hold was priced at.
@@ -916,7 +918,7 @@ export class ManagedInferenceService {
             priceObservedAt: price.observedAt, priceValidUntil: price.validUntil } };
         const ref = await this.holdAndDispatch({ ...h, attemptId, parentAttemptId: previous?.attemptId ?? h.parentAttemptId }, admission.tenantId, admission.state.grants,
           { kind: 'generation', route: route.id, requestDigest: await digest(canonicalJson({ body: forwarded, routing: rate.routing })), rate,
-            maxMicroUsd: micro(Math.max(1, priced.estimateMicroUsd)), ceilingMicroUsd: controls.ceilingMicroUsd }, async () => {
+            maxMicroUsd: micro(Math.max(1, priced.estimateMicroUsd)), ceilingMicroUsd: controls.ceilingMicroUsd, member: admission.member }, async () => {
             // Reservation and native preparation can wait on I/O. Recheck the actual
             // authority immediately before committing this attempt's dispatch.
             if (request.signal.aborted) throw new ManagedError(499, 'cancelled', 'The request was cancelled before dispatch.');
@@ -1059,7 +1061,7 @@ export class ManagedInferenceService {
     // 1. Headers.
     const h = jobHeaders(request.headers);
     // 2 to 4. Membership, the stored admission, the Agent and included AI usage, as for a response.
-    const { tenantId, state } = await this.admitted(h);
+    const { tenantId, state, member } = await this.admitted(h);
     const routing = await this.options.commercial.transaction(async tx => ({ ...(await effectivePolicy(tx, h.scope)),
       restrictions: await tx.restrictJob(routingScopeKey(h.scope), h.jobId, sourceRestrictionHeaders(request.headers)) }));
     if (h.scope.kind === 'individual' || routing.preference || routing.effective?.routing || routing.restrictions.length)
@@ -1088,7 +1090,7 @@ export class ManagedInferenceService {
     // 8 to 10. The job, the hold and the dispatch commit, as for a response.
     const ref = await this.holdAndDispatch(h, tenantId, state.grants, {
       kind: 'advisor', route: row.id, requestDigest: await digest(canonicalJson(parsed)), rate: row.rate,
-      maxMicroUsd: holdFor(row.rate, bound, questions * EVALUATION_OUTPUT_TOKENS_PER_QUESTION), ceilingMicroUsd: controls.ceilingMicroUsd,
+      maxMicroUsd: holdFor(row.rate, bound, questions * EVALUATION_OUTPUT_TOKENS_PER_QUESTION), ceilingMicroUsd: controls.ceilingMicroUsd, member,
     });
     // 11. The call, once, and its settlement before anything is answered.
     return this.decide(ref, row, credential, forwarded, headers);
@@ -1127,7 +1129,9 @@ export class ManagedInferenceService {
     // read from the same current grants. A month's credit period outlives the grant that funded it,
     // so funding alone doesn't answer this. Refused before the job is opened or anything is held.
     if (!view.managedInference) throw new ManagedError(403, 'agent_not_included', MANAGED_USAGE_NOT_INCLUDED);
-    return { tenantId, state, view };
+    // The verified person and their role, for the member's own monthly limit. Only a business has members.
+    const asMember = h.scope.kind === 'organization' ? { personId: member.person.id, role: member.role } : null;
+    return { tenantId, state, view, member: asMember };
   }
 
   /**
@@ -1137,6 +1141,8 @@ export class ManagedInferenceService {
    */
   private async holdAndDispatch(h: JobHeaders, tenantId: string, grants: readonly (FeatureGrant | PersonFeatureGrant)[], hold: {
     kind: ChargeKind; route: string; requestDigest: string; rate: RateSnapshot; maxMicroUsd: MicroUsd; ceilingMicroUsd: MicroUsd | null;
+    /** The verified member this call is for, so the funding service can enforce their monthly limit. Null for a personal workspace. */
+    member?: { personId: string; role: MemberRole } | null;
   }, beforeDispatch?: () => Promise<void>): Promise<AttemptRef> {
     const ref: AttemptRef = { tenantId, organizationId: h.organizationId, attemptId: h.attemptId };
     await this.options.funding.openJob({
@@ -1150,7 +1156,8 @@ export class ManagedInferenceService {
       attempt = await this.options.funding.reserve({
         ...ref, rootJobId: h.jobId, parentAttemptId: h.parentAttemptId, kind: hold.kind, route: hold.route,
         requestDigest: hold.requestDigest, rateSnapshot: hold.rate, maxMicroUsd: hold.maxMicroUsd, usageClass: h.usageClass,
-        companyCeilingMicroUsd: hold.ceilingMicroUsd, ...(individualCycle ? { individualCycle } : {}),
+        companyCeilingMicroUsd: hold.ceilingMicroUsd, ...(hold.member ? { member: hold.member } : {}),
+        ...(individualCycle ? { individualCycle } : {}),
       });
     } catch (error) {
       if (!(error instanceof FundingError && error.code === 'company_ceiling')) throw error;

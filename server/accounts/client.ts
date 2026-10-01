@@ -47,6 +47,59 @@ const purchasedHoldSchema = z.strictObject({
 export type PurchasedBalanceAnswer = z.infer<typeof purchasedBalanceSchema>;
 export type PurchasedHoldAnswer = z.infer<typeof purchasedHoldSchema>;
 
+/**
+ * What the account service answers about members' monthly credit limits (migration 014): the limits an
+ * owner or admin set, a member's own usage against their own limit, who used what, and the asks for
+ * more. Money is whole micro-USD, said as credits wherever a person reads it. Read against these
+ * shapes, never trusted as they arrive.
+ */
+const microUsd = z.number().int().nonnegative();
+const memberUsageSchema = z.strictObject({ usedMicroUsd: microUsd, includedMicroUsd: microUsd, purchasedMicroUsd: microUsd, heldMicroUsd: microUsd });
+const limitModeSchema = z.enum(['limit', 'unlimited', 'inherit']);
+const limitRequestSchema = z.strictObject({
+  requestId: z.string(), personId: z.string(), kind: z.enum(['job', 'month']), jobId: z.string().nullable(),
+  state: z.enum(['pending', 'approved', 'denied']), requestedAt: z.string(), decidedAt: z.string().nullable(), decidedBy: z.string().nullable(),
+  extraMicroUsd: microUsd.nullable(), allowPurchased: z.boolean(), periodId: z.string().nullable(),
+});
+const myCreditUsageSchema = z.discriminatedUnion('state', [
+  z.strictObject({ state: z.literal('hidden'), organizationId: z.string(), reason: z.string() }),
+  z.strictObject({ state: z.literal('unavailable'), organizationId: z.string(), reason: z.string() }),
+  z.strictObject({
+    state: z.literal('ready'), organizationId: z.string(), periodId: z.string(), resetsAt: z.string(), usage: memberUsageSchema,
+    limitMicroUsd: microUsd.nullable(), raisedByMicroUsd: microUsd, requests: z.array(limitRequestSchema),
+  }),
+]);
+const creditLimitsSchema = z.strictObject({
+  organizationId: z.string(), periodId: z.string(), planId: z.string().nullable(), defaultMemberLimitMicroUsd: microUsd.nullable(),
+  roles: z.array(z.strictObject({ role: z.enum(['member', 'admin']), mode: limitModeSchema, limitMicroUsd: microUsd.nullable(), effectiveMicroUsd: microUsd.nullable(), source: z.enum(['role', 'default']) })),
+  people: z.array(z.strictObject({ personId: z.string(), mode: limitModeSchema, limitMicroUsd: microUsd.nullable() })),
+  settings: z.strictObject({ membersSeeOwnUsage: z.boolean(), adminsSeeMemberUsage: z.boolean() }),
+});
+const creditUsageReportSchema = z.union([
+  z.strictObject({ state: z.literal('unavailable'), reason: z.string() }),
+  z.strictObject({
+    organizationId: z.string(), periodId: z.string(), startsAt: z.string(), resetsAt: z.string(),
+    members: z.array(z.strictObject({
+      personId: z.string(), role: z.enum(['owner', 'admin', 'member']).nullable(), usage: memberUsageSchema, limitMicroUsd: microUsd.nullable(),
+      limitSource: z.enum(['person', 'role', 'default']), raisedByMicroUsd: microUsd,
+    })),
+  }),
+]);
+const savedLimitSchema = z.strictObject({
+  tenantId: z.string(), organizationId: z.string(), subjectKind: z.enum(['role', 'person']), subjectId: z.string(), mode: limitModeSchema,
+  limitMicroUsd: microUsd.nullable(), updatedBy: z.string(), updatedAt: z.string(),
+});
+const savedSettingsSchema = z.strictObject({
+  tenantId: z.string(), organizationId: z.string(), membersSeeOwnUsage: z.boolean(), adminsSeeMemberUsage: z.boolean(), updatedBy: z.string(), updatedAt: z.string(),
+});
+const limitRequestsSchema = z.strictObject({ organizationId: z.string(), requests: z.array(limitRequestSchema) });
+export type MemberUsageAnswer = z.infer<typeof memberUsageSchema>;
+export type LimitRequestAnswer = z.infer<typeof limitRequestSchema>;
+export type MyCreditUsageAnswer = z.infer<typeof myCreditUsageSchema>;
+export type CreditLimitsAnswer = z.infer<typeof creditLimitsSchema>;
+export type CreditUsageReportAnswer = z.infer<typeof creditUsageReportSchema>;
+export type CreditLimitSubject = { kind: 'role'; role: 'member' | 'admin' } | { kind: 'person'; personId: string };
+
 export class ControlPlaneError extends Error {
   constructor(
     message: string,
@@ -244,6 +297,50 @@ export class ControlPlaneClient {
   }
   async releasePurchasedUsage(token: string, organizationId: string, input: { holdId: string }): Promise<PurchasedHoldAnswer> {
     const parsed = purchasedHoldSchema.safeParse(await this.call<unknown>('POST', `/account/organizations/${encodeURIComponent(organizationId)}/purchased-usage/releases`, token, input));
+    return parsed.success ? parsed.data : this.unreadable();
+  }
+  // --- members' monthly credit limits ---------------------------------------------------------
+  private creditPath(organizationId: string, tail: string) {
+    return `/account/organizations/${encodeURIComponent(organizationId)}/${tail}`;
+  }
+  /** Owners and admins: the limits set, the default under them, and who sees what. */
+  async creditLimits(token: string, organizationId: string): Promise<CreditLimitsAnswer> {
+    const parsed = creditLimitsSchema.safeParse(await this.call<unknown>('GET', this.creditPath(organizationId, 'credit-limits'), token));
+    return parsed.success ? parsed.data : this.unreadable();
+  }
+  /** Set, or clear, one limit for a role or a person. The service decides who may; a figure here is the approver's, never a balance. */
+  async setCreditLimit(token: string, organizationId: string, input: { subject: CreditLimitSubject; mode: 'limit' | 'unlimited' | 'inherit'; limitMicroUsd: number | null }) {
+    const parsed = savedLimitSchema.safeParse(await this.call<unknown>('POST', this.creditPath(organizationId, 'credit-limits'), token, input));
+    return parsed.success ? parsed.data : this.unreadable();
+  }
+  /** An owner: who sees what. */
+  async setCreditSettings(token: string, organizationId: string, input: { membersSeeOwnUsage?: boolean; adminsSeeMemberUsage?: boolean }) {
+    const parsed = savedSettingsSchema.safeParse(await this.call<unknown>('POST', this.creditPath(organizationId, 'credit-limits/settings'), token, input));
+    return parsed.success ? parsed.data : this.unreadable();
+  }
+  /** The signed-in person's own usage against their own limit. Never the pool and never anyone else. */
+  async myCreditUsage(token: string, organizationId: string): Promise<MyCreditUsageAnswer> {
+    const parsed = myCreditUsageSchema.safeParse(await this.call<unknown>('GET', this.creditPath(organizationId, 'credit-usage/mine'), token));
+    return parsed.success ? parsed.data : this.unreadable();
+  }
+  /** Owners and admins: who used what this month, by member, in micro-USD. */
+  async creditUsageReport(token: string, organizationId: string): Promise<CreditUsageReportAnswer> {
+    const parsed = creditUsageReportSchema.safeParse(await this.call<unknown>('GET', this.creditPath(organizationId, 'credit-usage/members'), token));
+    return parsed.success ? parsed.data : this.unreadable();
+  }
+  /** A member asks for more, for one job or for the month. The service sizes nothing from this. */
+  async askCreditLimit(token: string, organizationId: string, input: { requestId: string; kind: 'job' | 'month'; jobId: string | null }): Promise<LimitRequestAnswer> {
+    const parsed = limitRequestSchema.safeParse(await this.call<unknown>('POST', this.creditPath(organizationId, 'credit-limit-requests'), token, input));
+    return parsed.success ? parsed.data : this.unreadable();
+  }
+  /** Owners and admins see every ask; anyone else sees their own. */
+  async creditLimitRequests(token: string, organizationId: string) {
+    const parsed = limitRequestsSchema.safeParse(await this.call<unknown>('GET', this.creditPath(organizationId, 'credit-limit-requests'), token));
+    return parsed.success ? parsed.data : this.unreadable();
+  }
+  /** An owner or admin approves or denies. An approval names the credits to add for a month, and may allow bought credits. */
+  async decideCreditLimit(token: string, organizationId: string, requestId: string, input: { approve: boolean; extraMicroUsd?: number; allowPurchased?: boolean }): Promise<LimitRequestAnswer> {
+    const parsed = limitRequestSchema.safeParse(await this.call<unknown>('POST', this.creditPath(organizationId, `credit-limit-requests/${encodeURIComponent(requestId)}/decision`), token, input));
     return parsed.success ? parsed.data : this.unreadable();
   }
   /** Keep a hold this person made: the service moves its lease forward from its own clock. */
