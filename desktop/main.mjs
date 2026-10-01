@@ -42,7 +42,8 @@ function openSetupReference(destination) {
     !allowed.has(destination) &&
     !isUpdateReleaseReference(destination) &&
     !service?.locals.allowsCodexSignInReference?.(destination) &&
-    !service?.locals.allowsPlansReference?.(destination)
+    !service?.locals.allowsPlansReference?.(destination) &&
+    !service?.locals.allowsCheckoutReference?.(destination)
   ) return;
   void shell
     .openExternal(destination)
