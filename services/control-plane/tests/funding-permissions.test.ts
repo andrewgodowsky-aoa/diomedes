@@ -377,7 +377,7 @@ describe('cp_funding (scripts/funding-permissions.sql)', () => {
     expect(describeTables(grants.tables)).toEqual([
       'credit_adjustments: SELECT',
       'credit_periods: SELECT, INSERT',
-      'credit_topup_holds: SELECT, INSERT, UPDATE (debit_micro_usd, lease_until, released_by, resolved_at, state)',
+      'credit_topup_holds: SELECT, INSERT, UPDATE (absorbed_micro_usd, debit_micro_usd, lease_until, released_by, resolved_at, state)',
       'credit_topups: SELECT',
       'funded_job_refs: SELECT, INSERT',
       'funded_jobs: SELECT, INSERT, UPDATE (cap_generation, cap_micro_usd, state)',

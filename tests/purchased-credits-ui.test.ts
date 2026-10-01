@@ -66,22 +66,23 @@ describe('the credits you bought', () => {
     expect(page).toMatch(/included monthly usage isn’t part of this/i);
   });
 
-  it('an overdrawn balance shows Available as 0 credits and keeps the true figures', () => {
+  it('a balance with nothing left to hold shows Available as 0 credits and the true figures', () => {
+    // Bought 10, 7 reserved by one piece of work and 3 used by another: a late settle can't take it lower.
     const page = text(
       render({
         state: 'ready',
         organizationId: 'org_a',
         balance: {
-          purchasedMicroUsd: c(100),
-          heldMicroUsd: c(70),
-          settledMicroUsd: c(70),
-          availableMicroUsd: -c(40),
+          purchasedMicroUsd: c(10),
+          heldMicroUsd: c(7),
+          settledMicroUsd: c(3),
+          availableMicroUsd: 0,
         },
       }),
     );
-    expect(page).toContain('Bought 100 credits');
-    expect(page).toContain('Reserved for work in flight 70 credits');
-    expect(page).toContain('Used 70 credits');
+    expect(page).toContain('Bought 10 credits');
+    expect(page).toContain('Reserved for work in flight 7 credits');
+    expect(page).toContain('Used 3 credits');
     expect(page).toContain('Available 0 credits');
     expect(page).not.toMatch(/-\d/);
   });

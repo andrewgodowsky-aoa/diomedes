@@ -156,6 +156,12 @@ export interface TopUpHoldRow {
   amountMicroUsd: MicroUsd;
   /** Zero until the hold is settled. Never more than the amount. */
   debitMicroUsd: MicroUsd;
+  /**
+   * What a late settle asked for beyond what was free to record, which Diomedes covers. Zero unless the
+   * hold was settled after it had let go. Debit plus this is what the holder asked to settle, and is never
+   * more than the amount. Internal: it appears in no answer and no screen.
+   */
+  absorbedMicroUsd: MicroUsd;
   state: 'held' | 'settled' | 'released';
   createdAt: string;
   resolvedAt: string | null;
@@ -165,17 +171,12 @@ export interface TopUpHoldRow {
   releasedBy: 'person' | 'expiry' | null;
 }
 
-/**
- * The credits a business bought outright, as the top-up ledger reads them. `availableMicroUsd` is
- * the true figure and can be below zero: a late settle records real usage even when the credits its
- * hold let go of were held again meanwhile. Nothing here clamps it; what is free to hold is decided
- * separately and is never less than nothing.
- */
+/** The credits a business bought outright, as the top-up ledger reads them. */
 export interface PurchasedBalance {
   purchasedMicroUsd: MicroUsd;
   heldMicroUsd: MicroUsd;
   settledMicroUsd: MicroUsd;
-  availableMicroUsd: number;
+  availableMicroUsd: MicroUsd;
 }
 
 export interface CreditAdjustmentRow extends AllowanceAdjustment {
@@ -327,17 +328,18 @@ function monthlyAvailable(period: CreditPeriodRow, totals: PeriodTotals): MicroU
 }
 
 /**
- * What is free to hold or reserve. A late settle can leave the bought balance overdrawn, and then
- * nothing is free: this is a decision input and never a figure shown to anyone (see balanceOf).
+ * What is free to hold or reserve right now, never less than nothing. A late settle records only
+ * what is free here (settlePurchased), so the ledger itself never goes past what was bought.
  */
 function topUpAvailable(totals: TopUpTotals): MicroUsd {
   const committed = sumMoney([totals.heldMicroUsd, totals.settledMicroUsd]);
   return committed >= totals.purchasedMicroUsd ? micro(0) : subtractMoney(totals.purchasedMicroUsd, committed);
 }
 
-/** The true balance, below zero when a late settle overdrew it. */
 function balanceOf(totals: TopUpTotals): PurchasedBalance {
-  return { ...totals, availableMicroUsd: totals.purchasedMicroUsd - sumMoney([totals.heldMicroUsd, totals.settledMicroUsd]) };
+  // An overdrawn balance can only come from an edit outside the ledger; subtractMoney refuses to
+  // present it rather than clamp it.
+  return { ...totals, availableMicroUsd: subtractMoney(totals.purchasedMicroUsd, sumMoney([totals.heldMicroUsd, totals.settledMicroUsd])) };
 }
 
 const leaseFrom = (at: string) => new Date(Date.parse(at) + PURCHASED_HOLD_LEASE_MINUTES * 60_000).toISOString();
@@ -510,7 +512,7 @@ export class FundingService {
         throw new FundingError(402, 'No bought usage is free to hold. Included usage can’t be reserved. Nothing was held.', 'no_purchased_usage');
       if (amount > available)
         throw new FundingError(402, `This needs ${formatCredits(amount)} credits and ${formatCredits(available)} bought credits are free to hold. Nothing was held.`, 'insufficient_purchased_usage');
-      const hold: TopUpHoldRow = { tenantId, organizationId, holdId, personId, requestDigest: digest, amountMicroUsd: amount, debitMicroUsd: micro(0), state: 'held', createdAt: at, resolvedAt: null, leaseUntil: leaseFrom(at), releasedBy: null };
+      const hold: TopUpHoldRow = { tenantId, organizationId, holdId, personId, requestDigest: digest, amountMicroUsd: amount, debitMicroUsd: micro(0), absorbedMicroUsd: micro(0), state: 'held', createdAt: at, resolvedAt: null, leaseUntil: leaseFrom(at), releasedBy: null };
       await tx.saveTopUpHold(hold);
       return { hold, balance: balanceOf({ ...totals, heldMicroUsd: sumMoney([totals.heldMicroUsd, amount]) }) };
     });
@@ -518,14 +520,18 @@ export class FundingService {
 
   /**
    * Settle a purchased-usage hold to a debit on the top-up balance, never on the month. The debit
-   * is at most the hold; the rest is free again. A replay returns the recorded settlement and a
-   * different debit is refused.
+   * is at most the hold; the rest is free again. A replay of the same figure returns the recorded
+   * settlement and a different one is refused.
    *
-   * Work that finishes after its hold let go on its own still has its real usage recorded: a hold
-   * released by expiry (a lapsed lease is let go before this reads it) settles to the debit as given,
-   * capped at the amount held. That can overdraw the bought balance when the freed credits were held
-   * again meanwhile; it is recorded and reported as it is, never clamped. A hold the person released
-   * is still refused.
+   * Work that finishes after its hold let go on its own is still settled, but a business can't use more
+   * bought credits than it had left. A hold released by expiry (a lapsed lease is let go before this
+   * reads it) records against the business the least of the debit asked for, the amount held, and what
+   * is free to hold at this moment under the organization lock, so the bought balance never goes below
+   * zero. Diomedes covers the rest: it is kept on the row as absorbed and goes into no answer. A settle
+   * on a live hold is recorded as asked. A hold the person released is still refused.
+   *
+   * The figure a replay is compared with is what was asked, which is the debit recorded plus what was
+   * absorbed (for a live hold that is just the debit). Storing it needs no further column.
    */
   async settlePurchased(input: { tenantId: string; organizationId: string; holdId: string; personId: string; debitMicroUsd: MicroUsd }):
     Promise<{ hold: TopUpHoldRow; balance: PurchasedBalance }> {
@@ -538,14 +544,21 @@ export class FundingService {
     return this.repository.transaction(async (tx) => {
       const hold = await this.lockedHold(tx, { tenantId, organizationId, holdId, personId }, at);
       if (hold.state === 'settled') {
-        if (hold.debitMicroUsd !== debit) throw new FundingError(409, 'That hold is already settled for a different amount.', 'settlement_conflict');
+        if (sumMoney([hold.debitMicroUsd, hold.absorbedMicroUsd]) !== debit) throw new FundingError(409, 'That hold is already settled for a different amount.', 'settlement_conflict');
         return { hold, balance: balanceOf(await tx.topUpTotals(tenantId, organizationId, at)) };
       }
       if (hold.state === 'released' && hold.releasedBy !== 'expiry')
         throw new FundingError(409, 'That hold was released, so it can’t be settled.', 'invalid_transition');
       if (debit > hold.amountMicroUsd)
         throw new FundingError(409, 'That is more than was held. Nothing was changed.', 'settlement_exceeds_hold');
-      const settled: TopUpHoldRow = { ...hold, state: 'settled', debitMicroUsd: debit, resolvedAt: at, releasedBy: null };
+      // Released by expiry, or still held with a lease that has lapsed: only what is free right now may be recorded.
+      const late = hold.state === 'released' || Date.parse(hold.leaseUntil) <= Date.parse(at);
+      const recorded = late
+        ? micro(Math.min(debit, hold.amountMicroUsd, topUpAvailable(await tx.topUpTotals(tenantId, organizationId, at))))
+        : debit;
+      const settled: TopUpHoldRow = {
+        ...hold, state: 'settled', debitMicroUsd: recorded, absorbedMicroUsd: subtractMoney(debit, recorded), resolvedAt: at, releasedBy: null,
+      };
       await tx.saveTopUpHold(settled);
       return { hold: settled, balance: balanceOf(await tx.topUpTotals(tenantId, organizationId, at)) };
     });

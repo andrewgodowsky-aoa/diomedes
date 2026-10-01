@@ -167,7 +167,7 @@ function validate(state: FauxCloudState): FauxCloudState {
 function withLeases(funding: FundingState): FundingState {
   return {
     ...funding,
-    topUpHolds: funding.topUpHolds.map((row) => ({ ...row, leaseUntil: row.leaseUntil ?? row.createdAt, releasedBy: row.releasedBy ?? (row.state === 'released' ? 'person' : null) })),
+    topUpHolds: funding.topUpHolds.map((row) => ({ ...row, absorbedMicroUsd: row.absorbedMicroUsd ?? 0, leaseUntil: row.leaseUntil ?? row.createdAt, releasedBy: row.releasedBy ?? (row.state === 'released' ? 'person' : null) })),
   };
 }
 

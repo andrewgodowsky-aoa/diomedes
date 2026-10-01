@@ -175,7 +175,7 @@ describe('purchased-usage holds on the SQL adapter', () => {
   const leaseUntil = new Date(Date.parse(at) + PURCHASED_HOLD_LEASE_MINUTES * 60_000).toISOString();
   const input = { tenantId: 't1', organizationId: 'org_1', holdId: 'hold_1', personId: 'person_1', amountMicroUsd: amount, requestDigest: 'digest_1' };
   const stored = { tenant_id: 't1', organization_id: 'org_1', hold_id: 'hold_1', person_id: 'person_1', request_digest: 'digest_1',
-    amount_micro_usd: String(amount), debit_micro_usd: '0', state: 'held', created_at: new Date(at), resolved_at: null,
+    amount_micro_usd: String(amount), debit_micro_usd: '0', absorbed_micro_usd: '0', state: 'held', created_at: new Date(at), resolved_at: null,
     lease_until: new Date(leaseUntil), released_by: null };
 
   it('takes the organization lock, reads the balance, and inserts one bound row; it reads no month, job or period', async () => {
@@ -189,7 +189,7 @@ describe('purchased-usage holds on the SQL adapter', () => {
     expect(lock).toBeGreaterThan(sql.indexOf('BEGIN'));
     expect(lock).toBeLessThan(balance);
     expect(balance).toBeLessThan(insert);
-    expect(db.calls[insert].values).toEqual(['t1', 'hold_1', 'org_1', 'person_1', 'digest_1', amount, 0, 'held', at, null, leaseUntil, null]);
+    expect(db.calls[insert].values).toEqual(['t1', 'hold_1', 'org_1', 'person_1', 'digest_1', amount, 0, 0, 'held', at, null, leaseUntil, null]);
     expect(sql.some((item) => /credit_periods|funded_jobs|funding_reservations\b.*monthly|AS settled_monthly/.test(item) && !item.includes('AS purchased'))).toBe(false);
     expect(sql.some((item) => item.includes(String(amount)))).toBe(false);
     expect(sql.filter((item) => item === 'COMMIT')).toHaveLength(1);
@@ -208,7 +208,7 @@ describe('purchased-usage holds on the SQL adapter', () => {
     const { hold } = await new FundingService(new PostgresFundingRepository(db.factory), { now }).settlePurchased({ ...input, debitMicroUsd: creditAmount(25) });
     expect(hold).toMatchObject({ state: 'settled', debitMicroUsd: creditAmount(25) });
     const write = db.calls.find((call) => call.sql.startsWith('INSERT INTO control_plane.credit_topup_holds'))!;
-    expect(write.sql).toMatch(/DO UPDATE SET debit_micro_usd=EXCLUDED\.debit_micro_usd,state=EXCLUDED\.state,resolved_at=EXCLUDED\.resolved_at,lease_until=EXCLUDED\.lease_until,released_by=EXCLUDED\.released_by$/);
+    expect(write.sql).toMatch(/DO UPDATE SET debit_micro_usd=EXCLUDED\.debit_micro_usd,absorbed_micro_usd=EXCLUDED\.absorbed_micro_usd,state=EXCLUDED\.state,resolved_at=EXCLUDED\.resolved_at,lease_until=EXCLUDED\.lease_until,released_by=EXCLUDED\.released_by$/);
     expect(db.calls.some((call) => call.sql.includes('FOR UPDATE') && call.sql.includes('credit_topup_holds'))).toBe(true);
   });
 
@@ -223,17 +223,17 @@ describe('the lease on the SQL adapter', () => {
   const amount = creditAmount(40);
   const leaseUntil = new Date(Date.parse(at) + PURCHASED_HOLD_LEASE_MINUTES * 60_000).toISOString();
   const stored = { tenant_id: 't1', organization_id: 'org_1', hold_id: 'hold_1', person_id: 'person_1', request_digest: 'digest_1',
-    amount_micro_usd: String(amount), debit_micro_usd: '0', state: 'held', created_at: new Date(at), resolved_at: null,
+    amount_micro_usd: String(amount), debit_micro_usd: '0', absorbed_micro_usd: '0', state: 'held', created_at: new Date(at), resolved_at: null,
     lease_until: new Date(leaseUntil), released_by: null };
   const input = { tenantId: 't1', organizationId: 'org_1', holdId: 'hold_1', personId: 'person_1' };
 
-  function db(hold: Record<string, unknown> | null = stored) {
+  function db(hold: Record<string, unknown> | null = stored, totals: { purchased: number; held: number; settled: number } = { purchased: creditAmount(100), held: 0, settled: 0 }) {
     const calls: { sql: string; values: unknown[] }[] = [];
     const client: SqlClient = {
       async connect() {},
       async query(sql, values = []) {
         calls.push({ sql, values });
-        if (sql.includes('AS purchased')) return { rows: [{ purchased: String(creditAmount(100)), held: '0', settled: '0' }], rowCount: 1 };
+        if (sql.includes('AS purchased')) return { rows: [{ purchased: String(totals.purchased), held: String(totals.held), settled: String(totals.settled) }], rowCount: 1 };
         if (sql.includes('FROM control_plane.credit_topup_holds WHERE tenant_id=$1 AND hold_id=$2'))
           return { rows: hold ? [hold] : [], rowCount: hold ? 1 : 0 };
         return { rows: [], rowCount: 1 };
@@ -294,7 +294,28 @@ describe('the lease on the SQL adapter', () => {
     const { hold } = await service(fake).settlePurchased({ ...input, debitMicroUsd: creditAmount(25) });
     expect(hold).toMatchObject({ state: 'settled', debitMicroUsd: creditAmount(25), releasedBy: null });
     const write = fake.calls.find((call) => call.sql.startsWith('INSERT INTO control_plane.credit_topup_holds'))!;
-    expect(write.values).toEqual(['t1', 'hold_1', 'org_1', 'person_1', 'digest_1', amount, creditAmount(25), 'settled', at, at, leaseUntil, null]);
+    expect(write.values).toEqual(['t1', 'hold_1', 'org_1', 'person_1', 'digest_1', amount, creditAmount(25), 0, 'settled', at, at, leaseUntil, null]);
+  });
+
+  it('writes only what was free as the debit of a late settle, with the rest as absorbed', async () => {
+    // Bought 10, 7 held by other work: 3 are free, so 3 is recorded and the other 37 of the 40 asked is covered.
+    const fake = db({ ...stored, state: 'released', released_by: 'expiry', resolved_at: new Date(at) }, { purchased: creditAmount(10), held: creditAmount(7), settled: 0 });
+    const { hold } = await service(fake).settlePurchased({ ...input, debitMicroUsd: amount });
+    expect(hold).toMatchObject({ state: 'settled', debitMicroUsd: creditAmount(3), absorbedMicroUsd: creditAmount(37), releasedBy: null });
+    const sql = fake.sql();
+    // The free figure is read after the lapsed leases were let go, under the same lock.
+    expect(sql.findIndex(sweepSql)).toBeLessThan(sql.findIndex((item) => item.includes('AS purchased')));
+    const write = fake.calls.find((call) => call.sql.startsWith('INSERT INTO control_plane.credit_topup_holds'))!;
+    expect(write.values).toEqual(['t1', 'hold_1', 'org_1', 'person_1', 'digest_1', amount, creditAmount(3), creditAmount(37), 'settled', at, at, leaseUntil, null]);
+  });
+
+  it('reads what was absorbed back off a settled row, and a replay compares the debit asked: recorded plus absorbed', async () => {
+    const settled = { ...stored, state: 'settled', debit_micro_usd: String(creditAmount(3)), absorbed_micro_usd: String(creditAmount(37)), resolved_at: new Date(at) };
+    const fake = db(settled);
+    const { hold } = await service(fake).settlePurchased({ ...input, debitMicroUsd: amount });
+    expect(hold).toMatchObject({ state: 'settled', debitMicroUsd: creditAmount(3), absorbedMicroUsd: creditAmount(37) });
+    expect(fake.calls.some((call) => call.sql.startsWith('INSERT'))).toBe(false);
+    await expect(service(db(settled)).settlePurchased({ ...input, debitMicroUsd: creditAmount(3) })).rejects.toMatchObject({ status: 409, code: 'settlement_conflict' });
   });
 
   it('keeps who released a hold: a person’s release is written as person', async () => {
@@ -302,7 +323,7 @@ describe('the lease on the SQL adapter', () => {
     const { hold } = await service(fake).releasePurchased(input);
     expect(hold).toMatchObject({ state: 'released', releasedBy: 'person' });
     const write = fake.calls.find((call) => call.sql.startsWith('INSERT INTO control_plane.credit_topup_holds'))!;
-    expect(write.values.slice(7)).toEqual(['released', at, at, leaseUntil, 'person']);
+    expect(write.values.slice(8)).toEqual(['released', at, at, leaseUntil, 'person']);
   });
 
   it('reads a stored hold with a lease, and refuses one whose releaser is not a known value', async () => {
@@ -316,7 +337,7 @@ describe('topUpTotals: the SQL adapter and the faux backend agree on a lapsed ro
   const o = 'org_1';
   const hold = (holdId: string, state: 'held' | 'settled' | 'released', leaseMinutes: number, extra: Record<string, unknown> = {}) => ({
     tenantId: t, organizationId: o, holdId, personId: 'person_1', requestDigest: `digest_${holdId}`, amountMicroUsd: creditAmount(10),
-    debitMicroUsd: micro(0), state, createdAt: at, resolvedAt: state === 'held' ? null : at,
+    debitMicroUsd: micro(0), absorbedMicroUsd: micro(0), state, createdAt: at, resolvedAt: state === 'held' ? null : at,
     leaseUntil: new Date(Date.parse(at) + leaseMinutes * 60_000).toISOString(), releasedBy: state === 'released' ? 'person' : null, ...extra,
   }) as TopUpHoldRow;
 

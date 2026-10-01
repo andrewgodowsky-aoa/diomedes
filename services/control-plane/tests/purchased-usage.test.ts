@@ -483,39 +483,102 @@ describe('a lapsed hold lets go on its own', () => {
     expect((await release({ holdId: 'hold_1' })).status).toBe(200);
   });
 
-  it('records an overdraw instead of refusing the settlement, and reports the true figure', async () => {
-    const { hold, settle, balance, minutes } = await fixture({ purchased: 100 });
-    await hold(ask({ holdId: 'hold_a', amountMicroUsd: creditAmount(70) }));
-    minutes(PURCHASED_HOLD_LEASE_MINUTES);
+  // Andrew, 2026-10-01: a business can't use more bought credits than it had left. A late settle records only
+  // what is free right now; Diomedes covers the rest and keeps that figure to itself.
+  const lateOverlap = async () => {
+    const f = await fixture({ purchased: 10 });
+    await f.hold(ask({ holdId: 'hold_a', amountMicroUsd: creditAmount(7) }));
+    f.minutes(PURCHASED_HOLD_LEASE_MINUTES);
     // The freed credits are held again by someone else's work.
-    expect((await hold(ask({ holdId: 'hold_b', amountMicroUsd: creditAmount(70), requestDigest: 'digest-two' }))).status).toBe(200);
-    const late = await settle({ holdId: 'hold_a', debitMicroUsd: creditAmount(70) });
+    expect((await f.hold(ask({ holdId: 'hold_b', amountMicroUsd: creditAmount(7), requestDigest: 'digest-two' }))).status).toBe(200);
+    const late = await f.settle({ holdId: 'hold_a', debitMicroUsd: creditAmount(7) });
+    return { ...f, late };
+  };
+
+  it('records only what is free when a late settle arrives, covers the rest, and never goes below zero', async () => {
+    const { late, balance, repository } = await lateOverlap();
     expect(late.status).toBe(200);
     const body = await late.json();
-    expect(body.state).toBe('settled');
-    expect(body.balance).toEqual({ purchasedMicroUsd: creditAmount(100), heldMicroUsd: creditAmount(70), settledMicroUsd: creditAmount(70), availableMicroUsd: -creditAmount(40) });
+    expect(body).toMatchObject({ holdId: 'hold_a', state: 'settled', amountMicroUsd: creditAmount(7), debitMicroUsd: creditAmount(3) });
+    expect(body.balance).toEqual({ purchasedMicroUsd: creditAmount(10), heldMicroUsd: creditAmount(7), settledMicroUsd: creditAmount(3), availableMicroUsd: 0 });
+    expect(rowOf(repository, 'hold_a')).toMatchObject({ state: 'settled', debitMicroUsd: creditAmount(3), absorbedMicroUsd: creditAmount(4), releasedBy: null });
+    expect(rowOf(repository, 'hold_b')).toMatchObject({ state: 'held', debitMicroUsd: 0, absorbedMicroUsd: 0 });
     const read = await (await balance()).json();
-    expect(read.availableMicroUsd).toBe(-creditAmount(40));
+    expect(read.availableMicroUsd).toBe(0);
+    expect(read.availableMicroUsd).toBeGreaterThanOrEqual(0);
   });
 
-  it('still answers the usage read for an overdrawn business, with the top-up line at zero', async () => {
-    const { hold, settle, minutes, handler, organization } = await fixture({ purchased: 100 });
-    await hold(ask({ holdId: 'hold_a', amountMicroUsd: creditAmount(70) }));
-    minutes(PURCHASED_HOLD_LEASE_MINUTES);
-    await hold(ask({ holdId: 'hold_b', amountMicroUsd: creditAmount(70), requestDigest: 'digest-two' }));
-    await settle({ holdId: 'hold_a', debitMicroUsd: creditAmount(70) });
+  it('keeps what Diomedes covered out of every answer', async () => {
+    const { late, balance, release } = await lateOverlap();
+    for (const answer of [await late.text(), await (await balance()).text(), await (await release({ holdId: 'hold_b' })).text()])
+      expect(answer).not.toMatch(/absorb|covered/i);
+  });
+
+  it('answers the usage read for a business whose late settle was capped, with the top-up line at zero', async () => {
+    const { handler, organization } = await lateOverlap();
     const usage = await handler(request(`/account/organizations/${organization.id}/usage`), validEnv);
     expect(usage.status).toBe(200);
     const body = await usage.json();
-    expect(body.projection.topUp).toMatchObject({ availableMicroUsd: 0, heldMicroUsd: creditAmount(70) });
+    expect(body.projection.topUp).toMatchObject({ availableMicroUsd: 0, heldMicroUsd: creditAmount(7) });
   });
 
-  it('holds nothing more while overdrawn, with an ordinary refusal and not an error', async () => {
-    const { hold, settle, minutes } = await fixture({ purchased: 100 });
-    await hold(ask({ holdId: 'hold_a', amountMicroUsd: creditAmount(70) }));
+  it('replays a capped late settlement on the debit as asked, and refuses a different one', async () => {
+    const { settle, late, repository } = await lateOverlap();
+    const first = await late.json();
+    const again = await settle({ holdId: 'hold_a', debitMicroUsd: creditAmount(7) });
+    expect(again.status).toBe(200);
+    expect(await again.json()).toEqual(first);
+    // Nothing moved on the replay.
+    expect(rowOf(repository, 'hold_a')).toMatchObject({ debitMicroUsd: creditAmount(3), absorbedMicroUsd: creditAmount(4) });
+    // What was recorded is not what was asked, so asking for it is a different settlement.
+    const recorded = await settle({ holdId: 'hold_a', debitMicroUsd: creditAmount(3) });
+    expect(recorded.status).toBe(409);
+    expect((await recorded.json()).code).toBe('settlement_conflict');
+    const more = await settle({ holdId: 'hold_a', debitMicroUsd: creditAmount(8) });
+    expect(more.status).toBe(409);
+  });
+
+  it('refuses a late settle above the hold, even when the balance has nothing free', async () => {
+    const { settle, repository } = await lateOverlap();
+    const over = await settle({ holdId: 'hold_b', debitMicroUsd: creditAmount(8) });
+    expect(over.status).toBe(409);
+    expect((await over.json()).code).toBe('settlement_exceeds_hold');
+    expect(rowOf(repository, 'hold_b')).toMatchObject({ state: 'held', absorbedMicroUsd: 0 });
+  });
+
+  it('records nothing against the business when every bought credit is held again, and covers it all', async () => {
+    const { hold, settle, balance, repository, minutes } = await fixture({ purchased: 10 });
+    await hold(ask({ holdId: 'hold_a', amountMicroUsd: creditAmount(7) }));
     minutes(PURCHASED_HOLD_LEASE_MINUTES);
-    await hold(ask({ holdId: 'hold_b', amountMicroUsd: creditAmount(70), requestDigest: 'digest-two' }));
-    await settle({ holdId: 'hold_a', debitMicroUsd: creditAmount(70) });
+    expect((await hold(ask({ holdId: 'hold_b', amountMicroUsd: creditAmount(10), requestDigest: 'digest-two' }))).status).toBe(200);
+    const late = await settle({ holdId: 'hold_a', debitMicroUsd: creditAmount(7) });
+    expect(late.status).toBe(200);
+    expect(await late.json()).toMatchObject({ state: 'settled', debitMicroUsd: 0, balance: { heldMicroUsd: creditAmount(10), settledMicroUsd: 0, availableMicroUsd: 0 } });
+    expect(rowOf(repository, 'hold_a')).toMatchObject({ state: 'settled', debitMicroUsd: 0, absorbedMicroUsd: creditAmount(7) });
+    expect((await (await balance()).json()).availableMicroUsd).toBe(0);
+  });
+
+  it('records a late settle in full, and absorbs nothing, when enough is free', async () => {
+    const { hold, settle, repository, minutes } = await fixture({ purchased: 10 });
+    await hold(ask({ holdId: 'hold_a', amountMicroUsd: creditAmount(7) }));
+    minutes(PURCHASED_HOLD_LEASE_MINUTES);
+    await hold(ask({ holdId: 'hold_b', amountMicroUsd: creditAmount(2), requestDigest: 'digest-two' }));
+    expect((await settle({ holdId: 'hold_a', debitMicroUsd: creditAmount(7) })).status).toBe(200);
+    expect(rowOf(repository, 'hold_a')).toMatchObject({ state: 'settled', debitMicroUsd: creditAmount(7), absorbedMicroUsd: 0 });
+  });
+
+  it('settles a live hold as asked, with nothing absorbed, even when the rest is held elsewhere', async () => {
+    const { hold, settle, balance, repository } = await fixture({ purchased: 10 });
+    await hold(ask({ holdId: 'hold_a', amountMicroUsd: creditAmount(7) }));
+    await hold(ask({ holdId: 'hold_b', amountMicroUsd: creditAmount(3), requestDigest: 'digest-two' }));
+    const answer = await settle({ holdId: 'hold_a', debitMicroUsd: creditAmount(7) });
+    expect(answer.status).toBe(200);
+    expect(rowOf(repository, 'hold_a')).toMatchObject({ state: 'settled', debitMicroUsd: creditAmount(7), absorbedMicroUsd: 0 });
+    expect(await (await balance()).json()).toMatchObject({ heldMicroUsd: creditAmount(3), settledMicroUsd: creditAmount(7), availableMicroUsd: 0 });
+  });
+
+  it('holds nothing more once every bought credit is held or used, with an ordinary refusal and not an error', async () => {
+    const { hold } = await lateOverlap();
     const another = await hold(ask({ holdId: 'hold_c', amountMicroUsd: creditAmount(1), requestDigest: 'digest-three' }));
     expect(another.status).toBe(402);
     const body = await another.json();
