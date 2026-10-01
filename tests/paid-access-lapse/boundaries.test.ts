@@ -87,6 +87,26 @@ describe('independent free harness and paid Agent boundaries at 05ef1b0', () => 
     expect((await f.thread(binding)).turns.some((turn) => turn.text === 'Agent answer')).toBe(true);
   });
 
+  // e730317 routed the gate through AccountRoutingSession (07dc5ba), whose admit() re-reads access first: an unreachable service now answers 503 unreachable, not 403 AGENT_NOT_INCLUDED.
+  test('cached paid access cannot start new Agent work while the account service is offline', async () => {
+    const account = await f.signIn(DEMO_ACCOUNTS.owner.email);
+    const binding = await f.home();
+    await f.ownEngine(binding);
+    await f.aws(binding);
+    await f.api(`/workspace/organizations/${account.workspaces[0]!.organization.id}/output`, 'POST', { projectId: binding.projectId });
+    f.offline(true);
+    const response = await f.say(binding, 'offline-new-job');
+    expect(response.status, await response.clone().text()).toBe(503);
+    const body = await response.json() as { error: string; code: string };
+    expect(body.code).toBe('unreachable');
+    // The true reason: the service could not be reached. It is not a refusal of the plan.
+    expect(body.error).toContain('could not be reached');
+    expect(body.error).not.toMatch(/not included|free version|business/i);
+    expect(f.calls.model).toBe(0);
+    expect(f.calls.direct).toBe(0);
+    expect(f.calls.account.filter((call) => call.startsWith('POST') && /([/]admit|agent-admissions)$/.test(call))).toEqual([]);
+  });
+
   test('the free direct-engine session still works when the account service goes offline', async () => {
     await f.signIn(DEMO_ACCOUNTS.free.email);
     const binding = await f.home();
