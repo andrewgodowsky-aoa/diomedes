@@ -747,6 +747,14 @@ export const MONTHLY_CREDIT_GRANTS: readonly MonthlyCreditGrant[] = Object.freez
     note: 'Self-managed workspace and workflows.',
   }),
   Object.freeze({
+    planId: 'individual',
+    label: 'Individual',
+    monthlyCredits: 1_000,
+    status: 'published',
+    sellable: false,
+    note: 'One named person’s Personal work only; never a Business allowance.',
+  }),
+  Object.freeze({
     planId: 'managed-small',
     label: 'Managed Small',
     monthlyCredits: 3_000,

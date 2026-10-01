@@ -45,6 +45,7 @@ import {
   catalogPlan,
   catalogPlanLabel,
   isPersonPlan,
+  individualIncludesMonthlyCredits,
   planCatalog,
   type IndividualCoverage,
   type CoveredAccessView,
@@ -406,18 +407,28 @@ function personSummary(grant: PersonFeatureGrant, at: number): PersonGrantSummar
 
 /** A person's own entitlement from their Individual grants, in the person's words rather than a business's. */
 export function personEntitlement(grants: readonly PersonFeatureGrant[], revision: number, at: string): EntitlementView {
-  const view = entitlementFromGrants(grants, revision, at);
+  // Project the approved offer over the original phase-2a template. Never mutate historical grants,
+  // or broaden a limited feature override merely because it names the Individual plan.
+  const view = entitlementFromGrants(grants.map(grant => individualIncludesMonthlyCredits(grant)
+    ? { ...grant, features: [...new Set<AccessFeature>([...grant.features, 'managed-inference'])] } : grant), revision, at);
   const planLabel = view.plan === 'none' ? null : view.plan === 'custom' ? 'Custom access' : catalogPlanLabel(view.plan);
   const reason = view.state === 'active' ? '' : view.state === 'expired' ? INDIVIDUAL_EXPIRED_REASON
     : view.state === 'revoked' ? INDIVIDUAL_REVOKED_REASON : INDIVIDUAL_NONE_REASON;
   return { ...view, planLabel, reason };
 }
 
-/** Personal access belongs to the person; managed usage additionally needs its own funded agreement. */
+/** Personal access belongs to the person. A full plan or an explicit usage agreement can fund it. */
 export async function individualEntitlement(tx: CommercialTransaction, accountId: string, personId: string, at: string): Promise<EntitlementView> {
+  const account = await tx.individual(accountId);
+  if (!account || account.personId !== personId || account.tenantId !== personId)
+    throw new AccountError(403, 'This Individual account is unavailable to this person.', 'scope_forbidden');
   const person = personEntitlement(await tx.personGrants(personId), await tx.personAccessRevision(personId), at);
   const usage = entitlementFromGrants(await tx.grants(accountId), await tx.accessRevision(accountId), at);
-  const managedInference = person.state === 'active' && person.agent && usage.state === 'active' && usage.managedInference;
+  // Operations can inspect disabled accounts and their history; they grant no current authority.
+  if (account.state !== 'active') return { ...person, state: 'revoked', agent: false, managedInference: false,
+    features: [], revision: person.revision + usage.revision, reason: 'This Individual account is disabled.' };
+  const managedInference = person.state === 'active' && person.agent &&
+    (person.managedInference || (usage.state === 'active' && usage.managedInference));
   return { ...person, revision: person.revision + usage.revision, managedInference,
     features: [...person.features.filter(feature => feature !== 'managed-inference'), ...(managedInference ? ['managed-inference'] : [])] };
 }
@@ -960,7 +971,7 @@ export class CommercialService {
     };
   }
 
-  /** Issue Personal Agent access. Managed usage has a separate billing-scope agreement. */
+  /** Issue Personal access. Its recurring allowance is allocated by the funding writer when needed. */
   async issuePersonGrant(token: string, personId: string, input: z.infer<typeof issuePersonGrantInput>) {
     const parsed = issuePersonGrantInput.safeParse(input);
     if (!parsed.success) throw new AccountError(422, 'A grant needs a plan, a source, a reference and dates.');
@@ -969,9 +980,8 @@ export class CommercialService {
     if (!plan) throw new AccountError(422, 'That plan is not in the catalog.');
     if (plan.scope !== 'person') throw new AccountError(422, BUSINESS_PLAN_NOT_FOR_PERSON);
     const features = [...new Set(parsed.data.features ?? plan.features)] as AccessFeature[];
-    // Person-plan access and the separately funded managed-usage agreement are independent.
-    if (features.includes('managed-inference'))
-      throw new AccountError(422, "Included AI usage isn't part of the Individual plan yet, so it can't be issued with it.");
+    if (features.includes('managed-inference') && !features.includes(AGENT_FEATURE))
+      throw new AccountError(422, 'Individual included usage requires Personal Agent access in the same grant.');
     if (!parsed.data.reference) throw new AccountError(422, 'Name the invoice, agreement or ticket this grant answers to.');
     const now = this.now();
     const validFrom = parsed.data.validFrom ?? new Date(now).toISOString();

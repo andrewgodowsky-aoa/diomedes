@@ -59,9 +59,9 @@ const admitPersonal = async (who: DemoAccount, routeKind = 'byo') =>
 beforeEach(async () => { await setup(); });
 
 describe('the Individual plan in the catalog', () => {
-  it('is a person-scoped plan with the eligibility sentence, the Agent and no included usage or price', () => {
+  it('is a person-scoped plan with the eligibility sentence, the Agent and included usage without a dollar price', () => {
     expect(INDIVIDUAL_PLAN).toMatchObject({ id: 'individual', label: 'Individual', scope: 'person', termDays: 31, customerVisible: true });
-    expect(INDIVIDUAL_PLAN.features).toEqual(['nectovia-agent', 'maintained-profiles', 'owner-rules', 'phone-relay']);
+    expect(INDIVIDUAL_PLAN.features).toEqual(['nectovia-agent', 'maintained-profiles', 'owner-rules', 'phone-relay', 'managed-inference']);
     expect(INDIVIDUAL_PLAN.note).toContain(INDIVIDUAL_ELIGIBILITY_SENTENCE);
     expect(INDIVIDUAL_ELIGIBILITY_SENTENCE).toBe('Individual covers Personal work only. Every Business workspace needs its own Business plan, including a sole proprietorship.');
     expect(INDIVIDUAL_PLAN.note).not.toMatch(/\$|\d+\s*(a|per)\s*month/);
@@ -100,7 +100,7 @@ describe('issuing and withdrawing an Individual grant', () => {
     expect(issued.status).toBe(201);
     const personId = await personOf('free');
     expect(issued.body.grant).toMatchObject({ personId, tenantId: personId, planId: 'individual', state: 'active',
-      features: ['nectovia-agent', 'maintained-profiles', 'owner-rules', 'phone-relay'] });
+      features: ['nectovia-agent', 'maintained-profiles', 'owner-rules', 'phone-relay', 'managed-inference'] });
     expect(Date.parse(issued.body.grant.validUntil) - clock).toBe(31 * 86_400_000);
 
     const toBusiness = await call('POST', `/ops/customers/${orgs.harbor}/grants`, await token('staffBilling'),
@@ -109,7 +109,7 @@ describe('issuing and withdrawing an Individual grant', () => {
 
     const businessToPerson = await issue('free', { planId: 'business' });
     expect(businessToPerson).toMatchObject({ status: 422, body: { error: BUSINESS_PLAN_NOT_FOR_PERSON } });
-    expect((await issue('free', { features: ['nectovia-agent', 'managed-inference'] })).status).toBe(422);
+    expect((await issue('free', { features: ['managed-inference'] })).status).toBe(422);
     expect((await issue('free', { reference: '' })).status).toBe(422);
 
     const detail = await call('GET', `/ops/people/${personId}`, await token('staffSupport'));

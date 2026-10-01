@@ -23,6 +23,7 @@
  */
 import { EVALUATION_OUTPUT_TOKENS_PER_QUESTION, checkEvaluationRequest } from '../../../shared/evaluation-wire.js';
 import { FEATURE_LABELS } from '../../../shared/access.js';
+import { individualIncludesMonthlyCredits } from '../../../shared/individual-plan.js';
 import { inputTokenBound } from '../../../shared/token-bound.js';
 import { normalizeUsage } from '../../../shared/usage-contract.js';
 import {
@@ -49,6 +50,7 @@ import {
   grantState,
   type AdmissionRecord,
   type PersonalAdmissionRecord,
+  type PersonFeatureGrant,
   type CommercialRepository,
   type FeatureGrant,
   type RouteEntry,
@@ -1108,7 +1110,7 @@ export class ManagedInferenceService {
     const at = this.at();
     const state = await this.options.commercial.transaction(async (tx) => ({
       admission: h.scope.kind === 'individual' ? await tx.personalAdmission(tenantId, h.admissionId) : await tx.admission(tenantId, h.admissionId),
-      grants: await tx.grants(h.organizationId),
+      grants: h.scope.kind === 'individual' ? await tx.personGrants(member.person.id) : await tx.grants(h.organizationId),
       accessRevision: await tx.accessRevision(h.organizationId),
       individual: h.scope.kind === 'individual' ? await individualEntitlement(tx, h.scope.id, member.person.id, at) : null,
       policy: await tx.policy(),
@@ -1131,7 +1133,7 @@ export class ManagedInferenceService {
    * and the dispatch commit. A refusal here sent nothing. On return the attempt
    * is marked dispatched by this caller alone, and only this caller may send it.
    */
-  private async holdAndDispatch(h: JobHeaders, tenantId: string, grants: readonly FeatureGrant[], hold: {
+  private async holdAndDispatch(h: JobHeaders, tenantId: string, grants: readonly (FeatureGrant | PersonFeatureGrant)[], hold: {
     kind: ChargeKind; route: string; requestDigest: string; rate: RateSnapshot; maxMicroUsd: MicroUsd; ceilingMicroUsd: MicroUsd | null;
   }, beforeDispatch?: () => Promise<void>): Promise<AttemptRef> {
     const ref: AttemptRef = { tenantId, organizationId: h.organizationId, attemptId: h.attemptId };
@@ -1139,7 +1141,7 @@ export class ManagedInferenceService {
       tenantId, organizationId: h.organizationId, rootJobId: h.jobId, runRef: h.jobId, parentRunRef: null,
       tier: h.tier, capMicroUsd: approvedJobCap(h.tier),
     });
-    await this.ensurePeriod(tenantId, h.organizationId, grants);
+    await this.ensurePeriod(tenantId, h.scope, grants);
     // The company ceiling is checked inside the reserving transaction, so a refusal holds nothing.
     let attempt: FundedAttempt;
     try {
@@ -1339,12 +1341,16 @@ export class ManagedInferenceService {
    * last; allocatePeriod is idempotent for it. A revoked or expired grant never
    * gets here: step 4 has already refused.
    */
-  private async ensurePeriod(tenantId: string, organizationId: string, grants: readonly FeatureGrant[]) {
+  private async ensurePeriod(tenantId: string, scope: AccountScope, grants: readonly (FeatureGrant | PersonFeatureGrant)[]) {
+    const organizationId = scope.id; // The historical ledger column holds the billing account, never a selected Business.
     const periodId = periodIdFor(this.at());
     if (await this.options.fundingReads.transaction((tx) => tx.period(tenantId, organizationId, periodId))) return;
     const when = this.now();
     const source = grants
-      .filter((grant) => grantState(grant, when) === 'active' && grant.features.includes('managed-inference') &&
+      .filter((grant) => grantState(grant, when) === 'active' &&
+        (scope.kind === 'individual'
+          ? 'personId' in grant && grant.personId === tenantId && grant.tenantId === tenantId && individualIncludesMonthlyCredits(grant)
+          : 'organizationId' in grant && grant.organizationId === scope.id && grant.tenantId === tenantId && grant.features.includes('managed-inference')) &&
         grant.planId !== null && publishedMonthlyGrant(grant.planId) !== null)
       .sort((a, b) => Date.parse(b.validUntil) - Date.parse(a.validUntil) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))[0];
     if (!source?.planId) return;
