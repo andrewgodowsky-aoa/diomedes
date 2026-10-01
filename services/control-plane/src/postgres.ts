@@ -188,7 +188,9 @@ export class PostgresRepository implements AccountRepository {
       const customer = (await client.query('SELECT organization_id,tenant_id FROM control_plane.billing_customers WHERE provider=$1 AND customer_id=$2 FOR KEY SHARE', [event.provider, event.customerId])).rows[0];
       if (!customer) throw new AccountError(409, 'The billing customer is not mapped to a tenant.');
       const row = z.object({ organization_id: z.string(), tenant_id: z.string() }).parse(customer);
-      const added = await client.query('INSERT INTO control_plane.webhook_inbox(provider,event_id,customer_id,organization_id,tenant_id,payload_hash,event_type,payload) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb) ON CONFLICT (provider,event_id) DO NOTHING RETURNING event_id',
+      // No conflict target: webhook_inbox has two unique keys, and naming only one
+      // leaves the other to raise 23505 when an identical insert races this one.
+      const added = await client.query('INSERT INTO control_plane.webhook_inbox(provider,event_id,customer_id,organization_id,tenant_id,payload_hash,event_type,payload) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb) ON CONFLICT DO NOTHING RETURNING event_id',
         [event.provider, event.eventId, event.customerId, row.organization_id, row.tenant_id, event.payloadHash, event.eventType, payload]);
       if (added.rowCount !== 1) {
         const old = (await client.query('SELECT customer_id,tenant_id,payload_hash FROM control_plane.webhook_inbox WHERE provider=$1 AND event_id=$2', [event.provider, event.eventId])).rows[0];
