@@ -14,6 +14,8 @@ import { isUsageClass, micro, type AttemptSettlement, type FundedAttempt, type M
 import { isNormalizedUsage, type NormalizedUsage } from '../../../shared/usage-contract.js';
 import type { CapRequestRow, CreditAdjustmentRow, CreditPeriodRow, FundedJobRow, FundingRepository, FundingTransaction,
   JobRefRow, TopUpHoldRow, TopUpRow } from './funding.js';
+import type { AllotmentSettingsRow, AttemptPersonRow, LimitRequestRow, MemberLimitRow, MemberUsageRow } from './member-limits.js';
+import type { LimitMode } from '../../../shared/credit-allotments.js';
 import { inTransaction, type ClientFactory, type SqlClient } from './postgres.js';
 
 type Row = Record<string, unknown>;
@@ -78,6 +80,19 @@ function settlementFrom(row: Row): AttemptSettlement {
     topUpDebitMicroUsd: money(row.topup_debit_micro_usd), usage: normalized(row.usage),
   };
 }
+
+const moneyOrNull = (value: unknown) => (value === null || value === undefined ? null : money(value));
+const limitFrom = (row: Row): MemberLimitRow => ({
+  tenantId: text(row.tenant_id), organizationId: text(row.organization_id), subjectKind: text(row.subject_kind) as MemberLimitRow['subjectKind'],
+  subjectId: text(row.subject_id), mode: text(row.mode) as LimitMode, limitMicroUsd: moneyOrNull(row.limit_micro_usd),
+  updatedBy: text(row.updated_by), updatedAt: iso(row.updated_at),
+});
+const limitRequestFrom = (row: Row): LimitRequestRow => ({
+  tenantId: text(row.tenant_id), organizationId: text(row.organization_id), requestId: text(row.request_id), scopeKind: 'person', personId: text(row.person_id),
+  requesterRole: text(row.requester_role) as LimitRequestRow['requesterRole'], kind: text(row.kind) as LimitRequestRow['kind'], rootJobId: textOrNull(row.root_job_id),
+  state: text(row.state) as LimitRequestRow['state'], requestedAt: iso(row.requested_at), decidedBy: textOrNull(row.decided_by), decidedAt: isoOrNull(row.decided_at),
+  extraMicroUsd: moneyOrNull(row.extra_micro_usd), allowPurchased: row.allow_purchased === true, periodId: textOrNull(row.period_id),
+});
 
 export class PostgresFundingTransaction implements FundingTransaction {
   constructor(private readonly client: SqlClient) {}
@@ -208,6 +223,78 @@ export class PostgresFundingTransaction implements FundingTransaction {
       [row.tenantId, row.requestId, row.organizationId, row.rootJobId, row.requestedCapMicroUsd, row.requestedBy, row.state, row.requestedAt, row.decidedBy, row.decidedAt]);
   }
 
+  async memberLimits(tenantId: string, organizationId: string): Promise<MemberLimitRow[]> {
+    const result = await this.client.query('SELECT * FROM control_plane.credit_member_limits WHERE tenant_id=$1 AND organization_id=$2 ORDER BY subject_kind,subject_id', [tenantId, organizationId]);
+    return result.rows.map(limitFrom);
+  }
+  async saveMemberLimit(row: MemberLimitRow) {
+    await this.client.query(`INSERT INTO control_plane.credit_member_limits(tenant_id,organization_id,subject_kind,subject_id,mode,limit_micro_usd,updated_by,updated_at)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+      ON CONFLICT (tenant_id,organization_id,subject_kind,subject_id) DO UPDATE SET mode=EXCLUDED.mode,limit_micro_usd=EXCLUDED.limit_micro_usd,updated_by=EXCLUDED.updated_by,updated_at=EXCLUDED.updated_at`,
+      [row.tenantId, row.organizationId, row.subjectKind, row.subjectId, row.mode, row.limitMicroUsd, row.updatedBy, row.updatedAt]);
+  }
+  async allotmentSettings(tenantId: string, organizationId: string): Promise<AllotmentSettingsRow | undefined> {
+    const row = await this.one('SELECT * FROM control_plane.credit_allotment_settings WHERE tenant_id=$1 AND organization_id=$2', [tenantId, organizationId]);
+    return row && {
+      tenantId: text(row.tenant_id), organizationId: text(row.organization_id), membersSeeOwnUsage: row.members_see_own_usage === true,
+      adminsSeeMemberUsage: row.admins_see_member_usage === true, updatedBy: text(row.updated_by), updatedAt: iso(row.updated_at),
+    };
+  }
+  async saveAllotmentSettings(row: AllotmentSettingsRow) {
+    await this.client.query(`INSERT INTO control_plane.credit_allotment_settings(tenant_id,organization_id,members_see_own_usage,admins_see_member_usage,updated_by,updated_at)
+      VALUES ($1,$2,$3,$4,$5,$6)
+      ON CONFLICT (tenant_id,organization_id) DO UPDATE SET members_see_own_usage=EXCLUDED.members_see_own_usage,admins_see_member_usage=EXCLUDED.admins_see_member_usage,updated_by=EXCLUDED.updated_by,updated_at=EXCLUDED.updated_at`,
+      [row.tenantId, row.organizationId, row.membersSeeOwnUsage, row.adminsSeeMemberUsage, row.updatedBy, row.updatedAt]);
+  }
+  async limitRequest(tenantId: string, requestId: string): Promise<LimitRequestRow | undefined> {
+    const row = await this.one('SELECT * FROM control_plane.credit_limit_requests WHERE tenant_id=$1 AND request_id=$2', [tenantId, requestId]);
+    return row && limitRequestFrom(row);
+  }
+  async saveLimitRequest(row: LimitRequestRow) {
+    await this.client.query(`INSERT INTO control_plane.credit_limit_requests(tenant_id,request_id,organization_id,scope_kind,person_id,requester_role,kind,root_job_id,state,requested_at,decided_by,decided_at,extra_micro_usd,allow_purchased,period_id)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+      ON CONFLICT (tenant_id,request_id) DO UPDATE SET state=EXCLUDED.state,decided_by=EXCLUDED.decided_by,decided_at=EXCLUDED.decided_at,extra_micro_usd=EXCLUDED.extra_micro_usd,allow_purchased=EXCLUDED.allow_purchased,period_id=EXCLUDED.period_id`,
+      [row.tenantId, row.requestId, row.organizationId, row.scopeKind, row.personId, row.requesterRole, row.kind, row.rootJobId, row.state, row.requestedAt,
+        row.decidedBy, row.decidedAt, row.extraMicroUsd, row.allowPurchased, row.periodId]);
+  }
+  async limitRequests(tenantId: string, organizationId: string, filter: { personId?: string; state?: LimitRequestRow['state'] }): Promise<LimitRequestRow[]> {
+    const result = await this.client.query(`SELECT * FROM control_plane.credit_limit_requests WHERE tenant_id=$1 AND organization_id=$2
+      AND ($3::text IS NULL OR person_id=$3::text) AND ($4::text IS NULL OR state=$4::text) ORDER BY requested_at,request_id`,
+      [tenantId, organizationId, filter.personId ?? null, filter.state ?? null]);
+    return result.rows.map(limitRequestFrom);
+  }
+  async approvedAllowances(tenantId: string, organizationId: string, personId: string, periodId: string, rootJobId: string): Promise<LimitRequestRow[]> {
+    const result = await this.client.query(`SELECT * FROM control_plane.credit_limit_requests WHERE tenant_id=$1 AND organization_id=$2 AND scope_kind='person' AND person_id=$3 AND state='approved'
+      AND ((kind='month' AND period_id=$4) OR (kind='job' AND root_job_id=$5))`, [tenantId, organizationId, personId, periodId, rootJobId]);
+    return result.rows.map(limitRequestFrom);
+  }
+  async saveAttemptPerson(row: AttemptPersonRow) {
+    await this.client.query('INSERT INTO control_plane.credit_attempt_people(tenant_id,reservation_id,organization_id,person_id) VALUES ($1,$2,$3,$4)',
+      [row.tenantId, row.attemptId, row.organizationId, row.personId]);
+  }
+  async memberUsage(tenantId: string, organizationId: string, period: CreditPeriodRow, personId: string | null): Promise<MemberUsageRow[]> {
+    const result = await this.client.query(`SELECT person_id,
+        COALESCE(SUM(included),0) AS included, COALESCE(SUM(purchased),0) AS purchased, COALESCE(SUM(held),0) AS held
+      FROM (
+        SELECT p.person_id, r.monthly_hold_micro_usd AS included, r.topup_hold_micro_usd AS purchased, r.reserved_micro_usd AS held
+          FROM control_plane.funding_reservations r
+          JOIN control_plane.credit_attempt_people p ON p.tenant_id=r.tenant_id AND p.reservation_id=r.reservation_id
+          WHERE r.tenant_id=$1 AND r.organization_id=$2 AND r.period_id=$3 AND r.state IN ('pending','uncertain')
+        UNION ALL
+        SELECT p.person_id, s.monthly_debit_micro_usd, s.topup_debit_micro_usd, 0
+          FROM control_plane.funding_settlements s
+          JOIN control_plane.credit_attempt_people p ON p.tenant_id=s.tenant_id AND p.reservation_id=s.reservation_id
+          WHERE s.tenant_id=$1 AND s.organization_id=$2 AND s.period_id=$3
+        UNION ALL
+        SELECT h.person_id, 0, h.amount_micro_usd, h.amount_micro_usd
+          FROM control_plane.credit_topup_holds h WHERE h.tenant_id=$1 AND h.organization_id=$2 AND h.state='held'
+        UNION ALL
+        SELECT h.person_id, 0, h.debit_micro_usd, 0
+          FROM control_plane.credit_topup_holds h WHERE h.tenant_id=$1 AND h.organization_id=$2 AND h.state='settled' AND h.resolved_at >= $4 AND h.resolved_at < $5
+      ) u WHERE ($6::text IS NULL OR u.person_id = $6::text) GROUP BY person_id ORDER BY person_id`,
+      [tenantId, organizationId, period.periodId, period.startsAt, period.endsAt, personId]);
+    return result.rows.map((row) => ({ personId: text(row.person_id), includedMicroUsd: money(row.included), purchasedMicroUsd: money(row.purchased), heldMicroUsd: money(row.held) }));
+  }
   async periodTotals(tenantId: string, organizationId: string, periodId: string): Promise<PeriodTotals> {
     const row = await this.one(`SELECT
         (SELECT COALESCE(SUM(monthly_debit_micro_usd),0) FROM control_plane.funding_settlements WHERE tenant_id=$1 AND organization_id=$2 AND period_id=$3) AS settled_monthly,

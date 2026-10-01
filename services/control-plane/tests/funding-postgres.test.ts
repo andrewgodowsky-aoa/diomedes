@@ -13,13 +13,18 @@ import type { SqlClient } from '../src/postgres.js';
 const at = '2026-09-10T12:00:00.000Z';
 const now = () => Date.parse(at);
 
-function recording(options: { failCommit?: boolean; money?: string; companySpend?: string; attempt?: Record<string, unknown>; dispatchRows?: number | null } = {}) {
+function recording(options: { failCommit?: boolean; money?: string; companySpend?: string; attempt?: Record<string, unknown>; dispatchRows?: number | null;
+  /** What the person has used this month (members' limits, 014), and any limit rows the business set. */
+  memberUsed?: string; limits?: Record<string, unknown>[] } = {}) {
   const calls: { sql: string; values: unknown[] }[] = [];
   const client: SqlClient = {
     async connect() {},
     async query(sql, values = []) {
       calls.push({ sql, values });
       if (sql === 'COMMIT' && options.failCommit) throw Object.assign(new Error('connection lost during commit'), { code: '08006' });
+      if (sql.includes('FROM control_plane.credit_member_limits')) return { rows: options.limits ?? [], rowCount: options.limits?.length ?? 0 };
+      if (sql.includes('AS included'))
+        return options.memberUsed ? { rows: [{ person_id: 'person_1', included: options.memberUsed, purchased: '0', held: '0' }], rowCount: 1 } : { rows: [], rowCount: 0 };
       if (sql.includes('FROM control_plane.funded_jobs'))
         return { rows: [{ tenant_id: 't1', organization_id: 'org_1', root_job_id: 'job_1', run_ref: 'run_1', cap_micro_usd: String(creditAmount(20)), cap_generation: 0, state: 'open', opened_at: new Date(at) }], rowCount: 1 };
       if (sql.includes('FROM control_plane.credit_periods'))
@@ -213,5 +218,64 @@ describe('purchased-usage holds on the SQL adapter', () => {
     const db = holds({ hold: { ...stored, person_id: 'person_2' } });
     await expect(new FundingService(new PostgresFundingRepository(db.factory), { now }).releasePurchased(input)).rejects.toMatchObject({ status: 404, code: 'unknown_hold' });
     expect(db.calls.some((call) => call.sql.startsWith('INSERT'))).toBe(false);
+  });
+});
+
+describe('monthly limits for members on the SQL adapter (014)', () => {
+  const member = { personId: 'person_1', role: 'member' as const };
+
+  it('reads limits, usage and approvals under the organization lock, then writes the attempt and who it was for', async () => {
+    const db = recording();
+    await new FundingService(new PostgresFundingRepository(db.factory), { now }).reserve({ ...reserveInput, member });
+    const sql = db.calls.map((call) => call.sql);
+    const where = (needle: string) => sql.findIndex((item) => item.includes(needle));
+    const lock = where('pg_advisory_xact_lock');
+    const limits = where('FROM control_plane.credit_member_limits');
+    const usage = where('AS included');
+    const approvals = where('FROM control_plane.credit_limit_requests');
+    const insert = sql.findIndex((item) => item.startsWith('INSERT INTO control_plane.funding_reservations'));
+    const person = sql.findIndex((item) => item.startsWith('INSERT INTO control_plane.credit_attempt_people'));
+    expect(lock).toBeGreaterThan(sql.indexOf('BEGIN'));
+    for (const read of [limits, usage, approvals]) expect(read).toBeGreaterThan(lock);
+    expect(Math.max(limits, usage, approvals)).toBeLessThan(insert);
+    expect(insert).toBeLessThan(person);
+    expect(db.calls[person].values).toEqual(['t1', 'attempt_1', 'org_1', 'person_1']);
+    expect(sql.filter((item) => item === 'COMMIT')).toHaveLength(1);
+  });
+
+  it('sums this month from the month’s own bounds, for this person, held and settled together', async () => {
+    const db = recording();
+    await new FundingService(new PostgresFundingRepository(db.factory), { now }).reserve({ ...reserveInput, member });
+    const call = db.calls.find((item) => item.sql.includes('AS included'))!;
+    expect(call.values).toEqual(['t1', 'org_1', '2026-09', '2026-09-01T00:00:00.000Z', '2026-10-01T00:00:00.000Z', 'person_1']);
+    expect(call.sql).toMatch(/state IN \('pending','uncertain'\)/);
+    expect(call.sql).toMatch(/FROM control_plane\.funding_settlements s/);
+    expect(call.sql).toMatch(/FROM control_plane\.credit_topup_holds h WHERE[^)]*state='held'/);
+    expect(call.sql).toMatch(/state='settled' AND h\.resolved_at >= \$4 AND h\.resolved_at < \$5/);
+    expect(db.calls.some((item) => item.sql.includes(String(creditAmount(1000))))).toBe(false);
+  });
+
+  it('refuses over the limit with no reservation and no attempt row, and rolls back', async () => {
+    const db = recording({ memberUsed: String(creditAmount(998)) });
+    await expect(new FundingService(new PostgresFundingRepository(db.factory), { now }).reserve({ ...reserveInput, member }))
+      .rejects.toMatchObject({ status: 402, code: 'member_limit_reached' });
+    const sql = db.calls.map((call) => call.sql);
+    expect(sql.some((item) => item.startsWith('INSERT'))).toBe(false);
+    expect(sql).toContain('ROLLBACK');
+    expect(sql).not.toContain('COMMIT');
+  });
+
+  it('applies a stored person limit before the default', async () => {
+    const row = { tenant_id: 't1', organization_id: 'org_1', subject_kind: 'person', subject_id: 'person_1', mode: 'limit', limit_micro_usd: String(creditAmount(10)), updated_by: 'owner_1', updated_at: new Date(at) };
+    const db = recording({ limits: [row], memberUsed: String(creditAmount(8)) });
+    await expect(new FundingService(new PostgresFundingRepository(db.factory), { now }).reserve({ ...reserveInput, member }))
+      .rejects.toMatchObject({ code: 'member_limit_reached' });
+  });
+
+  it('reads nothing of the member tables for a call with no member behind it', async () => {
+    const db = recording();
+    await new FundingService(new PostgresFundingRepository(db.factory), { now }).reserve(reserveInput);
+    const sql = db.calls.map((call) => call.sql);
+    expect(sql.some((item) => /credit_member_limits|credit_attempt_people|credit_limit_requests/.test(item))).toBe(false);
   });
 });

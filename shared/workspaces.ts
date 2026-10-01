@@ -193,6 +193,16 @@ export function canSeePurchasedUsage(membership: Membership | undefined | null):
 }
 
 /**
+ * Who sets members' monthly credit limits, reads who used what, and decides a member's ask for
+ * more (Andrew, 2026-10-01): an active owner or admin. An admin's reach is narrower than that: an
+ * admin never sets a limit for, or decides a request from, an owner or another admin. The server
+ * enforces both rules; the client uses this one only to leave the section out.
+ */
+export function canManageMemberLimits(membership: Membership | undefined | null): boolean {
+  return isActiveMember(membership) && (membership!.role === 'owner' || membership!.role === 'admin');
+}
+
+/**
  * Only an owner administers membership in full: roles, invitations and
  * revocation. A Manager's narrower power (invite and remove Employees) is
  * `canInviteRole` / `canChangeMember` in `shared/access.ts`.
