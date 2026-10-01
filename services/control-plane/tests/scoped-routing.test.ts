@@ -180,6 +180,9 @@ describe('recurring Individual funding through scoped managed dispatch', () => {
     expect(state.settlements.every(s => s.tenantId === person.id && s.organizationId === account.id && s.periodId === `individual:${at}`)).toBe(true);
     const replay = await cloud.handle(await request(scope, { job: 'personal-a', attempt: 'personal-a' }));
     expect(replay.status).toBe(409); expect(sends).toHaveLength(2);
+    // Operations reads the person plan's term beside the account's agreements.
+    expect((await call('GET', `/ops/individuals/${account.id}`, billing)).body.individualTerm).toMatchObject({ anchorAt: at,
+      current: { index: 0, startsAt: at, endsAt: until }, next: { index: 1, startsAt: until } });
     expect(cloud.store.snapshot().funding.periods).toEqual(state.periods);
   });
 
