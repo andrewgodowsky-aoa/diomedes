@@ -1,0 +1,402 @@
+/**
+ * Buying credits (Andrew, 2026-10-01, DIO-161 slice 1).
+ *
+ * An owner or an admin buys more credits for their business through Stripe Checkout. The price is the
+ * Worker's own setting, CREDIT_PRICE_CENTS_PER_100 (whole cents for 100 credits): there is no default
+ * here, and nothing but a quoted total for an asked amount ever leaves this service. A purchase is a
+ * pending row (migration 015) until a verified Stripe event pays it, and the event that pays it
+ * records the top-up in the same transaction (FundingService.resolveCreditPurchase).
+ *
+ * Two services, both over FundingService:
+ * - CreditPurchaseService: quote, buy and read. It verifies membership and the owner or admin role,
+ *   makes the pending row, asks Stripe for a Checkout Session by fetch, and answers where to pay.
+ * - StripeWebhookService: the receiver for Stripe's events. It reads the raw body, verifies the
+ *   Stripe-Signature header before it parses a byte, and answers 200 to anything it will not act on.
+ *
+ * Stripe is called with fetch and the Worker secret STRIPE_SECRET_KEY; no SDK, and the signature check uses WebCrypto only. Neither
+ * secret is ever logged, answered or stored.
+ */
+import { z } from 'zod';
+import { canSeePurchasedUsage } from '../../../shared/workspaces.js';
+import { CREDIT_PURCHASE_MAX_CREDITS, CREDIT_PURCHASE_MIN_CREDITS, CREDIT_PURCHASE_STEP, isAllowedCheckoutUrl, isPurchasableCredits,
+  type CreditPurchaseStarted as CreditPurchaseAnswer, type CreditPurchaseStatus as CreditPurchaseRead, type CreditQuote } from '../../../shared/credit-purchases.js';
+import { AccountError } from './errors.js';
+import { readBytes } from './crypto.js';
+import { FundingError, type FundingService } from './funding.js';
+import type { AccountService } from './account-service.js';
+
+/**
+ * Credits are bought in whole steps of 100, at least one step and at most 100,000 in one purchase (shared with the
+ * desktop, which steps through the same amounts). The cap is an engineering one, not an owner figure; at any price the
+ * setting allows, the total is also held under what a single Stripe charge can be.
+ */
+export { CREDIT_PURCHASE_STEP, CREDIT_PURCHASE_MIN_CREDITS, CREDIT_PURCHASE_MAX_CREDITS };
+/** Stripe's largest single USD charge, in cents ($999,999.99). */
+export const STRIPE_MAX_CHARGE_CENTS = 99_999_999;
+/** The price setting is whole cents for 100 credits. These bound a setting that could only be a typing slip. */
+const PRICE_MIN_CENTS = 50;
+const PRICE_MAX_CENTS = 1_000_000;
+/** Stripe takes a Checkout Session expiry between 30 minutes and 24 hours out; this is just past the shortest. */
+const CHECKOUT_LIFETIME_SECONDS = 35 * 60;
+/** Stripe's signature timestamp may differ from this service's clock by this much, either way. */
+export const STRIPE_SIGNATURE_TOLERANCE_SECONDS = 300;
+const WEBHOOK_BODY_LIMIT = 262_144;
+const STRIPE_CHECKOUT_SESSIONS = 'https://api.stripe.com/v1/checkout/sessions';
+const STRIPE_TIMEOUT_MS = 10_000;
+
+export const CREDIT_PURCHASES_UNAVAILABLE = 'Buying credits isn\'t available right now. Try again later.';
+export const NOT_OWNER_OR_ADMIN = 'Only a Business owner or a Manager can buy credits for this business.';
+export const PAYMENT_PAGE_UNAVAILABLE = 'The payment page couldn\'t be opened. Try again.';
+const UNKNOWN_PURCHASE = 'That purchase was not found for this business.';
+const THOUSANDS = (count: number) => String(count).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+const BAD_CREDITS = `Credits are bought in steps of ${CREDIT_PURCHASE_STEP}, from ${CREDIT_PURCHASE_MIN_CREDITS} up to ${THOUSANDS(CREDIT_PURCHASE_MAX_CREDITS)}.`;
+const TOO_MUCH = 'That is more than one purchase can cover. Try a smaller amount.';
+
+/** What the Worker's environment says about buying. Parsed once per request; holds secrets, so it is never logged. */
+export interface BillingSettings {
+  /** Whole cents for 100 credits, or null when the setting is unset or unusable. */
+  creditPriceCentsPer100: number | null;
+  /** The rule a set but unusable price broke, or 'not-set'. Never the value. Null when the price is usable. */
+  priceProblem: string | null;
+  stripeSecretKey: string | null;
+  stripeWebhookSecret: string | null;
+}
+
+const secretText = (value: unknown): string | null => {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return /^[\x21-\x7e]{8,200}$/.test(trimmed) ? trimmed : null;
+};
+
+/** CREDIT_PRICE_CENTS_PER_100, STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET, read as the Worker reads them. */
+export function readBillingSettings(env: Record<string, unknown>): BillingSettings {
+  const raw = env.CREDIT_PRICE_CENTS_PER_100;
+  let price: number | null = null;
+  let problem: string | null = null;
+  if (raw === undefined || raw === null || (typeof raw === 'string' && raw.trim() === '')) problem = 'not-set';
+  else {
+    const value = typeof raw === 'string' ? (/^[1-9][0-9]{0,9}$/.test(raw.trim()) ? Number(raw.trim()) : Number.NaN) : raw;
+    if (typeof value !== 'number' || !Number.isSafeInteger(value)) problem = 'not-a-whole-number';
+    else if (value < PRICE_MIN_CENTS || value > PRICE_MAX_CENTS) problem = 'out-of-range';
+    else price = value;
+  }
+  return { creditPriceCentsPer100: price, priceProblem: problem, stripeSecretKey: secretText(env.STRIPE_SECRET_KEY), stripeWebhookSecret: secretText(env.STRIPE_WEBHOOK_SECRET) };
+}
+
+/** The total for a whole number of credits, in cents. Credits must already be a whole multiple of the step. */
+export function creditPriceCents(credits: number, centsPer100: number): number {
+  return (credits / CREDIT_PURCHASE_STEP) * centsPer100;
+}
+
+/** A credit count from a query string (text) or a body (number): a whole multiple of 100 inside the bounds, or null. */
+function wholeCredits(value: unknown): number | null {
+  const credits = typeof value === 'string' ? (/^[1-9][0-9]{0,9}$/.test(value) ? Number(value) : Number.NaN) : value;
+  return isPurchasableCredits(credits) ? credits : null;
+}
+
+export const creditPurchaseInput = z.strictObject({ credits: z.number() });
+
+export type { CreditQuote, CreditPurchaseAnswer, CreditPurchaseRead };
+
+export interface CreditPurchaseOptions {
+  settings: BillingSettings;
+  /** The transport to Stripe. Tests and the faux cloud pass their own; the Worker uses the global fetch. */
+  fetch?: typeof globalThis.fetch;
+  now?: () => number;
+  newId?: () => string;
+  /**
+   * Hand a client the faux cloud's own local checkout page, on the origin the buyer came from, as well as Stripe's.
+   * Only the faux cloud sets it; the Worker never does, so only Stripe's own hosted checkout ever leaves it.
+   */
+  localCheckout?: boolean;
+}
+
+const checkoutSessionSchema = z.object({ id: z.string().regex(/^cs_[A-Za-z0-9_]{1,250}$/), url: z.string() });
+
+type BuyingFunding = Pick<FundingService, 'startCreditPurchase' | 'attachCheckoutSession' | 'failCreditPurchase' | 'readCreditPurchase'>;
+
+export class CreditPurchaseService {
+  private readonly now: () => number;
+  private readonly send: typeof globalThis.fetch;
+  private readonly newId: () => string;
+
+  constructor(private readonly accounts: Pick<AccountService, 'membership'>, private readonly funding: BuyingFunding, private readonly options: CreditPurchaseOptions) {
+    this.now = options.now ?? Date.now;
+    this.send = options.fetch ?? ((input, init) => globalThis.fetch(input, init));
+    this.newId = options.newId ?? (() => `cpurch_${crypto.randomUUID()}`);
+  }
+
+  /** Verified membership, and then the rule that only an owner or an admin buys. */
+  private async buyer(token: string, organizationId: string) {
+    const snapshot = await this.accounts.membership(token, organizationId);
+    if (!canSeePurchasedUsage(snapshot.membership)) throw new AccountError(403, NOT_OWNER_OR_ADMIN, 'not_owner_or_admin');
+    return snapshot;
+  }
+
+  /** The price, or a 503 that says nothing but that buying is not available; the Worker's log says which rule. */
+  private price(): number {
+    const { creditPriceCentsPer100, priceProblem } = this.options.settings;
+    if (creditPriceCentsPer100 === null) {
+      console.error(JSON.stringify({ event: 'credit-purchases-price-unavailable', setting: 'CREDIT_PRICE_CENTS_PER_100', rule: priceProblem ?? 'not-set' }));
+      throw new AccountError(503, CREDIT_PURCHASES_UNAVAILABLE);
+    }
+    return creditPriceCentsPer100;
+  }
+
+  private total(credits: number, price: number): number {
+    const cents = creditPriceCents(credits, price);
+    if (!Number.isSafeInteger(cents) || cents < 1 || cents > STRIPE_MAX_CHARGE_CENTS) throw new AccountError(422, TOO_MUCH);
+    return cents;
+  }
+
+  /** What an amount of credits would cost. Writes nothing and asks Stripe nothing. */
+  async quote(token: string, organizationId: string, asked: unknown): Promise<CreditQuote> {
+    await this.buyer(token, organizationId);
+    const credits = wholeCredits(asked);
+    if (credits === null) throw new AccountError(422, BAD_CREDITS);
+    return { credits, amountCents: this.total(credits, this.price()), currency: 'usd' };
+  }
+
+  /**
+   * Make the pending purchase and a Checkout Session for it, and answer where to pay. The amount is the
+   * server's own: the request names credits and nothing else. A session Stripe could not make leaves
+   * the purchase failed, not pending, so it never waits for a payment that cannot come.
+   */
+  async create(token: string, organizationId: string, input: z.infer<typeof creditPurchaseInput>, returnBase: string): Promise<CreditPurchaseAnswer> {
+    const snapshot = await this.buyer(token, organizationId);
+    const credits = wholeCredits(input.credits);
+    if (credits === null) throw new AccountError(422, BAD_CREDITS);
+    const amountCents = this.total(credits, this.price());
+    const { stripeSecretKey } = this.options.settings;
+    if (stripeSecretKey === null) {
+      console.error(JSON.stringify({ event: 'credit-purchases-stripe-unavailable', setting: 'STRIPE_SECRET_KEY', rule: 'not-set' }));
+      throw new AccountError(503, CREDIT_PURCHASES_UNAVAILABLE);
+    }
+    const ref = { tenantId: snapshot.organization.tenantId, organizationId: snapshot.organization.id, purchaseId: this.newId() };
+    await this.funding.startCreditPurchase({ ...ref, personId: snapshot.person.id, credits, amountCents });
+    const session = await this.checkoutSession(stripeSecretKey, ref, credits, amountCents, returnBase);
+    if (session === null) {
+      await this.funding.failCreditPurchase(ref).catch(() => undefined);
+      throw new AccountError(503, PAYMENT_PAGE_UNAVAILABLE);
+    }
+    try {
+      await this.funding.attachCheckoutSession(ref, session.id);
+    } catch (error) {
+      // Stripe made a session this purchase could not keep. It stays pending and unpayable here: a paid event
+      // would find no session on it. The log carries the ids to repair it by hand.
+      console.error(JSON.stringify({ event: 'credit-purchase-session-not-kept', purchaseId: ref.purchaseId, sessionId: session.id,
+        reason: error instanceof FundingError ? error.code : 'unavailable' }));
+      throw new AccountError(503, PAYMENT_PAGE_UNAVAILABLE);
+    }
+    return { purchaseId: ref.purchaseId, checkoutUrl: session.url, credits, amountCents };
+  }
+
+  private async checkoutSession(secretKey: string, ref: { tenantId: string; organizationId: string; purchaseId: string }, credits: number, amountCents: number, returnBase: string) {
+    const back = `${returnBase}/billing/return?purchase=${ref.purchaseId}`;
+    const form = new URLSearchParams([
+      ['mode', 'payment'],
+      ['line_items[0][quantity]', '1'],
+      ['line_items[0][price_data][currency]', 'usd'],
+      ['line_items[0][price_data][unit_amount]', String(amountCents)],
+      ['line_items[0][price_data][product_data][name]', `${THOUSANDS(credits)} Nectovia credits`],
+      ['client_reference_id', ref.purchaseId],
+      ['metadata[purchase_id]', ref.purchaseId],
+      ['metadata[organization_id]', ref.organizationId],
+      ['metadata[tenant_id]', ref.tenantId],
+      ['expires_at', String(Math.floor(this.now() / 1000) + CHECKOUT_LIFETIME_SECONDS)],
+      ['success_url', back],
+      ['cancel_url', `${back}&canceled=1`],
+    ]);
+    try {
+      const response = await this.send(STRIPE_CHECKOUT_SESSIONS, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${secretKey}`, 'Content-Type': 'application/x-www-form-urlencoded', 'Idempotency-Key': ref.purchaseId, Accept: 'application/json' },
+        body: form.toString(),
+        signal: AbortSignal.timeout(STRIPE_TIMEOUT_MS),
+      });
+      if (!response.ok) {
+        console.error(JSON.stringify({ event: 'credit-purchase-checkout-refused', purchaseId: ref.purchaseId, status: response.status }));
+        return null;
+      }
+      const parsed = checkoutSessionSchema.safeParse(await response.json());
+      const url = parsed.success && isAllowedCheckoutUrl(parsed.data.url, this.options.localCheckout ? returnBase : null) ? parsed.data.url : null;
+      if (!parsed.success || url === null) {
+        console.error(JSON.stringify({ event: 'credit-purchase-checkout-unreadable', purchaseId: ref.purchaseId }));
+        return null;
+      }
+      return { id: parsed.data.id, url };
+    } catch {
+      console.error(JSON.stringify({ event: 'credit-purchase-checkout-unreachable', purchaseId: ref.purchaseId }));
+      return null;
+    }
+  }
+
+  /** A purchase, for the business that made it, as an owner or an admin. */
+  async read(token: string, organizationId: string, purchaseId: string): Promise<CreditPurchaseRead> {
+    const snapshot = await this.buyer(token, organizationId);
+    let row;
+    try {
+      row = await this.funding.readCreditPurchase({ tenantId: snapshot.organization.tenantId, organizationId: snapshot.organization.id, purchaseId });
+    } catch (error) {
+      if (error instanceof FundingError && error.status === 404) throw new AccountError(404, UNKNOWN_PURCHASE, 'unknown_purchase');
+      throw error;
+    }
+    return { purchaseId: row.purchaseId, credits: row.credits, amountCents: row.amountCents, state: row.state };
+  }
+}
+
+// --- Stripe's signature ---------------------------------------------------------------------------
+
+const encoder = new TextEncoder();
+
+function hexBytes(value: string): Uint8Array {
+  const bytes = new Uint8Array(value.length / 2);
+  for (let index = 0; index < bytes.length; index++) bytes[index] = parseInt(value.slice(index * 2, index * 2 + 2), 16);
+  return bytes;
+}
+
+/** Equal-length byte strings, compared without stopping at the first difference. */
+function sameBytes(left: Uint8Array, right: Uint8Array): boolean {
+  if (left.length !== right.length) return false;
+  let difference = 0;
+  for (let index = 0; index < left.length; index++) difference |= left[index] ^ right[index];
+  return difference === 0;
+}
+
+/**
+ * Stripe-Signature: `t=<seconds>,v1=<hex>[,v1=<hex>][,v0=<hex>]`. The signed text is "<t>.<raw body>",
+ * HMAC-SHA256 under the endpoint's signing secret. Any one v1 may match; v0 is Stripe's test scheme and
+ * is never accepted. The timestamp must be within the tolerance of this service's own clock, either way.
+ * The raw bytes are checked, never a parsed and re-serialized body.
+ */
+export async function verifyStripeSignature(rawBody: string | Uint8Array, header: string | null, secret: string, nowMs: number,
+  toleranceSeconds = STRIPE_SIGNATURE_TOLERANCE_SECONDS): Promise<boolean> {
+  if (!header || !secret) return false;
+  let timestamp: string | null = null;
+  const candidates: string[] = [];
+  for (const part of header.split(',')) {
+    const at = part.indexOf('=');
+    if (at < 1) continue;
+    const key = part.slice(0, at).trim();
+    const value = part.slice(at + 1).trim();
+    if (key === 't') {
+      if (timestamp !== null) return false;
+      timestamp = value;
+    } else if (key === 'v1') candidates.push(value);
+  }
+  if (timestamp === null || !/^[0-9]{1,12}$/.test(timestamp)) return false;
+  const signatures = candidates.filter((value) => /^[0-9a-f]{64}$/.test(value));
+  if (signatures.length === 0) return false;
+  const body = typeof rawBody === 'string' ? encoder.encode(rawBody) : rawBody;
+  const prefix = encoder.encode(`${timestamp}.`);
+  const signed = new Uint8Array(prefix.length + body.length);
+  signed.set(prefix, 0);
+  signed.set(body, prefix.length);
+  const key = await crypto.subtle.importKey('raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const expected = new Uint8Array(await crypto.subtle.sign('HMAC', key, signed));
+  let matched = false;
+  for (const signature of signatures) if (sameBytes(expected, hexBytes(signature))) matched = true;
+  return matched && Math.abs(Math.floor(nowMs / 1000) - Number(timestamp)) <= toleranceSeconds;
+}
+
+// --- the receiver -----------------------------------------------------------------------------------
+
+const eventSchema = z.object({ id: z.string().regex(/^evt_[A-Za-z0-9_]{1,128}$/), type: z.string().min(1).max(200), data: z.object({ object: z.unknown() }) });
+const sessionSchema = z.object({
+  id: z.string().regex(/^cs_[A-Za-z0-9_]{1,250}$/),
+  payment_status: z.string().nullish(),
+  amount_total: z.number().nullish(),
+  currency: z.string().nullish(),
+  metadata: z.record(z.string(), z.string()).nullish(),
+});
+
+export interface WebhookAnswer { status: number; body: Record<string, unknown> }
+
+export interface StripeWebhookOptions { settings: BillingSettings; now?: () => number }
+
+export class StripeWebhookService {
+  private readonly now: () => number;
+
+  constructor(private readonly funding: Pick<FundingService, 'resolveCreditPurchase'>, private readonly options: StripeWebhookOptions) {
+    this.now = options.now ?? Date.now;
+  }
+
+  /**
+   * One Stripe event. 400 for a body whose signature does not verify, or that is not an event, with nothing
+   * recorded. 503 when the signing secret is not set or the write could not be made, so Stripe sends it again.
+   * 200 for everything else, including an event this service does not act on and one it finds already applied.
+   */
+  async handle(request: Request): Promise<WebhookAnswer> {
+    const secret = this.options.settings.stripeWebhookSecret;
+    if (secret === null) {
+      console.error(JSON.stringify({ event: 'credit-purchases-webhook-unavailable', setting: 'STRIPE_WEBHOOK_SECRET', rule: 'not-set' }));
+      return { status: 503, body: { error: 'Payments are not set up here yet.' } };
+    }
+    let raw: Uint8Array;
+    try {
+      raw = await readBytes(request, WEBHOOK_BODY_LIMIT);
+    } catch (error) {
+      if (error instanceof RangeError) return { status: 413, body: { error: 'The event is too large.' } };
+      return { status: 400, body: { error: 'A readable event is required.' } };
+    }
+    if (!(await verifyStripeSignature(raw, request.headers.get('stripe-signature'), secret, this.now())))
+      return { status: 400, body: { error: 'The signature could not be verified.' } };
+    let event: z.infer<typeof eventSchema>;
+    try {
+      const parsed = eventSchema.safeParse(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(raw)));
+      if (!parsed.success) return { status: 400, body: { error: 'That is not an event.' } };
+      event = parsed.data;
+    } catch {
+      return { status: 400, body: { error: 'That is not an event.' } };
+    }
+    const received = { status: 200, body: { received: true } };
+    const kind = KINDS[event.type];
+    if (!kind) return received;
+    const session = sessionSchema.safeParse(event.data.object);
+    if (!session.success) return received;
+    const object = session.data;
+    // A completed session that is not paid yet is waiting on a delayed payment; its own event settles it.
+    if (kind === 'paid' && object.payment_status !== 'paid') return received;
+    try {
+      const result = await this.funding.resolveCreditPurchase({
+        kind, sessionId: object.id, eventId: event.id,
+        purchaseId: object.metadata?.purchase_id ?? null, organizationId: object.metadata?.organization_id ?? null, tenantId: object.metadata?.tenant_id ?? null,
+        amountTotal: object.amount_total ?? null, currency: object.currency ?? null,
+      });
+      if (result.outcome === 'ignored' && (result.reason === 'amount_mismatch' || result.reason === 'metadata_mismatch'))
+        console.error(JSON.stringify({ event: 'credit-purchase-mismatch', reason: result.reason, purchaseId: result.purchaseId, eventId: event.id }));
+    } catch (error) {
+      if (error instanceof FundingError) {
+        // A refusal a retry will not change. Answering 200 stops Stripe from sending it again; the log names it.
+        console.error(JSON.stringify({ event: 'credit-purchase-refused', code: error.code, eventId: event.id }));
+        return received;
+      }
+      console.error(JSON.stringify({ event: 'credit-purchase-webhook-failed', eventId: event.id }));
+      return { status: 503, body: { error: 'The event could not be recorded. Try again.' } };
+    }
+    return received;
+  }
+}
+
+const KINDS: Record<string, 'paid' | 'expired' | 'failed' | undefined> = Object.assign(Object.create(null), {
+  'checkout.session.completed': 'paid',
+  'checkout.session.async_payment_succeeded': 'paid',
+  'checkout.session.async_payment_failed': 'failed',
+  'checkout.session.expired': 'expired',
+});
+
+// --- the page Stripe sends the buyer back to ----------------------------------------------------------
+
+/** Plain text and nothing from the request: the buyer goes back to Nectovia, which shows what happened. */
+export function returnPage(canceled: boolean): { status: number; headers: Record<string, string>; body: string } {
+  const line = canceled ? 'Go back to Nectovia.' : 'Go back to Nectovia. Your credits show up there once the payment clears.';
+  const body = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Nectovia</title>`
+    + `<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0b0d12;color:#e8ecf4;font:16px/1.5 system-ui,sans-serif}p{max-width:28rem;margin:0 16px}</style>`
+    + `</head><body><p>${line}</p></body></html>`;
+  return {
+    status: 200,
+    headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer',
+      'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'" },
+    body,
+  };
+}

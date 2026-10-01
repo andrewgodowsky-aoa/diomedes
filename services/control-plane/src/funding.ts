@@ -41,6 +41,7 @@ import {
   subtractMoney,
   sumMoney,
   micro,
+  creditAmount,
   usageCost,
   formatCredits,
   validateProviderUsage,
@@ -171,6 +172,32 @@ export interface TopUpHoldRow {
   releasedBy: 'person' | 'expiry' | null;
 }
 
+/**
+ * A purchase of credits through Stripe Checkout (migration 015). Pending from the moment an owner or
+ * an admin asks for it until a verified Stripe event says what became of it. The amount charged is
+ * fixed when it is made and kept here in cents; the credits granted are kept in the top-up the paid
+ * event records, which carries this purchase's id as its own.
+ */
+export interface CreditPurchaseRow {
+  tenantId: string;
+  organizationId: string;
+  purchaseId: string;
+  /** The verified person who bought. */
+  personId: string;
+  /** A whole number of credits, in steps of 100. */
+  credits: number;
+  /** What Stripe is asked to charge, in cents. */
+  amountCents: number;
+  currency: 'usd';
+  /** Null until Stripe has made the Checkout Session. */
+  checkoutSessionId: string | null;
+  state: 'pending' | 'paid' | 'expired' | 'failed';
+  createdAt: string;
+  resolvedAt: string | null;
+  /** The verified event that resolved it. Null while pending, and when a purchase failed before Stripe knew of it. */
+  stripeEventId: string | null;
+}
+
 /** The credits a business bought outright, as the top-up ledger reads them. */
 export interface PurchasedBalance {
   purchasedMicroUsd: MicroUsd;
@@ -206,6 +233,12 @@ export interface FundingTransaction {
   topUpHold(tenantId: string, holdId: string): Promise<TopUpHoldRow | undefined>;
   /** Insert a new hold, or move an existing one from held to settled or released, or renew its lease. */
   saveTopUpHold(row: TopUpHoldRow): Promise<void>;
+  /** A credit purchase by its id. A row lock in the database: held to the end of the transaction. */
+  creditPurchase(tenantId: string, purchaseId: string): Promise<CreditPurchaseRow | undefined>;
+  /** A credit purchase by the Stripe Checkout Session that pays it. A session id belongs to one purchase, in any tenant. */
+  creditPurchaseBySession(sessionId: string): Promise<CreditPurchaseRow | undefined>;
+  /** Insert a new purchase, or move a pending one: its session, its state, its resolution and its event. Nothing else moves. */
+  saveCreditPurchase(row: CreditPurchaseRow): Promise<void>;
   /**
    * Let go of every held purchased-usage hold in the organization whose lease has lapsed at `at`
    * (lease_until <= at), as released by expiry. Runs under the organization lock before any balance is read.
@@ -441,16 +474,22 @@ export class FundingService {
     if (input.provider !== 'stripe') throw new FundingError(422, 'Top-ups arrive from the verified billing provider only.', 'invalid_request');
     return this.repository.transaction(async (tx) => {
       await tx.lockOrganization(tenantId, organizationId);
-      const existing = await tx.topUp(tenantId, topUpId);
-      if (existing) {
-        if (existing.organizationId !== organizationId || existing.amountMicroUsd !== amount || existing.sourceEventId !== sourceEventId)
-          throw new FundingError(409, 'That top-up is already recorded with different terms.', 'topup_conflict');
-        return existing;
-      }
-      const row: TopUpRow = { tenantId, organizationId, topUpId, amountMicroUsd: amount, provider: 'stripe', sourceEventId, recordedAt: this.at() };
-      await tx.saveTopUp(row);
-      return row;
+      return this.recordTopUpWithin(tx, { tenantId, organizationId, topUpId, amountMicroUsd: amount, sourceEventId });
     });
+  }
+
+  /** The top-up write, inside a transaction that already holds the organization's lock. */
+  private async recordTopUpWithin(tx: FundingTransaction, input: { tenantId: string; organizationId: string; topUpId: string; amountMicroUsd: MicroUsd; sourceEventId: string }): Promise<TopUpRow> {
+    const { tenantId, organizationId, topUpId, sourceEventId } = input;
+    const existing = await tx.topUp(tenantId, topUpId);
+    if (existing) {
+      if (existing.organizationId !== organizationId || existing.amountMicroUsd !== input.amountMicroUsd || existing.sourceEventId !== sourceEventId)
+        throw new FundingError(409, 'That top-up is already recorded with different terms.', 'topup_conflict');
+      return existing;
+    }
+    const row: TopUpRow = { tenantId, organizationId, topUpId, amountMicroUsd: input.amountMicroUsd, provider: 'stripe', sourceEventId, recordedAt: this.at() };
+    await tx.saveTopUp(row);
+    return row;
   }
 
   /** What a business bought outright and what of it is held or spent. Read-only; money only from recorded top-ups. */
@@ -462,6 +501,123 @@ export class FundingService {
       await tx.lockOrganization(tenantId, organizationId);
       await tx.expireTopUpHolds(tenantId, organizationId, at);
       return balanceOf(await tx.topUpTotals(tenantId, organizationId, at));
+    });
+  }
+
+  /**
+   * Start a credit purchase (migration 015): the pending row, before Stripe is asked for a Checkout
+   * Session. Idempotent by purchase id; the same terms find the row, different terms are a 409.
+   * Server-only: the amount comes from the Worker's price setting, never from a request.
+   */
+  async startCreditPurchase(input: { tenantId: string; organizationId: string; purchaseId: string; personId: string; credits: number; amountCents: number }): Promise<CreditPurchaseRow> {
+    const tenantId = requireId(input.tenantId, 'tenant');
+    const organizationId = requireId(input.organizationId, 'organization');
+    const purchaseId = requireId(input.purchaseId, 'purchase');
+    const personId = requireId(input.personId, 'person');
+    const { credits, amountCents } = input;
+    if (!Number.isSafeInteger(credits) || credits < 100 || credits > 1_000_000 || credits % 100 !== 0)
+      throw new FundingError(422, 'Credits are bought in whole steps of 100.', 'invalid_request');
+    if (!Number.isSafeInteger(amountCents) || amountCents < 1 || amountCents > 99_999_999)
+      throw new FundingError(422, 'A purchase needs a price in whole cents.', 'invalid_amount');
+    return this.repository.transaction(async (tx) => {
+      await tx.lockOrganization(tenantId, organizationId);
+      const existing = await tx.creditPurchase(tenantId, purchaseId);
+      if (existing) {
+        if (existing.organizationId !== organizationId || existing.personId !== personId || existing.credits !== credits || existing.amountCents !== amountCents)
+          throw new FundingError(409, 'That purchase already exists with different terms.', 'purchase_conflict');
+        return existing;
+      }
+      const row: CreditPurchaseRow = { tenantId, organizationId, purchaseId, personId, credits, amountCents, currency: 'usd',
+        checkoutSessionId: null, state: 'pending', createdAt: this.at(), resolvedAt: null, stripeEventId: null };
+      await tx.saveCreditPurchase(row);
+      return row;
+    });
+  }
+
+  /** Keep the Checkout Session Stripe made for a pending purchase. A replay of the same session is a no-op. */
+  async attachCheckoutSession(ref: { tenantId: string; organizationId: string; purchaseId: string }, sessionId: string): Promise<CreditPurchaseRow> {
+    const tenantId = requireId(ref.tenantId, 'tenant');
+    const organizationId = requireId(ref.organizationId, 'organization');
+    const purchaseId = requireId(ref.purchaseId, 'purchase');
+    if (typeof sessionId !== 'string' || !/^cs_[A-Za-z0-9_]{1,250}$/.test(sessionId))
+      throw new FundingError(422, 'A valid checkout session is required.', 'invalid_request');
+    return this.repository.transaction(async (tx) => {
+      await tx.lockOrganization(tenantId, organizationId);
+      const row = await tx.creditPurchase(tenantId, purchaseId);
+      if (!row || row.organizationId !== organizationId)
+        throw new FundingError(404, 'That purchase was not found for this business.', 'unknown_purchase');
+      if (row.checkoutSessionId === sessionId) return row;
+      if (row.state !== 'pending' || row.checkoutSessionId !== null)
+        throw new FundingError(409, 'That purchase is already closed.', 'purchase_closed');
+      const next: CreditPurchaseRow = { ...row, checkoutSessionId: sessionId };
+      await tx.saveCreditPurchase(next);
+      return next;
+    });
+  }
+
+  /** A pending purchase that never reached a Checkout Session ends here. Anything already resolved is left as it is. */
+  async failCreditPurchase(ref: { tenantId: string; organizationId: string; purchaseId: string }): Promise<CreditPurchaseRow> {
+    const tenantId = requireId(ref.tenantId, 'tenant');
+    const organizationId = requireId(ref.organizationId, 'organization');
+    const purchaseId = requireId(ref.purchaseId, 'purchase');
+    return this.repository.transaction(async (tx) => {
+      await tx.lockOrganization(tenantId, organizationId);
+      const row = await tx.creditPurchase(tenantId, purchaseId);
+      if (!row || row.organizationId !== organizationId)
+        throw new FundingError(404, 'That purchase was not found for this business.', 'unknown_purchase');
+      if (row.state !== 'pending' || row.checkoutSessionId !== null) return row;
+      const next: CreditPurchaseRow = { ...row, state: 'failed', resolvedAt: this.at() };
+      await tx.saveCreditPurchase(next);
+      return next;
+    });
+  }
+
+  /** A purchase, for the business that made it. Another business's purchase and an unknown one read the same. */
+  async readCreditPurchase(ref: { tenantId: string; organizationId: string; purchaseId: string }): Promise<CreditPurchaseRow> {
+    const tenantId = requireId(ref.tenantId, 'tenant');
+    const organizationId = requireId(ref.organizationId, 'organization');
+    const purchaseId = requireId(ref.purchaseId, 'purchase');
+    return this.repository.transaction(async (tx) => {
+      const row = await tx.creditPurchase(tenantId, purchaseId);
+      if (!row || row.organizationId !== organizationId)
+        throw new FundingError(404, 'That purchase was not found for this business.', 'unknown_purchase');
+      return row;
+    });
+  }
+
+  /**
+   * Apply a verified Stripe event to the purchase its Checkout Session pays. Only a pending purchase
+   * moves, and only when the session and the purchase, business and tenant the event names are this
+   * row's own. A paid event also needs the amount and currency to be the stored ones, and then marks the
+   * purchase paid and records the top-up (the credits bought, keyed by the purchase id) in this one
+   * transaction. Anything else changes nothing and says why. Server-only: the webhook calls it after
+   * the signature has been verified.
+   */
+  async resolveCreditPurchase(input: { kind: 'paid' | 'expired' | 'failed'; sessionId: string; purchaseId: string | null; tenantId: string | null;
+    organizationId: string | null; amountTotal: number | null; currency: string | null; eventId: string }):
+    Promise<{ outcome: 'paid' | 'expired' | 'failed' | 'ignored'; reason: string | null; purchaseId: string | null }> {
+    const eventId = requireId(input.eventId, 'billing event');
+    const ignored = (reason: string, purchaseId: string | null = null) => ({ outcome: 'ignored' as const, reason, purchaseId });
+    return this.repository.transaction(async (tx) => {
+      const found = await tx.creditPurchaseBySession(input.sessionId);
+      if (!found) return ignored('unknown_session');
+      if (found.purchaseId !== input.purchaseId || found.organizationId !== input.organizationId || found.tenantId !== input.tenantId)
+        return ignored('metadata_mismatch', found.purchaseId);
+      await tx.lockOrganization(found.tenantId, found.organizationId);
+      const purchase = await tx.creditPurchase(found.tenantId, found.purchaseId);
+      if (!purchase || purchase.checkoutSessionId !== input.sessionId) return ignored('unknown_session', found.purchaseId);
+      if (purchase.state !== 'pending') return ignored(`already_${purchase.state}`, purchase.purchaseId);
+      const resolvedAt = this.at();
+      if (input.kind !== 'paid') {
+        await tx.saveCreditPurchase({ ...purchase, state: input.kind, resolvedAt, stripeEventId: eventId });
+        return { outcome: input.kind, reason: null, purchaseId: purchase.purchaseId };
+      }
+      if (input.amountTotal !== purchase.amountCents || typeof input.currency !== 'string' || input.currency.toLowerCase() !== purchase.currency)
+        return ignored('amount_mismatch', purchase.purchaseId);
+      await this.recordTopUpWithin(tx, { tenantId: purchase.tenantId, organizationId: purchase.organizationId, topUpId: purchase.purchaseId,
+        amountMicroUsd: creditAmount(purchase.credits), sourceEventId: eventId });
+      await tx.saveCreditPurchase({ ...purchase, state: 'paid', resolvedAt, stripeEventId: eventId });
+      return { outcome: 'paid', reason: null, purchaseId: purchase.purchaseId };
     });
   }
 

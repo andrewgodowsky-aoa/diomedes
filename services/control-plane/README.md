@@ -5,8 +5,9 @@ membership, feature grants, staff operations and the managed inference gateway.
 The packaged Nectovia desktop signs customers in through WorkOS and uses this
 service for account access. OAuth login and refresh belong to the native client;
 Tasks, Runs and History remain with their existing owners. The marketing site
-does not depend on this package. Payments and production onboarding are not
-established by the presence of these routes.
+does not depend on this package. Production onboarding is not established by the
+presence of these routes, and the credit purchase routes below take no payment
+until the Stripe settings are set.
 
 From the full repository checkout, enter services/control-plane and run:
 
@@ -247,8 +248,9 @@ Cross-tenant commercial references use composite foreign keys. Later funding
 amounts are integer micro-USD with JavaScript-safe bounds and reference existing
 run/task IDs; there are no operational Task/Run/History replicas. Existing B00
 entitlement still resolves to none. The inbox method is an internal future B04
-seam requiring prior raw-body signature verification; no webhook HTTP receiver
-or Stripe request exists here.
+seam requiring prior raw-body signature verification; it has no caller. The one
+webhook receiver and the one Stripe request here are the credit purchase ones
+below.
 
 Migration history is versioned/checksummed; the migration folder pins SQL to LF
 so Windows and Linux checkouts produce the same hashes. A transaction advisory lock protects
@@ -327,6 +329,88 @@ them for a person who is not staff (see `server/managed-usage-routes.ts`).
 
 Migration 013 is additive. The runner takes each version from the file name's
 number, so it refuses 013 until 011 and 012 are in its list before it.
+
+## Buying credits (migration 015, 2026-10-01, DIO-161 slice 1)
+
+Owner rule: only a Business owner or a Manager (roles `owner` and `admin`) buys
+credits for a business. Credits are bought in whole steps of 100, at least 100
+and at most 100,000 in one purchase, and paid through Stripe Checkout. Test mode
+first. The price is a Worker setting, never a default in code, and nothing but a
+quoted total for an asked amount ever reaches a client.
+
+Settings (Worker settings, read on every call):
+
+- `CREDIT_PRICE_CENTS_PER_100`: whole cents the business pays for 100 credits,
+  from 50 to 1,000,000. Unset, blank or unusable: every quote and purchase
+  answers 503 "Buying credits isn't available right now. Try again later." and
+  the Worker logs `credit-purchases-price-unavailable` with the rule it broke
+  (never the value). It is a plain var, so put it in both `wrangler.jsonc` files
+  (the deploy overwrites a dashboard var, and `tests/deploy-config.test.ts`
+  insists the two files agree).
+- `STRIPE_SECRET_KEY`: a Worker secret (`npx wrangler secret put
+  STRIPE_SECRET_KEY --name diomedes`), the `sk_test_...` key for test mode.
+  Unset: purchases answer 503; quotes still work.
+- `STRIPE_WEBHOOK_SECRET`: a Worker secret, the `whsec_...` signing secret of
+  the endpoint below. Unset: the webhook answers 503 and records nothing, so
+  Stripe sends the event again once it is set.
+- `FUNDING_DATABASE_URL` (existing): the purchase rows and the top-ups they
+  record are funding writes, so they run as `cp_funding`. Run the updated
+  `scripts/funding-permissions.sql` as the owner after migrating 015.
+
+Register this endpoint in Stripe (test mode first): `https://accounts.diomedes.net/billing/stripe/webhook`.
+Subscribe it to these events:
+
+- `checkout.session.completed`
+- `checkout.session.async_payment_succeeded`
+- `checkout.session.async_payment_failed`
+- `checkout.session.expired`
+
+The first two pay a purchase, the third closes one whose delayed payment failed,
+and the last closes one nobody paid. Any other event is acknowledged and ignored.
+
+Routes, for an owner or an admin of the business, behind the same bearer, origin
+and query rules as the other account routes:
+
+- `GET /account/organizations/:id/credit-purchases/quote?credits=N` answers
+  `{ credits, amountCents, currency: 'usd' }`. Credits that are not a whole step
+  of 100 inside the bounds are 422.
+- `POST /account/organizations/:id/credit-purchases` `{ credits }` (strict body)
+  makes a pending purchase and a Checkout Session, and answers 201
+  `{ purchaseId, checkoutUrl, credits, amountCents }`. The amount is the Worker's
+  own; a body that names one is refused. The client opens `checkoutUrl`, which is
+  Stripe's own page; the Worker returns nothing else.
+- `GET /account/organizations/:id/credit-purchases/:purchaseId` answers
+  `{ purchaseId, credits, amountCents, state }`, `state` being `pending`, `paid`,
+  `expired` or `failed`, for the business that made it only.
+
+A member who is neither is 403 `not_owner_or_admin`, and a person outside the
+business is 403 `not_a_member`, the same as every other membership check.
+
+Stripe's calls are unauthenticated by Nectovia and prove themselves instead:
+`POST /billing/stripe/webhook` reads the raw body, checks the `Stripe-Signature`
+header (`t=`, `v1=`) as HMAC-SHA256 of "t.rawBody" under `STRIPE_WEBHOOK_SECRET`
+with WebCrypto and a fixed-time compare, within 300 seconds either way, and
+answers 400 and records nothing for anything it cannot verify. A paid event
+needs its Checkout Session to be the one stored on a pending purchase, the
+purchase, business and tenant in its metadata to be that row's own, and its
+`amount_total` and currency to equal the stored amount. Then one transaction
+marks the purchase paid and records the top-up (the credits bought, keyed by the
+purchase id, with the event id as its source). Replays, a second event for a paid
+purchase, a mismatched amount and an unknown session change nothing and answer
+200. `GET /billing/return` is the plain page Stripe sends the buyer back to; it
+says to go back to Nectovia and echoes nothing from the request.
+
+Migration 015 adds `credit_purchases` and frees `credit_topups` of its reference
+to `webhook_inbox`, the only thing it removes. That reference needed a stored
+event from a billing customer, which a Checkout payment does not have; each
+top-up still names exactly one verified event through `source_event_id`. The
+runner refuses 015 until 011, 012, 013 and 014 are in its list before it.
+
+The faux cloud buys without Stripe: `CREDIT_PRICE_CENTS_PER_100` from the
+environment (or the faux test price when it is unset), a local checkout page at
+`/faux/checkout/:sessionId`, and `FauxCloud.completeCheckout(sessionId)`, which
+posts the same signed event to the Worker's own webhook. The page's button does
+the same.
 
 ## Runtime evidence and release
 

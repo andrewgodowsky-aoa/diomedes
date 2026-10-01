@@ -68,13 +68,29 @@ GRANT SELECT, INSERT ON control_plane.funding_settlements TO cp_funding;
 -- digest, organization or creation-time column can be rewritten, and lease_until is only ever moved by a renewal.
 GRANT SELECT, INSERT ON control_plane.credit_topup_holds TO cp_funding;
 GRANT UPDATE (debit_micro_usd, absorbed_micro_usd, state, resolved_at, lease_until, released_by) ON control_plane.credit_topup_holds TO cp_funding;
+-- 015 credit_purchases: a purchase of credits through Stripe Checkout, from the pending row an owner or an admin
+-- asks for (POST /account/organizations/:id/credit-purchases, src/credit-purchases.ts CreditPurchaseService) to the
+-- verified Stripe event that pays, expires or fails it (POST /billing/stripe/webhook, StripeWebhookService), all
+-- through FundingService startCreditPurchase, attachCheckoutSession, failCreditPurchase, readCreditPurchase and
+-- resolveCreditPurchase. SELECT: creditPurchase(), "SELECT * FROM control_plane.credit_purchases WHERE tenant_id=$1
+-- AND purchase_id=$2 FOR UPDATE", and creditPurchaseBySession(), "... WHERE stripe_checkout_session_id=$1". INSERT:
+-- saveCreditPurchase(). UPDATE on four columns: its "ON CONFLICT (tenant_id,purchase_id) DO UPDATE SET
+-- stripe_checkout_session_id=...,state=...,resolved_at=...,stripe_event_id=..." (the session Stripe made, then
+-- paid, expired or failed), and creditPurchase()'s FOR UPDATE. No amount, credit count, person, business or
+-- creation-time column can be rewritten.
+GRANT SELECT, INSERT ON control_plane.credit_purchases TO cp_funding;
+GRANT UPDATE (stripe_checkout_session_id, state, resolved_at, stripe_event_id) ON control_plane.credit_purchases TO cp_funding;
 -- 009 Individual agreements allocate the same credit_periods through the
 -- existing funding writer. Scope, consent, routing and staff records remain
 -- on cp_runtime; foreign-key checks need no extra cp_funding table grants.
--- credit_adjustments and credit_topups: SELECT only, for the correction sums in
--- periodTotals() and the purchased sum in topUpTotals() (reserve).
-GRANT SELECT ON control_plane.credit_adjustments, control_plane.credit_topups TO cp_funding;
--- Not granted, because the gateway never runs them: job_cap_requests (cap
--- requests and decisions), INSERT on credit_adjustments (recordCorrection) and on
--- credit_topups (recordTopUp), and funding_accounts. Staff grant allocation and
--- staff funding corrections run on the Worker login and are still refused there.
+-- credit_adjustments: SELECT only, for the correction sums in periodTotals() (reserve).
+GRANT SELECT ON control_plane.credit_adjustments TO cp_funding;
+-- credit_topups. SELECT: topUp(), "SELECT * FROM control_plane.credit_topups WHERE tenant_id=$1 AND topup_id=$2"
+-- (resolveCreditPurchase, through recordTopUpWithin), and the purchased sum in topUpTotals() (reserve). INSERT:
+-- saveTopUp(), "INSERT INTO control_plane.credit_topups(...)" (resolveCreditPurchase: the credits a verified payment
+-- bought, with the purchase's id as the top-up's own). Never UPDATE: a top-up is written once.
+GRANT SELECT, INSERT ON control_plane.credit_topups TO cp_funding;
+-- Not granted, because nothing on this login runs them: job_cap_requests (cap
+-- requests and decisions), INSERT on credit_adjustments (recordCorrection), and
+-- funding_accounts. Staff grant allocation and staff funding corrections run on
+-- the Worker login and are still refused there.

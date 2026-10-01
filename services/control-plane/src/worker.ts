@@ -7,6 +7,7 @@ import { WorkOSIdentityVerifier } from './identity-workos.js';
 import { StaffKeyVerifier, postgresStaffKeys } from './identity-staff-key.js';
 import { PostgresRepository, neonClientFactory } from './postgres.js';
 import { FundingService, PurchasedUsageService, UsageService, purchasedHoldInput, purchasedReleaseInput, purchasedRenewInput, purchasedSettleInput } from './funding.js';
+import { CREDIT_PURCHASES_UNAVAILABLE, CreditPurchaseService, StripeWebhookService, creditPurchaseInput, readBillingSettings, returnPage } from './credit-purchases.js';
 import { PostgresFundingRepository } from './funding-postgres.js';
 import { PostgresCommercialRepository } from './commercial-postgres.js';
 import {
@@ -75,6 +76,8 @@ const QUERY_RULES: { path: RegExp; keys: Record<string, (value: string) => boole
   { path: /^\/ops\/individuals$/, keys: { q: (value) => value.length <= 100 } },
   { path: /^\/ops\/people$/, keys: { q: (value) => value.length <= 100 } },
   { path: /^\/ops\/audit$/, keys: { organizationId: (value) => accountId.safeParse(value).success, limit: (value) => /^[1-9][0-9]{0,2}$/.test(value) } },
+  // The amount is checked by the quote itself, which answers a plain 422 for anything that is not a step of 100.
+  { path: /^\/account\/organizations\/[^/]+\/credit-purchases\/quote$/, keys: { credits: (value) => value.length <= 40 } },
 ];
 
 function checkQuery(url: URL, method: string) {
@@ -91,6 +94,10 @@ export interface HandlerOptions {
   createCommercial?: (config: Configuration, accounts: AccountService) => CommercialService;
   /** Test and faux-cloud seam for purchased-usage holds. The Worker entry always uses the funding login. */
   createPurchased?: (config: Configuration, accounts: AccountService) => Pick<PurchasedUsageService, 'balance' | 'hold' | 'settle' | 'release' | 'renew'>;
+  /** Test and faux-cloud seam for buying credits: the faux Stripe and the faux store. The Worker entry always uses the funding login and Stripe. */
+  createCreditPurchases?: (config: Configuration, accounts: AccountService, env: Record<string, unknown>) => Pick<CreditPurchaseService, 'quote' | 'create' | 'read'>;
+  /** Test and faux-cloud seam for Stripe's events, over the same store. */
+  createStripeWebhook?: (config: Configuration, env: Record<string, unknown>) => Pick<StripeWebhookService, 'handle'>;
   createRouting?: (config: Configuration, accounts: AccountService) => RoutingService;
   /** Test and faux-cloud seam for the managed gateway: the scripted provider instead of Bedrock. */
   createManaged?: (config: Configuration, accounts: AccountService) => ManagedInferenceService;
@@ -135,6 +142,19 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
     }
     return new PurchasedUsageService(accounts, new FundingService(new PostgresFundingRepository(neonClientFactory(config.fundingDatabaseUrl))));
   });
+  // Buying credits writes funding rows (the purchase, and the top-up its payment records), so it runs as the
+  // funding login too. Without that login nothing is quoted, bought or recorded.
+  const fundingFor = (config: Configuration, event: string) => {
+    if (config.fundingDatabaseUrl === null) {
+      console.error(JSON.stringify({ event, setting: 'FUNDING_DATABASE_URL', rule: config.fundingProblem ?? 'not-set' }));
+      throw new AccountError(503, CREDIT_PURCHASES_UNAVAILABLE);
+    }
+    return new FundingService(new PostgresFundingRepository(neonClientFactory(config.fundingDatabaseUrl)));
+  };
+  const createCreditPurchases = options.createCreditPurchases ?? ((config: Configuration, accounts: AccountService, env: Record<string, unknown>) =>
+    new CreditPurchaseService(accounts, fundingFor(config, 'credit-purchases-funding-database-unavailable'), { settings: readBillingSettings(env) }));
+  const createStripeWebhook = options.createStripeWebhook ?? ((config: Configuration, env: Record<string, unknown>) =>
+    new StripeWebhookService(fundingFor(config, 'credit-purchases-webhook-funding-database-unavailable'), { settings: readBillingSettings(env) }));
   const createRouting = options.createRouting ?? ((config: Configuration, accounts: AccountService) =>
     new RoutingService(accounts, new PostgresCommercialRepository(neonClientFactory(config.databaseUrl)), Date.now,
       config.fundingDatabaseUrl ? new FundingService(new PostgresFundingRepository(neonClientFactory(config.fundingDatabaseUrl))) : null));
@@ -211,8 +231,38 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
     }
   }
 
+  /**
+   * What Stripe and the buyer's browser reach without a Nectovia sign-in. The webhook is Stripe's, and
+   * proves itself by its signature over the raw body, so it is routed before the bearer, the origin and
+   * the body rules. The return page is plain text for a person sent back from Stripe's own page.
+   */
+  async function billing(request: Request, env: Record<string, unknown>, pathname: string): Promise<Response> {
+    const headers = new Headers({ 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer' });
+    const refuse = (message: string, status: number, allow: string) => {
+      headers.set('Allow', allow);
+      return Response.json({ error: message }, { status, headers });
+    };
+    try {
+      if (pathname === '/billing/return') {
+        if (request.method !== 'GET') return refuse('Open this page with a GET.', 405, 'GET');
+        const page = returnPage(new URL(request.url).searchParams.get('canceled') === '1');
+        return new Response(page.body, { status: page.status, headers: page.headers });
+      }
+      if (request.method !== 'POST') return refuse('Send this request as a POST.', 405, 'POST');
+      const answer = await createStripeWebhook(readConfiguration(env), env).handle(request);
+      return Response.json(answer.body, { status: answer.status, headers });
+    } catch (error) {
+      if (error instanceof AccountError) return Response.json({ error: error.message }, { status: error.status, headers });
+      console.error(JSON.stringify({ event: 'billing-unavailable', ...(error instanceof ConfigurationError ? error.problem : {}) }));
+      headers.set('Retry-After', '5');
+      return Response.json({ error: 'Payments are not set up here yet.' }, { status: 503, headers });
+    }
+  }
+
   return async (request: Request, env: Record<string, unknown>, ctx?: ManagedContext): Promise<Response> => {
-    if (new URL(request.url).pathname.startsWith('/managed/')) return managed(request, env, ctx);
+    const entry = new URL(request.url).pathname;
+    if (entry.startsWith('/managed/')) return managed(request, env, ctx);
+    if (entry === '/billing/stripe/webhook' || entry === '/billing/return') return billing(request, env, entry);
     const headers = new Headers({ 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer', Vary: 'Origin' });
     const json = (value: unknown, status = 200) => Response.json(value, { status, headers });
     try {
@@ -274,6 +324,13 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
         return json(await createPurchased(config, accounts).release(token, match[1], await body(request, purchasedReleaseInput)));
       if ((match = route('/account/organizations/:id/purchased-usage/renewals').exec(pathname)) && method === 'POST')
         return json(await createPurchased(config, accounts).renew(token, match[1], await body(request, purchasedRenewInput)));
+      // --- buying more credits: an owner or an admin, through Stripe Checkout ---
+      if ((match = route('/account/organizations/:id/credit-purchases/quote').exec(pathname)) && method === 'GET')
+        return json(await createCreditPurchases(config, accounts, env).quote(token, match[1], url.searchParams.get('credits')));
+      if ((match = route('/account/organizations/:id/credit-purchases').exec(pathname)) && method === 'POST')
+        return json(await createCreditPurchases(config, accounts, env).create(token, match[1], await body(request, creditPurchaseInput), url.origin), 201);
+      if ((match = route('/account/organizations/:id/credit-purchases/:id').exec(pathname)) && method === 'GET')
+        return json(await createCreditPurchases(config, accounts, env).read(token, match[1], match[2]));
       if ((match = route('/account/organizations/:id/invitations').exec(pathname)) && method === 'POST')
         return json(await accounts.invite(token, match[1], await body(request, invitationInput)), 201);
       if ((match = route('/account/organizations/:id/invitations/accept').exec(pathname)) && method === 'POST')
@@ -430,6 +487,11 @@ export type GatewayEnv = WorkerEnv & {
   BEDROCK_API_KEY?: string;
   OPENROUTER_API_KEY?: string;
   FUNDING_DATABASE_URL?: string;
+  /** Whole cents for 100 credits. A setting, never a default: unset, every quote and purchase answers 503. */
+  CREDIT_PRICE_CENTS_PER_100?: string | number;
+  /** Stripe secret key, and the endpoint secret for /billing/stripe/webhook. Both Worker secrets. */
+  STRIPE_SECRET_KEY?: string;
+  STRIPE_WEBHOOK_SECRET?: string;
   STAFF_WORKOS_API_KEY?: string;
   MANAGED_SPEND_CEILING_MICRO_USD?: string | number;
   MANAGED_MAX_OUTPUT_TOKENS?: string | number;
