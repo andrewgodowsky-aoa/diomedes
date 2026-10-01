@@ -524,9 +524,26 @@ export function decideAgentAdmission(view: AgentAdmissionView): AgentAdmissionDe
     const own = view.individual ? snapshotAt(view.individual, view.at) : null;
     if (own?.state === 'active' && (own.features ?? []).includes(AGENT_FEATURE_ID))
       return { admitted: true, planId: own.planId, revision: own.revision, validUntil: own.expiresAt };
+    // The person's own plan decides the answer, never a business's: a plan that was withdrawn or has
+    // ended says so, and only a person with no usable Individual plan is told to get one.
+    if (own?.state === 'revoked')
+      return refuse(
+        'entitlement_revoked',
+        'Your Individual plan was withdrawn, so the Nectovia Agent is not available for your personal work. Your files and history are unchanged. Nothing was sent.',
+      );
+    if (own?.state === 'expired')
+      return refuse(
+        'entitlement_expired',
+        'Your Individual plan has ended, so the Nectovia Agent is not available for your personal work. Your files and history are unchanged. Nothing was sent.',
+      );
+    if (own?.state === 'unknown')
+      return refuse(
+        'entitlement_unknown',
+        'Nectovia could not confirm your Individual plan, so the Agent did not start. Check the connection and try again. Nothing was sent.',
+      );
     return refuse(
       'personal_workspace',
-      'The Nectovia Agent works for a business. Switch to a business workspace that includes it, or use your own AI tools directly.',
+      'Personal work with the Nectovia Agent needs an Individual plan of your own, or a business workspace that includes it. You can still use your own AI tools directly. Nothing was sent.',
     );
   }
   if (!view.member)

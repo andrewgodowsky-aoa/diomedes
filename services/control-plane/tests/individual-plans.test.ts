@@ -200,6 +200,64 @@ describe('Personal work under an Individual plan', () => {
     expect(decideAgentAdmission({ workspace: 'personal', member: true, entitlement: snapshotFromView(NO_ENTITLEMENT_VIEW), individual: snapshotFromView({ ...view, plan: 'individual' }), at: '2026-09-28T12:00:00.000Z' }))
       .toMatchObject({ admitted: true, planId: 'individual' });
   });
+
+  it('answers Personal work from the person\'s own Individual plan: withdrawn, ended, unreadable or missing', () => {
+    const at = '2026-09-28T12:00:00.000Z';
+    const own = { ...NO_ENTITLEMENT_VIEW, source: 'account-service' as const, plan: 'individual', features: ['nectovia-agent'], agent: true,
+      validFrom: '2026-09-28T00:00:00.000Z', validUntil: '2026-10-28T00:00:00.000Z', revision: 3 };
+    const decide = (individual?: ReturnType<typeof snapshotFromView>) => decideAgentAdmission({
+      workspace: 'personal', member: true, entitlement: snapshotFromView(NO_ENTITLEMENT_VIEW), ...(individual ? { individual } : {}), at });
+    const revoked = decide(snapshotFromView({ ...own, state: 'revoked' }));
+    expect(revoked).toMatchObject({ admitted: false, code: 'entitlement_revoked' });
+    const expired = decide(snapshotFromView({ ...own, state: 'expired' }));
+    expect(expired).toMatchObject({ admitted: false, code: 'entitlement_expired' });
+    // An active grant whose end has passed reads as expired at that moment, not as no plan.
+    expect(decide(snapshotFromView({ ...own, state: 'active', validUntil: '2026-09-28T06:00:00.000Z' })))
+      .toMatchObject({ admitted: false, code: 'entitlement_expired' });
+    const unreadable = decide(snapshotFromView({ ...own, state: 'unknown' }));
+    expect(unreadable).toMatchObject({ admitted: false, code: 'entitlement_unknown' });
+    const none = decide(snapshotFromView(NO_ENTITLEMENT_VIEW));
+    expect(none).toMatchObject({ admitted: false, code: 'personal_workspace' });
+    // A plan without the Agent, or no Individual read at all, is still "needs an Individual plan".
+    const without = decide(snapshotFromView({ ...own, state: 'active', features: ['managed-inference'], agent: false }));
+    expect(without).toMatchObject({ admitted: false, code: 'personal_workspace' });
+    expect(decide()).toMatchObject({ admitted: false, code: 'personal_workspace' });
+    for (const decision of [revoked, expired, unreadable, none, without] as const) {
+      if (decision.admitted) throw new Error('expected a refusal');
+      expect(decision.reason.endsWith(' Nothing was sent.')).toBe(true);
+      expect(decision.reason).not.toMatch(/[—–]/);
+    }
+    // Their own plan is named for the person who had one, and never a business's.
+    for (const decision of [revoked, expired]) if (!decision.admitted) expect(decision.reason).toMatch(/^Your Individual plan /);
+    if (!none.admitted) {
+      expect(none.reason).toContain('needs an Individual plan');
+      expect(none.reason).toContain('business workspace that includes it');
+      expect(none.reason).toContain('your own AI tools');
+      expect(none.reason).not.toContain('works for a business');
+    }
+  });
+
+  it('answers the scoped admission of a withdrawn or ended Individual plan with its own code', async () => {
+    const scoped = async () => {
+      const free = await token('free');
+      const individual = (await call('POST', '/account/individual', free)).body;
+      return call('POST', `/account/routing/individual/${encodeURIComponent(individual.id)}/admit`, free,
+        { surface: 'conversation', routeKind: 'byo', rootJobId: 'job-scoped' });
+    };
+    expect((await scoped()).body.decision).toMatchObject({ admitted: false, code: 'personal_workspace' });
+    const grantId = (await issue('free')).body.grant.id;
+    expect((await scoped()).body.decision).toMatchObject({ admitted: true, planId: 'individual' });
+    await call('POST', `/ops/people/${await personOf('free')}/grants/${grantId}/revoke`, await token('staffBilling'), { reason: 'Cancelled.' });
+    const revoked = (await scoped()).body.decision;
+    expect(revoked).toMatchObject({ admitted: false, code: 'entitlement_revoked' });
+    expect(revoked.reason).toMatch(/^Your Individual plan was withdrawn/);
+    clock += 60_000;
+    await issue('free');
+    clock += 40 * 86_400_000;
+    const expired = (await scoped()).body.decision;
+    expect(expired).toMatchObject({ admitted: false, code: 'entitlement_expired' });
+    expect(expired.reason).toMatch(/^Your Individual plan has ended/);
+  });
 });
 
 describe('Business authority remains separate from Individual', () => {

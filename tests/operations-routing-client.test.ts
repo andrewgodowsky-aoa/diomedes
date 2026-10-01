@@ -117,7 +117,8 @@ describe('published account policy at the desktop model boundary', () => {
     await client.acceptRoutingPreference(token, { scope, baseRevision: 0, profile: 'strict', restrictions: STRICT_RESTRICTIONS,
       consentVersion: 'NC-SETUP-2026-09-27.1', exceptions: [], acknowledge: true });
     const session = { personId: () => person.id, backend: { client },
-      call: <T>(fn: (value: string) => Promise<T>) => fn(token) } as unknown as AccountSessionService;
+      call: <T>(fn: (value: string) => Promise<T>) => fn(token),
+      confirmPersonalAdmitted: async () => {}, confirmPersonalDowngrade: async () => {} } as unknown as AccountSessionService;
     const workspaces = { projectOwner: () => null, active: () => selected === 'business'
       ? { kind: 'business', organizationId: org } : { kind: 'personal' } } as unknown as WorkspaceService;
     const projectId = selected === 'business' ? 'unowned-personal-project' : null;

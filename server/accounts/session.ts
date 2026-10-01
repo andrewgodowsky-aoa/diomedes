@@ -166,6 +166,12 @@ function admissionAnswer(answer: unknown, organizationId: string | null, personI
   return { admitted: true, admissionId, personId: pins.personId, planId: pins.planId, policyRevision: pins.policyRevision, validUntil };
 }
 
+/** Admission refusals that say the business is not paid, as opposed to unknown, unreadable or membership. */
+const UNPAID_REFUSAL_CODES = new Set(['entitlement_revoked', 'entitlement_expired', 'agent_not_included']);
+// Personal work the service refuses for want of a paid Individual plan: the service answers a person
+// who does not hold one as `personal_workspace` (scoped admission) or `entitlement_none`.
+const UNPAID_PERSONAL_REFUSAL_CODES = new Set([...UNPAID_REFUSAL_CODES, 'personal_workspace', 'entitlement_none']);
+
 const UNREADABLE_ADMISSION_REASON =
   'The account service answered in a way this app could not read, so the Nectovia Agent could not confirm this business includes it. Nothing was sent.';
 
@@ -900,6 +906,86 @@ export class AccountSessionService {
     current.personAccess = await person;
     current.notMember = notMember;
     current.policy = await this.backend.client.routingPolicy(current.accessToken).catch(() => current.policy);
+    await this.resetNoticeWhilePaid(current);
+  }
+
+  /**
+   * The free-version notice comes back when paid access lapses. A person who chose "Don't remind me
+   * again" (or "later") while free has that answer cleared the moment their plan reads as paid, so
+   * the notice is shown again whenever they are back on free, including after a restart. Only a
+   * plan read as paid clears it; an unknown read never does.
+   */
+  private async resetNoticeWhilePaid(current: Current) {
+    if (this.planOf(current) !== 'paid' || !this.planNotices[current.personId]) return;
+    const { [current.personId]: _dropped, ...rest } = this.planNotices;
+    this.planNotices = rest;
+    await durableWrite(this.planNoticeFile, JSON.stringify(this.planNotices, null, 2));
+  }
+
+  /**
+   * A business the service has just refused as not paid (access withdrawn, ended or not including
+   * the Agent) is read again, so the cached plan, the account read and the default thread route
+   * follow the confirmed downgrade without a manual refresh. A failed read changes nothing: a
+   * network error or a 5xx is never a downgrade.
+   */
+  async confirmDowngrade(organizationId: string, refusalCode: string) {
+    const current = this.current;
+    if (!current || !UNPAID_REFUSAL_CODES.has(refusalCode)) return;
+    try {
+      const answer = accessAnswer(await this.backend.client.access(current.accessToken, organizationId), organizationId);
+      if (answer && this.current === current) current.access.set(organizationId, answer);
+      await this.resetNoticeWhilePaid(current);
+    } catch {
+      // The cache stays as it was.
+    }
+  }
+
+  /**
+   * The mirror of confirmDowngrade. A business the service has just admitted whose cached access does
+   * not read as paid (a downgrade it was confirmed to have, since granted again) is read again, so the
+   * cached plan and the live observation recheck follow the re-grant without a manual refresh. A
+   * failed read changes nothing.
+   */
+  async confirmAdmitted(organizationId: string) {
+    const current = this.current;
+    if (!current || this.includes(organizationId)) return;
+    try {
+      const answer = accessAnswer(await this.backend.client.access(current.accessToken, organizationId), organizationId);
+      if (answer && this.current === current) current.access.set(organizationId, answer);
+      await this.resetNoticeWhilePaid(current);
+    } catch {
+      // The cache stays as it was.
+    }
+  }
+
+  /**
+   * The Personal-scope mirror of confirmDowngrade: the person's own Individual access, refused by the
+   * service as not paid, is read again so the cached plan and the account read follow the confirmed
+   * downgrade without a manual refresh. A failed or unreadable read changes nothing.
+   */
+  async confirmPersonalDowngrade(refusalCode: string) {
+    if (!this.current || !UNPAID_PERSONAL_REFUSAL_CODES.has(refusalCode)) return;
+    await this.rereadPersonAccess(this.current);
+  }
+
+  /**
+   * The Personal-scope mirror of confirmAdmitted: Personal work the service has just admitted whose
+   * cached Individual access does not read as paid is read again, so a re-grant is picked up.
+   */
+  async confirmPersonalAdmitted() {
+    const current = this.current;
+    if (!current || this.personalIncludes()) return;
+    await this.rereadPersonAccess(current);
+  }
+
+  private async rereadPersonAccess(current: Current) {
+    try {
+      const answer = personAccessAnswer(await this.backend.client.personAccess(current.accessToken), current.personId);
+      if (answer && this.current === current) current.personAccess = answer;
+      await this.resetNoticeWhilePaid(current);
+    } catch {
+      // The cache stays as it was: a network error or a 5xx is never a downgrade.
+    }
   }
 
   /**
@@ -1044,8 +1130,12 @@ export class AccountSessionService {
     }
     if (!answer.admitted) {
       this.admissions.delete(key);
+      if (input.organizationId !== null) await this.confirmDowngrade(input.organizationId, answer.code);
+      else await this.confirmPersonalDowngrade(answer.code);
       return { admitted: false, code: answer.code, reason: answer.reason };
     }
+    if (input.organizationId !== null) await this.confirmAdmitted(input.organizationId);
+    else await this.confirmPersonalAdmitted();
     const until = Math.min(Date.parse(answer.validUntil), this.now() + ADMISSION_CACHE_MAX_MS);
     const decision = {
       admitted: true as const,
@@ -1171,7 +1261,10 @@ export class AccountSessionService {
    * Individual plan counts too (2026-09-28).
    */
   agentPlan(): AgentPlanState {
-    const current = this.current;
+    return this.planOf(this.current);
+  }
+
+  private planOf(current: Current | null): AgentPlanState {
     if (!current) return 'free';
     if (personIncludes(current.personAccess)) return 'paid';
     // The person's own plan unread is unknown, unless a business already answers paid below.

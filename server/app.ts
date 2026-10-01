@@ -2694,6 +2694,7 @@ export async function createApp(options: AppOptions) {
     const command = parseWorkCommand(supplied);
     const b = command?.request ?? supplied;
     if (b.route === NECTOVIA_ROUTE && nectoviaAccount?.signedIn()) await nectoviaAccount.refreshPolicy(projectId);
+    if (b.route === undefined) await confirmPersonalAccess(projectId, b.threadId);
     const state = store.state(projectId);
     const taskId = asString(b.taskId, 'a task', 100);
     const requestedTask = state.tasks.find((task) => task.id === taskId && !task.deletedAt);
@@ -3657,6 +3658,17 @@ export async function createApp(options: AppOptions) {
     return isFreeConversationRoute(own) ? { ...conversation, engine: own } : conversation;
   };
   /**
+   * A Nectovia conversation's Personal work that the cached Individual access would refuse, or move
+   * to the person's own AI, is confirmed with the account service first, so a plan granted inside the
+   * cache window is not held to the old answer. It is async, so it runs before the synchronous route
+   * choice and outside the store lock. A read that fails keeps the refusal.
+   */
+  const confirmPersonalAccess = async (projectId: string, threadId: unknown) => {
+    if (!accountRouting || !nectoviaAccount?.signedIn()) return;
+    const thread = store.state(projectId).conversations.find((item) => item.id === threadId);
+    if (thread?.engine === NECTOVIA_ROUTE) await accountRouting.confirmedPersonalRefusal(projectId);
+  };
+  /**
    * A route the free version holds a conversation on: a direct engine that runs its own loop. A
    * model-API route, on anyone's key, runs Nectovia's own loop, which is the Agent and is paid.
    */
@@ -4602,6 +4614,7 @@ export async function createApp(options: AppOptions) {
   const interactionHost: InteractionHost = {
     resolve: async (projectId, threadId, command, options) => {
       const thread = store.state(projectId).conversations.find(item => item.id === threadId);
+      await confirmPersonalAccess(projectId, threadId);
       if (routed(projectId, thread)?.engine === NECTOVIA_ROUTE && nectoviaAccount?.signedIn())
         await nectoviaAccount.refreshPolicy(projectId);
       return store.locked(async () => {
@@ -5531,15 +5544,16 @@ export async function createApp(options: AppOptions) {
     route(async (req, res) => {
       const b = body(req),
         projectId = id(req),
-        text = asString(b.text, 'an instruction', 16000),
-        serviceRoute =
-          b.route === undefined
-            ? threadRoute(
-                projectId,
-                store.state(projectId).conversations.find((c) => c.id === b.threadId),
-                { mode: modeOf(b.mode) ?? undefined, text },
-              )
-            : choice(b.route, ROUTES, 'service');
+        text = asString(b.text, 'an instruction', 16000);
+      if (b.route === undefined) await confirmPersonalAccess(projectId, b.threadId);
+      const serviceRoute =
+        b.route === undefined
+          ? threadRoute(
+              projectId,
+              store.state(projectId).conversations.find((c) => c.id === b.threadId),
+              { mode: modeOf(b.mode) ?? undefined, text },
+            )
+          : choice(b.route, ROUTES, 'service');
       // Home is reached through its messages route alone. This direct route would start work
       // there, write a plan into it, or re-route the one thread that has to stay on Claude
       // Code, so it is refused for every mode before anything is changed, any source file is

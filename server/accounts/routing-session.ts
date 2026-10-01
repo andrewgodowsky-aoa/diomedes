@@ -129,6 +129,28 @@ export class AccountRoutingSession {
     if (access.value.state === 'expired' || access.value.state === 'revoked') return access.value.reason;
     return null;
   }
+  /**
+   * What the cache would refuse Personal work for, confirmed with the account service first. A cached
+   * "not paid" lasts a minute, so a person granted a plan inside it would stay refused (or have the
+   * conversation moved off Nectovia) until it aged out. When the cache reads unpaid it is read again
+   * once and the answer is re-evaluated; the person's session access follows the same read. A read
+   * that fails keeps the refusal: an unreadable answer is never an admission.
+   */
+  async confirmedPersonalRefusal(projectId: string | null): Promise<string | null> {
+    const scope = this.scopeFor(projectId), cached = this.personalRefusal(projectId);
+    const access = this.individualAccess;
+    if (scope?.kind !== 'individual' || !access || access.until <= this.now() || this.includes(scope, AGENT_FEATURE)) return cached;
+    try {
+      await this.refreshAccess();
+    } catch {
+      return cached;
+    }
+    const fresh = this.individualAccess?.value;
+    if (!fresh || this.includes(scope, AGENT_FEATURE)) await this.session.confirmPersonalAdmitted();
+    else await this.session.confirmPersonalDowngrade(fresh.state === 'none' ? 'entitlement_none'
+      : fresh.state === 'active' ? 'agent_not_included' : fresh.state === 'unknown' ? 'entitlement_unknown' : `entitlement_${fresh.state}`);
+    return this.personalRefusal(projectId);
+  }
   async admit(work: AgentWork): Promise<AdmittedAgentWork> {
     try {
       await this.refresh(work.projectId);
@@ -142,8 +164,11 @@ export class AccountRoutingSession {
     // Known plan limits are refused before a service admission is recorded. Unknown
     // access still goes to the service, which may return a definitive revocation.
     if (scope.kind === 'individual') {
-      if (this.individualAccess?.value.state === 'none')
+      if (this.individualAccess?.value.state === 'none') {
+        // The access was just read above, so this refusal is current; the person's own access follows it.
+        await this.session.confirmPersonalDowngrade('agent_not_included');
         throw admissionRefusal('agent_not_included', this.personalRefusal(work.projectId) ?? AGENT_PERSONAL_INDIVIDUAL_REASON);
+      }
       if (work.routeKind === 'managed' && this.includes(scope, AGENT_FEATURE) && !this.includes(scope, 'managed-inference'))
         throw admissionRefusal('managed_inference_not_included', MANAGED_USAGE_NOT_INCLUDED_PERSONAL);
     } else if (work.routeKind === 'managed' && this.session.includes(scope.id, AGENT_FEATURE) &&
@@ -170,7 +195,13 @@ export class AccountRoutingSession {
         Date.parse(parsed.data.validUntil) <= this.now())
       throw new EngineError('ACCOUNT_CHANGED', 'The account service did not return a current admission for this work. Nothing was sent.', false);
     const answer = parsed.data;
-    if (!answer.decision.admitted) throw admissionRefusal(answer.decision.code, answer.decision.reason);
+    if (!answer.decision.admitted) {
+      if (scope.kind === 'organization') await this.session.confirmDowngrade(scope.id, answer.decision.code);
+      else await this.session.confirmPersonalDowngrade(answer.decision.code);
+      throw admissionRefusal(answer.decision.code, answer.decision.reason);
+    }
+    if (scope.kind === 'organization') await this.session.confirmAdmitted(scope.id);
+    else await this.session.confirmPersonalAdmitted();
     return { admissionId: answer.admissionId, organizationId: answer.pins.organizationId, scope, personId: person,
       planId: answer.pins.planId, policyRevision: answer.pins.policyRevision, routeKind: work.routeKind ?? 'byo', surface: work.surface,
       validUntil: answer.validUntil };
