@@ -1187,3 +1187,21 @@ export type UsageState =
       readonly organizationId: string;
       readonly projection: UsageProjection;
     };
+
+/**
+ * What a business bought outright, as the account service reports it: the credits bought, held,
+ * spent and still free. Never the included month, and never an estimate: with no service answer
+ * there are no numbers at all.
+ */
+export type PurchasedUsageState =
+  | { readonly state: 'not-connected' | 'unavailable'; readonly organizationId: string; readonly reason: string }
+  | {
+      readonly state: 'ready';
+      readonly organizationId: string;
+      readonly balance: {
+        readonly purchasedMicroUsd: number;
+        readonly heldMicroUsd: number;
+        readonly settledMicroUsd: number;
+        readonly availableMicroUsd: number;
+      };
+    };

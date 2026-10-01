@@ -20,10 +20,14 @@
  * not send.
  *
  * Funding writes are server-to-server seams for the runtime and the verified
- * billing path. None of them is reachable from `worker.ts`; the only HTTP
- * surface is the read-only usage projection.
+ * billing path. Two things reach `worker.ts`: the read-only usage projection,
+ * and the purchased-usage holds below, which an active member asks for with
+ * their own session. Those holds draw only on top-ups the verified billing
+ * path recorded, never on the monthly grant.
  */
+import { z } from 'zod';
 import {
+  MAX_MONEY_MICRO_USD,
   RATE_CARD_V1,
   approvedJobCap,
   debitsAllowance,
@@ -38,6 +42,7 @@ import {
   sumMoney,
   micro,
   usageCost,
+  formatCredits,
   validateProviderUsage,
   type AllowanceAdjustment,
   type AttemptSettlement,
@@ -133,6 +138,56 @@ export interface TopUpRow {
   recordedAt: string;
 }
 
+/**
+ * How long a purchased-usage hold lasts before it lets go on its own, unless its holder renews it.
+ * An engineering default, not an owner figure: the owner may change it. It is long enough for the
+ * desktop to renew many times over before it lapses while work runs, and short enough that a crashed
+ * or closed app frees bought credits within the quarter hour.
+ */
+export const PURCHASED_HOLD_LEASE_MINUTES = 15;
+
+/**
+ * A hold a person asked for against the credits their business bought outright (migration 013).
+ * It is not a funded attempt: no job, no month, no rate and no provider call. It only keeps
+ * bought credits aside, and is settled to a debit on the top-up balance or released.
+ *
+ * It is a lease: only the holder knows whether the work is still running, so the holder renews it.
+ * A held row whose lease has lapsed stops counting as held and is let go by the next read or write
+ * under the organization lock. If the work finishes after that, its real usage is still recorded.
+ */
+export interface TopUpHoldRow {
+  tenantId: string;
+  organizationId: string;
+  holdId: string;
+  /** The verified person who asked. Only they can settle or release it. */
+  personId: string;
+  requestDigest: string;
+  amountMicroUsd: MicroUsd;
+  /** Zero until the hold is settled. Never more than the amount. */
+  debitMicroUsd: MicroUsd;
+  /**
+   * What a late settle asked for beyond what was free to record, which Diomedes covers. Zero unless the
+   * hold was settled after it had let go. Debit plus this is what the holder asked to settle, and is never
+   * more than the amount. Internal: it appears in no answer and no screen.
+   */
+  absorbedMicroUsd: MicroUsd;
+  state: 'held' | 'settled' | 'released';
+  createdAt: string;
+  resolvedAt: string | null;
+  /** From the service's own clock when the hold was made, moved only by a renewal. Never from a request. */
+  leaseUntil: string;
+  /** Who let go of a released hold: the person, or the lapse of the lease. Null unless released. */
+  releasedBy: 'person' | 'expiry' | null;
+}
+
+/** The credits a business bought outright, as the top-up ledger reads them. */
+export interface PurchasedBalance {
+  purchasedMicroUsd: MicroUsd;
+  heldMicroUsd: MicroUsd;
+  settledMicroUsd: MicroUsd;
+  availableMicroUsd: MicroUsd;
+}
+
 export interface CreditAdjustmentRow extends AllowanceAdjustment {
   tenantId: string;
   attemptRef: string | null;
@@ -159,10 +214,24 @@ export interface FundingTransaction {
   saveAdjustment(row: CreditAdjustmentRow): Promise<void>;
   topUp(tenantId: string, topUpId: string): Promise<TopUpRow | undefined>;
   saveTopUp(row: TopUpRow): Promise<void>;
+  topUpHold(tenantId: string, holdId: string): Promise<TopUpHoldRow | undefined>;
+  /** Insert a new hold, or move an existing one from held to settled or released, or renew its lease. */
+  saveTopUpHold(row: TopUpHoldRow): Promise<void>;
+  /**
+   * Let go of every held purchased-usage hold in the organization whose lease has lapsed at `at`
+   * (lease_until <= at), as released by expiry. Runs under the organization lock before any balance is read.
+   */
+  expireTopUpHolds(tenantId: string, organizationId: string, at: string): Promise<void>;
   capRequest(tenantId: string, requestId: string): Promise<CapRequestRow | undefined>;
   saveCapRequest(row: CapRequestRow): Promise<void>;
   periodTotals(tenantId: string, organizationId: string, periodId: string): Promise<PeriodTotals>;
-  topUpTotals(tenantId: string, organizationId: string): Promise<TopUpTotals>;
+  /**
+   * Purchased credits, and what is held or settled against them: funded attempts' top-up holds
+   * and debits, and purchased-usage holds and their debits. One balance, one place. A held
+   * purchased-usage hold whose lease has lapsed at `at` is not counted as held, even when nothing
+   * has let go of it yet: the funded-reserve path reads this without a sweep.
+   */
+  topUpTotals(tenantId: string, organizationId: string, at: string): Promise<TopUpTotals>;
   /** Pending and uncertain holds at their ceiling plus settled debits, across the root job. */
   jobUsed(tenantId: string, rootJobId: string): Promise<MicroUsd>;
   lastReceipt(tenantId: string, organizationId: string, periodId: string): Promise<UsageReceipt | null>;
@@ -269,9 +338,22 @@ function monthlyAvailable(period: CreditPeriodRow, totals: PeriodTotals): MicroU
   return committed > funded ? micro(0) : subtractMoney(funded, committed);
 }
 
+/**
+ * What is free to hold or reserve right now, never less than nothing. A late settle records only
+ * what is free here (settlePurchased), so the ledger itself never goes past what was bought.
+ */
 function topUpAvailable(totals: TopUpTotals): MicroUsd {
-  return subtractMoney(totals.purchasedMicroUsd, sumMoney([totals.heldMicroUsd, totals.settledMicroUsd]));
+  const committed = sumMoney([totals.heldMicroUsd, totals.settledMicroUsd]);
+  return committed >= totals.purchasedMicroUsd ? micro(0) : subtractMoney(totals.purchasedMicroUsd, committed);
 }
+
+function balanceOf(totals: TopUpTotals): PurchasedBalance {
+  // An overdrawn balance can only come from an edit outside the ledger; subtractMoney refuses to
+  // present it rather than clamp it.
+  return { ...totals, availableMicroUsd: subtractMoney(totals.purchasedMicroUsd, sumMoney([totals.heldMicroUsd, totals.settledMicroUsd])) };
+}
+
+const leaseFrom = (at: string) => new Date(Date.parse(at) + PURCHASED_HOLD_LEASE_MINUTES * 60_000).toISOString();
 
 export interface FundingOptions {
   now?: () => number;
@@ -422,6 +504,167 @@ export class FundingService {
     });
   }
 
+  /** What a business bought outright and what of it is held or spent. Read-only; money only from recorded top-ups. */
+  async purchasedBalance(tenantId: string, organizationId: string): Promise<PurchasedBalance> {
+    requireId(tenantId, 'tenant');
+    requireId(organizationId, 'organization');
+    const at = this.at();
+    return this.repository.transaction(async (tx) => {
+      await tx.lockOrganization(tenantId, organizationId);
+      await tx.expireTopUpHolds(tenantId, organizationId, at);
+      return balanceOf(await tx.topUpTotals(tenantId, organizationId, at));
+    });
+  }
+
+  private async lockedHold(tx: FundingTransaction, ref: { tenantId: string; organizationId: string; holdId: string; personId: string }, at: string): Promise<TopUpHoldRow> {
+    await tx.lockOrganization(ref.tenantId, ref.organizationId);
+    // Let go of lapsed leases before anything is read, so a hold is seen as it stands now.
+    await tx.expireTopUpHolds(ref.tenantId, ref.organizationId, at);
+    const hold = await tx.topUpHold(ref.tenantId, ref.holdId);
+    // Another business's hold, and another person's, read as absent.
+    if (!hold || hold.organizationId !== ref.organizationId || hold.personId !== ref.personId)
+      throw new FundingError(404, 'That hold was not found for you in this business.', 'unknown_hold');
+    return hold;
+  }
+
+  /**
+   * Hold some of the credits a business bought outright, for a person who asked.
+   *
+   * Top-up only: this never reads the month, never takes a period or a job, and never draws on the
+   * included grant. The balance it decides on is the recorded top-ups less what is already held or
+   * settled against them, read under the organization lock; no figure in the request is a balance.
+   * Idempotent by hold id: a retry with the same terms finds the hold, a different one is refused.
+   */
+  async holdPurchased(input: { tenantId: string; organizationId: string; holdId: string; personId: string; amountMicroUsd: MicroUsd; requestDigest: string }):
+    Promise<{ hold: TopUpHoldRow; balance: PurchasedBalance }> {
+    const tenantId = requireId(input.tenantId, 'tenant');
+    const organizationId = requireId(input.organizationId, 'organization');
+    const holdId = requireId(input.holdId, 'hold');
+    const personId = requireId(input.personId, 'person');
+    const amount = requireMoney(input.amountMicroUsd, 'the amount to hold');
+    const digest = typeof input.requestDigest === 'string' ? input.requestDigest : '';
+    if (!digest || digest.length > 200) throw new FundingError(422, 'A hold names the request it is for.', 'invalid_request');
+    if (amount > MAX_MONEY_MICRO_USD) throw new FundingError(422, 'That amount is too large to hold.', 'invalid_amount');
+    const at = this.at();
+    return this.repository.transaction(async (tx) => {
+      await tx.lockOrganization(tenantId, organizationId);
+      await tx.expireTopUpHolds(tenantId, organizationId, at);
+      const existing = await tx.topUpHold(tenantId, holdId);
+      const totals = await tx.topUpTotals(tenantId, organizationId, at);
+      if (existing) {
+        if (existing.organizationId !== organizationId || existing.personId !== personId || existing.amountMicroUsd !== amount || existing.requestDigest !== digest)
+          throw new FundingError(409, 'That hold id is already used for a different hold.', 'hold_conflict');
+        if (existing.state !== 'held')
+          throw new FundingError(409, 'That hold is already closed.', 'hold_closed');
+        return { hold: existing, balance: balanceOf(totals) };
+      }
+      const available = topUpAvailable(totals);
+      if (available === 0)
+        throw new FundingError(402, 'No bought usage is free to hold. Included usage can’t be reserved.', 'no_purchased_usage');
+      if (amount > available)
+        throw new FundingError(402, `This needs ${formatCredits(amount)} credits and ${formatCredits(available)} bought credits are free to hold.`, 'insufficient_purchased_usage');
+      const hold: TopUpHoldRow = { tenantId, organizationId, holdId, personId, requestDigest: digest, amountMicroUsd: amount, debitMicroUsd: micro(0), absorbedMicroUsd: micro(0), state: 'held', createdAt: at, resolvedAt: null, leaseUntil: leaseFrom(at), releasedBy: null };
+      await tx.saveTopUpHold(hold);
+      return { hold, balance: balanceOf({ ...totals, heldMicroUsd: sumMoney([totals.heldMicroUsd, amount]) }) };
+    });
+  }
+
+  /**
+   * Settle a purchased-usage hold to a debit on the top-up balance, never on the month. The debit
+   * is at most the hold; the rest is free again. A replay of the same figure returns the recorded
+   * settlement and a different one is refused.
+   *
+   * Work that finishes after its hold let go on its own is still settled, but a business can't use more
+   * bought credits than it had left. A hold released by expiry (a lapsed lease is let go before this
+   * reads it) records against the business the least of the debit asked for, the amount held, and what
+   * is free to hold at this moment under the organization lock, so the bought balance never goes below
+   * zero. Diomedes covers the rest: it is kept on the row as absorbed and goes into no answer. A settle
+   * on a live hold is recorded as asked. A hold the person released is still refused.
+   *
+   * The figure a replay is compared with is what was asked, which is the debit recorded plus what was
+   * absorbed (for a live hold that is just the debit). Storing it needs no further column.
+   */
+  async settlePurchased(input: { tenantId: string; organizationId: string; holdId: string; personId: string; debitMicroUsd: MicroUsd }):
+    Promise<{ hold: TopUpHoldRow; balance: PurchasedBalance }> {
+    const tenantId = requireId(input.tenantId, 'tenant');
+    const organizationId = requireId(input.organizationId, 'organization');
+    const holdId = requireId(input.holdId, 'hold');
+    const personId = requireId(input.personId, 'person');
+    const debit = requireMoney(input.debitMicroUsd, 'the amount to settle', false);
+    const at = this.at();
+    return this.repository.transaction(async (tx) => {
+      const hold = await this.lockedHold(tx, { tenantId, organizationId, holdId, personId }, at);
+      if (hold.state === 'settled') {
+        if (sumMoney([hold.debitMicroUsd, hold.absorbedMicroUsd]) !== debit) throw new FundingError(409, 'That hold is already settled for a different amount.', 'settlement_conflict');
+        return { hold, balance: balanceOf(await tx.topUpTotals(tenantId, organizationId, at)) };
+      }
+      if (hold.state === 'released' && hold.releasedBy !== 'expiry')
+        throw new FundingError(409, 'That hold was released, so it can’t be settled.', 'invalid_transition');
+      if (debit > hold.amountMicroUsd)
+        throw new FundingError(409, 'That is more than was held.', 'settlement_exceeds_hold');
+      // Released by expiry, or still held with a lease that has lapsed: only what is free right now may be recorded.
+      const late = hold.state === 'released' || Date.parse(hold.leaseUntil) <= Date.parse(at);
+      const recorded = late
+        ? micro(Math.min(debit, hold.amountMicroUsd, topUpAvailable(await tx.topUpTotals(tenantId, organizationId, at))))
+        : debit;
+      const settled: TopUpHoldRow = {
+        ...hold, state: 'settled', debitMicroUsd: recorded, absorbedMicroUsd: subtractMoney(debit, recorded), resolvedAt: at, releasedBy: null,
+      };
+      await tx.saveTopUpHold(settled);
+      return { hold: settled, balance: balanceOf(await tx.topUpTotals(tenantId, organizationId, at)) };
+    });
+  }
+
+  /** Give a purchased-usage hold back unused. A settled hold can't be released. */
+  async releasePurchased(input: { tenantId: string; organizationId: string; holdId: string; personId: string }):
+    Promise<{ hold: TopUpHoldRow; balance: PurchasedBalance }> {
+    const tenantId = requireId(input.tenantId, 'tenant');
+    const organizationId = requireId(input.organizationId, 'organization');
+    const holdId = requireId(input.holdId, 'hold');
+    const personId = requireId(input.personId, 'person');
+    const at = this.at();
+    return this.repository.transaction(async (tx) => {
+      const hold = await this.lockedHold(tx, { tenantId, organizationId, holdId, personId }, at);
+      if (hold.state === 'settled') throw new FundingError(409, 'That hold was settled, so it can’t be released.', 'invalid_transition');
+      if (hold.state === 'held') {
+        const released: TopUpHoldRow = { ...hold, state: 'released', resolvedAt: at, releasedBy: 'person' };
+        await tx.saveTopUpHold(released);
+        return { hold: released, balance: balanceOf(await tx.topUpTotals(tenantId, organizationId, at)) };
+      }
+      // Already released, by the person or by the lapse of its lease: a replay, and it keeps who let go.
+      return { hold, balance: balanceOf(await tx.topUpTotals(tenantId, organizationId, at)) };
+    });
+  }
+
+  /**
+   * Keep a purchased-usage hold: only the person who made it, and only while it is still held. The
+   * new lease is a full lease from the service's own clock now; nothing in the request sets it. A hold
+   * whose lease has lapsed, or that was settled or released, is refused and nothing is changed.
+   */
+  async renewPurchased(input: { tenantId: string; organizationId: string; holdId: string; personId: string }):
+    Promise<{ hold: TopUpHoldRow; balance: PurchasedBalance }> {
+    const tenantId = requireId(input.tenantId, 'tenant');
+    const organizationId = requireId(input.organizationId, 'organization');
+    const holdId = requireId(input.holdId, 'hold');
+    const personId = requireId(input.personId, 'person');
+    const at = this.at();
+    return this.repository.transaction(async (tx) => {
+      const hold = await this.lockedHold(tx, { tenantId, organizationId, holdId, personId }, at);
+      if (hold.state === 'settled')
+        throw new FundingError(409, 'That hold was settled, so it can’t be renewed.', 'hold_not_held');
+      if (hold.state === 'released')
+        throw new FundingError(409, hold.releasedBy === 'expiry'
+          ? 'That hold’s lease ran out and it was let go, so it can’t be renewed.'
+          : 'That hold was released, so it can’t be renewed.', 'hold_not_held');
+      // A lapsed lease was let go above, so a held row here is live; this says so again in case it is not.
+      if (Date.parse(hold.leaseUntil) <= Date.parse(at))
+        throw new FundingError(409, 'That hold’s lease ran out, so it can’t be renewed.', 'hold_not_held');
+      const renewed: TopUpHoldRow = { ...hold, leaseUntil: leaseFrom(at) };
+      await tx.saveTopUpHold(renewed);
+      return { hold: renewed, balance: balanceOf(await tx.topUpTotals(tenantId, organizationId, at)) };
+    });
+  }
+
   /**
    * Open a root job with its tier's finite cap, or attach a child run to its
    * parent's root. A child never brings a tier or a cap of its own: it spends
@@ -548,7 +791,7 @@ export class FundingService {
       const decision = decideReserve({
         maxMicroUsd: input.maxMicroUsd,
         monthlyAvailableMicroUsd: monthlyAvailable(period, await tx.periodTotals(tenantId, organizationId, periodId)),
-        topUpAvailableMicroUsd: topUpAvailable(await tx.topUpTotals(tenantId, organizationId)),
+        topUpAvailableMicroUsd: topUpAvailable(await tx.topUpTotals(tenantId, organizationId, at)),
         job: { capMicroUsd: job.capMicroUsd, usedMicroUsd: await tx.jobUsed(tenantId, rootJobId) },
       });
       if (!decision.ok)
@@ -866,7 +1109,7 @@ export class FundingService {
           organizationId,
           period,
           totals: await tx.periodTotals(tenantId, organizationId, periodId),
-          topUp: await tx.topUpTotals(tenantId, organizationId),
+          topUp: await tx.topUpTotals(tenantId, organizationId, observedAt),
           lastReceipt: await tx.lastReceipt(tenantId, organizationId, periodId),
           observedAt,
         }),
@@ -900,7 +1143,7 @@ export class FundingService {
           organizationId,
           period: period ?? { periodId, planId: 'individual', grantedMicroUsd: granted, startsAt: cycle.startsAt, endsAt: cycle.endsAt, rateCardVersion: RATE_CARD_V1.version },
           totals: await tx.periodTotals(tenantId, organizationId, periodId),
-          topUp: await tx.topUpTotals(tenantId, organizationId),
+          topUp: await tx.topUpTotals(tenantId, organizationId, observedAt),
           lastReceipt: await tx.lastReceipt(tenantId, organizationId, periodId),
           observedAt,
           allocation: period ? 'recorded' : 'pending',
@@ -920,5 +1163,81 @@ export class UsageService {
   async usage(token: string, organizationId: string): Promise<UsageState> {
     const snapshot = await this.accounts.membership(token, organizationId);
     return this.funding.projection(snapshot.organization.tenantId, snapshot.organization.id);
+  }
+}
+
+const holdIdField = z.string().regex(idPattern);
+export const purchasedHoldInput = z.strictObject({
+  holdId: holdIdField,
+  amountMicroUsd: z.number().int().positive().max(MAX_MONEY_MICRO_USD),
+  requestDigest: z.string().min(1).max(200),
+});
+export const purchasedSettleInput = z.strictObject({
+  holdId: holdIdField,
+  debitMicroUsd: z.number().int().nonnegative().max(MAX_MONEY_MICRO_USD),
+});
+export const purchasedReleaseInput = z.strictObject({ holdId: holdIdField });
+export const purchasedRenewInput = z.strictObject({ holdId: holdIdField });
+
+function holdAnswer(result: { hold: TopUpHoldRow; balance: PurchasedBalance }) {
+  const { hold, balance } = result;
+  return {
+    holdId: hold.holdId,
+    state: hold.state,
+    amountMicroUsd: hold.amountMicroUsd,
+    debitMicroUsd: hold.debitMicroUsd,
+    createdAt: hold.createdAt,
+    resolvedAt: hold.resolvedAt,
+    leaseUntil: hold.leaseUntil,
+    balance,
+  };
+}
+
+/**
+ * Purchased-usage holds, asked for by a person with their own session (Andrew, 2026-10-01: usage a
+ * business bought outright may be reserved; included usage may not). Membership is verified first,
+ * the same assertion every workspace read uses, and the funding write runs under the organization's
+ * own tenant and the verified person's id: nothing in a body names either. The only money these read
+ * or move is the recorded top-up balance.
+ */
+export class PurchasedUsageService {
+  constructor(
+    private readonly accounts: Pick<AccountService, 'membership'>,
+    private readonly funding: Pick<FundingService, 'purchasedBalance' | 'holdPurchased' | 'settlePurchased' | 'releasePurchased' | 'renewPurchased'>,
+  ) {}
+
+  async balance(token: string, organizationId: string): Promise<PurchasedBalance> {
+    const snapshot = await this.accounts.membership(token, organizationId);
+    return this.funding.purchasedBalance(snapshot.organization.tenantId, snapshot.organization.id);
+  }
+
+  async hold(token: string, organizationId: string, input: z.infer<typeof purchasedHoldInput>) {
+    const snapshot = await this.accounts.membership(token, organizationId);
+    return holdAnswer(await this.funding.holdPurchased({
+      tenantId: snapshot.organization.tenantId, organizationId: snapshot.organization.id, personId: snapshot.person.id,
+      holdId: input.holdId, amountMicroUsd: micro(input.amountMicroUsd), requestDigest: input.requestDigest,
+    }));
+  }
+
+  async settle(token: string, organizationId: string, input: z.infer<typeof purchasedSettleInput>) {
+    const snapshot = await this.accounts.membership(token, organizationId);
+    return holdAnswer(await this.funding.settlePurchased({
+      tenantId: snapshot.organization.tenantId, organizationId: snapshot.organization.id, personId: snapshot.person.id,
+      holdId: input.holdId, debitMicroUsd: micro(input.debitMicroUsd),
+    }));
+  }
+
+  async release(token: string, organizationId: string, input: z.infer<typeof purchasedReleaseInput>) {
+    const snapshot = await this.accounts.membership(token, organizationId);
+    return holdAnswer(await this.funding.releasePurchased({
+      tenantId: snapshot.organization.tenantId, organizationId: snapshot.organization.id, personId: snapshot.person.id, holdId: input.holdId,
+    }));
+  }
+
+  async renew(token: string, organizationId: string, input: z.infer<typeof purchasedRenewInput>) {
+    const snapshot = await this.accounts.membership(token, organizationId);
+    return holdAnswer(await this.funding.renewPurchased({
+      tenantId: snapshot.organization.tenantId, organizationId: snapshot.organization.id, personId: snapshot.person.id, holdId: input.holdId,
+    }));
   }
 }

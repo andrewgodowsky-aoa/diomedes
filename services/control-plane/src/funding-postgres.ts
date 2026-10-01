@@ -13,7 +13,7 @@ import { isUsageClass, micro, type AttemptSettlement, type FundedAttempt, type M
   type RateSnapshot, type ReservationState, type TopUpTotals, type ChargeKind, type UsageClass } from '../../../shared/managed-usage.js';
 import { isNormalizedUsage, type NormalizedUsage } from '../../../shared/usage-contract.js';
 import type { CapRequestRow, CreditAdjustmentRow, CreditPeriodRow, FundedJobRow, FundingRepository, FundingTransaction,
-  JobRefRow, TopUpRow } from './funding.js';
+  JobRefRow, TopUpHoldRow, TopUpRow } from './funding.js';
 import { inTransaction, type ClientFactory, type SqlClient } from './postgres.js';
 
 type Row = Record<string, unknown>;
@@ -36,6 +36,11 @@ const text = (value: unknown) => {
   return value;
 };
 const textOrNull = (value: unknown) => (value === null || value === undefined ? null : text(value));
+function releasedBy(value: unknown): TopUpHoldRow['releasedBy'] {
+  if (value === null || value === undefined) return null;
+  if (value === 'person' || value === 'expiry') return value;
+  throw new Error('Stored hold releaser is not a known value.');
+}
 const json = <T>(value: unknown): T => (typeof value === 'string' ? JSON.parse(value) : value) as T;
 function usageClass(value: unknown): UsageClass {
   if (!isUsageClass(value)) throw new Error('Stored usage class is unknown.');
@@ -189,6 +194,28 @@ export class PostgresFundingTransaction implements FundingTransaction {
       [row.tenantId, row.topUpId, row.organizationId, row.amountMicroUsd, row.provider, row.sourceEventId, row.recordedAt]);
   }
 
+  async topUpHold(tenantId: string, holdId: string): Promise<TopUpHoldRow | undefined> {
+    const row = await this.one('SELECT * FROM control_plane.credit_topup_holds WHERE tenant_id=$1 AND hold_id=$2 FOR UPDATE', [tenantId, holdId]);
+    return row && {
+      tenantId: text(row.tenant_id), organizationId: text(row.organization_id), holdId: text(row.hold_id), personId: text(row.person_id),
+      requestDigest: text(row.request_digest), amountMicroUsd: money(row.amount_micro_usd), debitMicroUsd: money(row.debit_micro_usd),
+      absorbedMicroUsd: money(row.absorbed_micro_usd),
+      state: text(row.state) as TopUpHoldRow['state'], createdAt: iso(row.created_at), resolvedAt: isoOrNull(row.resolved_at),
+      leaseUntil: iso(row.lease_until), releasedBy: releasedBy(row.released_by),
+    };
+  }
+  async saveTopUpHold(row: TopUpHoldRow) {
+    await this.client.query(`INSERT INTO control_plane.credit_topup_holds(tenant_id,hold_id,organization_id,person_id,request_digest,amount_micro_usd,debit_micro_usd,absorbed_micro_usd,state,created_at,resolved_at,lease_until,released_by)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+      ON CONFLICT (tenant_id,hold_id) DO UPDATE SET debit_micro_usd=EXCLUDED.debit_micro_usd,absorbed_micro_usd=EXCLUDED.absorbed_micro_usd,state=EXCLUDED.state,resolved_at=EXCLUDED.resolved_at,lease_until=EXCLUDED.lease_until,released_by=EXCLUDED.released_by`,
+      [row.tenantId, row.holdId, row.organizationId, row.personId, row.requestDigest, row.amountMicroUsd, row.debitMicroUsd, row.absorbedMicroUsd, row.state, row.createdAt, row.resolvedAt, row.leaseUntil, row.releasedBy]);
+  }
+  /** The lazy release of lapsed leases. Complements topUpTotals: lease_until <= $3 here, lease_until > $3 there. */
+  async expireTopUpHolds(tenantId: string, organizationId: string, at: string) {
+    await this.client.query("UPDATE control_plane.credit_topup_holds SET state='released',released_by='expiry',resolved_at=$3 WHERE tenant_id=$1 AND organization_id=$2 AND state='held' AND lease_until <= $3",
+      [tenantId, organizationId, at]);
+  }
+
   async capRequest(tenantId: string, requestId: string): Promise<CapRequestRow | undefined> {
     const row = await this.one('SELECT * FROM control_plane.job_cap_requests WHERE tenant_id=$1 AND request_id=$2', [tenantId, requestId]);
     return row && {
@@ -218,12 +245,14 @@ export class PostgresFundingTransaction implements FundingTransaction {
       correctionWithdrawalsMicroUsd: money(row.correction_withdrawals), settledTopUpMicroUsd: money(row.settled_topup),
     };
   }
-  async topUpTotals(tenantId: string, organizationId: string): Promise<TopUpTotals> {
+  async topUpTotals(tenantId: string, organizationId: string, at: string): Promise<TopUpTotals> {
     const row = await this.one(`SELECT
         (SELECT COALESCE(SUM(amount_micro_usd),0) FROM control_plane.credit_topups WHERE tenant_id=$1 AND organization_id=$2) AS purchased,
-        (SELECT COALESCE(SUM(topup_hold_micro_usd),0) FROM control_plane.funding_reservations WHERE tenant_id=$1 AND organization_id=$2 AND state IN ('pending','uncertain')) AS held,
-        (SELECT COALESCE(SUM(topup_debit_micro_usd),0) FROM control_plane.funding_settlements WHERE tenant_id=$1 AND organization_id=$2) AS settled`,
-      [tenantId, organizationId]);
+        (SELECT COALESCE(SUM(topup_hold_micro_usd),0) FROM control_plane.funding_reservations WHERE tenant_id=$1 AND organization_id=$2 AND state IN ('pending','uncertain'))
+      + (SELECT COALESCE(SUM(amount_micro_usd),0) FROM control_plane.credit_topup_holds WHERE tenant_id=$1 AND organization_id=$2 AND state='held' AND lease_until > $3) AS held,
+        (SELECT COALESCE(SUM(topup_debit_micro_usd),0) FROM control_plane.funding_settlements WHERE tenant_id=$1 AND organization_id=$2)
+      + (SELECT COALESCE(SUM(debit_micro_usd),0) FROM control_plane.credit_topup_holds WHERE tenant_id=$1 AND organization_id=$2 AND state='settled') AS settled`,
+      [tenantId, organizationId, at]);
     if (!row) throw new Error('Top-up totals returned no row.');
     return { purchasedMicroUsd: money(row.purchased), heldMicroUsd: money(row.held), settledMicroUsd: money(row.settled) };
   }

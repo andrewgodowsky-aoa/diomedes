@@ -18,16 +18,24 @@
  *
  * A person cannot reserve or settle included usage through this surface (owner
  * rule, 2026-09-30). Diomedes staff, and usage a business bought outright, are
- * the only kinds allowed. This app can identify staff, by asking the account
- * service at the time (an active staff row, never anything in the request), and
- * cannot identify purchased usage: its local ledger keeps one pool. So the route
- * marks a reservation as direct, passes the host's own answer on staff, and the
- * gateway refuses it where a hold would be taken unless the asker is staff.
- * Settling a hold is closed the same way, here at the route; the ledger itself
- * stays open to an in-process caller.
+ * the only kinds allowed (owner rule, 2026-10-01). This app can identify staff, by
+ * asking the account service at the time (an active staff row, never anything in
+ * the request). Its local ledger keeps one pool and no purchased line, so staff
+ * hold and settle there, and everyone else's reservation is held by the account
+ * service against the business's recorded top-ups, never against the included
+ * month. The route marks a reservation as direct and passes the host's own answer
+ * on staff; the gateway sends a non-staff hold to the service, or refuses it when
+ * the service holds nothing. A non-staff settle goes to the service too, which
+ * knows only the holds that person made; a hold on the included month is not one,
+ * and is refused. The ledger itself stays open to an in-process caller.
+ *
+ * A hold on bought usage is a lease the service times on its own clock. A non-staff person
+ * renews the hold they made through the renew route, as that person; staff hold on the local
+ * ledger, which keeps no lease, so there is nothing for them to renew.
  */
 import type { Express, Request, Response } from 'express';
 import type { StaffRole } from '../shared/access.js';
+import type { PurchasedUsageState } from '../shared/managed-usage.js';
 import {
   ALLOWANCE_MEANING,
   RATE_CARD_V1,
@@ -40,7 +48,17 @@ import {
 import type { BillingEvent, BillingEventProcessor } from './billing-events.js';
 import type { ManagedGateway } from './managed-gateway.js';
 import type { AllowanceLedger } from './managed-usage.js';
-import { DIRECT_RESERVATION_REFUSED, DIRECT_SETTLE_REASON, DIRECT_SETTLE_REFUSED } from './managed-gateway.js';
+import {
+  DIRECT_RENEW_REASON,
+  DIRECT_RENEW_REFUSED,
+  DIRECT_RESERVATION_REFUSED,
+  DIRECT_SETTLE_REASON,
+  DIRECT_SETTLE_REFUSED,
+  PURCHASED_REFUSAL_STATUS,
+  STAFF_RENEW_REASON,
+  STAFF_RENEW_REFUSED,
+  type PurchasedUsage,
+} from './managed-gateway.js';
 import { ApiError } from './paths.js';
 import type { Store } from './store.js';
 import type { WorkspaceService } from './workspaces.js';
@@ -99,6 +117,8 @@ export function mountManagedUsageRoutes(
   workspaces: WorkspaceService,
   /** Left out, nobody is staff here: an install without accounts has no one to say so. */
   staff: StaffReader | null = null,
+  /** Left out, a person who is not staff holds nothing: there is no account service to hold bought usage. */
+  purchased: PurchasedUsage | null = null,
 ) {
   const route =
     (action: (req: Request, res: Response) => Promise<unknown>, locked = true) =>
@@ -127,6 +147,10 @@ export function mountManagedUsageRoutes(
    * network call and the store lock is everyone's, so it is asked first and the lock is taken
    * after. Membership is checked before it, so a stranger reads as absent without the service
    * being asked. An error, a sign-out, or no reader at all says nobody is staff.
+   *
+   * Staff act on the local ledger, so they run under the store lock. Everyone else acts on the
+   * account service and never writes the ledger, so they run without it: a network call must not
+   * hold everyone's lock while it waits.
    */
   const withStaff =
     (action: (req: Request, res: Response, asker: StaffRole | null) => Promise<unknown>) =>
@@ -139,8 +163,106 @@ export function mountManagedUsageRoutes(
         if (error instanceof ApiError) return next(error);
         asker = null;
       }
-      return route((inner, out) => action(inner, out, asker))(req, res, next);
+      return route((inner, out) => action(inner, out, asker), asker !== null)(req, res, next);
     };
+
+  /**
+   * A non-staff renewal, sent to the account service as that person. The service finds only a hold this
+   * person made; someone else's and one that does not exist read the same, and that is a 403. The new
+   * lease is the service's: this app asks, and shows what came back.
+   */
+  const renewPurchasedHold = async (id: string, req: Request) => {
+    if (!purchased) throw new ApiError(403, DIRECT_RENEW_REASON, { code: DIRECT_RENEW_REFUSED });
+    const holdId = text(body(req).reservationId, 'the attempt being renewed', 120);
+    let answer;
+    try {
+      answer = await purchased.renewPurchased(id, { holdId });
+    } catch (error) {
+      if (error instanceof ApiError) {
+        const code = String((error.details as { code?: unknown }).code ?? '');
+        if (error.status === 404 && code === 'unknown_hold')
+          throw new ApiError(403, DIRECT_RENEW_REASON, { code: DIRECT_RENEW_REFUSED });
+        if (code === 'hold_not_held') throw new ApiError(409, error.message, { code });
+        if (error.status === 401) throw error;
+      }
+      throw new ApiError(503, 'The account service couldn’t be reached, so this wasn’t renewed.', {
+        code: 'purchased_renew_unavailable',
+      });
+    }
+    return {
+      reservationId: answer.holdId,
+      organizationId: id,
+      source: 'purchased' as const,
+      state: answer.state,
+      leaseUntil: answer.leaseUntil,
+      balance: answer.balance,
+    };
+  };
+
+  /**
+   * A non-staff settle, sent to the account service as that person. The service finds only a hold
+   * this person made against bought usage; a hold on the included month, someone else's hold and a
+   * hold that does not exist all come back unknown, and that is the 403 a non-staff settle always
+   * had. The debit is what the person says came off the bought balance: never more than was held,
+   * which the service refuses. What the provider charged is checked as an amount and not kept here.
+   */
+  const settlePurchasedHold = async (id: string, req: Request) => {
+    if (!purchased) throw new ApiError(403, DIRECT_SETTLE_REASON, { code: DIRECT_SETTLE_REFUSED });
+    const value = body(req);
+    const holdId = text(value.reservationId, 'the attempt being settled', 120);
+    amount(value.providerCostMicroUsd, 'what the provider charged');
+    const debit = amount(value.allowanceDebitMicroUsd, 'what came off the allowance');
+    let answer;
+    try {
+      answer = await purchased.settlePurchased(id, { holdId, debitMicroUsd: debit });
+    } catch (error) {
+      if (error instanceof ApiError) {
+        const code = String((error.details as { code?: unknown }).code ?? '');
+        if (error.status === 404 && code === 'unknown_hold')
+          throw new ApiError(403, DIRECT_SETTLE_REASON, { code: DIRECT_SETTLE_REFUSED });
+        if (['settlement_exceeds_hold', 'settlement_conflict', 'invalid_transition'].includes(code))
+          throw new ApiError(409, error.message, { code });
+        if (error.status === 401) throw error;
+      }
+      throw new ApiError(503, 'The account service couldn’t be reached, so this wasn’t settled.', {
+        code: 'purchased_settle_unavailable',
+      });
+    }
+    return {
+      reservationId: answer.holdId,
+      organizationId: id,
+      source: 'purchased' as const,
+      state: answer.state,
+      debitMicroUsd: answer.debitMicroUsd,
+      balance: answer.balance,
+    };
+  };
+
+  /**
+   * The usage this business bought outright, read from the account service as the person signed
+   * in. It is a read and writes nothing, so it does not take the store lock. Signed out, or with no
+   * account service, it says not connected; a service that cannot answer says unavailable.
+   */
+  app.get(
+    '/api/workspace/organizations/:organizationId/allowance/purchased',
+    route(async (req) => {
+      const id = assertMine(req);
+      // Owners and admins only. A plain member is refused here, not just left without the section.
+      workspaces.assertCanSeePurchasedUsage(id);
+      if (!purchased) return { state: 'not-connected', organizationId: id, reason: NOT_CONNECTED_REASON } satisfies PurchasedUsageState;
+      try {
+        return { state: 'ready', organizationId: id, balance: await purchased.purchasedBalance(id) } satisfies PurchasedUsageState;
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 401)
+          return { state: 'not-connected', organizationId: id, reason: NOT_CONNECTED_REASON } satisfies PurchasedUsageState;
+        return {
+          state: 'unavailable',
+          organizationId: id,
+          reason: 'The account service couldn’t say what this business has bought, so nothing is shown. Nothing is estimated in its place.',
+        } satisfies PurchasedUsageState;
+      }
+    }, false),
+  );
 
   app.get(
     '/api/workspace/organizations/:organizationId/allowance',
@@ -219,6 +341,10 @@ export function mountManagedUsageRoutes(
       // it. This is a refusal of the person, so it is a 403, not an admission that happens to say no.
       if (!decision.admitted && decision.code === DIRECT_RESERVATION_REFUSED)
         throw new ApiError(403, decision.message, { code: decision.code });
+      // A person who is not staff may hold only usage the business bought outright, and the account
+      // service says whether there is any. When it holds nothing, that is a refusal of the person.
+      if (!decision.admitted && decision.code in PURCHASED_REFUSAL_STATUS)
+        throw new ApiError(PURCHASED_REFUSAL_STATUS[decision.code], decision.message, { code: decision.code });
       return decision;
     }),
   );
@@ -227,9 +353,10 @@ export function mountManagedUsageRoutes(
     '/api/workspace/organizations/:organizationId/allowance/settle',
     withStaff(async (req, _res, asker) => {
       const id = assertMine(req);
-      // Settling takes a caller-supplied debit against an existing hold, so it is for staff only.
-      // It is refused before the body is read: a refusal says nothing of whether the body was good.
-      if (!asker) throw new ApiError(403, DIRECT_SETTLE_REASON, { code: DIRECT_SETTLE_REFUSED });
+      // Settling takes a caller-supplied debit against an existing hold. On the local ledger, which
+      // is the included month, that is for staff only. Anyone else may settle only a hold they made
+      // against usage the business bought, and the account service is the one that knows them.
+      if (!asker) return settlePurchasedHold(id, req);
       const value = body(req);
       return ledger.settle({
         reservationId: text(value.reservationId, 'the attempt being settled', 120),
@@ -242,6 +369,16 @@ export function mountManagedUsageRoutes(
         reconciledFrom: value.reconciledFrom === 'provider-report' ? 'provider-report' : 'response',
         at: new Date().toISOString(),
       });
+    }),
+  );
+
+  app.post(
+    '/api/workspace/organizations/:organizationId/allowance/renew',
+    withStaff(async (req, _res, asker) => {
+      const id = assertMine(req);
+      // Staff hold on this computer's ledger, which keeps no lease. Only a person who holds bought usage has one.
+      if (asker) throw new ApiError(409, STAFF_RENEW_REASON, { code: STAFF_RENEW_REFUSED });
+      return renewPurchasedHold(id, req);
     }),
   );
 

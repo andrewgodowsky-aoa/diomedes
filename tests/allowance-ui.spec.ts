@@ -180,6 +180,17 @@ test('managed access reads as a plan this build does not offer', async ({ page }
   await expect(section).not.toContainText('Diomedes');
 });
 
+test('an owner sees the credits the business bought, with no figure while this host has no account service', async ({ page }) => {
+  await openPanel(page);
+  const section = page.getByRole('region', { name: 'Credits you bought' });
+  await expect(section).toBeVisible();
+  await expect(section).toContainText(/nothing is estimated/i);
+  await expect(section).toContainText('included monthly usage');
+  // Absent, not zero, and never dollars.
+  await expect(section.locator('dl')).toHaveCount(0);
+  await expect(section).not.toContainText('$');
+});
+
 test('Nectovia usage says not connected and draws no figure', async ({ page }) => {
   await openPanel(page);
   const section = page.locator('.ws-section', {

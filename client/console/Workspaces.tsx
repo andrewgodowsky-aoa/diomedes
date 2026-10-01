@@ -480,7 +480,11 @@ export function WorkspacePanel({
         )}
 
         {activeOrganization && (
-          <Allowance organizationId={activeOrganization.organization.id} report={report} />
+          <Allowance
+            organizationId={activeOrganization.organization.id}
+            membership={activeOrganization.membership}
+            report={report}
+          />
         )}
 
         {activeOrganization && activeOrganization.members && (
