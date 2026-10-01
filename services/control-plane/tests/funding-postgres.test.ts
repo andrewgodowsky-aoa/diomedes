@@ -6,9 +6,10 @@
  */
 import { describe, expect, it } from 'vitest';
 import { creditAmount, micro } from '../../../shared/managed-usage.js';
-import { FundingService } from '../src/funding.js';
+import { FundingService, PURCHASED_HOLD_LEASE_MINUTES, type TopUpHoldRow } from '../src/funding.js';
 import { PostgresFundingRepository } from '../src/funding-postgres.js';
 import type { SqlClient } from '../src/postgres.js';
+import { FundingMemoryRepository } from './support/funding-memory.js';
 
 const at = '2026-09-10T12:00:00.000Z';
 const now = () => Date.parse(at);
@@ -171,9 +172,11 @@ describe('purchased-usage holds on the SQL adapter', () => {
     };
     return { factory: () => client, calls };
   }
+  const leaseUntil = new Date(Date.parse(at) + PURCHASED_HOLD_LEASE_MINUTES * 60_000).toISOString();
   const input = { tenantId: 't1', organizationId: 'org_1', holdId: 'hold_1', personId: 'person_1', amountMicroUsd: amount, requestDigest: 'digest_1' };
   const stored = { tenant_id: 't1', organization_id: 'org_1', hold_id: 'hold_1', person_id: 'person_1', request_digest: 'digest_1',
-    amount_micro_usd: String(amount), debit_micro_usd: '0', state: 'held', created_at: new Date(at), resolved_at: null };
+    amount_micro_usd: String(amount), debit_micro_usd: '0', state: 'held', created_at: new Date(at), resolved_at: null,
+    lease_until: new Date(leaseUntil), released_by: null };
 
   it('takes the organization lock, reads the balance, and inserts one bound row; it reads no month, job or period', async () => {
     const db = holds();
@@ -186,7 +189,7 @@ describe('purchased-usage holds on the SQL adapter', () => {
     expect(lock).toBeGreaterThan(sql.indexOf('BEGIN'));
     expect(lock).toBeLessThan(balance);
     expect(balance).toBeLessThan(insert);
-    expect(db.calls[insert].values).toEqual(['t1', 'hold_1', 'org_1', 'person_1', 'digest_1', amount, 0, 'held', at, null]);
+    expect(db.calls[insert].values).toEqual(['t1', 'hold_1', 'org_1', 'person_1', 'digest_1', amount, 0, 'held', at, null, leaseUntil, null]);
     expect(sql.some((item) => /credit_periods|funded_jobs|funding_reservations\b.*monthly|AS settled_monthly/.test(item) && !item.includes('AS purchased'))).toBe(false);
     expect(sql.some((item) => item.includes(String(amount)))).toBe(false);
     expect(sql.filter((item) => item === 'COMMIT')).toHaveLength(1);
@@ -196,7 +199,7 @@ describe('purchased-usage holds on the SQL adapter', () => {
     const db = holds();
     await new FundingService(new PostgresFundingRepository(db.factory), { now }).purchasedBalance('t1', 'org_1');
     const totals = db.calls.find((call) => call.sql.includes('AS purchased'))!.sql;
-    expect(totals).toMatch(/credit_topup_holds[^)]*state='held'\) AS held/);
+    expect(totals).toMatch(/credit_topup_holds[^)]*state='held' AND lease_until > \$3\) AS held/);
     expect(totals).toMatch(/credit_topup_holds[^)]*state='settled'\) AS settled/);
   });
 
@@ -205,7 +208,7 @@ describe('purchased-usage holds on the SQL adapter', () => {
     const { hold } = await new FundingService(new PostgresFundingRepository(db.factory), { now }).settlePurchased({ ...input, debitMicroUsd: creditAmount(25) });
     expect(hold).toMatchObject({ state: 'settled', debitMicroUsd: creditAmount(25) });
     const write = db.calls.find((call) => call.sql.startsWith('INSERT INTO control_plane.credit_topup_holds'))!;
-    expect(write.sql).toMatch(/DO UPDATE SET debit_micro_usd=EXCLUDED\.debit_micro_usd,state=EXCLUDED\.state,resolved_at=EXCLUDED\.resolved_at$/);
+    expect(write.sql).toMatch(/DO UPDATE SET debit_micro_usd=EXCLUDED\.debit_micro_usd,state=EXCLUDED\.state,resolved_at=EXCLUDED\.resolved_at,lease_until=EXCLUDED\.lease_until,released_by=EXCLUDED\.released_by$/);
     expect(db.calls.some((call) => call.sql.includes('FOR UPDATE') && call.sql.includes('credit_topup_holds'))).toBe(true);
   });
 
@@ -213,5 +216,146 @@ describe('purchased-usage holds on the SQL adapter', () => {
     const db = holds({ hold: { ...stored, person_id: 'person_2' } });
     await expect(new FundingService(new PostgresFundingRepository(db.factory), { now }).releasePurchased(input)).rejects.toMatchObject({ status: 404, code: 'unknown_hold' });
     expect(db.calls.some((call) => call.sql.startsWith('INSERT'))).toBe(false);
+  });
+});
+
+describe('the lease on the SQL adapter', () => {
+  const amount = creditAmount(40);
+  const leaseUntil = new Date(Date.parse(at) + PURCHASED_HOLD_LEASE_MINUTES * 60_000).toISOString();
+  const stored = { tenant_id: 't1', organization_id: 'org_1', hold_id: 'hold_1', person_id: 'person_1', request_digest: 'digest_1',
+    amount_micro_usd: String(amount), debit_micro_usd: '0', state: 'held', created_at: new Date(at), resolved_at: null,
+    lease_until: new Date(leaseUntil), released_by: null };
+  const input = { tenantId: 't1', organizationId: 'org_1', holdId: 'hold_1', personId: 'person_1' };
+
+  function db(hold: Record<string, unknown> | null = stored) {
+    const calls: { sql: string; values: unknown[] }[] = [];
+    const client: SqlClient = {
+      async connect() {},
+      async query(sql, values = []) {
+        calls.push({ sql, values });
+        if (sql.includes('AS purchased')) return { rows: [{ purchased: String(creditAmount(100)), held: '0', settled: '0' }], rowCount: 1 };
+        if (sql.includes('FROM control_plane.credit_topup_holds WHERE tenant_id=$1 AND hold_id=$2'))
+          return { rows: hold ? [hold] : [], rowCount: hold ? 1 : 0 };
+        return { rows: [], rowCount: 1 };
+      },
+      async end() {},
+    };
+    return { factory: () => client, calls, sql: () => calls.map((call) => call.sql) };
+  }
+  const sweepSql = (item: string) => item.startsWith('UPDATE control_plane.credit_topup_holds') && item.includes("released_by='expiry'");
+  const service = (fake: ReturnType<typeof db>) => new FundingService(new PostgresFundingRepository(fake.factory), { now });
+
+  it('lets go of every lapsed hold under the lock, before it reads any balance, with the service clock', async () => {
+    for (const run of [
+      (fake: ReturnType<typeof db>) => service(fake).purchasedBalance('t1', 'org_1'),
+      (fake: ReturnType<typeof db>) => service(fake).holdPurchased({ ...input, amountMicroUsd: amount, requestDigest: 'digest_1' }),
+      (fake: ReturnType<typeof db>) => service(fake).settlePurchased({ ...input, debitMicroUsd: creditAmount(5) }),
+      (fake: ReturnType<typeof db>) => service(fake).releasePurchased(input),
+      (fake: ReturnType<typeof db>) => service(fake).renewPurchased(input),
+    ]) {
+      const fake = db();
+      await run(fake);
+      const sql = fake.sql();
+      const lock = sql.findIndex((item) => item.includes('pg_advisory_xact_lock'));
+      const sweep = sql.findIndex(sweepSql);
+      const firstRead = sql.findIndex((item) => /credit_topup/.test(item) && !item.startsWith('UPDATE'));
+      expect(lock).toBeGreaterThan(-1);
+      expect(sweep).toBeGreaterThan(lock);
+      expect(sweep).toBeLessThan(firstRead);
+      expect(fake.calls[sweep].sql).toMatch(/SET state='released',released_by='expiry',resolved_at=\$3 WHERE tenant_id=\$1 AND organization_id=\$2 AND state='held' AND lease_until <= \$3$/);
+      expect(fake.calls[sweep].values).toEqual(['t1', 'org_1', at]);
+    }
+  });
+
+  it('counts a held row as held only while its lease has not lapsed, at the same instant the sweep uses', async () => {
+    const fake = db();
+    await service(fake).purchasedBalance('t1', 'org_1');
+    const totals = fake.calls.find((call) => call.sql.includes('AS purchased'))!;
+    expect(totals.values).toEqual(['t1', 'org_1', at]);
+    expect(totals.sql).toMatch(/credit_topup_holds WHERE tenant_id=\$1 AND organization_id=\$2 AND state='held' AND lease_until > \$3\) AS held/);
+    // The lapsed side of the same boundary is the sweep's: lease_until <= $3, so no instant is in neither.
+    expect(fake.calls.find((call) => sweepSql(call.sql))!.sql).toMatch(/lease_until <= \$3$/);
+  });
+
+  it('renews by moving only the lease on the row it locked, and only a held, unlapsed one', async () => {
+    const fake = db();
+    const { hold } = await service(fake).renewPurchased(input);
+    expect(hold.leaseUntil).toBe(leaseUntil);
+    const write = fake.calls.find((call) => call.sql.startsWith('INSERT INTO control_plane.credit_topup_holds'))!;
+    expect(write.sql).toMatch(/lease_until=EXCLUDED\.lease_until/);
+    expect(fake.calls.some((call) => call.sql.includes('FOR UPDATE') && call.sql.includes('credit_topup_holds'))).toBe(true);
+    const stale = db({ ...stored, state: 'released', released_by: 'person', resolved_at: new Date(at) });
+    await expect(service(stale).renewPurchased(input)).rejects.toMatchObject({ status: 409, code: 'hold_not_held' });
+    expect(stale.calls.some((call) => call.sql.startsWith('INSERT'))).toBe(false);
+  });
+
+  it('records a late settle by writing the row back to settled with no releaser', async () => {
+    const fake = db({ ...stored, state: 'released', released_by: 'expiry', resolved_at: new Date(at) });
+    const { hold } = await service(fake).settlePurchased({ ...input, debitMicroUsd: creditAmount(25) });
+    expect(hold).toMatchObject({ state: 'settled', debitMicroUsd: creditAmount(25), releasedBy: null });
+    const write = fake.calls.find((call) => call.sql.startsWith('INSERT INTO control_plane.credit_topup_holds'))!;
+    expect(write.values).toEqual(['t1', 'hold_1', 'org_1', 'person_1', 'digest_1', amount, creditAmount(25), 'settled', at, at, leaseUntil, null]);
+  });
+
+  it('keeps who released a hold: a person’s release is written as person', async () => {
+    const fake = db();
+    const { hold } = await service(fake).releasePurchased(input);
+    expect(hold).toMatchObject({ state: 'released', releasedBy: 'person' });
+    const write = fake.calls.find((call) => call.sql.startsWith('INSERT INTO control_plane.credit_topup_holds'))!;
+    expect(write.values.slice(7)).toEqual(['released', at, at, leaseUntil, 'person']);
+  });
+
+  it('reads a stored hold with a lease, and refuses one whose releaser is not a known value', async () => {
+    const fake = db({ ...stored, state: 'released', released_by: 'robot', resolved_at: new Date(at) });
+    await expect(service(fake).renewPurchased(input)).rejects.toThrow(/releaser/i);
+  });
+});
+
+describe('topUpTotals: the SQL adapter and the faux backend agree on a lapsed row', () => {
+  const t = 't1';
+  const o = 'org_1';
+  const hold = (holdId: string, state: 'held' | 'settled' | 'released', leaseMinutes: number, extra: Record<string, unknown> = {}) => ({
+    tenantId: t, organizationId: o, holdId, personId: 'person_1', requestDigest: `digest_${holdId}`, amountMicroUsd: creditAmount(10),
+    debitMicroUsd: micro(0), state, createdAt: at, resolvedAt: state === 'held' ? null : at,
+    leaseUntil: new Date(Date.parse(at) + leaseMinutes * 60_000).toISOString(), releasedBy: state === 'released' ? 'person' : null, ...extra,
+  }) as TopUpHoldRow;
+
+  async function fauxTotals(when: string) {
+    const repository = new FundingMemoryRepository();
+    await repository.transaction(async (tx) => {
+      await tx.saveTopUp({ tenantId: t, organizationId: o, topUpId: 'topup_1', amountMicroUsd: creditAmount(100), provider: 'stripe', sourceEventId: 'evt_1', recordedAt: at });
+      await tx.saveTopUpHold(hold('live', 'held', 5));
+      await tx.saveTopUpHold(hold('boundary', 'held', 0));
+      await tx.saveTopUpHold(hold('lapsed', 'held', -30));
+      await tx.saveTopUpHold(hold('settled', 'settled', -30, { debitMicroUsd: creditAmount(4) }));
+      await tx.saveTopUpHold(hold('released', 'released', 30));
+    });
+    return repository.transaction((tx) => tx.topUpTotals(t, o, when));
+  }
+
+  it('the faux backend counts only the hold whose lease runs past now, at the boundary and after', async () => {
+    expect(await fauxTotals(at)).toEqual({ purchasedMicroUsd: creditAmount(100), heldMicroUsd: creditAmount(10), settledMicroUsd: creditAmount(4) });
+    // A moment later the live hold has lapsed too, and nothing swept it.
+    const later = new Date(Date.parse(at) + 5 * 60_000).toISOString();
+    expect(await fauxTotals(later)).toEqual({ purchasedMicroUsd: creditAmount(100), heldMicroUsd: 0, settledMicroUsd: creditAmount(4) });
+  });
+
+  it('the SQL asks the same question of the same instant, and the settled debit is not conditioned on the lease', async () => {
+    const calls: { sql: string; values: unknown[] }[] = [];
+    const client: SqlClient = {
+      async connect() {},
+      async query(sql, values = []) {
+        calls.push({ sql, values });
+        if (sql.includes('AS purchased')) return { rows: [{ purchased: String(creditAmount(100)), held: String(creditAmount(10)), settled: String(creditAmount(4)) }], rowCount: 1 };
+        return { rows: [], rowCount: 0 };
+      },
+      async end() {},
+    };
+    const totals = await new PostgresFundingRepository(() => client).transaction((tx) => tx.topUpTotals(t, o, at));
+    expect(totals).toEqual(await fauxTotals(at));
+    const sql = calls.find((call) => call.sql.includes('AS purchased'))!;
+    expect(sql.values).toEqual([t, o, at]);
+    expect(sql.sql).toMatch(/credit_topup_holds WHERE tenant_id=\$1 AND organization_id=\$2 AND state='held' AND lease_until > \$3\)\s*AS held/);
+    expect(sql.sql).toMatch(/credit_topup_holds WHERE tenant_id=\$1 AND organization_id=\$2 AND state='settled'\) AS settled/);
   });
 });

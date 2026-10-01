@@ -8,7 +8,7 @@
 import { describe, expect, it } from 'vitest';
 import { creditAmount } from '../../../shared/managed-usage.js';
 import { createHandler } from '../src/worker.js';
-import { FundingService, PurchasedUsageService, UsageService } from '../src/funding.js';
+import { FundingService, PURCHASED_HOLD_LEASE_MINUTES, PurchasedUsageService, UsageService, type TopUpHoldRow } from '../src/funding.js';
 import { FundingMemoryRepository } from './support/funding-memory.js';
 import { now, setup, validEnv } from './support/fixtures.js';
 
@@ -26,7 +26,9 @@ async function fixture(options: { purchased?: number; month?: boolean } = {}) {
   const invite = await accounts.invite('alice', organization.id, { subject: 'user_bob', role: 'member', ttlMs: 5000 });
   await accounts.acceptInvitation('bob', organization.id, invite.token);
   const repository = new FundingMemoryRepository();
-  const funding = new FundingService(repository, { now: () => now });
+  // The funding service's own clock, which a test can move. The account service keeps its own.
+  const clock = { at: now };
+  const funding = new FundingService(repository, { now: () => clock.at });
   const ref = { tenantId: organization.tenantId, organizationId: organization.id };
   if (options.month !== false)
     await funding.allocatePeriod({ ...ref, periodId: '2026-09', planId: 'business', sourceGrantId: 'grant_fixture' });
@@ -39,8 +41,10 @@ async function fixture(options: { purchased?: number; month?: boolean } = {}) {
   const hold = (body: unknown, token = 'alice') => handler(request(`${base}/holds`, { method: 'POST', token, body: JSON.stringify(body) }), validEnv);
   const settle = (body: unknown, token = 'alice') => handler(request(`${base}/settlements`, { method: 'POST', token, body: JSON.stringify(body) }), validEnv);
   const release = (body: unknown, token = 'alice') => handler(request(`${base}/releases`, { method: 'POST', token, body: JSON.stringify(body) }), validEnv);
+  const renew = (body: unknown, token = 'alice') => handler(request(`${base}/renewals`, { method: 'POST', token, body: JSON.stringify(body) }), validEnv);
   const balance = (token = 'alice') => handler(request(base, { token }), validEnv);
-  return { accounts, organization, repository, funding, handler, ref, hold, settle, release, balance, base };
+  const minutes = (count: number) => { clock.at += count * 60_000; };
+  return { accounts, organization, repository, funding, handler, ref, hold, settle, release, renew, balance, base, clock, minutes };
 }
 
 const ask = (overrides: Record<string, unknown> = {}) => ({ holdId: 'hold_1', amountMicroUsd: creditAmount(40), requestDigest: 'digest-one', ...overrides });
@@ -259,5 +263,251 @@ describe('the worker keeps its funding writes narrow', () => {
     const answer = await handler(request(`/account/organizations/${organization.id}/purchased-usage/holds`, { method: 'POST', body: JSON.stringify(ask()) }), validEnv);
     expect(answer.status).toBe(503);
     expect((await answer.text())).not.toMatch(/MicroUsd/);
+  });
+});
+
+const LEASE_MS = PURCHASED_HOLD_LEASE_MINUTES * 60_000;
+const rowOf = (repository: { snapshot(): { topUpHolds: TopUpHoldRow[] } }, holdId = 'hold_1') =>
+  repository.snapshot().topUpHolds.find((row) => row.holdId === holdId)!;
+
+describe('the lease on a hold (Andrew, 2026-10-01: a stale hold lets go on its own, never while the work could still be running)', () => {
+  it('names one lease length, fifteen minutes, as an engineering default', () => {
+    expect(PURCHASED_HOLD_LEASE_MINUTES).toBe(15);
+  });
+
+  it('stamps the lease from the service clock, and nothing in the request can set or lengthen it', async () => {
+    const { hold, repository, clock } = await fixture({ purchased: 100 });
+    const answer = await hold(ask());
+    expect(answer.status).toBe(200);
+    const body = await answer.json();
+    expect(body.leaseUntil).toBe(new Date(clock.at + LEASE_MS).toISOString());
+    expect(rowOf(repository).leaseUntil).toBe(body.leaseUntil);
+    expect(rowOf(repository).releasedBy).toBeNull();
+    for (const forged of [{ leaseUntil: '2099-01-01T00:00:00.000Z' }, { leaseMinutes: 9999 }, { lease: 'forever' }, { createdAt: '2099-01-01T00:00:00.000Z' }])
+      expect((await hold(ask({ holdId: 'hold_forged', ...forged }))).status, JSON.stringify(forged)).toBe(422);
+    expect(repository.snapshot().topUpHolds).toHaveLength(1);
+  });
+
+  it('a replay of a live hold keeps its first lease, and every hold answer carries leaseUntil', async () => {
+    const { hold, settle, release, renew, minutes } = await fixture({ purchased: 100 });
+    const first = await (await hold(ask())).json();
+    minutes(5);
+    const replay = await (await hold(ask())).json();
+    expect(replay.leaseUntil).toBe(first.leaseUntil);
+    const renewed = await (await renew({ holdId: 'hold_1' })).json();
+    expect(typeof renewed.leaseUntil).toBe('string');
+    const settled = await (await settle({ holdId: 'hold_1', debitMicroUsd: creditAmount(5) })).json();
+    expect(settled.leaseUntil).toBe(renewed.leaseUntil);
+    await hold(ask({ holdId: 'hold_2', requestDigest: 'digest-two' }));
+    const released = await (await release({ holdId: 'hold_2' })).json();
+    expect(typeof released.leaseUntil).toBe('string');
+  });
+
+  it('renewing extends a live lease to a full lease from now, only for the person who made the hold', async () => {
+    const { hold, renew, repository, clock, minutes } = await fixture({ purchased: 100 });
+    await hold(ask());
+    minutes(10);
+    const answer = await renew({ holdId: 'hold_1' });
+    expect(answer.status).toBe(200);
+    const body = await answer.json();
+    expect(body).toMatchObject({ holdId: 'hold_1', state: 'held', amountMicroUsd: creditAmount(40), balance: { heldMicroUsd: creditAmount(40), availableMicroUsd: creditAmount(60) } });
+    expect(body.leaseUntil).toBe(new Date(clock.at + LEASE_MS).toISOString());
+    expect(rowOf(repository).leaseUntil).toBe(body.leaseUntil);
+    // Ten minutes later the first lease would have lapsed; the renewed one has not.
+    minutes(10);
+    expect((await renew({ holdId: 'hold_1' })).status).toBe(200);
+  });
+
+  it('reads a renewal by another person, for an unknown hold, or from another business as 404 unknown_hold', async () => {
+    const { hold, renew, handler, accounts, repository } = await fixture({ purchased: 100 });
+    await hold(ask());
+    const before = rowOf(repository).leaseUntil;
+    for (const answer of [await renew({ holdId: 'hold_1' }, 'bob'), await renew({ holdId: 'hold_nope' })]) {
+      expect(answer.status).toBe(404);
+      expect((await answer.json()).code).toBe('unknown_hold');
+    }
+    const second = await accounts.createOrganization('alice', 'Harbor Bakery');
+    const through = await handler(request(`/account/organizations/${second.id}/purchased-usage/renewals`, { method: 'POST', body: JSON.stringify({ holdId: 'hold_1' }) }), validEnv);
+    expect(through.status).toBe(404);
+    expect(rowOf(repository).leaseUntil).toBe(before);
+  });
+
+  it('refuses to renew a lapsed, settled or released hold with 409 hold_not_held and changes nothing', async () => {
+    const { hold, settle, release, renew, minutes, balance } = await fixture({ purchased: 100 });
+    await hold(ask({ holdId: 'hold_lapsed', requestDigest: 'd1' }));
+    await hold(ask({ holdId: 'hold_settled', requestDigest: 'd2', amountMicroUsd: creditAmount(10) }));
+    await hold(ask({ holdId: 'hold_released', requestDigest: 'd3', amountMicroUsd: creditAmount(10) }));
+    await settle({ holdId: 'hold_settled', debitMicroUsd: creditAmount(5) });
+    await release({ holdId: 'hold_released' });
+    for (const holdId of ['hold_settled', 'hold_released']) {
+      const answer = await renew({ holdId });
+      expect(answer.status, holdId).toBe(409);
+      const body = await answer.json();
+      expect(body.code).toBe('hold_not_held');
+      expect(body.error).toMatch(/Nothing was changed\.$/);
+      expect(body.error).not.toMatch(/[–—]/);
+    }
+    // Exactly at the lease's end it has lapsed.
+    minutes(PURCHASED_HOLD_LEASE_MINUTES);
+    const lapsed = await renew({ holdId: 'hold_lapsed' });
+    expect(lapsed.status).toBe(409);
+    const body = await lapsed.json();
+    expect(body.code).toBe('hold_not_held');
+    expect(body.error).toMatch(/Nothing was changed\.$/);
+    // The lapsed hold's credits are free, and renewing did not take them back.
+    expect(await (await balance()).json()).toMatchObject({ heldMicroUsd: 0, settledMicroUsd: creditAmount(5), availableMicroUsd: creditAmount(95) });
+  });
+
+  it('takes a renewal body of a hold id only', async () => {
+    const { hold, renew } = await fixture({ purchased: 100 });
+    await hold(ask());
+    for (const extra of [{ leaseUntil: '2099-01-01T00:00:00.000Z' }, { organizationId: 'org_other' }, { personId: 'person_other' }, { minutes: 999 }])
+      expect((await renew({ holdId: 'hold_1', ...extra })).status, JSON.stringify(extra)).toBe(422);
+    expect((await renew({})).status).toBe(422);
+    expect((await renew({ holdId: 'has space' })).status).toBe(422);
+  });
+
+  it('answers 503 for a renewal when the funding login is not configured', async () => {
+    const { accounts, organization } = await (async () => {
+      const { accounts } = setup();
+      return { accounts, organization: await accounts.createOrganization('alice', 'Fernbrook Joinery') };
+    })();
+    const handler = createHandler(() => accounts);
+    const answer = await handler(request(`/account/organizations/${organization.id}/purchased-usage/renewals`, { method: 'POST', body: JSON.stringify({ holdId: 'hold_1' }) }), validEnv);
+    expect(answer.status).toBe(503);
+    expect(await answer.text()).not.toMatch(/MicroUsd/);
+  });
+});
+
+describe('a lapsed hold lets go on its own', () => {
+  it('stops counting a lapsed hold before anything has swept it, and again after the sweep', async () => {
+    const { hold, balance, repository, ref, clock, minutes } = await fixture({ purchased: 100 });
+    await hold(ask({ amountMicroUsd: creditAmount(70) }));
+    expect((await (await balance()).json()).heldMicroUsd).toBe(creditAmount(70));
+    minutes(PURCHASED_HOLD_LEASE_MINUTES);
+    // The raw read the funded-reserve path uses, with no sweep: the row is still held, and not counted.
+    expect(rowOf(repository).state).toBe('held');
+    const raw = await repository.transaction((tx) => tx.topUpTotals(ref.tenantId, ref.organizationId, new Date(clock.at).toISOString()));
+    expect(raw).toMatchObject({ purchasedMicroUsd: creditAmount(100), heldMicroUsd: 0, settledMicroUsd: 0 });
+    // The balance read sweeps it, and reports the same.
+    expect(await (await balance()).json()).toEqual({ purchasedMicroUsd: creditAmount(100), heldMicroUsd: 0, settledMicroUsd: 0, availableMicroUsd: creditAmount(100) });
+    expect(rowOf(repository)).toMatchObject({ state: 'released', releasedBy: 'expiry', resolvedAt: new Date(clock.at).toISOString() });
+    expect(await (await balance()).json()).toMatchObject({ heldMicroUsd: 0, availableMicroUsd: creditAmount(100) });
+  });
+
+  it('keeps a hold until its lease ends, then lets it go at that moment', async () => {
+    const { hold, balance, minutes } = await fixture({ purchased: 100 });
+    await hold(ask());
+    minutes(PURCHASED_HOLD_LEASE_MINUTES - 1);
+    expect((await (await balance()).json()).heldMicroUsd).toBe(creditAmount(40));
+    minutes(1);
+    expect((await (await balance()).json()).heldMicroUsd).toBe(0);
+  });
+
+  it('lets a new hold use the credits a lapsed hold freed', async () => {
+    const { hold, balance, repository, minutes } = await fixture({ purchased: 100 });
+    expect((await hold(ask({ holdId: 'hold_a', amountMicroUsd: creditAmount(70) }))).status).toBe(200);
+    expect((await hold(ask({ holdId: 'hold_b', amountMicroUsd: creditAmount(70), requestDigest: 'digest-two' }))).status).toBe(402);
+    minutes(PURCHASED_HOLD_LEASE_MINUTES);
+    const second = await hold(ask({ holdId: 'hold_b', amountMicroUsd: creditAmount(70), requestDigest: 'digest-two' }));
+    expect(second.status).toBe(200);
+    expect(await (await balance()).json()).toMatchObject({ heldMicroUsd: creditAmount(70), availableMicroUsd: creditAmount(30) });
+    expect(rowOf(repository, 'hold_a')).toMatchObject({ state: 'released', releasedBy: 'expiry' });
+  });
+
+  it('answers a retry of a lapsed hold as closed, never as held again', async () => {
+    const { hold, minutes } = await fixture({ purchased: 100 });
+    await hold(ask());
+    minutes(PURCHASED_HOLD_LEASE_MINUTES);
+    const again = await hold(ask());
+    expect(again.status).toBe(409);
+    expect((await again.json()).code).toBe('hold_closed');
+  });
+
+  it('records the real usage when the work finishes after the hold let go, capped at what was held', async () => {
+    const { hold, settle, balance, repository, clock, minutes } = await fixture({ purchased: 100 });
+    await hold(ask());
+    minutes(PURCHASED_HOLD_LEASE_MINUTES + 30);
+    const over = await settle({ holdId: 'hold_1', debitMicroUsd: creditAmount(41) });
+    expect(over.status).toBe(409);
+    expect((await over.json()).code).toBe('settlement_exceeds_hold');
+    const late = await settle({ holdId: 'hold_1', debitMicroUsd: creditAmount(25) });
+    expect(late.status).toBe(200);
+    expect(await late.json()).toMatchObject({ holdId: 'hold_1', state: 'settled', debitMicroUsd: creditAmount(25), balance: { heldMicroUsd: 0, settledMicroUsd: creditAmount(25), availableMicroUsd: creditAmount(75) } });
+    expect(rowOf(repository)).toMatchObject({ state: 'settled', debitMicroUsd: creditAmount(25), releasedBy: null, resolvedAt: new Date(clock.at).toISOString() });
+    expect(await (await balance()).json()).toMatchObject({ settledMicroUsd: creditAmount(25), availableMicroUsd: creditAmount(75) });
+  });
+
+  it('settles a hold the moment its lease has lapsed as a late settle, even though nothing swept it', async () => {
+    const { hold, settle, repository, minutes } = await fixture({ purchased: 100 });
+    await hold(ask());
+    minutes(PURCHASED_HOLD_LEASE_MINUTES);
+    expect(rowOf(repository).state).toBe('held');
+    expect((await settle({ holdId: 'hold_1', debitMicroUsd: creditAmount(40) })).status).toBe(200);
+    expect(rowOf(repository)).toMatchObject({ state: 'settled', debitMicroUsd: creditAmount(40), releasedBy: null });
+  });
+
+  it('replays a late settlement and refuses a different one', async () => {
+    const { hold, settle, minutes } = await fixture({ purchased: 100 });
+    await hold(ask());
+    minutes(60);
+    const first = await (await settle({ holdId: 'hold_1', debitMicroUsd: creditAmount(25) })).json();
+    const again = await settle({ holdId: 'hold_1', debitMicroUsd: creditAmount(25) });
+    expect(again.status).toBe(200);
+    expect(await again.json()).toEqual(first);
+    const different = await settle({ holdId: 'hold_1', debitMicroUsd: creditAmount(30) });
+    expect(different.status).toBe(409);
+    expect((await different.json()).code).toBe('settlement_conflict');
+  });
+
+  it('still refuses to settle a hold the person released, however long ago', async () => {
+    const { hold, settle, release, repository, minutes } = await fixture({ purchased: 100 });
+    await hold(ask());
+    expect((await release({ holdId: 'hold_1' })).status).toBe(200);
+    expect(rowOf(repository)).toMatchObject({ state: 'released', releasedBy: 'person' });
+    minutes(60);
+    const late = await settle({ holdId: 'hold_1', debitMicroUsd: creditAmount(5) });
+    expect(late.status).toBe(409);
+    expect((await late.json()).code).toBe('invalid_transition');
+    expect(rowOf(repository)).toMatchObject({ state: 'released', releasedBy: 'person' });
+  });
+
+  it('treats a release of a hold that already let go as a replay, and keeps who released it', async () => {
+    const { hold, release, repository, minutes } = await fixture({ purchased: 100 });
+    await hold(ask());
+    minutes(PURCHASED_HOLD_LEASE_MINUTES + 1);
+    const answer = await release({ holdId: 'hold_1' });
+    expect(answer.status).toBe(200);
+    expect(await answer.json()).toMatchObject({ state: 'released' });
+    expect(rowOf(repository)).toMatchObject({ state: 'released', releasedBy: 'expiry' });
+    expect((await release({ holdId: 'hold_1' })).status).toBe(200);
+  });
+
+  it('records an overdraw instead of refusing the settlement, and reports the true figure', async () => {
+    const { hold, settle, balance, minutes } = await fixture({ purchased: 100 });
+    await hold(ask({ holdId: 'hold_a', amountMicroUsd: creditAmount(70) }));
+    minutes(PURCHASED_HOLD_LEASE_MINUTES);
+    // The freed credits are held again by someone else's work.
+    expect((await hold(ask({ holdId: 'hold_b', amountMicroUsd: creditAmount(70), requestDigest: 'digest-two' }))).status).toBe(200);
+    const late = await settle({ holdId: 'hold_a', debitMicroUsd: creditAmount(70) });
+    expect(late.status).toBe(200);
+    const body = await late.json();
+    expect(body.state).toBe('settled');
+    expect(body.balance).toEqual({ purchasedMicroUsd: creditAmount(100), heldMicroUsd: creditAmount(70), settledMicroUsd: creditAmount(70), availableMicroUsd: -creditAmount(40) });
+    const read = await (await balance()).json();
+    expect(read.availableMicroUsd).toBe(-creditAmount(40));
+  });
+
+  it('holds nothing more while overdrawn, with an ordinary refusal and not an error', async () => {
+    const { hold, settle, minutes } = await fixture({ purchased: 100 });
+    await hold(ask({ holdId: 'hold_a', amountMicroUsd: creditAmount(70) }));
+    minutes(PURCHASED_HOLD_LEASE_MINUTES);
+    await hold(ask({ holdId: 'hold_b', amountMicroUsd: creditAmount(70), requestDigest: 'digest-two' }));
+    await settle({ holdId: 'hold_a', debitMicroUsd: creditAmount(70) });
+    const another = await hold(ask({ holdId: 'hold_c', amountMicroUsd: creditAmount(1), requestDigest: 'digest-three' }));
+    expect(another.status).toBe(402);
+    const body = await another.json();
+    expect(body.code).toBe('no_purchased_usage');
+    expect(body.error).toMatch(/Nothing was held\.$/);
   });
 });

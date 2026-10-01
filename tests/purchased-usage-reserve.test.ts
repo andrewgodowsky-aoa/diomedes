@@ -18,7 +18,7 @@ import type { AccountBackend } from '../server/accounts/backend.js';
 import { ControlPlaneClient } from '../server/accounts/client.js';
 import { AccountSessionService } from '../server/accounts/session.js';
 import { BillingEventProcessor } from '../server/billing-events.js';
-import { ManagedGateway, type OrganizationPolicy } from '../server/managed-gateway.js';
+import { ManagedGateway, type OrganizationPolicy, type PurchasedUsage } from '../server/managed-gateway.js';
 import { AllowanceLedger } from '../server/managed-usage.js';
 import { mountManagedUsageRoutes } from '../server/managed-usage-routes.js';
 import { ApiError } from '../server/paths.js';
@@ -297,6 +297,167 @@ describe('a subscriber reserving at the allowance routes', () => {
     expect(cloudHolds()).toEqual([]);
   });
 
+  describe('the lease on a bought-usage hold', () => {
+    const AT_FIXED = '2026-10-01T12:00:00.000Z';
+    const minutesAfter = (minutes: number) => new Date(Date.parse(AT_FIXED) + minutes * 60_000).toISOString();
+
+    /** A service that holds whatever it is asked for, with the lease it is told to give. */
+    const leasing = (leaseUntil: string): PurchasedUsage => ({
+      personId: () => 'person_stub',
+      purchasedBalance: async () => ({ purchasedMicroUsd: creditAmount(100), heldMicroUsd: 0, settledMicroUsd: 0, availableMicroUsd: creditAmount(100) }),
+      holdPurchased: async (_organizationId, input) => ({
+        holdId: input.holdId, state: 'held', amountMicroUsd: input.amountMicroUsd, debitMicroUsd: 0, createdAt: AT_FIXED, resolvedAt: null, leaseUntil,
+        balance: { purchasedMicroUsd: creditAmount(100), heldMicroUsd: input.amountMicroUsd, settledMicroUsd: 0, availableMicroUsd: creditAmount(100) - input.amountMicroUsd },
+      }),
+      settlePurchased: async () => { throw new Error('not used'); },
+      renewPurchased: async () => { throw new Error('not used'); },
+    });
+    const admitWith = async (leaseUntil: string) => {
+      await mount(await signedIn(DEMO_ACCOUNTS.owner.email));
+      const gateway = new ManagedGateway({
+        ledger, entitlementFor: () => paid, tenantFor: () => 'tenant_ignored', memberOf: () => true,
+        billingStatusFor: async () => ({ suspended: false, suspendedReason: null }),
+        jobCapFor: () => approvedJobCap('thorough'), policyFor: () => ({ processing: 'may-leave', organizationRoute: 'managed' }),
+        purchased: leasing(leaseUntil),
+      });
+      return gateway.admit({
+        organizationId: ORG, personId: 'person_stub', route: 'codex', kind: 'generation', parentTaskId: null, maxMicroUsd: creditAmount(40),
+        requestDigest: 'digest-one', reservationId: 'res_lease', periodId: '2026-10', at: AT_FIXED, directReservation: true, staffRole: null,
+      });
+    };
+
+    test('the authorization ends at the usual ten minutes when the lease runs longer', async () => {
+      const admission = await admitWith(minutesAfter(30));
+      expect(admission).toMatchObject({ admitted: true, authorization: { expiresAt: minutesAfter(10) } });
+    });
+
+    test('the authorization ends with the lease when the lease ends sooner', async () => {
+      const admission = await admitWith(minutesAfter(4));
+      expect(admission).toMatchObject({ admitted: true, authorization: { expiresAt: minutesAfter(4) } });
+    });
+
+    test('a lease this app cannot read is not taken as a hold', async () => {
+      const admission = await admitWith('soon');
+      expect(admission).toMatchObject({ admitted: false, code: 'purchased_hold_unavailable' });
+      expect((admission as { message: string }).message).toMatch(/Nothing was held\.$/);
+    });
+
+    test('a real hold through the route carries a lease from the service, and the authorization never outlasts it', async () => {
+      await buy(100);
+      await mount(await signedIn(DEMO_ACCOUNTS.owner.email));
+      const held = await post('admit', ask());
+      expect(held.status).toBe(200);
+      const lease = cloudHolds()[0].leaseUntil;
+      expect(Date.parse(lease)).toBeGreaterThan(Date.now());
+      expect(Date.parse(held.data.authorization.expiresAt)).toBeLessThanOrEqual(Date.parse(lease));
+    });
+
+    describe('renewing it', () => {
+      test('a subscriber renews the hold they made, and the service moves the lease', async () => {
+        await buy(100);
+        await mount(await signedIn(DEMO_ACCOUNTS.owner.email));
+        await post('admit', ask());
+        const first = cloudHolds()[0].leaseUntil;
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        const answer = await post('renew', { reservationId: 'res_1' });
+        expect(answer.status).toBe(200);
+        expect(answer.data).toMatchObject({ reservationId: 'res_1', organizationId: ORG, source: 'purchased', state: 'held' });
+        expect(Date.parse(answer.data.leaseUntil)).toBeGreaterThan(Date.parse(first));
+        expect(cloudHolds()[0].leaseUntil).toBe(answer.data.leaseUntil);
+        expect(answer.data.balance).toMatchObject({ heldMicroUsd: creditAmount(40) });
+        expect(holdCalls()).toContain('POST ' + `/account/organizations/${ORG}/purchased-usage/renewals`);
+        expect(local()).toMatchObject({ pendingMicroUsd: 0, settledMicroUsd: 0 });
+      });
+
+      test('staff hold on this computer and do not lease, so there is nothing to renew, and the service is not asked', async () => {
+        await buy(100);
+        await mount(await signedIn(DEMO_ACCOUNTS.staffSupport.email));
+        await post('admit', ask({ maxMicroUsd: dollars(1) }));
+        const answer = await post('renew', { reservationId: 'res_1' });
+        expect(answer.status).toBe(409);
+        expect(answer.data.error).toMatch(/Nothing was changed\.$/);
+        expect(answer.data.error).not.toMatch(/[–—]/);
+        expect(holdCalls()).toEqual([]);
+        expect(local()).toMatchObject({ pendingMicroUsd: dollars(1) });
+      });
+
+      test('a hold that is no longer held is refused in the service’s words, and nothing is changed', async () => {
+        await buy(100);
+        await mount(await signedIn(DEMO_ACCOUNTS.owner.email));
+        await post('admit', ask());
+        const { organization } = await cloud.accounts.membership(await tokenFor(DEMO_ACCOUNTS.owner.email), ORG);
+        const person = cloudHolds()[0].personId;
+        await cloud.funding.releasePurchased({ tenantId: organization.tenantId, organizationId: ORG, holdId: 'res_1', personId: person });
+        const answer = await post('renew', { reservationId: 'res_1' });
+        expect(answer.status).toBe(409);
+        expect(answer.data.code).toBe('hold_not_held');
+        expect(answer.data.error).toMatch(/Nothing was changed\.$/);
+      });
+
+      test('another member cannot renew a subscriber’s hold, and cannot tell it exists', async () => {
+        await buy(100);
+        await mount(await signedIn(DEMO_ACCOUNTS.owner.email));
+        await post('admit', ask());
+        const before = cloudHolds()[0].leaseUntil;
+        await unmount();
+        await mount(await signedIn(DEMO_ACCOUNTS.employee.email));
+        const stranger = await post('renew', { reservationId: 'res_1' });
+        const missing = await post('renew', { reservationId: 'res_nope' });
+        expect(stranger.status).toBe(403);
+        expect(stranger.data.code).toBe('direct_renew_refused');
+        expect(stranger.data.error).toMatch(/Nothing was changed\.$/);
+        expect({ status: missing.status, code: missing.data.code, error: missing.data.error }).toEqual({ status: stranger.status, code: stranger.data.code, error: stranger.data.error });
+        expect(cloudHolds()[0].leaseUntil).toBe(before);
+      });
+
+      test('signed out, a renewal is a 401 and nothing reaches the service', async () => {
+        const backend: AccountBackend = {
+          client: new ControlPlaneClient('http://faux.local', (request) => { calls.push(`${request.method} ${pathOf(request)}`); return cloud.handle(request); }),
+          view: () => ({ kind: 'faux', label: FAUX_BACKEND_LABEL, url: null, reason: null, signIn: 'password' }),
+          close: async () => {},
+        };
+        const session = new AccountSessionService(backend, dir, null);
+        await session.init();
+        await mount(session);
+        const answer = await post('renew', { reservationId: 'res_1' });
+        expect(answer.status).toBe(401);
+        expect(holdCalls()).toEqual([]);
+      });
+
+      test('when the account service cannot be reached, it says so and nothing is changed', async () => {
+        await buy(100);
+        await mount(await signedIn(DEMO_ACCOUNTS.owner.email));
+        await post('admit', ask());
+        const before = cloudHolds()[0].leaseUntil;
+        intercept = (request) => (pathOf(request).includes('/purchased-usage/') ? Promise.reject(new Error('offline')) : null);
+        const answer = await post('renew', { reservationId: 'res_1' });
+        expect(answer.status).toBe(503);
+        expect(answer.data.error).toMatch(/Nothing was changed\.$/);
+        expect(cloudHolds()[0].leaseUntil).toBe(before);
+      });
+
+      test('with no account service wired in, nobody renews anything', async () => {
+        await buy(100);
+        await mount(await signedIn(DEMO_ACCOUNTS.owner.email), { purchased: false });
+        const answer = await post('renew', { reservationId: 'res_1' });
+        expect(answer.status).toBe(403);
+        expect(answer.data.code).toBe('direct_renew_refused');
+        expect(holdCalls()).toEqual([]);
+      });
+
+      test('an outsider reads as absent before anything, and the body is only the hold’s name', async () => {
+        await buy(100);
+        await mount(await signedIn(DEMO_ACCOUNTS.owner.email), { assertMine: () => { throw new ApiError(404, 'Not found.'); } });
+        expect((await post('renew', { reservationId: 'res_1' })).status).toBe(404);
+        expect(holdCalls()).toEqual([]);
+        await unmount();
+        await mount(await signedIn(DEMO_ACCOUNTS.owner.email));
+        expect((await post('renew', {})).status).toBe(400);
+        expect(holdCalls()).toEqual([]);
+      });
+    });
+  });
+
   describe('the bought balance, as the account service reports it', () => {
     const read = async () => {
       const response = await fetch(`${url}/api/workspace/organizations/${ORG}/allowance/purchased`);
@@ -346,7 +507,7 @@ describe('a subscriber reserving at the allowance routes', () => {
       expect((await read()).data).toMatchObject({ state: 'unavailable' });
       // A hold answered with a different amount than was asked is not taken as held either.
       intercept = (request) => (pathOf(request).endsWith('/purchased-usage/holds')
-        ? Promise.resolve(Response.json({ holdId: 'res_1', state: 'held', amountMicroUsd: 1, debitMicroUsd: 0, createdAt: AT, resolvedAt: null, balance: { purchasedMicroUsd: 1, heldMicroUsd: 1, settledMicroUsd: 0, availableMicroUsd: 0 } }))
+        ? Promise.resolve(Response.json({ holdId: 'res_1', state: 'held', amountMicroUsd: 1, debitMicroUsd: 0, createdAt: AT, resolvedAt: null, leaseUntil: AT, balance: { purchasedMicroUsd: 1, heldMicroUsd: 1, settledMicroUsd: 0, availableMicroUsd: 0 } }))
         : null);
       const answer = await post('admit', ask());
       expect(answer.status).toBe(503);

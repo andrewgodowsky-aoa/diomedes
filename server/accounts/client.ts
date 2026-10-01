@@ -34,12 +34,18 @@ const scopedEntitlementSchema = z.object({ plan: z.string(), planLabel: z.string
  */
 const purchasedBalanceSchema = z.strictObject({
   purchasedMicroUsd: z.number().int().nonnegative(), heldMicroUsd: z.number().int().nonnegative(),
-  settledMicroUsd: z.number().int().nonnegative(), availableMicroUsd: z.number().int().nonnegative(),
+  settledMicroUsd: z.number().int().nonnegative(),
+  // The true figure, which is below zero when work finished after its hold had let go and the freed
+  // credits were held again meanwhile. It is read as it is, never clamped here.
+  availableMicroUsd: z.number().int(),
 });
 const purchasedHoldSchema = z.strictObject({
   holdId: z.string(), state: z.enum(['held', 'settled', 'released']),
   amountMicroUsd: z.number().int().positive(), debitMicroUsd: z.number().int().nonnegative(),
-  createdAt: z.string(), resolvedAt: z.string().nullable(), balance: purchasedBalanceSchema,
+  createdAt: z.string(), resolvedAt: z.string().nullable(),
+  // When the hold lets go on its own unless it is renewed. The service's clock, never this app's.
+  leaseUntil: z.iso.datetime(),
+  balance: purchasedBalanceSchema,
 });
 export type PurchasedBalanceAnswer = z.infer<typeof purchasedBalanceSchema>;
 export type PurchasedHoldAnswer = z.infer<typeof purchasedHoldSchema>;
@@ -241,6 +247,11 @@ export class ControlPlaneClient {
   }
   async releasePurchasedUsage(token: string, organizationId: string, input: { holdId: string }): Promise<PurchasedHoldAnswer> {
     const parsed = purchasedHoldSchema.safeParse(await this.call<unknown>('POST', `/account/organizations/${encodeURIComponent(organizationId)}/purchased-usage/releases`, token, input));
+    return parsed.success ? parsed.data : this.unreadable();
+  }
+  /** Keep a hold this person made: the service moves its lease forward from its own clock. */
+  async renewPurchasedUsage(token: string, organizationId: string, input: { holdId: string }): Promise<PurchasedHoldAnswer> {
+    const parsed = purchasedHoldSchema.safeParse(await this.call<unknown>('POST', `/account/organizations/${encodeURIComponent(organizationId)}/purchased-usage/renewals`, token, input));
     return parsed.success ? parsed.data : this.unreadable();
   }
   createOrganization(token: string, name: string) {

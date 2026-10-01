@@ -9,6 +9,15 @@
 -- settled, and less the funded attempts' top-up holds and debits (see topUpTotals).
 -- Amounts are integer micro-USD.
 --
+-- A hold is a lease (Andrew, 2026-10-01: a stale hold releases on its own "as long as its accurate").
+-- Only the person holding it knows whether the work is still running, so the holder renews it:
+-- lease_until is stamped from the service's own clock when the hold is made and moved forward only by
+-- a renewal. A held row whose lease has lapsed stops counting as held and is moved to released by the
+-- next write or read under the organization lock, with released_by='expiry' (a person's own release
+-- is released_by='person'). If the work finishes after that, its real usage is still recorded: a late
+-- settle moves an expiry-released hold to settled and clears released_by. A hold the person released
+-- cannot be settled. No job runs a sweep; nothing here is timed by the database.
+--
 -- Apply after 011 and 012. The migration runner takes each version from the file name's number,
 -- so it refuses 013 until 011 and 012 are in the list before it.
 
@@ -23,11 +32,15 @@ CREATE TABLE control_plane.credit_topup_holds (
   state text NOT NULL CHECK (state IN ('held','settled','released')),
   created_at timestamptz NOT NULL,
   resolved_at timestamptz,
+  lease_until timestamptz NOT NULL,
+  released_by text,
   PRIMARY KEY (tenant_id,hold_id),
   FOREIGN KEY (organization_id,tenant_id) REFERENCES control_plane.organizations(id,tenant_id),
   CHECK (debit_micro_usd <= amount_micro_usd),
   CHECK ((state = 'held') = (resolved_at IS NULL)),
-  CHECK (state = 'settled' OR debit_micro_usd = 0)
+  CHECK (state = 'settled' OR debit_micro_usd = 0),
+  CHECK (released_by IN ('person','expiry')),
+  CHECK ((state = 'released') = (released_by IS NOT NULL))
 );
 CREATE INDEX credit_topup_holds_organization_state ON control_plane.credit_topup_holds(tenant_id,organization_id,state);
 REVOKE ALL ON ALL TABLES IN SCHEMA control_plane FROM PUBLIC;

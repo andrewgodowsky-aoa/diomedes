@@ -1038,6 +1038,10 @@ export class AccountSessionService {
   releasePurchased(organizationId: string, input: { holdId: string }) {
     return this.call((token) => this.backend.client.releasePurchasedUsage(token, organizationId, input));
   }
+  /** Keep a hold this person made from lapsing while the work it is for is still running. */
+  renewPurchased(organizationId: string, input: { holdId: string }) {
+    return this.call((token) => this.backend.client.renewPurchasedUsage(token, organizationId, input));
+  }
 
   /**
    * The last answer for one business. Null when the service knows nothing of it here. State

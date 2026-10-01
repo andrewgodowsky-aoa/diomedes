@@ -66,13 +66,23 @@ export class StateFundingTransaction implements FundingTransaction {
       settledTopUpMicroUsd: sum(settlements.map((row) => row.topUpDebitMicroUsd)),
     };
   }
-  async topUpTotals(tenantId: string, organizationId: string) {
+  /** The lazy release: a held hold whose lease has lapsed at `at` (lease_until <= at) is let go by expiry. */
+  async expireTopUpHolds(tenantId: string, organizationId: string, at: string) {
+    const now = Date.parse(at);
+    this.state.topUpHolds = this.state.topUpHolds.map((row) =>
+      row.tenantId === tenantId && row.organizationId === organizationId && row.state === 'held' && Date.parse(row.leaseUntil) <= now
+        ? { ...row, state: 'released' as const, releasedBy: 'expiry' as const, resolvedAt: at }
+        : row);
+  }
+  async topUpTotals(tenantId: string, organizationId: string, at: string) {
+    const now = Date.parse(at);
     const mine = <T extends { tenantId: string; organizationId: string }>(rows: T[]) => rows.filter((row) => row.tenantId === tenantId && row.organizationId === organizationId);
     return {
       purchasedMicroUsd: sum(mine(this.state.topUps).map((row) => row.amountMicroUsd)),
       heldMicroUsd: sum([
         ...mine(this.state.attempts).filter((row) => row.state === 'pending' || row.state === 'uncertain').map((row) => row.topUpHoldMicroUsd),
-        ...mine(this.state.topUpHolds).filter((row) => row.state === 'held').map((row) => row.amountMicroUsd),
+        // A held hold whose lease has lapsed is not held, whether or not anything has let go of it yet.
+        ...mine(this.state.topUpHolds).filter((row) => row.state === 'held' && Date.parse(row.leaseUntil) > now).map((row) => row.amountMicroUsd),
       ]),
       settledMicroUsd: sum([
         ...mine(this.state.settlements).map((row) => row.topUpDebitMicroUsd),

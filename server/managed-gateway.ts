@@ -100,6 +100,8 @@ export interface PurchasedUsage {
     organizationId: string,
     input: { holdId: string; debitMicroUsd: number },
   ): Promise<PurchasedHoldAnswer>;
+  /** Move the hold's lease forward. Only the person who made the hold can; the service says when it lapses. */
+  renewPurchased(organizationId: string, input: { holdId: string }): Promise<PurchasedHoldAnswer>;
 }
 
 /** What a person's request for bought usage can be refused with, and the status each answers with. */
@@ -124,6 +126,18 @@ const PURCHASED_OTHER_PERSON_REASON =
 export const DIRECT_SETTLE_REFUSED = 'direct_settle_refused';
 export const DIRECT_SETTLE_REASON =
   'You can’t settle this business’s usage yourself. Your work in the app settles as it finishes. Nothing was changed.';
+
+/**
+ * Renewing a hold keeps usage the business bought outright from lapsing while its work runs. A hold
+ * this person did not make reads the same as one that does not exist, as it does for a settle. Staff
+ * hold on this computer's own ledger, which keeps no lease, so there is nothing of theirs to renew.
+ */
+export const DIRECT_RENEW_REFUSED = 'direct_renew_refused';
+export const DIRECT_RENEW_REASON =
+  'You can’t renew a hold you didn’t make. Nothing was changed.';
+export const STAFF_RENEW_REFUSED = 'staff_hold_not_leased';
+export const STAFF_RENEW_REASON =
+  'Staff holds are kept on this computer and don’t run out, so there is nothing to renew. Nothing was changed.';
 
 export interface GatewayAuthorization {
   readonly tenantId: string;
@@ -374,10 +388,13 @@ export class ManagedGateway {
       return refuse('purchased_hold_unavailable', PURCHASED_UNAVAILABLE_REASON, 'managed');
     }
     // Held is the only state that took credits aside for this call. Anything else holds nothing.
+    // The hold is a lease: the authorization never outlasts it, and one this app cannot read is not a hold.
+    const lease = Date.parse(answer.leaseUntil);
     if (
       answer.state !== 'held' ||
       answer.holdId !== request.reservationId ||
-      answer.amountMicroUsd !== request.maxMicroUsd
+      answer.amountMicroUsd !== request.maxMicroUsd ||
+      !Number.isFinite(lease)
     )
       return refuse('purchased_hold_unavailable', PURCHASED_UNAVAILABLE_REASON, 'managed');
     const reservation: Reservation = {
@@ -403,7 +420,11 @@ export class ManagedGateway {
         tenantId,
         audience: request.route,
         requestDigest: request.requestDigest,
-        expiresAt: new Date(Date.parse(request.at) + AUTHORIZATION_MINUTES * 60_000).toISOString(),
+        // The earlier of the usual window and the hold's own lease: this never says a call may go
+        // ahead past the moment the credits behind it let go.
+        expiresAt: new Date(
+          Math.min(Date.parse(request.at) + AUTHORIZATION_MINUTES * 60_000, lease),
+        ).toISOString(),
         reservationId: reservation.id,
       },
     };

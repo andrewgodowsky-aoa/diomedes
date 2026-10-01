@@ -6,7 +6,7 @@ import { readBytes } from './crypto.js';
 import { WorkOSIdentityVerifier } from './identity-workos.js';
 import { StaffKeyVerifier, postgresStaffKeys } from './identity-staff-key.js';
 import { PostgresRepository, neonClientFactory } from './postgres.js';
-import { FundingService, PurchasedUsageService, UsageService, purchasedHoldInput, purchasedReleaseInput, purchasedSettleInput } from './funding.js';
+import { FundingService, PurchasedUsageService, UsageService, purchasedHoldInput, purchasedReleaseInput, purchasedRenewInput, purchasedSettleInput } from './funding.js';
 import { PostgresFundingRepository } from './funding-postgres.js';
 import { PostgresCommercialRepository } from './commercial-postgres.js';
 import {
@@ -90,7 +90,7 @@ export interface HandlerOptions {
   configuration?: (env: Record<string, unknown>) => Configuration;
   createCommercial?: (config: Configuration, accounts: AccountService) => CommercialService;
   /** Test and faux-cloud seam for purchased-usage holds. The Worker entry always uses the funding login. */
-  createPurchased?: (config: Configuration, accounts: AccountService) => Pick<PurchasedUsageService, 'balance' | 'hold' | 'settle' | 'release'>;
+  createPurchased?: (config: Configuration, accounts: AccountService) => Pick<PurchasedUsageService, 'balance' | 'hold' | 'settle' | 'release' | 'renew'>;
   createRouting?: (config: Configuration, accounts: AccountService) => RoutingService;
   /** Test and faux-cloud seam for the managed gateway: the scripted provider instead of Bedrock. */
   createManaged?: (config: Configuration, accounts: AccountService) => ManagedInferenceService;
@@ -272,6 +272,8 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
         return json(await createPurchased(config, accounts).settle(token, match[1], await body(request, purchasedSettleInput)));
       if ((match = route('/account/organizations/:id/purchased-usage/releases').exec(pathname)) && method === 'POST')
         return json(await createPurchased(config, accounts).release(token, match[1], await body(request, purchasedReleaseInput)));
+      if ((match = route('/account/organizations/:id/purchased-usage/renewals').exec(pathname)) && method === 'POST')
+        return json(await createPurchased(config, accounts).renew(token, match[1], await body(request, purchasedRenewInput)));
       if ((match = route('/account/organizations/:id/invitations').exec(pathname)) && method === 'POST')
         return json(await accounts.invite(token, match[1], await body(request, invitationInput)), 201);
       if ((match = route('/account/organizations/:id/invitations/accept').exec(pathname)) && method === 'POST')
