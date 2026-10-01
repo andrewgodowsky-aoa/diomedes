@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { FundingService } from '../src/funding.js';
 import { FundingMemoryRepository } from './support/funding-memory.js';
 import { micro } from '../../../shared/managed-usage.js';
+import { individualCycle } from '../../../shared/individual-period.js';
 
 const person = 'person_individual', account = 'individual_billing';
 const allocation = { tenantId: person, organizationId: account, planId: 'individual', sourceGrantId: 'grant_person', periodId: '2026-09' };
@@ -69,5 +70,120 @@ describe('Individual funding in the existing ledger', () => {
     await expect(funding.settle({ ...settlement, tenantId: 'other_person' })).rejects.toMatchObject({ code: 'unknown_attempt' });
     expect(repo.snapshot().settlements).toHaveLength(1);
     expect(repo.snapshot().periods).toHaveLength(2);
+  });
+});
+
+describe('Individual anniversary terms in the existing ledger (DIO-128)', () => {
+  const anchor = '2026-09-30T15:00:00.000Z';
+  const first = individualCycle(anchor, 0), second = individualCycle(anchor, 1);
+  const term = { tenantId: person, organizationId: account, sourceGrantId: 'grant_term', cycle: first };
+  const hold = (id: string, cycle = first, max = 200_000) => ({ tenantId: person, organizationId: account, attemptId: id, rootJobId: 'job',
+    parentAttemptId: null, kind: 'generation' as const, route: 'route', requestDigest: id, rateSnapshot: rate,
+    maxMicroUsd: micro(max), usageClass: 'metered-work' as const, individualCycle: cycle });
+  const usage = { inputTokens: 100_000, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, reasoningTokens: 0 };
+  async function opened(clock: { at: number }) {
+    const repo = new FundingMemoryRepository();
+    const funding = new FundingService(repo, { now: () => clock.at });
+    await funding.openJob({ tenantId: person, organizationId: account, rootJobId: 'job', runRef: 'job', parentRunRef: null, tier: 'efficient', capMicroUsd: null });
+    return { repo, funding };
+  }
+
+  it('records exactly one 1,000-credit row per term under concurrent retries and a lost commit, whichever grant asks', async () => {
+    const clock = { at: Date.parse('2026-10-01T00:00:00Z') };
+    const { repo, funding } = await opened(clock);
+    repo.failNextCommit('after-apply');
+    await expect(funding.allocateIndividualPeriod(term)).rejects.toThrow('commit outcome');
+    const rows = await Promise.all(Array.from({ length: 6 }, (_, index) =>
+      funding.allocateIndividualPeriod({ ...term, sourceGrantId: index % 2 ? 'grant_term' : 'grant_replacement' })));
+    expect(repo.snapshot().periods).toEqual([{ tenantId: person, organizationId: account, periodId: 'individual:2026-09-30T15:00:00.000Z',
+      planId: 'individual', rateCardVersion: expect.any(String), grantedMicroUsd: 100_000_000, startsAt: first.startsAt, endsAt: first.endsAt,
+      sourceGrantId: 'grant_term', allocatedAt: '2026-10-01T00:00:00.000Z' }]);
+    expect(rows.every(row => row.sourceGrantId === 'grant_term')).toBe(true); // The historical source is never rewritten.
+  });
+
+  it('does not reset on October 1 for a September 30 subscriber, and starts the verified next term at 0% with no carryover', async () => {
+    const clock = { at: Date.parse('2026-09-30T16:00:00Z') };
+    const { repo, funding } = await opened(clock);
+    await funding.allocateIndividualPeriod(term);
+    await funding.reserve(hold('a'));
+    clock.at = Date.parse('2026-10-01T00:00:01Z');
+    // Still the September 30 term: no calendar month is looked up, and nothing new is recorded.
+    expect(await funding.reserve(hold('b'))).toMatchObject({ periodId: 'individual:2026-09-30T15:00:00.000Z' });
+    await expect(funding.reserve({ ...hold('c'), individualCycle: undefined })).rejects.toMatchObject({ code: 'no_period' });
+    expect(await funding.individualProjection(person, account, first)).toMatchObject({ state: 'ready',
+      projection: { periodId: 'individual:2026-09-30T15:00:00.000Z', resetsAt: '2026-10-30T15:00:00.000Z', allocation: 'recorded', pendingMicroUsd: 400_000 } });
+    // At the anniversary the old term funds nothing new, and the next term is its own 1,000 credits.
+    clock.at = Date.parse('2026-10-30T15:00:00Z');
+    await expect(funding.reserve(hold('d'))).rejects.toMatchObject({ code: 'period_ended' });
+    await expect(funding.allocateIndividualPeriod(term)).resolves.toMatchObject({ periodId: 'individual:2026-09-30T15:00:00.000Z' });
+    await expect(funding.reserve(hold('e', second))).rejects.toMatchObject({ code: 'no_period' });
+    expect(await funding.individualProjection(person, account, second)).toMatchObject({ state: 'ready',
+      projection: { allocation: 'pending', grantedMicroUsd: 100_000_000, usedPercent: 0, availableMicroUsd: 100_000_000, resetsAt: '2026-11-30T15:00:00.000Z' } });
+    expect(repo.snapshot().periods).toHaveLength(1); // The read wrote nothing.
+    await funding.allocateIndividualPeriod({ ...term, cycle: second });
+    await expect(funding.reserve(hold('f', second, 100_000_001))).rejects.toMatchObject({ code: 'insufficient_allowance' });
+    expect(await funding.reserve(hold('g', second))).toMatchObject({ periodId: 'individual:2026-10-30T15:00:00.000Z' });
+    expect(repo.snapshot().periods.map(row => row.grantedMicroUsd)).toEqual([100_000_000, 100_000_000]);
+  });
+
+  it('never records an elapsed, future or overlapping term', async () => {
+    const clock = { at: Date.parse('2026-11-05T00:00:00Z') };
+    const { repo, funding } = await opened(clock);
+    await expect(funding.allocateIndividualPeriod(term)).rejects.toMatchObject({ code: 'period_not_current' });
+    await expect(funding.allocateIndividualPeriod({ ...term, cycle: individualCycle(anchor, 2) })).rejects.toMatchObject({ code: 'period_not_current' });
+    await funding.allocateIndividualPeriod({ ...term, cycle: second });
+    const overlapping = individualCycle('2026-11-01T00:00:00.000Z', 0);
+    await expect(funding.allocateIndividualPeriod({ ...term, cycle: overlapping })).rejects.toMatchObject({ code: 'period_overlap' });
+    await expect(funding.allocateIndividualPeriod({ ...term, cycle: { ...second, endsAt: '2026-12-01T15:00:00.000Z' } })).rejects.toMatchObject({ code: 'invalid_period' });
+    expect(repo.snapshot().periods).toHaveLength(1);
+  });
+
+  it('judges a reservation that waited on the lock past the end by the time it gets the lock', async () => {
+    const clock = { at: Date.parse('2026-10-29T00:00:00Z') };
+    const { repo, funding } = await opened(clock);
+    await funding.allocateIndividualPeriod(term);
+    clock.at = Date.parse('2026-10-30T14:59:59.999Z');
+    // The clock passes the anniversary while this reservation waits for the billing-scope lock.
+    const waiting = new FundingService({ transaction: (action) => { clock.at = Date.parse('2026-10-30T15:00:00Z'); return repo.transaction(action); } },
+      { now: () => clock.at });
+    await expect(waiting.reserve(hold('late'))).rejects.toMatchObject({ code: 'period_ended' });
+    expect(repo.snapshot().attempts).toHaveLength(0);
+  });
+
+  it('releases an unsent hold whose term ended before dispatch, and settles a sent one late against its own term', async () => {
+    const clock = { at: Date.parse('2026-10-30T14:00:00Z') };
+    const { repo, funding } = await opened(clock);
+    await funding.allocateIndividualPeriod(term);
+    await funding.reserve(hold('unsent'));
+    await funding.reserve(hold('sent'));
+    await funding.markDispatched(hold('sent'));
+    clock.at = Date.parse('2026-10-30T15:00:00Z');
+    await funding.allocateIndividualPeriod({ ...term, cycle: second });
+    await expect(funding.markDispatched(hold('unsent'))).rejects.toMatchObject({ code: 'period_ended' });
+    expect(repo.snapshot().attempts.find(a => a.id === 'unsent')).toMatchObject({ state: 'released', dispatchedAt: null });
+    const settled = await funding.settle({ ...hold('sent'), receiptRef: 'receipt', usage, reconciledFrom: 'response' });
+    expect(settled).toMatchObject({ outcome: 'settled', settlement: { periodId: 'individual:2026-09-30T15:00:00.000Z', allowanceDebitMicroUsd: 100_000 } });
+    // Neither the late debit nor the released hold moves the new term.
+    expect(await funding.individualProjection(person, account, second)).toMatchObject({ state: 'ready',
+      projection: { allocation: 'recorded', settledMicroUsd: 0, pendingMicroUsd: 0, availableMicroUsd: 100_000_000 } });
+    // A retry under the original parent job spends current funds inside the same job cap.
+    const retry = await funding.reserve({ ...hold('retry', second), parentAttemptId: 'sent' });
+    expect(retry).toMatchObject({ periodId: 'individual:2026-10-30T15:00:00.000Z', rootJobId: 'job' });
+  });
+
+  it('keeps a legacy calendar row for settlement only once a monthly term covers the moment', async () => {
+    const clock = { at: Date.parse('2026-10-02T00:00:00Z') };
+    const { repo, funding } = await opened(clock);
+    await funding.allocatePeriod({ ...allocation, periodId: '2026-10' });
+    await funding.reserve({ ...hold('legacy'), individualCycle: undefined });
+    await funding.markDispatched(hold('legacy'));
+    const restart = individualCycle('2026-10-05T00:00:00.000Z', 0);
+    clock.at = Date.parse('2026-10-06T00:00:00Z');
+    await funding.allocateIndividualPeriod({ ...term, cycle: restart });
+    await expect(funding.reserve({ ...hold('calendar'), individualCycle: undefined })).rejects.toMatchObject({ code: 'period_superseded' });
+    expect(await funding.reserve(hold('term', restart))).toMatchObject({ periodId: 'individual:2026-10-05T00:00:00.000Z' });
+    expect(await funding.settle({ ...hold('legacy'), receiptRef: 'legacy-receipt', usage, reconciledFrom: 'response' }))
+      .toMatchObject({ outcome: 'settled', settlement: { periodId: '2026-10' } });
+    expect(repo.snapshot().periods.map(row => row.periodId)).toEqual(['2026-10', 'individual:2026-10-05T00:00:00.000Z']);
   });
 });

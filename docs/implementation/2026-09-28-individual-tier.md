@@ -101,3 +101,10 @@ Add to the amendment list:
 - The owner's export (OPS-05) passes the access view through, so its strict schema and
   `shared/organization-export.ts` now accept the optional `coveredBy` and grant `scope` fields. The full root suite, Playwright, vite build and packaging were
   not run here (the heavy slot belonged to another lane); the orchestrator runs them.
+
+## Later change to the term (2026-10-01)
+
+The 31-day `termDays` recorded here is superseded for the complete Individual plan: each term now
+runs to the subscription's next monthly anniversary in UTC (`2026-10-01-individual-reset-boundary.md`).
+Grants issued under the 31-day template keep their dates; limited overrides keep explicit dates.
+

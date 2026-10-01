@@ -42,7 +42,7 @@ import {
   type AgentPlanState,
   type PlanNoticeChoice,
 } from '../../shared/access.js';
-import { noIndividualAccess, personIncludes, type PersonAccessView } from '../../shared/individual-plan.js';
+import { noIndividualAccess, personIncludes, type PersonAccessView, type PersonalUsageView } from '../../shared/individual-plan.js';
 import type { OrganizationSetupWrite, SetupFetchOutcome, SetupWriteOutcome } from '../../shared/organization-setup.js';
 import {
   NO_ENTITLEMENT_VIEW,
@@ -130,6 +130,39 @@ function personAccessAnswer(answer: unknown, personId: string): PersonAccessView
   const parsed = personAccessSchema.safeParse(answer);
   return parsed.success && parsed.data.personId === personId ? (answer as PersonAccessView) : null;
 }
+
+/**
+ * `GET /account/usage`: the person's own Individual credits for the period in force. An answer for
+ * another person, a figure for an account other than the one it names, a non-Individual plan, or a
+ * period that has already ended (or not begun) is no answer: it is shown as unavailable, never as 0%.
+ */
+const personalUsageSchema = z.object({
+  v: z.literal(1),
+  personId: z.string().min(1),
+  accountId: z.string().min(1).nullable(),
+  usage: z.object({ state: z.enum(['loading', 'not-connected', 'unavailable', 'ready']), organizationId: z.string().min(1) }).passthrough(),
+  renewal: z.object({ state: z.enum(['renewed', 'not-renewed']), nextStartsAt: z.iso.datetime(), nextEndsAt: z.iso.datetime() }).nullable(),
+  checkedAt: z.iso.datetime(),
+});
+const personalProjectionSchema = z.object({
+  organizationId: z.string().min(1),
+  planId: z.enum(['individual', 'individual-agreement']),
+  periodStartsAt: z.iso.datetime(),
+  resetsAt: z.iso.datetime(),
+}).passthrough();
+function personalUsageAnswer(answer: unknown, personId: string, now: number): PersonalUsageView | null {
+  const parsed = personalUsageSchema.safeParse(answer);
+  if (!parsed.success || parsed.data.personId !== personId) return null;
+  const view = answer as PersonalUsageView;
+  if (view.usage.state !== 'ready') return view;
+  const projection = personalProjectionSchema.safeParse(view.usage.projection);
+  if (!projection.success || view.accountId === null || view.usage.organizationId !== view.accountId ||
+      projection.data.organizationId !== view.accountId || Date.parse(projection.data.periodStartsAt) > now ||
+      Date.parse(projection.data.resetsAt) <= now) return null;
+  return view;
+}
+/** A Personal usage answer is reused for at most this long, and never past its period's end. */
+const PERSONAL_USAGE_TTL_MS = 15_000;
 
 /**
  * The fields of a `POST /account/organizations/:id/agent-admissions` answer this host reads. A
@@ -294,6 +327,8 @@ export class AccountSessionService {
   /** Token rotation replaces a saved entry without creating a different sign-in. */
   private readonly rememberedSignIns = new WeakMap<RememberedEntry, Current>();
   private current: Current | null = null;
+  /** The last verified Personal usage read, for the same sign-in and access revision only. */
+  private personalUsageCache: { current: Current; revision: number | null; until: number; view: PersonalUsageView } | null = null;
   /** A newer sign-in or sign-out invalidates work that is still awaiting an answer. */
   private lifecycle = 0;
   /** Forget cancels pending sign-ins for that person without cancelling another person's attempt. */
@@ -966,6 +1001,34 @@ export class AccountSessionService {
       const old = (error instanceof ControlPlaneError || error instanceof ApiError) && error.status === 404 && error.message === ROUTE_NOT_FOUND;
       return old ? noIndividualAccess(current.personId, this.at()) : null;
     }
+  }
+
+  /**
+   * The signed-in person's own Individual credits for the billing period in force (`GET /account/usage`).
+   * Read-only, and bound to this sign-in: the service resolves the person's own account and period, and
+   * an answer that names anyone or anything else is shown as unavailable. A verified answer is reused
+   * briefly, never past its period's end and never across a sign-in or access change.
+   */
+  async personalUsage(): Promise<PersonalUsageView> {
+    const current = this.requireCurrent();
+    const revision = current.personAccess?.revision ?? null;
+    const cached = this.personalUsageCache;
+    if (cached && cached.current === current && cached.revision === revision && this.now() < cached.until) return cached.view;
+    const unavailable = (reason: string): PersonalUsageView => ({ v: 1, personId: current.personId, accountId: null,
+      usage: { state: 'unavailable', organizationId: current.personId, reason }, renewal: null, checkedAt: this.at() });
+    let answer: unknown;
+    try {
+      answer = await this.call((token) => this.backend.client.personUsage(token));
+    } catch (error) {
+      if ((error instanceof ControlPlaneError || error instanceof ApiError) && error.status === 404 && error.message === ROUTE_NOT_FOUND)
+        return unavailable('This account service does not report Personal usage yet.');
+      throw error;
+    }
+    const view = personalUsageAnswer(answer, current.personId, this.now());
+    if (!view) return unavailable('The usage answer could not be verified for your account, so it was not shown.');
+    const ends = view.usage.state === 'ready' ? Date.parse(view.usage.projection.resetsAt) : Number.POSITIVE_INFINITY;
+    if (this.current === current) this.personalUsageCache = { current, revision, until: Math.min(this.now() + PERSONAL_USAGE_TTL_MS, ends), view };
+    return view;
   }
 
   /** Read the person's businesses and access again. `project: false` leaves the registry to the caller. */

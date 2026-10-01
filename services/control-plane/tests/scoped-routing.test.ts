@@ -56,10 +56,10 @@ async function call(method: string, pathname: string, token?: string, body?: unk
 }
 async function signIn(who: DemoAccount) { return (await call('POST', '/auth/sign-in', undefined,
   { email: DEMO_ACCOUNTS[who].email, password: FAUX_DEMO_PASSWORD })).body.accessToken as string; }
-async function personPlan(token = owner, reference = 'Synthetic Personal plan', features?: string[]) {
+async function personPlan(token = owner, reference = 'Synthetic Personal plan', features?: string[], extra: Record<string, unknown> = {}) {
   const person = (await cloud.accounts.signIn(token)).person;
   const result = await call('POST', `/ops/people/${person.id}/grants`, billing,
-    { planId: 'individual', source: 'internal-test', reference, note: '', validUntil: until, ...(features ? { features } : {}) });
+    { planId: 'individual', source: 'internal-test', reference, note: '', validUntil: until, ...(features ? { features } : {}), ...extra });
   expect(result.status, JSON.stringify(result.body)).toBe(201);
   return { person, grant: result.body.grant };
 }
@@ -129,6 +129,14 @@ beforeEach(async () => {
 afterEach(async () => { await cloud.idle(); vi.restoreAllMocks(); });
 
 describe('recurring Individual funding through scoped managed dispatch', () => {
+  /** Keep the synthetic route qualified past the first term, so only the billing period changes. */
+  async function routeOutlivesTerm() {
+    const later = '2026-12-28T00:00:00.000Z';
+    await editRoute('primary', b => {
+      b.qualification!.validUntil = later; b.access!.validUntil = later; b.privacy!.validUntil = later;
+      b.health!.validUntil = later; b.price!.validUntil = later;
+    });
+  }
   async function personal() {
     const { person, grant } = await personPlan();
     const account = (await call('POST', '/account/individual', owner, {})).body;
@@ -164,29 +172,58 @@ describe('recurring Individual funding through scoped managed dispatch', () => {
     await Promise.all(requests.map(completed));
     const state = cloud.store.snapshot().funding;
     expect(state.periods.filter(p => p.organizationId === account.id)).toMatchObject([{ tenantId: person.id,
-      organizationId: account.id, planId: 'individual', periodId: '2026-09', grantedMicroUsd: 100_000_000, sourceGrantId: grant.id }]);
+      organizationId: account.id, planId: 'individual', periodId: 'individual:2026-09-28T00:00:00.000Z', grantedMicroUsd: 100_000_000,
+      startsAt: at, endsAt: until, sourceGrantId: grant.id }]);
     expect(state.periods.filter(p => p.organizationId !== account.id)).toEqual(businessBefore);
     expect(state.attempts).toHaveLength(2);
     expect(state.attempts.every(a => a.tenantId === person.id && a.organizationId === account.id)).toBe(true);
-    expect(state.settlements.every(s => s.tenantId === person.id && s.organizationId === account.id && s.periodId === '2026-09')).toBe(true);
+    expect(state.settlements.every(s => s.tenantId === person.id && s.organizationId === account.id && s.periodId === `individual:${at}`)).toBe(true);
     const replay = await cloud.handle(await request(scope, { job: 'personal-a', attempt: 'personal-a' }));
     expect(replay.status).toBe(409); expect(sends).toHaveLength(2);
     expect(cloud.store.snapshot().funding.periods).toEqual(state.periods);
   });
 
-  it('keeps September payer and period when a response arrives in October, and allocates October once', async () => {
+  it('does not reset on October 1 for a September 28 subscriber, and funds the renewed term once at its anniversary', async () => {
     const { person, account, scope } = await personal();
     answer = () => { clock = Date.parse('2026-10-01T00:00:01Z'); return success(); };
     await completed(await request(scope, { job: 'september', attempt: 'september' }));
     owner = await signIn('owner'); answer = success;
-    await completed(await request(scope, { job: 'october', attempt: 'october' }));
-    const state = cloud.store.snapshot().funding;
-    expect(state.periods.filter(p => p.organizationId === account.id).map(p => [p.periodId, p.grantedMicroUsd]))
-      .toEqual([['2026-09', 100_000_000], ['2026-10', 100_000_000]]);
+    await completed(await request(scope, { job: 'october-1', attempt: 'october-1' }));
+    let state = cloud.store.snapshot().funding;
+    // October 1 is inside the September 28 term: one row, no calendar refill.
+    expect(state.periods.filter(p => p.organizationId === account.id).map(p => p.periodId)).toEqual([`individual:${at}`]);
+    // Billing records the paid renewal; the next term is funded only from its anniversary.
+    billing = await signIn('staffBilling'); routing = await signIn('staffRouting'); await routeOutlivesTerm();
+    await personPlan(owner, 'Synthetic renewal', undefined, { billingCycle: { anchorAt: at, index: 1 }, validUntil: undefined });
+    clock = Date.parse(until); owner = await signIn('owner');
+    await completed(await request(scope, { job: 'renewed', attempt: 'renewed' }));
+    state = cloud.store.snapshot().funding;
+    expect(state.periods.filter(p => p.organizationId === account.id).map(p => [p.periodId, p.grantedMicroUsd, p.startsAt, p.endsAt]))
+      .toEqual([[`individual:${at}`, 100_000_000, at, until], [`individual:${until}`, 100_000_000, until, '2026-11-28T00:00:00.000Z']]);
     expect(state.settlements).toMatchObject([
-      { reservationId: 'september', tenantId: person.id, organizationId: account.id, periodId: '2026-09' },
-      { reservationId: 'october', tenantId: person.id, organizationId: account.id, periodId: '2026-10' },
+      { reservationId: 'september', tenantId: person.id, organizationId: account.id, periodId: `individual:${at}` },
+      { reservationId: 'october-1', tenantId: person.id, organizationId: account.id, periodId: `individual:${at}` },
+      { reservationId: 'renewed', tenantId: person.id, organizationId: account.id, periodId: `individual:${until}` },
     ]);
+  });
+
+  it('refuses to send an unsent hold whose term ended while it waited, even after a renewal, and releases it as unsent', async () => {
+    const { account, scope } = await personal();
+    // The renewal keeps access current across the anniversary; it must not carry the old hold over it.
+    await personPlan(owner, 'Synthetic renewal', undefined, { billingCycle: { anchorAt: at, index: 1 }, validUntil: undefined });
+    await routeOutlivesTerm();
+    clock = Date.parse(until) - 2_000; owner = await signIn('owner');
+    const reserve = cloud.funding.reserve.bind(cloud.funding);
+    vi.spyOn(cloud.funding, 'reserve').mockImplementationOnce(async input => {
+      const held = await reserve(input);
+      clock = Date.parse(until) + 1_000; // The term ends between the hold and the dispatch claim.
+      return held;
+    });
+    const response = await cloud.handle(await request(scope));
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ error: { code: 'period_ended' } });
+    expect(sends).toHaveLength(0);
+    expect(cloud.store.snapshot().funding.attempts).toMatchObject([{ organizationId: account.id, state: 'released', dispatchedAt: null }]);
   });
 
   it('rechecks person revocation after reserving, releases the unsent hold, and does not erase its funding evidence', async () => {
@@ -210,7 +247,8 @@ describe('recurring Individual funding through scoped managed dispatch', () => {
     await completed(await request(scope));
     const original = cloud.store.snapshot().funding.periods.find(p => p.organizationId === account.id)!;
     expect((await call('POST', `/ops/people/${person.id}/grants/${grant.id}/revoke`, billing, { reason: 'Replace fixture access' })).status).toBe(200);
-    await personPlan(owner, 'Replacement subscription');
+    // The replacement names the same term under its own reference; the term's one row is reused unchanged.
+    await personPlan(owner, 'Replacement subscription', undefined, { billingCycle: { anchorAt: at, index: 0 } });
     await completed(await request(scope, { job: 'replacement', attempt: 'replacement' }));
     expect(cloud.store.snapshot().funding.periods.filter(p => p.organizationId === account.id)).toEqual([original]);
     expect(cloud.store.snapshot().funding.settlements).toHaveLength(2);
@@ -307,7 +345,8 @@ describe('Operations publication through authenticated funded dispatch', () => {
 
   it('new-main: provisions one person-bound billing identity when the plan is issued before setup', async () => {
     const { person } = await personPlan();
-    await Promise.all([personPlan(owner, 'Concurrent plan A'), personPlan(owner, 'Concurrent plan B')]);
+    const term = { billingCycle: { anchorAt: at, index: 0 } };
+    await Promise.all([personPlan(owner, 'Concurrent plan A', undefined, term), personPlan(owner, 'Concurrent plan B', undefined, term)]);
     const state = cloud.store.snapshot();
     const accounts = state.commercial.individuals.filter(account => account.personId === person.id);
     expect(accounts).toHaveLength(1);

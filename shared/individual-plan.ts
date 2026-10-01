@@ -5,8 +5,10 @@
  * an organization. It covers the person's Personal work and projects not linked to a business.
  * Business work always needs its own Business authority, including a one-member business.
  *
- * The full Individual plan includes 1,000 monthly credits on its own billing scope. Limited
- * feature grants retain their explicit scope. Legacy admission has no billing-scope pin and
+ * The full Individual plan includes 1,000 credits per monthly billing period on its own billing
+ * scope. A period is a subscription-anniversary calendar month in UTC (shared/individual-period.ts);
+ * unused included credits expire at its end and are never carried forward. Limited feature grants
+ * retain their explicit scope and dates. Legacy admission has no billing-scope pin and
  * continues to refuse managed work; scoped admission and dispatch check current person access.
  *
  * This module sits beside shared/access.ts rather than inside it while another lane holds that file.
@@ -24,6 +26,8 @@ import {
   type GrantSummary,
   type PlanTemplate,
 } from './access.js';
+import type { IndividualBillingCycle } from './individual-period.js';
+import type { UsageState } from './managed-usage.js';
 
 export const INDIVIDUAL_PLAN_ID = 'individual' as const;
 export const INDIVIDUAL_PLAN_LABEL = 'Individual' as const;
@@ -38,8 +42,11 @@ export const INDIVIDUAL_ELIGIBILITY_SENTENCE = 'Individual covers Personal work 
 export const INDIVIDUAL_SEPARATION_SENTENCE =
   "It covers your own work only. If you belong to a business, that business's work runs on the business's plan, even if you would pay for this one yourself.";
 
-/** A catalog plan: a template, and whether it is issued to an organization or to a person. */
-export type CatalogPlan = PlanTemplate & { scope: 'organization' | 'person' };
+/**
+ * A catalog plan: a template, and whether it is issued to an organization or to a person. Only the
+ * Individual plan renews by `billingInterval: 'month'`; every other plan keeps its `termDays`.
+ */
+export type CatalogPlan = PlanTemplate & { scope: 'organization' | 'person'; billingInterval?: 'month' };
 
 /** The complete phase-2a template, retained to recognize existing subscriptions without rewriting grants. */
 const INDIVIDUAL_ACCESS_FEATURES: readonly AccessFeature[] = Object.freeze([
@@ -56,9 +63,11 @@ export const INDIVIDUAL_PLAN: CatalogPlan = Object.freeze({
   id: INDIVIDUAL_PLAN_ID,
   label: INDIVIDUAL_PLAN_LABEL,
   features: Object.freeze([...INDIVIDUAL_ACCESS_FEATURES, 'managed-inference']) as readonly AccessFeature[],
-  termDays: 31,
+  // No fixed day count: each term runs to the subscription's next monthly anniversary, in UTC.
+  termDays: null,
+  billingInterval: 'month',
   customerVisible: true,
-  note: `A person's own monthly subscription, with 1,000 monthly credits on their Individual account. ${INDIVIDUAL_ELIGIBILITY_SENTENCE} ${INDIVIDUAL_SEPARATION_SENTENCE}`,
+  note: `A person's own monthly subscription, with 1,000 credits each billing period on their Individual account. Each period runs from the subscription's start to the same day and UTC time next month; unused credits expire at its end. ${INDIVIDUAL_ELIGIBILITY_SENTENCE} ${INDIVIDUAL_SEPARATION_SENTENCE}`,
   scope: 'person',
 });
 
@@ -129,6 +138,8 @@ export interface PersonGrantSummary {
   validFrom: string;
   validUntil: string;
   state: AccessState;
+  /** The verified monthly term a complete plan grant pays for. Absent on legacy and limited grants. */
+  billingCycle?: IndividualBillingCycle;
 }
 
 /** What `GET /account/access` answers: the signed-in person's own Individual access. */
@@ -145,6 +156,26 @@ export interface PersonAccessView {
   /** Monotonic across the person's grant changes. */
   revision: number;
   grants: readonly PersonGrantSummary[];
+  checkedAt: string;
+}
+
+/**
+ * What `GET /account/usage` answers: the signed-in person's own Individual credits for the billing
+ * period in force now. Read-only; it never records a period. `usage` is `unavailable`, never a
+ * zero, whenever no current period can be verified.
+ */
+export interface PersonalUsageView {
+  v: 1;
+  personId: string;
+  /** The person's own Individual billing account, or null before one exists. */
+  accountId: string | null;
+  usage: UsageState;
+  /**
+   * Whether the next billing period is already paid for (Billing records each paid term). Null when
+   * no monthly period is current. `not-renewed` means a new allowance needs a renewal: nothing is
+   * promised merely because the clock reaches `resetsAt`.
+   */
+  renewal: { state: 'renewed' | 'not-renewed'; nextStartsAt: string; nextEndsAt: string } | null;
   checkedAt: string;
 }
 

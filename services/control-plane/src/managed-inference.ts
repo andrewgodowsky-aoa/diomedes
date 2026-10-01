@@ -24,6 +24,7 @@
 import { EVALUATION_OUTPUT_TOKENS_PER_QUESTION, checkEvaluationRequest } from '../../../shared/evaluation-wire.js';
 import { FEATURE_LABELS } from '../../../shared/access.js';
 import { individualIncludesMonthlyCredits } from '../../../shared/individual-plan.js';
+import { individualCycleId, type IndividualBillingCycle } from '../../../shared/individual-period.js';
 import { inputTokenBound } from '../../../shared/token-bound.js';
 import { normalizeUsage } from '../../../shared/usage-contract.js';
 import {
@@ -45,6 +46,7 @@ import {
 import { decideAgentAdmission, snapshotFromView } from '../contract/contract.js';
 import type { AccountService } from './account-service.js';
 import {
+  currentIndividualCycle,
   entitlementFromGrants,
   individualEntitlement,
   grantState,
@@ -1141,14 +1143,14 @@ export class ManagedInferenceService {
       tenantId, organizationId: h.organizationId, rootJobId: h.jobId, runRef: h.jobId, parentRunRef: null,
       tier: h.tier, capMicroUsd: approvedJobCap(h.tier),
     });
-    await this.ensurePeriod(tenantId, h.scope, grants);
+    const individualCycle = await this.ensurePeriod(tenantId, h.scope, grants);
     // The company ceiling is checked inside the reserving transaction, so a refusal holds nothing.
     let attempt: FundedAttempt;
     try {
       attempt = await this.options.funding.reserve({
         ...ref, rootJobId: h.jobId, parentAttemptId: h.parentAttemptId, kind: hold.kind, route: hold.route,
         requestDigest: hold.requestDigest, rateSnapshot: hold.rate, maxMicroUsd: hold.maxMicroUsd, usageClass: h.usageClass,
-        companyCeilingMicroUsd: hold.ceilingMicroUsd,
+        companyCeilingMicroUsd: hold.ceilingMicroUsd, ...(individualCycle ? { individualCycle } : {}),
       });
     } catch (error) {
       if (!(error instanceof FundingError && error.code === 'company_ceiling')) throw error;
@@ -1340,16 +1342,34 @@ export class ManagedInferenceService {
    * (included usage, on a plan with a published monthly grant), the one ending
    * last; allocatePeriod is idempotent for it. A revoked or expired grant never
    * gets here: step 4 has already refused.
+   *
+   * Individual (DIO-128): a current complete-plan grant that names a verified monthly term funds
+   * that exact term, and the term is returned so the reservation binds to it. The term comes from
+   * the grant, never from the grant ending last, the first use or the calling device; grants that
+   * name the same term share its one row. Grants from before monthly terms keep the calendar month.
    */
-  private async ensurePeriod(tenantId: string, scope: AccountScope, grants: readonly (FeatureGrant | PersonFeatureGrant)[]) {
+  private async ensurePeriod(tenantId: string, scope: AccountScope, grants: readonly (FeatureGrant | PersonFeatureGrant)[]): Promise<IndividualBillingCycle | undefined> {
     const organizationId = scope.id; // The historical ledger column holds the billing account, never a selected Business.
+    if (scope.kind === 'individual') {
+      const person = grants.filter((grant): grant is PersonFeatureGrant => 'personId' in grant && grant.personId === tenantId && grant.tenantId === tenantId);
+      const term = currentIndividualCycle(person, this.now());
+      if (term) {
+        // Written once, on the first use inside the term; reserve() checks the row's bounds again.
+        if (!(await this.options.fundingReads.transaction((tx) => tx.period(tenantId, organizationId, individualCycleId(term.cycle)))))
+          await this.options.funding.allocateIndividualPeriod({ tenantId, organizationId, sourceGrantId: term.grant.id, cycle: term.cycle });
+        return term.cycle;
+      }
+      // A current grant naming a term that is not in force now never falls back to a calendar month.
+      if (person.some((grant) => grant.billingCycle && grantState(grant, this.now()) === 'active' && individualIncludesMonthlyCredits(grant)))
+        throw new FundingError(409, 'Your Individual billing period could not be confirmed, so nothing was reserved. Nothing was sent.', 'no_period');
+    }
     const periodId = periodIdFor(this.at());
     if (await this.options.fundingReads.transaction((tx) => tx.period(tenantId, organizationId, periodId))) return;
     const when = this.now();
     const source = grants
       .filter((grant) => grantState(grant, when) === 'active' &&
         (scope.kind === 'individual'
-          ? 'personId' in grant && grant.personId === tenantId && grant.tenantId === tenantId && individualIncludesMonthlyCredits(grant)
+          ? 'personId' in grant && grant.personId === tenantId && grant.tenantId === tenantId && !grant.billingCycle && individualIncludesMonthlyCredits(grant)
           : 'organizationId' in grant && grant.organizationId === scope.id && grant.tenantId === tenantId && grant.features.includes('managed-inference')) &&
         grant.planId !== null && publishedMonthlyGrant(grant.planId) !== null)
       .sort((a, b) => Date.parse(b.validUntil) - Date.parse(a.validUntil) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))[0];

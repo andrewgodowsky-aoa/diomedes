@@ -67,6 +67,14 @@ function attemptFrom(row: Row): FundedAttempt {
   };
 }
 
+function periodFrom(row: Row): CreditPeriodRow {
+  return {
+    tenantId: text(row.tenant_id), organizationId: text(row.organization_id), periodId: text(row.period_id), planId: text(row.plan_id),
+    rateCardVersion: text(row.rate_card_version), grantedMicroUsd: money(row.granted_micro_usd), startsAt: iso(row.starts_at),
+    endsAt: iso(row.ends_at), sourceGrantId: text(row.source_person_grant_id ?? row.source_grant_id), allocatedAt: iso(row.allocated_at),
+  };
+}
+
 function settlementFrom(row: Row): AttemptSettlement {
   const cost = money(row.provider_cost_micro_usd);
   return {
@@ -91,11 +99,11 @@ export class PostgresFundingTransaction implements FundingTransaction {
 
   async period(tenantId: string, organizationId: string, periodId: string): Promise<CreditPeriodRow | undefined> {
     const row = await this.one('SELECT * FROM control_plane.credit_periods WHERE tenant_id=$1 AND organization_id=$2 AND period_id=$3', [tenantId, organizationId, periodId]);
-    return row && {
-      tenantId: text(row.tenant_id), organizationId: text(row.organization_id), periodId: text(row.period_id), planId: text(row.plan_id),
-      rateCardVersion: text(row.rate_card_version), grantedMicroUsd: money(row.granted_micro_usd), startsAt: iso(row.starts_at),
-      endsAt: iso(row.ends_at), sourceGrantId: text(row.source_person_grant_id ?? row.source_grant_id), allocatedAt: iso(row.allocated_at),
-    };
+    return row && periodFrom(row);
+  }
+  async periods(tenantId: string, organizationId: string): Promise<CreditPeriodRow[]> {
+    const result = await this.client.query('SELECT * FROM control_plane.credit_periods WHERE tenant_id=$1 AND organization_id=$2 ORDER BY starts_at,period_id', [tenantId, organizationId]);
+    return result.rows.map(periodFrom);
   }
   async savePeriod(row: CreditPeriodRow) {
     await this.client.query('INSERT INTO control_plane.credit_periods(tenant_id,organization_id,period_id,plan_id,rate_card_version,granted_micro_usd,starts_at,ends_at,source_grant_id,allocated_at,source_person_grant_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)',

@@ -28,13 +28,39 @@ const verifier = { issuer: 'https://fixture.invalid', async verify(token: string
   return { issuer: this.issuer, subject: token, sessionId: `session_${token}`, displayName: token, emailVerified: true,
     issuedAt: new Date(clock - 1_000).toISOString(), expiresAt: new Date(clock + 60_000).toISOString(), verifiedAt: new Date(clock).toISOString() };
 } };
+/**
+ * A complete-plan grant in the shape issued before monthly terms (no billingCycle), which keeps 011's
+ * calendar month. The current issuer gives every new complete grant a term, so the fixture writes this
+ * historical record as the owner, exactly as that issuer stored it.
+ */
+function legacyGrant(personId: string, id: string, reference: string, validUntil: string,
+  features = ['nectovia-agent', 'maintained-profiles', 'owner-rules', 'phone-relay', 'managed-inference']) {
+  const at = new Date(clock).toISOString();
+  return { v: 1, id, personId, tenantId: personId, planId: 'individual', features, source: 'internal-test', reference,
+    note: 'Owned PostgreSQL fixture', validFrom: at, validUntil, state: 'active', issuedAt: at, issuedBy: personId,
+    revokedAt: null, revokedBy: null, revokedReason: null };
+}
+async function insertGrant(factory: ClientFactory, grant: ReturnType<typeof legacyGrant>) {
+  await query(factory, 'INSERT INTO control_plane.person_feature_grants(tenant_id,grant_id,person_id,record) VALUES ($1,$2,$3,$4::jsonb)',
+    [grant.personId, grant.id, grant.personId, JSON.stringify(grant)]);
+  await query(factory, `INSERT INTO control_plane.person_access(person_id,tenant_id,revision) VALUES ($1,$1,1)
+    ON CONFLICT (person_id) DO UPDATE SET revision=control_plane.person_access.revision+1`, [grant.personId]);
+}
 async function subscriber(name: string, validUntil = '2026-12-01T00:00:00.000Z') {
   const person = (await accounts.signIn(name)).person;
-  const { grant } = await commercial.issuePersonGrant('staff', person.id,
-    { planId: 'individual', source: 'internal-test', reference: name, note: 'Owned PostgreSQL fixture', validUntil });
   const account = await routing.individual(name);
+  const grant = legacyGrant(person.id, `grant_legacy_${name}`, name, validUntil);
+  await insertGrant(ownerFactory, grant);
   return { person, account, grant, allocation: { tenantId: person.id, organizationId: account.id,
     planId: 'individual', sourceGrantId: grant.id, periodId: '2026-09' } };
+}
+/** A complete grant from the current issuer, which names one verified monthly term. */
+async function termSubscriber(name: string) {
+  const person = (await accounts.signIn(name)).person;
+  const { grant } = await commercial.issuePersonGrant('staff', person.id,
+    { planId: 'individual', source: 'internal-test', reference: name, note: 'Owned PostgreSQL fixture' });
+  const account = await routing.individual(name);
+  return { person, account, grant, term: { tenantId: person.id, organizationId: account.id, sourceGrantId: grant.id, cycle: grant.billingCycle! } };
 }
 
 describe.skipIf(!ownerUrl)('Individual funding with real PostgreSQL runtime and funding logins', () => {
@@ -57,11 +83,11 @@ describe.skipIf(!ownerUrl)('Individual funding with real PostgreSQL runtime and 
     await bootstrapFirstAdmin(ownerCommercial, staff.id, new Date(clock).toISOString());
     const service = new CommercialService(ownerAccounts, ownerCommercial, null, { now: () => clock });
     oldPerson = (await ownerAccounts.signIn('legacy')).person.id;
-    const { grant } = await service.issuePersonGrant('staff', oldPerson, { planId: 'individual', source: 'subscription',
-      reference: 'Pre-011 subscription', note: '', features: ['nectovia-agent', 'maintained-profiles', 'owner-rules', 'phone-relay'],
-      validUntil: '2026-12-01T00:00:00.000Z' });
-    oldGrant = JSON.stringify(grant);
     oldAccount = (await new RoutingService(ownerAccounts, ownerCommercial, () => clock).individual('legacy')).id;
+    const grant = legacyGrant(oldPerson, 'grant_pre_011', 'Pre-011 subscription', '2026-12-01T00:00:00.000Z',
+      ['nectovia-agent', 'maintained-profiles', 'owner-rules', 'phone-relay']);
+    await insertGrant(ownerFactory, grant);
+    oldGrant = JSON.stringify((await ownerCommercial.transaction(tx => tx.personGrants(oldPerson)))[0]);
     const business = await ownerAccounts.createOrganization('legacy', 'Pre-011 Business');
     const issued = await service.issueGrant('staff', business.id, { planId: 'business', source: 'internal-test', reference: 'Pre-011 Business', note: '' });
     // Insert exactly the pre-011 row shape, without using the new adapter against the old schema.
@@ -88,7 +114,7 @@ describe.skipIf(!ownerUrl)('Individual funding with real PostgreSQL runtime and 
   beforeEach(() => { clock = initial; });
 
   it('preserves the phase-2a person grant and billing identity and replays migration without allocation', async () => {
-    expect(migrations.at(-1)?.version).toBe(11);
+    expect(migrations.at(-1)?.version).toBe(12);
     expect(await migrate(ownerFactory, migrations)).toEqual([]);
     const grants = await new PostgresCommercialRepository(runtimeFactory).transaction(tx => tx.personGrants(oldPerson));
     expect(JSON.stringify(grants[0])).toBe(oldGrant);
@@ -201,5 +227,93 @@ describe.skipIf(!ownerUrl)('Individual funding with real PostgreSQL runtime and 
       reservationId: 'forged-period', receiptRef: 'forged-receipt', periodId: '2026-10' }))).rejects.toMatchObject({ code: '23503' });
     await expect(query(fundingFactory, "UPDATE control_plane.funding_reservations SET period_id='2026-10' WHERE reservation_id=$1", [ref.attemptId])).rejects.toMatchObject({ code: '42501' });
     await expect(query(fundingFactory, "UPDATE control_plane.credit_periods SET granted_micro_usd=200000000 WHERE organization_id=$1", [account.id])).rejects.toMatchObject({ code: '42501' });
+  });
+
+  it('012: records one verified anniversary term under simultaneous funding logins, bound to the grant that names it', async () => {
+    clock = Date.parse('2026-09-30T15:00:00Z');
+    const { person, account, grant, term } = await termSubscriber('anniversary');
+    expect(term.cycle).toMatchObject({ startsAt: '2026-09-30T15:00:00.000Z', endsAt: '2026-10-30T15:00:00.000Z' });
+    clock = Date.parse('2026-10-01T00:00:00Z');
+    const rows = await Promise.all(Array.from({ length: 8 }, () => funding.allocateIndividualPeriod(term)));
+    expect(new Set(rows.map(row => row.periodId))).toEqual(new Set(['individual:2026-09-30T15:00:00.000Z']));
+    expect((await query(ownerFactory, `SELECT tenant_id,period_id,starts_at,ends_at,granted_micro_usd::text,source_grant_id,source_person_grant_id
+      FROM control_plane.credit_periods WHERE organization_id=$1`, [account.id])).rows).toEqual([{ tenant_id: person.id,
+      period_id: 'individual:2026-09-30T15:00:00.000Z', starts_at: new Date('2026-09-30T15:00:00.000Z'), ends_at: new Date('2026-10-30T15:00:00.000Z'),
+      granted_micro_usd: '100000000', source_grant_id: null, source_person_grant_id: grant.id }]);
+  });
+
+  it('012: refuses any bound, id, amount or calendar month other than the grant\'s own term, and an overlapping term', async () => {
+    clock = Date.parse('2026-09-30T15:00:00Z');
+    const { person, account, grant, term } = await termSubscriber('term-guards');
+    clock = Date.parse('2026-10-01T00:00:00Z');
+    const repository = new PostgresFundingRepository(fundingFactory);
+    const row = { tenantId: person.id, organizationId: account.id, periodId: 'individual:2026-09-30T15:00:00.000Z', planId: 'individual',
+      rateCardVersion: RATE_CARD_V1.version, grantedMicroUsd: micro(100_000_000), startsAt: term.cycle.startsAt, endsAt: term.cycle.endsAt,
+      sourceGrantId: grant.id, allocatedAt: new Date(clock).toISOString() };
+    for (const forged of [
+      { ...row, endsAt: '2026-10-31T15:00:00.000Z' },
+      { ...row, periodId: 'individual:2026-09-30T15:00:00.001Z' },
+      { ...row, grantedMicroUsd: micro(200_000_000) },
+      { ...row, allocatedAt: '2026-09-30T14:00:00.000Z' },
+      { ...row, periodId: '2026-10', startsAt: '2026-10-01T00:00:00.000Z', endsAt: '2026-11-01T00:00:00.000Z' },
+      { ...row, periodId: 'individual:soon' },
+    ]) await expect(repository.transaction(tx => tx.savePeriod(forged))).rejects.toMatchObject({ code: '23514' });
+    await funding.allocateIndividualPeriod(term);
+    // A second term overlapping the first, written as the owner because the issuer refuses it.
+    const overlapping = { ...legacyGrant(person.id, 'grant_overlap', 'overlap', '2026-11-10T00:00:00.000Z'),
+      validFrom: '2026-10-01T00:00:00.000Z', billingCycle: { policy: 'subscription-month-v1', anchorAt: '2026-10-10T00:00:00.000Z', index: 0,
+        startsAt: '2026-10-10T00:00:00.000Z', endsAt: '2026-11-10T00:00:00.000Z' } };
+    await insertGrant(ownerFactory, overlapping as ReturnType<typeof legacyGrant>);
+    clock = Date.parse('2026-10-11T00:00:00Z');
+    await expect(repository.transaction(tx => tx.savePeriod({ ...row, periodId: 'individual:2026-10-10T00:00:00.000Z', startsAt: '2026-10-10T00:00:00.000Z',
+      endsAt: '2026-11-10T00:00:00.000Z', sourceGrantId: 'grant_overlap', allocatedAt: new Date(clock).toISOString() }))).rejects.toMatchObject({ code: '23514' });
+    expect((await query(ownerFactory, 'SELECT count(*)::int AS n FROM control_plane.credit_periods WHERE organization_id=$1', [account.id])).rows[0].n).toBe(1);
+  });
+
+  it('012: refuses at the database to send a hold after its term ends, and still settles it late on its own term', async () => {
+    clock = Date.parse('2026-09-30T15:00:00Z');
+    const { person, account, term } = await termSubscriber('term-dispatch');
+    clock = Date.parse('2026-10-30T14:00:00Z');
+    await funding.allocateIndividualPeriod(term);
+    const ref = { tenantId: person.id, organizationId: account.id, attemptId: 'term-held' };
+    await funding.openJob({ ...ref, rootJobId: 'term-root', runRef: 'term-root', parentRunRef: null, tier: 'efficient', capMicroUsd: null });
+    const reservation = { ...ref, rootJobId: 'term-root', parentAttemptId: null, kind: 'generation' as const, route: 'fixture-route',
+      requestDigest: 'term-digest', maxMicroUsd: micro(200_000), usageClass: 'metered-work' as const, individualCycle: term.cycle,
+      rateSnapshot: { version: 'fixture', inputMicroUsdPerMillion: 1_000_000, outputMicroUsdPerMillion: 1_000_000, cacheReadMicroUsdPerMillion: 0, cacheWriteMicroUsdPerMillion: 0 } };
+    await funding.reserve(reservation);
+    await funding.reserve({ ...reservation, attemptId: 'term-unsent', requestDigest: 'term-unsent' });
+    await funding.markDispatched(ref);
+    // A direct dispatch claim past the end is refused by the database itself.
+    await expect(query(fundingFactory, "UPDATE control_plane.funding_reservations SET dispatched_at='2026-10-30T15:00:00Z' WHERE reservation_id='term-unsent'"))
+      .rejects.toMatchObject({ code: '23514' });
+    clock = Date.parse('2026-10-30T15:00:01Z');
+    await expect(funding.markDispatched({ ...ref, attemptId: 'term-unsent' })).rejects.toMatchObject({ code: 'period_ended' });
+    expect((await query(ownerFactory, "SELECT state, dispatched_at FROM control_plane.funding_reservations WHERE reservation_id='term-unsent'")).rows)
+      .toEqual([{ state: 'released', dispatched_at: null }]);
+    await commercial.revokePersonGrant('staff', person.id, term.sourceGrantId, { reason: 'Withdraw after dispatch' });
+    expect(await funding.settle({ ...ref, receiptRef: 'term-receipt', reconciledFrom: 'response',
+      usage: { inputTokens: 100_000, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, reasoningTokens: 0 } }))
+      .toMatchObject({ outcome: 'settled', settlement: { periodId: 'individual:2026-09-30T15:00:00.000Z', allowanceDebitMicroUsd: 100_000 } });
+  });
+
+  it('012: keeps a legacy calendar month for settlement only once a monthly term covers the moment', async () => {
+    clock = Date.parse('2026-10-02T00:00:00Z');
+    const legacy = await subscriber('cutover', '2026-10-05T00:00:00.000Z');
+    await funding.allocatePeriod({ ...legacy.allocation, periodId: '2026-10' });
+    clock = Date.parse('2026-10-05T00:00:00Z');
+    const { grant } = await commercial.issuePersonGrant('staff', legacy.person.id, { planId: 'individual', source: 'internal-test', reference: 'cutover-term', note: '' });
+    expect(grant.billingCycle).toMatchObject({ startsAt: '2026-10-05T00:00:00.000Z' });
+    clock = Date.parse('2026-10-06T00:00:00Z');
+    await funding.allocateIndividualPeriod({ tenantId: legacy.person.id, organizationId: legacy.account.id, sourceGrantId: grant.id, cycle: grant.billingCycle! });
+    await funding.openJob({ tenantId: legacy.person.id, organizationId: legacy.account.id, rootJobId: 'cutover-root', runRef: 'cutover-root', parentRunRef: null, tier: 'efficient', capMicroUsd: null });
+    const repository = new PostgresFundingRepository(fundingFactory);
+    await expect(repository.transaction(tx => tx.saveAttempt({ id: 'calendar-hold', organizationId: legacy.account.id, periodId: '2026-10',
+      parentTaskId: 'cutover-root', kind: 'generation', route: 'fixture-route', payer: 'managed', maxMicroUsd: micro(1_000), rateCardVersion: RATE_CARD_V1.version,
+      state: 'pending', createdAt: new Date(clock).toISOString(), resolvedAt: null, uncertainReason: null, tenantId: legacy.person.id, rootJobId: 'cutover-root',
+      parentAttemptId: null, requestDigest: 'calendar-hold', rateSnapshot: { version: 'fixture', inputMicroUsdPerMillion: 1, outputMicroUsdPerMillion: 1,
+        cacheReadMicroUsdPerMillion: 0, cacheWriteMicroUsdPerMillion: 0 }, usageClass: 'metered-work', monthlyHoldMicroUsd: micro(1_000),
+      topUpHoldMicroUsd: micro(0), dispatchedAt: null }))).rejects.toMatchObject({ code: '23514' });
+    expect((await query(ownerFactory, 'SELECT period_id FROM control_plane.credit_periods WHERE organization_id=$1 ORDER BY starts_at', [legacy.account.id])).rows)
+      .toEqual([{ period_id: '2026-10' }, { period_id: 'individual:2026-10-05T00:00:00.000Z' }]);
   });
 });

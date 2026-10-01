@@ -137,3 +137,12 @@ deployment. At the verification checkpoint, all candidate changes were uncommitt
 Andrew subsequently approved this exact source patch for commit, push and a draft PR; DIO-128
 records the resulting publication identifiers. The source fingerprint and pre-publication review
 patch remain the evidence for that approval. Merging and deployment remain unauthorized.
+
+## Superseded boundary (2026-10-01)
+
+The "Reset boundary" gap above is resolved by `2026-10-01-individual-reset-boundary.md`:
+Individual periods are now subscription-anniversary months in UTC, and new complete grants carry
+a verified term instead of the 31-day template. This record's hashes, counts and acceptance limits
+describe the calendar-month candidate as it was verified on 2026-09-29 and are left unchanged.
+Grants without a term, and the calendar rows 011 allowed for them, keep their meaning.
+

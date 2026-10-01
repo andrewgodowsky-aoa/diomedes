@@ -60,7 +60,10 @@ beforeEach(async () => { await setup(); });
 
 describe('the Individual plan in the catalog', () => {
   it('is a person-scoped plan with the eligibility sentence, the Agent and included usage without a dollar price', () => {
-    expect(INDIVIDUAL_PLAN).toMatchObject({ id: 'individual', label: 'Individual', scope: 'person', termDays: 31, customerVisible: true });
+    // DIO-128: no fixed day count. Each term runs to the subscription's next monthly anniversary in UTC.
+    expect(INDIVIDUAL_PLAN).toMatchObject({ id: 'individual', label: 'Individual', scope: 'person', termDays: null, billingInterval: 'month', customerVisible: true });
+    expect(planCatalog().filter((plan) => plan.billingInterval === 'month').map((plan) => plan.id)).toEqual(['individual']);
+    expect(PLAN_TEMPLATES.map((plan) => plan.termDays)).toEqual([31, 92, 31, 31, 31, null, 30]);
     expect(INDIVIDUAL_PLAN.features).toEqual(['nectovia-agent', 'maintained-profiles', 'owner-rules', 'phone-relay', 'managed-inference']);
     expect(INDIVIDUAL_PLAN.note).toContain(INDIVIDUAL_ELIGIBILITY_SENTENCE);
     expect(INDIVIDUAL_ELIGIBILITY_SENTENCE).toBe('Individual covers Personal work only. Every Business workspace needs its own Business plan, including a sole proprietorship.');
@@ -101,7 +104,10 @@ describe('issuing and withdrawing an Individual grant', () => {
     const personId = await personOf('free');
     expect(issued.body.grant).toMatchObject({ personId, tenantId: personId, planId: 'individual', state: 'active',
       features: ['nectovia-agent', 'maintained-profiles', 'owner-rules', 'phone-relay', 'managed-inference'] });
-    expect(Date.parse(issued.body.grant.validUntil) - clock).toBe(31 * 86_400_000);
+    // A September 28 subscription runs to October 28 at the same UTC time: 30 days here, never a fixed 31.
+    expect(issued.body.grant).toMatchObject({ validFrom: '2026-09-28T12:00:00.000Z', validUntil: '2026-10-28T12:00:00.000Z',
+      billingCycle: { policy: 'subscription-month-v1', anchorAt: '2026-09-28T12:00:00.000Z', index: 0,
+        startsAt: '2026-09-28T12:00:00.000Z', endsAt: '2026-10-28T12:00:00.000Z' } });
 
     const toBusiness = await call('POST', `/ops/customers/${orgs.harbor}/grants`, await token('staffBilling'),
       { planId: 'individual', source: 'subscription', reference: 'inv_x', note: '' });
@@ -149,7 +155,9 @@ describe('issuing and withdrawing an Individual grant', () => {
     expect(after.body.agent.reason).toMatch(/withdrawn/);
 
     clock += 60_000;
-    await issue('free');
+    // A replacement after withdrawal names the same term explicitly, under its own reference.
+    expect((await issue('free', { reference: 'ticket_replacement' })).body.code).toBe('billing_period_required');
+    expect((await issue('free', { reference: 'ticket_replacement', billingCycle: { anchorAt: '2026-09-28T12:00:00.000Z', index: 0 } })).status).toBe(201);
     clock += 40 * 86_400_000;
     const expired = await call('GET', '/account/access', await token('free'));
     expect(expired.body).toMatchObject({ state: 'expired', agent: { included: false }, revision: 3 });
@@ -165,6 +173,69 @@ describe('issuing and withdrawing an Individual grant', () => {
     expect(owner.memberships[0]).toMatchObject({ organizationName: 'Juniper Street Bakery', roleLabel: 'Business owner' });
     const free = people.body.find((row: { person: { name: string } }) => row.person.name === DEMO_ACCOUNTS.free.name);
     expect(free.individual).toBeNull();
+  });
+});
+
+describe('monthly Individual terms (DIO-128)', () => {
+  const anchorAt = '2026-09-28T12:00:00.000Z';
+  const detail = async (who: DemoAccount) => call('GET', `/ops/people/${await personOf(who)}`, await token('staffSupport'));
+
+  it('anchors a January 31 subscription and renews to the clamped February end, then back to March 31', async () => {
+    clock = Date.parse('2027-01-31T15:00:00.000Z');
+    const first = await issue('free', { reference: 'inv_jan' });
+    expect(first.body.grant.billingCycle).toMatchObject({ anchorAt: '2027-01-31T15:00:00.000Z', index: 0, endsAt: '2027-02-28T15:00:00.000Z' });
+    const renewal = await issue('free', { reference: 'inv_feb', billingCycle: { anchorAt: '2027-01-31T15:00:00.000Z', index: 1 } });
+    expect(renewal.status).toBe(201);
+    expect(renewal.body.grant).toMatchObject({ validFrom: '2027-02-28T15:00:00.000Z', validUntil: '2027-03-31T15:00:00.000Z',
+      billingCycle: { index: 1, startsAt: '2027-02-28T15:00:00.000Z', endsAt: '2027-03-31T15:00:00.000Z' } });
+    expect((await detail('free')).body.individualTerm).toMatchObject({ anchorAt: '2027-01-31T15:00:00.000Z',
+      current: { index: 0 }, next: { index: 2, startsAt: '2027-03-31T15:00:00.000Z', endsAt: '2027-04-30T15:00:00.000Z' } });
+  });
+
+  it('returns the same grant for a replayed reference and term, and refuses a conflicting replay', async () => {
+    const first = await issue('free');
+    const again = await issue('free', { billingCycle: { anchorAt, index: 0 } });
+    expect(again.body.grant.id).toBe(first.body.grant.id);
+    const conflicting = await issue('free', { billingCycle: { anchorAt, index: 1 } });
+    expect(conflicting).toMatchObject({ status: 409, body: { code: 'billing_reference_conflict' } });
+    expect((await detail('free')).body.grants).toHaveLength(1);
+    expect((await detail('free')).body.audit.map((row: { action: string }) => row.action)).toEqual(['person-grant.issued']);
+  });
+
+  it('never lets a submitted date move the server boundary, or fund an elapsed or overlapping term', async () => {
+    expect((await issue('free', { validUntil: '2026-11-28T12:00:00.000Z' })).body.code).toBe('outside_billing_period');
+    await issue('free');
+    const overlap = await issue('free', { reference: 'inv_overlap', billingCycle: { anchorAt: '2026-10-10T00:00:00.000Z', index: 0 } });
+    expect(overlap).toMatchObject({ status: 409, body: { code: 'billing_period_overlap' } });
+    expect((await issue('free', { reference: 'inv_past', billingCycle: { anchorAt: '2026-06-01T00:00:00.000Z', index: 0 } })).body.code).toBe('billing_period_ended');
+    expect((await issue('free', { reference: 'inv_bad', billingCycle: { anchorAt, index: -1 } })).status).toBe(422);
+    // A genuinely new subscription after the term ends may set a new anchor.
+    const restart = await issue('free', { reference: 'inv_restart', billingCycle: { anchorAt: '2026-11-05T09:00:00.000Z', index: 0 } });
+    expect(restart.body.grant.billingCycle).toMatchObject({ startsAt: '2026-11-05T09:00:00.000Z', endsAt: '2026-12-05T09:00:00.000Z' });
+  });
+
+  it('keeps limited overrides on their explicit dates without a term, and refuses a term on them', async () => {
+    const limited = await issue('free', { features: ['nectovia-agent'], validUntil: '2026-12-31T00:00:00.000Z' });
+    expect(limited.status).toBe(201);
+    expect(limited.body.grant.billingCycle).toBeUndefined();
+    expect((await issue('free', { reference: 'inv_limited', features: ['nectovia-agent'] })).status).toBe(422);
+    expect((await issue('free', { reference: 'inv_limited2', features: ['nectovia-agent'], validUntil: '2026-12-31T00:00:00.000Z',
+      billingCycle: { anchorAt, index: 0 } })).status).toBe(422);
+  });
+
+  it('refuses a term over a still-current legacy plan grant until it ends', async () => {
+    const personId = await personOf('free');
+    await cloud.store.run(async (draft) => {
+      draft.commercial.personGrants.push({ v: 1, id: 'grant_legacy', personId, tenantId: personId, planId: 'individual',
+        features: ['nectovia-agent', 'maintained-profiles', 'owner-rules', 'phone-relay'], source: 'subscription', reference: 'legacy',
+        note: '', validFrom: '2026-09-20T00:00:00.000Z', validUntil: '2026-10-21T00:00:00.000Z', state: 'active',
+        issuedAt: '2026-09-20T00:00:00.000Z', issuedBy: personId, revokedAt: null, revokedBy: null, revokedReason: null });
+    });
+    expect((await issue('free')).body.code).toBe('legacy_term_overlap');
+    const after = await issue('free', { billingCycle: { anchorAt: '2026-10-21T00:00:00.000Z', index: 0 }, validFrom: '2026-10-21T00:00:00.000Z' });
+    expect(after.status).toBe(201);
+    // The legacy record is read unchanged; it carries no term.
+    expect((await detail('free')).body.grants.find((grant: { id: string }) => grant.id === 'grant_legacy').billingCycle).toBeUndefined();
   });
 });
 

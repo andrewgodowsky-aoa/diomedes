@@ -60,7 +60,7 @@ describe('versioned migration protocol', () => {
 });
 
 describe('versioned migration source files', () => {
-  const names = ['001_accounts.sql', '002_commercial.sql', '003_funded_jobs.sql', '004_usage_contract.sql', '005_customer_access.sql', '006_staff_keys.sql', '007_relay_devices.sql', '008_organization_setup.sql', '009_individual_plans.sql', '010-scoped-routing.sql','011_individual_funding.sql'];
+  const names = ['001_accounts.sql', '002_commercial.sql', '003_funded_jobs.sql', '004_usage_contract.sql', '005_customer_access.sql', '006_staff_keys.sql', '007_relay_devices.sql', '008_organization_setup.sql', '009_individual_plans.sql', '010-scoped-routing.sql','011_individual_funding.sql','012_individual_subscription_periods.sql'];
   const load = () => Promise.all(names.map(async (name, index) => {
     const sql = await readFile(new URL(`../migrations/${name}`, import.meta.url), 'utf8');
     return { version: index + 1, name, sql, sha256: createHash('sha256').update(sql).digest('hex') };
@@ -178,8 +178,36 @@ describe('versioned migration source files', () => {
       sha256: '540f7bb22cc183175984fcdcf8e82718a7b093ec77d09329656ddd68196e5886' });
     expect(files[9]).toMatchObject({ version: 10, name: '010-scoped-routing.sql' });
     const db = database(files.slice(0, 9));
-    expect(await migrate(db.factory, files)).toEqual([10, 11]);
+    expect(await migrate(db.factory, files)).toEqual([10, 11, 12]);
     expect(db.calls).not.toContain(files[8].sql);
     expect(await migrate(db.factory, files)).toEqual([]);
+  });
+
+  it('012 adds Individual anniversary periods additively, after an unchanged 011', async () => {
+    const files = await load();
+    expect(files[10]).toMatchObject({ version: 11, name: '011_individual_funding.sql',
+      sha256: createHash('sha256').update(await readFile(new URL('../migrations/011_individual_funding.sql', import.meta.url), 'utf8')).digest('hex') });
+    const periods = files[11];
+    expect(periods).toMatchObject({ version: 12, name: '012_individual_subscription_periods.sql' });
+    // An 011 database upgrades to 012 without replaying anything earlier.
+    const db = database(files.slice(0, 11));
+    expect(await migrate(db.factory, files)).toEqual([12]);
+    expect(db.calls).not.toContain(files[10].sql);
+    expect(periods.sql.replace(/--.*$/gm, '')).not.toMatch(/\b(DROP\s+TABLE|DELETE\s+FROM|TRUNCATE|DROP\s+SCHEMA|UPDATE\s+control_plane)/i);
+    expect(periods.sql).not.toMatch(/^\s*GRANT\b/im);
+    // Historical calendar ids stay valid; only an Individual row may use the term form.
+    expect(periods.sql).toContain("period_id ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'");
+    expect(periods.sql).toContain("plan_id='individual' AND period_id ~ '^individual:");
+    // The term is the one its source grant names, recorded inside it, and never overlaps another.
+    expect(periods.sql).toContain("record->'billingCycle'");
+    expect(periods.sql).toContain('NEW.allocated_at < NEW.starts_at OR NEW.allocated_at >= NEW.ends_at');
+    expect(periods.sql).toContain('Individual billing periods may not overlap');
+    expect(periods.sql).toContain('pg_advisory_xact_lock');
+    // A hold is never sent after its Individual period ends; re-saving an old hold is never blocked.
+    expect(periods.sql).toContain('CREATE TRIGGER individual_reservation_period BEFORE INSERT OR UPDATE OF dispatched_at ON control_plane.funding_reservations');
+    expect(periods.sql).toContain('NEW.dispatched_at >= funded.ends_at');
+    // Narrow, fixed-path functions with no public execution.
+    expect(periods.sql.match(/SET search_path=pg_catalog/g)).toHaveLength(3);
+    expect(periods.sql.trim().endsWith('REVOKE ALL ON ALL FUNCTIONS IN SCHEMA control_plane FROM PUBLIC;')).toBe(true);
   });
 });
