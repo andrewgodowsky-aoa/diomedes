@@ -236,6 +236,21 @@ describe('the Nectovia bot', () => {
     expect(gateway[0].headers['x-nectovia-organization']).toBe(organizationId);
   });
 
+  test('a plan granted inside the cached refusal window is not held to the old answer on a direct request', async () => {
+    await signIn(DEMO_ACCOUNTS.free.email);
+    const binding = await home();
+    expect((await say(binding, 'm-free', 'How many loaves are on order?')).status).toBe(403);
+    const personToken = await staffToken(DEMO_ACCOUNTS.free.email);
+    const personId = (await cloud.accounts.signIn(personToken)).person.id;
+    await cloud.commercial.issuePersonGrant(await staffToken(DEMO_ACCOUNTS.staffBilling.email), personId,
+      { planId: 'individual', source: 'subscription', reference: 'DIO-128 re-grant', note: '' });
+    // The direct request is then stopped by the tier choice (this scope has no published model yet), a
+    // different answer: the cached "no plan" did not refuse the work first.
+    const direct = await request(`/projects/${binding.projectId}/ask`, 'POST', { threadId: binding.threadId, text: 'Count the loaves.', mode: 'ask' });
+    expect(direct.status, await direct.clone().text()).toBe(409);
+    expect(JSON.stringify(await direct.json())).not.toMatch(/free version|Individual plan of your own/);
+  });
+
   test('a Business owner’s Home message answers on nectovia through the managed gateway, with nothing connected', async () => {
     const owner = await signIn(DEMO_ACCOUNTS.owner.email);
     const organizationId = owner.workspaces[0].organization.id;
