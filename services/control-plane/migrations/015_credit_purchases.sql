@@ -16,6 +16,10 @@
 -- event and one event can pay one purchase. The reference to webhook_inbox is the only thing removed; no
 -- table, column or row is dropped, and the other references on credit_topups stay.
 --
+-- The credits check is a sanity bound, looser than the code's cap on purpose: the cap
+-- (shared/credit-purchases.ts) can be raised without a migration, and the amount check
+-- (99999999 cents, the most one card charge can be) is the one that has to hold.
+--
 -- Apply after 011, 012, 013 and 014. The migration runner takes each version from the file name's number.
 
 CREATE TABLE control_plane.credit_purchases (

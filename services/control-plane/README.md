@@ -344,9 +344,10 @@ Settings (Worker settings, read on every call):
   from 50 to 1,000,000. Unset, blank or unusable: every quote and purchase
   answers 503 "Buying credits isn't available right now. Try again later." and
   the Worker logs `credit-purchases-price-unavailable` with the rule it broke
-  (never the value). It is a plain var, so put it in both `wrangler.jsonc` files
-  (the deploy overwrites a dashboard var, and `tests/deploy-config.test.ts`
-  insists the two files agree).
+  (never the value). Set it as a Worker secret (`npx wrangler secret put
+  CREDIT_PRICE_CENTS_PER_100 --name diomedes`): it reads the same as a var,
+  survives a deploy, and keeps the figure out of the repository, where it would
+  sit beside the cost of a credit.
 - `STRIPE_SECRET_KEY`: a Worker secret (`npx wrangler secret put
   STRIPE_SECRET_KEY --name diomedes`), the `sk_test_...` key for test mode.
   Unset: purchases answer 503; quotes still work.

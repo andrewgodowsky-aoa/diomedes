@@ -7,7 +7,9 @@
 -- executes on the gateway's paths in src/managed-inference.ts: FundingService
 -- openJob, allocatePeriod (the month's credit, on the first call that needs it),
 -- reserve, markDispatched, settle, releaseRefused and markUncertain, and the
--- direct reads period, attempt and settlement. tests/funding-permissions.test.ts
+-- direct reads period, attempt and settlement. It also runs the purchased-usage
+-- holds (013) and the credit purchases (015: src/credit-purchases.ts, and the
+-- top-up a verified payment records). tests/funding-permissions.test.ts
 -- replays those paths and fails when this list and that SQL differ either way.
 -- Account, identity, session, grant, admission and routing tables stay with the
 -- Worker login (DATABASE_URL); the gateway reads them there.
