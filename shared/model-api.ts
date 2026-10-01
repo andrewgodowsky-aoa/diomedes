@@ -1,3 +1,9 @@
+import { lunaLabel, type LunaModelId } from './luna-models.js';
+
+/** The Luna model ids the desktop route sends and the one kept for older policies. */
+const MANAGED_LUNA_ID = 'us.openai.gpt-5.6-luna' satisfies LunaModelId;
+const GPT6_LUNA_ID = 'us.openai.gpt-6-luna' satisfies LunaModelId;
+
 /**
  * Model-API routes: a provider's API reached with the company's own credential,
  * rather than an engine installed on this computer. They are deliberately not
@@ -27,7 +33,7 @@ export const isModelApiProvider = (value: unknown): value is ModelApiProvider =>
   typeof value === 'string' && (MODEL_API_PROVIDERS as readonly string[]).includes(value);
 
 export const MODEL_API_NAMES: Record<ModelApiRoute, string> = {
-  'aws-bedrock': 'AWS Bedrock (GPT-5.6 Luna)',
+  'aws-bedrock': `AWS Bedrock (${lunaLabel(MANAGED_LUNA_ID)})`,
   'azure-openai': 'Azure OpenAI',
   openrouter: 'OpenRouter',
   'google-vertex': 'Google Vertex AI (Gemini 3.8 Flash)',
@@ -40,8 +46,8 @@ export const MODEL_API_NAMES: Record<ModelApiRoute, string> = {
  * the owner's AWS route and the Nectovia route's local guard price a call alike.
  */
 export const MANAGED_LUNA = {
-  model: 'us.openai.gpt-5.6-luna',
-  label: 'GPT-5.6 Luna',
+  model: MANAGED_LUNA_ID,
+  label: lunaLabel(MANAGED_LUNA_ID),
   rateCard: 'aws-bedrock-gpt-5.6-luna-us-2026-09-28.1',
   /** Whole micro-USD per million tokens. */
   rates: { input: 220_000, cacheRead: 22_000, cacheWrite: 275_000, output: 1_320_000 },
@@ -56,7 +62,7 @@ export const MANAGED_LUNA = {
 
 /** Compatibility for policies published before versioned routing; no new qualification is implied. */
 export const GPT6_LUNA = {
-  model: 'us.openai.gpt-6-luna', label: 'GPT-6 Luna', rateCard: 'aws-bedrock-gpt-6-luna-us-2026-09-25.1',
+  model: GPT6_LUNA_ID, label: lunaLabel(GPT6_LUNA_ID), rateCard: 'aws-bedrock-gpt-6-luna-us-2026-09-25.1',
   rates: { input: 110_000, cacheRead: 11_000, cacheWrite: 137_500, output: 550_000 },
   maxOutputTokens: 16_000, maxInputTokens: 272_000,
   source: 'Legacy published AWS Bedrock GPT-6 Luna US Geo price snapshot, 2026-09-25. Estimate only.',

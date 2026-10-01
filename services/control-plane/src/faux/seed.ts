@@ -13,6 +13,7 @@
  */
 import type { FauxCloud } from './cloud.js';
 import { bootstrapFirstAdmin, type RouteEntry } from '../commercial.js';
+import { lunaLabel } from '../../../../shared/luna-models.js';
 
 export const FAUX_DEMO_PASSWORD = 'nectovia-demo';
 export const FAUX_SEED_ID = 'demo-2026-09-25';
@@ -33,12 +34,12 @@ export type DemoAccount = keyof typeof DEMO_ACCOUNTS;
 type RouteSeed = Omit<RouteEntry, 'v' | 'revision' | 'updatedAt' | 'updatedBy'>;
 export const DEMO_ROUTES: readonly RouteSeed[] = [
   {
-    id: 'aws-luna-5-6', provider: 'aws-bedrock', model: 'us.openai.gpt-5.6-luna', label: 'GPT-5.6 Luna', region: 'us',
+    id: 'aws-luna-5-6', provider: 'aws-bedrock', model: 'us.openai.gpt-5.6-luna', label: lunaLabel('us.openai.gpt-5.6-luna'), region: 'us',
     processing: 'AWS Bedrock US inference profile. The provider does not train on inputs.', status: 'qualified',
     evidence: 'Faux seed: scripted provider, 2026-09-25',
   },
   {
-    id: 'aws-luna-6', provider: 'aws-bedrock', model: 'us.openai.gpt-6-luna', label: 'GPT-6 Luna', region: 'us',
+    id: 'aws-luna-6', provider: 'aws-bedrock', model: 'us.openai.gpt-6-luna', label: lunaLabel('us.openai.gpt-6-luna'), region: 'us',
     processing: 'AWS Bedrock US inference profile. In the faux cloud a scripted provider answers instead.', status: 'qualified',
     evidence: 'Faux seed: scripted provider, 2026-09-25',
   },
@@ -53,11 +54,23 @@ export const DEMO_ROUTES: readonly RouteSeed[] = [
     evidence: 'Faux seed: the Focused route of the 2026-09-23 tier map. Replace with a dated qualification record before go-live.',
   },
   {
-    id: 'azure-luna-6', provider: 'azure-openai', model: 'gpt-6-luna', label: 'GPT-6 Luna', region: null,
+    id: 'azure-luna-6', provider: 'azure-openai', model: 'gpt-6-luna', label: lunaLabel('gpt-6-luna'), region: null,
     processing: 'Azure OpenAI deployment on the company subscription.', status: 'unqualified',
     evidence: 'Listed in the Azure catalog. No deployment on the company subscription yet.',
   },
 ];
+
+/**
+ * The first policy. The note names the model of the route it publishes, read from that route's
+ * entry, so the two cannot drift apart.
+ */
+const DEMO_POLICY_ROUTE = 'aws-luna-5-6';
+export const DEMO_POLICY = {
+  // Managed inference (nectovia-managed/1): every tier runs on one Luna route. Reasoning effort
+  // differs by tier on the desktop; the route does not.
+  tiers: { efficient: DEMO_POLICY_ROUTE, focused: DEMO_POLICY_ROUTE, thorough: DEMO_POLICY_ROUTE },
+  note: `Faux seed: ${DEMO_ROUTES.find((r) => r.id === DEMO_POLICY_ROUTE)!.label} behind all three tiers, answered by the scripted provider (2026-09-25).`,
+};
 
 export interface SeedResult {
   seeded: boolean;
@@ -98,10 +111,7 @@ export async function seedDemo(cloud: FauxCloud): Promise<SeedResult> {
   // The route registry and the first policy, by the Routing role.
   for (const entry of DEMO_ROUTES) await cloud.commercial.saveRoute(tokens.staffRouting, entry);
   await cloud.commercial.publishPolicy(tokens.staffRouting, {
-    // Managed inference (nectovia-managed/1): every tier runs on GPT-6 Luna. Reasoning effort
-    // differs by tier on the desktop; the route does not.
-    tiers: { efficient: 'aws-luna-5-6', focused: 'aws-luna-5-6', thorough: 'aws-luna-5-6' },
-    note: 'Faux seed: GPT-6 Luna behind all three tiers, answered by the scripted provider (2026-09-25).',
+    ...DEMO_POLICY,
     baseRevision: 0,
   });
 
