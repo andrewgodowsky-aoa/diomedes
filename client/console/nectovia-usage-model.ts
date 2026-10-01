@@ -10,6 +10,18 @@ export const USAGE_LABEL = 'Nectovia usage';
 /** Older than this, a projection is shown with a warning rather than as current. */
 export const USAGE_STALE_AFTER_MS = 5 * 60_000;
 
+/**
+ * The points at which a month's included credits start to warn, as a share of the grant that is used or
+ * held. The usage panel's alert and the Usage screen's bar both read these, so they can't drift apart.
+ * Running out (nothing left to reserve) is a third point of its own, and reads as danger too.
+ */
+export const USAGE_WARNING_PERCENT = 75;
+export const USAGE_DANGER_PERCENT = 90;
+export const USAGE_EXHAUSTED_PERCENT = 100;
+
+/** How worried a bar should look: the theme's ok, warning and danger colours, in that order. */
+export type UsageTone = 'ok' | 'warning' | 'danger';
+
 export interface UsageFact {
   readonly term: string;
   readonly value: string;
@@ -33,6 +45,11 @@ export interface UsageBarModel {
   readonly reconciliation: string | null;
   /** Current allowance warnings include reservations, not just settled usage. */
   readonly alert: string | null;
+  /**
+   * Where the month stands against the warning points. It counts what is held as well as what is settled,
+   * as the alert does, so it can run ahead of the fill. Null where there is nothing to measure against.
+   */
+  readonly tone: UsageTone | null;
 }
 
 const credits = (amount: MicroUsd) => `${formatCredits(amount)} ${amount === 100_000 ? 'credit' : 'credits'}`;
@@ -64,7 +81,7 @@ function freshnessOf(observedAt: string, now: number): { text: string; stale: bo
 const percentText = (value: number) => (Number.isInteger(value) ? `${value}%` : `${value.toFixed(1).replace(/\.0$/, '')}%`);
 
 export function usageBarModel(state: UsageState, now: number): UsageBarModel {
-  const empty = { percent: null, meter: null, facts: [], resets: null, freshness: null, stale: false, reconciliation: null, alert: null };
+  const empty = { percent: null, meter: null, facts: [], resets: null, freshness: null, stale: false, reconciliation: null, alert: null, tone: null };
   if (state.state === 'loading') return { ...empty, status: 'loading', summary: 'Checking usage…', detail: null };
   if (state.state === 'not-connected') return { ...empty, status: 'not-connected', summary: 'Not connected', detail: state.reason };
   if (state.state === 'unavailable') return { ...empty, status: 'unavailable', summary: 'Unavailable', detail: state.reason };
@@ -108,12 +125,21 @@ export function usageBarModel(state: UsageState, now: number): UsageBarModel {
     ? (usage.settledMicroUsd + usage.pendingMicroUsd + usage.uncertainMicroUsd) / usage.grantedMicroUsd * 100
     : null;
   let alert: string | null = null;
-  if (!fresh.stale && committedPercent !== null && (committedPercent >= 75 || usage.availableMicroUsd === 0)) {
+  if (!fresh.stale && committedPercent !== null && (committedPercent >= USAGE_WARNING_PERCENT || usage.availableMicroUsd === 0)) {
     const warning = usage.availableMicroUsd === 0
       ? 'No monthly credits remain available.'
-      : `At least ${committedPercent >= 100 ? '100%' : committedPercent >= 90 ? '90%' : '75%'} of your monthly allowance is used or reserved.`;
+      : `At least ${committedPercent >= USAGE_EXHAUSTED_PERCENT ? '100%' : committedPercent >= USAGE_DANGER_PERCENT ? '90%' : '75%'} of your monthly allowance is used or reserved.`;
     alert = `${warning} Additional managed usage requires an authorized spending cap and never starts automatically. Only previously purchased usage can continue after the allowance is exhausted.`;
   }
+  // The colour is still true when the figures are old; only the alert's wording waits for fresh ones.
+  const tone: UsageTone | null =
+    committedPercent === null
+      ? null
+      : usage.availableMicroUsd === 0 || committedPercent >= USAGE_DANGER_PERCENT
+        ? 'danger'
+        : committedPercent >= USAGE_WARNING_PERCENT
+          ? 'warning'
+          : 'ok';
   return {
     status: 'ready',
     percent: usage.usedPercent,
@@ -126,6 +152,7 @@ export function usageBarModel(state: UsageState, now: number): UsageBarModel {
     stale: fresh.stale,
     reconciliation: usage.reconciliation,
     alert,
+    tone,
   };
 }
 
