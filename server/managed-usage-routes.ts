@@ -15,6 +15,11 @@
  *
  * There is no route that hands a client a provider key, and no route that takes
  * one. This is an admission surface, not a proxy.
+ *
+ * A person cannot reserve included usage through this surface (owner rule,
+ * 2026-09-30). Diomedes staff, and usage a business bought outright, are the
+ * only kinds allowed, and this app can identify neither, so the route marks its
+ * requests as direct and the gateway refuses them where a hold would be taken.
  */
 import type { Express, Request, Response } from 'express';
 import {
@@ -29,6 +34,7 @@ import {
 import type { BillingEvent, BillingEventProcessor } from './billing-events.js';
 import type { ManagedGateway } from './managed-gateway.js';
 import type { AllowanceLedger } from './managed-usage.js';
+import { DIRECT_RESERVATION_REFUSED } from './managed-gateway.js';
 import { ApiError } from './paths.js';
 import type { Store } from './store.js';
 import type { WorkspaceService } from './workspaces.js';
@@ -156,7 +162,9 @@ export function mountManagedUsageRoutes(
       // Everything authoritative is read from the host: the person, the tenant,
       // the entitlement, the policy, the job's cap. What arrives in the body is
       // the shape of the work, and a `paid` flag in it is just a word.
-      return gateway.admit({
+      // A person is asking, so this is a direct reservation, and the host says so. A body
+      // cannot: the flag is set here and nowhere reads it from the request.
+      const decision = await gateway.admit({
         organizationId: id,
         personId: workspaces.currentPerson().id,
         route: text(value.route, 'the route this work runs on', 60),
@@ -167,7 +175,13 @@ export function mountManagedUsageRoutes(
         reservationId: text(value.reservationId, 'an identifier for this attempt', 120),
         periodId: periodIdFor(at),
         at,
+        directReservation: true,
       });
+      // Owner rule (2026-09-30): a person cannot hold included usage by asking for it. This is a
+      // refusal of the person, so it is a 403, not an admission that happens to say no.
+      if (!decision.admitted && decision.code === DIRECT_RESERVATION_REFUSED)
+        throw new ApiError(403, decision.message, { code: decision.code });
+      return decision;
     }),
   );
 
