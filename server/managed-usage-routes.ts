@@ -15,8 +15,19 @@
  *
  * There is no route that hands a client a provider key, and no route that takes
  * one. This is an admission surface, not a proxy.
+ *
+ * A person cannot reserve or settle included usage through this surface (owner
+ * rule, 2026-09-30). Diomedes staff, and usage a business bought outright, are
+ * the only kinds allowed. This app can identify staff, by asking the account
+ * service at the time (an active staff row, never anything in the request), and
+ * cannot identify purchased usage: its local ledger keeps one pool. So the route
+ * marks a reservation as direct, passes the host's own answer on staff, and the
+ * gateway refuses it where a hold would be taken unless the asker is staff.
+ * Settling a hold is closed the same way, here at the route; the ledger itself
+ * stays open to an in-process caller.
  */
 import type { Express, Request, Response } from 'express';
+import type { StaffRole } from '../shared/access.js';
 import {
   ALLOWANCE_MEANING,
   RATE_CARD_V1,
@@ -29,6 +40,7 @@ import {
 import type { BillingEvent, BillingEventProcessor } from './billing-events.js';
 import type { ManagedGateway } from './managed-gateway.js';
 import type { AllowanceLedger } from './managed-usage.js';
+import { DIRECT_RESERVATION_REFUSED, DIRECT_SETTLE_REASON, DIRECT_SETTLE_REFUSED } from './managed-gateway.js';
 import { ApiError } from './paths.js';
 import type { Store } from './store.js';
 import type { WorkspaceService } from './workspaces.js';
@@ -70,6 +82,14 @@ const text = (value: unknown, field: string, max = 200) => {
   return candidate;
 };
 
+/**
+ * The host's own answer on whether the signed-in person is active Diomedes staff, asked of the
+ * account service when it is needed. Not a request field, and not remembered.
+ */
+export interface StaffReader {
+  staffRole(): Promise<StaffRole | null>;
+}
+
 export function mountManagedUsageRoutes(
   app: Express,
   store: Store,
@@ -77,6 +97,8 @@ export function mountManagedUsageRoutes(
   gateway: ManagedGateway,
   billing: BillingEventProcessor,
   workspaces: WorkspaceService,
+  /** Left out, nobody is staff here: an install without accounts has no one to say so. */
+  staff: StaffReader | null = null,
 ) {
   const route =
     (action: (req: Request, res: Response) => Promise<unknown>, locked = true) =>
@@ -99,6 +121,26 @@ export function mountManagedUsageRoutes(
     workspaces.assertMine(id);
     return id;
   };
+
+  /**
+   * A route that needs to know whether the signed-in person is staff. The account service is a
+   * network call and the store lock is everyone's, so it is asked first and the lock is taken
+   * after. Membership is checked before it, so a stranger reads as absent without the service
+   * being asked. An error, a sign-out, or no reader at all says nobody is staff.
+   */
+  const withStaff =
+    (action: (req: Request, res: Response, asker: StaffRole | null) => Promise<unknown>) =>
+    async (req: Request, res: Response, next: (error?: unknown) => void) => {
+      let asker: StaffRole | null = null;
+      try {
+        assertMine(req);
+        asker = staff ? await staff.staffRole() : null;
+      } catch (error) {
+        if (error instanceof ApiError) return next(error);
+        asker = null;
+      }
+      return route((inner, out) => action(inner, out, asker))(req, res, next);
+    };
 
   app.get(
     '/api/workspace/organizations/:organizationId/allowance',
@@ -143,7 +185,7 @@ export function mountManagedUsageRoutes(
 
   app.post(
     '/api/workspace/organizations/:organizationId/allowance/admit',
-    route(async (req) => {
+    withStaff(async (req, _res, asker) => {
       const id = assertMine(req);
       const value = body(req);
       const at = new Date().toISOString();
@@ -154,9 +196,12 @@ export function mountManagedUsageRoutes(
           code: 'client_envelope_refused',
         });
       // Everything authoritative is read from the host: the person, the tenant,
-      // the entitlement, the policy, the job's cap. What arrives in the body is
-      // the shape of the work, and a `paid` flag in it is just a word.
-      return gateway.admit({
+      // the entitlement, the policy, the job's cap, and whether this person is staff.
+      // What arrives in the body is the shape of the work, and a `paid` flag or a
+      // `staff` role in it is just a word.
+      // A person is asking, so this is a direct reservation, and the host says so. A body
+      // cannot: the flag is set here and nowhere reads it from the request.
+      const decision = await gateway.admit({
         organizationId: id,
         personId: workspaces.currentPerson().id,
         route: text(value.route, 'the route this work runs on', 60),
@@ -167,14 +212,24 @@ export function mountManagedUsageRoutes(
         reservationId: text(value.reservationId, 'an identifier for this attempt', 120),
         periodId: periodIdFor(at),
         at,
+        directReservation: true,
+        staffRole: asker,
       });
+      // Owner rule (2026-09-30): a person who is not staff cannot hold included usage by asking for
+      // it. This is a refusal of the person, so it is a 403, not an admission that happens to say no.
+      if (!decision.admitted && decision.code === DIRECT_RESERVATION_REFUSED)
+        throw new ApiError(403, decision.message, { code: decision.code });
+      return decision;
     }),
   );
 
   app.post(
     '/api/workspace/organizations/:organizationId/allowance/settle',
-    route(async (req) => {
+    withStaff(async (req, _res, asker) => {
       const id = assertMine(req);
+      // Settling takes a caller-supplied debit against an existing hold, so it is for staff only.
+      // It is refused before the body is read: a refusal says nothing of whether the body was good.
+      if (!asker) throw new ApiError(403, DIRECT_SETTLE_REASON, { code: DIRECT_SETTLE_REFUSED });
       const value = body(req);
       return ledger.settle({
         reservationId: text(value.reservationId, 'the attempt being settled', 120),

@@ -851,8 +851,11 @@ export async function createApp(options: AppOptions) {
       observation?.scopes.observeContext();
       void phoneRelay?.sync();
       await workspaces.refreshSetups();
-      // Refresh outside the store lock. Sign-out clears the cache and sends nothing.
-      await accountRouting!.refreshAccess();
+      // Refresh outside the store lock. Sign-out clears the cache and sends nothing. This only warms
+      // the cache: a read that fails leaves the person's access unread (unknown, as loadAccess does for
+      // a business), never answered as free and never a failed sign-in. Free work does not wait on it;
+      // Agent work asks again at its own admission, which still refuses when the service cannot confirm.
+      await accountRouting!.refreshAccess().catch(() => {});
     });
     // Signing out, switching accounts or forgetting one removes this computer's phone access first.
     accountSession.onRelease((personId, signedIn) => phoneRelay!.release(personId, signedIn));
@@ -1505,7 +1508,8 @@ export async function createApp(options: AppOptions) {
   mountAutomationRoutes(app, store, automations);
   mountThemeRoutes(app, store, themes, customization);
   mountCustomizationBenefitRoutes(app, store, workspaces, customization, customizationBenefit);
-  mountManagedUsageRoutes(app, store, ledger, gateway, billing, workspaces);
+  // Who is staff is the account service's word, asked at the time; an install without accounts has no staff.
+  mountManagedUsageRoutes(app, store, ledger, gateway, billing, workspaces, accountSession);
   mountConfigurationRoutes(app, store, workspaces, configuration, agents);
   // OPS-05: the Business owner's copy of the business's records, written into one of its projects.
   mountOrganizationExportRoute(app, { store, workspaces, configuration, accounts: accountSession, build: running.version });

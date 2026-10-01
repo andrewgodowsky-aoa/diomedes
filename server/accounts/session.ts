@@ -41,6 +41,7 @@ import {
   type AccessView,
   type AgentPlanState,
   type PlanNoticeChoice,
+  type StaffRole,
 } from '../../shared/access.js';
 import { noIndividualAccess, personIncludes, type PersonAccessView, type PersonalUsageView } from '../../shared/individual-plan.js';
 import type { OrganizationSetupWrite, SetupFetchOutcome, SetupWriteOutcome } from '../../shared/organization-setup.js';
@@ -1063,6 +1064,25 @@ export class AccountSessionService {
 
   personId(): string | null {
     return this.current?.personId ?? null;
+  }
+
+  /**
+   * The signed-in person's standing as active Diomedes staff, asked of the account service now.
+   * Not remembered: a person whose staff row was disabled a minute ago must stop being staff on
+   * the next decision, not at the next sign-in. It says null whenever it cannot say otherwise:
+   * signed out, the service unreachable or answering something unreadable, or naming a different
+   * person than the one signed in here. An error never reads as staff.
+   */
+  async staffRole(): Promise<StaffRole | null> {
+    const current = this.current;
+    if (!current) return null;
+    try {
+      const answer = await this.call((token) => this.backend.client.staffMarker(token));
+      if (this.current !== current || answer.personId !== current.personId) return null;
+      return answer.staff?.role ?? null;
+    } catch {
+      return null;
+    }
   }
 
   /**

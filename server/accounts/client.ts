@@ -8,7 +8,7 @@
  * for every answer here; the desktop caches, it never decides.
  */
 import { z } from 'zod';
-import type { AccessView } from '../../shared/access.js';
+import { readStaffMarker, type AccessView, type StaffMarker } from '../../shared/access.js';
 import type { PersonAccessView, PersonalUsageView } from '../../shared/individual-plan.js';
 import type { OrganizationSetupAnswer, OrganizationSetupWrite } from '../../shared/organization-setup.js';
 import type { Membership, MemberRole, Organization, Person } from '../../shared/workspaces.js';
@@ -51,6 +51,8 @@ export interface SessionPage {
   person: Person;
   organizations: { organization: Organization; membership: Membership }[];
   nextCursor: string | null;
+  /** The service's word on whether this person is active Diomedes staff. An older service leaves it out. */
+  staff?: unknown;
 }
 
 export interface AgentAdmissionAnswer {
@@ -190,6 +192,16 @@ export class ControlPlaneClient {
       organizations.push(...page.organizations);
     }
     return { person: page.person, organizations };
+  }
+  /**
+   * Whether the account service says this token's person is active Diomedes staff. One read of the
+   * session page's first page, which carries the marker. A service that leaves it out, or sends
+   * anything this build does not know, says nobody is staff; the person it names is returned with
+   * it so the caller can check it is the person it asked for.
+   */
+  async staffMarker(token: string): Promise<{ personId: string; staff: StaffMarker | null }> {
+    const page = await this.call<SessionPage>('GET', '/account/session', token);
+    return { personId: page.person.id, staff: readStaffMarker(page.staff) };
   }
   createOrganization(token: string, name: string) {
     return this.call<Organization>('POST', '/account/organizations', token, { name });
