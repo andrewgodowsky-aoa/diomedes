@@ -34,7 +34,7 @@ import { AccountService } from '../account-service.js';
 import { bootstrapFirstAdmin, CommercialService } from '../commercial.js';
 import { RoutingService } from '../routing.js';
 import { AccountError } from '../errors.js';
-import { FundingService, UsageService } from '../funding.js';
+import { FundingService, PurchasedUsageService, UsageService } from '../funding.js';
 import { ManagedInferenceService, SPEND_SETTINGS, spendControls, type SpendSetting } from '../managed-inference.js';
 import {
   FAUX_SCRIPTED_CREDENTIAL,
@@ -238,6 +238,7 @@ export async function createFauxCloud(options: FauxCloudOptions): Promise<FauxCl
     {
       configuration: () => config,
       createCommercial: () => commercial,
+      createPurchased: () => new PurchasedUsageService(accounts, funding),
       createRouting: () => new RoutingService(accounts, store.commercial, now, funding),
       createManaged: () => managed,
       createRelay: () => relay,

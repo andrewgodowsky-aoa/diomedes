@@ -56,6 +56,15 @@ GRANT UPDATE (state, dispatched_at, resolved_at, uncertain_reason) ON control_pl
 -- saveSettlement(), "INSERT INTO control_plane.funding_settlements(...)" (settle).
 -- Never UPDATE: a settlement is written once.
 GRANT SELECT, INSERT ON control_plane.funding_settlements TO cp_funding;
+-- 013 credit_topup_holds: the holds a person asked for against credits their business bought
+-- outright (POST /account/organizations/:id/purchased-usage/holds, /settlements and /releases, src/funding.ts
+-- PurchasedUsageService, and the held and settled sums every reserve reads in topUpTotals()). SELECT:
+-- topUpHold(), "SELECT * FROM control_plane.credit_topup_holds WHERE tenant_id=$1 AND hold_id=$2 FOR UPDATE",
+-- and the two sums in topUpTotals(). INSERT: saveTopUpHold(). UPDATE on three columns: its "ON CONFLICT
+-- (tenant_id,hold_id) DO UPDATE SET debit_micro_usd=...,state=...,resolved_at=..." (settle, release), and
+-- topUpHold()'s FOR UPDATE. No amount, person, digest or organization column can be rewritten.
+GRANT SELECT, INSERT ON control_plane.credit_topup_holds TO cp_funding;
+GRANT UPDATE (debit_micro_usd, state, resolved_at) ON control_plane.credit_topup_holds TO cp_funding;
 -- 009 Individual agreements allocate the same credit_periods through the
 -- existing funding writer. Scope, consent, routing and staff records remain
 -- on cp_runtime; foreign-key checks need no extra cp_funding table grants.

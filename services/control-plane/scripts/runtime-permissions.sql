@@ -26,7 +26,7 @@ GRANT SELECT, INSERT ON control_plane.organization_setups TO cp_runtime;
 -- NC-2026-09-22.1: the Worker's usage projection only reads funding rows.
 GRANT SELECT ON control_plane.credit_periods, control_plane.funding_reservations,
   control_plane.funding_settlements, control_plane.credit_adjustments,
-  control_plane.credit_topups TO cp_runtime;
+  control_plane.credit_topups, control_plane.credit_topup_holds TO cp_runtime;
 -- Funding writes (reserve, dispatch, settle, grants, top-ups, cap decisions)
 -- belong to a separately reviewed runtime role, never to the Worker login.
 -- 005 customer access (2026-09-25): what the Worker's customer-access, Agent

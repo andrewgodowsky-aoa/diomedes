@@ -150,7 +150,8 @@ function validate(state: FauxCloudState): FauxCloudState {
     accounts: accountStateSchema.parse(state.accounts),
     identity: fauxIdentityStateSchema.parse(state.identity),
     commercial: commercialSchema.parse(state.commercial) as CommercialState,
-    funding: state.funding,
+    // Stores written before purchased-usage holds (migration 013) have none yet.
+    funding: { ...emptyFundingState(), ...state.funding },
     // Stores written before the phone relay existed have no devices yet.
     relay: relaySchema.parse((state as Partial<FauxCloudState>).relay ?? { devices: [] }),
     // Stores written before business setups were kept have none yet.

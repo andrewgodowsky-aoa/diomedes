@@ -27,6 +27,23 @@ const scopedEntitlementSchema = z.object({ plan: z.string(), planLabel: z.string
   revision: z.number().int().nonnegative(), source: z.enum(['none', 'account-service']), reason: z.string(),
 });
 
+/**
+ * What the account service answers for usage a business bought outright: the recorded top-ups, and
+ * what is held or spent against them. Read against this shape, never trusted as it arrives, because
+ * money is on it.
+ */
+const purchasedBalanceSchema = z.strictObject({
+  purchasedMicroUsd: z.number().int().nonnegative(), heldMicroUsd: z.number().int().nonnegative(),
+  settledMicroUsd: z.number().int().nonnegative(), availableMicroUsd: z.number().int().nonnegative(),
+});
+const purchasedHoldSchema = z.strictObject({
+  holdId: z.string(), state: z.enum(['held', 'settled', 'released']),
+  amountMicroUsd: z.number().int().positive(), debitMicroUsd: z.number().int().nonnegative(),
+  createdAt: z.string(), resolvedAt: z.string().nullable(), balance: purchasedBalanceSchema,
+});
+export type PurchasedBalanceAnswer = z.infer<typeof purchasedBalanceSchema>;
+export type PurchasedHoldAnswer = z.infer<typeof purchasedHoldSchema>;
+
 export class ControlPlaneError extends Error {
   constructor(
     message: string,
@@ -202,6 +219,29 @@ export class ControlPlaneClient {
   async staffMarker(token: string): Promise<{ personId: string; staff: StaffMarker | null }> {
     const page = await this.call<SessionPage>('GET', '/account/session', token);
     return { personId: page.person.id, staff: readStaffMarker(page.staff) };
+  }
+  // --- usage the business bought outright -----------------------------------------------
+
+  private unreadable(): never {
+    throw new ControlPlaneError('The account service answered in a way this app could not read.', 502, 'unreadable_answer');
+  }
+  /** What the business bought outright, and what of it is held or spent. */
+  async purchasedBalance(token: string, organizationId: string): Promise<PurchasedBalanceAnswer> {
+    const parsed = purchasedBalanceSchema.safeParse(await this.call<unknown>('GET', `/account/organizations/${encodeURIComponent(organizationId)}/purchased-usage`, token));
+    return parsed.success ? parsed.data : this.unreadable();
+  }
+  /** Hold some of it for the signed-in person. The service decides; the amount is a request, never a balance. */
+  async holdPurchasedUsage(token: string, organizationId: string, input: { holdId: string; amountMicroUsd: number; requestDigest: string }): Promise<PurchasedHoldAnswer> {
+    const parsed = purchasedHoldSchema.safeParse(await this.call<unknown>('POST', `/account/organizations/${encodeURIComponent(organizationId)}/purchased-usage/holds`, token, input));
+    return parsed.success ? parsed.data : this.unreadable();
+  }
+  async settlePurchasedUsage(token: string, organizationId: string, input: { holdId: string; debitMicroUsd: number }): Promise<PurchasedHoldAnswer> {
+    const parsed = purchasedHoldSchema.safeParse(await this.call<unknown>('POST', `/account/organizations/${encodeURIComponent(organizationId)}/purchased-usage/settlements`, token, input));
+    return parsed.success ? parsed.data : this.unreadable();
+  }
+  async releasePurchasedUsage(token: string, organizationId: string, input: { holdId: string }): Promise<PurchasedHoldAnswer> {
+    const parsed = purchasedHoldSchema.safeParse(await this.call<unknown>('POST', `/account/organizations/${encodeURIComponent(organizationId)}/purchased-usage/releases`, token, input));
+    return parsed.success ? parsed.data : this.unreadable();
   }
   createOrganization(token: string, name: string) {
     return this.call<Organization>('POST', '/account/organizations', token, { name });

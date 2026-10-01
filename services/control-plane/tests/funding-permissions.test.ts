@@ -23,7 +23,8 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { createFauxCloud } from '../src/faux/cloud.js';
 import { DEMO_ACCOUNTS, FAUX_DEMO_PASSWORD, seedDemo } from '../src/faux/seed.js';
-import { FundingService, type FundingRepository } from '../src/funding.js';
+import { micro } from '../../../shared/managed-usage.js';
+import { FundingService, PurchasedUsageService, type FundingRepository } from '../src/funding.js';
 import { PostgresFundingTransaction } from '../src/funding-postgres.js';
 import { ManagedError, ManagedInferenceService } from '../src/managed-inference.js';
 import { MANAGED_PROVIDERS, bedrockResponsesCaller, scriptedResponsesFetch } from '../src/managed-providers.js';
@@ -38,7 +39,7 @@ const FUNDING_SOURCE = read('../src/funding.ts');
 
 /** The migration 002/003 funding tables. */
 const FUNDING_TABLES = ['credit_periods', 'funded_jobs', 'funded_job_refs', 'job_cap_requests', 'funding_accounts',
-  'funding_reservations', 'funding_settlements', 'credit_adjustments', 'credit_topups'];
+  'funding_reservations', 'funding_settlements', 'credit_adjustments', 'credit_topups', 'credit_topup_holds'];
 
 // --- the grant file --------------------------------------------------------------------------
 
@@ -185,7 +186,11 @@ function transactionCalls(name: string, seen = new Set<string>()): Set<string> {
 const GATEWAY_SERVICE_CALLS = names(GATEWAY_SOURCE, /this\.options\.funding\.(\w+)\(/g);
 const GATEWAY_DIRECT_READS = new Set([...GATEWAY_SOURCE.matchAll(/this\.options\.fundingReads\.transaction\(/g)]
   .flatMap((match) => [...names(parenthesized(GATEWAY_SOURCE, match.index + match[0].length - 1), /\btx\.(\w+)\(/g)]));
-const STATIC_TRANSACTION_CALLS = new Set([...GATEWAY_SERVICE_CALLS].flatMap((name) => [...transactionCalls(name)]).concat([...GATEWAY_DIRECT_READS]));
+
+/** Purchased-usage holds (013) run on the same login: the FundingService methods PurchasedUsageService calls. */
+const PURCHASED_SERVICE_CALLS = names(FUNDING_SOURCE.slice(FUNDING_SOURCE.indexOf('export class PurchasedUsageService')), /this\.funding\.(\w+)\(/g);
+const SERVICE_CALLS = new Set([...GATEWAY_SERVICE_CALLS, ...PURCHASED_SERVICE_CALLS]);
+const STATIC_TRANSACTION_CALLS = new Set([...SERVICE_CALLS].flatMap((name) => [...transactionCalls(name)]).concat([...GATEWAY_DIRECT_READS]));
 
 // --- the gateway's paths, run -------------------------------------------------------------------
 
@@ -285,9 +290,20 @@ async function runGatewayPaths() {
       headers: { authorization: `Bearer ${token}`, 'x-nectovia-organization': organizationId },
     }), 'run-1:1')).status,
   };
+  // Purchased-usage holds (013): a member holds, settles and releases credits the business bought outright.
+  const member = await cloud.accounts.membership(token, organizationId);
+  await cloud.store.funding.transaction((tx) => tx.saveTopUp({ tenantId: member.organization.tenantId, organizationId, topUpId: 'topup-permissions',
+    amountMicroUsd: micro(10_000_000), provider: 'stripe', sourceEventId: 'evt-permissions', recordedAt: new Date(now()).toISOString() }));
+  const purchased = new PurchasedUsageService(cloud.accounts, funding);
+  await purchased.balance(token, organizationId);
+  await purchased.hold(token, organizationId, { holdId: 'hold-1', amountMicroUsd: 1_000_000, requestDigest: 'digest-1' });
+  await purchased.settle(token, organizationId, { holdId: 'hold-1', debitMicroUsd: 400_000 });
+  await purchased.hold(token, organizationId, { holdId: 'hold-2', amountMicroUsd: 1_000_000, requestDigest: 'digest-2' });
+  await purchased.release(token, organizationId, { holdId: 'hold-2' });
+  const holds = Object.fromEntries(cloud.store.snapshot().funding.topUpHolds.map((row) => [row.holdId, row.state]));
   const states = Object.fromEntries(cloud.store.snapshot().funding.attempts.map((row) => [row.id, row.state]));
   const periods = cloud.store.snapshot().funding.periods.filter((row) => row.organizationId === organizationId).map((row) => row.periodId);
-  return { outcomes, states, periods, providerCalls: spy.calls.length, transactionLog, serviceLog };
+  return { outcomes, states, holds, periods, providerCalls: spy.calls.length, transactionLog, serviceLog };
 }
 
 /** Replays each recorded call on the SQL adapter and returns the statements it sent. */
@@ -334,9 +350,10 @@ describe('cp_funding (scripts/funding-permissions.sql)', () => {
     expect(run.states).toEqual({ 'run-1:1': 'settled', 'run-1:2': 'settled', 'run-1:3': 'released', 'run-1:4': 'uncertain', 'run-1:5': 'released' });
     expect(run.periods).toEqual(['2026-09', '2026-10']);
     expect(run.providerCalls).toBe(4);
+    expect(run.holds).toEqual({ 'hold-1': 'settled', 'hold-2': 'released' });
 
     // Every funding call the gateway's source can make, in any branch, was run.
-    expect([...run.serviceLog].sort()).toEqual([...GATEWAY_SERVICE_CALLS].sort());
+    expect([...run.serviceLog].sort()).toEqual([...SERVICE_CALLS].sort());
     expect([...new Set(run.transactionLog.map((call) => call.method))].sort()).toEqual([...STATIC_TRANSACTION_CALLS].sort());
 
     const sent = await replay(run.transactionLog);
@@ -358,6 +375,7 @@ describe('cp_funding (scripts/funding-permissions.sql)', () => {
     expect(describeTables(grants.tables)).toEqual([
       'credit_adjustments: SELECT',
       'credit_periods: SELECT, INSERT',
+      'credit_topup_holds: SELECT, INSERT, UPDATE (debit_micro_usd, resolved_at, state)',
       'credit_topups: SELECT',
       'funded_job_refs: SELECT, INSERT',
       'funded_jobs: SELECT, INSERT, UPDATE (cap_generation, cap_micro_usd, state)',

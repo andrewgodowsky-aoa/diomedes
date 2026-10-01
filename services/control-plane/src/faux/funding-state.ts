@@ -1,6 +1,6 @@
 import { micro, sumMoney, type AttemptSettlement, type FundedAttempt, type MicroUsd } from '../../../../shared/managed-usage.js';
 import type { CapRequestRow, CreditAdjustmentRow, CreditPeriodRow, FundedJobRow, FundingRepository, FundingTransaction,
-  JobRefRow, TopUpRow } from '../funding.js';
+  JobRefRow, TopUpHoldRow, TopUpRow } from '../funding.js';
 
 /** Funding rows as one JSON-serializable value, for the faux cloud and offline tests. */
 export interface FundingState {
@@ -11,10 +11,12 @@ export interface FundingState {
   settlements: AttemptSettlement[];
   adjustments: CreditAdjustmentRow[];
   topUps: TopUpRow[];
+  /** Purchased-usage holds (migration 013). Stores written before it have none. */
+  topUpHolds: TopUpHoldRow[];
   capRequests: CapRequestRow[];
 }
 
-export const emptyFundingState = (): FundingState => ({ periods: [], jobs: [], jobRefs: [], attempts: [], settlements: [], adjustments: [], topUps: [], capRequests: [] });
+export const emptyFundingState = (): FundingState => ({ periods: [], jobs: [], jobRefs: [], attempts: [], settlements: [], adjustments: [], topUps: [], topUpHolds: [], capRequests: [] });
 const sum = (values: MicroUsd[]) => (values.length ? sumMoney(values) : micro(0));
 const upsert = <T>(rows: T[], row: T, same: (item: T) => boolean) => {
   const index = rows.findIndex(same);
@@ -47,6 +49,8 @@ export class StateFundingTransaction implements FundingTransaction {
   async saveAdjustment(row: CreditAdjustmentRow) { this.state.adjustments.push(row); }
   async topUp(tenantId: string, id: string) { return this.state.topUps.find((row) => row.tenantId === tenantId && row.topUpId === id); }
   async saveTopUp(row: TopUpRow) { this.state.topUps.push(row); }
+  async topUpHold(tenantId: string, holdId: string) { return this.state.topUpHolds.find((row) => row.tenantId === tenantId && row.holdId === holdId); }
+  async saveTopUpHold(row: TopUpHoldRow) { upsert(this.state.topUpHolds, row, (item) => item.tenantId === row.tenantId && item.holdId === row.holdId); }
   async capRequest(tenantId: string, id: string) { return this.state.capRequests.find((row) => row.tenantId === tenantId && row.requestId === id); }
   async saveCapRequest(row: CapRequestRow) { upsert(this.state.capRequests, row, (item) => item.tenantId === row.tenantId && item.requestId === row.requestId); }
   async periodTotals(tenantId: string, organizationId: string, periodId: string) {
@@ -66,8 +70,14 @@ export class StateFundingTransaction implements FundingTransaction {
     const mine = <T extends { tenantId: string; organizationId: string }>(rows: T[]) => rows.filter((row) => row.tenantId === tenantId && row.organizationId === organizationId);
     return {
       purchasedMicroUsd: sum(mine(this.state.topUps).map((row) => row.amountMicroUsd)),
-      heldMicroUsd: sum(mine(this.state.attempts).filter((row) => row.state === 'pending' || row.state === 'uncertain').map((row) => row.topUpHoldMicroUsd)),
-      settledMicroUsd: sum(mine(this.state.settlements).map((row) => row.topUpDebitMicroUsd)),
+      heldMicroUsd: sum([
+        ...mine(this.state.attempts).filter((row) => row.state === 'pending' || row.state === 'uncertain').map((row) => row.topUpHoldMicroUsd),
+        ...mine(this.state.topUpHolds).filter((row) => row.state === 'held').map((row) => row.amountMicroUsd),
+      ]),
+      settledMicroUsd: sum([
+        ...mine(this.state.settlements).map((row) => row.topUpDebitMicroUsd),
+        ...mine(this.state.topUpHolds).filter((row) => row.state === 'settled').map((row) => row.debitMicroUsd),
+      ]),
     };
   }
   async jobUsed(tenantId: string, rootJobId: string) {

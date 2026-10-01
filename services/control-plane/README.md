@@ -285,12 +285,46 @@ retried by the service. Children and retries spend inside the root cap; a
 higher cap needs a request and an owner decision. There is no built-in default
 cap: the 20-credit figure is a proposal and must be configured once approved.
 
-The Worker exposes only `GET /account/organizations/:id/usage`, which verifies
-membership and then reads the projection. No funding write is reachable over
-HTTP. The memory adapter in `tests/support/funding-memory.ts` is TEST ONLY; the
+The Worker exposes `GET /account/organizations/:id/usage`, which verifies
+membership and then reads the projection, and the purchased-usage holds below.
+No other funding write is reachable over HTTP. The memory adapter in `tests/support/funding-memory.ts` is TEST ONLY; the
 SQL adapter has been checked against a recording client, and its real-database
 cases are in the opt-in PostgreSQL suite. Nothing here activates billing, a
 plan, a checkout or a funded model call.
+
+## Purchased-usage holds (migration 013, 2026-10-01)
+
+Owner rule: Diomedes staff may reserve allowance; a subscriber may reserve only
+against usage the business bought outright (top-ups), never against included
+monthly usage. The account service keeps the only purchased balance. A top-up
+is recorded from a verified Stripe billing event (`recordTopUp`) and nothing
+else; a request never names a balance.
+
+An active member of the business, with their own session, can:
+
+- `GET /account/organizations/:id/purchased-usage`: purchased, held, settled
+  and available, in micro-USD.
+- `POST .../purchased-usage/holds` `{ holdId, amountMicroUsd, requestDigest }`:
+  hold credits. Refused 402 `no_purchased_usage` or
+  `insufficient_purchased_usage`, with a plain reason ending "Nothing was
+  held." Idempotent by `holdId`: the same terms find the hold, different terms
+  are 409 `hold_conflict`, a closed hold is 409 `hold_closed`.
+- `POST .../purchased-usage/settlements` `{ holdId, debitMicroUsd }`: debit the
+  top-up balance by at most the hold; the rest is free again. A replay returns
+  the recorded settlement; a different debit is 409 `settlement_conflict`.
+- `POST .../purchased-usage/releases` `{ holdId }`: give an unused hold back.
+
+A hold is a row in `credit_topup_holds`, not a funded attempt: no job, month,
+rate or provider call, and it never reads or draws the monthly grant. `topUpTotals`
+counts open holds and settled debits, so a funded attempt's reserve sees them
+too and the same bought credit cannot be spent twice. Only the person who made
+a hold can settle or release it; anyone else's, another business's and an
+unknown hold all read as 404 `unknown_hold`. These writes run as the funding
+login (FUNDING_DATABASE_URL); without it they answer 503. The desktop calls
+them for a person who is not staff (see `server/managed-usage-routes.ts`).
+
+Migration 013 is additive. The runner takes each version from the file name's
+number, so it refuses 013 until 011 and 012 are in its list before it.
 
 ## Runtime evidence and release
 

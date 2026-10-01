@@ -1022,6 +1022,23 @@ export class AccountSessionService {
     }
   }
 
+  // --- usage the business bought outright (the account service is the only place that keeps it) ---
+
+  /** What the business bought outright and what of it is held or spent, as the person signed in. */
+  purchasedBalance(organizationId: string) {
+    return this.call((token) => this.backend.client.purchasedBalance(token, organizationId));
+  }
+  /** Ask the service to hold some of it for the person signed in. Refusals arrive as ApiErrors with the service's code. */
+  holdPurchased(organizationId: string, input: { holdId: string; amountMicroUsd: number; requestDigest: string }) {
+    return this.call((token) => this.backend.client.holdPurchasedUsage(token, organizationId, input));
+  }
+  settlePurchased(organizationId: string, input: { holdId: string; debitMicroUsd: number }) {
+    return this.call((token) => this.backend.client.settlePurchasedUsage(token, organizationId, input));
+  }
+  releasePurchased(organizationId: string, input: { holdId: string }) {
+    return this.call((token) => this.backend.client.releasePurchasedUsage(token, organizationId, input));
+  }
+
   /**
    * The last answer for one business. Null when the service knows nothing of it here. State
    * `unknown` only when the service has not answered for a business the person is an active member
