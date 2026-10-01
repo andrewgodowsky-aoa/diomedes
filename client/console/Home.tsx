@@ -20,6 +20,7 @@ import type { EverythingItem } from './Everything';
 import { Rail, type RailItem } from './Rail';
 import { SegmentBar } from './SegmentBar';
 import { projectProgress } from './progress-bars';
+import { shortcutHint } from '../keyboard';
 import './console.css';
 import './nectovia.css';
 import './everything.css';
@@ -189,7 +190,12 @@ export function Home({
       label: 'Open a folder',
       hint: 'Make a project of documents you already have.',
     },
-    { id: 'find', label: 'Find a project', hint: 'Search every project by name.', badge: 'Ctrl K' },
+    {
+      id: 'find',
+      label: 'Find a project',
+      hint: 'Search every project by name.',
+      badge: shortcutHint('K'),
+    },
     {
       id: 'engines',
       label: 'AI engines',

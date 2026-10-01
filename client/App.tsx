@@ -48,6 +48,7 @@ import { resolveAppearance } from '../shared/theme-pack/resolve';
 import { withBaseStructure } from '../shared/appearance-structure';
 import type { ThemePackV1 } from '../shared/theme-pack/types';
 import { useWake } from './console/useWake';
+import { shortcutHint } from './keyboard';
 
 const PLACE_KEY = 'diomedes.window.place';
 /** The project this window was showing before a reload, or null. */
@@ -532,13 +533,14 @@ export function App() {
   }, [showSettings]);
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.ctrlKey && e.key.toLowerCase() === 'k') {
+      // Ctrl or Cmd, like the interface-size keys: Cmd is how a Mac reaches them.
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         const onConsole = !!selected && !showSettings;
         if (onConsole && paletteOpen.current) paletteOpen.current();
         else setSearch(true);
       }
-      if (e.ctrlKey && e.key === '.') {
+      if ((e.ctrlKey || e.metaKey) && e.key === '.') {
         e.preventDefault();
         document.querySelector<HTMLButtonElement>('[data-stop]')?.focus();
       }
@@ -655,7 +657,12 @@ export function App() {
     { id: 'projects', label: 'Projects', hint: 'Every project, what each is doing, and what needs you.' },
     { id: 'new-project', label: 'New project', hint: 'Start from an empty folder.' },
     { id: 'open-folder', label: 'Open a folder', hint: 'Make a project of documents you already have.' },
-    { id: 'find', label: 'Find a project', hint: 'Search every project by name.', badge: 'Ctrl K' },
+    {
+      id: 'find',
+      label: 'Find a project',
+      hint: 'Search every project by name.',
+      badge: shortcutHint('K'),
+    },
     {
       id: 'automations',
       label: 'Automations',
