@@ -37,6 +37,8 @@ import { AccountError } from '../errors.js';
 import { FundingService, PurchasedUsageService, UsageService } from '../funding.js';
 import { CreditPurchaseService, StripeWebhookService, readBillingSettings } from '../credit-purchases.js';
 import { FAUX_STRIPE_SECRET_KEY, FAUX_STRIPE_WEBHOOK_SECRET, fauxCheckoutPage, fauxPaidEvent, fauxStripeFetch, signFauxEvent } from './stripe.js';
+import { StatePaymentLedger } from './payment-ledger.js';
+import type { PaymentLedger } from '../credit-purchases.js';
 import { ManagedInferenceService, SPEND_SETTINGS, spendControls, type SpendSetting } from '../managed-inference.js';
 import {
   FAUX_SCRIPTED_CREDENTIAL,
@@ -149,6 +151,8 @@ export interface FauxCloud {
    * webhook, which records the top-up. Paying a session twice is the same event, so it changes nothing the second time.
    */
   completeCheckout(sessionId: string): Promise<{ purchaseId: string; status: number }>;
+  /** The payment ledger the faux Worker reads and writes (billing customers and stored verified events), over this store. */
+  readonly paymentLedger: PaymentLedger;
   /** Sign a person in without a browser, for the seed and tests. Makes the person on first use. */
   seedSignIn(account: { email: string; name: string; password: string }): Promise<string>;
   /** Issuer and subject of a person's sign-in identity, by email. */
@@ -264,8 +268,8 @@ export async function createFauxCloud(options: FauxCloudOptions): Promise<FauxCl
       createCommercial: () => commercial,
       createPurchased: () => new PurchasedUsageService(accounts, funding),
       createCreditPurchases: (_config, _accounts, env) => new CreditPurchaseService(accounts, funding, { settings: readBillingSettings(env), fetch: fauxStripe, now,
-        localCheckout: true }),
-      createStripeWebhook: (_config, env) => new StripeWebhookService(funding, { settings: readBillingSettings(env), now }),
+        localCheckout: true, ledger: paymentLedger }),
+      createStripeWebhook: (_config, env) => new StripeWebhookService(funding, { settings: readBillingSettings(env), now, ledger: paymentLedger }),
       createRouting: () => new RoutingService(accounts, store.commercial, now, funding),
       createManaged: () => managed,
       createRelay: () => relay,
@@ -275,6 +279,7 @@ export async function createFauxCloud(options: FauxCloudOptions): Promise<FauxCl
   );
 
   const fauxStripe = fauxStripeFetch();
+  const paymentLedger = new StatePaymentLedger((use) => store.run(async (draft) => use(draft.funding)), now);
   const headers = () => new Headers({ 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'X-Nectovia-Backend': 'faux' });
   const json = (value: unknown, status = 200) => Response.json(value, { status, headers: headers() });
 
@@ -322,7 +327,11 @@ export async function createFauxCloud(options: FauxCloudOptions): Promise<FauxCl
 
   async function completeCheckout(sessionId: string) {
     const row = await purchaseForSession(sessionId);
-    const body = fauxPaidEvent({ sessionId, purchaseId: row.purchaseId, organizationId: row.organizationId, tenantId: row.tenantId, amountCents: row.amountCents }, now());
+    // A session made before this process started is not remembered: it pays as the business's stored customer, or a new one.
+    const customerId = fauxStripe.customerOf(sessionId)
+      ?? await paymentLedger.storedCustomer({ tenantId: row.tenantId, organizationId: row.organizationId })
+      ?? `cus_faux_${sessionId.slice(3)}`;
+    const body = fauxPaidEvent({ sessionId, purchaseId: row.purchaseId, organizationId: row.organizationId, tenantId: row.tenantId, amountCents: row.amountCents, customerId }, now());
     const response = await worker(new Request('http://faux.local/billing/stripe/webhook', {
       method: 'POST', body, headers: { 'content-type': 'application/json', 'stripe-signature': await signFauxEvent(body, now()) },
     }), managedEnv);
@@ -380,6 +389,7 @@ export async function createFauxCloud(options: FauxCloudOptions): Promise<FauxCl
     evaluationProvider: liveEvaluations ? 'live' : 'scripted',
     idle: () => managed.idle(),
     completeCheckout,
+    paymentLedger,
     async seedSignIn(account) {
       if (standIn) return (await standIn.signInDirect(account.email, account.name)).access_token;
       const pair = await store.run((draft) => identity.signUp(draft.identity, account));

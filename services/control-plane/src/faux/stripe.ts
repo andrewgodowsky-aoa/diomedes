@@ -14,18 +14,32 @@ export const FAUX_STRIPE_WEBHOOK_SECRET = 'whsec_faux_checkout_secret';
 
 const ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789';
 
-function fauxSessionId(): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(24));
-  return `cs_faux_${Array.from(bytes, (byte) => ALPHABET[byte % ALPHABET.length]).join('')}`;
+function randomText(length: number): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(length));
+  return Array.from(bytes, (byte) => ALPHABET[byte % ALPHABET.length]).join('');
 }
+
+const fauxSessionId = () => `cs_faux_${randomText(24)}`;
+const fauxCustomerId = () => `cus_faux_${randomText(14)}`;
+
+/** The faux Stripe's own memory of what it made: the customer each session belongs to, and the form that asked for it. */
+export type FauxStripeFetch = typeof globalThis.fetch & {
+  /** The customer a session was made for: the one the form passed, or a new one when it asked for a customer to be created. */
+  customerOf(sessionId: string): string | null;
+  /** The form each session was created from, in the order they were made. */
+  readonly created: { sessionId: string; customerId: string; form: URLSearchParams }[];
+};
 
 /**
  * POST https://api.stripe.com/v1/checkout/sessions, answered locally. It reads the same form the Worker
  * sends, refuses anything the real call would refuse for a missing field or key, and answers a session whose
- * page is on the origin the buyer was sent back to.
+ * page is on the origin the buyer was sent back to. A payment session must say whose it is the way Stripe's own API
+ * lets it: an existing `customer`, or `customer_creation=always`, never both and never neither, so a purchase that
+ * forgets either fails here as it would not in production, where a guest checkout is also allowed.
  */
-export function fauxStripeFetch(): typeof globalThis.fetch {
-  return (async (input: RequestInfo | URL, init?: RequestInit) => {
+export function fauxStripeFetch(): FauxStripeFetch {
+  const created: FauxStripeFetch['created'] = [];
+  const handler = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     const refuse = (status: number, message: string) => Response.json({ error: { message } }, { status });
     if (url !== 'https://api.stripe.com/v1/checkout/sessions' || init?.method !== 'POST') return refuse(404, 'The faux Stripe knows only the Checkout Session create call.');
@@ -36,9 +50,19 @@ export function fauxStripeFetch(): typeof globalThis.fetch {
     for (const field of ['mode', 'success_url', 'cancel_url', 'client_reference_id', 'line_items[0][price_data][unit_amount]'])
       if (!form.get(field)) return refuse(400, `Missing required param: ${field}.`);
     if (form.get('mode') !== 'payment') return refuse(400, 'Only payment mode is faux.');
+    const existing = form.get('customer');
+    const creation = form.get('customer_creation');
+    if (existing !== null && creation !== null) return refuse(400, 'customer_creation cannot be used with customer.');
+    if (existing === null && creation !== 'always') return refuse(400, 'The faux Stripe wants customer, or customer_creation=always.');
+    if (existing !== null && !/^cus_[A-Za-z0-9_]{1,128}$/.test(existing)) return refuse(400, 'No such customer.');
     const id = fauxSessionId();
+    created.push({ sessionId: id, customerId: existing ?? fauxCustomerId(), form });
     return Response.json({ id, object: 'checkout.session', status: 'open', url: `${new URL(form.get('success_url')!).origin}/faux/checkout/${id}` });
   }) as typeof globalThis.fetch;
+  return Object.assign(handler, {
+    customerOf: (sessionId: string) => created.find((row) => row.sessionId === sessionId)?.customerId ?? null,
+    created,
+  });
 }
 
 /** A Stripe-Signature header for a body, the way Stripe computes it. */
@@ -49,7 +73,7 @@ export async function signFauxEvent(body: string, nowMs: number, secret = FAUX_S
   return `t=${seconds},v1=${Array.from(mac, (byte) => byte.toString(16).padStart(2, '0')).join('')}`;
 }
 
-export interface FauxPaidSession { sessionId: string; purchaseId: string; organizationId: string; tenantId: string; amountCents: number }
+export interface FauxPaidSession { sessionId: string; purchaseId: string; organizationId: string; tenantId: string; amountCents: number; customerId: string }
 
 /** The checkout.session.completed event a paid session sends. Its id is the session's, so paying twice is one event. */
 export function fauxPaidEvent(session: FauxPaidSession, nowMs: number): string {
@@ -57,7 +81,7 @@ export function fauxPaidEvent(session: FauxPaidSession, nowMs: number): string {
     id: `evt_faux_${session.sessionId.replace(/^cs_/, '')}`, object: 'event', type: 'checkout.session.completed', created: Math.floor(nowMs / 1000),
     data: { object: {
       id: session.sessionId, object: 'checkout.session', status: 'complete', payment_status: 'paid', amount_total: session.amountCents, currency: 'usd',
-      client_reference_id: session.purchaseId,
+      client_reference_id: session.purchaseId, customer: session.customerId,
       metadata: { purchase_id: session.purchaseId, organization_id: session.organizationId, tenant_id: session.tenantId },
     } },
   });

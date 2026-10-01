@@ -1,9 +1,14 @@
 import { micro, sumMoney, type AttemptSettlement, type FundedAttempt, type MicroUsd } from '../../../../shared/managed-usage.js';
 import type { CapRequestRow, CreditAdjustmentRow, CreditPeriodRow, CreditPurchaseRow, FundedJobRow, FundingRepository, FundingTransaction,
   JobRefRow, TopUpHoldRow, TopUpRow } from '../funding.js';
+import { emptyLedgerState, type LedgerState } from './payment-ledger.js';
 
-/** Funding rows as one JSON-serializable value, for the faux cloud and offline tests. */
-export interface FundingState {
+/**
+ * Funding rows as one JSON-serializable value, for the faux cloud and offline tests. It also holds the payment ledger's rows
+ * (billing customers and stored verified events), which the Worker login writes in the real database, so the faux store keeps
+ * and persists them beside the funding rows. StateFundingTransaction never reads or writes them.
+ */
+export interface FundingState extends LedgerState {
   periods: CreditPeriodRow[];
   jobs: FundedJobRow[];
   jobRefs: JobRefRow[];
@@ -18,7 +23,7 @@ export interface FundingState {
   capRequests: CapRequestRow[];
 }
 
-export const emptyFundingState = (): FundingState => ({ periods: [], jobs: [], jobRefs: [], attempts: [], settlements: [], adjustments: [], topUps: [], topUpHolds: [], creditPurchases: [], capRequests: [] });
+export const emptyFundingState = (): FundingState => ({ periods: [], jobs: [], jobRefs: [], attempts: [], settlements: [], adjustments: [], topUps: [], topUpHolds: [], creditPurchases: [], capRequests: [], ...emptyLedgerState() });
 const sum = (values: MicroUsd[]) => (values.length ? sumMoney(values) : micro(0));
 const upsert = <T>(rows: T[], row: T, same: (item: T) => boolean) => {
   const index = rows.findIndex(same);

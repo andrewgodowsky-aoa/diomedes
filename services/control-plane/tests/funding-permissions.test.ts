@@ -315,9 +315,11 @@ async function runGatewayPaths() {
   const ownerToken = (await ownerSignIn.json()).accessToken as string;
   const billing = { CREDIT_PRICE_CENTS_PER_100: '1200', STRIPE_SECRET_KEY: FAUX_STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET: FAUX_STRIPE_WEBHOOK_SECRET };
   const settings = readBillingSettings(billing);
-  const buying = new CreditPurchaseService(cloud.accounts, funding, { settings, fetch: fauxStripeFetch(), now, localCheckout: true });
-  const refusing = new CreditPurchaseService(cloud.accounts, funding, { settings, fetch: (async () => new Response('no', { status: 500 })) as typeof fetch, now });
-  const receiving = new StripeWebhookService(funding, { settings, now });
+  const ledger = cloud.paymentLedger;
+  const faux = fauxStripeFetch();
+  const buying = new CreditPurchaseService(cloud.accounts, funding, { settings, fetch: faux, now, localCheckout: true, ledger });
+  const refusing = new CreditPurchaseService(cloud.accounts, funding, { settings, fetch: (async () => new Response('no', { status: 500 })) as typeof fetch, now, ledger });
+  const receiving = new StripeWebhookService(funding, { settings, now, ledger });
   vi.spyOn(console, 'error').mockImplementation(() => undefined);
   const paid = await buying.create(ownerToken, organizationId, { credits: 300 }, 'http://127.0.0.1:8795');
   const lapsed = await buying.create(ownerToken, organizationId, { credits: 100 }, 'http://127.0.0.1:8795');
@@ -325,7 +327,8 @@ async function runGatewayPaths() {
   await buying.read(ownerToken, organizationId, paid.purchaseId);
   const forPurchase = (purchaseId: string) => {
     const row = cloud.store.snapshot().funding.creditPurchases.find((item) => item.purchaseId === purchaseId)!;
-    return { sessionId: row.checkoutSessionId!, purchaseId, organizationId: row.organizationId, tenantId: row.tenantId, amountCents: row.amountCents };
+    return { sessionId: row.checkoutSessionId!, purchaseId, organizationId: row.organizationId, tenantId: row.tenantId, amountCents: row.amountCents,
+      customerId: faux.customerOf(row.checkoutSessionId!)! };
   };
   const deliver = async (body: string) => receiving.handle(new Request('http://faux/billing/stripe/webhook', {
     method: 'POST', body, headers: { 'stripe-signature': await signFauxEvent(body, now()) } }));
@@ -419,6 +422,20 @@ describe('cp_funding (scripts/funding-permissions.sql)', () => {
       'funding_reservations: SELECT, INSERT, UPDATE (dispatched_at, resolved_at, state, uncertain_reason)',
       'funding_settlements: SELECT, INSERT',
     ]);
+  });
+
+  it('is granted neither the inbox nor the customers, which the Worker login writes: it cannot make a top-up that names no stored event', () => {
+    // credit_topups.source_event_id references webhook_inbox (003), so a top-up needs an event the receiver stored first.
+    for (const table of ['webhook_inbox', 'billing_customers']) {
+      expect(grants.tables.has(table), table).toBe(false);
+      expect(FUNDING_SQL).not.toMatch(new RegExp(`GRANT[^;]*control_plane\.${table}`));
+    }
+    const runtime = parseGrants(RUNTIME_SQL, 'cp_runtime');
+    for (const table of ['webhook_inbox', 'billing_customers'])
+      expect({ table, insert: runtime.tables.get(table)?.insert, select: runtime.tables.get(table)?.select, update: [...(runtime.tables.get(table)?.update ?? [])] })
+        .toEqual({ table, insert: true, select: true, update: [] });
+    // And it does not write funding rows or credit purchases.
+    expect(runtime.tables.get('credit_purchases')).toBeUndefined();
   });
 
   it('fails a write without a grant, and a statement it cannot read', () => {

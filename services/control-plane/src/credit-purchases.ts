@@ -13,6 +13,11 @@
  * - StripeWebhookService: the receiver for Stripe's events. It reads the raw body, verifies the
  *   Stripe-Signature header before it parses a byte, and answers 200 to anything it will not act on.
  *
+ * Two database logins, kept apart on purpose. A top-up names a stored verified event (credit_topups.source_event_id
+ * references webhook_inbox), and the event is stored, with the business's Stripe customer, by the Worker's login through
+ * the PaymentLedger (src/postgres.ts, PostgresRepository). The funding login records the purchase and the top-up and
+ * cannot write the inbox, so it cannot make bought credits by itself: a top-up needs an event the receiver stored.
+ *
  * Stripe is called with fetch and the Worker secret STRIPE_SECRET_KEY; no SDK, and the signature check uses WebCrypto only. Neither
  * secret is ever logged, answered or stored.
  */
@@ -96,10 +101,46 @@ function wholeCredits(value: unknown): number | null {
 
 export const creditPurchaseInput = z.strictObject({ credits: z.number() });
 
+/** A Stripe customer id, as Stripe makes them. */
+const CUSTOMER_ID = /^cus_[A-Za-z0-9_]{1,128}$/;
+
+/** What the receiver stores for one verified paid event: the event, its payload and the business's Stripe customer. */
+export interface VerifiedPayment {
+  eventId: string;
+  /** From the verified event only. */
+  customerId: string;
+  /** The stored purchase's own business and tenant, never the event's metadata. */
+  organizationId: string;
+  tenantId: string;
+  /** SHA-256 of the raw body that was verified, in hex. */
+  payloadHash: string;
+  eventType: string;
+  /** The fields of the event this service acts on. Never the buyer's name, email or address. */
+  payload: Record<string, unknown>;
+}
+
+/**
+ * The payment ledger: one reusable Stripe customer per business, and the verified events its payments arrive in.
+ * Both rows live in migration 002's billing_customers and webhook_inbox and are written by the Worker's login
+ * (PostgresRepository), the receiver path, never by the funding login.
+ */
+export interface PaymentLedger {
+  /** The business's stored Stripe customer from an earlier verified payment, or null. Our own row, nothing else. */
+  storedCustomer(ref: { tenantId: string; organizationId: string }): Promise<string | null>;
+  /**
+   * Store a verified paid event, and the business's customer when it has none yet, in one transaction. Idempotent by
+   * event id. A 409 AccountError when the event is already stored with other contents, when the customer belongs to
+   * another business, or when the business already has a different customer.
+   */
+  recordVerifiedPayment(input: VerifiedPayment): Promise<{ inserted: boolean }>;
+}
+
 export type { CreditQuote, CreditPurchaseAnswer, CreditPurchaseRead };
 
 export interface CreditPurchaseOptions {
   settings: BillingSettings;
+  /** Where a business's stored Stripe customer is read, so a repeat purchase reuses it. */
+  ledger: Pick<PaymentLedger, 'storedCustomer'>;
   /** The transport to Stripe. Tests and the faux cloud pass their own; the Worker uses the global fetch. */
   fetch?: typeof globalThis.fetch;
   now?: () => number;
@@ -173,8 +214,11 @@ export class CreditPurchaseService {
       throw new AccountError(503, CREDIT_PURCHASES_UNAVAILABLE);
     }
     const ref = { tenantId: snapshot.organization.tenantId, organizationId: snapshot.organization.id, purchaseId: this.newId() };
+    // Our own stored row or nothing: a customer id is never taken from a request. Read before anything is written,
+    // so a read that fails leaves no purchase behind.
+    const customerId = await this.options.ledger.storedCustomer({ tenantId: ref.tenantId, organizationId: ref.organizationId });
     await this.funding.startCreditPurchase({ ...ref, personId: snapshot.person.id, credits, amountCents });
-    const session = await this.checkoutSession(stripeSecretKey, ref, credits, amountCents, returnBase);
+    const session = await this.checkoutSession(stripeSecretKey, ref, credits, amountCents, returnBase, customerId);
     if (session === null) {
       await this.funding.failCreditPurchase(ref).catch(() => undefined);
       throw new AccountError(503, PAYMENT_PAGE_UNAVAILABLE);
@@ -191,7 +235,8 @@ export class CreditPurchaseService {
     return { purchaseId: ref.purchaseId, checkoutUrl: session.url, credits, amountCents };
   }
 
-  private async checkoutSession(secretKey: string, ref: { tenantId: string; organizationId: string; purchaseId: string }, credits: number, amountCents: number, returnBase: string) {
+  private async checkoutSession(secretKey: string, ref: { tenantId: string; organizationId: string; purchaseId: string }, credits: number, amountCents: number, returnBase: string,
+    customerId: string | null) {
     const back = `${returnBase}/billing/return?purchase=${ref.purchaseId}`;
     const form = new URLSearchParams([
       ['mode', 'payment'],
@@ -203,6 +248,9 @@ export class CreditPurchaseService {
       ['metadata[purchase_id]', ref.purchaseId],
       ['metadata[organization_id]', ref.organizationId],
       ['metadata[tenant_id]', ref.tenantId],
+      // One reusable customer per business: a repeat purchase passes the stored customer, and a first one asks Stripe to
+      // make a customer, whose id comes back in the verified paid event.
+      customerId === null ? ['customer_creation', 'always'] : ['customer', customerId],
       ['expires_at', String(Math.floor(this.now() / 1000) + CHECKOUT_LIFETIME_SECONDS)],
       ['success_url', back],
       ['cancel_url', `${back}&canceled=1`],
@@ -308,17 +356,61 @@ const sessionSchema = z.object({
   amount_total: z.number().nullish(),
   currency: z.string().nullish(),
   metadata: z.record(z.string(), z.string()).nullish(),
+  /** The customer's id. Stripe sends the id (not an expanded object) in an event, and null for a guest. */
+  customer: z.unknown().optional(),
+  client_reference_id: z.string().nullish(),
 });
 
 export interface WebhookAnswer { status: number; body: Record<string, unknown> }
 
-export interface StripeWebhookOptions { settings: BillingSettings; now?: () => number }
+export interface StripeWebhookOptions {
+  settings: BillingSettings;
+  /** Where a verified paid event and its customer are stored before the purchase is paid. */
+  ledger: Pick<PaymentLedger, 'recordVerifiedPayment'>;
+  now?: () => number;
+}
+
+async function sha256Hex(bytes: Uint8Array): Promise<string> {
+  return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes as Uint8Array<ArrayBuffer>)), (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
 
 export class StripeWebhookService {
   private readonly now: () => number;
 
-  constructor(private readonly funding: Pick<FundingService, 'resolveCreditPurchase'>, private readonly options: StripeWebhookOptions) {
+  constructor(private readonly funding: Pick<FundingService, 'previewCreditPurchase' | 'resolveCreditPurchase'>, private readonly options: StripeWebhookOptions) {
     this.now = options.now ?? Date.now;
+  }
+
+  /**
+   * A paid event, before the purchase is paid: ask the funding service whether this event could pay its purchase (nothing
+   * is written), then store the verified event and the business's customer in the ledger, against the stored purchase's own
+   * business and tenant. False when the event pays nothing, so nothing is stored for it.
+   */
+  private async storePayment(event: z.infer<typeof eventSchema>, object: z.infer<typeof sessionSchema>, raw: Uint8Array): Promise<boolean> {
+    const ask = {
+      sessionId: object.id, purchaseId: object.metadata?.purchase_id ?? null, organizationId: object.metadata?.organization_id ?? null,
+      tenantId: object.metadata?.tenant_id ?? null, amountTotal: object.amount_total ?? null, currency: object.currency ?? null,
+    };
+    const payable = await this.funding.previewCreditPurchase(ask);
+    if (payable.outcome === 'ignored') {
+      if (payable.reason === 'amount_mismatch' || payable.reason === 'metadata_mismatch')
+        console.error(JSON.stringify({ event: 'credit-purchase-mismatch', reason: payable.reason, purchaseId: payable.purchaseId, eventId: event.id }));
+      return false;
+    }
+    // The customer comes from this verified event, and nothing else.
+    const customerId = typeof object.customer === 'string' && CUSTOMER_ID.test(object.customer) ? object.customer : null;
+    if (customerId === null) {
+      console.error(JSON.stringify({ event: 'credit-purchase-no-customer', purchaseId: payable.purchaseId, eventId: event.id }));
+      return false;
+    }
+    await this.options.ledger.recordVerifiedPayment({
+      eventId: event.id, customerId, organizationId: payable.organizationId, tenantId: payable.tenantId,
+      payloadHash: await sha256Hex(raw), eventType: event.type,
+      payload: { id: event.id, type: event.type, data: { object: {
+        id: object.id, payment_status: object.payment_status ?? null, amount_total: object.amount_total ?? null, currency: object.currency ?? null,
+        customer: customerId, client_reference_id: object.client_reference_id ?? null, metadata: object.metadata ?? null } } },
+    });
+    return true;
   }
 
   /**
@@ -358,6 +450,7 @@ export class StripeWebhookService {
     // A completed session that is not paid yet is waiting on a delayed payment; its own event settles it.
     if (kind === 'paid' && object.payment_status !== 'paid') return received;
     try {
+      if (kind === 'paid' && !(await this.storePayment(event, object, raw))) return received;
       const result = await this.funding.resolveCreditPurchase({
         kind, sessionId: object.id, eventId: event.id,
         purchaseId: object.metadata?.purchase_id ?? null, organizationId: object.metadata?.organization_id ?? null, tenantId: object.metadata?.tenant_id ?? null,
@@ -369,6 +462,12 @@ export class StripeWebhookService {
       if (error instanceof FundingError) {
         // A refusal a retry will not change. Answering 200 stops Stripe from sending it again; the log names it.
         console.error(JSON.stringify({ event: 'credit-purchase-refused', code: error.code, eventId: event.id }));
+        return received;
+      }
+      if (error instanceof AccountError && error.status === 409) {
+        // The ledger refused: the event is stored with other contents, or the customer is not this business's. A retry
+        // will not change it, and nothing was paid. The log carries the event id to repair it by hand.
+        console.error(JSON.stringify({ event: 'credit-purchase-ledger-refused', code: error.code ?? 'conflict', eventId: event.id }));
         return received;
       }
       console.error(JSON.stringify({ event: 'credit-purchase-webhook-failed', eventId: event.id }));

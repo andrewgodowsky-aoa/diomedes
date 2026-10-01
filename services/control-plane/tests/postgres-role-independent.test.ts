@@ -93,7 +93,11 @@ describe.skipIf(!ownerUrl)('Independent real Neon runtime role qualification', (
     ['history truncation', 'TRUNCATE control_plane.account_events'],
     ['migration mutation', 'UPDATE control_plane.schema_migrations SET name=name WHERE false'],
     ['commercial mutation', 'DELETE FROM control_plane.billing_customers WHERE false'],
-    ['commercial reads', 'SELECT * FROM control_plane.billing_customers LIMIT 1'],
+    // The credit purchase receiver stores customers and verified events on this login (SELECT, INSERT), never rewrites or removes one.
+    ['customer rewrite', 'UPDATE control_plane.billing_customers SET customer_id=customer_id WHERE false'],
+    ['inbox rewrite', 'UPDATE control_plane.webhook_inbox SET state=state WHERE false'],
+    ['inbox removal', 'DELETE FROM control_plane.webhook_inbox WHERE false'],
+    ['commercial reads', 'SELECT * FROM control_plane.subscriptions LIMIT 1'],
     ['setup rewrite', 'UPDATE control_plane.organization_setups SET revision=revision WHERE false'],
     ['setup removal', 'DELETE FROM control_plane.organization_setups WHERE false'],
   ])('refuses %s with PostgreSQL insufficient_privilege', async (_name, sql) => {

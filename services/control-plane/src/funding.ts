@@ -302,6 +302,16 @@ function requireId(value: unknown, field: string): string {
   return value;
 }
 
+/** A paid event names a purchase, business and tenant; they must all be this stored purchase's own. */
+function namesAnotherPurchase(stored: CreditPurchaseRow, event: { purchaseId: string | null; organizationId: string | null; tenantId: string | null }): boolean {
+  return stored.purchaseId !== event.purchaseId || stored.organizationId !== event.organizationId || stored.tenantId !== event.tenantId;
+}
+
+/** A paid event must carry the stored amount and currency, the ones the purchase was made at. */
+function paysAnotherAmount(stored: CreditPurchaseRow, event: { amountTotal: number | null; currency: string | null }): boolean {
+  return event.amountTotal !== stored.amountCents || typeof event.currency !== 'string' || event.currency.toLowerCase() !== stored.currency;
+}
+
 function requireMoney(value: unknown, field: string, positive = true): MicroUsd {
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0 || (positive && value === 0))
     throw new FundingError(422, `Provide ${field} as a ${positive ? 'positive ' : ''}whole number of micro-USD.`, 'invalid_amount');
@@ -586,6 +596,26 @@ export class FundingService {
   }
 
   /**
+   * Whether a verified paid event could pay a purchase, read-only: the checks resolveCreditPurchase makes
+   * before it writes, in the same order, with nothing written. The webhook asks it first so the business
+   * and tenant it stores the payment against are this stored purchase's own, never the event's metadata.
+   * Replays, mismatches and unknown sessions come back ignored, with the reason, and change nothing.
+   */
+  async previewCreditPurchase(input: { sessionId: string; purchaseId: string | null; tenantId: string | null; organizationId: string | null;
+    amountTotal: number | null; currency: string | null }):
+    Promise<{ outcome: 'payable'; tenantId: string; organizationId: string; purchaseId: string } | { outcome: 'ignored'; reason: string; purchaseId: string | null }> {
+    const ignored = (reason: string, purchaseId: string | null = null) => ({ outcome: 'ignored' as const, reason, purchaseId });
+    return this.repository.transaction(async (tx) => {
+      const found = await tx.creditPurchaseBySession(input.sessionId);
+      if (!found) return ignored('unknown_session');
+      if (namesAnotherPurchase(found, input)) return ignored('metadata_mismatch', found.purchaseId);
+      if (found.state !== 'pending') return ignored(`already_${found.state}`, found.purchaseId);
+      if (paysAnotherAmount(found, input)) return ignored('amount_mismatch', found.purchaseId);
+      return { outcome: 'payable' as const, tenantId: found.tenantId, organizationId: found.organizationId, purchaseId: found.purchaseId };
+    });
+  }
+
+  /**
    * Apply a verified Stripe event to the purchase its Checkout Session pays. Only a pending purchase
    * moves, and only when the session and the purchase, business and tenant the event names are this
    * row's own. A paid event also needs the amount and currency to be the stored ones, and then marks the
@@ -601,8 +631,7 @@ export class FundingService {
     return this.repository.transaction(async (tx) => {
       const found = await tx.creditPurchaseBySession(input.sessionId);
       if (!found) return ignored('unknown_session');
-      if (found.purchaseId !== input.purchaseId || found.organizationId !== input.organizationId || found.tenantId !== input.tenantId)
-        return ignored('metadata_mismatch', found.purchaseId);
+      if (namesAnotherPurchase(found, input)) return ignored('metadata_mismatch', found.purchaseId);
       await tx.lockOrganization(found.tenantId, found.organizationId);
       const purchase = await tx.creditPurchase(found.tenantId, found.purchaseId);
       if (!purchase || purchase.checkoutSessionId !== input.sessionId) return ignored('unknown_session', found.purchaseId);
@@ -612,8 +641,7 @@ export class FundingService {
         await tx.saveCreditPurchase({ ...purchase, state: input.kind, resolvedAt, stripeEventId: eventId });
         return { outcome: input.kind, reason: null, purchaseId: purchase.purchaseId };
       }
-      if (input.amountTotal !== purchase.amountCents || typeof input.currency !== 'string' || input.currency.toLowerCase() !== purchase.currency)
-        return ignored('amount_mismatch', purchase.purchaseId);
+      if (paysAnotherAmount(purchase, input)) return ignored('amount_mismatch', purchase.purchaseId);
       await this.recordTopUpWithin(tx, { tenantId: purchase.tenantId, organizationId: purchase.organizationId, topUpId: purchase.purchaseId,
         amountMicroUsd: creditAmount(purchase.credits), sourceEventId: eventId });
       await tx.saveCreditPurchase({ ...purchase, state: 'paid', resolvedAt, stripeEventId: eventId });

@@ -11,6 +11,10 @@
 -- holds (013) and the credit purchases (015: src/credit-purchases.ts, and the
 -- top-up a verified payment records). tests/funding-permissions.test.ts
 -- replays those paths and fails when this list and that SQL differ either way.
+-- A top-up references webhook_inbox (003), checked as the table owner, so the
+-- verified event it names is stored first, on the Worker login (runtime-permissions.sql),
+-- and this login is granted neither webhook_inbox nor billing_customers: it cannot
+-- make bought credits without an event the receiver stored.
 -- Account, identity, session, grant, admission and routing tables stay with the
 -- Worker login (DATABASE_URL); the gateway reads them there.
 -- Nothing else is needed: these tables have no sequences, triggers or row

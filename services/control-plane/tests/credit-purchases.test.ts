@@ -6,7 +6,7 @@
  * sends (a mocked fetch: nothing here reaches Stripe), the signature rules, and what a paid, repeated,
  * mismatched, unknown or expired event does. Offline memory adapters only.
  */
-import { createHmac } from 'node:crypto';
+import { createHash, createHmac } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CREDIT_MICRO_USD, creditAmount } from '../../../shared/managed-usage.js';
@@ -17,6 +17,7 @@ import {
   CREDIT_PURCHASE_STEP,
   CreditPurchaseService,
   StripeWebhookService,
+  type PaymentLedger,
   creditPriceCents,
   readBillingSettings,
   verifyStripeSignature,
@@ -24,6 +25,7 @@ import {
 import { createFauxCloud } from '../src/faux/cloud.js';
 import { DEMO_ACCOUNTS, FAUX_DEMO_PASSWORD, seedDemo } from '../src/faux/seed.js';
 import { PostgresFundingTransaction } from '../src/funding-postgres.js';
+import { memoryPaymentLedger } from '../src/faux/payment-ledger.js';
 import type { SqlClient } from '../src/postgres.js';
 import { FundingMemoryRepository } from './support/funding-memory.js';
 import { now, setup, validEnv } from './support/fixtures.js';
@@ -32,6 +34,8 @@ const SECRET = 'whsec_fixture_secret_for_tests';
 const KEY = 'sk_test_fixture_key_for_tests';
 const env = { ...validEnv, CREDIT_PRICE_CENTS_PER_100: '1200', STRIPE_SECRET_KEY: KEY, STRIPE_WEBHOOK_SECRET: SECRET };
 const ORIGIN = 'http://127.0.0.1:8791';
+/** The customer a paid event names in these tests, unless one says otherwise. */
+const CUSTOMER = 'cus_fixture_1';
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -49,6 +53,20 @@ async function fixture(options: { env?: Record<string, unknown>; stripe?: (call:
   const clock = { at: now };
   const funding = new FundingService(repository, { now: () => clock.at });
   const calls: StripeCall[] = [];
+  // The Worker login's side: the customer and the stored verified events. A separate store from the funding rows, as the two
+  // logins are separate. `hooks.afterRecord` runs once the event is stored and before the purchase is paid.
+  const { state: ledgerState, ledger: memoryLedger } = memoryPaymentLedger(() => clock.at);
+  const hooks: { afterRecord?: () => void | Promise<void> } = {};
+  const ledgerCalls: string[] = [];
+  const ledger: PaymentLedger = {
+    storedCustomer: (ref) => { ledgerCalls.push('storedCustomer'); return memoryLedger.storedCustomer(ref); },
+    recordVerifiedPayment: async (input) => {
+      ledgerCalls.push('recordVerifiedPayment');
+      const result = await memoryLedger.recordVerifiedPayment(input);
+      await hooks.afterRecord?.();
+      return result;
+    },
+  };
   const stripeFetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const headers = Object.fromEntries(new Headers(init?.headers).entries());
     const call: StripeCall = { url: String(input), method: init?.method ?? 'GET', headers, form: new URLSearchParams(String(init?.body ?? '')) };
@@ -60,9 +78,9 @@ async function fixture(options: { env?: Record<string, unknown>; stripe?: (call:
   const handler = createHandler(() => accounts, (_config, account) => new UsageService(account, funding), {
     createPurchased: (_config, account) => new PurchasedUsageService(account, funding),
     createCreditPurchases: (_config, account, runtimeEnv) => new CreditPurchaseService(account, funding, {
-      settings: readBillingSettings(runtimeEnv), fetch: stripeFetch, now: () => clock.at,
+      settings: readBillingSettings(runtimeEnv), fetch: stripeFetch, now: () => clock.at, ledger,
     }),
-    createStripeWebhook: (_config, runtimeEnv) => new StripeWebhookService(funding, { settings: readBillingSettings(runtimeEnv), now: () => clock.at }),
+    createStripeWebhook: (_config, runtimeEnv) => new StripeWebhookService(funding, { settings: readBillingSettings(runtimeEnv), now: () => clock.at, ledger }),
   });
   const runtime = options.env ?? env;
   const request = (path: string, init: RequestInit & { token?: string | null } = {}) => {
@@ -97,13 +115,14 @@ async function fixture(options: { env?: Record<string, unknown>; stripe?: (call:
   const sessionFor = (row: { purchaseId: string; checkoutSessionId: string | null; amountCents: number }, overrides: Record<string, unknown> = {}) => ({
     id: row.checkoutSessionId, object: 'checkout.session', payment_status: 'paid', status: 'complete', amount_total: row.amountCents, currency: 'usd',
     client_reference_id: row.purchaseId,
+    customer: CUSTOMER,
     metadata: { purchase_id: row.purchaseId, organization_id: organization.id, tenant_id: organization.tenantId }, ...overrides,
   });
   const eventBody = (type: string, object: unknown, id = 'evt_paid_1') =>
     JSON.stringify({ id, object: 'event', type, created: Math.floor(clock.at / 1000), data: { object } });
   const minutes = (count: number) => { clock.at += count * 60_000; };
   return { accounts, organization, other, repository, funding, handler, calls, base, request, quote, buy, read, balance, sign, webhook,
-    purchases, topUps, bought, sessionFor, eventBody, minutes, clock };
+    purchases, topUps, bought, sessionFor, eventBody, minutes, clock, ledger, ledgerState, ledgerCalls, hooks };
 }
 
 describe('the quote', () => {
@@ -221,7 +240,10 @@ describe('buying', () => {
       'metadata[organization_id]': organization.id,
       'metadata[tenant_id]': organization.tenantId,
       success_url: `${ORIGIN}/billing/return?purchase=${purchaseId}`,
+      // A business with no customer yet asks Stripe to make one.
+      customer_creation: 'always',
     });
+    expect(call.form.has('customer')).toBe(false);
     expect(form.cancel_url).toBe(`${ORIGIN}/billing/return?purchase=${purchaseId}&canceled=1`);
     // Stripe takes an expiry between 30 minutes and 24 hours out; this one is just past the shortest.
     const lifetime = Number(form.expires_at) - Math.floor(clock.at / 1000);
@@ -561,10 +583,11 @@ describe('the webhook', () => {
   });
 
   it('writes the paid purchase and its top-up in one transaction: a failed commit leaves neither, and the retry lands both', async () => {
-    const { bought, webhook, topUps, sessionFor, eventBody, purchases, repository } = await fixture();
+    const { bought, webhook, topUps, sessionFor, eventBody, purchases, repository, hooks } = await fixture();
     const { row } = await bought(1000);
     const body = eventBody('checkout.session.completed', sessionFor(row));
-    repository.failNextCommit('before-apply');
+    // The event is stored first; the funding transaction that pays the purchase then fails its commit.
+    hooks.afterRecord = () => { hooks.afterRecord = undefined; repository.failNextCommit('before-apply'); };
     const failed = await webhook(body);
     expect(failed.status).toBe(503);
     expect(topUps()).toEqual([]);
@@ -581,6 +604,180 @@ describe('the webhook', () => {
     const answers = await Promise.all([webhook(body), webhook(body), webhook(body)]);
     expect(answers.map((answer) => answer.status)).toEqual([200, 200, 200]);
     expect(topUps()).toHaveLength(1);
+  });
+});
+
+describe('one Stripe customer per business, and the stored event a top-up names', () => {
+  it('stores the verified event and the customer it names before the purchase is paid, and the top-up names that event', async () => {
+    const { bought, webhook, sessionFor, eventBody, organization, ledgerState, hooks, topUps, purchases } = await fixture();
+    const { row } = await bought(1000);
+    const body = eventBody('checkout.session.completed', sessionFor(row, { customer_details: { email: 'buyer@example.test', name: 'A Buyer', address: { line1: '1 Test Street' } } }));
+    let seenAtStore: { topUps: number; state: string } | null = null;
+    hooks.afterRecord = () => { seenAtStore = { topUps: topUps().length, state: purchases()[0].state }; };
+    expect((await webhook(body)).status).toBe(200);
+    // The ledger had the event, and the funding rows had not yet moved.
+    expect(seenAtStore).toEqual({ topUps: 0, state: 'pending' });
+    expect(ledgerState.billingCustomers).toEqual([{ customerId: CUSTOMER, tenantId: organization.tenantId, organizationId: organization.id }]);
+    expect(ledgerState.verifiedEvents).toEqual([expect.objectContaining({
+      eventId: 'evt_paid_1', customerId: CUSTOMER, organizationId: organization.id, tenantId: organization.tenantId,
+      eventType: 'checkout.session.completed', state: 'pending',
+      payloadHash: createHash('sha256').update(body).digest('hex'),
+    })]);
+    // The top-up refers to the stored event, and the payload keeps what is acted on and nothing the buyer typed.
+    expect(topUps()[0].sourceEventId).toBe(ledgerState.verifiedEvents[0].eventId);
+    expect(JSON.stringify(ledgerState.verifiedEvents[0].payload)).not.toMatch(/buyer@example|A Buyer|Test Street/);
+    expect(ledgerState.verifiedEvents[0].payload).toMatchObject({ id: 'evt_paid_1', data: { object: { id: row.checkoutSessionId, customer: CUSTOMER, amount_total: 12000 } } });
+  });
+
+  it('takes the business and tenant from the stored purchase, never from the event', async () => {
+    const { bought, webhook, sessionFor, eventBody, organization, ledgerState, other } = await fixture();
+    const { row } = await bought(1000);
+    // Metadata that names another business does not match the stored purchase, so nothing is stored for it.
+    await webhook(eventBody('checkout.session.completed', sessionFor(row, { metadata: { purchase_id: row.purchaseId, organization_id: other.id, tenant_id: other.tenantId } }), 'evt_other'));
+    expect(ledgerState).toEqual({ billingCustomers: [], verifiedEvents: [] });
+    await webhook(eventBody('checkout.session.completed', sessionFor(row), 'evt_own'));
+    expect(ledgerState.verifiedEvents.map((event) => [event.organizationId, event.tenantId])).toEqual([[organization.id, organization.tenantId]]);
+  });
+
+  it('passes the stored customer on the next purchase and asks Stripe to make one only the first time', async () => {
+    const { bought, webhook, sessionFor, eventBody, calls, buy } = await fixture();
+    const first = await bought(100);
+    expect(calls[0].form.get('customer_creation')).toBe('always');
+    expect(calls[0].form.has('customer')).toBe(false);
+    await webhook(eventBody('checkout.session.completed', sessionFor(first.row), 'evt_a'));
+    expect((await buy({ credits: 200 })).status).toBe(201);
+    expect(calls[1].form.get('customer')).toBe(CUSTOMER);
+    expect(calls[1].form.has('customer_creation')).toBe(false);
+  });
+
+  it('keeps asking Stripe to make a customer until a verified event has named one', async () => {
+    const { bought, buy, calls, ledgerState } = await fixture();
+    await bought(100);
+    expect((await buy({ credits: 100 })).status).toBe(201);
+    expect(calls.map((call) => call.form.get('customer_creation'))).toEqual(['always', 'always']);
+    expect(ledgerState.billingCustomers).toEqual([]);
+  });
+
+  it('reuses one customer for every payment of a business, and stores each event once', async () => {
+    const { bought, webhook, sessionFor, eventBody, ledgerState, topUps } = await fixture();
+    const first = await bought(100);
+    const second = await bought(300);
+    await webhook(eventBody('checkout.session.completed', sessionFor(first.row), 'evt_a'));
+    await webhook(eventBody('checkout.session.completed', sessionFor(second.row), 'evt_b'));
+    expect(ledgerState.billingCustomers).toHaveLength(1);
+    expect(ledgerState.verifiedEvents.map((event) => event.eventId)).toEqual(['evt_a', 'evt_b']);
+    expect(topUps().map((row) => row.sourceEventId)).toEqual(['evt_a', 'evt_b']);
+  });
+
+  it('refuses a paid event that names another customer than the business already has, and pays nothing', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { bought, webhook, sessionFor, eventBody, ledgerState, topUps, purchases } = await fixture();
+    const first = await bought(100);
+    const second = await bought(300);
+    await webhook(eventBody('checkout.session.completed', sessionFor(first.row), 'evt_a'));
+    const refused = await webhook(eventBody('checkout.session.completed', sessionFor(second.row, { customer: 'cus_someone_else' }), 'evt_b'));
+    expect(refused.status).toBe(200);
+    expect(ledgerState.billingCustomers).toEqual([expect.objectContaining({ customerId: CUSTOMER })]);
+    expect(ledgerState.verifiedEvents.map((event) => event.eventId)).toEqual(['evt_a']);
+    expect(topUps()).toHaveLength(1);
+    expect(purchases().map((row) => row.state)).toEqual(['paid', 'pending']);
+    expect(logged.mock.calls.map((call) => JSON.parse(String(call[0])))).toContainEqual({ event: 'credit-purchase-ledger-refused', code: 'customer_mismatch', eventId: 'evt_b' });
+  });
+
+  it('refuses a customer that already belongs to another business', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { bought, webhook, sessionFor, eventBody, ledgerState, topUps, organization, other, ledger } = await fixture();
+    // Another business already owns the customer a paid event now names for this one.
+    await ledger.recordVerifiedPayment({ eventId: 'evt_dave', customerId: CUSTOMER, organizationId: other.id, tenantId: other.tenantId,
+      payloadHash: 'a'.repeat(64), eventType: 'checkout.session.completed', payload: {} });
+    const { row } = await bought(100);
+    expect((await webhook(eventBody('checkout.session.completed', sessionFor(row), 'evt_a'))).status).toBe(200);
+    expect(ledgerState.verifiedEvents.map((event) => event.eventId)).toEqual(['evt_dave']);
+    expect(ledgerState.billingCustomers).toEqual([{ customerId: CUSTOMER, tenantId: other.tenantId, organizationId: other.id }]);
+    expect(topUps()).toEqual([]);
+    expect(organization.id).not.toBe(other.id);
+  });
+
+  it('stores nothing, and pays nothing, for a paid event with no customer', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { bought, webhook, sessionFor, eventBody, ledgerState, topUps, purchases } = await fixture();
+    const { row } = await bought(100);
+    for (const [index, customer] of [null, undefined, 'not_a_customer', 'cus_', { id: 'cus_object' }, 42].entries())
+      expect((await webhook(eventBody('checkout.session.completed', sessionFor(row, { customer }), `evt_none_${index}`))).status).toBe(200);
+    expect(ledgerState).toEqual({ billingCustomers: [], verifiedEvents: [] });
+    expect(topUps()).toEqual([]);
+    expect(purchases()[0].state).toBe('pending');
+    expect(logged.mock.calls.some((call) => JSON.parse(String(call[0])).event === 'credit-purchase-no-customer')).toBe(true);
+  });
+
+  it('stores nothing for an event it does not verify, replay, mismatch, expire or fail', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { bought, webhook, sessionFor, eventBody, ledgerState, ledgerCalls, sign, clock } = await fixture();
+    const { row } = await bought(1000);
+    const body = eventBody('checkout.session.completed', sessionFor(row));
+    expect((await webhook(body, sign(body, clock.at, 'whsec_other'))).status).toBe(400);
+    expect((await webhook(eventBody('checkout.session.completed', sessionFor(row, { amount_total: 1 }), 'evt_amount'))).status).toBe(200);
+    expect((await webhook(eventBody('checkout.session.completed', sessionFor(row, { id: 'cs_test_unknown' }), 'evt_unknown'))).status).toBe(200);
+    expect((await webhook(eventBody('checkout.session.completed', sessionFor(row, { payment_status: 'unpaid' }), 'evt_unpaid'))).status).toBe(200);
+    expect((await webhook(eventBody('checkout.session.expired', sessionFor(row, { payment_status: 'unpaid' }), 'evt_expired'))).status).toBe(200);
+    expect((await webhook(eventBody('checkout.session.async_payment_failed', sessionFor(row), 'evt_failed'))).status).toBe(200);
+    expect(ledgerState).toEqual({ billingCustomers: [], verifiedEvents: [] });
+    expect(ledgerCalls.filter((call) => call === 'recordVerifiedPayment')).toEqual([]);
+    // A replay of a paid event, once it is paid, is not stored a second time either.
+    const paid = await bought(100);
+    const paidBody = eventBody('checkout.session.completed', sessionFor(paid.row), 'evt_paid_once');
+    await webhook(paidBody);
+    await webhook(paidBody);
+    expect(ledgerCalls.filter((call) => call === 'recordVerifiedPayment')).toHaveLength(1);
+    expect(ledgerState.verifiedEvents).toHaveLength(1);
+  });
+
+  it('lets Stripe\'s retry finish a payment whose funding step failed, with the event and the customer stored once', async () => {
+    const { bought, webhook, sessionFor, eventBody, ledgerState, topUps, purchases, repository, hooks } = await fixture();
+    const { row } = await bought(1000);
+    const body = eventBody('checkout.session.completed', sessionFor(row));
+    hooks.afterRecord = () => { hooks.afterRecord = undefined; repository.failNextCommit('before-apply'); };
+    expect((await webhook(body)).status).toBe(503);
+    // Stored, not yet applied.
+    expect(ledgerState.verifiedEvents).toHaveLength(1);
+    expect(ledgerState.billingCustomers).toHaveLength(1);
+    expect(topUps()).toEqual([]);
+    expect(purchases()[0].state).toBe('pending');
+    expect((await webhook(body)).status).toBe(200);
+    expect(ledgerState.verifiedEvents).toHaveLength(1);
+    expect(ledgerState.billingCustomers).toHaveLength(1);
+    expect(topUps()).toHaveLength(1);
+    expect(purchases()[0].state).toBe('paid');
+  });
+
+  it('answers 503 so Stripe tries again when the ledger cannot be written, and pays nothing', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { bought, webhook, sessionFor, eventBody, topUps, purchases, ledger } = await fixture();
+    const { row } = await bought(100);
+    vi.spyOn(ledger, 'recordVerifiedPayment').mockRejectedValueOnce(new Error('connection reset'));
+    const body = eventBody('checkout.session.completed', sessionFor(row));
+    expect((await webhook(body)).status).toBe(503);
+    expect(topUps()).toEqual([]);
+    expect(purchases()[0].state).toBe('pending');
+    expect((await webhook(body)).status).toBe(200);
+    expect(topUps()).toHaveLength(1);
+  });
+
+  it('reads the stored customer before anything is written, and leaves no purchase when that read fails', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { buy, purchases, calls, ledger } = await fixture();
+    vi.spyOn(ledger, 'storedCustomer').mockRejectedValueOnce(new Error('connection reset'));
+    expect((await buy({ credits: 100 })).status).toBeGreaterThanOrEqual(500);
+    expect(purchases()).toEqual([]);
+    expect(calls).toEqual([]);
+  });
+
+  it('never takes a customer id from the request: a body that names one is refused', async () => {
+    const { buy, purchases, calls } = await fixture();
+    for (const body of [{ credits: 100, customer: 'cus_attacker' }, { credits: 100, customerId: 'cus_attacker' }])
+      expect((await buy(body)).status).toBe(422);
+    expect(purchases()).toEqual([]);
+    expect(calls).toEqual([]);
   });
 });
 
@@ -681,10 +878,15 @@ describe('migration 015 and its place in the list', () => {
     expect(sql).toMatch(/CHECK \(state <> 'paid' OR \(stripe_event_id IS NOT NULL AND stripe_checkout_session_id IS NOT NULL\)\)/);
   });
 
-  it('frees credit_topups of its reference to the stored webhook event, and only that', () => {
-    expect(sql).toMatch(/confrelid = 'control_plane\.webhook_inbox'::regclass/);
-    expect(sql).toMatch(/ALTER TABLE control_plane\.credit_topups DROP CONSTRAINT %I/);
-    expect(sql.match(/ALTER TABLE/g)).toHaveLength(1);
+  it('is purely additive: it keeps credit_topups\'s reference to the stored webhook event and changes no existing table', () => {
+    const code = sql.split('\n').filter((line) => !line.startsWith('--')).join('\n');
+    expect(code).not.toMatch(/\bALTER\b|\bDROP\b|DROP CONSTRAINT|\bDO\s+\$\$|\bUPDATE\b|\bINSERT\b|regclass|credit_topups|webhook_inbox|billing_customers/i);
+    expect(code.match(/CREATE TABLE/g)).toHaveLength(1);
+    expect(code.match(/CREATE INDEX/g)).toHaveLength(1);
+    expect(code.match(/\bCREATE\b/g)).toHaveLength(2);
+    // The reference it leaves alone is still in migration 003.
+    const funded = readFileSync(new URL('../migrations/003_funded_jobs.sql', import.meta.url), 'utf8');
+    expect(funded).toMatch(/CREATE TABLE control_plane\.credit_topups[\s\S]*FOREIGN KEY \(tenant_id,provider,source_event_id\) REFERENCES control_plane\.webhook_inbox\(tenant_id,provider,event_id\)/);
   });
 
   it('is listed in the runner after 013, and names no markup', () => {
@@ -739,6 +941,29 @@ describe('the faux cloud', () => {
     expect(paid.headers.get('location')).toBe(`http://127.0.0.1:8795/billing/return?purchase=${body.purchaseId}`);
     expect((await cloud.handle(new Request(`${body.checkoutUrl}/complete`, { method: 'GET' }))).status).toBe(405);
     expect((await cloud.handle(new Request(`http://127.0.0.1:8795/faux/checkout/cs_faux_${'a'.repeat(24)}`))).status).toBe(404);
+  });
+
+  it('makes the business one customer on its first payment and reuses it on the next', async () => {
+    const { cloud, organizationId, call } = await faux();
+    const buy = async (credits: number) => {
+      const body = await (await call('POST', `/account/organizations/${organizationId}/credit-purchases`, { credits })).json();
+      return new URL(body.checkoutUrl).pathname.split('/').pop()!;
+    };
+    const first = await buy(100);
+    const { tenantId } = cloud.store.snapshot().funding.creditPurchases[0];
+    expect(await cloud.paymentLedger.storedCustomer({ tenantId, organizationId })).toBeNull();
+    await cloud.completeCheckout(first);
+    const customer = await cloud.paymentLedger.storedCustomer({ tenantId, organizationId });
+    expect(customer).toMatch(/^cus_faux_[a-z0-9]+$/);
+    const second = await buy(200);
+    await cloud.completeCheckout(second);
+    const { billingCustomers, verifiedEvents, topUps } = cloud.store.snapshot().funding;
+    expect(billingCustomers).toEqual([{ customerId: customer, tenantId, organizationId }]);
+    expect(verifiedEvents.map((event) => event.customerId)).toEqual([customer, customer]);
+    expect(topUps.slice(-2).map((row) => row.sourceEventId)).toEqual(verifiedEvents.map((event) => event.eventId));
+    // Paying the first again changes nothing: the event is already stored, once.
+    await cloud.completeCheckout(first);
+    expect(cloud.store.snapshot().funding.verifiedEvents).toHaveLength(2);
   });
 
   it('can leave the price unset, which answers 503 as the Worker does', async () => {

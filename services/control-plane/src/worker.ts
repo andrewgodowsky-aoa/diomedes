@@ -151,10 +151,14 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
     }
     return new FundingService(new PostgresFundingRepository(neonClientFactory(config.fundingDatabaseUrl)));
   };
+  // The business's Stripe customer and the verified events its payments arrive in (billing_customers and webhook_inbox) are the
+  // receiver's records, written on the Worker login (DATABASE_URL), never on the funding login: a top-up names a stored event,
+  // so the funding login alone cannot make bought credits.
+  const ledgerFor = (config: Configuration) => new PostgresRepository(neonClientFactory(config.databaseUrl));
   const createCreditPurchases = options.createCreditPurchases ?? ((config: Configuration, accounts: AccountService, env: Record<string, unknown>) =>
-    new CreditPurchaseService(accounts, fundingFor(config, 'credit-purchases-funding-database-unavailable'), { settings: readBillingSettings(env) }));
+    new CreditPurchaseService(accounts, fundingFor(config, 'credit-purchases-funding-database-unavailable'), { settings: readBillingSettings(env), ledger: ledgerFor(config) }));
   const createStripeWebhook = options.createStripeWebhook ?? ((config: Configuration, env: Record<string, unknown>) =>
-    new StripeWebhookService(fundingFor(config, 'credit-purchases-webhook-funding-database-unavailable'), { settings: readBillingSettings(env) }));
+    new StripeWebhookService(fundingFor(config, 'credit-purchases-webhook-funding-database-unavailable'), { settings: readBillingSettings(env), ledger: ledgerFor(config) }));
   const createRouting = options.createRouting ?? ((config: Configuration, accounts: AccountService) =>
     new RoutingService(accounts, new PostgresCommercialRepository(neonClientFactory(config.databaseUrl)), Date.now,
       config.fundingDatabaseUrl ? new FundingService(new PostgresFundingRepository(neonClientFactory(config.fundingDatabaseUrl))) : null));

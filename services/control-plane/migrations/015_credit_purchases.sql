@@ -8,13 +8,14 @@
 -- is the purchase id. A purchase is paid only by a verified Stripe event that names this purchase's own
 -- checkout session and carries this row's own amount, and a top-up is recorded in that same transaction.
 --
--- A top-up has been tied to a stored webhook event (003: credit_topups.source_event_id references
--- webhook_inbox) and that event to a billing customer (002), neither of which a Checkout payment has: it
--- creates no Stripe customer for the business, and a business has at most one customer row. The verified
--- event id is kept on the purchase row instead (stripe_event_id, unique) and on the top-up row
--- (source_event_id, still unique per tenant and provider), so each top-up still names exactly one verified
--- event and one event can pay one purchase. The reference to webhook_inbox is the only thing removed; no
--- table, column or row is dropped, and the other references on credit_topups stay.
+-- This migration is additive only: one table and one index. It drops and alters nothing, and in particular it
+-- keeps the reference from a top-up to the webhook inbox (003: credit_topups.source_event_id references
+-- webhook_inbox, whose rows reference billing_customers, 002). A top-up can therefore exist only for a verified
+-- Stripe event stored in the inbox. The inbox row and the business's one Stripe customer are written first, by the
+-- Worker's login (cp_runtime) on the verified paid event; the funding login (cp_funding) then marks the purchase
+-- paid and records the top-up that names that event, and has no privilege on the inbox or the customers, so it
+-- cannot make bought credits on its own. The verified event id is also kept on the purchase row (stripe_event_id,
+-- unique), so one event can pay one purchase.
 --
 -- The credits check is a sanity bound, looser than the code's cap on purpose: the cap
 -- (shared/credit-purchases.ts) can be raised without a migration, and the amount check
@@ -42,25 +43,5 @@ CREATE TABLE control_plane.credit_purchases (
   CHECK (state <> 'paid' OR (stripe_event_id IS NOT NULL AND stripe_checkout_session_id IS NOT NULL))
 );
 CREATE INDEX credit_purchases_organization ON control_plane.credit_purchases(tenant_id,organization_id,created_at);
-
-DO $$
-DECLARE linked record;
-BEGIN
-  FOR linked IN
-    SELECT conname FROM pg_constraint
-    WHERE conrelid = 'control_plane.credit_topups'::regclass
-      AND confrelid = 'control_plane.webhook_inbox'::regclass
-      AND contype = 'f'
-  LOOP
-    EXECUTE format('ALTER TABLE control_plane.credit_topups DROP CONSTRAINT %I', linked.conname);
-  END LOOP;
-  IF EXISTS (
-    SELECT 1 FROM pg_constraint
-    WHERE conrelid = 'control_plane.credit_topups'::regclass
-      AND confrelid = 'control_plane.webhook_inbox'::regclass
-  ) THEN
-    RAISE EXCEPTION 'credit_topups still references webhook_inbox';
-  END IF;
-END $$;
 
 REVOKE ALL ON ALL TABLES IN SCHEMA control_plane FROM PUBLIC;
