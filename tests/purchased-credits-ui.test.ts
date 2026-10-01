@@ -66,6 +66,26 @@ describe('the credits you bought', () => {
     expect(page).toMatch(/included monthly usage isn’t part of this/i);
   });
 
+  it('an overdrawn balance shows Available as 0 credits and keeps the true figures', () => {
+    const page = text(
+      render({
+        state: 'ready',
+        organizationId: 'org_a',
+        balance: {
+          purchasedMicroUsd: c(100),
+          heldMicroUsd: c(70),
+          settledMicroUsd: c(70),
+          availableMicroUsd: -c(40),
+        },
+      }),
+    );
+    expect(page).toContain('Bought 100 credits');
+    expect(page).toContain('Reserved for work in flight 70 credits');
+    expect(page).toContain('Used 70 credits');
+    expect(page).toContain('Available 0 credits');
+    expect(page).not.toMatch(/-\d/);
+  });
+
   it('never shows a dollar sign or a dollar conversion', () => {
     expect(render(ready)).not.toMatch(/\$|USD|dollar/i);
   });

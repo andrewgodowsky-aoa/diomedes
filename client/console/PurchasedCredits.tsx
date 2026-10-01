@@ -52,7 +52,7 @@ export function PurchasedCreditsView({ state }: { state: PurchasedUsageState }) 
           </div>
           <div>
             <dt>Available</dt>
-            <dd className="mono">{credits(state.balance.availableMicroUsd)}</dd>
+            <dd className="mono">{credits(Math.max(0, state.balance.availableMicroUsd))}</dd>
           </div>
         </dl>
       ) : (

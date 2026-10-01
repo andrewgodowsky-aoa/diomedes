@@ -1065,6 +1065,11 @@ export interface UsageProjection {
   readonly rateCardVersion: string;
 }
 
+function topUpAvailable(topUp: TopUpTotals): MicroUsd {
+  const committed = sumMoney([topUp.heldMicroUsd, topUp.settledMicroUsd]);
+  return committed > topUp.purchasedMicroUsd ? micro(0) : subtractMoney(topUp.purchasedMicroUsd, committed);
+}
+
 export function projectUsage(input: {
   organizationId: string;
   period: {
@@ -1117,12 +1122,11 @@ export function projectUsage(input: {
         : null,
     usedPercent,
     topUp: {
-      // A top-up balance can only be overdrawn by an edit outside the ledger;
-      // subtractMoney refuses to present it rather than clamp it.
-      availableMicroUsd: subtractMoney(
-        topUp.purchasedMicroUsd,
-        sumMoney([topUp.heldMicroUsd, topUp.settledMicroUsd]),
-      ),
+      // A top-up balance can be overdrawn: a settle that arrives after its hold's
+      // lease lapsed is recorded on purpose (migration 013), while the freed credits
+      // may be held again. The projection shows zero available for that; the account
+      // service's own balance read keeps the true signed figure.
+      availableMicroUsd: topUpAvailable(topUp),
       heldMicroUsd: topUp.heldMicroUsd,
       settledThisPeriodMicroUsd: totals.settledTopUpMicroUsd,
     },

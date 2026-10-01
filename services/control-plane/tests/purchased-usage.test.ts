@@ -498,6 +498,18 @@ describe('a lapsed hold lets go on its own', () => {
     expect(read.availableMicroUsd).toBe(-creditAmount(40));
   });
 
+  it('still answers the usage read for an overdrawn business, with the top-up line at zero', async () => {
+    const { hold, settle, minutes, handler, organization } = await fixture({ purchased: 100 });
+    await hold(ask({ holdId: 'hold_a', amountMicroUsd: creditAmount(70) }));
+    minutes(PURCHASED_HOLD_LEASE_MINUTES);
+    await hold(ask({ holdId: 'hold_b', amountMicroUsd: creditAmount(70), requestDigest: 'digest-two' }));
+    await settle({ holdId: 'hold_a', debitMicroUsd: creditAmount(70) });
+    const usage = await handler(request(`/account/organizations/${organization.id}/usage`), validEnv);
+    expect(usage.status).toBe(200);
+    const body = await usage.json();
+    expect(body.projection.topUp).toMatchObject({ availableMicroUsd: 0, heldMicroUsd: creditAmount(70) });
+  });
+
   it('holds nothing more while overdrawn, with an ordinary refusal and not an error', async () => {
     const { hold, settle, minutes } = await fixture({ purchased: 100 });
     await hold(ask({ holdId: 'hold_a', amountMicroUsd: creditAmount(70) }));
