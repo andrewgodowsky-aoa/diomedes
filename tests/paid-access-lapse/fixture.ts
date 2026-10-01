@@ -141,6 +141,22 @@ export async function reviewFixture() {
     const token = await staff();
     await cloud.commercial.issueGrant(token, organizationId, { planId: 'business', source: 'internal-test', reference: 'DIO-126 regrant', note: 'Granted again.' });
   }
+  // The person's own Individual plan (DIO-128), granted and withdrawn by billing staff.
+  const individualGrants = new Map<string, string>();
+  async function personIdOf(email: string) {
+    const pair = await cloud.store.run((draft) => cloud.identity.signIn(draft.identity, { email, password: FAUX_DEMO_PASSWORD, remember: false }));
+    return (await cloud.accounts.signIn(pair.accessToken)).person.id;
+  }
+  async function grantIndividual(email: string) {
+    const personId = await personIdOf(email);
+    const { grant } = await cloud.commercial.issuePersonGrant(await staff(), personId,
+      { planId: 'individual', source: 'subscription', reference: 'DIO-128 individual', note: '' });
+    individualGrants.set(personId, grant.id);
+  }
+  async function revokeIndividual(email: string) {
+    const personId = await personIdOf(email);
+    await cloud.commercial.revokePersonGrant(await staff(), personId, individualGrants.get(personId)!, { reason: 'Individual lapse review' });
+  }
   async function ownEngine(binding: Binding) {
     await api('/ai/discover', 'POST', { consent: true });
     await api('/ai/check/claude-code', 'POST', {});
@@ -163,7 +179,7 @@ export async function reviewFixture() {
   const thread = async (binding: Binding) => (await api<{ conversations: Conversation[] }>(
     `/projects/${binding.projectId}/state`)).conversations.find((item) => item.id === binding.threadId)!;
   await open();
-  return { root, cloud, calls, request, api, signIn, staff, revoke, regrant, ownEngine, aws, say, home, thread,
+  return { root, cloud, calls, request, api, signIn, staff, revoke, regrant, grantIndividual, revokeIndividual, ownEngine, aws, say, home, thread,
     offline: (value: boolean) => { offline = value; },
     accessUnavailable: (value: boolean) => { accessUnavailable = value; },
     restart: async () => { await close(); await open(); },

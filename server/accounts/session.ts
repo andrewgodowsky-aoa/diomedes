@@ -168,6 +168,9 @@ function admissionAnswer(answer: unknown, organizationId: string | null, personI
 
 /** Admission refusals that say the business is not paid, as opposed to unknown, unreadable or membership. */
 const UNPAID_REFUSAL_CODES = new Set(['entitlement_revoked', 'entitlement_expired', 'agent_not_included']);
+// Personal work the service refuses for want of a paid Individual plan: the service answers a person
+// who does not hold one as `personal_workspace` (scoped admission) or `entitlement_none`.
+const UNPAID_PERSONAL_REFUSAL_CODES = new Set([...UNPAID_REFUSAL_CODES, 'personal_workspace', 'entitlement_none']);
 
 const UNREADABLE_ADMISSION_REASON =
   'The account service answered in a way this app could not read, so the Nectovia Agent could not confirm this business includes it. Nothing was sent.';
@@ -956,6 +959,36 @@ export class AccountSessionService {
   }
 
   /**
+   * The Personal-scope mirror of confirmDowngrade: the person's own Individual access, refused by the
+   * service as not paid, is read again so the cached plan and the account read follow the confirmed
+   * downgrade without a manual refresh. A failed or unreadable read changes nothing.
+   */
+  async confirmPersonalDowngrade(refusalCode: string) {
+    if (!this.current || !UNPAID_PERSONAL_REFUSAL_CODES.has(refusalCode)) return;
+    await this.rereadPersonAccess(this.current);
+  }
+
+  /**
+   * The Personal-scope mirror of confirmAdmitted: Personal work the service has just admitted whose
+   * cached Individual access does not read as paid is read again, so a re-grant is picked up.
+   */
+  async confirmPersonalAdmitted() {
+    const current = this.current;
+    if (!current || this.personalIncludes()) return;
+    await this.rereadPersonAccess(current);
+  }
+
+  private async rereadPersonAccess(current: Current) {
+    try {
+      const answer = personAccessAnswer(await this.backend.client.personAccess(current.accessToken), current.personId);
+      if (answer && this.current === current) current.personAccess = answer;
+      await this.resetNoticeWhilePaid(current);
+    } catch {
+      // The cache stays as it was: a network error or a 5xx is never a downgrade.
+    }
+  }
+
+  /**
    * The person's own Individual access, read beside the businesses'. A failed or unreadable read is
    * null (unknown). A service from before Individual plans answers its own "not found": none.
    */
@@ -1098,9 +1131,11 @@ export class AccountSessionService {
     if (!answer.admitted) {
       this.admissions.delete(key);
       if (input.organizationId !== null) await this.confirmDowngrade(input.organizationId, answer.code);
+      else await this.confirmPersonalDowngrade(answer.code);
       return { admitted: false, code: answer.code, reason: answer.reason };
     }
     if (input.organizationId !== null) await this.confirmAdmitted(input.organizationId);
+    else await this.confirmPersonalAdmitted();
     const until = Math.min(Date.parse(answer.validUntil), this.now() + ADMISSION_CACHE_MAX_MS);
     const decision = {
       admitted: true as const,
