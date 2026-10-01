@@ -209,3 +209,44 @@ export const askForMoreCredits = (
     'POST',
     input,
   );
+
+/**
+ * The ask for more, made from the message that stopped. The client names the project, the message's
+ * command id and the kind, and nothing else: the host finds the business and the account service's job
+ * itself, so there is no job, person, business or amount here to get wrong. Asking twice is the same ask.
+ */
+export const askForMoreFromStop = (projectId: string, commandId: string, kind: 'job' | 'month') =>
+  api<{ requestId: string; state: 'pending' | 'approved' | 'denied' }>(
+    `/projects/${encodeURIComponent(projectId)}/jobs/${encodeURIComponent(commandId)}/credit-ask`,
+    'POST',
+    { kind },
+  );
+
+/** What the person reads once the ask is sent. */
+export const MEMBER_LIMIT_ASKED = 'Asked. An owner or admin will see it in the workspace panel.';
+
+/**
+ * What happens at a member's limit stop, from the dialog to the line the person reads after it. The
+ * dialog is `deps.ask`; Cancel asks no one and leaves the service's own words on screen; a choice sends
+ * exactly one ask for this message, and a refusal of the ask is said in its own words.
+ */
+export async function settleMemberLimitStop(
+  stop: { projectId: string; commandId: string; message: string },
+  deps: {
+    ask(prompt: MemberLimitPrompt): Promise<MemberLimitChoice>;
+    send?(projectId: string, commandId: string, kind: 'job' | 'month'): Promise<unknown>;
+  },
+): Promise<string> {
+  const send = deps.send ?? askForMoreFromStop;
+  try {
+    const result = await afterMemberLimitStop(stop.message, {
+      ask: deps.ask,
+      request: async (kind) => {
+        await send(stop.projectId, stop.commandId, kind);
+      },
+    });
+    return result === 'asked' ? MEMBER_LIMIT_ASKED : stop.message;
+  } catch (error) {
+    return error instanceof Error ? error.message : 'Nectovia could not ask that.';
+  }
+}

@@ -288,6 +288,7 @@ import { baselineRedact } from './secrets.js';
 import { EngineError, MEMBER_LIMIT } from './engines/process.js';
 import { MEMBER_LIMIT_REACHED } from '../shared/credit-allotments.js';
 import { mountCreditLimitRoutes } from './credit-limit-routes.js';
+import { mountCreditAskRoutes } from './credit-ask-routes.js';
 import { selectedEngine, selectedModel } from '../shared/ai-selection.js';
 import {
   ownerPinFrom,
@@ -6216,6 +6217,21 @@ export async function createApp(options: AppOptions) {
         : { reason: 'This route has no declared price for its model, so the cost is not known.' }),
     };
   };
+  // A member whose own monthly limit stopped a message asks an owner or admin from the stop itself. The
+  // project and the command are all the client names; the business and the account service's job are
+  // resolved here, from the project and from where the message ran.
+  mountCreditAskRoutes(app, {
+    organizationFor: (projectId) => agentGate?.organizationFor(projectId) ?? null,
+    locate: async (projectId, commandId) => {
+      for (const thread of store.state(projectId).conversations) {
+        const found = await interactionHost.locate(projectId, thread.id, commandId);
+        if (found) return { runId: found.runId };
+      }
+      return null;
+    },
+    session: accountSession ?? null,
+    workspaces,
+  });
   mountJobCapRoutes(app, {
     jobCaps,
     // The same route, style and model a send resolves, and the same limits the turn runs under.

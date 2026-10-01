@@ -25,7 +25,9 @@ import {
 import type { AccountBackend } from '../server/accounts/backend.js';
 import { ControlPlaneClient } from '../server/accounts/client';
 import { AccountSessionService } from '../server/accounts/session.js';
+import { mountCreditAskRoutes } from '../server/credit-ask-routes.js';
 import { mountCreditLimitRoutes, NOT_SIGNED_IN_REASON } from '../server/credit-limit-routes.js';
+import { turnRunId } from '../server/harness/model-session-run.js';
 import { exposureAttempt } from '../server/engines/aws-bedrock';
 import { CONVERSATION_LIMITS, ModelApiError } from '../server/engines/model-api-core';
 import { gatewayRefusal, nectoviaConnectionId, nectoviaRateCard, respondNectovia, type NectoviaPolicy } from '../server/engines/nectovia';
@@ -129,6 +131,8 @@ const answer = () => new Response([
 let cloud: FauxCloud, client: ControlPlaneClient, exposure: SpendExposure, directory: string, connectionId: string;
 let org: string, staff: string, policy: NectoviaPolicy, sent: string[];
 let servers: Server[];
+/** Where each message ran, by its command id, as the host would find it: the run on its conversation. */
+let ranOn: Record<string, string>;
 const tokens: Record<string, string> = {};
 
 async function api(method: string, url: string, bearer: string, value?: unknown) {
@@ -157,6 +161,12 @@ async function desktop(email: string, signedIn = true) {
   const app = express();
   app.use(express.json());
   mountCreditLimitRoutes(app, workspaces, signedIn ? session : null);
+  mountCreditAskRoutes(app, {
+    organizationFor: () => org,
+    locate: async (_project, commandId) => (ranOn[commandId] ? { runId: ranOn[commandId] } : null),
+    session: signedIn ? session : null,
+    workspaces,
+  });
   app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     if (error instanceof ApiError) res.status(error.status).json({ error: error.message, ...error.details });
     else res.status(500).json({ error: String(error) });
@@ -164,16 +174,22 @@ async function desktop(email: string, signedIn = true) {
   const server = app.listen(0, '127.0.0.1');
   await new Promise<void>((resolve) => server.once('listening', resolve));
   servers.push(server);
-  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api/workspace/organizations/${org}`;
+  const root = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const base = `${root}/api/workspace/organizations/${org}`;
+  /** The ask a stop offers, as the Console sends it: a project, a command and a kind. */
+  const askFromStop = async (commandId: string, body: unknown) => {
+    const response = await fetch(`${root}/api/projects/proj-1/jobs/${commandId}/credit-ask`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    return { status: response.status, body: await response.json() as Record<string, any> };
+  };
   const call = async (method: string, tail: string, body?: unknown) => {
     const response = await fetch(`${base}${tail}`, { method, headers: { 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
     return { status: response.status, body: await response.json() as Record<string, any> };
   };
-  return { session, call, personId: session.personId() };
+  return { session, call, askFromStop, personId: session.personId() };
 }
 
 beforeEach(async () => {
-  sent = []; servers = [];
+  sent = []; servers = []; ranOn = {};
   const now = Date.now(), at = new Date(now).toISOString(), until = new Date(now + 3_600_000).toISOString();
   cloud = await createFauxCloud({ file: null, now: () => now, passwordIterations: 1000, managed: {
     bindings: { MANAGED_CONNECTIONS: JSON.stringify([connection]), AZURE_OPENAI_API_KEY: 'synthetic-provider-key' },
@@ -356,6 +372,111 @@ describe('a member at their own limit asks, and an owner decides', () => {
     expect((await out.call('GET', '/credit-usage/mine')).body).toMatchObject({ state: 'unavailable', reason: NOT_SIGNED_IN_REASON });
     expect((await out.call('POST', '/credit-limit-requests', { requestId: 'x', kind: 'month' })).status).toBe(401);
     expect((await out.call('GET', '/credit-limits')).status).toBe(401);
+  });
+});
+
+describe('the ask a stop offers, from the stop itself', () => {
+  const RUN = 'model-run-1';
+  const jobOf = (commandId: string, run = RUN) => turnRunId(run, commandId);
+  const limitPriya = async (maya: Awaited<ReturnType<typeof desktop>>, priya: Awaited<ReturnType<typeof desktop>>) =>
+    maya.call('POST', '/credit-limits', { subject: { kind: 'person', personId: priya.personId }, mode: 'limit', limitMicroUsd: 100 });
+  const decisionPath = (requestId: string) => `/credit-limit-requests/${requestId}/decision`;
+
+  test('asks for the job the message ran as, once, and approving it lifts the limit for that job only', async () => {
+    const maya = await desktop(DEMO_ACCOUNTS.owner.email);
+    const priya = await desktop(DEMO_ACCOUNTS.employee.email);
+    await limitPriya(maya, priya);
+    ranOn['cmd-1'] = RUN;
+    ranOn['cmd-2'] = RUN;
+    expect((await refusedStep(jobOf('cmd-1'), 'step-1')).code).toBe('nectovia_member_limit_reached');
+
+    // The client names the message and the kind. The host finds the business and the job.
+    const asked = await priya.askFromStop('cmd-1', { kind: 'job' });
+    expect(asked.status, JSON.stringify(asked.body)).toBe(200);
+    expect(asked.body).toMatchObject({ state: 'pending', kind: 'job', jobId: jobOf('cmd-1') });
+    // Pressing again, or asking from a second window, is the same ask: the service holds one.
+    const again = await priya.askFromStop('cmd-1', { kind: 'job' });
+    expect(again.body.requestId).toBe(asked.body.requestId);
+    const listed = await maya.call('GET', '/credit-limit-requests');
+    expect(listed.body.requests.map((row: { requestId: string; state: string }) => [row.requestId, row.state])).toEqual([[asked.body.requestId, 'pending']]);
+
+    const approved = await maya.call('POST', decisionPath(asked.body.requestId), { approve: true });
+    expect(approved.status, JSON.stringify(approved.body)).toBe(200);
+    expect((await step(jobOf('cmd-1'), 'step-2')).outcome).toMatchObject({ kind: 'final' });
+    // Another message on the same conversation is another job, and is still stopped.
+    expect((await refusedStep(jobOf('cmd-2'), 'step-1')).code).toBe('nectovia_member_limit_reached');
+  });
+
+  test('the job is the one the message that stopped ran as, never another stopped message', async () => {
+    const maya = await desktop(DEMO_ACCOUNTS.owner.email);
+    const priya = await desktop(DEMO_ACCOUNTS.employee.email);
+    await limitPriya(maya, priya);
+    ranOn['cmd-a'] = 'model-run-a';
+    ranOn['cmd-b'] = 'model-run-b';
+    await refusedStep(jobOf('cmd-a', 'model-run-a'), 'step-1');
+    await refusedStep(jobOf('cmd-b', 'model-run-b'), 'step-1');
+    const asked = await priya.askFromStop('cmd-b', { kind: 'job' });
+    expect(asked.body.jobId).toBe(jobOf('cmd-b', 'model-run-b'));
+    expect(asked.body.jobId).not.toBe(jobOf('cmd-a', 'model-run-a'));
+    await maya.call('POST', decisionPath(asked.body.requestId), { approve: true });
+    expect((await step(jobOf('cmd-b', 'model-run-b'), 'step-2')).outcome).toMatchObject({ kind: 'final' });
+    expect((await refusedStep(jobOf('cmd-a', 'model-run-a'), 'step-2')).code).toBe('nectovia_member_limit_reached');
+  });
+
+  test('an ask for the month names no job and needs no message, and the approver sizes it', async () => {
+    const maya = await desktop(DEMO_ACCOUNTS.owner.email);
+    const priya = await desktop(DEMO_ACCOUNTS.employee.email);
+    await limitPriya(maya, priya);
+    const asked = await priya.askFromStop('cmd-month', { kind: 'month' });
+    expect(asked.status, JSON.stringify(asked.body)).toBe(200);
+    expect(asked.body).toMatchObject({ state: 'pending', kind: 'month', jobId: null });
+    const approved = await maya.call('POST', decisionPath(asked.body.requestId), { approve: true, extraMicroUsd: creditAmount(5) });
+    expect(approved.status, JSON.stringify(approved.body)).toBe(200);
+    expect((await step('any-job', 'step-1')).outcome).toMatchObject({ kind: 'final' });
+  });
+
+  test('the client names a kind and nothing else, and a message that was not found or not an Agent job is refused plainly', async () => {
+    const priya = await desktop(DEMO_ACCOUNTS.employee.email);
+    for (const extra of [{ jobId: 'job-9' }, { extraMicroUsd: 5 }, { personId: 'someone' }, { organizationId: 'other-business' }, { requestId: 'mine' }])
+      expect((await priya.askFromStop('cmd-1', { kind: 'month', ...extra })).body.code).toBe('client_field_refused');
+    expect((await priya.askFromStop('cmd-1', { kind: 'forever' })).status).toBe(400);
+    const unknown = await priya.askFromStop('cmd-unknown', { kind: 'job' });
+    expect(unknown.status).toBe(404);
+    expect(unknown.body.error).toMatch(/wasn’t found/);
+    ranOn['cmd-cli'] = 'run-claude-code-1';
+    const cli = await priya.askFromStop('cmd-cli', { kind: 'job' });
+    expect(cli.status).toBe(409);
+    expect(cli.body.code).toBe('not_an_agent_job');
+    for (const said of [unknown.body.error, cli.body.error]) expect(said).not.toMatch(/[–—$]|nothing was/i);
+  });
+
+  test('a member sees only their own asks; an owner or admin sees everyone’s', async () => {
+    const maya = await desktop(DEMO_ACCOUNTS.owner.email);
+    const sam = await desktop(DEMO_ACCOUNTS.manager.email);
+    const priya = await desktop(DEMO_ACCOUNTS.employee.email);
+    await limitPriya(maya, priya);
+    await maya.call('POST', '/credit-limits', { subject: { kind: 'role', role: 'admin' }, mode: 'limit', limitMicroUsd: 100 });
+    ranOn['cmd-priya'] = RUN;
+    await refusedStep(jobOf('cmd-priya'), 'step-1');
+    const hers = await priya.askFromStop('cmd-priya', { kind: 'job' });
+    const his = await sam.askFromStop('cmd-sam', { kind: 'month' });
+    expect(hers.status).toBe(200);
+    expect(his.status).toBe(200);
+    const rows = async (who: typeof priya) =>
+      (await who.call('GET', '/credit-limit-requests')).body.requests.map((row: { requestId: string }) => row.requestId).sort();
+    expect(await rows(priya)).toEqual([hers.body.requestId]);
+    expect(await rows(maya)).toEqual([hers.body.requestId, his.body.requestId].sort());
+    expect(await rows(sam)).toEqual([hers.body.requestId, his.body.requestId].sort());
+    // Nor can she answer one.
+    expect((await priya.call('POST', decisionPath(hers.body.requestId), { approve: true })).status).toBe(403);
+  });
+
+  test('without an account sign-in there is no one to ask, and nothing is asked', async () => {
+    const out = await desktop(DEMO_ACCOUNTS.employee.email, false);
+    ranOn['cmd-1'] = RUN;
+    const answer = await out.askFromStop('cmd-1', { kind: 'job' });
+    expect(answer.status).toBe(401);
+    expect(answer.body.code).toBe('sign_in_required');
   });
 });
 
