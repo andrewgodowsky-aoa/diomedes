@@ -20,7 +20,7 @@ import {
 import { reopenLastProject } from './fixtures/landing';
 
 /**
- * Browser proof of the Usage screen in Settings (DIO-161): the owner of a business finds it, a member does not; the
+ * Browser proof of the Usage screen in Settings (DIO-161): the owner of a business finds it, and a member finds only their own use; the
  * bar changes colour at the shared warning points; and buying 1,000 credits over the faux account service, paying on its
  * checkout page, ends with the paid line and the refreshed balances.
  *
@@ -254,26 +254,122 @@ test('buying 1,000 credits, and paying on the faux checkout page, shows the paid
   await expect(meter(page)).toHaveAttribute('data-tone', 'ok');
 });
 
-test('a member of the business has no Usage in Settings, and the account service would refuse them anyway', async ({ page }) => {
+/** A member's own month. The limit and the settlement are the member's own; nothing here is the business's. */
+const MEMBER_ATTEMPT = 'settings-usage-member';
+const MEMBER_LIMIT_CREDITS = 300;
+const MEMBER_USED_CREDITS = 120;
+
+const base = () => `/workspace/organizations/${juniper}`;
+
+async function switchTo(account: { email: string }) {
   await api('/account/sign-out', 'POST', {});
-  await signInAs(DEMO_ACCOUNTS.employee);
+  await signInAs(account);
+}
+
+/** The signed-in member's id in the business, read as the member sees it. */
+async function memberPersonId() {
+  await switchTo(DEMO_ACCOUNTS.employee);
   const workspace = await api<WorkspaceView>('/workspace');
   const here = workspace.organizations.find((row) => row.organization.id === juniper)!;
   expect(here.membership.role).toBe('member');
+  return here.membership.personId;
+}
 
-  // The Usage entry is decided from the workspace the Settings page reads when it opens, and is absent until that answer is
-  // in, so the absence only means something after it. Wait for the read the Settings page itself makes: armed after the console
-  // is up (whose own reads are done) and just before Settings opens.
-  await openConsole(page);
-  const loaded = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/workspace' && response.request().method() === 'GET');
-  await page.getByRole('button', { name: 'Settings', exact: true }).click();
-  await loaded;
-  await expect(settingsNav(page)).toBeVisible();
-  await expect(settingsNav(page).getByRole('button', { name: 'Account', exact: true })).toBeVisible();
-  // The workspace read is in, and the entry the owner got is still not there.
-  await expect(usageEntry(page)).toHaveCount(0);
-  await expect(page.getByRole('heading', { name: 'Agent usage', level: 2 })).toHaveCount(0);
+/** `credits` of this month settled against the member, in the faux store the account service reads. */
+async function setMemberUsed(personId: string, credits: number) {
+  const at = new Date().toISOString();
+  const periodId = periodIdFor(at);
+  const spent = micro(creditAmount(credits));
+  await cloud.store.run(async (draft) => {
+    const tenantId = draft.accounts.organizations.find((row) => row.record.id === juniper)!.record.tenantId;
+    draft.funding.attemptPeople = draft.funding.attemptPeople.filter((row) => row.attemptId !== MEMBER_ATTEMPT);
+    draft.funding.settlements = draft.funding.settlements.filter((row) => row.reservationId !== MEMBER_ATTEMPT);
+    draft.funding.attemptPeople.push({ tenantId, attemptId: MEMBER_ATTEMPT, organizationId: juniper, personId });
+    draft.funding.settlements.push({
+      reservationId: MEMBER_ATTEMPT, organizationId: juniper, periodId, providerCostMicroUsd: spent, allowanceDebitMicroUsd: spent,
+      rateCardVersion: RATE_CARD_V1.version, eligibility: 'included', settledAt: at, reconciledFrom: 'response', tenantId,
+      receiptRef: 'receipt_settings_usage_member', monthlyDebitMicroUsd: spent, topUpDebitMicroUsd: micro(0), usage: {},
+    } as unknown as AttemptSettlement);
+  });
+}
 
-  const quote = await fetch(`${baseURL}/api/workspace/organizations/${juniper}/allowance/credit-purchases/quote?credits=100`, { headers: HEADERS });
-  expect(quote.ok).toBe(false);
+/** The owner sets the member's limit (or lifts it) and what the member used, then the member is the one signed in. */
+async function memberMonth(limit: number | null) {
+  const personId = await memberPersonId();
+  await switchTo(DEMO_ACCOUNTS.owner);
+  await setUsedPercent(10);
+  await setMemberUsed(personId, MEMBER_USED_CREDITS);
+  await api(`${base()}/credit-limits`, 'POST', {
+    subject: { kind: 'person', personId },
+    ...(limit === null ? { mode: 'unlimited' } : { mode: 'limit', limitMicroUsd: creditAmount(limit) }),
+  });
+  await api(`${base()}/credit-limits/settings`, 'POST', { membersSeeOwnUsage: true });
+  await switchTo(DEMO_ACCOUNTS.employee);
+}
+
+const businessWords = (page: Page) => page.getByText(/Credits you bought|Buy credits|Buy more/);
+
+test('a member finds Usage in Settings and sees only their own use against their own limit', async ({ page }) => {
+  await memberMonth(MEMBER_LIMIT_CREDITS);
+  await openSettings(page);
+  await expect(usageEntry(page)).toBeVisible();
+  await usageEntry(page).click();
+  await expect(page.getByRole('heading', { name: 'Agent usage', level: 2 })).toBeVisible();
+  await expect(meter(page)).toBeVisible();
+  await expect(meter(page)).toHaveAttribute('data-tone', 'ok');
+  await expect(page.getByText(`${MEMBER_USED_CREDITS} of ${MEMBER_LIMIT_CREDITS} credits used this month`)).toBeVisible();
+  await expect(meter(page).locator('.uc-fill')).toHaveAttribute('style', new RegExp(`width:\\s*${(MEMBER_USED_CREDITS / MEMBER_LIMIT_CREDITS) * 100}%`));
+  // Not the business's month (which is 100 of 1,000 here), not what it bought, and nothing to buy.
+  await expect(page.getByText(/of 1,000 credits/)).toHaveCount(0);
+  await expect(bought(page)).toHaveCount(0);
+  await expect(page.getByRole('region', { name: 'Buy credits' })).toHaveCount(0);
+  await expect(businessWords(page)).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Buy', exact: true })).toHaveCount(0);
+});
+
+test('a member with no limit sees what they used and no bar', async ({ page }) => {
+  await memberMonth(null);
+  await openSettings(page);
+  await expect(usageEntry(page)).toBeVisible();
+  await usageEntry(page).click();
+  await expect(page.getByRole('heading', { name: 'Agent usage', level: 2 })).toBeVisible();
+  await expect(page.getByText(`${MEMBER_USED_CREDITS} credits used this month`)).toBeVisible();
+  await expect(meter(page)).toHaveCount(0);
+  await expect(page.locator('.uc-fill')).toHaveCount(0);
+  await expect(bought(page)).toHaveCount(0);
+  await expect(page.getByRole('region', { name: 'Buy credits' })).toHaveCount(0);
+});
+
+test('when the owner turns off members seeing their own usage, a member has no Usage in Settings, and the account service would refuse them anyway', async ({ page }) => {
+  await memberMonth(MEMBER_LIMIT_CREDITS);
+  await switchTo(DEMO_ACCOUNTS.owner);
+  await api(`${base()}/credit-limits/settings`, 'POST', { membersSeeOwnUsage: false });
+  try {
+    await switchTo(DEMO_ACCOUNTS.employee);
+    const workspace = await api<WorkspaceView>('/workspace');
+    const here = workspace.organizations.find((row) => row.organization.id === juniper)!;
+    expect(here.membership.role).toBe('member');
+    expect(await api(`${base()}/credit-usage/mine`)).toMatchObject({ state: 'hidden' });
+
+    // The Usage entry waits on the member's own read, and is absent when it says hidden, so the absence only means something
+    // after that read is in. Wait for the read the Settings page itself makes: armed after the console is up (whose own reads
+    // are done) and just before Settings opens.
+    await openConsole(page);
+    const read = page.waitForResponse((response) => new URL(response.url()).pathname === `/api${base()}/credit-usage/mine` && response.request().method() === 'GET');
+    await page.getByRole('button', { name: 'Settings', exact: true }).click();
+    await read;
+    await expect(settingsNav(page)).toBeVisible();
+    await expect(settingsNav(page).getByRole('button', { name: 'Account', exact: true })).toBeVisible();
+    // The read is in, and the entry the owner got is still not there.
+    await expect(usageEntry(page)).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: 'Agent usage', level: 2 })).toHaveCount(0);
+
+    const quote = await fetch(`${baseURL}/api${base()}/allowance/credit-purchases/quote?credits=100`, { headers: HEADERS });
+    expect(quote.ok).toBe(false);
+    const members = await fetch(`${baseURL}/api${base()}/credit-usage/members`, { headers: HEADERS });
+    expect(members.status).toBe(403);
+  } finally {
+    await switchTo(DEMO_ACCOUNTS.owner);
+    await api(`${base()}/credit-limits/settings`, 'POST', { membersSeeOwnUsage: true });
+  }
 });

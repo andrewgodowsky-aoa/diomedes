@@ -38,6 +38,14 @@ import {
   usageMeterText,
 } from '../client/console/UsageCenter';
 import type { FlowState } from '../client/console/credit-purchase-flow';
+import {
+  MemberUsageView,
+  loadMyUsage,
+  memberUsageState,
+  memberUsageTarget,
+  type MyUsageRead,
+} from '../client/console/MemberUsage';
+import type { MyCreditUsage } from '../shared/credit-allotments';
 
 const c = (credits: number) => creditAmount(credits);
 const observedAt = '2026-10-15T12:00:00.000Z';
@@ -443,5 +451,202 @@ describe('opening the payment page from the shipped app', () => {
     const app = read('server/app.ts');
     expect(app).toMatch(/app\.locals\.allowsCheckoutReference\s*=\s*\(destination: string\)\s*=>/);
     expect(app).toMatch(/isAllowedCheckoutUrl\(destination,\s*accountSession\.localCheckoutOrigin\(\)\)/);
+  });
+});
+
+// ---- a member's own usage (DIO-161 slice 3) -------------------------------------------------------------
+
+type MineReady = Extract<MyCreditUsage, { state: 'ready' }>;
+/** A member's own month: `used` credits against `limit` (null: no limit), `held` of the used still in flight. */
+const mine = (used: number, limit: number | null, held = 0, raised = 0): MineReady => ({
+  state: 'ready',
+  organizationId: 'org_a',
+  periodId: '2026-10',
+  resetsAt: '2026-11-01T00:00:00.000Z',
+  usage: { usedMicroUsd: c(used), includedMicroUsd: c(used), purchasedMicroUsd: c(0), heldMicroUsd: c(held) },
+  limitMicroUsd: limit === null ? null : c(limit),
+  raisedByMicroUsd: c(raised),
+  requests: [],
+});
+const memberHtml = (answer: MyUsageRead) =>
+  renderToStaticMarkup(createElement(MemberUsageView, { usage: answer, readAt: Date.parse(observedAt), now }));
+const worldOf = (m: Membership | null, active: 'business' | 'personal' = 'business') =>
+  ({
+    active: active === 'business' ? { kind: 'business', organizationId: 'org_a' } : { kind: 'personal' },
+    organizations: m ? [{ organization: { id: 'org_a', name: 'Juniper Street Bakery' }, membership: m }] : [],
+  }) as unknown as WorkspaceView;
+
+describe('who gets the member view', () => {
+  it('an active member of the selected business does; an owner, an admin, an invitee, Personal and nobody do not', () => {
+    expect(memberUsageTarget(worldOf(asRole('member')))).toEqual({ organizationId: 'org_a', membership: asRole('member') });
+    expect(memberUsageTarget(worldOf(asRole('owner')))).toBeNull();
+    expect(memberUsageTarget(worldOf(asRole('admin')))).toBeNull();
+    expect(memberUsageTarget(worldOf(asRole('member', 'invited' as Membership['state'])))).toBeNull();
+    expect(memberUsageTarget(worldOf(asRole('member', 'revoked' as Membership['state'])))).toBeNull();
+    expect(memberUsageTarget(worldOf(asRole('member'), 'personal'))).toBeNull();
+    expect(memberUsageTarget(worldOf(null))).toBeNull();
+    expect(memberUsageTarget(null)).toBeNull();
+  });
+
+  it('the two views never overlap: whoever has the business screen has no member one', () => {
+    for (const role of ['owner', 'admin', 'member'] as const) {
+      const world = worldOf(asRole(role));
+      expect(Boolean(usageCenterTarget(world)) !== Boolean(memberUsageTarget(world))).toBe(true);
+    }
+  });
+});
+
+describe('a member’s own usage bar', () => {
+  it('says "120 of 300 credits used this month" with the same meter the business bar has', () => {
+    const html = memberHtml(mine(120, 300));
+    expect(text(html)).toContain('120 of 300 credits used this month');
+    expect(html).toContain('role="meter"');
+    expect(html).toContain('data-tone="ok"');
+    expect(html).toMatch(/uc-fill[^>]*style="width:40%"/);
+    expect(html).toContain('aria-valuemax="300"');
+    expect(html).toContain('aria-valuenow="120"');
+  });
+
+  it('is the business bar itself, so the wording and the warning points can’t drift apart', () => {
+    const state = memberUsageState(mine(120, 300), observedAt);
+    expect(state.state).toBe('ready');
+    expect(memberHtml(mine(120, 300))).toBe(renderToStaticMarkup(createElement(UsageCenterBar, { state, now })));
+    expect(read('client/console/MemberUsage.tsx')).toMatch(/import\s*\{[^}]*UsageCenterBar[^}]*\}\s*from\s*'\.\/UsageCenter'/);
+  });
+
+  it.each([
+    [USAGE_WARNING_PERCENT - 1, 'ok', null],
+    [USAGE_WARNING_PERCENT, 'warning', 'Your monthly credits are running low.'],
+    [USAGE_DANGER_PERCENT, 'danger', 'Your monthly credits are almost gone.'],
+    [USAGE_EXHAUSTED_PERCENT, 'danger', 'Your monthly credits are used up.'],
+  ] as const)('at %i percent of the member’s limit the bar is %s', (percent, tone, note) => {
+    const html = memberHtml(mine(percent * 3, 300));
+    expect(html).toContain(`data-tone="${tone}"`);
+    expect(text(html)).toContain(`${percent * 3} of 300 credits used this month`);
+    if (note) expect(text(html)).toContain(note);
+    else expect(html).not.toContain('uc-note');
+  });
+
+  it('measures against the limit plus what an approval added to the month', () => {
+    expect(text(memberHtml(mine(120, 300, 0, 100)))).toContain('120 of 400 credits used this month');
+  });
+
+  it('counts held credits as used against the limit, shows what settled, and says what is reserved', () => {
+    const page = text(memberHtml(mine(150, 300, 30)));
+    expect(page).toContain('120 of 300 credits used this month');
+    expect(page).toContain('30 credits are reserved for work in flight.');
+  });
+
+  it('says when the month resets', () => {
+    expect(text(memberHtml(mine(10, 300)))).toContain('Resets Nov 1, 2026, 00:00 UTC');
+  });
+
+  it('with no limit, says what was used and draws no bar and no fill', () => {
+    const html = memberHtml(mine(120, null));
+    expect(text(html)).toContain('120 credits used this month');
+    expect(text(html)).not.toMatch(/ of \d/);
+    expect(html).not.toContain('role="meter"');
+    expect(html).not.toContain('usage-fill');
+    expect(text(html)).toContain('Resets Nov 1, 2026, 00:00 UTC');
+    expect(text(memberHtml(mine(1, null)))).toContain('1 credit used this month');
+  });
+
+  it('shows no business total, bought credits, pool, anyone else’s use, or way to buy', () => {
+    for (const answer of [mine(120, 300), mine(120, null), mine(300, 300)]) {
+      const html = memberHtml(answer);
+      expect(html).not.toMatch(/<(form|input|button|a)[ >]/);
+      expect(html).not.toContain('$');
+      expect(text(html)).not.toMatch(/Credits you bought|Buy credits|Buy more|pool|business|your team|everyone/i);
+    }
+  });
+
+  it('while the answer is coming, one plain line; and a read it can’t use says so with no numbers', () => {
+    expect(text(memberHtml({ state: 'loading', organizationId: 'org_a' }))).toContain('Checking usage.');
+    for (const answer of [
+      { state: 'unavailable', organizationId: 'org_a', reason: 'Down. 3 of 9.' },
+      { state: 'hidden', organizationId: 'org_a', reason: 'Off. 4 of 8.' },
+    ] as MyUsageRead[]) {
+      const html = memberHtml(answer);
+      expect(text(html)).toContain('Usage isn’t available right now.');
+      expect(text(html)).not.toMatch(/\d/);
+      expect(html).not.toContain('role="meter"');
+    }
+  });
+
+  it('a figure it can’t trust is not drawn', () => {
+    const odd = { ...mine(1, 300), usage: { ...mine(1, 300).usage, usedMicroUsd: -5 } } as MineReady;
+    expect(memberUsageState(odd, observedAt).state).toBe('unavailable');
+  });
+
+  it.each([
+    ['limited', mine(120, 300)],
+    ['warning', mine(240, 300)],
+    ['used up', mine(300, 300)],
+    ['unlimited', mine(120, null)],
+    ['reserved', mine(150, 300, 30)],
+  ] as const)('%s: no italics, dashes, exclamations, vendor or model names, markup talk or reassurance tails', (_name, answer) => {
+    const html = memberHtml(answer);
+    const page = text(html);
+    expect(html).not.toMatch(/<(i|em)[ >]/);
+    expect(html).not.toMatch(/font-style/);
+    expect(page).not.toMatch(/[–—]/);
+    expect(page).not.toContain('!');
+    expect(page).not.toMatch(/Nothing was (charged|sent|held|changed)/);
+    expect(page).not.toMatch(/stripe|claude|anthropic|openai|gpt|gemini|llama|mistral|deepseek|bedrock|vertex/i);
+  });
+});
+
+describe('reading a member’s own usage', () => {
+  const stub = (answer: unknown) => {
+    const asked: string[] = [];
+    return {
+      asked,
+      reader: async <T,>(path: string): Promise<T> => {
+        asked.push(path);
+        return answer as T;
+      },
+    };
+  };
+
+  it('asks the one route that answers for the signed-in person, for the selected business', async () => {
+    const { asked, reader } = stub(mine(120, 300));
+    expect(await loadMyUsage('org_a', reader)).toMatchObject({ state: 'ready', organizationId: 'org_a' });
+    expect(asked).toEqual(['/workspace/organizations/org_a/credit-usage/mine']);
+  });
+
+  it('keeps a hidden answer as hidden, so the entry stays away', async () => {
+    const { reader } = stub({ state: 'hidden', organizationId: 'org_a', reason: 'This business doesn’t show members their usage.' });
+    expect(await loadMyUsage('org_a', reader)).toMatchObject({ state: 'hidden' });
+  });
+
+  it('an answer for another business is not used', async () => {
+    const { reader } = stub(mine(1, 10));
+    expect(await loadMyUsage('org_b', reader)).toMatchObject({ state: 'unavailable', organizationId: 'org_b' });
+  });
+
+  it('a refused or failed read is an unavailable one, never a zero', async () => {
+    const failing = async <T,>(): Promise<T> => {
+      throw new Error('refused');
+    };
+    expect(await loadMyUsage('org_a', failing)).toMatchObject({ state: 'unavailable', organizationId: 'org_a' });
+    expect(await loadMyUsage('org_a', stub({ state: 'ready', organizationId: 'org_a' }).reader)).toMatchObject({ state: 'unavailable' });
+    expect(await loadMyUsage('org_a', stub(null).reader)).toMatchObject({ state: 'unavailable' });
+  });
+});
+
+describe('the Settings rail for a member', () => {
+  const settings = read('client/Settings.tsx');
+
+  it('offers Usage only once the member’s own read says ready, and never while it is off, refused or failed', () => {
+    expect(settings).toMatch(/memberUsageTarget\(/);
+    expect(settings).toMatch(/useMyCreditUsage\(/);
+    expect(settings).toMatch(/\.state === 'ready'/);
+    expect(settings).toMatch(/usageScreen \|\| memberUsage \? \['Usage'\]/);
+    expect(settings).toMatch(/section === 'Usage' && !usageScreen && memberUsage/);
+  });
+
+  it('leaves the business screen to owners and admins', () => {
+    expect(settings).toMatch(/section === 'Usage' && usageScreen/);
+    expect(read('client/console/UsageCenter.tsx')).toMatch(/if \(!canSeePurchasedCredits\(membership\)\) return null/);
   });
 });

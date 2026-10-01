@@ -38,7 +38,7 @@ export function usageCenterTarget(
   return { organizationId: id, membership: found.membership };
 }
 
-const creditsText = (amount: MicroUsd) => {
+export const creditsText = (amount: MicroUsd) => {
   const text = formatCredits(amount);
   return `${text} ${text === '1' ? 'credit' : 'credits'}`;
 };

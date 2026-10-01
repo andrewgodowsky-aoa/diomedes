@@ -328,7 +328,7 @@ test('a message the server refuses stays in the box', async ({ page }) => {
     await say(page, 'Are you there?');
     // The refusal is Nectovia's, never a fallback it did not take.
     await expect(page.getByRole('alert')).toHaveText(
-      'Your business is out of credits, so this stopped here. Buy more credits to keep going.',
+      'Your business is out of credits, so this stopped here. Buy more credits in Settings, Usage.',
     );
     await expect(composer(page)).toHaveValue('Are you there?');
     await expect(page.locator('.dio-card')).toHaveCount(0);
