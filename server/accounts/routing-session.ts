@@ -170,7 +170,10 @@ export class AccountRoutingSession {
         Date.parse(parsed.data.validUntil) <= this.now())
       throw new EngineError('ACCOUNT_CHANGED', 'The account service did not return a current admission for this work. Nothing was sent.', false);
     const answer = parsed.data;
-    if (!answer.decision.admitted) throw admissionRefusal(answer.decision.code, answer.decision.reason);
+    if (!answer.decision.admitted) {
+      if (scope.kind === 'organization') await this.session.confirmDowngrade(scope.id, answer.decision.code);
+      throw admissionRefusal(answer.decision.code, answer.decision.reason);
+    }
     return { admissionId: answer.admissionId, organizationId: answer.pins.organizationId, scope, personId: person,
       planId: answer.pins.planId, policyRevision: answer.pins.policyRevision, routeKind: work.routeKind ?? 'byo', surface: work.surface,
       validUntil: answer.validUntil };
