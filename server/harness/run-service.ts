@@ -1113,8 +1113,8 @@ export class RunService {
             changesWorld(lastEffect(s)) &&
             error instanceof HarnessError &&
             (error.code === 'tool_timeout' || error.outcomeUnknown);
-          // A managed call refused for want of credits, its hold released, is a known outcome:
-          // nothing more was charged. The step failed and the caller ends the work there, rather
+          // A managed call refused for want of credits, its hold released, is a known outcome.
+          // The step failed and the caller ends the work there, rather
           // than the run being parked for a reconciliation there is nothing to reconcile.
           const refusedForCredits = intent.kind === 'model' && isOutOfCreditsRefusal(error);
           const state = waiting

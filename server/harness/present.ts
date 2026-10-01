@@ -100,7 +100,7 @@ export function presentRun(run: HarnessRun): RunPresentation {
       };
     case 'cancelled': {
       // A work loop that ended because the business ran out of credits keeps the sentence the stop
-      // recorded: it says who can buy more, and that nothing more was charged.
+      // recorded: it says who can buy more.
       const detail = (run.steps.find((s) => s.intent.stepId === 'stop:credits' && s.state === 'succeeded')?.output as
         | { detail?: unknown }
         | null

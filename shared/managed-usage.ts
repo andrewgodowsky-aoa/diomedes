@@ -972,7 +972,7 @@ const OUT_OF_CREDITS_ERROR_CODES: ReadonlySet<string> = new Set(OUT_OF_CREDITS_G
 
 /**
  * Whether a failed managed call was refused for want of credits before anything was inferred, with
- * its local hold known released. That outcome is known, not uncertain: nothing more was charged,
+ * its local hold known released. That outcome is known, not uncertain,
  * and the work ends at that step instead of being parked for reconciliation or retried. A refusal
  * whose hold is not known released is never read this way.
  */

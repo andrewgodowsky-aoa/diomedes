@@ -21,7 +21,7 @@ import { loopOutcome, loopView } from '../shared/native-loop.js';
 import { presentRun } from '../server/harness/present.js';
 import { micro } from '../shared/managed-usage.js';
 
-const WORDS = 'Your business is out of credits, so this stopped here. Buy more credits to keep going. Nothing more was charged.';
+const WORDS = 'Your business is out of credits, so this stopped here. Buy more credits to keep going.';
 
 const roots: string[] = [];
 afterEach(async () => {

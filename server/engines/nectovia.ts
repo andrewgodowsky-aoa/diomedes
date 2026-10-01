@@ -218,9 +218,9 @@ const tierName = (tier: JobTier) => WORK_STYLE_LABELS[tier];
  * anywhere.
  */
 export const OUT_OF_CREDITS_BUYER =
-  'Your business is out of credits, so this stopped here. Buy more credits to keep going. Nothing more was charged.';
+  'Your business is out of credits, so this stopped here. Buy more credits to keep going.';
 export const OUT_OF_CREDITS_OTHER =
-  'Your business is out of credits, so this stopped here. An owner or admin can buy more credits to keep going. Nothing more was charged.';
+  'Your business is out of credits, so this stopped here. An owner or admin can buy more credits to keep going.';
 export const outOfCreditsMessage = (role?: MemberRole | null): string =>
   role === 'owner' || role === 'admin' ? OUT_OF_CREDITS_BUYER : OUT_OF_CREDITS_OTHER;
 

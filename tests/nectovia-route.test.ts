@@ -29,8 +29,8 @@ import { routeEntrySchema } from '../services/control-plane/src/commercial.js';
 import { responsesAnswer } from './fixtures/model-api-streams.js';
 
 const BASE = 'https://accounts.nectovia.test';
-const OWNER_WORDS = 'Your business is out of credits, so this stopped here. Buy more credits to keep going. Nothing more was charged.';
-const MEMBER_WORDS = 'Your business is out of credits, so this stopped here. An owner or admin can buy more credits to keep going. Nothing more was charged.';
+const OWNER_WORDS = 'Your business is out of credits, so this stopped here. Buy more credits to keep going.';
+const MEMBER_WORDS = 'Your business is out of credits, so this stopped here. An owner or admin can buy more credits to keep going.';
 const GATEWAY = `${BASE}/managed/v1/responses`;
 const TOKEN = 'session-access-token-test-only-0123456789';
 const CONNECTION = nectoviaConnectionId('org_juniper', new Date('2026-09-25T12:00:00.000Z'));
