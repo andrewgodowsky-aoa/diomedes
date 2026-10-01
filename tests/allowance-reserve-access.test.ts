@@ -130,7 +130,7 @@ describe('reserving included allowance over HTTP', () => {
     const answer = await post('admit', ask());
     expect(answer.status).toBe(403);
     expect(answer.data.code).toBe('direct_reservation_refused');
-    expect(answer.data.error).toMatch(/cannot reserve/i);
+    expect(answer.data.error).toMatch(/can’t reserve this business’s included usage/i);
     expect(ledger.summary(ORG, PERIOD).pendingMicroUsd).toBe(0);
   });
 
