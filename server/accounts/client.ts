@@ -12,6 +12,13 @@ import { readStaffMarker, type AccessView, type StaffMarker } from '../../shared
 import type { PersonAccessView } from '../../shared/individual-plan.js';
 import type { OrganizationSetupAnswer, OrganizationSetupWrite } from '../../shared/organization-setup.js';
 import type { Membership, MemberRole, Organization, Person } from '../../shared/workspaces.js';
+import {
+  CREDIT_PURCHASE_MAX_CREDITS,
+  CREDIT_PURCHASE_MIN_CREDITS,
+  type CreditPurchaseStarted,
+  type CreditPurchaseStatus,
+  type CreditQuote,
+} from '../../shared/credit-purchases.js';
 import { RELAY_DEVICE_HEADER } from '../../services/control-plane/src/relay/protocol.js';
 import type { DesktopCheckAnswer } from '../../services/control-plane/src/relay/service.js';
 import { organizationSetupAnswerSchema } from '../../services/control-plane/src/organization-setup/schema.js';
@@ -46,6 +53,22 @@ const purchasedHoldSchema = z.strictObject({
 });
 export type PurchasedBalanceAnswer = z.infer<typeof purchasedBalanceSchema>;
 export type PurchasedHoldAnswer = z.infer<typeof purchasedHoldSchema>;
+
+/**
+ * Buying credits. A quote, a purchase just started and a purchase as it stands, each read against its exact
+ * shape: money is on them, and a link the person's machine may be sent to open. The link itself is judged
+ * where it is used (shared/credit-purchases.ts), never trusted for arriving in a well-formed answer.
+ */
+const purchaseIdSchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/);
+const creditsSchema = z.number().int().min(CREDIT_PURCHASE_MIN_CREDITS).max(CREDIT_PURCHASE_MAX_CREDITS);
+const centsSchema = z.number().int().positive().max(99_999_999);
+const creditQuoteSchema = z.strictObject({ credits: creditsSchema, amountCents: centsSchema, currency: z.literal('usd') });
+const creditPurchaseStartedSchema = z.strictObject({
+  purchaseId: purchaseIdSchema, checkoutUrl: z.string().min(1).max(4096), credits: creditsSchema, amountCents: centsSchema,
+});
+const creditPurchaseStatusSchema = z.strictObject({
+  purchaseId: purchaseIdSchema, credits: creditsSchema, amountCents: centsSchema, state: z.enum(['pending', 'paid', 'expired', 'failed']),
+});
 
 export class ControlPlaneError extends Error {
   constructor(
@@ -250,6 +273,22 @@ export class ControlPlaneClient {
   async renewPurchasedUsage(token: string, organizationId: string, input: { holdId: string }): Promise<PurchasedHoldAnswer> {
     const parsed = purchasedHoldSchema.safeParse(await this.call<unknown>('POST', `/account/organizations/${encodeURIComponent(organizationId)}/purchased-usage/renewals`, token, input));
     return parsed.success ? parsed.data : this.unreadable();
+  }
+  // --- buying credits (owner or admin; the service checks) -------------------------------
+
+  /** What an amount of credits costs. The service prices it; this app never does. */
+  async quoteCredits(token: string, organizationId: string, credits: number): Promise<CreditQuote> {
+    const parsed = creditQuoteSchema.safeParse(await this.call<unknown>('GET', `/account/organizations/${encodeURIComponent(organizationId)}/credit-purchases/quote?credits=${credits}`, token));
+    return parsed.success && parsed.data.credits === credits ? parsed.data : this.unreadable();
+  }
+  /** Start a purchase. The answer carries the payment page; whether this app may open it is for the caller to judge. */
+  async startCreditPurchase(token: string, organizationId: string, credits: number): Promise<CreditPurchaseStarted> {
+    const parsed = creditPurchaseStartedSchema.safeParse(await this.call<unknown>('POST', `/account/organizations/${encodeURIComponent(organizationId)}/credit-purchases`, token, { credits }));
+    return parsed.success && parsed.data.credits === credits ? parsed.data : this.unreadable();
+  }
+  async readCreditPurchase(token: string, organizationId: string, purchaseId: string): Promise<CreditPurchaseStatus> {
+    const parsed = creditPurchaseStatusSchema.safeParse(await this.call<unknown>('GET', `/account/organizations/${encodeURIComponent(organizationId)}/credit-purchases/${encodeURIComponent(purchaseId)}`, token));
+    return parsed.success && parsed.data.purchaseId === purchaseId ? parsed.data : this.unreadable();
   }
   createOrganization(token: string, name: string) {
     return this.call<Organization>('POST', '/account/organizations', token, { name });

@@ -1043,6 +1043,27 @@ export class AccountSessionService {
     return this.call((token) => this.backend.client.renewPurchasedUsage(token, organizationId, input));
   }
 
+  // --- buying credits (the account service prices, takes the payment and records it) ---
+
+  /** What an amount of credits costs, as the person signed in. */
+  quoteCredits(organizationId: string, credits: number) {
+    return this.call((token) => this.backend.client.quoteCredits(token, organizationId, credits));
+  }
+  /** Start a purchase as the person signed in: where to pay, and what for. */
+  startCreditPurchase(organizationId: string, credits: number) {
+    return this.call((token) => this.backend.client.startCreditPurchase(token, organizationId, credits));
+  }
+  readCreditPurchase(organizationId: string, purchaseId: string) {
+    return this.call((token) => this.backend.client.readCreditPurchase(token, organizationId, purchaseId));
+  }
+  /**
+   * The origin of the test service's own checkout page, when the account service is the local test one, so
+   * that page may be opened too. Null for the deployed service, whose only payment page is Stripe's.
+   */
+  localCheckoutOrigin(): string | null {
+    return this.backend.view().kind === 'faux' ? new URL(this.backend.client.base).origin : null;
+  }
+
   /**
    * The last answer for one business. Null when the service knows nothing of it here. State
    * `unknown` only when the service has not answered for a business the person is an active member

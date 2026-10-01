@@ -1456,6 +1456,17 @@ export class WorkspaceService {
   }
 
   /**
+   * Buying more credits is for the same people who see what the business bought: an active owner or admin,
+   * after membership, so an outsider still reads as absent. The account service checks it again; this is
+   * only so a plain member's request goes no further than this computer.
+   */
+  assertCanBuyCredits(organizationId: string): void {
+    const { membership } = this.mine(organizationId);
+    if (!canSeePurchasedUsage(membership))
+      throw refuse(403, 'Only an owner or an admin can buy credits for this business.', 'not_owner_or_admin');
+  }
+
+  /**
    * The organization that owns a project, read from its active project access
    * resource (recorded when an owner links the project to the business).
    * Null when no organization, or more than one, claims it: an
