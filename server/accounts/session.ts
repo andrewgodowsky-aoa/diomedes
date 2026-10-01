@@ -938,6 +938,24 @@ export class AccountSessionService {
   }
 
   /**
+   * The mirror of confirmDowngrade. A business the service has just admitted whose cached access does
+   * not read as paid (a downgrade it was confirmed to have, since granted again) is read again, so the
+   * cached plan and the live observation recheck follow the re-grant without a manual refresh. A
+   * failed read changes nothing.
+   */
+  async confirmAdmitted(organizationId: string) {
+    const current = this.current;
+    if (!current || this.includes(organizationId)) return;
+    try {
+      const answer = accessAnswer(await this.backend.client.access(current.accessToken, organizationId), organizationId);
+      if (answer && this.current === current) current.access.set(organizationId, answer);
+      await this.resetNoticeWhilePaid(current);
+    } catch {
+      // The cache stays as it was.
+    }
+  }
+
+  /**
    * The person's own Individual access, read beside the businesses'. A failed or unreadable read is
    * null (unknown). A service from before Individual plans answers its own "not found": none.
    */
@@ -1082,6 +1100,7 @@ export class AccountSessionService {
       if (input.organizationId !== null) await this.confirmDowngrade(input.organizationId, answer.code);
       return { admitted: false, code: answer.code, reason: answer.reason };
     }
+    if (input.organizationId !== null) await this.confirmAdmitted(input.organizationId);
     const until = Math.min(Date.parse(answer.validUntil), this.now() + ADMISSION_CACHE_MAX_MS);
     const decision = {
       admitted: true as const,

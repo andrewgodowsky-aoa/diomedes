@@ -137,6 +137,10 @@ export async function reviewFixture() {
     for (const grant of customer.grants.filter((row) => row.state === 'active'))
       await cloud.commercial.revokeGrant(token, organizationId, grant.id, { reason: 'Independent review downgrade' });
   }
+  async function regrant(organizationId: string) {
+    const token = await staff();
+    await cloud.commercial.issueGrant(token, organizationId, { planId: 'business', source: 'internal-test', reference: 'DIO-126 regrant', note: 'Granted again.' });
+  }
   async function ownEngine(binding: Binding) {
     await api('/ai/discover', 'POST', { consent: true });
     await api('/ai/check/claude-code', 'POST', {});
@@ -159,7 +163,7 @@ export async function reviewFixture() {
   const thread = async (binding: Binding) => (await api<{ conversations: Conversation[] }>(
     `/projects/${binding.projectId}/state`)).conversations.find((item) => item.id === binding.threadId)!;
   await open();
-  return { root, cloud, calls, request, api, signIn, staff, revoke, ownEngine, aws, say, home, thread,
+  return { root, cloud, calls, request, api, signIn, staff, revoke, regrant, ownEngine, aws, say, home, thread,
     offline: (value: boolean) => { offline = value; },
     accessUnavailable: (value: boolean) => { accessUnavailable = value; },
     restart: async () => { await close(); await open(); },

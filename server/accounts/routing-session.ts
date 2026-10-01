@@ -174,6 +174,7 @@ export class AccountRoutingSession {
       if (scope.kind === 'organization') await this.session.confirmDowngrade(scope.id, answer.decision.code);
       throw admissionRefusal(answer.decision.code, answer.decision.reason);
     }
+    if (scope.kind === 'organization') await this.session.confirmAdmitted(scope.id);
     return { admissionId: answer.admissionId, organizationId: answer.pins.organizationId, scope, personId: person,
       planId: answer.pins.planId, policyRevision: answer.pins.policyRevision, routeKind: work.routeKind ?? 'byo', surface: work.surface,
       validUntil: answer.validUntil };

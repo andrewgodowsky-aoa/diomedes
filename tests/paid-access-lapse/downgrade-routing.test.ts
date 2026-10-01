@@ -29,3 +29,20 @@ test('a known downgrade releases a default thread to the free engine without man
   expect(retried.status, await retried.clone().text()).toBe(200);
   expect(f.calls.direct).toBe(1);
 });
+
+test('after a revoke and a re-grant the next admitted message reads the business as paid again without a manual refresh', async () => {
+  const account = await f.signIn(DEMO_ACCOUNTS.owner.email);
+  const organizationId = account.workspaces[0]!.organization.id;
+  const binding = await f.home();
+  await f.ownEngine(binding);
+  await f.aws(binding);
+  await f.api(`/workspace/organizations/${organizationId}/output`, 'POST', { projectId: binding.projectId });
+  expect((await f.say(binding, 'before-revoke')).status).toBe(200);
+  await f.revoke(organizationId);
+  expect((await f.say(binding, 'refused')).status).toBe(403);
+  expect((await f.api<AccountStateView>('/account')).plan.agent).toBe('free');
+  await f.regrant(organizationId);
+  const admitted = await f.say(binding, 'after-regrant');
+  expect(admitted.status, await admitted.clone().text()).toBe(200);
+  expect((await f.api<AccountStateView>('/account')).plan.agent).toBe('paid');
+});
