@@ -53,10 +53,10 @@ const INDIVIDUAL_ACCESS_FEATURES: readonly AccessFeature[] = Object.freeze([
   'nectovia-agent', 'maintained-profiles', 'owner-rules', 'phone-relay',
 ]);
 
-/** Limited feature overrides are not silently upgraded to the complete Individual offer. */
+/** The complete legacy template and its current superset include credits; limited overrides do not. */
 export function individualIncludesMonthlyCredits(grant: { planId: string | null; features: readonly string[] }): boolean {
-  return grant.planId === INDIVIDUAL_PLAN_ID && grant.features.includes(AGENT_FEATURE) &&
-    (grant.features.includes('managed-inference') || INDIVIDUAL_ACCESS_FEATURES.every(feature => grant.features.includes(feature)));
+  return grant.planId === INDIVIDUAL_PLAN_ID &&
+    INDIVIDUAL_ACCESS_FEATURES.every(feature => grant.features.includes(feature));
 }
 
 export const INDIVIDUAL_PLAN: CatalogPlan = Object.freeze({

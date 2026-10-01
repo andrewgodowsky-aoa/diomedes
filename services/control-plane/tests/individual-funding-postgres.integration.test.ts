@@ -71,7 +71,10 @@ describe.skipIf(!ownerUrl)('Individual funding with real PostgreSQL runtime and 
     ownerFactory = () => new pg.Client({ connectionString: ownerUrl, connectionTimeoutMillis: 5_000 });
     if ((await query(ownerFactory, "SELECT to_regclass('control_plane.schema_migrations') AS existing")).rows[0].existing !== null)
       throw new Error('This test will not reset an existing schema.');
-    const names = (await readdir(new URL('../migrations/', import.meta.url))).filter(n => /^\d{3}.*\.sql$/.test(n)).sort();
+    // This suite qualifies the historical 011/012 boundary and asserts version 12.
+    // The limited-grants suite separately qualifies the contiguous 001..013..014 upgrade.
+    const names = (await readdir(new URL('../migrations/', import.meta.url)))
+      .filter(n => /^\d{3}.*\.sql$/.test(n) && Number(n.slice(0, 3)) <= 12).sort();
     migrations = await Promise.all(names.map(async name => {
       const sql = await readFile(new URL(`../migrations/${name}`, import.meta.url), 'utf8');
       return { version: Number(name.slice(0, 3)), name, sql, sha256: createHash('sha256').update(sql).digest('hex') };
