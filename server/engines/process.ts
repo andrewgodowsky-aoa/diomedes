@@ -4,6 +4,13 @@ import path from 'node:path';
 import { killOwnedProcess } from '../integrations.js';
 import type { SetupStage } from '../../shared/engines.js';
 
+/**
+ * The code an EngineError carries when a person's own monthly credit limit stopped a step (Andrew,
+ * 2026-10-01). Nothing was sent. It reaches the person as a 402 `member_limit_reached` they can ask an
+ * owner or admin about, the way a job that reached its cap asks.
+ */
+export const MEMBER_LIMIT = 'MEMBER_LIMIT';
+
 export class EngineError extends Error {
   readonly status = 503;
   /**

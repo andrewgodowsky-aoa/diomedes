@@ -11,6 +11,7 @@
  * Nothing here sizes a cap or a raise. The client names the job and the
  * message; every number comes back from the host.
  */
+import { MEMBER_LIMIT_REACHED } from '../shared/credit-allotments';
 import type { CapWarningCopy, JobEstimateView, JobStatusView, JobTier } from '../shared/job-caps';
 import type { Mode } from '../shared/types';
 import { api, ApiError } from './api';
@@ -152,3 +153,59 @@ export const estimateWake = (projectId: string, slotId: string) =>
 
 export const wakeOverCap = (projectId: string, slotId: string) =>
   api(`${memberPath(projectId, slotId)}/wake-over-cap`, 'POST', {});
+
+// --- a person's own monthly limit ------------------------------------------------------------
+
+/**
+ * A send the account service refused because it would pass the person's own monthly credit limit
+ * (Andrew, 2026-10-01). Nothing was sent. It stops the way a job at its cap stops: the person is told in
+ * the service's own words and may ask an owner or admin, for this one job or for the month, or let it be.
+ */
+export const isMemberLimitStop = (error: unknown): boolean =>
+  error instanceof ApiError && error.status === 402 && error.data.code === MEMBER_LIMIT_REACHED;
+
+export type MemberLimitChoice = 'job' | 'month' | 'cancel';
+
+export interface MemberLimitPrompt {
+  title: string;
+  /** The account service's sentence: what the step needs, what is used and set, and that nothing was sent. */
+  body: string;
+  job: string;
+  month: string;
+}
+
+/** The words of the stop. The body is the service's, unchanged; the client adds no figure of its own. */
+export const memberLimitPrompt = (message: string): MemberLimitPrompt => ({
+  title: 'This is past your monthly limit',
+  body: message,
+  job: 'Ask for this job',
+  month: 'Ask for more this month',
+});
+
+export interface MemberLimitDeps {
+  ask(prompt: MemberLimitPrompt): Promise<MemberLimitChoice>;
+  /** Send the ask to the account service. The client names the kind and the job, never an amount. */
+  request(kind: 'job' | 'month'): Promise<void>;
+}
+
+/**
+ * After a send stopped at the person's limit: ask what they want, and send the ask to an owner or admin.
+ * Nothing is sent again here: once someone approves, the person sends the message as a new job.
+ */
+export async function afterMemberLimitStop(message: string, deps: MemberLimitDeps): Promise<'asked' | 'cancelled'> {
+  const choice = await deps.ask(memberLimitPrompt(message));
+  if (choice === 'cancel') return 'cancelled';
+  await deps.request(choice);
+  return 'asked';
+}
+
+/** The ask for more, as this app sends it. The client mints the request id once per ask, so a retry is the same ask. */
+export const askForMoreCredits = (
+  organizationId: string,
+  input: { requestId: string; kind: 'job' | 'month'; jobId: string | null },
+) =>
+  api<{ requestId: string; state: 'pending' | 'approved' | 'denied' }>(
+    `/workspace/organizations/${encodeURIComponent(organizationId)}/credit-limit-requests`,
+    'POST',
+    input,
+  );

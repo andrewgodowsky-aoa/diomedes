@@ -4,7 +4,8 @@ import { ApiError } from '../paths.js';
 import { HarnessError } from '../harness/policy.js';
 import { commandIdSchema } from '../command-admission.js';
 import type { InteractionTurns, RequestContext } from '../interaction-service.js';
-import { EngineError } from './process.js';
+import { EngineError, MEMBER_LIMIT } from './process.js';
+import { MEMBER_LIMIT_REACHED } from '../../shared/credit-allotments.js';
 
 const id = z.string().trim().min(1).max(200);
 /**
@@ -77,6 +78,9 @@ export function mountInteractionRoutes(
         // with its own two choices, so it keeps the one shape every route gives it.
         if (error instanceof EngineError && error.code === 'JOB_CAP')
           next(new ApiError(402, error.message, { code: 'job_cap_reached' }));
+        // The person's own monthly limit stopped it. Nothing was sent; they can ask an owner or admin.
+        else if (error instanceof EngineError && error.code === MEMBER_LIMIT)
+          next(new ApiError(402, error.message, { code: MEMBER_LIMIT_REACHED }));
         // The Nectovia Agent was not admitted for this business, or nobody is signed in. Nothing was sent.
         else if (error instanceof EngineError && (error.code === 'AGENT_NOT_INCLUDED' || error.code === 'SIGN_IN_REQUIRED'))
           next(

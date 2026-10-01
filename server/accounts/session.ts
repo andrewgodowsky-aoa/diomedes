@@ -57,7 +57,7 @@ import { ApiError } from '../paths.js';
 import { durableWrite, readJson } from '../store.js';
 import type { AccountBackend } from './backend.js';
 import { checkBrowserToken, type BrowserIdentity, type BrowserSession } from './browser-identity.js';
-import { ControlPlaneError, type RoutingPolicyAnswer, type TokenPair } from './client.js';
+import { ControlPlaneError, type ControlPlaneClient, type RoutingPolicyAnswer, type TokenPair } from './client.js';
 import type { BrowserSignInConfig } from './deployment.js';
 
 /** What the workspace registry mirrors from the account service. */
@@ -1037,6 +1037,33 @@ export class AccountSessionService {
   }
   releasePurchased(organizationId: string, input: { holdId: string }) {
     return this.call((token) => this.backend.client.releasePurchasedUsage(token, organizationId, input));
+  }
+
+  // --- members' monthly credit limits (the account service keeps them; this app asks and shows) ---
+
+  creditLimits(organizationId: string) {
+    return this.call((token) => this.backend.client.creditLimits(token, organizationId));
+  }
+  setCreditLimit(organizationId: string, input: Parameters<ControlPlaneClient['setCreditLimit']>[2]) {
+    return this.call((token) => this.backend.client.setCreditLimit(token, organizationId, input));
+  }
+  setCreditSettings(organizationId: string, input: Parameters<ControlPlaneClient['setCreditSettings']>[2]) {
+    return this.call((token) => this.backend.client.setCreditSettings(token, organizationId, input));
+  }
+  myCreditUsage(organizationId: string) {
+    return this.call((token) => this.backend.client.myCreditUsage(token, organizationId));
+  }
+  creditUsageReport(organizationId: string) {
+    return this.call((token) => this.backend.client.creditUsageReport(token, organizationId));
+  }
+  askCreditLimit(organizationId: string, input: Parameters<ControlPlaneClient['askCreditLimit']>[2]) {
+    return this.call((token) => this.backend.client.askCreditLimit(token, organizationId, input));
+  }
+  creditLimitRequests(organizationId: string) {
+    return this.call((token) => this.backend.client.creditLimitRequests(token, organizationId));
+  }
+  decideCreditLimit(organizationId: string, requestId: string, input: Parameters<ControlPlaneClient['decideCreditLimit']>[3]) {
+    return this.call((token) => this.backend.client.decideCreditLimit(token, organizationId, requestId, input));
   }
 
   /**
