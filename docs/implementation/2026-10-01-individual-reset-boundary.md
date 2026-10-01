@@ -75,6 +75,9 @@ existing reservation is never blocked, so late settlement lands under 011's fore
 grant or permission is widened; the new invoker function reads only rows `cp_funding` already
 reads. `scripts/migrate.ts` registers it.
 
+**Staff read.** `GET /ops/individuals/:id` also returns `individualTerm` (the person plan's anchor,
+current and next term), so Operations shows the plan's period beside the account's agreements.
+
 **Personal read.** `GET /account/usage` (control plane, real and faux Worker) and
 `GET /api/account/usage` (desktop) answer the signed-in person's own credits for the current
 term. Read-only and person-bound: nothing in the request names a person, account or period.
@@ -111,7 +114,25 @@ guard refuses `.claude`, so running the root suite inside a `.claude/worktrees/`
 | control plane `npm test` | 47 files passed, 5 skipped; 749 tests passed, 52 skipped |
 
 All four required gates pass on `242e852`. The first Playwright attempt failed only because no
-browser was installed; Andrew approved installing Chromium and the rerun is the logged result. PostgreSQL is not installed on this Mac, so the three PostgreSQL
+browser was installed; Andrew approved installing Chromium and the rerun is the logged result.
+
+**PostgreSQL (commit `cc498b1`).** Run against a throwaway local PostgreSQL 17.10 cluster
+(`@embedded-postgres/darwin-arm64`, unpacked in a scratch directory, superuser owner, TCP on
+loopback only), one new `b01_validation_*` database per suite, with the suites' real
+`cp_runtime` and `cp_funding` logins created from the permission scripts. Log:
+`evidence/dio-128/2026-10-01/postgres.log`.
+
+| Suite | Result |
+| --- | --- |
+| `individual-funding-postgres.integration` (incl. the four 012 cases) | 12 passed |
+| `postgres.integration` (applies 001 to 012) | 13 passed |
+| `scoped-routing-postgres.integration` (its historical 009-to-010 probe, unchanged) | 6 passed |
+
+One earlier `postgres.integration` run failed once in "deduplicates verified events atomically"
+(`webhook_inbox` unique key) and passed on two reruns and on the evidence run; it exercises
+webhook code this patch does not touch, and passed at the pre-patch base too. It is an
+intermittent race to fix separately. `postgres-role-independent` needs a pinned Neon branch and
+was not run. This is a local PostgreSQL, not Neon or the deployment database. PostgreSQL is not installed on this Mac, so the three PostgreSQL
 suites (`individual-funding-postgres`, `postgres`, `scoped-routing-postgres`) were **skipped, not
 passed**. The new 012 cases in `individual-funding-postgres.integration.test.ts` and migration 012
 itself have therefore never run against a real database. That is the first gate before review
@@ -119,6 +140,10 @@ is complete.
 
 ## Not done here
 
+- **Operations: done in its own repository,** `andrewgodowsky-aoa/diomedes-ops#9`
+  (`feature/individual-monthly-terms`): the issue form names the term (first, renewal, same period,
+  restart) instead of an end date and reports the service's UTC dates. It must deploy with this.
+  The original analysis follows.
 - **Operations (`diomedes-ops`) and the site (`diomedes-site`).** Not checked out on this Mac and
   not reachable from this Mac when this record was first written. Operations `main` was checked
   afterwards (still `d4bae66`, no branch or open PR touching Individual issuance; PR #8 is staff
