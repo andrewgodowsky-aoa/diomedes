@@ -2,9 +2,12 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { inventoryReceiptSchema, type InventoryReceipt } from '../../shared/inventory.js';
 import type { HistoryEntry } from '../../shared/types.js';
-import { ApiError, projectFile, readTextOrNull, relativeName } from '../paths.js';
+import { ApiError, absent, projectFile, readTextOrNull, relativeName } from '../paths.js';
 import { durableWrite, hash, identifier, jsonWrite, type Store } from '../store.js';
+import { assertReadable } from '../migrations/framework.js';
+import { PROJECT_STATE } from '../migrations/registry.js';
 import { inventoryDigest, parseInventoryStockDocument } from './ledger.js';
+import { withStockLock } from './stock-lock.js';
 
 interface PendingStockJournal {
   readonly schemaVersion: 1;
@@ -61,6 +64,10 @@ export class InventoryStockRepository {
 
   /** Must run inside Store.locked(); exposed so service reads cannot overtake recovery. */
   async recover(projectId: string): Promise<void> {
+    return this.withLock(projectId, () => this.recoverUnlocked(projectId));
+  }
+
+  private async recoverUnlocked(projectId: string): Promise<void> {
     await fs.mkdir(this.pendingDir(), { recursive: true });
     const names = (await fs.readdir(this.pendingDir()))
       .filter((name) => name.endsWith('.json'))
@@ -106,12 +113,30 @@ export class InventoryStockRepository {
     prepare: (entry: HistoryEntry) => PreparedStockReceipt,
     beforeReplace: () => Promise<void>,
   ): Promise<InventoryReceipt> {
-    const state = structuredClone(this.store.state(projectId));
-    const resolved = await projectFile(state.project.folder, this.stockPath);
+    return this.withLock(projectId, () =>
+      this.commitUnlocked(projectId, beforeText, history, prepare, beforeReplace),
+    );
+  }
+
+  /**
+   * The commit critical section. Holds the cross-process stock lock so a
+   * second process cannot interleave its own commit or sweep this commit's
+   * live journal, and merges the History entry onto the durable state so a
+   * stale in-memory snapshot cannot erase entries written by another process.
+   */
+  private async commitUnlocked(
+    projectId: string,
+    beforeText: string,
+    history: { readonly sentence: string; readonly label: string },
+    prepare: (entry: HistoryEntry) => PreparedStockReceipt,
+    beforeReplace: () => Promise<void>,
+  ): Promise<InventoryReceipt> {
+    const scratch = structuredClone(this.store.state(projectId));
+    const resolved = await projectFile(scratch.project.folder, this.stockPath);
     const beforeSha = hash(beforeText);
     if (beforeSha === null)
       throw new ApiError(409, 'The authoritative stock document is unavailable.');
-    const entry = this.store.addEntry(state, {
+    const entry = this.store.addEntry(scratch, {
       actor: 'you',
       kind: 'inventory-stock',
       sentence: history.sentence,
@@ -149,6 +174,12 @@ export class InventoryStockRepository {
     await fs.mkdir(this.pendingDir(), { recursive: true });
     const journalPath = path.join(this.pendingDir(), `${journal.id}.json`);
     await jsonWrite(journalPath, journal);
+    const persistEntry = async () => {
+      const state = await this.writableState(projectId);
+      entry.versionId = `v${String(state.history.length + 1).padStart(4, '0')}`;
+      state.history.push(entry);
+      await this.store.persist(state);
+    };
     try {
       await durableWrite(resolved.absolute, prepared.afterText, async () => {
         await beforeReplace();
@@ -167,7 +198,7 @@ export class InventoryStockRepository {
       )
         await fs.unlink(journalPath);
       else if (actual === afterSha) {
-        await this.store.persist(state);
+        await persistEntry();
         await fs.unlink(journalPath);
         return receipt;
       } else if (actualText !== null) {
@@ -183,7 +214,7 @@ export class InventoryStockRepository {
         if (!recorded)
           throw new ApiError(409, 'A pending inventory effect cannot be reconciled safely.');
         if (inventoryDigest(recorded.receipt) === inventoryDigest(receipt)) {
-          await this.store.persist(state);
+          await persistEntry();
           await fs.unlink(journalPath);
           return receipt;
         } else {
@@ -192,9 +223,55 @@ export class InventoryStockRepository {
       }
       throw error;
     }
-    await this.store.persist(state);
+    await persistEntry();
     await fs.unlink(journalPath);
     return receipt;
+  }
+
+  private locksDir(): string {
+    return path.join(this.store.dataDir, 'inventory-locks');
+  }
+
+  private lockName(projectId: string): string {
+    return `${projectId}-${this.stockPath.replace(/[^a-z0-9]+/gi, '-')}`;
+  }
+
+  private async withLock<T>(projectId: string, action: () => Promise<T>): Promise<T> {
+    await fs.mkdir(this.locksDir(), { recursive: true });
+    return withStockLock(this.locksDir(), this.lockName(projectId), action);
+  }
+
+  /**
+   * A writable state merged onto the durable record, not the in-memory
+   * snapshot: another process may have committed since this process loaded,
+   * and persist() writes the whole object — a stale base would erase History
+   * entries it never saw. In-memory extras are retained defensively (none
+   * should exist mid-commit), and the volatile documents cache is preserved.
+   */
+  private async writableState(
+    projectId: string,
+  ): Promise<Parameters<Store['persist']>[0]> {
+    const memory = this.store.state(projectId);
+    let fresh: Parameters<Store['persist']>[0] | null = null;
+    try {
+      fresh = JSON.parse(
+        await fs.readFile(this.store.statePath(projectId), 'utf8'),
+      ) as Parameters<Store['persist']>[0];
+    } catch (error) {
+      if (!absent(error)) throw error;
+    }
+    if (fresh === null) return structuredClone(memory);
+    assertReadable(PROJECT_STATE, fresh);
+    delete (fresh as { schemaVersion?: unknown }).schemaVersion;
+    fresh.history ??= [];
+    const durableIds = new Set(fresh.history.map((item) => item.id));
+    for (const item of memory.history) {
+      if (!durableIds.has(item.id)) fresh.history.push(item);
+    }
+    (fresh as { documents?: unknown }).documents = (
+      memory as { documents?: unknown }
+    ).documents;
+    return fresh;
   }
 
   private pendingDir(): string {
@@ -248,7 +325,7 @@ export class InventoryStockRepository {
   }
 
   private async recordRecoveredHistory(journal: PendingStockJournal): Promise<void> {
-    const state = structuredClone(this.store.state(journal.projectId));
+    const state = await this.writableState(journal.projectId);
     const existing = state.history.find((entry) => entry.id === journal.historyEntry.id);
     if (existing) {
       if (
