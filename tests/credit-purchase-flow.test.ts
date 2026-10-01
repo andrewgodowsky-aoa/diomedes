@@ -190,14 +190,17 @@ describe('buying', () => {
     });
   });
 
-  it('opens the local test service payment page when that is the service answering', async () => {
-    const d = desktop({ checkoutUrl: FAUX_URL });
-    const { flow, opened } = flowFor(d);
-    flow.start();
-    await settle();
-    await flow.buy();
-    expect(opened).toEqual([FAUX_URL]);
-  });
+  it.each([FAUX_URL, `http://faux.local/faux/checkout/cs_faux_${'a1b2c3d4'.repeat(3)}`])(
+    'opens the test service payment page when that is the service answering: %s',
+    async (checkoutUrl) => {
+      const d = desktop({ checkoutUrl });
+      const { flow, opened } = flowFor(d);
+      flow.start();
+      await settle();
+      await flow.buy();
+      expect(opened).toEqual([checkoutUrl]);
+    },
+  );
 
   it.each([
     'https://evil.example/pay',
@@ -355,7 +358,9 @@ describe('small helpers', () => {
   it('trusts a local test page only on a loopback address', () => {
     expect(checkoutOriginFor(FAUX_URL)).toBe('http://127.0.0.1:5199');
     expect(checkoutOriginFor('http://localhost:3000/faux/checkout/x')).toBe('http://localhost:3000');
+    expect(checkoutOriginFor('http://faux.local/faux/checkout/x')).toBe('http://faux.local');
     expect(checkoutOriginFor('https://example.com/faux/checkout/x')).toBeNull();
+    expect(checkoutOriginFor('http://faux.local.evil.example/faux/checkout/x')).toBeNull();
     expect(checkoutOriginFor('not a url')).toBeNull();
   });
 });

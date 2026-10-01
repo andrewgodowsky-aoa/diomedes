@@ -84,13 +84,20 @@ export function formatUsd(cents: number): string {
 }
 
 /**
- * The origin a payment page may be trusted on when it is the account service's own test page, which is
- * always on this computer. Anything else has none, and only the processor's own address passes.
+ * Where the account service's own test page can be: on this computer, or at the in-process test address the
+ * host's test mode uses. The desktop trusts the same two (it names the origin of the service it is talking to),
+ * so a page it answers is never refused here for being somewhere it approved.
+ */
+const LOCAL_TEST_HOSTS = ['127.0.0.1', 'localhost', '[::1]', 'faux.local'];
+
+/**
+ * The origin a payment page may be trusted on when it is the account service's own test page. Anything else
+ * has none, and only the processor's own address passes.
  */
 export function checkoutOriginFor(value: string): string | null {
   try {
     const url = new URL(value);
-    return ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname) ? url.origin : null;
+    return LOCAL_TEST_HOSTS.includes(url.hostname) ? url.origin : null;
   } catch {
     return null;
   }
