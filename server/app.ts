@@ -851,8 +851,11 @@ export async function createApp(options: AppOptions) {
       observation?.scopes.observeContext();
       void phoneRelay?.sync();
       await workspaces.refreshSetups();
-      // Refresh outside the store lock. Sign-out clears the cache and sends nothing.
-      await accountRouting!.refreshAccess();
+      // Refresh outside the store lock. Sign-out clears the cache and sends nothing. This only warms
+      // the cache: a read that fails leaves the person's access unread (unknown, as loadAccess does for
+      // a business), never answered as free and never a failed sign-in. Free work does not wait on it;
+      // Agent work asks again at its own admission, which still refuses when the service cannot confirm.
+      await accountRouting!.refreshAccess().catch(() => {});
     });
     // Signing out, switching accounts or forgetting one removes this computer's phone access first.
     accountSession.onRelease((personId, signedIn) => phoneRelay!.release(personId, signedIn));
