@@ -1520,7 +1520,7 @@ export async function createApp(options: AppOptions) {
   mountThemeRoutes(app, store, themes, customization);
   mountCustomizationBenefitRoutes(app, store, workspaces, customization, customizationBenefit);
   // Who is staff is the account service's word, asked at the time; an install without accounts has no staff.
-  mountManagedUsageRoutes(app, store, ledger, gateway, billing, workspaces, accountSession, accountSession, accountSession);
+  mountManagedUsageRoutes(app, store, ledger, gateway, billing, workspaces, accountSession, accountSession, accountSession, accountSession);
   // Members' monthly credit limits: the account service keeps and enforces them; this app asks as the signed-in person.
   mountCreditLimitRoutes(app, workspaces, accountSession);
   mountConfigurationRoutes(app, store, workspaces, configuration, agents);

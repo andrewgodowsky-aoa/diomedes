@@ -1091,6 +1091,10 @@ export class AccountSessionService {
   purchasedBalance(organizationId: string) {
     return this.call((token) => this.backend.client.purchasedBalance(token, organizationId));
   }
+  /** This month's included credits for the business, as the person signed in may read them. */
+  organizationUsage(organizationId: string) {
+    return this.call((token) => this.backend.client.organizationUsage(token, organizationId));
+  }
   /** Ask the service to hold some of it for the person signed in. Refusals arrive as ApiErrors with the service's code. */
   holdPurchased(organizationId: string, input: { holdId: string; amountMicroUsd: number; requestDigest: string }) {
     return this.call((token) => this.backend.client.holdPurchasedUsage(token, organizationId, input));

@@ -11,6 +11,7 @@ import { z } from 'zod';
 import { readStaffMarker, type AccessView, type StaffMarker } from '../../shared/access.js';
 import type { PersonAccessView, PersonalUsageView } from '../../shared/individual-plan.js';
 import type { OrganizationSetupAnswer, OrganizationSetupWrite } from '../../shared/organization-setup.js';
+import type { UsageState } from '../../shared/managed-usage.js';
 import type { Membership, MemberRole, Organization, Person } from '../../shared/workspaces.js';
 import {
   CREDIT_PURCHASE_MAX_CREDITS,
@@ -52,6 +53,26 @@ const purchasedHoldSchema = z.strictObject({
   balance: purchasedBalanceSchema,
 });
 export type PurchasedBalanceAnswer = z.infer<typeof purchasedBalanceSchema>;
+
+/**
+ * What the account service answers for a business's included month: the usage projection, or a plain
+ * state that carries no figures. The figures are read against their shape, because a bar is drawn from them.
+ */
+const usageMicro = z.number().int().nonnegative();
+const usageProjectionSchema = z.object({
+  v: z.literal(1), organizationId: z.string().min(1), periodId: z.string().min(1), planId: z.string().min(1),
+  periodStartsAt: z.iso.datetime(), resetsAt: z.iso.datetime(),
+  grantedMicroUsd: usageMicro, settledMicroUsd: usageMicro, pendingMicroUsd: usageMicro, uncertainMicroUsd: usageMicro,
+  correctionsMicroUsd: usageMicro, correctionWithdrawalsMicroUsd: usageMicro, availableMicroUsd: usageMicro, overspentMicroUsd: usageMicro,
+  reconciliation: z.string().nullable(), usedPercent: z.number().finite().nullable(),
+  topUp: z.object({ availableMicroUsd: usageMicro, heldMicroUsd: usageMicro, settledThisPeriodMicroUsd: usageMicro }),
+  lastReceipt: z.object({}).passthrough().nullable(), observedAt: z.iso.datetime(), rateCardVersion: z.string(),
+}).passthrough();
+const organizationUsageSchema = z.union([
+  z.object({ state: z.literal('loading'), organizationId: z.string().min(1) }),
+  z.object({ state: z.enum(['not-connected', 'unavailable']), organizationId: z.string().min(1), reason: z.string() }),
+  z.object({ state: z.literal('ready'), organizationId: z.string().min(1), projection: usageProjectionSchema }),
+]);
 export type PurchasedHoldAnswer = z.infer<typeof purchasedHoldSchema>;
 
 /**
@@ -308,6 +329,11 @@ export class ControlPlaneClient {
   async purchasedBalance(token: string, organizationId: string): Promise<PurchasedBalanceAnswer> {
     const parsed = purchasedBalanceSchema.safeParse(await this.call<unknown>('GET', `/account/organizations/${encodeURIComponent(organizationId)}/purchased-usage`, token));
     return parsed.success ? parsed.data : this.unreadable();
+  }
+  /** This month's included credits for the business: what the account service says, or its plain `unavailable`. */
+  async organizationUsage(token: string, organizationId: string): Promise<UsageState> {
+    const parsed = organizationUsageSchema.safeParse(await this.call<unknown>('GET', `/account/organizations/${encodeURIComponent(organizationId)}/usage`, token));
+    return parsed.success ? (parsed.data as unknown as UsageState) : this.unreadable();
   }
   /** Hold some of it for the signed-in person. The service decides; the amount is a request, never a balance. */
   async holdPurchasedUsage(token: string, organizationId: string, input: { holdId: string; amountMicroUsd: number; requestDigest: string }): Promise<PurchasedHoldAnswer> {

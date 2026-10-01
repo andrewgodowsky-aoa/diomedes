@@ -210,7 +210,7 @@ for (const { percent, tone, fill, note } of TONES) {
     await expect(meter(page)).toHaveAttribute('data-tone', tone);
     await expect(meter(page).locator('.uc-fill')).toHaveClass(fill);
     await expect(meter(page).locator('.uc-fill')).toHaveAttribute('style', new RegExp(`width:\\s*${percent}%`));
-    await expect(page.getByText(`${(GRANTED_CREDITS * percent) / 100} of ${GRANTED_CREDITS.toLocaleString('en-US')} credits used this month`)).toBeVisible();
+    await expect(page.getByText(`${((GRANTED_CREDITS * percent) / 100).toLocaleString('en-US')} of ${GRANTED_CREDITS.toLocaleString('en-US')} credits used this month`)).toBeVisible();
     const warning = page.locator('.uc-note');
     if (note) await expect(warning).toHaveText(note);
     else await expect(warning).toHaveCount(0);

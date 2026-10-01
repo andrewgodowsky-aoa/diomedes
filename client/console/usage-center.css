@@ -54,7 +54,6 @@
 .uc-line {
   margin: 0 0 12px;
   color: var(--dm-text-1);
-  font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
 }
 .uc-field {

@@ -120,6 +120,15 @@ export interface StaffReader {
 }
 
 /**
+ * The business's included month, as the account service reports it. Tenant credit usage is the account
+ * service's to keep, so this app asks as the person signed in and shows the answer.
+ */
+export interface OrganizationUsageReader {
+  /** This month's included credits for the business, read from the account service as the person signed in. */
+  organizationUsage(organizationId: string): Promise<UsageState>;
+}
+
+/**
  * Buying credits, as the account service does it: it prices an amount, makes the purchase and says where to
  * pay, takes the payment and records the credits. This app asks and shows what comes back; it never prices
  * anything, takes a payment or opens the payment page itself.
@@ -148,6 +157,8 @@ export function mountManagedUsageRoutes(
   purchased: PurchasedUsage | null = null,
   /** Left out, nobody can buy credits here: there is no account service to sell them. */
   credits: CreditPurchasing | null = null,
+  /** Left out, usage can't be read here: there is no account service to ask. */
+  usage: OrganizationUsageReader | null = null,
 ) {
   const route =
     (action: (req: Request, res: Response) => Promise<unknown>, locked = true) =>
@@ -370,22 +381,36 @@ export function mountManagedUsageRoutes(
   );
 
   /**
-   * Nectovia usage, as this host can honestly report it. Tenant credit usage
-   * is owned by the control plane and read with an authenticated account
-   * session. This desktop host holds no control-plane session and no client
-   * for one, so it says so rather than drawing numbers. The local allowance
-   * ledger above is not the tenant allowance and is never relabelled as it.
+   * Nectovia usage, as this host can honestly report it. Tenant credit usage is owned by the account
+   * service and read as the person signed in. With no account service, or nobody signed in, it says not
+   * connected; a service that cannot answer, or an answer that is not for this business, says
+   * unavailable. The figures are never estimated, and the local allowance ledger above is not the tenant
+   * allowance and is never relabelled as it. The service checks membership too, so a stranger gets no figures.
    */
   app.get(
     '/api/workspace/organizations/:organizationId/usage',
     route(async (req) => {
       const id = assertMine(req);
-      const state: UsageState = {
-        state: 'not-connected',
-        organizationId: id,
-        reason: NOT_CONNECTED_REASON,
-      };
-      return state;
+      const notConnected: UsageState = { state: 'not-connected', organizationId: id, reason: NOT_CONNECTED_REASON };
+      if (!usage) return notConnected;
+      let answer: UsageState;
+      try {
+        answer = await usage.organizationUsage(id);
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 401) return notConnected;
+        return {
+          state: 'unavailable',
+          organizationId: id,
+          reason: 'The account service couldn’t say what this business has used, so nothing is shown. Nothing is estimated in its place.',
+        } satisfies UsageState;
+      }
+      if (answer.organizationId !== id || (answer.state === 'ready' && answer.projection.organizationId !== id))
+        return {
+          state: 'unavailable',
+          organizationId: id,
+          reason: 'The usage answer named a different business, so it was not shown.',
+        } satisfies UsageState;
+      return answer;
     }, false),
   );
 

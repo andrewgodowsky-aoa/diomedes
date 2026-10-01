@@ -650,3 +650,12 @@ describe('the Settings rail for a member', () => {
     expect(read('client/console/UsageCenter.tsx')).toMatch(/if \(!canSeePurchasedCredits\(membership\)\) return null/);
   });
 });
+
+describe('the sentences on the Usage screen', () => {
+  it('are not set in tabular figures, which widen the full stop and read as a stray space before it', () => {
+    const css = read('client/console/usage-center.css');
+    const rule = css.match(/\.uc-line\s*\{[^}]*\}/);
+    expect(rule).not.toBeNull();
+    expect(rule![0]).not.toMatch(/tabular-nums/);
+  });
+});
