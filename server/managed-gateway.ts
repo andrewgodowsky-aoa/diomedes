@@ -36,6 +36,7 @@ import {
   type Payer,
   type Reservation,
 } from '../shared/managed-usage.js';
+import type { StaffRole } from '../shared/access.js';
 import { NO_ENTITLEMENT_REASON, type EntitlementView } from '../shared/workspaces.js';
 import { ApiError } from './paths.js';
 import type { AllowanceLedger } from './managed-usage.js';
@@ -61,16 +62,27 @@ export interface AdmissionRequest {
    * allowance themselves (the HTTP route). Never read from a request body.
    * Left unset, this is the app admitting its own managed work for a person.
    * A direct reservation of the company's allowance is refused where a hold
-   * would be taken (owner rule, 2026-09-30): this app can tell neither Diomedes
-   * staff from a customer nor usage bought outright from included usage, so no
-   * direct request can be shown to be one of the two allowed kinds.
+   * would be taken (owner rule, 2026-09-30) unless the asker is active Diomedes
+   * staff. Usage bought outright is the other allowed kind, and this app's local
+   * ledger keeps no line for it, so no direct request can be shown to be that kind.
    */
   readonly directReservation?: boolean;
+  /**
+   * The asker's role when the account service has just said they are active staff. Set by
+   * the host from that answer, and only by the host; never read from a request body. It
+   * matters only to a direct reservation: left unset or null, that is refused.
+   */
+  readonly staffRole?: StaffRole | null;
 }
 
 export const DIRECT_RESERVATION_REFUSED = 'direct_reservation_refused';
 export const DIRECT_RESERVATION_REASON =
   'You can’t reserve this business’s included usage yourself. Your work in the app draws on it as it runs. Nothing was held.';
+
+/** Settling is a person's word about what a hold cost, so it is closed to people the same way. */
+export const DIRECT_SETTLE_REFUSED = 'direct_settle_refused';
+export const DIRECT_SETTLE_REASON =
+  'You can’t settle this business’s usage yourself. Your work in the app settles as it finishes. Nothing was changed.';
 
 export interface GatewayAuthorization {
   readonly tenantId: string;
@@ -226,11 +238,12 @@ export class ManagedGateway {
         'managed',
       );
     // A person asking to hold the company's allowance themselves stops here,
-    // at the last gate before money. Local and own-key work held nothing and
-    // returned above, and an unpaid, suspended or over-cap request has already
-    // been refused for its own reason, so only a hold that would draw on
-    // included usage reaches this line.
-    if (request.directReservation)
+    // at the last gate before money, unless the host has shown them to be
+    // active staff. Local and own-key work held nothing and returned above, and
+    // an unpaid, suspended or over-cap request has already been refused for its
+    // own reason, so only a hold that would draw on included usage reaches this
+    // line.
+    if (request.directReservation && !request.staffRole)
       return refuse(DIRECT_RESERVATION_REFUSED, DIRECT_RESERVATION_REASON, 'managed');
     let reservation: Reservation;
     try {

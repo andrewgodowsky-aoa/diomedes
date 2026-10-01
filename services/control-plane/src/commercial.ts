@@ -761,6 +761,18 @@ export class CommercialService {
     }
   }
 
+  /**
+   * Whether a person the caller has already verified is active Diomedes staff, and as what. Only an
+   * ACTIVE row counts: a disabled row, and a person with no row, are not staff. This reads the
+   * staff table and nothing else, so it cannot be argued into by an email domain, a plan, or the
+   * internal-test grant source. The caller owns the verification: pass only a personId taken from a
+   * session the account service has just authenticated, never one a client supplied.
+   */
+  async staffMarkerFor(verifiedPersonId: string): Promise<{ role: StaffRole } | null> {
+    const operator = await this.repository.transaction((tx) => tx.operator(verifiedPersonId));
+    return operator && operator.state === 'active' ? { role: operator.role } : null;
+  }
+
   /** Who is signed in to the Operations app, and what their role allows. */
   async me(token: string) {
     const actor = await this.staff(token, 'customers.read');
