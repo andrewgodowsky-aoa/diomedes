@@ -147,7 +147,7 @@ async function setUsedPercent(percent: number) {
 const settingsNav = (page: Page) => page.getByRole('navigation', { name: 'Settings' });
 const usageEntry = (page: Page) => settingsNav(page).getByRole('button', { name: 'Usage', exact: true });
 
-async function openSettings(page: Page) {
+async function openConsole(page: Page) {
   // Stand-in for the system browser: the screen asks to open the payment page, and the test reads where.
   await page.addInitScript(() => {
     const opened: string[] = [];
@@ -160,6 +160,10 @@ async function openSettings(page: Page) {
   await page.goto(`${baseURL}/`);
   await reopenLastProject(page);
   await expect(page.locator('.console')).toBeVisible();
+}
+
+async function openSettings(page: Page) {
+  await openConsole(page);
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   await expect(settingsNav(page)).toBeVisible();
 }
@@ -257,10 +261,16 @@ test('a member of the business has no Usage in Settings, and the account service
   const here = workspace.organizations.find((row) => row.organization.id === juniper)!;
   expect(here.membership.role).toBe('member');
 
+  // The Usage entry is decided from the workspace the Settings page reads when it opens, and is absent until that answer is
+  // in, so the absence only means something after it. Wait for the read the Settings page itself makes: armed after the console
+  // is up (whose own reads are done) and just before Settings opens.
+  await openConsole(page);
   const loaded = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/workspace' && response.request().method() === 'GET');
-  await openSettings(page);
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
   await loaded;
+  await expect(settingsNav(page)).toBeVisible();
   await expect(settingsNav(page).getByRole('button', { name: 'Account', exact: true })).toBeVisible();
+  // The workspace read is in, and the entry the owner got is still not there.
   await expect(usageEntry(page)).toHaveCount(0);
   await expect(page.getByRole('heading', { name: 'Agent usage', level: 2 })).toHaveCount(0);
 
