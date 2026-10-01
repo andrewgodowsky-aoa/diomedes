@@ -70,7 +70,7 @@ export interface AdmissionRequest {
 
 export const DIRECT_RESERVATION_REFUSED = 'direct_reservation_refused';
 export const DIRECT_RESERVATION_REASON =
-  'You cannot reserve this business’s included usage yourself. Included usage is used by your own work in the app. Only Diomedes staff, or usage bought outright, can be reserved directly.';
+  'You can’t reserve this business’s included usage yourself. Your work in the app draws on it as it runs. Nothing was held.';
 
 export interface GatewayAuthorization {
   readonly tenantId: string;
