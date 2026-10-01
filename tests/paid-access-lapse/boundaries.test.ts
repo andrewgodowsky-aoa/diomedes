@@ -155,4 +155,39 @@ describe('independent free harness and paid Agent boundaries at 05ef1b0', () => 
     expect(f.calls.direct + f.calls.model).toBe(0);
   });
 
+  // Restored from review 05ef1b0. Sign-in must not fail on an unreadable access read (the projector in server/app.ts since e730317).
+  test('an unread business entitlement is unknown and does not falsely show the free-plan notice', async () => {
+    f.accessUnavailable(true);
+    const account = await f.signIn(DEMO_ACCOUNTS.owner.email);
+    expect(account.plan).toMatchObject({ agent: 'unknown', notice: false });
+    expect(account.workspaces[0]!.access).toBeNull();
+    expect(f.calls.direct + f.calls.model).toBe(0);
+  });
+
+  test('a free person signs in while the access read is unavailable and can still choose their own engine', async () => {
+    f.accessUnavailable(true);
+    const account = await f.signIn(DEMO_ACCOUNTS.free.email);
+    expect(account.signedIn).toBe(true);
+    expect(account.plan).toMatchObject({ agent: 'unknown', notice: false });
+    const binding = await f.home();
+    await f.ownEngine(binding);
+    // Chosen by the person, so the thread does not wait on an entitlement the service cannot answer.
+    await f.api(`/projects/${binding.projectId}/threads/${binding.threadId}`, 'PUT', { engine: 'claude-code' });
+    const response = await f.say(binding, 'unread-free-direct');
+    expect(response.status, await response.clone().text()).toBe(200);
+    expect(f.calls.direct).toBe(1);
+    expect(f.calls.model).toBe(0);
+  });
+
+  test('Agent work still does not start while the access read is unavailable after sign-in', async () => {
+    f.accessUnavailable(true);
+    await f.signIn(DEMO_ACCOUNTS.owner.email);
+    const binding = await f.home();
+    await f.ownEngine(binding);
+    await f.aws(binding);
+    const response = await f.say(binding, 'unread-agent');
+    expect(response.status, await response.clone().text()).toBeGreaterThanOrEqual(400);
+    expect(f.calls.model).toBe(0);
+  });
+
 });
