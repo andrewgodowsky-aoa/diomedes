@@ -90,7 +90,8 @@ export class StateFundingTransaction implements FundingTransaction {
       && ((row.kind === 'month' && row.periodId === periodId) || (row.kind === 'job' && row.rootJobId === rootJobId)));
   }
   async saveAttemptPerson(row: AttemptPersonRow) { this.state.attemptPeople.push(row); }
-  async memberUsage(tenantId: string, organizationId: string, period: CreditPeriodRow, personId: string | null): Promise<MemberUsageRow[]> {
+  async memberUsage(tenantId: string, organizationId: string, period: CreditPeriodRow, personId: string | null, at: string): Promise<MemberUsageRow[]> {
+    const now = Date.parse(at);
     const personOf = (attemptId: string) => this.state.attemptPeople.find((row) => row.tenantId === tenantId && row.attemptId === attemptId)?.personId;
     const totals = new Map<string, { included: number; purchased: number; held: number }>();
     const add = (person: string | undefined, included: number, purchased: number, held: number) => {
@@ -106,7 +107,8 @@ export class StateFundingTransaction implements FundingTransaction {
         add(personOf(row.reservationId), row.monthlyDebitMicroUsd, row.topUpDebitMicroUsd, 0);
     for (const row of this.state.topUpHolds) {
       if (row.tenantId !== tenantId || row.organizationId !== organizationId) continue;
-      if (row.state === 'held') add(row.personId, 0, row.amountMicroUsd, row.amountMicroUsd);
+      // A held hold whose lease has lapsed is not held, whether or not anything has let go of it yet.
+      if (row.state === 'held') { if (Date.parse(row.leaseUntil) > now) add(row.personId, 0, row.amountMicroUsd, row.amountMicroUsd); }
       else if (row.state === 'settled' && row.resolvedAt !== null && row.resolvedAt >= period.startsAt && row.resolvedAt < period.endsAt) add(row.personId, 0, row.debitMicroUsd, 0);
     }
     return [...totals.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
@@ -125,13 +127,23 @@ export class StateFundingTransaction implements FundingTransaction {
       settledTopUpMicroUsd: sum(settlements.map((row) => row.topUpDebitMicroUsd)),
     };
   }
-  async topUpTotals(tenantId: string, organizationId: string) {
+  /** The lazy release: a held hold whose lease has lapsed at `at` (lease_until <= at) is let go by expiry. */
+  async expireTopUpHolds(tenantId: string, organizationId: string, at: string) {
+    const now = Date.parse(at);
+    this.state.topUpHolds = this.state.topUpHolds.map((row) =>
+      row.tenantId === tenantId && row.organizationId === organizationId && row.state === 'held' && Date.parse(row.leaseUntil) <= now
+        ? { ...row, state: 'released' as const, releasedBy: 'expiry' as const, resolvedAt: at }
+        : row);
+  }
+  async topUpTotals(tenantId: string, organizationId: string, at: string) {
+    const now = Date.parse(at);
     const mine = <T extends { tenantId: string; organizationId: string }>(rows: T[]) => rows.filter((row) => row.tenantId === tenantId && row.organizationId === organizationId);
     return {
       purchasedMicroUsd: sum(mine(this.state.topUps).map((row) => row.amountMicroUsd)),
       heldMicroUsd: sum([
         ...mine(this.state.attempts).filter((row) => row.state === 'pending' || row.state === 'uncertain').map((row) => row.topUpHoldMicroUsd),
-        ...mine(this.state.topUpHolds).filter((row) => row.state === 'held').map((row) => row.amountMicroUsd),
+        // A held hold whose lease has lapsed is not held, whether or not anything has let go of it yet.
+        ...mine(this.state.topUpHolds).filter((row) => row.state === 'held' && Date.parse(row.leaseUntil) > now).map((row) => row.amountMicroUsd),
       ]),
       settledMicroUsd: sum([
         ...mine(this.state.settlements).map((row) => row.topUpDebitMicroUsd),

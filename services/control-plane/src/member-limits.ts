@@ -315,7 +315,7 @@ export class MemberLimits {
       const { periodId, period } = await currentPeriod(tx, tenantId, organizationId, at);
       if (!period)
         return { state: 'unavailable', organizationId, reason: 'No credit grant is recorded for this month, so there is no usage to show.' } as const;
-      const usage = (await tx.memberUsage(tenantId, organizationId, period, personId))[0] ?? { personId, ...ZERO_USAGE };
+      const usage = (await tx.memberUsage(tenantId, organizationId, period, personId, at))[0] ?? { personId, ...ZERO_USAGE };
       const eff = effectiveLimit({ role: input.actor.role, personId, settings: (await tx.memberLimits(tenantId, organizationId)).map(settingOf),
         planId: period.planId, monthlyGrantMicroUsd: period.grantedMicroUsd });
       const requests = await tx.limitRequests(tenantId, organizationId, { personId });
@@ -344,7 +344,7 @@ export class MemberLimits {
         throw new FundingError(403, 'This business shows member usage to its owners only.', 'not_authorized');
       const { periodId, period } = await currentPeriod(tx, tenantId, organizationId, at);
       if (!period) return { state: 'unavailable', reason: 'No credit grant is recorded for this month, so there is no usage to show.' } as const;
-      const used = await tx.memberUsage(tenantId, organizationId, period, null);
+      const used = await tx.memberUsage(tenantId, organizationId, period, null, at);
       const rows = (await tx.memberLimits(tenantId, organizationId)).map(settingOf);
       const requests = await tx.limitRequests(tenantId, organizationId, { state: 'approved' });
       const ids = new Set([...input.people.map((p) => p.personId), ...used.map((row) => row.personId)]);
@@ -449,7 +449,7 @@ export class MemberLimits {
         periodId = periodIdFor(at);
       }
       const allowPurchased = input.allowPurchased === true;
-      if (allowPurchased && topUpAvailable(await tx.topUpTotals(tenantId, organizationId)) === 0)
+      if (allowPurchased && topUpAvailable(await tx.topUpTotals(tenantId, organizationId, at)) === 0)
         throw new FundingError(402, 'No bought credits are free to approve. Nothing was changed.', 'no_purchased_usage');
       const approved: LimitRequestRow = { ...request, state: 'approved', decidedBy: input.actor.personId, decidedAt: at, extraMicroUsd: extra, allowPurchased, periodId };
       await tx.saveLimitRequest(approved);

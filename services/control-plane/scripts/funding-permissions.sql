@@ -57,14 +57,17 @@ GRANT UPDATE (state, dispatched_at, resolved_at, uncertain_reason) ON control_pl
 -- Never UPDATE: a settlement is written once.
 GRANT SELECT, INSERT ON control_plane.funding_settlements TO cp_funding;
 -- 013 credit_topup_holds: the holds a person asked for against credits their business bought
--- outright (POST /account/organizations/:id/purchased-usage/holds, /settlements and /releases, src/funding.ts
--- PurchasedUsageService, and the held and settled sums every reserve reads in topUpTotals()). SELECT:
--- topUpHold(), "SELECT * FROM control_plane.credit_topup_holds WHERE tenant_id=$1 AND hold_id=$2 FOR UPDATE",
--- and the two sums in topUpTotals(). INSERT: saveTopUpHold(). UPDATE on three columns: its "ON CONFLICT
--- (tenant_id,hold_id) DO UPDATE SET debit_micro_usd=...,state=...,resolved_at=..." (settle, release), and
--- topUpHold()'s FOR UPDATE. No amount, person, digest or organization column can be rewritten.
+-- outright (POST /account/organizations/:id/purchased-usage/holds, /settlements, /releases and /renewals,
+-- src/funding.ts PurchasedUsageService, and the held and settled sums every reserve reads in topUpTotals()).
+-- SELECT: topUpHold(), "SELECT * FROM control_plane.credit_topup_holds WHERE tenant_id=$1 AND hold_id=$2 FOR UPDATE",
+-- and the two sums in topUpTotals(). INSERT: saveTopUpHold(). UPDATE on six columns: its "ON CONFLICT
+-- (tenant_id,hold_id) DO UPDATE SET debit_micro_usd=...,absorbed_micro_usd=...,state=...,resolved_at=...,lease_until=...,
+-- released_by=..." (settle, late settle, release, renew), expireTopUpHolds()'s "UPDATE ... SET state='released',released_by='expiry',
+-- resolved_at=$3 WHERE ... state='held' AND lease_until <= $3" (the lazy release of a lapsed lease, run under the
+-- organization lock by every purchased-hold read and write), and topUpHold()'s FOR UPDATE. No amount, person,
+-- digest, organization or creation-time column can be rewritten, and lease_until is only ever moved by a renewal.
 GRANT SELECT, INSERT ON control_plane.credit_topup_holds TO cp_funding;
-GRANT UPDATE (debit_micro_usd, state, resolved_at) ON control_plane.credit_topup_holds TO cp_funding;
+GRANT UPDATE (debit_micro_usd, absorbed_micro_usd, state, resolved_at, lease_until, released_by) ON control_plane.credit_topup_holds TO cp_funding;
 -- 014 credit_attempt_people: which person each funded attempt was reserved for. INSERT: saveAttemptPerson(),
 -- "INSERT INTO control_plane.credit_attempt_people(...)" (reserve, for a member's attempt). SELECT: the join in
 -- memberUsage() that every limited member's reserve reads. Written once; never UPDATE.

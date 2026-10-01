@@ -306,12 +306,14 @@ An active member of the business, with their own session, can:
   and available, in micro-USD.
 - `POST .../purchased-usage/holds` `{ holdId, amountMicroUsd, requestDigest }`:
   hold credits. Refused 402 `no_purchased_usage` or
-  `insufficient_purchased_usage`, with a plain reason ending "Nothing was
-  held." Idempotent by `holdId`: the same terms find the hold, different terms
-  are 409 `hold_conflict`, a closed hold is 409 `hold_closed`.
+  `insufficient_purchased_usage`, with a plain reason. Idempotent by
+  `holdId`: the same terms find the hold, different terms are 409 `hold_conflict`, a closed hold is 409 `hold_closed`.
 - `POST .../purchased-usage/settlements` `{ holdId, debitMicroUsd }`: debit the
   top-up balance by at most the hold; the rest is free again. A replay returns
-  the recorded settlement; a different debit is 409 `settlement_conflict`.
+  the recorded settlement; a different debit is 409 `settlement_conflict`. A
+  settle that arrives after the hold's lease lapsed records only what is free
+  at that moment, so the bought balance never goes below zero; Diomedes covers
+  the rest and keeps it internally, and no answer shows it.
 - `POST .../purchased-usage/releases` `{ holdId }`: give an unused hold back.
 
 A hold is a row in `credit_topup_holds`, not a funded attempt: no job, month,

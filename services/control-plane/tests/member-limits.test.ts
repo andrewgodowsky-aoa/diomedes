@@ -9,7 +9,7 @@
 import { describe, expect, it } from 'vitest';
 import { creditAmount, micro, type RateSnapshot } from '../../../shared/managed-usage.js';
 import { MEMBER_LIMIT_REACHED, PLAN_MEMBER_LIMIT_CREDITS, decideMemberUse, defaultLimitFor, effectiveLimit } from '../../../shared/credit-allotments.js';
-import { FundingError, FundingService, PurchasedUsageService, UsageService } from '../src/funding.js';
+import { FundingError, FundingService, PURCHASED_HOLD_LEASE_MINUTES, PurchasedUsageService, UsageService } from '../src/funding.js';
 import { MemberLimits, MemberLimitsService } from '../src/member-limits.js';
 import { createHandler } from '../src/worker.js';
 import { FundingMemoryRepository } from './support/funding-memory.js';
@@ -68,7 +68,7 @@ async function fixture() {
     limits.decide({ ...ref, requestId, actor: actor(who), approve, ...extra });
   const usage = async (who: keyof typeof people) => {
     const period = (await repository.transaction((tx) => tx.period(ref.tenantId, ref.organizationId, '2026-09')))!;
-    return (await repository.transaction((tx) => tx.memberUsage(ref.tenantId, ref.organizationId, period, people[who].id)))[0];
+    return (await repository.transaction((tx) => tx.memberUsage(ref.tenantId, ref.organizationId, period, people[who].id, new Date(clock).toISOString())))[0];
   };
   const service = new MemberLimitsService(accounts, limits);
   const handler = createHandler(() => accounts, (_config, account) => new UsageService(account, funding), {
@@ -187,6 +187,42 @@ describe('a member’s limit at admission', () => {
     await purchased.settle('bob', f.organization.id, { holdId: 'hold_1', debitMicroUsd: c(5) });
     expect(await f.usage('bob')).toMatchObject({ purchasedMicroUsd: c(5), heldMicroUsd: 0 });
     await expect(f.reserve('bob', 'a2', 10, 'job_a2')).resolves.toMatchObject({ state: 'pending' });
+  });
+
+// A purchased hold is a lease. Past it the hold is not held, even before anything has let go of it, so it
+  // stops counting against the member the moment the lease lapses, the same instant the bought balance frees it.
+  it('does not count a purchased hold whose lease has lapsed as held, before anything has let go of it', async () => {
+    const f = await fixture();
+    await f.funding.recordTopUp({ ...f.ref, topUpId: 'topup_1', amountMicroUsd: c(100), provider: 'stripe', sourceEventId: 'evt_1' });
+    await f.setLimit('alice', 'bob', 'limit', 20);
+    const purchased = new PurchasedUsageService(f.accounts, f.funding);
+    await purchased.hold('bob', f.organization.id, { holdId: 'hold_1', amountMicroUsd: c(15), requestDigest: 'digest-1' });
+    f.setClock('2026-09-20T12:14:00.000Z');
+    expect(await f.usage('bob')).toMatchObject({ purchasedMicroUsd: c(15), heldMicroUsd: c(15) });
+    expect((await refusal(f.reserve('bob', 'a1', 10))).code).toBe('member_limit_reached');
+    // The lease runs out at exactly 15 minutes: from that instant the hold is not held.
+    f.setClock(new Date(Date.parse('2026-09-20T12:00:00.000Z') + PURCHASED_HOLD_LEASE_MINUTES * 60_000).toISOString());
+    expect(await f.usage('bob')).toBeUndefined();
+    await expect(f.reserve('bob', 'a2', 10, 'job_a2')).resolves.toMatchObject({ state: 'pending' });
+    // Nothing swept the row: it is still held in storage, and only the reading changed.
+    expect(f.repository.snapshot().topUpHolds.find((row) => row.holdId === 'hold_1')).toMatchObject({ state: 'held', releasedBy: null });
+  });
+
+  it('counts a settled purchased hold at its recorded debit only, never at what was absorbed', async () => {
+    const f = await fixture();
+    await f.funding.recordTopUp({ ...f.ref, topUpId: 'topup_1', amountMicroUsd: c(10), provider: 'stripe', sourceEventId: 'evt_1' });
+    await f.setLimit('alice', 'bob', 'limit', 50);
+    const purchased = new PurchasedUsageService(f.accounts, f.funding);
+    await purchased.hold('bob', f.organization.id, { holdId: 'hold_a', amountMicroUsd: c(7), requestDigest: 'digest-a' });
+    f.setClock(new Date(Date.parse('2026-09-20T12:00:00.000Z') + PURCHASED_HOLD_LEASE_MINUTES * 60_000).toISOString());
+    // The lapsed credits are held again by other work, so a late settle of the first can record only what is free.
+    await purchased.hold('dave', f.organization.id, { holdId: 'hold_b', amountMicroUsd: c(7), requestDigest: 'digest-b' });
+    const late = await purchased.settle('bob', f.organization.id, { holdId: 'hold_a', debitMicroUsd: c(7) });
+    expect(late).toMatchObject({ state: 'settled', debitMicroUsd: c(3) });
+    const row = f.repository.snapshot().topUpHolds.find((item) => item.holdId === 'hold_a')!;
+    expect(row).toMatchObject({ debitMicroUsd: c(3), absorbedMicroUsd: c(4) });
+    expect(await f.usage('bob')).toMatchObject({ includedMicroUsd: 0, purchasedMicroUsd: c(3), heldMicroUsd: 0 });
+    expect(await f.usage('dave')).toMatchObject({ purchasedMicroUsd: c(7), heldMicroUsd: c(7) });
   });
 
   it('sets a limit for a role, lets a person override it, and lets an override clear', async () => {

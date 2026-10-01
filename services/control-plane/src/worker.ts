@@ -6,7 +6,7 @@ import { readBytes } from './crypto.js';
 import { WorkOSIdentityVerifier } from './identity-workos.js';
 import { StaffKeyVerifier, postgresStaffKeys } from './identity-staff-key.js';
 import { PostgresRepository, neonClientFactory } from './postgres.js';
-import { FundingService, PurchasedUsageService, UsageService, purchasedHoldInput, purchasedReleaseInput, purchasedSettleInput } from './funding.js';
+import { FundingService, PurchasedUsageService, UsageService, purchasedHoldInput, purchasedReleaseInput, purchasedRenewInput, purchasedSettleInput } from './funding.js';
 import { PostgresFundingRepository } from './funding-postgres.js';
 import { MemberLimits, MemberLimitsService, askRaiseInput, decideRaiseInput, setLimitInput, setSettingsInput } from './member-limits.js';
 import { PostgresCommercialRepository } from './commercial-postgres.js';
@@ -91,7 +91,7 @@ export interface HandlerOptions {
   configuration?: (env: Record<string, unknown>) => Configuration;
   createCommercial?: (config: Configuration, accounts: AccountService) => CommercialService;
   /** Test and faux-cloud seam for purchased-usage holds. The Worker entry always uses the funding login. */
-  createPurchased?: (config: Configuration, accounts: AccountService) => Pick<PurchasedUsageService, 'balance' | 'hold' | 'settle' | 'release'>;
+  createPurchased?: (config: Configuration, accounts: AccountService) => Pick<PurchasedUsageService, 'balance' | 'hold' | 'settle' | 'release' | 'renew'>;
   /** Test and faux-cloud seam for per-member credit limits. The Worker entry always uses the funding login. */
   createLimits?: (config: Configuration, accounts: AccountService) => Pick<MemberLimitsService, 'limits' | 'setLimit' | 'setSettings' | 'mine' | 'report' | 'ask' | 'requests' | 'decide'>;
   createRouting?: (config: Configuration, accounts: AccountService) => RoutingService;
@@ -300,6 +300,8 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
         return json(await createLimits(config, accounts).ask(token, match[1], await body(request, askRaiseInput)));
       if ((match = route('/account/organizations/:id/credit-limit-requests/:id/decision').exec(pathname)) && method === 'POST')
         return json(await createLimits(config, accounts).decide(token, match[1], match[2], await body(request, decideRaiseInput)));
+      if ((match = route('/account/organizations/:id/purchased-usage/renewals').exec(pathname)) && method === 'POST')
+        return json(await createPurchased(config, accounts).renew(token, match[1], await body(request, purchasedRenewInput)));
       if ((match = route('/account/organizations/:id/invitations').exec(pathname)) && method === 'POST')
         return json(await accounts.invite(token, match[1], await body(request, invitationInput)), 201);
       if ((match = route('/account/organizations/:id/invitations/accept').exec(pathname)) && method === 'POST')

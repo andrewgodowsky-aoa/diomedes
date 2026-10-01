@@ -1038,6 +1038,10 @@ export class AccountSessionService {
   releasePurchased(organizationId: string, input: { holdId: string }) {
     return this.call((token) => this.backend.client.releasePurchasedUsage(token, organizationId, input));
   }
+  /** Keep a hold this person made from lapsing while the work it is for is still running. */
+  renewPurchased(organizationId: string, input: { holdId: string }) {
+    return this.call((token) => this.backend.client.renewPurchasedUsage(token, organizationId, input));
+  }
 
   // --- members' monthly credit limits (the account service keeps them; this app asks and shows) ---
 

@@ -296,7 +296,7 @@ async function runGatewayPaths() {
       headers: { authorization: `Bearer ${token}`, 'x-nectovia-organization': organizationId },
     }), 'run-1:1')).status,
   };
-  // Purchased-usage holds (013): a member holds, settles and releases credits the business bought outright.
+  // Purchased-usage holds (013): a member holds, renews, settles and releases credits the business bought outright.
   const member = await cloud.accounts.membership(token, organizationId);
   await cloud.store.funding.transaction((tx) => tx.saveTopUp({ tenantId: member.organization.tenantId, organizationId, topUpId: 'topup-permissions',
     amountMicroUsd: micro(10_000_000), provider: 'stripe', sourceEventId: 'evt-permissions', recordedAt: new Date(now()).toISOString() }));
@@ -306,6 +306,8 @@ async function runGatewayPaths() {
   await purchased.settle(token, organizationId, { holdId: 'hold-1', debitMicroUsd: 400_000 });
   await purchased.hold(token, organizationId, { holdId: 'hold-2', amountMicroUsd: 1_000_000, requestDigest: 'digest-2' });
   await purchased.release(token, organizationId, { holdId: 'hold-2' });
+  await purchased.hold(token, organizationId, { holdId: 'hold-3', amountMicroUsd: 1_000_000, requestDigest: 'digest-3' });
+  await purchased.renew(token, organizationId, { holdId: 'hold-3' });
   // Members' monthly limits (014), run as the account Worker runs them on the same login: an owner sets a limit
   // and who sees what, the member's next call is refused before anything is held, the member asks for one
   // job and for the month, the owner approves both (the month with bought credits allowed), and each side reads.
@@ -377,7 +379,7 @@ describe('cp_funding (scripts/funding-permissions.sql)', () => {
     expect(run.states).toEqual({ 'run-1:1': 'settled', 'run-1:2': 'settled', 'run-1:3': 'released', 'run-1:4': 'uncertain', 'run-1:5': 'released' });
     expect(run.periods).toEqual(['2026-09', '2026-10']);
     expect(run.providerCalls).toBe(4);
-    expect(run.holds).toEqual({ 'hold-1': 'settled', 'hold-2': 'released' });
+    expect(run.holds).toEqual({ 'hold-1': 'settled', 'hold-2': 'released', 'hold-3': 'held' });
 
     // Every funding call the gateway's source can make, in any branch, was run.
     expect([...run.serviceLog].sort()).toEqual([...SERVICE_CALLS].sort());
@@ -406,7 +408,7 @@ describe('cp_funding (scripts/funding-permissions.sql)', () => {
       'credit_limit_requests: SELECT, INSERT, UPDATE (allow_purchased, decided_at, decided_by, extra_micro_usd, period_id, state)',
       'credit_member_limits: SELECT, INSERT, UPDATE (limit_micro_usd, mode, updated_at, updated_by)',
       'credit_periods: SELECT, INSERT',
-      'credit_topup_holds: SELECT, INSERT, UPDATE (debit_micro_usd, resolved_at, state)',
+      'credit_topup_holds: SELECT, INSERT, UPDATE (absorbed_micro_usd, debit_micro_usd, lease_until, released_by, resolved_at, state)',
       'credit_topups: SELECT',
       'funded_job_refs: SELECT, INSERT',
       'funded_jobs: SELECT, INSERT, UPDATE (cap_generation, cap_micro_usd, state)',

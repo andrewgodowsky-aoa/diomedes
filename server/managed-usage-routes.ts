@@ -28,6 +28,10 @@
  * the service holds nothing. A non-staff settle goes to the service too, which
  * knows only the holds that person made; a hold on the included month is not one,
  * and is refused. The ledger itself stays open to an in-process caller.
+ *
+ * A hold on bought usage is a lease the service times on its own clock. A non-staff person
+ * renews the hold they made through the renew route, as that person; staff hold on the local
+ * ledger, which keeps no lease, so there is nothing for them to renew.
  */
 import type { Express, Request, Response } from 'express';
 import type { StaffRole } from '../shared/access.js';
@@ -45,10 +49,14 @@ import type { BillingEvent, BillingEventProcessor } from './billing-events.js';
 import type { ManagedGateway } from './managed-gateway.js';
 import type { AllowanceLedger } from './managed-usage.js';
 import {
+  DIRECT_RENEW_REASON,
+  DIRECT_RENEW_REFUSED,
   DIRECT_RESERVATION_REFUSED,
   DIRECT_SETTLE_REASON,
   DIRECT_SETTLE_REFUSED,
   PURCHASED_REFUSAL_STATUS,
+  STAFF_RENEW_REASON,
+  STAFF_RENEW_REFUSED,
   type PurchasedUsage,
 } from './managed-gateway.js';
 import { ApiError } from './paths.js';
@@ -159,6 +167,39 @@ export function mountManagedUsageRoutes(
     };
 
   /**
+   * A non-staff renewal, sent to the account service as that person. The service finds only a hold this
+   * person made; someone else's and one that does not exist read the same, and that is a 403. The new
+   * lease is the service's: this app asks, and shows what came back.
+   */
+  const renewPurchasedHold = async (id: string, req: Request) => {
+    if (!purchased) throw new ApiError(403, DIRECT_RENEW_REASON, { code: DIRECT_RENEW_REFUSED });
+    const holdId = text(body(req).reservationId, 'the attempt being renewed', 120);
+    let answer;
+    try {
+      answer = await purchased.renewPurchased(id, { holdId });
+    } catch (error) {
+      if (error instanceof ApiError) {
+        const code = String((error.details as { code?: unknown }).code ?? '');
+        if (error.status === 404 && code === 'unknown_hold')
+          throw new ApiError(403, DIRECT_RENEW_REASON, { code: DIRECT_RENEW_REFUSED });
+        if (code === 'hold_not_held') throw new ApiError(409, error.message, { code });
+        if (error.status === 401) throw error;
+      }
+      throw new ApiError(503, 'The account service couldn’t be reached, so this wasn’t renewed.', {
+        code: 'purchased_renew_unavailable',
+      });
+    }
+    return {
+      reservationId: answer.holdId,
+      organizationId: id,
+      source: 'purchased' as const,
+      state: answer.state,
+      leaseUntil: answer.leaseUntil,
+      balance: answer.balance,
+    };
+  };
+
+  /**
    * A non-staff settle, sent to the account service as that person. The service finds only a hold
    * this person made against bought usage; a hold on the included month, someone else's hold and a
    * hold that does not exist all come back unknown, and that is the 403 a non-staff settle always
@@ -183,7 +224,7 @@ export function mountManagedUsageRoutes(
           throw new ApiError(409, error.message, { code });
         if (error.status === 401) throw error;
       }
-      throw new ApiError(503, 'The account service couldn’t be reached, so this wasn’t settled. Nothing was changed.', {
+      throw new ApiError(503, 'The account service couldn’t be reached, so this wasn’t settled.', {
         code: 'purchased_settle_unavailable',
       });
     }
@@ -328,6 +369,16 @@ export function mountManagedUsageRoutes(
         reconciledFrom: value.reconciledFrom === 'provider-report' ? 'provider-report' : 'response',
         at: new Date().toISOString(),
       });
+    }),
+  );
+
+  app.post(
+    '/api/workspace/organizations/:organizationId/allowance/renew',
+    withStaff(async (req, _res, asker) => {
+      const id = assertMine(req);
+      // Staff hold on this computer's ledger, which keeps no lease. Only a person who holds bought usage has one.
+      if (asker) throw new ApiError(409, STAFF_RENEW_REASON, { code: STAFF_RENEW_REFUSED });
+      return renewPurchasedHold(id, req);
     }),
   );
 

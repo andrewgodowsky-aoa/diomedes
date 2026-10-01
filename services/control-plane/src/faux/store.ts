@@ -151,11 +151,23 @@ function validate(state: FauxCloudState): FauxCloudState {
     identity: fauxIdentityStateSchema.parse(state.identity),
     commercial: commercialSchema.parse(state.commercial) as CommercialState,
     // Stores written before purchased-usage holds (migration 013) have none yet.
-    funding: { ...emptyFundingState(), ...state.funding },
+    funding: withLeases({ ...emptyFundingState(), ...state.funding }),
     // Stores written before the phone relay existed have no devices yet.
     relay: relaySchema.parse((state as Partial<FauxCloudState>).relay ?? { devices: [] }),
     // Stores written before business setups were kept have none yet.
     organizationSetups: organizationSetupsSchema.parse((state as Partial<FauxCloudState>).organizationSetups ?? []),
+  };
+}
+
+/**
+ * Holds written before they were leased (migration 013, edited before it merged) carry no lease. A
+ * held one is read as already lapsed, so it lets go on the next read instead of holding credits for
+ * ever; a released one is read as released by the person.
+ */
+function withLeases(funding: FundingState): FundingState {
+  return {
+    ...funding,
+    topUpHolds: funding.topUpHolds.map((row) => ({ ...row, absorbedMicroUsd: row.absorbedMicroUsd ?? 0, leaseUntil: row.leaseUntil ?? row.createdAt, releasedBy: row.releasedBy ?? (row.state === 'released' ? 'person' : null) })),
   };
 }
 
