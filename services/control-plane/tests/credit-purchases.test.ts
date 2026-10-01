@@ -997,8 +997,8 @@ describe('migration 015 and its place in the list', () => {
     expect(funded).toMatch(/CREATE TABLE control_plane\.credit_topups[\s\S]*FOREIGN KEY \(tenant_id,provider,source_event_id\) REFERENCES control_plane\.webhook_inbox\(tenant_id,provider,event_id\)/);
   });
 
-  it('is listed in the runner after 013, and names no markup', () => {
-    expect(runner).toMatch(/'013_purchased_usage_holds\.sql','015_credit_purchases\.sql'\]/);
+  it('is listed in the runner after 014, and names no markup', () => {
+    expect(runner).toMatch(/'014_member_credit_limits\.sql','015_credit_purchases\.sql'\]/);
     expect(sql).not.toMatch(/markup|percent|%\s*markup/i);
     const everything = [sql, readFileSync(new URL('../src/credit-purchases.ts', import.meta.url), 'utf8'), readFileSync(new URL('../README.md', import.meta.url), 'utf8')].join('\n');
     expect(everything).not.toMatch(/\b20 ?%|twenty percent|1\.2x|markup/i);

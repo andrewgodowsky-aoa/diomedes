@@ -43,7 +43,7 @@ import {
   type PlanNoticeChoice,
   type StaffRole,
 } from '../../shared/access.js';
-import { noIndividualAccess, personIncludes, type PersonAccessView } from '../../shared/individual-plan.js';
+import { noIndividualAccess, personIncludes, type PersonAccessView, type PersonalUsageView } from '../../shared/individual-plan.js';
 import type { OrganizationSetupWrite, SetupFetchOutcome, SetupWriteOutcome } from '../../shared/organization-setup.js';
 import {
   NO_ENTITLEMENT_VIEW,
@@ -57,7 +57,7 @@ import { ApiError } from '../paths.js';
 import { durableWrite, readJson } from '../store.js';
 import type { AccountBackend } from './backend.js';
 import { checkBrowserToken, type BrowserIdentity, type BrowserSession } from './browser-identity.js';
-import { ControlPlaneError, type RoutingPolicyAnswer, type TokenPair } from './client.js';
+import { ControlPlaneError, type ControlPlaneClient, type RoutingPolicyAnswer, type TokenPair } from './client.js';
 import type { BrowserSignInConfig } from './deployment.js';
 
 /** What the workspace registry mirrors from the account service. */
@@ -131,6 +131,39 @@ function personAccessAnswer(answer: unknown, personId: string): PersonAccessView
   const parsed = personAccessSchema.safeParse(answer);
   return parsed.success && parsed.data.personId === personId ? (answer as PersonAccessView) : null;
 }
+
+/**
+ * `GET /account/usage`: the person's own Individual credits for the period in force. An answer for
+ * another person, a figure for an account other than the one it names, a non-Individual plan, or a
+ * period that has already ended (or not begun) is no answer: it is shown as unavailable, never as 0%.
+ */
+const personalUsageSchema = z.object({
+  v: z.literal(1),
+  personId: z.string().min(1),
+  accountId: z.string().min(1).nullable(),
+  usage: z.object({ state: z.enum(['loading', 'not-connected', 'unavailable', 'ready']), organizationId: z.string().min(1) }).passthrough(),
+  renewal: z.object({ state: z.enum(['renewed', 'not-renewed']), nextStartsAt: z.iso.datetime(), nextEndsAt: z.iso.datetime() }).nullable(),
+  checkedAt: z.iso.datetime(),
+});
+const personalProjectionSchema = z.object({
+  organizationId: z.string().min(1),
+  planId: z.enum(['individual', 'individual-agreement']),
+  periodStartsAt: z.iso.datetime(),
+  resetsAt: z.iso.datetime(),
+}).passthrough();
+function personalUsageAnswer(answer: unknown, personId: string, now: number): PersonalUsageView | null {
+  const parsed = personalUsageSchema.safeParse(answer);
+  if (!parsed.success || parsed.data.personId !== personId) return null;
+  const view = answer as PersonalUsageView;
+  if (view.usage.state !== 'ready') return view;
+  const projection = personalProjectionSchema.safeParse(view.usage.projection);
+  if (!projection.success || view.accountId === null || view.usage.organizationId !== view.accountId ||
+      projection.data.organizationId !== view.accountId || Date.parse(projection.data.periodStartsAt) > now ||
+      Date.parse(projection.data.resetsAt) <= now) return null;
+  return view;
+}
+/** A Personal usage answer is reused for at most this long, and never past its period's end. */
+const PERSONAL_USAGE_TTL_MS = 15_000;
 
 /**
  * The fields of a `POST /account/organizations/:id/agent-admissions` answer this host reads. A
@@ -295,6 +328,8 @@ export class AccountSessionService {
   /** Token rotation replaces a saved entry without creating a different sign-in. */
   private readonly rememberedSignIns = new WeakMap<RememberedEntry, Current>();
   private current: Current | null = null;
+  /** The last verified Personal usage read, for the same sign-in and access revision only. */
+  private personalUsageCache: { current: Current; revision: number | null; until: number; view: PersonalUsageView } | null = null;
   /** A newer sign-in or sign-out invalidates work that is still awaiting an answer. */
   private lifecycle = 0;
   /** Forget cancels pending sign-ins for that person without cancelling another person's attempt. */
@@ -969,6 +1004,34 @@ export class AccountSessionService {
     }
   }
 
+  /**
+   * The signed-in person's own Individual credits for the billing period in force (`GET /account/usage`).
+   * Read-only, and bound to this sign-in: the service resolves the person's own account and period, and
+   * an answer that names anyone or anything else is shown as unavailable. A verified answer is reused
+   * briefly, never past its period's end and never across a sign-in or access change.
+   */
+  async personalUsage(): Promise<PersonalUsageView> {
+    const current = this.requireCurrent();
+    const revision = current.personAccess?.revision ?? null;
+    const cached = this.personalUsageCache;
+    if (cached && cached.current === current && cached.revision === revision && this.now() < cached.until) return cached.view;
+    const unavailable = (reason: string): PersonalUsageView => ({ v: 1, personId: current.personId, accountId: null,
+      usage: { state: 'unavailable', organizationId: current.personId, reason }, renewal: null, checkedAt: this.at() });
+    let answer: unknown;
+    try {
+      answer = await this.call((token) => this.backend.client.personUsage(token));
+    } catch (error) {
+      if ((error instanceof ControlPlaneError || error instanceof ApiError) && error.status === 404 && error.message === ROUTE_NOT_FOUND)
+        return unavailable('This account service does not report Personal usage yet.');
+      throw error;
+    }
+    const view = personalUsageAnswer(answer, current.personId, this.now());
+    if (!view) return unavailable('The usage answer could not be verified for your account, so it was not shown.');
+    const ends = view.usage.state === 'ready' ? Date.parse(view.usage.projection.resetsAt) : Number.POSITIVE_INFINITY;
+    if (this.current === current) this.personalUsageCache = { current, revision, until: Math.min(this.now() + PERSONAL_USAGE_TTL_MS, ends), view };
+    return view;
+  }
+
   /** Read the person's businesses and access again. `project: false` leaves the registry to the caller. */
   async reload(options: { project?: boolean } = {}): Promise<AccountProjection> {
     const current = this.requireCurrent();
@@ -1062,6 +1125,33 @@ export class AccountSessionService {
    */
   localCheckoutOrigin(): string | null {
     return this.backend.view().kind === 'faux' ? new URL(this.backend.client.base).origin : null;
+  }
+
+  // --- members' monthly credit limits (the account service keeps them; this app asks and shows) ---
+
+  creditLimits(organizationId: string) {
+    return this.call((token) => this.backend.client.creditLimits(token, organizationId));
+  }
+  setCreditLimit(organizationId: string, input: Parameters<ControlPlaneClient['setCreditLimit']>[2]) {
+    return this.call((token) => this.backend.client.setCreditLimit(token, organizationId, input));
+  }
+  setCreditSettings(organizationId: string, input: Parameters<ControlPlaneClient['setCreditSettings']>[2]) {
+    return this.call((token) => this.backend.client.setCreditSettings(token, organizationId, input));
+  }
+  myCreditUsage(organizationId: string) {
+    return this.call((token) => this.backend.client.myCreditUsage(token, organizationId));
+  }
+  creditUsageReport(organizationId: string) {
+    return this.call((token) => this.backend.client.creditUsageReport(token, organizationId));
+  }
+  askCreditLimit(organizationId: string, input: Parameters<ControlPlaneClient['askCreditLimit']>[2]) {
+    return this.call((token) => this.backend.client.askCreditLimit(token, organizationId, input));
+  }
+  creditLimitRequests(organizationId: string) {
+    return this.call((token) => this.backend.client.creditLimitRequests(token, organizationId));
+  }
+  decideCreditLimit(organizationId: string, requestId: string, input: Parameters<ControlPlaneClient['decideCreditLimit']>[3]) {
+    return this.call((token) => this.backend.client.decideCreditLimit(token, organizationId, requestId, input));
   }
 
   /**
@@ -1339,6 +1429,16 @@ export class AccountSessionService {
   personalUnknown(): boolean {
     const current = this.current;
     return current !== null && (current.personAccess === null || current.personAccess.state === 'unknown');
+  }
+
+  /**
+   * The signed-in person's role in one business, as this computer last read it. Null when nobody is
+   * signed in, the person is not an active member of it, or the service has not listed it. Nothing
+   * here reaches the service.
+   */
+  roleIn(organizationId: string): MemberRole | null {
+    const row = this.current?.organizations.find((item) => item.organization.id === organizationId);
+    return row && row.membership.state === 'active' ? row.membership.role : null;
   }
 
   /** True when the named feature is in the business's current access. */

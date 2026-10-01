@@ -29,6 +29,7 @@ import { CreditPurchaseService, StripeWebhookService, readBillingSettings } from
 import { FAUX_STRIPE_SECRET_KEY, FAUX_STRIPE_WEBHOOK_SECRET, fauxPaidEvent, fauxStripeFetch, signFauxEvent } from '../src/faux/stripe.js';
 import { PostgresFundingTransaction } from '../src/funding-postgres.js';
 import { ManagedError, ManagedInferenceService } from '../src/managed-inference.js';
+import { MemberLimits, MemberLimitsService } from '../src/member-limits.js';
 import { MANAGED_PROVIDERS, bedrockResponsesCaller, scriptedResponsesFetch } from '../src/managed-providers.js';
 import type { SqlClient } from '../src/postgres.js';
 import { providerSpy, readAll, type ProviderRequest } from './support/managed.js';
@@ -39,10 +40,13 @@ const RUNTIME_SQL = read('../scripts/runtime-permissions.sql');
 const GATEWAY_SOURCE = read('../src/managed-inference.ts');
 const PURCHASES_SOURCE = read('../src/credit-purchases.ts');
 const FUNDING_SOURCE = read('../src/funding.ts');
+const MEMBER_LIMITS_SOURCE = read('../src/member-limits.ts');
 
 /** The migration 002/003 funding tables. */
 const FUNDING_TABLES = ['credit_periods', 'funded_jobs', 'funded_job_refs', 'job_cap_requests', 'funding_accounts',
-  'funding_reservations', 'funding_settlements', 'credit_adjustments', 'credit_topups', 'credit_topup_holds', 'credit_purchases'];
+  'funding_reservations', 'funding_settlements', 'credit_adjustments', 'credit_topups', 'credit_topup_holds', 'credit_purchases',
+  // Migration 014: members' monthly limits.
+  'credit_attempt_people', 'credit_member_limits', 'credit_allotment_settings', 'credit_limit_requests'];
 
 // --- the grant file --------------------------------------------------------------------------
 
@@ -195,7 +199,9 @@ const PURCHASED_SERVICE_CALLS = names(FUNDING_SOURCE.slice(FUNDING_SOURCE.indexO
 /** Credit purchases (015) run on the same login: the quote and buy path and Stripe's webhook receiver, in src/credit-purchases.ts. */
 const PURCHASE_SERVICE_CALLS = names(PURCHASES_SOURCE, /this\.funding\.(\w+)\(/g);
 const SERVICE_CALLS = new Set([...GATEWAY_SERVICE_CALLS, ...PURCHASED_SERVICE_CALLS, ...PURCHASE_SERVICE_CALLS]);
-const STATIC_TRANSACTION_CALLS = new Set([...SERVICE_CALLS].flatMap((name) => [...transactionCalls(name)]).concat([...GATEWAY_DIRECT_READS]));
+/** Members' monthly limits (014) run on the same login: every FundingTransaction call member-limits.ts makes, in any branch. */
+const MEMBER_LIMIT_TRANSACTION_CALLS = names(MEMBER_LIMITS_SOURCE, /\btx\.(\w+)\(/g);
+const STATIC_TRANSACTION_CALLS = new Set([...SERVICE_CALLS].flatMap((name) => [...transactionCalls(name)]).concat([...GATEWAY_DIRECT_READS], [...MEMBER_LIMIT_TRANSACTION_CALLS]));
 
 // --- the gateway's paths, run -------------------------------------------------------------------
 
@@ -291,6 +297,25 @@ async function runGatewayPaths() {
       return ask('run-1:4');
     })(),
     replayed: await ask('run-1:1'),
+    personalFirstUse: await (async () => {
+      // DIO-128: the first Personal use inside a verified monthly term records that term's row.
+      const staff = await cloud.handle(new Request('http://faux/auth/sign-in', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email: DEMO_ACCOUNTS.staffBilling.email, password: FAUX_DEMO_PASSWORD }),
+      }));
+      const person = (await cloud.accounts.signIn(token)).person;
+      await cloud.commercial.issuePersonGrant((await staff.json()).accessToken as string, person.id,
+        { planId: 'individual', source: 'internal-test', reference: 'permissions-term', note: '' });
+      const account = cloud.store.snapshot().commercial.individuals.find((row) => row.personId === person.id)!;
+      const grants = await cloud.store.commercial.transaction((tx) => tx.personGrants(person.id));
+      const holdAndDispatch = Reflect.get(gateway, 'holdAndDispatch') as (...args: unknown[]) => Promise<unknown>;
+      await holdAndDispatch.call(gateway,
+        { token, organizationId: account.id, admissionId: 'unused', jobId: 'personal-1', attemptId: 'personal-1:1',
+          parentAttemptId: null, tier: 'efficient', usageClass: 'metered-work', scope: { kind: 'individual', id: account.id } },
+        person.id, grants,
+        { kind: 'generation', route: LUNA.model, requestDigest: 'b'.repeat(64), rate: LUNA.rate, maxMicroUsd: 1000, ceilingMicroUsd: 100000000 });
+      return cloud.store.snapshot().funding.periods.filter((row) => row.organizationId === account.id).map((row) => row.periodId);
+    })(),
     read: (await gateway.attempt(new Request('http://127.0.0.1:8791/managed/v1/attempts/run-1:1', {
       headers: { authorization: `Bearer ${token}`, 'x-nectovia-organization': organizationId },
     }), 'run-1:1')).status,
@@ -308,6 +333,9 @@ async function runGatewayPaths() {
   await purchased.hold(token, organizationId, { holdId: 'hold-3', amountMicroUsd: 1_000_000, requestDigest: 'digest-3' });
   await purchased.renew(token, organizationId, { holdId: 'hold-3' });
   // Credit purchases (015): an owner buys, Stripe pays one purchase and expires another, a third never reaches a session.
+  // Members' monthly limits (014), run as the account Worker runs them on the same login: an owner sets a limit
+  // and who sees what, the member's next call is refused before anything is held, the member asks for one
+  // job and for the month, the owner approves both (the month with bought credits allowed), and each side reads.
   const ownerSignIn = await cloud.handle(new Request('http://faux/auth/sign-in', {
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ email: DEMO_ACCOUNTS.owner.email, password: FAUX_DEMO_PASSWORD }),
@@ -337,11 +365,24 @@ async function runGatewayPaths() {
   expiring.type = 'checkout.session.expired';
   expiring.id = 'evt_faux_expired_1';
   await deliver(JSON.stringify(expiring));
+  const limits = new MemberLimitsService(cloud.accounts, new MemberLimits(repository, { now }));
+  const memberId = (await cloud.accounts.signIn(token)).person.id;
+  await limits.limits(ownerToken, organizationId);
+  await limits.setLimit(ownerToken, organizationId, { subject: { kind: 'person', personId: memberId }, mode: 'limit', limitMicroUsd: 1 });
+  await limits.setSettings(ownerToken, organizationId, { adminsSeeMemberUsage: true });
+  const limited = await ask('run-1:6');
+  await limits.ask(token, organizationId, { requestId: 'ask-job', kind: 'job', jobId: 'run-1' });
+  await limits.ask(token, organizationId, { requestId: 'ask-month', kind: 'month', jobId: null });
+  await limits.decide(ownerToken, organizationId, 'ask-job', { approve: true });
+  await limits.decide(ownerToken, organizationId, 'ask-month', { approve: true, extraMicroUsd: 1_000_000, allowPurchased: true });
+  await limits.mine(token, organizationId);
+  await limits.requests(token, organizationId);
+  await limits.report(ownerToken, organizationId);
   const purchases = cloud.store.snapshot().funding.creditPurchases.map((row) => row.state).sort();
   const holds = Object.fromEntries(cloud.store.snapshot().funding.topUpHolds.map((row) => [row.holdId, row.state]));
   const states = Object.fromEntries(cloud.store.snapshot().funding.attempts.map((row) => [row.id, row.state]));
   const periods = cloud.store.snapshot().funding.periods.filter((row) => row.organizationId === organizationId).map((row) => row.periodId);
-  return { outcomes, states, holds, purchases, periods, providerCalls: spy.calls.length, transactionLog, serviceLog };
+  return { outcomes: { ...outcomes, limited }, states, holds, purchases, periods, providerCalls: spy.calls.length, transactionLog, serviceLog };
 }
 
 /** Replays each recorded call on the SQL adapter and returns the statements it sent. */
@@ -384,8 +425,10 @@ describe('cp_funding (scripts/funding-permissions.sql)', () => {
   it('grants exactly what PostgresFundingRepository runs on the gateway’s paths, and nothing else', async () => {
     const run = await runGatewayPaths();
     // The scenarios did what they are for.
-    expect(run.outcomes).toEqual({ first: 200, retry: 200, busy: 429, failed: 503, preDispatchRelease: true, replayed: 409, read: 200 });
-    expect(run.states).toEqual({ 'run-1:1': 'settled', 'run-1:2': 'settled', 'run-1:3': 'released', 'run-1:4': 'uncertain', 'run-1:5': 'released' });
+    expect(run.outcomes).toEqual({ first: 200, retry: 200, busy: 429, failed: 503, preDispatchRelease: true, replayed: 409, read: 200,
+      personalFirstUse: ['individual:2026-10-02T09:00:00.000Z'], limited: 402 });
+    expect(run.states).toEqual({ 'run-1:1': 'settled', 'run-1:2': 'settled', 'run-1:3': 'released', 'run-1:4': 'uncertain', 'run-1:5': 'released',
+      'personal-1:1': 'pending' });
     expect(run.periods).toEqual(['2026-09', '2026-10']);
     expect(run.providerCalls).toBe(4);
     expect(run.holds).toEqual({ 'hold-1': 'settled', 'hold-2': 'released', 'hold-3': 'held' });
@@ -413,6 +456,10 @@ describe('cp_funding (scripts/funding-permissions.sql)', () => {
     // The list, as the owner reviews it.
     expect(describeTables(grants.tables)).toEqual([
       'credit_adjustments: SELECT',
+      'credit_allotment_settings: SELECT, INSERT, UPDATE (admins_see_member_usage, members_see_own_usage, updated_at, updated_by)',
+      'credit_attempt_people: SELECT, INSERT',
+      'credit_limit_requests: SELECT, INSERT, UPDATE (allow_purchased, decided_at, decided_by, extra_micro_usd, period_id, state)',
+      'credit_member_limits: SELECT, INSERT, UPDATE (limit_micro_usd, mode, updated_at, updated_by)',
       'credit_periods: SELECT, INSERT',
       'credit_purchases: SELECT, INSERT, UPDATE (resolved_at, state, stripe_checkout_session_id, stripe_event_id)',
       'credit_topup_holds: SELECT, INSERT, UPDATE (absorbed_micro_usd, debit_micro_usd, lease_until, released_by, resolved_at, state)',

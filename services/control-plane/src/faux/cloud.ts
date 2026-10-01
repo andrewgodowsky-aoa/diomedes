@@ -39,6 +39,7 @@ import { CreditPurchaseService, StripeWebhookService, readBillingSettings } from
 import { FAUX_STRIPE_SECRET_KEY, FAUX_STRIPE_WEBHOOK_SECRET, fauxCheckoutPage, fauxPaidEvent, fauxStripeFetch, signFauxEvent } from './stripe.js';
 import { StatePaymentLedger } from './payment-ledger.js';
 import type { PaymentLedger } from '../credit-purchases.js';
+import { MemberLimits, MemberLimitsService } from '../member-limits.js';
 import { ManagedInferenceService, SPEND_SETTINGS, spendControls, type SpendSetting } from '../managed-inference.js';
 import {
   FAUX_SCRIPTED_CREDENTIAL,
@@ -270,6 +271,7 @@ export async function createFauxCloud(options: FauxCloudOptions): Promise<FauxCl
       createCreditPurchases: (_config, _accounts, env) => new CreditPurchaseService(accounts, funding, { settings: readBillingSettings(env), fetch: fauxStripe, now,
         localCheckout: true, ledger: paymentLedger }),
       createStripeWebhook: (_config, env) => new StripeWebhookService(funding, { settings: readBillingSettings(env), now, ledger: paymentLedger }),
+      createLimits: () => new MemberLimitsService(accounts, new MemberLimits(store.funding, { now })),
       createRouting: () => new RoutingService(accounts, store.commercial, now, funding),
       createManaged: () => managed,
       createRelay: () => relay,

@@ -289,8 +289,10 @@ higher cap needs a request and an owner decision. There is no built-in default
 cap: the 20-credit figure is a proposal and must be configured once approved.
 
 The Worker exposes `GET /account/organizations/:id/usage`, which verifies
-membership and then reads the projection, and the purchased-usage holds below.
-No other funding write is reachable over HTTP. The memory adapter in `tests/support/funding-memory.ts` is TEST ONLY; the
+membership and then reads the projection, `GET /account/usage`, the signed-in
+person's own Individual credits, and the purchased-usage holds (both below).
+No other funding write is reachable over HTTP. The memory adapter in
+`tests/support/funding-memory.ts` is TEST ONLY; the
 SQL adapter has been checked against a recording client, and its real-database
 cases are in the opt-in PostgreSQL suite. Nothing here activates billing, a
 plan, a checkout or a funded model call.
@@ -331,6 +333,92 @@ them for a person who is not staff (see `server/managed-usage-routes.ts`).
 Migration 013 is additive. The runner takes each version from the file name's
 number, so it refuses 013 until 011 and 012 are in its list before it.
 
+## Individual billing periods (DIO-128, migration 012)
+
+An Individual period is a subscription-anniversary calendar month in UTC
+(`shared/individual-period.ts`), not the calendar month Business uses. Billing
+issues each paid term as a complete person grant carrying `billingCycle`
+(`policy: 'subscription-month-v1'`, the original `anchorAt`, a zero-based
+`index`, and `startsAt`/`endsAt` computed from them). Both boundaries come from
+the anchor and index, never from a day count, a submitted end date, the issue
+time or a new grant id: a January 31 anchor runs to February 28 (or 29), then
+March 31. A person's first subscription anchors at `validFrom` (or now); every
+later grant names its term, a renewal the next index and a restart after a
+lapse a new anchor. One reference pays for one term: an identical replay
+returns the original grant, and any other replay is refused. Overlapping terms,
+and a term over a still-current legacy plan or explicit agreement, are refused.
+Limited overrides keep their explicit dates and carry no term.
+
+The ledger row for a term is `individual:<startsAt>` on the person's existing
+billing account. It is written lazily, on the first funded use inside the term,
+by `FundingService.allocateIndividualPeriod`: exactly 1,000 credits, bounds
+equal to the term, recorded only while the term is current. Grants that name the
+same term (a replacement after withdrawal, say) share that one row, and its
+historical source is never rewritten. `reserve` binds a new hold to the
+server-resolved term and reads the time after taking the billing-scope lock;
+`markDispatched` releases an unsent hold whose term has ended rather than send
+it, even after a renewal. Late settlements stay on their original payer and
+period. Unused credits expire; nothing carries over.
+
+`GET /account/usage` is read-only. It resolves the signed-in person's own
+account and current term on the server; no query or body names a person,
+payer or period. Before first use it projects the term's approved 1,000
+credits with nothing used and `allocation: 'pending'`; afterwards ledger totals
+and `recorded`. `renewal` says whether the next term is already paid for.
+Missing or ended authority reads as unavailable, never as zero.
+
+Migration 012 broadens the period-id check for the term form while keeping
+every historical `YYYY-MM` row, replaces 011's calendar-only source check
+(terms must be exactly what their source grant names; legacy grants keep the
+calendar month), serializes and refuses overlapping terms, and adds a
+reservation trigger: a new hold binds to an Individual period it was reserved
+in, a calendar row on an account no longer funds a moment a term covers, and no
+Individual hold is dispatched at or after its period's end. Re-saving an
+existing reservation is never blocked, so late settlement still lands. No
+grant, role or permission is widened. Rollback stops new Individual issuance
+and allocation and keeps the additive schema; once term reservations exist, do
+not return to a calendar-only writer.
+
+## Members' monthly credit limits (migration 014, 2026-10-01)
+
+Owner rule: one shared pool per business, included usage first and then bought
+credits. Every member also has a monthly limit on how much of it they may use,
+always on, reset with the plan period. A limit comes from the member's role
+with a per-person override. Owners and admins are unlimited within the pool
+unless an owner sets a limit for them. The default for a member is the whole
+plan allowance, read in one place (`PLAN_MEMBER_LIMIT_CREDITS` in
+`shared/credit-allotments.ts`, empty until tier numbers are decided).
+
+Where it is enforced: `FundingService.reserve`, in the same transaction and
+under the same organization lock as the pool and job-cap checks, after the
+idempotent replay. The gateway names the verified person and role; a request
+never does. Usage is what the person's attempts and purchased-usage holds hold
+or have settled in the period (`credit_attempt_people` records whose attempt
+it was). Limits are a business feature: a personal Individual billing scope has
+no members, so an Individual-term reservation is never limited or attributed to a
+person, and a business's member usage is counted in the same UTC calendar-month
+period its reservations bind to. A refusal is 402 `member_limit_reached` with a plain reason that says
+who can approve more, and nothing is held.
+
+Routes under `/account/organizations/:id/`, each as the signed-in member:
+
+- `GET credit-limits`, `POST credit-limits`, `POST credit-limits/settings`:
+  owners and admins read and set limits and who sees what. An admin limits only
+  members; only an owner changes who sees what.
+- `GET credit-usage/mine`: a person's own usage against their own limit,
+  never the pool or anyone else.
+- `GET credit-usage/members`: who used what, by member, in micro-USD.
+- `POST credit-limit-requests` `{ requestId, kind: 'job'|'month', jobId }`: a
+  member asks to go past the limit. The ask names no amount.
+- `GET credit-limit-requests`, `POST credit-limit-requests/:id/decision`: an
+  owner or admin approves or denies. One job raises that job by its own cap; a
+  month needs the approver's `extraMicroUsd`. `allowPurchased` lets the
+  approval draw on bought credits and is refused when none are free.
+
+These run as the funding login (FUNDING_DATABASE_URL) and answer 503 without
+it. `scripts/funding-permissions.sql` carries the grants for the four new
+tables; `cp_runtime` is unchanged. Migration 014 is additive and applies after
+011, 012 and 013.
 ## Buying credits (migration 015, 2026-10-01, DIO-161 slice 1)
 
 Owner rule: only a Business owner or a Manager (roles `owner` and `admin`) buys

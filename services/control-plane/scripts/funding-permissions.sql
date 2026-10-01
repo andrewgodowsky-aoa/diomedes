@@ -74,6 +74,31 @@ GRANT SELECT, INSERT ON control_plane.funding_settlements TO cp_funding;
 -- digest, organization or creation-time column can be rewritten, and lease_until is only ever moved by a renewal.
 GRANT SELECT, INSERT ON control_plane.credit_topup_holds TO cp_funding;
 GRANT UPDATE (debit_micro_usd, absorbed_micro_usd, state, resolved_at, lease_until, released_by) ON control_plane.credit_topup_holds TO cp_funding;
+-- 014 credit_attempt_people: which person each funded attempt was reserved for. INSERT: saveAttemptPerson(),
+-- "INSERT INTO control_plane.credit_attempt_people(...)" (reserve, for a member's attempt). SELECT: the join in
+-- memberUsage() that every limited member's reserve reads. Written once; never UPDATE.
+GRANT SELECT, INSERT ON control_plane.credit_attempt_people TO cp_funding;
+-- 014 credit_member_limits: the monthly limits an owner or admin set, for a role or one person
+-- (POST /account/organizations/:id/credit-limits, src/member-limits.ts MemberLimits). SELECT: memberLimits(),
+-- "SELECT * FROM control_plane.credit_member_limits WHERE tenant_id=$1 AND organization_id=$2 ...", which reserve
+-- reads for every member. INSERT: saveMemberLimit(). UPDATE on four columns: its "ON CONFLICT
+-- (tenant_id,organization_id,subject_kind,subject_id) DO UPDATE SET mode=...,limit_micro_usd=...,updated_by=...,
+-- updated_at=...". No subject column can be rewritten.
+GRANT SELECT, INSERT ON control_plane.credit_member_limits TO cp_funding;
+GRANT UPDATE (mode, limit_micro_usd, updated_by, updated_at) ON control_plane.credit_member_limits TO cp_funding;
+-- 014 credit_allotment_settings: who sees what, per business (POST .../credit-limits/settings). SELECT:
+-- allotmentSettings(). INSERT and UPDATE on four columns: saveAllotmentSettings(), "ON CONFLICT
+-- (tenant_id,organization_id) DO UPDATE SET members_see_own_usage=...,admins_see_member_usage=...,updated_by=...,updated_at=...".
+GRANT SELECT, INSERT ON control_plane.credit_allotment_settings TO cp_funding;
+GRANT UPDATE (members_see_own_usage, admins_see_member_usage, updated_by, updated_at) ON control_plane.credit_allotment_settings TO cp_funding;
+-- 014 credit_limit_requests: a member's ask for more, and an owner's or admin's answer
+-- (POST .../credit-limit-requests and .../decision). SELECT: limitRequest(), limitRequests(), and
+-- approvedAllowances(), which reserve reads for every limited member. INSERT: saveLimitRequest(). UPDATE on six
+-- columns: its "ON CONFLICT (tenant_id,request_id) DO UPDATE SET state=...,decided_by=...,decided_at=...,
+-- extra_micro_usd=...,allow_purchased=...,period_id=..." (the decision). The member, kind, job and time asked
+-- can't be rewritten.
+GRANT SELECT, INSERT ON control_plane.credit_limit_requests TO cp_funding;
+GRANT UPDATE (state, decided_by, decided_at, extra_micro_usd, allow_purchased, period_id) ON control_plane.credit_limit_requests TO cp_funding;
 -- 015 credit_purchases: a purchase of credits through Stripe Checkout, from the pending row an owner or an admin
 -- asks for (POST /account/organizations/:id/credit-purchases, src/credit-purchases.ts CreditPurchaseService) to the
 -- verified Stripe event that pays, expires or fails it (POST /billing/stripe/webhook, StripeWebhookService), all

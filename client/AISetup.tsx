@@ -864,7 +864,11 @@ export function AIConnections({
                     </div>
                     <div className="setting-row">
                       <span>Source</span>
-                      {offer.source.startsWith('http') ? (
+                      {/* A link only while this computer can install it. An
+                          unavailable offer names a download the desktop shell will
+                          not open here (a Windows file on a Mac, or a vendor page),
+                          so it reads as text rather than as a link that does nothing. */}
+                      {offer.available && offer.source.startsWith('http') ? (
                         <a href={offer.source}>{offer.source}</a>
                       ) : (
                         <span>{offer.source}</span>

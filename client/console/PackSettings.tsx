@@ -7,6 +7,7 @@ import {
   type PackActivation,
 } from '../../shared/capability-packs';
 import { contributionSummary, type PackManifest } from '../../shared/pack-manifest';
+import { shortcutHint } from '../keyboard';
 
 interface InstalledPack {
   id: string;
@@ -241,7 +242,8 @@ export function PackSettings({ projectId, onChange }: { projectId: string; onCha
             )}
             {skills > 0 && (
               <p>
-                {skills} playbooks, found with Ctrl K{on ? '' : ' once it is on'}.
+                {skills} playbooks, found with {shortcutHint('K')}
+                {on ? '' : ' once it is on'}.
               </p>
             )}
             {on && found > 0 && (

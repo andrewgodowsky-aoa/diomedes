@@ -459,3 +459,24 @@
   margin: 10px 0 0;
   font-size: var(--dm-type-caption);
 }
+.ws-asks-list {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.ws-ask {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ws-ask p {
+  margin: 0;
+}
+.ws-ask label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}

@@ -32,7 +32,8 @@ import { OmpAdapter } from './omp.js';
 import { CursorAdapter, cursorCommand, resolveCursorEntry } from './cursor.js';
 import { DevinAdapter } from './devin.js';
 import { managedBinary, verifyManagedBinary } from './install.js';
-import { capture, engineEnvironment, EngineError } from './process.js';
+import { capture, engineEnvironment, EngineError, MEMBER_LIMIT } from './process.js';
+import { MEMBER_LIMIT_REACHED } from '../../shared/credit-allotments.js';
 import { secretFingerprint } from '../connection-secrets.js';
 import {
   activitySink,
@@ -2293,6 +2294,8 @@ export class EngineService {
       admissionId: admitted.admissionId,
       organizationId,
       scope: admitted.scope,
+      // Read here, so a refusal for want of credits can say who can buy more. Never a credential.
+      role: account.roleFor?.(organizationId) ?? null,
       routing: policy.resolved,
       policyRevision: policy.revision,
       tier,
@@ -3212,6 +3215,9 @@ function modelApiError(error: unknown): unknown {
   // signed-out person is asked to sign in and a plan that ended names the plan.
   if (error.code === 'nectovia_sign_in_required') return new EngineError(AGENT_SIGN_IN_REQUIRED, error.message, false);
   if (error.code === 'nectovia_agent_not_included') return new EngineError(AGENT_NOT_INCLUDED, error.message, false);
+  // A member's own monthly limit stopped the step: the person asks an owner or admin,
+  // who may approve one job or raise their month, the way a job that reached its cap asks.
+  if (error.code === `nectovia_${MEMBER_LIMIT_REACHED}`) return new EngineError(MEMBER_LIMIT, error.message, false);
   if (/^nectovia_/.test(error.code) && error.evidence.reservation?.state === 'released')
     return new EngineError('ROUTE_REFUSED', error.message, true);
   // A job that reached its cap stopped at a step boundary: nothing of that step was sent.

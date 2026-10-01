@@ -26,6 +26,7 @@ import { TriggerRules } from './console/TriggerRules';
 import { UsageCenter, usageCenterTarget } from './console/UsageCenter';
 import { useWorkspace } from './console/Workspaces';
 import { isExternalEngine } from '../shared/engines';
+import { modifierName } from './keyboard';
 import { SCHEMES, schemeId } from './console/schemes';
 import { readCustomizationStatus } from './console/design-center/entitlement-api';
 import {
@@ -770,7 +771,8 @@ export function SettingsPage({
                   );
                 })()}
                 <p className="caption">
-                  Ctrl+Plus and Ctrl+Minus change interface size. Ctrl+0 resets it to 100%.
+                  {modifierName()}+Plus and {modifierName()}+Minus change interface size.{' '}
+                  {modifierName()}+0 resets it to 100%.{' '}
                   Conversation text size changes only messages and replies; the ··· menu has it
                   too.
                 </p>

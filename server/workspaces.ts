@@ -110,6 +110,7 @@ import {
   canAdministerMembers,
   canBindOutputProject,
   canConfigureOrganization,
+  canManageMemberLimits,
   canSeePurchasedUsage,
   entitlementFor,
   isActiveMember,
@@ -1464,6 +1465,17 @@ export class WorkspaceService {
     const { membership } = this.mine(organizationId);
     if (!canSeePurchasedUsage(membership))
       throw refuse(403, 'Only an owner or an admin can buy credits for this business.', 'not_owner_or_admin');
+  }
+
+  /**
+   * Membership first, then the owner-or-admin rule, for setting members' monthly credit limits, reading
+   * who used what and deciding a member's ask for more. This is the early, plain refusal; the account
+   * service is the authority and refuses again, including the narrower rules for an admin.
+   */
+  assertCanManageMemberLimits(organizationId: string): void {
+    const { membership } = this.mine(organizationId);
+    if (!canManageMemberLimits(membership))
+      throw refuse(403, 'Only an owner or an admin can do that for this business.', 'not_owner_or_admin');
   }
 
   /**
