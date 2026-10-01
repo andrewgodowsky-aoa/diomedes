@@ -201,6 +201,7 @@ export function mountManagedUsageRoutes(
     '/api/workspace/organizations/:organizationId/billing-events',
     route(async (req) => {
       const id = assertMine(req);
+      workspaces.assertCanManageBilling(id);
       const value = body(req);
       const type = String(value.type ?? '');
       const sequence = Number(value.sequence);

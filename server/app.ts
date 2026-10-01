@@ -118,6 +118,7 @@ import { VerificationService } from './verification/service.js';
 import { mountNativeLoopRoutes } from './native-loop-routes.js';
 import { mountTaskWorkflowRoutes } from './task-workflow.js';
 import { taskWorkflowBlocker, workflowOf } from '../shared/task-workflow.js';
+import { checkCompletionAllowed } from './team/board.js';
 import { NATIVE_LOOP_ENGINE } from '../shared/native-loop.js';
 import { mountVerificationRoutes } from './verification/routes.js';
 import { codexVerificationReviewer, type VerificationReviewerAdapter } from './verification/reviewer.js';
@@ -2550,6 +2551,8 @@ export async function createApp(options: AppOptions) {
         )
           throw new ApiError(409, 'Stop this work before moving the task manually.');
         const target = choice(b.state, states, 'task state');
+        // A manual Done keeps the guard the team path uses: no waiting Change and no open Need.
+        if (target === 'done') checkCompletionAllowed(state, task.id, task.name);
         // A person's reopen is recorded even when the task already reads To do. A Stop or a
         // declined proposal leaves it there by Diomedes' own move, and the Board and the Ready
         // queue count a reopen only when it is the person's (taskEvidence, readyAt): without
