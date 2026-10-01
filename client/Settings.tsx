@@ -23,6 +23,8 @@ import { ReadConnectors } from './ReadConnectors';
 import { AgentProfiles } from './console/AgentProfiles';
 import { AccountSettings } from './AccountSettings';
 import { TriggerRules } from './console/TriggerRules';
+import { UsageCenter, usageCenterTarget } from './console/UsageCenter';
+import { useWorkspace } from './console/Workspaces';
 import { isExternalEngine } from '../shared/engines';
 import { SCHEMES, schemeId } from './console/schemes';
 import { readCustomizationStatus } from './console/design-center/entitlement-api';
@@ -37,6 +39,9 @@ import {
   meterLine,
   titleCase,
 } from './components';
+
+/** The Usage section reads what it needs and shows plain lines where it can't; nothing here has a place to report to. */
+const ignoreReport = () => {};
 
 /** The runtime's own effort ids read badly title-cased ('Xhigh'), so name them. */
 const effortNames: Record<string, string> = {
@@ -239,8 +244,16 @@ export function SettingsPage({
       requested === 'Engines' || requested === 'Helpers on this computer' ? helpersSection : requested;
     setSection(known);
   }, [requested, requestCount, helpersSection]);
+  // The Usage section is for an owner or an admin of the selected business. Everyone else gets no
+  // entry for it, so nobody lands on an empty pane.
+  const [workspace] = useWorkspace(ignoreReport);
+  const usageScreen = useMemo(() => usageCenterTarget(workspace), [workspace]);
+  useEffect(() => {
+    if (workspace && !usageScreen) setSection((current) => (current === 'Usage' ? 'Account' : current));
+  }, [workspace, usageScreen]);
   const sections = [
     'Account',
+    ...(usageScreen ? ['Usage'] : []),
     'Interface detail',
     helpersSection,
     'Permissions',
@@ -274,6 +287,13 @@ export function SettingsPage({
         <div className="workbook-layout">
           <div className="reading">
             {section === 'Account' && <AccountSettings />}
+            {section === 'Usage' && usageScreen && (
+              <UsageCenter
+                organizationId={usageScreen.organizationId}
+                membership={usageScreen.membership}
+                report={ignoreReport}
+              />
+            )}
             {section === 'Agent profiles' && <AgentProfiles />}
             {section === 'Interface detail' && (
               <>
