@@ -1,5 +1,97 @@
 # Mac development handoff
 
+## First Mac session - 2026-09-21
+
+Run on the MacBook Air itself. It supersedes the **[?]** marks and the *Known
+platform state* rows further down wherever they disagree. It is development
+evidence, not a Mac release: nothing was packaged, signed or published.
+
+Machine: MacBook Air (Mac14,2), Apple M2, 8 GB, macOS 26.2 (25C56). Node
+v22.23.2 arm64 from the official nodejs.org tarball, SHA-256 checked against its
+published list and unpacked under `~/.local` because this Mac has no Homebrew;
+npm 10.9.8. The Xcode Command Line Tools were already present.
+
+Source: public `diomedes` `main` at `c10b7b2`, which is the packaged 0.1.7
+source `6e2f033` plus documentation and evidence only. It already carries the
+Mac lane through `d74e0b3` by way of `e45ee1e`. The private `diomedes-mac`
+repository could not be read, because this Mac has no GitHub sign-in yet, so its
+branch was not compared beyond `d74e0b3`.
+
+**[M]** means verified on this Mac.
+
+| Step | Result |
+|---|---|
+| `uname -m`, `node -p process.arch` **[M]** | `arm64`, `arm64` |
+| `npm ci` **[M]** | 288 packages in 6 s. `@esbuild/darwin-arm64`, `@rollup/rollup-darwin-arm64` and `fsevents` present. |
+| `npm ci --prefix services/control-plane --ignore-scripts --no-audit --no-fund` **[M]** | 112 packages |
+| Control plane `typecheck`, `test`, `build` **[M]** | exit 0 each; 144 passed, 25 skipped |
+| `npm run check` **[M]** | exit 0 |
+| Vitest, two workers, a real `TMPDIR`, an isolated `CODEX_HOME` **[M]** | `main`: 4,669 passed, 17 skipped, 0 failed (252 files, 150 s). `feature/macos-desktop-parity`: 4,676 passed, 17 skipped, 0 failed (253 files, 142 s). |
+| `npm run build` **[M]** | exit 0 in 11 s and no `release/` folder; peak resident memory 1.3 GB |
+| Playwright gate with the installed Google Chrome (`PLAYWRIGHT_EXECUTABLE_PATH`) **[M]** | `main`: 32 passed, 1 failed, 3 did not run (the file is serial). The branch: 36 passed. |
+| `npm run dev` **[M]** | service on 127.0.0.1:47631, interface on 127.0.0.1:5173; first run, AI setup, the local sample and the Console work |
+| `node scripts/dev-server-guard.mjs` **[M]** | exit 0 with the ports free |
+| The guard's kill path **[M]** | `dev.mjs` killed with SIGKILL leaves its two children holding both ports, and the next `npm run dev` reclaims exactly those pids and starts fresh. Ctrl+C then stops both children, frees both ports and removes the marker. With port 5173 held by an unrelated Python server it refuses, prints that process's `ps` command line, exits 1, and kills and starts nothing. |
+
+The one Playwright failure on `main`, `ui.spec.ts` "Engine choices", is not a
+Mac defect. It expected a sentence that appears only before any check or once a
+Claude Code installation is found, and this Mac has none: in isolation the
+answer is "This engine does not report its choices to Diomedes yet.", and after
+an earlier test's check it is "Install this tool to connect it." Both are true.
+The branch widens the pattern to those two sentences and keeps the test's point,
+that no list is invented.
+
+**Engine discovery on a real Mac.** *Check this computer* reported all five
+engines as not found, which is correct: none is installed, on `PATH` or in the
+checked locations. The Codex binary inside ChatGPT.app is not on `PATH`, and the
+native Codex route stays refused on macOS.
+
+**Desktop shell.** `electron-v44.2.0-darwin-arm64.zip` was fetched from the
+Electron GitHub release and matched against `node_modules/electron/checksums.json`
+(`f906dff5d054b1b92e5711781b13cc206fd7139ce66467503b9d0a3e6fbc9b02`). It is kept
+outside the repository with a provenance note, ready for
+`DIOMEDES_ELECTRON_ZIP_DIR`. The stock `Electron.app`, with Electron's own ad-hoc
+signature untouched, ran the app staged the way `scripts/package-desktop.mjs`
+stages it (same service bundle and define) with no ASAR, no packaging and no
+signing, from an owned throwaway profile. Verified: launch, the macOS menus,
+closing the last window keeps the app and its service, a Dock activation reopens
+the window, and Quit exits 0, closes the service port and releases the data
+folder.
+
+Found on the Mac and fixed on `feature/macos-desktop-parity`:
+
+1. **The traffic lights covered the Diomedes mark.** They are drawn at x 11-72,
+   y 10-26; the mark sat at x 20-184. The Mac window now passes an overlay that
+   only sizes the strip and carries no colours, so Chromium reports where the
+   lights end as `env(titlebar-area-x)` (81px). The Console strip's first cell
+   and the first-run header start there. Windows reports 0 and a browser reports
+   nothing, so neither moves. The first-run header is also a drag region now on
+   both platforms: it holds no controls, and the window could not be moved during
+   first run.
+2. **Cmd+K did nothing; only Ctrl+K opened search.** The global shortcuts (K,
+   1-8 and .) take Ctrl or Cmd, as the interface-size keys always have. Hints read
+   ⌘K on a Mac and Ctrl K elsewhere, and the interface-size sentence in Settings
+   names Cmd on a Mac.
+3. **AI setup linked an unavailable installer.** On a Mac that was a Windows
+   download the shell refuses to open. The source is now text unless the offer is
+   available, and an offer is available only where the shell opens its link.
+
+Still open and not claimed: a packaged `Diomedes.app`, which waits on the ad-hoc
+signing decision below; a Mac icon, since the reviewed FD01 contract asserts the
+Mac package has none; Finder launch of a package (A02); sleep and wake (A23);
+display and scaling (A25); Keychain through `safeStorage`, not exercised, so no
+keychain item was created; and signing or notarization. *Open folder* still
+answers 501 off Windows, and only the frozen Workbook calls it. This session's
+logs and screenshots stayed on the Mac and are not committed.
+
+**Rebased onto `main` `41786c7` on 2026-10-01.** The three fixes above were
+carried forward. `main` had since removed the Ctrl+1-8 page keys with the
+Workbook, so only K and . take Cmd now, and it had already widened the "Engine
+choices" pattern in `ui.spec.ts` the same way, so that change was dropped. The
+playbook hint in a pack's settings, which arrived after the session, reads ⌘K
+on a Mac as well. The table above records the session at `c10b7b2`; it was not
+re-run on the rebased branch.
+
 ## Cloud continuation update - 2026-09-21
 
 This update supersedes the starting revisions and local-only inventory in the

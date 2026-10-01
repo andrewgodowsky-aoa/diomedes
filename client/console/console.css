@@ -181,6 +181,14 @@ html[data-surface='console'] body {
   -webkit-app-region: no-drag;
   app-region: no-drag;
 }
+/* macOS draws its traffic lights over the strip's top-left corner. The desktop
+   shell's overlay reports where they end as env(titlebar-area-x), so the first
+   cell starts after the lights rather than under them, and the space beneath
+   them stays part of the drag strip. Windows reports 0 (its controls sit at the
+   right) and a browser has no overlay, so both keep the strip as it was. */
+.console .top > :first-child {
+  margin-left: max(0px, calc(env(titlebar-area-x, 0px) - 16px));
+}
 .console .top .dm-mark {
   padding: 0 16px;
 }
