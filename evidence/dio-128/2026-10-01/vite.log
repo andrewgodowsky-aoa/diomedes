@@ -128,5 +128,5 @@ dist/assets/app-D2Jg5JrK.js                                        1,033.71 kB �
 - Using dynamic import() to code-split the application
 - Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
 - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
-✓ built in 8.03s
+✓ built in 5.67s
 exit=0

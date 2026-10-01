@@ -106,11 +106,12 @@ guard refuses `.claude`, so running the root suite inside a `.claude/worktrees/`
 | `npx tsc --noEmit` | pass |
 | `npx vitest run` | 525 files passed, 2 skipped; 8,668 tests passed, 32 skipped |
 | `npx vite build` | pass |
-| Playwright `ui`, `native-ui`, `field` | **not run**: the Chromium binary is not installed on this Mac; 13 failed at browser launch, 23 did not run |
+| Playwright `ui`, `native-ui`, `field` | 36 passed (after a fresh `vite build`; Chromium headless shell 1243 installed for this run) |
 | control plane `npm run typecheck` | pass |
 | control plane `npm test` | 47 files passed, 5 skipped; 749 tests passed, 52 skipped |
 
-The Playwright gate is therefore outstanding. PostgreSQL is not installed on this Mac, so the three PostgreSQL
+All four required gates pass on `242e852`. The first Playwright attempt failed only because no
+browser was installed; Andrew approved installing Chromium and the rerun is the logged result. PostgreSQL is not installed on this Mac, so the three PostgreSQL
 suites (`individual-funding-postgres`, `postgres`, `scoped-routing-postgres`) were **skipped, not
 passed**. The new 012 cases in `individual-funding-postgres.integration.test.ts` and migration 012
 itself have therefore never run against a real database. That is the first gate before review
@@ -119,7 +120,11 @@ is complete.
 ## Not done here
 
 - **Operations (`diomedes-ops`) and the site (`diomedes-site`).** Not checked out on this Mac and
-  not reachable with its credentials. Required, in their own repositories: Operations'
+  not reachable from this Mac when this record was first written. Operations `main` was checked
+  afterwards (still `d4bae66`, no branch or open PR touching Individual issuance; PR #8 is staff
+  credit corrections). With this server its form loses the 31-day prefill (`termDays` is null), so
+  "Ends" becomes a manual end-of-day date that is refused on the anniversary itself, and renewals
+  are refused for lack of `billingCycle`. Required, in their own repositories: Operations'
   `IssueIndividual` must stop computing a 31-day, end-of-day `validUntil`, submit an explicit UTC
   start or `billingCycle: { anchorAt, index }` (the person view's `individualTerm.next` gives a
   renewal's), and show the server-returned term; `Customers.tsx` should show the current term and
