@@ -56,7 +56,21 @@ export interface AdmissionRequest {
   readonly reservationId: string;
   readonly periodId: string;
   readonly at: string;
+  /**
+   * Set by the host, and only by the host, when a person is asking to reserve
+   * allowance themselves (the HTTP route). Never read from a request body.
+   * Left unset, this is the app admitting its own managed work for a person.
+   * A direct reservation of the company's allowance is refused where a hold
+   * would be taken (owner rule, 2026-09-30): this app can tell neither Diomedes
+   * staff from a customer nor usage bought outright from included usage, so no
+   * direct request can be shown to be one of the two allowed kinds.
+   */
+  readonly directReservation?: boolean;
 }
+
+export const DIRECT_RESERVATION_REFUSED = 'direct_reservation_refused';
+export const DIRECT_RESERVATION_REASON =
+  'You can’t reserve this business’s included usage yourself. Your work in the app draws on it as it runs. Nothing was held.';
 
 export interface GatewayAuthorization {
   readonly tenantId: string;
@@ -211,6 +225,13 @@ export class ManagedGateway {
         'This call could cost more than one job is capped at. Nothing was held and nothing was sent.',
         'managed',
       );
+    // A person asking to hold the company's allowance themselves stops here,
+    // at the last gate before money. Local and own-key work held nothing and
+    // returned above, and an unpaid, suspended or over-cap request has already
+    // been refused for its own reason, so only a hold that would draw on
+    // included usage reaches this line.
+    if (request.directReservation)
+      return refuse(DIRECT_RESERVATION_REFUSED, DIRECT_RESERVATION_REASON, 'managed');
     let reservation: Reservation;
     try {
       reservation = await this.deps.ledger.reserve({

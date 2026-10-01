@@ -328,3 +328,47 @@ describe('the job cap comes from the host, never the caller', () => {
     expect(ledger.summary(ORG, PERIOD).pendingMicroUsd).toBe(0);
   });
 });
+
+describe('a person asking to reserve allowance directly (owner rule, 2026-09-30)', () => {
+  test('the app’s own admission for a paid business still holds allowance', async () => {
+    // No `directReservation` flag: this is the host admitting a managed turn for a person.
+    const decision = await gateway({ entitlement: paid }).admit(ask());
+    expect(decision.admitted).toBe(true);
+    if (!decision.admitted) throw new Error('unreachable');
+    expect(decision.payer).toBe('managed');
+    expect(decision.reservation).not.toBeNull();
+    expect(ledger.summary(ORG, PERIOD).pendingMicroUsd).toBe(dollars(1));
+  });
+
+  test('a person asking directly is refused where a hold would be taken, and nothing is held', async () => {
+    const decision = await gateway({ entitlement: paid }).admit(ask({ directReservation: true }));
+    expect(decision.admitted).toBe(false);
+    if (decision.admitted) throw new Error('unreachable');
+    expect(decision.code).toBe('direct_reservation_refused');
+    expect(decision.message).toMatch(/can’t reserve this business’s included usage/i);
+    expect(ledger.summary(ORG, PERIOD).pendingMicroUsd).toBe(0);
+  });
+
+  test('a direct request on a route that costs the allowance nothing is unchanged', async () => {
+    const local = await gateway({ entitlement: paid }).admit(
+      ask({ route: 'ollama', directReservation: true }),
+    );
+    expect(local.admitted).toBe(true);
+    const own = await gateway({ entitlement: paid, organizationRoute: 'byo' }).admit(
+      ask({ reservationId: 'res_byo', directReservation: true }),
+    );
+    expect(own.admitted).toBe(true);
+    expect(ledger.summary(ORG, PERIOD).pendingMicroUsd).toBe(0);
+  });
+
+  test('every earlier refusal still answers first for a direct request', async () => {
+    const stranger = await gateway({ entitlement: paid, member: false }).admit(
+      ask({ directReservation: true }),
+    );
+    if (stranger.admitted) throw new Error('unreachable');
+    expect(stranger.code).toBe('not_a_member');
+    const unpaid = await gateway().admit(ask({ directReservation: true }));
+    if (unpaid.admitted) throw new Error('unreachable');
+    expect(unpaid.code).toBe('no_entitlement');
+  });
+});
