@@ -1383,6 +1383,16 @@ export class AccountSessionService {
     return current !== null && (current.personAccess === null || current.personAccess.state === 'unknown');
   }
 
+  /**
+   * The signed-in person's role in one business, as this computer last read it. Null when nobody is
+   * signed in, the person is not an active member of it, or the service has not listed it. Nothing
+   * here reaches the service.
+   */
+  roleIn(organizationId: string): MemberRole | null {
+    const row = this.current?.organizations.find((item) => item.organization.id === organizationId);
+    return row && row.membership.state === 'active' ? row.membership.role : null;
+  }
+
   /** True when the named feature is in the business's current access. */
   includes(organizationId: string, feature: string = AGENT_FEATURE): boolean {
     const access = this.current?.access.get(organizationId);

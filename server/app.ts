@@ -889,6 +889,7 @@ export async function createApp(options: AppOptions) {
           refreshPolicy: (projectId = null) => accountRouting!.refresh(projectId),
           organizationFor: (projectId) => accountRouting!.scopeFor(projectId)?.id ?? null,
           scopeFor: (projectId) => accountRouting!.scopeFor(projectId),
+          roleFor: (organizationId) => accountSession.roleIn(organizationId),
           fetch: (input, init) => accountSession.backend.client.send(new Request(input, init)),
         }
       : null;

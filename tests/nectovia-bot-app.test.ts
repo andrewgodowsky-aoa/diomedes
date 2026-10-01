@@ -367,7 +367,8 @@ describe('the Nectovia bot', () => {
   });
 
   test.each([
-    [402, 'insufficient_allowance', "This business has used this month's 1,000 credits.", "This business has used this month's 1,000 credits."],
+    // The signed-in person is the business owner: the sentence points at buying more, not at the service's words.
+    [402, 'insufficient_allowance', "This business has used this month's 1,000 credits.", 'Your business is out of credits, so this stopped here. Buy more credits to keep going.'],
     [503, 'route_unavailable', 'Upstream route is down.', NECTOVIA_UNAVAILABLE],
     [429, 'provider_busy', 'Slow down.', "Nectovia's model service is busy. Nothing was charged. Try again in a minute."],
   ])('a gateway %i %s reaches the conversation in plain words, with the local hold released', async (status, code, said, words) => {
