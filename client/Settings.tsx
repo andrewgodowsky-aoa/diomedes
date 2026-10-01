@@ -23,6 +23,9 @@ import { ReadConnectors } from './ReadConnectors';
 import { AgentProfiles } from './console/AgentProfiles';
 import { AccountSettings } from './AccountSettings';
 import { TriggerRules } from './console/TriggerRules';
+import { UsageCenter, usageCenterTarget } from './console/UsageCenter';
+import { MemberUsageView, memberUsageTarget, useMyCreditUsage } from './console/MemberUsage';
+import { useWorkspace } from './console/Workspaces';
 import { isExternalEngine } from '../shared/engines';
 import { modifierName } from './keyboard';
 import { SCHEMES, schemeId } from './console/schemes';
@@ -38,6 +41,9 @@ import {
   meterLine,
   titleCase,
 } from './components';
+
+/** The Usage section reads what it needs and shows plain lines where it can't; nothing here has a place to report to. */
+const ignoreReport = () => {};
 
 /** The runtime's own effort ids read badly title-cased ('Xhigh'), so name them. */
 const effortNames: Record<string, string> = {
@@ -240,8 +246,23 @@ export function SettingsPage({
       requested === 'Engines' || requested === 'Helpers on this computer' ? helpersSection : requested;
     setSection(known);
   }, [requested, requestCount, helpersSection]);
+  // The Usage section is for an owner or an admin of the selected business, who see the business's
+  // month and can buy credits. A member sees only their own use against their own limit, and only while
+  // the account service says it is ready: if the owner has turned that off, or the read is refused, they
+  // get no entry. Nobody else does, so nobody lands on an empty pane.
+  const [workspace] = useWorkspace(ignoreReport);
+  const usageScreen = useMemo(() => usageCenterTarget(workspace), [workspace]);
+  const memberScreen = useMemo(() => memberUsageTarget(workspace), [workspace]);
+  const mine = useMyCreditUsage(memberScreen?.organizationId ?? null);
+  const memberUsage = memberScreen && mine && mine.usage.state === 'ready' ? mine : null;
+  const memberPending = Boolean(memberScreen && mine?.usage.state === 'loading');
+  useEffect(() => {
+    if (workspace && !usageScreen && !memberUsage && !memberPending)
+      setSection((current) => (current === 'Usage' ? 'Account' : current));
+  }, [workspace, usageScreen, memberUsage, memberPending]);
   const sections = [
     'Account',
+    ...(usageScreen || memberUsage ? ['Usage'] : []),
     'Interface detail',
     helpersSection,
     'Permissions',
@@ -275,6 +296,18 @@ export function SettingsPage({
         <div className="workbook-layout">
           <div className="reading">
             {section === 'Account' && <AccountSettings />}
+            {section === 'Usage' && usageScreen && (
+              <UsageCenter
+                organizationId={usageScreen.organizationId}
+                membership={usageScreen.membership}
+                report={ignoreReport}
+              />
+            )}
+            {section === 'Usage' && !usageScreen && memberUsage && (
+              <div className="usage-center">
+                <MemberUsageView usage={memberUsage.usage} readAt={memberUsage.readAt} now={memberUsage.now} />
+              </div>
+            )}
             {section === 'Agent profiles' && <AgentProfiles />}
             {section === 'Interface detail' && (
               <>

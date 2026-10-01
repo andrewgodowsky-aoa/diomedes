@@ -1,10 +1,15 @@
 import { micro, sumMoney, type AttemptSettlement, type FundedAttempt, type MicroUsd } from '../../../../shared/managed-usage.js';
-import type { CapRequestRow, CreditAdjustmentRow, CreditPeriodRow, FundedJobRow, FundingRepository, FundingTransaction,
+import type { CapRequestRow, CreditAdjustmentRow, CreditPeriodRow, CreditPurchaseRow, FundedJobRow, FundingRepository, FundingTransaction,
   JobRefRow, TopUpHoldRow, TopUpRow } from '../funding.js';
+import { emptyLedgerState, type LedgerState } from './payment-ledger.js';
 import type { AllotmentSettingsRow, AttemptPersonRow, LimitRequestRow, MemberLimitRow, MemberUsageRow } from '../member-limits.js';
 
-/** Funding rows as one JSON-serializable value, for the faux cloud and offline tests. */
-export interface FundingState {
+/**
+ * Funding rows as one JSON-serializable value, for the faux cloud and offline tests. It also holds the payment ledger's rows
+ * (billing customers and stored verified events), which the Worker login writes in the real database, so the faux store keeps
+ * and persists them beside the funding rows. StateFundingTransaction never reads or writes them.
+ */
+export interface FundingState extends LedgerState {
   periods: CreditPeriodRow[];
   jobs: FundedJobRow[];
   jobRefs: JobRefRow[];
@@ -14,6 +19,8 @@ export interface FundingState {
   topUps: TopUpRow[];
   /** Purchased-usage holds (migration 013). Stores written before it have none. */
   topUpHolds: TopUpHoldRow[];
+  /** Credit purchases through Stripe Checkout (migration 015). Stores written before it have none. */
+  creditPurchases: CreditPurchaseRow[];
   capRequests: CapRequestRow[];
   /** Per-member limits, raise requests and who each attempt was for (migration 014). Stores written before it have none. */
   memberLimits: MemberLimitRow[];
@@ -22,8 +29,8 @@ export interface FundingState {
   attemptPeople: AttemptPersonRow[];
 }
 
-export const emptyFundingState = (): FundingState => ({ periods: [], jobs: [], jobRefs: [], attempts: [], settlements: [], adjustments: [], topUps: [], topUpHolds: [], capRequests: [],
-  memberLimits: [], allotmentSettings: [], limitRequests: [], attemptPeople: [] });
+export const emptyFundingState = (): FundingState => ({ periods: [], jobs: [], jobRefs: [], attempts: [], settlements: [], adjustments: [], topUps: [], topUpHolds: [], creditPurchases: [], capRequests: [],
+  memberLimits: [], allotmentSettings: [], limitRequests: [], attemptPeople: [], ...emptyLedgerState() });
 const sum = (values: MicroUsd[]) => (values.length ? sumMoney(values) : micro(0));
 const upsert = <T>(rows: T[], row: T, same: (item: T) => boolean) => {
   const index = rows.findIndex(same);
@@ -66,6 +73,9 @@ export class StateFundingTransaction implements FundingTransaction {
   async saveTopUp(row: TopUpRow) { this.state.topUps.push(row); }
   async topUpHold(tenantId: string, holdId: string) { return this.state.topUpHolds.find((row) => row.tenantId === tenantId && row.holdId === holdId); }
   async saveTopUpHold(row: TopUpHoldRow) { upsert(this.state.topUpHolds, row, (item) => item.tenantId === row.tenantId && item.holdId === row.holdId); }
+  async creditPurchase(tenantId: string, purchaseId: string) { return this.state.creditPurchases.find((row) => row.tenantId === tenantId && row.purchaseId === purchaseId); }
+  async creditPurchaseBySession(sessionId: string) { return this.state.creditPurchases.find((row) => row.checkoutSessionId === sessionId); }
+  async saveCreditPurchase(row: CreditPurchaseRow) { upsert(this.state.creditPurchases, row, (item) => item.tenantId === row.tenantId && item.purchaseId === row.purchaseId); }
   async capRequest(tenantId: string, id: string) { return this.state.capRequests.find((row) => row.tenantId === tenantId && row.requestId === id); }
   async saveCapRequest(row: CapRequestRow) { upsert(this.state.capRequests, row, (item) => item.tenantId === row.tenantId && item.requestId === row.requestId); }
   async memberLimits(tenantId: string, organizationId: string) {

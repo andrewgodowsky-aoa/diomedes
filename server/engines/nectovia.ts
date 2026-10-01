@@ -215,11 +215,11 @@ const tierName = (tier: JobTier) => WORK_STYLE_LABELS[tier];
  * What a person reads when the business has no credits left, and the work stopped at that step.
  * An owner or admin is the one who can buy more; anyone else, or a role this computer does not
  * know, is told who can. Earlier steps of the same work were charged, so only what came after is
- * said to be uncharged. The app has no screen where credits are bought, so neither sentence links
- * anywhere.
+ * said to be uncharged. Credits are bought in Settings, Usage, which the owner or admin's sentence
+ * names in plain words; the app has no way to link there from a message, so it doesn't try.
  */
 export const OUT_OF_CREDITS_BUYER =
-  'Your business is out of credits, so this stopped here. Buy more credits to keep going.';
+  'Your business is out of credits, so this stopped here. Buy more credits in Settings, Usage.';
 export const OUT_OF_CREDITS_OTHER =
   'Your business is out of credits, so this stopped here. An owner or admin can buy more credits to keep going.';
 export const outOfCreditsMessage = (role?: MemberRole | null): string =>

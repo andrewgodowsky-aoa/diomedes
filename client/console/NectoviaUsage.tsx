@@ -93,13 +93,11 @@ export function NectoviaUsageView({
   );
 }
 
-export function NectoviaUsage({
-  organizationId,
-  report,
-}: {
-  organizationId: string;
-  report(error: unknown): void;
-}) {
+/**
+ * The usage state for one business, read now and again every half minute, with a way to read it on demand.
+ * The Usage screen in Settings reads it through this too, so both show the same answer the same way.
+ */
+export function useNectoviaUsage(organizationId: string, report: (error: unknown) => void) {
   const [state, setState] = useState<UsageState>({ state: 'loading', organizationId });
   const [refreshing, setRefreshing] = useState(false);
   const [now, setNow] = useState(() => Date.now());
@@ -156,7 +154,19 @@ export function NectoviaUsage({
   }, [organizationId, load, refreshing]);
 
   const shown: UsageState = state.organizationId === organizationId ? state : { state: 'loading', organizationId };
-  return <NectoviaUsageView state={shown} now={now} refreshing={refreshing} onRefresh={() => void load(organizationId)} />;
+  const refresh = useCallback(() => void load(organizationId), [load, organizationId]);
+  return { state: shown, now, refreshing, refresh };
+}
+
+export function NectoviaUsage({
+  organizationId,
+  report,
+}: {
+  organizationId: string;
+  report(error: unknown): void;
+}) {
+  const { state, now, refreshing, refresh } = useNectoviaUsage(organizationId, report);
+  return <NectoviaUsageView state={state} now={now} refreshing={refreshing} onRefresh={refresh} />;
 }
 
 /** Never wait longer than this for a period's end; setTimeout cannot hold a longer delay. */

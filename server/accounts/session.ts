@@ -1091,6 +1091,10 @@ export class AccountSessionService {
   purchasedBalance(organizationId: string) {
     return this.call((token) => this.backend.client.purchasedBalance(token, organizationId));
   }
+  /** This month's included credits for the business, as the person signed in may read them. */
+  organizationUsage(organizationId: string) {
+    return this.call((token) => this.backend.client.organizationUsage(token, organizationId));
+  }
   /** Ask the service to hold some of it for the person signed in. Refusals arrive as ApiErrors with the service's code. */
   holdPurchased(organizationId: string, input: { holdId: string; amountMicroUsd: number; requestDigest: string }) {
     return this.call((token) => this.backend.client.holdPurchasedUsage(token, organizationId, input));
@@ -1104,6 +1108,27 @@ export class AccountSessionService {
   /** Keep a hold this person made from lapsing while the work it is for is still running. */
   renewPurchased(organizationId: string, input: { holdId: string }) {
     return this.call((token) => this.backend.client.renewPurchasedUsage(token, organizationId, input));
+  }
+
+  // --- buying credits (the account service prices, takes the payment and records it) ---
+
+  /** What an amount of credits costs, as the person signed in. */
+  quoteCredits(organizationId: string, credits: number) {
+    return this.call((token) => this.backend.client.quoteCredits(token, organizationId, credits));
+  }
+  /** Start a purchase as the person signed in: where to pay, and what for. */
+  startCreditPurchase(organizationId: string, credits: number) {
+    return this.call((token) => this.backend.client.startCreditPurchase(token, organizationId, credits));
+  }
+  readCreditPurchase(organizationId: string, purchaseId: string) {
+    return this.call((token) => this.backend.client.readCreditPurchase(token, organizationId, purchaseId));
+  }
+  /**
+   * The origin of the test service's own checkout page, when the account service is the local test one, so
+   * that page may be opened too. Null for the deployed service, whose only payment page is Stripe's.
+   */
+  localCheckoutOrigin(): string | null {
+    return this.backend.view().kind === 'faux' ? new URL(this.backend.client.base).origin : null;
   }
 
   // --- members' monthly credit limits (the account service keeps them; this app asks and shows) ---

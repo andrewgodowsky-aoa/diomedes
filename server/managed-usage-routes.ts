@@ -35,6 +35,17 @@
  */
 import type { Express, Request, Response } from 'express';
 import type { StaffRole } from '../shared/access.js';
+import { SIGN_IN_REQUIRED } from '../shared/accounts.js';
+import {
+  CREDIT_PURCHASE_MAX_CREDITS,
+  CREDIT_PURCHASE_MIN_CREDITS,
+  CREDIT_PURCHASE_STEP,
+  isAllowedCheckoutUrl,
+  isPurchasableCredits,
+  type CreditPurchaseStarted,
+  type CreditPurchaseStatus,
+  type CreditQuote,
+} from '../shared/credit-purchases.js';
 import type { PurchasedUsageState } from '../shared/managed-usage.js';
 import {
   ALLOWANCE_MEANING,
@@ -108,6 +119,31 @@ export interface StaffReader {
   staffRole(): Promise<StaffRole | null>;
 }
 
+/**
+ * The business's included month, as the account service reports it. Tenant credit usage is the account
+ * service's to keep, so this app asks as the person signed in and shows the answer.
+ */
+export interface OrganizationUsageReader {
+  /** This month's included credits for the business, read from the account service as the person signed in. */
+  organizationUsage(organizationId: string): Promise<UsageState>;
+}
+
+/**
+ * Buying credits, as the account service does it: it prices an amount, makes the purchase and says where to
+ * pay, takes the payment and records the credits. This app asks and shows what comes back; it never prices
+ * anything, takes a payment or opens the payment page itself.
+ */
+export interface CreditPurchasing {
+  quoteCredits(organizationId: string, credits: number): Promise<CreditQuote>;
+  startCreditPurchase(organizationId: string, credits: number): Promise<CreditPurchaseStarted>;
+  readCreditPurchase(organizationId: string, purchaseId: string): Promise<CreditPurchaseStatus>;
+  /** The origin of the test service's own checkout page when the account service is the test one, else null. */
+  localCheckoutOrigin(): string | null;
+}
+
+const CREDITS_REASON = `Credits are bought in steps of ${CREDIT_PURCHASE_STEP}, from ${CREDIT_PURCHASE_MIN_CREDITS} up to ${CREDIT_PURCHASE_MAX_CREDITS.toLocaleString('en-US')}.`;
+const PURCHASE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+
 export function mountManagedUsageRoutes(
   app: Express,
   store: Store,
@@ -119,6 +155,10 @@ export function mountManagedUsageRoutes(
   staff: StaffReader | null = null,
   /** Left out, a person who is not staff holds nothing: there is no account service to hold bought usage. */
   purchased: PurchasedUsage | null = null,
+  /** Left out, nobody can buy credits here: there is no account service to sell them. */
+  credits: CreditPurchasing | null = null,
+  /** Left out, usage can't be read here: there is no account service to ask. */
+  usage: OrganizationUsageReader | null = null,
 ) {
   const route =
     (action: (req: Request, res: Response) => Promise<unknown>, locked = true) =>
@@ -264,6 +304,61 @@ export function mountManagedUsageRoutes(
     }, false),
   );
 
+  /**
+   * Buying credits: owner or admin only, which is checked here after membership and again by the account
+   * service. Nothing here prices an amount or opens a page. The quote is the service's total for an amount,
+   * a started purchase answers the payment page for the client to open, and a read follows a purchase to paid.
+   */
+  const buyer = (req: Request) => {
+    const id = assertMine(req);
+    workspaces.assertCanBuyCredits(id);
+    if (!credits) throw new ApiError(401, 'Sign in to use Nectovia.', { code: SIGN_IN_REQUIRED });
+    return { id, credits };
+  };
+  /** A whole multiple of 100 in the bounds, or a 422 in plain words. */
+  const askedCredits = (value: unknown) => {
+    if (!isPurchasableCredits(value)) throw new ApiError(422, CREDITS_REASON, { code: 'invalid_credits' });
+    return value;
+  };
+
+  app.get(
+    '/api/workspace/organizations/:organizationId/allowance/credit-purchases/quote',
+    route(async (req) => {
+      const { id, credits: buying } = buyer(req);
+      // A query value is text: a plain run of digits, or it is not an amount at all.
+      const text = req.query.credits;
+      return buying.quoteCredits(id, askedCredits(typeof text === 'string' && /^[1-9][0-9]{0,9}$/.test(text) ? Number(text) : undefined));
+    }, false),
+  );
+
+  app.post(
+    '/api/workspace/organizations/:organizationId/allowance/credit-purchases',
+    route(async (req, res) => {
+      const { id, credits: buying } = buyer(req);
+      // The credits, and nothing else: an amount, a price or a payment page named in the request is refused, not ignored.
+      const value = req.body as unknown;
+      if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some((key) => key !== 'credits'))
+        throw invalid('Send only the credits to buy.', 'invalid_request');
+      const started = await buying.startCreditPurchase(id, askedCredits((value as { credits?: unknown }).credits));
+      // A link in an answer is data. Only Stripe's own page, or the test service's own, is ever passed to a client to open.
+      if (!isAllowedCheckoutUrl(started.checkoutUrl, buying.localCheckoutOrigin()))
+        throw new ApiError(502, 'The payment page the account service sent isn’t one this app will open.', { code: 'checkout_url_refused' });
+      res.status(201);
+      return started;
+    }, false),
+  );
+
+  app.get(
+    '/api/workspace/organizations/:organizationId/allowance/credit-purchases/:purchaseId',
+    route(async (req) => {
+      const { id, credits: buying } = buyer(req);
+      const purchaseId = String(req.params.purchaseId ?? '');
+      if (!PURCHASE_ID.test(purchaseId))
+        throw new ApiError(404, 'That purchase was not found for this business.', { code: 'unknown_purchase' });
+      return buying.readCreditPurchase(id, purchaseId);
+    }, false),
+  );
+
   app.get(
     '/api/workspace/organizations/:organizationId/allowance',
     route(async (req) => {
@@ -286,22 +381,36 @@ export function mountManagedUsageRoutes(
   );
 
   /**
-   * Nectovia usage, as this host can honestly report it. Tenant credit usage
-   * is owned by the control plane and read with an authenticated account
-   * session. This desktop host holds no control-plane session and no client
-   * for one, so it says so rather than drawing numbers. The local allowance
-   * ledger above is not the tenant allowance and is never relabelled as it.
+   * Nectovia usage, as this host can honestly report it. Tenant credit usage is owned by the account
+   * service and read as the person signed in. With no account service, or nobody signed in, it says not
+   * connected; a service that cannot answer, or an answer that is not for this business, says
+   * unavailable. The figures are never estimated, and the local allowance ledger above is not the tenant
+   * allowance and is never relabelled as it. The service checks membership too, so a stranger gets no figures.
    */
   app.get(
     '/api/workspace/organizations/:organizationId/usage',
     route(async (req) => {
       const id = assertMine(req);
-      const state: UsageState = {
-        state: 'not-connected',
-        organizationId: id,
-        reason: NOT_CONNECTED_REASON,
-      };
-      return state;
+      const notConnected: UsageState = { state: 'not-connected', organizationId: id, reason: NOT_CONNECTED_REASON };
+      if (!usage) return notConnected;
+      let answer: UsageState;
+      try {
+        answer = await usage.organizationUsage(id);
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 401) return notConnected;
+        return {
+          state: 'unavailable',
+          organizationId: id,
+          reason: 'The account service couldn’t say what this business has used, so nothing is shown. Nothing is estimated in its place.',
+        } satisfies UsageState;
+      }
+      if (answer.organizationId !== id || (answer.state === 'ready' && answer.projection.organizationId !== id))
+        return {
+          state: 'unavailable',
+          organizationId: id,
+          reason: 'The usage answer named a different business, so it was not shown.',
+        } satisfies UsageState;
+      return answer;
     }, false),
   );
 

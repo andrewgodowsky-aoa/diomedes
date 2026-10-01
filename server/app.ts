@@ -16,6 +16,7 @@ import { PhoneRelayService } from './relay/service.js';
 import { createObservation, type ObservationOptions } from './observability/runtime.js';
 import { FAUX_DEMO_PASSWORD } from '../services/control-plane/src/faux/seed.js';
 import { ACCOUNT_VIEW_VERSION, type AccountsOffView } from '../shared/accounts.js';
+import { isAllowedCheckoutUrl } from '../shared/credit-purchases.js';
 import { mountWorkspaceRoutes } from './workspace-routes.js';
 import { mountAutomationRoutes } from './automation-routes.js';
 import { AutomationOccurrences, AutomationService } from './automations.js';
@@ -1314,6 +1315,10 @@ export async function createApp(options: AppOptions) {
   // "Sign up for a plan" opens the one address the account session names, and nothing else.
   app.locals.allowsPlansReference = (destination: string) =>
     accountSession !== null && destination === accountSession.plansUrl;
+  // A payment page for a purchase of credits: the processor's own, or the test service's on this computer. The
+  // same check the purchase route makes before it answers the address, so nothing else leaves the app this way.
+  app.locals.allowsCheckoutReference = (destination: string) =>
+    accountSession !== null && isAllowedCheckoutUrl(destination, accountSession.localCheckoutOrigin());
   // The port this service listens on, learned from the first request's socket (listen(0)
   // in tests picks it late). A wake has no request of its own, so it uses the remembered one.
   let listeningPort: number | undefined;
@@ -1515,7 +1520,7 @@ export async function createApp(options: AppOptions) {
   mountThemeRoutes(app, store, themes, customization);
   mountCustomizationBenefitRoutes(app, store, workspaces, customization, customizationBenefit);
   // Who is staff is the account service's word, asked at the time; an install without accounts has no staff.
-  mountManagedUsageRoutes(app, store, ledger, gateway, billing, workspaces, accountSession, accountSession);
+  mountManagedUsageRoutes(app, store, ledger, gateway, billing, workspaces, accountSession, accountSession, accountSession, accountSession);
   // Members' monthly credit limits: the account service keeps and enforces them; this app asks as the signed-in person.
   mountCreditLimitRoutes(app, workspaces, accountSession);
   mountConfigurationRoutes(app, store, workspaces, configuration, agents);

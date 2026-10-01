@@ -1457,6 +1457,17 @@ export class WorkspaceService {
   }
 
   /**
+   * Buying more credits is for the same people who see what the business bought: an active owner or admin,
+   * after membership, so an outsider still reads as absent. The account service checks it again; this is
+   * only so a plain member's request goes no further than this computer.
+   */
+  assertCanBuyCredits(organizationId: string): void {
+    const { membership } = this.mine(organizationId);
+    if (!canSeePurchasedUsage(membership))
+      throw refuse(403, 'Only an owner or an admin can buy credits for this business.', 'not_owner_or_admin');
+  }
+
+  /**
    * Membership first, then the owner-or-admin rule, for setting members' monthly credit limits, reading
    * who used what and deciding a member's ask for more. This is the early, plain refusal; the account
    * service is the authority and refuses again, including the narrower rules for an admin.

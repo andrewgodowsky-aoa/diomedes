@@ -35,6 +35,10 @@ import { bootstrapFirstAdmin, CommercialService } from '../commercial.js';
 import { RoutingService } from '../routing.js';
 import { AccountError } from '../errors.js';
 import { FundingService, PurchasedUsageService, UsageService } from '../funding.js';
+import { CreditPurchaseService, StripeWebhookService, readBillingSettings } from '../credit-purchases.js';
+import { FAUX_STRIPE_SECRET_KEY, FAUX_STRIPE_WEBHOOK_SECRET, fauxCheckoutPage, fauxPaidEvent, fauxStripeFetch, signFauxEvent } from './stripe.js';
+import { StatePaymentLedger } from './payment-ledger.js';
+import type { PaymentLedger } from '../credit-purchases.js';
 import { MemberLimits, MemberLimitsService } from '../member-limits.js';
 import { ManagedInferenceService, SPEND_SETTINGS, spendControls, type SpendSetting } from '../managed-inference.js';
 import {
@@ -66,6 +70,12 @@ import { createWorkOSStandIn, WORKOS_ISSUER, type WorkOSStandIn } from './workos
 
 export const FAUX_BACKEND_LABEL = 'Test account service (local, faux data)';
 
+/**
+ * The price the faux cloud reads as CREDIT_PRICE_CENTS_PER_100 when nothing says otherwise: the test price Andrew
+ * gave for 100 credits, so the desktop can quote and buy offline. The Worker has no default; only this stand-in does.
+ */
+export const FAUX_CREDIT_PRICE_CENTS_PER_100 = 1200;
+
 export interface FauxCloudOptions {
   /** The JSON store. Null keeps everything in memory. */
   file: string | null;
@@ -96,6 +106,12 @@ export interface FauxCloudOptions {
     /** What the gateway reads as OPENROUTER_API_KEY. Null: no key is configured. */
     evaluationCredential?: string | null;
   };
+  /**
+   * Buying credits without Stripe: the Worker's CREDIT_PRICE_CENTS_PER_100 as a stand-in, a local checkout page and
+   * a test helper that pays it (FauxCloud.completeCheckout). Omitted: the faux test price. Null: unset, so quotes and
+   * purchases answer 503 as the Worker's do.
+   */
+  billing?: { creditPriceCentsPer100?: string | number | null };
   /** INDIVIDUAL_MAX_ACTIVE_MEMBERS, read as the Worker reads it. Unset or blank: 1. */
   individualMaxActiveMembers?: string | number;
   /** An owner-approved live test only: the gateway calls Bedrock for real with this key. */
@@ -131,6 +147,13 @@ export interface FauxCloud {
   handle(request: Request): Promise<Response>;
   /** Resolves once every managed settlement started so far has finished. */
   idle(): Promise<void>;
+  /**
+   * Pay a faux checkout session as Stripe would: a signed checkout.session.completed event posted to the Worker's own
+   * webhook, which records the top-up. Paying a session twice is the same event, so it changes nothing the second time.
+   */
+  completeCheckout(sessionId: string): Promise<{ purchaseId: string; status: number }>;
+  /** The payment ledger the faux Worker reads and writes (billing customers and stored verified events), over this store. */
+  readonly paymentLedger: PaymentLedger;
   /** Sign a person in without a browser, for the seed and tests. Makes the person on first use. */
   seedSignIn(account: { email: string; name: string; password: string }): Promise<string>;
   /** Issuer and subject of a person's sign-in identity, by email. */
@@ -203,6 +226,7 @@ export async function createFauxCloud(options: FauxCloudOptions): Promise<FauxCl
     staffIdentity: null,
     individual: coverage,
   };
+  const creditPrice = options.billing?.creditPriceCentsPer100 === undefined ? FAUX_CREDIT_PRICE_CENTS_PER_100 : options.billing.creditPriceCentsPer100;
   const credential = live ? options.liveBedrockApiKey! : options.managed?.credential === undefined ? FAUX_SCRIPTED_CREDENTIAL : options.managed.credential;
   const evaluationCredential = liveEvaluations ? options.liveOpenRouterApiKey!
     : options.managed?.evaluationCredential === undefined ? FAUX_SCRIPTED_CREDENTIAL : options.managed.evaluationCredential;
@@ -212,6 +236,10 @@ export async function createFauxCloud(options: FauxCloudOptions): Promise<FauxCl
     ...Object.fromEntries(SPEND_SETTINGS.filter((name) => settings[name] !== undefined).map((name) => [name, settings[name]])),
     ...(credential === null ? {} : { BEDROCK_API_KEY: credential }),
     ...(evaluationCredential === null ? {} : { OPENROUTER_API_KEY: evaluationCredential }),
+    // Buying credits: the Worker's own setting names, filled with the faux stand-ins.
+    ...(creditPrice === null ? {} : { CREDIT_PRICE_CENTS_PER_100: String(creditPrice) }),
+    STRIPE_SECRET_KEY: FAUX_STRIPE_SECRET_KEY,
+    STRIPE_WEBHOOK_SECRET: FAUX_STRIPE_WEBHOOK_SECRET,
   };
   const managed = new ManagedInferenceService({
     accounts,
@@ -240,6 +268,9 @@ export async function createFauxCloud(options: FauxCloudOptions): Promise<FauxCl
       configuration: () => config,
       createCommercial: () => commercial,
       createPurchased: () => new PurchasedUsageService(accounts, funding),
+      createCreditPurchases: (_config, _accounts, env) => new CreditPurchaseService(accounts, funding, { settings: readBillingSettings(env), fetch: fauxStripe, now,
+        localCheckout: true, ledger: paymentLedger }),
+      createStripeWebhook: (_config, env) => new StripeWebhookService(funding, { settings: readBillingSettings(env), now, ledger: paymentLedger }),
       createLimits: () => new MemberLimitsService(accounts, new MemberLimits(store.funding, { now })),
       createRouting: () => new RoutingService(accounts, store.commercial, now, funding),
       createManaged: () => managed,
@@ -249,6 +280,8 @@ export async function createFauxCloud(options: FauxCloudOptions): Promise<FauxCl
     },
   );
 
+  const fauxStripe = fauxStripeFetch();
+  const paymentLedger = new StatePaymentLedger((use) => store.run(async (draft) => use(draft.funding)), now);
   const headers = () => new Headers({ 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'X-Nectovia-Backend': 'faux' });
   const json = (value: unknown, status = 200) => Response.json(value, { status, headers: headers() });
 
@@ -288,6 +321,39 @@ export async function createFauxCloud(options: FauxCloudOptions): Promise<FauxCl
     throw new AccountError(404, 'This sign-in action was not found.');
   }
 
+  async function purchaseForSession(sessionId: string) {
+    const row = await store.funding.transaction((tx) => tx.creditPurchaseBySession(sessionId));
+    if (!row) throw new AccountError(404, 'This test checkout was not found.');
+    return row;
+  }
+
+  async function completeCheckout(sessionId: string) {
+    const row = await purchaseForSession(sessionId);
+    // A session made before this process started is not remembered: it pays as the business's stored customer, or a new one.
+    const customerId = fauxStripe.customerOf(sessionId)
+      ?? await paymentLedger.storedCustomer({ tenantId: row.tenantId, organizationId: row.organizationId })
+      ?? `cus_faux_${sessionId.slice(3)}`;
+    const body = fauxPaidEvent({ sessionId, purchaseId: row.purchaseId, organizationId: row.organizationId, tenantId: row.tenantId, amountCents: row.amountCents, customerId }, now());
+    const response = await worker(new Request('http://faux.local/billing/stripe/webhook', {
+      method: 'POST', body, headers: { 'content-type': 'application/json', 'stripe-signature': await signFauxEvent(body, now()) },
+    }), managedEnv);
+    return { purchaseId: row.purchaseId, status: response.status };
+  }
+
+  /** The local checkout page a faux session points at, and the button on it that pays. */
+  async function checkout(request: Request, url: URL, sessionId: string, complete: boolean): Promise<Response> {
+    if (!complete) {
+      if (request.method !== 'GET') throw new AccountError(405, 'Use GET.');
+      const row = await purchaseForSession(sessionId);
+      return new Response(fauxCheckoutPage({ sessionId, credits: row.credits, amountCents: row.amountCents }), {
+        headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'X-Nectovia-Backend': 'faux' } });
+    }
+    if (request.method !== 'POST') return Response.json({ error: 'Use POST.' }, { status: 405, headers: { Allow: 'POST' } });
+    const paid = await completeCheckout(sessionId);
+    if (paid.status !== 200) throw new AccountError(503, 'The test checkout could not record the payment.');
+    return new Response(null, { status: 303, headers: { Location: `${url.origin}/billing/return?purchase=${paid.purchaseId}`, 'Cache-Control': 'no-store' } });
+  }
+
   async function subjectFor(email: string) {
     if (standIn) return { issuer: WORKOS_ISSUER, subject: await standIn.userIdFor(email) };
     const user = store.snapshot().identity.users.find((row) => row.email === email.trim().toLowerCase());
@@ -324,6 +390,8 @@ export async function createFauxCloud(options: FauxCloudOptions): Promise<FauxCl
     provider: live ? 'live' : 'scripted',
     evaluationProvider: liveEvaluations ? 'live' : 'scripted',
     idle: () => managed.idle(),
+    completeCheckout,
+    paymentLedger,
     async seedSignIn(account) {
       if (standIn) return (await standIn.signInDirect(account.email, account.name)).access_token;
       const pair = await store.run((draft) => identity.signUp(draft.identity, account));
@@ -351,6 +419,8 @@ export async function createFauxCloud(options: FauxCloudOptions): Promise<FauxCl
           return await standIn.handle(new Request(inner, { method: request.method, headers: request.headers, body }));
         }
         if (pathname.startsWith('/auth/')) return await auth(request, pathname);
+        const faked = /^\/faux\/checkout\/(cs_faux_[a-z0-9]{24})(\/complete)?$/.exec(pathname);
+        if (faked) return await checkout(request, url, faked[1], faked[2] !== undefined);
       } catch (error) {
         if (error instanceof AccountError) return json({ error: error.message }, error.status);
         return json({ error: 'The test account service failed. Try again.' }, 503);

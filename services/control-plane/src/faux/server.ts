@@ -155,6 +155,8 @@ export async function startFauxCloud(options: {
   passwordIterations?: number;
   identity?: FauxIdentityMode;
   managed?: FauxCloudOptions['managed'];
+  /** Buying credits. Omitted: CREDIT_PRICE_CENTS_PER_100 from the environment when it is set, else the faux test price. */
+  billing?: FauxCloudOptions['billing'];
   liveBedrockApiKey?: string | null;
   liveOpenRouterApiKey?: string | null;
   /** The faux cloud's clock; tests move it to reach the relay's rechecks. */
@@ -171,6 +173,7 @@ export async function startFauxCloud(options: {
     const managed = { ...options.managed, settings: { ...fromEnvironment, ...options.managed?.settings } };
     const cloud = await createFauxCloud({ file, allowedOrigins: options.allowedOrigins, passwordIterations: options.passwordIterations,
       identity: options.identity, managed, liveBedrockApiKey, liveOpenRouterApiKey, now: options.now,
+      billing: options.billing ?? (process.env.CREDIT_PRICE_CENTS_PER_100 !== undefined ? { creditPriceCentsPer100: process.env.CREDIT_PRICE_CENTS_PER_100 } : undefined),
       individualMaxActiveMembers: process.env.INDIVIDUAL_MAX_ACTIVE_MEMBERS });
     const seed = options.seed ? await seedDemo(cloud) : null;
     const port = options.port ?? FAUX_CLOUD_PORT;
