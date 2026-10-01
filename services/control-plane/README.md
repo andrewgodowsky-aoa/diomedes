@@ -306,9 +306,8 @@ An active member of the business, with their own session, can:
   and available, in micro-USD.
 - `POST .../purchased-usage/holds` `{ holdId, amountMicroUsd, requestDigest }`:
   hold credits. Refused 402 `no_purchased_usage` or
-  `insufficient_purchased_usage`, with a plain reason ending "Nothing was
-  held." Idempotent by `holdId`: the same terms find the hold, different terms
-  are 409 `hold_conflict`, a closed hold is 409 `hold_closed`.
+  `insufficient_purchased_usage`, with a plain reason. Idempotent by
+  `holdId`: the same terms find the hold, different terms are 409 `hold_conflict`, a closed hold is 409 `hold_closed`.
 - `POST .../purchased-usage/settlements` `{ holdId, debitMicroUsd }`: debit the
   top-up balance by at most the hold; the rest is free again. A replay returns
   the recorded settlement; a different debit is 409 `settlement_conflict`. A

@@ -76,7 +76,7 @@ describe('holding bought usage', () => {
     expect(answer.status).toBe(402);
     const body = await answer.json();
     expect(body.code).toBe('no_purchased_usage');
-    expect(body.error).toMatch(/Nothing was held\.$/);
+    expect(body.error).toMatch(/can’t be reserved\.$/);
     expect(body.error).toMatch(/included usage/i);
     expect(repository.snapshot().topUpHolds).toEqual([]);
     const state = await funding.projection(ref.tenantId, ref.organizationId);
@@ -92,7 +92,7 @@ describe('holding bought usage', () => {
     expect(body.code).toBe('insufficient_purchased_usage');
     expect(body.error).toMatch(/150/);
     expect(body.error).toMatch(/100/);
-    expect(body.error).toMatch(/Nothing was held\.$/);
+    expect(body.error).toMatch(/free to hold\.$/);
     expect(repository.snapshot().topUpHolds).toEqual([]);
   });
 
@@ -344,7 +344,7 @@ describe('the lease on a hold (Andrew, 2026-10-01: a stale hold lets go on its o
       expect(answer.status, holdId).toBe(409);
       const body = await answer.json();
       expect(body.code).toBe('hold_not_held');
-      expect(body.error).toMatch(/Nothing was changed\.$/);
+      expect(body.error).toMatch(/can’t be renewed\.$/);
       expect(body.error).not.toMatch(/[–—]/);
     }
     // Exactly at the lease's end it has lapsed.
@@ -353,7 +353,7 @@ describe('the lease on a hold (Andrew, 2026-10-01: a stale hold lets go on its o
     expect(lapsed.status).toBe(409);
     const body = await lapsed.json();
     expect(body.code).toBe('hold_not_held');
-    expect(body.error).toMatch(/Nothing was changed\.$/);
+    expect(body.error).toMatch(/can’t be renewed\.$/);
     // The lapsed hold's credits are free, and renewing did not take them back.
     expect(await (await balance()).json()).toMatchObject({ heldMicroUsd: 0, settledMicroUsd: creditAmount(5), availableMicroUsd: creditAmount(95) });
   });
@@ -583,6 +583,6 @@ describe('a lapsed hold lets go on its own', () => {
     expect(another.status).toBe(402);
     const body = await another.json();
     expect(body.code).toBe('no_purchased_usage');
-    expect(body.error).toMatch(/Nothing was held\.$/);
+    expect(body.error).toMatch(/can’t be reserved\.$/);
   });
 });

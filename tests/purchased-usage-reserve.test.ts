@@ -188,7 +188,7 @@ describe('a subscriber reserving at the allowance routes', () => {
     const answer = await post('admit', ask());
     expect(answer.status).toBe(403);
     expect(answer.data.code).toBe('no_purchased_usage');
-    expect(answer.data.error).toMatch(/Nothing was held\.$/);
+    expect(answer.data.error).toMatch(/can’t be reserved\.$/);
     expect(answer.data.error).not.toMatch(/[–—]/);
     expect(cloudHolds()).toEqual([]);
     expect(local()).toMatchObject({ pendingMicroUsd: 0 });
@@ -200,7 +200,7 @@ describe('a subscriber reserving at the allowance routes', () => {
     const answer = await post('admit', ask({ maxMicroUsd: creditAmount(40) }));
     expect(answer.status).toBe(409);
     expect(answer.data.code).toBe('insufficient_purchased_usage');
-    expect(answer.data.error).toMatch(/Nothing was held\.$/);
+    expect(answer.data.error).toMatch(/free to hold\.$/);
     expect(cloudHolds()).toEqual([]);
     expect(local().pendingMicroUsd).toBe(0);
   });
@@ -269,7 +269,7 @@ describe('a subscriber reserving at the allowance routes', () => {
       const answer = await post('admit', ask(bad));
       expect(answer.status, JSON.stringify(bad)).toBe(400);
       expect(answer.data.code).toBe('purchased_hold_invalid');
-      expect(answer.data.error).toMatch(/Nothing was held.$/);
+      expect(answer.data.error).toMatch(/can’t be held as asked\.$/);
     }
     expect(cloudHolds()).toEqual([]);
   });
@@ -281,7 +281,7 @@ describe('a subscriber reserving at the allowance routes', () => {
     intercept = (request) => (pathOf(request).includes('/purchased-usage/') ? Promise.reject(new Error('offline')) : null);
     const answer = await post('admit', ask());
     expect(answer.status).toBe(503);
-    expect(answer.data.error).toMatch(/Nothing was held\.$/);
+    expect(answer.data.error).toMatch(/bought usage can’t be held\.$/);
     expect(cloudHolds()).toEqual([]);
     expect(local().pendingMicroUsd).toBe(0);
     const settle = await post('settle', { reservationId: 'res_1', providerCostMicroUsd: 1, allowanceDebitMicroUsd: 1 });
@@ -339,7 +339,7 @@ describe('a subscriber reserving at the allowance routes', () => {
     test('a lease this app cannot read is not taken as a hold', async () => {
       const admission = await admitWith('soon');
       expect(admission).toMatchObject({ admitted: false, code: 'purchased_hold_unavailable' });
-      expect((admission as { message: string }).message).toMatch(/Nothing was held\.$/);
+      expect((admission as { message: string }).message).toMatch(/can’t be held right now\.$/);
     });
 
     test('a real hold through the route carries a lease from the service, and the authorization never outlasts it', async () => {
@@ -375,7 +375,7 @@ describe('a subscriber reserving at the allowance routes', () => {
         await post('admit', ask({ maxMicroUsd: dollars(1) }));
         const answer = await post('renew', { reservationId: 'res_1' });
         expect(answer.status).toBe(409);
-        expect(answer.data.error).toMatch(/Nothing was changed\.$/);
+        expect(answer.data.error).toMatch(/nothing to renew\.$/);
         expect(answer.data.error).not.toMatch(/[–—]/);
         expect(holdCalls()).toEqual([]);
         expect(local()).toMatchObject({ pendingMicroUsd: dollars(1) });
@@ -391,7 +391,7 @@ describe('a subscriber reserving at the allowance routes', () => {
         const answer = await post('renew', { reservationId: 'res_1' });
         expect(answer.status).toBe(409);
         expect(answer.data.code).toBe('hold_not_held');
-        expect(answer.data.error).toMatch(/Nothing was changed\.$/);
+        expect(answer.data.error).toMatch(/can’t be renewed\.$/);
       });
 
       test('another member cannot renew a subscriber’s hold, and cannot tell it exists', async () => {
@@ -405,7 +405,7 @@ describe('a subscriber reserving at the allowance routes', () => {
         const missing = await post('renew', { reservationId: 'res_nope' });
         expect(stranger.status).toBe(403);
         expect(stranger.data.code).toBe('direct_renew_refused');
-        expect(stranger.data.error).toMatch(/Nothing was changed\.$/);
+        expect(stranger.data.error).toMatch(/didn’t make\.$/);
         expect({ status: missing.status, code: missing.data.code, error: missing.data.error }).toEqual({ status: stranger.status, code: stranger.data.code, error: stranger.data.error });
         expect(cloudHolds()[0].leaseUntil).toBe(before);
       });
@@ -432,7 +432,7 @@ describe('a subscriber reserving at the allowance routes', () => {
         intercept = (request) => (pathOf(request).includes('/purchased-usage/') ? Promise.reject(new Error('offline')) : null);
         const answer = await post('renew', { reservationId: 'res_1' });
         expect(answer.status).toBe(503);
-        expect(answer.data.error).toMatch(/Nothing was changed\.$/);
+        expect(answer.data.error).toMatch(/wasn’t renewed\.$/);
         expect(cloudHolds()[0].leaseUntil).toBe(before);
       });
 
@@ -511,7 +511,7 @@ describe('a subscriber reserving at the allowance routes', () => {
         : null);
       const answer = await post('admit', ask());
       expect(answer.status).toBe(503);
-      expect(answer.data.error).toMatch(/Nothing was held\.$/);
+      expect(answer.data.error).toMatch(/can’t be held right now\.$/);
     });
   });
 

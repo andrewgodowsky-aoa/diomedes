@@ -185,7 +185,7 @@ export function mountManagedUsageRoutes(
         if (code === 'hold_not_held') throw new ApiError(409, error.message, { code });
         if (error.status === 401) throw error;
       }
-      throw new ApiError(503, 'The account service couldn’t be reached, so this wasn’t renewed. Nothing was changed.', {
+      throw new ApiError(503, 'The account service couldn’t be reached, so this wasn’t renewed.', {
         code: 'purchased_renew_unavailable',
       });
     }
@@ -224,7 +224,7 @@ export function mountManagedUsageRoutes(
           throw new ApiError(409, error.message, { code });
         if (error.status === 401) throw error;
       }
-      throw new ApiError(503, 'The account service couldn’t be reached, so this wasn’t settled. Nothing was changed.', {
+      throw new ApiError(503, 'The account service couldn’t be reached, so this wasn’t settled.', {
         code: 'purchased_settle_unavailable',
       });
     }

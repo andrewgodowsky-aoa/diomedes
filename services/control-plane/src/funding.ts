@@ -502,16 +502,16 @@ export class FundingService {
       const totals = await tx.topUpTotals(tenantId, organizationId, at);
       if (existing) {
         if (existing.organizationId !== organizationId || existing.personId !== personId || existing.amountMicroUsd !== amount || existing.requestDigest !== digest)
-          throw new FundingError(409, 'That hold id is already used for a different hold. Nothing was held.', 'hold_conflict');
+          throw new FundingError(409, 'That hold id is already used for a different hold.', 'hold_conflict');
         if (existing.state !== 'held')
-          throw new FundingError(409, 'That hold is already closed. Nothing was held.', 'hold_closed');
+          throw new FundingError(409, 'That hold is already closed.', 'hold_closed');
         return { hold: existing, balance: balanceOf(totals) };
       }
       const available = topUpAvailable(totals);
       if (available === 0)
-        throw new FundingError(402, 'No bought usage is free to hold. Included usage can’t be reserved. Nothing was held.', 'no_purchased_usage');
+        throw new FundingError(402, 'No bought usage is free to hold. Included usage can’t be reserved.', 'no_purchased_usage');
       if (amount > available)
-        throw new FundingError(402, `This needs ${formatCredits(amount)} credits and ${formatCredits(available)} bought credits are free to hold. Nothing was held.`, 'insufficient_purchased_usage');
+        throw new FundingError(402, `This needs ${formatCredits(amount)} credits and ${formatCredits(available)} bought credits are free to hold.`, 'insufficient_purchased_usage');
       const hold: TopUpHoldRow = { tenantId, organizationId, holdId, personId, requestDigest: digest, amountMicroUsd: amount, debitMicroUsd: micro(0), absorbedMicroUsd: micro(0), state: 'held', createdAt: at, resolvedAt: null, leaseUntil: leaseFrom(at), releasedBy: null };
       await tx.saveTopUpHold(hold);
       return { hold, balance: balanceOf({ ...totals, heldMicroUsd: sumMoney([totals.heldMicroUsd, amount]) }) };
@@ -550,7 +550,7 @@ export class FundingService {
       if (hold.state === 'released' && hold.releasedBy !== 'expiry')
         throw new FundingError(409, 'That hold was released, so it can’t be settled.', 'invalid_transition');
       if (debit > hold.amountMicroUsd)
-        throw new FundingError(409, 'That is more than was held. Nothing was changed.', 'settlement_exceeds_hold');
+        throw new FundingError(409, 'That is more than was held.', 'settlement_exceeds_hold');
       // Released by expiry, or still held with a lease that has lapsed: only what is free right now may be recorded.
       const late = hold.state === 'released' || Date.parse(hold.leaseUntil) <= Date.parse(at);
       const recorded = late
@@ -600,14 +600,14 @@ export class FundingService {
     return this.repository.transaction(async (tx) => {
       const hold = await this.lockedHold(tx, { tenantId, organizationId, holdId, personId }, at);
       if (hold.state === 'settled')
-        throw new FundingError(409, 'That hold was settled, so it can’t be renewed. Nothing was changed.', 'hold_not_held');
+        throw new FundingError(409, 'That hold was settled, so it can’t be renewed.', 'hold_not_held');
       if (hold.state === 'released')
         throw new FundingError(409, hold.releasedBy === 'expiry'
-          ? 'That hold’s lease ran out and it was let go, so it can’t be renewed. Nothing was changed.'
-          : 'That hold was released, so it can’t be renewed. Nothing was changed.', 'hold_not_held');
+          ? 'That hold’s lease ran out and it was let go, so it can’t be renewed.'
+          : 'That hold was released, so it can’t be renewed.', 'hold_not_held');
       // A lapsed lease was let go above, so a held row here is live; this says so again in case it is not.
       if (Date.parse(hold.leaseUntil) <= Date.parse(at))
-        throw new FundingError(409, 'That hold’s lease ran out, so it can’t be renewed. Nothing was changed.', 'hold_not_held');
+        throw new FundingError(409, 'That hold’s lease ran out, so it can’t be renewed.', 'hold_not_held');
       const renewed: TopUpHoldRow = { ...hold, leaseUntil: leaseFrom(at) };
       await tx.saveTopUpHold(renewed);
       return { hold: renewed, balance: balanceOf(await tx.topUpTotals(tenantId, organizationId, at)) };

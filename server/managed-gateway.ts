@@ -114,13 +114,13 @@ export const PURCHASED_REFUSAL_STATUS: Readonly<Record<string, number>> = Object
   purchased_hold_unavailable: 503,
   purchased_sign_in_required: 401,
 });
-const PURCHASED_UNAVAILABLE_REASON = 'Bought usage can’t be held right now. Nothing was held.';
+const PURCHASED_UNAVAILABLE_REASON = 'Bought usage can’t be held right now.';
 const PURCHASED_UNREACHABLE_REASON =
-  'The account service couldn’t be reached, so bought usage can’t be held. Nothing was held.';
-const PURCHASED_INVALID_REASON = 'That reservation can’t be held as asked. Nothing was held.';
-const PURCHASED_SIGN_IN_REASON = 'Sign in to Nectovia to hold usage this business bought. Nothing was held.';
+  'The account service couldn’t be reached, so bought usage can’t be held.';
+const PURCHASED_INVALID_REASON = 'That reservation can’t be held as asked.';
+const PURCHASED_SIGN_IN_REASON = 'Sign in to Nectovia to hold usage this business bought.';
 const PURCHASED_OTHER_PERSON_REASON =
-  'This app is signed in to a different account than the one asking, so bought usage can’t be held. Nothing was held.';
+  'This app is signed in to a different account than the one asking, so bought usage can’t be held.';
 
 /** Settling is a person's word about what a hold cost, so it is closed to people the same way. */
 export const DIRECT_SETTLE_REFUSED = 'direct_settle_refused';
@@ -134,10 +134,10 @@ export const DIRECT_SETTLE_REASON =
  */
 export const DIRECT_RENEW_REFUSED = 'direct_renew_refused';
 export const DIRECT_RENEW_REASON =
-  'You can’t renew a hold you didn’t make. Nothing was changed.';
+  'You can’t renew a hold you didn’t make.';
 export const STAFF_RENEW_REFUSED = 'staff_hold_not_leased';
 export const STAFF_RENEW_REASON =
-  'Staff holds are kept on this computer and don’t run out, so there is nothing to renew. Nothing was changed.';
+  'Staff holds are kept on this computer and don’t run out, so there is nothing to renew.';
 
 export interface GatewayAuthorization {
   readonly tenantId: string;
@@ -375,7 +375,7 @@ export class ManagedGateway {
     } catch (error) {
       if (error instanceof ApiError) {
         const code = String((error.details as { code?: unknown }).code ?? '');
-        // The service's own refusals say what is wrong and end with what happened to the money.
+        // The service's own refusals say what is wrong in plain words, and are passed on as they are.
         if (code in PURCHASED_REFUSAL_STATUS && !code.startsWith('purchased_'))
           return refuse(code, error.message, 'managed');
         // The service could not read what was asked: an identifier or amount it does not accept.
