@@ -158,7 +158,7 @@ export const wakeOverCap = (projectId: string, slotId: string) =>
 
 /**
  * A send the account service refused because it would pass the person's own monthly credit limit
- * (Andrew, 2026-10-01). Nothing was sent. It stops the way a job at its cap stops: the person is told in
+ * (Andrew, 2026-10-01). It stops the way a job at its cap stops: the person is told in
  * the service's own words and may ask an owner or admin, for this one job or for the month, or let it be.
  */
 export const isMemberLimitStop = (error: unknown): boolean =>
@@ -168,7 +168,7 @@ export type MemberLimitChoice = 'job' | 'month' | 'cancel';
 
 export interface MemberLimitPrompt {
   title: string;
-  /** The account service's sentence: what the step needs, what is used and set, and that nothing was sent. */
+  /** The account service's sentence: what the step needs, what is used and set, and who can approve more. */
   body: string;
   job: string;
   month: string;

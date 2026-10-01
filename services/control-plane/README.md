@@ -343,8 +343,8 @@ under the same organization lock as the pool and job-cap checks, after the
 idempotent replay. The gateway names the verified person and role; a request
 never does. Usage is what the person's attempts and purchased-usage holds hold
 or have settled in the period (`credit_attempt_people` records whose attempt
-it was). A refusal is 402 `member_limit_reached` with a plain reason ending
-"Nothing was sent." and nothing is held.
+it was). A refusal is 402 `member_limit_reached` with a plain reason that says
+who can approve more, and nothing is held.
 
 Routes under `/account/organizations/:id/`, each as the signed-in member:
 

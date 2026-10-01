@@ -119,7 +119,8 @@ describe('the rules, as pure functions', () => {
     const over = decideMemberUse({ ...base, reserveMicroUsd: c(11) });
     expect(over).toMatchObject({ ok: false, code: MEMBER_LIMIT_REACHED, usedMicroUsd: c(20), limitMicroUsd: c(30), overByMicroUsd: c(1) });
     if (over.ok) throw new Error('unreachable');
-    expect(over.reason).toMatch(/Nothing was sent\.$/);
+    expect(over.reason).toMatch(/An owner or admin can approve more\.$/);
+    expect(over.reason).not.toMatch(/nothing was/i);
     expect(over.reason).not.toMatch(/[$—–]/);
     expect(decideMemberUse({ ...base, limitMicroUsd: null, usedMicroUsd: c(9999) })).toEqual({ ok: true });
     expect(decideMemberUse({ ...base, reserveMicroUsd: c(11), allowance: { extraMicroUsd: c(5), allowPurchased: false } })).toEqual({ ok: true });
@@ -145,14 +146,14 @@ describe('a member’s limit at admission', () => {
     expect(await f.usage('bob')).toMatchObject({ includedMicroUsd: c(40), purchasedMicroUsd: 0, heldMicroUsd: 0 });
   });
 
-  it('refuses a step past a per-person limit with a stable code and words that end "Nothing was sent.", and holds nothing', async () => {
+  it('refuses a step past a per-person limit with a stable code and words that end with who can approve more, and holds nothing', async () => {
     const f = await fixture();
     await f.setLimit('alice', 'bob', 'limit', 30);
     await f.spend('bob', 'a1', 20);
     const attemptsBefore = f.repository.snapshot().attempts.length;
     const refused = await refusal(f.reserve('bob', 'a2', 11, 'job_a2'));
     expect(refused).toMatchObject({ status: 402, code: 'member_limit_reached' });
-    expect(refused.message).toBe('This step needs up to 11 credits, and you’ve used 20 of the 30 set for you this month. An owner or admin can approve more. Nothing was sent.');
+    expect(refused.message).toBe('This step needs up to 11 credits, and you’ve used 20 of the 30 set for you this month. An owner or admin can approve more.');
     expect(f.repository.snapshot().attempts).toHaveLength(attemptsBefore);
     expect(f.repository.snapshot().attemptPeople).toHaveLength(1);
     // What fits is still admitted, right up to the limit.
@@ -368,7 +369,7 @@ describe('asking for more, and the answer', () => {
     // Room under the raised limit, but the step would use bought credits nobody approved for this member.
     const needsBought = await refusal(f.reserve('bob', 'a2', 10, 'job_2'));
     expect(needsBought).toMatchObject({ status: 402, code: 'member_limit_reached' });
-    expect(needsBought.message).toBe('This step would use credits your business bought, and an owner or admin hasn’t approved that for you yet. Nothing was sent.');
+    expect(needsBought.message).toBe('This step would use credits your business bought, and an owner or admin hasn’t approved that for you yet.');
     await f.ask('bob', 'req_2', 'month');
     await f.decide('alice', 'req_2', true, { extraMicroUsd: c(10), allowPurchased: true });
     const held = await f.reserve('bob', 'a2', 10, 'job_2');

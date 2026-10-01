@@ -129,7 +129,7 @@ export type MemberUseDecision =
       readonly needsPurchasedApproval: boolean;
     };
 
-/** The words a member reads when their limit stops a step. Ends by saying nothing was sent. */
+/** The words a member reads when their limit stops a step. Ends with who can approve more. */
 export function limitReachedReason(input: {
   usedMicroUsd: MicroUsd;
   limitMicroUsd: MicroUsd;
@@ -137,12 +137,12 @@ export function limitReachedReason(input: {
 }): string {
   return (
     `This step needs up to ${formatCredits(input.reserveMicroUsd)} credits, and you’ve used ${formatCredits(input.usedMicroUsd)} ` +
-    `of the ${formatCredits(input.limitMicroUsd)} set for you this month. An owner or admin can approve more. Nothing was sent.`
+    `of the ${formatCredits(input.limitMicroUsd)} set for you this month. An owner or admin can approve more.`
   );
 }
 
 export const PURCHASED_APPROVAL_REASON =
-  'This step would use credits your business bought, and an owner or admin hasn’t approved that for you yet. Nothing was sent.';
+  'This step would use credits your business bought, and an owner or admin hasn’t approved that for you yet.';
 
 /**
  * Whether a member's next step fits their limit. `usedMicroUsd` already counts everything the

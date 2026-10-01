@@ -52,7 +52,7 @@ const money = (value: unknown, what: string): number => {
 };
 
 export const NOT_SIGNED_IN_REASON =
-  'This app is not signed in to a Nectovia account, so it cannot reach this business’s credit limits. Nothing is estimated in its place.';
+  'This app is not signed in to a Nectovia account, so it cannot reach this business’s credit limits.';
 
 export function mountCreditLimitRoutes(
   app: Express,

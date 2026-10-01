@@ -45,7 +45,7 @@ import { DEMO_ACCOUNTS, FAUX_DEMO_PASSWORD, seedDemo } from '../services/control
 // ---- the client's decisions ---------------------------------------------------------------------------
 
 describe('the stop in the client', () => {
-  const SAID = 'This step needs up to 2 credits, and you’ve used 1 of the 1 set for you this month. An owner or admin can approve more. Nothing was sent.';
+  const SAID = 'This step needs up to 2 credits, and you’ve used 1 of the 1 set for you this month. An owner or admin can approve more.';
 
   test('only the host\'s member-limit refusal counts as this stop', () => {
     expect(isMemberLimitStop(new ClientApiError('stop', 402, { code: MEMBER_LIMIT_REACHED }))).toBe(true);
@@ -95,15 +95,16 @@ describe('the stop in the client', () => {
 
 describe('the refusal at the model boundary', () => {
   test('the gateway\'s code becomes the Agent\'s own, in the service\'s words', () => {
-    const said = 'This step needs up to 2 credits, and you’ve used 9 of the 10 set for you this month. An owner or admin can approve more. Nothing was sent.';
+    const said = 'This step needs up to 2 credits, and you’ve used 9 of the 10 set for you this month. An owner or admin can approve more.';
     expect(gatewayRefusal(402, { code: MEMBER_LIMIT_REACHED, message: said }, 'efficient')).toEqual({ code: 'nectovia_member_limit_reached', message: said });
   });
 
-  test('without words from the service it still says that nothing was sent and who can approve', () => {
+  test('without words from the service it still says who can approve', () => {
     const refusal = gatewayRefusal(402, { code: MEMBER_LIMIT_REACHED, message: '  ' }, 'focused')!;
     expect(refusal.code).toBe('nectovia_member_limit_reached');
     expect(refusal.message).toMatch(/owner or admin/);
-    expect(refusal.message).toMatch(/Nothing was sent\.$/);
+    expect(refusal.message).toMatch(/An owner or admin can approve more\.$/);
+    expect(refusal.message).not.toMatch(/nothing was/i);
     expect(refusal.message).not.toMatch(/[–—$]/);
   });
 
@@ -257,7 +258,7 @@ describe('a member at their own limit asks, and an owner decides', () => {
     // The next step is refused before anything is sent, in the service's words.
     const refusal = await refusedStep(JOB, 'step-1');
     expect(refusal.code).toBe('nectovia_member_limit_reached');
-    expect(refusal.message).toMatch(/An owner or admin can approve more\. Nothing was sent\.$/);
+    expect(refusal.message).toMatch(/An owner or admin can approve more\.$/);
     expect(refusal.message).not.toMatch(/\$|dollar|[–—]/i);
     expect(sent).toHaveLength(before);
 
@@ -382,7 +383,7 @@ describe('a stop reaches the Console in one shape', () => {
   }
 
   test('the messages route answers a member-limit stop as 402 member_limit_reached, in the service’s words', async () => {
-    const said = 'This step needs up to 2 credits, and you’ve used 9 of the 10 set for you this month. An owner or admin can approve more. Nothing was sent.';
+    const said = 'This step needs up to 2 credits, and you’ve used 9 of the 10 set for you this month. An owner or admin can approve more.';
     const { status, body } = await send(new EngineError(MEMBER_LIMIT, said, false));
     expect(status).toBe(402);
     expect(body).toMatchObject({ error: said, code: MEMBER_LIMIT_REACHED });

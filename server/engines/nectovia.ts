@@ -242,11 +242,11 @@ export function gatewayRefusal(
       };
     case MEMBER_LIMIT_REACHED:
       // A member's own monthly limit stopped this step (Andrew, 2026-10-01). The service's sentence says
-      // how many credits it needs and how many are set, and ends by saying nothing was sent; this app
+      // how many credits it needs and how many are set, and ends with who can approve more; this app
       // turns the refusal into a stop the person can ask an owner or admin about.
       return {
         code: `nectovia_${MEMBER_LIMIT_REACHED}`,
-        message: said ?? 'This would go past the credits set for you this month. An owner or admin can approve more. Nothing was sent.',
+        message: said ?? 'This would go past the credits set for you this month. An owner or admin can approve more.',
       };
     case 'policy_changed':
       return {

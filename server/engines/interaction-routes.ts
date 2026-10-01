@@ -78,7 +78,7 @@ export function mountInteractionRoutes(
         // with its own two choices, so it keeps the one shape every route gives it.
         if (error instanceof EngineError && error.code === 'JOB_CAP')
           next(new ApiError(402, error.message, { code: 'job_cap_reached' }));
-        // The person's own monthly limit stopped it. Nothing was sent; they can ask an owner or admin.
+        // The person's own monthly limit stopped it. They can ask an owner or admin.
         else if (error instanceof EngineError && error.code === MEMBER_LIMIT)
           next(new ApiError(402, error.message, { code: MEMBER_LIMIT_REACHED }));
         // The Nectovia Agent was not admitted for this business, or nobody is signed in. Nothing was sent.

@@ -450,7 +450,7 @@ export class MemberLimits {
       }
       const allowPurchased = input.allowPurchased === true;
       if (allowPurchased && topUpAvailable(await tx.topUpTotals(tenantId, organizationId, at)) === 0)
-        throw new FundingError(402, 'No bought credits are free to approve. Nothing was changed.', 'no_purchased_usage');
+        throw new FundingError(402, 'No bought credits are free to approve.', 'no_purchased_usage');
       const approved: LimitRequestRow = { ...request, state: 'approved', decidedBy: input.actor.personId, decidedAt: at, extraMicroUsd: extra, allowPurchased, periodId };
       await tx.saveLimitRequest(approved);
       return approved;
