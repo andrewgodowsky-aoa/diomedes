@@ -31,6 +31,7 @@
  */
 import type { Express, Request, Response } from 'express';
 import type { StaffRole } from '../shared/access.js';
+import type { PurchasedUsageState } from '../shared/managed-usage.js';
 import {
   ALLOWANCE_MEANING,
   RATE_CARD_V1,
@@ -60,24 +61,6 @@ const body = (req: Request): Record<string, unknown> =>
     : {};
 
 const organizationId = (req: Request) => String(req.params.organizationId ?? '');
-
-/**
- * What a business bought outright, as the account service reports it: the credits bought, held,
- * spent and still free. Never the included month, and never an estimate: with no service answer
- * there are no numbers at all.
- */
-export type PurchasedUsageState =
-  | { readonly state: 'not-connected' | 'unavailable'; readonly organizationId: string; readonly reason: string }
-  | {
-      readonly state: 'ready';
-      readonly organizationId: string;
-      readonly balance: {
-        readonly purchasedMicroUsd: number;
-        readonly heldMicroUsd: number;
-        readonly settledMicroUsd: number;
-        readonly availableMicroUsd: number;
-      };
-    };
 
 export const NOT_CONNECTED_REASON =
   'This app is not signed in to a Nectovia account, so it cannot read this business’s credit usage. Nothing is estimated in its place.';
@@ -223,6 +206,8 @@ export function mountManagedUsageRoutes(
     '/api/workspace/organizations/:organizationId/allowance/purchased',
     route(async (req) => {
       const id = assertMine(req);
+      // Owners and admins only. A plain member is refused here, not just left without the section.
+      workspaces.assertCanSeePurchasedUsage(id);
       if (!purchased) return { state: 'not-connected', organizationId: id, reason: NOT_CONNECTED_REASON } satisfies PurchasedUsageState;
       try {
         return { state: 'ready', organizationId: id, balance: await purchased.purchasedBalance(id) } satisfies PurchasedUsageState;

@@ -110,6 +110,7 @@ import {
   canAdministerMembers,
   canBindOutputProject,
   canConfigureOrganization,
+  canSeePurchasedUsage,
   entitlementFor,
   isActiveMember,
   legacyBusinessPreference,
@@ -1441,6 +1442,17 @@ export class WorkspaceService {
     const { membership } = this.mine(organizationId);
     if (!canAdministerMembers(membership))
       throw refuse(403, 'Only an owner can record billing events for this workspace.', 'not_owner');
+  }
+
+  /**
+   * Membership first, so an outsider gets the same refusal as a missing business, then the
+   * owner-or-admin rule. What a business bought outright is shown to the people who run the
+   * business, not to every member.
+   */
+  assertCanSeePurchasedUsage(organizationId: string): void {
+    const { membership } = this.mine(organizationId);
+    if (!canSeePurchasedUsage(membership))
+      throw refuse(403, 'Only an owner or an admin can see the credits this business bought.', 'not_owner_or_admin');
   }
 
   /**

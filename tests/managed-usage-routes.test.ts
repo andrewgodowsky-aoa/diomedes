@@ -244,6 +244,56 @@ describe('one company cannot read or move another company’s money', () => {
   });
 });
 
+describe('the credits a business bought outright are for owners and admins', () => {
+  const route = (organizationId: string) => `/workspace/organizations/${organizationId}/allowance/purchased`;
+
+  test('an owner reads it; this host has no account service, so it says not connected with no figures', async () => {
+    const organizationId = await makeOrganization('Fernbrook Joinery');
+    const read = await request<Record<string, unknown>>(route(organizationId));
+    expect(read.status).toBe(200);
+    expect(read.data).toMatchObject({ state: 'not-connected', organizationId });
+    expect(JSON.stringify(read.data)).not.toMatch(/MicroUsd/);
+  });
+
+  test('an admin reads it too', async () => {
+    const organizationId = await makeOrganization('Fernbrook Joinery');
+    const invited = await request<{ code: string }>(
+      `/workspace/organizations/${organizationId}/invitations`,
+      'POST',
+      { role: 'admin' },
+    );
+    expect(invited.status).toBe(200);
+    await restartAs('admin');
+    const joined = await request('/workspace/organizations/join', 'POST', { code: invited.data.code });
+    expect(joined.status).toBe(200);
+    const read = await request(route(organizationId));
+    expect(read.status).toBe(200);
+  });
+
+  test('a plain member is refused with a plain reason', async () => {
+    const organizationId = await makeOrganization('Fernbrook Joinery');
+    const invited = await request<{ code: string }>(
+      `/workspace/organizations/${organizationId}/invitations`,
+      'POST',
+      { role: 'member' },
+    );
+    await restartAs('member');
+    await request('/workspace/organizations/join', 'POST', { code: invited.data.code });
+    const read = await request<{ code?: string; error?: string }>(route(organizationId));
+    expect(read.status).toBe(403);
+    expect(read.data.code).toBe('not_owner_or_admin');
+    expect(read.data.error).toMatch(/owner or an admin/i);
+  });
+
+  test('a non-member reads it as absent', async () => {
+    const organizationId = await makeOrganization('Fernbrook Joinery');
+    await restartAs('outsider');
+    const read = await request<{ code?: string }>(route(organizationId));
+    expect(read.status).toBe(404);
+    expect(read.data.code).toBe('organization_not_found');
+  });
+});
+
 describe('admission through the route', () => {
   test('a business with no setup running has not permitted work to leave', async () => {
     const organizationId = await makeOrganization('Fernbrook Joinery');

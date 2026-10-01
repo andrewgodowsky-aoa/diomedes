@@ -96,7 +96,7 @@ describe('a subscriber reserving at the allowance routes', () => {
   let ledger: AllowanceLedger;
 
   async function mount(session: AccountSessionService, options: {
-    purchased?: boolean; entitlement?: EntitlementView; policy?: OrganizationPolicy; member?: boolean; jobCap?: number; assertMine?: () => void;
+    purchased?: boolean; entitlement?: EntitlementView; policy?: OrganizationPolicy; member?: boolean; jobCap?: number; assertMine?: () => void; assertCanSeePurchasedUsage?: () => void;
   } = {}) {
     await fs.mkdir(path.join(process.cwd(), 'test-results'), { recursive: true });
     root = await fs.mkdtemp(path.join(process.cwd(), 'test-results', 'purchased-reserve-'));
@@ -123,6 +123,7 @@ describe('a subscriber reserving at the allowance routes', () => {
     });
     const workspaces = {
       assertMine: options.assertMine ?? (() => {}),
+      assertCanSeePurchasedUsage: options.assertCanSeePurchasedUsage ?? (() => {}),
       currentPerson: () => ({ id: session.personId() }),
       entitlementOf: () => options.entitlement ?? paid,
     } as unknown as WorkspaceService;
@@ -302,12 +303,26 @@ describe('a subscriber reserving at the allowance routes', () => {
       return { status: response.status, data: (await response.json()) as any };
     };
 
-    test('shows what was bought, held, spent and still free, to any active member', async () => {
+    test('shows what was bought, held, spent and still free, to an owner or admin', async () => {
       await buy(100);
-      await mount(await signedIn(DEMO_ACCOUNTS.employee.email));
+      await mount(await signedIn(DEMO_ACCOUNTS.owner.email));
       expect((await read()).data).toEqual({ state: 'ready', organizationId: ORG, balance: { purchasedMicroUsd: creditAmount(100), heldMicroUsd: 0, settledMicroUsd: 0, availableMicroUsd: creditAmount(100) } });
       await post('admit', ask());
       expect((await read()).data.balance).toMatchObject({ heldMicroUsd: creditAmount(40), availableMicroUsd: creditAmount(60) });
+    });
+
+    test('a person the host refuses gets that refusal, and the account service is never asked', async () => {
+      await buy(100);
+      await mount(await signedIn(DEMO_ACCOUNTS.employee.email), {
+        assertCanSeePurchasedUsage: () => {
+          throw new ApiError(403, 'Only an owner or an admin can see the credits this business bought.', { code: 'not_owner_or_admin' });
+        },
+      });
+      const before = calls.length;
+      const answer = await read();
+      expect(answer.status).toBe(403);
+      expect(answer.data.code).toBe('not_owner_or_admin');
+      expect(calls.slice(before).filter((call) => call.includes('/purchased-usage'))).toEqual([]);
     });
 
     test('shows no numbers at all when there is no account service or it cannot answer', async () => {

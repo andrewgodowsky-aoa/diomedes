@@ -185,6 +185,14 @@ export function canConfigureOrganization(membership: Membership | undefined | nu
 }
 
 /**
+ * Who may see what the business bought outright: an active owner or admin. The server refuses
+ * anyone else; the client uses the same rule only to leave the section out.
+ */
+export function canSeePurchasedUsage(membership: Membership | undefined | null): boolean {
+  return isActiveMember(membership) && (membership!.role === 'owner' || membership!.role === 'admin');
+}
+
+/**
  * Only an owner administers membership in full: roles, invitations and
  * revocation. A Manager's narrower power (invite and remove Employees) is
  * `canInviteRole` / `canChangeMember` in `shared/access.ts`.
