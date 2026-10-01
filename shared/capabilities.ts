@@ -1,3 +1,5 @@
+import { lunaCapabilityName } from './luna-models.js';
+
 /**
  * What each execution route can actually do, and what a permission option may
  * therefore truthfully offer.
@@ -79,7 +81,7 @@ const NO_ISOLATION = {
 
 const AWS_BEDROCK: RouteCapabilities = {
   routeId: 'aws-bedrock',
-  name: 'AWS Bedrock, GPT-6 Luna, company AWS account',
+  name: lunaCapabilityName('us.openai.gpt-5.6-luna'),
   storeOnlyWrites: fact(
     'yes',
     'diomedes-enforced',

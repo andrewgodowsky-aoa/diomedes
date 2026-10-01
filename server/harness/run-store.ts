@@ -37,6 +37,61 @@ export function validateRunId(value: unknown): string {
 const absent = (error: unknown) =>
   error instanceof Error && 'code' in error && error.code === 'ENOENT';
 
+/**
+ * Windows refuses to rename over a file while any handle is open on it, even a
+ * share-delete one. The run service polls `read` every few milliseconds, and
+ * under CPU load a read's open to close span (several thread-pool hops) leaves a
+ * handle open on most polls, so the rename kept colliding with this process's
+ * own reader and sometimes outlasted the retry window below. Within one process
+ * the store therefore lets reads of a file overlap each other, but makes the
+ * replacement wait for reads in flight and makes new reads wait for it. A
+ * scanner or another process still holds files outside this gate, which is what
+ * the bounded retry is for.
+ */
+interface Gate { readers: number; writer: Promise<void> | null; drained: Array<() => void>; users: number }
+const gates = new Map<string, Gate>();
+
+function gateFor(file: string): Gate {
+  let gate = gates.get(file);
+  if (!gate) { gate = { readers: 0, writer: null, drained: [], users: 0 }; gates.set(file, gate); }
+  gate.users++;
+  return gate;
+}
+
+function leave(file: string, gate: Gate) {
+  if (--gate.users === 0 && gates.get(file) === gate) gates.delete(file);
+}
+
+async function reading<T>(file: string, action: () => Promise<T>): Promise<T> {
+  const gate = gateFor(file);
+  try {
+    while (gate.writer) await gate.writer;
+    gate.readers++;
+    try { return await action(); }
+    finally {
+      if (--gate.readers === 0) for (const wake of gate.drained.splice(0)) wake();
+    }
+  } finally { leave(file, gate); }
+}
+
+async function replacing<T>(file: string, action: () => Promise<T>): Promise<T> {
+  const gate = gateFor(file);
+  try {
+    const previous = gate.writer;
+    let release!: () => void;
+    const mine = new Promise<void>((resolve) => { release = resolve; });
+    gate.writer = mine;
+    try {
+      if (previous) await previous;
+      while (gate.readers > 0) await new Promise<void>((resolve) => gate.drained.push(resolve));
+      return await action();
+    } finally {
+      if (gate.writer === mine) gate.writer = null;
+      release();
+    }
+  } finally { leave(file, gate); }
+}
+
 async function durableWrite(target: string, bytes: string) {
   await fs.mkdir(path.dirname(target), { recursive: true });
   const temp = `${target}.${randomBytes(6).toString('hex')}.tmp`;
@@ -52,14 +107,16 @@ async function durableWrite(target: string, bytes: string) {
   // window. Backoff delays total 1.55 seconds across the same six attempts.
   // Retry only this atomic rename; never repeat a handler or remove the old
   // record. Permanent failures still surface with the temp intact.
-  for (let attempt = 0; ; attempt++) {
-    try { await fs.rename(temp, target); break; }
-    catch (error) {
-      if (process.platform !== 'win32' || attempt >= 5 || !(error instanceof Error) ||
-          !('code' in error) || !['EPERM', 'EACCES', 'EBUSY'].includes(String(error.code))) throw error;
-      await delay(50 * 2 ** attempt);
+  await replacing(target, async () => {
+    for (let attempt = 0; ; attempt++) {
+      try { await fs.rename(temp, target); return; }
+      catch (error) {
+        if (process.platform !== 'win32' || attempt >= 5 || !(error instanceof Error) ||
+            !('code' in error) || !['EPERM', 'EACCES', 'EBUSY'].includes(String(error.code))) throw error;
+        await delay(50 * 2 ** attempt);
+      }
     }
-  }
+  });
 }
 
 export class FileRunStore implements RunStore {
@@ -80,7 +137,8 @@ export class FileRunStore implements RunStore {
   async read(runId: string): Promise<HarnessRun | null> {
     let text: string;
     try {
-      text = await fs.readFile(this.file(runId), 'utf8');
+      const file = this.file(runId);
+      text = await reading(file, () => fs.readFile(file, 'utf8'));
     } catch (error) {
       if (absent(error)) return null;
       throw error;
