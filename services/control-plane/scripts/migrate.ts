@@ -25,7 +25,7 @@ if (process.env.CP_MIGRATION_TARGET === 'staging') {
 }
 const factory = local ? () => new pg.Client({ connectionString, connectionTimeoutMillis: 5000 })
   : () => new NeonClient({ connectionString, connectionTimeoutMillis: 5000 });
-const migrations = await Promise.all(['001_accounts.sql','002_commercial.sql','003_funded_jobs.sql','004_usage_contract.sql','005_customer_access.sql','006_staff_keys.sql','007_relay_devices.sql','008_organization_setup.sql','009_individual_plans.sql','010-scoped-routing.sql','013_purchased_usage_holds.sql'].map(async (name) => {
+const migrations = await Promise.all(['001_accounts.sql','002_commercial.sql','003_funded_jobs.sql','004_usage_contract.sql','005_customer_access.sql','006_staff_keys.sql','007_relay_devices.sql','008_organization_setup.sql','009_individual_plans.sql','010-scoped-routing.sql','011_individual_funding.sql','012_individual_subscription_periods.sql','013_purchased_usage_holds.sql'].map(async (name) => {
   const sql = await readFile(new URL(`../migrations/${name}`, import.meta.url), 'utf8');
   // The version is the file name's number, so 013 is refused until 011 and 012 are in the list before it.
   return { version: Number(name.slice(0, 3)), name, sql, sha256: createHash('sha256').update(sql).digest('hex') };

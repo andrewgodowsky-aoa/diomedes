@@ -1,0 +1,1045 @@
+diff --git a/docs/implementation/2026-09-28-individual-tier.md b/docs/implementation/2026-09-28-individual-tier.md
+index 06f71e5e..795da510 100644
+--- a/docs/implementation/2026-09-28-individual-tier.md
++++ b/docs/implementation/2026-09-28-individual-tier.md
+@@ -6,6 +6,13 @@ Original contract: `CONTRACT-individual-tier.md` (orchestrator scratchpad). The
+ merged in PR #176 at main `1af37e0`. The Operations routing composition described below is local
+ and unverified until its own recorded gates pass; this note makes no deployment claim.
+ 
++**2026-09-29 checkpoint:** PRs #177 (`d017647`) and #178 (`5f97d97e`) subsequently merged the
++integration work. The remaining automatic funding path is now a local, uncommitted candidate on
++`codex/dio-128-individual-funding`, based on #178 in `andrewgodowsky-aoa/diomedes`.
++See [the phase-2b funding record](2026-09-29-individual-funding.md) for its exact behavior, fresh
++verification and remaining acceptance gaps. The phase-2a descriptions and counts below are
++historical; they do not establish publication or deployment of the funding candidate.
++
+ ## Andrew's decisions (2026-09-28, owner-decision record)
+ 
+ - The Individual plan is **$200 a month**, a person's own subscription. This supersedes the $250
+@@ -66,7 +73,8 @@ Individual billing account and a null Business organization id.
+ ## What phase 2b must add
+ 
+ - Automatic recurring Individual credit allocation remains separate from routing's explicit
+-  usage-agreement path. Do not infer 1,000 allocated credits from the approved plan amount.
++  usage-agreement path. The local phase-2b candidate implements it; publication, deployment and
++  live-product acceptance remain open. Do not infer deployed credits from the approved amount.
+ - Fold `INDIVIDUAL_PLAN` into `PLAN_TEMPLATES` once `shared/access.ts` is free, and retire
+   `planCatalog()`'s concatenation.
+ - A faux seed subscriber (`services/control-plane/src/faux/seed.ts` was not edited here).
+diff --git a/services/control-plane/scripts/migrate.ts b/services/control-plane/scripts/migrate.ts
+index 65800348..b2bfee86 100644
+--- a/services/control-plane/scripts/migrate.ts
++++ b/services/control-plane/scripts/migrate.ts
+@@ -25,7 +25,7 @@ if (process.env.CP_MIGRATION_TARGET === 'staging') {
+ }
+ const factory = local ? () => new pg.Client({ connectionString, connectionTimeoutMillis: 5000 })
+   : () => new NeonClient({ connectionString, connectionTimeoutMillis: 5000 });
+-const migrations = await Promise.all(['001_accounts.sql','002_commercial.sql','003_funded_jobs.sql','004_usage_contract.sql','005_customer_access.sql','006_staff_keys.sql','007_relay_devices.sql','008_organization_setup.sql','009_individual_plans.sql','010-scoped-routing.sql'].map(async (name, index) => {
++const migrations = await Promise.all(['001_accounts.sql','002_commercial.sql','003_funded_jobs.sql','004_usage_contract.sql','005_customer_access.sql','006_staff_keys.sql','007_relay_devices.sql','008_organization_setup.sql','009_individual_plans.sql','010-scoped-routing.sql','011_individual_funding.sql'].map(async (name, index) => {
+   const sql = await readFile(new URL(`../migrations/${name}`, import.meta.url), 'utf8');
+   return { version: index + 1, name, sql, sha256: createHash('sha256').update(sql).digest('hex') };
+ }));
+diff --git a/services/control-plane/src/commercial.ts b/services/control-plane/src/commercial.ts
+index 01d40313..18602a1c 100644
+--- a/services/control-plane/src/commercial.ts
++++ b/services/control-plane/src/commercial.ts
+@@ -45,6 +45,7 @@ import {
+   catalogPlan,
+   catalogPlanLabel,
+   isPersonPlan,
++  individualIncludesMonthlyCredits,
+   planCatalog,
+   type IndividualCoverage,
+   type CoveredAccessView,
+@@ -406,18 +407,28 @@ function personSummary(grant: PersonFeatureGrant, at: number): PersonGrantSummar
+ 
+ /** A person's own entitlement from their Individual grants, in the person's words rather than a business's. */
+ export function personEntitlement(grants: readonly PersonFeatureGrant[], revision: number, at: string): EntitlementView {
+-  const view = entitlementFromGrants(grants, revision, at);
++  // Project the approved offer over the original phase-2a template. Never mutate historical grants,
++  // or broaden a limited feature override merely because it names the Individual plan.
++  const view = entitlementFromGrants(grants.map(grant => individualIncludesMonthlyCredits(grant)
++    ? { ...grant, features: [...new Set<AccessFeature>([...grant.features, 'managed-inference'])] } : grant), revision, at);
+   const planLabel = view.plan === 'none' ? null : view.plan === 'custom' ? 'Custom access' : catalogPlanLabel(view.plan);
+   const reason = view.state === 'active' ? '' : view.state === 'expired' ? INDIVIDUAL_EXPIRED_REASON
+     : view.state === 'revoked' ? INDIVIDUAL_REVOKED_REASON : INDIVIDUAL_NONE_REASON;
+   return { ...view, planLabel, reason };
+ }
+ 
+-/** Personal access belongs to the person; managed usage additionally needs its own funded agreement. */
++/** Personal access belongs to the person. A full plan or an explicit usage agreement can fund it. */
+ export async function individualEntitlement(tx: CommercialTransaction, accountId: string, personId: string, at: string): Promise<EntitlementView> {
++  const account = await tx.individual(accountId);
++  if (!account || account.personId !== personId || account.tenantId !== personId)
++    throw new AccountError(403, 'This Individual account is unavailable to this person.', 'scope_forbidden');
+   const person = personEntitlement(await tx.personGrants(personId), await tx.personAccessRevision(personId), at);
+   const usage = entitlementFromGrants(await tx.grants(accountId), await tx.accessRevision(accountId), at);
+-  const managedInference = person.state === 'active' && person.agent && usage.state === 'active' && usage.managedInference;
++  // Operations can inspect disabled accounts and their history; they grant no current authority.
++  if (account.state !== 'active') return { ...person, state: 'revoked', agent: false, managedInference: false,
++    features: [], revision: person.revision + usage.revision, reason: 'This Individual account is disabled.' };
++  const managedInference = person.state === 'active' && person.agent &&
++    (person.managedInference || (usage.state === 'active' && usage.managedInference));
+   return { ...person, revision: person.revision + usage.revision, managedInference,
+     features: [...person.features.filter(feature => feature !== 'managed-inference'), ...(managedInference ? ['managed-inference'] : [])] };
+ }
+@@ -960,7 +971,7 @@ export class CommercialService {
+     };
+   }
+ 
+-  /** Issue Personal Agent access. Managed usage has a separate billing-scope agreement. */
++  /** Issue Personal access. Its recurring allowance is allocated by the funding writer when needed. */
+   async issuePersonGrant(token: string, personId: string, input: z.infer<typeof issuePersonGrantInput>) {
+     const parsed = issuePersonGrantInput.safeParse(input);
+     if (!parsed.success) throw new AccountError(422, 'A grant needs a plan, a source, a reference and dates.');
+@@ -969,9 +980,8 @@ export class CommercialService {
+     if (!plan) throw new AccountError(422, 'That plan is not in the catalog.');
+     if (plan.scope !== 'person') throw new AccountError(422, BUSINESS_PLAN_NOT_FOR_PERSON);
+     const features = [...new Set(parsed.data.features ?? plan.features)] as AccessFeature[];
+-    // Person-plan access and the separately funded managed-usage agreement are independent.
+-    if (features.includes('managed-inference'))
+-      throw new AccountError(422, "Included AI usage isn't part of the Individual plan yet, so it can't be issued with it.");
++    if (features.includes('managed-inference') && !features.includes(AGENT_FEATURE))
++      throw new AccountError(422, 'Individual included usage requires Personal Agent access in the same grant.');
+     if (!parsed.data.reference) throw new AccountError(422, 'Name the invoice, agreement or ticket this grant answers to.');
+     const now = this.now();
+     const validFrom = parsed.data.validFrom ?? new Date(now).toISOString();
+diff --git a/services/control-plane/src/funding-postgres.ts b/services/control-plane/src/funding-postgres.ts
+index 46604b2e..139f4570 100644
+--- a/services/control-plane/src/funding-postgres.ts
++++ b/services/control-plane/src/funding-postgres.ts
+@@ -94,12 +94,13 @@ export class PostgresFundingTransaction implements FundingTransaction {
+     return row && {
+       tenantId: text(row.tenant_id), organizationId: text(row.organization_id), periodId: text(row.period_id), planId: text(row.plan_id),
+       rateCardVersion: text(row.rate_card_version), grantedMicroUsd: money(row.granted_micro_usd), startsAt: iso(row.starts_at),
+-      endsAt: iso(row.ends_at), sourceGrantId: text(row.source_grant_id), allocatedAt: iso(row.allocated_at),
++      endsAt: iso(row.ends_at), sourceGrantId: text(row.source_person_grant_id ?? row.source_grant_id), allocatedAt: iso(row.allocated_at),
+     };
+   }
+   async savePeriod(row: CreditPeriodRow) {
+-    await this.client.query('INSERT INTO control_plane.credit_periods(tenant_id,organization_id,period_id,plan_id,rate_card_version,granted_micro_usd,starts_at,ends_at,source_grant_id,allocated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)',
+-      [row.tenantId, row.organizationId, row.periodId, row.planId, row.rateCardVersion, row.grantedMicroUsd, row.startsAt, row.endsAt, row.sourceGrantId, row.allocatedAt]);
++    await this.client.query('INSERT INTO control_plane.credit_periods(tenant_id,organization_id,period_id,plan_id,rate_card_version,granted_micro_usd,starts_at,ends_at,source_grant_id,allocated_at,source_person_grant_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)',
++      [row.tenantId, row.organizationId, row.periodId, row.planId, row.rateCardVersion, row.grantedMicroUsd, row.startsAt, row.endsAt,
++        row.planId === 'individual' ? null : row.sourceGrantId, row.allocatedAt, row.planId === 'individual' ? row.sourceGrantId : null]);
+   }
+ 
+   async job(tenantId: string, rootJobId: string): Promise<FundedJobRow | undefined> {
+diff --git a/services/control-plane/src/funding.ts b/services/control-plane/src/funding.ts
+index 106ee4ac..1b9b1425 100644
+--- a/services/control-plane/src/funding.ts
++++ b/services/control-plane/src/funding.ts
+@@ -71,6 +71,7 @@ export class FundingError extends AccountError {
+ 
+ export interface CreditPeriodRow {
+   tenantId: string;
++  /** Historical name: the Business or Individual billing-scope id, never the UI's selected workspace. */
+   organizationId: string;
+   periodId: string;
+   planId: string;
+@@ -78,7 +79,7 @@ export interface CreditPeriodRow {
+   grantedMicroUsd: MicroUsd;
+   startsAt: string;
+   endsAt: string;
+-  /** The verified entitlement grant this allocation came from. */
++  /** The original person grant for Individual, or account feature grant for Business/explicit agreements. */
+   sourceGrantId: string;
+   allocatedAt: string;
+ }
+@@ -305,7 +306,9 @@ export class FundingService {
+ 
+   /**
+    * Record a month's grant from a verified entitlement grant. Only published
+-   * plan grants can fund a period; Solo and proposed rows cannot. Server-only.
++   * plan grants can fund a period; Solo and proposed rows cannot. Individual
++   * uses the verified person's own billing scope and person grant. The database
++   * binds that source without copying a grant into a Business. Server-only.
+    */
+   async allocatePeriod(input: { tenantId: string; organizationId: string; periodId: string; planId: string; sourceGrantId: string }): Promise<CreditPeriodRow> {
+     const tenantId = requireId(input.tenantId, 'tenant');
+diff --git a/services/control-plane/src/managed-inference.ts b/services/control-plane/src/managed-inference.ts
+index ee0a1efd..c8bc6f1b 100644
+--- a/services/control-plane/src/managed-inference.ts
++++ b/services/control-plane/src/managed-inference.ts
+@@ -23,6 +23,7 @@
+  */
+ import { EVALUATION_OUTPUT_TOKENS_PER_QUESTION, checkEvaluationRequest } from '../../../shared/evaluation-wire.js';
+ import { FEATURE_LABELS } from '../../../shared/access.js';
++import { individualIncludesMonthlyCredits } from '../../../shared/individual-plan.js';
+ import { inputTokenBound } from '../../../shared/token-bound.js';
+ import { normalizeUsage } from '../../../shared/usage-contract.js';
+ import {
+@@ -49,6 +50,7 @@ import {
+   grantState,
+   type AdmissionRecord,
+   type PersonalAdmissionRecord,
++  type PersonFeatureGrant,
+   type CommercialRepository,
+   type FeatureGrant,
+   type RouteEntry,
+@@ -1108,7 +1110,7 @@ export class ManagedInferenceService {
+     const at = this.at();
+     const state = await this.options.commercial.transaction(async (tx) => ({
+       admission: h.scope.kind === 'individual' ? await tx.personalAdmission(tenantId, h.admissionId) : await tx.admission(tenantId, h.admissionId),
+-      grants: await tx.grants(h.organizationId),
++      grants: h.scope.kind === 'individual' ? await tx.personGrants(member.person.id) : await tx.grants(h.organizationId),
+       accessRevision: await tx.accessRevision(h.organizationId),
+       individual: h.scope.kind === 'individual' ? await individualEntitlement(tx, h.scope.id, member.person.id, at) : null,
+       policy: await tx.policy(),
+@@ -1131,7 +1133,7 @@ export class ManagedInferenceService {
+    * and the dispatch commit. A refusal here sent nothing. On return the attempt
+    * is marked dispatched by this caller alone, and only this caller may send it.
+    */
+-  private async holdAndDispatch(h: JobHeaders, tenantId: string, grants: readonly FeatureGrant[], hold: {
++  private async holdAndDispatch(h: JobHeaders, tenantId: string, grants: readonly (FeatureGrant | PersonFeatureGrant)[], hold: {
+     kind: ChargeKind; route: string; requestDigest: string; rate: RateSnapshot; maxMicroUsd: MicroUsd; ceilingMicroUsd: MicroUsd | null;
+   }, beforeDispatch?: () => Promise<void>): Promise<AttemptRef> {
+     const ref: AttemptRef = { tenantId, organizationId: h.organizationId, attemptId: h.attemptId };
+@@ -1139,7 +1141,7 @@ export class ManagedInferenceService {
+       tenantId, organizationId: h.organizationId, rootJobId: h.jobId, runRef: h.jobId, parentRunRef: null,
+       tier: h.tier, capMicroUsd: approvedJobCap(h.tier),
+     });
+-    await this.ensurePeriod(tenantId, h.organizationId, grants);
++    await this.ensurePeriod(tenantId, h.scope, grants);
+     // The company ceiling is checked inside the reserving transaction, so a refusal holds nothing.
+     let attempt: FundedAttempt;
+     try {
+@@ -1339,12 +1341,16 @@ export class ManagedInferenceService {
+    * last; allocatePeriod is idempotent for it. A revoked or expired grant never
+    * gets here: step 4 has already refused.
+    */
+-  private async ensurePeriod(tenantId: string, organizationId: string, grants: readonly FeatureGrant[]) {
++  private async ensurePeriod(tenantId: string, scope: AccountScope, grants: readonly (FeatureGrant | PersonFeatureGrant)[]) {
++    const organizationId = scope.id; // The historical ledger column holds the billing account, never a selected Business.
+     const periodId = periodIdFor(this.at());
+     if (await this.options.fundingReads.transaction((tx) => tx.period(tenantId, organizationId, periodId))) return;
+     const when = this.now();
+     const source = grants
+-      .filter((grant) => grantState(grant, when) === 'active' && grant.features.includes('managed-inference') &&
++      .filter((grant) => grantState(grant, when) === 'active' &&
++        (scope.kind === 'individual'
++          ? 'personId' in grant && grant.personId === tenantId && grant.tenantId === tenantId && individualIncludesMonthlyCredits(grant)
++          : 'organizationId' in grant && grant.organizationId === scope.id && grant.tenantId === tenantId && grant.features.includes('managed-inference')) &&
+         grant.planId !== null && publishedMonthlyGrant(grant.planId) !== null)
+       .sort((a, b) => Date.parse(b.validUntil) - Date.parse(a.validUntil) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))[0];
+     if (!source?.planId) return;
+diff --git a/services/control-plane/tests/individual-plans.test.ts b/services/control-plane/tests/individual-plans.test.ts
+index ea060e02..6c6d1568 100644
+--- a/services/control-plane/tests/individual-plans.test.ts
++++ b/services/control-plane/tests/individual-plans.test.ts
+@@ -59,9 +59,9 @@ const admitPersonal = async (who: DemoAccount, routeKind = 'byo') =>
+ beforeEach(async () => { await setup(); });
+ 
+ describe('the Individual plan in the catalog', () => {
+-  it('is a person-scoped plan with the eligibility sentence, the Agent and no included usage or price', () => {
++  it('is a person-scoped plan with the eligibility sentence, the Agent and included usage without a dollar price', () => {
+     expect(INDIVIDUAL_PLAN).toMatchObject({ id: 'individual', label: 'Individual', scope: 'person', termDays: 31, customerVisible: true });
+-    expect(INDIVIDUAL_PLAN.features).toEqual(['nectovia-agent', 'maintained-profiles', 'owner-rules', 'phone-relay']);
++    expect(INDIVIDUAL_PLAN.features).toEqual(['nectovia-agent', 'maintained-profiles', 'owner-rules', 'phone-relay', 'managed-inference']);
+     expect(INDIVIDUAL_PLAN.note).toContain(INDIVIDUAL_ELIGIBILITY_SENTENCE);
+     expect(INDIVIDUAL_ELIGIBILITY_SENTENCE).toBe('Individual covers Personal work only. Every Business workspace needs its own Business plan, including a sole proprietorship.');
+     expect(INDIVIDUAL_PLAN.note).not.toMatch(/\$|\d+\s*(a|per)\s*month/);
+@@ -100,7 +100,7 @@ describe('issuing and withdrawing an Individual grant', () => {
+     expect(issued.status).toBe(201);
+     const personId = await personOf('free');
+     expect(issued.body.grant).toMatchObject({ personId, tenantId: personId, planId: 'individual', state: 'active',
+-      features: ['nectovia-agent', 'maintained-profiles', 'owner-rules', 'phone-relay'] });
++      features: ['nectovia-agent', 'maintained-profiles', 'owner-rules', 'phone-relay', 'managed-inference'] });
+     expect(Date.parse(issued.body.grant.validUntil) - clock).toBe(31 * 86_400_000);
+ 
+     const toBusiness = await call('POST', `/ops/customers/${orgs.harbor}/grants`, await token('staffBilling'),
+@@ -109,7 +109,7 @@ describe('issuing and withdrawing an Individual grant', () => {
+ 
+     const businessToPerson = await issue('free', { planId: 'business' });
+     expect(businessToPerson).toMatchObject({ status: 422, body: { error: BUSINESS_PLAN_NOT_FOR_PERSON } });
+-    expect((await issue('free', { features: ['nectovia-agent', 'managed-inference'] })).status).toBe(422);
++    expect((await issue('free', { features: ['managed-inference'] })).status).toBe(422);
+     expect((await issue('free', { reference: '' })).status).toBe(422);
+ 
+     const detail = await call('GET', `/ops/people/${personId}`, await token('staffSupport'));
+diff --git a/services/control-plane/tests/migrations.test.ts b/services/control-plane/tests/migrations.test.ts
+index 1829e768..f0760509 100644
+--- a/services/control-plane/tests/migrations.test.ts
++++ b/services/control-plane/tests/migrations.test.ts
+@@ -60,7 +60,7 @@ describe('versioned migration protocol', () => {
+ });
+ 
+ describe('versioned migration source files', () => {
+-  const names = ['001_accounts.sql', '002_commercial.sql', '003_funded_jobs.sql', '004_usage_contract.sql', '005_customer_access.sql', '006_staff_keys.sql', '007_relay_devices.sql', '008_organization_setup.sql', '009_individual_plans.sql', '010-scoped-routing.sql'];
++  const names = ['001_accounts.sql', '002_commercial.sql', '003_funded_jobs.sql', '004_usage_contract.sql', '005_customer_access.sql', '006_staff_keys.sql', '007_relay_devices.sql', '008_organization_setup.sql', '009_individual_plans.sql', '010-scoped-routing.sql','011_individual_funding.sql'];
+   const load = () => Promise.all(names.map(async (name, index) => {
+     const sql = await readFile(new URL(`../migrations/${name}`, import.meta.url), 'utf8');
+     return { version: index + 1, name, sql, sha256: createHash('sha256').update(sql).digest('hex') };
+@@ -172,13 +172,13 @@ describe('versioned migration source files', () => {
+     expect(individual.sql.trim().endsWith('REVOKE ALL ON ALL FUNCTIONS IN SCHEMA control_plane FROM PUBLIC;')).toBe(true);
+   });
+ 
+-  it('keeps the applied Individual migration immutable and upgrades its exact history with routing 010 only', async () => {
++  it('keeps the applied Individual migration immutable and upgrades its exact history with additive routing and funding migrations', async () => {
+     const files = await load();
+     expect(files[8]).toMatchObject({ version: 9, name: '009_individual_plans.sql',
+       sha256: '540f7bb22cc183175984fcdcf8e82718a7b093ec77d09329656ddd68196e5886' });
+     expect(files[9]).toMatchObject({ version: 10, name: '010-scoped-routing.sql' });
+     const db = database(files.slice(0, 9));
+-    expect(await migrate(db.factory, files)).toEqual([10]);
++    expect(await migrate(db.factory, files)).toEqual([10, 11]);
+     expect(db.calls).not.toContain(files[8].sql);
+     expect(await migrate(db.factory, files)).toEqual([]);
+   });
+diff --git a/services/control-plane/tests/postgres.integration.test.ts b/services/control-plane/tests/postgres.integration.test.ts
+index 85249053..91ca0c28 100644
+--- a/services/control-plane/tests/postgres.integration.test.ts
++++ b/services/control-plane/tests/postgres.integration.test.ts
+@@ -43,7 +43,7 @@ describe.skipIf(!enabled)('REAL PostgreSQL (explicit disposable database only)',
+     factory = local
+       ? () => new pg.Client({ connectionString, connectionTimeoutMillis: 5000 })
+       : () => new NeonClient({ connectionString, connectionTimeoutMillis: 5000 });
+-    migrations = await Promise.all(['001_accounts.sql', '002_commercial.sql', '003_funded_jobs.sql', '004_usage_contract.sql', '005_customer_access.sql', '006_staff_keys.sql', '007_relay_devices.sql', '008_organization_setup.sql', '009_individual_plans.sql', '010-scoped-routing.sql'].map(async (name, index) => {
++    migrations = await Promise.all(['001_accounts.sql', '002_commercial.sql', '003_funded_jobs.sql', '004_usage_contract.sql', '005_customer_access.sql', '006_staff_keys.sql', '007_relay_devices.sql', '008_organization_setup.sql', '009_individual_plans.sql', '010-scoped-routing.sql', '011_individual_funding.sql'].map(async (name, index) => {
+       const sql = await readFile(new URL(`../migrations/${name}`, import.meta.url), 'utf8');
+       return { version: index + 1, name, sql, sha256: createHash('sha256').update(sql).digest('hex') };
+     }));
+diff --git a/services/control-plane/tests/scoped-routing.test.ts b/services/control-plane/tests/scoped-routing.test.ts
+index f3765e9f..befe29f7 100644
+--- a/services/control-plane/tests/scoped-routing.test.ts
++++ b/services/control-plane/tests/scoped-routing.test.ts
+@@ -56,10 +56,10 @@ async function call(method: string, pathname: string, token?: string, body?: unk
+ }
+ async function signIn(who: DemoAccount) { return (await call('POST', '/auth/sign-in', undefined,
+   { email: DEMO_ACCOUNTS[who].email, password: FAUX_DEMO_PASSWORD })).body.accessToken as string; }
+-async function personPlan(token = owner, reference = 'Synthetic Personal plan') {
++async function personPlan(token = owner, reference = 'Synthetic Personal plan', features?: string[]) {
+   const person = (await cloud.accounts.signIn(token)).person;
+   const result = await call('POST', `/ops/people/${person.id}/grants`, billing,
+-    { planId: 'individual', source: 'internal-test', reference, note: '', validUntil: until });
++    { planId: 'individual', source: 'internal-test', reference, note: '', validUntil: until, ...(features ? { features } : {}) });
+   expect(result.status, JSON.stringify(result.body)).toBe(201);
+   return { person, grant: result.body.grant };
+ }
+@@ -128,6 +128,124 @@ beforeEach(async () => {
+ });
+ afterEach(async () => { await cloud.idle(); vi.restoreAllMocks(); });
+ 
++describe('recurring Individual funding through scoped managed dispatch', () => {
++  async function personal() {
++    const { person, grant } = await personPlan();
++    const account = (await call('POST', '/account/individual', owner, {})).body;
++    const scope: AccountScope = { kind: 'individual', id: account.id };
++    await preference(scope); await publish();
++    return { person, grant, account, scope };
++  }
++
++  it('keeps disabled accounts readable to staff while refusing customer access and dispatch', async () => {
++    const { account, scope } = await personal();
++    const other = await signIn('free');
++    const active = (await call('POST', '/account/individual', other, {})).body;
++    const pending = await request(scope);
++    await cloud.store.run(async draft => { draft.commercial.individuals.find(row => row.id === account.id)!.state = 'disabled'; });
++    const before = cloud.store.snapshot().funding;
++    const list = await call('GET', '/ops/individuals', billing);
++    expect(list.status).toBe(200);
++    expect(list.body.map((row: any) => row.account.id)).toEqual(expect.arrayContaining([account.id, active.id]));
++    const detail = await call('GET', `/ops/individuals/${account.id}`, billing);
++    expect(detail.status).toBe(200);
++    expect(detail.body).toMatchObject({ account: { state: 'disabled' }, entitlement: { agent: false, managedInference: false } });
++    expect(detail.body.admissions).toHaveLength(1);
++    expect((await call('GET', `/account/routing/${scopePath(scope)}/access`, owner)).status).toBe(403);
++    expect((await cloud.handle(pending)).status).toBe(403);
++    expect(sends).toHaveLength(0);
++    expect(cloud.store.snapshot().funding).toEqual(before);
++  });
++
++  it('funds concurrent Personal requests once without a staff usage agreement or Business charge', async () => {
++    const { person, grant, account, scope } = await personal();
++    const businessBefore = cloud.store.snapshot().funding.periods;
++    const requests = await Promise.all([request(scope, { job: 'personal-a', attempt: 'personal-a' }), request(scope, { job: 'personal-b', attempt: 'personal-b' })]);
++    await Promise.all(requests.map(completed));
++    const state = cloud.store.snapshot().funding;
++    expect(state.periods.filter(p => p.organizationId === account.id)).toMatchObject([{ tenantId: person.id,
++      organizationId: account.id, planId: 'individual', periodId: '2026-09', grantedMicroUsd: 100_000_000, sourceGrantId: grant.id }]);
++    expect(state.periods.filter(p => p.organizationId !== account.id)).toEqual(businessBefore);
++    expect(state.attempts).toHaveLength(2);
++    expect(state.attempts.every(a => a.tenantId === person.id && a.organizationId === account.id)).toBe(true);
++    expect(state.settlements.every(s => s.tenantId === person.id && s.organizationId === account.id && s.periodId === '2026-09')).toBe(true);
++    const replay = await cloud.handle(await request(scope, { job: 'personal-a', attempt: 'personal-a' }));
++    expect(replay.status).toBe(409); expect(sends).toHaveLength(2);
++    expect(cloud.store.snapshot().funding.periods).toEqual(state.periods);
++  });
++
++  it('keeps September payer and period when a response arrives in October, and allocates October once', async () => {
++    const { person, account, scope } = await personal();
++    answer = () => { clock = Date.parse('2026-10-01T00:00:01Z'); return success(); };
++    await completed(await request(scope, { job: 'september', attempt: 'september' }));
++    owner = await signIn('owner'); answer = success;
++    await completed(await request(scope, { job: 'october', attempt: 'october' }));
++    const state = cloud.store.snapshot().funding;
++    expect(state.periods.filter(p => p.organizationId === account.id).map(p => [p.periodId, p.grantedMicroUsd]))
++      .toEqual([['2026-09', 100_000_000], ['2026-10', 100_000_000]]);
++    expect(state.settlements).toMatchObject([
++      { reservationId: 'september', tenantId: person.id, organizationId: account.id, periodId: '2026-09' },
++      { reservationId: 'october', tenantId: person.id, organizationId: account.id, periodId: '2026-10' },
++    ]);
++  });
++
++  it('rechecks person revocation after reserving, releases the unsent hold, and does not erase its funding evidence', async () => {
++    const { person, grant, account, scope } = await personal();
++    const reserve = cloud.funding.reserve.bind(cloud.funding);
++    vi.spyOn(cloud.funding, 'reserve').mockImplementationOnce(async input => {
++      const held = await reserve(input);
++      expect((await call('POST', `/ops/people/${person.id}/grants/${grant.id}/revoke`, billing, { reason: 'Withdraw fixture access' })).status).toBe(200);
++      return held;
++    });
++    const response = await cloud.handle(await request(scope));
++    expect(response.status).toBe(403); expect(sends).toHaveLength(0);
++    const state = cloud.store.snapshot().funding;
++    expect(state.attempts).toMatchObject([{ organizationId: account.id, state: 'released', dispatchedAt: null }]);
++    expect(state.periods.filter(p => p.organizationId === account.id)).toHaveLength(1);
++    expect((await call('GET', `/account/routing/${scopePath(scope)}/access`, owner)).body.managedInference).toBe(false);
++  });
++
++  it('does not refill the month after person revocation and a replacement grant', async () => {
++    const { person, grant, account, scope } = await personal();
++    await completed(await request(scope));
++    const original = cloud.store.snapshot().funding.periods.find(p => p.organizationId === account.id)!;
++    expect((await call('POST', `/ops/people/${person.id}/grants/${grant.id}/revoke`, billing, { reason: 'Replace fixture access' })).status).toBe(200);
++    await personPlan(owner, 'Replacement subscription');
++    await completed(await request(scope, { job: 'replacement', attempt: 'replacement' }));
++    expect(cloud.store.snapshot().funding.periods.filter(p => p.organizationId === account.id)).toEqual([original]);
++    expect(cloud.store.snapshot().funding.settlements).toHaveLength(2);
++  });
++
++  it('refuses lapsed access before allocating the next month even with a prior positive balance', async () => {
++    const { person, account, scope } = await personal();
++    await completed(await request(scope));
++    clock = Date.parse(until); owner = await signIn('owner');
++    const state = cloud.store.snapshot().funding;
++    const admission = await call('POST', `/account/routing/${scopePath(scope)}/admit`, owner, { surface: 'conversation', routeKind: 'managed' });
++    expect(admission.body.decision.admitted).toBe(false);
++    expect((await call('GET', `/account/routing/${scopePath(scope)}/access`, owner)).body).toMatchObject({ state: 'expired', managedInference: false });
++    expect(cloud.store.snapshot().funding).toEqual(state);
++    expect(state.periods.find(p => p.organizationId === account.id)!.tenantId).toBe(person.id);
++    expect(sends).toHaveLength(1);
++  });
++
++  it('denies another person and swapped Personal/Business admissions without changing either ledger', async () => {
++    const { scope } = await personal();
++    const req = await request(scope), before = cloud.store.snapshot().funding;
++    const other = await signIn('employee');
++    const stolen = new Headers(req.headers); stolen.set('authorization', `Bearer ${other}`);
++    expect((await cloud.handle(new Request(req.clone(), { headers: stolen }))).status).toBe(403);
++    const business = new Headers(req.headers); business.set('x-nectovia-scope-kind', 'organization');
++    business.delete('x-nectovia-account'); business.set('x-nectovia-organization', orgA);
++    expect((await cloud.handle(new Request(req.clone(), { headers: business }))).status).toBe(403);
++    const businessRequest = await request();
++    const personalHeaders = new Headers(businessRequest.headers); personalHeaders.set('x-nectovia-scope-kind', 'individual');
++    personalHeaders.delete('x-nectovia-organization'); personalHeaders.set('x-nectovia-account', scope.id);
++    expect((await cloud.handle(new Request(businessRequest, { headers: personalHeaders }))).status).toBe(403);
++    expect(sends).toHaveLength(0); expect(cloud.store.snapshot().funding).toEqual(before);
++  });
++});
++
+ describe('Operations publication through authenticated funded dispatch', () => {
+   it('does not advertise Responses summaries for a registered model using Chat Completions', async () => {
+     await addAwsRoute('aws-chat', 'us.openai.gpt-5.6-luna', 'chat-completions');
+@@ -200,8 +318,8 @@ describe('Operations publication through authenticated funded dispatch', () => {
+     expect((await call('POST', '/account/individual', owner, {})).body.id).toBe(accounts[0].id);
+   });
+ 
+-  it('new-main: a person plan admits scoped Personal BYO without inventing managed usage', async () => {
+-    await personPlan();
++  it('a limited person grant admits scoped Personal BYO without inventing managed usage', async () => {
++    await personPlan(owner, 'Limited access', ['nectovia-agent']);
+     const individual = (await call('POST', '/account/individual', owner, {})).body;
+     const path = `/account/routing/individual/${individual.id}/admit`;
+     const byo = await call('POST', path, owner, { surface: 'conversation', routeKind: 'byo', rootJobId: 'personal-byo' });
+@@ -337,8 +455,8 @@ describe('Operations publication through authenticated funded dispatch', () => {
+     expect(response.status).toBe(409); expect(sends).toHaveLength(0);
+     expect(cloud.store.snapshot().funding.attempts).toMatchObject([{ state: 'released', dispatchedAt: null }]);
+   });
+-  it('requires versioned setup for a newly paid Individual and rechecks a withdrawn agreement', async () => {
+-    await personPlan();
++  it('requires versioned setup for limited Individual access and rechecks its withdrawn usage agreement', async () => {
++    await personPlan(owner, 'Limited access', ['nectovia-agent']);
+     const individual = (await call('POST', '/account/individual', owner, {})).body;
+     const scope: AccountScope = { kind: 'individual', id: individual.id };
+     const grant = await call('POST', `/ops/individuals/${scope.id}/grants`, billing, { reference: 'Synthetic agreement', validUntil: until, credits: 100 });
+diff --git a/shared/individual-plan.ts b/shared/individual-plan.ts
+index 82ad6448..6ce88ca0 100644
+--- a/shared/individual-plan.ts
++++ b/shared/individual-plan.ts
+@@ -5,10 +5,9 @@
+  * an organization. It covers the person's Personal work and projects not linked to a business.
+  * Business work always needs its own Business authority, including a one-member business.
+  *
+- * Included AI usage ('managed-inference') is not part of the person plan. The grant carries
+- * the Agent, maintained profiles, owner rules and phone access. Managed Personal work additionally
+- * requires a current, separately funded usage agreement on the person's Individual billing scope.
+- * The legacy admission path cannot establish that agreement and refuses managed work.
++ * The full Individual plan includes 1,000 monthly credits on its own billing scope. Limited
++ * feature grants retain their explicit scope. Legacy admission has no billing-scope pin and
++ * continues to refuse managed work; scoped admission and dispatch check current person access.
+  *
+  * This module sits beside shared/access.ts rather than inside it while another lane holds that file.
+  * Phase 2b folds INDIVIDUAL_PLAN into PLAN_TEMPLATES. The app shows no price for any plan: the public
+@@ -42,13 +41,24 @@ export const INDIVIDUAL_SEPARATION_SENTENCE =
+ /** A catalog plan: a template, and whether it is issued to an organization or to a person. */
+ export type CatalogPlan = PlanTemplate & { scope: 'organization' | 'person' };
+ 
++/** The complete phase-2a template, retained to recognize existing subscriptions without rewriting grants. */
++const INDIVIDUAL_ACCESS_FEATURES: readonly AccessFeature[] = Object.freeze([
++  'nectovia-agent', 'maintained-profiles', 'owner-rules', 'phone-relay',
++]);
++
++/** Limited feature overrides are not silently upgraded to the complete Individual offer. */
++export function individualIncludesMonthlyCredits(grant: { planId: string | null; features: readonly string[] }): boolean {
++  return grant.planId === INDIVIDUAL_PLAN_ID && grant.features.includes(AGENT_FEATURE) &&
++    (grant.features.includes('managed-inference') || INDIVIDUAL_ACCESS_FEATURES.every(feature => grant.features.includes(feature)));
++}
++
+ export const INDIVIDUAL_PLAN: CatalogPlan = Object.freeze({
+   id: INDIVIDUAL_PLAN_ID,
+   label: INDIVIDUAL_PLAN_LABEL,
+-  features: Object.freeze(['nectovia-agent', 'maintained-profiles', 'owner-rules', 'phone-relay']) as readonly AccessFeature[],
++  features: Object.freeze([...INDIVIDUAL_ACCESS_FEATURES, 'managed-inference']) as readonly AccessFeature[],
+   termDays: 31,
+   customerVisible: true,
+-  note: `A person's own monthly subscription, issued to a person and never to a business. ${INDIVIDUAL_ELIGIBILITY_SENTENCE} ${INDIVIDUAL_SEPARATION_SENTENCE} Included AI usage is not part of it yet.`,
++  note: `A person's own monthly subscription, with 1,000 monthly credits on their Individual account. ${INDIVIDUAL_ELIGIBILITY_SENTENCE} ${INDIVIDUAL_SEPARATION_SENTENCE}`,
+   scope: 'person',
+ });
+ 
+@@ -153,9 +163,9 @@ export type CoveredAccessView = Omit<AccessView, 'grants'> & {
+ export const AGENT_PERSONAL_INDIVIDUAL_REASON =
+   "The Nectovia Agent isn't part of your personal work here. It comes with an Individual plan of your own, or with a business workspace that includes it. Nothing was sent.";
+ 
+-/** Legacy Personal admission cannot establish a managed-usage agreement. */
++/** Legacy Personal admission cannot bind a managed request to its Individual billing scope. */
+ export const MANAGED_USAGE_NOT_INCLUDED_PERSONAL =
+-  "Included AI usage isn't part of the Individual plan yet, so the Nectovia Agent can't answer on the company route here. Your own connections still work. Nothing was sent.";
++  'Managed Personal work requires Individual account routing and setup. Refresh your account in a current app to continue. Nothing was sent.';
+ 
+ /** Staff tried to issue the Individual plan to a business. */
+ export const INDIVIDUAL_PLAN_NOT_FOR_BUSINESS =
+diff --git a/shared/managed-usage.ts b/shared/managed-usage.ts
+index b30c285c..816bf287 100644
+--- a/shared/managed-usage.ts
++++ b/shared/managed-usage.ts
+@@ -746,6 +746,14 @@ export const MONTHLY_CREDIT_GRANTS: readonly MonthlyCreditGrant[] = Object.freez
+     sellable: false,
+     note: 'Self-managed workspace and workflows.',
+   }),
++  Object.freeze({
++    planId: 'individual',
++    label: 'Individual',
++    monthlyCredits: 1_000,
++    status: 'published',
++    sellable: false,
++    note: 'One named person’s Personal work only; never a Business allowance.',
++  }),
+   Object.freeze({
+     planId: 'managed-small',
+     label: 'Managed Small',
+diff --git a/docs/implementation/2026-09-29-individual-funding.md b/docs/implementation/2026-09-29-individual-funding.md
+new file mode 100644
+index 00000000..3c5157fb
+--- /dev/null
++++ b/docs/implementation/2026-09-29-individual-funding.md
+@@ -0,0 +1,135 @@
++# DIO-128: recurring Individual funding candidate (2026-09-29)
++
++Repository: `andrewgodowsky-aoa/diomedes`. Base: upstream/main
++`5f97d97e61300c08002d7767bbbb179c1882a5fc` (PR #178). Branch:
++`codex/dio-128-individual-funding`. This is local, uncommitted implementation evidence, not a
++release or deployment. No changes were published to the `diomedes-mac` fork.
++
++## Authority and preserved integration
++
++DIO-128 and app PRs #176, #177 and #178 were re-read before implementation. Phase 2a merged at
++`1af37e0`; #177 at `d017647`; #178 at the full base above. This candidate extends their existing
++person access, billing scopes, routing preferences, admission pins, policy and native routing
++behavior. Migrations 001–010 and existing runtime/funding permission scripts are unchanged.
++
++The three repository canonical mirrors report version **2026-09-27.2**. The accepted rule is
++Personal only, including for a person who owns a one-member Business. Every Business needs its
++own Business plan. The approved Individual allowance is 1,000 monthly credits.
++
++Andrew clarified during this implementation that unused monthly credits expire. The next period
++starts at **0% used with 1,000 credits**, with **no unused-credit carryover**. Historical periods
++and delayed settlements remain evidence; they never enlarge a later month's allowance.
++
++## Implemented boundary
++
++- Full Individual grants now include `managed-inference`. Existing phase-2a grants with the
++  complete four-feature template receive the same derived entitlement without rewriting their
++  historical records. Limited feature overrides retain their narrower scope. A managed-only
++  person grant without Agent access is refused.
++- Managed Personal dispatch uses the person's distinct Individual billing account, with
++  `tenant_id = person_id`. It cannot adopt the selected Business, another person's account, or
++  a Business grant. Scoped admission, current access, current policy and the pre-dispatch check
++  remain required. Legacy unscoped managed admission still refuses spending.
++- The first funded request of a period lazily allocates exactly 1,000 credits, using the existing
++  account lock and unique period key. Concurrent requests and a committed write whose response
++  was lost retry to the original row. Reissuing access or changing configuration cannot refill it.
++- Existing explicit agreement periods retain their amount, payer and source. This candidate
++  does not silently top them up to 1,000 or replace their evidence. A subsequent eligible period
++  can receive the recurring Individual allowance.
++- New work can spend only its current period. An unused previous allowance cannot fund it.
++  A new period's projection starts at 0% used. Revocation, lapse and account disabling prevent
++  new dispatch; a hold revoked before dispatch is released without sending. Work already sent
++  still settles against the payer and period recorded when it was reserved, including when the
++  response arrives after that period ends.
++- Migration 011 adds the person-grant funding source and validates exact person/account identity,
++  live grant authority, amount and period under a narrowly scoped database trigger. It locks the
++  source against concurrent revocation. Account-grant sources must belong to the same billing
++  account. A composite settlement foreign key binds every settlement to its reservation's
++  original payer and period. It neither allocates credits nor rewrites pre-existing history.
++- The existing restricted `cp_funding` writer can allocate; `cp_runtime` cannot. Neither receives
++  new identity, consent, audit, adjustment or schema privileges. The trigger reads source grants
++  under a fixed search path; its function is not public executable authority.
++- Disabled Individual accounts remain inspectable in authorized Operations lists and details,
++  including historical admissions, while projecting no active Agent or managed authority.
++
++## Verification
++
++Gate results and the source fingerprint are recorded in
++`evidence/dio-128/2026-09-29/verification.json`, with complete logs beside it.
++
++| Gate | Fresh result | Log |
++| --- | --- | --- |
++| Root TypeScript | Passed, zero diagnostics; 4 GB Node heap | `root-types.log` |
++| Control-plane TypeScript | Passed, zero diagnostics | `control-plane-types.log` |
++| Root Vitest, one full run | **8,619 passed, 32 skipped**, 517 files passed / 2 skipped (519 total) | `root-vitest.log` |
++| Control-plane Vitest, one full run | **736 passed, 48 skipped**, 47 files passed / 5 skipped (52 total) | `control-plane-vitest.log` |
++| Real local PostgreSQL, separate explicit run | **27 passed**, 3 files; Individual 8, routing 6, account/funding 13 | `postgres.log` |
++| Vite production client build | Passed; existing chunk-size warnings | `vite.log` |
++| Required browser gate | **36 passed**, zero failed/skipped | `playwright.log` |
++
++Skipped tests are not passing evidence. The PostgreSQL checks are a separate explicitly enabled
++run; their counts are not added to the full-suite total. The full root run uses four workers and a
++4 GB Node heap. The control-plane full suite uses one worker.
++
++The root test fixtures cannot run inside `.codex`, which the product deliberately protects, and
++macOS's default temporary path includes a symlink that the path guard refuses. The first root run
++there failed for those fixture paths. An identical source snapshot at
++`/Users/andrewgodowsky/Diomedes-dio128-verification` and an owned non-symlink temporary directory
++are used for the desktop gates. That snapshot initially borrowed Git objects; two capability-record
++checks correctly refused to infer history through alternates. It now owns its Git objects, and the
++fresh full run above passes. A default-heap type check exhausted Node's 2 GB heap; the final 4 GB
++run passes. The first browser invocation could not launch because the matching browser was absent;
++the tool-matched browser was installed in an owned test-tools directory before the final run.
++No production path guard or test assertion was relaxed to resolve these fixture problems. All
++2,234 tracked files outside docs matched before browser execution; that suite then generated its
++recorded screenshots in the verification copy. All 1840 tracked files outside docs/evidence,
++and all 14 changed source/test paths, still match. Changed-source fingerprint:
++`6441ebb0000fda8086e71199cfba0f679fd33d58cb9a453bd96c9dabcd2f4f7c`.
++
++PostgreSQL tests use an owned, disposable local PostgreSQL **17.10** cluster and actual separate
++runtime and funding logins, with the repository's existing role grants. They do not connect to
++staging or production. The dedicated Individual suite refuses an existing schema. Tests cover
++001–010 to 011 upgrades with prior Business/person records preserved, migration idempotence,
++concurrent allocation, a lost commit response, invalid amount/period/grant denial, revocation,
++lapse, cross-person/cross-scope denial, restricted role privileges, and original settlement period.
++
++Independent read-only review found one Operations regression for disabled accounts. A failing
++staff-list test reproduced it; the non-authorizing projection fixes it and keeps dispatch denied.
++The reviewer confirmed that fix. Review also caught a test fixture exceeding the normal job cap;
++the expiry test now uses a permitted reservation without changing production caps.
++
++## Remaining acceptance and policy gaps
++
++- **Reset boundary:** this candidate uses the existing ledger's UTC calendar months. Andrew's
++  no-carryover decision is implemented. Whether the billing month must instead be anchored to
++  the person's plan start date remains a question raised in this session; this record does not
++  claim calendar-month billing was newly approved. The existing 31-day access template is
++  unchanged. Reconcile subscription/renewal dates and billing-month boundaries before rollout.
++- **Live acceptance:** migration 011 is not applied to a shared environment. There is no signed-in
++  packaged-app journey, funded real-provider receipt, Operations acceptance on this candidate,
++  migration rollout/rollback rehearsal against the deployment, or release evidence here. Synthetic
++  provider responses and local database tests do not establish those outcomes.
++- **Usage surface:** allocation is lazy at the first eligible dispatch. The broader customer
++  Personal usage display/reset-date experience and subscription renewal/payment lifecycle are
++  not completed by this server funding slice.
++- **Related open work:** DIO-132 staff credit adjustments/audit idempotency are not fixed by this
++  migration; granting extra database privileges alone would not fix that workflow. DIO-136 site
++  pricing/Personal-only reconciliation and DIO-125 automation entitlement policy remain separate.
++- The historical phase-2b plan-catalog consolidation and faux seed subscriber remain open.
++  `shared/access.ts`, seed fixtures and pricing are not changed. Canonical cloud/mirror commercial
++  reconciliation remains pending; no new price, checkout, automation authority or plan meaning
++  is silently introduced here.
++
++## Required status report
++
++**Pillar impact:** advances person/Business funding separation, bounded authorized spending and
++durable evidence through the same ledger and account authority. The tests above are the observable
++proof. No second runtime, account authority or Console surface is introduced.
++
++**Roadmap impact:** DIO-128's recurring funding moves from recorded/unwired to locally implemented
++and verified within the stated boundary. DIO-128 remains In Progress / Partly implemented pending
++review and the live-product gaps. No canonical roadmap item is marked shipped.
++
++**Build / publication / deployment:** source verification only; no package, release, merge or
++deployment. All candidate changes remain uncommitted and unpushed. A PR requires Andrew's
++current-patch publication approval under AGENTS.md.
+diff --git a/services/control-plane/migrations/011_individual_funding.sql b/services/control-plane/migrations/011_individual_funding.sql
+new file mode 100644
+index 00000000..abf2e751
+--- /dev/null
++++ b/services/control-plane/migrations/011_individual_funding.sql
+@@ -0,0 +1,67 @@
++-- DIO-128: use the existing ledger for the approved Individual monthly allowance.
++-- Apply as migration owner after 010. No data is allocated, repriced or rewritten here.
++-- The ledger's historical organization_id remains the immutable billing-scope id.
++
++ALTER TABLE control_plane.credit_periods
++  ALTER COLUMN source_grant_id DROP NOT NULL,
++  ADD COLUMN source_person_grant_id text,
++  ADD CONSTRAINT credit_periods_person_grant_fkey FOREIGN KEY (tenant_id,source_person_grant_id)
++    REFERENCES control_plane.person_feature_grants(tenant_id,grant_id),
++  ADD CONSTRAINT credit_periods_source_kind CHECK (
++    (plan_id='individual' AND source_person_grant_id IS NOT NULL AND source_grant_id IS NULL)
++    OR (plan_id<>'individual' AND source_person_grant_id IS NULL AND source_grant_id IS NOT NULL)
++  );
++
++-- Account-scoped agreements and Business grants must belong to the actual payer,
++-- even when two scopes share a tenant. Retain the original source FK as well.
++ALTER TABLE control_plane.feature_grants ADD CONSTRAINT feature_grants_scope_key
++  UNIQUE(tenant_id,grant_id,organization_id);
++ALTER TABLE control_plane.credit_periods ADD CONSTRAINT credit_periods_account_source_fkey
++  FOREIGN KEY(tenant_id,source_grant_id,organization_id)
++  REFERENCES control_plane.feature_grants(tenant_id,grant_id,organization_id);
++
++-- cp_funding has no grant/identity privileges. This narrowly scoped trigger reads
++-- the authoritative grant, locks it against concurrent revocation until commit,
++-- and validates its billing identity. It neither issues grants nor changes access.
++CREATE FUNCTION control_plane.check_individual_period_source() RETURNS trigger
++  LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,control_plane AS $$
++BEGIN
++  IF NEW.source_person_grant_id IS NOT NULL THEN
++    PERFORM 1 FROM control_plane.person_feature_grants g
++      JOIN control_plane.billing_scopes b ON b.person_id=g.person_id AND b.tenant_id=g.tenant_id
++      WHERE g.tenant_id=NEW.tenant_id AND g.grant_id=NEW.source_person_grant_id
++        AND b.kind='individual' AND b.id=NEW.organization_id AND b.record->>'state'='active'
++        AND g.record->>'planId'='individual' AND g.record->>'state'='active'
++        AND g.record->>'revokedAt' IS NULL
++        AND (g.record->>'validFrom')::timestamptz <= NEW.allocated_at
++        AND (g.record->>'validUntil')::timestamptz > NEW.allocated_at
++        AND g.record->'features' ? 'nectovia-agent'
++        AND (g.record->'features' ? 'managed-inference'
++          OR g.record->'features' ?& ARRAY['nectovia-agent','maintained-profiles','owner-rules','phone-relay'])
++      FOR SHARE OF g,b;
++    IF NOT FOUND THEN
++      RAISE EXCEPTION 'Individual funding requires a current person grant on its own billing scope' USING ERRCODE='23514';
++    END IF;
++    IF NEW.granted_micro_usd <> 100000000
++      OR NEW.period_id <> to_char(NEW.allocated_at AT TIME ZONE 'UTC','YYYY-MM')
++      OR NEW.starts_at <> date_trunc('month',NEW.allocated_at AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
++      OR NEW.ends_at <> (date_trunc('month',NEW.allocated_at AT TIME ZONE 'UTC') + INTERVAL '1 month') AT TIME ZONE 'UTC' THEN
++      RAISE EXCEPTION 'Individual funding is exactly 1000 credits for the current UTC month' USING ERRCODE='23514';
++    END IF;
++  END IF;
++  RETURN NEW;
++END $$;
++REVOKE ALL ON FUNCTION control_plane.check_individual_period_source() FROM PUBLIC;
++CREATE TRIGGER individual_period_source BEFORE INSERT ON control_plane.credit_periods
++  FOR EACH ROW EXECUTE FUNCTION control_plane.check_individual_period_source();
++
++-- A settlement must retain both payer and period from its reservation. Merely
++-- naming another valid period is insufficient. Existing rows are validated.
++ALTER TABLE control_plane.funding_reservations ADD CONSTRAINT funding_reservation_payer_period_key
++  UNIQUE(tenant_id,reservation_id,organization_id,period_id);
++ALTER TABLE control_plane.funding_settlements ADD CONSTRAINT funding_settlement_original_payer_period
++  FOREIGN KEY(tenant_id,reservation_id,organization_id,period_id)
++  REFERENCES control_plane.funding_reservations(tenant_id,reservation_id,organization_id,period_id);
++
++-- Existing cp_runtime/cp_funding column grants remain sufficient. No funding,
++-- identity, consent, history or schema permissions are widened by this migration.
+diff --git a/services/control-plane/tests/individual-funding-postgres.integration.test.ts b/services/control-plane/tests/individual-funding-postgres.integration.test.ts
+new file mode 100644
+index 00000000..42aaef1d
+--- /dev/null
++++ b/services/control-plane/tests/individual-funding-postgres.integration.test.ts
+@@ -0,0 +1,205 @@
++import { createHash, randomBytes } from 'node:crypto';
++import { readFile, readdir } from 'node:fs/promises';
++import pg from 'pg';
++import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
++import { AccountService } from '../src/account-service.js';
++import { PostgresRepository, type ClientFactory } from '../src/postgres.js';
++import { PostgresCommercialRepository } from '../src/commercial-postgres.js';
++import { CommercialService, bootstrapFirstAdmin } from '../src/commercial.js';
++import { RoutingService } from '../src/routing.js';
++import { FundingService } from '../src/funding.js';
++import { PostgresFundingRepository } from '../src/funding-postgres.js';
++import { migrate, type Migration } from '../src/migrations.js';
++import { micro, RATE_CARD_V1 } from '../../../shared/managed-usage.js';
++
++// Never take a deployment URL or reset an existing schema. This suite owns a new local DB.
++const ownerUrl = process.env.CP_INDIVIDUAL_TEST_DATABASE_URL;
++const initial = Date.parse('2026-09-29T12:00:00Z');
++let clock = initial;
++let ownerFactory: ClientFactory, runtimeFactory: ClientFactory, fundingFactory: ClientFactory;
++let accounts: AccountService, commercial: CommercialService, funding: FundingService, routing: RoutingService;
++let migrations: Migration[], oldGrant: string, oldPerson: string, oldAccount: string;
++let oldBusinessPeriod: Record<string, unknown>;
++const query = async (factory: ClientFactory, sql: string, values?: unknown[]) => {
++  const client = factory(); await client.connect();
++  try { return await client.query(sql, values); } finally { await client.end(); }
++};
++const verifier = { issuer: 'https://fixture.invalid', async verify(token: string) {
++  return { issuer: this.issuer, subject: token, sessionId: `session_${token}`, displayName: token, emailVerified: true,
++    issuedAt: new Date(clock - 1_000).toISOString(), expiresAt: new Date(clock + 60_000).toISOString(), verifiedAt: new Date(clock).toISOString() };
++} };
++async function subscriber(name: string, validUntil = '2026-12-01T00:00:00.000Z') {
++  const person = (await accounts.signIn(name)).person;
++  const { grant } = await commercial.issuePersonGrant('staff', person.id,
++    { planId: 'individual', source: 'internal-test', reference: name, note: 'Owned PostgreSQL fixture', validUntil });
++  const account = await routing.individual(name);
++  return { person, account, grant, allocation: { tenantId: person.id, organizationId: account.id,
++    planId: 'individual', sourceGrantId: grant.id, periodId: '2026-09' } };
++}
++
++describe.skipIf(!ownerUrl)('Individual funding with real PostgreSQL runtime and funding logins', () => {
++  beforeAll(async () => {
++    const url = new URL(ownerUrl!);
++    if (!['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname) || !/^\/b01_validation_individual_funding_[a-z0-9_]+$/.test(url.pathname))
++      throw new Error('Use a new, explicitly named disposable local Individual-funding database.');
++    ownerFactory = () => new pg.Client({ connectionString: ownerUrl, connectionTimeoutMillis: 5_000 });
++    if ((await query(ownerFactory, "SELECT to_regclass('control_plane.schema_migrations') AS existing")).rows[0].existing !== null)
++      throw new Error('This test will not reset an existing schema.');
++    const names = (await readdir(new URL('../migrations/', import.meta.url))).filter(n => /^\d{3}.*\.sql$/.test(n)).sort();
++    migrations = await Promise.all(names.map(async name => {
++      const sql = await readFile(new URL(`../migrations/${name}`, import.meta.url), 'utf8');
++      return { version: Number(name.slice(0, 3)), name, sql, sha256: createHash('sha256').update(sql).digest('hex') };
++    }));
++    await migrate(ownerFactory, migrations.filter(m => m.version <= 10));
++    const ownerAccounts = new AccountService(new PostgresRepository(ownerFactory), verifier, { now: () => clock });
++    const ownerCommercial = new PostgresCommercialRepository(ownerFactory);
++    const staff = (await ownerAccounts.signIn('staff')).person;
++    await bootstrapFirstAdmin(ownerCommercial, staff.id, new Date(clock).toISOString());
++    const service = new CommercialService(ownerAccounts, ownerCommercial, null, { now: () => clock });
++    oldPerson = (await ownerAccounts.signIn('legacy')).person.id;
++    const { grant } = await service.issuePersonGrant('staff', oldPerson, { planId: 'individual', source: 'subscription',
++      reference: 'Pre-011 subscription', note: '', features: ['nectovia-agent', 'maintained-profiles', 'owner-rules', 'phone-relay'],
++      validUntil: '2026-12-01T00:00:00.000Z' });
++    oldGrant = JSON.stringify(grant);
++    oldAccount = (await new RoutingService(ownerAccounts, ownerCommercial, () => clock).individual('legacy')).id;
++    const business = await ownerAccounts.createOrganization('legacy', 'Pre-011 Business');
++    const issued = await service.issueGrant('staff', business.id, { planId: 'business', source: 'internal-test', reference: 'Pre-011 Business', note: '' });
++    // Insert exactly the pre-011 row shape, without using the new adapter against the old schema.
++    await query(ownerFactory, `INSERT INTO control_plane.credit_periods(tenant_id,organization_id,period_id,plan_id,rate_card_version,
++      granted_micro_usd,starts_at,ends_at,source_grant_id,allocated_at) VALUES($1,$2,'2026-09','business',$3,100000000,
++      '2026-09-01T00:00:00Z','2026-10-01T00:00:00Z',$4,$5)`, [business.tenantId, business.id, RATE_CARD_V1.version, issued.grant.id, new Date(clock).toISOString()]);
++    oldBusinessPeriod = (await query(ownerFactory, 'SELECT to_jsonb(p) AS record FROM control_plane.credit_periods p WHERE organization_id=$1', [business.id])).rows[0].record as Record<string, unknown>;
++    await migrate(ownerFactory, migrations);
++    const login = async (base: string) => {
++      const role = `${base}_${randomBytes(6).toString('hex')}`, password = randomBytes(24).toString('hex');
++      await query(ownerFactory, `CREATE ROLE ${role} LOGIN PASSWORD '${password}' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS`);
++      const file = base === 'cp_runtime' ? 'runtime-permissions.sql' : 'funding-permissions.sql';
++      await query(ownerFactory, (await readFile(new URL(`../scripts/${file}`, import.meta.url), 'utf8')).replaceAll(base, role));
++      const connection = new URL(ownerUrl!); connection.username = role; connection.password = password;
++      return () => new pg.Client({ connectionString: connection.toString(), connectionTimeoutMillis: 5_000 });
++    };
++    runtimeFactory = await login('cp_runtime'); fundingFactory = await login('cp_funding');
++    accounts = new AccountService(new PostgresRepository(runtimeFactory), verifier, { now: () => clock });
++    funding = new FundingService(new PostgresFundingRepository(fundingFactory), { now: () => clock });
++    const repository = new PostgresCommercialRepository(runtimeFactory);
++    commercial = new CommercialService(accounts, repository, null, { now: () => clock });
++    routing = new RoutingService(accounts, repository, () => clock, funding);
++  }, 60_000);
++  beforeEach(() => { clock = initial; });
++
++  it('preserves the phase-2a person grant and billing identity and replays migration without allocation', async () => {
++    expect(migrations.at(-1)?.version).toBe(11);
++    expect(await migrate(ownerFactory, migrations)).toEqual([]);
++    const grants = await new PostgresCommercialRepository(runtimeFactory).transaction(tx => tx.personGrants(oldPerson));
++    expect(JSON.stringify(grants[0])).toBe(oldGrant);
++    expect((await routing.individual('legacy')).id).toBe(oldAccount);
++    expect((await query(ownerFactory, 'SELECT to_jsonb(p) - \'source_person_grant_id\' AS record FROM control_plane.credit_periods p')).rows)
++      .toEqual([{ record: oldBusinessPeriod }]);
++    expect(await routing.access('legacy', { kind: 'individual', id: oldAccount })).toMatchObject({ agent: true, managedInference: true });
++  });
++
++  it('uses actual restricted logins and keeps identity, schema, grant and staff-correction writes away from funding', async () => {
++    for (const factory of [runtimeFactory, fundingFactory]) {
++      expect((await query(factory, 'SELECT rolsuper, rolcreatedb, rolcreaterole, rolreplication, rolbypassrls FROM pg_roles WHERE rolname=current_user')).rows[0])
++        .toEqual({ rolsuper: false, rolcreatedb: false, rolcreaterole: false, rolreplication: false, rolbypassrls: false });
++      expect((await query(factory, 'SELECT 1 FROM pg_auth_members WHERE member=(SELECT oid FROM pg_roles WHERE rolname=current_user)')).rows).toEqual([]);
++      await expect(query(factory, 'CREATE TABLE control_plane.forbidden_fixture(id text)')).rejects.toMatchObject({ code: '42501' });
++    }
++    for (const table of ['person_feature_grants', 'billing_scopes', 'account_routing_preferences', 'ops_audit', 'credit_adjustments'])
++      expect((await query(fundingFactory, 'SELECT has_table_privilege(current_user,$1,\'INSERT\') AS allowed', [`control_plane.${table}`])).rows[0].allowed).toBe(false);
++    const { allocation } = await subscriber('runtime-denied');
++    await expect(new FundingService(new PostgresFundingRepository(runtimeFactory), { now: () => clock }).allocatePeriod(allocation)).rejects.toMatchObject({ code: '42501' });
++  });
++
++  it('allocates one 1,000-credit period under simultaneous funding connections and binds the person source', async () => {
++    const { person, account, grant, allocation } = await subscriber('concurrent');
++    const periods = await Promise.all(Array.from({ length: 8 }, () => funding.allocatePeriod(allocation)));
++    expect(periods.every(p => p.grantedMicroUsd === 100_000_000 && p.sourceGrantId === grant.id)).toBe(true);
++    const rows = (await query(ownerFactory, 'SELECT tenant_id,organization_id,source_grant_id,source_person_grant_id,granted_micro_usd::text FROM control_plane.credit_periods WHERE organization_id=$1', [account.id])).rows;
++    expect(rows).toEqual([{ tenant_id: person.id, organization_id: account.id, source_grant_id: null,
++      source_person_grant_id: grant.id, granted_micro_usd: '100000000' }]);
++  });
++
++  it('retries an unknown COMMIT outcome without crediting the real database twice', async () => {
++    const { account, allocation } = await subscriber('lost-commit');
++    let lost = false;
++    const interruptedFactory: ClientFactory = () => {
++      const client = fundingFactory();
++      return { connect: () => client.connect(), end: () => client.end(), query: async (sql, values) => {
++        const result = await client.query(sql, values);
++        if (sql === 'COMMIT' && !lost) { lost = true; throw new Error('Fixture lost the successful COMMIT response'); }
++        return result;
++      } };
++    };
++    const interrupted = new FundingService(new PostgresFundingRepository(interruptedFactory), { now: () => clock });
++    await expect(interrupted.allocatePeriod(allocation)).rejects.toThrow('lost the successful COMMIT');
++    expect((await funding.allocatePeriod(allocation)).grantedMicroUsd).toBe(100_000_000);
++    expect((await query(ownerFactory, 'SELECT count(*)::int AS n, sum(granted_micro_usd)::text AS total FROM control_plane.credit_periods WHERE organization_id=$1', [account.id])).rows)
++      .toEqual([{ n: 1, total: '100000000' }]);
++  });
++
++  it('rejects an altered allowance, backdated month, or widened limited grant instead of manufacturing funding', async () => {
++    const { person, account, grant, allocation } = await subscriber('invalid-terms');
++    const repository = new PostgresFundingRepository(fundingFactory);
++    const row = { ...allocation, rateCardVersion: RATE_CARD_V1.version, grantedMicroUsd: micro(100_000_000),
++      startsAt: '2026-09-01T00:00:00.000Z', endsAt: '2026-10-01T00:00:00.000Z', allocatedAt: new Date(clock).toISOString() };
++    await expect(repository.transaction(tx => tx.savePeriod({ ...row, grantedMicroUsd: micro(200_000_000) }))).rejects.toMatchObject({ code: '23514' });
++    await expect(repository.transaction(tx => tx.savePeriod({ ...row, periodId: '2026-08' }))).rejects.toMatchObject({ code: '23514' });
++    await commercial.revokePersonGrant('staff', person.id, grant.id, { reason: 'Replace with limited access' });
++    const limited = await commercial.issuePersonGrant('staff', person.id, { planId: 'individual', source: 'internal-test',
++      reference: 'Agent access only', note: '', features: ['nectovia-agent'], validUntil: '2026-12-01T00:00:00.000Z' });
++    await expect(funding.allocatePeriod({ ...allocation, sourceGrantId: limited.grant.id })).rejects.toMatchObject({ code: '23514' });
++    expect((await query(ownerFactory, 'SELECT count(*)::int AS n FROM control_plane.credit_periods WHERE organization_id=$1', [account.id])).rows[0].n).toBe(0);
++  });
++
++  it('refuses cross-person and Business source substitution at the database boundary', async () => {
++    const first = await subscriber('source-a'), other = await subscriber('source-b');
++    await expect(funding.allocatePeriod({ ...first.allocation, sourceGrantId: other.grant.id })).rejects.toThrow();
++    await expect(funding.allocatePeriod({ ...first.allocation, organizationId: other.account.id })).rejects.toThrow();
++    const business = await accounts.createOrganization('source-a', 'Owned Business fixture');
++    await expect(funding.allocatePeriod({ ...first.allocation, organizationId: business.id, tenantId: business.tenantId })).rejects.toThrow();
++    const businessGrant = await commercial.issueGrant('staff', business.id,
++      { planId: 'business', source: 'internal-test', reference: 'Business fixture', note: '' });
++    await expect(funding.allocatePeriod({ ...first.allocation, planId: 'business', sourceGrantId: businessGrant.grant.id })).rejects.toThrow();
++    expect((await query(ownerFactory, 'SELECT count(*)::int AS n FROM control_plane.credit_periods WHERE organization_id=ANY($1::text[])', [[first.account.id, other.account.id, business.id]])).rows[0].n).toBe(0);
++  });
++
++  it('refuses revoked or lapsed sources for a new month and preserves their original allocation', async () => {
++    const revoked = await subscriber('revoked'), lapsed = await subscriber('lapsed', '2026-10-01T00:00:00.000Z');
++    await funding.allocatePeriod(revoked.allocation); await funding.allocatePeriod(lapsed.allocation);
++    await commercial.revokePersonGrant('staff', revoked.person.id, revoked.grant.id, { reason: 'Fixture withdrawal' });
++    clock = Date.parse('2026-10-01T00:00:00Z');
++    for (const source of [revoked, lapsed]) {
++      await expect(funding.allocatePeriod({ ...source.allocation, periodId: '2026-10' })).rejects.toThrow();
++      expect((await routing.admit(source === revoked ? 'revoked' : 'lapsed', { kind: 'individual', id: source.account.id },
++        { surface: 'conversation', routeKind: 'managed' })).decision.admitted).toBe(false);
++      expect((await query(ownerFactory, 'SELECT period_id FROM control_plane.credit_periods WHERE organization_id=$1', [source.account.id])).rows).toEqual([{ period_id: '2026-09' }]);
++    }
++  });
++
++  it('settles dispatched work after revocation and rollover on its original account and rejects a forged settlement period', async () => {
++    const { person, account, grant, allocation } = await subscriber('settlement');
++    await funding.allocatePeriod(allocation);
++    const ref = { tenantId: person.id, organizationId: account.id, attemptId: 'held-personal' };
++    await funding.openJob({ ...ref, rootJobId: 'root-personal', runRef: 'root-personal', parentRunRef: null, tier: 'efficient', capMicroUsd: null });
++    const reservation = { ...ref, rootJobId: 'root-personal', parentAttemptId: null, kind: 'generation' as const, route: 'fixture-route',
++      requestDigest: 'fixture-digest', maxMicroUsd: micro(200_000), usageClass: 'metered-work' as const, rateSnapshot: { version: 'fixture',
++        inputMicroUsdPerMillion: 1_000_000, outputMicroUsdPerMillion: 1_000_000, cacheReadMicroUsdPerMillion: 0, cacheWriteMicroUsdPerMillion: 0 } };
++    await funding.reserve(reservation);
++    await funding.markDispatched(ref);
++    await funding.reserve({ ...reservation, attemptId: 'forged-period' });
++    await funding.markDispatched({ ...ref, attemptId: 'forged-period' });
++    clock = Date.parse('2026-10-01T00:00:00Z'); await funding.allocatePeriod({ ...allocation, periodId: '2026-10' });
++    await commercial.revokePersonGrant('staff', person.id, grant.id, { reason: 'Withdraw after dispatch' });
++    const result = await funding.settle({ ...ref, receiptRef: 'fixture-receipt', reconciledFrom: 'response',
++      usage: { inputTokens: 100_000, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, reasoningTokens: 0 } });
++    expect(result).toMatchObject({ outcome: 'settled', settlement: { tenantId: person.id, organizationId: account.id,
++      periodId: '2026-09', allowanceDebitMicroUsd: 100_000 } });
++    if (result.outcome !== 'settled') throw new Error('Expected a settled fixture');
++    // A distinct real reservation keeps the primary key from masking the period constraint.
++    await expect(new PostgresFundingRepository(fundingFactory).transaction(tx => tx.saveSettlement({ ...result.settlement,
++      reservationId: 'forged-period', receiptRef: 'forged-receipt', periodId: '2026-10' }))).rejects.toMatchObject({ code: '23503' });
++    await expect(query(fundingFactory, "UPDATE control_plane.funding_reservations SET period_id='2026-10' WHERE reservation_id=$1", [ref.attemptId])).rejects.toMatchObject({ code: '42501' });
++    await expect(query(fundingFactory, "UPDATE control_plane.credit_periods SET granted_micro_usd=200000000 WHERE organization_id=$1", [account.id])).rejects.toMatchObject({ code: '42501' });
++  });
++});
+diff --git a/services/control-plane/tests/individual-funding.test.ts b/services/control-plane/tests/individual-funding.test.ts
+new file mode 100644
+index 00000000..495c0022
+--- /dev/null
++++ b/services/control-plane/tests/individual-funding.test.ts
+@@ -0,0 +1,73 @@
++import { describe, expect, it } from 'vitest';
++import { FundingService } from '../src/funding.js';
++import { FundingMemoryRepository } from './support/funding-memory.js';
++import { micro } from '../../../shared/managed-usage.js';
++
++const person = 'person_individual', account = 'individual_billing';
++const allocation = { tenantId: person, organizationId: account, planId: 'individual', sourceGrantId: 'grant_person', periodId: '2026-09' };
++const rate = { version: 'fixture', inputMicroUsdPerMillion: 1_000_000, outputMicroUsdPerMillion: 1_000_000,
++  cacheReadMicroUsdPerMillion: 0, cacheWriteMicroUsdPerMillion: 0 };
++
++describe('Individual funding in the existing ledger', () => {
++  it('allocates exactly 1,000 credits once per UTC month, including concurrent retries and a lost commit response', async () => {
++    const repo = new FundingMemoryRepository();
++    const funding = new FundingService(repo, { now: () => Date.parse('2026-09-29T00:00:00Z') });
++    repo.failNextCommit('after-apply');
++    await expect(funding.allocatePeriod(allocation)).rejects.toThrow('commit outcome');
++    const rows = await Promise.all(Array.from({ length: 6 }, () => funding.allocatePeriod(allocation)));
++    expect(rows.every(row => row.grantedMicroUsd === 100_000_000)).toBe(true);
++    expect(repo.snapshot().periods).toHaveLength(1);
++    expect(rows[0]).toMatchObject({ tenantId: person, organizationId: account, sourceGrantId: 'grant_person',
++      startsAt: '2026-09-01T00:00:00.000Z', endsAt: '2026-10-01T00:00:00.000Z' });
++    await funding.allocatePeriod({ ...allocation, periodId: '2026-10' });
++    expect(repo.snapshot().periods.map(row => row.grantedMicroUsd)).toEqual([100_000_000, 100_000_000]);
++    await expect(funding.allocatePeriod({ ...allocation, sourceGrantId: 'replacement_grant' })).rejects.toMatchObject({ code: 'period_conflict' });
++    expect(repo.snapshot().periods[0]).toMatchObject({ sourceGrantId: 'grant_person', grantedMicroUsd: 100_000_000 });
++  });
++
++  it('expires unused credits and resets the next month to 0% used without carrying any balance forward', async () => {
++    const repo = new FundingMemoryRepository();
++    let clock = Date.parse('2026-09-30T23:59:59Z');
++    const funding = new FundingService(repo, { now: () => clock });
++    await funding.allocatePeriod(allocation);
++    await funding.openJob({ tenantId: person, organizationId: account, rootJobId: 'new-month', runRef: 'new-month', parentRunRef: null, tier: 'efficient', capMicroUsd: null });
++    clock = Date.parse('2026-10-01T00:00:01Z');
++    const attempt = { tenantId: person, organizationId: account, attemptId: 'new-month', rootJobId: 'new-month', parentAttemptId: null,
++      kind: 'generation' as const, route: 'route', requestDigest: 'new-month', rateSnapshot: rate,
++      maxMicroUsd: micro(100_000_001), usageClass: 'metered-work' as const };
++    // Last month's unused 1,000 credits cannot fund even one new request.
++    await expect(funding.reserve(attempt)).rejects.toMatchObject({ code: 'no_period' });
++    await funding.allocatePeriod({ ...allocation, periodId: '2026-10' });
++    expect(await funding.projection(person, account)).toMatchObject({ state: 'ready', projection: {
++      periodId: '2026-10', usedPercent: 0, availableMicroUsd: 100_000_000 } });
++    await expect(funding.reserve(attempt)).rejects.toMatchObject({ code: 'insufficient_allowance' });
++    expect(await funding.reserve({ ...attempt, maxMicroUsd: micro(100_000) })).toMatchObject({ periodId: '2026-10', monthlyHoldMicroUsd: 100_000 });
++    expect(repo.snapshot().periods).toHaveLength(2); // Past records remain evidence, never spendable credit.
++  });
++
++  it('settles a late response against the original person account and expired month without moving or replenishing spending', async () => {
++    const repo = new FundingMemoryRepository();
++    let clock = Date.parse('2026-09-30T23:59:59Z');
++    const funding = new FundingService(repo, { now: () => clock });
++    await funding.allocatePeriod(allocation);
++    await funding.openJob({ tenantId: person, organizationId: account, rootJobId: 'job', runRef: 'job', parentRunRef: null, tier: 'efficient', capMicroUsd: null });
++    const input = { tenantId: person, organizationId: account, attemptId: 'attempt', rootJobId: 'job', parentAttemptId: null,
++      kind: 'generation' as const, route: 'route', requestDigest: 'digest', rateSnapshot: rate,
++      maxMicroUsd: micro(200_000), usageClass: 'metered-work' as const };
++    const held = await funding.reserve(input);
++    await funding.markDispatched(input);
++    clock = Date.parse('2026-10-01T00:00:01Z');
++    await funding.allocatePeriod({ ...allocation, periodId: '2026-10' });
++    const settlement = { ...input, receiptRef: 'receipt', usage: { inputTokens: 100_000, outputTokens: 0,
++      cacheReadTokens: 0, cacheWriteTokens: 0, reasoningTokens: 0 }, reconciledFrom: 'response' as const };
++    const result = await funding.settle(settlement);
++    expect(result).toMatchObject({ outcome: 'settled', settlement: { tenantId: person, organizationId: account,
++      periodId: '2026-09', allowanceDebitMicroUsd: 100_000 } });
++    expect(await funding.settle(settlement)).toEqual(result);
++    expect(await funding.reserve(input)).toMatchObject({ periodId: held.periodId, state: 'settled' });
++    await expect(funding.settle({ ...settlement, organizationId: 'org_business' })).rejects.toMatchObject({ code: 'unknown_attempt' });
++    await expect(funding.settle({ ...settlement, tenantId: 'other_person' })).rejects.toMatchObject({ code: 'unknown_attempt' });
++    expect(repo.snapshot().settlements).toHaveLength(1);
++    expect(repo.snapshot().periods).toHaveLength(2);
++  });
++});

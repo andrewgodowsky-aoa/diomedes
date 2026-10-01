@@ -6,6 +6,14 @@ Original contract: `CONTRACT-individual-tier.md` (orchestrator scratchpad). The 
 merged in PR #176 at main `1af37e0`. The Operations routing composition described below is local
 and unverified until its own recorded gates pass; this note makes no deployment claim.
 
+**2026-09-29 checkpoint:** PRs #177 (`d017647`) and #178 (`5f97d97e`) subsequently merged the
+integration work. The remaining automatic funding path is now a verified candidate on
+`codex/dio-128-individual-funding`, based on #178 in `andrewgodowsky-aoa/diomedes`.
+See [the phase-2b funding record](2026-09-29-individual-funding.md) for its exact behavior, fresh
+verification and remaining acceptance gaps. Andrew approved publishing the reviewed candidate as
+a draft PR on 2026-09-29; merging and deployment remain unauthorized. The phase-2a descriptions and counts below are
+historical; they do not establish publication or deployment of the funding candidate.
+
 ## Andrew's decisions (2026-09-28, owner-decision record)
 
 - The Individual plan is **$200 a month**, a person's own subscription. This supersedes the $250
@@ -66,7 +74,8 @@ Individual billing account and a null Business organization id.
 ## What phase 2b must add
 
 - Automatic recurring Individual credit allocation remains separate from routing's explicit
-  usage-agreement path. Do not infer 1,000 allocated credits from the approved plan amount.
+  usage-agreement path. The local phase-2b candidate implements it; publication, deployment and
+  live-product acceptance remain open. Do not infer deployed credits from the approved amount.
 - Fold `INDIVIDUAL_PLAN` into `PLAN_TEMPLATES` once `shared/access.ts` is free, and retire
   `planCatalog()`'s concatenation.
 - A faux seed subscriber (`services/control-plane/src/faux/seed.ts` was not edited here).
@@ -92,3 +101,10 @@ Add to the amendment list:
 - The owner's export (OPS-05) passes the access view through, so its strict schema and
   `shared/organization-export.ts` now accept the optional `coveredBy` and grant `scope` fields. The full root suite, Playwright, vite build and packaging were
   not run here (the heavy slot belonged to another lane); the orchestrator runs them.
+
+## Later change to the term (2026-10-01)
+
+The 31-day `termDays` recorded here is superseded for the complete Individual plan: each term now
+runs to the subscription's next monthly anniversary in UTC (`2026-10-01-individual-reset-boundary.md`).
+Grants issued under the 31-day template keep their dates; limited overrides keep explicit dates.
+

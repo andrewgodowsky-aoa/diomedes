@@ -1,0 +1,63 @@
+server: PostgreSQL 17.10 on x86_64-apple-darwin24.6.0, compiled by Apple clang version 17.0.0 (clang-1700.6.3.2), 64-bit
+commit: cc498b10a5348af3c130d6a5eae7d20869cb1e38
+== individual-funding-postgres
+
+ RUN  v3.2.7 /Users/andrewgodowsky/dev/diomedes/.claude/worktrees/individual-reset-boundary-5239f9/services/control-plane
+
+ ✓ tests/individual-funding-postgres.integration.test.ts > Individual funding with real PostgreSQL runtime and funding logins > preserves the phase-2a person grant and billing identity and replays migration without allocation 37ms
+ ✓ tests/individual-funding-postgres.integration.test.ts > Individual funding with real PostgreSQL runtime and funding logins > uses actual restricted logins and keeps identity, schema, grant and staff-correction writes away from funding 56ms
+ ✓ tests/individual-funding-postgres.integration.test.ts > Individual funding with real PostgreSQL runtime and funding logins > allocates one 1,000-credit period under simultaneous funding connections and binds the person source 49ms
+ ✓ tests/individual-funding-postgres.integration.test.ts > Individual funding with real PostgreSQL runtime and funding logins > retries an unknown COMMIT outcome without crediting the real database twice 39ms
+ ✓ tests/individual-funding-postgres.integration.test.ts > Individual funding with real PostgreSQL runtime and funding logins > rejects an altered allowance, backdated month, or widened limited grant instead of manufacturing funding 68ms
+ ✓ tests/individual-funding-postgres.integration.test.ts > Individual funding with real PostgreSQL runtime and funding logins > refuses cross-person and Business source substitution at the database boundary 85ms
+ ✓ tests/individual-funding-postgres.integration.test.ts > Individual funding with real PostgreSQL runtime and funding logins > refuses revoked or lapsed sources for a new month and preserves their original allocation 114ms
+ ✓ tests/individual-funding-postgres.integration.test.ts > Individual funding with real PostgreSQL runtime and funding logins > settles dispatched work after revocation and rollover on its original account and rejects a forged settlement period 103ms
+ ✓ tests/individual-funding-postgres.integration.test.ts > Individual funding with real PostgreSQL runtime and funding logins > 012: records one verified anniversary term under simultaneous funding logins, bound to the grant that names it 48ms
+ ✓ tests/individual-funding-postgres.integration.test.ts > Individual funding with real PostgreSQL runtime and funding logins > 012: refuses any bound, id, amount or calendar month other than the grant's own term, and an overlapping term 102ms
+ ✓ tests/individual-funding-postgres.integration.test.ts > Individual funding with real PostgreSQL runtime and funding logins > 012: refuses at the database to send a hold after its term ends, and still settles it late on its own term 122ms
+ ✓ tests/individual-funding-postgres.integration.test.ts > Individual funding with real PostgreSQL runtime and funding logins > 012: keeps a legacy calendar month for settlement only once a monthly term covers the moment 63ms
+
+ Test Files  1 passed (1)
+      Tests  12 passed (12)
+   Start at  01:21:17
+   Duration  1.57s (transform 184ms, setup 10ms, collect 324ms, tests 1.10s, environment 0ms, prepare 38ms)
+
+== postgres.integration
+
+ RUN  v3.2.7 /Users/andrewgodowsky/dev/diomedes/.claude/worktrees/individual-reset-boundary-5239f9/services/control-plane
+
+ ✓ tests/postgres.integration.test.ts > REAL PostgreSQL (explicit disposable database only) > migrates an empty DB, then upgrades a prior version and is idempotent 108ms
+ ✓ tests/postgres.integration.test.ts > REAL PostgreSQL (explicit disposable database only) > rolls back interrupted DDL and its version row 11ms
+ ✓ tests/postgres.integration.test.ts > REAL PostgreSQL (explicit disposable database only) > maps concurrent identical verified subjects to exactly one person 28ms
+ ✓ tests/postgres.integration.test.ts > REAL PostgreSQL (explicit disposable database only) > rolls back all earlier writes when a tenant authorization fails 9ms
+ ✓ tests/postgres.integration.test.ts > REAL PostgreSQL (explicit disposable database only) > serializes invitation redemption and competing last-owner removals 49ms
+ ✓ tests/postgres.integration.test.ts > REAL PostgreSQL (explicit disposable database only) > binds unique customer mappings and deduplicates verified events atomically 33ms
+ ✓ tests/postgres.integration.test.ts > REAL PostgreSQL (explicit disposable database only) > serializes concurrent funded reservations so the last credits are held once 126ms
+ ✓ tests/postgres.integration.test.ts > REAL PostgreSQL (explicit disposable database only) > holds the company spend ceiling across organizations when their reservations race 74ms
+ ✓ tests/postgres.integration.test.ts > REAL PostgreSQL (explicit disposable database only) > keeps a sent hold across a restarted repository and settles it in its own period 57ms
+ ✓ tests/postgres.integration.test.ts > REAL PostgreSQL (explicit disposable database only) > refuses a funded period bound to another tenant’s grant 35ms
+ ✓ tests/postgres.integration.test.ts > REAL PostgreSQL (explicit disposable database only) > retains revoked session tombstones across repository instances 9ms
+ ✓ tests/postgres.integration.test.ts > REAL PostgreSQL (explicit disposable database only) > a setup write holds the same organization lock as membership changes 220ms
+ ✓ tests/postgres.integration.test.ts > REAL PostgreSQL (explicit disposable database only) > keeps a business setup append-only, compare-and-set and filed under its own business (ORG-01) 95ms
+
+ Test Files  1 passed (1)
+      Tests  13 passed (13)
+   Start at  01:21:19
+   Duration  1.23s (transform 140ms, setup 11ms, collect 222ms, tests 860ms, environment 0ms, prepare 40ms)
+
+== scoped-routing-postgres
+
+ RUN  v3.2.7 /Users/andrewgodowsky/dev/diomedes/.claude/worktrees/individual-reset-boundary-5239f9/services/control-plane
+
+ ✓ tests/scoped-routing-postgres.integration.test.ts > scoped routing on an isolated real PostgreSQL database > runs as an unprivileged login without inherited role memberships 8ms
+ ✓ tests/scoped-routing-postgres.integration.test.ts > scoped routing on an isolated real PostgreSQL database > backfills only identities for existing organizations and grant holders without creating access or funding 34ms
+ ✓ tests/scoped-routing-postgres.integration.test.ts > scoped routing on an isolated real PostgreSQL database > preserves 009 grant bytes, revisions and append-only Personal history while new admissions bind the billing scope 46ms
+ ✓ tests/scoped-routing-postgres.integration.test.ts > scoped routing on an isolated real PostgreSQL database > creates one Individual identity concurrently, locks it with the restricted runtime role and keeps membership separate 53ms
+ ✓ tests/scoped-routing-postgres.integration.test.ts > scoped routing on an isolated real PostgreSQL database > persists append-only customer consent across new service instances and refuses history rewrites 43ms
+ ✓ tests/scoped-routing-postgres.integration.test.ts > scoped routing on an isolated real PostgreSQL database > allows only monotone source restrictions and refuses funding or scope identity mutation from the runtime 15ms
+
+ Test Files  1 passed (1)
+      Tests  6 passed (6)
+   Start at  01:21:21
+   Duration  752ms (transform 153ms, setup 11ms, collect 251ms, tests 358ms, environment 0ms, prepare 32ms)
+

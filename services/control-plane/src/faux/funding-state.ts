@@ -33,7 +33,15 @@ export class StateFundingTransaction implements FundingTransaction {
   async period(tenantId: string, organizationId: string, periodId: string) {
     return this.state.periods.find((row) => row.tenantId === tenantId && row.organizationId === organizationId && row.periodId === periodId);
   }
-  async savePeriod(row: CreditPeriodRow) { this.state.periods.push(row); }
+  async periods(tenantId: string, organizationId: string) {
+    return this.state.periods.filter((row) => row.tenantId === tenantId && row.organizationId === organizationId);
+  }
+  async savePeriod(row: CreditPeriodRow) {
+    // The table's primary key: one row per billing scope and period id.
+    if (this.state.periods.some((item) => item.tenantId === row.tenantId && item.organizationId === row.organizationId && item.periodId === row.periodId))
+      throw new Error('That billing period is already recorded.');
+    this.state.periods.push(row);
+  }
   async job(tenantId: string, rootJobId: string) { return this.state.jobs.find((row) => row.tenantId === tenantId && row.rootJobId === rootJobId); }
   async jobRef(tenantId: string, runRef: string) { return this.state.jobRefs.find((row) => row.tenantId === tenantId && row.runRef === runRef); }
   async saveJob(row: FundedJobRow) { upsert(this.state.jobs, row, (item) => item.tenantId === row.tenantId && item.rootJobId === row.rootJobId); }

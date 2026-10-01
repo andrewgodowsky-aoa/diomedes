@@ -747,6 +747,14 @@ export const MONTHLY_CREDIT_GRANTS: readonly MonthlyCreditGrant[] = Object.freez
     note: 'Self-managed workspace and workflows.',
   }),
   Object.freeze({
+    planId: 'individual',
+    label: 'Individual',
+    monthlyCredits: 1_000,
+    status: 'published',
+    sellable: false,
+    note: 'One named person’s Personal work only; never a Business allowance.',
+  }),
+  Object.freeze({
     planId: 'managed-small',
     label: 'Managed Small',
     monthlyCredits: 3_000,
@@ -1027,9 +1035,14 @@ export interface UsageReceipt {
 }
 
 /**
- * What the Nectovia usage bar draws. The monthly percentage is settled debit
- * allocated to the monthly grant divided by that month's grant. Holds,
- * top-ups and corrections are separate lines and never move the percentage.
+ * What the Nectovia usage bar draws. The percentage is settled debit allocated
+ * to the period's grant divided by that grant. Holds, top-ups and corrections
+ * are separate lines and never move the percentage.
+ *
+ * A period is a UTC calendar month for Business and explicit agreements, and a
+ * subscription-anniversary month for Individual (shared/individual-period.ts,
+ * period id `individual:<startsAt>`). `resetsAt` is always that period's exact
+ * exclusive end; it promises no new allowance on its own.
  */
 export interface UsageProjection {
   readonly v: 1;
@@ -1063,6 +1076,12 @@ export interface UsageProjection {
   readonly lastReceipt: UsageReceipt | null;
   readonly observedAt: string;
   readonly rateCardVersion: string;
+  /**
+   * Personal Individual projections only. `pending`: a verified current term
+   * whose ledger row is not written yet (it is written on first use), so these
+   * figures are its approved grant with nothing used. `recorded`: ledger totals.
+   */
+  readonly allocation?: 'pending' | 'recorded';
 }
 
 export function projectUsage(input: {
@@ -1079,6 +1098,7 @@ export function projectUsage(input: {
   topUp: TopUpTotals;
   lastReceipt: UsageReceipt | null;
   observedAt: string;
+  allocation?: 'pending' | 'recorded';
 }): UsageProjection {
   const { period, totals, topUp } = input;
   const funded = sumMoney([period.grantedMicroUsd, totals.correctionGrantsMicroUsd]);
@@ -1113,7 +1133,7 @@ export function projectUsage(input: {
     overspentMicroUsd: overspent,
     reconciliation:
       overspent > 0
-        ? 'Used and held credits exceed this month’s grant. The difference is being reconciled against provider records; nothing was bought or switched on your behalf.'
+        ? 'Used and held credits exceed this billing period’s grant. The difference is being reconciled against provider records; nothing was bought or switched on your behalf.'
         : null,
     usedPercent,
     topUp: {
@@ -1130,6 +1150,7 @@ export function projectUsage(input: {
     lastReceipt: input.lastReceipt,
     observedAt: input.observedAt,
     rateCardVersion: period.rateCardVersion,
+    ...(input.allocation ? { allocation: input.allocation } : {}),
   };
 }
 

@@ -298,6 +298,9 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
       // --- the person's own Individual plan -------------------------------------------------
       if (pathname === '/account/access' && method === 'GET')
         return json(await createCommercial(config, accounts).personAccess(token));
+      // Read-only: the person's own current Individual period. No query or body selects a scope.
+      if (pathname === '/account/usage' && method === 'GET')
+        return json(await createCommercial(config, accounts).personUsage(token));
       if (pathname === '/account/agent-admissions' && method === 'POST')
         return json(await createCommercial(config, accounts).admitPersonalAgent(token, await body(request, agentAdmissionInput)));
 

@@ -5,6 +5,7 @@ import { NectoviaMark } from './NectoviaMark';
 import { Mark as StateMark } from '../components';
 import { TextSizeMenuItems } from './TextSizeMenu';
 import { AccountMenu } from './AccountMenu';
+import { shortcutHint } from '../keyboard';
 import './console.css';
 import './nectovia.css';
 
@@ -19,7 +20,7 @@ interface TopStripProps {
   onShowProjects: () => void;
   onOpenProject: (p: Project) => void;
   onToggleSettings: () => void;
-  /** Opens the project search, which Ctrl K also opens outside a project. */
+  /** Opens the project search, which Ctrl K (⌘K on a Mac) also opens outside a project. */
   onFind: () => void;
   /** Only said when it is news: offline, something waiting, or work running. */
   status: { state: 'fault' | 'waiting' | 'working'; text: string } | null;
@@ -121,7 +122,7 @@ export function TopStrip({
               if (e.key === 'Enter') onFind();
             }}
           >
-            Ctrl K
+            {shortcutHint('K')}
           </span>
           <button
             type="button"

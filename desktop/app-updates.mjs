@@ -354,20 +354,28 @@ export function shouldReopenMainWindow(platform, openWindowCount) {
 }
 
 /**
- * The window's title bar options. macOS draws its own traffic lights, and
- * `titleBarOverlay` is a Windows/Linux concept, so the inset style is the whole
- * answer there and no overlay key is passed at all. Windows keeps the exact
- * hidden title bar and overlay literal it has always had.
+ * The window's title bar options. macOS draws its own traffic lights over the
+ * top-left of the page. Its overlay carries no colours, only the strip's height,
+ * and exists so the renderer can read where the lights end: with it Chromium
+ * reports the usable title area through `env(titlebar-area-x)` (81px on macOS
+ * 26 with `hiddenInset`, measured on an Apple Silicon MacBook Air), which the
+ * Console strip and the first-run header use to start after the lights instead
+ * of under them. Windows keeps the exact hidden title bar and overlay literal it
+ * has always had; there the controls sit at the right and the same value is 0.
  */
 export function titleBarWindowOptions(platform) {
-  if (platform === 'darwin') return { titleBarStyle: 'hiddenInset' };
+  if (platform === 'darwin')
+    return { titleBarStyle: 'hiddenInset', titleBarOverlay: { height: 40 } };
   return {
     titleBarStyle: 'hidden',
     titleBarOverlay: { color: '#121417', symbolColor: '#e6e9ed', height: 40 },
   };
 }
 
-/** `setTitleBarOverlay` exists for the overlay platforms only. */
+/**
+ * `setTitleBarOverlay` recolours the Windows and Linux controls. macOS keeps its
+ * native traffic lights and has no overlay colours to set.
+ */
 export function supportsTitleBarOverlay(platform) {
   return platform !== 'darwin';
 }

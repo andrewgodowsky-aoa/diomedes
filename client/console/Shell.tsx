@@ -132,6 +132,7 @@ import { TextSizeMenuItems } from './TextSizeMenu';
 import { AccountMenu } from './AccountMenu';
 import { PlaybookPanel } from './PlaybookPanel';
 import type { LoadedContribution } from '../../shared/pack-contributions';
+import { shortcutHint } from '../keyboard';
 
 interface ShellProps {
   projectId: string;
@@ -2005,7 +2006,7 @@ export function Shell({
               if (e.key === 'Enter') openPalette();
             }}
           >
-            Ctrl K
+            {shortcutHint('K')}
           </span>
           <button type="button" onClick={onOpenSettings}>
             Settings
