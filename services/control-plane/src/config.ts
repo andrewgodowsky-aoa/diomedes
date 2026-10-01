@@ -11,6 +11,9 @@ export interface Configuration {
    * route_unavailable, and nothing else in the Worker reads it.
    */
   fundingDatabaseUrl: string | null;
+  /** Dedicated staff credit/audit writer; never the gateway or Worker login. */
+  staffFundingDatabaseUrl?: string | null;
+  staffFundingProblem?: string;
   /** The customer (Nectovia) WorkOS environment: every /account/* and /managed/* call. */
   identity: WorkOSIdentity;
   /**
@@ -84,11 +87,11 @@ const endpoint = (url: URL) => url.hostname.replace(/-pooler(?=\.)/, '');
  * DATABASE_URL: the gateway reads the admission and grants there, the usage
  * projection reads the funding rows there, and the spend ceiling counts them there.
  */
-function fundingUrl(value: unknown, database: URL): { url: string | null; problem?: string } {
+function fundingUrl(value: unknown, database: URL, login = /^cp_funding(?:_[a-z0-9_]+)?$/): { url: string | null; problem?: string } {
   if (typeof value !== 'string' || !value.trim()) return { url: null };
   const text = textProblem(value);
   if (text) return { url: null, problem: text };
-  const funding = neonUrl(value, /^cp_funding(?:_[a-z0-9_]+)?$/);
+  const funding = neonUrl(value, login);
   if (typeof funding === 'string') return { url: null, problem: funding };
   if (endpoint(funding) !== endpoint(database) || funding.pathname !== database.pathname) return { url: null, problem: 'other-database' };
   return { url: value };
@@ -163,6 +166,7 @@ export function configuration(env: Record<string, unknown>): Configuration {
     if (typeof database === 'string') throw refuse(database);
     // Optional, and never a reason to refuse the account routes: only the gateway reads it.
     const funding = fundingUrl(env.FUNDING_DATABASE_URL, database);
+    const staffFunding = fundingUrl(env.STAFF_FUNDING_DATABASE_URL, database, /^cp_staff_funding(?:_[a-z0-9_]+)?$/);
     const identity = { clientId, issuer, audience, apiKey };
     const staff = staffIdentity(env, identity, environment);
     setting = 'INDIVIDUAL_MAX_ACTIVE_MEMBERS';
@@ -172,7 +176,8 @@ export function configuration(env: Record<string, unknown>): Configuration {
     try { individual = readIndividualCoverage(raw as string | number | undefined | null); }
     catch { throw refuse('whole-number'); }
     return { environment: environment as Configuration['environment'], origins, databaseUrl, fundingDatabaseUrl: funding.url, identity,
-      staffIdentity: staff.identity, individual,
+      staffIdentity: staff.identity, individual, staffFundingDatabaseUrl: staffFunding.url,
+      ...(staffFunding.problem ? { staffFundingProblem: staffFunding.problem } : {}),
       ...(staff.problem ? { staffProblem: staff.problem } : {}),
       ...(funding.problem ? { fundingProblem: funding.problem } : {}) };
   } catch (error) {

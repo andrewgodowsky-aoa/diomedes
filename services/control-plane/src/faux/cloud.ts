@@ -185,7 +185,7 @@ export async function createFauxCloud(options: FauxCloudOptions): Promise<FauxCl
   const accounts = new AccountService(store.accounts, verifier, { now });
   const funding = new FundingService(store.funding, { now });
   const coverage = readIndividualCoverage(options.individualMaxActiveMembers);
-  const commercial = new CommercialService(accounts, store.commercial, funding, { now, directory, backend: 'faux', coverage });
+  const commercial = new CommercialService(accounts, store.commercial, funding, { now, directory, backend: 'faux', coverage, staffFunding: store.staffFunding });
   const origins = [...(options.allowedOrigins ?? [])];
   // The Worker's configuration shape, filled with what the faux cloud actually is.
   // No database URL or WorkOS key exists here, and none is ever read.

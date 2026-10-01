@@ -1,0 +1,5 @@
+{
+  "command": "./node_modules/.bin/vitest.cmd run --maxWorkers=1 --minWorkers=1",
+  "exitCode": 0,
+  "at": "2026-10-01T00:42:25.8484032Z"
+}

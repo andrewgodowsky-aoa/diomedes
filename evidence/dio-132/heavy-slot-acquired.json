@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "slotId": "slot_muoskqr0_398cca2f",
+  "owner": {
+    "role": "astra",
+    "host": "Andrews-Desktop",
+    "pid": 39844,
+    "processStart": "2026-09-30T22:16:36.3031935Z",
+    "worktree": "F:/Diomedes/diomedes-wt/staff-credit-integrity"
+  },
+  "purpose": "DIO-132 required broad verification gates",
+  "node": "DIO-132",
+  "acquiredAt": "2026-10-01T00:24:25.452Z"
+}

@@ -1,0 +1,31 @@
+
+ RUN  v3.2.7 F:/Diomedes/diomedes-ops-wt/staff-credit-integrity
+
+ Γ¥» tests/funding-request.test.mjs (6 tests | 1 failed) 12ms
+   ├ù staff correction request identity > does not persist invalid terms before sending 8ms
+     ΓåÆ expected [Function] to throw an error
+   Γ£ô staff correction request identity > keeps one request across retries and reopening the caller 1ms
+   Γ£ô staff correction request identity > refuses changed terms while the previous outcome is unresolved 0ms
+   Γ£ô staff correction request identity > starts a distinct same-amount request only after successful acknowledgement 0ms
+   Γ£ô staff correction request identity > isolates staff, customer and service scopes 0ms
+   Γ£ô staff correction request identity > fails before a credit call if its saved identity is unreadable 0ms
+
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ» Failed Tests 1 ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»
+
+ FAIL  tests/funding-request.test.mjs > staff correction request identity > does not persist invalid terms before sending
+AssertionError: expected [Function] to throw an error
+ Γ¥» tests/funding-request.test.mjs:12:53
+     10|     const client = new FundingRequest('scope', storage());
+     11|     for (const [credits, reason] of [[0, 'Ticket'], [1.5, 'Ticket'], [ΓÇª
+     12|       expect(() => client.prepare(credits, reason)).toThrow();
+       |                                                     ^
+     13|       expect(client.pending()).toBeNull();
+     14|     }
+
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[1/1]ΓÄ»
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 5 passed (6)
+   Start at  20:13:23
+   Duration  1.04s (transform 50ms, setup 0ms, collect 54ms, tests 12ms, environment 0ms, prepare 188ms)

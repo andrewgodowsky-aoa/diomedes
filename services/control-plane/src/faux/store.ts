@@ -43,6 +43,7 @@ import {
 } from '../commercial.js';
 import { accountStateSchema, emptyAccountState, type AccountRepository, type AccountState, type AccountTransaction } from '../domain.js';
 import type { FundingRepository, FundingTransaction } from '../funding.js';
+import type { StaffFundingRepository } from '../staff-funding.js';
 import { RELAY_DEVICE_LIMIT, relayDeviceSchema, type RelayDevice, type RelayRepository, type RelayTransaction } from '../relay/service.js';
 import {
   organizationSetupRowSchema,
@@ -168,6 +169,7 @@ class FauxCommercialTransaction implements CommercialTransaction {
   private get c() { return this.state.commercial; }
   async lockOrganization() {}
   async lockStaff() {}
+  async auditById(id: string) { return this.c.audit.find(row => row.id === id); }
   async grants(organizationId: string) { return this.c.grants.filter((row) => row.organizationId === organizationId); }
   async saveGrant(row: FeatureGrant) {
     const index = this.c.grants.findIndex((old) => old.id === row.id);
@@ -434,6 +436,7 @@ export class FauxCloudStore {
   readonly accounts: AccountRepository;
   readonly commercial: CommercialRepository;
   readonly funding: FundingRepository;
+  readonly staffFunding: StaffFundingRepository;
   readonly relay: RelayRepository;
   readonly organizationSetups: OrganizationSetupRepository;
   readonly organizationExports: OrganizationExportRepository;
@@ -443,6 +446,8 @@ export class FauxCloudStore {
     this.accounts = { transaction: (action) => this.run((draft) => action(new StateTransaction(draft.accounts)) as Promise<never>) };
     this.commercial = { transaction: (action) => this.run((draft) => action(new FauxCommercialTransaction(draft))) };
     this.funding = { transaction: (action) => this.run((draft) => action(new StateFundingTransaction(draft.funding))) };
+    this.staffFunding = { transaction: action => this.run(draft => action(Object.assign(
+      new FauxCommercialTransaction(draft), { funding: new StateFundingTransaction(draft.funding) }))) };
     this.relay = { transaction: (action) => this.run((draft) => action(new FauxRelayTransaction(draft))) };
     this.organizationSetups = { transaction: (action) => this.run((draft) => action(new FauxOrganizationSetupTransaction(draft))) };
     this.organizationExports = { transaction: (action) => this.run((draft) => action(new FauxOrganizationExportTransaction(draft))) };

@@ -1,0 +1,5 @@
+{
+  "command": "./node_modules/.bin/playwright.cmd test tests/ui.spec.ts tests/native-ui.spec.ts tests/field.spec.ts",
+  "exitCode": 0,
+  "at": "2026-10-01T00:42:15.5422949Z"
+}

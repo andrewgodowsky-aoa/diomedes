@@ -1,0 +1,16 @@
+
+ RUN  v3.2.7 F:/Diomedes/diomedes-ops-wt/staff-credit-integrity
+
+ Γ£ô tests/ops-service.test.mjs (8 tests) 2565ms
+ Γ£ô tests/ops-workos.test.mjs (8 tests) 1814ms
+   Γ£ô WorkOS staff sign-in against the stand-in > each staff role signs in through the browser and gets its own permissions  312ms
+ Γ£ô tests/routing.test.mjs (2 tests) 1228ms
+ Γ£ô tests/staff-key.test.mjs (6 tests) 16ms
+ Γ£ô tests/app-repo-ops-reconcile.test.mjs (5 tests) 1580ms
+   Γ£ô an absolute app override wins over the default at every depth  491ms
+ Γ£ô tests/funding-request.test.mjs (6 tests) 4ms
+
+ Test Files  6 passed (6)
+      Tests  35 passed (35)
+   Start at  20:42:16
+   Duration  9.42s (transform 65ms, setup 0ms, collect 149ms, tests 7.21s, environment 1ms, prepare 495ms)

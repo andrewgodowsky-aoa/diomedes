@@ -1,0 +1,9 @@
+
+ RUN  v3.2.7 F:/Diomedes/diomedes-ops-wt/staff-credit-integrity
+
+ Γ£ô tests/funding-request.test.mjs (6 tests) 7ms
+
+ Test Files  1 passed (1)
+      Tests  6 passed (6)
+   Start at  20:13:50
+   Duration  805ms (transform 50ms, setup 0ms, collect 56ms, tests 7ms, environment 0ms, prepare 158ms)

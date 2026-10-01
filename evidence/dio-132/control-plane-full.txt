@@ -1,0 +1,155 @@
+
+ RUN  v3.2.7 F:/Diomedes/diomedes-wt/staff-credit-integrity/services/control-plane
+
+stderr | tests/managed-inference.test.ts > the company spend ceiling (MANAGED_SPEND_CEILING_MICRO_USD) > counts an open hold in full: of two calls near the edge at once, exactly one passes
+{"event":"managed-spend-ceiling-reached","attemptId":"run-1:2"}
+
+stderr | tests/managed-inference.test.ts > the company spend ceiling (MANAGED_SPEND_CEILING_MICRO_USD) > counts an uncertain hold in full
+{"event":"managed-spend-ceiling-reached","attemptId":"run-1:2"}
+
+stderr | tests/managed-inference.test.ts > the company spend ceiling (MANAGED_SPEND_CEILING_MICRO_USD) > refuses every call, sending and holding nothing, when a setting cannot be read; empty means unset
+{"event":"managed-spend-ceiling-reached","attemptId":"run-1:1"}
+
+ Γ£ô tests/managed-inference.test.ts (49 tests) 3630ms
+   Γ£ô replaying an attempt > sends once when two gateway instances, as two Worker isolates, race the same attempt over one store  692ms
+   Γ£ô replaying an attempt > would send twice with an unconditional dispatch update, so the case above has teeth  693ms
+ Γ£ô tests/scoped-routing.test.ts (26 tests) 1653ms
+stderr | tests/managed-evaluations.test.ts > the faux cloudΓÇÖs evaluation provider > refuses to start with a live OpenRouter key and no readable spend ceiling, before anything opens
+{"event":"managed-setting-unreadable","setting":"MANAGED_SPEND_CEILING_MICRO_USD"}
+
+stderr | tests/managed-evaluations.test.ts > the faux cloudΓÇÖs evaluation provider > refuses to start with a live OpenRouter key and no readable spend ceiling, before anything opens
+{"event":"managed-setting-unreadable","setting":"MANAGED_SPEND_CEILING_MICRO_USD"}
+
+ Γ£ô tests/managed-evaluations.test.ts (29 tests) 1045ms
+ Γ£ô tests/funding.test.ts (34 tests) 175ms
+ Γ£ô tests/managed-bindings.test.ts (31 tests) 107ms
+ Γ£ô tests/customer-access.test.ts (20 tests) 703ms
+ Γ£ô tests/account-service-review-independent.test.ts (30 tests) 99ms
+ Γ£ô tests/relay-hub.test.ts (26 tests) 231ms
+ Γ£ô tests/funding-permissions.test.ts (4 tests) 124ms
+ Γ£ô tests/account-service-repair-review-independent.test.ts (31 tests | 3 skipped) 302ms
+ Γåô tests/postgres.integration.test.ts (13 tests | 13 skipped)
+ Γ£ô tests/individual-plans.test.ts (13 tests) 553ms
+ Γ£ô tests/managed-body.test.ts (65 tests) 115ms
+ Γ£ô tests/organization-export.test.ts (8 tests) 370ms
+ Γ£ô tests/organization-setup.test.ts (12 tests) 403ms
+ Γ£ô tests/gateway-funding-login.test.ts (16 tests) 486ms
+ Γ£ô tests/staff-funding-postgres.integration.test.ts (9 tests | 5 skipped) 7ms
+ Γ£ô tests/usage-contract-funding.test.ts (16 tests) 25ms
+ Γåô tests/scoped-routing-postgres.integration.test.ts (6 tests | 6 skipped)
+ Γ£ô tests/relay-devices.test.ts (10 tests) 440ms
+ Γ£ô tests/migrations.test.ts (13 tests) 17ms
+ Γ£ô tests/operations-routing-policy.test.ts (28 tests) 13ms
+ Γ£ô tests/account-capacity-repair.test.ts (13 tests) 572ms
+ Γ£ô tests/relay-socket.test.ts (7 tests) 458ms
+ Γ£ô tests/relay-durable-object.test.ts (7 tests) 20ms
+ Γ£ô tests/funding-postgres.test.ts (8 tests) 9ms
+ Γ£ô tests/relay-postgres.test.ts (8 tests) 67ms
+stderr | tests/identity-workos.test.ts > WorkOS access-token and active-session verification (offline HTTP fixtures) > rejects issuer before authenticated provider lookup
+{"event":"identity-refused","check":"issuer"}
+
+stderr | tests/identity-workos.test.ts > WorkOS access-token and active-session verification (offline HTTP fixtures) > rejects another clientΓÇÖs issuer before authenticated provider lookup
+{"event":"identity-refused","check":"issuer"}
+
+stderr | tests/identity-workos.test.ts > WorkOS access-token and active-session verification (offline HTTP fixtures) > rejects a longer issuer path before authenticated provider lookup
+{"event":"identity-refused","check":"issuer"}
+
+stderr | tests/identity-workos.test.ts > WorkOS access-token and active-session verification (offline HTTP fixtures) > rejects the client issuer with a trailing slash before authenticated provider lookup
+{"event":"identity-refused","check":"issuer"}
+
+stderr | tests/identity-workos.test.ts > WorkOS access-token and active-session verification (offline HTTP fixtures) > rejects the user-management root before authenticated provider lookup
+{"event":"identity-refused","check":"issuer"}
+
+stderr | tests/identity-workos.test.ts > WorkOS access-token and active-session verification (offline HTTP fixtures) > rejects audience before authenticated provider lookup
+{"event":"identity-refused","check":"audience"}
+
+stderr | tests/identity-workos.test.ts > WorkOS access-token and active-session verification (offline HTTP fixtures) > rejects missing audience before authenticated provider lookup
+{"event":"identity-refused","check":"claims-shape"}
+
+stderr | tests/identity-workos.test.ts > WorkOS access-token and active-session verification (offline HTTP fixtures) > rejects client before authenticated provider lookup
+{"event":"identity-refused","check":"client"}
+
+stderr | tests/identity-workos.test.ts > WorkOS access-token and active-session verification (offline HTTP fixtures) > rejects missing client before authenticated provider lookup
+{"event":"identity-refused","check":"claims-shape"}
+
+stderr | tests/identity-workos.test.ts > WorkOS access-token and active-session verification (offline HTTP fixtures) > rejects expired before authenticated provider lookup
+{"event":"identity-refused","check":"lifetime"}
+
+stderr | tests/identity-workos.test.ts > WorkOS access-token and active-session verification (offline HTTP fixtures) > rejects future issued before authenticated provider lookup
+{"event":"identity-refused","check":"lifetime"}
+
+stderr | tests/identity-workos.test.ts > WorkOS access-token and active-session verification (offline HTTP fixtures) > rejects not yet valid before authenticated provider lookup
+{"event":"identity-refused","check":"lifetime"}
+
+stderr | tests/identity-workos.test.ts > WorkOS access-token and active-session verification (offline HTTP fixtures) > rejects invalid subject before authenticated provider lookup
+{"event":"identity-refused","check":"claims-shape"}
+
+stderr | tests/identity-workos.test.ts > WorkOS access-token and active-session verification (offline HTTP fixtures) > rejects missing session before authenticated provider lookup
+{"event":"identity-refused","check":"claims-shape"}
+
+stderr | tests/identity-workos.test.ts > WorkOS access-token and active-session verification (offline HTTP fixtures) > rejects impersonation before authenticated provider lookup
+{"event":"identity-refused","check":"actor"}
+
+stderr | tests/identity-workos.test.ts > WorkOS access-token and active-session verification (offline HTTP fixtures) > rejects none and refuses header-selected keys
+{"event":"identity-refused","check":"header"}
+
+stderr | tests/identity-workos.test.ts > WorkOS access-token and active-session verification (offline HTTP fixtures) > rejects HS256 and refuses header-selected keys
+{"event":"identity-refused","check":"header"}
+
+stderr | tests/identity-workos.test.ts > WorkOS access-token and active-session verification (offline HTTP fixtures) > rejects RS512 and refuses header-selected keys
+{"event":"identity-refused","check":"header"}
+
+stderr | tests/identity-workos.test.ts > WorkOS access-token and active-session verification (offline HTTP fixtures) > rejects tampered signatures and unknown keys
+{"event":"identity-refused","check":"signature"}
+
+stderr | tests/identity-workos.test.ts > WorkOS access-token and active-session verification (offline HTTP fixtures) > rejects tampered signatures and unknown keys
+{"event":"identity-refused","check":"signing-key"}
+
+stderr | tests/identity-workos.test.ts > WorkOS access-token and active-session verification (offline HTTP fixtures) > provider outage is unavailable, not successful or an invalid-token response
+{"event":"identity-unavailable","step":"jwks"}
+
+ Γ£ô tests/identity-workos.test.ts (36 tests) 49ms
+stderr | tests/workos-standin.test.ts > the faux cloud in workos-standin mode > rotates refresh tokens, and a token without the audience is refused
+{"event":"identity-refused","check":"audience"}
+
+ Γ£ô tests/workos-standin.test.ts (6 tests) 263ms
+ Γåô tests/account-capacity.integration.test.ts (6 tests | 6 skipped)
+ Γ£ô tests/staff-funding.test.ts (12 tests) 389ms
+ Γ£ô tests/organization-export-postgres.test.ts (6 tests) 67ms
+ Γ£ô tests/staff-keys.test.ts (11 tests) 115ms
+ Γ£ô tests/organization-setup-postgres.test.ts (7 tests) 64ms
+ Γ£ô tests/funding-dispatch-release.test.ts (7 tests) 567ms
+ Γ£ô tests/faux-server-managed.test.ts (3 tests) 194ms
+ Γ£ô tests/managed-providers.test.ts (9 tests) 86ms
+ Γ£ô tests/company-spend-ceiling.test.ts (4 tests) 800ms
+   Γ£ô two reservations near the company ceiling at once > lets exactly one through while the company lock is held to the end of the reserving transaction  406ms
+   Γ£ô two reservations near the company ceiling at once > would let both through without the lock, so the case above has teeth  387ms
+ Γåô tests/postgres-role-independent.test.ts (12 tests | 12 skipped)
+ Γ£ô tests/accounts.test.ts (11 tests) 26ms
+stderr | tests/managed-worker.test.ts > the Worker entry for managed inference > answers every managed refusal in the managed error shape, before configuration and at the edge
+{"event":"managed-configuration-unavailable","setting":"ENVIRONMENT","rule":"missing"}
+{"event":"managed-gateway-unavailable"}
+
+ Γ£ô tests/managed-worker.test.ts (3 tests) 149ms
+ Γ£ô tests/configuration-diagnostics.test.ts (26 tests) 12ms
+ Γ£ô tests/staff-identity.test.ts (26 tests) 11ms
+ Γ£ô tests/membership-refusal-code.test.ts (5 tests) 182ms
+ Γ£ô tests/usage-route.test.ts (6 tests) 22ms
+stderr | tests/worker.test.ts > actual Fetch API failure boundaries > fails a cold start with missing configuration before creating adapters
+{"event":"control-plane-unavailable","setting":"ENVIRONMENT","rule":"missing"}
+
+stderr | tests/worker.test.ts > actual Fetch API failure boundaries > maps unavailable database/quota to refusal without exposing driver secrets
+{"event":"control-plane-unavailable"}
+
+ Γ£ô tests/worker.test.ts (5 tests) 21ms
+ Γ£ô tests/config.test.ts (38 tests) 8ms
+ Γ£ô tests/deploy-config.test.ts (4 tests) 3ms
+ Γ£ô tests/client-lifecycle-repair.test.ts (5 tests) 5ms
+ Γ£ô tests/inbox.test.ts (2 tests) 6ms
+ Γ£ô tests/postgres.test.ts (5 tests) 5ms
+ Γ£ô tests/admission-read.test.ts (2 tests) 8ms
+
+ Test Files  48 passed | 4 skipped (52)
+      Tests  744 passed | 45 skipped (789)
+   Start at  20:40:02
+   Duration  42.53s (transform 864ms, setup 385ms, collect 10.07s, tests 14.67s, environment 6ms, prepare 4.45s)

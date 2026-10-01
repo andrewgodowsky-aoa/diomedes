@@ -1,0 +1,13 @@
+
+ RUN  v3.2.7 F:/Diomedes/diomedes-wt/staff-credit-integrity/services/control-plane
+
+ Γ£ô tests/customer-access.test.ts (20 tests) 2196ms
+ Γ£ô tests/funding-permissions.test.ts (4 tests) 355ms
+   Γ£ô cp_funding (scripts/funding-permissions.sql) > grants exactly what PostgresFundingRepository runs on the gatewayΓÇÖs paths, and nothing else  345ms
+ Γ£ô tests/gateway-funding-login.test.ts (14 tests) 865ms
+ Γ£ô tests/staff-funding.test.ts (7 tests) 429ms
+
+ Test Files  4 passed (4)
+      Tests  45 passed (45)
+   Start at  19:49:46
+   Duration  10.27s (transform 840ms, setup 96ms, collect 2.98s, tests 3.85s, environment 1ms, prepare 936ms)

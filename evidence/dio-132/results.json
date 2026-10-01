@@ -1,0 +1,119 @@
+{
+  "controlPlane": {
+    "command": "vitest run tests/staff-funding.test.ts tests/staff-funding-postgres.integration.test.ts tests/customer-access.test.ts tests/gateway-funding-login.test.ts tests/funding-permissions.test.ts tests/config.test.ts tests/staff-keys.test.ts --maxWorkers=1 --minWorkers=1",
+    "filesPassed": 7,
+    "passed": 105,
+    "failed": 0,
+    "skipped": 5,
+    "source": "final-focused.txt"
+  },
+  "operations": {
+    "command": "vitest run tests/funding-request.test.mjs --maxWorkers=1 --minWorkers=1",
+    "filesPassed": 1,
+    "passed": 6,
+    "failed": 0,
+    "skipped": 0,
+    "source": "operations-focused.txt"
+  },
+  "typechecks": [
+    {
+      "command": "root tsc --noEmit",
+      "exitCode": 0,
+      "at": "2026-10-01T00:07:20.4162233Z"
+    },
+    {
+      "command": "control-plane tsc --noEmit",
+      "exitCode": 0,
+      "at": "2026-10-01T00:16:30.6427209Z"
+    },
+    {
+      "command": "Operations tsc --noEmit",
+      "exitCode": 0,
+      "at": "2026-10-01T00:13:54.6453465Z"
+    }
+  ],
+  "database": {
+    "actualRoleCases": "not run",
+    "skipped": 5,
+    "blocker": "No local PostgreSQL executable, server process or Docker runtime found; DIO132_TEST_DATABASE_URL was not supplied.",
+    "authentication": "faux even in the opt-in real database harness"
+  },
+  "broadVerification": {
+    "status": "passed",
+    "stages": [
+      {
+        "name": "root-full",
+        "at": "2026-10-01T00:39:38.6893138Z",
+        "command": "root vitest run --maxWorkers=2 --minWorkers=1",
+        "exitCode": 0,
+        "status": "passed",
+        "summaries": [
+          "Test Files  519 passed (519)",
+          "Tests  8646 passed | 5 skipped (8651)"
+        ],
+        "source": "root-full.txt"
+      },
+      {
+        "name": "control-plane-full",
+        "command": "./node_modules/.bin/vitest.cmd run --maxWorkers=1 --minWorkers=1",
+        "exitCode": 0,
+        "at": "2026-10-01T00:40:45.6110015Z",
+        "status": "passed",
+        "summaries": [
+          "Test Files  48 passed | 4 skipped (52)",
+          "Tests  744 passed | 45 skipped (789)"
+        ],
+        "source": "control-plane-full.txt"
+      },
+      {
+        "name": "root-build",
+        "command": "./node_modules/.bin/vite.cmd build",
+        "exitCode": 0,
+        "at": "2026-10-01T00:40:54.9510703Z",
+        "status": "passed",
+        "summaries": [],
+        "source": "root-build.txt"
+      },
+      {
+        "name": "playwright",
+        "command": "./node_modules/.bin/playwright.cmd test tests/ui.spec.ts tests/native-ui.spec.ts tests/field.spec.ts",
+        "exitCode": 0,
+        "at": "2026-10-01T00:42:15.5422949Z",
+        "status": "passed",
+        "summaries": [
+          "36 passed (1.3m)"
+        ],
+        "source": "playwright.txt"
+      },
+      {
+        "name": "operations-full",
+        "command": "./node_modules/.bin/vitest.cmd run --maxWorkers=1 --minWorkers=1",
+        "exitCode": 0,
+        "at": "2026-10-01T00:42:25.8484032Z",
+        "status": "passed",
+        "summaries": [
+          "Test Files  6 passed (6)",
+          "Tests  35 passed (35)"
+        ],
+        "source": "operations-full.txt"
+      },
+      {
+        "name": "operations-build",
+        "command": "./node_modules/.bin/vite.cmd build",
+        "exitCode": 0,
+        "at": "2026-10-01T00:42:27.0094994Z",
+        "status": "passed",
+        "summaries": [],
+        "source": "operations-build.txt"
+      }
+    ],
+    "coordinator": "Initially denied; later acquired slot_muoskqr0_398cca2f through the coordinator after the other lane released it."
+  },
+  "approval": {
+    "commit": "not approved for these exact patches",
+    "push": "not approved",
+    "publication": "not approved",
+    "merge": "not authorized",
+    "deployment": "not authorized"
+  }
+}

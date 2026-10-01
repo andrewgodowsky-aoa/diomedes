@@ -65,4 +65,4 @@ GRANT SELECT ON control_plane.credit_adjustments, control_plane.credit_topups TO
 -- Not granted, because the gateway never runs them: job_cap_requests (cap
 -- requests and decisions), INSERT on credit_adjustments (recordCorrection) and on
 -- credit_topups (recordTopUp), and funding_accounts. Staff grant allocation and
--- staff funding corrections run on the Worker login and are still refused there.
+-- corrections use the separate cp_staff_funding role (staff-funding-permissions.sql).

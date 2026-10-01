@@ -1,0 +1,171 @@
+
+ RUN  v3.2.7 F:/Diomedes/diomedes-wt/staff-credit-integrity/services/control-plane
+
+ Γ¥» tests/staff-funding.test.ts (7 tests | 7 failed) 538ms
+   ├ù DIO-132 authenticated staff funding > replays one request as one adjustment and one audit 107ms
+     ΓåÆ expected 422 to be 201 // Object.is equality
+   ├ù DIO-132 authenticated staff funding > rejects changed credits or reason for the same request 53ms
+     ΓåÆ expected 422 to be 201 // Object.is equality
+   ├ù DIO-132 authenticated staff funding > serializes concurrent replays 140ms
+     ΓåÆ expected [ 422, 422, 422, 422, 422, 422 ] to deeply equal [ 201, 201, 201, 201, 201, 201 ]
+   ├ù DIO-132 authenticated staff funding > allows distinct requests for the same amount 92ms
+     ΓåÆ expected 422 to be 201 // Object.is equality
+   ├ù DIO-132 authenticated staff funding > replays the original period after the calendar changes 43ms
+     ΓåÆ expected 422 to be 201 // Object.is equality
+   ├ù DIO-132 authenticated staff funding > requires a bounded request identity and current staff authority 44ms
+     ΓåÆ expected 201 to be 422 // Object.is equality
+   ├ù DIO-132 authenticated staff funding > rolls back grant allocation when its audit insert fails 58ms
+     ΓåÆ expected [ { ΓÇª(10) } ] to have a length of +0 but got 1
+
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ» Failed Tests 7 ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»
+
+ FAIL  tests/staff-funding.test.ts > DIO-132 authenticated staff funding > replays one request as one adjustment and one audit
+AssertionError: expected 422 to be 201 // Object.is equality
+
+- Expected
++ Received
+
+- 201
++ 422
+
+ Γ¥» tests/staff-funding.test.ts:38:26
+     36|   it('replays one request as one adjustment and one audit', async () =ΓÇª
+     37|     const first = await add();
+     38|     expect(first.status).toBe(201);
+       |                          ^
+     39|     const row = await first.json();
+     40|     expect((await add()).status).toBe(201);
+
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[1/7]ΓÄ»
+
+ FAIL  tests/staff-funding.test.ts > DIO-132 authenticated staff funding > rejects changed credits or reason for the same request
+AssertionError: expected 422 to be 201 // Object.is equality
+
+- Expected
++ Received
+
+- 201
++ 422
+
+ Γ¥» tests/staff-funding.test.ts:47:34
+     45|   });
+     46|   it('rejects changed credits or reason for the same request', async (ΓÇª
+     47|     expect((await add()).status).toBe(201);
+       |                                  ^
+     48|     expect((await add({ ...request, credits: 11 })).status).toBe(409);
+     49|     expect((await add({ ...request, reason: 'Different ticket.' })).stΓÇª
+
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[2/7]ΓÄ»
+
+ FAIL  tests/staff-funding.test.ts > DIO-132 authenticated staff funding > serializes concurrent replays
+AssertionError: expected [ 422, 422, 422, 422, 422, 422 ] to deeply equal [ 201, 201, 201, 201, 201, 201 ]
+
+- Expected
++ Received
+
+  [
+-   201,
+-   201,
+-   201,
+-   201,
+-   201,
+-   201,
++   422,
++   422,
++   422,
++   422,
++   422,
++   422,
+  ]
+
+ Γ¥» tests/staff-funding.test.ts:54:92
+     52|   });
+     53|   it('serializes concurrent replays', async () => {
+     54|     expect((await Promise.all(Array.from({ length: 6 }, () => add())))ΓÇª
+       |                                                                                            ^
+     55|     expect(cloud.store.snapshot().funding.adjustments).toHaveLength(1);
+     56|     expect(added()).toHaveLength(1);
+
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[3/7]ΓÄ»
+
+ FAIL  tests/staff-funding.test.ts > DIO-132 authenticated staff funding > allows distinct requests for the same amount
+AssertionError: expected 422 to be 201 // Object.is equality
+
+- Expected
++ Received
+
+- 201
++ 422
+
+ Γ¥» tests/staff-funding.test.ts:59:34
+     57|   });
+     58|   it('allows distinct requests for the same amount', async () => {
+     59|     expect((await add()).status).toBe(201);
+       |                                  ^
+     60|     expect((await add({ ...request, requestId: 'correction-2' })).statΓÇª
+     61|     expect(cloud.store.snapshot().funding.adjustments).toHaveLength(2);
+
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[4/7]ΓÄ»
+
+ FAIL  tests/staff-funding.test.ts > DIO-132 authenticated staff funding > replays the original period after the calendar changes
+AssertionError: expected 422 to be 201 // Object.is equality
+
+- Expected
++ Received
+
+- 201
++ 422
+
+ Γ¥» tests/staff-funding.test.ts:65:34
+     63|   });
+     64|   it('replays the original period after the calendar changes', async (ΓÇª
+     65|     expect((await add()).status).toBe(201);
+       |                                  ^
+     66|     clock = Date.parse('2026-10-01T00:00:00Z');
+     67|     billing = await signIn('staffBilling');
+
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[5/7]ΓÄ»
+
+ FAIL  tests/staff-funding.test.ts > DIO-132 authenticated staff funding > requires a bounded request identity and current staff authority
+AssertionError: expected 201 to be 422 // Object.is equality
+
+- Expected
++ Received
+
+- 422
++ 201
+
+ Γ¥» tests/staff-funding.test.ts:74:73
+     72|   });
+     73|   it('requires a bounded request identity and current staff authority'ΓÇª
+     74|     expect((await add({ credits: 10, reason: request.reason })).statusΓÇª
+       |                                                                         ^
+     75|     expect((await add({ ...request, requestId: 'x'.repeat(129) })).staΓÇª
+     76|     expect((await add(request, await signIn('staffSupport'))).status).ΓÇª
+
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[6/7]ΓÄ»
+
+ FAIL  tests/staff-funding.test.ts > DIO-132 authenticated staff funding > rolls back grant allocation when its audit insert fails
+AssertionError: expected [ { ΓÇª(10) } ] to have a length of +0 but got 1
+
+- Expected
++ Received
+
+- 0
++ 1
+
+ Γ¥» tests/staff-funding.test.ts:98:97
+     96|     const result = await service.issueGrant(billing, harbor, { planId:ΓÇª
+     97|     expect(result.funding.allocated).toBe(false);
+     98|     expect(cloud.store.snapshot().funding.periods.filter(row => row.orΓÇª
+       |                                                                                                 ^
+     99|     expect(cloud.store.snapshot().commercial.audit.filter(row => row.aΓÇª
+    100|   });
+
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[7/7]ΓÄ»
+
+
+ Test Files  1 failed (1)
+      Tests  7 failed (7)
+   Start at  19:45:22
+   Duration  2.59s (transform 569ms, setup 28ms, collect 1.19s, tests 538ms, environment 0ms, prepare 206ms)

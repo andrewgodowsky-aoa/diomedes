@@ -8,6 +8,7 @@ import { StaffKeyVerifier, postgresStaffKeys } from './identity-staff-key.js';
 import { PostgresRepository, neonClientFactory } from './postgres.js';
 import { FundingService, UsageService } from './funding.js';
 import { PostgresFundingRepository } from './funding-postgres.js';
+import { PostgresStaffFundingRepository } from './staff-funding-postgres.js';
 import { PostgresCommercialRepository } from './commercial-postgres.js';
 import {
   CommercialService,
@@ -123,7 +124,9 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
   const createCommercial = options.createCommercial ?? ((config: Configuration, accounts: AccountService) =>
     new CommercialService(accounts, new PostgresCommercialRepository(neonClientFactory(config.databaseUrl)),
       new FundingService(new PostgresFundingRepository(neonClientFactory(config.databaseUrl))),
-      config.individual ? { coverage: config.individual } : {}));
+      { ...(config.individual ? { coverage: config.individual } : {}),
+        staffFunding: config.staffFundingDatabaseUrl
+          ? new PostgresStaffFundingRepository(neonClientFactory(config.staffFundingDatabaseUrl)) : null }));
   const createRouting = options.createRouting ?? ((config: Configuration, accounts: AccountService) =>
     new RoutingService(accounts, new PostgresCommercialRepository(neonClientFactory(config.databaseUrl)), Date.now,
       config.fundingDatabaseUrl ? new FundingService(new PostgresFundingRepository(neonClientFactory(config.fundingDatabaseUrl))) : null));
@@ -386,6 +389,10 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
  * - FUNDING_DATABASE_URL, the login cp_funding for the gateway's funding rows
  *   (scripts/funding-permissions.sql), on the same database as DATABASE_URL.
  *   Unset, blank or unreadable: every managed call answers 503 route_unavailable.
+ * - STAFF_FUNDING_DATABASE_URL, the separate cp_staff_funding login for staff
+ *   corrections and grant allocation, including the audit in their transaction.
+ *   Unset or unreadable: corrections answer staff_funding_unavailable, and grant
+ *   issuance reports that its optional funding allocation is unavailable.
  * - OPENROUTER_API_KEY, the key /managed/v1/evaluations sends to OpenRouter's
  *   Decisions endpoint; without it that route alone answers 503.
  * STAFF_WORKOS_API_KEY and STAFF_WORKOS_CLIENT_ID (src/config.ts) are no longer read by
@@ -396,6 +403,7 @@ export type GatewayEnv = WorkerEnv & {
   BEDROCK_API_KEY?: string;
   OPENROUTER_API_KEY?: string;
   FUNDING_DATABASE_URL?: string;
+  STAFF_FUNDING_DATABASE_URL?: string;
   STAFF_WORKOS_API_KEY?: string;
   MANAGED_SPEND_CEILING_MICRO_USD?: string | number;
   MANAGED_MAX_OUTPUT_TOKENS?: string | number;

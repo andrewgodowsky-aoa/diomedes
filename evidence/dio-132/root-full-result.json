@@ -1,0 +1,5 @@
+{
+  "at": "2026-10-01T00:39:38.6893138Z",
+  "command": "root vitest run --maxWorkers=2 --minWorkers=1",
+  "exitCode": 0
+}

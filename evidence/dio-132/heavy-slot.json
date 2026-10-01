@@ -1,0 +1,18 @@
+{
+  "ok": false,
+  "heldBy": {
+    "schema_version": 1,
+    "slotId": "slot_muorv69k_12f13659",
+    "owner": {
+      "role": "opus",
+      "host": "Andrews-Desktop",
+      "pid": 37044,
+      "processStart": "2026-09-30T19:56:40.542732Z",
+      "worktree": "F:/Diomedes/diomedes-wt/luna-route-labels"
+    },
+    "purpose": "DIO-153 focused tests",
+    "node": "DIO-153",
+    "acquiredAt": "2026-10-01T00:04:32.504Z"
+  },
+  "detail": "The heavy slot is held by opus (pid 37044 on Andrews-Desktop, started 2026-09-30T19:56:40.5427320Z, worktree F:/Diomedes/diomedes-wt/luna-route-labels) for DIO-153 focused tests (DIO-153, since 2026-10-01T00:04:32.504Z). Wait; do not start Playwright, a full suite, packaging or a live call."
+}

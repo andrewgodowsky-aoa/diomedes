@@ -1,0 +1,15 @@
+
+ RUN  v3.2.7 F:/Diomedes/diomedes-wt/staff-credit-integrity/services/control-plane
+
+ Γ£ô tests/customer-access.test.ts (20 tests) 714ms
+ Γ£ô tests/gateway-funding-login.test.ts (16 tests) 492ms
+ Γ£ô tests/staff-funding.test.ts (12 tests) 425ms
+ Γ£ô tests/funding-permissions.test.ts (4 tests) 131ms
+ Γ£ô tests/staff-funding-postgres.integration.test.ts (9 tests | 5 skipped) 7ms
+ Γ£ô tests/staff-keys.test.ts (11 tests) 108ms
+ Γ£ô tests/config.test.ts (38 tests) 10ms
+
+ Test Files  7 passed (7)
+      Tests  105 passed | 5 skipped (110)
+   Start at  20:05:51
+   Duration  6.48s (transform 401ms, setup 63ms, collect 1.99s, tests 1.89s, environment 1ms, prepare 628ms)
