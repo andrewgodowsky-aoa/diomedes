@@ -9,7 +9,8 @@
  *
  * Two services, both over FundingService:
  * - CreditPurchaseService: quote, buy and read. It verifies membership and the owner or admin role,
- *   makes the pending row, asks Stripe for a Checkout Session by fetch, and answers where to pay.
+ *   makes sure the business has its one Stripe customer (made at Stripe and stored before its first session), makes the
+ *   pending row, asks Stripe for a Checkout Session by fetch, and answers where to pay.
  * - StripeWebhookService: the receiver for Stripe's events. It reads the raw body, verifies the
  *   Stripe-Signature header before it parses a byte, and answers 200 to anything it will not act on.
  *
@@ -47,7 +48,14 @@ const CHECKOUT_LIFETIME_SECONDS = 35 * 60;
 export const STRIPE_SIGNATURE_TOLERANCE_SECONDS = 300;
 const WEBHOOK_BODY_LIMIT = 262_144;
 const STRIPE_CHECKOUT_SESSIONS = 'https://api.stripe.com/v1/checkout/sessions';
+const STRIPE_CUSTOMERS = 'https://api.stripe.com/v1/customers';
 const STRIPE_TIMEOUT_MS = 10_000;
+/**
+ * The customer call runs inside a database transaction that holds the business's lock (PaymentLedger.ensureCustomer), and
+ * inTransaction (src/postgres.ts) gives a waiting purchase 3 seconds for a lock and an open transaction 6 seconds idle. So this
+ * call is held under both: a slow Stripe fails this one purchase, which can be retried, and never another one's wait.
+ */
+export const STRIPE_CUSTOMER_TIMEOUT_MS = 2_500;
 
 export const CREDIT_PURCHASES_UNAVAILABLE = 'Buying credits isn\'t available right now. Try again later.';
 export const NOT_OWNER_OR_ADMIN = 'Only a Business owner or a Manager can buy credits for this business.';
@@ -125,8 +133,17 @@ export interface VerifiedPayment {
  * (PostgresRepository), the receiver path, never by the funding login.
  */
 export interface PaymentLedger {
-  /** The business's stored Stripe customer from an earlier verified payment, or null. Our own row, nothing else. */
+  /** The business's stored Stripe customer, or null when it has none yet. Our own row, nothing else. */
   storedCustomer(ref: { tenantId: string; organizationId: string }): Promise<string | null>;
+  /**
+   * The business's one Stripe customer, made before its first Checkout Session. Under a lock held per business, the same
+   * lock a paid event takes, it reads the stored customer and answers it; when there is none it runs `make` (which asks
+   * Stripe for a customer and answers the id Stripe gave) and stores that id in the same locked step. So two first
+   * purchases made at once share one customer: the second waits, then finds the first's row. An id is trusted only from
+   * `make`'s own Stripe answer, checked to be a Stripe customer id, or from our stored row, never from a request. When `make`
+   * throws nothing is stored and the error reaches the caller.
+   */
+  ensureCustomer(ref: { tenantId: string; organizationId: string }, make: () => Promise<string>): Promise<string>;
   /**
    * Store a verified paid event, and the business's customer when it has none yet, in one transaction. Idempotent by
    * event id. A 409 AccountError when the event is already stored with other contents, when the customer belongs to
@@ -139,8 +156,8 @@ export type { CreditQuote, CreditPurchaseAnswer, CreditPurchaseRead };
 
 export interface CreditPurchaseOptions {
   settings: BillingSettings;
-  /** Where a business's stored Stripe customer is read, so a repeat purchase reuses it. */
-  ledger: Pick<PaymentLedger, 'storedCustomer'>;
+  /** Where a business's one Stripe customer is read, or made and stored the first time, so every purchase reuses it. */
+  ledger: Pick<PaymentLedger, 'ensureCustomer'>;
   /** The transport to Stripe. Tests and the faux cloud pass their own; the Worker uses the global fetch. */
   fetch?: typeof globalThis.fetch;
   now?: () => number;
@@ -153,6 +170,10 @@ export interface CreditPurchaseOptions {
 }
 
 const checkoutSessionSchema = z.object({ id: z.string().regex(/^cs_[A-Za-z0-9_]{1,250}$/), url: z.string() });
+const customerSchema = z.object({ id: z.string().regex(CUSTOMER_ID) });
+
+/** Stripe would not make the business's customer. Kept apart from a database failure, which is not this and is not hidden. */
+class CustomerNotMade extends Error {}
 
 type BuyingFunding = Pick<FundingService, 'startCreditPurchase' | 'attachCheckoutSession' | 'failCreditPurchase' | 'readCreditPurchase'>;
 
@@ -214,9 +235,16 @@ export class CreditPurchaseService {
       throw new AccountError(503, CREDIT_PURCHASES_UNAVAILABLE);
     }
     const ref = { tenantId: snapshot.organization.tenantId, organizationId: snapshot.organization.id, purchaseId: this.newId() };
-    // Our own stored row or nothing: a customer id is never taken from a request. Read before anything is written,
-    // so a read that fails leaves no purchase behind.
-    const customerId = await this.options.ledger.storedCustomer({ tenantId: ref.tenantId, organizationId: ref.organizationId });
+    // The business's one customer, before anything else is written, so a customer that could not be read or made leaves no
+    // purchase behind. From our own stored row or Stripe's own answer to our own request: never from a request to us.
+    let customerId: string;
+    try {
+      customerId = await this.options.ledger.ensureCustomer({ tenantId: ref.tenantId, organizationId: ref.organizationId },
+        () => this.createCustomer(stripeSecretKey, ref));
+    } catch (error) {
+      if (error instanceof CustomerNotMade) throw new AccountError(503, PAYMENT_PAGE_UNAVAILABLE);
+      throw error;
+    }
     await this.funding.startCreditPurchase({ ...ref, personId: snapshot.person.id, credits, amountCents });
     const session = await this.checkoutSession(stripeSecretKey, ref, credits, amountCents, returnBase, customerId);
     if (session === null) {
@@ -235,8 +263,42 @@ export class CreditPurchaseService {
     return { purchaseId: ref.purchaseId, checkoutUrl: session.url, credits, amountCents };
   }
 
+  /**
+   * POST /v1/customers: the business's Stripe customer, carrying our business and tenant ids as metadata and nothing about
+   * the buyer. The idempotency key is derived from the tenant and the business alone, so a retry (a commit that failed after
+   * Stripe answered, say) gets the same customer back from Stripe instead of a second one. Throws CustomerNotMade when
+   * Stripe refuses, cannot be reached or answers something that is not a customer.
+   */
+  private async createCustomer(secretKey: string, ref: { tenantId: string; organizationId: string; purchaseId: string }): Promise<string> {
+    const form = new URLSearchParams([['metadata[organization_id]', ref.organizationId], ['metadata[tenant_id]', ref.tenantId]]);
+    const key = `nectovia-customer-${await sha256Hex(encoder.encode(JSON.stringify(['stripe-customer', ref.tenantId, ref.organizationId])))}`;
+    let answer: unknown;
+    try {
+      const response = await this.send(STRIPE_CUSTOMERS, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${secretKey}`, 'Content-Type': 'application/x-www-form-urlencoded', 'Idempotency-Key': key, Accept: 'application/json' },
+        body: form.toString(),
+        signal: AbortSignal.timeout(STRIPE_CUSTOMER_TIMEOUT_MS),
+      });
+      if (!response.ok) {
+        console.error(JSON.stringify({ event: 'credit-purchase-customer-refused', purchaseId: ref.purchaseId, status: response.status }));
+        throw new CustomerNotMade();
+      }
+      answer = await response.json();
+    } catch (error) {
+      if (!(error instanceof CustomerNotMade)) console.error(JSON.stringify({ event: 'credit-purchase-customer-unreachable', purchaseId: ref.purchaseId }));
+      throw new CustomerNotMade();
+    }
+    const parsed = customerSchema.safeParse(answer);
+    if (!parsed.success) {
+      console.error(JSON.stringify({ event: 'credit-purchase-customer-unreadable', purchaseId: ref.purchaseId }));
+      throw new CustomerNotMade();
+    }
+    return parsed.data.id;
+  }
+
   private async checkoutSession(secretKey: string, ref: { tenantId: string; organizationId: string; purchaseId: string }, credits: number, amountCents: number, returnBase: string,
-    customerId: string | null) {
+    customerId: string) {
     const back = `${returnBase}/billing/return?purchase=${ref.purchaseId}`;
     const form = new URLSearchParams([
       ['mode', 'payment'],
@@ -248,9 +310,9 @@ export class CreditPurchaseService {
       ['metadata[purchase_id]', ref.purchaseId],
       ['metadata[organization_id]', ref.organizationId],
       ['metadata[tenant_id]', ref.tenantId],
-      // One reusable customer per business: a repeat purchase passes the stored customer, and a first one asks Stripe to
-      // make a customer, whose id comes back in the verified paid event.
-      customerId === null ? ['customer_creation', 'always'] : ['customer', customerId],
+      // One reusable customer per business, made and stored before the session (ensureCustomer): every session names it, so
+      // the paid event of any of the business's purchases names that same customer.
+      ['customer', customerId],
       ['expires_at', String(Math.floor(this.now() / 1000) + CHECKOUT_LIFETIME_SECONDS)],
       ['success_url', back],
       ['cancel_url', `${back}&canceled=1`],

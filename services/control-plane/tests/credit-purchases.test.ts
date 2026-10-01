@@ -16,6 +16,7 @@ import {
   CREDIT_PURCHASE_MAX_CREDITS,
   CREDIT_PURCHASE_STEP,
   CreditPurchaseService,
+  STRIPE_CUSTOMER_TIMEOUT_MS,
   StripeWebhookService,
   type PaymentLedger,
   creditPriceCents,
@@ -23,6 +24,7 @@ import {
   verifyStripeSignature,
 } from '../src/credit-purchases.js';
 import { createFauxCloud } from '../src/faux/cloud.js';
+import { FAUX_STRIPE_SECRET_KEY, fauxStripeFetch } from '../src/faux/stripe.js';
 import { DEMO_ACCOUNTS, FAUX_DEMO_PASSWORD, seedDemo } from '../src/faux/seed.js';
 import { PostgresFundingTransaction } from '../src/funding-postgres.js';
 import { memoryPaymentLedger } from '../src/faux/payment-ledger.js';
@@ -41,7 +43,12 @@ afterEach(() => vi.restoreAllMocks());
 
 interface StripeCall { url: string; method: string; headers: Record<string, string>; form: URLSearchParams }
 
-async function fixture(options: { env?: Record<string, unknown>; stripe?: (call: StripeCall, count: number) => Response | Promise<Response> } = {}) {
+/**
+ * `stripe` answers a Checkout Session create and `customer` a Customer create; each default answers as Stripe would. The customers
+ * the default makes are one per idempotency key (the first is CUSTOMER), as Stripe's own idempotency makes them.
+ */
+async function fixture(options: { env?: Record<string, unknown>; stripe?: (call: StripeCall, count: number) => Response | Promise<Response>;
+  customer?: (call: StripeCall, count: number) => Response | Promise<Response> } = {}) {
   const { accounts } = setup();
   const organization = await accounts.createOrganization('alice', 'Fernbrook Joinery');
   const bobInvite = await accounts.invite('alice', organization.id, { subject: 'user_bob', role: 'member', ttlMs: 5000 });
@@ -52,7 +59,10 @@ async function fixture(options: { env?: Record<string, unknown>; stripe?: (call:
   const repository = new FundingMemoryRepository();
   const clock = { at: now };
   const funding = new FundingService(repository, { now: () => clock.at });
+  /** The Checkout Session create calls, in order. The Customer create calls are `customerCalls`. */
   const calls: StripeCall[] = [];
+  const customerCalls: StripeCall[] = [];
+  const customersByKey = new Map<string, string>();
   // The Worker login's side: the customer and the stored verified events. A separate store from the funding rows, as the two
   // logins are separate. `hooks.afterRecord` runs once the event is stored and before the purchase is paid.
   const { state: ledgerState, ledger: memoryLedger } = memoryPaymentLedger(() => clock.at);
@@ -60,6 +70,7 @@ async function fixture(options: { env?: Record<string, unknown>; stripe?: (call:
   const ledgerCalls: string[] = [];
   const ledger: PaymentLedger = {
     storedCustomer: (ref) => { ledgerCalls.push('storedCustomer'); return memoryLedger.storedCustomer(ref); },
+    ensureCustomer: (ref, make) => { ledgerCalls.push('ensureCustomer'); return memoryLedger.ensureCustomer(ref, make); },
     recordVerifiedPayment: async (input) => {
       ledgerCalls.push('recordVerifiedPayment');
       const result = await memoryLedger.recordVerifiedPayment(input);
@@ -70,6 +81,13 @@ async function fixture(options: { env?: Record<string, unknown>; stripe?: (call:
   const stripeFetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const headers = Object.fromEntries(new Headers(init?.headers).entries());
     const call: StripeCall = { url: String(input), method: init?.method ?? 'GET', headers, form: new URLSearchParams(String(init?.body ?? '')) };
+    if (call.url === 'https://api.stripe.com/v1/customers') {
+      customerCalls.push(call);
+      if (options.customer) return options.customer(call, customerCalls.length);
+      const key = call.headers['idempotency-key'] ?? '';
+      if (!customersByKey.has(key)) customersByKey.set(key, customersByKey.size === 0 ? CUSTOMER : `cus_fixture_${customersByKey.size + 1}`);
+      return Response.json({ id: customersByKey.get(key), object: 'customer' });
+    }
     calls.push(call);
     if (options.stripe) return options.stripe(call, calls.length);
     const id = `cs_test_session${calls.length}`;
@@ -121,7 +139,7 @@ async function fixture(options: { env?: Record<string, unknown>; stripe?: (call:
   const eventBody = (type: string, object: unknown, id = 'evt_paid_1') =>
     JSON.stringify({ id, object: 'event', type, created: Math.floor(clock.at / 1000), data: { object } });
   const minutes = (count: number) => { clock.at += count * 60_000; };
-  return { accounts, organization, other, repository, funding, handler, calls, base, request, quote, buy, read, balance, sign, webhook,
+  return { accounts, organization, other, repository, funding, handler, calls, customerCalls, base, request, quote, buy, read, balance, sign, webhook,
     purchases, topUps, bought, sessionFor, eventBody, minutes, clock, ledger, ledgerState, ledgerCalls, hooks };
 }
 
@@ -240,10 +258,10 @@ describe('buying', () => {
       'metadata[organization_id]': organization.id,
       'metadata[tenant_id]': organization.tenantId,
       success_url: `${ORIGIN}/billing/return?purchase=${purchaseId}`,
-      // A business with no customer yet asks Stripe to make one.
-      customer_creation: 'always',
+      // The business's customer was made before the session, and the session names it.
+      customer: CUSTOMER,
     });
-    expect(call.form.has('customer')).toBe(false);
+    expect(call.form.has('customer_creation')).toBe(false);
     expect(form.cancel_url).toBe(`${ORIGIN}/billing/return?purchase=${purchaseId}&canceled=1`);
     // Stripe takes an expiry between 30 minutes and 24 hours out; this one is just past the shortest.
     const lifetime = Number(form.expires_at) - Math.floor(clock.at / 1000);
@@ -634,28 +652,109 @@ describe('one Stripe customer per business, and the stored event a top-up names'
     const { row } = await bought(1000);
     // Metadata that names another business does not match the stored purchase, so nothing is stored for it.
     await webhook(eventBody('checkout.session.completed', sessionFor(row, { metadata: { purchase_id: row.purchaseId, organization_id: other.id, tenant_id: other.tenantId } }), 'evt_other'));
-    expect(ledgerState).toEqual({ billingCustomers: [], verifiedEvents: [] });
+    // No event is stored: the only row is the customer the purchase itself made, before any event.
+    expect(ledgerState.verifiedEvents).toEqual([]);
+    expect(ledgerState.billingCustomers).toEqual([expect.objectContaining({ customerId: CUSTOMER })]);
     await webhook(eventBody('checkout.session.completed', sessionFor(row), 'evt_own'));
     expect(ledgerState.verifiedEvents.map((event) => [event.organizationId, event.tenantId])).toEqual([[organization.id, organization.tenantId]]);
   });
 
-  it('passes the stored customer on the next purchase and asks Stripe to make one only the first time', async () => {
-    const { bought, webhook, sessionFor, eventBody, calls, buy } = await fixture();
-    const first = await bought(100);
-    expect(calls[0].form.get('customer_creation')).toBe('always');
-    expect(calls[0].form.has('customer')).toBe(false);
-    await webhook(eventBody('checkout.session.completed', sessionFor(first.row), 'evt_a'));
+  it('makes the business\'s customer at Stripe before its first session, stores it, and reuses the stored one on every later purchase', async () => {
+    const { buy, calls, customerCalls, ledgerState, organization, webhook, sessionFor, eventBody, purchases } = await fixture();
+    expect((await buy({ credits: 100 })).status).toBe(201);
+    // Stored before any payment: it needs no verified event.
+    expect(ledgerState.billingCustomers).toEqual([{ customerId: CUSTOMER, tenantId: organization.tenantId, organizationId: organization.id }]);
+    expect(customerCalls).toHaveLength(1);
+    expect(calls[0].form.get('customer')).toBe(CUSTOMER);
+    expect(calls[0].form.has('customer_creation')).toBe(false);
     expect((await buy({ credits: 200 })).status).toBe(201);
-    expect(calls[1].form.get('customer')).toBe(CUSTOMER);
-    expect(calls[1].form.has('customer_creation')).toBe(false);
+    await webhook(eventBody('checkout.session.completed', sessionFor(purchases()[0]), 'evt_a'));
+    expect((await buy({ credits: 300 })).status).toBe(201);
+    // Stripe was asked for a customer once, and every session names that customer.
+    expect(customerCalls).toHaveLength(1);
+    expect(calls.map((call) => call.form.get('customer'))).toEqual([CUSTOMER, CUSTOMER, CUSTOMER]);
+    expect(ledgerState.billingCustomers).toHaveLength(1);
   });
 
-  it('keeps asking Stripe to make a customer until a verified event has named one', async () => {
-    const { bought, buy, calls, ledgerState } = await fixture();
-    await bought(100);
-    expect((await buy({ credits: 100 })).status).toBe(201);
-    expect(calls.map((call) => call.form.get('customer_creation'))).toEqual(['always', 'always']);
+  it('asks Stripe for the customer with the business and tenant ids as metadata, nothing about a person, and a key derived from them', async () => {
+    const { buy, customerCalls, organization, other, request } = await fixture();
+    await buy({ credits: 100 });
+    const [call] = customerCalls;
+    expect(call.url).toBe('https://api.stripe.com/v1/customers');
+    expect(call.method).toBe('POST');
+    expect(call.headers.authorization).toBe(`Bearer ${KEY}`);
+    expect(call.headers['content-type']).toBe('application/x-www-form-urlencoded');
+    expect([...call.form.entries()]).toEqual([['metadata[organization_id]', organization.id], ['metadata[tenant_id]', organization.tenantId]]);
+    const key = `nectovia-customer-${createHash('sha256').update(JSON.stringify(['stripe-customer', organization.tenantId, organization.id])).digest('hex')}`;
+    expect(call.headers['idempotency-key']).toBe(key);
+    // Another business has another key.
+    await request(`/account/organizations/${other.id}/credit-purchases`, { method: 'POST', token: 'dave', body: JSON.stringify({ credits: 100 }) });
+    expect(customerCalls).toHaveLength(2);
+    expect(customerCalls[1].headers['idempotency-key']).not.toBe(key);
+  });
+
+  it('gives two first purchases made at once one customer, so both are paid and both top-ups are recorded against it', async () => {
+    // Stripe is slow to answer the customer call, so the second purchase starts while the first is still waiting on it.
+    const { buy, purchases, customerCalls, calls, ledgerState, webhook, sessionFor, eventBody, topUps, organization } = await fixture({
+      customer: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        return Response.json({ id: 'cus_slow_one', object: 'customer' });
+      },
+    });
+    const answers = await Promise.all([buy({ credits: 100 }), buy({ credits: 300 })]);
+    expect(answers.map((answer) => answer.status)).toEqual([201, 201]);
+    expect(customerCalls).toHaveLength(1);
+    const customer = ledgerState.billingCustomers[0].customerId;
+    expect(ledgerState.billingCustomers).toEqual([{ customerId: customer, tenantId: organization.tenantId, organizationId: organization.id }]);
+    expect(calls.map((call) => call.form.get('customer'))).toEqual([customer, customer]);
+    // Both are paid before either event lands, each event naming the customer its own session was made for.
+    const [first, second] = purchases();
+    const bodies = [first, second].map((row, index) => eventBody('checkout.session.completed', sessionFor(row, { customer }), `evt_both_${index}`));
+    expect((await Promise.all(bodies.map((body) => webhook(body)))).map((answer) => answer.status)).toEqual([200, 200]);
+    expect(purchases().map((row) => row.state)).toEqual(['paid', 'paid']);
+    expect(topUps()).toHaveLength(2);
+    expect(topUps().map((row) => row.sourceEventId).sort()).toEqual(['evt_both_0', 'evt_both_1']);
+    expect(ledgerState.billingCustomers).toHaveLength(1);
+    expect(ledgerState.verifiedEvents.map((event) => event.customerId)).toEqual([customer, customer]);
+  });
+
+  it('gets the same customer back when a retry follows a customer that was made but not stored', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { buy, customerCalls, ledger, ledgerState, purchases } = await fixture();
+    // Stripe answers, and then the store fails before the row is kept: nothing is stored, and no purchase is left.
+    vi.spyOn(ledger, 'ensureCustomer').mockImplementationOnce(async (_ref, make) => { await make(); throw new Error('connection reset'); });
+    expect((await buy({ credits: 100 })).status).toBeGreaterThanOrEqual(500);
     expect(ledgerState.billingCustomers).toEqual([]);
+    expect(purchases()).toEqual([]);
+    expect((await buy({ credits: 100 })).status).toBe(201);
+    // The retry asked with the same key, so Stripe answered with the customer it had already made.
+    expect(customerCalls).toHaveLength(2);
+    expect(customerCalls[1].headers['idempotency-key']).toBe(customerCalls[0].headers['idempotency-key']);
+    expect(ledgerState.billingCustomers.map((row) => row.customerId)).toEqual([CUSTOMER]);
+  });
+
+  it('leaves no purchase and answers 503 when Stripe will not make the customer, or answers something that is not one', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const answers = [() => Response.json({ error: { message: 'No.' } }, { status: 400 }), () => { throw new TypeError('fetch failed'); }, () => new Response('upstream', { status: 502 }),
+      () => Response.json({ object: 'customer' }), () => Response.json({ id: 'cus_' }), () => Response.json({ id: 'not_a_customer' }), () => Response.json({ id: { nested: 'cus_x' } })];
+    for (const customer of answers) {
+      const { buy, purchases, calls, ledgerState } = await fixture({ customer });
+      const answer = await buy({ credits: 100 });
+      expect(answer.status).toBe(503);
+      expect((await answer.json()).error).toBe('The payment page couldn\'t be opened. Try again.');
+      expect(purchases()).toEqual([]);
+      expect(calls).toEqual([]);
+      expect(ledgerState.billingCustomers).toEqual([]);
+    }
+    expect(logged.mock.calls.map((call) => JSON.parse(String(call[0])).event)).toEqual(expect.arrayContaining(
+      ['credit-purchase-customer-refused', 'credit-purchase-customer-unreachable', 'credit-purchase-customer-unreadable']));
+  });
+
+  it('holds the customer call under the limits the lock is taken with: a waiting purchase gets 3 seconds, an open transaction 6 idle', () => {
+    const adapter = readFileSync(new URL('../src/postgres.ts', import.meta.url), 'utf8');
+    expect(adapter).toContain("SET LOCAL lock_timeout = '3s'");
+    expect(adapter).toContain("SET LOCAL idle_in_transaction_session_timeout = '6s'");
+    expect(STRIPE_CUSTOMER_TIMEOUT_MS).toBeLessThan(3000);
   });
 
   it('reuses one customer for every payment of a business, and stores each event once', async () => {
@@ -688,12 +787,16 @@ describe('one Stripe customer per business, and the stored event a top-up names'
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const { bought, webhook, sessionFor, eventBody, ledgerState, topUps, organization, other, ledger } = await fixture();
     // Another business already owns the customer a paid event now names for this one.
-    await ledger.recordVerifiedPayment({ eventId: 'evt_dave', customerId: CUSTOMER, organizationId: other.id, tenantId: other.tenantId,
+    const daves = 'cus_fixture_dave';
+    await ledger.recordVerifiedPayment({ eventId: 'evt_dave', customerId: daves, organizationId: other.id, tenantId: other.tenantId,
       payloadHash: 'a'.repeat(64), eventType: 'checkout.session.completed', payload: {} });
     const { row } = await bought(100);
-    expect((await webhook(eventBody('checkout.session.completed', sessionFor(row), 'evt_a'))).status).toBe(200);
+    expect((await webhook(eventBody('checkout.session.completed', sessionFor(row, { customer: daves }), 'evt_a'))).status).toBe(200);
     expect(ledgerState.verifiedEvents.map((event) => event.eventId)).toEqual(['evt_dave']);
-    expect(ledgerState.billingCustomers).toEqual([{ customerId: CUSTOMER, tenantId: other.tenantId, organizationId: other.id }]);
+    expect(ledgerState.billingCustomers).toEqual([
+      { customerId: daves, tenantId: other.tenantId, organizationId: other.id },
+      { customerId: CUSTOMER, tenantId: organization.tenantId, organizationId: organization.id },
+    ]);
     expect(topUps()).toEqual([]);
     expect(organization.id).not.toBe(other.id);
   });
@@ -704,7 +807,9 @@ describe('one Stripe customer per business, and the stored event a top-up names'
     const { row } = await bought(100);
     for (const [index, customer] of [null, undefined, 'not_a_customer', 'cus_', { id: 'cus_object' }, 42].entries())
       expect((await webhook(eventBody('checkout.session.completed', sessionFor(row, { customer }), `evt_none_${index}`))).status).toBe(200);
-    expect(ledgerState).toEqual({ billingCustomers: [], verifiedEvents: [] });
+    // No event is stored: the only row is the customer the purchase itself made, before any event.
+    expect(ledgerState.verifiedEvents).toEqual([]);
+    expect(ledgerState.billingCustomers).toEqual([expect.objectContaining({ customerId: CUSTOMER })]);
     expect(topUps()).toEqual([]);
     expect(purchases()[0].state).toBe('pending');
     expect(logged.mock.calls.some((call) => JSON.parse(String(call[0])).event === 'credit-purchase-no-customer')).toBe(true);
@@ -721,7 +826,9 @@ describe('one Stripe customer per business, and the stored event a top-up names'
     expect((await webhook(eventBody('checkout.session.completed', sessionFor(row, { payment_status: 'unpaid' }), 'evt_unpaid'))).status).toBe(200);
     expect((await webhook(eventBody('checkout.session.expired', sessionFor(row, { payment_status: 'unpaid' }), 'evt_expired'))).status).toBe(200);
     expect((await webhook(eventBody('checkout.session.async_payment_failed', sessionFor(row), 'evt_failed'))).status).toBe(200);
-    expect(ledgerState).toEqual({ billingCustomers: [], verifiedEvents: [] });
+    // No event is stored: the only row is the customer the purchase itself made, before any event.
+    expect(ledgerState.verifiedEvents).toEqual([]);
+    expect(ledgerState.billingCustomers).toEqual([expect.objectContaining({ customerId: CUSTOMER })]);
     expect(ledgerCalls.filter((call) => call === 'recordVerifiedPayment')).toEqual([]);
     // A replay of a paid event, once it is paid, is not stored a second time either.
     const paid = await bought(100);
@@ -763,10 +870,10 @@ describe('one Stripe customer per business, and the stored event a top-up names'
     expect(topUps()).toHaveLength(1);
   });
 
-  it('reads the stored customer before anything is written, and leaves no purchase when that read fails', async () => {
+  it('has the customer before anything is written, and leaves no purchase when that fails', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const { buy, purchases, calls, ledger } = await fixture();
-    vi.spyOn(ledger, 'storedCustomer').mockRejectedValueOnce(new Error('connection reset'));
+    vi.spyOn(ledger, 'ensureCustomer').mockRejectedValueOnce(new Error('connection reset'));
     expect((await buy({ credits: 100 })).status).toBeGreaterThanOrEqual(500);
     expect(purchases()).toEqual([]);
     expect(calls).toEqual([]);
@@ -807,9 +914,10 @@ describe('what a customer reads', () => {
     const { quote, buy, read, handler, request, base } = await fixture({ env: { ...env, CREDIT_PRICE_CENTS_PER_100: undefined } });
     const unset = await fixture({ env: { ...env, STRIPE_SECRET_KEY: undefined } });
     const failing = await fixture({ stripe: () => new Response('no', { status: 500 }) });
+    const noCustomer = await fixture({ customer: () => new Response('no', { status: 500 }) });
     const answers = [
       await quote(100, 'bob'), await quote(150), await quote(100), await buy({ credits: 100 }), await read('cpurch_nope'),
-      await unset.buy({ credits: 100 }), await failing.buy({ credits: 100 }), await request(`${base}/nowhere`),
+      await unset.buy({ credits: 100 }), await failing.buy({ credits: 100 }), await noCustomer.buy({ credits: 100 }), await request(`${base}/nowhere`),
       await handler(new Request(`${ORIGIN}/billing/return`), env),
     ];
     for (const answer of answers) {
@@ -943,7 +1051,7 @@ describe('the faux cloud', () => {
     expect((await cloud.handle(new Request(`http://127.0.0.1:8795/faux/checkout/cs_faux_${'a'.repeat(24)}`))).status).toBe(404);
   });
 
-  it('makes the business one customer on its first payment and reuses it on the next', async () => {
+  it('makes the business one customer before its first session and reuses it on the next', async () => {
     const { cloud, organizationId, call } = await faux();
     const buy = async (credits: number) => {
       const body = await (await call('POST', `/account/organizations/${organizationId}/credit-purchases`, { credits })).json();
@@ -951,10 +1059,11 @@ describe('the faux cloud', () => {
     };
     const first = await buy(100);
     const { tenantId } = cloud.store.snapshot().funding.creditPurchases[0];
-    expect(await cloud.paymentLedger.storedCustomer({ tenantId, organizationId })).toBeNull();
-    await cloud.completeCheckout(first);
+    // Made before the session, so before any payment.
     const customer = await cloud.paymentLedger.storedCustomer({ tenantId, organizationId });
     expect(customer).toMatch(/^cus_faux_[a-z0-9]+$/);
+    expect(cloud.store.snapshot().funding.verifiedEvents).toEqual([]);
+    await cloud.completeCheckout(first);
     const second = await buy(200);
     await cloud.completeCheckout(second);
     const { billingCustomers, verifiedEvents, topUps } = cloud.store.snapshot().funding;
@@ -966,6 +1075,21 @@ describe('the faux cloud', () => {
     expect(cloud.store.snapshot().funding.verifiedEvents).toHaveLength(2);
   });
 
+  it('gives two first purchases made at once one customer, and both are paid and recorded against it', async () => {
+    const { cloud, organizationId, call } = await faux();
+    const answers = await Promise.all([call('POST', `/account/organizations/${organizationId}/credit-purchases`, { credits: 100 }),
+      call('POST', `/account/organizations/${organizationId}/credit-purchases`, { credits: 200 })]);
+    expect(answers.map((answer) => answer.status)).toEqual([201, 201]);
+    const sessions = await Promise.all(answers.map(async (answer) => new URL((await answer.json()).checkoutUrl).pathname.split('/').pop()!));
+    const done = await Promise.all(sessions.map((session) => cloud.completeCheckout(session)));
+    expect(done.map((row) => row.status)).toEqual([200, 200]);
+    const { billingCustomers, verifiedEvents, topUps, creditPurchases } = cloud.store.snapshot().funding;
+    expect(billingCustomers).toHaveLength(1);
+    expect(verifiedEvents.map((event) => event.customerId)).toEqual([billingCustomers[0].customerId, billingCustomers[0].customerId]);
+    expect(creditPurchases.filter((row) => row.organizationId === organizationId).map((row) => row.state)).toEqual(['paid', 'paid']);
+    expect(topUps.filter((row) => verifiedEvents.some((event) => event.eventId === row.sourceEventId))).toHaveLength(2);
+  });
+
   it('can leave the price unset, which answers 503 as the Worker does', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const { organizationId, call } = await faux({ creditPriceCentsPer100: null });
@@ -975,5 +1099,54 @@ describe('the faux cloud', () => {
   it('prices from the option it is given, and quotes a member out', async () => {
     const { organizationId, call } = await faux({ creditPriceCentsPer100: 1500 });
     expect(await (await call('GET', `/account/organizations/${organizationId}/credit-purchases/quote?credits=200`)).json()).toEqual({ credits: 200, amountCents: 3000, currency: 'usd' });
+  });
+});
+
+describe('the faux Stripe', () => {
+  const customerRequest = (key: string | null, body = 'metadata[organization_id]=org_1&metadata[tenant_id]=tenant_1', secret = FAUX_STRIPE_SECRET_KEY) => ({
+    method: 'POST',
+    headers: { Authorization: `Bearer ${secret}`, 'Content-Type': 'application/x-www-form-urlencoded', ...(key === null ? {} : { 'Idempotency-Key': key }) },
+    body,
+  });
+  const CUSTOMERS = 'https://api.stripe.com/v1/customers';
+
+  it('makes a customer once per idempotency key: a retry with the same key returns the same id, and another key makes another', async () => {
+    const stripe = fauxStripeFetch();
+    const first = await (await stripe(CUSTOMERS, customerRequest('key-1'))).json();
+    expect(first.id).toMatch(/^cus_faux_[a-z0-9]{14}$/);
+    expect((await (await stripe(CUSTOMERS, customerRequest('key-1'))).json()).id).toBe(first.id);
+    expect(stripe.customers).toHaveLength(1);
+    const other = await (await stripe(CUSTOMERS, customerRequest('key-2'))).json();
+    expect(other.id).not.toBe(first.id);
+    expect(stripe.customers).toHaveLength(2);
+    // The same key with other parameters is refused, as Stripe refuses it.
+    expect((await stripe(CUSTOMERS, customerRequest('key-1', 'metadata[organization_id]=org_2&metadata[tenant_id]=tenant_1'))).status).toBe(400);
+  });
+
+  it('refuses a customer call with no key, the wrong key, a missing id, or a field about a person', async () => {
+    const stripe = fauxStripeFetch();
+    expect((await stripe(CUSTOMERS, customerRequest(null))).status).toBe(400);
+    expect((await stripe(CUSTOMERS, customerRequest('key-1', undefined, 'sk_test_other'))).status).toBe(401);
+    expect((await stripe(CUSTOMERS, customerRequest('key-1', 'metadata[tenant_id]=tenant_1'))).status).toBe(400);
+    for (const field of ['email=buyer%40example.test', 'name=A+Buyer', 'address[line1]=1+Test+Street', 'phone=555'])
+      expect((await stripe(CUSTOMERS, customerRequest('key-1', `metadata[organization_id]=org_1&metadata[tenant_id]=tenant_1&${field}`))).status, field).toBe(400);
+    expect((await stripe(CUSTOMERS, { ...customerRequest('key-1'), method: 'GET' })).status).toBe(404);
+    expect(stripe.customers).toEqual([]);
+  });
+
+  it('wants the business\'s customer on every session, and refuses customer_creation outright', async () => {
+    const stripe = fauxStripeFetch();
+    const session = (extra: string) => stripe('https://api.stripe.com/v1/checkout/sessions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${FAUX_STRIPE_SECRET_KEY}`, 'Idempotency-Key': 'cpurch_1' },
+      body: `mode=payment&success_url=http%3A%2F%2F127.0.0.1%3A8795%2Fbilling%2Freturn&cancel_url=http%3A%2F%2F127.0.0.1%3A8795%2Fbilling%2Freturn&client_reference_id=cpurch_1&line_items[0][price_data][unit_amount]=1200${extra}`,
+    });
+    expect((await session('')).status).toBe(400);
+    expect((await session('&customer_creation=always')).status).toBe(400);
+    expect((await session('&customer=cus_faux_abc&customer_creation=always')).status).toBe(400);
+    expect((await session('&customer=not_a_customer')).status).toBe(400);
+    expect(stripe.created).toEqual([]);
+    const made = await (await session('&customer=cus_faux_abc')).json();
+    expect(stripe.customerOf(made.id)).toBe('cus_faux_abc');
   });
 });

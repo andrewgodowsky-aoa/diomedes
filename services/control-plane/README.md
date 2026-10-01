@@ -361,7 +361,8 @@ Settings (Worker settings, read on every call):
   business's Stripe customer and the verified events are not funding writes:
   they run as the Worker login (`DATABASE_URL`, `cp_runtime`), which needs the
   updated `scripts/runtime-permissions.sql` (SELECT and INSERT on
-  `billing_customers` and `webhook_inbox`, nothing more).
+  `billing_customers` and `webhook_inbox`, nothing more; making the customer
+  adds no privilege).
 
 Register this endpoint in Stripe (test mode first): `https://accounts.diomedes.net/billing/stripe/webhook`.
 Subscribe it to these events:
@@ -401,9 +402,9 @@ needs its Checkout Session to be the one stored on a pending purchase, the
 purchase, business and tenant in its metadata to be that row's own, and its
 `amount_total` and currency to equal the stored amount. A paid event is then
 applied in two steps. First the Worker login stores the verified event in
-`webhook_inbox`, and the business's Stripe customer in `billing_customers` when
-it has none, against the stored purchase's own business and tenant (never the
-event's metadata); the stored payload keeps the fields the receiver acts on, not
+`webhook_inbox`, against the stored purchase's own business and tenant (never the
+event's metadata), and checks that the customer the event names is the business's
+stored one; the stored payload keeps the fields the receiver acts on, not
 the buyer's name, email or address, and `payload_hash` is the SHA-256 of the
 verified raw body. Then the funding login, in one transaction, marks the purchase
 paid and records the top-up (the credits bought, keyed by the purchase id, with
@@ -413,15 +414,30 @@ the receiver checks all of that, read-only, before it stores anything.
 `GET /billing/return` is the plain page Stripe sends the buyer back to; it
 says to go back to Nectovia and echoes nothing from the request.
 
-One reusable Stripe customer per business. The first purchase asks Checkout for
-`customer_creation=always`; the verified paid event names the customer Stripe made,
-and that becomes the business's customer in `billing_customers`. Every later
-purchase passes `customer=<the stored id>`. A customer id is never taken from a
-request, only from a verified event or our own stored row. A paid event whose
-customer is not the business's stored one (two first purchases both paid before
-either event arrived, say) is refused: nothing is stored or paid, the receiver
-answers 200 and logs `credit-purchase-ledger-refused` with the event id, and the
-money is repaired by hand.
+One reusable Stripe customer per business, made before its first Checkout Session.
+A purchase first has the business's customer: on the Worker login, in one
+transaction under a per-business advisory lock (the same lock a paid event takes),
+it reads `billing_customers`; when there is none it asks Stripe for one
+(`POST /v1/customers`, with the business and tenant ids as metadata and nothing
+about a person, and an `Idempotency-Key` derived from the tenant and business, so
+a retry gets the same customer back) and stores that id in the same transaction.
+Every session then passes `customer=<the stored id>`; none asks Checkout for
+`customer_creation`. So two first purchases made at once share one customer: the
+second waits on the lock and finds the first's row, and both paid events name that
+customer. A customer id is never taken from a request, only from Stripe's own
+answer to our own call or from our stored row. The row needs no verified event
+(`billing_customers` in 002 holds only the customer, business and tenant; only
+`webhook_inbox` and the top-up that names it need an event), so no migration
+changed. Stripe is asked for the customer with a 2.5 second limit, because the
+lock is held across the call and the database gives a waiting purchase 3 seconds
+for a lock and an open transaction 6 seconds idle; a slow Stripe fails that one
+purchase with a 503 and no purchase row, and the retry reuses the same customer.
+A paid event whose customer is still not the business's stored one is refused:
+nothing is stored or paid, the receiver answers 200 and logs
+`credit-purchase-ledger-refused` with the event id, and the money is repaired by
+hand. Only a session made before this change, which asked Checkout to make the
+customer, can still be paid with a customer other than the stored one; a business
+with no stored customer takes the one that session's verified event names.
 
 Migration 015 adds `credit_purchases` and nothing else: it is additive, and
 `credit_topups` keeps its reference to `webhook_inbox` (whose rows reference
@@ -436,7 +452,9 @@ future inbox processor would take, so nothing marks it processed. The runner
 refuses 015 until 011, 012, 013 and 014 are in its list before it.
 
 The faux cloud buys without Stripe: `CREDIT_PRICE_CENTS_PER_100` from the
-environment (or the faux test price when it is unset), a local checkout page at
+environment (or the faux test price when it is unset), a faux `POST /v1/customers`
+(one customer per idempotency key, as Stripe makes them) beside the faux Checkout
+Session call, a local checkout page at
 `/faux/checkout/:sessionId`, and `FauxCloud.completeCheckout(sessionId)`, which
 posts the same signed event to the Worker's own webhook. The page's button does
 the same.

@@ -1,6 +1,6 @@
 /**
- * A stand-in for the two things the faux cloud needs from Stripe so the desktop can buy credits without it:
- * the Checkout Session create call, and the signed event Stripe sends when a session is paid.
+ * A stand-in for the three things the faux cloud needs from Stripe so the desktop can buy credits without it:
+ * the Customer create call, the Checkout Session create call, and the signed event Stripe sends when a session is paid.
  *
  * Nothing here reaches the network. The session it makes carries a local checkout page (served by the faux
  * cloud, /faux/checkout/:id) in place of checkout.stripe.com, and a test helper pays it by posting the same
@@ -22,46 +22,65 @@ function randomText(length: number): string {
 const fauxSessionId = () => `cs_faux_${randomText(24)}`;
 const fauxCustomerId = () => `cus_faux_${randomText(14)}`;
 
-/** The faux Stripe's own memory of what it made: the customer each session belongs to, and the form that asked for it. */
+/** The faux Stripe's own memory of what it made: the customers, the customer each session belongs to, and the form that asked for it. */
 export type FauxStripeFetch = typeof globalThis.fetch & {
-  /** The customer a session was made for: the one the form passed, or a new one when it asked for a customer to be created. */
+  /** The customer a session was made for: the one its form named. */
   customerOf(sessionId: string): string | null;
   /** The form each session was created from, in the order they were made. */
   readonly created: { sessionId: string; customerId: string; form: URLSearchParams }[];
+  /** The customers made, one per idempotency key: a retry with the same key is answered with the customer already made, not a second. */
+  readonly customers: { customerId: string; idempotencyKey: string; form: URLSearchParams }[];
 };
 
+/** The fields of a customer the faux Stripe takes: our own business and tenant ids as metadata, and nothing about a person. */
+const CUSTOMER_FIELDS = ['metadata[organization_id]', 'metadata[tenant_id]'];
+
 /**
- * POST https://api.stripe.com/v1/checkout/sessions, answered locally. It reads the same form the Worker
- * sends, refuses anything the real call would refuse for a missing field or key, and answers a session whose
- * page is on the origin the buyer was sent back to. A payment session must say whose it is the way Stripe's own API
- * lets it: an existing `customer`, or `customer_creation=always`, never both and never neither, so a purchase that
- * forgets either fails here as it would not in production, where a guest checkout is also allowed.
+ * POST https://api.stripe.com/v1/customers and POST https://api.stripe.com/v1/checkout/sessions, answered locally. They read
+ * the same forms the Worker sends and refuse anything the real calls would refuse for a missing field or key. A customer is
+ * made once per idempotency key, as Stripe does: the same key again answers the same customer. A payment session must name an
+ * existing `customer` (`customer_creation` is refused outright, so a purchase that goes back to asking Checkout to make
+ * one fails here), and answers a session whose page is on the origin the buyer was sent back to.
  */
 export function fauxStripeFetch(): FauxStripeFetch {
   const created: FauxStripeFetch['created'] = [];
+  const customers: FauxStripeFetch['customers'] = [];
   const handler = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     const refuse = (status: number, message: string) => Response.json({ error: { message } }, { status });
-    if (url !== 'https://api.stripe.com/v1/checkout/sessions' || init?.method !== 'POST') return refuse(404, 'The faux Stripe knows only the Checkout Session create call.');
+    if (!['https://api.stripe.com/v1/checkout/sessions', 'https://api.stripe.com/v1/customers'].includes(url) || init?.method !== 'POST')
+      return refuse(404, 'The faux Stripe knows only the Customer and Checkout Session create calls.');
     const headers = new Headers(init.headers);
     if (headers.get('authorization') !== `Bearer ${FAUX_STRIPE_SECRET_KEY}`) return refuse(401, 'Invalid API key.');
-    if (!headers.get('idempotency-key')) return refuse(400, 'An idempotency key is required here.');
+    const idempotencyKey = headers.get('idempotency-key');
+    if (!idempotencyKey) return refuse(400, 'An idempotency key is required here.');
     const form = new URLSearchParams(String(init.body ?? ''));
+    if (url === 'https://api.stripe.com/v1/customers') {
+      for (const field of CUSTOMER_FIELDS) if (!form.get(field)) return refuse(400, `Missing required param: ${field}.`);
+      for (const field of form.keys()) if (!CUSTOMER_FIELDS.includes(field)) return refuse(400, `The faux Stripe takes no ${field} for a customer.`);
+      const made = customers.find((row) => row.idempotencyKey === idempotencyKey);
+      if (made && made.form.toString() !== form.toString())
+        return refuse(400, 'Keys for idempotent requests can only be used with the same parameters they were first used with.');
+      const customerId = made?.customerId ?? fauxCustomerId();
+      if (!made) customers.push({ customerId, idempotencyKey, form });
+      return Response.json({ id: customerId, object: 'customer', metadata: { organization_id: form.get('metadata[organization_id]'), tenant_id: form.get('metadata[tenant_id]') } });
+    }
     for (const field of ['mode', 'success_url', 'cancel_url', 'client_reference_id', 'line_items[0][price_data][unit_amount]'])
       if (!form.get(field)) return refuse(400, `Missing required param: ${field}.`);
     if (form.get('mode') !== 'payment') return refuse(400, 'Only payment mode is faux.');
     const existing = form.get('customer');
-    const creation = form.get('customer_creation');
-    if (existing !== null && creation !== null) return refuse(400, 'customer_creation cannot be used with customer.');
-    if (existing === null && creation !== 'always') return refuse(400, 'The faux Stripe wants customer, or customer_creation=always.');
-    if (existing !== null && !/^cus_[A-Za-z0-9_]{1,128}$/.test(existing)) return refuse(400, 'No such customer.');
+    if (form.has('customer_creation')) return refuse(400, 'The faux Stripe takes no customer_creation: the business has its customer before its session.');
+    if (existing === null) return refuse(400, "The faux Stripe wants the business's customer on the session.");
+    // Any well-formed id is taken: a faux cloud that is restarted keeps its stored customer but not this memory of it.
+    if (!/^cus_[A-Za-z0-9_]{1,128}$/.test(existing)) return refuse(400, 'No such customer.');
     const id = fauxSessionId();
-    created.push({ sessionId: id, customerId: existing ?? fauxCustomerId(), form });
+    created.push({ sessionId: id, customerId: existing, form });
     return Response.json({ id, object: 'checkout.session', status: 'open', url: `${new URL(form.get('success_url')!).origin}/faux/checkout/${id}` });
   }) as typeof globalThis.fetch;
   return Object.assign(handler, {
     customerOf: (sessionId: string) => created.find((row) => row.sessionId === sessionId)?.customerId ?? null,
     created,
+    customers,
   });
 }
 

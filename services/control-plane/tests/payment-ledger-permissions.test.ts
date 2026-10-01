@@ -1,5 +1,5 @@
 /**
- * The payment ledger's SQL (PostgresRepository.storedCustomer and recordVerifiedPayment) against a recording client, and
+ * The payment ledger's SQL (PostgresRepository.storedCustomer, ensureCustomer and recordVerifiedPayment) against a recording client, and
  * against the Worker login's grant file. Protocol only: this does not run PostgreSQL. It checks what each call sends, that every
  * value is a bound parameter, the rules the statements enforce (one customer per business, an event stored once, nothing written
  * on a refusal), and that the statements need exactly the billing_customers and webhook_inbox privileges
@@ -7,7 +7,7 @@
  * is granted neither table.
  */
 import { describe, expect, it } from 'vitest';
-import { PostgresRepository } from '../src/postgres.js';
+import { PostgresRepository, type SqlClient } from '../src/postgres.js';
 import { describePrivileges, needs, read, recording, runtimeGrants } from './support/runtime-grants.js';
 
 const payment = {
@@ -38,6 +38,37 @@ function database() {
     return [];
   });
   return { ...db, customers, events, repository: new PostgresRepository(db.factory) };
+}
+/**
+ * The same rows with PostgreSQL's per-business advisory lock: a transaction that asks for a held key waits until the one holding
+ * it commits or rolls back, as pg_advisory_xact_lock does, so two calls made at once run one after the other.
+ */
+function lockingDatabase() {
+  const db = database();
+  const tails = new Map<string, Promise<void>>();
+  const factory = (): SqlClient => {
+    let release: (() => void) | null = null;
+    return {
+      async connect() {},
+      async end() {},
+      async query(sql, values = []) {
+        if (sql.startsWith('SELECT pg_advisory_xact_lock')) {
+          const key = String(values[0]);
+          const prior = tails.get(key) ?? Promise.resolve();
+          let done!: () => void;
+          tails.set(key, new Promise<void>((resolve) => { done = resolve; }));
+          await prior;
+          release = done;
+        }
+        // Another connection runs between this one's statements, as it would against the database.
+        await new Promise((resolve) => setTimeout(resolve, 1));
+        const result = await db.client.query(sql, values);
+        if (sql === 'COMMIT' || sql === 'ROLLBACK') { release?.(); release = null; }
+        return result;
+      },
+    };
+  };
+  return { ...db, repository: new PostgresRepository(factory) };
 }
 const statementsOf = (calls: { sql: string }[]) => calls.map((call) => call.sql).filter((sql) => !/^(BEGIN|COMMIT|ROLLBACK|SET LOCAL|SELECT pg_advisory)/.test(sql))
   .map((sql) => /^(INSERT INTO|SELECT).*?control_plane\.(\w+)/.exec(sql)!.slice(1, 3).join(' '));
@@ -130,6 +161,111 @@ describe('the payment ledger on the Worker login', () => {
   });
 });
 
+const business = { tenantId: 'tenant_1', organizationId: 'org_1' };
+
+describe('the business\'s one customer, made before its first session', () => {
+  it('reads the stored customer and makes none when there is one, taking the business\'s lock first and writing nothing', async () => {
+    const { repository, calls, customers } = database();
+    await repository.recordVerifiedPayment(payment);
+    const before = calls.length;
+    let made = 0;
+    expect(await repository.ensureCustomer(business, async () => { made++; return 'cus_new'; })).toBe('cus_ledger_1');
+    expect(made).toBe(0);
+    const sent = calls.slice(before);
+    expect(sent.map((call) => call.sql)[0]).toBe('BEGIN');
+    expect(sent.map((call) => call.sql).at(-1)).toBe('COMMIT');
+    expect(sent.find((call) => call.sql.startsWith('SELECT pg_advisory_xact_lock'))!.values).toEqual([JSON.stringify(['payment-ledger', 'tenant_1', 'org_1'])]);
+    expect(statementsOf(sent)).toEqual(['SELECT billing_customers']);
+    expect(customers).toHaveLength(1);
+  });
+
+  it('runs the Stripe call under the lock, after the read found none, and stores what it answers with the business and tenant in the same transaction', async () => {
+    const { repository, calls, customers } = database();
+    let seenInCall: string[] = [];
+    expect(await repository.ensureCustomer(business, async () => { seenInCall = calls.map((call) => call.sql); return 'cus_made_1'; })).toBe('cus_made_1');
+    // The lock and the read were sent before the call ran, and the row after it, all inside one BEGIN and COMMIT.
+    const beforeCall = seenInCall.filter((sql) => !/^(BEGIN|SET LOCAL)/.test(sql));
+    expect(beforeCall).toHaveLength(2);
+    expect(beforeCall[0]).toBe('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))');
+    expect(beforeCall[1]).toMatch(/^SELECT customer_id FROM control_plane.billing_customers /);
+    const sql = calls.map((call) => call.sql);
+    expect(sql.filter((text) => text === 'BEGIN')).toHaveLength(1);
+    expect(sql.at(-1)).toBe('COMMIT');
+    expect(statementsOf(calls)).toEqual(['SELECT billing_customers', 'INSERT INTO billing_customers']);
+    const insert = calls.find((call) => call.sql.startsWith('INSERT INTO control_plane.billing_customers'))!;
+    expect(insert.values).toEqual(['stripe', 'cus_made_1', 'org_1', 'tenant_1']);
+    expect(insert.sql).not.toMatch(/state|processed|ON CONFLICT|webhook_inbox/);
+    expect(customers).toEqual([{ customer_id: 'cus_made_1', organization_id: 'org_1', tenant_id: 'tenant_1' }]);
+  });
+
+  it('stores nothing and rolls back when the Stripe call fails, and the next call asks again', async () => {
+    const { repository, calls, customers } = database();
+    await expect(repository.ensureCustomer(business, async () => { throw new Error('stripe is down'); })).rejects.toThrow('stripe is down');
+    expect(customers).toEqual([]);
+    const sql = calls.map((call) => call.sql);
+    expect(sql).toContain('ROLLBACK');
+    expect(sql).not.toContain('COMMIT');
+    expect(sql.filter((text) => text.startsWith('INSERT'))).toEqual([]);
+    expect(await repository.ensureCustomer(business, async () => 'cus_second_try')).toBe('cus_second_try');
+    expect(customers).toHaveLength(1);
+  });
+
+  it('refuses an answer that is not a Stripe customer id before it stores anything', async () => {
+    for (const answer of ['not_a_customer', 'cus_', '', 'cus_' + 'a'.repeat(129), "cus_x'); DROP TABLE control_plane.billing_customers;--"]) {
+      const { repository, calls, customers } = database();
+      await expect(repository.ensureCustomer(business, async () => answer), answer).rejects.toThrow();
+      expect(customers).toEqual([]);
+      expect(calls.map((call) => call.sql).filter((text) => text.startsWith('INSERT'))).toEqual([]);
+    }
+  });
+
+  it('binds the business and the customer: nothing is spliced into the SQL text', async () => {
+    const { repository, calls } = database();
+    await repository.ensureCustomer(business, async () => 'cus_made_1');
+    for (const { sql } of calls) for (const value of ['cus_made_1', 'org_1', 'tenant_1']) expect(sql).not.toContain(value);
+  });
+
+  it('gives two first calls made at once one customer: the second waits for the lock, finds the first\'s row and never calls Stripe', async () => {
+    const { repository, customers, calls } = lockingDatabase();
+    let made = 0;
+    const make = async () => { made++; await new Promise((resolve) => setTimeout(resolve, 10)); return `cus_made_${made}`; };
+    const answers = await Promise.all([repository.ensureCustomer(business, make), repository.ensureCustomer(business, make), repository.ensureCustomer(business, make)]);
+    expect(answers).toEqual(['cus_made_1', 'cus_made_1', 'cus_made_1']);
+    expect(made).toBe(1);
+    expect(customers).toEqual([{ customer_id: 'cus_made_1', organization_id: 'org_1', tenant_id: 'tenant_1' }]);
+    expect(calls.filter((call) => call.sql.startsWith('INSERT INTO control_plane.billing_customers'))).toHaveLength(1);
+  });
+
+  it('serializes with a paid event for the same business, so an event cannot store another customer between the read and the write', async () => {
+    const { repository, customers, events } = lockingDatabase();
+    const first = repository.ensureCustomer(business, async () => { await new Promise((resolve) => setTimeout(resolve, 15)); return 'cus_made_1'; });
+    // The event names the customer the business is about to be given: it waits, then finds that customer already stored.
+    const event = repository.recordVerifiedPayment({ ...payment, customerId: 'cus_made_1' });
+    expect(await first).toBe('cus_made_1');
+    expect(await event).toEqual({ inserted: true });
+    expect(customers).toHaveLength(1);
+    expect(events).toHaveLength(1);
+  });
+
+  it('lets two businesses make their customers at once', async () => {
+    const { repository, customers } = lockingDatabase();
+    let made = 0;
+    const make = async () => `cus_biz_${++made}`;
+    await Promise.all([repository.ensureCustomer(business, make), repository.ensureCustomer({ tenantId: 'tenant_1', organizationId: 'org_2' }, make)]);
+    expect(made).toBe(2);
+    expect(customers.map((row) => row.organization_id).sort()).toEqual(['org_1', 'org_2']);
+  });
+
+  it('keeps a customer that belongs to the business even when the event after it names another: the mismatch is still refused', async () => {
+    const { repository, customers, events } = database();
+    await repository.ensureCustomer(business, async () => 'cus_made_1');
+    await expect(repository.recordVerifiedPayment({ ...payment, customerId: 'cus_ledger_2' })).rejects.toMatchObject({ status: 409, code: 'customer_mismatch' });
+    expect(customers).toHaveLength(1);
+    expect(events).toEqual([]);
+    expect(await repository.recordVerifiedPayment({ ...payment, customerId: 'cus_made_1' })).toEqual({ inserted: true });
+  });
+});
+
 describe('the Worker login and the payment ledger', () => {
   async function everyPath() {
     const first = database();
@@ -137,7 +273,11 @@ describe('the Worker login and the payment ledger', () => {
     await first.repository.recordVerifiedPayment(payment);
     await first.repository.recordVerifiedPayment({ ...payment, eventId: 'evt_ledger_2', payloadHash: 'b'.repeat(64) });
     await first.repository.storedCustomer({ tenantId: 'tenant_1', organizationId: 'org_1' });
-    return first.calls.map((call) => call.sql);
+    // The customer made before a first session: a read that finds none and writes one, and a read that finds it.
+    const second = database();
+    await second.repository.ensureCustomer({ tenantId: 'tenant_1', organizationId: 'org_1' }, async () => 'cus_ledger_1');
+    await second.repository.ensureCustomer({ tenantId: 'tenant_1', organizationId: 'org_1' }, async () => 'cus_ledger_1');
+    return [...first.calls, ...second.calls].map((call) => call.sql);
   }
 
   it('needs exactly the SELECT and INSERT on billing_customers and webhook_inbox that cp_runtime is granted, and nothing else', async () => {
@@ -149,6 +289,18 @@ describe('the Worker login and the payment ledger', () => {
       expect(describePrivileges(used.get(table)), table).toEqual({ select: true, insert: true, update: [] });
     }
     expect([...used.keys()].sort()).toEqual(['billing_customers', 'webhook_inbox']);
+  });
+
+  it('needs nothing more for making the customer than the SELECT and INSERT on billing_customers it is already granted', async () => {
+    const { repository, calls } = database();
+    await repository.ensureCustomer({ tenantId: 'tenant_1', organizationId: 'org_1' }, async () => 'cus_ledger_1');
+    const used = needs(calls.map((call) => call.sql));
+    expect([...used.keys()]).toEqual(['billing_customers']);
+    expect(describePrivileges(used.get('billing_customers'))).toEqual({ select: true, insert: true, update: [] });
+    const granted = runtimeGrants(read('../scripts/runtime-permissions.sql'));
+    expect(describePrivileges(granted.get('billing_customers'))).toEqual(describePrivileges(used.get('billing_customers')));
+    // The advisory lock is a function every role may call: no grant, and none is asked for.
+    expect(read('../scripts/runtime-permissions.sql')).not.toMatch(/pg_advisory/);
   });
 
   it('writes an event or a customer once and never rewrites or deletes one', () => {
