@@ -2294,6 +2294,8 @@ export class EngineService {
       admissionId: admitted.admissionId,
       organizationId,
       scope: admitted.scope,
+      // Read here, so a refusal for want of credits can say who can buy more. Never a credential.
+      role: account.roleFor?.(organizationId) ?? null,
       routing: policy.resolved,
       policyRevision: policy.revision,
       tier,

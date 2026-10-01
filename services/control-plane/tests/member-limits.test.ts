@@ -11,6 +11,7 @@ import { creditAmount, micro, type RateSnapshot } from '../../../shared/managed-
 import { MEMBER_LIMIT_REACHED, PLAN_MEMBER_LIMIT_CREDITS, decideMemberUse, defaultLimitFor, effectiveLimit } from '../../../shared/credit-allotments.js';
 import { FundingError, FundingService, PURCHASED_HOLD_LEASE_MINUTES, PurchasedUsageService, UsageService } from '../src/funding.js';
 import { MemberLimits, MemberLimitsService } from '../src/member-limits.js';
+import { individualCycle } from '../../../shared/individual-period.js';
 import { createHandler } from '../src/worker.js';
 import { FundingMemoryRepository } from './support/funding-memory.js';
 import { setup, validEnv } from './support/fixtures.js';
@@ -307,6 +308,35 @@ describe('a member’s limit at admission', () => {
     await f.funding.reserve({ ...f.ref, attemptId: 's1', rootJobId: 'job_s', parentAttemptId: null, kind: 'generation', route: 'aws-bedrock',
       requestDigest: 'digest_s1', rateSnapshot: RATE, maxMicroUsd: c(20), usageClass: 'metered-work' });
     expect(f.repository.snapshot().attemptPeople.map((row) => row.attemptId)).toEqual(['a0']);
+  });
+});
+
+describe('member limits belong to businesses, not to a personal Individual billing scope', () => {
+  it('leaves an Individual-term reservation untouched by member limits, and still enforces them for the business in the same ledger', async () => {
+    const f = await fixture();
+    const person = 'person_individual', account = 'individual_billing';
+    const cycle = individualCycle('2026-09-15T00:00:00.000Z', 0);
+    // A limit of one credit for every member role is set on the business and, to make the point, on the Individual scope too.
+    await f.setRole('alice', 'member', 'limit', 1);
+    await f.limits.setLimit({ tenantId: person, organizationId: account, actor: { personId: 'person_individual', role: 'owner' },
+      subject: { kind: 'role', role: 'member' }, targetRole: null, mode: 'limit', limitMicroUsd: c(1) });
+    await f.funding.allocateIndividualPeriod({ tenantId: person, organizationId: account, sourceGrantId: 'grant_term', cycle });
+    await f.funding.openJob({ tenantId: person, organizationId: account, rootJobId: 'job_i', runRef: 'run_i', parentRunRef: null, tier: 'efficient', capMicroUsd: null });
+    const personal = await f.funding.reserve({ tenantId: person, organizationId: account, attemptId: 'i1', rootJobId: 'job_i', parentAttemptId: null,
+      kind: 'generation', route: 'aws-bedrock', requestDigest: 'digest_i1', rateSnapshot: RATE, maxMicroUsd: c(15), usageClass: 'metered-work',
+      individualCycle: cycle, member: { personId: 'person_individual', role: 'member' } });
+    // Held in full on the term, not refused, and attributed to no one: a personal scope has no members.
+    expect(personal).toMatchObject({ state: 'pending', periodId: `individual:${cycle.startsAt}`, maxMicroUsd: c(15) });
+    expect(f.repository.snapshot().attemptPeople).toEqual([]);
+    // The same business, same ledger: the member's limit still stops the step, and holds nothing.
+    const refused = await refusal(f.reserve('bob', 'b1', 15, 'job_b1'));
+    expect(refused).toMatchObject({ status: 402, code: 'member_limit_reached' });
+    expect(f.repository.snapshot().attemptPeople).toEqual([]);
+    // What fits is admitted, bound to the business's UTC calendar month and counted against that same period id.
+    const held = await f.reserve('bob', 'b2', 1, 'job_b2');
+    expect(held).toMatchObject({ state: 'pending', periodId: '2026-09' });
+    expect(f.repository.snapshot().attemptPeople.map((row) => row.attemptId)).toEqual(['b2']);
+    expect((await f.usage('bob'))?.includedMicroUsd).toBe(c(1));
   });
 });
 

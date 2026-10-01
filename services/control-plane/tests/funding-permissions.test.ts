@@ -292,6 +292,25 @@ async function runGatewayPaths() {
       return ask('run-1:4');
     })(),
     replayed: await ask('run-1:1'),
+    personalFirstUse: await (async () => {
+      // DIO-128: the first Personal use inside a verified monthly term records that term's row.
+      const staff = await cloud.handle(new Request('http://faux/auth/sign-in', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email: DEMO_ACCOUNTS.staffBilling.email, password: FAUX_DEMO_PASSWORD }),
+      }));
+      const person = (await cloud.accounts.signIn(token)).person;
+      await cloud.commercial.issuePersonGrant((await staff.json()).accessToken as string, person.id,
+        { planId: 'individual', source: 'internal-test', reference: 'permissions-term', note: '' });
+      const account = cloud.store.snapshot().commercial.individuals.find((row) => row.personId === person.id)!;
+      const grants = await cloud.store.commercial.transaction((tx) => tx.personGrants(person.id));
+      const holdAndDispatch = Reflect.get(gateway, 'holdAndDispatch') as (...args: unknown[]) => Promise<unknown>;
+      await holdAndDispatch.call(gateway,
+        { token, organizationId: account.id, admissionId: 'unused', jobId: 'personal-1', attemptId: 'personal-1:1',
+          parentAttemptId: null, tier: 'efficient', usageClass: 'metered-work', scope: { kind: 'individual', id: account.id } },
+        person.id, grants,
+        { kind: 'generation', route: LUNA.model, requestDigest: 'b'.repeat(64), rate: LUNA.rate, maxMicroUsd: 1000, ceilingMicroUsd: 100000000 });
+      return cloud.store.snapshot().funding.periods.filter((row) => row.organizationId === account.id).map((row) => row.periodId);
+    })(),
     read: (await gateway.attempt(new Request('http://127.0.0.1:8791/managed/v1/attempts/run-1:1', {
       headers: { authorization: `Bearer ${token}`, 'x-nectovia-organization': organizationId },
     }), 'run-1:1')).status,
@@ -375,8 +394,10 @@ describe('cp_funding (scripts/funding-permissions.sql)', () => {
   it('grants exactly what PostgresFundingRepository runs on the gateway’s paths, and nothing else', async () => {
     const run = await runGatewayPaths();
     // The scenarios did what they are for.
-    expect(run.outcomes).toEqual({ first: 200, retry: 200, busy: 429, failed: 503, preDispatchRelease: true, replayed: 409, read: 200, limited: 402 });
-    expect(run.states).toEqual({ 'run-1:1': 'settled', 'run-1:2': 'settled', 'run-1:3': 'released', 'run-1:4': 'uncertain', 'run-1:5': 'released' });
+    expect(run.outcomes).toEqual({ first: 200, retry: 200, busy: 429, failed: 503, preDispatchRelease: true, replayed: 409, read: 200,
+      personalFirstUse: ['individual:2026-10-02T09:00:00.000Z'], limited: 402 });
+    expect(run.states).toEqual({ 'run-1:1': 'settled', 'run-1:2': 'settled', 'run-1:3': 'released', 'run-1:4': 'uncertain', 'run-1:5': 'released',
+      'personal-1:1': 'pending' });
     expect(run.periods).toEqual(['2026-09', '2026-10']);
     expect(run.providerCalls).toBe(4);
     expect(run.holds).toEqual({ 'hold-1': 'settled', 'hold-2': 'released', 'hold-3': 'held' });

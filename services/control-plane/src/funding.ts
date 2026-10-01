@@ -59,6 +59,14 @@ import {
   type UsageState,
 } from '../../../shared/managed-usage.js';
 import { sameUsageCounts } from '../../../shared/usage-contract.js';
+import {
+  cycleContains,
+  individualCycleId,
+  isIndividualCycleId,
+  periodsOverlap,
+  verifiedIndividualCycle,
+  type IndividualBillingCycle,
+} from '../../../shared/individual-period.js';
 import { MEMBER_ROLES, canAdministerMembers, type MemberRole } from '../../../shared/workspaces.js';
 import { decideMemberUse, effectiveLimit, type Allowance } from '../../../shared/credit-allotments.js';
 import { AccountError } from './errors.js';
@@ -78,6 +86,7 @@ export class FundingError extends AccountError {
 
 export interface CreditPeriodRow {
   tenantId: string;
+  /** Historical name: the Business or Individual billing-scope id, never the UI's selected workspace. */
   organizationId: string;
   periodId: string;
   planId: string;
@@ -85,7 +94,7 @@ export interface CreditPeriodRow {
   grantedMicroUsd: MicroUsd;
   startsAt: string;
   endsAt: string;
-  /** The verified entitlement grant this allocation came from. */
+  /** The original person grant for Individual, or account feature grant for Business/explicit agreements. */
   sourceGrantId: string;
   allocatedAt: string;
 }
@@ -191,6 +200,8 @@ export interface FundingTransaction {
   /** Serializes every funding write for one organization's credits. */
   lockOrganization(tenantId: string, organizationId: string): Promise<void>;
   period(tenantId: string, organizationId: string, periodId: string): Promise<CreditPeriodRow | undefined>;
+  /** Every period recorded for one billing scope, for the Individual overlap and supersession checks. */
+  periods(tenantId: string, organizationId: string): Promise<CreditPeriodRow[]>;
   savePeriod(row: CreditPeriodRow): Promise<void>;
   job(tenantId: string, rootJobId: string): Promise<FundedJobRow | undefined>;
   jobRef(tenantId: string, runRef: string): Promise<JobRefRow | undefined>;
@@ -410,7 +421,9 @@ export class FundingService {
 
   /**
    * Record a month's grant from a verified entitlement grant. Only published
-   * plan grants can fund a period; Solo and proposed rows cannot. Server-only.
+   * plan grants can fund a period; Solo and proposed rows cannot. Individual
+   * uses the verified person's own billing scope and person grant. The database
+   * binds that source without copying a grant into a Business. Server-only.
    */
   async allocatePeriod(input: { tenantId: string; organizationId: string; periodId: string; planId: string; sourceGrantId: string }): Promise<CreditPeriodRow> {
     const tenantId = requireId(input.tenantId, 'tenant');
@@ -451,6 +464,44 @@ export class FundingService {
       const row: CreditPeriodRow = { tenantId, organizationId, periodId: input.periodId, planId: 'individual-agreement',
         rateCardVersion: RATE_CARD_V1.version, grantedMicroUsd: granted, startsAt, endsAt, sourceGrantId, allocatedAt: this.at() };
       await tx.savePeriod(row); return row;
+    });
+  }
+
+  /**
+   * Record one verified Individual term's 1,000 credits (DIO-128), on first use inside that term.
+   * The period id and both bounds come from the term alone, so a replacement grant, a reinstall, a
+   * device or a repeated payment event names the same row. An existing row for the term is returned
+   * unchanged when its payer, plan, bounds and amount agree, whichever current grant asks: its
+   * historical source is never rewritten. Server-only; the caller has already verified that
+   * `sourceGrantId` is a current complete-plan grant naming this term, and the database checks it again.
+   */
+  async allocateIndividualPeriod(input: { tenantId: string; organizationId: string; sourceGrantId: string; cycle: IndividualBillingCycle }): Promise<CreditPeriodRow> {
+    const tenantId = requireId(input.tenantId, 'tenant'), organizationId = requireId(input.organizationId, 'account');
+    const sourceGrantId = requireId(input.sourceGrantId, 'person grant');
+    const cycle = verifiedIndividualCycle(input.cycle);
+    if (!cycle) throw new FundingError(422, 'That is not a verified Individual billing period.', 'invalid_period');
+    const granted = publishedMonthlyGrant('individual');
+    if (granted === null) throw new FundingError(409, 'The Individual plan has no approved grant.', 'grant_not_approved');
+    const periodId = individualCycleId(cycle);
+    return this.repository.transaction(async (tx) => {
+      await tx.lockOrganization(tenantId, organizationId);
+      // The time is read after the lock: a wait that crosses the period's end funds nothing.
+      const at = this.at();
+      const existing = await tx.period(tenantId, organizationId, periodId);
+      if (existing) {
+        if (existing.planId !== 'individual' || existing.grantedMicroUsd !== granted || existing.startsAt !== cycle.startsAt || existing.endsAt !== cycle.endsAt)
+          throw new FundingError(409, 'This billing period already has different funding. Apply an explicit correction instead.', 'period_conflict');
+        return existing;
+      }
+      if (!cycleContains(cycle, at))
+        throw new FundingError(409, 'Credits are recorded only during their own billing period. An elapsed or future period is not funded now.', 'period_not_current');
+      const others = (await tx.periods(tenantId, organizationId)).filter((row) => isIndividualCycleId(row.periodId) && periodsOverlap(row, cycle));
+      if (others.length)
+        throw new FundingError(409, 'Another Individual billing period already covers part of this time.', 'period_overlap');
+      const row: CreditPeriodRow = { tenantId, organizationId, periodId, planId: 'individual', rateCardVersion: RATE_CARD_V1.version,
+        grantedMicroUsd: granted, startsAt: cycle.startsAt, endsAt: cycle.endsAt, sourceGrantId, allocatedAt: at };
+      await tx.savePeriod(row);
+      return row;
     });
   }
 
@@ -706,9 +757,17 @@ export class FundingService {
      * The verified member this work is for, and their role. Given by the gateway from the membership it
      * has just checked, never from a request. When present, the member's monthly limit is enforced here,
      * under the organization lock, and the attempt is recorded against them. Left out, as for a personal
-     * workspace or a server-side caller, nothing is limited and nothing is attributed.
+     * workspace or a server-side caller, nothing is limited and nothing is attributed. Member limits
+     * apply to businesses only: given together with `individualCycle`, the member is ignored, because a
+     * personal Individual billing scope has no members.
      */
     member?: { personId: string; role: MemberRole };
+    /**
+     * The verified Individual term resolved by the server from the person's current grant. Never a
+     * client value. Without it, the attempt binds to the UTC calendar month (Business, agreements
+     * and legacy Individual grants).
+     */
+    individualCycle?: IndividualBillingCycle;
   }): Promise<FundedAttempt> {
     const tenantId = requireId(input.tenantId, 'tenant');
     const organizationId = requireId(input.organizationId, 'organization');
@@ -728,9 +787,14 @@ export class FundingService {
     const member = input.member === undefined ? null
       : { personId: requireId(input.member.personId, 'person'), role: input.member.role };
     if (member && !MEMBER_ROLES.includes(member.role)) throw new FundingError(422, 'A member has an owner, admin or member role.', 'invalid_request');
-    const at = this.at();
+    const cycle = input.individualCycle === undefined ? null : verifiedIndividualCycle(input.individualCycle);
+    if (input.individualCycle !== undefined && !cycle) throw new FundingError(422, 'That is not a verified Individual billing period.', 'invalid_period');
+    // A personal Individual billing scope has no members: nothing there is limited or attributed to a person.
+    const limitedMember = cycle ? null : member;
     return this.repository.transaction(async (tx) => {
       await tx.lockOrganization(tenantId, organizationId);
+      // Read after the lock, so a reservation that waited past a period's end is judged at its end.
+      const at = this.at();
       const existing = await tx.attempt(tenantId, attemptId);
       if (existing) {
         const same = existing.organizationId === organizationId && existing.rootJobId === rootJobId && existing.parentAttemptId === parentAttemptId &&
@@ -749,10 +813,18 @@ export class FundingService {
         if (!parent || parent.rootJobId !== rootJobId)
           throw new FundingError(409, 'A retry or child names an attempt under the same job.', 'parent_attempt_mismatch');
       }
-      const periodId = periodIdFor(at);
+      if (cycle && !cycleContains(cycle, at))
+        throw new FundingError(409, 'This billing period has ended, so its credits fund nothing new. Nothing was reserved.', 'period_ended');
+      const periodId = cycle ? individualCycleId(cycle) : periodIdFor(at);
       const period = await tx.period(tenantId, organizationId, periodId);
       if (!period)
-        throw new FundingError(409, 'This month has no credit grant recorded yet, so nothing can be reserved.', 'no_period');
+        throw new FundingError(409, 'This billing period has no credit grant recorded yet, so nothing can be reserved.', 'no_period');
+      if (cycle && (period.planId !== 'individual' || period.startsAt !== cycle.startsAt || period.endsAt !== cycle.endsAt))
+        throw new FundingError(409, 'The recorded billing period does not match the verified term.', 'period_conflict');
+      // Once an anniversary term covers this moment, a calendar row on the same account is history only.
+      if (!cycle && (period.planId === 'individual' || period.planId === 'individual-agreement') &&
+          (await tx.periods(tenantId, organizationId)).some((row) => isIndividualCycleId(row.periodId) && cycleContains(row, at)))
+        throw new FundingError(409, 'A monthly Individual term now funds this account; earlier funding is kept for settlement only.', 'period_superseded');
       const decision = decideReserve({
         maxMicroUsd: input.maxMicroUsd,
         monthlyAvailableMicroUsd: monthlyAvailable(period, await tx.periodTotals(tenantId, organizationId, periodId)),
@@ -764,7 +836,7 @@ export class FundingService {
       // The shared pool has the funds and the job has the room. Now the member's own monthly limit,
       // read in the same transaction that holds the credits, so two steps by one member cannot both
       // slip under it. A refusal throws and rolls everything back: nothing is held and nothing is sent.
-      if (member) await this.enforceMemberLimit(tx, { tenantId, organizationId, rootJobId, period, member, at, maxMicroUsd: input.maxMicroUsd, purchasedMicroUsd: decision.topUpHoldMicroUsd });
+      if (limitedMember) await this.enforceMemberLimit(tx, { tenantId, organizationId, rootJobId, period, member: limitedMember, at, maxMicroUsd: input.maxMicroUsd, purchasedMicroUsd: decision.topUpHoldMicroUsd });
       if (companyCeiling !== null) {
         await tx.lockCompany();
         if (sumMoney([await tx.companySpend(), input.maxMicroUsd]) > companyCeiling)
@@ -777,7 +849,7 @@ export class FundingService {
         monthlyHoldMicroUsd: decision.monthlyHoldMicroUsd, topUpHoldMicroUsd: decision.topUpHoldMicroUsd, dispatchedAt: null,
       };
       await tx.saveAttempt(attempt);
-      if (member) await tx.saveAttemptPerson({ tenantId, attemptId, organizationId, personId: member.personId });
+      if (limitedMember) await tx.saveAttemptPerson({ tenantId, attemptId, organizationId, personId: limitedMember.personId });
       return attempt;
     });
   }
@@ -824,15 +896,28 @@ export class FundingService {
    * `attempt_in_flight` and sends nothing.
    */
   async markDispatched(ref: AttemptRef): Promise<FundedAttempt> {
-    const at = this.at();
-    return this.repository.transaction(async (tx) => {
+    const outcome = await this.repository.transaction(async (tx) => {
       const attempt = await this.lockedAttempt(tx, ref);
+      const at = this.at();
       if (attempt.state !== 'pending')
         throw new FundingError(409, `A ${attempt.state} attempt cannot be sent.`, 'invalid_transition');
+      // An Individual allowance ends at its period's end. An unsent hold from that period is released
+      // as unsent, in this same transaction, rather than sent on credits that have expired.
+      if (attempt.dispatchedAt === null) {
+        const period = await tx.period(attempt.tenantId, attempt.organizationId, attempt.periodId);
+        if (period?.planId === 'individual' && Date.parse(at) >= Date.parse(period.endsAt)) {
+          await tx.saveAttempt({ ...this.move(attempt, 'release'), resolvedAt: at,
+            uncertainReason: 'Released unsent: its Individual billing period ended before it was sent.' });
+          return { expired: true as const };
+        }
+      }
       if (!(await tx.claimDispatch(attempt.tenantId, attempt.id, at)))
         throw new FundingError(409, 'That request is already being answered.', 'attempt_in_flight');
-      return { ...attempt, dispatchedAt: at };
+      return { expired: false as const, attempt: { ...attempt, dispatchedAt: at } };
     });
+    if (outcome.expired)
+      throw new FundingError(409, 'This billing period ended before the request was sent. Nothing was sent, and its hold was released.', 'period_ended');
+    return outcome.attempt;
   }
 
   /**
@@ -1100,6 +1185,41 @@ export class FundingService {
           topUp: await tx.topUpTotals(tenantId, organizationId, observedAt),
           lastReceipt: await tx.lastReceipt(tenantId, organizationId, periodId),
           observedAt,
+        }),
+      };
+    });
+  }
+
+  /**
+   * One verified Individual term's usage, for the person's own read. Read-only: before the term's
+   * ledger row exists (it is written on first use) this projects the term's approved 1,000 credits
+   * with nothing used and `allocation: 'pending'`; afterwards, ledger totals and `recorded`. The
+   * caller has verified the term from the person's current grant; an ended term is refused.
+   */
+  async individualProjection(tenantId: string, organizationId: string, verified: IndividualBillingCycle): Promise<UsageState> {
+    requireId(tenantId, 'tenant');
+    requireId(organizationId, 'account');
+    const cycle = verifiedIndividualCycle(verified);
+    const granted = publishedMonthlyGrant('individual');
+    const observedAt = this.at();
+    if (!cycle || granted === null || !cycleContains(cycle, observedAt))
+      return { state: 'unavailable', organizationId, reason: 'No current Individual billing period is recorded, so there is no usage to show.' };
+    const periodId = individualCycleId(cycle);
+    return this.repository.transaction(async (tx) => {
+      const period = await tx.period(tenantId, organizationId, periodId);
+      if (period && (period.planId !== 'individual' || period.startsAt !== cycle.startsAt || period.endsAt !== cycle.endsAt))
+        return { state: 'unavailable', organizationId, reason: 'This billing period’s record needs review, so its usage is not shown.' };
+      return {
+        state: 'ready',
+        organizationId,
+        projection: projectUsage({
+          organizationId,
+          period: period ?? { periodId, planId: 'individual', grantedMicroUsd: granted, startsAt: cycle.startsAt, endsAt: cycle.endsAt, rateCardVersion: RATE_CARD_V1.version },
+          totals: await tx.periodTotals(tenantId, organizationId, periodId),
+          topUp: await tx.topUpTotals(tenantId, organizationId, observedAt),
+          lastReceipt: await tx.lastReceipt(tenantId, organizationId, periodId),
+          observedAt,
+          allocation: period ? 'recorded' : 'pending',
         }),
       };
     });

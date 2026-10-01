@@ -16,7 +16,7 @@
  * | `delegate:<n>`     | tool      | Diomedes native supervisor (child run)      |
  * | `observe:<n>`      | transform | Diomedes application (what came back)       |
  * | `finish:<n>`       | transform | Diomedes native supervisor (a claim only)   |
- * | `stop:turns`/`stop:budget` | transform | Diomedes native supervisor          |
+ * | `stop:turns`/`stop:budget`/`stop:credits` | transform | Diomedes native supervisor |
  *
  * A finish is a claim, never a grade. Whether the result is done is decided by
  * H17's projection of the task's declared acceptance checks against the bytes
@@ -223,8 +223,11 @@ export interface LoopFinishRecord {
   readonly account: ContextAccount | null;
 }
 
-/** `worker`: a worker the lead waited for failed or died (H14); the person retries the lead. */
-export type LoopStopReason = 'turn-limit' | 'budget' | 'worker';
+/**
+ * `worker`: a worker the lead waited for failed or died (H14); the person retries the lead.
+ * `credits`: the business had no credits left for the next step, so the run ended there.
+ */
+export type LoopStopReason = 'turn-limit' | 'budget' | 'worker' | 'credits';
 export interface LoopStopRecord {
   readonly v: 1;
   readonly reason: LoopStopReason;
@@ -424,6 +427,7 @@ export function loopView(run: HarnessRun, children: readonly HarnessRun[] = []):
   const stop =
     record<LoopStopRecord>(byId.get('stop:turns')) ??
     record<LoopStopRecord>(byId.get('stop:budget')) ??
+    record<LoopStopRecord>(byId.get('stop:credits')) ??
     record<LoopStopRecord>(byId.get('stop:worker'));
   const context = record<LoopContextRecord>(byId.get('loop:context'));
   const waitingStep = run.steps.find((step) => step.state === 'waiting_approval');
@@ -534,7 +538,9 @@ export function loopOutcome(
               ? 'Stopped: turn limit reached'
               : view.stop.reason === 'worker'
                 ? 'Stopped: a worker did not answer'
-                : 'Stopped: budget reached',
+                : view.stop.reason === 'credits'
+                  ? 'Stopped: out of credits'
+                  : 'Stopped: budget reached',
           sentence: view.stop.detail,
         };
       return {

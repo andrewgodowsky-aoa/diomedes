@@ -1,0 +1,185 @@
+{
+  "recordedAt": "2026-09-29T10:10:31.238498+00:00",
+  "repository": "andrewgodowsky-aoa/diomedes",
+  "base": "5f97d97e61300c08002d7767bbbb179c1882a5fc",
+  "branch": "codex/dio-128-individual-funding",
+  "status": "uncommitted and unpushed; no PR, merge, package, release or deployment",
+  "worktree": "/Users/andrewgodowsky/.codex/worktrees/dio-128-individual-funding/Diomedes",
+  "desktopVerificationSnapshot": "/Users/andrewgodowsky/Diomedes-dio128-verification",
+  "trackedFilesOutsideDocsIdenticalBeforeBrowser": 2234,
+  "trackedFilesOutsideDocsAndEvidenceIdenticalAfterBrowser": 1840,
+  "canonicalMirrorVersions": {
+    "pillars": "2026-09-27.2",
+    "roadmap": "2026-09-27.2",
+    "projectMemory": "2026-09-27.2"
+  },
+  "environment": {
+    "platform": "macOS arm64",
+    "node": "22.23.2",
+    "vitest": "3.2.7",
+    "playwright": "1.63.0",
+    "postgres": "17.10; owned disposable local databases; actual separate runtime/funding logins; cluster stopped after tests"
+  },
+  "sourceFingerprintSha256": "6441ebb0000fda8086e71199cfba0f679fd33d58cb9a453bd96c9dabcd2f4f7c",
+  "changedSourceFiles": [
+    {
+      "path": "services/control-plane/migrations/011_individual_funding.sql",
+      "sha256": "042849f4249f229d5e5478ee47e0109cdddc0912000b25e00e64a3e0a705d453"
+    },
+    {
+      "path": "services/control-plane/scripts/migrate.ts",
+      "sha256": "a468b17b18bf7ff2a3ee00d390a0a056f112381d76b9f367aa2caf3b2dd6d68f"
+    },
+    {
+      "path": "services/control-plane/src/commercial.ts",
+      "sha256": "3b21860ef6203c2835502076f9c7962c073d26f85c3059c80360bb405f3033e8"
+    },
+    {
+      "path": "services/control-plane/src/funding-postgres.ts",
+      "sha256": "2e54b374d51dfbf87a44d9c3a1458a38426c2a857eff99ee50751e156e38c8a1"
+    },
+    {
+      "path": "services/control-plane/src/funding.ts",
+      "sha256": "5a1c46d57e4aff67bdc032feab1ae13dcfd8f4a6358e44b3e5a65e0825756fc9"
+    },
+    {
+      "path": "services/control-plane/src/managed-inference.ts",
+      "sha256": "5ca6c249aeae3bf6c16a1816d15ffa05e6f3ecc614dfd40e5e75b1abae8a7f39"
+    },
+    {
+      "path": "services/control-plane/tests/individual-funding-postgres.integration.test.ts",
+      "sha256": "5c1acf142d6a4db2635f19fb1bab34e0c4edb8d9fd712b5def9fbcda165aeea2"
+    },
+    {
+      "path": "services/control-plane/tests/individual-funding.test.ts",
+      "sha256": "aa29d387e5b5593ca48cd607a521db95dc9ae003e3f3bc4735d9cf964d25ae39"
+    },
+    {
+      "path": "services/control-plane/tests/individual-plans.test.ts",
+      "sha256": "49b7dbe9c718358735ef7bbb88389ecbe7a44b06c5cec7459138278561a122d0"
+    },
+    {
+      "path": "services/control-plane/tests/migrations.test.ts",
+      "sha256": "62b2dc69b2dd747cfdd097bbbaf8146770d7cc12e066b461d47c41cc41b95a91"
+    },
+    {
+      "path": "services/control-plane/tests/postgres.integration.test.ts",
+      "sha256": "b57fe1d6e3ca03f4d6935db60f00756a33e2f4c3f42f218ba6ede1632e643131"
+    },
+    {
+      "path": "services/control-plane/tests/scoped-routing.test.ts",
+      "sha256": "d89e341c319f895fedc3a24ec325c71cf54f81a0680664b4c416bf1212a0dbde"
+    },
+    {
+      "path": "shared/individual-plan.ts",
+      "sha256": "4f461347c69b0de6da5184d3483bc2a1ca1412cdb9adcecfcf11779ddd24acb0"
+    },
+    {
+      "path": "shared/managed-usage.ts",
+      "sha256": "a4c55153eab2be3b928f920a044adf09630e66efc8665b8eb5aabb1cb5db6494"
+    }
+  ],
+  "candidatePatchSha256": "a4ca9fcab303e2ef7350a4a43ae3dbd357a62e5a1cdd8030c36778adb19620bb",
+  "gates": [
+    {
+      "name": "root types",
+      "command": "NODE_OPTIONS=--max-old-space-size=4096 node_modules/.bin/tsc --noEmit",
+      "log": "root-types.log",
+      "cwd": "/Users/andrewgodowsky/Diomedes-dio128-verification",
+      "exitCode": 0,
+      "diagnostics": 0
+    },
+    {
+      "name": "control-plane types",
+      "command": "node_modules/.bin/tsc --noEmit",
+      "log": "control-plane-types.log",
+      "cwd": "/Users/andrewgodowsky/.codex/worktrees/dio-128-individual-funding/Diomedes/services/control-plane",
+      "exitCode": 0,
+      "diagnostics": 0
+    },
+    {
+      "name": "root full unit suite",
+      "command": "TMPDIR=/Users/andrewgodowsky/diomedes-dio128-test-tmp NODE_OPTIONS=--max-old-space-size=4096 node_modules/.bin/vitest run --maxWorkers=4 --minWorkers=1",
+      "log": "root-vitest.log",
+      "cwd": "/Users/andrewgodowsky/Diomedes-dio128-verification",
+      "exitCode": 0,
+      "passed": 8619,
+      "failed": 0,
+      "skipped": 32,
+      "filesPassed": 517,
+      "filesSkipped": 2
+    },
+    {
+      "name": "control-plane full unit suite",
+      "command": "node_modules/.bin/vitest run --maxWorkers=1 --minWorkers=1",
+      "log": "control-plane-vitest.log",
+      "cwd": "/Users/andrewgodowsky/.codex/worktrees/dio-128-individual-funding/Diomedes/services/control-plane",
+      "exitCode": 0,
+      "passed": 736,
+      "failed": 0,
+      "skipped": 48,
+      "filesPassed": 47,
+      "filesSkipped": 5
+    },
+    {
+      "name": "explicit real PostgreSQL suites",
+      "command": "node_modules/.bin/vitest run tests/individual-funding-postgres.integration.test.ts tests/scoped-routing-postgres.integration.test.ts tests/postgres.integration.test.ts --maxWorkers=1 --minWorkers=1",
+      "log": "postgres.log",
+      "cwd": "/Users/andrewgodowsky/.codex/worktrees/dio-128-individual-funding/Diomedes/services/control-plane",
+      "exitCode": 0,
+      "passed": 27,
+      "failed": 0,
+      "skipped": 0,
+      "filesPassed": 3,
+      "suites": {
+        "individual": 8,
+        "routing": 6,
+        "accountFunding": 13
+      }
+    },
+    {
+      "name": "client build",
+      "command": "NODE_OPTIONS=--max-old-space-size=4096 node_modules/.bin/vite build",
+      "log": "vite.log",
+      "cwd": "/Users/andrewgodowsky/Diomedes-dio128-verification",
+      "exitCode": 0,
+      "warnings": [
+        "Existing chunk-size warnings"
+      ]
+    },
+    {
+      "name": "required browser gate",
+      "command": "PLAYWRIGHT_BROWSERS_PATH=/Users/andrewgodowsky/diomedes-dio128-test-tools/playwright TMPDIR=/Users/andrewgodowsky/diomedes-dio128-test-tmp NODE_OPTIONS=--max-old-space-size=4096 node_modules/.bin/playwright test tests/ui.spec.ts tests/native-ui.spec.ts tests/field.spec.ts",
+      "log": "playwright.log",
+      "cwd": "/Users/andrewgodowsky/Diomedes-dio128-verification",
+      "exitCode": 0,
+      "passed": 36,
+      "failed": 0,
+      "skipped": 0
+    }
+  ],
+  "implementationRecord": "docs/implementation/2026-09-29-individual-funding.md",
+  "fixtureRepairs": [
+    "Existing path guards reject managed .codex checkout and symlinked temp path; identical ordinary-path snapshot used.",
+    "Shared-clone alternates caused two Git-history fixture failures; independent Git objects restored correct evidence. Focused23 checks and fresh full suite passed.",
+    "Default2GB Node heap exhausted on root types; final4GB check passed.",
+    "Missing matching browser initially caused13 launch failures and23 tests not run; installed isolated tool-matched browser, rebuilt and36 passed."
+  ],
+  "review": "Independent read-only review: disabled-account Operations regression reproduced, fixed and confirmed by reviewer; expiry-test job-cap fixture corrected; full tests passed. No remaining correctness finding from that review.",
+  "remainingAcceptance": [
+    "UTC calendar reset retained; plan-anniversary boundary clarification and unchanged31-day access term require reconciliation before rollout. No unused-credit carryover is permitted.",
+    "No shared migration011 deployment, real-provider funding receipt, signed-in packaged-app journey, current-candidate Operations acceptance or release proof.",
+    "Personal usage display and subscription/renewal/payment lifecycle remain incomplete.",
+    "DIO-132 staff correction/audit; DIO-136 site/canonical reconciliation; DIO-125 automation policy; historical plan-catalog consolidation and faux subscriber remain open.",
+    "Current-patch publication approval required by AGENTS.md; no commit/push/PR/merge/deploy."
+  ],
+  "logSha256": {
+    "root-types.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "control-plane-types.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "root-vitest.log": "a1a0c5a81a8320de2c15a83ad9b154fbe410b413d98bfd73872fd99ab471f876",
+    "control-plane-vitest.log": "e10a388d763f22c1da6874bc22acf5ef8b5e2c30cb47cd44ccc768f2df5e5404",
+    "postgres.log": "7a52ad2fdf2648388ec2f30b142c160a0d5ba10054896bceed4636b0a9cf70a9",
+    "vite.log": "8caa42bd3eca6b1e37a400e98103f6586f7f7eb75e2a8fc2908f65305d47ff12",
+    "playwright.log": "e7ae4e81131c8785dd82ba690382c97a64c95b0206f817f07abe9d6d8383cd77"
+  }
+}
