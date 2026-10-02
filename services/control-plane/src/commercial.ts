@@ -16,7 +16,8 @@
  *
  * Funding (credits, top-ups, reservations) stays the FundingService's; this
  * module only asks it to allocate a month or record a noted correction.
- * Every staff write is audited in the same transaction as the change.
+ * Every staff mutation and its audit share a transaction. Grant issuance is
+ * separate from optional credit allocation; allocation and its audit commit together.
  */
 import { z } from 'zod';
 import {
@@ -74,7 +75,8 @@ import { modelBindingSchema, routingScopeSchema, routingConfigurationSchema, har
 import type { RoutingTransaction } from './routing.js';
 import { approvedConnections } from './managed-bindings.js';
 import { registryRow } from './managed-providers.js';
-import type { FundingService } from './funding.js';
+import { FundingService } from './funding.js';
+import { staffFundingId, type StaffFundingRepository } from './staff-funding.js';
 
 export const COMMERCIAL_VERSION = 1 as const;
 
@@ -535,6 +537,7 @@ export const issuePersonGrantInput = z.strictObject({
   billingCycle: z.strictObject({ anchorAt: time, index: z.number().int().min(0).max(MAX_INDIVIDUAL_CYCLE_INDEX) }).optional(),
 });
 export const addFundingInput = z.strictObject({
+  requestId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/),
   credits: z.number().int().min(1).max(100_000),
   reason: z.string().trim().min(1).max(500),
 });
@@ -578,6 +581,8 @@ export interface CommercialOptions {
   backend?: string;
   /** Legacy configuration remains accepted; Individual never covers Business work. */
   coverage?: IndividualCoverage;
+  /** Restricted staff writer; credit and audit share its transaction. */
+  staffFunding?: StaffFundingRepository | null;
 }
 
 const newId = (kind: string) => `${kind}_${crypto.randomUUID()}`;
@@ -595,6 +600,7 @@ export class CommercialService {
   private readonly now: () => number;
   private readonly directory: IdentityDirectory;
   readonly backend: string;
+  private readonly staffFunding: StaffFundingRepository | null;
 
   constructor(
     private readonly accounts: AccountService,
@@ -605,6 +611,7 @@ export class CommercialService {
     this.now = options.now ?? Date.now;
     this.directory = options.directory ?? NO_IDENTITY_DIRECTORY;
     this.backend = options.backend ?? 'cloud';
+    this.staffFunding = options.staffFunding ?? null;
   }
 
   private at() {
@@ -851,7 +858,7 @@ export class CommercialService {
 
   // --- staff --------------------------------------------------------------------------
 
-  private async staffOperator(tx: CommercialTransaction, personId: string, permission: StaffPermission) {
+  private async staffOperator(tx: Pick<CommercialTransaction, 'operator'>, personId: string, permission: StaffPermission) {
     const operator = await tx.operator(personId);
     if (!operator || operator.state !== 'active')
       throw new AccountError(403, 'This account is not a Diomedes staff account.');
@@ -1020,13 +1027,26 @@ export class CommercialService {
       return row;
     });
     let funding: { allocated: boolean; reason: string } = { allocated: false, reason: 'This grant carries no included usage.' };
-    if (this.funding && grant.features.includes('managed-inference') && grant.planId && publishedMonthlyGrant(grant.planId) !== null) {
+    if (grant.features.includes('managed-inference') && grant.planId && publishedMonthlyGrant(grant.planId) !== null) {
       try {
-        await this.funding.allocatePeriod({ tenantId: grant.tenantId, organizationId, periodId: periodIdFor(this.at()), planId: grant.planId, sourceGrantId: grant.id });
-        await this.repository.transaction((tx) => this.audited(tx, actor, {
-          action: 'funding.allocated', organizationId, targetKind: 'funding', targetId: periodIdFor(this.at()),
-          reason: `Monthly credits for ${planLabel(grant.planId)}`, detail: { grantId: grant.id, planId: grant.planId },
-        }));
+        if (!this.staffFunding) throw new AccountError(503, 'Staff funding is not connected here.', 'staff_funding_unavailable');
+        const at = this.at(), periodId = periodIdFor(at);
+        const auditId = 'audit_' + await staffFundingId(['staff-allocation', grant.tenantId, organizationId, grant.id, periodId]);
+        await this.staffFunding.transaction(async tx => {
+          await tx.lockStaff();
+          const operator = await this.staffOperator(tx, actor.person.id, 'grants.write');
+          await tx.lockOrganization(organizationId);
+          const current = (await tx.grants(organizationId)).find(row => row.id === grant.id);
+          if (!current || grantState(current, Date.parse(at)) !== 'active')
+            throw new AccountError(409, 'This grant is no longer active.');
+          const receipt = await tx.auditById(auditId);
+          if (receipt) return;
+          const funding = new FundingService({ transaction: action => action(tx.funding) }, { now: () => Date.parse(at) });
+          await funding.allocatePeriod({ tenantId: grant.tenantId, organizationId, periodId, planId: grant.planId!, sourceGrantId: grant.id });
+          await tx.audit({ id: auditId, at, actorPersonId: actor.person.id, actorRole: operator.role,
+            action: 'funding.allocated', organizationId, targetKind: 'funding', targetId: periodId,
+            reason: 'Monthly credits for ' + planLabel(grant.planId), detail: { grantId: grant.id, planId: grant.planId } });
+        });
         funding = { allocated: true, reason: 'This month’s included credits were allocated.' };
       } catch (error) {
         funding = { allocated: false, reason: error instanceof Error ? error.message : 'Credits could not be allocated.' };
@@ -1230,22 +1250,48 @@ export class CommercialService {
   /** Add included credits to this month as a noted correction. Needs a month already funded by a plan. */
   async addFunding(token: string, organizationId: string, input: z.infer<typeof addFundingInput>) {
     const parsed = addFundingInput.safeParse(input);
-    if (!parsed.success) throw new AccountError(422, 'Give a whole number of credits and a reason.');
+    if (!parsed.success) throw new AccountError(422, 'Give a request id, a whole number of credits and a reason.');
     const actor = await this.staff(token, 'funding.write');
-    if (!this.funding) throw new AccountError(503, 'The funding service is not connected here.');
-    const organization = await this.repository.transaction((tx) => tx.organizationRecord(organizationId));
-    if (!organization) throw new AccountError(404, 'That customer was not found.');
-    const periodId = periodIdFor(this.at());
-    const adjustmentId = newId('adjustment');
-    const row = await this.funding.recordCorrection({
-      tenantId: organization.tenantId, organizationId, adjustmentId, periodId, direction: 'grant',
-      amountMicroUsd: creditAmount(parsed.data.credits), attemptRef: null, note: parsed.data.reason,
+    if (!this.staffFunding) throw new AccountError(503, 'Staff funding is not connected here.', 'staff_funding_unavailable');
+    const digest = await staffFundingId(['staff-correction', actor.person.id, organizationId, parsed.data.requestId]);
+    const adjustmentId = 'adjustment_' + digest;
+    const auditId = 'audit_' + digest;
+    return this.staffFunding.transaction(async tx => {
+      await tx.lockStaff();
+      const operator = await this.staffOperator(tx, actor.person.id, 'funding.write');
+      const organization = await tx.organizationRecord(organizationId);
+      if (!organization) throw new AccountError(404, 'That customer was not found.');
+      await tx.funding.lockOrganization(organization.tenantId, organizationId);
+      const receipt = await tx.auditById(auditId);
+      if (receipt) {
+        if (receipt.action !== 'funding.added' || receipt.actorPersonId !== actor.person.id ||
+            receipt.organizationId !== organizationId || receipt.targetId !== adjustmentId ||
+            receipt.detail.requestId !== parsed.data.requestId || receipt.detail.credits !== parsed.data.credits ||
+            receipt.reason !== parsed.data.reason)
+          throw new AccountError(409, 'That request id already has different funding terms.', 'funding_request_conflict');
+        const row = await tx.funding.adjustment(organization.tenantId, adjustmentId);
+        if (receipt.targetKind !== 'funding' || receipt.detail.microUsd !== creditAmount(parsed.data.credits) ||
+            !row || row.id !== adjustmentId || row.tenantId !== organization.tenantId || row.organizationId !== organizationId ||
+            row.periodId !== receipt.detail.periodId || row.direction !== 'grant' || row.reason !== 'correction' ||
+            row.attemptRef !== null || row.sourceEventId !== null || row.at !== receipt.at ||
+            row.amountMicroUsd !== creditAmount(parsed.data.credits) || row.note !== parsed.data.reason)
+          throw new AccountError(409, 'The funding receipt needs reconciliation.', 'funding_receipt_conflict');
+        return row;
+      }
+      // An adjustment without its receipt is never repaired by silently crediting again.
+      if (await tx.funding.adjustment(organization.tenantId, adjustmentId))
+        throw new AccountError(409, 'The funding receipt needs reconciliation.', 'funding_receipt_conflict');
+      const at = this.at(), periodId = periodIdFor(at);
+      const funding = new FundingService({ transaction: action => action(tx.funding) }, { now: () => Date.parse(at) });
+      const row = await funding.recordCorrection({ tenantId: organization.tenantId, organizationId,
+        adjustmentId, periodId, direction: 'grant', amountMicroUsd: creditAmount(parsed.data.credits),
+        attemptRef: null, note: parsed.data.reason });
+      await tx.audit({ id: auditId, at, actorPersonId: actor.person.id, actorRole: operator.role,
+        action: 'funding.added', organizationId, targetKind: 'funding', targetId: adjustmentId,
+        reason: parsed.data.reason, detail: { requestId: parsed.data.requestId, credits: parsed.data.credits,
+          microUsd: parsed.data.credits * CREDIT_MICRO_USD, periodId } });
+      return row;
     });
-    await this.repository.transaction((tx) => this.audited(tx, actor, {
-      action: 'funding.added', organizationId, targetKind: 'funding', targetId: adjustmentId, reason: parsed.data.reason,
-      detail: { credits: parsed.data.credits, microUsd: parsed.data.credits * CREDIT_MICRO_USD, periodId },
-    }));
-    return row;
   }
 
   async routes(token: string) {

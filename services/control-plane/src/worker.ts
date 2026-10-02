@@ -9,6 +9,7 @@ import { PostgresRepository, neonClientFactory } from './postgres.js';
 import { FundingService, PurchasedUsageService, UsageService, purchasedHoldInput, purchasedReleaseInput, purchasedRenewInput, purchasedSettleInput } from './funding.js';
 import { CREDIT_PURCHASES_UNAVAILABLE, CreditPurchaseService, StripeWebhookService, creditPurchaseInput, readBillingSettings, returnPage } from './credit-purchases.js';
 import { PostgresFundingRepository } from './funding-postgres.js';
+import { PostgresStaffFundingRepository } from './staff-funding-postgres.js';
 import { MemberLimits, MemberLimitsService, askRaiseInput, decideRaiseInput, setLimitInput, setSettingsInput } from './member-limits.js';
 import { PostgresCommercialRepository } from './commercial-postgres.js';
 import {
@@ -135,7 +136,9 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
   const createCommercial = options.createCommercial ?? ((config: Configuration, accounts: AccountService) =>
     new CommercialService(accounts, new PostgresCommercialRepository(neonClientFactory(config.databaseUrl)),
       new FundingService(new PostgresFundingRepository(neonClientFactory(config.databaseUrl))),
-      config.individual ? { coverage: config.individual } : {}));
+      { ...(config.individual ? { coverage: config.individual } : {}),
+        staffFunding: config.staffFundingDatabaseUrl
+          ? new PostgresStaffFundingRepository(neonClientFactory(config.staffFundingDatabaseUrl)) : null }));
   // Holds write funding rows, so they run as the funding login (FUNDING_DATABASE_URL), never as the
   // Worker login, which may only read them. Without that login nothing is held or read.
   const createPurchased = options.createPurchased ?? ((config: Configuration, accounts: AccountService) => {
@@ -513,6 +516,10 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
  * - FUNDING_DATABASE_URL, the login cp_funding for the gateway's funding rows
  *   (scripts/funding-permissions.sql), on the same database as DATABASE_URL.
  *   Unset, blank or unreadable: every managed call answers 503 route_unavailable.
+ * - STAFF_FUNDING_DATABASE_URL, the separate cp_staff_funding login for staff
+ *   corrections and optional grant allocation, with the audit in the same transaction.
+ *   Unset or unreadable: corrections answer staff_funding_unavailable; grant
+ *   issuance reports that its optional credit allocation is unavailable.
  * - OPENROUTER_API_KEY, the key /managed/v1/evaluations sends to OpenRouter's
  *   Decisions endpoint; without it that route alone answers 503.
  * STAFF_WORKOS_API_KEY and STAFF_WORKOS_CLIENT_ID (src/config.ts) are no longer read by
@@ -523,6 +530,7 @@ export type GatewayEnv = WorkerEnv & {
   BEDROCK_API_KEY?: string;
   OPENROUTER_API_KEY?: string;
   FUNDING_DATABASE_URL?: string;
+  STAFF_FUNDING_DATABASE_URL?: string;
   /** Whole cents for 100 credits. A setting, never a default: unset, every quote and purchase answers 503. */
   CREDIT_PRICE_CENTS_PER_100?: string | number;
   /** Stripe secret key, and the endpoint secret for /billing/stripe/webhook. Both Worker secrets. */

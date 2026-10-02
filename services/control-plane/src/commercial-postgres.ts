@@ -31,7 +31,7 @@ const like = (query: string) => `%${query.replace(/[\\%_]/g, (char) => `\\${char
  * request-owned client per transaction, parameterized SQL, rows parsed through
  * the record schemas, and no provider call inside a transaction.
  */
-class PostgresCommercialTransaction implements CommercialTransaction {
+export class PostgresCommercialTransaction implements CommercialTransaction {
   constructor(private readonly client: SqlClient) {}
 
   async lockOrganization(organizationId: string) {

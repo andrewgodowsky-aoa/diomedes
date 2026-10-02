@@ -123,5 +123,5 @@ GRANT SELECT ON control_plane.credit_adjustments TO cp_funding;
 GRANT SELECT, INSERT ON control_plane.credit_topups TO cp_funding;
 -- Not granted, because nothing on this login runs them: job_cap_requests (cap
 -- requests and decisions), INSERT on credit_adjustments (recordCorrection), and
--- funding_accounts. Staff grant allocation and staff funding corrections run on
--- the Worker login and are still refused there.
+-- funding_accounts. Staff grant allocation and corrections use the separately
+-- reviewed cp_staff_funding login (staff-funding-permissions.sql).
