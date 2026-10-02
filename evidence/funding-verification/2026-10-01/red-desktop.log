@@ -1,0 +1,89 @@
+
+ RUN  v3.2.7 /Users/andrewgodowsky/dev/diomedes-funding-verify
+
+ ❯ tests/individual-term-local-guard.probe.test.ts (2 tests | 1 failed) 22ms
+   ✓ this computer’s guard for an Individual billing account > holds work in the first term against the plan’s 1,000 credits 12ms
+   × this computer’s guard for an Individual billing account > starts a renewed term with its whole 1,000 credits, as the account service funds it 10ms
+     → expected 10000000 to be 100000000 // Object.is equality
+ ❯ tests/purchased-usage-reserve.test.ts (33 tests | 1 failed) 1232ms
+   ✓ a subscriber reserving at the allowance routes > a subscriber with bought usage is admitted and settled by the service, and the local month is never touched 115ms
+   ✓ a subscriber reserving at the allowance routes > a retry of the same reservation holds once 48ms
+   ✓ a subscriber reserving at the allowance routes > a subscriber with nothing bought is refused, even though the month is funded, and nothing is held 33ms
+   ✓ a subscriber reserving at the allowance routes > a subscriber is refused what the bought balance cannot cover 36ms
+   × a subscriber reserving at the allowance routes > a member is held to their own monthly limit on bought usage, refused in the service’s words, and nothing is held 40ms
+     → expected 200 to be 409 // Object.is equality
+   ✓ a subscriber reserving at the allowance routes > flags in the body are only words: they cannot make a person staff, widen the balance or skip the check 38ms
+   ✓ a subscriber reserving at the allowance routes > staff keep the local path, and the service is never asked to hold anything for them 43ms
+   ✓ a subscriber reserving at the allowance routes > a subscriber cannot settle a hold on the local, included month 36ms
+   ✓ a subscriber reserving at the allowance routes > another member cannot settle a subscriber’s hold, and a hold is never settled past what was held 55ms
+   ✓ a subscriber reserving at the allowance routes > an identifier or amount the service does not accept holds nothing and says so 33ms
+   ✓ a subscriber reserving at the allowance routes > when the account service cannot be reached, nothing is held and the refusal says so 34ms
+   ✓ a subscriber reserving at the allowance routes > with no account service wired in, as on an install without accounts, a subscriber is refused as before 32ms
+   ✓ a subscriber reserving at the allowance routes > the lease on a bought-usage hold > the authorization ends at the usual ten minutes when the lease runs longer 27ms
+   ✓ a subscriber reserving at the allowance routes > the lease on a bought-usage hold > the authorization ends with the lease when the lease ends sooner 28ms
+   ✓ a subscriber reserving at the allowance routes > the lease on a bought-usage hold > a lease this app cannot read is not taken as a hold 26ms
+   ✓ a subscriber reserving at the allowance routes > the lease on a bought-usage hold > a real hold through the route carries a lease from the service, and the authorization never outlasts it 32ms
+   ✓ a subscriber reserving at the allowance routes > the lease on a bought-usage hold > renewing it > a subscriber renews the hold they made, and the service moves the lease 42ms
+   ✓ a subscriber reserving at the allowance routes > the lease on a bought-usage hold > renewing it > staff hold on this computer and do not lease, so there is nothing to renew, and the service is not asked 35ms
+   ✓ a subscriber reserving at the allowance routes > the lease on a bought-usage hold > renewing it > a hold that is no longer held is refused in the service’s words, and nothing is changed 35ms
+   ✓ a subscriber reserving at the allowance routes > the lease on a bought-usage hold > renewing it > another member cannot renew a subscriber’s hold, and cannot tell it exists 45ms
+   ✓ a subscriber reserving at the allowance routes > the lease on a bought-usage hold > renewing it > signed out, a renewal is a 401 and nothing reaches the service 22ms
+   ✓ a subscriber reserving at the allowance routes > the lease on a bought-usage hold > renewing it > when the account service cannot be reached, it says so and nothing is changed 34ms
+   ✓ a subscriber reserving at the allowance routes > the lease on a bought-usage hold > renewing it > with no account service wired in, nobody renews anything 30ms
+   ✓ a subscriber reserving at the allowance routes > the lease on a bought-usage hold > renewing it > an outsider reads as absent before anything, and the body is only the hold’s name 43ms
+   ✓ a subscriber reserving at the allowance routes > the bought balance, as the account service reports it > shows what was bought, held, spent and still free, to an owner or admin 36ms
+   ✓ a subscriber reserving at the allowance routes > the bought balance, as the account service reports it > a person the host refuses gets that refusal, and the account service is never asked 30ms
+   ✓ a subscriber reserving at the allowance routes > the bought balance, as the account service reports it > shows no numbers at all when there is no account service or it cannot answer 39ms
+   ✓ a subscriber reserving at the allowance routes > the bought balance, as the account service reports it > a service answer this app cannot read is not shown as numbers 30ms
+   ✓ a subscriber reserving at the allowance routes > every earlier gate answers first, and the service is not asked > an outsider reads as absent (404) before anything 31ms
+   ✓ a subscriber reserving at the allowance routes > every earlier gate answers first, and the service is not asked > a business that keeps its work on its own computers, asked for a remote route 31ms
+   ✓ a subscriber reserving at the allowance routes > every earlier gate answers first, and the service is not asked > no entitlement 31ms
+   ✓ a subscriber reserving at the allowance routes > every earlier gate answers first, and the service is not asked > a call that could cost more than one job is capped at 29ms
+   ✓ a subscriber reserving at the allowance routes > every earlier gate answers first, and the service is not asked > someone who is not an active member of the business 31ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/individual-term-local-guard.probe.test.ts > this computer’s guard for an Individual billing account > starts a renewed term with its whole 1,000 credits, as the account service funds it
+AssertionError: expected 10000000 to be 100000000 // Object.is equality
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- 100000000[39m
+[31m+ 10000000[39m
+
+ ❯ tests/individual-term-local-guard.probe.test.ts:66:39
+     64|     await useFirstTerm();
+     65|     const renewed = await ensureNectoviaGuard(exposure, nectoviaConnec…
+     66|     expect(renewed.availableMicroUsd).toBe(creditAmount(1000));
+       |                                       ^
+     67|   });
+     68| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  tests/purchased-usage-reserve.test.ts > a subscriber reserving at the allowance routes > a member is held to their own monthly limit on bought usage, refused in the service’s words, and nothing is held
+AssertionError: expected 200 to be 409 // Object.is equality
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- 409[39m
+[31m+ 200[39m
+
+ ❯ tests/purchased-usage-reserve.test.ts:218:27
+    216|     await mount(await signedIn(DEMO_ACCOUNTS.employee.email));
+    217|     const answer = await post('admit', ask({ maxMicroUsd: creditAmount…
+    218|     expect(answer.status).toBe(409);
+       |                           ^
+    219|     expect(answer.data.code).toBe('member_limit_reached');
+    220|     expect(answer.data.error).toMatch(/An owner or admin can approve m…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  2 failed (2)
+      Tests  2 failed | 33 passed (35)
+   Start at  22:35:53
+   Duration  2.11s (transform 602ms, setup 0ms, collect 1.28s, tests 1.25s, environment 0ms, prepare 81ms)
+

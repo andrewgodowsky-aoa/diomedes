@@ -102,13 +102,13 @@ export class StateFundingTransaction implements FundingTransaction {
       && (filter.personId === undefined || row.personId === filter.personId) && (filter.state === undefined || row.state === filter.state))
       .sort((a, b) => (a.requestedAt < b.requestedAt ? -1 : a.requestedAt > b.requestedAt ? 1 : a.requestId < b.requestId ? -1 : 1));
   }
-  async approvedAllowances(tenantId: string, organizationId: string, personId: string, periodId: string, rootJobId: string) {
+  async approvedAllowances(tenantId: string, organizationId: string, personId: string, periodId: string, rootJobId: string | null) {
     return this.state.limitRequests.filter((row) => row.tenantId === tenantId && row.organizationId === organizationId && row.scopeKind === 'person'
       && row.personId === personId && row.state === 'approved'
       && ((row.kind === 'month' && row.periodId === periodId) || (row.kind === 'job' && row.rootJobId === rootJobId)));
   }
   async saveAttemptPerson(row: AttemptPersonRow) { this.state.attemptPeople.push(row); }
-  async memberUsage(tenantId: string, organizationId: string, period: CreditPeriodRow, personId: string | null, at: string): Promise<MemberUsageRow[]> {
+  async memberUsage(tenantId: string, organizationId: string, period: Pick<CreditPeriodRow, 'periodId' | 'startsAt' | 'endsAt'>, personId: string | null, at: string): Promise<MemberUsageRow[]> {
     const now = Date.parse(at);
     const personOf = (attemptId: string) => this.state.attemptPeople.find((row) => row.tenantId === tenantId && row.attemptId === attemptId)?.personId;
     const totals = new Map<string, { included: number; purchased: number; held: number }>();

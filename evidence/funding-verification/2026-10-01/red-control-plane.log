@@ -1,0 +1,93 @@
+
+ RUN  v3.2.7 /Users/andrewgodowsky/dev/diomedes-funding-verify/services/control-plane
+
+ ✓ tests/funding.test.ts (35 tests) 170ms
+stderr | tests/member-limits.test.ts > the account API > answers 503 when the funding login is not configured, instead of writing as the Worker login
+{"event":"member-limits-funding-database-unavailable","setting":"FUNDING_DATABASE_URL","rule":"not-set"}
+
+ ❯ tests/member-limits.test.ts (34 tests | 3 failed) 147ms
+   ✓ the rules, as pure functions > has no tier default decided: a plan with no entry gets its whole monthly allowance 1ms
+   ✓ the rules, as pure functions > resolves a person, then their role, then the default 0ms
+   ✓ the rules, as pure functions > admits what fits, refuses what does not in plain words, and never counts an approval it was not given 10ms
+   ✓ a member’s limit at admission > changes nothing while every member is under their limit: the default is the whole allowance, and each attempt is attributed 15ms
+   ✓ a member’s limit at admission > refuses a step past a per-person limit with a stable code and words that end with who can approve more, and holds nothing 5ms
+   ✓ a member’s limit at admission > counts held work at its ceiling and settled work at cost, and gives back what was released 4ms
+   ✓ a member’s limit at admission > counts the bought credits a member holds on their own, so a purchased hold counts too 5ms
+   ✓ a member’s limit at admission > does not count a purchased hold whose lease has lapsed as held, before anything has let go of it 3ms
+   ✓ a member’s limit at admission > counts a settled purchased hold at its recorded debit only, never at what was absorbed 3ms
+   ✓ a member’s limit at admission > sets a limit for a role, lets a person override it, and lets an override clear 4ms
+   ✓ a member’s limit at admission > leaves an owner and an admin unlimited within the pool until an owner sets a limit for them 3ms
+   ✓ a member’s limit at admission > applies the limit to every member separately, and the shared pool still bounds everyone 4ms
+   ✓ a member’s limit at admission > is idempotent: a retry of a landed hold is not refused by the limit and counts once 2ms
+   ✓ a member’s limit at admission > lets only one of two concurrent steps by one member slip under the limit 2ms
+   ✓ a member’s limit at admission > does not limit, or attribute, a caller that names no member 2ms
+   × a member’s limit on a hold of bought credits > refuses a member’s bought-credit hold past their limit, through the service and the account API, and holds nothing 6ms
+     → Expected a refusal.
+   × a member’s limit on a hold of bought credits > holds what fits under the limit, and past it only with an approval that lets the member use bought credits 3ms
+     → Expected a refusal.
+   ✓ a member’s limit on a hold of bought credits > finds a landed hold on retry even after the member reached the limit, and leaves owners and admins with no limit set alone 3ms
+   × a member’s limit on a hold of bought credits > applies a limit set for the member or their role in a month whose included credits are not recorded yet 3ms
+     → Expected a refusal.
+   ✓ member limits belong to businesses, not to a personal Individual billing scope > leaves an Individual-term reservation untouched by member limits, and still enforces them for the business in the same ledger 3ms
+   ✓ asking for more, and the answer > raises one job: that job may run past the limit, and no other job may 3ms
+   ✓ asking for more, and the answer > raises the month by what the approver chose, for that person only, and it lapses when the period rolls over 4ms
+   ✓ asking for more, and the answer > draws on bought credits only when the approval says so, and refuses that approval when none are free 3ms
+   ✓ asking for more, and the answer > is idempotent by request id, returns an open ask instead of a second, and refuses a reused id 2ms
+   ✓ asking for more, and the answer > lets an admin decide a member’s request, never an admin’s, an owner’s or their own 3ms
+   ✓ asking for more, and the answer > refuses a member who tries to decide, set a limit or read what is not theirs 4ms
+   ✓ asking for more, and the answer > lets an admin set a limit for a member but not for an admin or an owner; only an owner may 2ms
+   ✓ the account API > lets an owner read the limits, with the default read from the plan 7ms
+   ✓ the account API > changes a limit by role and by person through the API, reading the person’s role from the roster 13ms
+   ✓ the account API > answers a member their own usage against their own limit, and never the pool or anyone else 5ms
+   ✓ the account API > answers an owner or admin who used what this month, in micro-USD, for everyone including those who used nothing 5ms
+   ✓ the account API > asks and decides through the API, and an approval reaches the next admission 8ms
+   ✓ the account API > lets only an owner change who sees what, and the setting is honoured 7ms
+   ✓ the account API > answers 503 when the funding login is not configured, instead of writing as the Worker login 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/member-limits.test.ts > a member’s limit on a hold of bought credits > refuses a member’s bought-credit hold past their limit, through the service and the account API, and holds nothing
+Error: Expected a refusal.
+ ❯ refusal tests/member-limits.test.ts:95:9
+     93|     throw error;
+     94|   }
+     95|   throw new Error('Expected a refusal.');
+       |         ^
+     96| }
+     97| 
+ ❯ tests/member-limits.test.ts:323:21
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  tests/member-limits.test.ts > a member’s limit on a hold of bought credits > holds what fits under the limit, and past it only with an approval that lets the member use bought credits
+Error: Expected a refusal.
+ ❯ refusal tests/member-limits.test.ts:95:9
+     93|     throw error;
+     94|   }
+     95|   throw new Error('Expected a refusal.');
+       |         ^
+     96| }
+     97| 
+ ❯ tests/member-limits.test.ts:342:25
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  tests/member-limits.test.ts > a member’s limit on a hold of bought credits > applies a limit set for the member or their role in a month whose included credits are not recorded yet
+Error: Expected a refusal.
+ ❯ refusal tests/member-limits.test.ts:95:9
+     93|     throw error;
+     94|   }
+     95|   throw new Error('Expected a refusal.');
+       |         ^
+     96| }
+     97| 
+ ❯ tests/member-limits.test.ts:372:13
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  3 failed | 66 passed (69)
+   Start at  22:35:52
+   Duration  1.05s (transform 289ms, setup 12ms, collect 480ms, tests 318ms, environment 0ms, prepare 64ms)
+

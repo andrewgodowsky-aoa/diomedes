@@ -1,0 +1,28 @@
+{
+  "base": "f72c6ace14c89201425e33f90fb096bdbdda8f4d",
+  "verifiedIn": "detached checkout of the base at ~/dev/diomedes-funding-verify with this patch applied",
+  "patch": {
+    "sha256": "c5cffdf3a0146527562012db568dab209223271ef454557f938de21fe7befe0b",
+    "bytes": 31232,
+    "of": "git diff of the base for the eight tracked files, then the new test file against /dev/null"
+  },
+  "files": {
+    "server/managed-gateway.ts": "6ca79c2ddb806681cf0317a2c51f0f5ca41aa5c15eab870d8a441dff2bb7af27",
+    "services/control-plane/src/faux/funding-state.ts": "0cac147bdf7e0882e352b27a3f4479d5d208b13a633eaf128bc2a07a70a6be70",
+    "services/control-plane/src/funding-postgres.ts": "44506eb54f14dd324802e638ccd0263b5c7954ac3a5498f499d7bcf84fc46798",
+    "services/control-plane/src/funding.ts": "bef8ea7cc65c0ccda33e4b501e96d979c66a8e6d3ebc3ea7a5ee3c2682dfacde",
+    "services/control-plane/src/member-limits.ts": "4acb1e7c1117f21b988bf63a9e9e72394d19254e89a7a0546cac199e4db40b4e",
+    "services/control-plane/tests/funding.test.ts": "268733644b40b7b04a1121fee5b3d22f3de6b3f92a1b981386d513d6460482b4",
+    "services/control-plane/tests/member-limits.test.ts": "4e5634c5f6cccd5bd9fd4373092f52fa32fff20ed48c8dcd8597ed2412b8e47b",
+    "tests/purchased-usage-reserve.test.ts": "bfcd41982bcdcd4430c17d894004a1221d61230b70b247da1190dcacedab0b2a",
+    "tests/individual-term-local-guard.test.ts": "7c6a1237003111135f47da59603aea11be9a34b281dd8ce9d510898341478658"
+  },
+  "logs": [
+    "red-control-plane.log",
+    "red-desktop.log",
+    "control-plane-types.log",
+    "control-plane-vitest.log",
+    "root-types.log",
+    "root-vitest-focused.log"
+  ]
+}
