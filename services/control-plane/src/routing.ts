@@ -14,7 +14,7 @@ import type { AccountService } from './account-service.js';
 import { AccountError } from './errors.js';
 import { approvedConnections, connectionCredential, connectionView, supportsReasoningSummaries } from './managed-bindings.js';
 import type { CommercialRepository, CommercialTransaction, Operator, TierPolicy } from './commercial.js';
-import { entitlementFromGrants, individualEntitlement, agentAdmissionInput, featureGrantSchema, revokeGrantInput, ensureIndividualAccount } from './commercial.js';
+import { entitlementFromGrants, individualEntitlement, individualTerms, agentAdmissionInput, featureGrantSchema, revokeGrantInput, ensureIndividualAccount } from './commercial.js';
 import type { FundingService } from './funding.js';
 
 /** Implemented on the same transaction as route/policy/grant writes, in Postgres and the faux store. */
@@ -156,6 +156,8 @@ export class RoutingService {
       const account = await tx.individual(id); if (!account) throw new AccountError(404, 'That Individual account was not found.');
       const grants = await tx.grants(id);
       return { account, grants, entitlement: await individualEntitlement(tx, id, account.personId, this.at()),
+        // The person plan's monthly term, beside the account's explicit agreements (DIO-128).
+        individualTerm: individualTerms(await tx.personGrants(account.personId), this.now()),
         admissions: await tx.personalAdmissions(account.personId, 50) };
     });
     return detail;

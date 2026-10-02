@@ -29,6 +29,8 @@ import { routeEntrySchema } from '../services/control-plane/src/commercial.js';
 import { responsesAnswer } from './fixtures/model-api-streams.js';
 
 const BASE = 'https://accounts.nectovia.test';
+const OWNER_WORDS = 'Your business is out of credits, so this stopped here. Buy more credits in Settings, Usage.';
+const MEMBER_WORDS = 'Your business is out of credits, so this stopped here. An owner or admin can buy more credits to keep going.';
 const GATEWAY = `${BASE}/managed/v1/responses`;
 const TOKEN = 'session-access-token-test-only-0123456789';
 const CONNECTION = nectoviaConnectionId('org_juniper', new Date('2026-09-25T12:00:00.000Z'));
@@ -435,7 +437,7 @@ describe("the gateway's refusals, in the conversation's words", () => {
     [401, 'sign_in_required', 'nectovia_sign_in_required', NECTOVIA_SIGN_IN],
     [403, 'agent_not_included', 'nectovia_agent_not_included', 'Juniper Street Bakery has no plan that includes the Nectovia Agent.'],
     [403, 'admission_invalid', 'nectovia_admission_invalid', 'Nectovia could not confirm this message was admitted. Nothing was charged. Send it again.'],
-    [402, 'insufficient_allowance', 'nectovia_insufficient_allowance', "This business has used this month's 1,000 credits."],
+    [402, 'insufficient_allowance', 'nectovia_insufficient_allowance', MEMBER_WORDS],
     [402, 'cap_request_required', 'nectovia_cap_request_required', 'This job needs a cap request before it can spend more.'],
     [409, 'tier_unrouted', 'nectovia_tier_unrouted', 'Efficient has no Nectovia model right now. Nothing was charged. Choose another tier.'],
     [413, 'context_too_long', 'nectovia_too_long', 'This message and its sources are longer than Nectovia accepts. Nothing was charged. Choose fewer or shorter sources.'],
@@ -469,6 +471,53 @@ describe("the gateway's refusals, in the conversation's words", () => {
     expect(error.evidence.reservation?.state).toBe('released');
     // Nothing is retried, on this route or any other.
     expect(net.sent).toHaveLength(1);
+  });
+
+  describe('out of credits reads by role, whatever words the gateway sent', () => {
+    const roles: [string, ManagedAdmission['role'] | undefined, string][] = [
+      ['an owner', 'owner', OWNER_WORDS],
+      ['an admin', 'admin', OWNER_WORDS],
+      ['a member', 'member', MEMBER_WORDS],
+      ['a role the desktop does not know yet', null, MEMBER_WORDS],
+      ['a role nobody stamped', undefined, MEMBER_WORDS],
+    ];
+    test.each(roles)('for %s, both codes carry the same sentence and keep their codes', async (_who, role, words) => {
+      const messages: ModelMessage[] = [{ role: 'user', content: 'How many loaves are on order?' }];
+      for (const code of ['insufficient_allowance', 'no_period']) {
+        const net = gateway([() => refusal(402, code, 'Gateway words that must not be shown.')]);
+        const error = await failure(
+          call(net.fetch, {
+            managed: { ...MANAGED, ...(role === undefined ? {} : { role }) },
+            attempt: exposureAttempt(`run-${run}`, `model@${code}`, messages),
+          }),
+        );
+        expect(error.code).toBe(`nectovia_${code}`);
+        expect(error.message).toBe(words);
+        expect(error.evidence.reservation?.state).toBe('released');
+        expect(net.sent).toHaveLength(1);
+      }
+    });
+    test('the sentence is plain: no dollars, no dashes, no model or vendor name', () => {
+      const said = { code: 'insufficient_allowance', message: 'Words.' };
+      for (const words of [gatewayRefusal(402, said, 'efficient', 'owner')!.message, gatewayRefusal(402, said, 'efficient')!.message]) {
+        expect(words).not.toMatch(/[—–]/);
+        expect(words).not.toMatch(/\$|dollar|USD/i);
+        expect(words).not.toMatch(/AWS|Bedrock|OpenAI|GPT|Luna|model|provider/i);
+      }
+    });
+    test('the mapping itself: role in, sentence out, nothing else changes', () => {
+      const said = { code: 'insufficient_allowance', message: 'Words.' };
+      expect(gatewayRefusal(402, said, 'efficient', 'owner')).toEqual({ code: 'nectovia_insufficient_allowance', message: OWNER_WORDS });
+      expect(gatewayRefusal(402, said, 'efficient', 'admin')).toEqual({ code: 'nectovia_insufficient_allowance', message: OWNER_WORDS });
+      expect(gatewayRefusal(402, said, 'efficient', 'member')).toEqual({ code: 'nectovia_insufficient_allowance', message: MEMBER_WORDS });
+      expect(gatewayRefusal(402, said, 'efficient')).toEqual({ code: 'nectovia_insufficient_allowance', message: MEMBER_WORDS });
+      expect(gatewayRefusal(402, { code: 'no_period', message: 'Words.' }, 'efficient', 'owner')).toEqual({ code: 'nectovia_no_period', message: OWNER_WORDS });
+      // The job cap is not out of credits: its own words, whoever asks.
+      expect(gatewayRefusal(402, { code: 'cap_request_required', message: 'Cap words.' }, 'efficient', 'owner')).toEqual({
+        code: 'nectovia_cap_request_required',
+        message: 'Cap words.',
+      });
+    });
   });
 
   test('a 503 without the gateway’s own body is not claimed as uncharged', () => {

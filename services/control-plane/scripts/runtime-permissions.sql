@@ -21,12 +21,26 @@ GRANT UPDATE (revoked_at, revoked_by, last_seen_at) ON control_plane.relay_devic
 -- deleted (the table's trigger refuses both), so it gets no UPDATE. A write
 -- rechecks the writer's membership, which the grants above already cover.
 GRANT SELECT, INSERT ON control_plane.organization_setups TO cp_runtime;
--- B01 runtime does not yet consume the later commercial tables. A separately
--- reviewed receiver role can receive only the inbox/customer privileges it needs.
+-- The later commercial tables (subscriptions, entitlement grants) are not consumed by the
+-- Worker yet. The inbox and customer tables are, for one path only: the credit purchase
+-- receiver and the purchase (src/credit-purchases.ts) use them. A purchase makes the
+-- business's one Stripe customer before its first Checkout Session, through
+-- PostgresRepository.ensureCustomer: under the business's advisory lock (a function any
+-- role may call, so it needs no grant) it reads the stored customer and, when there is
+-- none, stores the one Stripe made. The receiver stores each verified paid Stripe event
+-- through PostgresRepository.recordVerifiedPayment, under the same lock. All of these are
+-- plain SELECT and INSERT statements, with no row lock, UPDATE or DELETE: an event or a
+-- customer is written once and never rewritten. The funding login (cp_funding) is not
+-- granted these tables, so it cannot make a top-up (which references a stored event) on
+-- its own. tests/payment-ledger-permissions.test.ts replays all of them and fails when
+-- this line and those statements differ either way. recordVerifiedWebhook, the older seam with no caller, takes
+-- a FOR KEY SHARE row lock on billing_customers, which needs UPDATE on one column; it is
+-- not granted here and stays with a separately reviewed receiver role.
+GRANT SELECT, INSERT ON control_plane.billing_customers, control_plane.webhook_inbox TO cp_runtime;
 -- NC-2026-09-22.1: the Worker's usage projection only reads funding rows.
 GRANT SELECT ON control_plane.credit_periods, control_plane.funding_reservations,
   control_plane.funding_settlements, control_plane.credit_adjustments,
-  control_plane.credit_topups TO cp_runtime;
+  control_plane.credit_topups, control_plane.credit_topup_holds TO cp_runtime;
 -- Funding writes (reserve, dispatch, settle, grants, top-ups, cap decisions)
 -- belong to a separately reviewed runtime role, never to the Worker login.
 -- 005 customer access (2026-09-25): what the Worker's customer-access, Agent

@@ -232,6 +232,41 @@ describe('the monthly usage projection', () => {
     });
   });
 
+  test('a top-up with every bought credit held or used projects zero available', () => {
+    // The most a late settle can leave: it records only what was free, so held plus used never passes bought.
+    const result = project(
+      { settledMonthlyMicroUsd: c(300), settledTopUpMicroUsd: c(3) },
+      { purchasedMicroUsd: c(10), heldMicroUsd: c(7), settledMicroUsd: c(3) },
+    );
+    expect(result.topUp).toEqual({
+      availableMicroUsd: 0,
+      heldMicroUsd: c(7),
+      settledThisPeriodMicroUsd: c(3),
+    });
+    expect(result.availableMicroUsd).toBe(c(700));
+    expect(result.overspentMicroUsd).toBe(0);
+    expect(result.usedPercent).toBe(30);
+  });
+
+  test('a top-up overdrawn by an edit outside the ledger is refused, never shown clamped', () => {
+    expect(() =>
+      project(
+        { settledMonthlyMicroUsd: c(300), settledTopUpMicroUsd: c(7) },
+        { purchasedMicroUsd: c(10), heldMicroUsd: c(7), settledMicroUsd: c(7) },
+      ),
+    ).toThrow();
+  });
+
+  test('a monthly over-commit is still reported as overspend, with the top-up line independent', () => {
+    const result = project(
+      { settledMonthlyMicroUsd: c(1100) },
+      { purchasedMicroUsd: c(10), heldMicroUsd: c(4), settledMicroUsd: c(3) },
+    );
+    expect(result.availableMicroUsd).toBe(0);
+    expect(result.overspentMicroUsd).toBe(c(100));
+    expect(result.topUp.availableMicroUsd).toBe(c(3));
+  });
+
   test('a company-funded correction is its own line and does not rewrite usage', () => {
     const result = project({ settledMonthlyMicroUsd: c(300), correctionGrantsMicroUsd: c(10) });
     expect(result.usedPercent).toBe(30);

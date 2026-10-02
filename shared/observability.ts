@@ -191,7 +191,7 @@ export interface TraceObservation extends ObservationBase {
   readonly toolSteps: number;
   readonly childRuns: number;
   readonly errorClass: Observed<string>;
-  readonly loopStop: Observed<'turn-limit' | 'budget' | 'worker'>;
+  readonly loopStop: Observed<'turn-limit' | 'budget' | 'worker' | 'credits'>;
 }
 
 export interface GenerationObservation extends ObservationBase {

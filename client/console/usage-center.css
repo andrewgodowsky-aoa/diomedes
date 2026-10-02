@@ -1,0 +1,86 @@
+/* Settings, Usage. Colours are the theme's own tokens and nothing else: the bar fills in the glacier
+   lead while the month is fine, the signal colour past the first warning point and the fault colour
+   past the second, by the `.usage-fill` / `.signal` / `.fault` rules in styles.css, so every scheme
+   and theme decides what ok, warning and danger look like. */
+.usage-center {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  max-width: 560px;
+  min-width: 0;
+}
+.usage-center h2 {
+  margin: 0 0 12px;
+  font-size: var(--dm-type-section);
+}
+.uc-section {
+  min-width: 0;
+}
+.uc-meter {
+  height: 10px;
+  background: var(--dm-well);
+  border: 1px solid var(--dm-rule-2);
+  overflow: hidden;
+}
+/* The fill eases to its new width and colour when a refresh changes them. */
+.uc-fill {
+  transition:
+    width var(--dm-t-extend, 200ms) var(--dm-ease, ease),
+    background-color var(--dm-t-extend, 200ms) var(--dm-ease, ease);
+}
+.uc-meter-text {
+  margin: 8px 0 0;
+  color: var(--dm-text-1);
+  font-variant-numeric: tabular-nums;
+}
+.uc-note {
+  margin: 6px 0 0;
+  color: var(--dm-text-2);
+}
+.uc-note.warning {
+  color: var(--dm-signal);
+}
+.uc-note.danger {
+  color: var(--dm-fault);
+}
+.uc-held,
+.uc-when {
+  margin: 6px 0 0;
+  color: var(--dm-text-3);
+}
+.uc-when.uc-stale {
+  color: var(--dm-text-2);
+}
+.uc-line {
+  margin: 0 0 12px;
+  color: var(--dm-text-1);
+  overflow-wrap: anywhere;
+}
+.uc-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 220px;
+  margin-bottom: 10px;
+  font-size: var(--dm-type-ui);
+  color: var(--dm-text-2);
+}
+.uc-field input {
+  font-variant-numeric: tabular-nums;
+}
+.uc-buy .button-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+html[data-motion='reduced'] .uc-fill,
+html[data-motion-preset='none'] .uc-fill {
+  transition: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .uc-fill {
+    transition: none;
+  }
+}

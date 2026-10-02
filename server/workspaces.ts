@@ -110,6 +110,8 @@ import {
   canAdministerMembers,
   canBindOutputProject,
   canConfigureOrganization,
+  canManageMemberLimits,
+  canSeePurchasedUsage,
   entitlementFor,
   isActiveMember,
   legacyBusinessPreference,
@@ -1441,6 +1443,39 @@ export class WorkspaceService {
     const { membership } = this.mine(organizationId);
     if (!canAdministerMembers(membership))
       throw refuse(403, 'Only an owner can record billing events for this workspace.', 'not_owner');
+  }
+
+  /**
+   * Membership first, so an outsider gets the same refusal as a missing business, then the
+   * owner-or-admin rule. What a business bought outright is shown to the people who run the
+   * business, not to every member.
+   */
+  assertCanSeePurchasedUsage(organizationId: string): void {
+    const { membership } = this.mine(organizationId);
+    if (!canSeePurchasedUsage(membership))
+      throw refuse(403, 'Only an owner or an admin can see the credits this business bought.', 'not_owner_or_admin');
+  }
+
+  /**
+   * Buying more credits is for the same people who see what the business bought: an active owner or admin,
+   * after membership, so an outsider still reads as absent. The account service checks it again; this is
+   * only so a plain member's request goes no further than this computer.
+   */
+  assertCanBuyCredits(organizationId: string): void {
+    const { membership } = this.mine(organizationId);
+    if (!canSeePurchasedUsage(membership))
+      throw refuse(403, 'Only an owner or an admin can buy credits for this business.', 'not_owner_or_admin');
+  }
+
+  /**
+   * Membership first, then the owner-or-admin rule, for setting members' monthly credit limits, reading
+   * who used what and deciding a member's ask for more. This is the early, plain refusal; the account
+   * service is the authority and refuses again, including the narrower rules for an admin.
+   */
+  assertCanManageMemberLimits(organizationId: string): void {
+    const { membership } = this.mine(organizationId);
+    if (!canManageMemberLimits(membership))
+      throw refuse(403, 'Only an owner or an admin can do that for this business.', 'not_owner_or_admin');
   }
 
   /**

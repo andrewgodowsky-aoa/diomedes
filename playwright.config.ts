@@ -111,6 +111,7 @@ export default defineConfig({
     'kept-session-thread-ui.spec.ts',
     'independent-h01-final-20260917.spec.ts',
     'allowance-ui.spec.ts',
+    'settings-usage.spec.ts',
     'organization-export-ui.spec.ts',
     'vertex-setup-ui.spec.ts',
     'artifacts-ui.spec.ts',

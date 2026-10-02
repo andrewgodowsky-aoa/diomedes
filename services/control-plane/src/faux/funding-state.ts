@@ -1,9 +1,15 @@
 import { micro, sumMoney, type AttemptSettlement, type FundedAttempt, type MicroUsd } from '../../../../shared/managed-usage.js';
-import type { CapRequestRow, CreditAdjustmentRow, CreditPeriodRow, FundedJobRow, FundingRepository, FundingTransaction,
-  JobRefRow, TopUpRow } from '../funding.js';
+import type { CapRequestRow, CreditAdjustmentRow, CreditPeriodRow, CreditPurchaseRow, FundedJobRow, FundingRepository, FundingTransaction,
+  JobRefRow, TopUpHoldRow, TopUpRow } from '../funding.js';
+import { emptyLedgerState, type LedgerState } from './payment-ledger.js';
+import type { AllotmentSettingsRow, AttemptPersonRow, LimitRequestRow, MemberLimitRow, MemberUsageRow } from '../member-limits.js';
 
-/** Funding rows as one JSON-serializable value, for the faux cloud and offline tests. */
-export interface FundingState {
+/**
+ * Funding rows as one JSON-serializable value, for the faux cloud and offline tests. It also holds the payment ledger's rows
+ * (billing customers and stored verified events), which the Worker login writes in the real database, so the faux store keeps
+ * and persists them beside the funding rows. StateFundingTransaction never reads or writes them.
+ */
+export interface FundingState extends LedgerState {
   periods: CreditPeriodRow[];
   jobs: FundedJobRow[];
   jobRefs: JobRefRow[];
@@ -11,10 +17,20 @@ export interface FundingState {
   settlements: AttemptSettlement[];
   adjustments: CreditAdjustmentRow[];
   topUps: TopUpRow[];
+  /** Purchased-usage holds (migration 013). Stores written before it have none. */
+  topUpHolds: TopUpHoldRow[];
+  /** Credit purchases through Stripe Checkout (migration 015). Stores written before it have none. */
+  creditPurchases: CreditPurchaseRow[];
   capRequests: CapRequestRow[];
+  /** Per-member limits, raise requests and who each attempt was for (migration 014). Stores written before it have none. */
+  memberLimits: MemberLimitRow[];
+  allotmentSettings: AllotmentSettingsRow[];
+  limitRequests: LimitRequestRow[];
+  attemptPeople: AttemptPersonRow[];
 }
 
-export const emptyFundingState = (): FundingState => ({ periods: [], jobs: [], jobRefs: [], attempts: [], settlements: [], adjustments: [], topUps: [], capRequests: [] });
+export const emptyFundingState = (): FundingState => ({ periods: [], jobs: [], jobRefs: [], attempts: [], settlements: [], adjustments: [], topUps: [], topUpHolds: [], creditPurchases: [], capRequests: [],
+  memberLimits: [], allotmentSettings: [], limitRequests: [], attemptPeople: [], ...emptyLedgerState() });
 const sum = (values: MicroUsd[]) => (values.length ? sumMoney(values) : micro(0));
 const upsert = <T>(rows: T[], row: T, same: (item: T) => boolean) => {
   const index = rows.findIndex(same);
@@ -31,7 +47,15 @@ export class StateFundingTransaction implements FundingTransaction {
   async period(tenantId: string, organizationId: string, periodId: string) {
     return this.state.periods.find((row) => row.tenantId === tenantId && row.organizationId === organizationId && row.periodId === periodId);
   }
-  async savePeriod(row: CreditPeriodRow) { this.state.periods.push(row); }
+  async periods(tenantId: string, organizationId: string) {
+    return this.state.periods.filter((row) => row.tenantId === tenantId && row.organizationId === organizationId);
+  }
+  async savePeriod(row: CreditPeriodRow) {
+    // The table's primary key: one row per billing scope and period id.
+    if (this.state.periods.some((item) => item.tenantId === row.tenantId && item.organizationId === row.organizationId && item.periodId === row.periodId))
+      throw new Error('That billing period is already recorded.');
+    this.state.periods.push(row);
+  }
   async job(tenantId: string, rootJobId: string) { return this.state.jobs.find((row) => row.tenantId === tenantId && row.rootJobId === rootJobId); }
   async jobRef(tenantId: string, runRef: string) { return this.state.jobRefs.find((row) => row.tenantId === tenantId && row.runRef === runRef); }
   async saveJob(row: FundedJobRow) { upsert(this.state.jobs, row, (item) => item.tenantId === row.tenantId && item.rootJobId === row.rootJobId); }
@@ -47,8 +71,67 @@ export class StateFundingTransaction implements FundingTransaction {
   async saveAdjustment(row: CreditAdjustmentRow) { this.state.adjustments.push(row); }
   async topUp(tenantId: string, id: string) { return this.state.topUps.find((row) => row.tenantId === tenantId && row.topUpId === id); }
   async saveTopUp(row: TopUpRow) { this.state.topUps.push(row); }
+  async topUpHold(tenantId: string, holdId: string) { return this.state.topUpHolds.find((row) => row.tenantId === tenantId && row.holdId === holdId); }
+  async saveTopUpHold(row: TopUpHoldRow) { upsert(this.state.topUpHolds, row, (item) => item.tenantId === row.tenantId && item.holdId === row.holdId); }
+  async creditPurchase(tenantId: string, purchaseId: string) { return this.state.creditPurchases.find((row) => row.tenantId === tenantId && row.purchaseId === purchaseId); }
+  async creditPurchaseBySession(sessionId: string) { return this.state.creditPurchases.find((row) => row.checkoutSessionId === sessionId); }
+  async saveCreditPurchase(row: CreditPurchaseRow) { upsert(this.state.creditPurchases, row, (item) => item.tenantId === row.tenantId && item.purchaseId === row.purchaseId); }
   async capRequest(tenantId: string, id: string) { return this.state.capRequests.find((row) => row.tenantId === tenantId && row.requestId === id); }
   async saveCapRequest(row: CapRequestRow) { upsert(this.state.capRequests, row, (item) => item.tenantId === row.tenantId && item.requestId === row.requestId); }
+  async memberLimits(tenantId: string, organizationId: string) {
+    return this.state.memberLimits.filter((row) => row.tenantId === tenantId && row.organizationId === organizationId);
+  }
+  async saveMemberLimit(row: MemberLimitRow) {
+    upsert(this.state.memberLimits, row, (item) => item.tenantId === row.tenantId && item.organizationId === row.organizationId
+      && item.subjectKind === row.subjectKind && item.subjectId === row.subjectId);
+  }
+  async allotmentSettings(tenantId: string, organizationId: string) {
+    return this.state.allotmentSettings.find((row) => row.tenantId === tenantId && row.organizationId === organizationId);
+  }
+  async saveAllotmentSettings(row: AllotmentSettingsRow) {
+    upsert(this.state.allotmentSettings, row, (item) => item.tenantId === row.tenantId && item.organizationId === row.organizationId);
+  }
+  async limitRequest(tenantId: string, requestId: string) {
+    return this.state.limitRequests.find((row) => row.tenantId === tenantId && row.requestId === requestId);
+  }
+  async saveLimitRequest(row: LimitRequestRow) {
+    upsert(this.state.limitRequests, row, (item) => item.tenantId === row.tenantId && item.requestId === row.requestId);
+  }
+  async limitRequests(tenantId: string, organizationId: string, filter: { personId?: string; state?: LimitRequestRow['state'] }) {
+    return this.state.limitRequests.filter((row) => row.tenantId === tenantId && row.organizationId === organizationId
+      && (filter.personId === undefined || row.personId === filter.personId) && (filter.state === undefined || row.state === filter.state))
+      .sort((a, b) => (a.requestedAt < b.requestedAt ? -1 : a.requestedAt > b.requestedAt ? 1 : a.requestId < b.requestId ? -1 : 1));
+  }
+  async approvedAllowances(tenantId: string, organizationId: string, personId: string, periodId: string, rootJobId: string) {
+    return this.state.limitRequests.filter((row) => row.tenantId === tenantId && row.organizationId === organizationId && row.scopeKind === 'person'
+      && row.personId === personId && row.state === 'approved'
+      && ((row.kind === 'month' && row.periodId === periodId) || (row.kind === 'job' && row.rootJobId === rootJobId)));
+  }
+  async saveAttemptPerson(row: AttemptPersonRow) { this.state.attemptPeople.push(row); }
+  async memberUsage(tenantId: string, organizationId: string, period: CreditPeriodRow, personId: string | null, at: string): Promise<MemberUsageRow[]> {
+    const now = Date.parse(at);
+    const personOf = (attemptId: string) => this.state.attemptPeople.find((row) => row.tenantId === tenantId && row.attemptId === attemptId)?.personId;
+    const totals = new Map<string, { included: number; purchased: number; held: number }>();
+    const add = (person: string | undefined, included: number, purchased: number, held: number) => {
+      if (person === undefined || (personId !== null && person !== personId)) return;
+      const row = totals.get(person) ?? { included: 0, purchased: 0, held: 0 };
+      totals.set(person, { included: row.included + included, purchased: row.purchased + purchased, held: row.held + held });
+    };
+    for (const row of this.state.attempts)
+      if (row.tenantId === tenantId && row.organizationId === organizationId && row.periodId === period.periodId && (row.state === 'pending' || row.state === 'uncertain'))
+        add(personOf(row.id), row.monthlyHoldMicroUsd, row.topUpHoldMicroUsd, row.maxMicroUsd);
+    for (const row of this.state.settlements)
+      if (row.tenantId === tenantId && row.organizationId === organizationId && row.periodId === period.periodId)
+        add(personOf(row.reservationId), row.monthlyDebitMicroUsd, row.topUpDebitMicroUsd, 0);
+    for (const row of this.state.topUpHolds) {
+      if (row.tenantId !== tenantId || row.organizationId !== organizationId) continue;
+      // A held hold whose lease has lapsed is not held, whether or not anything has let go of it yet.
+      if (row.state === 'held') { if (Date.parse(row.leaseUntil) > now) add(row.personId, 0, row.amountMicroUsd, row.amountMicroUsd); }
+      else if (row.state === 'settled' && row.resolvedAt !== null && row.resolvedAt >= period.startsAt && row.resolvedAt < period.endsAt) add(row.personId, 0, row.debitMicroUsd, 0);
+    }
+    return [...totals.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([person, row]) => ({ personId: person, includedMicroUsd: micro(row.included), purchasedMicroUsd: micro(row.purchased), heldMicroUsd: micro(row.held) }));
+  }
   async periodTotals(tenantId: string, organizationId: string, periodId: string) {
     const attempts = this.state.attempts.filter((row) => row.tenantId === tenantId && row.organizationId === organizationId && row.periodId === periodId);
     const settlements = this.state.settlements.filter((row) => row.tenantId === tenantId && row.organizationId === organizationId && row.periodId === periodId);
@@ -62,12 +145,28 @@ export class StateFundingTransaction implements FundingTransaction {
       settledTopUpMicroUsd: sum(settlements.map((row) => row.topUpDebitMicroUsd)),
     };
   }
-  async topUpTotals(tenantId: string, organizationId: string) {
+  /** The lazy release: a held hold whose lease has lapsed at `at` (lease_until <= at) is let go by expiry. */
+  async expireTopUpHolds(tenantId: string, organizationId: string, at: string) {
+    const now = Date.parse(at);
+    this.state.topUpHolds = this.state.topUpHolds.map((row) =>
+      row.tenantId === tenantId && row.organizationId === organizationId && row.state === 'held' && Date.parse(row.leaseUntil) <= now
+        ? { ...row, state: 'released' as const, releasedBy: 'expiry' as const, resolvedAt: at }
+        : row);
+  }
+  async topUpTotals(tenantId: string, organizationId: string, at: string) {
+    const now = Date.parse(at);
     const mine = <T extends { tenantId: string; organizationId: string }>(rows: T[]) => rows.filter((row) => row.tenantId === tenantId && row.organizationId === organizationId);
     return {
       purchasedMicroUsd: sum(mine(this.state.topUps).map((row) => row.amountMicroUsd)),
-      heldMicroUsd: sum(mine(this.state.attempts).filter((row) => row.state === 'pending' || row.state === 'uncertain').map((row) => row.topUpHoldMicroUsd)),
-      settledMicroUsd: sum(mine(this.state.settlements).map((row) => row.topUpDebitMicroUsd)),
+      heldMicroUsd: sum([
+        ...mine(this.state.attempts).filter((row) => row.state === 'pending' || row.state === 'uncertain').map((row) => row.topUpHoldMicroUsd),
+        // A held hold whose lease has lapsed is not held, whether or not anything has let go of it yet.
+        ...mine(this.state.topUpHolds).filter((row) => row.state === 'held' && Date.parse(row.leaseUntil) > now).map((row) => row.amountMicroUsd),
+      ]),
+      settledMicroUsd: sum([
+        ...mine(this.state.settlements).map((row) => row.topUpDebitMicroUsd),
+        ...mine(this.state.topUpHolds).filter((row) => row.state === 'settled').map((row) => row.debitMicroUsd),
+      ]),
     };
   }
   async jobUsed(tenantId: string, rootJobId: string) {

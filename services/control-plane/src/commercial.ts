@@ -45,12 +45,24 @@ import {
   catalogPlan,
   catalogPlanLabel,
   isPersonPlan,
+  individualIncludesMonthlyCredits,
   planCatalog,
   type IndividualCoverage,
   type CoveredAccessView,
   type PersonAccessView,
   type PersonGrantSummary,
+  type PersonalUsageView,
 } from '../../../shared/individual-plan.js';
+import {
+  INDIVIDUAL_CYCLE_POLICY,
+  MAX_INDIVIDUAL_CYCLE_INDEX,
+  cycleContains,
+  individualCycle,
+  periodsOverlap,
+  sameIndividualCycle,
+  verifiedIndividualCycle,
+  type IndividualBillingCycle,
+} from '../../../shared/individual-period.js';
 import { MODEL_API_PROVIDERS as MODEL_API_ROUTES } from '../../../shared/model-api.js';
 import { CREDIT_MICRO_USD, creditAmount, periodIdFor, publishedMonthlyGrant, type UsageState } from '../../../shared/managed-usage.js';
 import { NO_ENTITLEMENT_VIEW, type EntitlementView, type Membership, type Organization, type Person } from '../../../shared/workspaces.js';
@@ -112,6 +124,18 @@ export const featureGrantSchema = z.strictObject({
 export type FeatureGrant = z.infer<typeof featureGrantSchema>;
 
 /**
+ * One verified monthly Individual term (DIO-128). Every field must be exactly what the anchor and
+ * index produce, so a stored record cannot carry a hand-edited or drifted boundary.
+ */
+export const individualCycleSchema = z.strictObject({
+  policy: z.literal(INDIVIDUAL_CYCLE_POLICY),
+  anchorAt: time,
+  index: z.number().int().min(0).max(MAX_INDIVIDUAL_CYCLE_INDEX),
+  startsAt: time,
+  endsAt: time,
+}).refine((cycle) => verifiedIndividualCycle(cycle) !== null, 'A billing period must be the one its anchor and index produce.');
+
+/**
  * An Individual grant (migration 009): what a person, not a business, may use. Issued to a person
  * and never to an organization. A person has no tenant of their own, so their rows use the
  * person's id as the tenant id.
@@ -134,6 +158,12 @@ export const personFeatureGrantSchema = z.strictObject({
   revokedAt: time.nullable(),
   revokedBy: accountId.nullable(),
   revokedReason: text(1000).nullable(),
+  /**
+   * The monthly term a complete Individual grant pays for (DIO-128). Absent on grants issued before
+   * anniversary periods and on limited overrides, which keep their explicit dates. The validity
+   * interval lies inside it; a replacement or recovery grant may start later in the same term.
+   */
+  billingCycle: individualCycleSchema.optional(),
 });
 export type PersonFeatureGrant = z.infer<typeof personFeatureGrantSchema>;
 /** What access resolution reads from a grant, whoever holds it. */
@@ -365,9 +395,11 @@ export function entitlementFromGrants(grants: readonly GrantTerms[], revision: n
     plan: 'none', planLabel: null, features: [] as string[], agent: false, managedInference: false,
     validFrom: null, validUntil: null, revision, source: 'account-service' as const,
   };
+  // Ties (a replacement ending with the term it replaced, say) go to the grant issued last.
   const latest = [...grants].sort((a, b) =>
     Math.max(Date.parse(b.revokedAt ?? b.issuedAt), Math.min(Date.parse(b.validUntil), when)) -
-    Math.max(Date.parse(a.revokedAt ?? a.issuedAt), Math.min(Date.parse(a.validUntil), when)))[0];
+    Math.max(Date.parse(a.revokedAt ?? a.issuedAt), Math.min(Date.parse(a.validUntil), when)) ||
+    Date.parse(b.issuedAt) - Date.parse(a.issuedAt))[0];
   if (!latest) return { ...base, state: 'none', reason: 'This business has no Nectovia plan yet.' };
   const state = grantState(latest, when);
   if (state === 'revoked')
@@ -401,23 +433,64 @@ function personSummary(grant: PersonFeatureGrant, at: number): PersonGrantSummar
     validFrom: grant.validFrom,
     validUntil: grant.validUntil,
     state: grantState(grant, at),
+    ...(grant.billingCycle ? { billingCycle: grant.billingCycle } : {}),
+  };
+}
+
+/**
+ * The verified monthly Individual term that funds Personal work at `at`, from the person's current
+ * complete-plan grants. Null when none is current, or when only legacy grants without a term are.
+ * Grants that name one term share its one balance; two current grants naming different terms are a
+ * record conflict and fund nothing. A grant's end date never selects a newer term on its own.
+ */
+export function currentIndividualCycle(grants: readonly PersonFeatureGrant[], at: number): { cycle: IndividualBillingCycle; grant: PersonFeatureGrant } | null {
+  const current = grants
+    .filter((grant) => grant.billingCycle && grantState(grant, at) === 'active' && individualIncludesMonthlyCredits(grant) &&
+      cycleContains(grant.billingCycle, at) && grant.personId === grant.tenantId)
+    .sort((a, b) => (a.issuedAt < b.issuedAt ? -1 : a.issuedAt > b.issuedAt ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  if (!current.length) return null;
+  const cycle = verifiedIndividualCycle(current[0].billingCycle);
+  if (!cycle || current.some((grant) => !sameIndividualCycle(grant.billingCycle!, cycle))) return null;
+  return { cycle, grant: current[0] };
+}
+
+/** For Operations: the person's subscription anchor, current term and the next term a renewal would pay for. */
+export function individualTerms(grants: readonly PersonFeatureGrant[], at: number) {
+  const terms = grants.flatMap((grant) => (grant.billingCycle ? [grant.billingCycle] : []));
+  if (!terms.length) return { anchorAt: null, current: null, next: null };
+  // The latest anchor is the subscription in force; a restart after a lapse may have set a new one.
+  const latest = terms.reduce((a, b) => (Date.parse(b.startsAt) > Date.parse(a.startsAt) ? b : a));
+  return {
+    anchorAt: latest.anchorAt,
+    current: currentIndividualCycle(grants, at)?.cycle ?? null,
+    next: individualCycle(latest.anchorAt, latest.index + 1),
   };
 }
 
 /** A person's own entitlement from their Individual grants, in the person's words rather than a business's. */
 export function personEntitlement(grants: readonly PersonFeatureGrant[], revision: number, at: string): EntitlementView {
-  const view = entitlementFromGrants(grants, revision, at);
+  // Project the approved offer over the original phase-2a template. Never mutate historical grants,
+  // or broaden a limited feature override merely because it names the Individual plan.
+  const view = entitlementFromGrants(grants.map(grant => individualIncludesMonthlyCredits(grant)
+    ? { ...grant, features: [...new Set<AccessFeature>([...grant.features, 'managed-inference'])] } : grant), revision, at);
   const planLabel = view.plan === 'none' ? null : view.plan === 'custom' ? 'Custom access' : catalogPlanLabel(view.plan);
   const reason = view.state === 'active' ? '' : view.state === 'expired' ? INDIVIDUAL_EXPIRED_REASON
     : view.state === 'revoked' ? INDIVIDUAL_REVOKED_REASON : INDIVIDUAL_NONE_REASON;
   return { ...view, planLabel, reason };
 }
 
-/** Personal access belongs to the person; managed usage additionally needs its own funded agreement. */
+/** Personal access belongs to the person. A full plan or an explicit usage agreement can fund it. */
 export async function individualEntitlement(tx: CommercialTransaction, accountId: string, personId: string, at: string): Promise<EntitlementView> {
+  const account = await tx.individual(accountId);
+  if (!account || account.personId !== personId || account.tenantId !== personId)
+    throw new AccountError(403, 'This Individual account is unavailable to this person.', 'scope_forbidden');
   const person = personEntitlement(await tx.personGrants(personId), await tx.personAccessRevision(personId), at);
   const usage = entitlementFromGrants(await tx.grants(accountId), await tx.accessRevision(accountId), at);
-  const managedInference = person.state === 'active' && person.agent && usage.state === 'active' && usage.managedInference;
+  // Operations can inspect disabled accounts and their history; they grant no current authority.
+  if (account.state !== 'active') return { ...person, state: 'revoked', agent: false, managedInference: false,
+    features: [], revision: person.revision + usage.revision, reason: 'This Individual account is disabled.' };
+  const managedInference = person.state === 'active' && person.agent &&
+    (person.managedInference || (usage.state === 'active' && usage.managedInference));
   return { ...person, revision: person.revision + usage.revision, managedInference,
     features: [...person.features.filter(feature => feature !== 'managed-inference'), ...(managedInference ? ['managed-inference'] : [])] };
 }
@@ -449,9 +522,17 @@ export const issuePersonGrantInput = z.strictObject({
   source: z.enum(['subscription', 'courtesy', 'internal-test']),
   reference: text(200),
   note: text(1000),
+  /** Omitted for the complete plan: the start of its billing period. */
   validFrom: time.optional(),
-  /** Omitted: the plan's term. */
+  /** Omitted for the complete plan: the end of its billing period. A limited override names its own. */
   validUntil: time.optional(),
+  /**
+   * The verified monthly term the complete plan pays for: the subscription's original anchor and the
+   * term's index from it. Omitted only for a person's first subscription, whose anchor is `validFrom`
+   * (or now). A renewal names the next index; a genuinely new subscription after a lapse names a new
+   * anchor. The server computes both boundaries; a submitted end date cannot move them.
+   */
+  billingCycle: z.strictObject({ anchorAt: time, index: z.number().int().min(0).max(MAX_INDIVIDUAL_CYCLE_INDEX) }).optional(),
 });
 export const addFundingInput = z.strictObject({
   credits: z.number().int().min(1).max(100_000),
@@ -500,6 +581,15 @@ export interface CommercialOptions {
 }
 
 const newId = (kind: string) => `${kind}_${crypto.randomUUID()}`;
+
+interface PersonGrantDraft {
+  plan: NonNullable<ReturnType<typeof catalogPlan>>;
+  features: AccessFeature[];
+  data: z.infer<typeof issuePersonGrantInput>;
+  validFrom: string;
+  validUntil: string;
+  billingCycle: IndividualBillingCycle | undefined;
+}
 
 export class CommercialService {
   private readonly now: () => number;
@@ -642,6 +732,42 @@ export class CommercialService {
       grants: grants.map((grant) => personSummary(grant, when)).sort((a, b) => (a.validUntil < b.validUntil ? 1 : -1)),
       checkedAt: at,
     };
+  }
+
+  /**
+   * The signed-in person's own Individual credits, for `GET /account/usage`. Read-only: it resolves the
+   * person's own billing account and current verified term on the server, so no request can name
+   * another person, payer or period, and it never allocates. Grants from before monthly terms, and
+   * an explicit usage agreement, read their UTC calendar month as before.
+   */
+  async personUsage(token: string): Promise<PersonalUsageView> {
+    const session = await this.accounts.signIn(token);
+    const personId = session.person.id;
+    const at = this.at(), when = Date.parse(at);
+    const { account, grants, agreements } = await this.repository.transaction(async (tx) => {
+      const account = await tx.individualFor(personId);
+      return { account, grants: await tx.personGrants(personId), agreements: account ? await tx.grants(account.id) : [] };
+    });
+    const view = (usage: UsageState, renewal: PersonalUsageView['renewal'] = null): PersonalUsageView =>
+      ({ v: 1, personId, accountId: account?.id ?? null, usage, renewal, checkedAt: at });
+    const scope = account?.id ?? personId;
+    if (!account || account.personId !== personId || account.tenantId !== personId)
+      return view({ state: 'unavailable', organizationId: scope, reason: 'You have no Individual account yet, so there is no usage to show.' });
+    if (account.state !== 'active')
+      return view({ state: 'unavailable', organizationId: scope, reason: 'This Individual account is disabled, so it funds no new work.' });
+    if (!this.funding) return view({ state: 'not-connected', organizationId: scope, reason: 'The funding service is not connected here.' });
+    const term = currentIndividualCycle(grants, when);
+    if (term) {
+      const next = individualCycle(term.cycle.anchorAt, term.cycle.index + 1);
+      const renewed = grants.some((grant) => grant.billingCycle && grant.state === 'active' && sameIndividualCycle(grant.billingCycle, next) &&
+        individualIncludesMonthlyCredits(grant));
+      return view(await this.funding.individualProjection(personId, account.id, term.cycle),
+        { state: renewed ? 'renewed' : 'not-renewed', nextStartsAt: next.startsAt, nextEndsAt: next.endsAt });
+    }
+    const legacy = grants.some((grant) => !grant.billingCycle && grantState(grant, when) === 'active' && individualIncludesMonthlyCredits(grant)) ||
+      agreements.some((grant) => grantState(grant, when) === 'active' && grant.features.includes('managed-inference'));
+    if (legacy) return view(await this.funding.projection(personId, account.id));
+    return view({ state: 'unavailable', organizationId: scope, reason: 'No current Individual plan includes credits, so there is no usage to show.' });
   }
 
   /**
@@ -967,12 +1093,24 @@ export class CommercialService {
       memberships: found.memberships,
       entitlement: personEntitlement(found.grants, found.revision, at),
       grants: found.grants.map((grant) => ({ ...grant, current: grantState(grant, Date.parse(at)) })),
+      /** The subscription anchor, the term in force now and the next term a renewal would pay for, all UTC. */
+      individualTerm: individualTerms(found.grants, Date.parse(at)),
       admissions: found.admissions,
       audit: found.audit,
     };
   }
 
-  /** Issue Personal Agent access. Managed usage has a separate billing-scope agreement. */
+  /**
+   * Issue Personal access. Its recurring allowance is allocated by the funding writer when needed.
+   *
+   * The complete plan pays for exactly one verified monthly term (DIO-128): both boundaries come from
+   * the subscription's anchor and the term's index, never from a day count, a submitted end date,
+   * the issue time or a new grant id. Issuing the same reference for the same term and terms again
+   * returns the original grant; any other replay of that reference is refused. A different reference
+   * for a term already paid (a replacement after withdrawal, say) shares that term's one balance.
+   * Overlapping terms, and a term overlapping a still-current legacy plan or explicit agreement, are
+   * refused so two allowances can never fund the same time.
+   */
   async issuePersonGrant(token: string, personId: string, input: z.infer<typeof issuePersonGrantInput>) {
     const parsed = issuePersonGrantInput.safeParse(input);
     if (!parsed.success) throw new AccountError(422, 'A grant needs a plan, a source, a reference and dates.');
@@ -981,34 +1119,91 @@ export class CommercialService {
     if (!plan) throw new AccountError(422, 'That plan is not in the catalog.');
     if (plan.scope !== 'person') throw new AccountError(422, BUSINESS_PLAN_NOT_FOR_PERSON);
     const features = [...new Set(parsed.data.features ?? plan.features)] as AccessFeature[];
-    // Person-plan access and the separately funded managed-usage agreement are independent.
-    if (features.includes('managed-inference'))
-      throw new AccountError(422, "Included AI usage isn't part of the Individual plan yet, so it can't be issued with it.");
+    if (features.includes('managed-inference') && !features.includes(AGENT_FEATURE))
+      throw new AccountError(422, 'Individual included usage requires Personal Agent access in the same grant.');
     if (!parsed.data.reference) throw new AccountError(422, 'Name the invoice, agreement or ticket this grant answers to.');
+    const monthly = plan.billingInterval === 'month' && individualIncludesMonthlyCredits({ planId: plan.id, features });
+    if (!monthly && parsed.data.billingCycle)
+      throw new AccountError(422, 'Only the complete Individual plan has a monthly billing period. A limited grant names its own dates.');
     const now = this.now();
-    const validFrom = parsed.data.validFrom ?? new Date(now).toISOString();
-    const validUntil = parsed.data.validUntil ??
-      (plan.termDays ? new Date(Date.parse(validFrom) + plan.termDays * 86_400_000).toISOString() : undefined);
-    if (!validUntil) throw new AccountError(422, 'Choose when this grant ends.');
-    if (Date.parse(validUntil) <= Date.parse(validFrom) || Date.parse(validUntil) <= now)
-      throw new AccountError(422, 'A grant must end after it starts, and after today.');
+    const normalize = (value: string | undefined) => (value === undefined ? undefined : new Date(value).toISOString());
+    const submittedFrom = normalize(parsed.data.validFrom), submittedUntil = normalize(parsed.data.validUntil);
+    if (!monthly) {
+      const validFrom = submittedFrom ?? new Date(now).toISOString();
+      const validUntil = submittedUntil ??
+        (plan.termDays ? new Date(Date.parse(validFrom) + plan.termDays * 86_400_000).toISOString() : undefined);
+      if (!validUntil) throw new AccountError(422, 'Choose when this grant ends.');
+      if (Date.parse(validUntil) <= Date.parse(validFrom) || Date.parse(validUntil) <= now)
+        throw new AccountError(422, 'A grant must end after it starts, and after today.');
+      return this.savePersonGrantRow(actor, personId, { plan, features, data: parsed.data, validFrom, validUntil, billingCycle: undefined });
+    }
+    return this.repository.transaction(async (tx) => {
+      const person = await tx.person(personId);
+      if (!person) throw new AccountError(404, 'That person was not found.');
+      const account = await ensureIndividualAccount(tx, person.person, this.at());
+      const prior = await tx.personGrants(personId);
+      const terms = prior.filter((grant) => grant.billingCycle);
+      let cycle: IndividualBillingCycle;
+      try {
+        if (parsed.data.billingCycle) cycle = individualCycle(new Date(parsed.data.billingCycle.anchorAt).toISOString(), parsed.data.billingCycle.index);
+        else if (!terms.length) cycle = individualCycle(submittedFrom ?? new Date(now).toISOString(), 0);
+        else throw new AccountError(409, 'This person already has a monthly Individual subscription. Name the billing period this grant pays for: the next term, or a new subscription start.', 'billing_period_required');
+      } catch (error) {
+        if (error instanceof RangeError) throw new AccountError(422, 'That billing period is not a valid subscription month.', 'invalid_billing_period');
+        throw error;
+      }
+      const validFrom = submittedFrom ?? cycle.startsAt;
+      const validUntil = submittedUntil ?? cycle.endsAt;
+      if (Date.parse(validFrom) < Date.parse(cycle.startsAt) || Date.parse(validUntil) > Date.parse(cycle.endsAt) || Date.parse(validUntil) <= Date.parse(validFrom))
+        throw new AccountError(422, `This grant's dates must lie inside its billing period, ${cycle.startsAt} to ${cycle.endsAt} (UTC).`, 'outside_billing_period');
+      if (Date.parse(validUntil) <= now)
+        throw new AccountError(422, 'That billing period has already ended. An elapsed period is never funded afterwards.', 'billing_period_ended');
+      // One reference pays for one term, once. A replay with the same terms is the same grant.
+      const replay = terms.find((grant) => grant.reference === parsed.data.reference);
+      if (replay) {
+        const same = sameIndividualCycle(replay.billingCycle!, cycle) && replay.state === 'active' && replay.planId === plan.id &&
+          replay.source === parsed.data.source && replay.validFrom === validFrom && replay.validUntil === validUntil &&
+          JSON.stringify([...replay.features].sort()) === JSON.stringify([...features].sort());
+        if (!same) throw new AccountError(409, 'That reference already paid for a billing period on different terms. Issue a correction under its own reference.', 'billing_reference_conflict');
+        return { grant: replay, replayed: true as const };
+      }
+      if (terms.some((grant) => !sameIndividualCycle(grant.billingCycle!, cycle) && periodsOverlap(grant.billingCycle!, cycle)))
+        throw new AccountError(409, 'That billing period overlaps another recorded Individual period. One period funds any moment, once.', 'billing_period_overlap');
+      const covering = (grant: { validFrom: string; validUntil: string }) => periodsOverlap({ startsAt: grant.validFrom, endsAt: grant.validUntil }, cycle);
+      if (prior.some((grant) => !grant.billingCycle && grant.state === 'active' && individualIncludesMonthlyCredits(grant) && Date.parse(grant.validUntil) > now && covering(grant)))
+        throw new AccountError(409, 'A current Individual plan from before monthly billing periods still covers part of this period. Start the monthly term when it ends.', 'legacy_term_overlap');
+      if ((await tx.grants(account.id)).some((grant) => grant.state === 'active' && grant.features.includes('managed-inference') && Date.parse(grant.validUntil) > now && covering(grant)))
+        throw new AccountError(409, 'An explicit usage agreement still funds this account during part of this period. Start the monthly term after its agreed coverage.', 'agreement_overlap');
+      const grant = await this.writePersonGrant(tx, actor, personId, { plan, features, data: parsed.data, validFrom, validUntil, billingCycle: cycle });
+      return { grant };
+    });
+  }
+
+  private savePersonGrantRow(actor: { person: Person; operator: Operator }, personId: string, input: PersonGrantDraft) {
     return this.repository.transaction(async (tx) => {
       const person = await tx.person(personId);
       if (!person) throw new AccountError(404, 'That person was not found.');
       await ensureIndividualAccount(tx, person.person, this.at());
-      const row: PersonFeatureGrant = {
-        v: 1, id: newId('grant'), personId, tenantId: personId, planId: plan.id, features, source: parsed.data.source,
-        reference: parsed.data.reference, note: parsed.data.note, validFrom, validUntil, state: 'active',
-        issuedAt: this.at(), issuedBy: actor.person.id, revokedAt: null, revokedBy: null, revokedReason: null,
-      };
-      await tx.savePersonGrant(row);
-      const revision = await tx.bumpPersonAccessRevision(personId, personId);
-      await this.audited(tx, actor, {
-        action: 'person-grant.issued', organizationId: null, targetKind: 'person-grant', targetId: row.id, reason: row.note || row.reference,
-        detail: { personId, planId: row.planId, features: row.features, source: row.source, reference: row.reference, validFrom, validUntil, accessRevision: revision },
-      });
-      return { grant: row };
+      return { grant: await this.writePersonGrant(tx, actor, personId, input) };
     });
+  }
+
+  private async writePersonGrant(tx: CommercialTransaction, actor: { person: Person; operator: Operator }, personId: string, input: PersonGrantDraft) {
+    const { plan, features, data, validFrom, validUntil, billingCycle } = input;
+    const row: PersonFeatureGrant = {
+      v: 1, id: newId('grant'), personId, tenantId: personId, planId: plan.id, features, source: data.source,
+      reference: data.reference, note: data.note, validFrom, validUntil, state: 'active',
+      issuedAt: this.at(), issuedBy: actor.person.id, revokedAt: null, revokedBy: null, revokedReason: null,
+      ...(billingCycle ? { billingCycle } : {}),
+    };
+    await tx.savePersonGrant(row);
+    const revision = await tx.bumpPersonAccessRevision(personId, personId);
+    await this.audited(tx, actor, {
+      action: 'person-grant.issued', organizationId: null, targetKind: 'person-grant', targetId: row.id, reason: row.note || row.reference,
+      detail: { personId, planId: row.planId, features: row.features, source: row.source, reference: row.reference, validFrom, validUntil,
+        accessRevision: revision, ...(billingCycle ? { billingCycle } : {}) },
+    });
+    return row;
   }
 
   async revokePersonGrant(token: string, personId: string, grantId: string, input: z.infer<typeof revokeGrantInput>) {

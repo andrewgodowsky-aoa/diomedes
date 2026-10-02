@@ -7,7 +7,9 @@ import {
   formatMoney,
   type AllowanceView,
 } from '../../shared/managed-usage';
+import type { Membership } from '../../shared/workspaces';
 import { ApiError, api } from '../api';
+import { PurchasedCredits } from './PurchasedCredits';
 
 /**
  * What managed model access is, and what this installation can honestly say
@@ -37,9 +39,12 @@ function coverage(): { included: string; excluded: string } {
 
 export function Allowance({
   organizationId,
+  membership,
   report,
 }: {
   organizationId: string;
+  /** The signed-in person's own membership in this business, as the workspace view carries it. */
+  membership: Membership;
   report(error: unknown): void;
 }) {
   const [view, setView] = useState<AllowanceView | null>(null);
@@ -145,6 +150,8 @@ export function Allowance({
           </dd>
         </div>
       </dl>
+
+      <PurchasedCredits organizationId={organizationId} membership={membership} report={report} />
 
       <p className="caption ws-rate-card">
         Rates recorded as{' '}

@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { PersonalUsageView } from '../../shared/individual-plan';
 import type { UsageState } from '../../shared/managed-usage';
 import { ApiError, api } from '../api';
 import { Button } from '../components';
-import { USAGE_LABEL, acceptsUsage, usageBarModel } from './nectovia-usage-model';
+import { USAGE_LABEL, acceptsPersonalUsage, acceptsUsage, usageBarModel, type UsageScope } from './nectovia-usage-model';
 
 /**
  * Nectovia usage for the active business, in the account area.
@@ -39,17 +40,21 @@ export function NectoviaUsageView({
   now,
   onRefresh,
   refreshing,
+  scope,
+  title = USAGE_LABEL,
 }: {
   state: UsageState;
   now: number;
   onRefresh(): void;
   refreshing: boolean;
+  scope?: UsageScope;
+  title?: string;
 }) {
-  const model = usageBarModel(state, now);
+  const model = usageBarModel(state, now, scope);
   return (
     <section className="ws-section nu">
       <div className="nu-head">
-        <h3>{USAGE_LABEL}</h3>
+        <h3>{title}</h3>
         {state.state !== 'loading' && (
           <Button tone="quiet" disabled={refreshing} onClick={onRefresh}>
             Refresh
@@ -88,13 +93,11 @@ export function NectoviaUsageView({
   );
 }
 
-export function NectoviaUsage({
-  organizationId,
-  report,
-}: {
-  organizationId: string;
-  report(error: unknown): void;
-}) {
+/**
+ * The usage state for one business, read now and again every half minute, with a way to read it on demand.
+ * The Usage screen in Settings reads it through this too, so both show the same answer the same way.
+ */
+export function useNectoviaUsage(organizationId: string, report: (error: unknown) => void) {
   const [state, setState] = useState<UsageState>({ state: 'loading', organizationId });
   const [refreshing, setRefreshing] = useState(false);
   const [now, setNow] = useState(() => Date.now());
@@ -151,5 +154,107 @@ export function NectoviaUsage({
   }, [organizationId, load, refreshing]);
 
   const shown: UsageState = state.organizationId === organizationId ? state : { state: 'loading', organizationId };
-  return <NectoviaUsageView state={shown} now={now} refreshing={refreshing} onRefresh={() => void load(organizationId)} />;
+  const refresh = useCallback(() => void load(organizationId), [load, organizationId]);
+  return { state: shown, now, refreshing, refresh };
 }
+
+export function NectoviaUsage({
+  organizationId,
+  report,
+}: {
+  organizationId: string;
+  report(error: unknown): void;
+}) {
+  const { state, now, refreshing, refresh } = useNectoviaUsage(organizationId, report);
+  return <NectoviaUsageView state={state} now={now} refreshing={refreshing} onRefresh={refresh} />;
+}
+
+/** Never wait longer than this for a period's end; setTimeout cannot hold a longer delay. */
+const MAX_TIMER_MS = 2 ** 31 - 1;
+
+/**
+ * The signed-in person's own Individual credits, in Account settings. The host reads them from the
+ * control plane for this person only; the browser never computes a balance or a new period. At the
+ * period's end the old figures stop showing and the section reads again, so expired credits are never
+ * drawn as current. Nothing is shown before the person has an Individual account.
+ */
+export function PersonalUsage({ personId, report }: { personId: string | null; report(error: unknown): void }) {
+  const [view, setView] = useState<PersonalUsageView | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
+  // Each read is numbered; an answer that arrives after a newer read, or for another person, is dropped.
+  const generation = useRef(0);
+  const person = useRef(personId);
+  person.current = personId;
+  const reportRef = useRef(report);
+  reportRef.current = report;
+
+  const load = useCallback(() => {
+    const mine = ++generation.current;
+    const asked = person.current;
+    setRefreshing(true);
+    return api<PersonalUsageView>('/account/usage')
+      .then((next) => {
+        if (generation.current !== mine || person.current !== asked) return;
+        setView(acceptsPersonalUsage(next, asked, Date.now()) ? next : {
+          ...next, usage: { state: 'unavailable', organizationId: next.accountId ?? next.personId,
+            reason: 'The usage answer was for another account or an ended billing period, so it was not shown.' } });
+      })
+      .catch((error) => {
+        if (generation.current !== mine || person.current !== asked) return;
+        if (!(error instanceof ApiError && error.status === 404)) reportRef.current(error);
+        // With nothing shown yet the section stays hidden; the error itself is reported above.
+        setView((prior) => ({ v: 1, personId: asked ?? '', accountId: prior?.accountId ?? null, renewal: null, checkedAt: new Date().toISOString(),
+          usage: { state: 'unavailable', organizationId: prior?.usage.organizationId ?? 'individual', reason: 'Usage could not be read just now.' } }));
+      })
+      .finally(() => {
+        if (generation.current === mine) {
+          setRefreshing(false);
+          setNow(Date.now());
+        }
+      });
+  }, []);
+
+  useEffect(() => {
+    setView(null);
+    void load();
+  }, [personId, load]);
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    if (refreshing) return;
+    const timer = setTimeout(() => void load(), 30_000);
+    return () => clearTimeout(timer);
+  }, [load, refreshing]);
+
+  // Read again the moment the shown period ends.
+  const endsAt = view?.usage.state === 'ready' ? Date.parse(view.usage.projection.resetsAt) : null;
+  useEffect(() => {
+    if (endsAt === null) return;
+    const timer = setTimeout(() => {
+      setNow(Date.now());
+      void load();
+    }, Math.min(MAX_TIMER_MS, Math.max(0, endsAt - Date.now())));
+    return () => clearTimeout(timer);
+  }, [endsAt, load]);
+
+  if (view !== null && view.accountId === null && view.usage.state !== 'ready') return null;
+  const loading: UsageState = { state: 'loading', organizationId: view?.accountId ?? personId ?? 'individual' };
+  // Past its end, a period's figures are history; show nothing current until the next read answers.
+  const shown = view === null || (endsAt !== null && now >= endsAt) ? loading : view.usage;
+  return (
+    <NectoviaUsageView
+      state={shown}
+      now={now}
+      refreshing={refreshing}
+      onRefresh={() => void load()}
+      scope={{ kind: 'individual', renewal: view?.renewal ?? null }}
+      title="Your Individual credits"
+    />
+  );
+}
+

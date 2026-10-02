@@ -23,16 +23,36 @@ describe('desktop shell title bar options', () => {
     });
   });
 
-  it('uses the native traffic lights on darwin and passes no overlay', () => {
+  it('keeps the native traffic lights on darwin with an overlay that only sizes the strip', () => {
+    // The overlay is what makes Chromium report where the lights end,
+    // env(titlebar-area-x); it carries no colours, so nothing is drawn over them.
     const options = titleBarWindowOptions('darwin');
-    expect(options).toEqual({ titleBarStyle: 'hiddenInset' });
-    expect(options).not.toHaveProperty('titleBarOverlay');
+    expect(options).toEqual({ titleBarStyle: 'hiddenInset', titleBarOverlay: { height: 40 } });
+    expect(options.titleBarOverlay).not.toHaveProperty('color');
+    expect(options.titleBarOverlay).not.toHaveProperty('symbolColor');
   });
 
   it('answers a fresh options object so a caller cannot mutate the next window', () => {
     const first = titleBarWindowOptions('win32');
     first.titleBarOverlay.color = '#ff0000';
     expect(titleBarWindowOptions('win32').titleBarOverlay).toEqual(WINDOWS_OVERLAY);
+    const mac = titleBarWindowOptions('darwin');
+    mac.titleBarOverlay.height = 1;
+    expect(titleBarWindowOptions('darwin').titleBarOverlay).toEqual({ height: 40 });
+  });
+
+  it('starts the Console strip and the first-run header after the macOS traffic lights', () => {
+    const read = (relative: string) =>
+      fs.readFileSync(new URL(`../${relative}`, import.meta.url), 'utf8');
+    // Windows reports 0 for the title area's left edge and a browser reports
+    // nothing, so each rule falls back to the strip's existing spacing there.
+    expect(read('client/console/console.css')).toMatch(
+      /\.console \.top > :first-child \{\s*margin-left: max\(0px, calc\(env\(titlebar-area-x, 0px\) - 16px\)\);\s*\}/,
+    );
+    const setupTop =
+      read('client/styles.css').split('.setup-top {')[1]?.split('}')[0] ?? '';
+    expect(setupTop).toContain('padding-left: max(24px, calc(env(titlebar-area-x, 0px) + 12px));');
+    expect(setupTop).toContain('-webkit-app-region: drag;');
   });
 
   it('allows setTitleBarOverlay everywhere except darwin', () => {

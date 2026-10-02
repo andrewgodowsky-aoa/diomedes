@@ -23,10 +23,12 @@
  */
 import { createOpenAI } from '@ai-sdk/openai';
 import { creditAmount, publishedMonthlyGrant, type JobTier, type UsageClass } from '../../shared/managed-usage.js';
+import { MEMBER_LIMIT_REACHED } from '../../shared/credit-allotments.js';
 import { GPT6_LUNA, MANAGED_LUNA, NECTOVIA_ROUTE } from '../../shared/model-api.js';
 import type { TierResolution } from '../../shared/tier-map.js';
 import { routingPriceSchema, routingReceiptSchema, routingScopeKey, type ResolvedRoutingSnapshot, type AccountScope, type HardRestrictions, type RoutingReceipt } from '../../shared/routing-policy.js';
 import { classifyTask, WORK_STYLE_LABELS, type WorkStyle } from '../../shared/work-style.js';
+import type { MemberRole } from '../../shared/workspaces.js';
 import { digest } from '../harness/policy.js';
 import { attemptIdFor, type ExposureSummary, type ModelRateCard, type SpendExposure } from '../spend-exposure.js';
 import { AWS_BEDROCK_SDK } from './aws-bedrock.js';
@@ -78,6 +80,8 @@ export interface NectoviaAccount {
   /** The business the work belongs to, or null for Personal work. */
   organizationFor(projectId: string | null): string | null;
   scopeFor?(projectId: string | null): AccountScope | null;
+  /** The signed-in person's role in a business as this computer last read it, or null when it is not known. */
+  roleFor?(organizationId: string): MemberRole | null;
   /** The account service's own transport, so an in-process test service is reached the same way. */
   readonly fetch?: typeof globalThis.fetch;
 }
@@ -96,6 +100,11 @@ export interface ManagedAdmission {
   /** The run the admission was pinned to: every call of the work names it as its job. */
   rootJobId: string;
   scope?: AccountScope;
+  /**
+   * The person's role in the business when the work was admitted, or null when this computer does
+   * not know it. It decides only which sentence a refusal for want of credits reads as.
+   */
+  role?: MemberRole | null;
   /** Authenticated per-account snapshot, never a model table from the owner settings. */
   routing?: ResolvedRoutingSnapshot;
   sourceRestrictions?: HardRestrictions[];
@@ -203,6 +212,20 @@ export function nectoviaLimits(limits: RespondLimits, snapshot?: ResolvedRouting
 const tierName = (tier: JobTier) => WORK_STYLE_LABELS[tier];
 
 /**
+ * What a person reads when the business has no credits left, and the work stopped at that step.
+ * An owner or admin is the one who can buy more; anyone else, or a role this computer does not
+ * know, is told who can. Earlier steps of the same work were charged, so only what came after is
+ * said to be uncharged. Credits are bought in Settings, Usage, which the owner or admin's sentence
+ * names in plain words; the app has no way to link there from a message, so it doesn't try.
+ */
+export const OUT_OF_CREDITS_BUYER =
+  'Your business is out of credits, so this stopped here. Buy more credits in Settings, Usage.';
+export const OUT_OF_CREDITS_OTHER =
+  'Your business is out of credits, so this stopped here. An owner or admin can buy more credits to keep going.';
+export const outOfCreditsMessage = (role?: MemberRole | null): string =>
+  role === 'owner' || role === 'admin' ? OUT_OF_CREDITS_BUYER : OUT_OF_CREDITS_OTHER;
+
+/**
  * The gateway's refusals (contract sections 2 and 3), each in the words a customer reads. Every
  * one of these is answered before the gateway's dispatch commit, or after a provider rejection it
  * released, so nothing was charged; the local hold is released for them too. The service's own
@@ -212,6 +235,7 @@ export function gatewayRefusal(
   status: number,
   error: { code: string | null; message: string } | null,
   tier: JobTier,
+  role?: MemberRole | null,
 ): { code: string; message: string } | null {
   const said = error?.message?.trim() || null;
   switch (error?.code) {
@@ -230,14 +254,21 @@ export function gatewayRefusal(
       };
     case 'insufficient_allowance':
     case 'no_period':
-      return {
-        code: `nectovia_${error.code}`,
-        message: said ?? "This business has used this month's Nectovia credits. Nothing was charged.",
-      };
+      // The service's own words are not shown: they cannot know the person's role or that earlier
+      // steps of this work were charged. The codes stay, so anything that keys on them still does.
+      return { code: `nectovia_${error.code}`, message: outOfCreditsMessage(role) };
     case 'cap_request_required':
       return {
         code: 'nectovia_cap_request_required',
         message: said ?? `This job has reached the ${tierName(tier)} cap. Nothing was charged.`,
+      };
+    case MEMBER_LIMIT_REACHED:
+      // A member's own monthly limit stopped this step (Andrew, 2026-10-01). The service's sentence says
+      // how many credits it needs and how many are set, and ends with who can approve more; this app
+      // turns the refusal into a stop the person can ask an owner or admin about.
+      return {
+        code: `nectovia_${MEMBER_LIMIT_REACHED}`,
+        message: said ?? 'This would go past the credits set for you this month. An owner or admin can approve more.',
       };
     case 'policy_changed':
       return {
@@ -388,7 +419,7 @@ export function nectoviaBinding(input: {
     },
     usage: responsesUsage,
     releasableStatuses: GATEWAY_RELEASABLE,
-    refused: (status, error) => gatewayRefusal(status, error, managed.tier),
+    refused: (status, error) => gatewayRefusal(status, error, managed.tier, managed.role),
   };
 }
 

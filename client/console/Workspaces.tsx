@@ -7,6 +7,7 @@ import {
 } from '../../shared/workspaces';
 import { api } from '../api';
 import { Allowance } from './Allowance';
+import { CreditAsks } from './CreditAsks';
 import { NectoviaUsage } from './NectoviaUsage';
 import { Button, Modal } from '../components';
 import { BusinessSetup } from './BusinessSetup';
@@ -480,7 +481,21 @@ export function WorkspacePanel({
         )}
 
         {activeOrganization && (
-          <Allowance organizationId={activeOrganization.organization.id} report={report} />
+          <Allowance
+            organizationId={activeOrganization.organization.id}
+            membership={activeOrganization.membership}
+            report={report}
+          />
+        )}
+
+        {activeOrganization && (
+          <CreditAsks
+            key={activeOrganization.organization.id}
+            organizationId={activeOrganization.organization.id}
+            membership={activeOrganization.membership}
+            members={activeOrganization.members}
+            report={report}
+          />
         )}
 
         {activeOrganization && activeOrganization.members && (

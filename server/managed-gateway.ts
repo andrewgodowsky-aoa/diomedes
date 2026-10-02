@@ -39,6 +39,7 @@ import {
 import type { StaffRole } from '../shared/access.js';
 import { NO_ENTITLEMENT_REASON, type EntitlementView } from '../shared/workspaces.js';
 import { ApiError } from './paths.js';
+import type { PurchasedBalanceAnswer, PurchasedHoldAnswer } from './accounts/client.js';
 import type { AllowanceLedger } from './managed-usage.js';
 
 /** How long an admission's authorization is good for. */
@@ -63,8 +64,10 @@ export interface AdmissionRequest {
    * Left unset, this is the app admitting its own managed work for a person.
    * A direct reservation of the company's allowance is refused where a hold
    * would be taken (owner rule, 2026-09-30) unless the asker is active Diomedes
-   * staff. Usage bought outright is the other allowed kind, and this app's local
-   * ledger keeps no line for it, so no direct request can be shown to be that kind.
+   * staff. Usage bought outright is the other allowed kind (owner rule, 2026-10-01):
+   * this app's local ledger keeps no line for it, so a non-staff direct reservation
+   * is held by the account service against recorded top-ups instead (`purchased`),
+   * and refused when the service holds nothing.
    */
   readonly directReservation?: boolean;
   /**
@@ -79,10 +82,62 @@ export const DIRECT_RESERVATION_REFUSED = 'direct_reservation_refused';
 export const DIRECT_RESERVATION_REASON =
   'You can’t reserve this business’s included usage yourself. Your work in the app draws on it as it runs. Nothing was held.';
 
+/**
+ * The account service's word on usage a business bought outright, for the person signed in here.
+ * It is the only place that keeps that balance. This app asks; it never decides, and never keeps a
+ * figure of its own for it.
+ */
+export interface PurchasedUsage {
+  /** Who is signed in to the account service, to check against who is asking here. */
+  personId(): string | null;
+  /** What the business bought outright, and what of it is held or spent. */
+  purchasedBalance(organizationId: string): Promise<PurchasedBalanceAnswer>;
+  holdPurchased(
+    organizationId: string,
+    input: { holdId: string; amountMicroUsd: number; requestDigest: string },
+  ): Promise<PurchasedHoldAnswer>;
+  settlePurchased(
+    organizationId: string,
+    input: { holdId: string; debitMicroUsd: number },
+  ): Promise<PurchasedHoldAnswer>;
+  /** Move the hold's lease forward. Only the person who made the hold can; the service says when it lapses. */
+  renewPurchased(organizationId: string, input: { holdId: string }): Promise<PurchasedHoldAnswer>;
+}
+
+/** What a person's request for bought usage can be refused with, and the status each answers with. */
+export const PURCHASED_REFUSAL_STATUS: Readonly<Record<string, number>> = Object.freeze({
+  no_purchased_usage: 403,
+  insufficient_purchased_usage: 409,
+  hold_conflict: 409,
+  hold_closed: 409,
+  purchased_hold_invalid: 400,
+  purchased_hold_unavailable: 503,
+  purchased_sign_in_required: 401,
+});
+const PURCHASED_UNAVAILABLE_REASON = 'Bought usage can’t be held right now.';
+const PURCHASED_UNREACHABLE_REASON =
+  'The account service couldn’t be reached, so bought usage can’t be held.';
+const PURCHASED_INVALID_REASON = 'That reservation can’t be held as asked.';
+const PURCHASED_SIGN_IN_REASON = 'Sign in to Nectovia to hold usage this business bought.';
+const PURCHASED_OTHER_PERSON_REASON =
+  'This app is signed in to a different account than the one asking, so bought usage can’t be held.';
+
 /** Settling is a person's word about what a hold cost, so it is closed to people the same way. */
 export const DIRECT_SETTLE_REFUSED = 'direct_settle_refused';
 export const DIRECT_SETTLE_REASON =
   'You can’t settle this business’s usage yourself. Your work in the app settles as it finishes. Nothing was changed.';
+
+/**
+ * Renewing a hold keeps usage the business bought outright from lapsing while its work runs. A hold
+ * this person did not make reads the same as one that does not exist, as it does for a settle. Staff
+ * hold on this computer's own ledger, which keeps no lease, so there is nothing of theirs to renew.
+ */
+export const DIRECT_RENEW_REFUSED = 'direct_renew_refused';
+export const DIRECT_RENEW_REASON =
+  'You can’t renew a hold you didn’t make.';
+export const STAFF_RENEW_REFUSED = 'staff_hold_not_leased';
+export const STAFF_RENEW_REASON =
+  'Staff holds are kept on this computer and don’t run out, so there is nothing to renew.';
 
 export interface GatewayAuthorization {
   readonly tenantId: string;
@@ -135,6 +190,11 @@ export interface GatewayDependencies {
    * could name its own envelope could name any envelope.
    */
   readonly jobCapFor: (organizationId: string, jobId: string) => MicroUsd;
+  /**
+   * The account service's holds on usage a business bought outright. Left out or null, a person
+   * who is not staff cannot reserve anything: this install cannot show them any purchased usage.
+   */
+  readonly purchased?: PurchasedUsage | null;
 }
 
 const refuse = (code: string, message: string, payer: Payer = 'refused'): Admission => ({
@@ -243,8 +303,10 @@ export class ManagedGateway {
     // an unpaid, suspended or over-cap request has already been refused for its
     // own reason, so only a hold that would draw on included usage reaches this
     // line.
-    if (request.directReservation && !request.staffRole)
-      return refuse(DIRECT_RESERVATION_REFUSED, DIRECT_RESERVATION_REASON, 'managed');
+    if (request.directReservation && !request.staffRole) {
+      if (!this.deps.purchased) return refuse(DIRECT_RESERVATION_REFUSED, DIRECT_RESERVATION_REASON, 'managed');
+      return this.holdPurchased(this.deps.purchased, request, tenantId);
+    }
     let reservation: Reservation;
     try {
       reservation = await this.deps.ledger.reserve({
@@ -283,6 +345,85 @@ export class ManagedGateway {
         requestDigest: request.requestDigest,
         expiresAt: new Date(
           Date.parse(request.at) + AUTHORIZATION_MINUTES * 60_000,
+        ).toISOString(),
+        reservationId: reservation.id,
+      },
+    };
+  }
+
+  /**
+   * A person who is not staff reserving: held by the account service against the credits this
+   * business bought outright, or refused. Only the last gate before money reaches here, so every
+   * earlier question has already been answered. Nothing is written to the local ledger, which keeps
+   * no purchased line and would otherwise hold the included month. An answer this build cannot
+   * read, a service that cannot be reached, and anything unexpected all refuse with nothing held.
+   */
+  private async holdPurchased(
+    purchased: PurchasedUsage,
+    request: AdmissionRequest,
+    tenantId: string,
+  ): Promise<Admission> {
+    if (purchased.personId() !== request.personId)
+      return refuse('purchased_hold_unavailable', PURCHASED_OTHER_PERSON_REASON, 'managed');
+    let answer: PurchasedHoldAnswer;
+    try {
+      answer = await purchased.holdPurchased(request.organizationId, {
+        holdId: request.reservationId,
+        amountMicroUsd: request.maxMicroUsd,
+        requestDigest: request.requestDigest,
+      });
+    } catch (error) {
+      if (error instanceof ApiError) {
+        const code = String((error.details as { code?: unknown }).code ?? '');
+        // The service's own refusals say what is wrong in plain words, and are passed on as they are.
+        if (code in PURCHASED_REFUSAL_STATUS && !code.startsWith('purchased_'))
+          return refuse(code, error.message, 'managed');
+        // The service could not read what was asked: an identifier or amount it does not accept.
+        if (error.status === 422) return refuse('purchased_hold_invalid', PURCHASED_INVALID_REASON, 'managed');
+        if (error.status === 401)
+          return refuse('purchased_sign_in_required', PURCHASED_SIGN_IN_REASON, 'managed');
+        if (error.status === 503 || code === 'unreachable')
+          return refuse('purchased_hold_unavailable', PURCHASED_UNREACHABLE_REASON, 'managed');
+      }
+      return refuse('purchased_hold_unavailable', PURCHASED_UNAVAILABLE_REASON, 'managed');
+    }
+    // Held is the only state that took credits aside for this call. Anything else holds nothing.
+    // The hold is a lease: the authorization never outlasts it, and one this app cannot read is not a hold.
+    const lease = Date.parse(answer.leaseUntil);
+    if (
+      answer.state !== 'held' ||
+      answer.holdId !== request.reservationId ||
+      answer.amountMicroUsd !== request.maxMicroUsd ||
+      !Number.isFinite(lease)
+    )
+      return refuse('purchased_hold_unavailable', PURCHASED_UNAVAILABLE_REASON, 'managed');
+    const reservation: Reservation = {
+      id: request.reservationId,
+      organizationId: request.organizationId,
+      periodId: request.periodId,
+      parentTaskId: request.parentTaskId,
+      kind: request.kind,
+      route: request.route,
+      payer: 'managed',
+      maxMicroUsd: request.maxMicroUsd,
+      rateCardVersion: RATE_CARD_V1.version,
+      state: 'pending',
+      createdAt: request.at,
+      resolvedAt: null,
+      uncertainReason: null,
+    };
+    return {
+      admitted: true,
+      payer: 'managed',
+      reservation,
+      authorization: {
+        tenantId,
+        audience: request.route,
+        requestDigest: request.requestDigest,
+        // The earlier of the usual window and the hold's own lease: this never says a call may go
+        // ahead past the moment the credits behind it let go.
+        expiresAt: new Date(
+          Math.min(Date.parse(request.at) + AUTHORIZATION_MINUTES * 60_000, lease),
         ).toISOString(),
         reservationId: reservation.id,
       },

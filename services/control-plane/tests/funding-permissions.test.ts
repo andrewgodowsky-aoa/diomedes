@@ -20,12 +20,16 @@
  * slip past step 3.
  */
 import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createFauxCloud } from '../src/faux/cloud.js';
 import { DEMO_ACCOUNTS, FAUX_DEMO_PASSWORD, seedDemo } from '../src/faux/seed.js';
-import { FundingService, type FundingRepository } from '../src/funding.js';
+import { micro } from '../../../shared/managed-usage.js';
+import { FundingService, PurchasedUsageService, type FundingRepository } from '../src/funding.js';
+import { CreditPurchaseService, StripeWebhookService, readBillingSettings } from '../src/credit-purchases.js';
+import { FAUX_STRIPE_SECRET_KEY, FAUX_STRIPE_WEBHOOK_SECRET, fauxPaidEvent, fauxStripeFetch, signFauxEvent } from '../src/faux/stripe.js';
 import { PostgresFundingTransaction } from '../src/funding-postgres.js';
 import { ManagedError, ManagedInferenceService } from '../src/managed-inference.js';
+import { MemberLimits, MemberLimitsService } from '../src/member-limits.js';
 import { MANAGED_PROVIDERS, bedrockResponsesCaller, scriptedResponsesFetch } from '../src/managed-providers.js';
 import type { SqlClient } from '../src/postgres.js';
 import { providerSpy, readAll, type ProviderRequest } from './support/managed.js';
@@ -34,11 +38,15 @@ const read = (relative: string) => readFileSync(new URL(relative, import.meta.ur
 const FUNDING_SQL = read('../scripts/funding-permissions.sql');
 const RUNTIME_SQL = read('../scripts/runtime-permissions.sql');
 const GATEWAY_SOURCE = read('../src/managed-inference.ts');
+const PURCHASES_SOURCE = read('../src/credit-purchases.ts');
 const FUNDING_SOURCE = read('../src/funding.ts');
+const MEMBER_LIMITS_SOURCE = read('../src/member-limits.ts');
 
 /** The migration 002/003 funding tables. */
 const FUNDING_TABLES = ['credit_periods', 'funded_jobs', 'funded_job_refs', 'job_cap_requests', 'funding_accounts',
-  'funding_reservations', 'funding_settlements', 'credit_adjustments', 'credit_topups'];
+  'funding_reservations', 'funding_settlements', 'credit_adjustments', 'credit_topups', 'credit_topup_holds', 'credit_purchases',
+  // Migration 014: members' monthly limits.
+  'credit_attempt_people', 'credit_member_limits', 'credit_allotment_settings', 'credit_limit_requests'];
 
 // --- the grant file --------------------------------------------------------------------------
 
@@ -185,7 +193,15 @@ function transactionCalls(name: string, seen = new Set<string>()): Set<string> {
 const GATEWAY_SERVICE_CALLS = names(GATEWAY_SOURCE, /this\.options\.funding\.(\w+)\(/g);
 const GATEWAY_DIRECT_READS = new Set([...GATEWAY_SOURCE.matchAll(/this\.options\.fundingReads\.transaction\(/g)]
   .flatMap((match) => [...names(parenthesized(GATEWAY_SOURCE, match.index + match[0].length - 1), /\btx\.(\w+)\(/g)]));
-const STATIC_TRANSACTION_CALLS = new Set([...GATEWAY_SERVICE_CALLS].flatMap((name) => [...transactionCalls(name)]).concat([...GATEWAY_DIRECT_READS]));
+
+/** Purchased-usage holds (013) run on the same login: the FundingService methods PurchasedUsageService calls. */
+const PURCHASED_SERVICE_CALLS = names(FUNDING_SOURCE.slice(FUNDING_SOURCE.indexOf('export class PurchasedUsageService')), /this\.funding\.(\w+)\(/g);
+/** Credit purchases (015) run on the same login: the quote and buy path and Stripe's webhook receiver, in src/credit-purchases.ts. */
+const PURCHASE_SERVICE_CALLS = names(PURCHASES_SOURCE, /this\.funding\.(\w+)\(/g);
+const SERVICE_CALLS = new Set([...GATEWAY_SERVICE_CALLS, ...PURCHASED_SERVICE_CALLS, ...PURCHASE_SERVICE_CALLS]);
+/** Members' monthly limits (014) run on the same login: every FundingTransaction call member-limits.ts makes, in any branch. */
+const MEMBER_LIMIT_TRANSACTION_CALLS = names(MEMBER_LIMITS_SOURCE, /\btx\.(\w+)\(/g);
+const STATIC_TRANSACTION_CALLS = new Set([...SERVICE_CALLS].flatMap((name) => [...transactionCalls(name)]).concat([...GATEWAY_DIRECT_READS], [...MEMBER_LIMIT_TRANSACTION_CALLS]));
 
 // --- the gateway's paths, run -------------------------------------------------------------------
 
@@ -281,13 +297,92 @@ async function runGatewayPaths() {
       return ask('run-1:4');
     })(),
     replayed: await ask('run-1:1'),
+    personalFirstUse: await (async () => {
+      // DIO-128: the first Personal use inside a verified monthly term records that term's row.
+      const staff = await cloud.handle(new Request('http://faux/auth/sign-in', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email: DEMO_ACCOUNTS.staffBilling.email, password: FAUX_DEMO_PASSWORD }),
+      }));
+      const person = (await cloud.accounts.signIn(token)).person;
+      await cloud.commercial.issuePersonGrant((await staff.json()).accessToken as string, person.id,
+        { planId: 'individual', source: 'internal-test', reference: 'permissions-term', note: '' });
+      const account = cloud.store.snapshot().commercial.individuals.find((row) => row.personId === person.id)!;
+      const grants = await cloud.store.commercial.transaction((tx) => tx.personGrants(person.id));
+      const holdAndDispatch = Reflect.get(gateway, 'holdAndDispatch') as (...args: unknown[]) => Promise<unknown>;
+      await holdAndDispatch.call(gateway,
+        { token, organizationId: account.id, admissionId: 'unused', jobId: 'personal-1', attemptId: 'personal-1:1',
+          parentAttemptId: null, tier: 'efficient', usageClass: 'metered-work', scope: { kind: 'individual', id: account.id } },
+        person.id, grants,
+        { kind: 'generation', route: LUNA.model, requestDigest: 'b'.repeat(64), rate: LUNA.rate, maxMicroUsd: 1000, ceilingMicroUsd: 100000000 });
+      return cloud.store.snapshot().funding.periods.filter((row) => row.organizationId === account.id).map((row) => row.periodId);
+    })(),
     read: (await gateway.attempt(new Request('http://127.0.0.1:8791/managed/v1/attempts/run-1:1', {
       headers: { authorization: `Bearer ${token}`, 'x-nectovia-organization': organizationId },
     }), 'run-1:1')).status,
   };
+  // Purchased-usage holds (013): a member holds, renews, settles and releases credits the business bought outright.
+  const member = await cloud.accounts.membership(token, organizationId);
+  await cloud.store.funding.transaction((tx) => tx.saveTopUp({ tenantId: member.organization.tenantId, organizationId, topUpId: 'topup-permissions',
+    amountMicroUsd: micro(10_000_000), provider: 'stripe', sourceEventId: 'evt-permissions', recordedAt: new Date(now()).toISOString() }));
+  const purchased = new PurchasedUsageService(cloud.accounts, funding);
+  await purchased.balance(token, organizationId);
+  await purchased.hold(token, organizationId, { holdId: 'hold-1', amountMicroUsd: 1_000_000, requestDigest: 'digest-1' });
+  await purchased.settle(token, organizationId, { holdId: 'hold-1', debitMicroUsd: 400_000 });
+  await purchased.hold(token, organizationId, { holdId: 'hold-2', amountMicroUsd: 1_000_000, requestDigest: 'digest-2' });
+  await purchased.release(token, organizationId, { holdId: 'hold-2' });
+  await purchased.hold(token, organizationId, { holdId: 'hold-3', amountMicroUsd: 1_000_000, requestDigest: 'digest-3' });
+  await purchased.renew(token, organizationId, { holdId: 'hold-3' });
+  // Credit purchases (015): an owner buys, Stripe pays one purchase and expires another, a third never reaches a session.
+  // Members' monthly limits (014), run as the account Worker runs them on the same login: an owner sets a limit
+  // and who sees what, the member's next call is refused before anything is held, the member asks for one
+  // job and for the month, the owner approves both (the month with bought credits allowed), and each side reads.
+  const ownerSignIn = await cloud.handle(new Request('http://faux/auth/sign-in', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ email: DEMO_ACCOUNTS.owner.email, password: FAUX_DEMO_PASSWORD }),
+  }));
+  const ownerToken = (await ownerSignIn.json()).accessToken as string;
+  const billing = { CREDIT_PRICE_CENTS_PER_100: '1200', STRIPE_SECRET_KEY: FAUX_STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET: FAUX_STRIPE_WEBHOOK_SECRET };
+  const settings = readBillingSettings(billing);
+  const ledger = cloud.paymentLedger;
+  const faux = fauxStripeFetch();
+  const buying = new CreditPurchaseService(cloud.accounts, funding, { settings, fetch: faux, now, localCheckout: true, ledger });
+  const refusing = new CreditPurchaseService(cloud.accounts, funding, { settings, fetch: (async () => new Response('no', { status: 500 })) as typeof fetch, now, ledger });
+  const receiving = new StripeWebhookService(funding, { settings, now, ledger });
+  vi.spyOn(console, 'error').mockImplementation(() => undefined);
+  const paid = await buying.create(ownerToken, organizationId, { credits: 300 }, 'http://127.0.0.1:8795');
+  const lapsed = await buying.create(ownerToken, organizationId, { credits: 100 }, 'http://127.0.0.1:8795');
+  await expect(refusing.create(ownerToken, organizationId, { credits: 100 }, 'http://127.0.0.1:8795')).rejects.toMatchObject({ status: 503 });
+  await buying.read(ownerToken, organizationId, paid.purchaseId);
+  const forPurchase = (purchaseId: string) => {
+    const row = cloud.store.snapshot().funding.creditPurchases.find((item) => item.purchaseId === purchaseId)!;
+    return { sessionId: row.checkoutSessionId!, purchaseId, organizationId: row.organizationId, tenantId: row.tenantId, amountCents: row.amountCents,
+      customerId: faux.customerOf(row.checkoutSessionId!)! };
+  };
+  const deliver = async (body: string) => receiving.handle(new Request('http://faux/billing/stripe/webhook', {
+    method: 'POST', body, headers: { 'stripe-signature': await signFauxEvent(body, now()) } }));
+  await deliver(fauxPaidEvent(forPurchase(paid.purchaseId), now()));
+  const expiring = JSON.parse(fauxPaidEvent(forPurchase(lapsed.purchaseId), now()));
+  expiring.type = 'checkout.session.expired';
+  expiring.id = 'evt_faux_expired_1';
+  await deliver(JSON.stringify(expiring));
+  const limits = new MemberLimitsService(cloud.accounts, new MemberLimits(repository, { now }));
+  const memberId = (await cloud.accounts.signIn(token)).person.id;
+  await limits.limits(ownerToken, organizationId);
+  await limits.setLimit(ownerToken, organizationId, { subject: { kind: 'person', personId: memberId }, mode: 'limit', limitMicroUsd: 1 });
+  await limits.setSettings(ownerToken, organizationId, { adminsSeeMemberUsage: true });
+  const limited = await ask('run-1:6');
+  await limits.ask(token, organizationId, { requestId: 'ask-job', kind: 'job', jobId: 'run-1' });
+  await limits.ask(token, organizationId, { requestId: 'ask-month', kind: 'month', jobId: null });
+  await limits.decide(ownerToken, organizationId, 'ask-job', { approve: true });
+  await limits.decide(ownerToken, organizationId, 'ask-month', { approve: true, extraMicroUsd: 1_000_000, allowPurchased: true });
+  await limits.mine(token, organizationId);
+  await limits.requests(token, organizationId);
+  await limits.report(ownerToken, organizationId);
+  const purchases = cloud.store.snapshot().funding.creditPurchases.map((row) => row.state).sort();
+  const holds = Object.fromEntries(cloud.store.snapshot().funding.topUpHolds.map((row) => [row.holdId, row.state]));
   const states = Object.fromEntries(cloud.store.snapshot().funding.attempts.map((row) => [row.id, row.state]));
   const periods = cloud.store.snapshot().funding.periods.filter((row) => row.organizationId === organizationId).map((row) => row.periodId);
-  return { outcomes, states, periods, providerCalls: spy.calls.length, transactionLog, serviceLog };
+  return { outcomes: { ...outcomes, limited }, states, holds, purchases, periods, providerCalls: spy.calls.length, transactionLog, serviceLog };
 }
 
 /** Replays each recorded call on the SQL adapter and returns the statements it sent. */
@@ -330,13 +425,17 @@ describe('cp_funding (scripts/funding-permissions.sql)', () => {
   it('grants exactly what PostgresFundingRepository runs on the gateway’s paths, and nothing else', async () => {
     const run = await runGatewayPaths();
     // The scenarios did what they are for.
-    expect(run.outcomes).toEqual({ first: 200, retry: 200, busy: 429, failed: 503, preDispatchRelease: true, replayed: 409, read: 200 });
-    expect(run.states).toEqual({ 'run-1:1': 'settled', 'run-1:2': 'settled', 'run-1:3': 'released', 'run-1:4': 'uncertain', 'run-1:5': 'released' });
+    expect(run.outcomes).toEqual({ first: 200, retry: 200, busy: 429, failed: 503, preDispatchRelease: true, replayed: 409, read: 200,
+      personalFirstUse: ['individual:2026-10-02T09:00:00.000Z'], limited: 402 });
+    expect(run.states).toEqual({ 'run-1:1': 'settled', 'run-1:2': 'settled', 'run-1:3': 'released', 'run-1:4': 'uncertain', 'run-1:5': 'released',
+      'personal-1:1': 'pending' });
     expect(run.periods).toEqual(['2026-09', '2026-10']);
     expect(run.providerCalls).toBe(4);
+    expect(run.holds).toEqual({ 'hold-1': 'settled', 'hold-2': 'released', 'hold-3': 'held' });
+    expect(run.purchases).toEqual(['expired', 'failed', 'paid']);
 
     // Every funding call the gateway's source can make, in any branch, was run.
-    expect([...run.serviceLog].sort()).toEqual([...GATEWAY_SERVICE_CALLS].sort());
+    expect([...run.serviceLog].sort()).toEqual([...SERVICE_CALLS].sort());
     expect([...new Set(run.transactionLog.map((call) => call.method))].sort()).toEqual([...STATIC_TRANSACTION_CALLS].sort());
 
     const sent = await replay(run.transactionLog);
@@ -357,13 +456,33 @@ describe('cp_funding (scripts/funding-permissions.sql)', () => {
     // The list, as the owner reviews it.
     expect(describeTables(grants.tables)).toEqual([
       'credit_adjustments: SELECT',
+      'credit_allotment_settings: SELECT, INSERT, UPDATE (admins_see_member_usage, members_see_own_usage, updated_at, updated_by)',
+      'credit_attempt_people: SELECT, INSERT',
+      'credit_limit_requests: SELECT, INSERT, UPDATE (allow_purchased, decided_at, decided_by, extra_micro_usd, period_id, state)',
+      'credit_member_limits: SELECT, INSERT, UPDATE (limit_micro_usd, mode, updated_at, updated_by)',
       'credit_periods: SELECT, INSERT',
-      'credit_topups: SELECT',
+      'credit_purchases: SELECT, INSERT, UPDATE (resolved_at, state, stripe_checkout_session_id, stripe_event_id)',
+      'credit_topup_holds: SELECT, INSERT, UPDATE (absorbed_micro_usd, debit_micro_usd, lease_until, released_by, resolved_at, state)',
+      'credit_topups: SELECT, INSERT',
       'funded_job_refs: SELECT, INSERT',
       'funded_jobs: SELECT, INSERT, UPDATE (cap_generation, cap_micro_usd, state)',
       'funding_reservations: SELECT, INSERT, UPDATE (dispatched_at, resolved_at, state, uncertain_reason)',
       'funding_settlements: SELECT, INSERT',
     ]);
+  });
+
+  it('is granted neither the inbox nor the customers, which the Worker login writes: it cannot make a top-up that names no stored event', () => {
+    // credit_topups.source_event_id references webhook_inbox (003), so a top-up needs an event the receiver stored first.
+    for (const table of ['webhook_inbox', 'billing_customers']) {
+      expect(grants.tables.has(table), table).toBe(false);
+      expect(FUNDING_SQL).not.toMatch(new RegExp(`GRANT[^;]*control_plane\.${table}`));
+    }
+    const runtime = parseGrants(RUNTIME_SQL, 'cp_runtime');
+    for (const table of ['webhook_inbox', 'billing_customers'])
+      expect({ table, insert: runtime.tables.get(table)?.insert, select: runtime.tables.get(table)?.select, update: [...(runtime.tables.get(table)?.update ?? [])] })
+        .toEqual({ table, insert: true, select: true, update: [] });
+    // And it does not write funding rows or credit purchases.
+    expect(runtime.tables.get('credit_purchases')).toBeUndefined();
   });
 
   it('fails a write without a grant, and a statement it cannot read', () => {

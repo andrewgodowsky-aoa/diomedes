@@ -22,11 +22,15 @@ import {
   goOverAfterStop,
   goOverBeforeSend,
   isJobCapStop,
+  isMemberLimitStop,
   jobStatus,
   setThreadTier,
+  settleMemberLimitStop,
   type CapChoice,
   type CapPrompt,
   type GateResult,
+  type MemberLimitChoice,
+  type MemberLimitPrompt,
 } from '../job-cap-gate';
 import { mintCommandId } from '../work-start';
 import type { JobTier } from '../../shared/job-caps';
@@ -51,6 +55,7 @@ import type {
 } from '../../shared/types';
 import type { WorkStyle } from '../../shared/work-style';
 import { Diomedes } from './Diomedes';
+import { MemberLimitStop } from './MemberLimitStop';
 import {
   historyLine,
   historySentence,
@@ -248,6 +253,10 @@ export function DiomedesHome(props: DiomedesHomeProps) {
   const [capPrompt, setCapPrompt] = useState<(CapPrompt & { answer(choice: CapChoice): void }) | null>(null);
   /** The command a job-cap stop refused, told from inside the delivery to the send that awaits it. */
   const capStop = useRef<DispatchIdentity | null>(null);
+  /** The member-limit question on screen, and how to answer the send waiting on it. */
+  const [limitPrompt, setLimitPrompt] = useState<(MemberLimitPrompt & { answer(choice: MemberLimitChoice): void }) | null>(null);
+  /** The message a member's own monthly limit stopped, with the account service's words, told from inside the delivery. */
+  const limitStop = useRef<{ identity: DispatchIdentity; message: string } | null>(null);
   const delivery = useRef<ActiveDelivery | null>(null);
   // Whose turn it is to paint. A scope change, a read and a send each take the next number, so
   // an answer for a visit the person has left, or for a message they have since followed with
@@ -563,6 +572,10 @@ export function DiomedesHome(props: DiomedesHomeProps) {
       if (error instanceof CapDeclined) return false;
       // A job that reached its cap stopped before its next step; the send decides what follows.
       if (isJobCapStop(error) && current.issued) capStop.current = current.issued;
+      // A member's own limit stopped the message: the dialog that follows says why and offers the ask,
+      // so the stop is not also said as a notice.
+      const limited = isMemberLimitStop(error) && current.issued;
+      if (limited) limitStop.current = { identity: current.issued!, message: words(error) };
       // Claude Code is the one route whose All projects follow-up is refused without history; a
       // model route answers it alone. Its refusal is said once: the line's own sentence, with its
       // button. The record is read again, in case another window's change is what refused it.
@@ -571,7 +584,7 @@ export function DiomedesHome(props: DiomedesHomeProps) {
         setRefusal(sentence);
         setNotice(sentence);
         setSharingReads((n) => n + 1);
-      } else {
+      } else if (!limited) {
         setNotice(words(error));
         if (refusedForSignIn(error)) setSignInRefusal(words(error));
       }
@@ -611,6 +624,14 @@ export function DiomedesHome(props: DiomedesHomeProps) {
     setCapPrompt(null);
     shown?.answer(choice);
   };
+  /** Ask the member what to do about their limit; the send waits for the answer. */
+  const askLimit = (prompt: MemberLimitPrompt) =>
+    new Promise<MemberLimitChoice>((answer) => setLimitPrompt({ ...prompt, answer }));
+  const answerLimit = (choice: MemberLimitChoice) => {
+    const shown = limitPrompt;
+    setLimitPrompt(null);
+    shown?.answer(choice);
+  };
   const tierUp = async (where: Binding, tier: JobTier) => {
     await setThreadTier(where.projectId, where.threadId, tier);
     setWorkStyle(tier);
@@ -628,6 +649,7 @@ export function DiomedesHome(props: DiomedesHomeProps) {
     const mode = modeFor(restriction);
     const draft = { text, mode, sources: [] };
     capStop.current = null;
+    limitStop.current = null;
     const sent = await deliver(
       text,
       () => ensure(scope),
@@ -650,6 +672,19 @@ export function DiomedesHome(props: DiomedesHomeProps) {
     // Set inside the delivery, which TypeScript cannot see from here.
     const stop = capStop.current as DispatchIdentity | null;
     capStop.current = null;
+    const limit = limitStop.current as { identity: DispatchIdentity; message: string } | null;
+    limitStop.current = null;
+    if (limit) {
+      // The person's own monthly limit stopped it. They may ask an owner or admin for this job or for the
+      // month; the message is not sent again here, and the words they typed are theirs to keep.
+      setNotice(
+        await settleMemberLimitStop(
+          { projectId: limit.identity.projectId, commandId: limit.identity.commandId, message: limit.message },
+          { ask: askLimit },
+        ),
+      );
+      return sent;
+    }
     if (!stop) return sent;
     const again: GateResult = await afterStop({
       status: () => jobStatus(stop.projectId, stop.commandId),
@@ -956,6 +991,14 @@ export function DiomedesHome(props: DiomedesHomeProps) {
           onUpgrade={() => answerCap('upgrade')}
           onGoOver={() => answerCap('over')}
           onCancel={() => answerCap('cancel')}
+        />
+      )}
+      {limitPrompt && (
+        <MemberLimitStop
+          prompt={limitPrompt}
+          onAskJob={() => answerLimit('job')}
+          onAskMonth={() => answerLimit('month')}
+          onCancel={() => answerLimit('cancel')}
         />
       )}
       {sharingOpen && homeProject !== null && (
