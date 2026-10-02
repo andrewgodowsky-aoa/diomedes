@@ -1,0 +1,212 @@
+{
+  "base": "f72c6ace14c89201425e33f90fb096bdbdda8f4d",
+  "sourceContentDigest": "c8a6f945d5a0bbfb558019fe5ec84e8d0f8e2d6a2fbe777f83a1aad32f727f71",
+  "gates": [
+    {
+      "started": "2026-10-02T11:55:54.4624588Z",
+      "finished": "2026-10-02T11:56:24.5418253Z",
+      "exit": 0,
+      "gate": "root-typecheck"
+    },
+    {
+      "started": "2026-10-02T11:56:24.5562073Z",
+      "finished": "2026-10-02T12:05:08.4605365Z",
+      "exit": 0,
+      "gate": "root-unit"
+    },
+    {
+      "started": "2026-10-02T12:05:08.4643724Z",
+      "finished": "2026-10-02T12:05:17.5337500Z",
+      "exit": 0,
+      "gate": "root-build"
+    },
+    {
+      "started": "2026-10-02T12:05:18.4380008Z",
+      "finished": "2026-10-02T12:06:47.6761667Z",
+      "exit": 0,
+      "gate": "browser"
+    },
+    {
+      "started": "2026-10-02T12:06:47.6818870Z",
+      "finished": "2026-10-02T12:06:52.5090186Z",
+      "exit": 0,
+      "gate": "control-plane-typecheck"
+    },
+    {
+      "started": "2026-10-02T12:06:52.5108040Z",
+      "finished": "2026-10-02T12:07:51.5965085Z",
+      "exit": 0,
+      "gate": "control-plane-unit"
+    },
+    {
+      "started": "2026-10-02T12:07:51.5986430Z",
+      "finished": "2026-10-02T12:07:53.7549519Z",
+      "exit": 0,
+      "gate": "control-plane-build"
+    }
+  ],
+  "root": {
+    "passed": 9046,
+    "failed": 0,
+    "skipped": 5,
+    "total": 9051,
+    "source": "evidence/gates/root-unit.json",
+    "sha256": "495b89ae39e9990738a65192ab6702d9ffb50ee9b4d1581d57435cef53457e94"
+  },
+  "controlPlane": {
+    "passed": 995,
+    "failed": 0,
+    "skipped": 78,
+    "total": 1073,
+    "source": "evidence/gates/control-plane-unit.json",
+    "sha256": "cc6f14cfdc0b2aa974888370aa58c4189deabf536edee2415c94a4f52807d192"
+  },
+  "playwright": {
+    "startTime": "2026-10-02T12:05:19.471Z",
+    "duration": 88175.85100000001,
+    "expected": 36,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0,
+    "source": "evidence/gates/browser.json",
+    "sha256": "34f4c2e73aeb5344bcf37dd7eb9d863b84719a9a2d98ab6e99cf841e5f624351"
+  },
+  "postgresFinal": {
+    "restricted": {
+      "passed": 24,
+      "failed": 0,
+      "skipped": 0,
+      "total": 24,
+      "source": "evidence/postgres-composed-016-repeat/tests.json",
+      "sha256": "7e65485b6352ebfbca7bf8980979b248bc74b26c66a4c91eb629718c82696071"
+    },
+    "historical": {
+      "passed": 12,
+      "failed": 0,
+      "skipped": 0,
+      "total": 12,
+      "source": "evidence/postgres-composed-016-repeat/historical-tests.json",
+      "sha256": "6f133b62e1e6b274cb1f648279334cb638762efb102830db15b07dcd2d92929d"
+    },
+    "general": {
+      "passed": 13,
+      "failed": 0,
+      "skipped": 0,
+      "total": 13,
+      "source": "evidence/postgres-composed-016-repeat/fresh-tests.json",
+      "sha256": "8d0e594414e0c5061d1f61f6b3cc70a2d260ccbfb0cd40086157a0ea81b2afe4"
+    },
+    "cleanup": {
+      "testExit": 0,
+      "phase": "green",
+      "globalServiceInstalled": false,
+      "postgresPid": 14048,
+      "noProviderCredentials": true,
+      "at": "2026-10-02T12:12:30.1778959Z",
+      "ownedRuntimeStopped": true
+    },
+    "scope": "Owned loopback PostgreSQL 18.6; actual 001..015->016 and 010->012->016 histories; restricted runtime and funding logins. The 24 restricted cases include one pre-connection manifest-gap check. Auth, provider transport and prior purchase provenance are fixtures."
+  },
+  "runner": {
+    "main": {
+      "applied": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ]
+    },
+    "upgrade": {
+      "applied": [
+        16
+      ]
+    },
+    "replay": {
+      "applied": []
+    },
+    "cleanup": {
+      "globalServiceInstalled": false,
+      "phase": "green",
+      "noProviderCredentials": true,
+      "at": "2026-10-02T12:10:31.8895118Z",
+      "postgresPid": 29788,
+      "testExit": 0,
+      "ownedRuntimeStopped": true
+    }
+  },
+  "earlierFailure": {
+    "result": {
+      "passed": 12,
+      "failed": 1,
+      "skipped": 0,
+      "total": 13,
+      "source": "evidence/postgres-composed-016/fresh-tests.json",
+      "sha256": "83bff66e5081b32b81f07c6daaa07e863928dca60d2e53ed92f45449467fd91e"
+    },
+    "test": "binds unique customer mappings and deduplicates verified events atomically",
+    "error": "23505 webhook_inbox_tenant_id_provider_event_id_key",
+    "investigation": "One initial concurrent duplicate-webhook failure. No source change followed. Fresh candidate rerun passed all 13; five unchanged-main full-suite runs each passed all 13. Cause remains unresolved; do not describe the initial run as passing or the baseline as reproducing it.",
+    "baselineRuns": [
+      {
+        "passed": 13,
+        "failed": 0,
+        "skipped": 0,
+        "total": 13,
+        "source": "evidence/postgres-main-baseline-qualified/baseline-1.json",
+        "sha256": "475633a3c0e72ec2888175a84494041dd90131a659d44e7af0f83d93a5efbe70"
+      },
+      {
+        "passed": 13,
+        "failed": 0,
+        "skipped": 0,
+        "total": 13,
+        "source": "evidence/postgres-main-baseline-qualified/baseline-2.json",
+        "sha256": "e2445d7435cb45428391d26154a96f9359a12fb8ab472b105ea9f13628354b2a"
+      },
+      {
+        "passed": 13,
+        "failed": 0,
+        "skipped": 0,
+        "total": 13,
+        "source": "evidence/postgres-main-baseline-qualified/baseline-3.json",
+        "sha256": "5e6014b6861456a2b23381e1e804bfcc86d4a3919815f230ac0e6c0525c5286c"
+      },
+      {
+        "passed": 13,
+        "failed": 0,
+        "skipped": 0,
+        "total": 13,
+        "source": "evidence/postgres-main-baseline-qualified/baseline-4.json",
+        "sha256": "003834a0ff4888c8c2cde2718acc03a731f75eaea9db432bf50596763ed23d12"
+      },
+      {
+        "passed": 13,
+        "failed": 0,
+        "skipped": 0,
+        "total": 13,
+        "source": "evidence/postgres-main-baseline-qualified/baseline-5.json",
+        "sha256": "32be631b456c3f2e51f03197eb65e3a2c1f563b9fdd649372c8881e2dfd51db6"
+      }
+    ],
+    "excludedSetupAttempt": "evidence/postgres-main-baseline-and-runner/baseline-1.json ran the single test without its preceding migration/session setup and is not defect evidence."
+  },
+  "boundaries": {
+    "merged": false,
+    "deployed": false,
+    "liveMigrations": false,
+    "hostedCI": "not run; owner stop remains in force",
+    "otherIntegrationSkips": "Control-plane unit gate skipped 78 tests under its default environment; dedicated qualification above is separate. Neon-only runtime-role tests, other routing/capacity suites and live-provider tests are not inferred to pass."
+  },
+  "rawEvidenceRoot": "F:/Diomedes/deliverables/individual-grant-reconstruction-20261002"
+}

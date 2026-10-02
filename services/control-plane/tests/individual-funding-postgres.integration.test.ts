@@ -71,7 +71,9 @@ describe.skipIf(!ownerUrl)('Individual funding with real PostgreSQL runtime and 
     ownerFactory = () => new pg.Client({ connectionString: ownerUrl, connectionTimeoutMillis: 5_000 });
     if ((await query(ownerFactory, "SELECT to_regclass('control_plane.schema_migrations') AS existing")).rows[0].existing !== null)
       throw new Error('This test will not reset an existing schema.');
-    const names = (await readdir(new URL('../migrations/', import.meta.url))).filter(n => /^\d{3}.*\.sql$/.test(n)).sort();
+    // Preserve the exact 011/012 upgrade checkpoint, then qualify today's runtime on 016.
+    const names = (await readdir(new URL('../migrations/', import.meta.url)))
+      .filter(n => /^\d{3}.*\.sql$/.test(n)).sort();
     migrations = await Promise.all(names.map(async name => {
       const sql = await readFile(new URL(`../migrations/${name}`, import.meta.url), 'utf8');
       return { version: Number(name.slice(0, 3)), name, sql, sha256: createHash('sha256').update(sql).digest('hex') };
@@ -95,7 +97,14 @@ describe.skipIf(!ownerUrl)('Individual funding with real PostgreSQL runtime and 
       granted_micro_usd,starts_at,ends_at,source_grant_id,allocated_at) VALUES($1,$2,'2026-09','business',$3,100000000,
       '2026-09-01T00:00:00Z','2026-10-01T00:00:00Z',$4,$5)`, [business.tenantId, business.id, RATE_CARD_V1.version, issued.grant.id, new Date(clock).toISOString()]);
     oldBusinessPeriod = (await query(ownerFactory, 'SELECT to_jsonb(p) AS record FROM control_plane.credit_periods p WHERE organization_id=$1', [business.id])).rows[0].record as Record<string, unknown>;
-    await migrate(ownerFactory, migrations);
+    const historical = migrations.filter(m => m.version <= 12);
+    expect(await migrate(ownerFactory, historical)).toEqual([11, 12]);
+    expect(await migrate(ownerFactory, historical)).toEqual([]);
+    expect((await query(ownerFactory, 'SELECT version,name,sha256 FROM control_plane.schema_migrations ORDER BY version')).rows)
+      .toEqual(historical.map(({ version, name, sha256 }) => ({ version, name, sha256 })));
+    // Current permission templates and funding queries require 013..015's tables.
+    // Apply the real additive sequence before using current restricted-role runtime code.
+    expect(await migrate(ownerFactory, migrations)).toEqual([13, 14, 15, 16]);
     const login = async (base: string) => {
       const role = `${base}_${randomBytes(6).toString('hex')}`, password = randomBytes(24).toString('hex');
       await query(ownerFactory, `CREATE ROLE ${role} LOGIN PASSWORD '${password}' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS`);
@@ -114,7 +123,7 @@ describe.skipIf(!ownerUrl)('Individual funding with real PostgreSQL runtime and 
   beforeEach(() => { clock = initial; });
 
   it('preserves the phase-2a person grant and billing identity and replays migration without allocation', async () => {
-    expect(migrations.at(-1)?.version).toBe(12);
+    expect(migrations.at(-1)?.version).toBe(16);
     expect(await migrate(ownerFactory, migrations)).toEqual([]);
     const grants = await new PostgresCommercialRepository(runtimeFactory).transaction(tx => tx.personGrants(oldPerson));
     expect(JSON.stringify(grants[0])).toBe(oldGrant);

@@ -1,0 +1,193 @@
+{
+  "base": "f72c6ace14c89201425e33f90fb096bdbdda8f4d",
+  "originalHead": "1b4705bee5f3f5d71f0798b4baa5eafa2d61338f",
+  "worktree": "F:/Diomedes/diomedes-wt/individual-grant-reconstruction",
+  "files": [
+    {
+      "path": "docs/implementation/2026-10-01-individual-limited-grant-credits.md",
+      "bytes": 3529,
+      "sha256": "67a5e98b11de409c54cc8d5402e46d87d233de3da4616636393c8dd4364b8475",
+      "gitBlob": "d73273dc16020527b4c60afbdb406baca4141ac2"
+    },
+    {
+      "path": "services/control-plane/migrations/016_individual_complete_plan_credits.sql",
+      "bytes": 4846,
+      "sha256": "2ab62ae9dd41b4d7c6800ac9eebe9dbdcac76658f7e03e2d37c4a28c2a8f911a",
+      "gitBlob": "4d523f6a2d8883400c591f36e5f143b688d5c905"
+    },
+    {
+      "path": "services/control-plane/scripts/migrate.ts",
+      "bytes": 3159,
+      "sha256": "d77b5a30795ff91c235bd748904906a4f4f8b0e6cab95feae5c3bb40c890fa22",
+      "gitBlob": "ff02f7dec854d1aa7af92c1d72d41f1c882c2140"
+    },
+    {
+      "path": "services/control-plane/tests/credit-purchases.test.ts",
+      "bytes": 76913,
+      "sha256": "f8e215ba2f282fb72328500b661bb697eeb59715884812e2fe898cf7908a15ec",
+      "gitBlob": "b7f889b92d55e5e7b86dcfa3245de4e34d974aa6"
+    },
+    {
+      "path": "services/control-plane/tests/individual-funding-postgres.integration.test.ts",
+      "bytes": 28634,
+      "sha256": "9334f6ad33eb7eb1116c00f0d88c864ba97216f0258cdc0eb45035ca17083df1",
+      "gitBlob": "6468eec697e24833f1b1e0b6af688058e9e45ba0"
+    },
+    {
+      "path": "services/control-plane/tests/individual-limited-grants-postgres.integration.test.ts",
+      "bytes": 19525,
+      "sha256": "06aadb3545aefd591bf3bd284a68975e8199c476d87cac94640e47d3af37c0e8",
+      "gitBlob": "a8279b023ae0d73e84e15d28a3f24377baa0ef88"
+    },
+    {
+      "path": "services/control-plane/tests/individual-limited-grants.test.ts",
+      "bytes": 4254,
+      "sha256": "810fc6d4f7119fc78843cced9ade30b5019923b2e9a224db3954468e7237a0ed",
+      "gitBlob": "c4a48c42638885695277d78c90cb3063db3173c7"
+    },
+    {
+      "path": "services/control-plane/tests/migrations.test.ts",
+      "bytes": 17640,
+      "sha256": "84f737d4df985070ab3bf816b62403938772b194590989b3167991cec5f4f385",
+      "gitBlob": "f2249545b2adf7e53eac3407ef8e47b8d40b2541"
+    },
+    {
+      "path": "services/control-plane/tests/postgres.integration.test.ts",
+      "bytes": 19202,
+      "sha256": "07496ccc36f5dfcfd85857f0513a2f40977ae72bdb5d0263de9f8235a90f10fe",
+      "gitBlob": "b895dd40c03953a06ed9207c45c5d55fff72aa9a"
+    },
+    {
+      "path": "services/control-plane/tests/scoped-routing.test.ts",
+      "bytes": 58107,
+      "sha256": "839c073d4d3e1ca717f0bd93f6b97cfa22931bfc7fceb68a0f016d0401ecb3bc",
+      "gitBlob": "8e754124b863e52f9e6106d160ca930391c6dd17"
+    },
+    {
+      "path": "shared/individual-plan.ts",
+      "bytes": 11498,
+      "sha256": "c37b6bf3c1a594c9696030cb235b61b536b2f80ab6c381e099e8869122ba8244",
+      "gitBlob": "1e9455460c8d80b58c6ea2af3fa57edc19366529"
+    },
+    {
+      "path": "tests/individual-monthly-credits.test.ts",
+      "bytes": 1232,
+      "sha256": "cb3080f2dc5781e34f27e6c272b34a28e29b4dcc2354c3ed1897e98da49e45e8",
+      "gitBlob": "ad8ae004d79758348210ee7c38cfa314cfa0c1fd"
+    }
+  ],
+  "migrations": [
+    {
+      "version": 1,
+      "name": "001_accounts.sql",
+      "sha256": "ef1d84c9f3c41857393aae012777b482b266785ec246874cff9ab9b0acd21f55",
+      "baseSha256": "ef1d84c9f3c41857393aae012777b482b266785ec246874cff9ab9b0acd21f55",
+      "matchesCommittedBytes": true
+    },
+    {
+      "version": 2,
+      "name": "002_commercial.sql",
+      "sha256": "53ed8311eaec0f2d772b9775e4129cf5d99e4e76bcf8ca393d0a3af308c0d5af",
+      "baseSha256": "53ed8311eaec0f2d772b9775e4129cf5d99e4e76bcf8ca393d0a3af308c0d5af",
+      "matchesCommittedBytes": true
+    },
+    {
+      "version": 3,
+      "name": "003_funded_jobs.sql",
+      "sha256": "ca351a394db17fe131ff8bce99ad2bbb1790dd363e767debdf14d24de523bda8",
+      "baseSha256": "ca351a394db17fe131ff8bce99ad2bbb1790dd363e767debdf14d24de523bda8",
+      "matchesCommittedBytes": true
+    },
+    {
+      "version": 4,
+      "name": "004_usage_contract.sql",
+      "sha256": "492b441db2f7d6998379342ddcf38da24f0b3ec113a247ae5e46dc1996325079",
+      "baseSha256": "492b441db2f7d6998379342ddcf38da24f0b3ec113a247ae5e46dc1996325079",
+      "matchesCommittedBytes": true
+    },
+    {
+      "version": 5,
+      "name": "005_customer_access.sql",
+      "sha256": "ae8fba20e3c405651a46f967527ea8bc7ba34f294fb73fe8dc24d8a6c3513a73",
+      "baseSha256": "ae8fba20e3c405651a46f967527ea8bc7ba34f294fb73fe8dc24d8a6c3513a73",
+      "matchesCommittedBytes": true
+    },
+    {
+      "version": 6,
+      "name": "006_staff_keys.sql",
+      "sha256": "f58b642664b6150a4e9c0985cf35fe6a9643f6d28f5a2ff9b94574f3982b0bcb",
+      "baseSha256": "f58b642664b6150a4e9c0985cf35fe6a9643f6d28f5a2ff9b94574f3982b0bcb",
+      "matchesCommittedBytes": true
+    },
+    {
+      "version": 7,
+      "name": "007_relay_devices.sql",
+      "sha256": "9464a1e966dec85f58f73b9f83848c9780ba575e05c1d996d27efc5262f5e9ef",
+      "baseSha256": "9464a1e966dec85f58f73b9f83848c9780ba575e05c1d996d27efc5262f5e9ef",
+      "matchesCommittedBytes": true
+    },
+    {
+      "version": 8,
+      "name": "008_organization_setup.sql",
+      "sha256": "f130938a3c4fc358a489634d687f388896a864b40ecad8fcd82373f9e15eed5c",
+      "baseSha256": "f130938a3c4fc358a489634d687f388896a864b40ecad8fcd82373f9e15eed5c",
+      "matchesCommittedBytes": true
+    },
+    {
+      "version": 9,
+      "name": "009_individual_plans.sql",
+      "sha256": "540f7bb22cc183175984fcdcf8e82718a7b093ec77d09329656ddd68196e5886",
+      "baseSha256": "540f7bb22cc183175984fcdcf8e82718a7b093ec77d09329656ddd68196e5886",
+      "matchesCommittedBytes": true
+    },
+    {
+      "version": 10,
+      "name": "010-scoped-routing.sql",
+      "sha256": "426c3373e9c3a6f9e5f4af6180710d4da4262ce9a834f4c61273a60ef27eb9f3",
+      "baseSha256": "426c3373e9c3a6f9e5f4af6180710d4da4262ce9a834f4c61273a60ef27eb9f3",
+      "matchesCommittedBytes": true
+    },
+    {
+      "version": 11,
+      "name": "011_individual_funding.sql",
+      "sha256": "042849f4249f229d5e5478ee47e0109cdddc0912000b25e00e64a3e0a705d453",
+      "baseSha256": "042849f4249f229d5e5478ee47e0109cdddc0912000b25e00e64a3e0a705d453",
+      "matchesCommittedBytes": true
+    },
+    {
+      "version": 12,
+      "name": "012_individual_subscription_periods.sql",
+      "sha256": "8ab3f0fe8e331f5297e696a5afd6ba35f41704ba3617382786df22c37c6fbcb8",
+      "baseSha256": "8ab3f0fe8e331f5297e696a5afd6ba35f41704ba3617382786df22c37c6fbcb8",
+      "matchesCommittedBytes": true
+    },
+    {
+      "version": 13,
+      "name": "013_purchased_usage_holds.sql",
+      "sha256": "ab8487922b6ff8a8ebd7bd238ffbb4766d6ff0655e5f5de500e72aec441cc59c",
+      "baseSha256": "ab8487922b6ff8a8ebd7bd238ffbb4766d6ff0655e5f5de500e72aec441cc59c",
+      "matchesCommittedBytes": true
+    },
+    {
+      "version": 14,
+      "name": "014_member_credit_limits.sql",
+      "sha256": "b818212f2a4d5bc389c094c2b7843e9a234cd5b2a85d11b869e7de8a7f5cc8c1",
+      "baseSha256": "b818212f2a4d5bc389c094c2b7843e9a234cd5b2a85d11b869e7de8a7f5cc8c1",
+      "matchesCommittedBytes": true
+    },
+    {
+      "version": 15,
+      "name": "015_credit_purchases.sql",
+      "sha256": "20cb234aa0f37dfc79c762402cbd2c7ed141db4db6cd1ebb0d7bd46e7d232605",
+      "baseSha256": "20cb234aa0f37dfc79c762402cbd2c7ed141db4db6cd1ebb0d7bd46e7d232605",
+      "matchesCommittedBytes": true
+    },
+    {
+      "version": 16,
+      "name": "016_individual_complete_plan_credits.sql",
+      "sha256": "2ab62ae9dd41b4d7c6800ac9eebe9dbdcac76658f7e03e2d37c4a28c2a8f911a"
+    }
+  ],
+  "contentDigest": "c8a6f945d5a0bbfb558019fe5ec84e8d0f8e2d6a2fbe777f83a1aad32f727f71",
+  "validatorMatches012ExceptEligibility": true
+}

@@ -1,0 +1,104 @@
+{
+  "base": "f72c6ace14c89201425e33f90fb096bdbdda8f4d",
+  "reviewedContentDigest": "c8a6f945d5a0bbfb558019fe5ec84e8d0f8e2d6a2fbe777f83a1aad32f727f71",
+  "committedContentDigest": "2ef651e9d678f7368646f38504d73137033c32fc87db23997b9ae711faf0c2c2",
+  "files": [
+    {
+      "path": "docs/implementation/2026-10-01-individual-limited-grant-credits.md",
+      "testedSha256": "67a5e98b11de409c54cc8d5402e46d87d233de3da4616636393c8dd4364b8475",
+      "testedRawGitBlob": "d73273dc16020527b4c60afbdb406baca4141ac2",
+      "committedSha256": "67a5e98b11de409c54cc8d5402e46d87d233de3da4616636393c8dd4364b8475",
+      "committedGitBlob": "d73273dc16020527b4c60afbdb406baca4141ac2",
+      "transform": "identical"
+    },
+    {
+      "path": "services/control-plane/migrations/016_individual_complete_plan_credits.sql",
+      "testedSha256": "2ab62ae9dd41b4d7c6800ac9eebe9dbdcac76658f7e03e2d37c4a28c2a8f911a",
+      "testedRawGitBlob": "4d523f6a2d8883400c591f36e5f143b688d5c905",
+      "committedSha256": "2ab62ae9dd41b4d7c6800ac9eebe9dbdcac76658f7e03e2d37c4a28c2a8f911a",
+      "committedGitBlob": "4d523f6a2d8883400c591f36e5f143b688d5c905",
+      "transform": "identical"
+    },
+    {
+      "path": "services/control-plane/scripts/migrate.ts",
+      "testedSha256": "d77b5a30795ff91c235bd748904906a4f4f8b0e6cab95feae5c3bb40c890fa22",
+      "testedRawGitBlob": "ff02f7dec854d1aa7af92c1d72d41f1c882c2140",
+      "committedSha256": "9c06768d18e1997648f6e2a60ba5cb0e3b4ef3798c0f9df3bcb7c3ff5e123653",
+      "committedGitBlob": "f5f82a70e5cdf88a84ada12f1c4fd773b380210d",
+      "transform": "CRLF to LF only"
+    },
+    {
+      "path": "services/control-plane/tests/credit-purchases.test.ts",
+      "testedSha256": "f8e215ba2f282fb72328500b661bb697eeb59715884812e2fe898cf7908a15ec",
+      "testedRawGitBlob": "b7f889b92d55e5e7b86dcfa3245de4e34d974aa6",
+      "committedSha256": "27912365adc5f991eae90b5f17526f0352485e77533f4b34c98c2f6f8fe4b85a",
+      "committedGitBlob": "10526f36c39fc31671d648dd975da28d5eed7a2c",
+      "transform": "CRLF to LF only"
+    },
+    {
+      "path": "services/control-plane/tests/individual-funding-postgres.integration.test.ts",
+      "testedSha256": "9334f6ad33eb7eb1116c00f0d88c864ba97216f0258cdc0eb45035ca17083df1",
+      "testedRawGitBlob": "6468eec697e24833f1b1e0b6af688058e9e45ba0",
+      "committedSha256": "05bd1497cd0b6873442478c61c0114469bda6c39c7285fe672c4eacc0eba84dd",
+      "committedGitBlob": "0247d0733cb593292552cf91e1644dc81f87b482",
+      "transform": "CRLF to LF only"
+    },
+    {
+      "path": "services/control-plane/tests/individual-limited-grants-postgres.integration.test.ts",
+      "testedSha256": "06aadb3545aefd591bf3bd284a68975e8199c476d87cac94640e47d3af37c0e8",
+      "testedRawGitBlob": "a8279b023ae0d73e84e15d28a3f24377baa0ef88",
+      "committedSha256": "06aadb3545aefd591bf3bd284a68975e8199c476d87cac94640e47d3af37c0e8",
+      "committedGitBlob": "a8279b023ae0d73e84e15d28a3f24377baa0ef88",
+      "transform": "identical"
+    },
+    {
+      "path": "services/control-plane/tests/individual-limited-grants.test.ts",
+      "testedSha256": "810fc6d4f7119fc78843cced9ade30b5019923b2e9a224db3954468e7237a0ed",
+      "testedRawGitBlob": "c4a48c42638885695277d78c90cb3063db3173c7",
+      "committedSha256": "810fc6d4f7119fc78843cced9ade30b5019923b2e9a224db3954468e7237a0ed",
+      "committedGitBlob": "c4a48c42638885695277d78c90cb3063db3173c7",
+      "transform": "identical"
+    },
+    {
+      "path": "services/control-plane/tests/migrations.test.ts",
+      "testedSha256": "84f737d4df985070ab3bf816b62403938772b194590989b3167991cec5f4f385",
+      "testedRawGitBlob": "f2249545b2adf7e53eac3407ef8e47b8d40b2541",
+      "committedSha256": "869faa0bafb3287ba0fb356ce6513a4c9a9dd07aa5d2f191c6f97a1339931856",
+      "committedGitBlob": "5ac2e1edbdcefe7d793d0a5c27566dc0abe74783",
+      "transform": "CRLF to LF only"
+    },
+    {
+      "path": "services/control-plane/tests/postgres.integration.test.ts",
+      "testedSha256": "07496ccc36f5dfcfd85857f0513a2f40977ae72bdb5d0263de9f8235a90f10fe",
+      "testedRawGitBlob": "b895dd40c03953a06ed9207c45c5d55fff72aa9a",
+      "committedSha256": "d825c1853416f8f2709530338b088156022fbfc40f0ab7c75550da3e91d0710b",
+      "committedGitBlob": "dac707397846e35fa229e8e83f75090935cd0b06",
+      "transform": "CRLF to LF only"
+    },
+    {
+      "path": "services/control-plane/tests/scoped-routing.test.ts",
+      "testedSha256": "839c073d4d3e1ca717f0bd93f6b97cfa22931bfc7fceb68a0f016d0401ecb3bc",
+      "testedRawGitBlob": "8e754124b863e52f9e6106d160ca930391c6dd17",
+      "committedSha256": "eefc9314a249162811b33cd04469072182d401b9cd3f947a254386f5aaefadd1",
+      "committedGitBlob": "9a22259d32cd2069c44751c9368753e20c32d9ee",
+      "transform": "CRLF to LF only"
+    },
+    {
+      "path": "shared/individual-plan.ts",
+      "testedSha256": "c37b6bf3c1a594c9696030cb235b61b536b2f80ab6c381e099e8869122ba8244",
+      "testedRawGitBlob": "1e9455460c8d80b58c6ea2af3fa57edc19366529",
+      "committedSha256": "86ac4aec4cea4fd4d65b1bcb0cd6fc072094f9393ddf1d184c4b2d8c7be90c5c",
+      "committedGitBlob": "afdb91093874b8a7413d4f2c89e56fbf8f4d1c1c",
+      "transform": "CRLF to LF only"
+    },
+    {
+      "path": "tests/individual-monthly-credits.test.ts",
+      "testedSha256": "cb3080f2dc5781e34f27e6c272b34a28e29b4dcc2354c3ed1897e98da49e45e8",
+      "testedRawGitBlob": "ad8ae004d79758348210ee7c38cfa314cfa0c1fd",
+      "committedSha256": "cb3080f2dc5781e34f27e6c272b34a28e29b4dcc2354c3ed1897e98da49e45e8",
+      "committedGitBlob": "ad8ae004d79758348210ee7c38cfa314cfa0c1fd",
+      "transform": "identical"
+    }
+  ],
+  "note": "source.json hashes the physical tested/reviewed Windows files. This manifest binds those files to Git index bytes. There are no content changes beyond Git CRLF-to-LF normalization; all SQL migration bytes are identical."
+}
