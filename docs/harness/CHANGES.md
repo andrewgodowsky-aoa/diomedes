@@ -1,5 +1,17 @@
 # Harness host integration changes, 2026-09-09
 
+## Subscription workers under a Personal Nectovia lead, 2026-10-03
+
+A Nectovia loop a person starts in their Personal workspace can hand one task to their own Codex,
+Claude Code or OpenCode, when they turned that on (DIO-175, slice S3). The lead spends Nectovia
+credits; the worker runs on the person’s own plan through the tool’s programming interface, and the
+account service records a paid Agent admission for it with no managed hold. Consent names the tools,
+only the person’s own start takes such a worker (Board work and the Ready queue never do), a business
+project keeps its single-agent path, and a reserve keeps the person’s share of their tool’s usage.
+It’s off unless `DIOMEDES_EXTERNAL_WORKERS=1` and `DIOMEDES_SUBSCRIPTION_WORKERS=1`, and stays off
+until the Pillar 07 wording (D1) is approved. See
+[the record](../implementation/2026-10-03-subscription-workers.md).
+
 ## External team workers, 2026-10-03
 
 A lead loop can hand a bounded task to a worker on the person's own installed Claude Code, Codex

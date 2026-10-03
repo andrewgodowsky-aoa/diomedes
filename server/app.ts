@@ -99,6 +99,7 @@ import { WorkService } from './work.js';
 import { NativeWorkService, type NativeGenerator } from './native-work.js';
 import { ChangeReviewService } from './change-review/service.js';
 import { engineWorkerPort } from './external-worker-port.js';
+import { SubscriptionWorkers, paidWorkerAdmission } from './subscription-workers.js';
 import {
   askCodex,
   closeWarmCodex,
@@ -412,6 +413,12 @@ interface AppOptions {
    * Null attaches none. Tests pass their own port.
    */
   externalWorkers?: import('./harness/external-worker.js').ExternalWorkerPort | null;
+  /**
+   * S3: whether a Personal Nectovia lead may take a worker from the person's subscription worker
+   * preference. Omitted follows `DIOMEDES_SUBSCRIPTION_WORKERS=1`. It also needs an external
+   * worker port.
+   */
+  subscriptionWorkers?: boolean;
   /** Host-qualified exact Decisions account/billing bounds; never supplied by a message or UI. */
   agentReviewQualification?: Parameters<typeof createProductionAgentTeamHost>[0]['trustedReviewQualification'];
   /** Offline host fixture; production composes the existing services above. */
@@ -539,7 +546,8 @@ function validateSettings(current: Settings, body: unknown): Settings {
   // workspace, and cannot rebind Diomedes' own conversation: only
   // POST /api/workspace/switch writes the first, after checking membership, and
   // only the home provisioner writes the second. Do not add a branch here that
-  // reads `supplied.activeWorkspace` or `supplied.home`.
+  // reads `supplied.activeWorkspace` or `supplied.home`. The same holds for
+  // `subscriptionWorkers`, which only its own route writes, for the signed-in person.
   if (supplied.version !== undefined && supplied.version !== 1)
     throw new ApiError(400, 'This settings version is unsupported.');
   if (supplied.plainWritingPhrases !== undefined) {
@@ -1358,7 +1366,7 @@ export async function createApp(options: AppOptions) {
   });
   // S2: team workers on the person's own installed coding tools, read once from the launch
   // environment. Without a port every external worker is refused at admission.
-  harness.loop.setExternalWorkers(
+  const externalWorkerPort =
     options.externalWorkers !== undefined
       ? options.externalWorkers
       : process.env.DIOMEDES_EXTERNAL_WORKERS === '1'
@@ -1367,8 +1375,20 @@ export async function createApp(options: AppOptions) {
             { admission: readCodexWorkerAdmission, ask: options.codexIntegration?.askCodex ?? askCodex },
             () => store.settings.services as Record<string, unknown> | undefined,
           )
-        : null,
-  );
+        : null;
+  harness.loop.setExternalWorkers(externalWorkerPort);
+  // S3: a Personal Nectovia lead may hand tasks to the person's own coding tools once they turn
+  // that on. The build must allow it and the port above must be attached; it stays off until
+  // Andrew approves the Pillar 07 amendment (D1). A worker under a Nectovia lead carries the
+  // Agent gate's `external-engine` record, so without a gate it can't start.
+  const subscriptionWorkers = new SubscriptionWorkers({
+    store,
+    available: () =>
+      externalWorkerPort !== null && (options.subscriptionWorkers ?? process.env.DIOMEDES_SUBSCRIPTION_WORKERS === '1'),
+    personId: () => accountSession?.personId() ?? null,
+    projectOwner: (projectId) => workspaces.projectOwner(projectId)?.organizationId ?? null,
+  });
+  harness.loop.setPaidWorkerAdmission(engines.agentGate ? paidWorkerAdmission(engines.agentGate) : null);
   await harness.init();
   await engineAsks.expireOpen();
   // Run once admits the brief through the harness above, so its occurrences
@@ -1592,7 +1612,7 @@ export async function createApp(options: AppOptions) {
     },
   }, () => packLifecycle.contributions, {
     host:collaborationHost, rootLedger:productionTeam.rootLedger,
-  });
+  }, subscriptionWorkers);
   mountTaskWorkflowRoutes(app, store);
   mountWorkspaceRoutes(app, store, workspaces, configuration, automations);
   mountAutomationRoutes(app, store, automations);
@@ -1905,6 +1925,13 @@ export async function createApp(options: AppOptions) {
         await store.saveSettings(validateSettings(store.settings, req.body)),
       );
     }),
+  );
+  // S3: the person's choice to let a Personal Nectovia lead hand tasks to their own coding tools.
+  // Only this route writes it; `PUT /api/settings` keeps whatever is stored.
+  app.get('/api/settings/subscription-workers', route(async () => subscriptionWorkers.view(), false));
+  app.put(
+    '/api/settings/subscription-workers',
+    route(async (req) => ({ preference: await subscriptionWorkers.save(req.body) })),
   );
   const externalEngine = (req: Request) =>
     choice(String(req.params.engine), EXTERNAL_ENGINES, 'engine');

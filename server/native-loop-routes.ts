@@ -11,9 +11,14 @@
  * (connection, model, credential, spend cap; for Nectovia the Agent gate's
  * managed admission under the loop's deterministic run id). A delegate route,
  * when the person names one, is admitted the same way now and again when the
- * loop hands it work; Nectovia never runs with a delegate or a team. The run
- * is created through the bridge with its admission pinned, so a replay of the
- * same command id returns the same run and admits nothing new.
+ * loop hands it work; Nectovia never runs with a delegate or a team the person
+ * names. Its one exception (S3) is a worker on the person's own coding tool,
+ * resolved here from their subscription worker preference for Personal work, on
+ * the person's own start only and only once they confirmed the tools it may go
+ * to. A host start (Board work, the Ready queue, a follow-up) never takes one, so
+ * scheduled work never runs on a person's subscription (D12).
+ * The run is created through the bridge with its admission pinned, so a replay
+ * of the same command id returns the same run and admits nothing new.
  *
  * Reading projects the loop from its steps (`shared/native-loop.ts`) and the
  * finish from H17's four-state projection of the task's declared checks. No
@@ -58,6 +63,7 @@ import { AGENT_CATALOG, AUTO_AGENT, type AgentDefinition } from '../shared/agent
 import { resolveProfileRoute, profileLabel } from '../shared/agent-profiles.js';
 import {
   EXTERNAL_WORKER_LIMITS,
+  EXTERNAL_WORKER_ROUTES,
   TEAM_LIMITS,
   budgetRefusal,
   executionOf,
@@ -69,6 +75,8 @@ import {
 } from '../shared/team-delegation.js';
 import { routeName as engineName } from './harness/external-worker.js';
 import { CODEX_ACCOUNT_ROUTE } from './engines/codex-session.js';
+import type { SubscriptionWorkerChoice, SubscriptionWorkers } from './subscription-workers.js';
+import { reserveRefusal, type SubscriptionReserve, type SubscriptionWorkerRecord } from '../shared/subscription-workers.js';
 import type { Route, Session } from '../shared/types.js';
 import { OWNER_RULES_NOT_INCLUDED_REASON } from '../shared/access.js';
 import { taskWorkflowBlocker } from '../shared/task-workflow.js';
@@ -95,6 +103,16 @@ const startSchema = z.strictObject({
   accountRoute: z.string().min(1).max(400).nullable().optional(),
   effort: z.enum(['low', 'medium', 'high']).nullable().optional(),
   consent: z.boolean().optional(),
+  /**
+   * S3: the coding tools the person confirmed a task may go to, under the consent text they read.
+   * A start that would hand tasks to their tools needs it to name exactly those tools.
+   */
+  workerConsent: z
+    .strictObject({
+      revision: z.string().min(1).max(40),
+      engines: z.array(z.enum(EXTERNAL_WORKER_ROUTES)).min(1).max(EXTERNAL_WORKER_ROUTES.length),
+    })
+    .optional(),
   maxTurns: z.number().int().min(1).max(LOOP_LIMITS.maxTurns).optional(),
   sources: z.array(z.string().min(1).max(400)).max(32).optional(),
   persistentTeam: agentTeamSelectionSchema.nullable().optional(),
@@ -151,6 +169,11 @@ export interface LoopHostStart {
   preparedSessionId?: string;
   /** Host-selected helper-only composition; ordinary H14 profile requests keep their existing contract. */
   compose?: boolean;
+  /**
+   * The person's own start of this loop, from the loop start route. Only such a start takes a
+   * worker from their subscription worker preference (S3); a host start never does (D12).
+   */
+  personStart?: boolean;
 }
 export interface NativeCollaborationDeps {
   host: AgentCollaborationHost;
@@ -163,6 +186,12 @@ export function loopRunId(projectId: string, commandId: string): string {
 }
 
 const loopRoute = (route: string) => route === LOOP_FIXTURE_ROUTE || isModelApiRoute(route);
+
+/** Tools by name for one sentence: "Codex", "Codex or Claude Code", "Codex, Claude Code or OpenCode". */
+function engineNames(routes: readonly ExternalWorkerRoute[]): string {
+  const names = routes.map(engineName);
+  return names.length <= 1 ? (names[0] ?? '') : `${names.slice(0, -1).join(', ')} or ${names.at(-1)}`;
+}
 
 /** What H14 admission reads to resolve a team role: H09 profiles and the Agent catalog. */
 export interface TeamAdmission {
@@ -197,9 +226,9 @@ export interface NectoviaManagedLoopDeps {
   ) => Promise<{ model: string; accountRoute: string }>;
 }
 
-/** Nectovia runs single-agent only: no delegate and no team beside it. */
+/** Nectovia takes no delegate and no team the person names; S3's host-resolved worker is the only team beside it. */
 export const NECTOVIA_LOOP_TEAM_REFUSED =
-  'Nectovia loops run single-agent only, so a delegate or a team cannot join one. Nothing was sent.';
+  'A Nectovia loop can’t take a delegate or a team you name. Nothing was sent.';
 
 const WORKER_AGENT = 'diomedes.general';
 const ADVISOR_AGENT = 'diomedes.architect';
@@ -232,6 +261,8 @@ export function mountNativeLoopRoutes(
   managed: NectoviaManagedLoopDeps | null = null,
   contributions: (() => PackContributions) | null = null,
   collaboration: NativeCollaborationDeps | null = null,
+  /** S3: the person's subscription worker preference. Absent: a Nectovia lead never takes a worker. */
+  subscription: SubscriptionWorkers | null = null,
 ) {
   if (collaboration) harness.loop.attachCollaboration(collaboration.host);
   const collaborationHost = () => collaboration?.host ?? harness.loop.collaboration?.() ?? null;
@@ -321,7 +352,8 @@ export function mountNativeLoopRoutes(
   /**
    * S2: a team worker on the person's own installed coding tool. Its Settings switch, consent
    * naming it, cloud sharing for its files, then the tool's own fresh admission: install,
-   * sign-in, model and account route. Never a lead, never an advisor, never on Nectovia.
+   * sign-in, model and account route. Never a lead, never an advisor, never a Nectovia lead's
+   * unless the host chose it (S3). A reserve the person keeps is read on that same admission.
    */
   const admitExternalWorkerRoute = async (
     projectId: string,
@@ -329,6 +361,7 @@ export function mountNativeLoopRoutes(
     requested: { model?: string | null; accountRoute?: string | null },
     sources: readonly string[],
     consent: boolean,
+    reserve?: SubscriptionReserve,
   ) => {
     const name = engineName(route);
     if (services()[route] !== true) throw new ApiError(409, `Turn ${name} on in Settings before giving it work.`);
@@ -343,12 +376,16 @@ export function mountNativeLoopRoutes(
     const model = requested.model ?? saved(`${route}Model`);
     const accountRoute =
       requested.accountRoute ?? (route === 'codex' ? (saved('codexAccountRoute') ?? CODEX_ACCOUNT_ROUTE) : saved(`${route}AccountRoute`));
+    let admitted: Awaited<ReturnType<typeof harness.loop.admitExternalWorker>>;
     try {
-      return await harness.loop.admitExternalWorker(route, { projectId, model, accountRoute });
+      admitted = await harness.loop.admitExternalWorker(route, { projectId, model, accountRoute });
     } catch (error) {
       if (error instanceof ApiError) throw error;
       throw new ApiError(409, error instanceof Error ? error.message : `${name} refused this worker.`, { code: 'route_refused' });
     }
+    const kept = reserve ? reserveRefusal(reserve, admitted.usage, Date.now(), name) : null;
+    if (kept) throw new ApiError(409, kept, { code: 'subscription_reserve' });
+    return admitted;
   };
 
   /**
@@ -368,6 +405,8 @@ export function mountNativeLoopRoutes(
     consent: boolean,
     // S2: only a team's worker may run on the person's own installed coding tool, never a delegate.
     teamWorker = false,
+    // S3: the part of the tool's usage limit the person keeps, for a worker the host chose.
+    reserve?: SubscriptionReserve,
   ): Promise<TeamRole & { effort: string | null }> => {
     const state = store.state(projectId);
     const refuse = (message: string, code = 'team_role_refused') => new ApiError(409, message, { code, role: kind });
@@ -413,7 +452,7 @@ export function mountNativeLoopRoutes(
     if (external && !teamWorker)
       throw refuse(`${engineName(resolved)} can be a worker on a team, not ${kind === 'advisor' ? 'an advisor' : 'a delegate'}.`, 'team_route_unsupported');
     const admitted = external
-      ? await admitExternalWorkerRoute(projectId, resolved, { model, accountRoute }, scope, consent)
+      ? await admitExternalWorkerRoute(projectId, resolved, { model, accountRoute }, scope, consent, reserve)
       : await admitRoute(projectId, resolved, { model, accountRoute }, scope, consent);
     const wanted = agentId ?? (kind === 'advisor' ? ADVISOR_AGENT : WORKER_AGENT);
     const agent: AgentDefinition | undefined = teamAdmission
@@ -459,10 +498,21 @@ export function mountNativeLoopRoutes(
     if (refusal) throw new ApiError(400, refusal, { code: 'team_budget_invalid' });
     const worker = await admitRole(projectId, taskId, 'worker', spec.worker, body, scope ?? [], consent, true);
     const advisor = spec.advisor ? await admitRole(projectId, taskId, 'advisor', spec.advisor, body, scope ?? [], consent) : null;
-    // An external worker answers in one turn, and one runs at a time.
+    return teamConfig(scope, worker, advisor, budget);
+  };
+
+  /** One admitted team. An external worker answers in one turn, and one runs at a time. */
+  const teamConfig = (
+    scope: readonly string[] | null,
+    worker: TeamRole & { effort: string | null },
+    advisor: (TeamRole & { effort: string | null }) | null,
+    budget: TeamConfig['worker']['budget'],
+    origin?: TeamConfig['origin'],
+  ): TeamConfig => {
     const external = executionOf(worker) === 'external-proposal';
     return {
       v: 1,
+      ...(origin ? { origin } : {}),
       scope,
       worker: { ...worker, budget: external ? { ...budget, turns: EXTERNAL_WORKER_LIMITS.turns } : budget },
       advisor,
@@ -476,11 +526,66 @@ export function mountNativeLoopRoutes(
   };
 
   /**
+   * S3: the worker a Nectovia lead takes from the person's subscription worker preference. Each of
+   * their tools is tried in their order and admitted the way a worker they name is, with the
+   * reserve they keep; the first that's ready takes the role. When none is, the lead follows what
+   * they chose: hold the work, or carry on by itself. Nothing is sent here.
+   */
+  const subscriptionWorkerFor = async (
+    projectId: string,
+    taskId: string,
+    body: LoopStartRequest,
+    sources: readonly string[],
+    consent: boolean,
+    choice: Exclude<SubscriptionWorkerChoice, { kind: 'off' }>,
+  ): Promise<{ team: TeamConfig | null; record: SubscriptionWorkerRecord }> => {
+    const { preference } = choice;
+    const record = (state: SubscriptionWorkerRecord['state'], route: ExternalWorkerRoute | null, reason: string | null): SubscriptionWorkerRecord =>
+      ({ state, route, reason, reserve: preference.reserve, consentRevision: preference.consentRevision });
+    const unavailable = (reason: string) => {
+      if (preference.whenUnavailable === 'pause')
+        throw new ApiError(409, `${reason} You chose to hold work until one of your coding tools can take it, so this didn’t start.`, {
+          code: 'subscription_worker_unavailable',
+        });
+      return { team: null, record: record('unavailable', null, reason) };
+    };
+    if (choice.kind === 'unavailable') return unavailable(choice.reason);
+    // The person confirms the tools by name, under the consent text they read. A bare consent was
+    // given to a dialog that may not have named them, so it never reaches their tools.
+    const confirmed = body.workerConsent;
+    if (
+      !consent ||
+      !confirmed ||
+      confirmed.revision !== preference.consentRevision ||
+      confirmed.engines.length !== choice.engines.length ||
+      choice.engines.some((route) => !confirmed.engines.includes(route))
+    )
+      throw new ApiError(
+        409,
+        `Your goal and the files the loop reads will be sent to Nectovia, and a task it hands off goes to ${engineNames(choice.engines)} with the files it needs, signed in with your own account. Confirm before sending.`,
+        { consentRequired: true, workerConsent: { revision: preference.consentRevision, engines: [...choice.engines] } },
+      );
+    const scope = sources.length ? [...sources] : null;
+    const reasons: string[] = [];
+    for (const route of choice.engines) {
+      try {
+        const worker = await admitRole(projectId, taskId, 'worker', { route }, body, scope ?? [], consent, true, preference.reserve);
+        const budget = { turns: TEAM_LIMITS.worker.turns, tokens: TEAM_LIMITS.worker.tokens, wallMs: TEAM_LIMITS.worker.wallMs };
+        return { team: teamConfig(scope, worker, null, budget, 'subscription-preference'), record: record('attached', route, null) };
+      } catch (error) {
+        if (!(error instanceof ApiError) || error.details.consentRequired) throw error;
+        reasons.push(error.message);
+      }
+    }
+    return unavailable(reasons.join(' '));
+  };
+
+  /**
    * An H08 Retry asks for exactly what the earlier lead was admitted with: the
    * same scope, roles, profiles and budget. Each role's route is admitted again,
    * fresh, so a route switched off since then refuses the retry.
    */
-  const readmitTeam = async (projectId: string, team: TeamConfig, consent: boolean): Promise<TeamConfig> => {
+  const readmitTeam = async (projectId: string, team: TeamConfig, consent: boolean, reserve?: SubscriptionReserve): Promise<TeamConfig> => {
     const scope = team.scope ?? [];
     for (const role of [team.worker, team.advisor]) {
       if (!role) continue;
@@ -488,7 +593,7 @@ export function mountNativeLoopRoutes(
         throw new ApiError(409, NECTOVIA_LOOP_TEAM_REFUSED, { code: 'team_route_unsupported' });
       const requested = { model: role.model, accountRoute: role.accountRoute };
       const again = isExternalWorkerRoute(role.route)
-        ? await admitExternalWorkerRoute(projectId, role.route, requested, scope, consent)
+        ? await admitExternalWorkerRoute(projectId, role.route, requested, scope, consent, reserve)
         : await admitRoute(projectId, role.route, requested, scope, consent);
       if (again.model !== role.model)
         throw new ApiError(409, `This team's ${role === team.worker ? 'worker' : 'advisor'} used ${role.model}, which its route would not use now, so it was not retried.`, {
@@ -539,9 +644,11 @@ export function mountNativeLoopRoutes(
       ? [...new Set(body.applyScope.map((entry) => (entry.trim() === '.' ? '.' : relativeName(entry))))]
       : null;
     const consent = body.consent === true;
-    // Nectovia is managed single-agent only: a lead on it names no delegate
-    // and no team, and nothing names it as a delegate. Never another payer.
-    if (body.route === NECTOVIA_ROUTE && (body.delegate || body.team || extra.team || body.persistentTeam || body.review))
+    // Nectovia names no delegate and no team, and nothing names it as a delegate. The one team
+    // beside it is the worker the host resolves from the person's preference (S3), which a Retry
+    // brings back from the recorded input with its origin.
+    const hostTeam = extra.team?.origin === 'subscription-preference';
+    if (body.route === NECTOVIA_ROUTE && (body.delegate || body.team || (extra.team && !hostTeam) || body.persistentTeam || body.review))
       throw new ApiError(409, NECTOVIA_LOOP_TEAM_REFUSED, { code: 'loop_route_unsupported' });
     if (body.delegate?.route === NECTOVIA_ROUTE)
       throw new ApiError(409, NECTOVIA_LOOP_REFUSED, { code: 'loop_route_unsupported' });
@@ -564,6 +671,32 @@ export function mountNativeLoopRoutes(
         (body.accountRoute != null && body.accountRoute !== selectedLead.accountRoute) || (body.effort != null && body.effort !== selectedLead.effort)))
       throw new HarnessError('collaboration_refused', 'The requested route, model, account or effort differs from the selected Team lead.');
     const requestedRoot = selectedLead ? { ...body, model: selectedLead.model, accountRoute: selectedLead.accountRoute } : body;
+    // S3: a Personal Nectovia lead may hand tasks to one of the person's own coding tools, when they
+    // turned that on. It's resolved before the lead's paid admission, so a start held for want of a
+    // tool records no admission. A collaboration root takes no such worker.
+    let subscriptionWorker: SubscriptionWorkerRecord | undefined;
+    let subscriptionTeam: TeamConfig | null = null;
+    // Read on the person's own start, and on a Retry of a worker the host chose then. A host start
+    // (Board work, the Ready queue, a follow-up) keeps the lead single-agent (D12).
+    const choice: SubscriptionWorkerChoice =
+      body.route === NECTOVIA_ROUTE && subscription && !body.composition && extra.compose !== true && (extra.personStart === true || hostTeam)
+        ? subscription.choice(projectId)
+        : { kind: 'off' };
+    if (hostTeam) {
+      // A Retry asks for the same tool again, under the person's preference as it is now.
+      const route = extra.team!.worker.route;
+      if (choice.kind !== 'candidates' || !isExternalWorkerRoute(route) || !choice.engines.includes(route))
+        throw new ApiError(
+          409,
+          `This work handed tasks to ${isExternalWorkerRoute(route) ? engineName(route) : route}, which your settings don’t allow now, so it wasn’t retried. Start it again to use your current settings.`,
+          { code: 'subscription_worker_changed' },
+        );
+      subscriptionWorker = { state: 'attached', route, reason: null, reserve: choice.preference.reserve, consentRevision: choice.preference.consentRevision };
+    } else if (choice.kind !== 'off') {
+      const resolved = await subscriptionWorkerFor(projectId, task.id, body, sources, consent, choice);
+      subscriptionWorker = resolved.record;
+      subscriptionTeam = resolved.team;
+    }
     const admitted = await admitRoute(projectId, body.route, requestedRoot, sources, consent,
       { taskId: task.id, runId, rootJobId, threadId: extra.threadId, effort: selectedLead ? selectedLead.effort : body.effort });
     let delegate: LoopRunInput['delegate'] = null;
@@ -577,10 +710,10 @@ export function mountNativeLoopRoutes(
       delegate = { route: body.delegate.route, model: child.model, accountRoute: child.accountRoute };
     }
     let team = extra.team
-      ? await readmitTeam(projectId, extra.team, consent)
+      ? await readmitTeam(projectId, extra.team, consent, hostTeam ? subscriptionWorker?.reserve : undefined)
       : body.team
         ? await admitTeam(projectId, task.id, body, sources, consent)
-        : null;
+        : subscriptionTeam;
     let composition: LoopRunInput['collaboration'] = null;
     if (body.persistentTeam || body.review || body.composition || extra.compose === true) {
       if (body.delegate || applyScope) throw new HarnessError('collaboration_refused', 'This bounded collaboration uses selected read-only roles and exact report approval.');
@@ -631,6 +764,7 @@ export function mountNativeLoopRoutes(
       ...(applyScope ? { applyScope } : {}),
       ...(team ? { team } : {}),
       ...(extra.retryOf ? { retryOf: extra.retryOf } : {}),
+      ...(subscriptionWorker ? { subscriptionWorker } : {}),
       command: { id: commandId, digest: commandDigest },
     };
     const session = await harness.bridge.start(
@@ -664,7 +798,7 @@ export function mountNativeLoopRoutes(
         throw new ApiError(400, 'Provide a versioned loop command: its id, the task, the goal and the route.', {
           code: 'invalid_loop_command',
         });
-      return store.locked(() => startLocked(projectId, parsed.data));
+      return store.locked(() => startLocked(projectId, parsed.data, { personStart: true }));
     }),
   );
 

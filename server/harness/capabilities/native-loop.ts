@@ -72,6 +72,8 @@ import {
   type ExternalWorkerRoute,
 } from '../../../shared/team-delegation.js';
 import { ExternalWorkerGate, externalWorkerAdapter, routeName, type ExternalWorkerPort } from '../external-worker.js';
+import { NECTOVIA_ROUTE } from '../../../shared/model-api.js';
+import { reserveRefusal } from '../../../shared/subscription-workers.js';
 import { CODEX_ACCOUNT_ROUTE } from '../../engines/codex-session.js';
 import { HandoffLedger } from '../../team/handoff-ledger.js';
 import { createTeamPort, teamChildIds } from './team-loop.js';
@@ -727,6 +729,8 @@ export function createLoopProcedure(deps: {
   let modelRoutes: LoopModelRoutes | null = null;
   // External workers on the person's own installed coding tools (S2). Absent: none can start.
   let externalWorkers: ExternalWorkerPort | null = null;
+  // S3: the paid record a worker under a Nectovia lead carries. Absent: such a worker can't start.
+  let paidWorkers: ((root: { route: string; projectId: string; rootJobId: string }) => Promise<void>) | null = null;
   const workerGate = new ExternalWorkerGate();
   let collaboration: AgentCollaborationHost | null = null;
   const rootScopes = new Map<string, { rootRunId: string; rootJobId: string; scopedLedger: SpendExposure }>();
@@ -756,7 +760,25 @@ export function createLoopProcedure(deps: {
     if (!externalWorkers)
       throw new ApiError(409, `${routeName(route)} can't work for a team on this computer.`, { code: 'external_worker_unavailable' });
     const admitted = await externalWorkers.admit(route, input);
-    return { model: admitted.model, accountRoute: admitted.accountRoute, accountDigest: admitted.accountDigest ?? null };
+    return { model: admitted.model, accountRoute: admitted.accountRoute, accountDigest: admitted.accountDigest ?? null, usage: admitted.usage ?? null };
+  };
+  /**
+   * A worker child's admission under its lead (S3). The reserve its lead was admitted with holds
+   * for every worker, read on this admission's own reading; under a Nectovia lead the worker also
+   * carries the paid record. Either refusal fails the child before anything is sent.
+   */
+  const admitWorkerChild = async (route: ExternalWorkerRoute, input: { projectId: string; model: string | null; accountRoute: string | null }) => {
+    const admitted = await admitExternalWorker(route, input);
+    const root = admissionContext.getStore();
+    if (!root) return admitted;
+    const lead = loopInput(root);
+    const kept = lead.subscriptionWorker ? reserveRefusal(lead.subscriptionWorker.reserve, admitted.usage, Date.now(), routeName(route)) : null;
+    if (kept) throw new ApiError(409, kept, { code: 'subscription_reserve' });
+    if (lead.route === NECTOVIA_ROUTE) {
+      if (!paidWorkers) throw new ApiError(409, `${routeName(route)} can't work for a Nectovia lead on this computer.`, { code: 'external_worker_unavailable' });
+      await paidWorkers({ route: lead.route, projectId: root.projectId, rootJobId: lead.rootJobId ?? root.id });
+    }
+    return admitted;
   };
   const adapterFor = async (route: string, request: LoopRouteRequest, stop: AbortSignal, script: () => ModelAdapter) => {
     if (route === LOOP_FIXTURE_ROUTE) return script();
@@ -797,6 +819,7 @@ export function createLoopProcedure(deps: {
     if (input.collaboration)
       throw new HarnessError('external_role_refused', 'An Agent Team run takes no external worker.');
     const effort = (input.team?.worker as { effort?: string | null } | undefined)?.effort ?? null;
+    const pinned = input.subscriptionWorker;
     return externalWorkerAdapter(externalWorkers, {
       route,
       projectId: request.projectId,
@@ -809,6 +832,7 @@ export function createLoopProcedure(deps: {
       documents: () => workerDocuments(store, request.projectId, request.readRoutes ?? [route], request.scope ?? null),
       stop,
       gate: workerGate,
+      ...(pinned ? { reserve: (admission) => reserveRefusal(pinned.reserve, admission.usage, Date.now(), routeName(route)) } : {}),
     });
   };
 
@@ -831,7 +855,7 @@ export function createLoopProcedure(deps: {
     runs,
     ledger,
     // A child on the person's own engine is admitted by that engine; every other route as before.
-    admit: (route, input) => (isExternalWorkerRoute(route) ? admitExternalWorker(route, input) : admit(route, input)),
+    admit: (route, input) => (isExternalWorkerRoute(route) ? admitWorkerChild(route, input) : admit(route, input)),
     adapterFor: (route, request, stop, script) => adapterFor(route, request, stop, script),
     heartbeat: (runId, owner) => heartbeat(runId, owner),
     registry: (projectId, routes, scope) => delegateRegistry(store, projectId, routes, scope),
@@ -929,6 +953,7 @@ export function createLoopProcedure(deps: {
         : null;
     return teamLeadView({
       lead: run,
+      leadRoute: input.route,
       config: input.team,
       retryOf: input.retryOf ?? null,
       events,
@@ -1340,6 +1365,8 @@ export function createLoopProcedure(deps: {
     setModelRoutes(routes: LoopModelRoutes): void;
     /** S2: the person's own installed engines, as team workers reach them. Null: none can start. */
     setExternalWorkers(port: ExternalWorkerPort | null): void;
+    /** S3: the paid record for a worker under a Nectovia lead. Null: no such worker can start. */
+    setPaidWorkerAdmission(admit: ((root: { route: string; projectId: string; rootJobId: string }) => Promise<void>) | null): void;
     admitExternalWorker: typeof admitExternalWorker;
     attachCollaboration(host: AgentCollaborationHost): void;
     collaboration(): AgentCollaborationHost | null;
@@ -1464,6 +1491,9 @@ export function createLoopProcedure(deps: {
     },
     setExternalWorkers(port) {
       externalWorkers = port;
+    },
+    setPaidWorkerAdmission(admit) {
+      paidWorkers = admit;
     },
     admitExternalWorker,
     attachCollaboration(host) { collaboration = host; },

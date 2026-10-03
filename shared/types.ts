@@ -129,6 +129,12 @@ export interface Settings {
   streamTriggerRules?: import('./stream-rules.js').StreamRule[];
   /** Plain writing: phrases the owner added to the shipped list (shared/plain-writing-rules.json). */
   plainWritingPhrases?: string[];
+  /**
+   * S3: whether a Personal Nectovia lead may hand tasks to the person's own coding tools. Like
+   * `home`, it isn't writable through `PUT /api/settings`: only its own route writes it, for the
+   * signed-in person (`server/subscription-workers.ts`). Absent or null: off.
+   */
+  subscriptionWorkers?: import('./subscription-workers.js').SubscriptionWorkersPreference | null;
 }
 /**
  * One thing waiting on the person, by name: an approval, work to review, or a run that failed

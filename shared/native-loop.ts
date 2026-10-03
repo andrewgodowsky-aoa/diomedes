@@ -177,6 +177,11 @@ export interface LoopRunInput {
   readonly team?: TeamConfig | null;
   /** H14: set on a lead started by an H08 Retry, naming the attempt it runs again. */
   readonly retryOf?: TeamRetry | null;
+  /**
+   * S3: on a Nectovia lead whose person turned subscription workers on, the tool that took the
+   * worker role or why none did, and the reserve its workers are held to. Absent: not in play.
+   */
+  readonly subscriptionWorker?: import('./subscription-workers.js').SubscriptionWorkerRecord;
 }
 
 /** What a delegate child run was admitted with. */

@@ -27,6 +27,7 @@ import type { HarnessBudget, HarnessRun, HarnessRunState, HarnessUsage } from '.
 import { reportedModels, type LoopModel } from './native-loop.js';
 import type { VerificationState } from './verification.js';
 import type { FundingKind, UsageObservation } from './funding-source.js';
+import { NECTOVIA_ROUTE } from './model-api.js';
 
 export const TEAM_CONTRACT_VERSION = 1 as const;
 /** The capability a worker run is started under. */
@@ -200,6 +201,11 @@ export interface TeamRole {
 /** Pinned in the lead's `LoopRunInput.team` at admission and never recomputed. */
 export interface TeamConfig {
   readonly v: 1;
+  /**
+   * S3: the host resolved this team from the person's subscription worker preference. Absent: the
+   * person named it in the start request. Only a host-resolved team may join a Nectovia lead.
+   */
+  readonly origin?: 'subscription-preference';
   /** What the lead may read. Null: the whole project, as the lead's route allows. */
   readonly scope: readonly string[] | null;
   readonly worker: TeamRole & { readonly budget: WorkerBudget };
@@ -447,6 +453,11 @@ export interface TeamLeadView {
   readonly worker: TeamConfig['worker'];
   readonly advisor: TeamConfig['advisor'];
   readonly retryOf: TeamRetry | null;
+  /**
+   * S3: who pays for the lead's own calls, beside each worker's `payer`. Nectovia credits for a
+   * Nectovia lead; null where this view can't tell a person's key from a business's.
+   */
+  readonly leadPayer: FundingKind | null;
   readonly workers: readonly HandoffView[];
   readonly advice: readonly HandoffView[];
 }
@@ -471,6 +482,8 @@ const SENTENCE: Record<HandoffOutcome | 'reused', string> = {
  */
 export function teamLeadView(input: {
   readonly lead: Pick<HarnessRun, 'id' | 'taskId' | 'state'>;
+  /** The lead's own route, for its payer. Absent reads as not known. */
+  readonly leadRoute?: string;
   readonly config: TeamConfig;
   readonly retryOf: TeamRetry | null;
   readonly events: readonly HandoffEvent[];
@@ -599,6 +612,7 @@ export function teamLeadView(input: {
     worker: input.config.worker,
     advisor: input.config.advisor,
     retryOf: input.retryOf,
+    leadPayer: input.leadRoute === NECTOVIA_ROUTE ? 'nectovia-credits' : null,
     workers: views.filter((view) => view.role === 'worker'),
     advice: views.filter((view) => view.role === 'advisor'),
   };

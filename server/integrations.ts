@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { createHash, randomUUID } from 'node:crypto';
 import { ROUTE_NAMES } from '../shared/engines.js';
 import type { IntegrationStatus } from '../shared/types.js';
+import type { UsageReading } from '../shared/subscription-workers.js';
 import {
   createDiscovery,
   emptyDiscovery,
@@ -2066,11 +2067,23 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
    * and its ChatGPT account route, read from a fresh app-server. Any other sign-in is refused by
    * `requireChatGpt`, as for every Codex turn.
    */
-  async function readCodexWorkerAdmission(): Promise<{ accountRoute: string; version: string }> {
+  async function readCodexWorkerAdmission(): Promise<{ accountRoute: string; version: string; usage: UsageReading | null }> {
     const client = await dependencies.createClient();
     try {
       const version = await initialize(client);
-      return { accountRoute: await requireChatGpt(client), version };
+      const accountRoute = await requireChatGpt(client);
+      // S3: a reserve is decided on the account's windows now, so they're read in the same check,
+      // once the ChatGPT account is confirmed. Advisory: a failed read reports nothing, which a
+      // reserve treats as not met, and the status snapshot keeps what it last had.
+      let usage: UsageReading | null = null;
+      try {
+        const mapped = windowsFromRateLimits(await client.request('account/rateLimits/read', {}));
+        if (mapped.windows.length || mapped.plan || mapped.credits) dependencies.usage.record('codex', { ...mapped, source: 'poll' });
+        if (mapped.windows.length) usage = { windows: mapped.windows, at: new Date().toISOString() };
+      } catch {
+        // Not reported.
+      }
+      return { accountRoute, version, usage };
     } finally {
       await client.close();
     }

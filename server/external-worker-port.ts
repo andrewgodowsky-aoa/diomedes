@@ -14,10 +14,14 @@ import type { EngineService } from './engines/service.js';
 import { routeName, type ExternalWorkerPort } from './harness/external-worker.js';
 import { HarnessError } from './harness/policy.js';
 import type { askCodex as AskCodex } from './integrations.js';
+import type { UsageReading } from '../shared/subscription-workers.js';
 
 export interface CodexWorkerDeps {
-  /** A fresh app-server's build and ChatGPT account route; refuses any other sign-in. */
-  admission(): Promise<{ accountRoute: string; version: string }>;
+  /**
+   * A fresh app-server's build and ChatGPT account route; refuses any other sign-in. `usage` is
+   * the account's rate limit windows read in the same check, or null when they weren't reported.
+   */
+  admission(): Promise<{ accountRoute: string; version: string; usage?: UsageReading | null }>;
   ask: typeof AskCodex;
 }
 
@@ -38,7 +42,14 @@ export function engineWorkerPort(
           throw new HarnessError('external_worker_changed', `The ${name} sign-in changed. Set it up again in AI setup.`);
         signal?.throwIfAborted();
         const admitted = await codex.admission();
-        return { route, model: input.model, accountRoute, version: admitted.version, accountDigest: admitted.accountRoute };
+        return {
+          route,
+          model: input.model,
+          accountRoute,
+          version: admitted.version,
+          accountDigest: admitted.accountRoute,
+          usage: admitted.usage ?? null,
+        };
       }
       if (!input.accountRoute) throw new HarnessError('external_worker_account', `Set up ${name} in AI setup first.`);
       const admitted = await engines.admitWorkerTurn(route, { model: input.model, accountRoute: input.accountRoute }, signal);

@@ -17,6 +17,7 @@
  */
 import { createHash } from 'node:crypto';
 import type { AdapterCapabilities, ModelRequest, ModelResult, PortableMessage } from '../../shared/harness.js';
+import type { UsageReading } from '../../shared/subscription-workers.js';
 import type { ExternalWorkerRoute } from '../../shared/team-delegation.js';
 import type { ModelAdapter, ModelInspection } from './native-agent.js';
 import { HarnessError } from './policy.js';
@@ -35,6 +36,11 @@ export interface ExternalWorkerAdmission {
   readonly accountDigest?: string;
   /** The admitted installation, for an engine the host runs from a discovered program. */
   readonly location?: string;
+  /**
+   * The engine's usage limits as this admission read them, where it reports them (Codex's rate
+   * limit windows). Absent or null: not reported, so a reserve can't be met.
+   */
+  readonly usage?: UsageReading | null;
 }
 
 /** One tools-off text turn. */
@@ -151,6 +157,12 @@ export interface ExternalWorkerSpec {
   readonly documents: () => Promise<{ path: string; text: string }[]>;
   readonly stop: AbortSignal;
   readonly gate: ExternalWorkerGate;
+  /**
+   * S3: why the person's reserve stops this turn, read from each admission, or null. Checked
+   * whenever the adapter admits, so a refusal fails the child before its turn is sent. A turn that
+   * waits behind another on the same account isn't checked again after the wait.
+   */
+  readonly reserve?: (admission: ExternalWorkerAdmission) => string | null;
   /** For tests: the clock admission reuse is measured by. */
   readonly now?: () => number;
 }
@@ -178,6 +190,8 @@ export async function externalWorkerAdapter(port: ExternalWorkerPort, spec: Exte
         'external_worker_changed',
         `A different account is signed in to ${routeName(spec.route)} than when this worker was admitted, so its turn wasn't sent. Retry to send it under the account signed in now.`,
       );
+    const kept = spec.reserve?.(value) ?? null;
+    if (kept) throw new HarnessError('subscription_reserve', kept);
     admission = { value, at: now() };
     return value;
   };
