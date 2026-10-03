@@ -180,6 +180,26 @@ describe('the two facts the README used to state as literals', () => {
   });
 });
 
+describe('where the Mac disk image was launched', () => {
+  const mac = (proof: Record<string, unknown>, testedOn: string) => ({
+    dmgName: 'Diomedes-Experimental-9.9.9-mac-arm64.dmg',
+    testedOn,
+    outcome: { result: 'passed' },
+    proof,
+  });
+
+  it('says no Mac computer has run an image launched only on a hosted runner', () => {
+    const text = readme({ mac: mac({}, 'a GitHub-hosted macOS 14.8.9 arm64 runner') });
+    expect(text).toContain('Its launch was checked on a GitHub-hosted macOS 14.8.9 arm64 runner; no Mac\n    computer has run it.');
+  });
+
+  it('names the Mac it was launched on, and does not deny it, when the proof comes from one', () => {
+    const text = readme({ mac: mac({ hostedRunner: false }, 'a MacBook Air (Apple M2) with macOS 26.2') });
+    expect(text).toContain('Its launch was checked on a MacBook Air (Apple M2) with macOS 26.2.');
+    expect(text).not.toMatch(/no Mac\s+computer has run it/);
+  });
+});
+
 describe('what the README must not leave behind in the repository', () => {
   it('carries every sentence the capability record says is not proven', () => {
     const text = readme();
