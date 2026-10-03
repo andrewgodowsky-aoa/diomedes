@@ -12,6 +12,7 @@ import { AccountRoutingSession } from './accounts/routing-session.js';
 import { routingPreferenceWriteSchema } from '../shared/routing-policy.js';
 import { conversationRoutingReceipts } from './harness/routing-receipts.js';
 import { mountPhoneRelayRoutes } from './relay/routes.js';
+import { desktopRelayPorts } from './relay/ports.js';
 import { PhoneRelayService } from './relay/service.js';
 import { createObservation, type ObservationOptions } from './observability/runtime.js';
 import { FAUX_DEMO_PASSWORD } from '../services/control-plane/src/faux/seed.js';
@@ -187,7 +188,7 @@ import { CODEX_ENGINE, type ResolveHarnessAuthority } from './harness/codex-engi
 import { roleInstructions } from './team/prompts.js';
 import { unreadForSlot } from './team/mailbox.js';
 import { JobCaps, jobKeyFor } from './job-caps.js';
-import { jobRatesOf, mountJobCapRoutes, type JobPlan } from './job-cap-routes.js';
+import { estimateView, jobRatesOf, mountJobCapRoutes, type JobCapRouteDeps, type JobPlan } from './job-cap-routes.js';
 import { approvedJobCap, jobTierOf, type JobShape } from '../shared/job-caps.js';
 import { CONVERSATION_LIMITS, WORK_LIMITS as MODEL_WORK_LIMITS } from './engines/model-api-core.js';
 import { MODEL_TURN_CAPABILITY, TEAM_WORK_CAPABILITY } from './harness/model-session-run.js';
@@ -3469,67 +3470,71 @@ export async function createApp(options: AppOptions) {
       return need;
     }),
   );
-  app.post(
-    '/api/projects/:id/needs/:needId/resolve',
-    route(async (req) => {
-      const b = body(req);
-      if (b.allowForTask !== undefined && typeof b.allowForTask !== 'boolean')
-        throw new ApiError(400, 'Choose true or false for the task allowance.');
-      const need = store.state(id(req)).needs.find((item) => item.id === req.params.needId);
-      if (!need) throw new ApiError(404, 'This request was not found.');
-      if (need.engineAsk)
-        return engineAsks.resolve(
-          id(req),
-          need.id,
-          choice(b.resolution, ['go-ahead', 'declined'], 'decision'),
-          b.allowForTask === true,
-        );
-      // A sandbox's change set: go ahead keeps every waiting change, decline discards them.
-      if (need.changeSet) {
-        if (b.allowForTask === true)
-          throw new ApiError(400, 'A change set is decided change by change, never for the whole task.');
-        await harness.loop.changeSets.resolveNeed(
-          id(req),
-          need,
-          choice(b.resolution, ['go-ahead', 'declined'], 'decision'),
-          typeof b.commandId === 'string' ? b.commandId : `need.${need.id}`,
-        );
-        return store.state(id(req)).needs.find((item) => item.id === need.id);
-      }
-      // A supervision escalation is answered only by a person, never for the whole task.
-      if (need.supervision) {
-        if (b.allowForTask === true)
-          throw new ApiError(400, 'A supervision escalation is answered for this run only.');
-        return supervision.answer(id(req), need.id, {
-          protocolVersion: 1,
-          commandId: typeof b.commandId === 'string' ? b.commandId : `answer.${identifier()}`,
-          answer: choice(b.resolution, ['go-ahead', 'declined'], 'decision') === 'go-ahead' ? 'continue' : 'stop',
-        });
-      }
-      const admission = parseApprovalCommand(id(req), need.id, b);
-      if (need.harness)
-        return harness.bridge.resolve(
-          id(req),
-          need.id,
-          choice(b.resolution, ['go-ahead', 'declined'], 'decision'),
-          b.allowForTask === true,
-          admission,
-        );
-      if (need.approval || admission)
-        return nativeWork.resolve(
-          id(req),
-          need.id,
-          choice(b.resolution, ['go-ahead', 'declined'], 'decision'),
-          b.allowForTask === true,
-          admission,
-        );
-      return serviceFor(id(req), need.sessionId).resolve(
-        id(req),
-        String(req.params.needId),
+  /**
+   * The Need answer path: the route below and a phone's decision through the relay
+   * (server/relay/ports.ts) both run exactly this, under the Store lock.
+   */
+  const resolveNeed = async (projectId: string, needId: string, b: Record<string, unknown>) => {
+    if (b.allowForTask !== undefined && typeof b.allowForTask !== 'boolean')
+      throw new ApiError(400, 'Choose true or false for the task allowance.');
+    const need = store.state(projectId).needs.find((item) => item.id === needId);
+    if (!need) throw new ApiError(404, 'This request was not found.');
+    if (need.engineAsk)
+      return engineAsks.resolve(
+        projectId,
+        need.id,
         choice(b.resolution, ['go-ahead', 'declined'], 'decision'),
         b.allowForTask === true,
       );
-    }),
+    // A sandbox's change set: go ahead keeps every waiting change, decline discards them.
+    if (need.changeSet) {
+      if (b.allowForTask === true)
+        throw new ApiError(400, 'A change set is decided change by change, never for the whole task.');
+      await harness.loop.changeSets.resolveNeed(
+        projectId,
+        need,
+        choice(b.resolution, ['go-ahead', 'declined'], 'decision'),
+        typeof b.commandId === 'string' ? b.commandId : `need.${need.id}`,
+      );
+      return store.state(projectId).needs.find((item) => item.id === need.id);
+    }
+    // A supervision escalation is answered only by a person, never for the whole task.
+    if (need.supervision) {
+      if (b.allowForTask === true)
+        throw new ApiError(400, 'A supervision escalation is answered for this run only.');
+      return supervision.answer(projectId, need.id, {
+        protocolVersion: 1,
+        commandId: typeof b.commandId === 'string' ? b.commandId : `answer.${identifier()}`,
+        answer: choice(b.resolution, ['go-ahead', 'declined'], 'decision') === 'go-ahead' ? 'continue' : 'stop',
+      });
+    }
+    const admission = parseApprovalCommand(projectId, need.id, b);
+    if (need.harness)
+      return harness.bridge.resolve(
+        projectId,
+        need.id,
+        choice(b.resolution, ['go-ahead', 'declined'], 'decision'),
+        b.allowForTask === true,
+        admission,
+      );
+    if (need.approval || admission)
+      return nativeWork.resolve(
+        projectId,
+        need.id,
+        choice(b.resolution, ['go-ahead', 'declined'], 'decision'),
+        b.allowForTask === true,
+        admission,
+      );
+    return serviceFor(projectId, need.sessionId).resolve(
+      projectId,
+      needId,
+      choice(b.resolution, ['go-ahead', 'declined'], 'decision'),
+      b.allowForTask === true,
+    );
+  };
+  app.post(
+    '/api/projects/:id/needs/:needId/resolve',
+    route(async (req) => resolveNeed(id(req), String(req.params.needId), body(req))),
   );
   const review = async (projectId: string, changeId: string, action: 'keep' | 'undo') => {
     let state = store.state(projectId);
@@ -5616,7 +5621,8 @@ export async function createApp(options: AppOptions) {
   );
   mountModelApiRoutes(app, { store, engines });
   mountReadConnectorRoutes(app, { store });
-  mountInteractionRoutes(app, new InteractionTurns(engines, interactionHost), {
+  const interactionTurns = new InteractionTurns(engines, interactionHost);
+  mountInteractionRoutes(app, interactionTurns, {
     authorize: async (req) => {
       store.state(String(req.params.id));
     },
@@ -6611,7 +6617,7 @@ export async function createApp(options: AppOptions) {
     session: accountSession ?? null,
     workspaces,
   });
-  mountJobCapRoutes(app, {
+  const jobCapDeps: JobCapRouteDeps = {
     jobCaps,
     // The same route, style and model a send resolves, and the same limits the turn runs under.
     messagePlan: async (projectId, threadId, draft) => {
@@ -6707,7 +6713,46 @@ export async function createApp(options: AppOptions) {
     },
     wake: (projectId, slotId) =>
       store.locked(() => teamService.wakeMember(projectId, slotId as TeamMember['slotId'])),
-  });
+  };
+  mountJobCapRoutes(app, jobCapDeps);
+  // Relay plan steps 3 and 4: a phone's commands reach these same paths, and nothing wider.
+  phoneRelay?.attach(
+    desktopRelayPorts({
+      store,
+      personId: () => accountSession?.personId() ?? null,
+      includes: (organizationId, feature) => accountSession?.includes(organizationId, feature) ?? false,
+      organizationFor: (projectId) => agentGate?.organizationFor(projectId) ?? null,
+      resolveNeed,
+      stop: (projectId, request) => workControl.stop(projectId, request),
+      harnessRuns: (projectId) => harness.list(projectId),
+      handoffs: async (projectId) => (await harness.loop.ledger.read(projectId)).events,
+      message: (projectId, threadId, command, context) =>
+        interactionTurns.message(projectId, threadId, command, context),
+      teamMessage: (projectId, slotId, text) =>
+        store.locked(() => teamService.ownerSendMessage(projectId, slotId, text)),
+      // Run under the Store lock the relay's wake takes, right after its check of the waiting mail.
+      teamWake: (projectId, slotId) => teamService.wakeMember(projectId, slotId as TeamMember['slotId']),
+      messageWarns: async (projectId, threadId, text, mode) => {
+        const plan = await jobCapDeps.messagePlan(projectId, threadId, { text, mode, sources: [] });
+        return estimateView(jobCaps.tierFor(projectId, plan.threadId), plan).warning !== null;
+      },
+      wakeWarns: async (projectId, slotId) => {
+        const plan = await jobCapDeps.teamWakePlan(projectId, slotId);
+        return estimateView(jobCaps.tierFor(projectId, plan.threadId), plan).warning !== null;
+      },
+      updates: {
+        closing: () => isUpdateClosing(),
+        hold: () => {
+          pendingMutations += 1;
+          let held = true;
+          return () => {
+            if (held) pendingMutations -= 1;
+            held = false;
+          };
+        },
+      },
+    }),
+  );
   app.use('/api', (_req, _res, next) => next(new ApiError(404, 'This action was not found.')));
   const errorHandler: ErrorRequestHandler = (error: unknown, _req, res, _next) => {
     if (error instanceof EngineError && error.code === MEMBER_LIMIT) {

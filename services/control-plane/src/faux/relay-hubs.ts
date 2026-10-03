@@ -5,12 +5,13 @@
  *
  * The faux server hands each raw upgrade to hold() before the Worker's relay
  * route runs. When the route authorizes the desktop, connect() answers the
- * upgrade on that same socket; when it refuses, the server writes the refusal
- * as an ordinary HTTP answer. Only the faux server can hold a socket, so an
- * in-process call to the route can check a desktop but never connect one.
+ * upgrade on that same socket (connectPhone() for a phone, relay plan step 3);
+ * when it refuses, the server writes the refusal as an ordinary HTTP answer.
+ * Only the faux server can hold a socket, so an in-process call to the route
+ * can check a desktop or a phone but never connect one.
  */
 import type { Duplex } from 'node:stream';
-import { RelayHubCore, type DesktopGrant, type HubAuthority } from '../relay/hub-core.js';
+import { RelayHubCore, type DesktopGrant, type HubAuthority, type HubTransport, type PhoneGrant, type PhoneTransport } from '../relay/hub-core.js';
 import type { RelayClose } from '../relay/protocol.js';
 import { RelayError, type RelayHubs } from '../relay/service.js';
 import { FauxWebSocket, switchingProtocols, upgradeKey } from './websocket.js';
@@ -49,28 +50,13 @@ export class FauxRelayHubs implements RelayHubs {
   }
 
   async connect(grant: DesktopGrant, request: Request): Promise<Response> {
-    const held = this.held.get(request);
-    if (!held || held.taken || this.stopped)
-      throw new RelayError(503, "Phone access isn't available right now. Try again shortly.", 'relay_unavailable');
-    const key = upgradeKey(request.headers);
-    if (!key) throw new RelayError(400, 'A computer dials in with a version 13 WebSocket handshake.', 'invalid_upgrade');
-    held.taken = true;
-    const hub = this.hub(grant.organizationId);
-    let id = '';
-    const socket: FauxWebSocket = new FauxWebSocket(held.socket, held.head, {
-      message: (data) => void hub.core.message(id, data).finally(() => this.schedule(grant.organizationId)),
-      close: (code) => {
-        this.sockets.delete(socket);
-        void hub.core.closed(id, code).finally(() => this.schedule(grant.organizationId));
-      },
-    });
-    this.sockets.add(socket);
-    (held.socket as Duplex & { setNoDelay?(noDelay: boolean): unknown }).setNoDelay?.(true);
-    held.socket.write(switchingProtocols(key));
-    id = hub.core.open({ send: (text) => socket.send(text), close: (code, reason) => socket.close(code, reason), save: () => {} }, grant);
-    socket.start();
-    this.schedule(grant.organizationId);
-    return new Response(null, { status: 204 });
+    return this.attach(grant.organizationId, request, 'A computer dials in with a version 13 WebSocket handshake.',
+      (core, transport) => core.open(transport, grant));
+  }
+
+  async connectPhone(grant: PhoneGrant, request: Request): Promise<Response> {
+    return this.attach(grant.organizationId, request, 'A phone dials in with a version 13 WebSocket handshake.',
+      (core, transport) => core.openPhone(transport, grant));
   }
 
   async end(organizationId: string, deviceId: string, close: RelayClose): Promise<void> {
@@ -94,6 +80,33 @@ export class FauxRelayHubs implements RelayHubs {
     for (const hub of this.hubs.values()) if (hub.timer) clearTimeout(hub.timer);
     for (const socket of this.sockets) socket.terminate();
     this.sockets.clear();
+  }
+
+  /** Answers a held upgrade on its own socket and hands the socket to the business's hub. */
+  private attach(organizationId: string, request: Request, invalid: string,
+    open: (core: RelayHubCore, transport: HubTransport & PhoneTransport) => string): Response {
+    const held = this.held.get(request);
+    if (!held || held.taken || this.stopped)
+      throw new RelayError(503, "Phone access isn't available right now. Try again shortly.", 'relay_unavailable');
+    const key = upgradeKey(request.headers);
+    if (!key) throw new RelayError(400, invalid, 'invalid_upgrade');
+    held.taken = true;
+    const hub = this.hub(organizationId);
+    let id = '';
+    const socket: FauxWebSocket = new FauxWebSocket(held.socket, held.head, {
+      message: (data) => void hub.core.message(id, data).finally(() => this.schedule(organizationId)),
+      close: (code) => {
+        this.sockets.delete(socket);
+        void hub.core.closed(id, code).finally(() => this.schedule(organizationId));
+      },
+    });
+    this.sockets.add(socket);
+    (held.socket as Duplex & { setNoDelay?(noDelay: boolean): unknown }).setNoDelay?.(true);
+    held.socket.write(switchingProtocols(key));
+    id = open(hub.core, { send: (text) => socket.send(text), close: (code, reason) => socket.close(code, reason), save: () => {} });
+    socket.start();
+    this.schedule(organizationId);
+    return new Response(null, { status: 204 });
   }
 
   private hub(organizationId: string): Hub {
