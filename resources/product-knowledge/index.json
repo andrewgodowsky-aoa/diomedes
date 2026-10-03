@@ -5,7 +5,7 @@
   "resources": [
     {
       "path": "core.json",
-      "sha256": "b53fca01c4943499c9f1d28233c7e675ae823e1000e69e499a817f55a7da45ed",
+      "sha256": "c7160192064a2e8ad7c5b486a4fa325d5d08ec43f6f2c5cba8ad132efe755b70",
       "scopes": [
         "product",
         "route:native-fixture",

@@ -4927,7 +4927,8 @@ export async function createApp(options: AppOptions) {
           binding: commandBinding('message', command),
           interaction: {
             sourceMessageId,
-            decide: decideWith(sourceMessageId, restriction, command.text, automaticOriginal),
+            // Plain until the route is known: automatic work is added below, only where the work loop runs.
+            decide: decideWith(sourceMessageId, restriction, command.text, null),
           },
         };
         const resolved = { projectId, threadId, commandId: command.commandId, sourceMessageId };
@@ -5016,8 +5017,13 @@ export async function createApp(options: AppOptions) {
           await store.persist(state);
         }
         const accountRoute = routeAccount(conversationRoute, projectId);
+        // Automatic work runs in the work loop, and only a model API route runs the loop (the
+        // Nectovia route is one). On an outside tool an explicit request stays the proposal the
+        // person starts, so it never makes a task its own route can't run.
+        const workRoute = automaticOriginal ? threadRoute(projectId, thread, { mode: 'build', text: command.text }) : null;
         if (automaticOriginal) request.interaction.decide = decideWith(sourceMessageId,restriction,command.text,
-          {...automaticOriginal,executionPin:await automaticExecutionPin(automaticOriginal)});
+          workRoute === 'sample' || isModelApiRoute(workRoute)
+            ? {...automaticOriginal,executionPin:await automaticExecutionPin(automaticOriginal)} : null);
         // A WorkStyle, when one applies, chooses from what the route offers; on a model-API
         // route its level follows style and mode only, because that route binds it into the
         // lineage's saved context. Without one, each route keeps its own path.
