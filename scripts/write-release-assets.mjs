@@ -251,14 +251,20 @@ export function releaseReadme({
       : null,
   ].filter(Boolean);
 
+  // A hosted runner is a Mac nobody uses. A proof from scripts/release-support/build-mac-release.mjs
+  // ran on a person's Mac (hostedRunner: false), and saying no Mac has run it would be false.
+  const macTested =
+    mac?.proof?.hostedRunner === false
+      ? `Its launch was checked on ${mac.testedOn}.`
+      : `Its launch was checked on ${mac?.testedOn}; no Mac
+    computer has run it.`;
   const macFile = mac
     ? `
   ${mac.dmgName}
     macOS on Apple Silicon (arm64). Open the disk image and drag Diomedes.app
     to Applications. It is not signed with an Apple Developer ID and not
     notarized, so macOS will refuse to open it until you allow it, and that
-    choice is yours. Its launch was checked on ${mac.testedOn}; no Mac
-    computer has run it.`
+    choice is yours. ${macTested}`
     : '';
   return `Nectovia ${version} - ${mac ? 'Windows x64 and macOS arm64' : 'Windows x64'} experimental build (${tag})
 Release ID: ${record.releaseId}

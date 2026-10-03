@@ -301,7 +301,8 @@ export async function callManagedProvider(call: BoundProviderCall, transport: ty
   if (!call.credential || call.credential.length > 8192 || !/^[\x21-\x7e]+$/.test(call.credential))
     throw new BindingError('credential_unavailable', 'The provider credential is missing or invalid.');
   const vertexKey = connection.provider === 'google-vertex' && connection.secretRef === 'VERTEX_API_KEY';
-  if (connection.provider === 'azure-openai') headers.set('api-key', call.credential);
+  if (connection.provider === 'azure-openai')
+    headers.set(call.route.binding!.protocol === 'messages' ? 'x-api-key' : 'api-key', call.credential);
   else if (connection.provider === 'aws-bedrock' && connection.endpointFamily === 'mantle' && call.route.binding!.protocol === 'messages')
     headers.set('x-api-key', call.credential);
   // A key is a header, never part of the URL, so it stays out of logs; it bills the project that owns it.

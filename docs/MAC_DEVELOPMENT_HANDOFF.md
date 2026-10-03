@@ -1,5 +1,38 @@
 # Mac development handoff
 
+## Release image on the Mac, from 0.2.2
+
+Andrew decided on 2026-10-03 to build the 0.2.2 Apple silicon image on the MacBook Air,
+from `diomedes-mac`. Actions is off there; macOS minutes on a private repository bill at
+about ten times the Linux rate. `write-release-assets.mjs` publishes a disk image only
+beside a proof whose build commit is the Windows record's, so the image is built from
+the exact commit the Windows installer is built from, which is not this repository's
+`main`.
+
+1. Sign in to GitHub once. This Mac has no Homebrew, so install the GitHub CLI from its
+   macOS installer at https://cli.github.com, then run `gh auth login` (GitHub.com,
+   HTTPS, web browser).
+2. Clone and check out the release commit:
+   ```
+   gh repo clone andrewgodowsky-aoa/diomedes-mac ~/dev/nectovia-<version>
+   cd ~/dev/nectovia-<version>
+   git checkout --detach <release commit>
+   ```
+3. Build, sign ad hoc, make the image, launch it from the image and write the proof:
+   ```
+   node scripts/release-support/build-mac-release.mjs --commit <release commit>
+   ```
+   It refuses another commit, local changes, an Intel Mac or a Node other than 22, and
+   it prints the image's bytes, its SHA-256 and whether it may be published.
+4. Copy `release/Diomedes-Experimental-<version>-mac-arm64.dmg` and
+   `release/mac-release-proof.json` to the Windows machine that assembles the release,
+   where `write-release-assets.mjs --mac-dmg <dmg> --mac-proof <proof>` takes them.
+
+The proof records `hostedRunner: false` and names the Mac, so the release README reads
+"Its launch was checked on a MacBook Air (Apple M2) with macOS ..." where a hosted
+runner's reads "no Mac computer has run it". The script's steps are the release
+workflow's `macos` job; a change to one belongs in both.
+
 ## First Mac session - 2026-09-21
 
 Run on the MacBook Air itself. It supersedes the **[?]** marks and the *Known
