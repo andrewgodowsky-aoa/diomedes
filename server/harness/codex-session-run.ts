@@ -19,7 +19,7 @@ import { digest, HarnessError } from './policy.js';
 export const CODEX_SESSION_CAPABILITY: CapabilityManifest = {
   id: 'codex-native-session',
   version: '1',
-  label: 'ChatGPT native conversation',
+  label: 'Codex native conversation',
   description:
     "An explicitly admitted kept ChatGPT conversation on Diomedes' own Codex runtime, with durable turns, its saved thread id and the read scope it was opened with.",
   tools: [],
@@ -40,7 +40,7 @@ export function validateCodexNativeCheckpoint(value: NativeCheckpoint): NativeCh
 
 export const CODEX_SESSION_PROFILE: NativeSessionProfile<CodexSessionCheckpoint> = {
   engine: 'codex',
-  label: 'ChatGPT',
+  label: 'Codex',
   capability: CODEX_SESSION_CAPABILITY,
   parseCheckpoint: (value) =>
     codexCheckpointSchema.parse(validateCodexNativeCheckpoint(value).payload),

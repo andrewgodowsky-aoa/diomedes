@@ -283,9 +283,12 @@ export class RunService {
   private describeError(error: unknown, model = false): NonNullable<StepRecord['error']> {
     const managed = model && error !== null && typeof error === 'object' && 'managed' in error
       ? routingReceiptSchema.safeParse(error.managed) : null;
+    const code = error instanceof HarnessError && /^[a-z][a-z0-9_-]{0,79}$/.test(error.code)
+      ? error.code : undefined;
     return {
       name: error instanceof Error ? this.redact(error.name).slice(0, 128) : 'Error',
       message: this.redact(error instanceof Error ? error.message : String(error)).slice(0, 2000),
+      ...(code ? { code } : {}),
       ...(managed?.success ? { managed: managed.data } : {}),
     };
   }

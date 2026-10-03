@@ -15,7 +15,7 @@ import type { ReadAccess } from '../../shared/read-access';
  *
  * A thread's next request runs on the route the host resolves for it: the owner's tier map
  * when a tier applies, else the route the thread is recorded on. Ask, Plan and Automatic on a
- * model-API route or a kept-session engine (ChatGPT, OpenCode, Cursor, Devin) answer through
+ * model-API route or a kept-session engine (Codex, OpenCode, Cursor, Devin) answer through
  * the conversation (`conversation-send.ts`), which holds that route's lineage or the engine's
  * kept session, its read tools and its tool activity. Claude Code project threads keep the
  * direct request path (O38), Build and Fix keep it on every route, and so does a playbook

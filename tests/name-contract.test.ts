@@ -283,7 +283,7 @@ describe('attribution under the new name', () => {
     const origin = { ...directOrigin({ engine: 'codex', reportedModel: 'gpt-5.5' }), mode: 'supervisor' as const };
     const shown = formatOrigin(origin);
     expect(shown.primary).toBe('Nectovia');
-    // The route keeps the one name shared/engines.ts gives it (Codex runs as ChatGPT).
+    // The route keeps the one name shared/engines.ts gives it (Codex).
     expect(shown.secondary).toBe(`gpt-5.5 via ${routeDisplayName('codex')}`);
     expect(shown.detail).toBe('Nectovia native supervisor operation.');
   });

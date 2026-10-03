@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { AwsConnectionView } from '../shared/model-api';
-import { MODEL_API_NAMES } from '../shared/model-api';
+import { AWS_DIRECT_MODELS, AWS_KIMI_K3, AWS_KIMI_K3_REFUSAL, MANAGED_LUNA, MODEL_API_NAMES } from '../shared/model-api';
 import type { Settings } from '../shared/types';
 import { ApiError, api } from './api';
 import {
@@ -38,6 +38,7 @@ export function AwsBedrockSetup({
   const [working, setWorking] = useState(false);
   const [editing, setEditing] = useState(false);
   const [accountId, setAccountId] = useState('');
+  const [model, setModel] = useState<string>(MANAGED_LUNA.model);
   const [apiKey, setApiKey] = useState('');
   const [expiresLocal, setExpiresLocal] = useState('');
   const [consent, setConsent] = useState(false);
@@ -47,7 +48,9 @@ export function AwsBedrockSetup({
 
   const load = useCallback(async (signal?: AbortSignal) => {
     try {
-      setView(await api<AwsConnectionView>(BASE, 'GET', undefined, signal));
+      const next = await api<AwsConnectionView>(BASE, 'GET', undefined, signal);
+      setView(next);
+      setModel(next.connection?.model ?? MANAGED_LUNA.model);
       setError('');
     } catch (reason) {
       if (!signal?.aborted) setError(messageOf(reason));
@@ -73,7 +76,7 @@ export function AwsBedrockSetup({
   };
 
   const connect = () => {
-    const parsed = awsConnectBody({ accountId, apiKey, expiresLocal, consent });
+    const parsed = awsConnectBody({ accountId, model, apiKey, expiresLocal, consent });
     if (!parsed.ok) {
       setError(parsed.message);
       return;
@@ -131,13 +134,14 @@ export function AwsBedrockSetup({
 
   const disabled = busy || working;
   const connection = view?.connection ?? null;
+  const routeName = connection?.model === AWS_KIMI_K3.model ? 'AWS Bedrock (Kimi K3)' : MODEL_API_NAMES['aws-bedrock'];
   const spend = view?.spend ?? null;
   const showForm = !!view && view.protectedStorage && (!connection || editing || connection.credential.expired);
 
   return (
-    <section className="service" aria-label={MODEL_API_NAMES['aws-bedrock']}>
+    <section className="service" aria-label={routeName}>
       <div className="row">
-        <h3>{MODEL_API_NAMES['aws-bedrock']}</h3>
+        <h3>{routeName}</h3>
         {awsIsDefault(settings.services) && <span className="caption push-right">Default</span>}
       </div>
       <p className="caption ai-route">
@@ -181,6 +185,15 @@ export function AwsBedrockSetup({
             />
           </label>
           <label>
+            Model
+            <select value={model} onChange={(event) => setModel(event.target.value)}>
+              {AWS_DIRECT_MODELS.map((entry) => (
+                <option key={entry.model} value={entry.model}>{entry.label}</option>
+              ))}
+            </select>
+          </label>
+          {model === AWS_KIMI_K3.model && <p className="ai-note">{AWS_KIMI_K3_REFUSAL}</p>}
+          <label>
             Bedrock API key
             <input
               type="password"
@@ -200,7 +213,7 @@ export function AwsBedrockSetup({
           </label>
           <div className="actions">
             <Button tone="primary" type="submit" disabled={disabled}>
-              {connection ? 'Save new key' : 'Connect AWS'}
+              {connection ? 'Save connection' : 'Connect AWS'}
             </Button>
             {connection && (
               <Button tone="quiet" onClick={() => setEditing(false)} disabled={disabled}>
@@ -283,8 +296,15 @@ export function AwsBedrockSetup({
       {connection && (
         <div className="actions">
           {!editing && !connection.credential.expired && (
-            <Button tone="quiet" onClick={() => setEditing(true)} disabled={disabled}>
-              Replace key
+            <Button
+              tone="quiet"
+              onClick={() => {
+                setModel(connection.model);
+                setEditing(true);
+              }}
+              disabled={disabled}
+            >
+              Change model or key
             </Button>
           )}
           {!view?.enabled && (

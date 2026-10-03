@@ -678,3 +678,45 @@ describe('delegation: carved budgets, four per run, several at once', () => {
     expect(loopOutcome(loopView(parent), null)).toMatchObject({ state: 'stopped', sentence: 'Stopped: Stopped by the person.' });
   });
 });
+
+describe('recorded collaboration action projection', () => {
+  test.each(['completed', 'failed'] as const)('review_report is only shown done after its %s review returns', async outcome => {
+    const { runs } = await setup();
+    const tools = registry([]);
+    const runId = 'review-projection-' + outcome;
+    await start(runs, runId, BUDGET, tools);
+    let enter!: () => void;
+    let finish!: () => void;
+    const entered = new Promise<void>(resolve => { enter = resolve; });
+    const released = new Promise<void>(resolve => { finish = resolve; });
+    const execution = new NativeLoop(runs, scripted([
+      () => ({ type: 'tool', name: 'review_report', input: { text: 'Six napkins short.' } }),
+      () => ({ type: 'final', text: 'The report was reviewed.' }),
+    ]), tools, { maxTurns: 4, instructions: '', bindings, route: 'native-fixture', model: null,
+      collaboration: { validate: async () => {}, review: async () => {
+        enter(); await released;
+        if (outcome === 'failed') throw new Error('Synthetic review transport failed');
+        return { advice: 'The discrepancy agrees with the selected notes.' };
+      } },
+    }).run(runId, 'host', 'Review the discrepancy.', principal).then(value => value, error => error);
+    await entered;
+    try {
+      expect(loopView(await runs.get(runId)).turns[0]).toMatchObject({
+        decision: 'deciding', actionState: null, observation: null,
+      });
+    } finally { finish(); }
+    const result = await execution;
+    const turn = loopView(await runs.get(runId)).turns[0];
+    if (outcome === 'failed') {
+      expect(result).toBeInstanceOf(Error);
+      expect(turn.observation).toBeNull();
+      expect(turn.actionState).not.toBe('succeeded');
+    } else {
+      expect(result).toMatchObject({ kind: 'finished' });
+      expect(turn).toMatchObject({ decision: 'tool', tool: 'review_report', actionState: 'succeeded',
+        approval: false, observation: { action: 'tool', tool: 'review_report', ok: true } });
+      expect(turn.observation!.excerpt).toContain('discrepancy agrees');
+      expect(loopOutcome(loopView(await runs.get(runId)), null).state).toBe('not-verified');
+    }
+  });
+});

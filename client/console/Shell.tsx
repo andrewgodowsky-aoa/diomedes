@@ -4,6 +4,8 @@ import { formatOrigin, originForNeed, originForSession } from '../attribution-di
 import type { RememberOffer, ScopeGrantView } from '../../shared/permissions';
 import { isRoute, isExternalEngine, routeDisplayName } from '../../shared/engines';
 import type { EngineConnection } from '../../shared/engines';
+import { boardStartRoute, isManualCard, manualCardStart } from '../../shared/task-workflow';
+import { handoffsInto } from '../../shared/manual-handoff';
 import {
   mayNameDocument,
   selectTaskSources,
@@ -989,11 +991,17 @@ export function Shell({
       available:
         i.kind === 'sample' ? i.available : i.available && settings.services?.[i.id] === true,
     }));
+  // A manual Team card starts on its assigned member's engine, so its send dialog names that
+  // engine (S1); every other task keeps the route its thread or project selects.
   const routeForTask = (task: Task) =>
-    selectedEngine(
-      settings,
-      state?.project,
-      state?.conversations.find((thread) => thread.taskId === task.id),
+    boardStartRoute(
+      task,
+      state?.team?.members ?? [],
+      selectedEngine(
+        settings,
+        state?.project,
+        state?.conversations.find((thread) => thread.taskId === task.id),
+      ),
     );
 
   // An ask carried from the Projects page needs a thread to land in. A project
@@ -1393,15 +1401,36 @@ export function Shell({
     }
   }
   async function startTask(task: Task, route: Route) {
+    // A manual Team card that cannot start says why before any dialog opens.
+    const manual = isManualCard(task)
+      ? manualCardStart(task, state?.team?.members ?? [], routeDisplayName)
+      : null;
+    if (manual && !manual.ok) {
+      report(new Error(manual.reason));
+      return;
+    }
     if (route !== 'sample') {
       setBusy(true);
       try {
         const listed = (await listDocuments(projectId)).documents;
         if (currentId.current !== projectId) return;
-        // Keep an unavailable saved path visible so the person can replace it.
-        const sources = task.sourceDocument !== undefined
-          ? [task.sourceDocument]
-          : selectTaskSources(task, listed);
+        // The files a live hand-off into this card names come first (N08), by the listing's
+        // own names. One no longer in the project can't be sent, and the start goes ahead
+        // without it. Otherwise keep an unavailable saved path visible so the person can
+        // replace it.
+        const listedName = new Map(listed.map((document) => [document.path.toLowerCase(), document.path]));
+        const handed = [
+          ...new Set(
+            handoffsInto(state?.manualHandoffs, task.id).flatMap((record) =>
+              record.changedFiles.flatMap((name) => listedName.get(name.toLowerCase()) ?? []),
+            ),
+          ),
+        ];
+        const sources = handed.length
+          ? handed
+          : task.sourceDocument !== undefined
+            ? [task.sourceDocument]
+            : selectTaskSources(task, listed);
         setSendTask({ task, route, sources, namedSources: sources, documents: listed });
       } catch (error) {
         report(error);

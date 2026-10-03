@@ -43,7 +43,7 @@ const table = (...rows: ProfileCandidate[]) =>
 describe('the resolution table', () => {
   const a = candidate({ profileId: 'pr-a', name: 'A' });
   const b = candidate({ profileId: 'pr-b', name: 'B', engine: 'opencode', model: 'glm-9' });
-  const aDown = candidate({ profileId: 'pr-a', name: 'A' }, 'ChatGPT is off in Settings > Engines.');
+  const aDown = candidate({ profileId: 'pr-a', name: 'A' }, 'Codex is off in Settings > Engines.');
   const bDown = candidate(
     { profileId: 'pr-b', name: 'B', engine: 'opencode', model: 'glm-9' },
     'OpenCode is off in Settings > Engines.',
@@ -96,11 +96,11 @@ describe('the resolution table', () => {
     expect(result.pick.fallback).toEqual({
       fromProfileId: 'pr-a',
       fromName: 'A',
-      reason: 'ChatGPT is off in Settings > Engines.',
+      reason: 'Codex is off in Settings > Engines.',
     });
     expect(result.pick.skipped).toHaveLength(1);
     expect(fallbackSentence(result.pick)).toBe(
-      'Ran on B (OpenCode · glm-9) because A was unavailable: ChatGPT is off in Settings > Engines.',
+      'Ran on B (OpenCode · glm-9) because A was unavailable: Codex is off in Settings > Engines.',
     );
   });
 

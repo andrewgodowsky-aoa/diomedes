@@ -41,9 +41,11 @@ import {
   REQUEST_ENVELOPE_TOKENS,
   TYPESAFE_DOCUMENTED_LIMITS,
   UNPROVEN_ROUTE_LIMITS,
+  checkEvaluationRequest,
   serializedRequestTokens,
   serializedStateTokens,
   type EvaluationRequestLimits,
+  type EvaluationQuestionShapePolicy,
   type ProviderQuestion,
 } from '../../shared/evaluation-wire.js';
 
@@ -337,9 +339,34 @@ export function normalizeSdkEvaluation(result: unknown): unknown {
     typeof given.usage === 'object' && given.usage !== null
       ? (given.usage as Record<string, unknown>)
       : undefined;
+  const metadata =
+    typeof given.providerMetadata === 'object' && given.providerMetadata !== null
+      ? (given.providerMetadata as Record<string, unknown>)
+      : {};
+  const openrouter =
+    typeof metadata.openrouter === 'object' && metadata.openrouter !== null
+      ? (metadata.openrouter as Record<string, unknown>)
+      : {};
+  const metadataUsage =
+    typeof openrouter.usage === 'object' && openrouter.usage !== null
+      ? (openrouter.usage as Record<string, unknown>)
+      : {};
+  const bodyUsage =
+    typeof body.usage === 'object' && body.usage !== null
+      ? (body.usage as Record<string, unknown>)
+      : {};
+  // OpenRouter puts dollar cost in provider metadata, while SDK versions may
+  // also expose it on usage or the original response body. Zero is a report;
+  // absent stays absent. The direct scoped transport validates it for settlement.
+  const cost = usage?.cost !== undefined ? usage.cost
+    : metadataUsage.cost !== undefined ? metadataUsage.cost : bodyUsage.cost;
   return {
     answers: given.answers,
-    ...(usage ? { usage: { inputTokens: usage.inputTokens, outputTokens: usage.outputTokens } } : {}),
+    ...(usage || cost !== undefined ? { usage: {
+      inputTokens: usage?.inputTokens,
+      outputTokens: usage?.outputTokens,
+      ...(cost !== undefined ? { cost } : {}),
+    } } : {}),
     ...(given.rounding ? { rounding: given.rounding } : {}),
     warnings: Array.isArray(given.warnings) ? given.warnings : [],
     response: {
@@ -351,6 +378,48 @@ export function normalizeSdkEvaluation(result: unknown): unknown {
 
 const loadAi = async (): Promise<EvaluationSdk> =>
   evaluationSdkFrom((await import('ai' as string)) as Record<string, unknown>);
+
+/** Real SDK routes can tighten the unqualified bounds, never widen them. */
+function sdkEvaluationLimits(given: EvaluationRequestLimits | undefined): EvaluationRequestLimits {
+  const source = given === undefined ? UNPROVEN_ROUTE_LIMITS : given;
+  if (source === null || typeof source !== 'object')
+    throw new EvaluationTransportError('invalid_transport', 'Evaluation limits must name positive whole-number request bounds.');
+  const limits = {
+    maxTotalTokens: source.maxTotalTokens,
+    maxStatePlusLongestQuestionTokens: source.maxStatePlusLongestQuestionTokens,
+  };
+  for (const field of ['maxTotalTokens', 'maxStatePlusLongestQuestionTokens'] as const)
+    if (!Number.isSafeInteger(limits[field]) || limits[field] <= 0 || limits[field] > UNPROVEN_ROUTE_LIMITS[field])
+      throw new EvaluationTransportError(
+        'invalid_transport',
+        `${field} must be a positive safe integer no greater than ${UNPROVEN_ROUTE_LIMITS[field]}.`,
+      );
+  return Object.freeze(limits);
+}
+
+/** The exported ports enforce their own host bounds before loading any SDK. */
+function checkedSdkRequest(
+  call: EvaluationPortCall,
+  limits: EvaluationRequestLimits,
+  shapes: EvaluationQuestionShapePolicy,
+) {
+  let checked = checkEvaluationRequest({ state: call.state, questions: call.questions }, limits, shapes);
+  if (checked.ok) {
+    // Guard shape and depth before serialization, then check the actual detached
+    // JSON: an accessor can change between the first check and this snapshot.
+    const snapshot = JSON.parse(JSON.stringify(checked.request));
+    checked = checkEvaluationRequest(snapshot, limits, shapes);
+  }
+  if (!checked.ok) {
+    const code: EvaluationTransportCode = checked.code === 'request_too_large'
+      ? checked.field === 'state' ? 'state_too_large' : 'request_too_large'
+      : checked.code === 'unsupported_field' ? 'unsupported_question_type' : 'invalid_transport';
+    throw new EvaluationTransportError(code, checked.message);
+  }
+  // Only this checked snapshot reaches the SDK, so caller mutation during an
+  // awaited load cannot expand the admitted payload.
+  return checked.request;
+}
 
 /**
  * The real route, through the Vercel AI Gateway.
@@ -367,12 +436,15 @@ export function gatewayEvaluationPort(options: {
   fetch?: unknown;
   /** Injected in tests; production resolves the real package. */
   loadSdk?: () => Promise<EvaluationSdk>;
+  /** Optional tightening of the unqualified route's whole-request bounds. */
+  limits?: EvaluationRequestLimits;
 }): EvaluationPort {
   if (!options.apiKey)
     throw new EvaluationTransportError(
       'invalid_transport',
       'An evaluation route needs an explicit credential. Falling back to an ambient environment variable would let it bill a payer nobody admitted.',
     );
+  const limits = sdkEvaluationLimits(options.limits);
   const load = options.loadSdk ?? loadAi;
   return {
     id: 'vercel-gateway-evaluation',
@@ -380,9 +452,10 @@ export function gatewayEvaluationPort(options: {
     requestedModel: options.modelId,
     scripted: false,
     supports: ['choice', 'score', 'boolean'],
-    limits: UNPROVEN_ROUTE_LIMITS,
+    limits,
     async evaluate(call) {
       call.signal.throwIfAborted();
+      const request = checkedSdkRequest(call, limits, 'gateway');
       let sdk: EvaluationSdk;
       try {
         sdk = await load();
@@ -400,8 +473,8 @@ export function gatewayEvaluationPort(options: {
       return normalizeSdkEvaluation(
         await sdk.evaluate({
           model: gateway.evaluationModel(options.modelId),
-          state: call.state,
-          questions: call.questions,
+          state: request.state,
+          questions: request.questions,
           // Attempts belong to the run service, which records and budgets each one.
           maxRetries: 0,
           abortSignal: call.signal,
@@ -414,8 +487,8 @@ export function gatewayEvaluationPort(options: {
 /** The part of `@openrouter/ai-sdk-provider` this port uses. */
 interface OpenRouterEvaluationSdk {
   evaluate: EvaluationSdk['evaluate'];
-  createOpenRouter(settings: { apiKey: string; fetch?: unknown }): {
-    evaluationModel(modelId: string): unknown;
+  createOpenRouter(settings: { apiKey: string; fetch?: typeof globalThis.fetch }): {
+    evaluationModel(modelId: string, settings?: { provider: Readonly<Record<string, unknown>> }): unknown;
   };
 }
 
@@ -445,14 +518,21 @@ function openRouterRefuses(question: EvaluationProfile['questions'][number]): st
 export function openRouterEvaluationPort(options: {
   apiKey: string;
   modelId: string;
-  fetch?: unknown;
+  fetch?: typeof globalThis.fetch;
   loadSdk?: () => Promise<OpenRouterEvaluationSdk>;
+  /** Optional tightening of the unqualified route's whole-request bounds. */
+  limits?: EvaluationRequestLimits;
+  /** Host-admitted preferences; scoped transports still inspect the actual wire. */
+  provider?: Readonly<Record<string, unknown>>;
 }): EvaluationPort {
   if (!options.apiKey)
     throw new EvaluationTransportError(
       'invalid_transport',
       'An evaluation route needs an explicit credential. Falling back to an ambient environment variable would let it bill a payer nobody admitted.',
     );
+  const limits = sdkEvaluationLimits(options.limits);
+  const providerPreferences = options.provider === undefined
+    ? undefined : JSON.parse(JSON.stringify(options.provider)) as Readonly<Record<string, unknown>>;
   const load =
     options.loadSdk ??
     (async (): Promise<OpenRouterEvaluationSdk> => {
@@ -477,10 +557,11 @@ export function openRouterEvaluationPort(options: {
     requestedModel: options.modelId,
     scripted: false,
     supports: ['choice', 'score', 'boolean'],
-    limits: UNPROVEN_ROUTE_LIMITS,
+    limits,
     refuses: openRouterRefuses,
     async evaluate(call) {
       call.signal.throwIfAborted();
+      const request = checkedSdkRequest(call, limits, 'strict');
       let sdk: OpenRouterEvaluationSdk;
       try {
         sdk = await load();
@@ -497,9 +578,11 @@ export function openRouterEvaluationPort(options: {
       });
       return normalizeSdkEvaluation(
         await sdk.evaluate({
-          model: openrouter.evaluationModel(options.modelId),
-          state: call.state,
-          questions: call.questions,
+          model: providerPreferences === undefined
+            ? openrouter.evaluationModel(options.modelId)
+            : openrouter.evaluationModel(options.modelId, { provider: providerPreferences }),
+          state: request.state,
+          questions: request.questions,
           maxRetries: 0,
           abortSignal: call.signal,
         }),
@@ -624,7 +707,7 @@ export function jevEvaluationPort(options: {
   route?: EvaluationRoute;
   apiKey: string;
   modelId?: string;
-  fetch?: unknown;
+  fetch?: typeof globalThis.fetch;
   loadOpenRouterSdk?: () => Promise<OpenRouterEvaluationSdk>;
   loadGatewaySdk?: () => Promise<EvaluationSdk>;
 }): EvaluationPort {

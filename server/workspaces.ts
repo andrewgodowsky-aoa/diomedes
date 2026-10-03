@@ -167,6 +167,8 @@ interface Registry {
     workerProfiles: WorkerProfile[];
     organizationGenerations: Record<string, number>;
     principalGenerations: Record<string, number>;
+    /** Counter only, never rights: app-scoped personal Trust references bind this epoch. */
+    personalAuthorityGeneration?: number;
   };
 }
 
@@ -260,6 +262,63 @@ function syncView(load: SetupLoad): BusinessSetupSync | undefined {
 }
 
 export class WorkspaceService {
+  private personalAuthorityReady = false;
+  private personalBindingPin: string | null = null;
+
+  private personalBindings(): string {
+    return payloadDigest({ personId:this.accountPerson?.id ?? null, outputs:this.registry.outputs,
+      projects:this.registry.access.resources.filter(item=>item.type === 'project')
+        .map(item=>({id:item.id,organizationId:item.organizationId,externalId:item.externalId,state:item.state})) });
+  }
+
+  /** Opens a durable epoch only for the protected desktop's scoped backend. */
+  async openPersonalAuthority(): Promise<void> {
+    const current = this.registry.access.personalAuthorityGeneration ?? 0;
+    if (!Number.isSafeInteger(current) || current < 0 || current >= Number.MAX_SAFE_INTEGER)
+      throw refuse(409, 'The local authority epoch cannot be advanced safely.', 'personal_authority_epoch_invalid');
+    this.personalAuthorityReady = false;
+    this.registry.access.personalAuthorityGeneration = current + 1;
+    this.personalBindingPin = this.personalBindings();
+    await jsonWrite(this.registryPath,this.registry);
+    this.personalAuthorityReady = true;
+  }
+
+  private async advancePersonalAuthority(restoreReady = true): Promise<void> {
+    if (!this.personalAuthorityReady) return;
+    const current = this.registry.access.personalAuthorityGeneration!;
+    this.personalAuthorityReady = false;
+    if (!Number.isSafeInteger(current) || current < 1 || current >= Number.MAX_SAFE_INTEGER)
+      throw refuse(409, 'The local authority epoch cannot be advanced safely.', 'personal_authority_epoch_invalid');
+    this.registry.access.personalAuthorityGeneration = current + 1;
+    this.personalBindingPin = this.personalBindings();
+    await jsonWrite(this.registryPath,this.registry);
+    this.personalAuthorityReady = restoreReady;
+  }
+
+  private async saveWorkspaceSettings(settings: Store['settings']): Promise<void> {
+    const changed = payloadDigest(this.store.settings.activeWorkspace ?? PERSONAL) !== payloadDigest(settings.activeWorkspace ?? PERSONAL);
+    const reopen = changed && this.personalAuthorityReady;
+    if (changed) await this.advancePersonalAuthority(false);
+    // Store updates its in-memory Settings before the disk await. No authority
+    // may reopen during that transition, or after a rejected write.
+    await this.store.saveSettings(settings);
+    if (reopen) this.personalAuthorityReady = true;
+  }
+
+  /** Local facts only. A stale Business selection never becomes personal authority. */
+  personalAuthorityFacts(projectId: string): {projectId:string;tenantId:'local';generation:number;projectFolder:string} | null {
+    if (!this.personalAuthorityReady || (this.store.settings.activeWorkspace && this.store.settings.activeWorkspace.kind !== 'personal')
+      || this.registry.access.resources.some(item=>item.type === 'project' && item.externalId === projectId)
+      || Object.values(this.registry.outputs).some(item=>item.projectId === projectId)) return null;
+    const generation = this.registry.access.personalAuthorityGeneration;
+    if (!Number.isSafeInteger(generation) || !generation || generation < 1) return null;
+    try {
+      const project = this.store.state(projectId).project;
+      if (project.id !== projectId || project.missing || !path.isAbsolute(project.folder)) return null;
+      return {projectId,tenantId:'local',generation,projectFolder:project.folder};
+    } catch { return null; }
+  }
+
   private registry: Registry = emptyRegistry();
   private person: Person | null = null;
   /** The signed-in account's person, when customer accounts are on and someone is signed in. */
@@ -478,7 +537,7 @@ export class WorkspaceService {
       (membership) => membership.personId === person.id && membership.state === 'active' && this.accountBacked(membership.organizationId),
     );
     const pick = mine.find((membership) => this.entitlementFor(membership.organizationId).agent) ?? mine[0];
-    await this.store.saveSettings({
+    await this.saveWorkspaceSettings({
       ...this.store.settings,
       activeWorkspace: pick ? { kind: 'business', organizationId: pick.organizationId } : PERSONAL,
     });
@@ -491,6 +550,10 @@ export class WorkspaceService {
   }
 
   private async saveRegistry() {
+    if (this.personalAuthorityReady && this.personalBindingPin !== this.personalBindings()) {
+      await this.advancePersonalAuthority();
+      return;
+    }
     await jsonWrite(this.registryPath, this.registry);
   }
 
@@ -743,7 +806,7 @@ export class WorkspaceService {
   /** Persist the fallback when a stored reference has stopped being valid. */
   private async reconcileActive() {
     if (this.needsReconcile())
-      await this.store.saveSettings({ ...this.store.settings, activeWorkspace: PERSONAL });
+      await this.saveWorkspaceSettings({ ...this.store.settings, activeWorkspace: PERSONAL });
   }
 
   async switchTo(ref: WorkspaceRef): Promise<WorkspaceView> {
@@ -765,7 +828,7 @@ export class WorkspaceService {
           'membership_inactive',
         );
     }
-    await this.store.saveSettings({
+    await this.saveWorkspaceSettings({
       ...this.store.settings,
       activeWorkspace: ref.kind === 'business' ? { ...ref } : PERSONAL,
     });
@@ -798,7 +861,7 @@ export class WorkspaceService {
         mirrored.industry = industry;
         await this.saveRegistry();
       }
-      await this.store.saveSettings({
+      await this.saveWorkspaceSettings({
         ...this.store.settings,
         activeWorkspace: { kind: 'business', organizationId: created.organizationId },
       });
@@ -833,7 +896,7 @@ export class WorkspaceService {
     });
     this.ensureAccessFoundations();
     await this.saveRegistry();
-    await this.store.saveSettings({
+    await this.saveWorkspaceSettings({
       ...this.store.settings,
       activeWorkspace: { kind: 'business', organizationId: id },
     });
@@ -922,7 +985,7 @@ export class WorkspaceService {
     this.bumpOrganizationGeneration(invitation.organizationId);
     this.bumpPrincipalGeneration(invitation.organizationId, person.id);
     await this.saveRegistry();
-    await this.store.saveSettings({
+    await this.saveWorkspaceSettings({
       ...this.store.settings,
       activeWorkspace: { kind: 'business', organizationId: invitation.organizationId },
     });

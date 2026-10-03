@@ -568,8 +568,8 @@ describe('guarded native file proposals', () => {
     expect((await start()).status).toBe(200);
     const running = (await state()).sessions[0];
     expect(running.origin?.model).toEqual({ requested: 'saved-model', reported: null, source: 'not-recorded' });
-    expect(running.engine.name).toBe('ChatGPT, guarded file proposals');
-    expect(running.log.map((line) => line.sentence).join('\n')).toContain('Preparing a proposal with ChatGPT');
+    expect(running.engine.name).toBe('Codex, guarded file proposals');
+    expect(running.log.map((line) => line.sentence).join('\n')).toContain('Preparing a proposal with Codex');
     expect(running.log.map((line) => line.sentence).join('\n')).not.toContain('with codex');
     gate.resolve(proposal([update]));
     const ready = await waiting();

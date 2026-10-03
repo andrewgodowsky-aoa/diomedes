@@ -1,5 +1,55 @@
 # Harness host integration changes, 2026-09-09
 
+## The Codex route is named Codex, 2026-10-03
+
+The codex route is named Codex everywhere a person sees it: the model picker, Settings, run
+cards, attribution, receipts, worker rows and the route's own messages (owner decision,
+2026-10-03). The account it signs in with is still called the ChatGPT account, so the sign-in,
+connection check and account messages keep that name. The name comes from `ROUTE_NAMES` in
+`shared/engines.ts`, and every label built from it follows.
+
+## Subscription workers under a Personal Nectovia lead, 2026-10-03
+
+A Nectovia loop a person starts in their Personal workspace can hand one task to their own Codex,
+Claude Code or OpenCode, when they turned that on (DIO-175, slice S3). The lead spends Nectovia
+credits; the worker runs on the person’s own plan through the tool’s programming interface, and the
+account service records a paid Agent admission for it with no managed hold. Consent names the tools,
+only the person’s own start takes such a worker (Board work and the Ready queue never do), a business
+project keeps its single-agent path, and a reserve keeps the person’s share of their tool’s usage.
+It’s off unless `DIOMEDES_EXTERNAL_WORKERS=1` and `DIOMEDES_SUBSCRIPTION_WORKERS=1`, and stays off
+until the Pillar 07 wording (D1) is approved. See
+[the record](../implementation/2026-10-03-subscription-workers.md).
+
+## External team workers, 2026-10-03
+
+A lead loop can hand a bounded task to a worker on the person's own installed Claude Code, Codex
+or OpenCode (DIO-175, slice S2). Each goes through the tool's programming interface with its tools
+off, signed in through the provider's own flow; nothing reaches a consumer chat. The worker answers
+in one turn, one external turn runs per engine account at a time, and a turn that may have gone out
+is never sent again by Retry. It's off unless `DIOMEDES_EXTERNAL_WORKERS=1`. See
+[the record](../implementation/2026-10-03-external-team-workers.md).
+
+## Free manual teams on the Board (S1), 2026-10-03
+
+A person-run Team now works from the Board without the paid Agent (DIO-175 lane S1). The
+person assigns a card to a Team member from the card (DIO-176). A card a member makes starts
+on that member's own Codex or Claude Code engine through Native Work, with the usual send
+confirmation, and only the person moves its phase. A manual hand-off carries what came of one
+card, its changed files, checks and open issues to the next card, whose start begins with those
+files; the files must fit one start, a file that left the project no longer blocks it, and the
+person can retire a hand-off. Only the person assigns or removes a manual card; a member's tool
+is told to ask. Worker rows for Sessions, Team members and H14 workers come from a production
+source behind `GET /api/projects/:id/work/rows` and a `work-rows` event on its own stream,
+`/api/events?topics=work-rows`, and never carry Team mail. Nothing in this lane calls the Agent
+gate or a managed route. See [the implementation record](../implementation/2026-10-03-manual-teams.md).
+
+## Agent Team reconciliation onto main, 2026-10-03
+
+The Agent Team, automatic work and Personal Trust work now sits on current main as
+`feature/agent-team-automatic-work` (DIO-177). The Individual funding repair, the Mac
+packaging changes and the release workflow stay with their owners. See
+[the reconciliation record](../implementation/2026-10-01-agent-team-automatic-work.md#reconciliation-onto-main-2026-10-03).
+
 ## Current engine compatibility amendment, 2026-09-27
 
 Vendor build equality no longer admits or refuses native/subscription engines.

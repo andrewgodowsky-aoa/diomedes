@@ -1,12 +1,13 @@
 /**
  * The relay hub on Cloudflare: one Durable Object per business, named by its
- * organization id, holding that business's desktop connections with the
- * WebSocket Hibernation API (relay plan step 2). The rules are RelayHubCore's;
- * this file is its Cloudflare host.
+ * organization id, holding that business's desktop connections (relay plan
+ * step 2) and its phones' connections (steps 3 and 4) with the WebSocket
+ * Hibernation API. The rules are RelayHubCore's; this file is its Cloudflare host.
  *
  * Only this Worker reaches the hub, through the RELAY_HUB binding, and only
  * after the Worker front has checked the desktop's sign-in, membership, role,
- * plan and registration. The front passes what it checked in the grant header;
+ * plan and registration, or the phone's sign-in, membership and plan. The
+ * front passes what it checked in the grant header;
  * there is no public route to the hub. While it hibernates, each socket keeps
  * its connection state as an attachment, the runtime answers heartbeats on its
  * own, and an alarm wakes the hub for its next recheck or deadline.
@@ -18,7 +19,17 @@ import { z } from 'zod';
 import { configuration } from '../config.js';
 import { accountId } from '../domain.js';
 import { neonClientFactory } from '../postgres.js';
-import { RelayHubCore, desktopGrantSchema, type DesktopGrant, type HubAuthority, type HubEvent, type HubTransport } from './hub-core.js';
+import {
+  RelayHubCore,
+  desktopGrantSchema,
+  phoneGrantSchema,
+  type DesktopGrant,
+  type HubAuthority,
+  type HubEvent,
+  type HubTransport,
+  type PhoneGrant,
+  type PhoneTransport,
+} from './hub-core.js';
 import { PostgresRelayRepository } from './postgres.js';
 import { RELAY_CLOSE, RELAY_PING_FRAME, RELAY_PONG_FRAME, type RelayClose } from './protocol.js';
 import { RelayAuthority, type RelayHubs } from './service.js';
@@ -67,6 +78,7 @@ function databaseAuthority(env: Record<string, unknown>): HubAuthority {
   return {
     recheck: async (grant, at) => current().recheck(grant, at),
     seen: async (grant, at) => current().seen(grant, at),
+    recheckPhone: async (grant, at) => current().recheckPhone(grant, at),
   };
 }
 
@@ -97,7 +109,8 @@ export class RelayHub {
     const hub = this.hub();
     const { pathname } = new URL(request.url);
     try {
-      if (pathname === '/desktop') return this.desktop(hub, request);
+      if (pathname === '/desktop') return this.accept(request, desktopGrantSchema, (transport, grant) => hub.open(transport, grant));
+      if (pathname === '/phone') return this.accept(request, phoneGrantSchema, (transport, grant) => hub.openPhone(transport, grant));
       if (pathname === '/presence' && request.method === 'GET') return Response.json({ online: [...hub.presence()] });
       if (pathname === '/end' && request.method === 'POST') {
         const input = endInput.safeParse(await request.json().catch(() => null));
@@ -145,11 +158,12 @@ export class RelayHub {
     return new Response(null, init);
   }
 
-  private desktop(hub: RelayHubCore, request: Request): Response {
+  /** An authorized upgrade: reads the grant the Worker front passed, accepts the socket, and hands it to the hub. */
+  private accept<G>(request: Request, schema: z.ZodType<G>, open: (transport: HubTransport & PhoneTransport, grant: G) => unknown): Response {
     if (request.headers.get('upgrade')?.toLowerCase() !== 'websocket') return new Response(null, { status: 426 });
-    let grant: DesktopGrant;
+    let grant: G;
     try {
-      grant = desktopGrantSchema.parse(JSON.parse(request.headers.get(RELAY_GRANT_HEADER) ?? ''));
+      grant = schema.parse(JSON.parse(request.headers.get(RELAY_GRANT_HEADER) ?? ''));
     } catch {
       return new Response(null, { status: 400 });
     }
@@ -157,15 +171,16 @@ export class RelayHub {
     if (!Pair) return new Response(null, { status: 503 });
     const [client, server] = Object.values(new Pair()) as [HubSocket, HubSocket];
     this.ctx.acceptWebSocket(server);
-    hub.open(this.transport(server), grant);
+    open(this.transport(server), grant);
     return this.upgraded(client);
   }
 
-  private transport(ws: HubSocket): HubTransport {
+  /** A socket as the hub uses it, desktop or phone: each keeps its own state as the socket's attachment. */
+  private transport(ws: HubSocket): HubTransport & PhoneTransport {
     return {
       send: (text) => ws.send(text),
       close: (code, reason) => ws.close(code, reason),
-      save: (state) => {
+      save: (state: unknown) => {
         try {
           ws.serializeAttachment(state);
         } catch {
@@ -192,8 +207,9 @@ export class RelayHub {
       } catch {
         // Unreadable: closed below.
       }
-      // A socket whose state can't be read can't be vouched for: the desktop dials again.
-      if (!core.restore(this.transport(ws), saved)) {
+      // A socket whose state can't be read can't be vouched for: the desktop or phone dials again.
+      const phone = (saved as { kind?: unknown } | null)?.kind === 'phone';
+      if (!(phone ? core.restorePhone(this.transport(ws), saved) : core.restore(this.transport(ws), saved))) {
         try {
           ws.close(RELAY_CLOSE.recheckUnavailable.code, RELAY_CLOSE.recheckUnavailable.reason);
         } catch {
@@ -229,6 +245,13 @@ function isHubNamespace(value: unknown): value is HubNamespace {
 export function durableObjectHubs(binding: unknown): RelayHubs | null {
   if (!isHubNamespace(binding)) return null;
   const hub = (organizationId: string) => binding.get(binding.idFromName(organizationId));
+  // The hub needs the handshake headers and the grant, never the bearer.
+  const forward = (path: '/desktop' | '/phone', grant: DesktopGrant | PhoneGrant, request: Request) => {
+    const headers = new Headers(request.headers);
+    headers.delete('authorization');
+    headers.set(RELAY_GRANT_HEADER, JSON.stringify(grant));
+    return hub(grant.organizationId).fetch(new Request(`${HUB_ORIGIN}${path}`, { method: 'GET', headers }));
+  };
   return {
     async presence(organizationId) {
       const response = await hub(organizationId).fetch(`${HUB_ORIGIN}/presence`);
@@ -236,11 +259,10 @@ export function durableObjectHubs(binding: unknown): RelayHubs | null {
       return new Set(presenceAnswer.parse(await response.json()).online);
     },
     connect(grant, request) {
-      // The hub needs the handshake headers and the grant, never the bearer.
-      const headers = new Headers(request.headers);
-      headers.delete('authorization');
-      headers.set(RELAY_GRANT_HEADER, JSON.stringify(grant));
-      return hub(grant.organizationId).fetch(new Request(`${HUB_ORIGIN}/desktop`, { method: 'GET', headers }));
+      return forward('/desktop', grant, request);
+    },
+    connectPhone(grant, request) {
+      return forward('/phone', grant, request);
     },
     async end(organizationId: string, deviceId: string, close: RelayClose) {
       const response = await hub(organizationId).fetch(`${HUB_ORIGIN}/end`, {

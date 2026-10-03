@@ -73,6 +73,7 @@ import { stepLiveReply, type LiveBinding, type LiveEvent, type LiveReply } from 
 import { saveArtifact } from './artifact-save';
 import { HomeArt } from './HomeArt';
 import { HomeBrief } from './HomeBrief';
+import { WorkerRows } from './WorkerRows';
 import type { EverythingItem } from './Everything';
 import {
   diomedesThread,
@@ -941,6 +942,7 @@ export function DiomedesHome(props: DiomedesHomeProps) {
           ) : undefined
         }
         art={props.scheme === 'nectovia' ? <HomeArt /> : undefined}
+        workers={scopeId !== null ? <WorkerRows projectId={scopeId} compact /> : undefined}
         session={
           binding ? (
             <>

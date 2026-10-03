@@ -28,6 +28,7 @@ import {
 import type { WorkAdmission } from '../work-admission.js';
 import { patternForStep, type ApprovalCandidate } from '../trust/remembered-approvals.js';
 import { ALWAYS_ASK_REASON, rememberedAttribution } from '../../shared/remembered-approvals.js';
+import { projectBoardProgress } from './board-progress.js';
 
 export const localHarnessPrincipal = (projectId: string): HarnessPrincipal => ({
   id: 'local-client',
@@ -160,7 +161,7 @@ export class HarnessBridge {
     principal: HarnessPrincipal,
     codex?: { runId: string; input: CodexRunInput; admission: WorkAdmission },
     /** A procedure's admission-pinned run id and input, so a replay finds the same run. */
-    pinned?: { runId: string; input: Json; admission?: WorkAdmission },
+    pinned?: { runId: string; input: Json; admission?: WorkAdmission; preparedSessionId?: string },
   ): Promise<Session> {
     if (this.closed) throw new ApiError(503, 'The local service is closing.');
     const capability = this.capabilityFor(capabilityId, codex !== undefined);
@@ -178,7 +179,15 @@ export class HarnessBridge {
     if (typeof prompt !== 'string' || !prompt.trim() || prompt.length > 16000)
       throw new ApiError(400, 'Provide a work instruction of no more than 16,000 characters.');
     const state = this.store.state(projectId);
-    if (state.sessions.some(active))
+    const prepared = pinned?.preparedSessionId ? state.sessions.find(item => item.id === pinned.preparedSessionId) : undefined;
+    if (pinned?.preparedSessionId && (!prepared || !procedure || codex || !pinned.admission
+      || prepared.taskId !== taskId || prepared.engine.name !== procedure.engine || prepared.engine.events !== 0
+      || prepared.receipt?.commandId !== pinned.admission.commandId || prepared.receipt.payloadDigest !== pinned.admission.payloadDigest
+      || !['queued', 'failed'].includes(prepared.state)
+      || (prepared.state === 'failed' && prepared.log.at(-1)?.sentence !== 'The saved run could not be read. Check its record before starting again.')
+      || state.tasks.find(item => item.id === taskId)?.automaticWork?.rootRunId !== pinned.runId))
+      throw new ApiError(409, 'The saved Session is not an untouched automatic admission.', { code: 'prepared_session_conflict' });
+    if (state.sessions.some(session => session.id !== prepared?.id && active(session)))
       throw new ApiError(409, 'This project already has work in progress.');
     await this.store.checkFolder(state);
     if (state.project.missing) throw new ApiError(409, 'The project folder is missing.');
@@ -193,7 +202,7 @@ export class HarnessBridge {
     if (!task) throw new ApiError(404, 'This task was not found.');
     const thread = state.conversations.find((item) => item.taskId === task.id);
     const route = procedure && pinned ? procedure.routeFor?.(pinned.input) : undefined;
-    const session: Session = {
+    const session: Session = prepared ?? {
       ...(route ? { route } : {}),
       id: identifier('S'),
       taskId: task.id,
@@ -217,20 +226,21 @@ export class HarnessBridge {
         verified: false,
       },
     };
-    state.sessions.push(session);
+    if (!prepared) state.sessions.push(session);
+    else { session.state = 'queued'; session.endedAt = null; session.needId = null; }
     if (codex)
       session.log.push({
         time: now(),
         level: 'technical',
         sentence: `Codex adapter guarantees: ${JSON.stringify(this.codex!.capabilities())}`,
       });
-    task.sessionIds.push(session.id);
+    if (!prepared) task.sessionIds.push(session.id);
     task.state = 'working';
     task.reason = null;
     task.needId = null;
     // A run may reference only a durable Session. A failed run-file create leaves a
     // visible stopped Session, not an undiscoverable file writer.
-    this.store.recordWorkAdmission(projectId, session, codex?.admission ?? pinned?.admission);
+    if (!prepared) this.store.recordWorkAdmission(projectId, session, codex?.admission ?? pinned?.admission);
     await this.store.persist(state);
     let createdRunId: string | undefined;
     try {
@@ -398,6 +408,7 @@ export class HarnessBridge {
           reason: 'The run stopped before this write was prepared.',
           conflicts: [],
         };
+    if (currentTask) projectBoardProgress({store:this.store,state,task,session,run,redact:this.redact});
     await this.store.persist(state);
     if (procedure?.settled && ['completed', 'failed', 'cancelled'].includes(run.state)) this.settle(procedure, run);
     if (covered) {

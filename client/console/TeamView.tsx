@@ -14,6 +14,9 @@ import type { NewTeamMember, TeamRoutesView } from '../../shared/team-routes';
 import { WORK_STYLE_LABELS, WORK_STYLES } from '../../shared/work-style';
 import './team.css';
 import { LeadWorkers } from './LeadWorkers';
+import { WorkerRows } from './WorkerRows';
+import { HandoffForm } from './HandoffForm';
+import { isManualCard } from '../../shared/task-workflow';
 
 const KIND_WORDS = new Set([
   'read',
@@ -100,6 +103,15 @@ interface StreamRow {
   kind: string;
   detail: string;
   handoffId?: string;
+  teamRunId?: string;
+}
+
+function endedRunLabel(run: TeamRun): string {
+  if ('unknownOutcome' in run && run.unknownOutcome === true) return 'outcome unknown';
+  if (run.status === 'completed') return 'finished';
+  if (run.status === 'failed') return 'failed';
+  if (run.status === 'cancelled') return 'stopped';
+  return 'outcome unknown';
 }
 
 function memberName(slots: Map<Slot, string>, slot: Slot): string {
@@ -167,7 +179,8 @@ function buildStream(
         at: timeOf(r.endedAt),
         clock: fmtClock(r.endedAt),
         kind: 'run',
-        detail: 'finished',
+        detail: endedRunLabel(r),
+        teamRunId: r.id,
       });
     }
   }
@@ -196,6 +209,8 @@ export function TeamView({
   onAddMember,
 }: TeamProps) {
   const [adding, setAdding] = useState(false);
+  // The member whose manual hand-off form is open (S1).
+  const [handingFrom, setHandingFrom] = useState<Slot | null>(null);
   const ordered = useMemo(
     () =>
       [...members].sort((a, b) => {
@@ -418,12 +433,25 @@ export function TeamView({
               onWake={onWake}
               onOpenThread={onOpenThread}
               onMessageFocus={focusComposer}
+              onHandOff={(m) => setHandingFrom(handingFrom === m.slotId ? null : m.slotId)}
             />
           ))}
         </div>
       )}
       <LeadWorkers projectId={project.id} revision={state} />
       <div className="teamcompose">
+        <WorkerRows projectId={project.id} />
+        {handingFrom && (
+          <HandoffForm
+            key={handingFrom}
+            projectId={project.id}
+            tasks={state.tasks}
+            members={members}
+            fromSlot={handingFrom}
+            onDone={() => setHandingFrom(null)}
+            onCancel={() => setHandingFrom(null)}
+          />
+        )}
         <form
           className="composer"
           onSubmit={(e) => {
@@ -584,6 +612,7 @@ function Lane({
   onWake,
   onOpenThread,
   onMessageFocus,
+  onHandOff,
 }: {
   member: TeamMember;
   state: TeamProps['state'];
@@ -598,16 +627,38 @@ function Lane({
   onWake(m: TeamMember): Promise<void>;
   onOpenThread(m: TeamMember): void;
   onMessageFocus(slot: Slot): void;
+  onHandOff(m: TeamMember): void;
 }) {
-  const lane = laneClassOf(member.status);
   const unread = member.unread ?? 0;
   const thread: Conversation | null =
     member.threadId != null ? (convById.get(member.threadId) ?? null) : null;
-
-  const taskSessions = useMemo(
-    () => (thread?.taskId ? state.sessions.filter((s) => s.taskId === thread.taskId) : []),
-    [state.sessions, thread?.taskId],
+  // S1: the manual Team cards assigned to this member are its work too. A run on one leaves the
+  // member's own status alone (no team run, no slot), so the lane reads it from the Session.
+  const manualTaskIds = useMemo(
+    () =>
+      new Set(
+        state.tasks
+          .filter((task) => !task.deletedAt && isManualCard(task) && task.assignedTo === member.slotId)
+          .map((task) => task.id),
+      ),
+    [state.tasks, member.slotId],
   );
+  const taskSessions = useMemo(
+    () =>
+      state.sessions.filter(
+        (s) => (thread?.taskId != null && s.taskId === thread.taskId) || manualTaskIds.has(s.taskId),
+      ),
+    [state.sessions, thread?.taskId, manualTaskIds],
+  );
+  const manualLive = taskSessions.find(
+    (s) => manualTaskIds.has(s.taskId) && ['queued', 'working', 'waiting'].includes(s.state),
+  );
+  const lane: LaneClass =
+    manualLive && member.status !== 'stopped' && member.status !== 'error'
+      ? manualLive.state === 'waiting'
+        ? 'waiting'
+        : 'working'
+      : laneClassOf(member.status);
   const latestSession = useMemo(
     () =>
       taskSessions.length
@@ -709,7 +760,7 @@ function Lane({
             .filter(Boolean)
             .join(' ');
           return (
-            <li key={row.key} className={cls || undefined} data-handoff={row.handoffId}>
+            <li key={row.key} className={cls || undefined} data-handoff={row.handoffId} data-team-run={row.teamRunId}>
               <b>{row.clock}</b>
               <span className="k">{row.kind}</span>
               <span>{row.detail}</span>
@@ -746,6 +797,11 @@ function Lane({
         <button type="button" onClick={() => onOpenThread(member)}>
           Thread
         </button>
+        {state.tasks.some((task) => !task.deletedAt && task.state !== 'done' && task.assignedTo === member.slotId) && (
+          <button type="button" disabled={busy} onClick={() => onHandOff(member)}>
+            Hand off
+          </button>
+        )}
       </div>
     </div>
   );

@@ -270,7 +270,7 @@ describe('routing preferences and fallback', () => {
     });
     expect(session.agent?.modelSelection).toBe('automatic');
     expect(session.log.map((line) => line.sentence)).toContain(
-      'Ran on Codex writer (ChatGPT · gpt-6-astra) because OpenCode writer was unavailable: OpenCode is off in Settings > Engines.',
+      'Ran on Codex writer (Codex · gpt-6-astra) because OpenCode writer was unavailable: OpenCode is off in Settings > Engines.',
     );
   });
 
@@ -314,7 +314,7 @@ describe('routing preferences and fallback', () => {
       data.profiles.find((item: { profileId: string }) => item.profileId === id);
     expect(reason(unlisted.profileId)).toMatchObject({
       available: false,
-      reason: 'gpt-6-astra is not in the list ChatGPT reports for this account.',
+      reason: 'gpt-6-astra is not in the list Codex reports for this account.',
     });
     expect(reason(deeper.profileId)).toMatchObject({
       available: false,

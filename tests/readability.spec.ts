@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import type { Project, Settings, TeamState } from '../shared/types';
+import { reopenLastProject } from './fixtures/landing';
 
 const headers = { 'X-Diomedes-Client': '1' };
 let project: Project;
@@ -32,6 +33,7 @@ async function open(page: Page, scale = 1) {
         headers,
         data: {
           onboarding: { ...saved.onboarding, resumeAt: 'done' },
+          detail: 'technical',
           openProjects: [project.id],
           appearance: {
             package: 'graphite',
@@ -74,6 +76,7 @@ async function open(page: Page, scale = 1) {
   };
   await page.route(`**/api/projects/${project.id}/team`, (route) => route.fulfill({ json: team }));
   await page.goto('/');
+  await reopenLastProject(page);
   await expect(page.locator('.console .body p').first()).toBeVisible();
   await page.evaluate(() => document.fonts.ready);
 }
@@ -162,7 +165,8 @@ for (const screen of screens) {
       const measurements = [await audit(page)];
       const m = measurements[0];
       expect(m.dpr).toBe(screen.dpr);
-      expect(m.body?.font).toBe(16);
+      // Conversation text has its own 15 px semantic role; ordinary UI prose stays 16 px.
+      expect(m.body?.font).toBe(15);
       expect(m.input?.font).toBe(15);
       expect(m.body!.line / m.body!.font).toBeCloseTo(1.55, 2);
       expect(m.transcript!.top).toBeLessThanOrEqual(m.instruments!.bottom + 2);
@@ -170,11 +174,12 @@ for (const screen of screens) {
       if (screen.width >= 1920) expect(m.col!.width).toBe(920);
       await page.screenshot({ path: info.outputPath('thread.png') });
       const nav = page.getByRole('navigation', { name: 'Threads and views' });
-      for (const name of ['Board', 'Team', 'Connections', 'Engines']) {
+      for (const name of ['Board', 'Team']) {
         await nav.getByRole('button', { name: new RegExp(`^${name}\\b`) }).click();
         measurements.push(await audit(page));
-        if (name === 'Engines') break; // Settings replaces the Console.
       }
+      await page.getByRole('button', { name: 'Settings', exact: true }).click();
+      await expect(page.locator('.settings-layout')).toBeVisible();
       await page
         .locator('.settings-layout .rail')
         .getByRole('button', { name: 'Appearance', exact: true })
@@ -215,7 +220,7 @@ test('maximizing preserves type and explicit scaling persists through reload and
   await page.reload();
   await expect(page.locator('html')).toHaveCSS('zoom', '1.25');
   await expect(page.locator('.console .body p').first()).toBeVisible();
-  expect((await audit(page)).body?.font).toBe(16);
+  expect((await audit(page)).body?.font).toBe(15);
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   await page
     .locator('.settings-layout .rail')
@@ -363,7 +368,7 @@ test('the newer Console surfaces take the same semantic roles', async ({ page })
   ).toBe(14);
   await audit(page);
 
-  // A thread that owns a task carries the follow-up queue under its composer.
+  // An idle task uses its ordinary composer. A saved follow-up makes the queue visible.
   const task = await (
     await page.request.post(`/api/projects/${project.id}/tasks`, {
       headers,
@@ -385,6 +390,21 @@ test('the newer Console surfaces take the same semantic roles', async ({ page })
   ).toBe(true);
   await page.reload();
   await nav.getByRole('button', { name: /Confirm the produce order with the supplier/ }).click();
+  await expect(page.locator('.console .follow-ups')).toHaveCount(0);
+  const queued = await page.request.post(`/api/projects/${project.id}/controls`, {
+    headers,
+    data: {
+      protocolVersion: 1,
+      commandId: crypto.randomUUID(),
+      taskId: task.id,
+      control: 'queue',
+      text: 'Check the final delivery date after this task finishes.',
+      waitsFor: 'task',
+      route: 'sample',
+    },
+  });
+  expect(queued.ok()).toBe(true);
+  expect((await queued.json()).receipt.outcome).not.toBe('refused');
   await expect(page.locator('.console .follow-ups')).toBeVisible();
   await audit(page);
   const queue = await page.evaluate(() => {

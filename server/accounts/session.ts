@@ -23,6 +23,7 @@
  * decision for at most the minute the service allows.
  */
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import {
   ACCOUNT_VIEW_VERSION,
@@ -320,6 +321,13 @@ const planNoticeSchema = z.record(
 );
 type PlanNotices = z.infer<typeof planNoticeSchema>;
 
+/** Token-free facts of an actually published cloud sign-in. A password session's
+ * sessionId is a private host-published nonce, not an invented service identifier. */
+export interface AccountAuthorityFacts {
+  backendKind: 'cloud'; backendKey: string; personId: string; sessionId: string;
+  lifecycle: number; publishedLifecycle: number; expiresAt: string;
+}
+
 export class AccountSessionService {
   /** Where "Sign up for a plan" opens. The host sets it from `NECTOVIA_PLANS_URL` when that is given. */
   plansUrl: string = PLANS_URL;
@@ -328,6 +336,28 @@ export class AccountSessionService {
   /** Token rotation replaces a saved entry without creating a different sign-in. */
   private readonly rememberedSignIns = new WeakMap<RememberedEntry, Current>();
   private current: Current | null = null;
+  private readonly authorityPublications = new WeakMap<Current, { lifecycle:number; browserChanges:number; sessionId:string }>();
+  private publishAuthority(current: Current, lifecycle: number): void {
+    this.assertCurrent(current);
+    this.assertSignIn(current, lifecycle);
+    const prior = this.authorityPublications.get(current);
+    this.authorityPublications.set(current, { lifecycle, browserChanges:this.browserChanges,
+      sessionId:current.browserSessionId ?? prior?.sessionId ?? `host-published:${randomUUID()}` });
+  }
+
+  /** Bounded local read: never refreshes tokens, calls the account service or takes Store.locked. */
+  authorityFacts(): AccountAuthorityFacts | null {
+    const current = this.current, published = current ? this.authorityPublications.get(current) : null;
+    const backend = this.backend.view();
+    if (!current || !published || backend.kind !== 'cloud' || !backend.url?.startsWith('https://')
+      || published.lifecycle !== this.lifecycle || published.browserChanges !== this.browserChanges
+      || this.forgotten?.lifecycle === this.lifecycle && this.forgotten.people.has(current.personId)
+      || current.browserSessionId && [...this.closingBrowserSessions].some(item=>item.sessionId === current.browserSessionId)
+      || !Number.isFinite(Date.parse(current.accessExpiresAt)) || Date.parse(current.accessExpiresAt) <= this.now()) return null;
+    return { backendKind:'cloud',backendKey:this.backendKey,personId:current.personId,sessionId:published.sessionId,
+      lifecycle:this.lifecycle,publishedLifecycle:published.lifecycle,expiresAt:current.accessExpiresAt };
+  }
+
   /** The last verified Personal usage read, for the same sign-in and access revision only. */
   private personalUsageCache: { current: Current; revision: number | null; until: number; view: PersonalUsageView } | null = null;
   /** A newer sign-in or sign-out invalidates work that is still awaiting an answer. */
@@ -637,6 +667,7 @@ export class AccountSessionService {
     this.assertSignIn(current, lifecycle);
     this.assertCurrent(current);
     await this.projector(this.projection('sign-in'));
+    this.publishAuthority(current, lifecycle);
   }
 
   async signIn(input: { email: string; password: string; remember: boolean }) {
@@ -815,14 +846,16 @@ export class AccountSessionService {
       return;
     }
     const current = this.current;
-    if (current?.browser) {
-      if (current.accessToken === session.accessToken) return;
+    // A failed initial keep/projection must repeat full verified publication.
+    if (current?.browser && this.authorityPublications.has(current)) {
+      if (current.accessToken === session.accessToken) { this.publishAuthority(current, lifecycle); return; }
       // A newer token for the same WorkOS session preserves the person and their workspace.
       const claims = checkBrowserToken(session.accessToken, browser.expect, this.now());
       if (claims && claims.subject === current.subject && claims.sessionId === current.browserSessionId) {
         current.accessToken = session.accessToken;
         current.accessExpiresAt = claims.expiresAt;
         current.refreshExpiresAt = claims.expiresAt;
+        this.publishAuthority(current, lifecycle);
         return;
       }
     }

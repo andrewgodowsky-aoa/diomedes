@@ -129,6 +129,12 @@ export interface Settings {
   streamTriggerRules?: import('./stream-rules.js').StreamRule[];
   /** Plain writing: phrases the owner added to the shipped list (shared/plain-writing-rules.json). */
   plainWritingPhrases?: string[];
+  /**
+   * S3: whether a Personal Nectovia lead may hand tasks to the person's own coding tools. Like
+   * `home`, it isn't writable through `PUT /api/settings`: only its own route writes it, for the
+   * signed-in person (`server/subscription-workers.ts`). Absent or null: off.
+   */
+  subscriptionWorkers?: import('./subscription-workers.js').SubscriptionWorkersPreference | null;
 }
 /**
  * One thing waiting on the person, by name: an approval, work to review, or a run that failed
@@ -223,6 +229,12 @@ export interface Task {
    * unchanged and the task runs exactly as before.
    */
   workflow?: TaskWorkflow;
+  /** Host-bound original request, distinct from a model-suggested Inbox proposal. */
+  automaticWork?: import('./automatic-work.js').AutomaticWorkBinding;
+  /** A root-owned response assignment; it cannot start as an independent job. */
+  ownedAssignment?: { readonly rootTaskId:string;readonly rootRunId:string;readonly admissionRef:string };
+  /** Cursor of the existing run event projection. No execution state is kept here. */
+  runtimeProgress?: import('./automatic-work.js').TaskRuntimeProgress;
   /**
    * Immutable origin of a runtime-proposed task: the project, thread, turn and
    * run it came from. Absent on person-made and legacy tasks. Provenance, never
@@ -231,6 +243,13 @@ export interface Task {
   origin?: TaskOrigin;
   createdBy: Owner;
   createdAt: string;
+  /**
+   * `team-mail` on a card a Team member's wake made from the mail it answered, when the member
+   * had no open card to take it (server/app.ts `startCodexWork`): its name and description are
+   * the mail's words, so worker rows title it by whose wake it is (server/work-rows.ts). Absent
+   * on every other card, and on every card written before the field existed.
+   */
+  createdFrom?: 'team-mail';
   assignedTo?: Slot | null;
   deletedAt?: string | null;
   moves: {
@@ -317,6 +336,18 @@ export interface TaskWorkflow {
   /** Why the pending phase was asked for; kept so approval records the full handoff. */
   pendingReason?: string | null;
   handoffs: TaskHandoff[];
+  /**
+   * How the card runs (S1, 2026-10-03). `external-proposal`: a person starts it on one
+   * engine, which proposes files for review, outside the Diomedes work loop. Absent on every
+   * card written before manual teams, which run exactly as before.
+   */
+  style?: 'external-proposal';
+  /**
+   * True on a card a member of a person-run Team made (`TeamService.taskCreateAsMember`
+   * outside an Agent Team root). It starts on its assigned member's engine, and only the
+   * person moves its phase. Absent on every other card.
+   */
+  manual?: true;
 }
 /** Immutable origin of a runtime-proposed task. Provenance, never authority. */
 export interface TaskOrigin {
@@ -540,6 +571,8 @@ export interface FileRecord {
   binary?: true;
 }
 export interface HistoryEntry {
+  /** Exact existing Runtime event behind a phase/failure/success note. */
+  progress?: import('./automatic-work.js').TaskProgressEvidence;
   origin?: OriginSnapshot;
   authorization?: ScopedAuthorization | RememberedAuthorization;
   /** Mirrors the reviewer decision this event records, for audit without the Need. */
@@ -806,6 +839,11 @@ export interface ProjectState {
   streamTriggerFirings?: import('./stream-rules.js').StreamTriggerFiring[];
   /** P07 Software Engineering pack: declared commands, their runs and worktrees. Absent until first used. */
   softwarePack?: import('./software-pack.js').SoftwarePackRecord;
+  /**
+   * S1 manual hand-offs between Team cards, oldest first. Append-only: retiring one stamps its
+   * `retiredAt` and keeps it. Absent until the first.
+   */
+  manualHandoffs?: import('./manual-handoff.js').ManualHandoff[];
 }
 /** How Diomedes knows whether an engine is signed in. 'first-use' means the first run reports it. */
 export type SignInState = 'signed-in' | 'not-signed-in' | 'unknown' | 'first-use' | 'not-needed';
@@ -896,6 +934,8 @@ export interface TeamState {
   members: TeamMember[];
   messages: MailboxMessage[];
   runs: TeamRun[];
+  /** Host-recorded measured evidence; empty until exact accounts and profiles qualify. */
+  qualifications?: import('./automatic-team.js').AutomaticTeamQualification[];
 }
 export interface UsageWindow {
   id: string;

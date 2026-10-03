@@ -12,6 +12,8 @@ import { DEMO_ACCOUNTS, FAUX_DEMO_PASSWORD, seedDemo } from '../services/control
 import { RATE_CARD_V1, creditAmount, micro, periodIdFor, type AttemptSettlement } from '../shared/managed-usage';
 import type { WorkspaceView } from '../shared/workspaces';
 import type { Project } from '../shared/types';
+import type { SubscriptionWorkersView } from '../shared/subscription-workers';
+import { SUBSCRIPTION_WORKERS_UNAVAILABLE } from '../server/subscription-workers';
 import {
   USAGE_DANGER_PERCENT,
   USAGE_EXHAUSTED_PERCENT,
@@ -27,6 +29,10 @@ import { reopenLastProject } from './fixtures/landing';
  * The account service is the real control-plane handler over the faux store, in this process, as the desktop's own tests
  * run it. Every person, business and figure is one of the faux seed's invented demo ones, and nothing is charged: the
  * faux Stripe makes the session and the faux checkout page pays it.
+ *
+ * The last three tests are Settings' "Your coding tools" (subscription-aware orchestration S3), which this app offers with
+ * no coding tool behind it: saved through the real preference routes, asked again under an older consent, and absent
+ * when the build doesn't offer it.
  */
 test.describe.configure({ mode: 'serial' });
 
@@ -86,6 +92,17 @@ test.beforeAll(async () => {
         close: async () => {},
       },
     },
+    // S3's "Your coding tools" section, offered by this build with no coding tool behind it: the
+    // section saves the preference through its real routes and nothing is ever handed off here.
+    externalWorkers: {
+      admit: async () => {
+        throw new Error('No coding tool runs in this spec.');
+      },
+      send: async () => {
+        throw new Error('No coding tool runs in this spec.');
+      },
+    },
+    subscriptionWorkers: true,
   });
   const dist = path.resolve('dist');
   await fs.access(path.join(dist, 'index.html'));
@@ -372,4 +389,156 @@ test('when the owner turns off members seeing their own usage, a member has no U
     await switchTo(DEMO_ACCOUNTS.owner);
     await api(`${base()}/credit-limits/settings`, 'POST', { membersSeeOwnUsage: true });
   }
+});
+
+// --- Your coding tools (subscription-aware orchestration S3) -------------------------------------
+
+const TOOLS_PATH = '/settings/subscription-workers';
+const toolsEntry = (page: Page) => settingsNav(page).getByRole('button', { name: 'Your coding tools', exact: true });
+/** What the service holds now, through the section's own read. */
+const savedTools = async () => (await api<SubscriptionWorkersView>(TOOLS_PATH)).preference;
+
+async function openCodingTools(page: Page) {
+  await openSettings(page);
+  await toolsEntry(page).click();
+  await expect(page.getByRole('heading', { name: 'Your coding tools', level: 1 })).toBeVisible();
+  const section = page.locator('.settings-layout .reading');
+  return {
+    section,
+    understand: section.getByRole('checkbox', { name: 'I understand', exact: true }),
+    toggle: section.getByRole('checkbox', { name: 'Hand tasks to my coding tools', exact: true }),
+    tools: section.getByRole('group', { name: 'Tools to use, first choice at the top', exact: true }),
+    reserve: section.getByRole('radiogroup', { name: "Keep part of each tool's limit for your own work", exact: true }),
+    fallback: section.getByRole('radiogroup', { name: 'When none of your tools can take a task', exact: true }),
+  };
+}
+
+test('your coding tools: confirmed, turned on and saved in the person’s order, through the real preference routes', async ({ page }) => {
+  await switchTo(DEMO_ACCOUNTS.owner);
+  const { consent } = await api<SubscriptionWorkersView>(TOOLS_PATH);
+  expect(await savedTools()).toBeNull();
+  const { section, understand, toggle, tools, reserve, fallback } = await openCodingTools(page);
+  await expect(
+    section.getByText(
+      'Nectovia can hand a task in your Personal work to a coding tool you already pay for. That task runs on your plan, not your Nectovia credits.',
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(section.getByText(consent.text, { exact: true })).toBeVisible();
+  await expect(section.getByText(/has changed/)).toHaveCount(0);
+  await expect(understand).not.toBeChecked();
+  await expect(toggle).not.toBeChecked();
+  await expect(toggle).toBeDisabled();
+  // Every tool by the server's name, in its order, none chosen.
+  await expect(tools.locator('[data-tool]')).toHaveText([/^Claude Code/, /^Codex/, /^OpenCode/]);
+  for (const name of ['Claude Code', 'Codex', 'OpenCode']) await expect(tools.getByRole('checkbox', { name, exact: true })).not.toBeChecked();
+  await expect(tools.getByRole('button', { name: 'Move Claude Code up', exact: true })).toBeDisabled();
+  await expect(tools.getByRole('button', { name: 'Move OpenCode down', exact: true })).toBeDisabled();
+  await expect(reserve.getByRole('radio', { name: 'No. Use a tool whenever it can take the task.', exact: true })).toBeChecked();
+  await expect(
+    section.getByText("A tool that doesn't report how much of its limit is left won't get tasks while you keep a share.", { exact: true }),
+  ).toBeVisible();
+  await expect(fallback.getByRole('radio', { name: 'Nectovia does it with your Nectovia credits', exact: true })).toBeChecked();
+  await expect(fallback.getByRole('radio', { name: 'Hold the work until one of your tools can take it', exact: true })).not.toBeChecked();
+
+  // Codex, put first, confirmed and turned on.
+  await tools.getByRole('checkbox', { name: 'Codex', exact: true }).check();
+  await expect.poll(savedTools).toMatchObject({ enabled: false, engines: ['codex'] });
+  await tools.getByRole('button', { name: 'Move Codex up', exact: true }).click();
+  await expect(tools.locator('[data-tool]')).toHaveText([/^Codex/, /^Claude Code/, /^OpenCode/]);
+  await understand.check();
+  await expect(toggle).toBeEnabled();
+  await toggle.check();
+  await expect.poll(savedTools).toMatchObject({
+    enabled: true,
+    engines: ['codex'],
+    reserve: { kind: 'none' },
+    whenUnavailable: 'single-agent',
+    consentRevision: consent.revision,
+  });
+  await expect(understand).toBeChecked();
+  await expect(understand).toBeDisabled();
+  await tools.getByRole('checkbox', { name: 'Claude Code', exact: true }).check();
+  await expect.poll(savedTools).toMatchObject({ engines: ['codex', 'claude-code'] });
+
+  // Keep 30% of each tool's limit, and hold the work when no tool can take it.
+  const share = reserve.getByRole('spinbutton', { name: "Share of each tool's limit to keep, in percent", exact: true });
+  await share.fill('30');
+  await share.press('Enter');
+  await expect.poll(savedTools).toMatchObject({ reserve: { kind: 'provider-window', keepPercent: 30 } });
+  await expect(reserve.getByRole('radio', { name: /^Yes, keep/ })).toBeChecked();
+  await fallback.getByRole('radio', { name: 'Hold the work until one of your tools can take it', exact: true }).check();
+  await expect.poll(savedTools).toMatchObject({ whenUnavailable: 'pause' });
+
+  // A change the server refuses shows its own sentence, and the control goes back to what's saved.
+  await tools.getByRole('checkbox', { name: 'Claude Code', exact: true }).uncheck();
+  await expect.poll(savedTools).toMatchObject({ engines: ['codex'] });
+  await tools.getByRole('checkbox', { name: 'Codex', exact: true }).click();
+  await expect(section.getByRole('alert')).toHaveText('No coding tool is chosen for Nectovia to hand tasks to. Choose one in Settings.');
+  await expect(tools.getByRole('checkbox', { name: 'Codex', exact: true })).toBeChecked();
+  expect(await savedTools()).toMatchObject({ enabled: true, engines: ['codex'] });
+
+  // Opened again, it shows what's saved.
+  const again = await openCodingTools(page);
+  await expect(again.toggle).toBeChecked();
+  await expect(again.understand).toBeChecked();
+  await expect(again.understand).toBeDisabled();
+  await expect(again.tools.locator('[data-tool]')).toHaveText([/^Codex/, /^Claude Code/, /^OpenCode/]);
+  await expect(again.tools.getByRole('checkbox', { name: 'Codex', exact: true })).toBeChecked();
+  await expect(again.reserve.getByRole('spinbutton')).toHaveValue('30');
+  await expect(again.fallback.getByRole('radio', { name: 'Hold the work until one of your tools can take it', exact: true })).toBeChecked();
+  await expect(again.section.getByRole('alert')).toHaveCount(0);
+
+  // Turned off, it asks again before it can be on again.
+  await again.toggle.uncheck();
+  await expect.poll(savedTools).toMatchObject({ enabled: false, engines: ['codex'] });
+  await expect(again.understand).not.toBeChecked();
+  await expect(again.toggle).toBeDisabled();
+});
+
+test('your coding tools: a choice saved on under an older consent says so and stays off until confirmed', async ({ page }) => {
+  await switchTo(DEMO_ACCOUNTS.owner);
+  const { consent } = await api<SubscriptionWorkersView>(TOOLS_PATH);
+  const on = { enabled: true, engines: ['codex'], reserve: { kind: 'none' }, whenUnavailable: 'single-agent', consentRevision: consent.revision };
+  await api(TOOLS_PATH, 'PUT', on);
+  // The consent text changed since: the service holds it on under an older revision.
+  const store = application!.locals.store;
+  await store.saveSettings({ ...store.settings, subscriptionWorkers: { ...store.settings.subscriptionWorkers, consentRevision: '2026-01-01.1' } });
+  const { section, understand, toggle } = await openCodingTools(page);
+  await expect(
+    section.getByText('What handing tasks to your coding tools sends has changed. Read it again and confirm.', { exact: true }),
+  ).toBeVisible();
+  await expect(understand).not.toBeChecked();
+  await expect(understand).toBeEnabled();
+  await expect(toggle).not.toBeChecked();
+  await expect(toggle).toBeDisabled();
+  await understand.check();
+  await toggle.check();
+  await expect.poll(savedTools).toMatchObject({ enabled: true, consentRevision: consent.revision });
+  await expect(section.getByText(/has changed/)).toHaveCount(0);
+  await api(TOOLS_PATH, 'PUT', { ...on, enabled: false });
+});
+
+test('your coding tools: no section at all when the build doesn’t offer it, and only a sign-in line when nobody is signed in', async ({ page }) => {
+  await switchTo(DEMO_ACCOUNTS.owner);
+  const real = await api<SubscriptionWorkersView>(TOOLS_PATH);
+  expect(real.available).toBe(true);
+  const serve = async (view: SubscriptionWorkersView) => {
+    await page.unroute(`**/api${TOOLS_PATH}`);
+    await page.route(`**/api${TOOLS_PATH}`, (route) => route.fulfill({ status: 200, json: view }));
+  };
+  // Not offered: once the Settings read says so, the rail has no entry and nothing says why.
+  await serve({ ...real, available: false });
+  await openConsole(page);
+  const read = page.waitForResponse((response) => new URL(response.url()).pathname === `/api${TOOLS_PATH}`);
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await read;
+  await expect(settingsNav(page).getByRole('button', { name: 'Account', exact: true })).toBeVisible();
+  await expect(toolsEntry(page)).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Your coding tools' })).toHaveCount(0);
+  await expect(page.getByText(SUBSCRIPTION_WORKERS_UNAVAILABLE)).toHaveCount(0);
+  // Offered with nobody signed in: only the line asking to sign in.
+  await serve({ ...real, signedIn: false, preference: null });
+  const { section } = await openCodingTools(page);
+  await expect(section).toHaveText('Sign in to choose your coding tools.');
 });

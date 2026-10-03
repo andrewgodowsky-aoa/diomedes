@@ -13,8 +13,9 @@ import type { TeamMember } from '../../shared/types.js';
 import { TEAM_TOOL_NAMES } from '../../shared/team-routes.js';
 import { ApiError } from '../paths.js';
 import type { Store } from '../store.js';
-import type { TeamService } from './service.js';
+import type { TeamService, TeamMutationOptions } from './service.js';
 import { ToolRegistry } from '../harness/tools.js';
+import type { StepContext } from '../harness/run-service.js';
 
 type TeamToolName = (typeof TEAM_TOOL_NAMES)[number];
 
@@ -23,6 +24,9 @@ export interface TeamToolContext {
   member: TeamMember;
   store: Store;
   service: TeamService;
+  /** Supplied only by the host's owned exchange; ordinary Team calls keep their existing behavior. */
+  mutationOptions?: TeamMutationOptions;
+  readMessageIds?: readonly string[];
 }
 
 export interface TeamToolDefinition {
@@ -64,13 +68,13 @@ export const TEAM_TOOLS: readonly TeamToolDefinition[] = [
       summary: z.string().optional(),
     },
     effect: 'non-idempotent',
-    run: async ({ service, projectId, member }, args) => ({
+    run: async ({ service, projectId, member, mutationOptions }, args) => ({
       message: await service.sendAsMember(projectId, member, {
         to: args.to,
         message: args.message,
         files: args.files,
         summary: args.summary,
-      }),
+      }, mutationOptions),
     }),
   },
   {
@@ -78,8 +82,8 @@ export const TEAM_TOOLS: readonly TeamToolDefinition[] = [
     description: 'Read this slot’s messages, oldest first, marking them read.',
     shape: { since_message_id: z.string().optional() },
     effect: 'non-idempotent',
-    run: async ({ service, projectId, member }, args) => ({
-      messages: await service.readAsMember(projectId, member, args.since_message_id),
+    run: async ({ service, projectId, member, readMessageIds }, args) => ({
+      messages: await service.readAsMember(projectId, member, args.since_message_id, readMessageIds),
     }),
   },
   {
@@ -93,14 +97,14 @@ export const TEAM_TOOLS: readonly TeamToolDefinition[] = [
       idempotency_key: z.string().optional(),
     },
     effect: 'non-idempotent',
-    run: async ({ service, projectId, member }, args) => ({
+    run: async ({ service, projectId, member, mutationOptions }, args) => ({
       task: await service.taskCreateAsMember(projectId, member, {
         subject: args.subject,
         description: args.description,
         owner: args.owner,
         blocked_by: args.blocked_by,
         idempotency_key: args.idempotency_key,
-      }),
+      }, mutationOptions),
     }),
   },
   {
@@ -255,9 +259,14 @@ export async function runTeamTool(
 export function teamToolRegistry(
   context: TeamToolContext,
   onCall?: (tool: string) => void,
+  options: {
+    tools?: readonly string[];
+    /** Host-owned scoping over the same tool definitions and Runtime step; no nested dispatch. */
+    execute?: (definition: TeamToolDefinition, context: StepContext) => Promise<unknown>;
+  } = {},
 ): ToolRegistry {
   const registry = new ToolRegistry();
-  for (const definition of TEAM_TOOLS)
+  for (const definition of TEAM_TOOLS.filter((definition) => !options.tools || options.tools.includes(definition.name)))
     registry.register<Record<string, unknown>, Json>({
       name: definition.name,
       version: '1',
@@ -274,13 +283,15 @@ export function teamToolRegistry(
       outputSchema: z.record(z.string(), z.json()) as unknown as z.ZodType<Json>,
       // A team call changes this project's team state and nothing else.
       ...(definition.effect === 'read' ? {} : { targets: () => [`team:${context.projectId}`] }),
-      execute: async ({ input }) => {
+      execute: async (step) => {
         try {
           onCall?.(definition.name);
         } catch {
           // Narration never decides a tool's outcome.
         }
-        const result = await runTeamTool(definition, context, input);
+        const result = options.execute
+          ? { ok: true as const, data: await options.execute(definition, step) }
+          : await runTeamTool(definition, context, step.input as Record<string, unknown>);
         return JSON.parse(
           JSON.stringify(result.ok ? result.data : { error: result.error }),
         ) as Json;

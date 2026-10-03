@@ -195,7 +195,7 @@ test('a thread Codex no longer has starts fresh, and only that message says so',
   expect(again.checkpoint).toMatchObject({ origin: 'restarted-fresh', lostThreadId: saved.nativeSessionId });
   expect(again.checkpoint.nativeSessionId).not.toBe(saved.nativeSessionId);
   expect(again.continuity.detail).toBe(
-    "ChatGPT no longer had this conversation's thread, so this message started a new one. Earlier messages weren't carried into it.",
+    "Codex no longer had this conversation's thread, so this message started a new one. Earlier messages weren't carried into it.",
   );
   await again.turn(request());
   expect(again.continuity.detail).toBeNull();
@@ -364,12 +364,12 @@ test('a restart during a turn keeps a confirmed thread, and the next message say
   expect(recovered).toEqual({ resume: { ...busy, state: 'idle', origin: 'recovered', interruptedRequestId: 'cmd-lost' } });
   expect(recoverCodexCheckpoint({ ...busy, nativeSessionId: null }, 'cmd-lost')).toEqual({
     refuse:
-      "Diomedes restarted while ChatGPT was answering, and no ChatGPT thread was confirmed to continue, so this conversation couldn't resume. Start again.",
+      "Diomedes restarted while Codex was answering, and no Codex thread was confirmed to continue, so this conversation couldn't resume. Start again.",
   });
   const again = await open({ restore: (recovered as { resume: CodexSessionCheckpoint }).resume });
   await again.turn(request());
   expect(again.continuity.detail).toBe(
-    "Diomedes restarted while an earlier message was being answered. That message wasn't completed or sent again. This conversation continued from ChatGPT's saved thread.",
+    "Diomedes restarted while an earlier message was being answered. That message wasn't completed or sent again. This conversation continued from Codex's saved thread.",
   );
   expect(again.checkpoint).toMatchObject({ origin: 'resumed', interruptedRequestId: null });
 });

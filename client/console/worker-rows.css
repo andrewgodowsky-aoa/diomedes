@@ -1,0 +1,68 @@
+/* Worker rows (WorkerRows.tsx): one line per unit of work, in the Settings > Engines language:
+   caption type, hairlines, a small state point, the route name first. Titles wrap where they
+   are written; nothing here sets a column's inline margin. */
+.console .worker-rows {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 0 0 10px;
+  font-size: var(--dm-type-caption);
+  color: var(--t2);
+}
+.console .worker-rows > h2.caption {
+  margin: 0;
+  font-size: var(--dm-type-caption);
+  font-weight: inherit;
+  color: var(--t3);
+}
+.console .worker-rows ul {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.console .worker-rows li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  min-width: 0;
+  padding: 3px 0;
+  border-top: 1px solid var(--hair);
+}
+.console .worker-rows li:first-child {
+  border-top: 0;
+}
+.console .worker-rows .wr-pt {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  align-self: center;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px var(--t3);
+}
+.console .worker-rows .wr-pt.live {
+  background: var(--light);
+  box-shadow: none;
+}
+.console .worker-rows .wr-label {
+  flex: none;
+  color: var(--t1);
+}
+.console .worker-rows .wr-title {
+  flex: 1 1 160px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.console .worker-rows .wr-state,
+.console .worker-rows .wr-payer {
+  flex: none;
+  white-space: nowrap;
+}
+.console .worker-rows .wr-payer {
+  color: var(--t3);
+}
+.console .worker-rows.compact {
+  padding: 0 0 8px;
+}

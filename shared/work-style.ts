@@ -149,7 +149,7 @@ export interface WorkStyleInput {
   escalationApproved?: boolean;
   /**
    * The route may run its own default when it has listed nothing yet. True
-   * only for ChatGPT, which writes its list after its first run.
+   * only for Codex, which writes its list after its first run.
    */
   routeDefaultAllowed?: boolean;
   /**
@@ -203,7 +203,7 @@ function step(effort: string, by: number): string {
 /**
  * Hold a wanted level to what the model offers: the highest level it lists at
  * or below the one wanted, else its lowest. A model that lists no ladder (every
- * route but ChatGPT and AWS today) takes no level at all.
+ * route but Codex and AWS today) takes no level at all.
  */
 function fit(model: EngineModel | undefined, wanted: string): string | null {
   if (!model) return null;

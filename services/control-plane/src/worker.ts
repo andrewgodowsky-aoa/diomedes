@@ -419,6 +419,11 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
         const answer = await createRelay(config, accounts, env).desktop(token, match[1], request);
         return answer instanceof Response ? answer : json(answer);
       }
+      // A phone dials here (relay plan step 3): the same front checks as presence, no device key.
+      if ((match = route('/relay/v1/organizations/:id/phone').exec(pathname)) && method === 'GET') {
+        const answer = await createRelay(config, accounts, env).phone(token, match[1], request);
+        return answer instanceof Response ? answer : json(answer);
+      }
 
       if (pathname === '/account/routing-policy' && method === 'GET')
         return json(await createCommercial(config, accounts).routingPolicy(token));

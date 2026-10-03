@@ -200,7 +200,7 @@ test('Settings lists profiles with their reason, and an edit saves a new revisio
   await editor.getByRole('button', { name: 'Save profile' }).click();
   const writer = profileSection(page, 'Fixture writer');
   await expect(writer).toContainText('Revision 1');
-  await expect(writer).toContainText('ChatGPT · fixture-model-a · medium · Change Builder');
+  await expect(writer).toContainText('Codex · fixture-model-a · medium · Change Builder');
   await expect(writer).toContainText('Keep British spelling.');
 
   await writer.getByRole('button', { name: 'Edit', exact: true }).click();

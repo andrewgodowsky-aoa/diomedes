@@ -262,6 +262,9 @@ export const defaults = (): Settings => ({
   streamTriggerRules: [],
   // Plain writing: phrases the owner adds to the shipped list. Checked on finished answers.
   plainWritingPhrases: [],
+  // S3: listed so a client echoing the whole settings object back is accepted. Like `home`,
+  // `validateSettings` never reads it; only the subscription workers route writes it.
+  subscriptionWorkers: null,
 });
 
 /**

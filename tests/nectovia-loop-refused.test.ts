@@ -27,6 +27,7 @@ import { EngineService } from '../server/engines/service';
 import { NECTOVIA_LOOP_REFUSED } from '../server/engines/nectovia';
 import { NECTOVIA_LOOP_TEAM_REFUSED, loopRunId } from '../server/native-loop-routes';
 import { MANAGED_LUNA } from '../shared/model-api.js';
+import { jobKeyFor } from '../server/job-caps.js';
 import { testOnlySecretBox } from '../server/connection-secrets';
 import { ControlPlaneClient } from '../server/accounts/client';
 import type { AccountBackend } from '../server/accounts/backend';
@@ -176,7 +177,9 @@ describe('a paid Nectovia work loop through managed wiring', () => {
     expect(completed.steps.filter((step: { intent: { kind: string } }) => step.intent.kind === 'model')).toHaveLength(2);
     const admissionCount = await admissions();
     expect(admissionCount, 'start and each model call record paid admission').toBeGreaterThan(before + 1);
-    const pinned = await admittedFor(firstJson.runId);
+    const rootJobId = jobKeyFor(projectId, firstJson.runId);
+    expect(completed.input).toMatchObject({ rootJobId, rootJobRequestId: firstJson.runId });
+    const pinned = await admittedFor(rootJobId);
     expect(pinned).toHaveLength(admissionCount - before);
     for (const admission of pinned)
       expect(admission).toMatchObject({ decision: 'admitted', routeKind: 'managed', surface: 'loop', organizationId: juniper });
@@ -190,7 +193,7 @@ describe('a paid Nectovia work loop through managed wiring', () => {
     expect(secondJson.runId).toBe(firstJson.runId);
     expect(secondJson.replayed).toBe(true);
     expect(await admissions(), 'a replay allocates no second job or paid admission').toBe(admissionCount);
-    expect(await admittedFor(firstJson.runId), 'every admission names the same root job').toHaveLength(pinned.length);
+    expect(await admittedFor(rootJobId), 'every admission names the same root job').toHaveLength(pinned.length);
     expect(gatewayCalls).toBe(2);
     expect(providerCalls).toBe(0);
   });
@@ -231,7 +234,9 @@ describe('a paid Nectovia work loop through managed wiring', () => {
     expect(replay.id).toBe(session.id);
     expect(state.sessions.filter((item: { taskId: string }) => item.taskId === taskId)).toHaveLength(1);
     expect(await admissions()).toBe(beforeReplay);
-    expect(await admittedFor(runId)).toHaveLength(beforeReplay);
+    const rootJobId = jobKeyFor(projectId, runId);
+    expect((await app.locals.harness.get(projectId, runId)).input).toMatchObject({ rootJobId, rootJobRequestId: runId });
+    expect(await admittedFor(rootJobId)).toHaveLength(beforeReplay);
     expect(gatewayCalls).toBe(2);
     expect(providerCalls).toBe(0);
   });

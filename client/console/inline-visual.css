@@ -65,12 +65,12 @@
 .console .iv-grid text,
 .console .iv-total {
   fill: var(--t3);
-  font: 400 11px var(--mono);
+  font: 400 0.6875rem var(--mono);
   font-variant-numeric: tabular-nums;
 }
 .console .iv-total {
   fill: var(--t1);
-  font: 500 22px var(--ui);
+  font: 500 1.375rem var(--ui);
 }
 .console .iv-mark {
   fill: var(--iv-c);

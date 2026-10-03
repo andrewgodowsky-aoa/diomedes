@@ -1312,6 +1312,11 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
 .setting-rows {
   margin: 20px 0;
 }
+/* The share of each tool's limit kept in Settings' coding tools sits inside its sentence. */
+.coding-tools-keep {
+  width: 8ch;
+  margin: 0 4px;
+}
 /* Appearance swatches are 12 px points in the scheme's own light colour. */
 .palette-dot {
   display: inline-block;

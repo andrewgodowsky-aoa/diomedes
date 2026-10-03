@@ -3,6 +3,7 @@
  */
 import { describe, expect, test } from 'vitest';
 import type { ObservationScope, ScopeRecheck } from '../server/observability/eligibility.js';
+import { ObservationScopes } from '../server/observability/scopes.js';
 import {
   BoundedObservationExporter,
   EXPORTER_LIMITS,
@@ -37,6 +38,8 @@ const scopeNamed = (name: string): ObservationScope => ({
   activeOrganizationAtBind: 'org_a',
   bindKey: `loop:${name}`,
   connectionId: 'conn-1',
+  connectionRevision: 1,
+  planId: 'business',
   requestedModel: null,
   boundAt: 0,
 });
@@ -63,6 +66,8 @@ function setup(options: { live?: (scope: ObservationScope) => boolean; limits?: 
 }
 
 describe('the exporter', () => {
+  test.each([false, true])('admission withdrawal discards retained predecessors and permits fresh export (retry=%s)', retry => verifyWithdrawal(retry));
+
   test('Noop records nothing and counts what it was offered', async () => {
     const noop = new NoopObservationExporter();
     noop.enqueue();
@@ -185,3 +190,58 @@ describe('the exporter', () => {
     expect(unknown('not-linked')).toEqual({ known: false, why: 'not-linked' });
   });
 });
+
+async function verifyWithdrawal(retry: boolean) {
+  let now = 1_000;
+  let collection: 'metadata' | 'none' = 'metadata';
+  const scopes = new ObservationScopes({
+    operator: { mode: 'memory', environment: 'test', companyHost: false, internalOrganizations: new Set(),
+      pseudonymKey: new Uint8Array(32).fill(7), customerExport: true, posthog: null },
+    backend: () => 'cloud', now: () => now,
+    authority: { personId: () => 'person_1', activeOrganizationId: () => 'org_a', entitlement: () => ({ agent: true, state: 'active' }) },
+    telemetry: { policyFor: organizationId => ({ organizationId, revision: 1, export: collection, source: 'account-service' }) },
+  });
+  let admissions = 0;
+  const decide = () => scopes.decide({
+    admission: { admissionId: `adm_withdrawal_${++admissions}`, organizationId: 'org_a', personId: 'person_1',
+      planId: 'business', policyRevision: 1, routeKind: 'byo', surface: 'loop', validUntil: '2099-01-01T00:00:00.000Z' },
+    rootJobId: 'root', route: 'openrouter', connectionId: 'connection-1', model: 'fixture/model',
+  });
+  const bind = () => { const result = decide(); if (!result.eligible) throw new Error(result.denial); return result.scope; };
+  const memory = new MemoryObservationSink();
+  const attempts: string[] = [];
+  const sink: ObservationSink = { kind: 'memory', send: async body => {
+    attempts.push(body);
+    if (retry && attempts.length === 1) return { ok: false, failure: 'network', retryAfterMs: 1_000 };
+    return memory.send(body);
+  } };
+  const exporter = new BoundedObservationExporter({ sink, scopes, clock: () => now, timer: false, random: () => 0 });
+  const first = bind();
+  exporter.enqueue({ ...parked(0), scope: first.facts }, first);
+  const rebound = bind();
+  exporter.enqueue({ ...parked(1), scope: rebound.facts }, rebound);
+  if (retry) {
+    await exporter.flush();
+    expect(attempts).toHaveLength(1);
+    expect(memory.batches).toEqual([]);
+    expect(exporter.health().queued).toBe(2);
+  }
+  collection = 'none';
+  expect(decide()).toEqual({ eligible: false, denial: 'telemetry-policy-none' });
+  // Neither recheck nor flush during the none interval may make this test pass.
+  collection = 'metadata';
+  now = 3_000;
+  const fresh = bind();
+  expect(fresh.boundAt).toBe(3_000);
+  await exporter.flush();
+  expect(attempts).toHaveLength(retry ? 1 : 0);
+  expect(memory.batches).toEqual([]);
+  expect(exporter.health()).toMatchObject({ exported: 0, queued: 0, dropped: { 'scope-ended': 2 } });
+  const freshEvent = { ...parked(2), scope: fresh.facts };
+  exporter.enqueue(freshEvent, fresh);
+  await exporter.flush();
+  expect(memory.batches).toEqual([encodeBatch([toWireEvent(freshEvent)])]);
+  expect(exporter.health()).toMatchObject({ exported: 1, queued: 0 });
+  for (const old of [first, rebound]) expect(scopes.recheck(old)).toEqual({ live: false, denial: 'telemetry-policy-none' });
+  await exporter.close();
+}
