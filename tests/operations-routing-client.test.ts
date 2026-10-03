@@ -5,7 +5,7 @@ import path from 'node:path';
 import { createFauxCloud, type FauxCloud } from '../services/control-plane/src/faux/cloud';
 import { seedDemo, FAUX_DEMO_PASSWORD } from '../services/control-plane/src/faux/seed';
 import { ControlPlaneClient } from '../server/accounts/client';
-import { STRICT_RESTRICTIONS, type ModelBinding, type ProviderConnection } from '../shared/routing-policy';
+import { ROUTING_CONSENT_VERSION, STRICT_RESTRICTIONS, type ModelBinding, type ProviderConnection } from '../shared/routing-policy';
 import { micro } from '../shared/managed-usage';
 import { nectoviaRateCard, nectoviaConnectionId, respondNectovia, type NectoviaPolicy } from '../server/engines/nectovia';
 import { CONVERSATION_LIMITS } from '../server/engines/model-api-core';
@@ -72,7 +72,7 @@ beforeEach(async () => {
   for (const id of ['primary', 'backup']) await api('POST', '/ops/routes', staff, { id, provider: 'azure-openai', model: 'fixture-non-luna',
     label: id, region: 'US', processing: 'Synthetic only', status: 'qualified', evidence: 'Synthetic only', binding: { ...binding, deployment: id } });
   await client.acceptRoutingPreference(token, { scope: { kind: 'organization', id: org }, baseRevision: 0, profile: 'strict', restrictions: STRICT_RESTRICTIONS,
-    consentVersion: 'NC-SETUP-2026-09-27.1', exceptions: [], acknowledge: true });
+    consentVersion: ROUTING_CONSENT_VERSION, exceptions: [], acknowledge: true });
   const tier = { primary: 'primary', backups: ['backup'], fallbackEnabled: true, maxAttempts: 2,
     cost: { sameOrLower: true, qualityFloor: 1, maxAttemptMicroUsd: null } };
   await api('POST', '/ops/routing/scopes/publish', staff, { scope: { kind: 'global' }, baseRevision: 1, baseGlobalRevision: 1,
@@ -115,7 +115,7 @@ describe('published account policy at the desktop model boundary', () => {
     await api('POST', `/ops/individuals/${individual.id}/grants`, billing,
       { reference: 'Synthetic managed usage', validUntil: new Date(Date.now() + 3_600_000).toISOString(), credits: 100 });
     await client.acceptRoutingPreference(token, { scope, baseRevision: 0, profile: 'strict', restrictions: STRICT_RESTRICTIONS,
-      consentVersion: 'NC-SETUP-2026-09-27.1', exceptions: [], acknowledge: true });
+      consentVersion: ROUTING_CONSENT_VERSION, exceptions: [], acknowledge: true });
     const session = { personId: () => person.id, backend: { client },
       call: <T>(fn: (value: string) => Promise<T>) => fn(token) } as unknown as AccountSessionService;
     const workspaces = { projectOwner: () => null, active: () => selected === 'business'
@@ -247,7 +247,7 @@ describe('published account policy at the desktop model boundary', () => {
         const value = await accept(...args); activeOrganization = 'another-account'; return value;
       });
       result = routing.accept(null, { scope: { kind: 'organization', id: org }, baseRevision: 1, profile: 'strict', restrictions: STRICT_RESTRICTIONS,
-        consentVersion: 'NC-SETUP-2026-09-27.1', exceptions: [], acknowledge: true });
+        consentVersion: ROUTING_CONSENT_VERSION, exceptions: [], acknowledge: true });
     }
     await expect(result).rejects.toMatchObject({ code: 'ACCOUNT_CHANGED' });
     expect(routing.policy()).toBeNull(); expect(sent).toHaveLength(0);

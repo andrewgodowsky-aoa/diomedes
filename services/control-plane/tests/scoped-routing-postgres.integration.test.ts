@@ -9,7 +9,7 @@ import { PostgresCommercialRepository } from '../src/commercial-postgres.js';
 import { RoutingService } from '../src/routing.js';
 import { migrate, type Migration } from '../src/migrations.js';
 import { now, verifier } from './support/fixtures.js';
-import { STRICT_RESTRICTIONS, routingScopeKey, type AccountScope } from '../../../shared/routing-policy.js';
+import { ROUTING_CONSENT_VERSION, STRICT_RESTRICTIONS, routingScopeKey, type AccountScope } from '../../../shared/routing-policy.js';
 
 const ownerUrl = process.env.CP_ROUTING_TEST_DATABASE_URL;
 let ownerFactory: ClientFactory, runtimeFactory: ClientFactory, accounts: AccountService, routing: RoutingService;
@@ -143,7 +143,7 @@ describe.skipIf(!ownerUrl)('scoped routing on an isolated real PostgreSQL databa
   it('persists append-only customer consent across new service instances and refuses history rewrites', async () => {
     const scope: AccountScope = { kind: 'individual', id: (await routing.individual('routing_owner')).id };
     const input = { scope, baseRevision: 0, profile: 'strict', restrictions: STRICT_RESTRICTIONS, exceptions: [],
-      consentVersion: 'NC-SETUP-2026-09-27.1', acknowledge: true };
+      consentVersion: ROUTING_CONSENT_VERSION, acknowledge: true };
     const results = await Promise.allSettled([routing.acceptPreference('routing_owner', input), routing.acceptPreference('routing_owner', input)]);
     expect(results.filter(r => r.status === 'fulfilled')).toHaveLength(1);
     const restarted = new RoutingService(accounts, new PostgresCommercialRepository(runtimeFactory), () => now);

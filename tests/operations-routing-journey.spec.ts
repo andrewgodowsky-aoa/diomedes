@@ -180,6 +180,19 @@ test('publishes in Operations, accepts customer privacy, and preserves a non-Lun
   await expect(details).toContainText('Route journey-primary revision 1; price fixture-price.');
   await expect(details).toContainText('settled');
   await customer.screenshot({ path: info.outputPath('customer-response.png'), fullPage: true });
+
+  // Moving from Strict to Balanced gives up limits, and the screen names them before the owner accepts.
+  await customer.getByRole('button', { name: 'Settings', exact: true }).first().click();
+  await customer.getByRole('navigation', { name: 'Settings', exact: true }).getByRole('button', { name: 'Account', exact: true }).click();
+  await privacy.getByRole('radio', { name: /^Balanced/ }).check();
+  await expect(privacy.getByRole('note')).toHaveText('Saving this lets requests run outside the US and lets providers store content.');
+  await expect(privacy.getByRole('button', { name: 'Save routing preference', exact: true })).toBeDisabled();
+  await privacy.getByRole('checkbox', { name: /I accept this profile/ }).check();
+  await privacy.getByRole('button', { name: 'Save routing preference', exact: true }).click();
+  await expect(privacy.getByRole('status')).toContainText('Routing preference saved.');
+  await expect(privacy).toContainText('Preference revision 2.');
+  await expect(privacy.getByRole('note')).toHaveCount(0);
+  await privacy.screenshot({ path: info.outputPath('customer-relaxation.png') });
 });
 
 test('funds Personal access separately and keeps its override and receipt outside the Business account', async ({ page, context }, info) => {

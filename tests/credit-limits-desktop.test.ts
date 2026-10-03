@@ -40,7 +40,7 @@ import type { WorkspaceService } from '../server/workspaces.js';
 import { MEMBER_LIMIT_REACHED } from '../shared/credit-allotments';
 import { creditAmount, micro } from '../shared/managed-usage';
 import { canManageMemberLimits } from '../shared/workspaces';
-import { STRICT_RESTRICTIONS, type ModelBinding, type ProviderConnection } from '../shared/routing-policy';
+import { ROUTING_CONSENT_VERSION, STRICT_RESTRICTIONS, type ModelBinding, type ProviderConnection } from '../shared/routing-policy';
 import { createFauxCloud, FAUX_BACKEND_LABEL, type FauxCloud } from '../services/control-plane/src/faux/cloud';
 import { DEMO_ACCOUNTS, FAUX_DEMO_PASSWORD, seedDemo } from '../services/control-plane/src/faux/seed';
 
@@ -215,7 +215,7 @@ beforeEach(async () => {
   for (const id of ['primary', 'backup']) await api('POST', '/ops/routes', staff, { id, provider: 'azure-openai', model: 'fixture-non-luna',
     label: id, region: 'US', processing: 'Synthetic only', status: 'qualified', evidence: 'Synthetic only', binding: { ...binding, deployment: id } });
   await client.acceptRoutingPreference(tokens.owner, { scope: { kind: 'organization', id: org }, baseRevision: 0, profile: 'strict', restrictions: STRICT_RESTRICTIONS,
-    consentVersion: 'NC-SETUP-2026-09-27.1', exceptions: [], acknowledge: true });
+    consentVersion: ROUTING_CONSENT_VERSION, exceptions: [], acknowledge: true });
   const tier = { primary: 'primary', backups: ['backup'], fallbackEnabled: true, maxAttempts: 2,
     cost: { sameOrLower: true, qualityFloor: 1, maxAttemptMicroUsd: null } };
   await api('POST', '/ops/routing/scopes/publish', staff, { scope: { kind: 'global' }, baseRevision: 1, baseGlobalRevision: 1,
