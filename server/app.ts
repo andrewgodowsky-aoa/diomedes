@@ -120,9 +120,17 @@ import { mountNativeLoopRoutes, loopRunId } from './native-loop-routes.js';
 import { mintAutomaticWorkRequest, admitAutomaticWork } from './automatic-work-admission.js';
 import { AUTOMATIC_WORK_POLICY, type AutomaticWorkRequest } from '../shared/automatic-work.js';
 import { mountTaskWorkflowRoutes } from './task-workflow.js';
-import { taskWorkflowBlocker, workflowOf, emptyTaskWorkflow } from '../shared/task-workflow.js';
+import {
+  taskWorkflowBlocker,
+  workflowOf,
+  emptyTaskWorkflow,
+  isManualCard,
+  manualCardStart,
+} from '../shared/task-workflow.js';
+import { applyTaskAssignment, mountManualHandoffRoutes, requireHandoffCoverage } from './manual-teams.js';
 import { checkCompletionAllowed } from './team/board.js';
-import { NATIVE_LOOP_ENGINE } from '../shared/native-loop.js';
+import { NATIVE_LOOP_CAPABILITY, NATIVE_LOOP_ENGINE } from '../shared/native-loop.js';
+import { ProductionWorkRows } from './work-rows.js';
 import { mountVerificationRoutes } from './verification/routes.js';
 import { codexVerificationReviewer, type VerificationReviewerAdapter } from './verification/reviewer.js';
 import { AgentRegistry } from './agents.js';
@@ -1573,6 +1581,7 @@ export async function createApp(options: AppOptions) {
     host:collaborationHost, rootLedger:productionTeam.rootLedger,
   });
   mountTaskWorkflowRoutes(app, store);
+  mountManualHandoffRoutes(app, store);
   mountWorkspaceRoutes(app, store, workspaces, configuration, automations);
   mountAutomationRoutes(app, store, automations);
   mountThemeRoutes(app, store, themes, customization);
@@ -2624,6 +2633,9 @@ export async function createApp(options: AppOptions) {
         const blocked = taskWorkflowBlocker(task);
         if (blocked) throw new ApiError(409, blocked, { code: 'task_workflow_blocked' });
       }
+      // DIO-176: the person assigns the card to a current Team member, or clears it. Checked
+      // before anything else changes; a refusal reloads the task as it was (server/manual-teams.ts).
+      if (b.assignedTo !== undefined) applyTaskAssignment(store, state, task, b.assignedTo);
       if (b.name !== undefined) task.name = asString(b.name, 'a task name', 200);
       if (b.description !== undefined) {
         if (typeof b.description !== 'string' || b.description.length > 10000)
@@ -2803,19 +2815,34 @@ export async function createApp(options: AppOptions) {
       threadPermission = thread.permission ?? 'show-first';
     }
     if (ceiling?.permission === 'show-first') threadPermission = 'show-first';
+    // S1: a manual Team card runs on its assigned member's engine, through Native Work and never
+    // the loop, as an ordinary proposal run: no team tools, no profile and no Agent gate. The
+    // route the person confirmed must be that engine, so the consent named it.
+    const manual = isManualCard(requestedTask)
+      ? manualCardStart(requestedTask, state.team?.members ?? [], routeDisplayName)
+      : null;
+    if (manual && !manual.ok) throw new ApiError(409, manual.reason, { code: 'manual_card_unassigned' });
     // The thread's tier, when one applies, decides the route Build runs on; a tier whose
     // route is not ready is refused here by name, never moved to the recorded route.
     const selectedRoute =
       b.route === undefined
-        ? threadRoute(projectId, state.conversations.find((c) => c.id === threadId), {
-            mode: 'build',
-            text: typeof b.instruction === 'string' ? b.instruction : null,
-          })
+        ? manual?.ok
+          ? manual.route
+          : threadRoute(projectId, state.conversations.find((c) => c.id === threadId), {
+              mode: 'build',
+              text: typeof b.instruction === 'string' ? b.instruction : null,
+            })
         : choice(b.route, ROUTES, 'service');
-    const useLoop = selectedRoute === NECTOVIA_ROUTE || Boolean(requestedTask.workflow);
+    if (manual?.ok && selectedRoute !== manual.route)
+      throw new ApiError(
+        409,
+        `${manual.member.name} works on this card through ${routeDisplayName(manual.route)}. Start it on ${routeDisplayName(manual.route)}.`,
+        { code: 'manual_card_route' },
+      );
+    const useLoop = !manual && (selectedRoute === NECTOVIA_ROUTE || Boolean(requestedTask.workflow));
     if (useLoop && selectedRoute !== 'sample' && !isModelApiRoute(selectedRoute))
       throw new ApiError(409, 'This task requires the Diomedes work loop to enforce its phase settings. Choose a model API route.');
-    const team = teamForThread(projectId, threadId, port, selectedRoute);
+    const team = manual ? undefined : teamForThread(projectId, threadId, port, selectedRoute);
     if (command && team)
       throw new ApiError(409, 'Saved Work commands for team helpers are not available yet.', {
         code: 'unsupported_work_target',
@@ -2835,6 +2862,8 @@ export async function createApp(options: AppOptions) {
           'Provide the explicitly selected source documents, or an empty list to propose new files.',
         );
       requireCloudSharing(state, selectedRoute, b.sources.map(relativeName));
+      // N05: every file a hand-off into this card names must be among the documents sent.
+      requireHandoffCoverage(state, taskId, b.sources.map(relativeName));
     }
     // Recheck the current local scope and service consent before returning a cached
     // receipt. Replay never scans source files or dispatches another adapter call.
@@ -2932,15 +2961,21 @@ export async function createApp(options: AppOptions) {
       return result.session;
     }
     if (selectedRoute !== 'sample') {
+      // A manual card runs as its member was recorded: the member's Agent and requested model,
+      // like a member's wake. A member with no model of its own takes the route's default.
+      const member = manual?.ok ? manual.member : null;
       return nativeWork.start(projectId, taskId, {
         engine: selectedRoute,
         threadId,
-        agentId:
-          command?.request.agentId ??
-          state.conversations.find((c) => c.id === threadId)?.requested?.agent ??
-          null,
+        agentId: member
+          ? (member.agentId ?? null)
+          : (command?.request.agentId ??
+            state.conversations.find((c) => c.id === threadId)?.requested?.agent ??
+            null),
         // A profile that decides this run supplies its own exact model (H09).
-        requested: agentProfiles.applies(
+        requested: member?.model
+          ? { model: member.model, ...(member.selection?.by === 'nectovia' ? { selection: 'automatic' as const } : {}) }
+          : !member && agentProfiles.applies(
           projectId,
           taskId,
           state.conversations.find((c) => c.id === threadId),
@@ -2960,6 +2995,7 @@ export async function createApp(options: AppOptions) {
         sources: Array.isArray(b.sources) ? b.sources.map(relativeName) : [],
         consent: true,
         team,
+        ...(member ? { manualSlot: member.slotId } : {}),
         permission: threadPermission,
         admission: command?.admission,
         commit,
@@ -6284,6 +6320,36 @@ export async function createApp(options: AppOptions) {
       });
     }, false),
   );
+  /**
+   * Worker rows (plan 4.8, S1): one small projection of who is working, for the Team view, the
+   * Agent conversation and, later, the phone relay. Read from the records and the H14 ledger;
+   * nothing is written, admitted or sent to a model to produce it (server/work-rows.ts).
+   */
+  const workRows = new ProductionWorkRows({
+    store,
+    harness: {
+      runIdFor: async (projectId, sessionId) => {
+        // A versioned start names its loop run by its command; anything else is found by its Session.
+        const commandId = store.state(projectId).sessions.find((item) => item.id === sessionId)?.receipt?.commandId;
+        if (commandId) {
+          const named = await harness.get(projectId, loopRunId(projectId, commandId)).catch(() => null);
+          if (named?.sessionId === sessionId) return named.id;
+        }
+        const runs = await harness.list(projectId);
+        return runs.find((run) => run.sessionId === sessionId && run.capabilityId === NATIVE_LOOP_CAPABILITY)?.id ?? null;
+      },
+      run: (projectId, runId) => harness.get(projectId, runId).catch(() => null),
+      teamView: (run) => harness.loop.teamView(run),
+    },
+  });
+  app.get(
+    '/api/projects/:id/work/rows',
+    route(async (req) => {
+      const snapshot = await workRows.snapshot(id(req));
+      if (!snapshot) throw new ApiError(404, 'This project was not found.');
+      return snapshot;
+    }, false),
+  );
   app.get('/api/events', (req, res) => {
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
@@ -6292,9 +6358,30 @@ export async function createApp(options: AppOptions) {
     const send = (event: string, data: unknown) => {
       if (!res.destroyed) res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
     };
+    // The rows each project last sent on this stream, without their time, and the latest read
+    // asked for: a read that resolves after a newer one began is dropped, so rows never go back.
+    const rowsSent = new Map<string, string>();
+    const rowsAsked = new Map<string, number>();
+    let rowsSeq = 0;
+    const sendRows = (projectId: string) => {
+      const asked = ++rowsSeq;
+      rowsAsked.set(projectId, asked);
+      workRows.snapshot(projectId).then(
+        (snapshot) => {
+          if (!snapshot || rowsAsked.get(projectId) !== asked) return;
+          const { at: _at, ...content } = snapshot;
+          const key = JSON.stringify(content);
+          if (rowsSent.get(projectId) === key) return;
+          rowsSent.set(projectId, key);
+          send('work-rows', snapshot);
+        },
+        () => undefined,
+      );
+    };
     const listener = (projectId: string) => {
       const state = store.state(projectId);
       send('state', { projectId, state: statePayload(state) });
+      sendRows(projectId);
       for (const event of [
         'project',
         'tasks',
@@ -6598,6 +6685,8 @@ export async function createApp(options: AppOptions) {
   app.locals.workControl = workControl;
   app.locals.durableControls = durableControls;
   app.locals.readyScheduler = readyScheduler;
+  /** The production WorkRowsSource (server/work-rows.ts), for the phone relay to read. */
+  app.locals.workRows = workRows;
   app.locals.automationScheduler = automationScheduler;
   app.locals.automations = automations;
   app.locals.softwarePack = softwarePack;

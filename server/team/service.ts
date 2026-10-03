@@ -9,7 +9,7 @@ import type {
   TeamState,
 } from '../../shared/types.js';
 import { ApiError } from '../paths.js';
-import { emptyTaskWorkflow, taskWorkflowBlocker } from '../../shared/task-workflow.js';
+import { emptyTaskWorkflow, manualTaskWorkflow, taskWorkflowBlocker } from '../../shared/task-workflow.js';
 import { identifier, now, type Store } from '../store.js';
 import { migrateTeam } from '../store.js';
 import {
@@ -132,6 +132,15 @@ export class TeamService {
 
   setOwnedControl(control: OwnedTeamControl): void {
     this.ownedControl = control;
+  }
+
+  /** Whether this slot is the lead or the member of an Agent Team exchange that is still open. */
+  private inAgentTeam(team: TeamState, slot: Slot): boolean {
+    return team.runs.some((run) => {
+      if (isOwnedTeamRun(run))
+        return (!run.rootClosed || run.unknownOutcome) && [run.grant.lead.slotId, run.grant.member.slotId].includes(slot);
+      return (run as { ownership?: unknown }).ownership === 'agent-team-response';
+    });
   }
 
   /** Persisted ownership still fences wakes before the response host has been wired after restart. */
@@ -605,7 +614,12 @@ export class TeamService {
       owner: 'diomedes-with-ok',
     });
     task.createdBy = 'diomedes';
-    task.workflow = { ...emptyTaskWorkflow(), inbox: true };
+    // S1: a card from the person-run Team is a manual card (shared/task-workflow.ts). A member
+    // inside an open Agent Team exchange is not working in the manual team, so its card keeps
+    // the plain proposed workflow; the exchange itself creates its assignments elsewhere.
+    task.workflow = this.inAgentTeam(team, live.slotId)
+      ? { ...emptyTaskWorkflow(), inbox: true }
+      : manualTaskWorkflow();
     task.assignedTo = assignedTo;
     meta.blockedBy[task.id] = blocked;
     if (typeof args.idempotency_key === 'string' && args.idempotency_key.trim())

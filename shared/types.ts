@@ -323,6 +323,18 @@ export interface TaskWorkflow {
   /** Why the pending phase was asked for; kept so approval records the full handoff. */
   pendingReason?: string | null;
   handoffs: TaskHandoff[];
+  /**
+   * How the card runs (S1, 2026-10-03). `external-proposal`: a person starts it on one
+   * engine, which proposes files for review, outside the Diomedes work loop. Absent on every
+   * card written before manual teams, which run exactly as before.
+   */
+  style?: 'external-proposal';
+  /**
+   * True on a card a member of a person-run Team made (`TeamService.taskCreateAsMember`
+   * outside an Agent Team root). It starts on its assigned member's engine, and only the
+   * person moves its phase. Absent on every other card.
+   */
+  manual?: true;
 }
 /** Immutable origin of a runtime-proposed task. Provenance, never authority. */
 export interface TaskOrigin {
@@ -814,6 +826,8 @@ export interface ProjectState {
   streamTriggerFirings?: import('./stream-rules.js').StreamTriggerFiring[];
   /** P07 Software Engineering pack: declared commands, their runs and worktrees. Absent until first used. */
   softwarePack?: import('./software-pack.js').SoftwarePackRecord;
+  /** S1 manual hand-offs between Team cards, oldest first. Append-only; absent until the first. */
+  manualHandoffs?: import('./manual-handoff.js').ManualHandoff[];
 }
 /** How Diomedes knows whether an engine is signed in. 'first-use' means the first run reports it. */
 export type SignInState = 'signed-in' | 'not-signed-in' | 'unknown' | 'first-use' | 'not-needed';

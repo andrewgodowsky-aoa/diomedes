@@ -16,7 +16,7 @@
  * Reuses the Task, Store, run and Need records: there is no parallel
  * lifecycle. A task without a workflow runs exactly as before.
  */
-import type { Owner, Task, TaskContinuation, TaskHandoff, TaskWorkflow, TaskWorkflowPhase } from './types.js';
+import type { Owner, Task, TaskContinuation, TaskHandoff, TaskWorkflow, TaskWorkflowPhase, TeamMember } from './types.js';
 
 export const TASK_WORKFLOW_CONTRACT_VERSION = 1 as const;
 
@@ -67,7 +67,85 @@ export function workflowOf(task: Pick<Task, 'workflow'>): TaskWorkflow {
     pendingPhase: stored.pendingPhase ?? null,
     pendingReason: stored.pendingReason ?? null,
     handoffs: [...stored.handoffs],
+    // A card written before manual teams carries neither field and reads exactly as before.
+    ...(stored.style === 'external-proposal' ? { style: stored.style } : {}),
+    ...(stored.manual === true ? { manual: true as const } : {}),
   };
+}
+
+/**
+ * S1 free manual teams (2026-10-03). A manual team is the person-run Team: the project's
+ * TeamService members acting outside any Agent Team root. A card one of them makes
+ * (`TeamService.taskCreateAsMember`) is a manual card. It waits in the Inbox like every
+ * proposed card, starts only when the person starts it, runs on its assigned member's engine
+ * through Native Work (never the Diomedes work loop) and changes phase only when the person
+ * moves it. Agent Team assignments (`ownedAssignment`) are never manual.
+ */
+export const manualTaskWorkflow = (): TaskWorkflow => ({
+  ...emptyTaskWorkflow(),
+  inbox: true,
+  style: 'external-proposal',
+  manual: true,
+});
+
+export function isManualCard(task: Pick<Task, 'workflow'>): boolean {
+  return task.workflow?.manual === true;
+}
+
+/**
+ * The engines a manual card starts on in S1: the person's own ChatGPT or Claude Code sign-in.
+ * A model-API route would pass the Agent gate, and S1 makes no Agent gate or managed call,
+ * so members on any other route are refused by name.
+ */
+export const MANUAL_CARD_ENGINES = ['codex', 'claude-code'] as const;
+export type ManualCardEngine = (typeof MANUAL_CARD_ENGINES)[number];
+
+export const MANUAL_CARD_LOOP_REFUSED =
+  "A manual Team card runs on its member's engine when you start it, not in the work loop.";
+export const MANUAL_CARD_PHASE_REFUSED = "A manual Team card's phase moves only when you move it.";
+export const MANUAL_CARD_HOLD = "Start it yourself: a manual Team card doesn't start on its own";
+
+export type ManualCardStart =
+  | { ok: true; member: TeamMember; route: ManualCardEngine }
+  | { ok: false; reason: string };
+
+/** The member a manual card would start on, and its engine, or why it cannot start. */
+export function manualCardStart(
+  task: Pick<Task, 'assignedTo'>,
+  members: readonly TeamMember[],
+  routeName: (route: string) => string,
+): ManualCardStart {
+  const member = task.assignedTo ? members.find((item) => item.slotId === task.assignedTo) : undefined;
+  if (!member)
+    return {
+      ok: false,
+      reason: "Assign this card to a Team member before you start it. A manual card runs on its member's engine.",
+    };
+  if (member.status === 'stopped')
+    return {
+      ok: false,
+      reason: `${member.name} was stopped and can't take work. Assign the card to a current member.`,
+    };
+  if (!(MANUAL_CARD_ENGINES as readonly string[]).includes(member.engine))
+    return {
+      ok: false,
+      reason: `${member.name} works through ${routeName(member.engine)}. A manual card runs on ChatGPT or Claude Code for now, so assign it to a member on one of those.`,
+    };
+  return { ok: true, member, route: member.engine as ManualCardEngine };
+}
+
+/**
+ * The route a Board Start of this task sends and its send dialog names: a startable manual
+ * card's member engine, otherwise `fallback` (the thread's or project's selected engine).
+ */
+export function boardStartRoute<R extends string>(
+  task: Pick<Task, 'workflow' | 'assignedTo'>,
+  members: readonly TeamMember[],
+  fallback: R,
+): R | ManualCardEngine {
+  if (!isManualCard(task)) return fallback;
+  const start = manualCardStart(task, members, (route) => route);
+  return start.ok ? start.route : fallback;
 }
 
 /**

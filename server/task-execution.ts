@@ -26,7 +26,7 @@ import {
 import type { Conversation, ProjectState, Route, Session } from '../shared/types.js';
 import { threadChoosesItsOwnModel, type AgentProfileService } from './agent-profiles.js';
 import { requireCloudSharing } from './cloud-sharing.js';
-import { taskWorkflowBlocker } from '../shared/task-workflow.js';
+import { isManualCard, manualCardStart, taskWorkflowBlocker } from '../shared/task-workflow.js';
 import { CAPABILITY_PACKS, findSkill, isPackActive } from '../shared/capability-packs.js';
 import { withProfile, type NativeStartInput, type NativeWorkService } from './native-work.js';
 import { ApiError } from './paths.js';
@@ -78,7 +78,11 @@ export async function taskExecutionView(
   if (!task) throw new ApiError(404, 'This task was not found.');
   // The task's own thread is the one the Board's Start names (Shell `routeForTask`).
   const thread = state.conversations.find((item) => item.taskId === taskId) ?? null;
-  const route = selectedEngine(store.settings, state.project, thread);
+  // S1: a manual Team card starts on its assigned member's engine, whatever the thread says.
+  const manual = isManualCard(task)
+    ? manualCardStart(task, state.team?.members ?? [], routeDisplayName)
+    : null;
+  const route = manual?.ok ? manual.route : selectedEngine(store.settings, state.project, thread);
   const blockers: string[] = [];
   const notes: string[] = [];
   const block = (reason: string) => {
@@ -86,6 +90,7 @@ export async function taskExecutionView(
   };
 
   if (store.isHomeProject(projectId)) block(HOME_REFUSES_WORK);
+  if (manual && !manual.ok) block(manual.reason);
   const closing = deps.updateClosing();
   if (closing) block(closing);
   const workflowBlocker = taskWorkflowBlocker(task);
@@ -148,6 +153,33 @@ export async function taskExecutionView(
       model = { requested: choice.model, effort: null, selection: 'automatic' };
     } catch (error) { block(message(error)); }
     notes.push('Starting sends the instruction and selected documents to Nectovia. Account access and limits are checked again before each call.');
+  } else if (manual) {
+    // As `admitWork` starts it: no profile, no loop, the member's own Agent and model.
+    if (listed) inert = "A manual Team card runs on its member's engine; saved profiles don't choose for it.";
+    worker.note = "A manual Team card runs on its member's engine and proposes files for your review. Only you move its phase.";
+    if (manual.ok) {
+      const member = manual.member;
+      if (member.model)
+        model = {
+          requested: member.model,
+          effort: null,
+          selection: member.selection?.by === 'nectovia' ? 'automatic' : 'manual',
+        };
+      else
+        try {
+          const picked = deps.choice(manual.route, projectId, thread);
+          model = {
+            requested: picked.model ?? null,
+            effort: picked.effort ?? null,
+            selection: picked.selection ?? (picked.model ? 'manual' : 'runtime-default'),
+          };
+        } catch (error) {
+          block(message(error));
+        }
+      notes.push(
+        `Starting sends the instruction and the documents you choose to ${routeDisplayName(manual.route)}. You confirm before anything is sent.`,
+      );
+    }
   } else if (task.workflow) {
     if (listed) inert = 'This task uses the Diomedes work loop; saved external worker profiles do not replace it.';
     if (!['sample', 'aws-bedrock', 'azure-openai', 'openrouter', 'google-vertex'].includes(route))
@@ -260,7 +292,7 @@ export async function taskExecutionView(
     route: {
       id: resolvedRoute,
       name: routeDisplayName(resolvedRoute) || resolvedRoute,
-      source: outcome.outcome === 'resolved' ? 'profile' : routeSource(state, thread),
+      source: manual?.ok ? 'member' : outcome.outcome === 'resolved' ? 'profile' : routeSource(state, thread),
       // No Settings switch governs the sample route or the Nectovia route; the Nectovia
       // route's refusal of Work is a blocker above, not a switch that is off.
       on:

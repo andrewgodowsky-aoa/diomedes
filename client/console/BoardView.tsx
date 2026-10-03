@@ -33,6 +33,10 @@ import {
 } from '../../shared/board-moves';
 import { TaskInspector, type InspectorMove } from './TaskInspector';
 import { api } from '../api';
+import { routeDisplayName } from '../../shared/engines';
+import { isManualCard } from '../../shared/task-workflow';
+import { handoffsInto, type ManualHandoff } from '../../shared/manual-handoff';
+import { HandoffForm, HandoffNote } from './HandoffForm';
 
 const ORDER: Column[] = [...BOARD_COLUMNS];
 type CommandMove = Extract<BoardMove, { kind: 'command' }>;
@@ -234,6 +238,8 @@ export function BoardView({
       ? 'Queue paused · Start runs one by hand'
       : 'Starts automatically, oldest first';
   const [routeId, setRouteId] = useState<string | null>(null);
+  // The card whose hand-off form is open (S1 manual hand-off).
+  const [handId, setHandId] = useState<string | null>(null);
   const [arrived, setArrived] = useState<ReadonlySet<string>>(new Set());
   const prevCol = useRef(new Map<string, Column>());
   // The row's point rect and column before a board action. After the Shell's
@@ -435,9 +441,10 @@ export function BoardView({
     noteTravel(task, 'start', 280);
     await onStart(task);
   }
-  async function handleRoute(task: Task, to: Slot): Promise<void> {
+  async function handleRoute(task: Task, to: Slot | null): Promise<void> {
     noteTravel(task, 'route', 420);
     await onRoute(task, to);
+    setRouteId(null);
   }
   function handleReview(task: Task): void {
     noteTravel(task, 'review', 220);
@@ -447,6 +454,7 @@ export function BoardView({
   function closeInline() {
     setRequest(null);
     setRouteId(null);
+    setHandId(null);
     setMenuId(null);
   }
 
@@ -804,6 +812,24 @@ export function BoardView({
                       menu={menuId === task.id ? boardMoveMenu(facts) : null}
                       dragging={dragId === task.id}
                       routeOpen={routeId === task.id}
+                      handoffs={handoffsInto(state.manualHandoffs, task.id)}
+                      canHandOff={canHandOff(task)}
+                      handoffForm={
+                        handId === task.id ? (
+                          <HandoffForm
+                            projectId={project.id}
+                            tasks={tasks}
+                            members={members}
+                            fromTaskId={task.id}
+                            onDone={() => setHandId(null)}
+                            onCancel={() => setHandId(null)}
+                          />
+                        ) : null
+                      }
+                      onToggleHand={() => {
+                        setRouteId(null);
+                        setHandId(handId === task.id ? null : task.id);
+                      }}
                       onToggleStart={() => toggleStart(task)}
                       onConfirm={confirmRequest}
                       onCancel={() => setRequest(null)}
@@ -828,7 +854,10 @@ export function BoardView({
                         setDragId(null);
                         setDropOver(null);
                       }}
-                      onToggleRoute={() => setRouteId(routeId === task.id ? null : task.id)}
+                      onToggleRoute={() => {
+                        setHandId(null);
+                        setRouteId(routeId === task.id ? null : task.id);
+                      }}
                       onCloseInline={closeInline}
                       onPause={onPause}
                       onReview={handleReview}
@@ -893,17 +922,33 @@ export function BoardView({
   );
 
   function workerOf(task: Task): string {
+    const member = members.find((m) => m.slotId === task.assignedTo);
+    // A manual Team card is its member's work, before, during and after a run (S1).
+    if (member && isManualCard(task)) return member.name;
     const session = evidenceOf(task).session;
     if (session) return formatOrigin(originForSession(session)).primary;
-    const member = members.find((m) => m.slotId === task.assignedTo);
     if (member) return member.name;
     return task.owner === 'you' ? 'You' : 'Unassigned';
   }
 
+  /** A card handed on by its member: assigned to one, not running, with a next card to take it. */
+  function canHandOff(task: Task): boolean {
+    if (evidenceOf(task).active || !members.some((m) => m.slotId === task.assignedTo)) return false;
+    return tasks.some(
+      (other) =>
+        other.id !== task.id &&
+        !other.deletedAt &&
+        other.state !== 'done' &&
+        !other.ownedAssignment &&
+        members.some((m) => m.slotId === other.assignedTo && m.status !== 'stopped'),
+    );
+  }
+
   function workerTitleOf(task: Task): string | undefined {
+    const member = members.find((m) => m.slotId === task.assignedTo);
+    if (member && isManualCard(task)) return `${member.name} works through ${routeDisplayName(member.engine)}`;
     const session = evidenceOf(task).session;
     if (session) return formatOrigin(originForSession(session)).label;
-    const member = members.find((m) => m.slotId === task.assignedTo);
     if (member) return member.model ? `${member.name} ${member.model}` : member.name;
     return undefined;
   }
@@ -930,6 +975,10 @@ function TaskRow({
   menu,
   dragging,
   routeOpen,
+  handoffs,
+  canHandOff,
+  handoffForm,
+  onToggleHand,
   onToggleStart,
   onConfirm,
   onCancel,
@@ -972,6 +1021,12 @@ function TaskRow({
   menu: { to: Column; move: BoardMove }[] | null;
   dragging: boolean;
   routeOpen: boolean;
+  /** Manual hand-offs into this card, newest first (S1). */
+  handoffs: ManualHandoff[];
+  canHandOff: boolean;
+  /** The open hand-off form under this card, or null. */
+  handoffForm: React.ReactNode;
+  onToggleHand(): void;
   onToggleStart(): void;
   onConfirm(): void;
   onCancel(): void;
@@ -984,7 +1039,7 @@ function TaskRow({
   onCloseInline(): void;
   onPause(task: Task): Promise<void>;
   onReview(task: Task): void;
-  onRoute(task: Task, to: Slot): Promise<void>;
+  onRoute(task: Task, to: Slot | null): Promise<void>;
   onReopen(task: Task): Promise<void>;
   onOpenTeam(task: Task): void;
 }) {
@@ -1011,7 +1066,14 @@ function TaskRow({
   const canStart = column === 'Ready' || (column === 'Blocked' && failed);
   const startLabel = column === 'Ready' ? 'Start' : 'Start again';
   const startBlocked = canStart && slotBusy;
-  const canRoute = column === 'Blocked' && !evidence.active && members.length > 0;
+  // DIO-176: the person assigns a card to a Team member, or clears it, from the card itself.
+  // An Agent Team assignment belongs to its run, and a running card keeps who it has.
+  const canRoute =
+    (column === 'Inbox' || column === 'Ready' || column === 'Blocked') &&
+    !evidence.active &&
+    !task.ownedAssignment &&
+    members.length > 0;
+  const assignable = members.filter((m) => m.status !== 'stopped');
 
   function onKeyClose(e: React.KeyboardEvent) {
     if (e.key === 'Escape') onCloseInline();
@@ -1130,8 +1192,13 @@ function TaskRow({
           </button>
         )}
         {canRoute && (
-          <button type="button" className="verb" onClick={onToggleRoute}>
-            Route to
+          <button type="button" className="verb" aria-expanded={routeOpen} onClick={onToggleRoute}>
+            Assign
+          </button>
+        )}
+        {canHandOff && (
+          <button type="button" className="verb" aria-expanded={!!handoffForm} onClick={onToggleHand}>
+            Hand off
           </button>
         )}
         {column === 'Done' && (
@@ -1210,21 +1277,31 @@ function TaskRow({
         </div>
       )}
       {canRoute && routeOpen && (
-        <div className="route" role="list">
-          {members.map((m) => (
+        <div className="route" role="list" aria-label={`Assign ${task.name} to`}>
+          {assignable.map((m) => (
             <button
               key={m.slotId}
               type="button"
               role="listitem"
-              disabled={busy || slotBusy}
+              aria-current={task.assignedTo === m.slotId ? 'true' : undefined}
+              disabled={busy}
               onClick={() => void onRoute(task, m.slotId)}
             >
               <span>{m.name}</span>
-              <span className="mono">{m.engine}</span>
+              <span className="mono">{routeDisplayName(m.engine)}</span>
             </button>
           ))}
+          {task.assignedTo && (
+            <button type="button" role="listitem" disabled={busy} onClick={() => void onRoute(task, null)}>
+              <span>Clear assignment</span>
+            </button>
+          )}
         </div>
       )}
+      {handoffForm}
+      {handoffs.map((record) => (
+        <HandoffNote key={record.id} record={record} members={members} />
+      ))}
     </li>
   );
 }

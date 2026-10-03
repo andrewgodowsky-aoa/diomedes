@@ -65,7 +65,7 @@ import {
 } from '../shared/team-delegation.js';
 import type { Route, Session } from '../shared/types.js';
 import { OWNER_RULES_NOT_INCLUDED_REASON } from '../shared/access.js';
-import { taskWorkflowBlocker } from '../shared/task-workflow.js';
+import { isManualCard, MANUAL_CARD_LOOP_REFUSED, taskWorkflowBlocker } from '../shared/task-workflow.js';
 import type { WorkAdmission } from './work-admission.js';
 import type { PackContributions } from './pack-contributions.js';
 import { prepareTaskSkill } from './task-skills.js';
@@ -473,6 +473,8 @@ export function mountNativeLoopRoutes(
     if (!task) throw new ApiError(404, 'This task was not found.');
     const workflowBlocker = taskWorkflowBlocker(task);
     if (workflowBlocker) throw new ApiError(409, workflowBlocker, { code: 'task_workflow_blocked' });
+    // S1: a manual Team card never runs in the loop, so no loop phase gate can move it (N04).
+    if (isManualCard(task)) throw new ApiError(409, MANUAL_CARD_LOOP_REFUSED, { code: 'manual_card_loop' });
     if (state.sessions.some((session) => session.id !== extra.preparedSessionId && ['queued', 'working', 'waiting'].includes(session.state)))
       throw new ApiError(409, 'This project already has work in progress.');
     if (task.workflow && body.maxTurns !== undefined && body.maxTurns > task.workflow.maxTurns)
