@@ -6,7 +6,10 @@ import { createOpenAI } from '@ai-sdk/openai';
 import { streamText } from 'ai';
 import { createFauxCloud, type FauxCloud } from '../src/faux/cloud.js';
 import { seedDemo, DEMO_ACCOUNTS, FAUX_DEMO_PASSWORD, type DemoAccount } from '../src/faux/seed.js';
-import { STRICT_RESTRICTIONS, type AccountScope, type ModelBinding, type ProviderConnection } from '../../../shared/routing-policy.js';
+import {
+  LEGACY_ROUTING_CONSENT, PROFILE_FLOORS, ROUTING_CONSENT_VERSION, STRICT_RESTRICTIONS, UNPINNED_REGION,
+  type AccountScope, type ModelBinding, type ProviderConnection, type RoutingPreference,
+} from '../../../shared/routing-policy.js';
 import { micro } from '../../../shared/managed-usage.js';
 import { RoutingService } from '../src/routing.js';
 
@@ -64,9 +67,9 @@ async function personPlan(token = owner, reference = 'Synthetic Personal plan', 
   return { person, grant: result.body.grant };
 }
 const scopePath = (s: AccountScope) => `${s.kind}/${s.id}`;
-async function preference(scope: AccountScope, token = owner) {
-  const result = await call('POST', `/account/routing/${scopePath(scope)}/preference`, token, { scope, baseRevision: 0,
-    profile: 'strict', restrictions: STRICT_RESTRICTIONS, exceptions: [], consentVersion: 'NC-SETUP-2026-09-27.1', acknowledge: true });
+async function preference(scope: AccountScope, token = owner, profile: RoutingPreference['profile'] = 'strict', baseRevision = 0) {
+  const result = await call('POST', `/account/routing/${scopePath(scope)}/preference`, token, { scope, baseRevision,
+    profile, restrictions: PROFILE_FLOORS[profile], exceptions: [], consentVersion: ROUTING_CONSENT_VERSION, acknowledge: true });
   expect(result.status, JSON.stringify(result.body)).toBe(200);
 }
 function tier(primary = 'primary', fallback = false) { return { primary, backups: fallback ? ['backup'] : [], fallbackEnabled: fallback,
@@ -622,5 +625,53 @@ describe('Operations publication through authenticated funded dispatch', () => {
       if (path.dirname(path.resolve(directory)) !== path.resolve(tmpdir()) || !path.basename(directory).startsWith('nectovia-routing-')) throw new Error('Unexpected temporary directory.');
       await rm(directory, { recursive: true, force: true });
     }
+  });
+});
+
+describe('profile floors under NC-SETUP-2026-10-02.1', () => {
+  const org = () => ({ kind: 'organization' as const, id: orgA });
+  const write = (change: Record<string, unknown> = {}) => call('POST', `/account/routing/organization/${orgA}/preference`, owner, { scope: org(),
+    baseRevision: 1, profile: 'balanced', restrictions: PROFILE_FLOORS.balanced, exceptions: [], consentVersion: ROUTING_CONSENT_VERSION,
+    acknowledge: true, ...change });
+  const cheaperOutput = (b: ModelBinding) => { b.price.outputMicroUsdPerMillion = 100_000; b.price.reasoningMicroUsdPerMillion = 100_000; };
+
+  it('refuses limits weaker than the chosen profile and the retired consent version, and stamps acceptance on the server', async () => {
+    expect((await write({ restrictions: { ...PROFILE_FLOORS.balanced, noTraining: false } })).status).toBe(422);
+    expect((await write({ profile: 'strict' })).status).toBe(422);
+    expect((await write({ consentVersion: LEGACY_ROUTING_CONSENT })).status).toBe(422);
+    expect((await write({ acceptedAt: '2020-01-01T00:00:00.000Z' })).status).toBe(422);
+    clock += 5_000;
+    const saved = await write();
+    expect(saved.status, JSON.stringify(saved.body)).toBe(200);
+    expect(saved.body).toMatchObject({ profile: 'balanced', revision: 2, consentVersion: ROUTING_CONSENT_VERSION,
+      acceptedAt: new Date(clock).toISOString(), exceptions: [] });
+  });
+  it('serves Balanced from a global zero-retention route that Strict refuses as unpinned', async () => {
+    expect((await publish()).status).toBe(201);
+    await editRoute('primary', b => { b.privacy!.decryptionCountries = [UNPINNED_REGION]; b.privacy!.processingCountries = [UNPINNED_REGION]; });
+    const strict = (await call('GET', `/account/routing/organization/${orgA}/policy`, owner)).body;
+    expect(strict.tiers.efficient).toBeNull();
+    expect(strict.exclusions.efficient[0].reasons.map((r: { code: string }) => r.code)).toContain('geography_unpinned');
+    await preference(org(), owner, 'balanced', 1);
+    await completed(await request());
+    expect(sends.map(s => s.body.model)).toEqual(['primary']);
+  });
+  it('lets Lowest cost serve a cheaper backup ahead of an eligible primary and records why', async () => {
+    expect((await publish('primary', true)).status).toBe(201);
+    await editRoute('backup', cheaperOutput);
+    await preference(org(), owner, 'lowest-cost', 1);
+    const result = await completed(await request());
+    expect(sends.map(s => s.body.model)).toEqual(['backup']);
+    expect(result.response.headers.get('x-nectovia-route')).toBe('backup');
+    expect(result.response.headers.get('x-nectovia-fallback-reason')).toBe('ranked_by_profile');
+  });
+  it('publishes an account override whose eligible primary a cheaper backup outranks', async () => {
+    await editRoute('primary', b => { b.price.requestFeeMicroUsd = 50; });
+    await preference(org(), owner, 'lowest-cost', 1);
+    const single = { ...tier('primary', true), maxAttempts: 1 };
+    const result = await call('POST', '/ops/routing/scopes/publish', routing, { scope: org(), baseRevision: 0, baseGlobalRevision: 1,
+      routing: { efficient: single, focused: single, thorough: single }, note: 'Synthetic override' });
+    expect(result.status, JSON.stringify(result.body)).toBe(201);
+    expect(result.body.preview.affected[0].tiers.efficient.eligible).toEqual(['backup', 'primary']);
   });
 });

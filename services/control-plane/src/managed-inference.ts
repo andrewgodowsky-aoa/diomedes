@@ -61,7 +61,7 @@ import {
 import { digest, readBytes } from './crypto.js';
 import { accountId, type AccountMembershipSnapshot } from './domain.js';
 import { AccountError } from './errors.js';
-import { PRIVATE_RESTRICTIONS, hardRestrictionsSchema, resolveRoutingCandidates, mayFailOver, routingScopeKey,
+import { DEFAULT_MANDATORY_RESTRICTIONS, hardRestrictionsSchema, resolveRoutingCandidates, mayFailOver, routingScopeKey,
   type AccountScope, type RequestEnvelope, type FailureKind, type RoutingReceipt } from '../../../shared/routing-policy.js';
 import { approvedConnections, callManagedProvider, connectionCredential, providerBody, prepareManagedProvider, nativeRouteId, supportsReasoningSummaries } from './managed-bindings.js';
 import { BindingError, canonicalJson, sseObjects } from './managed-normalization.js';
@@ -856,7 +856,7 @@ export class ManagedInferenceService {
     const referencePrice = initial.routes.find(r => r.id === policy.primary)?.binding?.price ?? null;
     const resolve = (state: typeof initial, requestEnvelope = envelope, sourceRestrictions = state.restrictions) => resolveRoutingCandidates({ routes: state.routes,
       connections: approvedConnections(env).filter(c => connectionCredential(c, env)), policy, preference: state.preference!,
-      mandatory: state.global?.mandatory ?? PRIVATE_RESTRICTIONS, sourceRestrictions,
+      mandatory: state.global?.mandatory ?? DEFAULT_MANDATORY_RESTRICTIONS, sourceRestrictions,
       tier: h.tier, envelope: requestEnvelope, referencePrice, now: this.now() });
     // The advertised model is the authenticated snapshot's selection. The real request may
     // exclude it (context or sources); only an explicitly enabled backup may then serve it.
@@ -865,7 +865,9 @@ export class ManagedInferenceService {
     const selection = resolve(initial);
     const first = selection.candidates[0];
     if (!first) throw new ManagedError(409, 'no_compliant_route', selection.excluded.flatMap(x => x.reasons.map(r => r.message)).slice(0, 4).join(' ') || 'No configured route fits this request and its spending limits.');
-    if (first.route.id !== policy.primary) fallbackReason = selection.excluded.find(e => e.routeId === policy.primary)?.reasons[0]?.code ?? 'primary_unavailable';
+    // An eligible primary that the account's profile ranked lower is a choice, not an outage.
+    if (first.route.id !== policy.primary) fallbackReason = selection.ranked.some(c => c.route.id === policy.primary) ? 'ranked_by_profile'
+      : selection.excluded.find(e => e.routeId === policy.primary)?.reasons[0]?.code ?? 'primary_unavailable';
     const refs: AttemptRef[] = [];
     try {
       for (let index = 0; index < selection.candidates.length; index++) {
@@ -874,7 +876,7 @@ export class ManagedInferenceService {
         const current = await readCurrent();
         if (current.globalRevision !== initial.globalRevision || current.scopeRevision !== initial.scopeRevision || current.preference?.revision !== preferenceRevision) throw changed();
         const candidate = selection.candidates[index];
-        const fresh = resolve(current).candidates.find(c => c.route.id === candidate.route.id);
+        const fresh = resolve(current).ranked.find(c => c.route.id === candidate.route.id);
         if (!fresh || fresh.route.revision !== candidate.route.revision) throw changed();
         const { route, connection } = fresh;
         const binding = route.binding!;
@@ -897,7 +899,7 @@ export class ManagedInferenceService {
           const encoded = providerBody(route, connection, prepared.body);
           actualEnvelope = { ...envelope, inputTokens: Math.max(envelope.inputTokens,
             inputTokenBound(new TextEncoder().encode(encoded).byteLength, body.input.length)) };
-          const eligible = resolve(current, actualEnvelope).candidates.find(c => c.route.id === route.id);
+          const eligible = resolve(current, actualEnvelope).ranked.find(c => c.route.id === route.id);
           if (!eligible) throw new ManagedError(409, previous ? 'routing_changed_after_attempt' : 'no_compliant_route',
             'The provider request format exceeds this route capability or approved cost envelope. Choose a smaller request.');
           priced = eligible;
@@ -925,7 +927,7 @@ export class ManagedInferenceService {
             await this.admitted(h);
             const latest = await readCurrent();
             if (latest.globalRevision !== initial.globalRevision || latest.scopeRevision !== initial.scopeRevision || latest.preference?.revision !== preferenceRevision) throw changed();
-            const allowed = resolve(latest, actualEnvelope).candidates.find(c => c.route.id === route.id);
+            const allowed = resolve(latest, actualEnvelope).ranked.find(c => c.route.id === route.id);
             if (!allowed || allowed.route.revision !== route.revision || allowed.connection.revision !== connection.revision ||
                 allowed.estimateMicroUsd !== priced.estimateMicroUsd || connectionCredential(allowed.connection, env) !== credential) throw changed();
           });

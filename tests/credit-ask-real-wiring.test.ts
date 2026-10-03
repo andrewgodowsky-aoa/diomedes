@@ -21,7 +21,7 @@ import type { AccountBackend } from '../server/accounts/backend';
 import { digest } from '../server/harness/policy.js';
 import { turnRunId } from '../server/harness/model-session-run.js';
 import { MEMBER_LIMIT_REACHED } from '../shared/credit-allotments';
-import { STRICT_RESTRICTIONS, type ModelBinding, type ProviderConnection } from '../shared/routing-policy';
+import { ROUTING_CONSENT_VERSION, STRICT_RESTRICTIONS, type ModelBinding, type ProviderConnection } from '../shared/routing-policy';
 import type { AccountStateView } from '../shared/accounts';
 import { createFauxCloud, FAUX_BACKEND_LABEL, type FauxCloud } from '../services/control-plane/src/faux/cloud';
 import { DEMO_ACCOUNTS, FAUX_DEMO_PASSWORD, seedDemo } from '../services/control-plane/src/faux/seed';
@@ -106,7 +106,7 @@ beforeEach(async () => {
     label: id, region: 'US', processing: 'Synthetic only', status: 'qualified', evidence: 'Synthetic only', binding: { ...binding, deployment: id } });
   const client = new ControlPlaneClient(ACCOUNT_SERVICE, (req) => cloud.handle(req));
   await client.acceptRoutingPreference(tokens.owner, { scope: { kind: 'organization', id: org }, baseRevision: 0, profile: 'strict', restrictions: STRICT_RESTRICTIONS,
-    consentVersion: 'NC-SETUP-2026-09-27.1', exceptions: [], acknowledge: true });
+    consentVersion: ROUTING_CONSENT_VERSION, exceptions: [], acknowledge: true });
   const tier = { primary: 'primary', backups: ['backup'], fallbackEnabled: true, maxAttempts: 2, cost: { sameOrLower: true, qualityFloor: 1, maxAttemptMicroUsd: null } };
   await cloudApi('POST', '/ops/routing/scopes/publish', staff, { scope: { kind: 'global' }, baseRevision: 1, baseGlobalRevision: 1,
     routing: { efficient: tier, focused: tier, thorough: tier }, note: 'Synthetic wiring test' });

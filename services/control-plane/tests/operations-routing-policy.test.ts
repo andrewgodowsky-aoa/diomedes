@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
-  PRIVATE_RESTRICTIONS, STRICT_RESTRICTIONS, bindingProblems, estimateRouteCost, mayFailOver,
-  providerConnectionSchema, resolveRoutingCandidates, routeEligibility, routingPreferenceSchema,
-  routingScopeKey, tierRoutingSchema, type CatalogRoute, type ModelBinding, type ProviderConnection,
+  DEFAULT_MANDATORY_RESTRICTIONS, LEGACY_ROUTING_CONSENT, PRIVATE_RESTRICTIONS, PROFILE_FLOORS, ROUTING_CONSENT_VERSION,
+  STRICT_RESTRICTIONS, UNPINNED_REGION, bindingProblems, estimateRouteCost, mayFailOver,
+  providerConnectionSchema, resolveRoutingCandidates, restrictionsCover, routeEligibility, routingPreferenceSchema,
+  routingPreferenceWriteSchema, routingScopeKey, tierRoutingSchema, type CatalogRoute, type ModelBinding, type ProviderConnection,
   type RequestEnvelope, type RoutingPreference, type TierRouting,
 } from '../../../shared/routing-policy.js';
 
@@ -37,7 +38,7 @@ function route(id = 'primary'): CatalogRoute {
 }
 const preference: RoutingPreference = {
   v: 1, scope: { kind: 'organization', id: 'org-a' }, revision: 1, profile: 'strict', restrictions: { ...PRIVATE_RESTRICTIONS },
-  consentVersion: 'NC-SETUP-2026-09-27.1', acceptedBy: 'owner-a', acceptedAt: observed, exceptions: [],
+  consentVersion: LEGACY_ROUTING_CONSENT, acceptedBy: 'owner-a', acceptedAt: observed, exceptions: [],
 };
 const envelope: RequestEnvelope = { inputTokens: 1000, outputTokens: 100, tools: true, images: false, reasoning: true, nativeRouteId: null };
 const policy: TierRouting = { primary: 'primary', backups: ['backup'], fallbackEnabled: true, maxAttempts: 2,
@@ -169,5 +170,115 @@ describe('approved connection boundary', () => {
       payer: 'company', account: 'fixture', enabled: true, ingress: 'us', regionalEntitlement: true, allowedEndpoints: ['example/us-east'], endpointNames: { 'example/us-east': 'Example' } };
     const r = route(); r.provider = 'openrouter'; r.binding = { ...r.binding!, connectionId: 'or', protocol: 'chat-completions', upstreamEndpoint: 'example' };
     expect(bindingProblems(r, c).map(x => x.code)).toEqual(['binding_invalid']);
+  });
+});
+
+describe('profile floors under NC-SETUP-2026-10-02.1', () => {
+  const current = (profile: RoutingPreference['profile']): RoutingPreference =>
+    ({ ...preference, profile, restrictions: { ...PROFILE_FLOORS[profile] }, consentVersion: ROUTING_CONSENT_VERSION });
+  const evaluate = (r: CatalogRoute, p: RoutingPreference, c: ProviderConnection = connection) => routeEligibility({ route: r, connection: c,
+    preference: p, mandatory: DEFAULT_MANDATORY_RESTRICTIONS, sourceRestrictions: [], tier: 'efficient', envelope, qualityFloor: 0.8, now });
+  const codes = (reasons: { code: string }[]) => [...new Set(reasons.map(x => x.code))];
+  const rank = (routes: CatalogRoute[], p: RoutingPreference, change: Partial<TierRouting> = {}, connections: ProviderConnection[] = [connection]) =>
+    resolveRoutingCandidates({ routes, connections, policy: { ...policy, ...change }, preference: p,
+      mandatory: DEFAULT_MANDATORY_RESTRICTIONS, sourceRestrictions: [], tier: 'efficient', envelope, now });
+  const unpinned = (r: CatalogRoute) => {
+    r.binding!.privacy!.decryptionCountries = [UNPINNED_REGION]; r.binding!.privacy!.processingCountries = [UNPINNED_REGION]; return r;
+  };
+  const retaining = (r: CatalogRoute) => { r.binding!.privacy!.zeroRetention = false; r.binding!.privacy!.retentionPolicy = 'fixture-30-day'; return r; };
+  const cheaper = (r: CatalogRoute) => { r.binding!.price.outputMicroUsdPerMillion = 100_000; r.binding!.price.reasoningMicroUsdPerMillion = 100_000; return r; };
+  const openRouter: ProviderConnection = { id: 'openrouter-company', revision: 1, label: 'Synthetic OpenRouter', provider: 'openrouter',
+    secretRef: 'OPENROUTER_API_KEY', payer: 'company', account: 'fixture-account', enabled: true, ingress: 'global', regionalEntitlement: false,
+    allowedEndpoints: ['fixture/us'], endpointNames: { 'fixture/us': 'Fixture' } };
+  const openRouterRoute = (id: string) => {
+    const r = route(id), b = r.binding!;
+    r.provider = 'openrouter'; r.model = 'fixture/model-a';
+    b.connectionId = openRouter.id; b.protocol = 'chat-completions'; b.upstreamEndpoint = 'fixture/us'; delete b.reasoning;
+    b.privacy!.protocol = 'chat-completions';
+    return r;
+  };
+
+  it('refuses an unpinned region under Strict with its own reason', () => {
+    expect(codes(evaluate(unpinned(route()), current('strict')))).toEqual(['geography_unpinned']);
+  });
+  it('serves global zero-retention and retaining no-training routes under Balanced and Lowest cost without an exception', () => {
+    for (const profile of ['balanced', 'lowest-cost'] as const) {
+      expect(evaluate(unpinned(route()), current(profile))).toEqual([]);
+      expect(evaluate(retaining(route()), current(profile))).toEqual([]);
+    }
+  });
+  it('keeps no training as the floor of every profile', () => {
+    for (const profile of ['lowest-cost', 'balanced', 'strict'] as const) {
+      const r = route(); r.binding!.privacy!.training = true;
+      expect(codes(evaluate(r, current(profile)))).toContain('training_forbidden');
+    }
+  });
+  it('allows an evidenced transient provider cache outside Strict only', () => {
+    const cached = (evidence: string | null) => {
+      const r = route(); r.binding!.privacy!.caching = 'transient'; r.binding!.privacy!.transientCacheEvidence = evidence; return r;
+    };
+    expect(evaluate(cached('Synthetic cache terms'), current('balanced'))).toEqual([]);
+    expect(evaluate(cached('Synthetic cache terms'), current('lowest-cost'))).toEqual([]);
+    expect(codes(evaluate(cached('Synthetic cache terms'), current('strict')))).toEqual(['cache_forbidden']);
+    expect(codes(evaluate(cached(null), current('balanced')))).toEqual(['cache_forbidden']);
+  });
+  it('keeps the old Balanced exception rule for a preference accepted under 09-27.1', () => {
+    const r = route(); r.binding!.privacy!.processingCountries = ['CA'];
+    expect(codes(evaluate(r, { ...current('balanced'), consentVersion: LEGACY_ROUTING_CONSENT }))).toEqual(['balanced_consent_required']);
+    expect(evaluate(r, current('balanced'))).toEqual([]);
+  });
+  it('ranks verified zero retention first and pinned US second under Balanced, in staff order within a rank', () => {
+    const routes = [retaining(route('primary')), unpinned(route('backup')), route('third'), route('fourth')];
+    const result = rank(routes, current('balanced'), { backups: ['backup', 'third', 'fourth'], maxAttempts: 4 });
+    expect(result.candidates.map(x => x.route.id)).toEqual(['third', 'fourth', 'backup', 'primary']);
+    expect(rank(routes, current('strict'), { backups: ['backup', 'third', 'fourth'], maxAttempts: 4 }).candidates.map(x => x.route.id)).toEqual(['third', 'fourth']);
+  });
+  it('does not count an OpenRouter route as US without entitled US ingress', () => {
+    const routes = [openRouterRoute('primary'), route('backup')];
+    expect(rank(routes, current('balanced'), {}, [connection, openRouter]).candidates.map(x => x.route.id)).toEqual(['backup', 'primary']);
+    const entitled: ProviderConnection = { ...openRouter, ingress: 'us', regionalEntitlement: true };
+    routes[0].binding!.privacy!.regionalEntitlement = true;
+    expect(rank(routes, current('balanced'), {}, [connection, entitled]).candidates.map(x => x.route.id)).toEqual(['primary', 'backup']);
+  });
+  it('does not treat AWS zero retention as verified without its retention mode evidence when ranking', () => {
+    const unproven = route('primary');
+    unproven.binding!.privacy!.allowedRetentionModes = ['default']; unproven.binding!.privacy!.effectiveRetentionMode = 'default';
+    expect(rank([unproven, route('backup')], current('balanced')).candidates.map(x => x.route.id)).toEqual(['backup', 'primary']);
+  });
+  it('ranks every eligible route by price under Lowest cost, the primary included, and keeps the uncapped order', () => {
+    const result = rank([route('primary'), cheaper(route('backup'))], current('lowest-cost'), { maxAttempts: 1 });
+    expect(result.candidates.map(x => x.route.id)).toEqual(['backup']);
+    expect(result.ranked.map(x => x.route.id)).toEqual(['backup', 'primary']);
+    expect(rank([route('primary'), cheaper(route('backup'))], current('strict'), { maxAttempts: 1 }).candidates.map(x => x.route.id)).toEqual(['primary']);
+  });
+  it('breaks a Lowest cost price tie by privacy, then by published order', () => {
+    expect(rank([retaining(route('primary')), route('backup')], current('lowest-cost')).candidates.map(x => x.route.id)).toEqual(['backup', 'primary']);
+    expect(rank([route('primary'), route('backup')], current('lowest-cost')).candidates.map(x => x.route.id)).toEqual(['primary', 'backup']);
+  });
+  it('still holds Lowest cost at or below the primary reference price', () => {
+    const pricier = route('backup');
+    pricier.binding!.price.outputMicroUsdPerMillion = 400_000; pricier.binding!.price.reasoningMicroUsdPerMillion = 400_000;
+    const result = rank([route('primary'), pricier], current('lowest-cost'));
+    expect(result.ranked.map(x => x.route.id)).toEqual(['primary']);
+    expect(result.excluded[0].reasons.map(x => x.code)).toContain('reference_price_limit');
+  });
+  it('measures privacy limits against a profile floor', () => {
+    expect(restrictionsCover(STRICT_RESTRICTIONS, PROFILE_FLOORS.balanced)).toBe(true);
+    expect(restrictionsCover(PROFILE_FLOORS.balanced, STRICT_RESTRICTIONS)).toBe(false);
+    expect(restrictionsCover({ ...STRICT_RESTRICTIONS, processingCountries: null }, STRICT_RESTRICTIONS)).toBe(false);
+    expect(restrictionsCover({ ...STRICT_RESTRICTIONS, transientCache: 'approved' }, STRICT_RESTRICTIONS)).toBe(false);
+    expect(restrictionsCover({ ...PROFILE_FLOORS.balanced, noTraining: false }, PROFILE_FLOORS.balanced)).toBe(false);
+    expect(restrictionsCover({ ...STRICT_RESTRICTIONS, allowedConnections: [connection.id] }, STRICT_RESTRICTIONS)).toBe(true);
+  });
+  it('accepts writes only under the current consent version and without exceptions, while 09-27.1 rows still parse', () => {
+    const write = { scope: preference.scope, baseRevision: 0, profile: 'balanced', restrictions: PROFILE_FLOORS.balanced,
+      exceptions: [], consentVersion: ROUTING_CONSENT_VERSION, acknowledge: true };
+    expect(routingPreferenceWriteSchema.safeParse(write).success).toBe(true);
+    expect(routingPreferenceWriteSchema.safeParse({ ...write, consentVersion: LEGACY_ROUTING_CONSENT }).success).toBe(false);
+    expect(routingPreferenceWriteSchema.safeParse({ ...write, exceptions: [{ connectionId: connection.id, model: 'us.test.model',
+      ingressCountries: ['US'], processingCountries: ['CA'], retentionPolicy: 'fixture-zdr', acceptedAt: observed, savings: null,
+      qualificationId: 'fixture-q1' }] }).success).toBe(false);
+    expect(routingPreferenceSchema.safeParse(preference).success).toBe(true);
+    expect(routingPreferenceSchema.safeParse(current('balanced')).success).toBe(true);
   });
 });
