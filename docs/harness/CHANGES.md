@@ -1,5 +1,17 @@
 # Harness host integration changes, 2026-09-09
 
+## Type and spacing keep one size at every window width, 2026-10-03
+
+The Nectovia home greeting no longer grows with the window. It reads a new fixed token,
+`--dm-type-display` (3rem), where it had `clamp(2.125rem, 1rem + 2.6vw, 3.5rem)`, so a bigger
+window adds margin and never a bigger line. `tests/viewport-units.test.ts` fails on any new
+viewport or container unit in a font, padding, margin or gap, or in a type, line or measure
+token. Five older padding rules stay on its list with their reasons, and the list can only
+shrink. `tests/readability.spec.ts` expects every type role to measure the same at 1280, 1920
+and 2560, and the work column to hold at 920 at 1920 and 2560. This is Phase 1 of
+`docs/superpowers/specs/2026-10-03-wide-windows-and-multitask-mode-design.md`, which the round 2
+reskin is built against.
+
 ## Worker rows read on a timer, 2026-10-03
 
 Worker rows no longer hold an event stream of their own. They're read when shown and again every

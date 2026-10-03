@@ -51,9 +51,13 @@ These rules bind the reskin build. A reskin change that breaks one is not done.
   `--dm-type-conversation`. A board's 16px control label becomes `--dm-type-ui`. Control heights
   follow today's controls.
 - No font size, padding, margin or gap in the reskin may use `vw`, `vh`, `vmin`, `vmax` or a
-  `clamp()` with a viewport term. The one rule doing this today,
-  `client/console/nectovia.css:760` (`clamp(2.125rem, 1rem + 2.6vw, 3.5rem)`), becomes a fixed
-  size from the token scale.
+  `clamp()` with a viewport term. The home greeting did,
+  `client/console/nectovia.css:760` (`clamp(2.125rem, 1rem + 2.6vw, 3.5rem)`). It now reads a
+  new token, `--dm-type-display` (3rem, about what the greeting measured in a 1230px window).
+- Five older rules use a viewport unit in padding and stay, each listed with its reason in
+  `tests/viewport-units.test.ts`: the two title bar paddings, the room kept for the artifact
+  panel (Phase 2 replaces it), the position of the Ctrl+K palette, and the full-window loading,
+  error and sign-in screens (`.initial-state`). The list can only shrink. Anything new fails.
 - Interface size (Ctrl plus and minus, `--dm-ui-scale` on `html`) stays the only zoom, and only
   the person sets it.
 
@@ -81,7 +85,9 @@ These rules bind the reskin build. A reskin change that breaks one is not done.
 ### Phase 1 tests
 
 - Extend `tests/readability.spec.ts`: at viewport widths 1280, 1920 and 2560, conversation text,
-  body text and the work column measure the same.
+  input text, body text (the composer's mode buttons) and the interface role measure the same.
+  The work column is 920 at 1920 and 2560. At 1280 it is what fits today (648px on the test
+  project) and never wider than 920.
 - A unit test fails if any reskin stylesheet sets a font size, padding, margin or gap with a
   viewport unit. The one exception is the title bar padding that reads `env(titlebar-area-x)`
   and `env(titlebar-area-width)` (`client/console/console.css:173` and `client/styles.css:661`
