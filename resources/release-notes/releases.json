@@ -9,7 +9,7 @@
         "windows",
         "macos"
       ],
-      "headline": "A free version beside paid plans, a Usage section with member credit limits, paid Automations, a repaired Windows sign-in and routing profiles that keep to the limits you accept.",
+      "headline": "A free version beside paid plans, a Team of your own AI tools on the Board, a Usage section with member credit limits, paid Automations, a repaired Windows sign-in and routing profiles that keep to the limits you accept.",
       "sections": [
         {
           "title": "New",
@@ -23,6 +23,10 @@
             "When a business's paid access ends, the next Nectovia Agent message is refused with the reason, the default conversation goes back to your own AI tool, and the free version notice returns. When access is granted again, the next message picks it up with no restart.",
             "Personal Agent access and managed usage funding are checked separately. An Individual plan covers Personal work and includes monthly credits, and Settings > Account shows them with the exact time the period ends.",
             "A Board task has a Task permission panel: stop at each phase change or approve the whole task, cap its action turns and pick an optional playbook. Tasks the Nectovia Agent proposes wait in Inbox, and Start on a Board task can run on the Nectovia Agent.",
+            "On the Agent page, a project's conversation in Automatic mode can now start work on the Nectovia Agent with no Start click. A request like Fix the price list becomes a Board task set to approve the whole task, with up to 12 action turns. Finished work waits in Review.",
+            "Your Team, the AI tools you add in the Team view, can now take Board cards. Assign gives an Inbox, Ready or Blocked card to a member. A card a member makes waits in Inbox and runs on that member's Codex or Claude Code when you start it. Only you move its phase, reassign it or remove it. Teams are part of the free version.",
+            "Hand off passes what came of one card to the next member's card, with up to eight changed files, checks and open issues. Starting that card sends those files. The Team view lists what's running and who pays for it.",
+            "ChatGPT is now called Codex, after the coding tool it runs through. You still sign in with your ChatGPT account.",
             "Settings > Account > AI routing and privacy offers two profiles, with Balanced selected for a new account. Neither uses your content for training, and requests can run outside the US. Balanced prefers providers that don't store your content, then US processing, and Lowest cost uses the least expensive AI that can do the job. Strict keeps requests in the US with no provider storage, and it's available on request at hello@diomedes.net. An account that already chose Strict keeps it. Saving names what a looser choice gives up, and a choice saved under the earlier rules asks to be saved again."
           ]
         },
@@ -61,11 +65,12 @@
             "When an Individual plan ends, Personal Agent work is refused, but the default conversation doesn't move back to your own AI tool the way a business's does.",
             "The new account routing has not yet completed a real signed-in, paid-provider acceptance run. Automated routing tests use synthetic model responses. A route without current qualification or required privacy consent stays unavailable.",
             "Apart from a few conversation turns on one outside engine and a connection check on the company's AI account, nothing in this version was tried against a real provider.",
-            "Board work on the Nectovia Agent was tested with stand-in model responses only, and helpers and teams don't run on it.",
+            "Board work on the Nectovia Agent, including work a request starts in Automatic mode, was tested with stand-in model responses only. Helpers and teams don't run on it.",
+            "Team cards and hand-offs were tested with stand-in tools only.",
             "The phone apps can't reach this computer through the relay yet; this version only connects the computer and lists it as online. The relay was tested against a stand-in and hasn't yet run on the live account service.",
             "An update that installs this version over an earlier one, including the change from Diomedes.exe to nectovia.exe, hasn't been run on an installed copy.",
             "Automations run the weekly brief alone, and only while this computer is on. They tell you inside the app and send nothing by push, email or phone.",
-            "Resume, Retry, Fork and Steer work on ChatGPT (Codex) runs only.",
+            "Resume, Retry, Fork and Steer work on Codex runs only.",
             "Run checks run only the checks a task declares, and never run your project's own code. Nothing checks a run automatically when it finishes.",
             "Files has no PDF viewer. Pictures and PDFs cannot be sent to an AI, and a binary file cannot be put back from an earlier version.",
             "Trigger rules don't watch conversations, Ask or Plan. Tool rules don't reach Codex, Claude Code, OpenCode or other outside tools, which run their own tools, and on every outside tool except Codex a text rule reads the text after secrets are removed, so a rule looking for a secret may not fire there. A correction asked of a tool other than Codex was not tested, and a rule that asks a work loop run to correct still can't reach it: the correction is recorded and shown as not sent.",

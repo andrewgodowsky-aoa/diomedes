@@ -1,7 +1,7 @@
 WHAT IS NEW
-  A free version beside paid plans, a Usage section with member credit limits,
-  paid Automations, a repaired Windows sign-in and routing profiles that keep
-  to the limits you accept.
+  A free version beside paid plans, a Team of your own AI tools on the Board,
+  a Usage section with member credit limits, paid Automations, a repaired
+  Windows sign-in and routing profiles that keep to the limits you accept.
 
   Nectovia has a free version. Without a paid plan you keep your projects,
   files and workspace, the task board, conversations and work on your own AI
@@ -45,6 +45,24 @@ WHAT IS NEW
   approve the whole task, cap its action turns and pick an optional playbook.
   Tasks the Nectovia Agent proposes wait in Inbox, and Start on a Board task
   can run on the Nectovia Agent.
+
+  On the Agent page, a project's conversation in Automatic mode can now start
+  work on the Nectovia Agent with no Start click. A request like Fix the price
+  list becomes a Board task set to approve the whole task, with up to 12
+  action turns. Finished work waits in Review.
+
+  Your Team, the AI tools you add in the Team view, can now take Board cards.
+  Assign gives an Inbox, Ready or Blocked card to a member. A card a member
+  makes waits in Inbox and runs on that member's Codex or Claude Code when you
+  start it. Only you move its phase, reassign it or remove it. Teams are part
+  of the free version.
+
+  Hand off passes what came of one card to the next member's card, with up to
+  eight changed files, checks and open issues. Starting that card sends those
+  files. The Team view lists what's running and who pays for it.
+
+  ChatGPT is now called Codex, after the coding tool it runs through. You
+  still sign in with your ChatGPT account.
 
   Settings > Account > AI routing and privacy offers two profiles, with
   Balanced selected for a new account. Neither uses your content for training,
@@ -162,8 +180,11 @@ LIMITS
   check on the company's AI account, nothing in this version was tried against
   a real provider.
 
-  Board work on the Nectovia Agent was tested with stand-in model responses
-  only, and helpers and teams don't run on it.
+  Board work on the Nectovia Agent, including work a request starts in
+  Automatic mode, was tested with stand-in model responses only. Helpers and
+  teams don't run on it.
+
+  Team cards and hand-offs were tested with stand-in tools only.
 
   The phone apps can't reach this computer through the relay yet; this version
   only connects the computer and lists it as online. The relay was tested
@@ -176,7 +197,7 @@ LIMITS
   Automations run the weekly brief alone, and only while this computer is on.
   They tell you inside the app and send nothing by push, email or phone.
 
-  Resume, Retry, Fork and Steer work on ChatGPT (Codex) runs only.
+  Resume, Retry, Fork and Steer work on Codex runs only.
 
   Run checks run only the checks a task declares, and never run your project's
   own code. Nothing checks a run automatically when it finishes.

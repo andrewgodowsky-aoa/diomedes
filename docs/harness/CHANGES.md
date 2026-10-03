@@ -1,5 +1,22 @@
 # Harness host integration changes, 2026-09-09
 
+## Worker rows read on a timer, 2026-10-03
+
+Worker rows no longer hold an event stream of their own. They're read when shown and again every
+three seconds while they are (`client/work-rows.ts`). The page already keeps its event streams open,
+and a browser keeps at most six connections to one host, so with two windows on the Agent page the
+extra stream left no connection for an ordinary request and the second window waited forever
+(`tests/diomedes-home.spec.ts`, CD05-R-10). The server's `/api/events?topics=work-rows` is unchanged.
+
+## Automatic work only where the work loop runs, 2026-10-03
+
+An explicit request in Automatic mode becomes automatic work only when its conversation's work
+route can run the work loop: a model API route, Nectovia's included. On Codex, Claude Code and the
+other outside tools the request stays the proposal the person starts, as every proposal did before
+automatic work. Without this, a free conversation on an outside tool made a Board task it couldn't
+start and answered "Nothing was started". `tests/interaction-seam.test.ts` holds it. The shipped
+product knowledge names the route Codex too.
+
 ## The Codex route is named Codex, 2026-10-03
 
 The codex route is named Codex everywhere a person sees it: the model picker, Settings, run

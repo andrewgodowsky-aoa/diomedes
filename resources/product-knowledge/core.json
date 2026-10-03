@@ -118,7 +118,7 @@
     {
       "id": "route-codex-session",
       "scopes": ["route:codex-session"],
-      "text": "The ChatGPT conversation route keeps one Codex thread per conversation on Diomedes' own Codex runtime. Each conversation has its own app-server process, which ends after five idle minutes, and the next message resumes the saved thread. A message sent while ChatGPT answers is queued as the next turn, Stop interrupts with a bounded wait, fork copies the thread, and a turn carries only read-only tools.",
+      "text": "The Codex conversation route keeps one Codex thread per conversation on Diomedes' own Codex runtime. Each conversation has its own app-server process, which ends after five idle minutes, and the next message resumes the saved thread. A message sent while Codex answers is queued as the next turn, Stop interrupts with a bounded wait, fork copies the thread, and a turn carries only read-only tools.",
       "sources": ["server/harness/route-contract.ts", "server/engines/codex-session.ts"]
     },
     {
