@@ -140,7 +140,7 @@ describe('independent real signature and current provider checks', () => {
     expect(fixture.calls.filter(call => call.url.includes('/sso/jwks/'))).toHaveLength(1);
     expect(fixture.calls.filter(call => call.url.includes('/sessions?'))).toHaveLength(2);
     for (const call of fixture.calls) {
-      expect(call.init?.redirect).toBe('error');
+      expect(call.init?.redirect).toBe('manual');
       expect(call.init?.signal).toBeInstanceOf(AbortSignal);
       const headers = new Headers(call.init?.headers);
       expect(headers.has('Authorization')).toBe(!call.url.includes('/sso/jwks/'));

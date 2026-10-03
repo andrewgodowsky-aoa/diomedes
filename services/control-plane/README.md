@@ -560,10 +560,12 @@ the same.
 
 `npm run test:runtime` requires CP_EVIDENCE_DIRECTORY and uses local workerd.
 It tests the production entry's refusal paths plus real RS256 verification with
-offline provider HTTP. It saves a V8 CPU profile and wall timings. Local sampled
-V8 time does not certify native crypto CPU, hosted quota enforcement or the
-Workers Free 10 ms per-request budget. Real hosted capacity remains a separate
-gate, with no automatic paid upgrade.
+offline provider HTTP. It also runs the verifier with its default fetch in
+workerd, answers the provider calls from fixtures at the runtime boundary, and
+checks that a redirect is refused. It saves a V8 CPU profile and wall timings.
+Local sampled V8 time does not certify native crypto CPU, hosted quota
+enforcement or the Workers Free 10 ms per-request budget. Real hosted capacity
+remains a separate gate, with no automatic paid upgrade.
 
 The parent owns root Wrangler/workflow changes, the desktop foundation extraction,
 independent review, live database qualification and publication. No deploy,
