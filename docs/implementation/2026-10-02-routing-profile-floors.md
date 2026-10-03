@@ -105,6 +105,10 @@ because `STRICT_RESTRICTIONS` spreads it.
   was not edited.
 - **Untested recheck.** No dispatch test forces the encoded-envelope reorder. It depends on exact
   provider-body byte counts. The pure tests cover the uncapped `ranked` order.
+- **Operations tests.** The diomedes-ops routing journey (`tests/routing.test.mjs`) posted its
+  stand-in customer preference under 09-27.1, so it fails against this change. Its companion is
+  diomedes-ops `feature/routing-consent-version` (a798ae2). It reads the version from the
+  app checkout, so the two can merge in either order. The Ops app itself only reads preferences.
 
 ## Gates (2026-10-02, under the heavy slot, from main d91a94f plus this change)
 
@@ -123,3 +127,7 @@ because `STRICT_RESTRICTIONS` spreads it.
 - Follow-up (receipt wording, journey relaxation step, plainer unpinned message), same night:
   root tsc passed; the two routing test files passed (79); `npx vite build` passed; the same four
   Playwright specs passed (36).
+- Operations, 2026-10-03 (diomedes-ops e4fa258 plus a798ae2, `NECTOVIA_APP_REPO` set):
+  `npm run check` passed; `vitest run` passed 30 of 30 against main d91a94f and against this branch.
+  The run against this branch also reported an expected 403 as an unhandled rejection and exited 1.
+  That is a race in the Support journey, and diomedes-ops PR #8 already fixes it.
