@@ -1,36 +1,190 @@
 WHAT IS NEW
-  A release candidate with account security repairs, kept engine
-  conversations, account routing preferences and clearer work that needs your
-  attention.
+  A free version beside paid plans, a Usage section with member credit limits,
+  paid Automations, a repaired Windows sign-in and routing profiles that keep
+  to the limits you accept.
+
+  Nectovia has a free version. Without a paid plan you keep your projects,
+  files and workspace, the task board, conversations and work on your own AI
+  tools, and your projects' own instruction files. The Nectovia Agent, its
+  included usage, Business rules, Automations and phone access come with a
+  paid plan. A notice says when you're on the free version, and Settings >
+  Account shows your plan.
 
   Supported conversation engines keep their own sessions across follow-up
   messages, Stops and restarts. When an engine supplies a thinking summary,
   the conversation can show it above the reply.
 
+  Settings has a Usage section. Owners and admins see the business's Agent
+  usage this month, the credits it bought and what's reserved for work in
+  flight, and a place to buy more. A member sees their own use against their
+  own monthly limit. The usage panel warns when 75 and 90 percent of the
+  monthly allowance is used or reserved, and again when it runs out.
+
+  Work that runs out of credits stops at that step and keeps what it already
+  did. An owner or admin is told to buy more in Settings, Usage, and anyone
+  else is told that an owner or admin can buy more.
+
+  A member about to pass their monthly credit limit can ask for that one job
+  or for more this month. Owners and admins see the asks under Change
+  workspace and approve or decline each one.
+
+  Automations need a paid plan. Without one, their setup and history are kept
+  but nothing runs, and a schedule that was on shows Blocked: needs a paid
+  plan.
+
+  When a business's paid access ends, the next Nectovia Agent message is
+  refused with the reason, the default conversation goes back to your own AI
+  tool, and the free version notice returns. When access is granted again, the
+  next message picks it up with no restart.
+
   Personal Agent access and managed usage funding are checked separately. An
-  Individual plan covers Personal work. Account routing preferences record the
-  privacy profile you accept; managed calls require current access, funding
-  and an eligible configured route.
+  Individual plan covers Personal work and includes monthly credits, and
+  Settings > Account shows them with the exact time the period ends.
+
+  A Board task has a Task permission panel: stop at each phase change or
+  approve the whole task, cap its action turns and pick an optional playbook.
+  Tasks the Nectovia Agent proposes wait in Inbox, and Start on a Board task
+  can run on the Nectovia Agent.
+
+  Settings > Account > AI routing and privacy has three profiles. Strict keeps
+  requests in the US, with no provider storage and no training. Balanced and
+  Lowest cost never allow training, but requests can run outside the US:
+  Balanced prefers providers that don't store your content, then US
+  processing, and Lowest cost uses the least expensive AI that can do the job.
+  Saving names what a looser choice gives up, and a choice saved under the
+  earlier rules asks to be saved again.
 
 FIXED
-  Home links open the task or approval they name. Needs you counts approvals,
-  changes awaiting review and failed work consistently across the Console.
-  Review work is described as needing attention rather than requiring an OK.
+  On Windows, signing in no longer stops at a gray screen after you finish in
+  the browser. The app now accepts the sign-in callback in the form Windows
+  hands it.
+
+  If the account service can't read your plan while you sign in, sign-in still
+  finishes. Free work goes ahead, and Nectovia Agent work is refused until
+  your access can be confirmed.
+
+  Home lists the newest three items waiting on you, each with Review or Check,
+  and its links open the task or approval they name. Needs you counts
+  approvals, changes awaiting review and failed work consistently across the
+  Console. Review work is described as needing attention rather than requiring
+  an OK.
 
   Account changes and sign-out cannot restore a stale session or borrow an
   admission made for another person. Streamed replies and thinking summaries
   redact secrets split across engine output chunks.
 
+  Marking a task Done by hand is refused while a change waits for review or a
+  Need is open.
+
+  Windows briefly locking a record or run file no longer fails the save, a run
+  or the weekly brief.
+
 UPDATES
-  This is a release candidate, separate from stable automatic updates.
-  Existing project and settings locations are retained.
+  Settings > App updates offers stable releases only. Nothing is downloaded,
+  verified or installed until you confirm it, and a download is accepted only
+  when its SHA-256 matches the digest the release publishes. An installed
+  0.1.7, 0.1.8, 0.1.9, 0.1.10, 0.1.11, 0.2.0 or 0.2.1 on Windows can find this
+  release when you press Check for updates.
+
+  An update from 0.1.9, 0.1.10, 0.1.11, 0.2.0 or 0.2.1 keeps your settings,
+  routes, saved keys, projects and conversations. An update from 0.1.7 or
+  0.1.8 that skips 0.1.9 still gets the one-time fresh start 0.1.9 introduced:
+  the earlier version's data and the Documents\Diomedes folder are set aside,
+  renamed with "before 0.1.9" and the date, and nothing is deleted.
+
+  Your install is refreshed the first time this version opens, and again after
+  each later update. Settings you never changed move to the new defaults,
+  anything you chose is kept, cached screens are cleared, and a byte-for-byte
+  backup and a record of what moved are kept. A custom look keeps its colours,
+  fonts and artwork, while text sizes, line spacing and density follow the new
+  version. You see it once: Updated to 0.2.2, with how many settings moved.
+
+  Saving AI routing and privacy settings needs this version, because the
+  account service no longer accepts them from 0.2.1. A choice saved in 0.2.1
+  keeps working under its earlier rules until you save it again here.
+
+  This release has no Mac build. A Mac keeps the version it has, and Check for
+  updates there doesn't offer this Windows release.
 
 LIMITS
-  This build is experimental. Windows builds are unsigned. Apple silicon
-  builds use an ad hoc signature and are not notarized; Intel Macs are not
-  included.
+  This build is unsigned and experimental. On Windows, SmartScreen may warn
+  before the installer runs: choose More info, then Run anyway, after checking
+  the file's SHA-256.
+
+  Signing in, Settings > Account and the Nectovia Agent's AI service were
+  tested only against stand-ins for the Nectovia account service and its
+  sign-in page. The Windows sign-in repair was checked against the exact form
+  Windows hands the app, but a real sign-in on an installed copy hasn't been
+  run yet. The account service this version uses is still a staging service
+  with a fixed testing budget: while it is, the Nectovia Agent's answers are
+  kept short, and the Agent stops answering once that budget is spent.
+
+  Signing in needs the Nectovia account service, so if it can't be reached
+  when Nectovia starts, you can't open anything, your own projects included;
+  the sign-in screen says why. A connection lost after you sign in doesn't
+  sign you out.
+
+  Buying credits isn't available yet. Until payments are set up on the account
+  service, Settings, Usage answers that buying isn't available right now, and
+  buying has run only against a stand-in payment service.
+
+  Credit limits, bought credits, Individual credits and the paid-access
+  changes were tested against stand-ins and test databases, not against the
+  live account service.
+
+  This version has no screen for setting a member's monthly limit. Unless one
+  is set, a member's limit is the plan's whole allowance.
+
+  When an Individual plan ends, Personal Agent work is refused, but the
+  default conversation doesn't move back to your own AI tool the way a
+  business's does.
 
   The new account routing has not yet completed a real signed-in,
-  paid-provider acceptance run. Automated routing journeys use synthetic model
+  paid-provider acceptance run. Automated routing tests use synthetic model
   responses. A route without current qualification or required privacy consent
   stays unavailable.
+
+  Apart from a few conversation turns on one outside engine and a connection
+  check on the company's AI account, nothing in this version was tried against
+  a real provider.
+
+  Board work on the Nectovia Agent was tested with stand-in model responses
+  only, and helpers and teams don't run on it.
+
+  The phone apps can't reach this computer through the relay yet; this version
+  only connects the computer and lists it as online. The relay was tested
+  against a stand-in and hasn't yet run on the live account service.
+
+  An update that installs this version over an earlier one, including the
+  change from Diomedes.exe to nectovia.exe, hasn't been run on an installed
+  copy.
+
+  Automations run the weekly brief alone, and only while this computer is on.
+  They tell you inside the app and send nothing by push, email or phone.
+
+  Resume, Retry, Fork and Steer work on ChatGPT (Codex) runs only.
+
+  Run checks run only the checks a task declares, and never run your project's
+  own code. Nothing checks a run automatically when it finishes.
+
+  Files has no PDF viewer. Pictures and PDFs cannot be sent to an AI, and a
+  binary file cannot be put back from an earlier version.
+
+  Trigger rules don't watch conversations, Ask or Plan. Tool rules don't reach
+  Codex, Claude Code, OpenCode or other outside tools, which run their own
+  tools, and on every outside tool except Codex a text rule reads the text
+  after secrets are removed, so a rule looking for a secret may not fire
+  there. A correction asked of a tool other than Codex was not tested, and a
+  rule that asks a work loop run to correct still can't reach it: the
+  correction is recorded and shown as not sent.
+
+  Helpers that take pieces of a loop run's work, each in its own copy of the
+  files, and a lead that runs a small team of them are built but cannot be
+  started from the app yet. The Console still has no History screen and no
+  Make tasks from this plan.
+
+  Every route except the Nectovia Agent still runs on, and is billed to, your
+  own account. A provider connection you saved yourself works only for a
+  business whose plan includes the Nectovia Agent, or for Personal work on an
+  Individual plan. You can still choose such a connection for a thread, and
+  Settings has no place to change or remove it.
