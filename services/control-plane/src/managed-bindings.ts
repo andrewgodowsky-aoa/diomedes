@@ -66,8 +66,12 @@ export function providerEndpoint(route: CatalogRoute, connection: ProviderConnec
       return `${base}/openai/v1/${b.protocol === 'responses' ? 'responses' : 'chat/completions'}`;
     return `${base}/model/${encodeURIComponent(route.model)}/${b.protocol === 'converse' ? 'converse-stream' : 'invoke-with-response-stream'}`;
   }
-  if (connection.provider === 'azure-openai')
-    return `https://${connection.resource}.openai.azure.com/openai/v1/${b.protocol === 'responses' ? 'responses' : 'chat/completions'}`;
+  if (connection.provider === 'azure-openai') {
+    // Claude on Foundry is served only at the Anthropic path of the services host; bindingProblems checked both.
+    const base = `https://${connection.resource}.${connection.host ?? 'openai.azure.com'}`;
+    return b.protocol === 'messages' ? `${base}/anthropic/v1/messages`
+      : `${base}/openai/v1/${b.protocol === 'responses' ? 'responses' : 'chat/completions'}`;
+  }
   if (connection.provider === 'google-vertex') {
     const host = connection.location === 'global' ? 'aiplatform.googleapis.com' : `${connection.location}-aiplatform.googleapis.com`;
     const action = b.protocol === 'messages' ? 'streamRawPredict' : 'streamGenerateContent?alt=sse';
@@ -296,15 +300,19 @@ export async function callManagedProvider(call: BoundProviderCall, transport: ty
   const headers = new Headers({ 'content-type': 'application/json', accept: 'text/event-stream' });
   if (!call.credential || call.credential.length > 8192 || !/^[\x21-\x7e]+$/.test(call.credential))
     throw new BindingError('credential_unavailable', 'The provider credential is missing or invalid.');
+  const vertexKey = connection.provider === 'google-vertex' && connection.secretRef === 'VERTEX_API_KEY';
   if (connection.provider === 'azure-openai') headers.set('api-key', call.credential);
   else if (connection.provider === 'aws-bedrock' && connection.endpointFamily === 'mantle' && call.route.binding!.protocol === 'messages')
     headers.set('x-api-key', call.credential);
+  // A key is a header, never part of the URL, so it stays out of logs; it bills the project that owns it.
+  else if (vertexKey) headers.set('x-goog-api-key', call.credential);
   else headers.set('authorization', `Bearer ${call.credential}`);
-  if (connection.provider === 'google-vertex') headers.set('x-goog-user-project', connection.project);
+  if (connection.provider === 'google-vertex' && !vertexKey) headers.set('x-goog-user-project', connection.project);
   if (connection.provider === 'openrouter') headers.set('X-OpenRouter-Metadata', 'enabled');
   if (connection.provider === 'aws-bedrock' && connection.endpointFamily === 'runtime' && ['converse', 'messages'].includes(call.route.binding!.protocol))
     headers.set('accept', 'application/vnd.amazon.eventstream');
-  if (call.route.binding!.protocol === 'messages' && connection.provider === 'aws-bedrock' && connection.endpointFamily === 'mantle')
+  if (call.route.binding!.protocol === 'messages' &&
+      ((connection.provider === 'aws-bedrock' && connection.endpointFamily === 'mantle') || connection.provider === 'azure-openai'))
     headers.set('anthropic-version', '2023-06-01');
   const abort = new AbortController(), onAbort = () => abort.abort(call.signal.reason);
   if (call.signal.aborted) onAbort(); else call.signal.addEventListener('abort', onAbort, { once: true });
@@ -313,7 +321,7 @@ export async function callManagedProvider(call: BoundProviderCall, transport: ty
   try { response = await transport(endpoint, { method: 'POST', body: serialized, headers, signal: abort.signal, redirect: 'manual' }); }
   catch (error) { complete(); throw error; }
   if (!response.ok) { complete(); return response; }
-  const requestId = ['x-amzn-requestid', 'x-request-id', 'request-id', 'x-goog-request-id'].map(h => response.headers.get(h)).find(Boolean) ?? null;
+  const requestId = ['x-amzn-requestid', 'x-request-id', 'request-id', 'apim-request-id', 'x-goog-request-id'].map(h => response.headers.get(h)).find(Boolean) ?? null;
   return normalizeProviderResponse(response, {
     protocol: call.route.binding!.protocol, model: call.route.model,
     upstreamEndpoint: connection.provider === 'openrouter' ? call.route.binding!.upstreamEndpoint : null,

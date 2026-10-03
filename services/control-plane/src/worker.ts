@@ -515,6 +515,10 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
  *   Unset, blank or unreadable: every managed call answers 503 route_unavailable.
  * - OPENROUTER_API_KEY, the key /managed/v1/evaluations sends to OpenRouter's
  *   Decisions endpoint; without it that route alone answers 503.
+ * Each approved connection in MANAGED_CONNECTIONS names one more secret by secretRef and is read
+ * as env[secretRef] (src/managed-bindings.ts): BEDROCK_API_KEY and OPENROUTER_API_KEY above,
+ * AZURE_OPENAI_API_KEY for the Azure AI Foundry resource, and VERTEX_API_KEY (or a short-lived
+ * VERTEX_ACCESS_TOKEN) for Vertex. A connection whose secret is unset serves nothing.
  * STAFF_WORKOS_API_KEY and STAFF_WORKOS_CLIENT_ID (src/config.ts) are no longer read by
  * /ops/*: staff sign in with staff keys since 2026-09-26. They go with the staff WorkOS
  * environment.

@@ -88,7 +88,7 @@ export type ManagedProtocol = z.infer<typeof protocolSchema>;
 const connectionBase = {
   id, revision: count, label: z.string().trim().min(1).max(120),
   /** Names an installed server secret. Never accepted from a customer or returned with its value. */
-  secretRef: z.enum(['BEDROCK_API_KEY', 'AZURE_OPENAI_API_KEY', 'VERTEX_ACCESS_TOKEN', 'OPENROUTER_API_KEY']),
+  secretRef: z.enum(['BEDROCK_API_KEY', 'AZURE_OPENAI_API_KEY', 'VERTEX_ACCESS_TOKEN', 'VERTEX_API_KEY', 'OPENROUTER_API_KEY']),
   payer: z.literal('company'),
   account: z.string().trim().min(1).max(200),
   enabled: z.boolean(),
@@ -103,8 +103,14 @@ export const providerConnectionSchema = z.discriminatedUnion('provider', [
   z.strictObject({ ...connectionBase, provider: z.literal('azure-openai'), secretRef: z.literal('AZURE_OPENAI_API_KEY'),
     resource: z.string().regex(/^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/),
     apiVersion: z.literal('v1'),
+    /**
+     * Which of the resource's own hosts the gateway addresses. Absent means openai.azure.com. A
+     * Foundry resource also answers on services.ai.azure.com, the only host that serves Claude.
+     */
+    host: z.enum(['openai.azure.com', 'services.ai.azure.com']).optional(),
     deployments: z.array(z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/)).min(1).max(500) }),
-  z.strictObject({ ...connectionBase, provider: z.literal('google-vertex'), secretRef: z.literal('VERTEX_ACCESS_TOKEN'),
+  /** A short-lived access token is a bearer for the named project; an API key is sent as x-goog-api-key. */
+  z.strictObject({ ...connectionBase, provider: z.literal('google-vertex'), secretRef: z.enum(['VERTEX_ACCESS_TOKEN', 'VERTEX_API_KEY']),
     project: z.string().regex(/^[a-z][a-z0-9-]{4,61}[a-z0-9]$/),
     location: z.string().regex(/^(?:global|[a-z]+-[a-z]+\d)$/),
     publisher: z.enum(['google', 'anthropic']) }),
@@ -299,12 +305,16 @@ export function bindingProblems(route: CatalogRoute, connection: ProviderConnect
     if (b.protocol === 'messages' && !/(?:^|\.)anthropic\./.test(route.model)) return fail('AWS Messages requires an Anthropic model.');
     if (b.protocol === 'converse' && connection.endpointFamily !== 'runtime') return fail('Converse requires the Bedrock runtime endpoint.');
   } else if (connection.provider === 'azure-openai') {
-    if (!['responses', 'chat-completions'].includes(b.protocol) || !b.deployment || !connection.deployments.includes(b.deployment))
+    if (!['responses', 'chat-completions', 'messages'].includes(b.protocol) || !b.deployment || !connection.deployments.includes(b.deployment))
       return fail('The Azure deployment or API protocol is not approved.');
+    if (b.protocol === 'messages' && (connection.host !== 'services.ai.azure.com' || !/^claude-[a-z0-9][a-z0-9.-]{0,127}$/.test(route.model)))
+      return fail('Azure Messages requires a Claude model on the Foundry services host.');
   } else if (connection.provider === 'google-vertex') {
     if ((connection.publisher === 'google' && b.protocol !== 'generate-content') ||
         (connection.publisher === 'anthropic' && b.protocol !== 'messages') || !/^[A-Za-z0-9][A-Za-z0-9@._-]{0,199}$/.test(route.model))
       return fail('The Vertex publisher, model or request format is invalid.');
+    if (connection.secretRef === 'VERTEX_API_KEY' && connection.publisher !== 'google')
+      return fail('A Vertex API key reaches Google models only. Use an access token for partner models.');
   } else if (b.protocol !== 'chat-completions' || !b.upstreamEndpoint || !b.upstreamEndpoint.includes('/') ||
       !connection.allowedEndpoints.includes(b.upstreamEndpoint) || !connection.endpointNames[b.upstreamEndpoint] ||
       !/^[a-z0-9][a-z0-9._-]{0,63}\/[a-z0-9][a-z0-9._-]{0,127}$/.test(route.model) || route.model.startsWith('openrouter/'))
