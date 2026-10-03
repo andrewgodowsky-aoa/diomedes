@@ -1,5 +1,14 @@
 # Harness host integration changes, 2026-09-09
 
+## External team workers, 2026-10-03
+
+A lead loop can hand a bounded task to a worker on the person's own installed Claude Code, Codex
+or OpenCode (DIO-175, slice S2). Each goes through the tool's programming interface with its tools
+off, signed in through the provider's own flow; nothing reaches a consumer chat. The worker answers
+in one turn, one external turn runs per engine account at a time, and a turn that may have gone out
+is never sent again by Retry. It's off unless `DIOMEDES_EXTERNAL_WORKERS=1`. See
+[the record](../implementation/2026-10-03-external-team-workers.md).
+
 ## Agent Team reconciliation onto main, 2026-10-03
 
 The Agent Team, automatic work and Personal Trust work now sits on current main as

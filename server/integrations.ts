@@ -2061,6 +2061,20 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
       await client.close();
     }
   }
+  /**
+   * A Codex team worker's admission (subscription-aware orchestration S2): this runtime's build
+   * and its ChatGPT account route, read from a fresh app-server. Any other sign-in is refused by
+   * `requireChatGpt`, as for every Codex turn.
+   */
+  async function readCodexWorkerAdmission(): Promise<{ accountRoute: string; version: string }> {
+    const client = await dependencies.createClient();
+    try {
+      const version = await initialize(client);
+      return { accountRoute: await requireChatGpt(client), version };
+    } finally {
+      await client.close();
+    }
+  }
   async function refreshCodexCatalog() {
     const client = await dependencies.createClient();
     try {
@@ -2230,6 +2244,7 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
     getIntegrationStatuses,
     askCodex,
     readCodexAccountRoute,
+    readCodexWorkerAdmission,
     refreshCodexCatalog,
     closeWarm,
     steerCodex,
@@ -2287,6 +2302,7 @@ const integrations = createIntegrations({
 export const getIntegrationStatuses = integrations.getIntegrationStatuses;
 export const askCodex = integrations.askCodex;
 export const readCodexAccountRoute = integrations.readCodexAccountRoute;
+export const readCodexWorkerAdmission = integrations.readCodexWorkerAdmission;
 export const refreshCodexCatalog = integrations.refreshCodexCatalog;
 /** Closes the kept app-server, if any. The service calls this on shutdown. */
 export const closeWarmCodex = integrations.closeWarm;

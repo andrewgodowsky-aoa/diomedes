@@ -26,6 +26,7 @@
 import type { HarnessBudget, HarnessRun, HarnessRunState, HarnessUsage } from './harness.js';
 import { reportedModels, type LoopModel } from './native-loop.js';
 import type { VerificationState } from './verification.js';
+import type { FundingKind, UsageObservation } from './funding-source.js';
 
 export const TEAM_CONTRACT_VERSION = 1 as const;
 /** The capability a worker run is started under. */
@@ -36,6 +37,42 @@ export const TEAM_ADVISOR_CAPABILITY = 'diomedes-loop-advisor';
 export const ASSIGN_TOOL = 'assign_workers';
 /** The tool the lead is offered to ask its advisor. Never a registry tool. */
 export const ADVISE_TOOL = 'consult_advisor';
+
+/**
+ * How a role does its work (subscription-aware orchestration, IMPLEMENTATION.md 4.1).
+ *
+ * - `loop`: the Diomedes loop on a model-API route or the fixture, with read tools.
+ * - `external-proposal`: one bounded text turn on the person's own installed coding tool, its
+ *   tools off. Its answer, or a change it proposes as text, comes back to the lead, which alone
+ *   can propose a write.
+ * - `external-contained`: an engine working inside its own contained copy. No engine qualifies
+ *   for it yet, and nothing admits it.
+ */
+export type ExecutionStyle = 'loop' | 'external-proposal' | 'external-contained';
+
+/**
+ * The coding tools a team worker may run on outside the loop (owner decision D3, 2026-10-03).
+ * Each runs only as the person's own installed program in its programmatic mode (Claude Code's
+ * `claude -p`, the Codex app-server, `opencode serve`), signed in through that provider's own
+ * flow. Never a consumer chat product, its sessions or its cookies, and never a credential
+ * Nectovia holds or forwards.
+ */
+export const EXTERNAL_WORKER_ROUTES = ['claude-code', 'codex', 'opencode'] as const;
+export type ExternalWorkerRoute = (typeof EXTERNAL_WORKER_ROUTES)[number];
+export function isExternalWorkerRoute(route: unknown): route is ExternalWorkerRoute {
+  return EXTERNAL_WORKER_ROUTES.some((id) => id === route);
+}
+
+/**
+ * What an external worker is held to: one text turn, and one such worker at a time. None of these
+ * engines reports tokens on this path, so the turn and the wall time are what bound it.
+ */
+export const EXTERNAL_WORKER_LIMITS = Object.freeze({ turns: 1, concurrentWorkers: 1 });
+
+/** How a role works. A record written before the field existed is a loop role. */
+export function executionOf(role: { readonly execution?: ExecutionStyle }): ExecutionStyle {
+  return role.execution ?? 'loop';
+}
 
 /**
  * Proposed defaults, recorded for Andrew to confirm (docs/implementation/2026-09-24-h14-teams.md).
@@ -147,6 +184,8 @@ export interface TeamRole {
   readonly route: string;
   readonly model: string | null;
   readonly accountRoute: string | null;
+  /** How this role works. Set only on an external worker; a loop role, and any older record, has none. */
+  readonly execution?: ExecutionStyle;
   /** The H09 profile revision that named the route and model, or null when the route was chosen directly. */
   readonly profile: {
     readonly profileId: string;
@@ -183,6 +222,11 @@ export interface TeamChildInput {
   readonly route: string;
   readonly model: string | null;
   readonly accountRoute: string | null;
+  /**
+   * The finer account identity an external worker was admitted under, where its engine reports
+   * one (Codex's hashed ChatGPT account). Every later check, and the dispatch, must match it.
+   */
+  readonly accountDigest?: string | null;
   readonly budget: WorkerBudget;
 }
 
@@ -222,6 +266,10 @@ export interface HandoffOpened extends EventBase {
   readonly attempt: number;
   /** The handoff this one runs again, when it is a retry. */
   readonly retryOf: string | null;
+  /** How an external worker works. Absent on a loop child's event and on older events. */
+  readonly execution?: ExecutionStyle;
+  /** Who funds an external worker's turn, resolved at hand-over. Absent on a loop child's event and on older events. */
+  readonly payer?: FundingKind;
 }
 
 /** An assignment the host refused before any run existed. */
@@ -324,6 +372,24 @@ export function reportedTokens(run: Pick<HarnessRun, 'steps'>): number | null {
   return total;
 }
 
+/**
+ * What a child's engine reported about tokens, from its own succeeded model steps. An engine that
+ * reports nothing reads as unknown, never as zero.
+ */
+export function usageOf(run: Pick<HarnessRun, 'steps'>, source: string): UsageObservation {
+  let input: number | null = null;
+  let output: number | null = null;
+  for (const step of run.steps) {
+    if (step.intent.kind !== 'model' || step.state !== 'succeeded') continue;
+    const usage = (step.output as { usage?: { inputTokens?: unknown; outputTokens?: unknown } | null } | null)?.usage;
+    if (!usage) continue;
+    if (typeof usage.inputTokens === 'number') input = (input ?? 0) + usage.inputTokens;
+    if (typeof usage.outputTokens === 'number') output = (output ?? 0) + usage.outputTokens;
+  }
+  if (input === null && output === null) return { tokens: null, confidence: 'unknown', source: 'not reported' };
+  return { tokens: { total: (input ?? 0) + (output ?? 0), input, output }, confidence: 'reported', source };
+}
+
 /** Milliseconds between a run's first step start and its last step end, from its own record. */
 export function runWallMs(run: Pick<HarnessRun, 'steps' | 'createdAt' | 'updatedAt'>): number | null {
   const start = Date.parse(run.createdAt);
@@ -362,6 +428,14 @@ export interface HandoffView {
   readonly models: readonly LoopModel[];
   /** H17 for a worker: the lead's outcome decides. Null for advice, which is never verified. */
   readonly verification: { readonly state: VerificationState; readonly sentence: string } | null;
+  /** When the child was handed its task, from the ledger. Null when it never started. */
+  readonly openedAt: string | null;
+  /** How the child worked. */
+  readonly execution: ExecutionStyle;
+  /** Who funded an external worker's turn. Null for a loop child, one that never started, or an older record. */
+  readonly payer: FundingKind | null;
+  /** What the engine reported about tokens, or that it reported nothing. Null when it never started. */
+  readonly usage: UsageObservation | null;
 }
 
 export interface TeamLeadView {
@@ -502,6 +576,16 @@ export function teamLeadView(input: {
       models: child ? reportedModels(child) : (settled?.models ?? []),
       verification:
         opened.role === 'advisor' ? null : outcome === 'completed' ? verificationFor(input.leadVerification) : null,
+      openedAt: opened.at,
+      execution: opened.execution ?? 'loop',
+      payer: opened.payer ?? null,
+      usage: child
+        ? usageOf(child, opened.route)
+        : settled
+          ? settled.tokens === null
+            ? { tokens: null, confidence: 'unknown', source: 'not reported' }
+            : { tokens: { total: settled.tokens, input: null, output: null }, confidence: 'reported', source: opened.route }
+          : null,
     };
   };
 
@@ -548,6 +632,10 @@ function emptyView(
     reason: null,
     models: [],
     verification: null,
+    openedAt: null,
+    execution: 'loop',
+    payer: null,
+    usage: null,
   };
 }
 

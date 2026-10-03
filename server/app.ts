@@ -98,12 +98,14 @@ import {
 import { WorkService } from './work.js';
 import { NativeWorkService, type NativeGenerator } from './native-work.js';
 import { ChangeReviewService } from './change-review/service.js';
+import { engineWorkerPort } from './external-worker-port.js';
 import {
   askCodex,
   closeWarmCodex,
   codexConversations,
   forkCodexThread,
   getIntegrationStatuses,
+  readCodexWorkerAdmission,
   refreshCodexCatalog,
   steerCodex,
   type CodexIntegration,
@@ -404,6 +406,12 @@ interface AppOptions {
   };
   /** H13: tests replace the Diomedes loop's model-API routes here. Production uses the engine service. */
   loopModelRoutes?: import('./harness/capabilities/native-loop.js').LoopModelRoutes;
+  /**
+   * S2: H14 workers on the person's own installed coding tools. Omitted follows the launch
+   * environment: `DIOMEDES_EXTERNAL_WORKERS=1` attaches the engines, anything else attaches none.
+   * Null attaches none. Tests pass their own port.
+   */
+  externalWorkers?: import('./harness/external-worker.js').ExternalWorkerPort | null;
   /** Host-qualified exact Decisions account/billing bounds; never supplied by a message or UI. */
   agentReviewQualification?: Parameters<typeof createProductionAgentTeamHost>[0]['trustedReviewQualification'];
   /** Offline host fixture; production composes the existing services above. */
@@ -1348,6 +1356,19 @@ export async function createApp(options: AppOptions) {
     },
     rootLedger:productionTeam.rootLedger,
   });
+  // S2: team workers on the person's own installed coding tools, read once from the launch
+  // environment. Without a port every external worker is refused at admission.
+  harness.loop.setExternalWorkers(
+    options.externalWorkers !== undefined
+      ? options.externalWorkers
+      : process.env.DIOMEDES_EXTERNAL_WORKERS === '1'
+        ? engineWorkerPort(
+            engines,
+            { admission: readCodexWorkerAdmission, ask: options.codexIntegration?.askCodex ?? askCodex },
+            () => store.settings.services as Record<string, unknown> | undefined,
+          )
+        : null,
+  );
   await harness.init();
   await engineAsks.expireOpen();
   // Run once admits the brief through the harness above, so its occurrences

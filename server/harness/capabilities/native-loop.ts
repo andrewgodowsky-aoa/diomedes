@@ -67,8 +67,12 @@ import {
   TEAM_LIMITS,
   TEAM_WORKER_CAPABILITY,
   harnessBudgetOf,
+  isExternalWorkerRoute,
   teamLeadView,
+  type ExternalWorkerRoute,
 } from '../../../shared/team-delegation.js';
+import { ExternalWorkerGate, externalWorkerAdapter, routeName, type ExternalWorkerPort } from '../external-worker.js';
+import { CODEX_ACCOUNT_ROUTE } from '../../engines/codex-session.js';
 import { HandoffLedger } from '../../team/handoff-ledger.js';
 import { createTeamPort, teamChildIds } from './team-loop.js';
 import { applicationOrigin, type OriginSnapshot } from '../../../shared/attribution.js';
@@ -454,6 +458,29 @@ export function delegateRegistry(
   return registry;
 }
 
+/**
+ * An external worker's files, whole, for its one turn. The rules a loop's reads follow apply:
+ * a path inside the project and inside the worker's scope, shared with every cloud route the
+ * text can reach. A file that can't be given refuses the turn instead of being cut or skipped.
+ */
+export async function workerDocuments(
+  store: Store,
+  projectId: string,
+  routes: readonly string[],
+  scope: readonly string[] | null,
+): Promise<{ path: string; text: string }[]> {
+  if (!scope?.length) return [];
+  const documents: { path: string; text: string }[] = [];
+  for (const name of scope) {
+    const path = relativeName(name);
+    for (const route of routes) if (isCloudRoute(route)) requireCloudSharing(store.state(projectId), route, [path]);
+    const text = await store.current(projectId, path);
+    if (text === null) throw new HarnessError('external_worker_source', `${path} wasn't found, so the worker can't be given it.`);
+    documents.push({ path, text });
+  }
+  return documents;
+}
+
 // --- the scripted route -----------------------------------------------------------------------
 
 const toolOutputs = (request: ModelRequest) => request.messages.filter((message) => message.role === 'tool');
@@ -608,6 +635,12 @@ export interface LoopRouteRequest {
   readonly scopedLedger?: SpendExposure;
   readonly effort?: string | null;
   readonly callLimits?: RespondLimits;
+  /** An external worker's files, read by the host and attached to its one turn. */
+  readonly scope?: readonly string[] | null;
+  /** Every route the child's text can reach: its own and its lead's, which receives its answer. */
+  readonly readRoutes?: readonly string[];
+  /** The account identity an external worker was admitted under, where its engine reports one. */
+  readonly accountDigest?: string | null;
 }
 
 /**
@@ -692,6 +725,9 @@ export function createLoopProcedure(deps: {
 }) {
   const { store, runs, tools } = deps;
   let modelRoutes: LoopModelRoutes | null = null;
+  // External workers on the person's own installed coding tools (S2). Absent: none can start.
+  let externalWorkers: ExternalWorkerPort | null = null;
+  const workerGate = new ExternalWorkerGate();
   let collaboration: AgentCollaborationHost | null = null;
   const rootScopes = new Map<string, { rootRunId: string; rootJobId: string; scopedLedger: SpendExposure }>();
   const admissionContext = new AsyncLocalStorage<HarnessRun>();
@@ -712,8 +748,19 @@ export function createLoopProcedure(deps: {
     return modelRoutes.admit(route, { ...input, rootRunId: root.id, rootJobId: scope.rootJobId,
       threadId: loopInput(root).threadId ?? null, effort: loopInput(root).collaboration?.helper?.effort });
   };
+  /**
+   * An external worker's admission on the person's own engine, fresh: its install, sign-in,
+   * model and account route. No root ledger is involved, because nothing is held or debited.
+   */
+  const admitExternalWorker = async (route: ExternalWorkerRoute, input: { projectId: string; model: string | null; accountRoute: string | null }) => {
+    if (!externalWorkers)
+      throw new ApiError(409, `${routeName(route)} can't work for a team on this computer.`, { code: 'external_worker_unavailable' });
+    const admitted = await externalWorkers.admit(route, input);
+    return { model: admitted.model, accountRoute: admitted.accountRoute, accountDigest: admitted.accountDigest ?? null };
+  };
   const adapterFor = async (route: string, request: LoopRouteRequest, stop: AbortSignal, script: () => ModelAdapter) => {
     if (route === LOOP_FIXTURE_ROUTE) return script();
+    if (isExternalWorkerRoute(route)) return externalAdapterFor(route, request, stop);
     if (!modelRoutes) throw new ApiError(409, 'This route cannot run a Diomedes loop in this process.');
     const child = await runs.get(request.runId);
     const root = await rootOf(child);
@@ -735,6 +782,36 @@ export function createLoopProcedure(deps: {
     } };
   };
 
+  /**
+   * The adapter an external worker child is driven with. Only a worker: an external engine never
+   * leads, advises or delegates here, and never joins an Agent Team root. No spend ledger is
+   * attached, because the person's own subscription pays for the turn.
+   */
+  const externalAdapterFor = async (route: ExternalWorkerRoute, request: LoopRouteRequest, stop: AbortSignal) => {
+    if (request.purpose !== 'worker')
+      throw new HarnessError('external_role_refused', `${routeName(route)} can only be a worker on a team.`);
+    if (!externalWorkers)
+      throw new ApiError(409, `${routeName(route)} can't work for a team on this computer.`, { code: 'external_worker_unavailable' });
+    const root = await rootOf(await runs.get(request.runId));
+    const input = loopInput(root);
+    if (input.collaboration)
+      throw new HarnessError('external_role_refused', 'An Agent Team run takes no external worker.');
+    const effort = (input.team?.worker as { effort?: string | null } | undefined)?.effort ?? null;
+    return externalWorkerAdapter(externalWorkers, {
+      route,
+      projectId: request.projectId,
+      runId: request.runId,
+      model: request.model,
+      accountRoute: request.accountRoute,
+      accountDigest: request.accountDigest ?? null,
+      instructions: request.instructions,
+      effort,
+      documents: () => workerDocuments(store, request.projectId, request.readRoutes ?? [route], request.scope ?? null),
+      stop,
+      gate: workerGate,
+    });
+  };
+
   /** Keep a lease alive while this process drives a run; stops at the first refusal. */
   const heartbeat = (runId: string, owner: string, ttlMs = 60_000) => {
     const timer = setInterval(() => {
@@ -753,7 +830,8 @@ export function createLoopProcedure(deps: {
     store,
     runs,
     ledger,
-    admit,
+    // A child on the person's own engine is admitted by that engine; every other route as before.
+    admit: (route, input) => (isExternalWorkerRoute(route) ? admitExternalWorker(route, input) : admit(route, input)),
     adapterFor: (route, request, stop, script) => adapterFor(route, request, stop, script),
     heartbeat: (runId, owner) => heartbeat(runId, owner),
     registry: (projectId, routes, scope) => delegateRegistry(store, projectId, routes, scope),
@@ -1260,6 +1338,9 @@ export function createLoopProcedure(deps: {
 
   const procedure: HarnessProcedure & {
     setModelRoutes(routes: LoopModelRoutes): void;
+    /** S2: the person's own installed engines, as team workers reach them. Null: none can start. */
+    setExternalWorkers(port: ExternalWorkerPort | null): void;
+    admitExternalWorker: typeof admitExternalWorker;
     attachCollaboration(host: AgentCollaborationHost): void;
     collaboration(): AgentCollaborationHost | null;
     pinRootScope(runId: string, ledger: SpendExposure): void;
@@ -1381,6 +1462,10 @@ export function createLoopProcedure(deps: {
     setModelRoutes(routes) {
       modelRoutes = routes;
     },
+    setExternalWorkers(port) {
+      externalWorkers = port;
+    },
+    admitExternalWorker,
     attachCollaboration(host) { collaboration = host; },
     collaboration: () => collaboration,
     pinRootScope(runId, scopedLedger) {
@@ -1482,7 +1567,9 @@ export function loopEgressAuthorizer(
     const settings = services();
     if (typeof route !== 'string' || settings?.[route] !== true)
       throw new HarnessError('egress_denied', 'This loop’s route is not switched on in Settings.');
-    if (typeof input?.accountRoute !== 'string' || settings[`${route}AccountRoute`] !== input.accountRoute)
+    // Codex keeps no account route in Settings unless one was chosen; its default is the ChatGPT route.
+    const selected = route === 'codex' ? (settings.codexAccountRoute ?? CODEX_ACCOUNT_ROUTE) : settings[`${route}AccountRoute`];
+    if (typeof input?.accountRoute !== 'string' || selected !== input.accountRoute)
       throw new HarnessError(
         'egress_denied',
         phase === 'result'

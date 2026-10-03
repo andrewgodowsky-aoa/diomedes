@@ -1588,6 +1588,125 @@ export class EngineService {
     };
   }
   /**
+   * One text route's admission, read fresh: this route's discovery, its sign-in, the chosen
+   * model and account route, and the contract the adapter carries. A conversation turn and an
+   * external team worker run exactly these checks.
+   */
+  private async admitText(
+    engine: ExternalEngine,
+    model: string,
+    accountRoute: string | null,
+    signal?: AbortSignal,
+  ): Promise<TextAdmission> {
+    // Refresh this route, not all five: admission is on the hot path.
+    await this.discover(true, { engine });
+    this.adopt(engine);
+    await this.check(engine, signal);
+    const selected = this.selection(engine, model);
+    if (selected.accountRoute !== accountRoute)
+      throw new EngineError(
+        'ACCOUNT_CHANGED',
+        'The sign-in route changed. Select it again before sending.',
+      );
+    const value = this.connections.get(engine)!;
+    const adapter = this.deps.adapter(engine, value.location!, path.join(this.root, engine));
+    // The descriptor the adapter carries is operative: dispatch only
+    // what the route declares, only for the proven build.
+    if (adapter.id !== engine)
+      throw new EngineError(
+        'CONTRACT_MISMATCH',
+        `The ${engine} route was handed an adapter identifying as ${adapter.id}.`,
+        true,
+      );
+    const gate = commandGate(adapter.contract, 'start');
+    if (!gate.admitted)
+      throw new EngineError(
+        gate.code === 'command_unsupported' ? 'COMMAND_UNSUPPORTED' : 'CONTRACT_INVALID',
+        gate.reason,
+        true,
+      );
+    if (
+      adapter.contract.routeId !== engine ||
+      adapter.contract.engine.id !== engine
+    )
+      throw new EngineError(
+        'CONTRACT_MISMATCH',
+        'The adapter descriptor does not name this route and engine.',
+        true,
+      );
+    return {
+      engine,
+      location: value.location!,
+      version: value.version!,
+      model: selected.model,
+      accountRoute: selected.accountRoute,
+    };
+  }
+  /**
+   * An external team worker's admission (subscription-aware orchestration S2): the checks a
+   * conversation turn runs, read fresh. The worker's own run is its durable record, so no
+   * text run is opened here.
+   */
+  admitWorkerTurn(engine: ExternalEngine, input: { model: string; accountRoute: string | null }, signal?: AbortSignal) {
+    return this.admitText(engine, input.model, input.accountRoute, signal);
+  }
+  /**
+   * One admitted worker turn, sent straight to the engine's own adapter with its tools off: no
+   * read scope, no team carriage, no preview sinks. The caller's `model:<n>` step records it and
+   * never resends it, so nothing here retries.
+   */
+  async workerTurn(
+    engine: ExternalEngine,
+    admission: TextAdmission,
+    input: {
+      projectId: string;
+      threadId: string;
+      requestId: string;
+      prompt: string;
+      documents: { path: string; text: string }[];
+      instructions: string;
+      effort?: string;
+      signal: AbortSignal;
+    },
+  ): Promise<TextResponse> {
+    if (admission.engine !== engine)
+      throw new EngineError('CONTRACT_MISMATCH', `This worker was admitted on ${admission.engine}, not ${engine}.`, true);
+    const adapter = this.deps.adapter(engine, admission.location, path.join(this.root, engine));
+    if (adapter.id !== engine)
+      throw new EngineError(
+        'CONTRACT_MISMATCH',
+        `The ${engine} route was handed an adapter identifying as ${adapter.id}.`,
+        true,
+      );
+    input.signal.throwIfAborted();
+    const result = await adapter.generate({
+      projectId: input.projectId,
+      threadId: input.threadId,
+      requestId: input.requestId,
+      prompt: input.prompt,
+      documents: input.documents,
+      instructions: input.instructions,
+      model: admission.model,
+      accountRoute: admission.accountRoute,
+      ...(input.effort ? { effort: input.effort } : {}),
+      signal: input.signal,
+    });
+    if (input.signal.aborted)
+      throw new EngineError('CANCELLED', 'The request was stopped. No late response was saved.', true);
+    if (
+      result.projectId !== input.projectId ||
+      result.threadId !== input.threadId ||
+      result.requestId !== input.requestId
+    )
+      throw new EngineError(
+        'IDENTITY_MISMATCH',
+        'The engine response did not match this request. No response was saved.',
+        true,
+      );
+    // Version attribution comes from this installation's fresh admission.
+    return { ...result, version: admission.version };
+  }
+  /**
    * One admitted external text turn. Admission runs inside the run's recorded
    * `text:admission` step; the provider transport runs inside the fenced
    * `text:dispatch` step. Preview frames are stamped with the run, step,
@@ -1643,51 +1762,7 @@ export class EngineService {
           effort: input.effort ?? null,
         },
         signal,
-        admit: async () => {
-          // Refresh this route, not all five: admission is on the hot path.
-          await this.discover(true, { engine });
-          this.adopt(engine);
-          await this.check(engine, signal);
-          const selected = this.selection(engine, input.model);
-          if (selected.accountRoute !== input.accountRoute)
-            throw new EngineError(
-              'ACCOUNT_CHANGED',
-              'The sign-in route changed. Select it again before sending.',
-            );
-          const value = this.connections.get(engine)!;
-          const adapter = this.deps.adapter(engine, value.location!, path.join(this.root, engine));
-          // The descriptor the adapter carries is operative: dispatch only
-          // what the route declares, only for the proven build.
-          if (adapter.id !== engine)
-            throw new EngineError(
-              'CONTRACT_MISMATCH',
-              `The ${engine} route was handed an adapter identifying as ${adapter.id}.`,
-              true,
-            );
-          const gate = commandGate(adapter.contract, 'start');
-          if (!gate.admitted)
-            throw new EngineError(
-              gate.code === 'command_unsupported' ? 'COMMAND_UNSUPPORTED' : 'CONTRACT_INVALID',
-              gate.reason,
-              true,
-            );
-          if (
-            adapter.contract.routeId !== engine ||
-            adapter.contract.engine.id !== engine
-          )
-            throw new EngineError(
-              'CONTRACT_MISMATCH',
-              'The adapter descriptor does not name this route and engine.',
-              true,
-            );
-          return {
-            engine,
-            location: value.location!,
-            version: value.version!,
-            model: selected.model,
-            accountRoute: selected.accountRoute,
-          } satisfies TextAdmission;
-        },
+        admit: () => this.admitText(engine, input.model, input.accountRoute, signal),
         send: async (context, admission) => {
           const adapter = this.deps.adapter(
             engine,
@@ -3311,7 +3386,7 @@ function modelApiError(error: unknown): unknown {
 }
 
 /** The durable admission record — what the admission step is allowed to persist. */
-interface TextAdmission {
+export interface TextAdmission {
   engine: ExternalEngine;
   location: string;
   version: string;

@@ -57,12 +57,18 @@ import type { AgentRegistry } from './agents.js';
 import { AGENT_CATALOG, AUTO_AGENT, type AgentDefinition } from '../shared/agents.js';
 import { resolveProfileRoute, profileLabel } from '../shared/agent-profiles.js';
 import {
+  EXTERNAL_WORKER_LIMITS,
   TEAM_LIMITS,
   budgetRefusal,
+  executionOf,
+  isExternalWorkerRoute,
+  type ExternalWorkerRoute,
   type TeamConfig,
   type TeamRetry,
   type TeamRole,
 } from '../shared/team-delegation.js';
+import { routeName as engineName } from './harness/external-worker.js';
+import { CODEX_ACCOUNT_ROUTE } from './engines/codex-session.js';
 import type { Route, Session } from '../shared/types.js';
 import { OWNER_RULES_NOT_INCLUDED_REASON } from '../shared/access.js';
 import { taskWorkflowBlocker } from '../shared/task-workflow.js';
@@ -313,6 +319,39 @@ export function mountNativeLoopRoutes(
   };
 
   /**
+   * S2: a team worker on the person's own installed coding tool. Its Settings switch, consent
+   * naming it, cloud sharing for its files, then the tool's own fresh admission: install,
+   * sign-in, model and account route. Never a lead, never an advisor, never on Nectovia.
+   */
+  const admitExternalWorkerRoute = async (
+    projectId: string,
+    route: ExternalWorkerRoute,
+    requested: { model?: string | null; accountRoute?: string | null },
+    sources: readonly string[],
+    consent: boolean,
+  ) => {
+    const name = engineName(route);
+    if (services()[route] !== true) throw new ApiError(409, `Turn ${name} on in Settings before giving it work.`);
+    if (!consent)
+      throw new ApiError(
+        409,
+        `This worker's task and files go to ${name}, signed in with your own account. Confirm before sending.`,
+        { consentRequired: true },
+      );
+    requireCloudSharing(store.state(projectId), route, sources);
+    const saved = (key: string) => (typeof services()[key] === 'string' ? (services()[key] as string) : null);
+    const model = requested.model ?? saved(`${route}Model`);
+    const accountRoute =
+      requested.accountRoute ?? (route === 'codex' ? (saved('codexAccountRoute') ?? CODEX_ACCOUNT_ROUTE) : saved(`${route}AccountRoute`));
+    try {
+      return await harness.loop.admitExternalWorker(route, { projectId, model, accountRoute });
+    } catch (error) {
+      if (error instanceof ApiError) throw error;
+      throw new ApiError(409, error instanceof Error ? error.message : `${name} refused this worker.`, { code: 'route_refused' });
+    }
+  };
+
+  /**
    * H14: resolve one team role. A named H09 profile decides the route and model
    * by H09's own rules (fallback only where the person turned it on); otherwise
    * the route named here, or the lead's. The route is admitted in its own right,
@@ -327,6 +366,8 @@ export function mountNativeLoopRoutes(
     lead: LoopStartRequest,
     scope: readonly string[],
     consent: boolean,
+    // S2: only a team's worker may run on the person's own installed coding tool, never a delegate.
+    teamWorker = false,
   ): Promise<TeamRole & { effort: string | null }> => {
     const state = store.state(projectId);
     const refuse = (message: string, code = 'team_role_refused') => new ApiError(409, message, { code, role: kind });
@@ -350,7 +391,7 @@ export function mountNativeLoopRoutes(
       if (routed.outcome !== 'resolved')
         throw refuse(routed.outcome === 'refused' ? routed.reason : 'That profile was not found.', 'team_profile_refused');
       const pick = routed.pick;
-      if (!loopRoute(pick.engine))
+      if (!loopRoute(pick.engine) && !(teamWorker && isExternalWorkerRoute(pick.engine)))
         throw refuse(`${profileLabel(pick)} runs on a route that keeps its own loop, so it cannot be a ${kind} here.`);
       route = pick.engine;
       model = pick.model;
@@ -367,7 +408,13 @@ export function mountNativeLoopRoutes(
       };
     }
     if (route === NECTOVIA_ROUTE) throw refuse(NECTOVIA_LOOP_TEAM_REFUSED, 'team_route_unsupported');
-    const admitted = await admitRoute(projectId, route, { model, accountRoute }, scope, consent);
+    const resolved = route;
+    const external = isExternalWorkerRoute(resolved);
+    if (external && !teamWorker)
+      throw refuse(`${engineName(resolved)} can be a worker on a team, not ${kind === 'advisor' ? 'an advisor' : 'a delegate'}.`, 'team_route_unsupported');
+    const admitted = external
+      ? await admitExternalWorkerRoute(projectId, resolved, { model, accountRoute }, scope, consent)
+      : await admitRoute(projectId, resolved, { model, accountRoute }, scope, consent);
     const wanted = agentId ?? (kind === 'advisor' ? ADVISOR_AGENT : WORKER_AGENT);
     const agent: AgentDefinition | undefined = teamAdmission
       ? await teamAdmission.agents.find(wanted, state.project.folder)
@@ -384,6 +431,8 @@ export function mountNativeLoopRoutes(
       route,
       model: admitted.model,
       accountRoute: admitted.accountRoute,
+      // Only an external worker names how it works, so a loop role's saved shape is unchanged.
+      ...(external ? { execution: 'external-proposal' as const } : {}),
       profile,
       effort,
     };
@@ -408,16 +457,18 @@ export function mountNativeLoopRoutes(
     };
     const refusal = budgetRefusal(budget);
     if (refusal) throw new ApiError(400, refusal, { code: 'team_budget_invalid' });
-    const worker = await admitRole(projectId, taskId, 'worker', spec.worker, body, scope ?? [], consent);
+    const worker = await admitRole(projectId, taskId, 'worker', spec.worker, body, scope ?? [], consent, true);
     const advisor = spec.advisor ? await admitRole(projectId, taskId, 'advisor', spec.advisor, body, scope ?? [], consent) : null;
+    // An external worker answers in one turn, and one runs at a time.
+    const external = executionOf(worker) === 'external-proposal';
     return {
       v: 1,
       scope,
-      worker: { ...worker, budget },
+      worker: { ...worker, budget: external ? { ...budget, turns: EXTERNAL_WORKER_LIMITS.turns } : budget },
       advisor,
       limits: {
         depth: TEAM_LIMITS.depth,
-        concurrentWorkers: TEAM_LIMITS.concurrentWorkers,
+        concurrentWorkers: external ? EXTERNAL_WORKER_LIMITS.concurrentWorkers : TEAM_LIMITS.concurrentWorkers,
         workersPerRun: TEAM_LIMITS.workersPerRun,
         advicePerRun: TEAM_LIMITS.advicePerRun,
       },
@@ -435,7 +486,10 @@ export function mountNativeLoopRoutes(
       if (!role) continue;
       if (role.route === NECTOVIA_ROUTE)
         throw new ApiError(409, NECTOVIA_LOOP_TEAM_REFUSED, { code: 'team_route_unsupported' });
-      const again = await admitRoute(projectId, role.route, { model: role.model, accountRoute: role.accountRoute }, scope, consent);
+      const requested = { model: role.model, accountRoute: role.accountRoute };
+      const again = isExternalWorkerRoute(role.route)
+        ? await admitExternalWorkerRoute(projectId, role.route, requested, scope, consent)
+        : await admitRoute(projectId, role.route, requested, scope, consent);
       if (again.model !== role.model)
         throw new ApiError(409, `This team's ${role === team.worker ? 'worker' : 'advisor'} used ${role.model}, which its route would not use now, so it was not retried.`, {
           code: 'team_model_changed',
