@@ -10,8 +10,8 @@ Andrew asked for the company gateway to reach his Azure AI Foundry deployments (
   (`/openai/v1/responses` and `/openai/v1/chat/completions`, deployment as the model).
 - **Claude on Foundry.** An Azure binding may use `messages`, only for a `claude-*` model on the
   services host. The request goes to `https://{resource}.services.ai.azure.com/anthropic/v1/messages`
-  with `api-key`, `anthropic-version: 2023-06-01` and the deployment as `model`. It reuses the
-  existing Anthropic Messages body and stream handling.
+  with `x-api-key`, `anthropic-version: 2023-06-01` and the deployment as `model`. OpenAI-compatible
+  Azure bindings retain `api-key`. It reuses the existing Anthropic Messages body and stream handling.
 - **Vertex API key.** A Vertex connection may name `VERTEX_API_KEY` instead of the hourly
   `VERTEX_ACCESS_TOKEN`. The key goes in `x-goog-api-key`, never as a bearer or in the URL, and
   `x-goog-user-project` is not sent with it. A key reaches Google models only.
