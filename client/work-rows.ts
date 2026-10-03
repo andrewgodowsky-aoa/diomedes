@@ -1,54 +1,25 @@
 /**
- * Worker rows in the Console (plan section 4.8, S1): one project's rows, read once from
- * `GET /api/projects/:id/work/rows` and then kept current by the small `work-rows` event on
- * the rows' own stream, `/api/events?topics=work-rows`, which carries no `state` payload.
- * Never derived from the `state` event, and reading or refreshing rows calls no model (A38):
+ * Worker rows in the Console (plan section 4.8, S1): one project's rows, read from
+ * `GET /api/projects/:id/work/rows` when they're shown and again every few seconds while they
+ * are. Never derived from the `state` event, and reading or refreshing rows calls no model (A38):
  * the server projects them from its records.
  *
- * Every hook on the page shares that one stream, opened while any of them listens.
+ * The rows hold no stream of their own. The page already keeps its event streams open, and a
+ * browser keeps at most six connections to one host, so two windows that each held one more left
+ * none for an ordinary request (CD05-R-10). `/api/events?topics=work-rows` stays for other readers.
  */
 import { useEffect, useState } from 'react';
 import type { WorkRowsSnapshot } from '../shared/work-rows';
 import { api } from './api';
 
-type Listener = { rows(snapshot: WorkRowsSnapshot): void; reconnected(): void };
-const listeners = new Set<Listener>();
-let source: EventSource | null = null;
-
-function onRows(event: Event) {
-  let snapshot: WorkRowsSnapshot;
-  try {
-    snapshot = JSON.parse((event as MessageEvent).data) as WorkRowsSnapshot;
-  } catch {
-    return;
-  }
-  for (const listener of listeners) listener.rows(snapshot);
-}
-
-// A reconnect replays nothing, so each listener reads its rows again.
-function onReady() {
-  for (const listener of listeners) listener.reconnected();
-}
-
-function listen(listener: Listener): () => void {
-  listeners.add(listener);
-  if (!source && typeof EventSource !== 'undefined') {
-    source = new EventSource('/api/events?topics=work-rows');
-    source.addEventListener('work-rows', onRows);
-    source.addEventListener('ready', onReady);
-  }
-  return () => {
-    listeners.delete(listener);
-    if (!listeners.size && source) {
-      source.close();
-      source = null;
-    }
-  };
-}
+/** How often rows on screen are read again. */
+export const WORK_ROWS_REFRESH_MS = 3_000;
 
 export function readWorkRows(projectId: string, signal?: AbortSignal): Promise<WorkRowsSnapshot> {
   return api<WorkRowsSnapshot>(`/projects/${encodeURIComponent(projectId)}/work/rows`, 'GET', undefined, signal);
 }
+
+const hidden = () => typeof document !== 'undefined' && document.visibilityState === 'hidden';
 
 /** The rows for one project, or null until the first read lands. A newer snapshot always wins. */
 export function useWorkRows(projectId: string | null): WorkRowsSnapshot | null {
@@ -58,17 +29,28 @@ export function useWorkRows(projectId: string | null): WorkRowsSnapshot | null {
     if (!projectId) return;
     const control = new AbortController();
     let latest = '';
+    let reading = false;
     const take = (next: WorkRowsSnapshot) => {
       if (control.signal.aborted || next.projectId !== projectId || next.at < latest) return;
       latest = next.at;
       setSnapshot(next);
     };
-    const read = () => void readWorkRows(projectId, control.signal).then(take, () => undefined);
-    const off = listen({ rows: take, reconnected: read });
+    // One read at a time, and none while the window is hidden; showing it reads at once.
+    const read = () => {
+      if (reading || control.signal.aborted) return;
+      reading = true;
+      void readWorkRows(projectId, control.signal)
+        .then(take, () => undefined)
+        .finally(() => { reading = false; });
+    };
+    const timer = setInterval(() => { if (!hidden()) read(); }, WORK_ROWS_REFRESH_MS);
+    const shown = () => { if (!hidden()) read(); };
+    if (typeof document !== 'undefined') document.addEventListener('visibilitychange', shown);
     read();
     return () => {
       control.abort();
-      off();
+      clearInterval(timer);
+      if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', shown);
     };
   }, [projectId]);
   return snapshot;
