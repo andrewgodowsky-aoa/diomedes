@@ -23,6 +23,7 @@
  * decision for at most the minute the service allows.
  */
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import {
   ACCOUNT_VIEW_VERSION,
@@ -41,8 +42,9 @@ import {
   type AccessView,
   type AgentPlanState,
   type PlanNoticeChoice,
+  type StaffRole,
 } from '../../shared/access.js';
-import { noIndividualAccess, personIncludes, type PersonAccessView } from '../../shared/individual-plan.js';
+import { noIndividualAccess, personIncludes, type PersonAccessView, type PersonalUsageView } from '../../shared/individual-plan.js';
 import type { OrganizationSetupWrite, SetupFetchOutcome, SetupWriteOutcome } from '../../shared/organization-setup.js';
 import {
   NO_ENTITLEMENT_VIEW,
@@ -132,6 +134,39 @@ function personAccessAnswer(answer: unknown, personId: string): PersonAccessView
 }
 
 /**
+ * `GET /account/usage`: the person's own Individual credits for the period in force. An answer for
+ * another person, a figure for an account other than the one it names, a non-Individual plan, or a
+ * period that has already ended (or not begun) is no answer: it is shown as unavailable, never as 0%.
+ */
+const personalUsageSchema = z.object({
+  v: z.literal(1),
+  personId: z.string().min(1),
+  accountId: z.string().min(1).nullable(),
+  usage: z.object({ state: z.enum(['loading', 'not-connected', 'unavailable', 'ready']), organizationId: z.string().min(1) }).passthrough(),
+  renewal: z.object({ state: z.enum(['renewed', 'not-renewed']), nextStartsAt: z.iso.datetime(), nextEndsAt: z.iso.datetime() }).nullable(),
+  checkedAt: z.iso.datetime(),
+});
+const personalProjectionSchema = z.object({
+  organizationId: z.string().min(1),
+  planId: z.enum(['individual', 'individual-agreement']),
+  periodStartsAt: z.iso.datetime(),
+  resetsAt: z.iso.datetime(),
+}).passthrough();
+function personalUsageAnswer(answer: unknown, personId: string, now: number): PersonalUsageView | null {
+  const parsed = personalUsageSchema.safeParse(answer);
+  if (!parsed.success || parsed.data.personId !== personId) return null;
+  const view = answer as PersonalUsageView;
+  if (view.usage.state !== 'ready') return view;
+  const projection = personalProjectionSchema.safeParse(view.usage.projection);
+  if (!projection.success || view.accountId === null || view.usage.organizationId !== view.accountId ||
+      projection.data.organizationId !== view.accountId || Date.parse(projection.data.periodStartsAt) > now ||
+      Date.parse(projection.data.resetsAt) <= now) return null;
+  return view;
+}
+/** A Personal usage answer is reused for at most this long, and never past its period's end. */
+const PERSONAL_USAGE_TTL_MS = 15_000;
+
+/**
  * The fields of a `POST /account/organizations/:id/agent-admissions` answer this host reads. A
  * refusal needs its code and the sentence the person reads. An admission needs the record the
  * gateway checks, who and what it was pinned to, and a time it is good until. `{}`, a 200 that is
@@ -165,6 +200,9 @@ function admissionAnswer(answer: unknown, organizationId: string | null, personI
   const { admissionId, pins, validUntil } = admitted.data;
   return { admitted: true, admissionId, personId: pins.personId, planId: pins.planId, policyRevision: pins.policyRevision, validUntil };
 }
+
+/** Admission refusals that say the business is not paid, as opposed to unknown, unreadable or membership. */
+const UNPAID_REFUSAL_CODES = new Set(['entitlement_revoked', 'entitlement_expired', 'agent_not_included']);
 
 const UNREADABLE_ADMISSION_REASON =
   'The account service answered in a way this app could not read, so the Nectovia Agent could not confirm this business includes it. Nothing was sent.';
@@ -283,6 +321,13 @@ const planNoticeSchema = z.record(
 );
 type PlanNotices = z.infer<typeof planNoticeSchema>;
 
+/** Token-free facts of an actually published cloud sign-in. A password session's
+ * sessionId is a private host-published nonce, not an invented service identifier. */
+export interface AccountAuthorityFacts {
+  backendKind: 'cloud'; backendKey: string; personId: string; sessionId: string;
+  lifecycle: number; publishedLifecycle: number; expiresAt: string;
+}
+
 export class AccountSessionService {
   /** Where "Sign up for a plan" opens. The host sets it from `NECTOVIA_PLANS_URL` when that is given. */
   plansUrl: string = PLANS_URL;
@@ -291,6 +336,30 @@ export class AccountSessionService {
   /** Token rotation replaces a saved entry without creating a different sign-in. */
   private readonly rememberedSignIns = new WeakMap<RememberedEntry, Current>();
   private current: Current | null = null;
+  private readonly authorityPublications = new WeakMap<Current, { lifecycle:number; browserChanges:number; sessionId:string }>();
+  private publishAuthority(current: Current, lifecycle: number): void {
+    this.assertCurrent(current);
+    this.assertSignIn(current, lifecycle);
+    const prior = this.authorityPublications.get(current);
+    this.authorityPublications.set(current, { lifecycle, browserChanges:this.browserChanges,
+      sessionId:current.browserSessionId ?? prior?.sessionId ?? `host-published:${randomUUID()}` });
+  }
+
+  /** Bounded local read: never refreshes tokens, calls the account service or takes Store.locked. */
+  authorityFacts(): AccountAuthorityFacts | null {
+    const current = this.current, published = current ? this.authorityPublications.get(current) : null;
+    const backend = this.backend.view();
+    if (!current || !published || backend.kind !== 'cloud' || !backend.url?.startsWith('https://')
+      || published.lifecycle !== this.lifecycle || published.browserChanges !== this.browserChanges
+      || this.forgotten?.lifecycle === this.lifecycle && this.forgotten.people.has(current.personId)
+      || current.browserSessionId && [...this.closingBrowserSessions].some(item=>item.sessionId === current.browserSessionId)
+      || !Number.isFinite(Date.parse(current.accessExpiresAt)) || Date.parse(current.accessExpiresAt) <= this.now()) return null;
+    return { backendKind:'cloud',backendKey:this.backendKey,personId:current.personId,sessionId:published.sessionId,
+      lifecycle:this.lifecycle,publishedLifecycle:published.lifecycle,expiresAt:current.accessExpiresAt };
+  }
+
+  /** The last verified Personal usage read, for the same sign-in and access revision only. */
+  private personalUsageCache: { current: Current; revision: number | null; until: number; view: PersonalUsageView } | null = null;
   /** A newer sign-in or sign-out invalidates work that is still awaiting an answer. */
   private lifecycle = 0;
   /** Forget cancels pending sign-ins for that person without cancelling another person's attempt. */
@@ -598,6 +667,7 @@ export class AccountSessionService {
     this.assertSignIn(current, lifecycle);
     this.assertCurrent(current);
     await this.projector(this.projection('sign-in'));
+    this.publishAuthority(current, lifecycle);
   }
 
   async signIn(input: { email: string; password: string; remember: boolean }) {
@@ -776,14 +846,16 @@ export class AccountSessionService {
       return;
     }
     const current = this.current;
-    if (current?.browser) {
-      if (current.accessToken === session.accessToken) return;
+    // A failed initial keep/projection must repeat full verified publication.
+    if (current?.browser && this.authorityPublications.has(current)) {
+      if (current.accessToken === session.accessToken) { this.publishAuthority(current, lifecycle); return; }
       // A newer token for the same WorkOS session preserves the person and their workspace.
       const claims = checkBrowserToken(session.accessToken, browser.expect, this.now());
       if (claims && claims.subject === current.subject && claims.sessionId === current.browserSessionId) {
         current.accessToken = session.accessToken;
         current.accessExpiresAt = claims.expiresAt;
         current.refreshExpiresAt = claims.expiresAt;
+        this.publishAuthority(current, lifecycle);
         return;
       }
     }
@@ -900,6 +972,56 @@ export class AccountSessionService {
     current.personAccess = await person;
     current.notMember = notMember;
     current.policy = await this.backend.client.routingPolicy(current.accessToken).catch(() => current.policy);
+    await this.resetNoticeWhilePaid(current);
+  }
+
+  /**
+   * The free-version notice comes back when paid access lapses. A person who chose "Don't remind me
+   * again" (or "later") while free has that answer cleared the moment their plan reads as paid, so
+   * the notice is shown again whenever they are back on free, including after a restart. Only a
+   * plan read as paid clears it; an unknown read never does.
+   */
+  private async resetNoticeWhilePaid(current: Current) {
+    if (this.planOf(current) !== 'paid' || !this.planNotices[current.personId]) return;
+    const { [current.personId]: _dropped, ...rest } = this.planNotices;
+    this.planNotices = rest;
+    await durableWrite(this.planNoticeFile, JSON.stringify(this.planNotices, null, 2));
+  }
+
+  /**
+   * A business the service has just refused as not paid (access withdrawn, ended or not including
+   * the Agent) is read again, so the cached plan, the account read and the default thread route
+   * follow the confirmed downgrade without a manual refresh. A failed read changes nothing: a
+   * network error or a 5xx is never a downgrade.
+   */
+  async confirmDowngrade(organizationId: string, refusalCode: string) {
+    const current = this.current;
+    if (!current || !UNPAID_REFUSAL_CODES.has(refusalCode)) return;
+    try {
+      const answer = accessAnswer(await this.backend.client.access(current.accessToken, organizationId), organizationId);
+      if (answer && this.current === current) current.access.set(organizationId, answer);
+      await this.resetNoticeWhilePaid(current);
+    } catch {
+      // The cache stays as it was.
+    }
+  }
+
+  /**
+   * The mirror of confirmDowngrade. A business the service has just admitted whose cached access does
+   * not read as paid (a downgrade it was confirmed to have, since granted again) is read again, so the
+   * cached plan and the live observation recheck follow the re-grant without a manual refresh. A
+   * failed read changes nothing.
+   */
+  async confirmAdmitted(organizationId: string) {
+    const current = this.current;
+    if (!current || this.includes(organizationId)) return;
+    try {
+      const answer = accessAnswer(await this.backend.client.access(current.accessToken, organizationId), organizationId);
+      if (answer && this.current === current) current.access.set(organizationId, answer);
+      await this.resetNoticeWhilePaid(current);
+    } catch {
+      // The cache stays as it was.
+    }
   }
 
   /**
@@ -913,6 +1035,34 @@ export class AccountSessionService {
       const old = (error instanceof ControlPlaneError || error instanceof ApiError) && error.status === 404 && error.message === ROUTE_NOT_FOUND;
       return old ? noIndividualAccess(current.personId, this.at()) : null;
     }
+  }
+
+  /**
+   * The signed-in person's own Individual credits for the billing period in force (`GET /account/usage`).
+   * Read-only, and bound to this sign-in: the service resolves the person's own account and period, and
+   * an answer that names anyone or anything else is shown as unavailable. A verified answer is reused
+   * briefly, never past its period's end and never across a sign-in or access change.
+   */
+  async personalUsage(): Promise<PersonalUsageView> {
+    const current = this.requireCurrent();
+    const revision = current.personAccess?.revision ?? null;
+    const cached = this.personalUsageCache;
+    if (cached && cached.current === current && cached.revision === revision && this.now() < cached.until) return cached.view;
+    const unavailable = (reason: string): PersonalUsageView => ({ v: 1, personId: current.personId, accountId: null,
+      usage: { state: 'unavailable', organizationId: current.personId, reason }, renewal: null, checkedAt: this.at() });
+    let answer: unknown;
+    try {
+      answer = await this.call((token) => this.backend.client.personUsage(token));
+    } catch (error) {
+      if ((error instanceof ControlPlaneError || error instanceof ApiError) && error.status === 404 && error.message === ROUTE_NOT_FOUND)
+        return unavailable('This account service does not report Personal usage yet.');
+      throw error;
+    }
+    const view = personalUsageAnswer(answer, current.personId, this.now());
+    if (!view) return unavailable('The usage answer could not be verified for your account, so it was not shown.');
+    const ends = view.usage.state === 'ready' ? Date.parse(view.usage.projection.resetsAt) : Number.POSITIVE_INFINITY;
+    if (this.current === current) this.personalUsageCache = { current, revision, until: Math.min(this.now() + PERSONAL_USAGE_TTL_MS, ends), view };
+    return view;
   }
 
   /** Read the person's businesses and access again. `project: false` leaves the registry to the caller. */
@@ -947,6 +1097,25 @@ export class AccountSessionService {
 
   personId(): string | null {
     return this.current?.personId ?? null;
+  }
+
+  /**
+   * The signed-in person's standing as active Diomedes staff, asked of the account service now.
+   * Not remembered: a person whose staff row was disabled a minute ago must stop being staff on
+   * the next decision, not at the next sign-in. It says null whenever it cannot say otherwise:
+   * signed out, the service unreachable or answering something unreadable, or naming a different
+   * person than the one signed in here. An error never reads as staff.
+   */
+  async staffRole(): Promise<StaffRole | null> {
+    const current = this.current;
+    if (!current) return null;
+    try {
+      const answer = await this.call((token) => this.backend.client.staffMarker(token));
+      if (this.current !== current || answer.personId !== current.personId) return null;
+      return answer.staff?.role ?? null;
+    } catch {
+      return null;
+    }
   }
 
   /**
@@ -1044,8 +1213,10 @@ export class AccountSessionService {
     }
     if (!answer.admitted) {
       this.admissions.delete(key);
+      if (input.organizationId !== null) await this.confirmDowngrade(input.organizationId, answer.code);
       return { admitted: false, code: answer.code, reason: answer.reason };
     }
+    if (input.organizationId !== null) await this.confirmAdmitted(input.organizationId);
     const until = Math.min(Date.parse(answer.validUntil), this.now() + ADMISSION_CACHE_MAX_MS);
     const decision = {
       admitted: true as const,
@@ -1171,7 +1342,10 @@ export class AccountSessionService {
    * Individual plan counts too (2026-09-28).
    */
   agentPlan(): AgentPlanState {
-    const current = this.current;
+    return this.planOf(this.current);
+  }
+
+  private planOf(current: Current | null): AgentPlanState {
     if (!current) return 'free';
     if (personIncludes(current.personAccess)) return 'paid';
     // The person's own plan unread is unknown, unless a business already answers paid below.

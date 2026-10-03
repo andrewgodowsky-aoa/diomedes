@@ -263,6 +263,7 @@ async function createMainWindow() {
     event.preventDefault();
     interfaceScale(command);
   });
+  app.setAboutPanelOptions({ applicationName: 'Nectovia' });
   Menu.setApplicationMenu(
     Menu.buildFromTemplate(applicationMenuTemplate(process.platform, { interfaceScale })),
   );

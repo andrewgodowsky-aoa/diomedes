@@ -22,7 +22,12 @@
 import { createHash } from 'node:crypto';
 import type { Express, NextFunction, Request, Response } from 'express';
 import { z } from 'zod';
-import type { Json } from '../shared/harness.js';
+import type { HarnessPrincipal, Json } from '../shared/harness.js';
+import { agentTeamSelectionSchema } from '../shared/agent-collaboration.js';
+import { agentReviewSelectionSchema } from '../shared/agent-review.js';
+import type { AgentCollaborationHost } from './harness/agent-collaboration.js';
+import type { SpendExposure } from './spend-exposure.js';
+import { REPORT_PATH } from './harness/approval.js';
 import { isModelApiRoute, MODEL_API_NAMES, MODEL_API_PROVIDERS, NECTOVIA_ROUTE } from '../shared/model-api.js';
 import {
   LOOP_LIMITS,
@@ -82,9 +87,13 @@ const startSchema = z.strictObject({
   route: routeName,
   model: z.string().min(1).max(200).nullable().optional(),
   accountRoute: z.string().min(1).max(400).nullable().optional(),
+  effort: z.enum(['low', 'medium', 'high']).nullable().optional(),
   consent: z.boolean().optional(),
   maxTurns: z.number().int().min(1).max(LOOP_LIMITS.maxTurns).optional(),
   sources: z.array(z.string().min(1).max(400)).max(32).optional(),
+  persistentTeam: agentTeamSelectionSchema.nullable().optional(),
+  review: agentReviewSelectionSchema.nullable().optional(),
+  composition: z.literal(true).optional(),
   delegate: z
     .strictObject({
       /** Absent when an H09 profile names it (Andrew, 2026-09-24: delegate routes come from profiles). */
@@ -121,6 +130,27 @@ const startSchema = z.strictObject({
 });
 export type LoopStartRequest = z.infer<typeof startSchema>;
 
+export interface LoopHostStart {
+  retryOf?: TeamRetry | null;
+  team?: TeamConfig | null;
+  admission?: WorkAdmission;
+  principal?: HarnessPrincipal;
+  rootJobId?: string;
+  rootJobRequestId?: string;
+  threadId?: string | null;
+  scopedLedger?: SpendExposure;
+  qualityStatus?: 'hypothesis' | 'measured';
+  selectionReason?: string;
+  /** The exact pre-effect Session left by a process exit before this run file existed. */
+  preparedSessionId?: string;
+  /** Host-selected helper-only composition; ordinary H14 profile requests keep their existing contract. */
+  compose?: boolean;
+}
+export interface NativeCollaborationDeps {
+  host: AgentCollaborationHost;
+  rootLedger?(projectId: string, rawJobId: string, threadId: string | null): Promise<SpendExposure>;
+}
+
 /** One command id names one run, in this project, forever. */
 export function loopRunId(projectId: string, commandId: string): string {
   return `R${createHash('sha256').update(`diomedes-loop\0${projectId}\0${commandId}`).digest('hex').slice(0, 12)}`;
@@ -156,6 +186,8 @@ export interface NectoviaManagedLoopDeps {
     runId: string,
     input: { model: string; accountRoute: string },
     taskId: string,
+    /** Already validated host spend scope; the run id remains the raw request id. */
+    rootJobId?: string,
   ) => Promise<{ model: string; accountRoute: string }>;
 }
 
@@ -193,7 +225,10 @@ export function mountNativeLoopRoutes(
    */
   managed: NectoviaManagedLoopDeps | null = null,
   contributions: (() => PackContributions) | null = null,
+  collaboration: NativeCollaborationDeps | null = null,
 ) {
+  if (collaboration) harness.loop.attachCollaboration(collaboration.host);
+  const collaborationHost = () => collaboration?.host ?? harness.loop.collaboration?.() ?? null;
   const handle =
     (action: (req: Request) => Promise<unknown>) => async (req: Request, res: Response, next: NextFunction) => {
       try {
@@ -213,7 +248,7 @@ export function mountNativeLoopRoutes(
     requested: { model?: string | null; accountRoute?: string | null },
     sources: readonly string[],
     consent: boolean,
-    opts: { taskId?: string | null; runId?: string | null } = {},
+    opts: { taskId?: string | null; runId?: string | null; rootJobId?: string; threadId?: string | null; effort?: string | null } = {},
   ) => {
     if (!loopRoute(route))
       throw new ApiError(400, 'A Diomedes loop runs on the fixture route or a model-API route. An external engine keeps its own loop.', {
@@ -245,7 +280,7 @@ export function mountNativeLoopRoutes(
         // the parent supplied the seam. Without it this stays read-only and
         // the per-step adapter admits with the real run id; never a null job.
         if (managed?.admitManaged && opts.runId)
-          return await managed.admitManaged(projectId, opts.runId, resolved, opts.taskId!);
+          return await managed.admitManaged(projectId, opts.runId, resolved, opts.taskId!, opts.rootJobId);
         return resolved;
       } catch (error) {
         if (error instanceof ApiError) throw error;
@@ -266,7 +301,8 @@ export function mountNativeLoopRoutes(
       requested.accountRoute ??
       (typeof services()[`${route}AccountRoute`] === 'string' ? (services()[`${route}AccountRoute`] as string) : null);
     try {
-      return await harness.loop.admit(route, { projectId, model, accountRoute });
+      return await harness.loop.admit(route, { projectId, model, accountRoute, rootRunId: opts.runId ?? undefined,
+        rootJobId: opts.rootJobId, threadId: opts.threadId, effort: opts.effort });
     } catch (error) {
       if (error instanceof ApiError) throw error;
       // The Agent gate's refusal is the business's plan, not the route: it answers as every Agent
@@ -291,7 +327,7 @@ export function mountNativeLoopRoutes(
     lead: LoopStartRequest,
     scope: readonly string[],
     consent: boolean,
-  ): Promise<TeamRole> => {
+  ): Promise<TeamRole & { effort: string | null }> => {
     const state = store.state(projectId);
     const refuse = (message: string, code = 'team_role_refused') => new ApiError(409, message, { code, role: kind });
     let route = spec.route ?? lead.route;
@@ -299,6 +335,9 @@ export function mountNativeLoopRoutes(
     let accountRoute = spec.accountRoute ?? (spec.route ? null : (lead.accountRoute ?? null));
     let agentId = spec.agentId ?? null;
     let profile: TeamRole['profile'] = null;
+    // Direct H14 roles keep the adapter's existing medium default. A saved
+    // profile below may instead pin an explicit effort, including null.
+    let effort: string | null = 'medium';
     if (spec.profileId) {
       if (!teamAdmission) throw refuse('Agent profiles cannot be used for a team in this process.');
       const preference = teamAdmission.profiles.profiles.routing(projectId, taskId);
@@ -315,6 +354,7 @@ export function mountNativeLoopRoutes(
         throw refuse(`${profileLabel(pick)} runs on a route that keeps its own loop, so it cannot be a ${kind} here.`);
       route = pick.engine;
       model = pick.model;
+      effort = pick.effort;
       accountRoute = null;
       if (!agentId && pick.agentId !== AUTO_AGENT) agentId = pick.agentId;
       profile = {
@@ -345,6 +385,7 @@ export function mountNativeLoopRoutes(
       model: admitted.model,
       accountRoute: admitted.accountRoute,
       profile,
+      effort,
     };
   };
 
@@ -410,7 +451,7 @@ export function mountNativeLoopRoutes(
   const startLocked = async (
     projectId: string,
     body: LoopStartRequest,
-    extra: { retryOf?: TeamRetry | null; team?: TeamConfig | null; admission?: WorkAdmission } = {},
+    extra: LoopHostStart = {},
   ): Promise<{ runId: string; session: Session | null; replayed: boolean }> => {
     const { commandId, ...payload } = body;
     const commandDigest = digest(payload);
@@ -432,18 +473,21 @@ export function mountNativeLoopRoutes(
     if (!task) throw new ApiError(404, 'This task was not found.');
     const workflowBlocker = taskWorkflowBlocker(task);
     if (workflowBlocker) throw new ApiError(409, workflowBlocker, { code: 'task_workflow_blocked' });
-    if (state.sessions.some((session) => ['queued', 'working', 'waiting'].includes(session.state)))
+    if (state.sessions.some((session) => session.id !== extra.preparedSessionId && ['queued', 'working', 'waiting'].includes(session.state)))
       throw new ApiError(409, 'This project already has work in progress.');
     if (task.workflow && body.maxTurns !== undefined && body.maxTurns > task.workflow.maxTurns)
       throw new ApiError(409, 'This loop exceeds the task turn limit.', { code: 'task_turn_limit' });
     const sources = [...new Set((body.sources ?? []).map((source) => relativeName(source)))];
+    if ((body.persistentTeam || body.review || body.composition || extra.compose === true) &&
+        sources.some(path => process.platform === 'win32' ? path.toLowerCase() === REPORT_PATH.toLowerCase() : path === REPORT_PATH))
+      throw new HarnessError('collaboration_refused', 'The report output cannot also be an immutable collaboration source. Select separate source files.');
     const applyScope = body.applyScope
       ? [...new Set(body.applyScope.map((entry) => (entry.trim() === '.' ? '.' : relativeName(entry))))]
       : null;
     const consent = body.consent === true;
     // Nectovia is managed single-agent only: a lead on it names no delegate
     // and no team, and nothing names it as a delegate. Never another payer.
-    if (body.route === NECTOVIA_ROUTE && (body.delegate || body.team || extra.team))
+    if (body.route === NECTOVIA_ROUTE && (body.delegate || body.team || extra.team || body.persistentTeam || body.review))
       throw new ApiError(409, NECTOVIA_LOOP_TEAM_REFUSED, { code: 'loop_route_unsupported' });
     if (body.delegate?.route === NECTOVIA_ROUTE)
       throw new ApiError(409, NECTOVIA_LOOP_REFUSED, { code: 'loop_route_unsupported' });
@@ -452,22 +496,59 @@ export function mountNativeLoopRoutes(
     const skill = contributions
       ? await prepareTaskSkill(contributions(), state, task, runId, instructionSectionBudget(0))
       : null;
-    const admitted = await admitRoute(projectId, body.route, body, sources, consent, { taskId: task.id, runId });
+    const principal = extra.principal ?? localHarnessPrincipal(projectId);
+    const rawJobId = extra.rootJobRequestId ?? runId;
+    const scopedLedger = extra.scopedLedger ?? (collaboration?.rootLedger ? await collaboration.rootLedger(projectId, rawJobId, extra.threadId ?? null) : undefined);
+    const rootJobId = extra.rootJobId ?? scopedLedger?.jobScope?.id;
+    if (rootJobId && (!scopedLedger || scopedLedger.jobScope?.id !== rootJobId))
+      throw new HarnessError('collaboration_refused', 'The host must supply this existing root job ledger.');
+    if (scopedLedger) harness.loop.pinRootScope(runId, scopedLedger);
+    const selectedHost = collaborationHost();
+    if (body.persistentTeam && !selectedHost) throw new HarnessError('collaboration_refused', 'This host cannot resolve a selected Team lead.');
+    const selectedLead = body.persistentTeam ? await selectedHost!.resolveRootTeamLead(projectId, body.persistentTeam) : null;
+    if (selectedLead && (body.route !== selectedLead.route || (body.model != null && body.model !== selectedLead.model) ||
+        (body.accountRoute != null && body.accountRoute !== selectedLead.accountRoute) || (body.effort != null && body.effort !== selectedLead.effort)))
+      throw new HarnessError('collaboration_refused', 'The requested route, model, account or effort differs from the selected Team lead.');
+    const requestedRoot = selectedLead ? { ...body, model: selectedLead.model, accountRoute: selectedLead.accountRoute } : body;
+    const admitted = await admitRoute(projectId, body.route, requestedRoot, sources, consent,
+      { taskId: task.id, runId, rootJobId, threadId: extra.threadId, effort: selectedLead ? selectedLead.effort : body.effort });
     let delegate: LoopRunInput['delegate'] = null;
     if (body.delegate?.profileId) {
       // The person's H09 profile fixes the delegate's route and exact model, by H09's own rules.
       const role = await admitRole(projectId, task.id, 'worker', { profileId: body.delegate.profileId }, body, [], consent);
       if (role.route === NECTOVIA_ROUTE) throw new ApiError(409, NECTOVIA_LOOP_REFUSED, { code: 'loop_route_unsupported' });
-      delegate = { route: role.route, model: role.model, accountRoute: role.accountRoute, profile: role.profile };
+      delegate = { route: role.route, model: role.model, accountRoute: role.accountRoute, profile: role.profile, effort: role.effort };
     } else if (body.delegate?.route) {
       const child = await admitRoute(projectId, body.delegate.route, body.delegate, [], consent);
       delegate = { route: body.delegate.route, model: child.model, accountRoute: child.accountRoute };
     }
-    const team = extra.team
+    let team = extra.team
       ? await readmitTeam(projectId, extra.team, consent)
       : body.team
         ? await admitTeam(projectId, task.id, body, sources, consent)
         : null;
+    let composition: LoopRunInput['collaboration'] = null;
+    if (body.persistentTeam || body.review || body.composition || extra.compose === true) {
+      if (body.delegate || applyScope) throw new HarnessError('collaboration_refused', 'This bounded collaboration uses selected read-only roles and exact report approval.');
+      const host = collaborationHost();
+      if (!host || !rootJobId) throw new HarnessError('collaboration_refused', 'This host has no admitted collaboration and root spend scope.');
+      composition = await host.admit({ projectId, taskId: task.id, rootRunId: runId, rootJobId, commandId,
+        principal, route: body.route, model: admitted.model, accountRoute: admitted.accountRoute, sources, consent,
+        persistentTeam: body.persistentTeam, helperProfileId: body.team?.worker.profileId ?? null, review: body.review,
+        qualityStatus: extra.qualityStatus, selectionReason: extra.selectionReason });
+      if (selectedLead && digest(selectedLead) !== digest(composition.persistentTeam?.lead))
+        throw new HarnessError('collaboration_refused', 'The selected lead binding changed during admission.');
+      if (composition.helper) {
+        const helper = composition.helper;
+        if (!team || team.advisor || team.worker.route !== helper.route || team.worker.model !== helper.model || team.worker.accountRoute !== helper.accountRoute ||
+            team.worker.profile?.profileId !== helper.profile.id || team.worker.profile.revision !== helper.profile.revision || team.worker.profile.digest !== `sha256:${helper.profile.digest}` || helper.effort !== 'medium' ||
+            (team.scope && team.scope.some(path => !sources.includes(path))))
+          throw new HarnessError('collaboration_refused', 'The H14 worker differs from its selected helper profile or source scope.');
+        team = { ...team, scope: sources, worker: { ...team.worker, agent: { ...team.worker.agent, ceiling: 'review' },
+          budget: { turns: Math.min(3, team.worker.budget.turns), tokens: Math.min(15_000, team.worker.budget.tokens ?? 15_000), wallMs: Math.min(120_000, team.worker.budget.wallMs ?? 120_000) } },
+          advisor: null, limits: { depth: 1, concurrentWorkers: 1, workersPerRun: 1, advicePerRun: 0 } };
+      } else if (team) throw new HarnessError('collaboration_refused', 'Select one exact H14 helper profile for this composition.');
+    }
     // H11: the project's instruction files, resolved through the rule path and recorded on the Session.
     const cloud = body.route !== LOOP_FIXTURE_ROUTE;
     const instructions = await assembleInstructions({
@@ -485,6 +566,9 @@ export function mountNativeLoopRoutes(
       route: body.route,
       model: admitted.model,
       accountRoute: admitted.accountRoute,
+      effort: composition?.persistentTeam?.lead.effort ?? body.effort ?? null,
+      ...(rootJobId ? { rootJobId, rootJobRequestId: rawJobId, threadId: extra.threadId ?? null } : {}),
+      ...(composition ? { collaboration: composition } : {}),
       maxTurns: body.maxTurns ?? task.workflow?.maxTurns ?? LOOP_LIMITS.defaultTurns,
       instructions: [instructions.section, skill?.section].filter(Boolean).join('\n\n'),
       ...(skill ? { skill: skill.use } : {}),
@@ -500,9 +584,9 @@ export function mountNativeLoopRoutes(
       task.id,
       NATIVE_LOOP_CAPABILITY,
       body.goal,
-      localHarnessPrincipal(projectId),
+      principal,
       undefined,
-      { runId, input: input as unknown as Json, admission: extra.admission },
+      { runId, input: input as unknown as Json, admission: extra.admission, preparedSessionId: extra.preparedSessionId },
     );
     const saved = store.state(projectId).sessions.find((item) => item.id === session.id);
     if (saved) {
@@ -529,6 +613,14 @@ export function mountNativeLoopRoutes(
       return store.locked(() => startLocked(projectId, parsed.data));
     }),
   );
+
+  app.get('/api/projects/:id/loop/collaboration-options', handle(async req => {
+    const host = collaborationHost();
+    const projectId = String(req.params.id);
+    const taskId = typeof req.query.taskId === 'string' ? req.query.taskId : '';
+    if (!taskId) throw new ApiError(400, 'Select the task these roles will work on.');
+    return host ? host.options(projectId, taskId) : { leads: [], members: [], helpers: [], reviews: [], reason: 'This host has no qualified collaboration choices.' };
+  }));
 
   /**
    * The routes a Console start control may offer, each with the start route's own admission
@@ -715,6 +807,8 @@ export function mountNativeLoopRoutes(
       );
       if (!run) return { refused: { code: 'unsupported', reason: 'This loop’s run record was not found, so it cannot be retried.' } };
       const input = run.input as unknown as LoopRunInput;
+      if (ctx.task.automaticWork) return { refused: { code: 'unsupported', reason: 'This work is bound to the original request and its spend records. Send a new original request to start another root.' } };
+      if (input.collaboration) return { refused: { code: 'unsupported', reason: 'This root owns bounded response and spend records; select a new authorized task instead of retrying it.' } };
       const attempt = (input.retryOf?.attempt ?? 1) + 1;
       const started = await startLocked(
         ctx.projectId,
@@ -740,7 +834,8 @@ export function mountNativeLoopRoutes(
       };
     },
   };
-  return { startLocked, retryDriver, contract: LOOP_CONTROL_CONTRACT };
+  return { startLocked, startHostLocked: (projectId: string, request: LoopStartRequest, extra: LoopHostStart = {}) =>
+    startLocked(projectId, startSchema.parse(request), extra), retryDriver, contract: LOOP_CONTROL_CONTRACT };
 }
 
 /**

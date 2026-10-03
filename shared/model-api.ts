@@ -1,3 +1,9 @@
+import { lunaLabel, type LunaModelId } from './luna-models.js';
+
+/** The Luna model ids the desktop route sends and the one kept for older policies. */
+const MANAGED_LUNA_ID = 'us.openai.gpt-5.6-luna' satisfies LunaModelId;
+const GPT6_LUNA_ID = 'us.openai.gpt-6-luna' satisfies LunaModelId;
+
 /**
  * Model-API routes: a provider's API reached with the company's own credential,
  * rather than an engine installed on this computer. They are deliberately not
@@ -27,7 +33,7 @@ export const isModelApiProvider = (value: unknown): value is ModelApiProvider =>
   typeof value === 'string' && (MODEL_API_PROVIDERS as readonly string[]).includes(value);
 
 export const MODEL_API_NAMES: Record<ModelApiRoute, string> = {
-  'aws-bedrock': 'AWS Bedrock (GPT-5.6 Luna)',
+  'aws-bedrock': `AWS Bedrock (${lunaLabel(MANAGED_LUNA_ID)})`,
   'azure-openai': 'Azure OpenAI',
   openrouter: 'OpenRouter',
   'google-vertex': 'Google Vertex AI (Gemini 3.8 Flash)',
@@ -40,8 +46,8 @@ export const MODEL_API_NAMES: Record<ModelApiRoute, string> = {
  * the owner's AWS route and the Nectovia route's local guard price a call alike.
  */
 export const MANAGED_LUNA = {
-  model: 'us.openai.gpt-5.6-luna',
-  label: 'GPT-5.6 Luna',
+  model: MANAGED_LUNA_ID,
+  label: lunaLabel(MANAGED_LUNA_ID),
   rateCard: 'aws-bedrock-gpt-5.6-luna-us-2026-09-28.1',
   /** Whole micro-USD per million tokens. */
   rates: { input: 220_000, cacheRead: 22_000, cacheWrite: 275_000, output: 1_320_000 },
@@ -54,9 +60,32 @@ export const MANAGED_LUNA = {
     'AWS Bedrock GPT-5.6 Luna agreement offer-bklbyf2ewuawu, US Geo standard prices per 1M tokens, checked 2026-09-28. Estimate only.',
 } as const;
 
+/**
+ * Published direct-AWS catalog identity and US Geo Standard prices. This row does not
+ * qualify an account or a provider exchange, and never changes the managed Luna selection.
+ * K3's billed reasoning/output cap remains unverified for the existing Responses adapter.
+ */
+export const AWS_KIMI_K3 = {
+  model: 'us.moonshotai.kimi-k3',
+  label: 'Kimi K3',
+  rateCard: 'aws-bedrock-kimi-k3-us-standard-2026-10-01.1',
+  /** Whole micro-USD per million tokens; cache writes cost more than ordinary input. */
+  rates: { input: 3_300_000, cacheRead: 330_000, cacheWrite: 4_125_000, output: 16_500_000 },
+  source:
+    'AWS Bedrock Kimi K3, US Geo Standard prices per 1M tokens, checked 2026-10-01. https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-moonshot-ai-kimi-k3.html . Estimate only; account access and billed output bounds are unverified.',
+} as const;
+
+/** The direct owner's setup choices only; no Global profile or alternate region is implied. */
+export const AWS_DIRECT_MODELS = [MANAGED_LUNA, AWS_KIMI_K3] as const;
+export const AWS_DIRECT_MODEL_IDS = [MANAGED_LUNA.model, AWS_KIMI_K3.model] as const;
+
+/** Visible in setup and admission; catalog recognition never removes this refusal. */
+export const AWS_KIMI_K3_REFUSAL =
+  'Kimi K3 requests are blocked: the Responses limit on all billed reasoning and output tokens has not been verified.';
+
 /** Compatibility for policies published before versioned routing; no new qualification is implied. */
 export const GPT6_LUNA = {
-  model: 'us.openai.gpt-6-luna', label: 'GPT-6 Luna', rateCard: 'aws-bedrock-gpt-6-luna-us-2026-09-25.1',
+  model: GPT6_LUNA_ID, label: lunaLabel(GPT6_LUNA_ID), rateCard: 'aws-bedrock-gpt-6-luna-us-2026-09-25.1',
   rates: { input: 110_000, cacheRead: 11_000, cacheWrite: 137_500, output: 550_000 },
   maxOutputTokens: 16_000, maxInputTokens: 272_000,
   source: 'Legacy published AWS Bedrock GPT-6 Luna US Geo price snapshot, 2026-09-25. Estimate only.',
@@ -173,6 +202,12 @@ export interface AzureConnectionView {
 }
 
 /** What `GET /api/ai/model-api/openrouter` returns. Identifiers and state only, never a credential. */
+export interface OpenRouterReasoningView {
+  /** Configured capability only; no live provider qualification is implied. */
+  supported: ('low' | 'medium' | 'high')[];
+  source: string;
+}
+
 export interface OpenRouterConnectionView {
   route: 'openrouter';
   configured: boolean;
@@ -182,7 +217,7 @@ export interface OpenRouterConnectionView {
     id: string;
     endpoint: string;
     /** The allow-list: each model and the only upstream endpoints it may run on. */
-    models: { id: string; upstreams: string[]; rates: DeclaredRatesView }[];
+    models: { id: string; upstreams: string[]; rates: DeclaredRatesView; reasoning?: OpenRouterReasoningView }[];
     dataCollection: 'deny';
     allowFallbacks: false;
     credential: CredentialView;

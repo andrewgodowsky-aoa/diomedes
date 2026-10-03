@@ -234,6 +234,23 @@ export function canChangeMember(input: {
 export const STAFF_ROLES = ['support', 'billing', 'routing', 'admin'] as const;
 export type StaffRole = (typeof STAFF_ROLES)[number];
 
+/**
+ * What the account service says of the signed-in person's standing as Diomedes staff, beside the
+ * session page. Present only for an active staff row; a disabled row, no row, and a person the
+ * service has no staff record for all read as null. Computed there, never from an email domain,
+ * a request, or the internal-test grant source.
+ */
+export interface StaffMarker {
+  readonly role: StaffRole;
+}
+
+/** A marker as this build trusts it: a known role, or nothing. A service that omits it, or sends anything else, says nobody is staff. */
+export function readStaffMarker(value: unknown): StaffMarker | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
+  const role = (value as { role?: unknown }).role;
+  return typeof role === 'string' && (STAFF_ROLES as readonly string[]).includes(role) ? { role: role as StaffRole } : null;
+}
+
 export const STAFF_ROLE_LABELS: Record<StaffRole, string> = {
   support: 'Support',
   billing: 'Billing',
@@ -362,3 +379,6 @@ export const OWNER_RULES_NOT_INCLUDED_REASON =
 /** The sentence a person reads when their business's plan does not include phone access. */
 export const PHONE_RELAY_NOT_INCLUDED_REASON =
   'Reaching this computer from your phone is part of a paid plan.';
+/** The sentence a person reads wherever a business without a plan would start an Automation. */
+export const AUTOMATIONS_NOT_INCLUDED_REASON =
+  'Automations are part of a paid plan. Their setup and history are kept, but nothing runs until this business has one.';

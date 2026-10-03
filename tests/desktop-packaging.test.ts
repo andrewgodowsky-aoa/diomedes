@@ -48,6 +48,7 @@ async function fixture() {
     'desktop/update-helper.mjs',
     'desktop/fresh-start.mjs',
     'desktop/diomedes.ico',
+    'desktop/nectovia.icns',
     'desktop/service.ts',
     'fixtures/harness/report-lines.txt',
     'LICENSE',
@@ -82,7 +83,10 @@ async function fixture() {
       extraResource: string[];
     }) => {
       const output = path.join(options.out, `${options.name}-${options.platform}-${options.arch}`);
-      const resources = path.join(output, 'Diomedes.app/Contents/Resources');
+      const resources = path.join(output, `${options.name}.app/Contents/Resources`);
+      const metadata = JSON.parse(await fs.readFile(path.join(options.dir, 'package.json'), 'utf8'));
+      expect(metadata.name).toBe('diomedes');
+      expect(metadata.productName).toBe('Nectovia');
       await fs.mkdir(resources, { recursive: true });
       await fs.copyFile(
         path.join(options.dir, 'BUILD_INFO.json'),
@@ -187,13 +191,14 @@ describe('FD01 same desktop packaging entry point', () => {
       expect.objectContaining({
         platform: 'darwin',
         arch: 'arm64',
-        name: 'Diomedes',
+        name: 'Nectovia',
+        appBundleId: 'com.electron.diomedes',
+        icon: path.join(root, 'desktop/nectovia.icns'),
         asar: true,
         electronZipDir: options.electronZipDir,
       }),
     );
     const call = deps.packager.mock.calls[0][0];
-    expect(call).not.toHaveProperty('icon');
     expect(call).not.toHaveProperty('win32metadata');
     expect(call).not.toHaveProperty('osxSign');
     expect(call).not.toHaveProperty('asarIntegrityDigest');
@@ -211,12 +216,12 @@ describe('FD01 same desktop packaging entry point', () => {
     });
     expect(JSON.stringify(manifest.nativeRuntime)).not.toMatch(/\.exe/);
     const output = JSON.parse(
-      await fs.readFile(path.join(root, 'release/Diomedes-darwin-arm64.manifest.json'), 'utf8'),
+      await fs.readFile(path.join(root, 'release/Nectovia-darwin-arm64.manifest.json'), 'utf8'),
     );
     expect(output.files).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          path: 'Diomedes.app/Contents/Resources/app.asar',
+          path: 'Nectovia.app/Contents/Resources/app.asar',
           sha256: expect.stringMatching(/^[a-f0-9]{64}$/),
         }),
       ]),

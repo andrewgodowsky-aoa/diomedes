@@ -16,8 +16,14 @@ import { EngineService } from '../server/engines/service';
 import { testOnlySecretBox, type SecretBox } from '../server/connection-secrets';
 import type { AzureConnectionView, ModelApiReadiness, OpenRouterConnectionView } from '../shared/model-api';
 import type { Conversation, Project } from '../shared/types';
-import { azureConnectBody, openRouterConnectBody } from '../client/provider-setup-view';
+import { azureConnectBody, openRouterConnectBody, openRouterInputFrom } from '../client/provider-setup-view';
 import { awsLimitBody } from '../client/aws-bedrock-view';
+import { OpenRouterConnections, openRouterRateCard, respondOpenRouter } from '../server/engines/openrouter';
+import { exposureAttempt } from '../server/engines/aws-bedrock';
+import { CONVERSATION_LIMITS } from '../server/engines/model-api-core';
+import { SpendExposure } from '../server/spend-exposure';
+import { micro } from '../shared/managed-usage';
+import { chatEvents, sseResponse } from './fixtures/model-api-streams';
 
 const headers = { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' };
 const SECRET = 'test-only-provider-key-0123456789abcdef-never-real';
@@ -158,7 +164,7 @@ describe('Azure OpenAI setup, from the card to the host and back', () => {
 });
 
 describe('a thread on a connected Azure route', () => {
-  test('takes the route with no pin and runs the saved default model; a pinned model is refused', async () => {
+  test('uses the saved default and accepts only current configured model and effort pins', async () => {
     await ok('/ai/model-api/azure-openai', 'PUT', azureBody());
     const project = await ok<Project>('/projects', 'POST', { name: 'Harbor cafe' });
     const thread = await ok<Conversation>(`/projects/${project.id}/threads`, 'POST', {});
@@ -173,13 +179,26 @@ describe('a thread on a connected Azure route', () => {
     );
     expect(next.route).toBe('azure-openai');
     expect(next.resolution).toMatchObject({ outcome: 'run', model: 'gpt-5.6-luna' });
-    // Why the picker does not pin: the host checks a pin against engine catalogues, which list
-    // nothing for a company-account route.
+    // API choices are the current connection's deployments, including their reasoning capability.
     const pinned = await call(`/projects/${project.id}/threads/${thread.id}`, 'PUT', {
       engine: 'azure-openai',
       requested: { model: 'gpt-4.1-mini', effort: null },
     });
-    expect(pinned.status).toBe(400);
+    expect(pinned.status).toBe(200);
+    expect(JSON.parse(pinned.text).requested).toEqual({ model: 'gpt-4.1-mini', effort: null });
+    const pinnedStyle = await ok<{ resolution: { model: string | null; effort: string | null } }>(
+      `/projects/${project.id}/threads/${thread.id}/work-style`,
+    );
+    expect(pinnedStyle.resolution).toMatchObject({ outcome: 'run', model: 'gpt-4.1-mini', effort: null });
+    for (const requested of [
+      { model: 'unconfigured-deployment', effort: null },
+      { model: 'gpt-4.1-mini', effort: 'high' },
+    ]) {
+      const refused = await call(`/projects/${project.id}/threads/${thread.id}`, 'PUT', { engine: 'azure-openai', requested });
+      expect(refused.status).toBe(400);
+    }
+    const preserved = await ok<{ conversations: Conversation[] }>(`/projects/${project.id}/state`);
+    expect(preserved.conversations.find(item => item.id === thread.id)?.requested).toEqual({ model: 'gpt-4.1-mini', effort: null });
   });
 });
 
@@ -224,20 +243,115 @@ describe('the owner’s tier map sends each tier to its mapped Azure or OpenRout
     expect(efficient.resolution).toMatchObject({ outcome: 'run', model: 'gpt-6-luna' });
   });
 
-  test('an OpenRouter model is mapped with no level, since the route sends none', async () => {
+  test('F1: unknown model capability offers no effort, infers none, and refuses a high pin without replacing the accepted choice', async () => {
+    const model = 'vendor/no-reasoning';
     const parsed = openRouterConnectBody({
-      models: [{ id: 'vendor/gpt-6-luna', upstreams: 'upstream-one', rates: prices }],
+      models: [{ id: model, upstreams: 'openai', rates: prices }],
+      apiKey: SECRET, expiresLocal: '', consent: true,
+    });
+    if (!parsed.ok) throw new Error(parsed.message);
+    await ok('/ai/model-api/openrouter', 'PUT', parsed.body);
+    await mapTiers({ efficientRoute: 'openrouter', efficientModel: model });
+    const project = await ok<Project>('/projects', 'POST', { name: 'Synthetic unknown capability' });
+    const thread = await ok<Conversation>(`/projects/${project.id}/threads`, 'POST', {});
+    const choices = await ok<{ models: { slug: string; efforts: { id: string }[] }[] }>('/engines/openrouter/models');
+    expect(choices.models.find(entry => entry.slug === model)?.efforts).toEqual([]);
+    expect(await styled(project, thread, 'efficient')).toMatchObject({
+      route: 'openrouter', resolution: { outcome: 'run', model, effort: null },
+    });
+    await ok(`/projects/${project.id}/threads/${thread.id}`, 'PUT', { engine: 'openrouter', requested: { model, effort: null } });
+    const refused = await call(`/projects/${project.id}/threads/${thread.id}`, 'PUT', {
+      engine: 'openrouter', requested: { model, effort: 'high' },
+    });
+    expect(refused.status).toBe(400);
+    const preserved = await ok<{ conversations: Conversation[] }>(`/projects/${project.id}/state`);
+    expect(preserved.conversations.find(item => item.id === thread.id)?.requested).toEqual({ model, effort: null });
+  });
+
+  test('F1: a declared partial capability round-trips through setup and accepts only its supported levels', async () => {
+    const model = 'vendor/low-only';
+    const declared = { supported: ['low' as const], source: 'Synthetic owner declaration; not live qualification' };
+    const parsed = openRouterConnectBody({
+      models: [{ id: model, upstreams: 'openai', rates: prices, reasoning: declared }],
+      apiKey: SECRET, expiresLocal: '', consent: true,
+    });
+    if (!parsed.ok) throw new Error(parsed.message);
+    const view = await ok<OpenRouterConnectionView>('/ai/model-api/openrouter', 'PUT', parsed.body);
+    expect(view.connection?.models[0]).toMatchObject({ reasoning: declared });
+    const restored = openRouterInputFrom(view);
+    expect(restored.models[0]).toMatchObject({ reasoning: declared });
+    const again = openRouterConnectBody({ ...restored, apiKey: SECRET, expiresLocal: '', consent: true });
+    if (!again.ok) throw new Error(again.message);
+    await ok('/ai/model-api/openrouter', 'PUT', again.body);
+    const choices = await ok<{ models: { slug: string; efforts: { id: string }[] }[] }>('/engines/openrouter/models');
+    expect(choices.models.find(entry => entry.slug === model)?.efforts.map(level => level.id)).toEqual(['low']);
+    const project = await ok<Project>('/projects', 'POST', { name: 'Synthetic partial capability' });
+    const thread = await ok<Conversation>(`/projects/${project.id}/threads`, 'POST', {});
+    await ok(`/projects/${project.id}/threads/${thread.id}`, 'PUT', { engine: 'openrouter', requested: { model, effort: 'low' } });
+    for (const effort of ['medium', 'high']) {
+      expect((await call(`/projects/${project.id}/threads/${thread.id}`, 'PUT', {
+        engine: 'openrouter', requested: { model, effort },
+      })).status).toBe(400);
+    }
+    const preserved = await ok<{ conversations: Conversation[] }>(`/projects/${project.id}/state`);
+    expect(preserved.conversations.find(item => item.id === thread.id)?.requested).toEqual({ model, effort: 'low' });
+  });
+
+  test('an OpenRouter model is mapped with its selected reasoning level on the SDK wire', async () => {
+    const model = 'openai/gpt-6.1-sol';
+    const parsed = openRouterConnectBody({
+      models: [{ id: model, upstreams: 'openai', rates: prices,
+        reasoning: { supported: ['low', 'medium', 'high'], source: 'Synthetic SDK fixture declaration; not live qualification' } }],
       apiKey: SECRET,
       expiresLocal: '',
       consent: true,
     });
     if (!parsed.ok) throw new Error(parsed.message);
     await ok('/ai/model-api/openrouter', 'PUT', parsed.body);
-    await mapTiers({ efficientRoute: 'openrouter', efficientModel: 'vendor/gpt-6-luna' });
+    await mapTiers({ efficientRoute: 'openrouter', efficientModel: model });
     const project = await ok<Project>('/projects', 'POST', { name: 'Harbor cafe' });
     const thread = await ok<Conversation>(`/projects/${project.id}/threads`, 'POST', {});
     const efficient = await styled(project, thread, 'efficient');
-    expect(efficient).toMatchObject({ route: 'openrouter', resolution: { outcome: 'run', model: 'vendor/gpt-6-luna', effort: null } });
+    expect(efficient).toMatchObject({ route: 'openrouter', resolution: { outcome: 'run', model, effort: 'low' } });
+
+    const choices = await ok<{ models: { slug: string; efforts: { id: string }[] }[] }>('/engines/openrouter/models');
+    expect(choices.models.find(entry => entry.slug === model)?.efforts.map(level => level.id)).toContain(efficient.resolution.effort);
+
+    // Carry the resolved level through the real SDK using an independently captured, local transport.
+    const connection = await new OpenRouterConnections(path.join(root, 'data')).read();
+    if (!connection) throw new Error('The configured OpenRouter fixture is missing.');
+    const exposure = new SpendExposure(path.join(root, 'captured-sdk-spend'));
+    await exposure.init();
+    await exposure.setCap(connection.id, micro(1_000_000), { approvedBy: 'test owner', note: 'Scripted SDK fixture only' });
+    const messages = [{ role: 'user' as const, content: 'Read the synthetic lunch menu.' }];
+    const captured: Record<string, any>[] = [];
+    const capturedTransport = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      captured.push(JSON.parse(String(init?.body)));
+      return sseResponse(chatEvents({ model, provider: 'OpenAI', text: 'Fixture answer.', usage: {
+        prompt_tokens: 80, completion_tokens: 12, total_tokens: 92,
+        prompt_tokens_details: { cached_tokens: 0 }, completion_tokens_details: { reasoning_tokens: 0 },
+        cost: 0.00022, is_byok: false,
+      } }));
+    }) as typeof globalThis.fetch;
+    const sent = await respondOpenRouter({
+      connection, model: efficient.resolution.model!, effort: efficient.resolution.effort as 'low',
+      secret: SECRET, card: openRouterRateCard(connection, model), exposure,
+      attempt: exposureAttempt('mapped-effort-fixture', 'model@1', messages),
+      instructions: 'Use only the synthetic menu.', messages, tools: [], limits: CONVERSATION_LIMITS,
+      signal: new AbortController().signal, transport: capturedTransport,
+    });
+    expect(captured).toHaveLength(1);
+    expect(captured[0].reasoning).toEqual({ effort: efficient.resolution.effort });
+    expect(captured[0]).toMatchObject({ model, reasoning: { effort: efficient.resolution.effort },
+      max_tokens: CONVERSATION_LIMITS.maxOutputTokens,
+      provider: { only: ['openai'], allow_fallbacks: false, require_parameters: true, data_collection: 'deny' },
+    });
+    expect(sent.reservation.state).toBe('settled');
+
+    // An explicit no-level selection remains distinct from the tier's inferred level.
+    await ok(`/projects/${project.id}/threads/${thread.id}`, 'PUT', { engine: 'openrouter', requested: { model, effort: null } });
+    const manual = await ok<Next>(`/projects/${project.id}/threads/${thread.id}/work-style`);
+    expect(manual.resolution).toMatchObject({ outcome: 'run', model, effort: null });
   });
 
   test('the host refuses a tier mapped to anything but a company account, or a malformed model id', async () => {

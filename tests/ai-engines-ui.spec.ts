@@ -2,10 +2,16 @@ import { test, expect, type Locator, type Page } from '@playwright/test';
 import express from 'express';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import type { Server } from 'node:http';
 import { createApp } from '../server/app';
 import { EngineService } from '../server/engines/service';
-import type { TextEngineAdapter, TextRequest, TextResponse } from '../server/engines/contract';
+import type { PersistentTextAdapter, TextEngineAdapter, TextRequest, TextResponse } from '../server/engines/contract';
+import type { ClaudeSessionCheckpoint } from '../server/engines/claude-session';
+import type { OpenCodeSessionCheckpoint } from '../server/engines/opencode-session';
+import type { AcpSessionCheckpoint } from '../server/engines/acp-session';
+import { readScopeDigest } from '../server/engines/read-scope';
+import { hash } from '../server/store';
 import { routeContractFor } from '../server/harness/route-contract';
 import type {
   EngineModel,
@@ -79,7 +85,7 @@ async function api<T>(route: string, method = 'GET', data?: unknown): Promise<T>
 }
 
 function fixtureAdapter(engine: ExternalEngine): TextEngineAdapter {
-  return {
+  const textAdapter: TextEngineAdapter = {
     id: engine,
     contract: routeContractFor(engine),
     inspect: async () => ({
@@ -131,6 +137,52 @@ function fixtureAdapter(engine: ExternalEngine): TextEngineAdapter {
       };
     },
   };
+  // These routes now keep native sessions. The fixture must implement that
+  // transport too; production must continue refusing a text-only adapter.
+  if (engine === 'oh-my-pi') return textAdapter;
+  type Checkpoint = ClaudeSessionCheckpoint | OpenCodeSessionCheckpoint | AcpSessionCheckpoint;
+  const persistent: PersistentTextAdapter<Checkpoint> = {
+    ...textAdapter,
+    sessionContract: routeContractFor(`${engine}-session`),
+    openSession: async (input, options) => {
+      const common = {
+        version: 1 as const, nativeSessionId: randomUUID(), lineageId: randomUUID(),
+        projectId: input.projectId, threadId: input.threadId, cliVersion: versions[engine],
+        requestedModel: input.model, reportedModel: null, instructionDigest: hash(input.instructions)!,
+        scopeDigest: readScopeDigest(input.readScope), state: 'idle' as const,
+      };
+      let checkpoint: Checkpoint = options.restore ? structuredClone(options.restore) :
+        engine === 'claude-code' ? { ...common, parentSessionId: null, cwd: project.folder,
+          accountDigest: hash('fixture-account')!, requests: [], results: [] } :
+        engine === 'opencode' ? { ...common, engine, accountRoute: input.accountRoute,
+          parentSessionId: null, origin: 'started', lostSessionId: null, lastAssistantMessageId: null, turns: 0 } :
+        { ...common, engine, accountRoute: input.accountRoute, origin: 'started', loadSession: true,
+          lostSessionId: null, interruptedRequestId: null, lastStop: null, turns: 0 };
+      const signal = new AbortController().signal;
+      let active: AbortController | undefined;
+      return {
+        get checkpoint() { return structuredClone(checkpoint); },
+        get nativeSession() { return { providerId: engine, lineageId: checkpoint.lineageId,
+          opaqueRef: checkpoint.nativeSessionId! }; },
+        turn: async (turn) => {
+          active = new AbortController();
+          const abort = () => active?.abort();
+          turn.signal?.addEventListener('abort', abort, { once: true });
+          checkpoint = { ...checkpoint, state: 'busy' };
+          await options.onCheckpoint(checkpoint, signal);
+          try {
+            const answer = await textAdapter.generate({ ...turn, signal: active.signal });
+            checkpoint = { ...checkpoint, state: 'idle', reportedModel: answer.model };
+            await options.onCheckpoint(checkpoint, signal);
+            return answer;
+          } finally { turn.signal?.removeEventListener('abort', abort); active = undefined; }
+        },
+        interrupt: async () => { active?.abort(); },
+        close: async () => { active?.abort(); },
+      };
+    },
+  };
+  return persistent;
 }
 
 async function expectFreshBundle(dist: string): Promise<void> {
@@ -478,6 +530,10 @@ test('Console Ask revision confirms the named task documents, preserves Cancel, 
   expect(calls.at(-1)?.input.accountRoute).toBe('opencode:fixture-account');
   await expect(page.locator('.exchange .turn.dio')).toContainText('Scoped answer from opencode.');
   await expect(composer).toHaveValue('');
+  // A native transport can preview its answer before the turn commits. Wait
+  // for the persisted source record, not only the visible streaming text.
+  await expect.poll(async () => (await api<ProjectState>(`/projects/${fixture.id}/state`))
+    .conversations[0].turns[0]?.sources).toEqual(['weekly-operations-brief.md', 'bakery-inventory.md']);
   const after = await api<ProjectState>(`/projects/${fixture.id}/state`);
   expect(after.conversations[0].turns[0].sources).toEqual(['weekly-operations-brief.md', 'bakery-inventory.md']);
   expect(after.conversations[0].permission).toBe('task');
@@ -530,11 +586,25 @@ test('Console keeps the Codex sending preference and sample route separate from 
   const fixture = await api<Project>('/projects', 'POST', { name: 'Sending preference fixture' });
   const thread = await api<Conversation>(`/projects/${fixture.id}/threads`, 'POST', { mode: 'ask' });
   const sent: { route: string; mode: string; consent: boolean }[] = [];
+  let selectedRoute = 'codex';
   // Observe the client request boundary without starting a real Codex process.
   // The backend consent contract is exercised in backend.test.ts.
   await page.route(`**/api/projects/${fixture.id}/ask`, (route) => {
     sent.push(route.request().postDataJSON());
     return route.fulfill({ json: {} });
+  });
+  // Ask on ChatGPT now uses the kept-conversation command boundary. This
+  // client-only consent fixture supplies its route and a confirmed command
+  // result, without asking the host to find or launch a real Codex runtime.
+  await page.route(`**/api/projects/${fixture.id}/threads/${thread.id}/work-style`, async route => {
+    const response = await route.fetch();
+    return route.fulfill({ json: { ...await response.json(), route: selectedRoute, refusal: null } });
+  });
+  await page.route(`**/api/projects/${fixture.id}/threads/${thread.id}/messages`, route => {
+    const body = route.request().postDataJSON();
+    sent.push({ route: selectedRoute, mode: body.mode, consent: body.consent });
+    return route.fulfill({ json: { commandId: body.commandId, runId: 'fixture', sourceMessageId: 'fixture',
+      answerText: 'Fixture answer', interrupted: false, outcome: { status: 'answered' } } });
   });
   for (const scenario of [
     { route: 'codex', mode: 'ask', sending: false, confirm: false },
@@ -542,6 +612,7 @@ test('Console keeps the Codex sending preference and sample route separate from 
     { route: 'codex', mode: 'build', sending: false, confirm: true },
     { route: 'sample', mode: 'ask', sending: true, confirm: false },
   ]) {
+    selectedRoute = scenario.route;
     await api(`/projects/${fixture.id}/threads/${thread.id}`, 'PUT', { engine: scenario.route, mode: scenario.mode });
     await api('/settings', 'PUT', {
       openProjects: [fixture.id], services: { codex: true }, permissions: { sending: scenario.sending },

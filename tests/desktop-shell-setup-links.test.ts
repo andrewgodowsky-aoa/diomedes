@@ -1,6 +1,10 @@
+import fs from 'node:fs/promises';
+import os from 'node:os';
 import { describe, expect, it } from 'vitest';
 // @ts-expect-error The desktop shell helpers are an executable JavaScript module.
 import { engineSetupDownloads, setupReferenceLinks } from '../desktop/app-updates.mjs';
+import { EngineInstaller } from '../server/engines/install';
+import { EXTERNAL_ENGINES } from '../shared/engines';
 
 // The pinned Windows engine artefacts desktop/main.mjs has always allowed.
 const WINDOWS_DOWNLOADS = [
@@ -40,6 +44,26 @@ describe('desktop shell engine setup references', () => {
   it('invents no macOS download in place of the Windows ones', () => {
     for (const platform of ['darwin', 'linux'])
       for (const link of setupReferenceLinks(platform)) expect(SHARED_LINKS).toContain(link);
+  });
+
+  it('links an install source only when the shell on that platform would open it', async () => {
+    // An unavailable offer names a Windows file on a Mac, or a vendor page the
+    // shell opens nowhere, so AI setup shows its source as text there.
+    const aiSetup = await fs.readFile(new URL('../client/AISetup.tsx', import.meta.url), 'utf8');
+    expect(aiSetup).toContain("offer.available && offer.source.startsWith('http') ? (");
+    for (const [platform, arch] of [
+      ['win32', 'x64'],
+      ['darwin', 'arm64'],
+    ] as const) {
+      const installer = new EngineInstaller(os.tmpdir(), { platform, arch });
+      for (const engine of EXTERNAL_ENGINES) {
+        const offer = installer.offer(engine);
+        if (offer.available)
+          expect(setupReferenceLinks(platform), `${platform} ${engine}`).toContain(offer.source);
+        else if (platform === 'darwin')
+          expect(setupReferenceLinks(platform), engine).not.toContain(offer.source);
+      }
+    }
   });
 
   it('answers a fresh list so a caller cannot widen the next allowlist', () => {

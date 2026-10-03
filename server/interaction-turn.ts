@@ -6,6 +6,7 @@
 // existing task and work admission.
 import { digest } from './harness/policy.js';
 import type { Json } from '../shared/harness.js';
+import type { AutomaticWorkRequest } from '../shared/automatic-work.js';
 import {
   PACKAGE_FIELD_NAMES,
   interactionDecisionSchema,
@@ -110,6 +111,8 @@ const SNAKE_TO_CAMEL = new Map<string, string>(
 /** `absent`: no block, an ordinary answer. `refused`: a block that is not a valid proposal for this message. */
 export type DecisionBlock = 'absent' | 'parsed' | 'refused';
 export interface DecisionPhaseBody {
+  /** Host supplied original-request evidence. Never parsed from the model block. */
+  automaticWork?: AutomaticWorkRequest;
   /**
    * What the person typed. It is the instruction any work proposed from this message is
    * started with, and it is read from here on every retry, so a task or a Work command made
@@ -212,10 +215,10 @@ export function splitDecision(
 }
 
 /** The splitter the driver is handed for one message. Pure, so it gives the same body on every replay. */
-export function decideWith(sourceMessageId: string, restriction: Restriction, text: string) {
+export function decideWith(sourceMessageId: string, restriction: Restriction, text: string, automaticWork: AutomaticWorkRequest | null = null) {
   return (answer: string): { answerText: string; body: Json } => {
     const split = splitDecision(answer, sourceMessageId, restriction, text);
-    return { answerText: split.answerText, body: split.body as unknown as Json };
+    return { answerText: split.answerText, body: { ...split.body, ...(automaticWork ? { automaticWork: structuredClone(automaticWork) } : {}) } as unknown as Json };
   };
 }
 
@@ -256,6 +259,8 @@ const BLOCKED: Record<BlockReason, string> = {
   'send-not-reachable': 'Sending anything outside the app from a conversation is not available yet.',
   'control-not-reachable': 'Use the run’s own controls to stop or resume it.',
   'stale-selection': 'That choice was for a different proposal. Nothing was started.',
+  'stale-request': 'The original request no longer matches this work. Nothing was started.',
+  'request-out-of-scope': 'This work exceeds the original request. Nothing was started.',
 };
 export const blockedMessage = (reason: BlockReason) => BLOCKED[reason];
 
@@ -295,8 +300,8 @@ export function outcomeOf(
 ): InteractionOutcome {
   const recorded = decisionOf(phases);
   const refused =
-    bodyOf<{ status: number; message: string }>(phases, 'work-refused') ??
-    bodyOf<{ status: number; message: string }>(phases, 'task-refused');
+    bodyOf<{ status: number; message: string; code?: string }>(phases, 'work-refused') ??
+    bodyOf<{ status: number; message: string; code?: string }>(phases, 'task-refused');
   if (receipts.sessionId && receipts.taskId && receipts.projectId)
     return {
       status: 'started',
@@ -307,7 +312,7 @@ export function outcomeOf(
   if (refused)
     return {
       status: 'not-started',
-      reason: 'refused',
+      reason: refused.code === 'above-ceiling' ? 'above-ceiling' : 'refused',
       message: refused.message,
       taskId: receipts.taskId,
     };

@@ -1,4 +1,4 @@
-// Draws the Nectovia mark as the Windows app icon, desktop/diomedes.ico. The file keeps its
+// Draws the Nectovia mark as desktop/diomedes.ico and desktop/nectovia.icns. The ICO keeps its
 // old name because scripts/package-desktop.mjs embeds it in nectovia.exe by that name, and
 // the installer that scripts/build-windows-installer.mjs writes shows it for itself and its
 // uninstaller.
@@ -291,8 +291,32 @@ export function buildIco() {
   return Buffer.concat([directory, ...images.map(({ data }) => data)]);
 }
 
+/** PNG-backed ICNS entries for standard and Retina sizes, from the same Console mark. */
+export function buildIcns() {
+  const entries = [
+    ['icp4', 16], ['icp5', 32], ['icp6', 64], ['ic07', 128],
+    ['ic08', 256], ['ic09', 512], ['ic10', 1024],
+    ['ic11', 32], ['ic12', 64], ['ic13', 256], ['ic14', 512],
+  ];
+  const images = new Map();
+  const chunks = entries.map(([type, size]) => {
+    if (!images.has(size)) images.set(size, encodePng(renderIcon(size), size));
+    const png = images.get(size);
+    const header = Buffer.alloc(8);
+    header.write(type, 0, 'ascii');
+    header.writeUInt32BE(png.length + 8, 4);
+    return Buffer.concat([header, png]);
+  });
+  const header = Buffer.alloc(8);
+  header.write('icns', 0, 'ascii');
+  header.writeUInt32BE(8 + chunks.reduce((total, chunk) => total + chunk.length, 0), 4);
+  return Buffer.concat([header, ...chunks]);
+}
+
 if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url) {
-  const out = fileURLToPath(new URL('../desktop/diomedes.ico', import.meta.url));
-  await fs.writeFile(out, buildIco());
-  console.log(`Wrote ${out}`);
+  for (const [name, bytes] of [['diomedes.ico', buildIco()], ['nectovia.icns', buildIcns()]]) {
+    const out = fileURLToPath(new URL(`../desktop/${name}`, import.meta.url));
+    await fs.writeFile(out, bytes);
+    console.log(`Wrote ${out}`);
+  }
 }

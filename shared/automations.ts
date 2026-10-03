@@ -237,6 +237,8 @@ export const SCHEDULE_OUTCOME: Readonly<Record<string, string>> = Object.freeze(
   configuration_changed: 'Blocked: the setup changed',
   assigned_to_another_computer: 'Blocked: assigned to another computer',
   schedule_budget_unbounded: 'Blocked: no hard spending bound',
+  plan_not_included: 'Blocked: needs a paid plan',
+  plan_unknown: 'Blocked: the plan could not be read',
 });
 
 /** Codes that stop every slot until an owner or admin acts. */
@@ -246,6 +248,7 @@ export const SCHEDULE_BLOCKING_CODES: readonly string[] = [
   'configuration_changed',
   'assigned_to_another_computer',
   'schedule_budget_unbounded',
+  'plan_not_included',
 ];
 
 /** The outcome text of a scheduled occurrence that did not start, or null. */

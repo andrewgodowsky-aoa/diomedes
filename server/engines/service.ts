@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import { createReadStream, realpath as realpathCallback } from 'node:fs';
 import { promisify } from 'node:util';
 import { createHash, randomUUID } from 'node:crypto';
+import type { OwnedTeamObservation } from '../observability/eligibility.js';
 import path from 'node:path';
 import type { ExternalEngine, IntegrationStatus } from '../../shared/types.js';
 import {
@@ -76,10 +77,11 @@ import { digest } from '../harness/policy.js';
 import {
   AWS_BEDROCK_ROUTE,
   AWS_BEDROCK_SDK,
-  AWS_LUNA_RATE_CARD,
   ModelApiError,
   WORK_LIMITS,
   awsAccountRoute,
+  awsModelRateCard,
+  awsModelRefusal,
   AwsConnectionRetired,
   respondOnce,
   type AwsConnection,
@@ -121,7 +123,7 @@ import type { MicroUsd } from '../../shared/managed-usage.js';
 import { createAwsModelAdapter } from '../harness/aws-model-adapter.js';
 import { createAzureModelAdapter } from '../harness/azure-model-adapter.js';
 import { createOpenRouterModelAdapter } from '../harness/openrouter-model-adapter.js';
-import { createVertexModelAdapter } from '../harness/vertex-model-adapter.js';
+import { createVertexModelAdapter, createVertexModelDescriptor } from '../harness/vertex-model-adapter.js';
 import { createNectoviaModelAdapter } from '../harness/nectovia-model-adapter.js';
 import {
   NECTOVIA_LOOP_REFUSED,
@@ -143,7 +145,7 @@ import type { ModelTranscripts } from '../harness/model-transcripts.js';
 import { turnRunId, type ModelSessionAdmission, type ModelSessionRuns, type ModelSessionTurn } from '../harness/model-session-run.js';
 import type { ReadToolDeps } from '../harness/capabilities/read-scope-tools.js';
 import type { ConnectionSecrets } from '../connection-secrets.js';
-import type { SpendExposure } from '../spend-exposure.js';
+import { SpendExposure } from '../spend-exposure.js';
 import { NECTOVIA_ROUTE, type ModelApiRoute } from '../../shared/model-api.js';
 import { WORK_STYLE_LABELS } from '../../shared/work-style.js';
 import { routeUnavailable } from '../../shared/route-unavailable.js';
@@ -427,6 +429,7 @@ function stageOf(error: unknown): SetupStage {
   return 'runtime-verification';
 }
 export class EngineService {
+  private readonly jobLedgerViews = new Map<string, { base: SpendExposure; cap: MicroUsd; view: SpendExposure }>();
   private readonly connections = new Map(EXTERNAL_ENGINES.map((id) => [id, blank(id)]));
   private readonly deps: EngineServiceDeps;
   /** One run per scope: two simultaneous scans of the same routes share it. */
@@ -2111,9 +2114,19 @@ export class EngineService {
    * to the request's job. The job is named by the request id and its tier comes
    * from its thread, both read by the host; nothing in a request body sets a cap.
    */
-  private async jobLedger(api: ModelApiServices, input: Pick<TextRequest, 'projectId' | 'requestId' | 'threadId'>): Promise<SpendExposure> {
+  private async jobLedger(api: ModelApiServices, input: Pick<TextRequest, 'projectId' | 'requestId'> & { threadId?: string | null }): Promise<SpendExposure> {
     if (!this.jobCaps) return api.exposure;
-    return api.exposure.forJob(await this.jobCaps.scope(input.projectId, input.requestId, input.threadId ?? null));
+    const scope = await this.jobCaps.scope(input.projectId, input.requestId, input.threadId ?? null);
+    const held = this.jobLedgerViews.get(scope.id);
+    if (held?.base === api.exposure && held.cap === scope.capMicroUsd) return held.view;
+    const view = api.exposure.forJob(scope);
+    this.jobLedgerViews.set(scope.id, { base: api.exposure, cap: scope.capMicroUsd, view });
+    return view;
+  }
+  /** Resolve once from the original raw request id; callers preserve this scope across roles. */
+  async rootJobLedger(projectId: string, rawJobId: string, threadId: string | null = null): Promise<SpendExposure> {
+    if (!this.modelApi) throw new EngineError('RUNTIME_UNAVAILABLE', 'The model-API runtime is not attached to this service.', true);
+    return this.jobLedger(this.modelApi, { projectId, requestId: rawJobId, threadId });
   }
   /** Record where a job stopped at its cap, so "Go over this once" can raise the next one from it. */
   private async noteJobStop(error: unknown) {
@@ -2153,12 +2166,14 @@ export class EngineService {
   async admitModelApi(
     route: ModelApiRoute,
     input: Pick<TextRequest, 'model' | 'accountRoute'> & {
+      effort?: string | null;
       projectId?: string;
       prompt?: string;
       requestId?: string;
       threadId?: string | null;
     },
     agent?: Pick<AgentWork, 'surface' | 'rootJobId'>,
+    observe?: { readonly runId: string; readonly ownedTeam?: OwnedTeamObservation } | false,
   ): Promise<ModelSessionAdmission> {
     // A loop on the Nectovia route is admitted only under its own stable root
     // job (the loop's deterministic run id). Without one there is nothing the
@@ -2199,7 +2214,7 @@ export class EngineService {
     // The Nectovia route is company-managed inference: its admission is the managed one, and it is
     // admitted on the business's plan and the published policy, never on a connection in Settings.
     if (route === NECTOVIA_ROUTE)
-      return this.admitNectovia(api, input, agent, await this.admitAgent(input, { ...agent, routeKind: 'managed' }).catch(refused), ask);
+      return this.admitNectovia(api, input, agent, await this.admitAgent(input, { ...agent, routeKind: 'managed' }).catch(refused), ask, observe);
     const admitted = await this.admitAgent(input, agent).catch(refused);
     const handle = await modelApiRoute(api, route);
     const { short, long } = handle.names;
@@ -2220,18 +2235,23 @@ export class EngineService {
         `The approved ${short} spend limit has no room left. Nothing was sent. The owner can review usage and approve more in AI setup.`,
         true,
       );
-    try {
-      this.observation?.bind({
-        admission: admitted,
-        rootJobId: agent?.rootJobId ?? null,
-        route,
-        connectionId: handle.connectionId,
-        model: input.model,
-        ask,
-      });
-    } catch {
-      // Observation never changes an admission.
-    }
+    // A loop's observation belongs to its actual run, separately from the shared spend job.
+    // Bind at adapter setup only: dispatch/result checks must not move the attempt's boundAt.
+    if (observe !== false && (agent?.surface !== 'loop' || observe))
+      try {
+        this.observation?.bind({
+          admission: admitted,
+          rootJobId: observe?.ownedTeam?.commandId ?? observe?.runId ?? agent?.rootJobId ?? null,
+          route,
+          connectionId: handle.connectionId,
+          connectionRevision: handle.revision,
+          ownedTeam: observe?.ownedTeam,
+          model: input.model,
+          ask,
+        });
+      } catch {
+        // Observation never changes an admission.
+      }
     return {
       route,
       connectionId: handle.connectionId,
@@ -2254,6 +2274,7 @@ export class EngineService {
     agent: Pick<AgentWork, 'surface' | 'rootJobId'> | undefined,
     admitted: AdmittedAgentWork | null,
     ask?: ObservationAsk,
+    observe?: { readonly runId: string; readonly ownedTeam?: OwnedTeamObservation } | false,
   ): Promise<ModelSessionAdmission> {
     const account = api.nectovia?.account;
     if (!account?.signedIn()) throw new EngineError(AGENT_SIGN_IN_REQUIRED, NECTOVIA_SIGN_IN, false);
@@ -2317,11 +2338,13 @@ export class EngineService {
         true,
       );
     // Observed as managed because the gate admitted it as managed (`admitted.routeKind`), never by name.
-    try {
-      this.observation?.bind({ admission: admitted, rootJobId, route: NECTOVIA_ROUTE, connectionId: handle.connectionId, model: input.model, ask });
-    } catch {
-      // Observation never changes an admission.
-    }
+    if (observe !== false && (agent?.surface !== 'loop' || observe))
+      try {
+        this.observation?.bind({ admission: admitted, rootJobId: observe?.ownedTeam?.commandId ?? observe?.runId ?? rootJobId, route: NECTOVIA_ROUTE,
+          connectionId: handle.connectionId, connectionRevision: handle.revision, model: input.model, ownedTeam: observe?.ownedTeam, ask });
+      } catch {
+        // Observation never changes an admission.
+      }
     return {
       route: NECTOVIA_ROUTE,
       connectionId: handle.connectionId,
@@ -2355,7 +2378,7 @@ export class EngineService {
       routeKind: agent?.routeKind ?? 'byo',
     });
   }
-  private async openModelApi(admission: ModelSessionAdmission): Promise<{ handle: ConnectedRoute; secret: string }> {
+  private async modelApiHandle(admission: ModelSessionAdmission): Promise<ConnectedRoute> {
     const api = this.modelApi!;
     const handle = await modelApiRoute(api, admission.route as ModelApiRoute, { managed: admission.managed ?? null });
     if (!handle.connected || handle.connectionId !== admission.connectionId || handle.revision !== admission.revision)
@@ -2363,6 +2386,10 @@ export class EngineService {
         'ACCOUNT_CHANGED',
         `The ${handle.names.short} connection changed after this message was admitted. Nothing was sent.`,
       );
+    return handle;
+  }
+  private async openModelApi(admission: ModelSessionAdmission): Promise<{ handle: ConnectedRoute; secret: string }> {
+    const handle = await this.modelApiHandle(admission);
     return { handle, secret: await handle.credential.open() };
   }
   /** One conversation message on a model-API route, through the model-session driver. */
@@ -2415,7 +2442,7 @@ export class EngineService {
             secret,
             exposure: handle.exposure(await this.jobLedger(api, input), runId),
             instructions,
-            effort: effortOf(input.effort),
+            effort: selectedEffortOf(input.effort),
             transport: api.transport,
             sinks,
           });
@@ -2497,7 +2524,7 @@ export class EngineService {
               instructions: input.instructions,
               messages: [{ role: 'user', content: contextMessage(input) }],
               tools: [],
-              effort: effortOf(input.effort),
+              effort: selectedEffortOf(input.effort),
               limits: WORK_LIMITS,
               signal: attemptSignal,
               transport: api.transport,
@@ -2616,7 +2643,7 @@ export class EngineService {
             secret,
             exposure: await this.jobLedger(api, input),
             instructions,
-            effort: effortOf(input.effort),
+            effort: selectedEffortOf(input.effort),
             transport: api.transport,
           });
           return {
@@ -2660,32 +2687,59 @@ export class EngineService {
    */
   async loopAdapter(
     route: ModelApiRoute,
-    request: { projectId: string; runId: string; model: string; accountRoute: string; instructions: string },
+    request: { projectId: string; runId: string; model: string; accountRoute: string; instructions: string;
+      rootRunId?: string; rootJobId?: string; threadId?: string | null; scopedLedger?: SpendExposure;
+      effort?: string | null; callLimits?: RespondLimits; ownedTeamObservation?: OwnedTeamObservation },
     stop: AbortSignal,
   ): Promise<ModelAdapter> {
     const api = this.modelApi;
     if (!api) throw new EngineError('RUNTIME_UNAVAILABLE', 'The model-API runtime is not attached to this service.', true);
+    const rootRunId = request.rootRunId ?? request.runId;
+    const ownedTeamObservation = request.ownedTeamObservation;
+    if (ownedTeamObservation && (ownedTeamObservation.runId !== request.runId || ownedTeamObservation.rootRunId !== rootRunId))
+      throw new HarnessError('collaboration_refused', 'The observed Team identity differs from the validated child.');
+    const surface = ownedTeamObservation ? 'team' : 'loop';
+    const threadId = request.threadId ?? `loop-${rootRunId}`;
+    if (request.rootJobId && !request.scopedLedger)
+      throw new HarnessError('collaboration_refused', 'The existing root job requires its supplied scoped spend ledger.');
+    const ledger = request.scopedLedger ?? await this.rootJobLedger(request.projectId, rootRunId, threadId);
+    if (request.rootJobId && ledger.jobScope?.id !== request.rootJobId)
+      throw new HarnessError('collaboration_refused', 'This role was supplied a different root spend ledger.');
+    const rootJobId = ledger.jobScope?.id ?? rootRunId;
+    const effort = request.effort === undefined ? 'medium' : request.effort === null ? undefined : request.effort;
+    if (effort !== undefined && !['low', 'medium', 'high'].includes(effort))
+      throw new HarnessError('collaboration_refused', 'The pinned model effort is unsupported on this API route.');
+    const callOptions = { instructions: request.instructions, effort: effort as 'low' | 'medium' | 'high' | undefined,
+      transport: api.transport, ...(request.callLimits ? { limits: request.callLimits } : {}) };
     const admission = await this.admitModelApi(
       route,
-      { ...request, requestId: request.runId, threadId: `loop-${request.runId}` },
-      { surface: 'loop', rootJobId: request.runId },
+      { ...request, requestId: request.runId, threadId },
+      { surface, rootJobId },
+      { runId: request.runId, ownedTeam: ownedTeamObservation },
     );
-    const ledger = await this.jobLedger(api, { projectId: request.projectId, requestId: request.runId, threadId: `loop-${request.runId}` });
-    const { handle, secret } = await this.openModelApi(admission);
-    const adapter = handle.adapter({
-      model: admission.model,
-      secret,
-      exposure: handle.exposure(ledger, request.runId),
-      instructions: request.instructions,
-      effort: 'medium',
-      transport: api.transport,
-    });
-    if (route !== NECTOVIA_ROUTE)
-      return {
-        ...adapter,
-        complete: (call, signal, stream) => adapter.complete(call, AbortSignal.any([signal, stop]), stream),
-      };
-    // Managed per-step path: re-admit, re-open and rebuild the call's adapter
+    if (admission.model !== request.model || admission.accountRoute !== request.accountRoute)
+      throw new EngineError('ACCOUNT_CHANGED', 'The selected route changed after this role was admitted. Nothing was sent.', true);
+    let adapter: ModelAdapter;
+    if (route === GOOGLE_VERTEX_ROUTE) {
+      // Setup needs the exact current descriptor/profile, not a token. Every
+      // actual model step below opens its own fresh credential after admission.
+      const handle = await this.modelApiHandle(admission);
+      if (!handle.descriptor) throw new EngineError('RUNTIME_UNAVAILABLE', routeUnavailable('Google Vertex AI'), false);
+      adapter = handle.descriptor({
+        model: admission.model,
+        exposure: ledger,
+        ...callOptions,
+      });
+    } else {
+      const { handle, secret } = await this.openModelApi(admission);
+      adapter = handle.adapter({
+        model: admission.model,
+        secret,
+        exposure: handle.exposure(ledger, request.runId),
+        ...callOptions,
+      });
+    }
+    // Every role re-admits, re-opens and rebuilds the call's adapter
     // on every step. Route, model, account, job and ledger stay pinned to what
     // the loop was admitted with; the token, policy, membership and cap are
     // read again. Stale policy, expiry and revocation refuse here, unsent.
@@ -2697,22 +2751,28 @@ export class EngineService {
         callSignal.throwIfAborted();
         const fresh = await this.admitModelApi(
           pinned.route,
-          { model: pinned.model, accountRoute: pinned.accountRoute, projectId: pinned.projectId, requestId: pinned.runId, threadId: `loop-${pinned.runId}` },
-          { surface: 'loop', rootJobId: pinned.runId },
+          { model: pinned.model, accountRoute: pinned.accountRoute, projectId: pinned.projectId, requestId: pinned.runId, threadId },
+          { surface, rootJobId },
+          false,
         );
         if (fresh.model !== pinned.model || fresh.accountRoute !== pinned.accountRoute)
-          throw new EngineError('ACCOUNT_CHANGED', 'The Nectovia route changed after this loop was admitted. Nothing was sent.', true);
+          throw new EngineError('ACCOUNT_CHANGED', 'The selected route changed after this role was admitted. Nothing was sent.', true);
         const opened = await this.openModelApi(fresh);
         const step = opened.handle.adapter({
           model: fresh.model,
           secret: opened.secret,
           exposure: opened.handle.exposure(ledger, pinned.runId),
-          instructions: pinned.instructions,
-          effort: 'medium',
-          transport: api.transport,
+          ...callOptions,
         });
         callSignal.throwIfAborted();
-        return step.complete(call, callSignal, stream);
+        const result = await step.complete(call, callSignal, stream);
+        callSignal.throwIfAborted();
+        const accepted = await this.admitModelApi(pinned.route,
+          { model: pinned.model, accountRoute: pinned.accountRoute, projectId: pinned.projectId, requestId: pinned.runId, threadId },
+          { surface, rootJobId }, false);
+        if (accepted.model !== pinned.model || accepted.accountRoute !== pinned.accountRoute)
+          throw new EngineError('ACCOUNT_CHANGED', 'The selected route changed while this role was in flight. Its answer was not accepted.', true);
+        return result;
       },
     };
   }
@@ -2783,7 +2843,8 @@ interface RouteCallOptions {
   secret: string;
   exposure: CallExposure;
   instructions: string;
-  effort: 'low' | 'medium' | 'high';
+  effort?: 'low' | 'medium' | 'high';
+  limits?: RespondLimits;
   transport?: typeof globalThis.fetch;
   sinks?: StreamSinks;
 }
@@ -2808,6 +2869,8 @@ type ConnectedRoute = {
   credential: { check(): Promise<string | null>; open(): Promise<string> };
   /** The ledger a call is held on: the local cap, or a managed route's funded ledger over it. */
   exposure(base: SpendExposure, runId: string): CallExposure;
+  /** A pure descriptor/profile for loop setup; it cannot dispatch without a credential. */
+  descriptor?(options: Omit<RouteCallOptions, 'secret'>): ModelAdapter;
   adapter(options: RouteCallOptions): ModelAdapter;
   respond(
     options: RouteCallOptions & {
@@ -2845,6 +2908,13 @@ const storedKey = (api: ModelApiServices, connectionId: string): ConnectedRoute[
 });
 const localLedger = (base: SpendExposure) => base;
 
+/** Keep a keyed route's exact local job view; never replace it with the connection ledger. */
+function localCallLedger(exposure: CallExposure): SpendExposure {
+  if (!(exposure instanceof SpendExposure))
+    throw new EngineError('RUNTIME_UNAVAILABLE', 'This route requires the local spend ledger admitted for this call. Nothing was sent.', true);
+  return exposure;
+}
+
 /**
  * One model-API route's saved connection, read fresh, with the calls it can make. Each branch
  * builds only its own route's adapter and exchange from its own record: there is no path from
@@ -2864,6 +2934,8 @@ async function modelApiRoute(api: ModelApiServices, route: ModelApiRoute, work: 
         throw error;
       });
       if (!connection) return { connected: false, route, names };
+      const refusal = awsModelRefusal(connection.modelId);
+      if (refusal) throw new EngineError('ROUTE_REFUSED', `${refusal} Nothing was sent.`, true);
       return {
         connected: true,
         route,
@@ -2876,24 +2948,24 @@ async function modelApiRoute(api: ModelApiServices, route: ModelApiRoute, work: 
         expiresAt: connection.credential.expiresAt,
         serving: connection.modelId,
         serves: (model) => model === connection.modelId,
-        card: () => AWS_LUNA_RATE_CARD,
+        card: (model) => awsModelRateCard(model),
         credential: storedKey(api, connection.id),
         exposure: localLedger,
         adapter: (options) =>
           createAwsModelAdapter({
             connection,
             secret: options.secret,
-            card: AWS_LUNA_RATE_CARD,
-            // Only a managed route is funded; this route always holds on the local ledger.
-            exposure: api.exposure,
+            card: awsModelRateCard(connection.modelId),
+            exposure: localCallLedger(options.exposure),
             transcripts: api.transcripts,
             instructions: options.instructions,
-            effort: options.effort,
+            effort: effortOf(options.effort),
             transport: options.transport,
+            limits: options.limits,
             ...options.sinks,
           }),
         respond: ({ sinks, model: _model, ...options }) =>
-          respondOnce({ connection, card: AWS_LUNA_RATE_CARD, ...options, exposure: api.exposure, ...sinks }),
+          respondOnce({ connection, card: awsModelRateCard(connection.modelId), ...options, effort: effortOf(options.effort), exposure: localCallLedger(options.exposure), ...sinks }),
       };
     }
     case AZURE_OPENAI_ROUTE: {
@@ -2923,16 +2995,16 @@ async function modelApiRoute(api: ModelApiServices, route: ModelApiRoute, work: 
             model: options.model,
             secret: options.secret,
             card: azureRateCard(connection, options.model),
-            // Only a managed route is funded; this route always holds on the local ledger.
-            exposure: api.exposure,
+            exposure: localCallLedger(options.exposure),
             transcripts: services.transcripts,
             instructions: options.instructions,
-            effort: options.effort,
+            effort: effortOf(options.effort),
             transport: options.transport,
+            limits: options.limits,
             ...options.sinks,
           }),
         respond: ({ sinks, ...options }) =>
-          respondAzure({ connection, card: azureRateCard(connection, options.model), ...options, exposure: api.exposure, ...sinks }),
+          respondAzure({ connection, card: azureRateCard(connection, options.model), ...options, effort: effortOf(options.effort), exposure: localCallLedger(options.exposure), ...sinks }),
       };
     }
     case OPENROUTER_ROUTE: {
@@ -2962,15 +3034,16 @@ async function modelApiRoute(api: ModelApiServices, route: ModelApiRoute, work: 
             model: options.model,
             secret: options.secret,
             card: openRouterRateCard(connection, options.model),
-            // Only a managed route is funded; this route always holds on the local ledger.
-            exposure: api.exposure,
+            exposure: localCallLedger(options.exposure),
             transcripts: services.transcripts,
             instructions: options.instructions,
+            effort: options.effort,
             transport: options.transport,
+            limits: options.limits,
             ...options.sinks,
           }),
-        respond: ({ sinks, effort: _effort, ...options }) =>
-          respondOpenRouter({ connection, card: openRouterRateCard(connection, options.model), ...options, exposure: api.exposure, ...sinks }),
+        respond: ({ sinks, ...options }) =>
+          respondOpenRouter({ connection, card: openRouterRateCard(connection, options.model), ...options, exposure: localCallLedger(options.exposure), ...sinks }),
       };
     }
     case GOOGLE_VERTEX_ROUTE: {
@@ -2980,6 +3053,18 @@ async function modelApiRoute(api: ModelApiServices, route: ModelApiRoute, work: 
       if (!connection) return { connected: false, route, names };
       const now = services.now ?? (() => new Date());
       const mint = services.mint ?? ((value: VertexConnection) => mintVertexToken(value, services.env));
+      const adapterOptions = (options: Omit<RouteCallOptions, 'secret'>) => ({
+        connection,
+        card: vertexRateCard(now()),
+        exposure: options.exposure,
+        transcripts: services.transcripts,
+        instructions: options.instructions,
+        effort: effortOf(options.effort),
+        transport: options.transport,
+        limits: options.limits,
+        now,
+        ...options.sinks,
+      });
       return {
         connected: true,
         route,
@@ -3026,21 +3111,10 @@ async function modelApiRoute(api: ModelApiServices, route: ModelApiRoute, work: 
         },
         card: () => vertexRateCard(now()),
         exposure: (base, runId) => (services.funding ? services.funding(base, runId) : base),
-        adapter: (options) =>
-          createVertexModelAdapter({
-            connection,
-            secret: options.secret,
-            card: vertexRateCard(now()),
-            exposure: options.exposure,
-            transcripts: services.transcripts,
-            instructions: options.instructions,
-            effort: options.effort,
-            transport: options.transport,
-            now,
-            ...options.sinks,
-          }),
+        descriptor: (options) => createVertexModelDescriptor(adapterOptions(options)),
+        adapter: (options) => createVertexModelAdapter({ ...adapterOptions(options), secret: options.secret }),
         respond: ({ sinks, model: _model, ...options }) =>
-          respondVertex({ connection, card: vertexRateCard(now()), now, ...options, ...sinks }),
+          respondVertex({ connection, card: vertexRateCard(now()), now, ...options, effort: effortOf(options.effort), ...sinks }),
       };
     }
     case NECTOVIA_ROUTE: {
@@ -3101,8 +3175,9 @@ async function modelApiRoute(api: ModelApiServices, route: ModelApiRoute, work: 
             exposure: options.exposure as SpendExposure,
             transcripts: services.transcripts,
             instructions: options.instructions,
-            effort: options.effort,
+            effort: effortOf(options.effort),
             transport: transport(options.transport),
+            limits: options.limits,
             now,
             ...options.sinks,
           }),
@@ -3117,6 +3192,7 @@ async function modelApiRoute(api: ModelApiServices, route: ModelApiRoute, work: 
             transport: transport(given),
             now,
             ...options,
+            effort: effortOf(options.effort),
             ...sinks,
           }),
       };
@@ -3204,6 +3280,10 @@ function fencedSinks(
 
 const effortOf = (effort: string | undefined): 'low' | 'medium' | 'high' =>
   effort === 'medium' || effort === 'high' ? effort : 'low';
+
+/** OpenRouter requests reasoning only when the caller selected a supported effort. */
+const selectedEffortOf = (effort: string | undefined): 'low' | 'medium' | 'high' | undefined =>
+  effort === 'low' || effort === 'medium' || effort === 'high' ? effort : undefined;
 
 /** A model-API failure in the service's vocabulary. What is known about the send decides the code. */
 function modelApiError(error: unknown): unknown {

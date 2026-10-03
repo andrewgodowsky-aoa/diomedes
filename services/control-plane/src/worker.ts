@@ -232,7 +232,19 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
       let match: RegExpExecArray | null;
 
       // --- customer account routes (original shapes unchanged) --------------------------
-      if (pathname === '/account/session' && method === 'GET') return json(await accounts.workspacePage(token, url.searchParams.get('after') ?? undefined));
+      if (pathname === '/account/session' && method === 'GET') {
+        const page = await accounts.workspacePage(token, url.searchParams.get('after') ?? undefined);
+        // Beside the person: whether they are active Diomedes staff, from the staff table alone
+        // (never an email domain, a plan, or anything in this request). A read that fails says
+        // null, so signing in never depends on it and nobody is taken for staff by an error.
+        let staff: Awaited<ReturnType<CommercialService['staffMarkerFor']>> = null;
+        try {
+          staff = await createCommercial(config, accounts).staffMarkerFor(page.person.id);
+        } catch {
+          staff = null;
+        }
+        return json({ ...page, staff });
+      }
       if (pathname === '/account/session/revoke' && method === 'POST') {
         await accounts.revokeLocalSession(token); return new Response(null, { status: 204, headers });
       }
@@ -264,6 +276,9 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
       // --- the person's own Individual plan -------------------------------------------------
       if (pathname === '/account/access' && method === 'GET')
         return json(await createCommercial(config, accounts).personAccess(token));
+      // Read-only: the person's own current Individual period. No query or body selects a scope.
+      if (pathname === '/account/usage' && method === 'GET')
+        return json(await createCommercial(config, accounts).personUsage(token));
       if (pathname === '/account/agent-admissions' && method === 'POST')
         return json(await createCommercial(config, accounts).admitPersonalAgent(token, await body(request, agentAdmissionInput)));
 

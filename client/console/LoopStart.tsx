@@ -1,11 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { api, listDocuments } from '../api';
 import { Modal } from '../components';
 import { AGENT_NAME } from '../../shared/agent-name';
 import { LOOP_LIMITS, type LoopRouteOffer } from '../../shared/native-loop';
 import { selectTaskSources } from '../../shared/task-sources';
 import type { DocumentInfo, Session, Task } from '../../shared/types';
-import { defaultLoopGoal, loopStartCommand, newLoopCommandId } from './loop-start-model';
+import {
+  defaultLoopGoal, loopStartCommand, newLoopCommandId, retainLoopStartCommand,
+  LOOP_REVIEW_PROFILE, type LoopCollaborationOptions, type LoopStartCommand,
+} from './loop-start-model';
 import './trigger-rules.css';
 
 /**
@@ -30,6 +33,7 @@ export function LoopStart({
   onClose(): void;
   onStarted(session: Session | null): void;
 }) {
+  const labelId = useId();
   // One dialog, one command: a second click or a resend names the same run.
   const [commandId] = useState(newLoopCommandId);
   const [offers, setOffers] = useState<LoopRouteOffer[] | null>(null);
@@ -44,6 +48,13 @@ export function LoopStart({
   const [consent, setConsent] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [collaboration, setCollaboration] = useState<LoopCollaborationOptions | null>(null);
+  const [leadSlotId, setLeadSlotId] = useState('');
+  const [memberSlotId, setMemberSlotId] = useState('');
+  const [helperProfileId, setHelperProfileId] = useState('');
+  const [reviewConnectionId, setReviewConnectionId] = useState('');
+  const starting = useRef(false);
+  const submitted = useRef<LoopStartCommand | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -71,29 +82,69 @@ export function LoopStart({
       },
       () => undefined,
     );
+    api<LoopCollaborationOptions>(
+      `/projects/${projectId}/loop/collaboration-options?taskId=${encodeURIComponent(task.id)}`,
+    ).then(
+      (options) => live && setCollaboration(options),
+      (failure) => live && setCollaboration({
+        leads: [], members: [], helpers: [], reviews: [],
+        reason: failure instanceof Error ? failure.message : 'Collaboration choices could not be read.',
+      }),
+    );
     return () => {
       live = false;
     };
-  }, [projectId, task]);
+  }, [projectId, task.id]);
 
-  const admitted = (offers ?? []).filter((offer) => offer.admitted);
-  const refused = (offers ?? []).filter((offer) => !offer.admitted);
+  const leads = collaboration?.leads ?? [];
+  const selectedLead = leads.find(offer => offer.slotId === leadSlotId) ?? null;
+  // A selected lead has its own current model; the route's default model may be refused.
+  const acceptsChoice = (offer: LoopRouteOffer) => offer.admitted ||
+    Boolean(selectedLead?.admitted && selectedLead.route === offer.route);
+  const admitted = (offers ?? []).filter(acceptsChoice);
+  const refused = (offers ?? []).filter(offer => !acceptsChoice(offer));
   const chosen = admitted.find((offer) => offer.route === route) ?? null;
+  const members = collaboration?.members ?? [];
+  const helpers = collaboration?.helpers ?? [];
+  const reviews = (collaboration?.reviews ?? []).filter(offer => offer.profileId === LOOP_REVIEW_PROFILE);
+  const partialTeam = Boolean(leadSlotId) !== Boolean(memberSlotId) ||
+    Boolean(leadSlotId && leadSlotId === memberSlotId);
+  const unavailableSelection =
+    Boolean(leadSlotId && !leads.some(offer => offer.slotId === leadSlotId && offer.admitted)) ||
+    Boolean(selectedLead && selectedLead.route !== route) ||
+    Boolean(memberSlotId && !members.some(offer => offer.slotId === memberSlotId && offer.admitted)) ||
+    Boolean(helperProfileId && !helpers.some(offer => offer.profileId === helperProfileId && offer.admitted)) ||
+    Boolean(reviewConnectionId && !reviews.some(offer => offer.connectionId === reviewConnectionId && offer.admitted));
+  const collaborationRefusals = [...new Set(
+    [...leads, ...members, ...helpers, ...reviews]
+      .filter(offer => !offer.admitted && offer.reason)
+      .map(offer => offer.reason!),
+  )];
 
   async function start() {
-    if (!chosen) return;
+    // React's disabled state is painted later; the ref closes two submits in one turn.
+    if (starting.current || !chosen || partialTeam || unavailableSelection) return;
+    starting.current = true;
     setBusy(true);
     setError('');
     try {
+      const command = retainLoopStartCommand(submitted.current, loopStartCommand({
+        commandId, taskId: task.id, goal, route: chosen.route, sources, consent, maxTurns: turns,
+        persistentTeam: leadSlotId && memberSlotId ? { leadSlotId, memberSlotId } : null,
+        team: helperProfileId ? { scope: sources, worker: { profileId: helperProfileId }, advisor: null } : null,
+        review: reviewConnectionId ? { profileId: LOOP_REVIEW_PROFILE, connectionId: reviewConnectionId } : null,
+      }));
+      submitted.current = command;
       const started = await api<{ runId: string; session: Session | null }>(
         `/projects/${projectId}/loop/start`,
         'POST',
-        loopStartCommand({ commandId, taskId: task.id, goal, route: chosen.route, sources, consent, maxTurns: turns }),
+        command,
       );
       onStarted(started.session);
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : 'The loop could not be started.');
     } finally {
+      starting.current = false;
       setBusy(false);
     }
   }
@@ -112,14 +163,16 @@ export function LoopStart({
           {task.name}
         </p>
         {notIncluded && <p className="trigger-rules-reach">{notIncluded}</p>}
-        {offers && admitted.length === 0 && (
+        {offers && admitted.length === 0 && !leads.some(offer => offer.admitted) && (
           <p className="trigger-rules-reach">No route can run a work loop here yet.</p>
         )}
         {admitted.length > 0 && (
           <label className="field">
-            <span>Route</span>
+            <span id={`${labelId}-route`}>Route</span>
             <select
+              aria-labelledby={`${labelId}-route`}
               value={route}
+              disabled={busy || Boolean(leadSlotId)}
               onChange={(event) => {
                 setRoute(event.target.value);
                 setConsent(false);
@@ -128,7 +181,8 @@ export function LoopStart({
               {admitted.map((offer) => (
                 <option key={offer.route} value={offer.route}>
                   {offer.label}
-                  {offer.model ? ` · ${offer.model}` : ''}
+                  {(selectedLead?.route === offer.route ? selectedLead.model : offer.model)
+                    ? ` · ${selectedLead?.route === offer.route ? selectedLead.model : offer.model}` : ''}
                 </option>
               ))}
             </select>
@@ -147,8 +201,8 @@ export function LoopStart({
           </details>
         )}
         <label className="field">
-          <span>Goal</span>
-          <textarea value={goal} onChange={(event) => setGoal(event.target.value)} rows={3} maxLength={16_000} />
+          <span id={`${labelId}-goal`}>Goal</span>
+          <textarea aria-labelledby={`${labelId}-goal`} value={goal} onChange={(event) => setGoal(event.target.value)} rows={3} maxLength={16_000} />
         </label>
         {documents.length > 0 && (
           <fieldset className="trigger-rule-kinds">
@@ -173,6 +227,65 @@ export function LoopStart({
           </fieldset>
         )}
         <label className="field">
+          <span id={`${labelId}-team-lead`}>Team lead</span>
+          <select aria-labelledby={`${labelId}-team-lead`} value={leadSlotId} onChange={event => {
+            const next = leads.find(offer => offer.slotId === event.target.value);
+            setLeadSlotId(event.target.value);
+            if (next && next.route !== route) {
+              setRoute(next.route);
+              setConsent(false);
+            }
+          }}
+            disabled={busy || !leads.some(offer => offer.admitted)}>
+            <option value="">None</option>
+            {leads.map(offer => (
+              <option key={offer.slotId} value={offer.slotId}
+                disabled={!offer.admitted || offer.slotId === memberSlotId}>
+                {offer.name}{offer.model ? ` · ${offer.model}` : ''}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field">
+          <span id={`${labelId}-team-member`}>Team member</span>
+          <select aria-labelledby={`${labelId}-team-member`} value={memberSlotId} onChange={event => setMemberSlotId(event.target.value)}
+            disabled={busy || !members.some(offer => offer.admitted)}>
+            <option value="">None</option>
+            {members.map(offer => (
+              <option key={offer.slotId} value={offer.slotId}
+                disabled={!offer.admitted || offer.slotId === leadSlotId}>
+                {offer.name}{offer.model ? ` · ${offer.model}` : ''}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field">
+          <span id={`${labelId}-helper-profile`}>Helper profile</span>
+          <select aria-labelledby={`${labelId}-helper-profile`} value={helperProfileId} onChange={event => setHelperProfileId(event.target.value)}
+            disabled={busy || !helpers.some(offer => offer.admitted)}>
+            <option value="">None</option>
+            {helpers.map(offer => (
+              <option key={offer.profileId} value={offer.profileId} disabled={!offer.admitted}>
+                {offer.name}{offer.model ? ` · ${offer.model}` : ''}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field">
+          <span id={`${labelId}-jev-review`}>Jev review</span>
+          <select aria-labelledby={`${labelId}-jev-review`} value={reviewConnectionId} onChange={event => setReviewConnectionId(event.target.value)}
+            disabled={busy || !reviews.some(offer => offer.admitted)}>
+            <option value="">None</option>
+            {reviews.map(offer => (
+              <option key={offer.connectionId} value={offer.connectionId} disabled={!offer.admitted}>
+                {offer.name}{offer.model ? ` · ${offer.model}` : ''}
+              </option>
+            ))}
+          </select>
+        </label>
+        {collaboration?.reason && <p className="trigger-rules-reach">{collaboration.reason}</p>}
+        {collaborationRefusals.map(reason => <p className="loop-start-refused" key={reason}>{reason}</p>)}
+        <label className="field">
           <span>Turns (up to {LOOP_LIMITS.maxTurns})</span>
           <input
             type="number"
@@ -194,7 +307,7 @@ export function LoopStart({
           </p>
         )}
         <div className="trigger-rule-form-acts">
-          <button type="submit" className="button primary" disabled={busy || !chosen}>
+          <button type="submit" className="button primary" disabled={busy || !chosen || partialTeam || unavailableSelection}>
             {busy ? 'Starting…' : 'Start loop run'}
           </button>
           <button type="button" className="button quiet" onClick={onClose}>

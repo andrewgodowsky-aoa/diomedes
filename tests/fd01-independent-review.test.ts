@@ -215,7 +215,7 @@ async function packagingFixture() {
   const root = await temporaryRoot();
   for (const folder of ['client', 'server', 'shared', 'desktop', 'fixtures/harness', 'licenses', 'resources', 'dist', 'scripts/release-support', 'node_modules/electron', '.data/native-runtime', 'cache'])
     await fs.mkdir(path.join(root, folder), { recursive: true });
-  for (const file of ['desktop/main.mjs', 'desktop/app-updates.mjs', 'desktop/update-helper.mjs', 'desktop/fresh-start.mjs', 'desktop/diomedes.ico', 'desktop/service.ts', 'fixtures/harness/report-lines.txt', 'LICENSE', 'package-lock.json', 'scripts/package-desktop.mjs', 'scripts/build-desktop-auth.mjs', 'scripts/collect-package-notices.mjs', 'scripts/release-support/verify-native-publisher.mjs', 'scripts/release-support/acquire-native-runtime.mjs', 'dist/index.html'])
+  for (const file of ['desktop/main.mjs', 'desktop/app-updates.mjs', 'desktop/update-helper.mjs', 'desktop/fresh-start.mjs', 'desktop/diomedes.ico', 'desktop/nectovia.icns', 'desktop/service.ts', 'fixtures/harness/report-lines.txt', 'LICENSE', 'package-lock.json', 'scripts/package-desktop.mjs', 'scripts/build-desktop-auth.mjs', 'scripts/collect-package-notices.mjs', 'scripts/release-support/verify-native-publisher.mjs', 'scripts/release-support/acquire-native-runtime.mjs', 'dist/index.html'])
     await fs.writeFile(path.join(root, file), `independent fixture ${file}`);
   for (const file of ['desktop/native-auth.ts', 'desktop/native-auth-preload.ts'])
     await fs.writeFile(path.join(root, file), 'export const fixture = true;');
@@ -231,8 +231,8 @@ async function packagingFixture() {
   const build = vi.fn(async (call: { outfile: string }) => { await fs.writeFile(call.outfile, 'fixture bundle'); });
   const packager = vi.fn(async (call: PackageCall) => {
     expect(await fs.readdir(call.extraResource[0])).toEqual([]);
-    const output = path.join(call.out, 'Diomedes-darwin-arm64');
-    const resources = path.join(output, 'Diomedes.app/Contents/Resources');
+    const output = path.join(call.out, `${call.name}-${call.platform}-${call.arch}`);
+    const resources = path.join(output, `${call.name}.app/Contents/Resources`);
     await fs.mkdir(resources, { recursive: true });
     await fs.copyFile(path.join(call.dir, 'BUILD_INFO.json'), path.join(resources, 'BUILD_INFO.json'));
     await fs.writeFile(path.join(resources, 'app.asar'), 'independent placeholder, not a Mac artifact');
@@ -248,8 +248,9 @@ describe('FD01 independent packaging contract (substituted packager, not Mac pro
     await packageDesktop(options, deps);
     const call = deps.packager.mock.calls[0][0];
     expect(call).toMatchObject({ platform: 'darwin', arch: 'arm64', asar: true });
-    for (const key of ['icon', 'win32metadata', 'osxSign', 'osxNotarize', 'asarIntegrityDigest']) expect(call).not.toHaveProperty(key);
-    const output = path.join(root, 'release/Diomedes-darwin-arm64');
+    expect(call).toMatchObject({ name: 'Nectovia', appBundleId: 'com.electron.diomedes', icon: path.join(root, 'desktop/nectovia.icns') });
+    for (const key of ['win32metadata', 'osxSign', 'osxNotarize', 'asarIntegrityDigest']) expect(call).not.toHaveProperty(key);
+    const output = path.join(root, 'release/Nectovia-darwin-arm64');
     const manifest = JSON.parse(await fs.readFile(`${output}.manifest.json`, 'utf8'));
     expect(manifest.nativeRuntime).toMatchObject({ bundled: false, sha256: {} });
     expect(manifest.signing).toBe('unsigned-experimental');

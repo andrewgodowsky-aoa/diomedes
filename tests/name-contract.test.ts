@@ -67,11 +67,6 @@ const SHELL_ALLOWED: Allowed[] = [
     why: "the installer's ownership marker, which an update checks",
   },
   {
-    file: 'desktop/app-updates.mjs',
-    text: 'Diomedes',
-    why: "the macOS application menu, which macOS titles with the bundle's name whatever the label says",
-  },
-  {
     file: 'desktop/update-helper.mjs',
     text: 'Diomedes update helper failed:',
     why: 'the error stream of a detached helper whose output is discarded',
@@ -341,8 +336,9 @@ describe('the desktop shell (contract A3)', () => {
     expect(read('desktop/main.mjs')).toContain("app.setName('Diomedes');");
     // Executable naming is independent of the existing app and data identity.
     const packaging = read('scripts/package-desktop.mjs');
-    expect(packaging).toContain("productName: 'Diomedes',");
-    expect(packaging).toContain("name: 'Diomedes',");
+    expect(packaging).toContain("productName: 'Nectovia',");
+    expect(packaging).toContain("name: 'diomedes',");
+    expect(packaging).toContain("appBundleId: 'com.electron.diomedes'");
     expect(packaging).toContain("executableName: 'nectovia',");
     expect(packaging).toContain("ProductName: 'Nectovia',");
     expect(packaging).toContain("FileDescription: 'Nectovia desktop',");

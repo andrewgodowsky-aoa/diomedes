@@ -22,8 +22,13 @@ import {
   type PreflightInput,
 } from '../server/harness/jev-advisor.js';
 import {
+  EVALUATION_ROUTE_LIMITS,
   EvaluationTransportError,
+  providerQuestions,
   scriptedEvaluationPort,
+  serializedRequestTokens,
+  serializedStateTokens,
+  UNPROVEN_ROUTE_LIMITS,
   type EvaluationPort,
   type EvaluationPortCall,
 } from '../server/harness/evaluation-adapter.js';
@@ -326,11 +331,15 @@ describe('what is refused before anything is sent', () => {
 
   test('a request whose complete serialized size is over the route bound', async () => {
     const port = billedPort({ result: reply() });
-    const advice = await createJevAdvisor({ port, recordCharge: () => {} }).preflight(
-      // About 31.5k tokens of state, under the 32k state bound; the questions
-      // and the envelope take the complete request over the 32k total.
-      input({ intent: 'Plan this. '.repeat(8_700) }),
-    );
+    // About 31.5k serialized bytes of state, under the 32k state bound; the
+    // questions and the envelope take the whole request over its 32k bound.
+    const request = input({ intent: 'Plan this. '.repeat(2_865) });
+    const plan = planPreflight(request);
+    if (plan.kind !== 'ask') throw new Error('expected a plan with questions');
+    expect(serializedStateTokens(plan.state)).toBeLessThanOrEqual(EVALUATION_ROUTE_LIMITS.maxStateTokens);
+    expect(serializedRequestTokens(plan.state, providerQuestions(plan.profile)).total)
+      .toBeGreaterThan(UNPROVEN_ROUTE_LIMITS.maxTotalTokens);
+    const advice = await createJevAdvisor({ port, recordCharge: () => {} }).preflight(request);
     expect(advice.status).toBe('refused');
     expect(advice.reason).toMatch(/whole request/);
     expect(advice.charge).toEqual({ state: 'none' });

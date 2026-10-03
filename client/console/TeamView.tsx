@@ -100,6 +100,15 @@ interface StreamRow {
   kind: string;
   detail: string;
   handoffId?: string;
+  teamRunId?: string;
+}
+
+function endedRunLabel(run: TeamRun): string {
+  if ('unknownOutcome' in run && run.unknownOutcome === true) return 'outcome unknown';
+  if (run.status === 'completed') return 'finished';
+  if (run.status === 'failed') return 'failed';
+  if (run.status === 'cancelled') return 'stopped';
+  return 'outcome unknown';
 }
 
 function memberName(slots: Map<Slot, string>, slot: Slot): string {
@@ -167,7 +176,8 @@ function buildStream(
         at: timeOf(r.endedAt),
         clock: fmtClock(r.endedAt),
         kind: 'run',
-        detail: 'finished',
+        detail: endedRunLabel(r),
+        teamRunId: r.id,
       });
     }
   }
@@ -709,7 +719,7 @@ function Lane({
             .filter(Boolean)
             .join(' ');
           return (
-            <li key={row.key} className={cls || undefined} data-handoff={row.handoffId}>
+            <li key={row.key} className={cls || undefined} data-handoff={row.handoffId} data-team-run={row.teamRunId}>
               <b>{row.clock}</b>
               <span className="k">{row.kind}</span>
               <span>{row.detail}</span>

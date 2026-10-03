@@ -274,7 +274,7 @@ export async function packageDesktop(options = {}, dependencies = {}) {
       path.join(stage, 'package.json'),
       JSON.stringify({
         name: 'diomedes',
-        productName: 'Diomedes',
+        productName: 'Nectovia',
         version: manifest.version,
         type: 'module',
         main: 'main.mjs',
@@ -334,16 +334,20 @@ export async function packageDesktop(options = {}, dependencies = {}) {
     };
     await fs.writeFile(path.join(stage, 'BUILD_INFO.json'), JSON.stringify(buildInfo, null, 2));
     // The packager only warns about a missing icon and ships Electron's instead; fail here.
-    const icon = platform === 'win32' ? path.join(root, 'desktop/diomedes.ico') : undefined;
-    if (icon) await fs.access(icon);
+    const icon = platform === 'win32'
+      ? path.join(root, 'desktop/diomedes.ico')
+      : path.join(root, 'desktop/nectovia.icns');
+    await fs.access(icon);
     const outputs = await packageApp({
       dir: stage,
       out: path.join(root, 'release'),
-      name: 'Diomedes',
+      name: platform === 'darwin' ? 'Nectovia' : 'Diomedes',
       platform,
       arch,
       asar: true,
       ...(icon ? { icon } : {}),
+      // Keep the existing Mac application identity when its visible name changes.
+      ...(platform === 'darwin' ? { appBundleId: 'com.electron.diomedes' } : {}),
       electronVersion,
       ...(electronZipDir ? { electronZipDir } : {}),
       extraResource: [runtime],

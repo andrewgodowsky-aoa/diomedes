@@ -21,6 +21,7 @@ import {
   AWS_BEDROCK_ROUTE,
   AWS_BEDROCK_SDK,
   CONVERSATION_LIMITS,
+  assertAwsModelQualified,
   awsConnectionSchema,
   respondOnce,
   type AwsConnection,
@@ -56,6 +57,7 @@ export interface AwsModelAdapterOptions extends StreamSinks {
 
 export function createAwsModelAdapter(options: AwsModelAdapterOptions): ModelAdapter & { profileHash: string } {
   const connection = Object.freeze(awsConnectionSchema.parse(options.connection));
+  assertAwsModelQualified(connection.modelId);
   const limits = options.limits ?? CONVERSATION_LIMITS;
   return createModelApiAdapter({
     route: AWS_BEDROCK_ROUTE,

@@ -56,10 +56,10 @@ async function call(method: string, pathname: string, token?: string, body?: unk
 }
 async function signIn(who: DemoAccount) { return (await call('POST', '/auth/sign-in', undefined,
   { email: DEMO_ACCOUNTS[who].email, password: FAUX_DEMO_PASSWORD })).body.accessToken as string; }
-async function personPlan(token = owner, reference = 'Synthetic Personal plan') {
+async function personPlan(token = owner, reference = 'Synthetic Personal plan', features?: string[], extra: Record<string, unknown> = {}) {
   const person = (await cloud.accounts.signIn(token)).person;
   const result = await call('POST', `/ops/people/${person.id}/grants`, billing,
-    { planId: 'individual', source: 'internal-test', reference, note: '', validUntil: until });
+    { planId: 'individual', source: 'internal-test', reference, note: '', validUntil: until, ...(features ? { features } : {}), ...extra });
   expect(result.status, JSON.stringify(result.body)).toBe(201);
   return { person, grant: result.body.grant };
 }
@@ -128,6 +128,165 @@ beforeEach(async () => {
 });
 afterEach(async () => { await cloud.idle(); vi.restoreAllMocks(); });
 
+describe('recurring Individual funding through scoped managed dispatch', () => {
+  /** Keep the synthetic route qualified past the first term, so only the billing period changes. */
+  async function routeOutlivesTerm() {
+    const later = '2026-12-28T00:00:00.000Z';
+    await editRoute('primary', b => {
+      b.qualification!.validUntil = later; b.access!.validUntil = later; b.privacy!.validUntil = later;
+      b.health!.validUntil = later; b.price!.validUntil = later;
+    });
+  }
+  async function personal() {
+    const { person, grant } = await personPlan();
+    const account = (await call('POST', '/account/individual', owner, {})).body;
+    const scope: AccountScope = { kind: 'individual', id: account.id };
+    await preference(scope); await publish();
+    return { person, grant, account, scope };
+  }
+
+  it('keeps disabled accounts readable to staff while refusing customer access and dispatch', async () => {
+    const { account, scope } = await personal();
+    const other = await signIn('free');
+    const active = (await call('POST', '/account/individual', other, {})).body;
+    const pending = await request(scope);
+    await cloud.store.run(async draft => { draft.commercial.individuals.find(row => row.id === account.id)!.state = 'disabled'; });
+    const before = cloud.store.snapshot().funding;
+    const list = await call('GET', '/ops/individuals', billing);
+    expect(list.status).toBe(200);
+    expect(list.body.map((row: any) => row.account.id)).toEqual(expect.arrayContaining([account.id, active.id]));
+    const detail = await call('GET', `/ops/individuals/${account.id}`, billing);
+    expect(detail.status).toBe(200);
+    expect(detail.body).toMatchObject({ account: { state: 'disabled' }, entitlement: { agent: false, managedInference: false } });
+    expect(detail.body.admissions).toHaveLength(1);
+    expect((await call('GET', `/account/routing/${scopePath(scope)}/access`, owner)).status).toBe(403);
+    expect((await cloud.handle(pending)).status).toBe(403);
+    expect(sends).toHaveLength(0);
+    expect(cloud.store.snapshot().funding).toEqual(before);
+  });
+
+  it('funds concurrent Personal requests once without a staff usage agreement or Business charge', async () => {
+    const { person, grant, account, scope } = await personal();
+    const businessBefore = cloud.store.snapshot().funding.periods;
+    const requests = await Promise.all([request(scope, { job: 'personal-a', attempt: 'personal-a' }), request(scope, { job: 'personal-b', attempt: 'personal-b' })]);
+    await Promise.all(requests.map(completed));
+    const state = cloud.store.snapshot().funding;
+    expect(state.periods.filter(p => p.organizationId === account.id)).toMatchObject([{ tenantId: person.id,
+      organizationId: account.id, planId: 'individual', periodId: 'individual:2026-09-28T00:00:00.000Z', grantedMicroUsd: 100_000_000,
+      startsAt: at, endsAt: until, sourceGrantId: grant.id }]);
+    expect(state.periods.filter(p => p.organizationId !== account.id)).toEqual(businessBefore);
+    expect(state.attempts).toHaveLength(2);
+    expect(state.attempts.every(a => a.tenantId === person.id && a.organizationId === account.id)).toBe(true);
+    expect(state.settlements.every(s => s.tenantId === person.id && s.organizationId === account.id && s.periodId === `individual:${at}`)).toBe(true);
+    const replay = await cloud.handle(await request(scope, { job: 'personal-a', attempt: 'personal-a' }));
+    expect(replay.status).toBe(409); expect(sends).toHaveLength(2);
+    // Operations reads the person plan's term beside the account's agreements.
+    expect((await call('GET', `/ops/individuals/${account.id}`, billing)).body.individualTerm).toMatchObject({ anchorAt: at,
+      current: { index: 0, startsAt: at, endsAt: until }, next: { index: 1, startsAt: until } });
+    expect(cloud.store.snapshot().funding.periods).toEqual(state.periods);
+  });
+
+  it('does not reset on October 1 for a September 28 subscriber, and funds the renewed term once at its anniversary', async () => {
+    const { person, account, scope } = await personal();
+    answer = () => { clock = Date.parse('2026-10-01T00:00:01Z'); return success(); };
+    await completed(await request(scope, { job: 'september', attempt: 'september' }));
+    owner = await signIn('owner'); answer = success;
+    await completed(await request(scope, { job: 'october-1', attempt: 'october-1' }));
+    let state = cloud.store.snapshot().funding;
+    // October 1 is inside the September 28 term: one row, no calendar refill.
+    expect(state.periods.filter(p => p.organizationId === account.id).map(p => p.periodId)).toEqual([`individual:${at}`]);
+    // Billing records the paid renewal; the next term is funded only from its anniversary.
+    billing = await signIn('staffBilling'); routing = await signIn('staffRouting'); await routeOutlivesTerm();
+    await personPlan(owner, 'Synthetic renewal', undefined, { billingCycle: { anchorAt: at, index: 1 }, validUntil: undefined });
+    clock = Date.parse(until); owner = await signIn('owner');
+    await completed(await request(scope, { job: 'renewed', attempt: 'renewed' }));
+    state = cloud.store.snapshot().funding;
+    expect(state.periods.filter(p => p.organizationId === account.id).map(p => [p.periodId, p.grantedMicroUsd, p.startsAt, p.endsAt]))
+      .toEqual([[`individual:${at}`, 100_000_000, at, until], [`individual:${until}`, 100_000_000, until, '2026-11-28T00:00:00.000Z']]);
+    expect(state.settlements).toMatchObject([
+      { reservationId: 'september', tenantId: person.id, organizationId: account.id, periodId: `individual:${at}` },
+      { reservationId: 'october-1', tenantId: person.id, organizationId: account.id, periodId: `individual:${at}` },
+      { reservationId: 'renewed', tenantId: person.id, organizationId: account.id, periodId: `individual:${until}` },
+    ]);
+  });
+
+  it('refuses to send an unsent hold whose term ended while it waited, even after a renewal, and releases it as unsent', async () => {
+    const { account, scope } = await personal();
+    // The renewal keeps access current across the anniversary; it must not carry the old hold over it.
+    await personPlan(owner, 'Synthetic renewal', undefined, { billingCycle: { anchorAt: at, index: 1 }, validUntil: undefined });
+    await routeOutlivesTerm();
+    clock = Date.parse(until) - 2_000; owner = await signIn('owner');
+    const reserve = cloud.funding.reserve.bind(cloud.funding);
+    vi.spyOn(cloud.funding, 'reserve').mockImplementationOnce(async input => {
+      const held = await reserve(input);
+      clock = Date.parse(until) + 1_000; // The term ends between the hold and the dispatch claim.
+      return held;
+    });
+    const response = await cloud.handle(await request(scope));
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ error: { code: 'period_ended' } });
+    expect(sends).toHaveLength(0);
+    expect(cloud.store.snapshot().funding.attempts).toMatchObject([{ organizationId: account.id, state: 'released', dispatchedAt: null }]);
+  });
+
+  it('rechecks person revocation after reserving, releases the unsent hold, and does not erase its funding evidence', async () => {
+    const { person, grant, account, scope } = await personal();
+    const reserve = cloud.funding.reserve.bind(cloud.funding);
+    vi.spyOn(cloud.funding, 'reserve').mockImplementationOnce(async input => {
+      const held = await reserve(input);
+      expect((await call('POST', `/ops/people/${person.id}/grants/${grant.id}/revoke`, billing, { reason: 'Withdraw fixture access' })).status).toBe(200);
+      return held;
+    });
+    const response = await cloud.handle(await request(scope));
+    expect(response.status).toBe(403); expect(sends).toHaveLength(0);
+    const state = cloud.store.snapshot().funding;
+    expect(state.attempts).toMatchObject([{ organizationId: account.id, state: 'released', dispatchedAt: null }]);
+    expect(state.periods.filter(p => p.organizationId === account.id)).toHaveLength(1);
+    expect((await call('GET', `/account/routing/${scopePath(scope)}/access`, owner)).body.managedInference).toBe(false);
+  });
+
+  it('does not refill the month after person revocation and a replacement grant', async () => {
+    const { person, grant, account, scope } = await personal();
+    await completed(await request(scope));
+    const original = cloud.store.snapshot().funding.periods.find(p => p.organizationId === account.id)!;
+    expect((await call('POST', `/ops/people/${person.id}/grants/${grant.id}/revoke`, billing, { reason: 'Replace fixture access' })).status).toBe(200);
+    // The replacement names the same term under its own reference; the term's one row is reused unchanged.
+    await personPlan(owner, 'Replacement subscription', undefined, { billingCycle: { anchorAt: at, index: 0 } });
+    await completed(await request(scope, { job: 'replacement', attempt: 'replacement' }));
+    expect(cloud.store.snapshot().funding.periods.filter(p => p.organizationId === account.id)).toEqual([original]);
+    expect(cloud.store.snapshot().funding.settlements).toHaveLength(2);
+  });
+
+  it('refuses lapsed access before allocating the next month even with a prior positive balance', async () => {
+    const { person, account, scope } = await personal();
+    await completed(await request(scope));
+    clock = Date.parse(until); owner = await signIn('owner');
+    const state = cloud.store.snapshot().funding;
+    const admission = await call('POST', `/account/routing/${scopePath(scope)}/admit`, owner, { surface: 'conversation', routeKind: 'managed' });
+    expect(admission.body.decision.admitted).toBe(false);
+    expect((await call('GET', `/account/routing/${scopePath(scope)}/access`, owner)).body).toMatchObject({ state: 'expired', managedInference: false });
+    expect(cloud.store.snapshot().funding).toEqual(state);
+    expect(state.periods.find(p => p.organizationId === account.id)!.tenantId).toBe(person.id);
+    expect(sends).toHaveLength(1);
+  });
+
+  it('denies another person and swapped Personal/Business admissions without changing either ledger', async () => {
+    const { scope } = await personal();
+    const req = await request(scope), before = cloud.store.snapshot().funding;
+    const other = await signIn('employee');
+    const stolen = new Headers(req.headers); stolen.set('authorization', `Bearer ${other}`);
+    expect((await cloud.handle(new Request(req.clone(), { headers: stolen }))).status).toBe(403);
+    const business = new Headers(req.headers); business.set('x-nectovia-scope-kind', 'organization');
+    business.delete('x-nectovia-account'); business.set('x-nectovia-organization', orgA);
+    expect((await cloud.handle(new Request(req.clone(), { headers: business }))).status).toBe(403);
+    const businessRequest = await request();
+    const personalHeaders = new Headers(businessRequest.headers); personalHeaders.set('x-nectovia-scope-kind', 'individual');
+    personalHeaders.delete('x-nectovia-organization'); personalHeaders.set('x-nectovia-account', scope.id);
+    expect((await cloud.handle(new Request(businessRequest, { headers: personalHeaders }))).status).toBe(403);
+    expect(sends).toHaveLength(0); expect(cloud.store.snapshot().funding).toEqual(before);
+  });
+});
+
 describe('Operations publication through authenticated funded dispatch', () => {
   it('does not advertise Responses summaries for a registered model using Chat Completions', async () => {
     await addAwsRoute('aws-chat', 'us.openai.gpt-5.6-luna', 'chat-completions');
@@ -189,7 +348,8 @@ describe('Operations publication through authenticated funded dispatch', () => {
 
   it('new-main: provisions one person-bound billing identity when the plan is issued before setup', async () => {
     const { person } = await personPlan();
-    await Promise.all([personPlan(owner, 'Concurrent plan A'), personPlan(owner, 'Concurrent plan B')]);
+    const term = { billingCycle: { anchorAt: at, index: 0 } };
+    await Promise.all([personPlan(owner, 'Concurrent plan A', undefined, term), personPlan(owner, 'Concurrent plan B', undefined, term)]);
     const state = cloud.store.snapshot();
     const accounts = state.commercial.individuals.filter(account => account.personId === person.id);
     expect(accounts).toHaveLength(1);
@@ -200,8 +360,8 @@ describe('Operations publication through authenticated funded dispatch', () => {
     expect((await call('POST', '/account/individual', owner, {})).body.id).toBe(accounts[0].id);
   });
 
-  it('new-main: a person plan admits scoped Personal BYO without inventing managed usage', async () => {
-    await personPlan();
+  it('a limited person grant admits scoped Personal BYO without inventing managed usage', async () => {
+    await personPlan(owner, 'Limited access', ['nectovia-agent']);
     const individual = (await call('POST', '/account/individual', owner, {})).body;
     const path = `/account/routing/individual/${individual.id}/admit`;
     const byo = await call('POST', path, owner, { surface: 'conversation', routeKind: 'byo', rootJobId: 'personal-byo' });
@@ -337,8 +497,8 @@ describe('Operations publication through authenticated funded dispatch', () => {
     expect(response.status).toBe(409); expect(sends).toHaveLength(0);
     expect(cloud.store.snapshot().funding.attempts).toMatchObject([{ state: 'released', dispatchedAt: null }]);
   });
-  it('requires versioned setup for a newly paid Individual and rechecks a withdrawn agreement', async () => {
-    await personPlan();
+  it('requires versioned setup for limited Individual access and rechecks its withdrawn usage agreement', async () => {
+    await personPlan(owner, 'Limited access', ['nectovia-agent']);
     const individual = (await call('POST', '/account/individual', owner, {})).body;
     const scope: AccountScope = { kind: 'individual', id: individual.id };
     const grant = await call('POST', `/ops/individuals/${scope.id}/grants`, billing, { reference: 'Synthetic agreement', validUntil: until, credits: 100 });
@@ -462,5 +622,157 @@ describe('Operations publication through authenticated funded dispatch', () => {
       if (path.dirname(path.resolve(directory)) !== path.resolve(tmpdir()) || !path.basename(directory).startsWith('nectovia-routing-')) throw new Error('Unexpected temporary directory.');
       await rm(directory, { recursive: true, force: true });
     }
+  });
+});
+
+describe('limited Individual grants do not manufacture the full allowance', () => {
+  const legacy = ['nectovia-agent', 'maintained-profiles', 'owner-rules', 'phone-relay'];
+  const current = [...legacy, 'managed-inference'];
+  const limited = [
+    { name: 'Agent only', features: ['nectovia-agent'] },
+    { name: 'Agent and managed inference', features: ['nectovia-agent', 'managed-inference'] },
+    ...legacy.slice(1).map(missing => ({ name: `missing ${missing}`, features: current.filter(feature => feature !== missing) })),
+  ];
+  const stored = limited.flatMap(row => [
+    { ...row, term: 'legacy calendar grant', hasTerm: false },
+    { ...row, term: 'previously issued monthly term', hasTerm: true },
+  ]);
+
+  // Reproduce stored records independently of the repaired issuer, including terms the old
+  // permissive predicate allowed. These are owned fixture records, never production grants.
+  async function storedGrant(features: string[], hasTerm: boolean) {
+    const { person, grant } = await personPlan();
+    await cloud.store.run(async draft => {
+      const row = draft.commercial.personGrants.find(row => row.id === grant.id)!;
+      row.features = features as typeof row.features;
+      if (!hasTerm) delete row.billingCycle;
+    });
+    const account = (await call('POST', '/account/individual', owner, {})).body;
+    const scope: AccountScope = { kind: 'individual', id: account.id };
+    return { person, grant, account, scope };
+  }
+
+  it.each(stored)('$name / $term projects no 1,000-credit allowance and records nothing', async ({ features, hasTerm }) => {
+    const { person, account } = await storedGrant(features, hasTerm);
+    const before = cloud.store.snapshot().funding;
+    const view = await call('GET', '/account/usage', owner);
+    expect(view.status).toBe(200);
+    expect(view.body).toMatchObject({ personId: person.id, accountId: account.id, usage: { state: 'unavailable' }, renewal: null });
+    expect(view.body.usage.projection).toBeUndefined();
+    expect(cloud.store.snapshot().funding).toEqual(before);
+  });
+
+  it.each(stored.filter(row => row.features.includes('managed-inference')))
+    ('$name / $term cannot allocate on first managed use or reach the provider', async ({ features, hasTerm }) => {
+      const { scope } = await storedGrant(features, hasTerm);
+      await preference(scope); expect((await publish()).status).toBe(201);
+      const before = cloud.store.snapshot().funding.periods;
+      const response = await cloud.handle(await request(scope));
+      const body = await response.text();
+      expect(response.status, body).toBe(402);
+      expect(JSON.parse(body)).toMatchObject({ error: { code: 'no_period' } });
+      expect(cloud.store.snapshot().funding.periods).toEqual(before);
+      expect(cloud.store.snapshot().funding.attempts).toHaveLength(0);
+      expect(cloud.store.snapshot().funding.settlements).toHaveLength(0);
+      expect(sends).toHaveLength(0);
+    });
+
+  it.each([{ name: 'legacy four', features: legacy }, { name: 'current five', features: current }])
+    ('$name still projects and allocates exactly 1,000 credits on the person account', async ({ features }) => {
+      const { person, grant } = await personPlan(owner, 'Full plan compatibility', features);
+      const account = (await call('POST', '/account/individual', owner, {})).body;
+      const scope: AccountScope = { kind: 'individual', id: account.id };
+      expect(grant.features).toEqual(features);
+      const businessBefore = cloud.store.snapshot().funding.periods;
+      const view = await call('GET', '/account/usage', owner);
+      expect(view.body.usage).toMatchObject({ state: 'ready', projection: { allocation: 'pending', grantedMicroUsd: 100_000_000 } });
+      expect(cloud.store.snapshot().funding.periods).toEqual(businessBefore);
+      await preference(scope); expect((await publish()).status).toBe(201);
+      await completed(await request(scope));
+      expect(cloud.store.snapshot().funding.periods.filter(row => row.organizationId === account.id)).toMatchObject([
+        { tenantId: person.id, organizationId: account.id, sourceGrantId: grant.id, grantedMicroUsd: 100_000_000,
+          periodId: `individual:${at}`, startsAt: at, endsAt: until },
+      ]);
+      expect(cloud.store.snapshot().funding.periods.filter(row => row.organizationId !== account.id)).toEqual(businessBefore);
+    });
+
+  it('retains an explicit funded agreement on a limited Agent and managed grant without adding 1,000 credits', async () => {
+    const { grant } = await personPlan(owner, 'Limited explicit usage access', ['nectovia-agent', 'managed-inference']);
+    expect(grant.billingCycle).toBeUndefined();
+    const account = (await call('POST', '/account/individual', owner, {})).body;
+    const scope: AccountScope = { kind: 'individual', id: account.id };
+    const agreement = await call('POST', `/ops/individuals/${account.id}/grants`, billing,
+      { reference: 'Explicit 100-credit usage agreement', validUntil: until, credits: 100 });
+    expect(agreement.status, JSON.stringify(agreement.body)).toBe(201);
+    const before = cloud.store.snapshot().funding.periods.filter(row => row.organizationId === account.id);
+    expect(before).toMatchObject([{ sourceGrantId: agreement.body.grant.id, grantedMicroUsd: 10_000_000 }]);
+    await preference(scope); expect((await publish()).status).toBe(201);
+    await completed(await request(scope));
+    expect(cloud.store.snapshot().funding.periods.filter(row => row.organizationId === account.id)).toEqual(before);
+    expect((await call('GET', '/account/usage', owner)).body.usage).toMatchObject({ state: 'ready', projection: { grantedMicroUsd: 10_000_000 } });
+  });
+
+  it('does not combine separate limited grants into one full-plan credit source', async () => {
+    const { grant, scope } = await storedGrant(['nectovia-agent', 'managed-inference'], false);
+    await cloud.store.run(async draft => {
+      const original = draft.commercial.personGrants.find(row => row.id === grant.id)!;
+      draft.commercial.personGrants.push({ ...original, id: 'grant_split_features', reference: 'Separate limited features',
+        features: ['maintained-profiles', 'owner-rules', 'phone-relay'] });
+    });
+    expect((await call('GET', '/account/usage', owner)).body.usage.state).toBe('unavailable');
+    await preference(scope); expect((await publish()).status).toBe(201);
+    const response = await cloud.handle(await request(scope));
+    const body = await response.text();
+    expect(response.status, body).toBe(402);
+    expect(JSON.parse(body)).toMatchObject({ error: { code: 'no_period' } });
+    expect(cloud.store.snapshot().funding.periods.filter(row => row.organizationId === scope.id)).toHaveLength(0);
+    expect(sends).toHaveLength(0);
+  });
+
+  it('retains an already recorded calendar balance without refilling or reclaiming it', async () => {
+    const { person, grant, scope } = await storedGrant(['nectovia-agent', 'managed-inference'], false);
+    await cloud.funding.allocatePeriod({ tenantId: person.id, organizationId: scope.id,
+      planId: 'individual', sourceGrantId: grant.id, periodId: '2026-09' });
+    const before = cloud.store.snapshot().funding.periods.filter(row => row.organizationId === scope.id);
+    await preference(scope); expect((await publish()).status).toBe(201);
+    await completed(await request(scope));
+    expect(cloud.store.snapshot().funding.periods.filter(row => row.organizationId === scope.id)).toEqual(before);
+    expect(before).toMatchObject([{ grantedMicroUsd: 100_000_000, sourceGrantId: grant.id }]);
+  });
+
+  it('reuses an already funded term when a qualifying full plan replaces a previously misclassified grant', async () => {
+    const { person, grant, scope } = await storedGrant(['nectovia-agent', 'managed-inference'], true);
+    await cloud.funding.allocateIndividualPeriod({ tenantId: person.id, organizationId: scope.id,
+      sourceGrantId: grant.id, cycle: grant.billingCycle });
+    const before = cloud.store.snapshot().funding.periods.filter(row => row.organizationId === scope.id);
+    await personPlan(owner, 'Qualifying replacement', current, { billingCycle: { anchorAt: at, index: 0 } });
+    await preference(scope); expect((await publish()).status).toBe(201);
+    await completed(await request(scope));
+    expect(cloud.store.snapshot().funding.periods.filter(row => row.organizationId === scope.id)).toEqual(before);
+    expect(before).toMatchObject([{ grantedMicroUsd: 100_000_000, sourceGrantId: grant.id }]);
+  });
+
+  it.each(['expiry', 'revocation'])('retains bought credits after %s without making them execution authority', async state => {
+    const { person, grant, scope } = await storedGrant(current, true);
+    await cloud.funding.recordTopUp({ tenantId: person.id, organizationId: scope.id, topUpId: 'personal-purchase',
+      amountMicroUsd: micro(2_000_000), provider: 'stripe', sourceEventId: 'personal-purchase-event' });
+    await preference(scope); expect((await publish()).status).toBe(201);
+    let pending = await request(scope);
+    const before = cloud.store.snapshot().funding;
+    if (state === 'expiry') {
+      clock = Date.parse(until);
+      owner = await signIn('owner');
+      const headers = new Headers(pending.headers);
+      headers.set('authorization', `Bearer ${owner}`);
+      pending = new Request(pending, { headers });
+    }
+    else expect((await call('POST', `/ops/people/${person.id}/grants/${grant.id}/revoke`, billing,
+      { reason: 'Owned fixture withdrawal' })).status).toBe(200);
+    expect(await new RoutingService(cloud.accounts, cloud.store.commercial, () => clock).access(owner, scope))
+      .toMatchObject({ agent: false, managedInference: false });
+    const response = await cloud.handle(pending);
+    expect(response.status, await response.text()).toBe(403);
+    expect(cloud.store.snapshot().funding).toEqual(before);
+    expect(sends).toHaveLength(0);
   });
 });

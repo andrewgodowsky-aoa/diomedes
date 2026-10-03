@@ -23,6 +23,8 @@ const admissionSchema = z.object({ admissionId: z.string().min(1), validUntil: z
     accessRevision: z.number().int(), policyRevision: z.number().int(), rootJobId: z.string().nullable() }),
 });
 
+const NOTHING_SENT = ' Nothing was sent.';
+
 function admissionRefusal(code: string, reason: string) {
   const refusal = new EngineError(code === SIGN_IN_REQUIRED ? 'SIGN_IN_REQUIRED' : 'AGENT_NOT_INCLUDED', reason, false);
   Object.defineProperty(refusal, 'refusalCode', { value: code, enumerable: false });
@@ -135,6 +137,10 @@ export class AccountRoutingSession {
     } catch (error) {
       if (this.scopeFor(work.projectId)?.kind === 'organization' && refusedBusinessScope(error))
         throw admissionRefusal('not_a_member', 'You are not a member of this business, so the Nectovia Agent cannot work for it.');
+      // Starting Agent work: an unreachable account service is still a refusal, so it says nothing went out.
+      // Only here; the same 503 answers sign-in and account reads elsewhere, where the sentence would be wrong.
+      if (error instanceof ApiError && error.status === 503 && error.details.code === 'unreachable' && !error.message.endsWith(NOTHING_SENT))
+        throw new ApiError(503, `${error.message}${NOTHING_SENT}`, error.details);
       throw error;
     }
     const scope = this.scopeFor(work.projectId), person = this.current();
@@ -170,7 +176,11 @@ export class AccountRoutingSession {
         Date.parse(parsed.data.validUntil) <= this.now())
       throw new EngineError('ACCOUNT_CHANGED', 'The account service did not return a current admission for this work. Nothing was sent.', false);
     const answer = parsed.data;
-    if (!answer.decision.admitted) throw admissionRefusal(answer.decision.code, answer.decision.reason);
+    if (!answer.decision.admitted) {
+      if (scope.kind === 'organization') await this.session.confirmDowngrade(scope.id, answer.decision.code);
+      throw admissionRefusal(answer.decision.code, answer.decision.reason);
+    }
+    if (scope.kind === 'organization') await this.session.confirmAdmitted(scope.id);
     return { admissionId: answer.admissionId, organizationId: answer.pins.organizationId, scope, personId: person,
       planId: answer.pins.planId, policyRevision: answer.pins.policyRevision, routeKind: work.routeKind ?? 'byo', surface: work.surface,
       validUntil: answer.validUntil };

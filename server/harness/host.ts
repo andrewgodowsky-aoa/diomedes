@@ -48,6 +48,7 @@ import { AWS_BEDROCK_ROUTE } from '../engines/aws-bedrock.js';
 import { isModelApiRoute } from '../../shared/model-api.js';
 import { cloudSharing, requireCloudSharing, sharesHistory } from '../cloud-sharing.js';
 import { StreamRuleService } from '../stream-rules/service.js';
+import { EVALUATION_PERMISSION } from './evaluation.js';
 
 export const HARNESS_POLICY_VERSION = 'diomedes-host-policy-v1';
 
@@ -447,6 +448,8 @@ export function createHarnessHost({
     validateNativeCheckpoint,
     authorizeEgress: async (runId, intent, principal, phase) => {
       const run = await runs.get(runId);
+      if (intent.permission === EVALUATION_PERMISSION)
+        return loop.authorizeReview(run, intent, principal, phase);
       if (
         run.capabilityId === ENGINE_TEXT_TURN.id ||
         run.capabilityId === CLAUDE_SESSION_CAPABILITY.id ||
@@ -456,7 +459,10 @@ export function createHarnessHost({
       )
         return textAuthorize(run, intent, phase);
       if (modelRun(run.capabilityId)) return modelAuthorize(run, intent, phase);
-      if (loopRun(run.capabilityId)) return loopAuthorize(run, intent, phase);
+      if (loopRun(run.capabilityId)) {
+        await loop.authorizeModel(run, phase);
+        return loopAuthorize(run, intent, phase);
+      }
       return codex.authorize(runId, intent, principal, phase);
     },
   });
@@ -718,6 +724,7 @@ export function createHarnessHost({
         const saved = await savedRuns(project.id);
         // A loop's delegate has no Session of its own: its dead lease is invalidated first, so
         // the parent's replay below can drive it again instead of meeting a stale owner.
+        for (const run of saved) await loop.recoverCollaboration(run);
         for (const run of saved) await loop.recoverChild(run);
         await bridge.recover(
           project.id,

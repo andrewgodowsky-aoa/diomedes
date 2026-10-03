@@ -5,10 +5,11 @@
  * an organization. It covers the person's Personal work and projects not linked to a business.
  * Business work always needs its own Business authority, including a one-member business.
  *
- * Included AI usage ('managed-inference') is not part of the person plan. The grant carries
- * the Agent, maintained profiles, owner rules and phone access. Managed Personal work additionally
- * requires a current, separately funded usage agreement on the person's Individual billing scope.
- * The legacy admission path cannot establish that agreement and refuses managed work.
+ * The full Individual plan includes 1,000 credits per monthly billing period on its own billing
+ * scope. A period is a subscription-anniversary calendar month in UTC (shared/individual-period.ts);
+ * unused included credits expire at its end and are never carried forward. Limited feature grants
+ * retain their explicit scope and dates. Legacy admission has no billing-scope pin and
+ * continues to refuse managed work; scoped admission and dispatch check current person access.
  *
  * This module sits beside shared/access.ts rather than inside it while another lane holds that file.
  * Phase 2b folds INDIVIDUAL_PLAN into PLAN_TEMPLATES. The app shows no price for any plan: the public
@@ -25,6 +26,8 @@ import {
   type GrantSummary,
   type PlanTemplate,
 } from './access.js';
+import type { IndividualBillingCycle } from './individual-period.js';
+import type { UsageState } from './managed-usage.js';
 
 export const INDIVIDUAL_PLAN_ID = 'individual' as const;
 export const INDIVIDUAL_PLAN_LABEL = 'Individual' as const;
@@ -39,16 +42,32 @@ export const INDIVIDUAL_ELIGIBILITY_SENTENCE = 'Individual covers Personal work 
 export const INDIVIDUAL_SEPARATION_SENTENCE =
   "It covers your own work only. If you belong to a business, that business's work runs on the business's plan, even if you would pay for this one yourself.";
 
-/** A catalog plan: a template, and whether it is issued to an organization or to a person. */
-export type CatalogPlan = PlanTemplate & { scope: 'organization' | 'person' };
+/**
+ * A catalog plan: a template, and whether it is issued to an organization or to a person. Only the
+ * Individual plan renews by `billingInterval: 'month'`; every other plan keeps its `termDays`.
+ */
+export type CatalogPlan = PlanTemplate & { scope: 'organization' | 'person'; billingInterval?: 'month' };
+
+/** The complete phase-2a template, retained to recognize existing subscriptions without rewriting grants. */
+const INDIVIDUAL_ACCESS_FEATURES: readonly AccessFeature[] = Object.freeze([
+  'nectovia-agent', 'maintained-profiles', 'owner-rules', 'phone-relay',
+]);
+
+/** The complete legacy template and its current superset include credits; limited overrides do not. */
+export function individualIncludesMonthlyCredits(grant: { planId: string | null; features: readonly string[] }): boolean {
+  return grant.planId === INDIVIDUAL_PLAN_ID &&
+    INDIVIDUAL_ACCESS_FEATURES.every(feature => grant.features.includes(feature));
+}
 
 export const INDIVIDUAL_PLAN: CatalogPlan = Object.freeze({
   id: INDIVIDUAL_PLAN_ID,
   label: INDIVIDUAL_PLAN_LABEL,
-  features: Object.freeze(['nectovia-agent', 'maintained-profiles', 'owner-rules', 'phone-relay']) as readonly AccessFeature[],
-  termDays: 31,
+  features: Object.freeze([...INDIVIDUAL_ACCESS_FEATURES, 'managed-inference']) as readonly AccessFeature[],
+  // No fixed day count: each term runs to the subscription's next monthly anniversary, in UTC.
+  termDays: null,
+  billingInterval: 'month',
   customerVisible: true,
-  note: `A person's own monthly subscription, issued to a person and never to a business. ${INDIVIDUAL_ELIGIBILITY_SENTENCE} ${INDIVIDUAL_SEPARATION_SENTENCE} Included AI usage is not part of it yet.`,
+  note: `A person's own monthly subscription, with 1,000 credits each billing period on their Individual account. Each period runs from the subscription's start to the same day and UTC time next month; unused credits expire at its end. ${INDIVIDUAL_ELIGIBILITY_SENTENCE} ${INDIVIDUAL_SEPARATION_SENTENCE}`,
   scope: 'person',
 });
 
@@ -119,6 +138,8 @@ export interface PersonGrantSummary {
   validFrom: string;
   validUntil: string;
   state: AccessState;
+  /** The verified monthly term a complete plan grant pays for. Absent on legacy and limited grants. */
+  billingCycle?: IndividualBillingCycle;
 }
 
 /** What `GET /account/access` answers: the signed-in person's own Individual access. */
@@ -139,6 +160,26 @@ export interface PersonAccessView {
 }
 
 /**
+ * What `GET /account/usage` answers: the signed-in person's own Individual credits for the billing
+ * period in force now. Read-only; it never records a period. `usage` is `unavailable`, never a
+ * zero, whenever no current period can be verified.
+ */
+export interface PersonalUsageView {
+  v: 1;
+  personId: string;
+  /** The person's own Individual billing account, or null before one exists. */
+  accountId: string | null;
+  usage: UsageState;
+  /**
+   * Whether the next billing period is already paid for (Billing records each paid term). Null when
+   * no monthly period is current. `not-renewed` means a new allowance needs a renewal: nothing is
+   * promised merely because the clock reaches `resetsAt`.
+   */
+  renewal: { state: 'renewed' | 'not-renewed'; nextStartsAt: string; nextEndsAt: string } | null;
+  checkedAt: string;
+}
+
+/**
  * Historical Business snapshots may carry Individual attribution. Retain their readable shape;
  * new Business access views never derive authority from a person's plan.
  */
@@ -153,9 +194,9 @@ export type CoveredAccessView = Omit<AccessView, 'grants'> & {
 export const AGENT_PERSONAL_INDIVIDUAL_REASON =
   "The Nectovia Agent isn't part of your personal work here. It comes with an Individual plan of your own, or with a business workspace that includes it. Nothing was sent.";
 
-/** Legacy Personal admission cannot establish a managed-usage agreement. */
+/** Legacy Personal admission cannot bind a managed request to its Individual billing scope. */
 export const MANAGED_USAGE_NOT_INCLUDED_PERSONAL =
-  "Included AI usage isn't part of the Individual plan yet, so the Nectovia Agent can't answer on the company route here. Your own connections still work. Nothing was sent.";
+  'Managed Personal work requires Individual account routing and setup. Refresh your account in a current app to continue. Nothing was sent.';
 
 /** Staff tried to issue the Individual plan to a business. */
 export const INDIVIDUAL_PLAN_NOT_FOR_BUSINESS =

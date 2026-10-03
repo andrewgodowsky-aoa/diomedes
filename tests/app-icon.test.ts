@@ -120,6 +120,46 @@ it('embeds the icon when packaging nectovia.exe', async () => {
   expect(script).toMatch(/packageApp\(\{[^}]*\bicon\b/);
 });
 
+it('provides the same Nectovia mark at every Mac and Retina icon size', async () => {
+  expect(typeof appIcon.buildIcns).toBe('function');
+  const generated = appIcon.buildIcns() as Buffer;
+  expect(generated.subarray(0, 4).toString()).toBe('icns');
+  expect(generated.readUInt32BE(4)).toBe(generated.length);
+  const expected: Record<string, number> = {
+    icp4: 16, icp5: 32, icp6: 64, ic07: 128, ic08: 256, ic09: 512, ic10: 1024,
+    ic11: 32, ic12: 64, ic13: 256, ic14: 512,
+  };
+  const entries: string[] = [];
+  for (let offset = 8; offset < generated.length;) {
+    const type = generated.toString('ascii', offset, offset + 4);
+    const length = generated.readUInt32BE(offset + 4);
+    expect(length).toBeGreaterThan(8);
+    expect(offset + length).toBeLessThanOrEqual(generated.length);
+    expect(expected[type]).toBeDefined();
+    const pixels = decodeEntry(generated.subarray(offset + 8, offset + length), expected[type]);
+    expect(pixels.equals(appIcon.renderIcon(expected[type])), type).toBe(true);
+    entries.push(type);
+    offset += length;
+  }
+  expect(entries.sort()).toEqual(Object.keys(expected).sort());
+  // Compare the committed container's entries as pixels, independent of zlib versions.
+  const committed = await fs.readFile(new URL('../desktop/nectovia.icns', import.meta.url));
+  expect(committed.subarray(0, 4).toString()).toBe('icns');
+  const sizes: string[] = [];
+  for (let offset = 8; offset < committed.length;) {
+    const type = committed.toString('ascii', offset, offset + 4);
+    const length = committed.readUInt32BE(offset + 4);
+    expect(length).toBeGreaterThan(8);
+    expect(offset + length).toBeLessThanOrEqual(committed.length);
+    expect(expected[type]).toBeDefined();
+    expect(decodeEntry(committed.subarray(offset + 8, offset + length), expected[type])
+      .equals(appIcon.renderIcon(expected[type])), type).toBe(true);
+    sizes.push(type);
+    offset += length;
+  }
+  expect(sizes.sort()).toEqual(Object.keys(expected).sort());
+}, 20_000);
+
 it('shows the icon on the installer and its uninstaller', () => {
   const icon = fileURLToPath(new URL('../desktop/diomedes.ico', import.meta.url));
   const nsi: string = installer.generateNsis({

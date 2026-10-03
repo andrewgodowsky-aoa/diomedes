@@ -11,6 +11,7 @@
  *   PATCH /api/account/organizations/:id/members/:personId
  *   POST  /api/account/invitation-codes/redeem
  *   POST  /api/account/plan-notice                       the free-version notice: remind me later, or don't remind me again
+ *   GET   /api/account/usage                             the person's own Individual credits for the period in force (read-only)
  *
  * Mounted after the loopback, origin and client-header guards, and before any
  * other /api route. The account service decides every permission; these routes
@@ -117,6 +118,8 @@ export function mountAccountSessionRoutes(app: Express, session: AccountSessionS
     }),
   );
   router.post('/plan-notice', route(async (req) => session.answerPlanNotice(parse(planNoticeBody, req.body).choice)));
+  // Read-only and bound to the signed-in person: nothing in the request names a person, account or period.
+  router.get('/usage', route(async () => session.personalUsage()));
   app.use('/api/account', router);
 
   // Everything else under /api needs a signed-in person. The renderer shows the

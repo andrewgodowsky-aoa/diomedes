@@ -17,9 +17,15 @@
 .console .task {
   position: relative;
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   gap: 12px;
   padding: 26px 32px 14px 56px;
+}
+.console .task > :is(h1, .mono, .hands) {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 .console .task h1 {
   margin: 0;
@@ -453,6 +459,7 @@ html[data-motion='reduced'] .console .lane header .pt.landed {
 }
 /* Add a member: flat fields on the page ground, one row that wraps. */
 .console .task .addmember-open {
+  flex-shrink: 0;
   color: var(--t3);
   font-size: var(--dm-type-caption);
   border-bottom: 1px solid var(--hair-2);

@@ -1,0 +1,1783 @@
+
+ RUN  v3.2.7 /Users/andrewgodowsky/dev/diomedes-reset-boundary-verify
+
+ ✓ tests/view-mode.test.ts (8 tests) 134ms
+ ✓ tests/verification-service.test.ts (18 tests) 1991ms
+   ✓ H17 verification service > every file the checks judged stays bound, however many the run wrote  631ms
+   ✓ H17 routes > a sample run: declare, verify, then an outside edit reads uncertain through the state route  311ms
+ ✓ tests/change-review.test.ts (57 tests) 6345ms
+   ✓ git source > baseline isolation: pre-existing dirty state is not attributed  343ms
+   ✓ change-review service over HTTP > a sample run produces a deterministic recorded-writes manifest  324ms
+   ✓ change-review service over HTTP > a history append rebuilds only sessions whose evidence can move  406ms
+   ✓ change-review service over HTTP > a later run of the same task leaves an ended run record byte-identical  437ms
+   ✓ change-review service over HTTP > keep and undo on an earlier run still reach the task review after every run ended  625ms
+   ✓ change-review service over HTTP > a state rebuild that lands after a keep records the keep, not a state rebuild  561ms
+   ✓ change-review service over HTTP > runs under one task cost builds per run, never a rebuild of every earlier run  1135ms
+ ✓ tests/crash-matrix.test.ts (12 tests) 10834ms
+   ✓ project writes: object, journal, project file, state file > killed at object-write: the in-flight write is absent, the acknowledged one kept  1667ms
+   ✓ project writes: object, journal, project file, state file > killed at journal-append: the in-flight write is applied, the acknowledged one kept  842ms
+   ✓ project writes: object, journal, project file, state file > killed at project-file: the in-flight write is applied, the acknowledged one kept  795ms
+   ✓ project writes: object, journal, project file, state file > killed at state-temp: the in-flight write is applied, the acknowledged one kept  898ms
+   ✓ project writes: object, journal, project file, state file > killed at state-rename: the in-flight write is applied, the acknowledged one kept  829ms
+   ✓ project writes: object, journal, project file, state file > killed at journal-unlink: the in-flight write is applied, the acknowledged one kept  807ms
+   ✓ automation occurrences and their migration > killed at occurrence-temp: the file holds ["one"], each once  721ms
+   ✓ automation occurrences and their migration > killed at occurrence-rename: the file holds ["one","two"], each once  717ms
+   ✓ automation occurrences and their migration > killed at migration-backup: the next open finishes the migration with one backup of the original  703ms
+   ✓ automation occurrences and their migration > killed at migration-rewrite: the next open finishes the migration with one backup of the original  683ms
+   ✓ Ready queue claims > killed at claim-temp: after restart the task starts exactly once  1140ms
+   ✓ Ready queue claims > killed at claim-rename: after restart the task starts exactly once  1031ms
+ ✓ tests/review-diffs.test.ts (15 tests) 1058ms
+ ✓ tests/app-updates.test.ts (44 tests) 702ms
+ ✓ tests/cloud-sharing.test.ts (6 tests) 185ms
+ ✓ tests/work-style-dispatch.test.ts (9 tests) 1135ms
+ ✓ tests/fd03-readiness.test.ts (22 tests) 401ms
+ ✓ tests/review-c-h02-codex.test.ts (8 tests) 3084ms
+   ✓ RC-H02-2: Fork is offered and claimed as continuable where Codex cannot resume the branch  377ms
+   ✓ RC-H02-3: an overloaded/internal Codex error during thread/resume fails the run, not a fresh start  332ms
+   ✓ RC-H02-4: thread/resume carries the same isolation fields as thread/start  348ms
+   ✓ RC-H02 guard: Codex exiting during thread/resume fails the run, never a fresh start  335ms
+   ✓ RC-H02 guard: steer before the turn id is known is refused, not sent  898ms
+   ✓ RC-H02-5: resuming the same stopped run twice never continues a thread that has moved on  386ms
+ ✓ tests/jev-advisor-routes.test.ts (7 tests) 2254ms
+   ✓ the preflight route > asks the provider outside the store lock, so other requests are not held behind it  1597ms
+ ✓ tests/h15-decision5.test.ts (4 tests) 709ms
+   ✓ a supervision correction starts the next run without a person, labelled as supervision’s  305ms
+ ✓ tests/task-execution-isolation.test.ts (4 tests) 502ms
+stderr | tests/task-admission.test.ts > ordinary task creation admission > a persistence failure before saving reconciles without a phantom or duplicate task
+Error: Synthetic task persistence failure.
+    at Store.<anonymous> [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mtests/task-admission.test.ts:225:15[90m)[39m
+    at Store.mockCall [90m(file:///Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mnode_modules/[4m@vitest/spy[24m/dist/index.js:96:15[90m)[39m
+    at Store.persist [90m(file:///Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mnode_modules/[4mtinyspy[24m/dist/index.js:47:80[90m)[39m
+    at createTaskFrom [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/app.ts:2507:17[90m)[39m
+    at [90m/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/app.ts:2512:26
+    at [90m/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/app.ts:1687:58
+    at [90m/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/store.ts:560:22
+[90m    at processTicksAndRejections (node:internal/process/task_queues:103:5)[39m
+
+stderr | tests/task-admission.test.ts > ordinary task creation admission > a persistence failure after saving reconciles without a phantom or duplicate task
+Error: Synthetic task persistence failure.
+    at Store.<anonymous> [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mtests/task-admission.test.ts:225:15[90m)[39m
+
+ ✓ tests/task-admission.test.ts (29 tests) 1403ms
+ ✓ tests/auto-mode-migration.test.ts (18 tests) 508ms
+ ✓ tests/h12-controls.test.ts (2 tests) 372ms
+stderr | tests/approval-admission.test.ts > exact native approval admission > failed decision persistence creates no phantom receipt or write and can be retried
+Error: Synthetic disk full.
+    at Store.<anonymous> [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mtests/approval-admission.test.ts:329:67[90m)[39m
+    at Store.mockCall [90m(file:///Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mnode_modules/[4m@vitest/spy[24m/dist/index.js:96:15[90m)[39m
+    at Store.persist [90m(file:///Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mnode_modules/[4mtinyspy[24m/dist/index.js:47:80[90m)[39m
+    at NativeWorkService.resolve [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/native-work.ts:1534:22[90m)[39m
+    at [90m/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/store.ts:560:16
+
+stderr | tests/approval-admission.test.ts > exact native approval admission > failure after acceptance but before journal preparation is durable not-applied and never redispatched
+Error: Synthetic preparation failure.
+    at [90m/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mtests/approval-admission.test.ts:342:26
+    at [90mfile:///Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:752:20
+
+stderr | tests/approval-admission.test.ts > exact native approval admission > failed journal recovery blocks later mutations until recovery finishes
+Error: Synthetic finalization disk fault.
+    at Store.<anonymous> [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mtests/approval-admission.test.ts:355:15[90m)[39m
+    at Store.mockCall [90m(file:///Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mnode_modules/[4m@vitest/spy[24m/dist/index.js:96:15[90m)[39m
+    at Store.persist [90m(file:///Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mnode_modules/[4mtinyspy[24m/dist/index.js:47:80[90m)[39m
+    at Store.recover [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/store.ts:1732:18[90m)[39m
+    at Store.recoverAndReload [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/store.ts:533:5[90m)[39m
+    at [90m/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/store.ts:563:9
+
+stderr | tests/approval-admission.test.ts > exact native approval admission > failed journal recovery blocks later mutations until recovery finishes
+Supervision could not evaluate a run: Synthetic finalization disk fault.
+
+stderr | tests/approval-admission.test.ts > exact native approval admission > failed journal recovery blocks later mutations until recovery finishes
+Error: Synthetic finalization disk fault.
+    at Store.<anonymous> [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mtests/approval-admission.test.ts:355:15[90m)[39m
+    at Store.mockCall [90m(file:///Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mnode_modules/[4m@vitest/spy[24m/dist/index.js:96:15[90m)[39m
+    at Store.persist [90m(file:///Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mnode_modules/[4mtinyspy[24m/dist/index.js:47:80[90m)[39m
+    at Store.recover [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/store.ts:1732:18[90m)[39m
+    at Store.recoverAndReload [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/store.ts:533:5[90m)[39m
+    at [90m/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/store.ts:558:34
+
+ ✓ tests/reviewer-authority.test.ts (37 tests) 6761ms
+   ✓ Approve for me: a reviewer gates authority the person already granted > an approved change set is applied, and recorded as a model decision  345ms
+   ✓ Approve for me never approves what it should not > one change set costs one reviewer call however often admission is retried  482ms
+ ✓ tests/configuration-proof.test.ts (6 tests) 788ms
+ ✓ tests/agent-authority.test.ts (24 tests) 2971ms
+stdout | tests/backend.test.ts > state reads stay fast with a cached documents listing > (a) projectState returns quickly with a large folder
+state-speed: created 3000 fixture files in 167 ms
+
+stdout | tests/backend.test.ts > state reads stay fast with a cached documents listing > (a) projectState returns quickly with a large folder
+state-speed: project creation took 15 ms
+
+stdout | tests/backend.test.ts > state reads stay fast with a cached documents listing > (a) projectState returns quickly with a large folder
+state-speed: explicit document walk took 48 ms, 3037 lstat calls
+
+stdout | tests/backend.test.ts > state reads stay fast with a cached documents listing > (a) projectState returns quickly with a large folder
+state-speed: second /state with 3000 files took 5 ms
+
+ ✓ tests/backend.test.ts (53 tests) 6362ms
+   ✓ threads are first-class conversations > Work task names use the trimmed first line, cut on a word with an ellipsis  422ms
+   ✓ threads are first-class conversations > work sessions carry the thread permission, defaulting to show-first  314ms
+   ✓ state reads stay fast with a cached documents listing > (a) projectState returns quickly with a large folder  348ms
+stdout | tests/approval-admission.test.ts > exact native approval admission > receipt retention is bounded without eviction and replay stays free of project IO at capacity
+Approval replay at 1024 receipts: 50 requests in 28.0 ms, zero project IO or persistence; receipt metadata 1421150 bytes, full synthetic state 3867031 bytes.
+
+ ✓ tests/approval-admission.test.ts (46 tests) 22840ms
+   ✓ exact native approval admission > lost response and duplicate go-ahead return one immutable decision through two restarts  430ms
+   ✓ exact native approval admission > abrupt exit at before-decision recovers once with the correct durable outcome  1398ms
+   ✓ exact native approval admission > abrupt exit at after-decision recovers once with the correct durable outcome  1069ms
+   ✓ exact native approval admission > abrupt exit at journal recovers once with the correct durable outcome  1089ms
+   ✓ exact native approval admission > abrupt exit at first-file recovers once with the correct durable outcome  1083ms
+   ✓ exact native approval admission > abrupt exit at after-files recovers once with the correct durable outcome  1083ms
+   ✓ exact native approval admission > abrupt exit at finalized recovers once with the correct durable outcome  1090ms
+   ✓ exact native approval admission > recovery preserves an outside text replacement and reports a conflict without replaying  1153ms
+   ✓ exact native approval admission > recovery preserves an outside binary replacement and reports a conflict without replaying  1161ms
+   ✓ exact native approval admission > recovery preserves an outside oversized replacement and reports a conflict without replaying  1145ms
+   ✓ exact native approval admission > recovery preserves an outside directory replacement and reports a conflict without replaying  1122ms
+   ✓ exact native approval admission > an inconsistent prepared action fails closed before any recovery write  1039ms
+   ✓ exact native approval admission > an inconsistent prepared missing-link fails closed before any recovery write  1076ms
+   ✓ exact native approval admission > an inconsistent prepared receipt fails closed before any recovery write  1073ms
+   ✓ exact native approval admission > a damaged content object cannot change the bytes authorized by a receipt  1142ms
+   ✓ exact native approval admission > receipt retention is bounded without eviction and replay stays free of project IO at capacity  520ms
+stderr | tests/work-admission.test.ts > durable task Work admission > failed sample admission persistence returns no phantom receipt
+Error: Synthetic disk full.
+    at Store.<anonymous> [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mtests/work-admission.test.ts:136:17[90m)[39m
+    at Store.mockCall [90m(file:///Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mnode_modules/[4m@vitest/spy[24m/dist/index.js:96:15[90m)[39m
+    at Store.persist [90m(file:///Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mnode_modules/[4mtinyspy[24m/dist/index.js:47:80[90m)[39m
+    at WorkService.need [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/work.ts:199:22[90m)[39m
+    at [90m/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/work.ts:111:71
+    at commit [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/work.ts:97:72[90m)[39m
+    at WorkService.start [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/work.ts:98:20[90m)[39m
+    at [90m/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/store.ts:560:16
+
+stderr | tests/work-admission.test.ts > durable task Work admission > failed codex admission persistence returns no phantom receipt
+Error: Synthetic disk full.
+    at Store.<anonymous> [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mtests/work-admission.test.ts:136:17[90m)[39m
+    at Store.mockCall [90m(file:///Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mnode_modules/[4m@vitest/spy[24m/dist/index.js:96:15[90m)[39m
+    at Store.persist [90m(file:///Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mnode_modules/[4mtinyspy[24m/dist/index.js:47:80[90m)[39m
+    at NativeWorkService.fail [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/native-work.ts:1599:22[90m)[39m
+    at [90m/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/native-work.ts:825:20
+    at NativeWorkService.start [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/native-work.ts:661:30[90m)[39m
+    at [90m/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/store.ts:560:16
+
+ ✓ tests/h08-durable-controls.test.ts (12 tests) 2102ms
+ ✓ tests/h16-external-codex.test.ts (2 tests) 678ms
+   ✓ H16 trigger rules on Codex Work > steer: the correction reaches the running Codex turn natively, with the rule’s exact message, and the run goes on  410ms
+ ✓ tests/usage.test.ts (9 tests) 111ms
+ ✓ tests/release-notes.test.ts (31 tests) 110ms
+stdout | tests/work-admission.test.ts > durable task Work admission > receipt replays perform no folder listing, document read, adapter call or persistence
+Work admission replay: 50 requests in 28.3 ms; no scans or writes.
+
+ ✓ tests/review-c-h08-controls.test.ts (11 tests) 2444ms
+   ✓ RC-H08-2: retrying an earlier run is blocked by an uncertain effect of a later retry of it  319ms
+   ✓ RC-H08-3: a project at the control receipt limit can still Stop a running run  333ms
+ ✓ tests/work-admission.test.ts (49 tests) 8075ms
+   ✓ durable task Work admission > abrupt process exit before admission recovers without unsafe redispatch  941ms
+   ✓ durable task Work admission > abrupt process exit admitted admission recovers without unsafe redispatch  850ms
+   ✓ durable task Work admission > abrupt process exit dispatched admission recovers without unsafe redispatch  864ms
+ ✓ tests/managed-gateway.test.ts (19 tests) 182ms
+ ✓ tests/configuration-routes.test.ts (11 tests) 967ms
+ ✓ tests/drawings-trust.test.ts (32 tests) 4768ms
+ ✓ tests/scoped-work.test.ts (30 tests) 5193ms
+   ✓ human-issued task scope > completion observation stays pending for working sessions and ignores another project  351ms
+   ✓ human-issued task scope > one confirmation permits twenty journaled edits, each with independent authorization evidence  1516ms
+ ✓ tests/h02-codex-controls.test.ts (9 tests) 3421ms
+   ✓ a Codex Work run records its thread before the turn, and offers what this Codex advertised  438ms
+   ✓ Steer reaches the running Codex turn and leaves a receipt performed by Codex  349ms
+   ✓ Resume after Stop continues the same Codex thread in a new run; the stopped run is untouched  426ms
+   ✓ Resume after a Diomedes restart continues the thread the run recorded  426ms
+   ✓ where Codex cannot resume, Resume starts a new Codex thread and says so  347ms
+   ✓ a kept thread Codex no longer has, or a build that dropped resume, also starts fresh and says why  503ms
+   ✓ Fork branches a settled Codex thread into a new task, leaves the origin untouched, and its first run continues the branch  388ms
+   ✓ Fork is refused with the reason where Codex cannot fork, and nothing is made  329ms
+ ✓ tests/scope-validation.test.ts (11 tests) 1732ms
+ ✓ tests/workspaces.test.ts (25 tests) 1652ms
+ ✓ tests/task-workflow-admission.test.ts (18 tests) 1479ms
+ ✓ tests/task-completion-bypasses.test.ts (4 tests) 281ms
+ ✓ tests/agent-profiles-routing.test.ts (13 tests) 1889ms
+ ✓ tests/ready-scheduler.test.ts (17 tests) 6406ms
+   ✓ Trust: automatic start has no authority a manual Start would not > a confirmed start re-sends only the documents the person confirmed  351ms
+   ✓ Trust: automatic start has no authority a manual Start would not > a stopped task is not started again; the next one is  317ms
+   ✓ pause > project and global pauses survive a restart  309ms
+   ✓ limits and fairness across projects > two runs at most across projects; the third waits for a free slot  449ms
+   ✓ limits and fairness across projects > manual work counts toward the global limit  350ms
+   ✓ restart between claim and start > a restart after the claimed write starts the task exactly once  1328ms
+   ✓ restart between claim and start > a restart after the admitted write starts the task exactly once  1057ms
+ ✓ tests/fd04-rehearsal-service.test.ts (1 test) 173ms
+ ✓ tests/fd04-prospect-configuration.test.ts (3 tests) 57ms
+ ✓ tests/work-control.test.ts (10 tests) 2281ms
+ ✓ tests/documents-write-merge.test.ts (3 tests) 390ms
+ ✓ tests/h15-supervision.test.ts (11 tests) 4580ms
+   ✓ a run writing outside the selected folder is paused through H08 Stop and escalated as a Need  359ms
+   ✓ an escalation is never answered for the task and never by anything but a person  546ms
+   ✓ continue is refused where the route cannot resume, and the escalation stays open  361ms
+   ✓ continuing goes through H08 Resume and its revalidation, and never with wider authority  463ms
+   ✓ supervision can never ask to resume, retry or fork a run: continuing is always yours  377ms
+   ✓ redirect queues your words as the next run through ordinary admission  457ms
+   ✓ supervision records and the open escalation survive a restart, and are not raised again  378ms
+   ✓ a correction steers the running turn where the route can, labelled as Diomedes supervision  514ms
+   ✓ where the route cannot steer, the correction is queued in supervision’s name for after the turn  565ms
+ ✓ tests/team-auth-security.test.ts (1 test) 158ms
+ ✓ tests/team.test.ts (10 tests) 1084ms
+ ✓ tests/path-alias.test.ts (9 tests) 6ms
+ ✓ tests/weekly-brief.test.ts (19 tests) 495ms
+ ✓ tests/billing-events.test.ts (7 tests) 78ms
+ ✓ tests/loopback-auth.test.ts (2 tests) 105ms
+ ✓ tests/configuration-service.test.ts (13 tests) 274ms
+ ✓ tests/managed-usage-ledger.test.ts (16 tests) 271ms
+ ✓ tests/task-workflow.test.ts (12 tests) 383ms
+ ✓ tests/team-secrets-storage.test.ts (4 tests) 39ms
+ ✓ tests/task-phase.test.ts (10 tests) 326ms
+ ✓ tests/paths.test.ts (7 tests | 2 skipped) 4ms
+stderr | tests/h01-event-recovery.test.ts > durable per-run HTTP event recovery > replays persisted events, survives a dropped reader, and resumes without duplicates after restart
+Skipped a harness run whose Session or Task is unavailable.
+
+ ✓ tests/h01-event-recovery.test.ts (21 tests) 17516ms
+   ✓ durable per-run HTTP event recovery > the idle heartbeat rechecks authority without a Store notification  15270ms
+ ✓ tests/h01-event-recovery-independent.test.ts (35 tests) 18483ms
+   ✓ independent H01 local observer acceptance > idle read authority is rechecked without any event or settings notification  15261ms
+   ✓ independent H01 local observer acceptance > two observers reconnect after restart with identical historical attribution and zero redispatch  372ms
+ ✓ tests/h03-claude-live-controls.test.ts (15 tests) 16757ms
+   ✓ H03 Claude Code live controls over a fixture stream-json process > queues a message sent while an answer runs and sends it next, on the same process  1698ms
+   ✓ H03 Claude Code live controls over a fixture stream-json process > a queued conversation message and a steered one share the queue: each settles with its own turn, and only the steered one is projected by onDelivered  1847ms
+   ✓ H03 Claude Code live controls over a fixture stream-json process > a Stop the turn ignores ends the process after the grace, records why, and never resumes it  569ms
+   ✓ H03 review F: Stop tells the truth about what it stopped > Stop on a steered message Claude Code is already answering stops that turn; it is not "withdrawn"  1750ms
+   ✓ H03 review F: Stop tells the truth about what it stopped > Diomedes closing while a queued message is being answered never says it was not sent  1770ms
+   ✓ H03 review F: Stop tells the truth about what it stopped > a Stop before anything reaches Claude Code keeps the live session: nothing was sent, so nothing is uncertain  2220ms
+   ✓ H03 review F: Stop tells the truth about what it stopped > a Stop Claude Code never acknowledges is recorded as forced, whatever the grace  5161ms
+ ✓ tests/remembered-approvals.test.ts (65 tests) 17195ms
+   ✓ both routes through the real host > the learned offer appears exactly at the threshold, only once, and accepting creates the grant  1618ms
+   ✓ both routes through the real host > a declined offer is remembered and does not come back  2610ms
+   ✓ both routes through the real host > a decline starts the count again  1783ms
+   ✓ both routes through the real host > Go ahead and remember covers the next identical step, once per item per project  1299ms
+   ✓ both routes through the real host > the write-time check refuses a write outside the remembered destination  715ms
+   ✓ both routes through the real host > only the local client, and only an approval just given, can be remembered  396ms
+   ✓ revocation, restart and re-asking > revoking stops coverage immediately and is recorded as evidence  976ms
+   ✓ revocation, restart and re-asking > a covered step whose grant is revoked before it runs writes nothing  609ms
+   ✓ revocation, restart and re-asking > a remembered approval survives a restart, and a revoked one stays revoked  966ms
+   ✓ out of pattern asks again > the exact pattern is covered and each listed trigger asks again  451ms
+   ✓ out of pattern asks again > a changed connection at run time asks again through the real host  556ms
+   ✓ out of pattern asks again > a Codex step is bound to the account its run used, so another account asks again  313ms
+   ✓ out of pattern asks again > always-asks steps are never offered, remembered or covered  316ms
+   ✓ configuration, rollback and restart never create or revive > pack activation, a settings change, the offer threshold and a restart create nothing  633ms
+   ✓ configuration, rollback and restart never create or revive > a prepared state image cannot revive a revoked grant or reopen a declined offer  944ms
+   ✓ versioned format and the Codex task scope > existing Codex grants carry forward losslessly beside remembered ones  355ms
+   ✓ versioned format and the Codex task scope > an unknown format or grant version is refused, never rewritten  349ms
+   ✓ versioned format and the Codex task scope > tampered remembered evidence cannot authorize  587ms
+ ✓ tests/devin-adapter.test.ts (73 tests) 15691ms
+   ✓ Devin ACP text route > names a host deadline a timeout rather than the person stopping the request  304ms
+   ✓ Devin ACP text route > stops before prompting when ask is never confirmed  5002ms
+   ✓ Devin ACP text route > preserves the primary error when process cleanup cannot be confirmed  1504ms
+   ✓ Devin failure stages > stops before prompting when ask is never confirmed, at the handshake  5020ms
+   ✓ Devin failure stages > separates a cleanup that could not be confirmed from the failure it followed  3014ms
+ ✓ tests/opencode-adapter.test.ts (78 tests) 14862ms
+   ✓ OpenCode 1.18.4 authenticated text route > gives the startup budget its own timeout sentence  2017ms
+   ✓ OpenCode failure stages > reports a startup timeout at the launch stage  2014ms
+   ✓ OpenCode failure stages > reports a request timeout at the stage it ran out on  2216ms
+   ✓ OpenCode route repairs found by the MiMo 2.6 evaluation (2026-09-23) > tries readiness again when one probe never reaches a listening server  448ms
+   ✓ OpenCode route repairs found by the MiMo 2.6 evaluation (2026-09-23) > still gives up at the startup deadline when no probe is ever answered  1208ms
+ ✓ tests/h03-thread-session-routes.test.ts (6 tests) 10542ms
+   ✓ H03: a Console thread on Claude Code > offers no controls before its conversation exists, then the contract controls and the reported model  453ms
+   ✓ H03: a Console thread on Claude Code > a message sent while an answer runs is queued, shown as queued, and answered next in the same process  2730ms
+   ✓ H03: a Console thread on Claude Code > Stop interrupts the running answer gracefully and says so; the session stays live  642ms
+   ✓ H03: a Console thread on Claude Code > Stop on a queued message withdraws it before anything is sent; an unknown command is still not found  553ms
+   ✓ H03: a Console thread on Claude Code > a Stop from a page that has already let go of its request still reaches the turn and says it was forced  5527ms
+   ✓ H03: a Console thread on Claude Code > after a Diomedes restart the thread says it will resume, and the next message resumes by session id  636ms
+ ✓ tests/ph07-review.test.ts (17 tests) 12579ms
+   ✓ A exclusion and identity transitions > A1 the same internal owner on a direct engine (Claude Code) sends nothing, in conversation or Work, while that owner’s AWS turn does  947ms
+   ✓ A exclusion and identity transitions > A2 startup: a restart with observation on sends nothing for recorded work, and the next turn in the same conversation sends only itself  549ms
+   ✓ A exclusion and identity transitions > A3 switching between two entitled businesses: the internal one’s queued events drop, the other sends nothing, and switching back resurrects nothing  449ms
+   ✓ B spoofing > B1 a client-supplied plan, tenant, internal flag, organization, route kind or header never creates eligibility, for a paying business or Free  470ms
+   ✓ C outgoing-packet privacy > C1 canaries in the prompt, answer, nested tool input, tool error, unregistered tool name, URL, path, provider error body and code, and profile, project and business names never appear in the POST bodies  417ms
+   ✓ D failure isolation > D1 export throwing, hanging, answering 429 or 5xx, a one-event queue and a one-event budget leave the answer, the runs, the approval, the file, the history, the ledger and the provider calls equal to export off  2831ms
+   ✓ E accounting honesty > E1 usage the provider did not report stays unknown (never zero); its late reconciliation is one correlated event, never a second generation; a resent command adds nothing  358ms
+   ✓ F bounds > F3 a full queue drops the tail; enqueue never throws or blocks with a hung sink; health never leaves the machine  354ms
+   ✓ G default off through the environment > G1 every condition present exports; removing or malforming any one of them sends nothing  4620ms
+   ✓ H the normal internal trace > H1 an internal loop on AWS through createApp: generations, a registered tool span and the recorded verification share one trace, with mapped fields  605ms
+   ✓ I durable run records > I1 a stored run written before errorCode existed still loads, projects and lets its conversation continue  392ms
+(node:63958) Warning: AI SDK Warning System: To turn off warning logging, set the AI_SDK_LOG_WARNINGS global to false.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:63958) Warning: AI SDK Warning (aws-bedrock.responses / us.openai.gpt-5.6-luna): The feature "JSON Schema propertyNames" is used in a compatibility mode. OpenAI does not support JSON Schema propertyNames. It was removed before sending the schema, so OpenAI will not enforce property-name constraints.
+(node:63958) Warning: AI SDK Warning (aws-bedrock.responses / us.openai.gpt-5.6-luna): The feature "JSON Schema propertyNames" is used in a compatibility mode. OpenAI does not support JSON Schema propertyNames. It was removed before sending the schema, so OpenAI will not enforce property-name constraints.
+(node:63958) Warning: AI SDK Warning (aws-bedrock.responses / us.openai.gpt-5.6-luna): The feature "JSON Schema propertyNames" is used in a compatibility mode. OpenAI does not support JSON Schema propertyNames. It was removed before sending the schema, so OpenAI will not enforce property-name constraints.
+(node:63958) Warning: AI SDK Warning (aws-bedrock.responses / us.openai.gpt-5.6-luna): The feature "JSON Schema propertyNames" is used in a compatibility mode. OpenAI does not support JSON Schema propertyNames. It was removed before sending the schema, so OpenAI will not enforce property-name constraints.
+(node:63958) Warning: AI SDK Warning (aws-bedrock.responses / us.openai.gpt-5.6-luna): The feature "JSON Schema propertyNames" is used in a compatibility mode. OpenAI does not support JSON Schema propertyNames. It was removed before sending the schema, so OpenAI will not enforce property-name constraints.
+(node:63958) Warning: AI SDK Warning (aws-bedrock.responses / us.openai.gpt-5.6-luna): The feature "JSON Schema propertyNames" is used in a compatibility mode. OpenAI does not support JSON Schema propertyNames. It was removed before sending the schema, so OpenAI will not enforce property-name constraints.
+stdout | tests/native-work.test.ts > member thread to real adapter glue > work/start forwards team config and tracks completion
+Fake app-server team configuration: {"url":"http://127.0.0.1:51634/mcp/team/2a88e533a70e","tokenEnv":"DIOMEDES_TEAM_SB9E2A223AAA2","slotId":"Sb9e2a223aaa2","role":"lead","roleInstructions":"You are Astra, the leader of a small team working in Diomedes. You plan and delegate; members do the work; the person who owns the project approves anything that matters. Use the team tools: team_members to see the roster, team_task_create and team_task_update to put work on the board and hand it to a member (owner = their slot), team_send_message to give direction, team_read_messages to hear back. Diomedes applies file changes only after the person approves them, so describe changes as proposals. Keep messages short and specific. Do not claim work is done until a member reports it and the board shows it."}
+
+(node:63958) Warning: AI SDK Warning (aws-bedrock.responses / us.openai.gpt-5.6-luna): The feature "JSON Schema propertyNames" is used in a compatibility mode. OpenAI does not support JSON Schema propertyNames. It was removed before sending the schema, so OpenAI will not enforce property-name constraints.
+(node:63958) Warning: AI SDK Warning (aws-bedrock.responses / us.openai.gpt-5.6-luna): The feature "JSON Schema propertyNames" is used in a compatibility mode. OpenAI does not support JSON Schema propertyNames. It was removed before sending the schema, so OpenAI will not enforce property-name constraints.
+(node:63958) Warning: AI SDK Warning (aws-bedrock.responses / us.openai.gpt-5.6-luna): The feature "JSON Schema propertyNames" is used in a compatibility mode. OpenAI does not support JSON Schema propertyNames. It was removed before sending the schema, so OpenAI will not enforce property-name constraints.
+(node:63958) Warning: AI SDK Warning (aws-bedrock.responses / us.openai.gpt-5.6-luna): The feature "JSON Schema propertyNames" is used in a compatibility mode. OpenAI does not support JSON Schema propertyNames. It was removed before sending the schema, so OpenAI will not enforce property-name constraints.
+(node:63958) Warning: AI SDK Warning (aws-bedrock.responses / us.openai.gpt-5.6-luna): The feature "JSON Schema propertyNames" is used in a compatibility mode. OpenAI does not support JSON Schema propertyNames. It was removed before sending the schema, so OpenAI will not enforce property-name constraints.
+(node:63958) Warning: AI SDK Warning (aws-bedrock.responses / us.openai.gpt-5.6-luna): The feature "JSON Schema propertyNames" is used in a compatibility mode. OpenAI does not support JSON Schema propertyNames. It was removed before sending the schema, so OpenAI will not enforce property-name constraints.
+(node:63958) Warning: AI SDK Warning (aws-bedrock.responses / us.openai.gpt-5.6-luna): The feature "JSON Schema propertyNames" is used in a compatibility mode. OpenAI does not support JSON Schema propertyNames. It was removed before sending the schema, so OpenAI will not enforce property-name constraints.
+(node:63958) Warning: AI SDK Warning (aws-bedrock.responses / us.openai.gpt-5.6-luna): The feature "JSON Schema propertyNames" is used in a compatibility mode. OpenAI does not support JSON Schema propertyNames. It was removed before sending the schema, so OpenAI will not enforce property-name constraints.
+(node:63958) Warning: AI SDK Warning (aws-bedrock.responses / us.openai.gpt-5.6-luna): The feature "JSON Schema propertyNames" is used in a compatibility mode. OpenAI does not support JSON Schema propertyNames. It was removed before sending the schema, so OpenAI will not enforce property-name constraints.
+(node:63958) Warning: AI SDK Warning (aws-bedrock.responses / us.openai.gpt-5.6-luna): The feature "JSON Schema propertyNames" is used in a compatibility mode. OpenAI does not support JSON Schema propertyNames. It was removed before sending the schema, so OpenAI will not enforce property-name constraints.
+(node:63958) Warning: AI SDK Warning (aws-bedrock.responses / us.openai.gpt-5.6-luna): The feature "JSON Schema propertyNames" is used in a compatibility mode. OpenAI does not support JSON Schema propertyNames. It was removed before sending the schema, so OpenAI will not enforce property-name constraints.
+(node:63958) Warning: AI SDK Warning (aws-bedrock.responses / us.openai.gpt-5.6-luna): The feature "JSON Schema propertyNames" is used in a compatibility mode. OpenAI does not support JSON Schema propertyNames. It was removed before sending the schema, so OpenAI will not enforce property-name constraints.
+(node:63958) Warning: AI SDK Warning (aws-bedrock.responses / us.openai.gpt-5.6-luna): The feature "JSON Schema propertyNames" is used in a compatibility mode. OpenAI does not support JSON Schema propertyNames. It was removed before sending the schema, so OpenAI will not enforce property-name constraints.
+(node:63958) Warning: AI SDK Warning (aws-bedrock.responses / us.openai.gpt-5.6-luna): The feature "JSON Schema propertyNames" is used in a compatibility mode. OpenAI does not support JSON Schema propertyNames. It was removed before sending the schema, so OpenAI will not enforce property-name constraints.
+(node:63958) Warning: AI SDK Warning (aws-bedrock.responses / us.openai.gpt-5.6-luna): The feature "JSON Schema propertyNames" is used in a compatibility mode. OpenAI does not support JSON Schema propertyNames. It was removed before sending the schema, so OpenAI will not enforce property-name constraints.
+(node:63958) Warning: AI SDK Warning (aws-bedrock.responses / us.openai.gpt-5.6-luna): The feature "JSON Schema propertyNames" is used in a compatibility mode. OpenAI does not support JSON Schema propertyNames. It was removed before sending the schema, so OpenAI will not enforce property-name constraints.
+(node:63958) Warning: AI SDK Warning (aws-bedrock.responses / us.openai.gpt-5.6-luna): The feature "JSON Schema propertyNames" is used in a compatibility mode. OpenAI does not support JSON Schema propertyNames. It was removed before sending the schema, so OpenAI will not enforce property-name constraints.
+(node:63958) Warning: AI SDK Warning (aws-bedrock.responses / us.openai.gpt-5.6-luna): The feature "JSON Schema propertyNames" is used in a compatibility mode. OpenAI does not support JSON Schema propertyNames. It was removed before sending the schema, so OpenAI will not enforce property-name constraints.
+(node:63958) Warning: AI SDK Warning (aws-bedrock.responses / us.openai.gpt-5.6-luna): The feature "JSON Schema propertyNames" is used in a compatibility mode. OpenAI does not support JSON Schema propertyNames. It was removed before sending the schema, so OpenAI will not enforce property-name constraints.
+(node:63958) Warning: AI SDK Warning (aws-bedrock.responses / us.openai.gpt-5.6-luna): The feature "JSON Schema propertyNames" is used in a compatibility mode. OpenAI does not support JSON Schema propertyNames. It was removed before sending the schema, so OpenAI will not enforce property-name constraints.
+(node:63958) Warning: AI SDK Warning (aws-bedrock.responses / us.openai.gpt-5.6-luna): The feature "JSON Schema propertyNames" is used in a compatibility mode. OpenAI does not support JSON Schema propertyNames. It was removed before sending the schema, so OpenAI will not enforce property-name constraints.
+(node:63958) Warning: AI SDK Warning (aws-bedrock.responses / us.openai.gpt-5.6-luna): The feature "JSON Schema propertyNames" is used in a compatibility mode. OpenAI does not support JSON Schema propertyNames. It was removed before sending the schema, so OpenAI will not enforce property-name constraints.
+(node:63958) Warning: AI SDK Warning (aws-bedrock.responses / us.openai.gpt-5.6-luna): The feature "JSON Schema propertyNames" is used in a compatibility mode. OpenAI does not support JSON Schema propertyNames. It was removed before sending the schema, so OpenAI will not enforce property-name constraints.
+(node:63958) Warning: AI SDK Warning (aws-bedrock.responses / us.openai.gpt-5.6-luna): The feature "JSON Schema propertyNames" is used in a compatibility mode. OpenAI does not support JSON Schema propertyNames. It was removed before sending the schema, so OpenAI will not enforce property-name constraints.
+(node:63958) Warning: AI SDK Warning (aws-bedrock.responses / us.openai.gpt-5.6-luna): The feature "JSON Schema propertyNames" is used in a compatibility mode. OpenAI does not support JSON Schema propertyNames. It was removed before sending the schema, so OpenAI will not enforce property-name constraints.
+(node:63958) Warning: AI SDK Warning (aws-bedrock.responses / us.openai.gpt-5.6-luna): The feature "JSON Schema propertyNames" is used in a compatibility mode. OpenAI does not support JSON Schema propertyNames. It was removed before sending the schema, so OpenAI will not enforce property-name constraints.
+(node:63958) Warning: AI SDK Warning (aws-bedrock.responses / us.openai.gpt-5.6-luna): The feature "JSON Schema propertyNames" is used in a compatibility mode. OpenAI does not support JSON Schema propertyNames. It was removed before sending the schema, so OpenAI will not enforce property-name constraints.
+(node:63958) Warning: AI SDK Warning (aws-bedrock.responses / us.openai.gpt-5.6-luna): The feature "JSON Schema propertyNames" is used in a compatibility mode. OpenAI does not support JSON Schema propertyNames. It was removed before sending the schema, so OpenAI will not enforce property-name constraints.
+(node:63958) Warning: AI SDK Warning (aws-bedrock.responses / us.openai.gpt-5.6-luna): The feature "JSON Schema propertyNames" is used in a compatibility mode. OpenAI does not support JSON Schema propertyNames. It was removed before sending the schema, so OpenAI will not enforce property-name constraints.
+(node:63958) Warning: AI SDK Warning (aws-bedrock.responses / us.openai.gpt-5.6-luna): The feature "JSON Schema propertyNames" is used in a compatibility mode. OpenAI does not support JSON Schema propertyNames. It was removed before sending the schema, so OpenAI will not enforce property-name constraints.
+(node:63958) Warning: AI SDK Warning (aws-bedrock.responses / us.openai.gpt-5.6-luna): The feature "JSON Schema propertyNames" is used in a compatibility mode. OpenAI does not support JSON Schema propertyNames. It was removed before sending the schema, so OpenAI will not enforce property-name constraints.
+(node:63958) Warning: AI SDK Warning (aws-bedrock.responses / us.openai.gpt-5.6-luna): The feature "JSON Schema propertyNames" is used in a compatibility mode. OpenAI does not support JSON Schema propertyNames. It was removed before sending the schema, so OpenAI will not enforce property-name constraints.
+(node:63958) Warning: AI SDK Warning (aws-bedrock.responses / us.openai.gpt-5.6-luna): The feature "JSON Schema propertyNames" is used in a compatibility mode. OpenAI does not support JSON Schema propertyNames. It was removed before sending the schema, so OpenAI will not enforce property-name constraints.
+(node:63958) Warning: AI SDK Warning (aws-bedrock.responses / us.openai.gpt-5.6-luna): The feature "JSON Schema propertyNames" is used in a compatibility mode. OpenAI does not support JSON Schema propertyNames. It was removed before sending the schema, so OpenAI will not enforce property-name constraints.
+(node:63958) Warning: AI SDK Warning (aws-bedrock.responses / us.openai.gpt-5.6-luna): The feature "JSON Schema propertyNames" is used in a compatibility mode. OpenAI does not support JSON Schema propertyNames. It was removed before sending the schema, so OpenAI will not enforce property-name constraints.
+(node:63958) Warning: AI SDK Warning (aws-bedrock.responses / us.openai.gpt-5.6-luna): The feature "JSON Schema propertyNames" is used in a compatibility mode. OpenAI does not support JSON Schema propertyNames. It was removed before sending the schema, so OpenAI will not enforce property-name constraints.
+ ✓ tests/read-connector-fixtures.test.ts (8 tests) 7301ms
+   ✓ read-sales: approve, discover, Ask, Plan and revoke through the real host  1046ms
+   ✓ read-accounting: approve, discover, Ask, Plan and revoke through the real host  995ms
+   ✓ read-bank: approve, discover, Ask, Plan and revoke through the real host  1016ms
+   ✓ read-payroll: approve, discover, Ask, Plan and revoke through the real host  1012ms
+   ✓ read-inventory: approve, discover, Ask, Plan and revoke through the real host  980ms
+   ✓ read-reviews: approve, discover, Ask, Plan and revoke through the real host  996ms
+   ✓ read-leads: approve, discover, Ask, Plan and revoke through the real host  1074ms
+ ✓ tests/native-work.test.ts (66 tests) 10806ms
+   ✓ member thread to real adapter glue > ask forwards team config and tracks completion  301ms
+   ✓ project instructions reach the model > a nested file governs work in its folder, is recorded with its scope and survives a restart  301ms
+stdout | tests/ph07-round3-review.test.ts > M which admission failures end a business’s observation > M3 failures that are not a refusal end nothing: 429, a body cut off mid-read, a 200 that is `{}` or not JSON, a 422
+M3 observed: {"422":{"person":403,"exported":["$ai_generation","$ai_trace"],"denied":{}},"429":{"person":403,"exported":["$ai_generation","$ai_trace"],"denied":{}},"cut-off body":{"person":403,"exported":["$ai_generation","$ai_trace"],"denied":{}},"200 {}":{"person":409,"exported":["$ai_generation","$ai_trace"],"denied":{}},"200 not JSON":{"person":409,"exported":["$ai_generation","$ai_trace"],"denied":{}}}
+
+stdout | tests/ph07-round3-review.test.ts > C refusalCode is invisible to the person > C1 every refusal the gate can raise gives the same status and the same body bytes with the field as without it, on the AWS route and on the Nectovia route
+C1 observed: {"entitlement_revoked / aws":{"status":403,"body":"{\"error\":\"This business’s Nectovia Agent access was withdrawn. Your files and history are unchanged.\",\"code\":\"AGENT_NOT_INCLUDED\"}"},"entitlement_revoked / nectovia":{"status":403,"body":"{\"error\":\"This business’s Nectovia Agent access was withdrawn. Your files and history are unchanged.\",\"code\":\"AGENT_NOT_INCLUDED\"}"},"entitlement_expired / aws":{"status":403,"body":"{\"error\":\"This business’s plan has ended, so the Nectovia Agent is not available. Your files and history are unchanged.\",\"code\":\"AGENT_NOT_INCLUDED\"}"},"entitlement_expired / nectovia":{"status":403,"body":"{\"error\":\"This business’s plan has ended, so the Nectovia Agent is not available. Your files and history are unchanged.\",\"code\":\"AGENT_NOT_INCLUDED\"}"},"agent_not_included / aws":{"status":403,"body":"{\"error\":\"The Nectovia Agent is part of a Business plan. You can still use your workspace and your own AI tools directly.\",\"code\":\"AGENT_NOT_INCLUDED\"}"},"agent_not_included / nectovia":{"status":403,"body":"{\"error\":\"The Nectovia Agent is part of a Business plan. You can still use your workspace and your own AI tools directly.\",\"code\":\"AGENT_NOT_INCLUDED\"}"},"personal_workspace / aws":{"status":403,"body":"{\"error\":\"The Nectovia Agent works for a business.\",\"code\":\"AGENT_NOT_INCLUDED\"}"},"personal_workspace / nectovia":{"status":403,"body":"{\"error\":\"The Nectovia Agent works for a business.\",\"code\":\"AGENT_NOT_INCLUDED\"}"},"not_a_member (403) / aws":{"status":403,"body":"{\"error\":\"You are not a member of this business, so the Nectovia Agent cannot work for it.\",\"code\":\"AGENT_NOT_INCLUDED\"}"},"not_a_member (403) / nectovia":{"status":403,"body":"{\"error\":\"You are not a member of this business, so the Nectovia Agent cannot work for it.\",\"code\":\"AGENT_NOT_INCLUDED\"}"},"entitlement_unknown (503) / aws":{"status":403,"body":"{\"error\":\"The account service could not be reached, so the Nectovia Agent could not confirm this business includes it. Nothing was sent.\",\"code\":\"AGENT_NOT_INCLUDED\"}"},"entitlement_unknown (503) / nectovia":{"status":403,"body":"{\"error\":\"The account service could not be reached, so the Nectovia Agent could not confirm this business includes it. Nothing was sent.\",\"code\":\"AGENT_NOT_INCLUDED\"}"},"sign_in_required (401) / aws":{"status":401,"body":"{\"error\":\"A verified bearer session is required.\",\"code\":\"sign_in_required\"}"},"sign_in_required (401) / nectovia":{"status":401,"body":"{\"error\":\"A verified bearer session is required.\",\"code\":\"sign_in_required\"}"},"personal / aws":{"status":403,"body":"{\"error\":\"The Nectovia Agent isn't part of your personal work here. It comes with an Individual plan of your own, or with a business workspace that includes it. Nothing was sent.\",\"code\":\"AGENT_NOT_INCLUDED\"}"},"personal / nectovia":{"status":403,"body":"{\"error\":\"The Nectovia Agent isn't part of your personal work here. It comes with an Individual plan of your own, or with a business workspace that includes it. Nothing was sent.\",\"code\":\"AGENT_NOT_INCLUDED\"}"}}; codes ["entitlement_revoked","entitlement_revoked","entitlement_revoked","entitlement_revoked","entitlement_expired","entitlement_expired","entitlement_expired","entitlement_expired","agent_not_included","agent_not_included","agent_not_included","agent_not_included","personal_workspace","personal_workspace","personal_workspace","personal_workspace","not_a_member","not_a_member","not_a_member","not_a_member","entitlement_unknown","entitlement_unknown","entitlement_unknown","entitlement_unknown","sign_in_required","sign_in_required","sign_in_required","sign_in_required","agent_not_included","agent_not_included"]
+
+stdout | tests/ph07-round3-review.test.ts > P payer and managed cost > P1 a Nectovia turn whose thread is switched to AWS while the gateway is answering: every event of that turn stays nectovia/managed, the next turn is aws-bedrock/byo, and no trace mixes
+P1 observed: {"switchStatus":200,"second":200,"firstTurn":"completed","events":[["$ai_generation","nectovia","managed"],["$ai_trace","nectovia","managed"],["$ai_generation","aws-bedrock","byo"],["$ai_trace","aws-bedrock","byo"]]}
+
+ ✓ tests/ph07-round3-review.test.ts (15 tests) 11702ms
+   ✓ K which failed rechecks are final > K2 an access read that fails during a refresh (503, 429, network, a body cut off mid-read, a 200 that is not JSON) ends a running turn’s observation for good; a malformed `{}` does not  2477ms
+   ✓ M which admission failures end a business’s observation > M1 a 404 or 403 that is not the service’s membership answer (a Worker that does not know the route, an edge block) is read as `not_a_member` and ends the business’s observation  647ms
+   ✓ M which admission failures end a business’s observation > M2 positive control: a real membership withdrawal ends the business’s observation  328ms
+   ✓ M which admission failures end a business’s observation > M3 failures that are not a refusal end nothing: 429, a body cut off mid-read, a 200 that is `{}` or not JSON, a 422  1271ms
+   ✓ B the workspace a scope is bound against > B1 a workspace switch during an admitted turn’s round trip: the scope is bound against the business switched to, so the turn’s events leave while the person is in the other business, and are dropped if they come back  531ms
+   ✓ C refusalCode is invisible to the person > C1 every refusal the gate can raise gives the same status and the same body bytes with the field as without it, on the AWS route and on the Nectovia route  852ms
+   ✓ P payer and managed cost > P1 a Nectovia turn whose thread is switched to AWS while the gateway is answering: every event of that turn stays nectovia/managed, the next turn is aws-bedrock/byo, and no trace mixes  402ms
+   ✓ I invariants on the Nectovia route > I1 observation off, by the option and by the unset environment: nothing is constructed and a Nectovia send is unchanged  469ms
+   ✓ I invariants on the Nectovia route > I2 Personal, Free, no plan, and a paying business that is not internal with spoofed headers: Nectovia sends observe nothing  315ms
+   ✓ I invariants on the Nectovia route > I4 a PostHog that throws, answers 500 or hangs leaves a Nectovia turn, its local hold and the gateway’s settlement identical to export off  4069ms
+ ✓ tests/software-pack.test.ts (18 tests) 11646ms
+   ✓ the repository view > branch, changed files and recent commits, read-only  397ms
+   ✓ worktrees > add waits for an exact approval, then works on a branch without touching your checkout  461ms
+   ✓ worktrees > a worktree with uncommitted work is never removed; a clean one is, and its branch stays  635ms
+   ✓ worktrees > declining changes nothing; names outside the rules and a linked worktree folder are refused  342ms
+   ✓ declared commands > nothing runs before its exact approval; declining runs nothing; approving runs it once  463ms
+   ✓ declared commands > a failing command is a recorded failure with its output, not an error  347ms
+   ✓ declared commands > a timeout ends the command and every process it started  5299ms
+   ✓ declared commands > output past the cap ends the command  395ms
+   ✓ declared commands > the command runs with a minimal environment: no secret reaches it  369ms
+   ✓ declared commands > a run a stop interrupted is said to be unconfirmed, is never re-run, and does not block the next one  339ms
+   ✓ H17 reads a declared command run as evidence > without the pack a command check is never run; with it, an approved passing run verifies  579ms
+   ✓ H17 reads a declared command run as evidence > a failing declared command fails verification with its evidence  614ms
+stderr | tests/automation-scheduler.test.ts > overlap, revalidation and budget at fire time > without a hard spending bound nothing starts on a schedule; an exhausted budget stops before writing (A22)
+The harness run stopped: HarnessError: budget exceeded
+
+ ✓ tests/mermaid-sequence-check.test.ts (2 tests) 3749ms
+   ✓ the sequence diagram check, against Mermaid > refuses every diagram in which Mermaid would take a properties or details statement  3002ms
+ ✓ tests/automation-scheduler.test.ts (27 tests) 8975ms
+   ✓ a due slot starts on its own through the same admission (OPS-08) > at its interpreted time, once, with an occurrence, a run, a Task and a draft  390ms
+   ✓ a due slot starts on its own through the same admission (OPS-08) > a duplicate dispatch of one slot is one run and a receipt (A05)  316ms
+   ✓ a due slot starts on its own through the same admission (OPS-08) > a nonexistent local time runs when the clocks jump; a repeated one runs once (A04)  1846ms
+   ✓ missed work and this computer (OPS-09) > slots missed while the computer was off are recorded; only the latest catches up, within its window (A02)  497ms
+   ✓ missed work and this computer (OPS-09) > back after the window: nothing runs, a backlog is never run, and one item says so  346ms
+   ✓ pause, resume, turn off, and restart (A10, A12) > a pause that lands before the slot suppresses it and says so; resume never revives it  335ms
+   ✓ overlap, revalidation and budget at fire time > a missing source stops a scheduled run as Waiting for data, raised once however often it is read (A17, A31)  342ms
+   ✓ editing a schedule around its slot (A13, A35) > an edit after a slot ran never runs that slot again; the new time runs under the new revision  441ms
+   ✓ editing a schedule around its slot (A13, A35) > an edit before the slot moves it; the old time never runs  308ms
+   ✓ independent review (review-e): every slot is accounted for, with the truth about this computer > a slot that fell due just before a pause is recorded, never silently dropped  312ms
+   ✓ independent review (review-e): every slot is accounted for, with the truth about this computer > a slot missed while the running computer slept names when it was last seen, not when Diomedes started  358ms
+stderr | tests/harness-host.test.ts > native harness through the real host > outside edits invalidate the exact write and remain untouched
+The harness run stopped: Error: This document changed since you opened it. Read its current version before saving.
+
+stderr | tests/harness-host.test.ts > native harness through the real host > secret scrubber covers durable errors, event mirrors, and returned run records
+The harness run stopped: [redacted]: Synthetic error [redacted]
+
+ ✓ tests/conversation-update.test.ts (15 tests) 9969ms
+   ✓ "Update this conversation" with history sharing on > retires the conversation opened under 0.1.8 with one note, and the next message carries the recent messages under today's text  716ms
+   ✓ "Update this conversation" with history sharing on > a turn records the carry only while the carried messages still reach it  2402ms
+   ✓ "Update this conversation" with history sharing on > the carried history is bounded: the last 12 messages, which give way to the new lineage's own  2995ms
+   ✓ "Update this conversation" with history sharing on > a retry of the same command reads back what it did and writes no second note, even after the conversation moved on  431ms
+   ✓ "Update this conversation" with history sharing off > carries nothing, says so, and leaves sharing off  444ms
+   ✓ "Update this conversation" with history sharing off > a grant given after the update carries nothing: the update said it won't remember, and that stands  414ms
+   ✓ "Update this conversation" with history sharing off > carries nothing when sharing is turned off after the update: each send checks again  365ms
+   ✓ "Update this conversation" is refused, with its reason, while > a message is being answered, and goes ahead once it is answered  368ms
+   ✓ only a conversation on instructions this build knows is carried > a revoked text is updated, and carries nothing  397ms
+   ✓ only a conversation on instructions this build knows is carried > a text revoked after the update stops the carry at the next send  393ms
+ ✓ tests/harness-host.test.ts (22 tests | 1 skipped) 9117ms
+   ✓ native harness through the real host > one Session, exact Need, recorded write, receipt replay, and reconnect cursor survive reopening  547ms
+   ✓ native harness through the real host > an unanswered Need remains resolvable after service restart  461ms
+   ✓ native harness through the real host > routes validate the cursor, enforce project scope and client header, and cancel through the person principal  304ms
+   ✓ native harness through the real host > duplicate run ids are refused without breaking unrelated project startup  446ms
+   ✓ native harness through the real host > unknown effects stay waiting for reconciliation across failure, completion, restart, and cancellation  349ms
+   ✓ native harness through the real host > abrupt exit at after-decision recovers the Store first and commits the harness observation once  1581ms
+   ✓ native harness through the real host > abrupt exit at journal recovers the Store first and commits the harness observation once  1216ms
+   ✓ native harness through the real host > abrupt exit at after-write recovers the Store first and commits the harness observation once  1163ms
+stderr | tests/interaction-seam.test.ts > R-05: narrowing after the task was admitted stops the Work start and keeps the task readable
+Error: the process died
+    at ClaudeSessionRuns.d.record [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mtests/interaction-seam.test.ts:579:70[90m)[39m
+    at record [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/interaction-service.ts:727:14[90m)[39m
+    at InteractionTurns.settle [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/interaction-service.ts:766:11[90m)[39m
+    at InteractionTurns.choose [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/interaction-service.ts:526:21[90m)[39m
+    at InteractionTurns.select [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/interaction-service.ts:466:14[90m)[39m
+    at [90m/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/engines/interaction-routes.ts:74:18
+
+ ✓ tests/h04-opencode-session-routes.test.ts (6 tests) 6461ms
+   ✓ a kept OpenCode session answers follow-ups on one session and projects each answer once, attributed to OpenCode  992ms
+   ✓ a message sent while OpenCode answers is shown in the thread once it is sent, attributed like any other turn  2070ms
+   ✓ closed and restarted hosts resume the same OpenCode session only through explicit resume, and fork from it  1319ms
+   ✓ after OpenCode updates itself, a restarted host resumes the same session on the version installed now  936ms
+   ✓ a fork the OpenCode build cannot make is refused with its reason  891ms
+stderr | tests/interaction-seam.test.ts > R-14: a message whose decision was never recorded reads as unresolved on every route, settled or not
+Error: the process died
+    at Object.decide [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mtests/interaction-seam.test.ts:637:19[90m)[39m
+    at ClaudeSessionRuns.decide [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/harness/claude-session-run.ts:584:31[90m)[39m
+    at ClaudeSessionRuns.drive [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/harness/claude-session-run.ts:1296:26[90m)[39m
+    at EngineService.nativeTurn [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/engines/service.ts:1990:22[90m)[39m
+    at InteractionTurns.answer [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/interaction-service.ts:411:16[90m)[39m
+    at InteractionTurns.message [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/interaction-service.ts:386:14[90m)[39m
+    at [90m/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/engines/interaction-routes.ts:74:18
+
+stderr | tests/interaction-seam.test.ts > R-03: a projection that failed is repaired from the turn itself, not from the files and settings as they stand now
+Error: the disk was full
+    at Store.live.persist [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mtests/interaction-seam.test.ts:681:13[90m)[39m
+    at [90m/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/app.ts:5205:21
+    at [90m/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/store.ts:560:22
+
+stdout | tests/independent-h01-20260917.test.ts > H01 real application and host acceptance > persists an admitted command, host run, model step, attempt and fence before Work dispatch
+H01_WORK_DISPATCH {"command":"independent-work-command","runs":1}
+
+ ✓ tests/interaction-seam.test.ts (19 tests) 7424ms
+   ✓ C01: a greeting is answered and creates nothing  380ms
+   ✓ C06: under Automatic a valid act proposal is shown, never started, until the person selects it  321ms
+   ✓ a selection bound to the message, the proposal and the target starts exactly one task and one work session  678ms
+   ✓ Answer only and Plan only never show or start work, whatever the model proposes  373ms
+   ✓ narrowing the Mode control after a proposal was shown means it can no longer be started  360ms
+   ✓ R-03: a reused command with a changed text, mode or source list is refused before and after projection, and changes nothing  301ms
+   ✓ R-14: a message answered on a cancelled conversation is still readable, and nothing can be started through it  411ms
+   ✓ a busy target is a final refusal: the task exists, the work did not start, and a retry does not try again  812ms
+   ✓ a receipt that exists without its phase is linked after a restart, never sent again  435ms
+   ✓ R-05: a selection saved before a crash cannot start work once the Mode is narrowed to ask  334ms
+   ✓ R-05: a selection saved before a crash cannot start work once the Mode is narrowed to plan  316ms
+   ✓ R-05: narrowing after the task was admitted stops the Work start and keeps the task readable  376ms
+   ✓ R-15: a cancellation after task-input is recorded and before its admission starts nothing  319ms
+   ✓ R-15: a cancellation after work-input is recorded and before its admission starts nothing  413ms
+   ✓ R-10: a lineage that runs out of budget is replaced once, and the replacement is what a retry and a restart find  625ms
+stdout | tests/independent-h01-20260917.test.ts > H01 real application and host acceptance > persists a durable run before the application text support route sends a prompt
+H01_TEXT_DISPATCH {"runs":1,"providerCalls":1}
+
+stdout | tests/independent-h01-20260917.test.ts > H01 real application and host acceptance > carries host run, step, attempt and lease fence through the actual app-facing preview event
+H01_APP_PREVIEW {"projectId":"270eddd00faa","threadId":"Cba687eb8cd16","requestId":"R1fe7b34c48a1","runId":"270eddd00faa-R1fe7b34c48a1","kind":"delta","stepId":"text:dispatch","attempt":1,"fence":1,"seq":1,"text":"Synthetic cafe inventory: café 🚀"}
+
+stdout | tests/independent-h01-20260917.test.ts > H01 real application and host acceptance > diagnostic only: returns the durable result when the same logical EngineService request is replayed
+H01_LOGICAL_REPLAY {"providerCalls":1}
+
+stderr | tests/independent-h01-20260917.test.ts > H01 real application and host acceptance > reopens saved application text without another provider call or changed attribution
+Skipped a harness run whose capability is unavailable.
+
+stdout | tests/independent-h01-20260917.test.ts > H01 real application and host acceptance > rechecks current app enablement after observation and before provider dispatch
+H01_ENABLEMENT_RACE {"responseStatus":409,"providerCalls":0}
+
+stdout | tests/independent-h01-20260917.test.ts > H01 real application and host acceptance > rejects old-owner previews after lease expiry and host takeover
+H01_STALE_OWNER_PREVIEW {"oldFence":1,"newFence":2,"frames":[{"projectId":"81f1bf7604a2","threadId":"Ce661d47714c3","requestId":"Rb939076c3707","runId":"81f1bf7604a2-Rb939076c3707","kind":"started"},{"projectId":"81f1bf7604a2","threadId":"Ce661d47714c3","requestId":"Rb939076c3707","runId":"81f1bf7604a2-Rb939076c3707","kind":"delta","stepId":"text:dispatch","attempt":1,"fence":1,"seq":1,"text":"Synthetic cafe inventory: café 🚀"},{"projectId":"81f1bf7604a2","threadId":"Ce661d47714c3","requestId":"Rb939076c3707","runId":"81f1bf7604a2-Rb939076c3707","kind":"ended"}],"afterState":"running"}
+
+stdout | tests/independent-h01-20260917.test.ts > H01 real application and host acceptance > refuses a current account-route selection change during admission before provider dispatch
+H01_ACCOUNT_ROUTE_RACE {"status":409,"calls":0}
+
+stdout | tests/independent-h01-20260917.test.ts > H01 real application and host acceptance > parks an in-flight app result when route authority is withdrawn and never records an answer
+H01_RESULT_AUTHORITY {"status":503,"state":"reconcile_required","calls":1}
+
+stdout | tests/independent-h01-20260917.test.ts > H01 real provider transport regressions > OpenCode observes successful prompt acceptance and partial SSE before an actual socket drop
+H01_SSE_DROP {"trace":[{"event":"prompt-accepted","status":204},{"event":"partial-output"},{"event":"connection-drop","terminalSent":false},{"event":"abort"},{"event":"delete"}],"error":"DISPATCH_UNCERTAIN","previews":["Partial fixture answer"]}
+
+stderr | tests/independent-h01-20260917.test.ts > H01 real provider transport regressions > parks a dropped-SSE app operation durably for reconciliation across restart
+Skipped a harness run whose capability is unavailable.
+
+ ✓ tests/independent-h01-20260917.test.ts (22 tests) 8089ms
+   ✓ H01 real application and host acceptance > persists an admitted command, host run, model step, attempt and fence before Work dispatch  460ms
+   ✓ H01 real application and host acceptance > persists a durable run before the application text support route sends a prompt  412ms
+   ✓ H01 real application and host acceptance > carries host run, step, attempt and lease fence through the actual app-facing preview event  381ms
+   ✓ H01 real application and host acceptance > commits one matching host terminal result for a completed app text operation  323ms
+   ✓ H01 real application and host acceptance > diagnostic only: returns the durable result when the same logical EngineService request is replayed  352ms
+   ✓ H01 real application and host acceptance > replays the existing admitted Work command and its receipt without another provider call  355ms
+   ✓ H01 real application and host acceptance > reopens saved application text without another provider call or changed attribution  371ms
+   ✓ H01 real application and host acceptance > rejects a second controller while a provider turn remains active  399ms
+   ✓ H01 real application and host acceptance > rejects a withdrawn model observed between listing and dispatch  320ms
+   ✓ H01 real application and host acceptance > rechecks current app enablement after observation and before provider dispatch  358ms
+   ✓ H01 real application and host acceptance > rejects old-owner previews after lease expiry and host takeover  416ms
+   ✓ H01 real application and host acceptance > refuses a current account-route selection change during admission before provider dispatch  334ms
+   ✓ H01 real application and host acceptance > parks an in-flight app result when route authority is withdrawn and never records an answer  320ms
+   ✓ H01 real provider transport regressions > Claude handles unicode through its production process parser  332ms
+   ✓ H01 real provider transport regressions > Claude handles stderr through its production process parser  352ms
+   ✓ H01 real provider transport regressions > Claude refuses no-terminal without fabricated completion or retry  335ms
+   ✓ H01 real provider transport regressions > Claude refuses truncated without fabricated completion or retry  333ms
+   ✓ H01 real provider transport regressions > Claude refuses oversized without fabricated completion or retry  361ms
+   ✓ H01 real provider transport regressions > OpenCode observes successful prompt acceptance and partial SSE before an actual socket drop  478ms
+   ✓ H01 real provider transport regressions > parks a dropped-SSE app operation durably for reconciliation across restart  556ms
+stderr | tests/h14-team-host.test.ts > profiles, durability and retry > Stop on the lead stops every worker it is waiting for
+The harness run stopped: HarnessError: stale attempt
+
+ ✓ tests/h14-team-host.test.ts (13 tests) 7871ms
+   ✓ a lead with workers and an advisor on the fixture route > workers run as their own bounded runs, the advisor advises, and the lead verifies the outcome  974ms
+   ✓ a lead with workers and an advisor on the fixture route > scope: a worker cannot be given a file outside the lead’s scope, and a worker reads nothing outside its own  710ms
+   ✓ budgets, fan-out and authority on a stub model-API route > a worker cannot ask for more turns than admitted, and one that keeps going is stopped at its budget  499ms
+   ✓ budgets, fan-out and authority on a stub model-API route > a worker is stopped before the call that would pass its reported-token budget  473ms
+   ✓ budgets, fan-out and authority on a stub model-API route > fan-out: at most three workers at once, and they run at the same time; a worker is never offered delegation  1634ms
+   ✓ budgets, fan-out and authority on a stub model-API route > authority: a worker that tries to write is refused, nothing is written, and its lead stops for a retry  338ms
+   ✓ budgets, fan-out and authority on a stub model-API route > advisor: read-only by construction; one that tries to write is refused and the lead goes on  331ms
+   ✓ budgets, fan-out and authority on a stub model-API route > an advisor’s advice is attributed to the model the runtime reported  336ms
+   ✓ profiles, durability and retry > a worker runs under its own H09 profile, pinned by revision; a profile that cannot run refuses by name  731ms
+   ✓ profiles, durability and retry > a worker that fails stops its lead; the record survives a restart; H08 Retry reruns only that worker  1383ms
+   ✓ profiles, durability and retry > Stop on the lead stops every worker it is waiting for  325ms
+ ✓ tests/h05-acp-session-routes.test.ts (5 tests) 2868ms
+   ✓ a kept Cursor conversation continues its ACP session and offers only the controls its contract answers  1082ms
+   ✓ a plan Cursor presents mid-turn is a Need; the answer given there reaches Cursor  432ms
+   ✓ a declined plan tells Cursor no, and the same answer continues  401ms
+   ✓ a Stop while the question is open expires the Need; nothing can be sent for it afterwards  366ms
+   ✓ after Cursor updates itself, a restarted host resumes the same ACP session on the version installed now  586ms
+ ✓ tests/acp-session.test.ts (30 tests) 8138ms
+   ✓ kept ACP conversation — cursor > Stop ends the process tree after the bounded wait when the agent ignores session/cancel  3057ms
+   ✓ kept ACP conversation — devin > Stop ends the process tree after the bounded wait when the agent ignores session/cancel  3056ms
+ ✓ tests/home-conversation.test.ts (24 tests) 5531ms
+   ✓ the home Project is never listed, and is still enumerated for recovery after a restart  336ms
+   ✓ from home an Automatic proposal naming no project needs a target, and one naming a project is proposed there  569ms
+   ✓ R-17: the ordinary thread update cannot reroute home away from its conversation engine  304ms
+   ✓ R-17: a refused home engine change is whole, and the conversation still answers after a restart  305ms
+   ✓ R-17: home keeps every control that is not its engine, and an ordinary project keeps them all  373ms
+   ✓ the home update accepts a supported conversation route and records it as the person's  324ms
+   ✓ a Claude Code Home answers with no grant, and a follow-up needs the history grant  452ms
+   ✓ a Claude Code Home follow-up is answered after the page's grant and refused after its revoke  447ms
+stderr | tests/h16-stream-triggers.test.ts > H16 stream-time triggers on the scripted loop route > hold on an intent the approval gate cannot carry: refused before admission and paused for you, never run
+The harness run stopped: HarnessError: This run was cancelled: Paused by Diomedes supervision.
+
+stderr | tests/h16-stream-triggers.test.ts > H16 stream-time triggers on the scripted loop route > review-g: a hold on a read the loop hands to a delegate still holds; the helper never reads it
+The harness run stopped: HarnessError: stale attempt
+
+stderr | tests/h16-stream-triggers.test.ts > H16 stream-time triggers on the scripted loop route > stop on streamed text: supervision pauses the run through H08 Stop and asks you; nothing the plan proposed runs
+The harness run stopped: AbortError: This operation was aborted
+
+stderr | tests/h16-stream-triggers.test.ts > H16 stream-time triggers on the scripted loop route > a stop rule whose escalation is already open on the task still stops the next run before anything it proposed runs
+The harness run stopped: AbortError: This operation was aborted
+
+stderr | tests/h16-stream-triggers.test.ts > H16 stream-time triggers on the scripted loop route > a stop rule whose escalation is already open on the task still stops the next run before anything it proposed runs
+The harness run stopped: HarnessError: A rule stopped this run: Rule no-summaries.
+
+stderr | tests/h16-stream-triggers.test.ts > H16 stream-time triggers on the scripted loop route > review-g: two stop rules firing on one run pause it once and ask the person once
+The harness run stopped: AbortError: This operation was aborted
+
+stderr | tests/h16-stream-triggers.test.ts > H16 stream-time triggers on the scripted loop route > review-g: a hold on a read an H14 lead hands to a worker still holds; the worker never reads it
+The harness run stopped: HarnessError: stale attempt
+
+stderr | tests/h16-stream-triggers.test.ts > H16 stream-time triggers on the scripted loop route > review-g: a tool stop whose escalation is already open on the task still refuses the next run's intent
+The harness run stopped: HarnessError: This run was cancelled: Paused by Diomedes supervision.
+
+stderr | tests/h16-stream-triggers.test.ts > H16 stream-time triggers on the scripted loop route > review-g: a tool stop whose escalation is already open on the task still refuses the next run's intent
+The harness run stopped: HarnessError: A rule stopped this before it ran: Rule orders-guarded.
+
+stderr | tests/h16-stream-triggers.test.ts > H16 stream-time triggers on the scripted loop route > review-g: a tool hold whose escalation is already open on the task still refuses the next run's intent
+The harness run stopped: HarnessError: This run was cancelled: Paused by Diomedes supervision.
+
+stderr | tests/h16-stream-triggers.test.ts > H16 stream-time triggers on the scripted loop route > review-g: a tool hold whose escalation is already open on the task still refuses the next run's intent
+The harness run stopped: HarnessError: A rule stopped this before it ran: Rule orders-guarded.
+
+stderr | tests/h16-stream-triggers.test.ts > H16 stream-time triggers on the scripted loop route > stop on a proposed tool intent: the intent is refused before admission and the run is paused for you
+The harness run stopped: HarnessError: This run was cancelled: Paused by Diomedes supervision.
+
+stderr | tests/h16-stream-triggers.test.ts > H16 stream-time triggers on the scripted loop route > restart: firings and the escalation they raised read back identically from a fresh host on the same data folder
+The harness run stopped: AbortError: This operation was aborted
+
+ ✓ tests/change-review-subfolder.test.ts (13 tests) 3239ms
+   ✓ change review for a project below the repository root > one recorded edit produces one project-relative entry with readable content  460ms
+   ✓ change review for a project below the repository root > one observed edit produces one project-relative entry with readable content  381ms
+   ✓ change review for a project below the repository root > Git-only text in project "apps/project" uses the project path and preserves Git identity  417ms
+   ✓ change review for a project below the repository root > Git-only text in project "app[1]" uses the project path and preserves Git identity  401ms
+   ✓ change review for a project below the repository root > Git-only text in project "" uses the project path and preserves Git identity  398ms
+   ✓ change review for a project below the repository root > a persisted dirty Git baseline still finds its staged before-text after restart  424ms
+   ✓ change review for a project below the repository root > a Git-only rename displays both names relative to the project  321ms
+   ✓ change review for a project below the repository root > moving a Git-only file out of the project remains a readable removal  433ms
+ ✓ tests/h16-stream-triggers.test.ts (18 tests) 6348ms
+   ✓ H16 stream-time triggers on the scripted loop route > annotate: a phrase split across streamed chunks is recorded with the rule digest and its exact span, and nothing else happens  640ms
+   ✓ H16 stream-time triggers on the scripted loop route > no false fire across two streams: text that only exists when one stream is joined to the next never matches  529ms
+   ✓ H16 stream-time triggers on the scripted loop route > hold on a recorded write: it waits at the approval gate with the rule named, and never runs until you answer  467ms
+   ✓ H16 stream-time triggers on the scripted loop route > hold on a recorded write, declined: the run is cancelled and nothing was written  303ms
+   ✓ H16 stream-time triggers on the scripted loop route > review-g: a hold on a read the loop hands to a delegate still holds; the helper never reads it  315ms
+   ✓ H16 stream-time triggers on the scripted loop route > review-g: a hold on a read an H14 lead hands to a worker still holds; the worker never reads it  322ms
+   ✓ H16 stream-time triggers on the scripted loop route > review-g: a tool stop whose escalation is already open on the task still refuses the next run's intent  309ms
+   ✓ H16 stream-time triggers on the scripted loop route > review-g: a tool hold whose escalation is already open on the task still refuses the next run's intent  347ms
+   ✓ H16 stream-time triggers on the scripted loop route > steer on streamed text: supervision asks the run to correct through H08, with the rule’s exact message, and the run goes on  442ms
+   ✓ H16 holds and remembered approvals > a held write is answered by a person even where a remembered approval would have covered it  1236ms
+ ✓ tests/inventory-receipt-workflow.test.ts (17 tests) 1187ms
+   ✓ mobile receipt workflow over durable stock > new receipts do not shift an older-history cursor or hide earlier evidence  594ms
+ ✓ tests/h16-stream-evaluator.test.ts (15 tests) 1614ms
+   ✓ H16 incremental matching > cost per chunk is bounded: 64 rules over 4 KB chunks, a 1 MB chunk, and the worst allowed pattern  1595ms
+ ✓ tests/remembered-approvals-codex.test.ts (17 tests) 5838ms
+   ✓ a Codex proposal records the account it was prepared under > the runtime-reported route is kept on the proposal, outside its approval digest  343ms
+   ✓ route 1 on a Codex proposal: Go ahead and remember in this project > the next identical proposal runs under it, another file asks, and revoking asks again  462ms
+   ✓ route 1 on a Codex proposal: Go ahead and remember in this project > another ChatGPT account asks again, and so does turning the Codex connection off  390ms
+   ✓ route 2 on a Codex proposal: the learned offer > offered once at the threshold; Stop asking covers the next, Keep asking is remembered  514ms
+   ✓ route 2 on a Codex proposal: the learned offer > a declined offer does not come back, and a decline restarts the count  1080ms
+   ✓ the ChatGPT account a Codex task scope was confirmed for > a scope confirmed on a waiting proposal binds its account, and another account asks again  375ms
+   ✓ independent review (review-e): evidence names the grant that covers its files > covered evidence re-pointed at a grant for another file cannot authorize  379ms
+ ✓ tests/evaluation-sdk-conformance.test.ts (18 tests) 6063ms
+   ✓ the gateway port on the installed SDK > the SDK left to its default would have tried three times, which is why the port says zero  6007ms
+stderr | tests/delegate-sandbox-host.test.ts > Stop, depth and restart > a delegate may hand one part on; Stop on the loop cancels the whole tree and removes its sandboxes
+The harness run stopped: HarnessError: stale attempt
+
+ ✓ tests/opencode-session-runtime.test.ts (10 tests) 6089ms
+   ✓ kept OpenCode session over the native conversation driver > holds a message sent while a turn runs and sends it next, as its own durable turn  875ms
+   ✓ kept OpenCode session over the native conversation driver > sends several held messages in the order they were sent, and holds again behind a later turn  2315ms
+   ✓ kept OpenCode session over the native conversation driver > a stop leaves the session resumable and cancels what was held, with the reason  387ms
+   ✓ kept OpenCode session over the native conversation driver > after a restart, recovery then an explicit resume continue the same OpenCode session  374ms
+   ✓ kept OpenCode session over the native conversation driver > a resume OpenCode cannot honour starts fresh, and the turn says so  342ms
+   ✓ kept OpenCode session over the native conversation driver > forks an idle conversation into a child run on a new OpenCode session  363ms
+   ✓ kept OpenCode session over the native conversation driver > refuses a fork the OpenCode build cannot make, and starts nothing  334ms
+   ✓ kept OpenCode session over the native conversation driver > a refused fork leaves nothing to reconcile, and the same fork command goes through once the cause is fixed  532ms
+   ✓ kept OpenCode session over the native conversation driver > a session deleted in OpenCode while connected is refused as not sent, and a resume starts fresh and says so  321ms
+ ✓ tests/delegate-sandbox-host.test.ts (7 tests) 5557ms
+   ✓ a delegate’s change set, settled into the project > in scope it applies as the model’s change; out of scope it waits under a Need that outlives the run  850ms
+   ✓ a delegate’s change set, settled into the project > with no scope given, every change waits; the ordinary Need answer can decline it and nothing is written  1333ms
+   ✓ the delegate’s route comes from an H09 profile > a profile named at start fixes the delegate’s route and model, pinned by revision  707ms
+   ✓ Stop, depth and restart > a delegate may hand one part on; Stop on the loop cancels the whole tree and removes its sandboxes  417ms
+   ✓ Stop, depth and restart > an abrupt exit mid-delegate: its sandbox survives with the child’s work, the child resumes in it, and it is removed at the end  1771ms
+   ✓ H14 workers work in sandboxes too > a worker’s change comes back as a change set and applies inside the lead’s scope  447ms
+stdout | tests/interaction-authority.matrix-20260921.test.ts > matrix: concurrent identical selections converge on one receipt
+DUPLICATE_SELECTION {"statuses":[200,200],"results":[{"runId":"claude-c47bf4ec8dbe4a7edd3fcd5e09ac0495ff17e5d310fc7d96271ac2c42c851a07","commandId":"matrix-duplicate","sourceMessageId":"sm.a5a72622050a852520d5494edccbfebc","answerText":null,"interrupted":false,"outcome":{"status":"started","projectId":"bc05dda00175","taskId":"T1","sessionId":"S588ce23f2ecf"}},{"runId":"claude-c47bf4ec8dbe4a7edd3fcd5e09ac0495ff17e5d310fc7d96271ac2c42c851a07","commandId":"matrix-duplicate","sourceMessageId":"sm.a5a72622050a852520d5494edccbfebc","answerText":null,"interrupted":false,"outcome":{"status":"started","projectId":"bc05dda00175","taskId":"T1","sessionId":"S588ce23f2ecf"}}],"tasks":1,"sessions":1}
+
+stdout | tests/interaction-authority.matrix-20260921.test.ts > matrix: a child command already bound to different task intent must conflict
+CHILD_INTENT_COLLISION {"status":409,"tasks":1,"sessions":0}
+
+ ✓ tests/opencode-session.test.ts (16 tests) 5779ms
+   ✓ kept OpenCode session transport > a stop OpenCode does not confirm leaves the session uncertain, and it is never resumed  3233ms
+   ✓ kept OpenCode session transport > forks a saved idle session into a new OpenCode session that carries its messages  350ms
+   ✓ kept OpenCode session transport > refuses a fork, with a stated reason, where the build or the source cannot give one  304ms
+stderr | tests/interaction-authority.matrix-20260921.test.ts > matrix: restart after child admission before receipt phase never creates another child
+Error: Synthetic stop before receipt phase
+    at ClaudeSessionRuns.runtime.record [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mtests/interaction-authority.matrix-20260921.test.ts:478:72[90m)[39m
+    at record [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/interaction-service.ts:727:14[90m)[39m
+    at InteractionTurns.settle [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/interaction-service.ts:778:13[90m)[39m
+    at InteractionTurns.choose [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/interaction-service.ts:526:21[90m)[39m
+    at InteractionTurns.select [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/interaction-service.ts:466:14[90m)[39m
+    at [90m/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/engines/interaction-routes.ts:74:18
+
+stderr | tests/interaction-authority.matrix-20260921.test.ts > matrix: a concurrent provider failure after liveness check must prevent new Work
+Error: Synthetic provider outcome is unknown
+    at afterPreview [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mtests/interaction-authority.matrix-20260921.test.ts:552:13[90m)[39m
+    at Object.turn [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mtests/interaction-authority.matrix-20260921.test.ts:184:11[90m)[39m
+    at [90m/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/harness/claude-session-run.ts:1188:24
+    at HostRunService.step [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/harness/run-service.ts:1041:22[90m)[39m
+    at HostRunService.step [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/harness/host.ts:380:14[90m)[39m
+    at ClaudeSessionRuns.drive [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/harness/claude-session-run.ts:1137:18[90m)[39m
+    at EngineService.nativeTurn [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/engines/service.ts:1990:22[90m)[39m
+    at InteractionTurns.answer [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/interaction-service.ts:411:16[90m)[39m
+    at InteractionTurns.message [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/interaction-service.ts:386:14[90m)[39m
+    at [90m/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/engines/interaction-routes.ts:74:18
+
+stdout | tests/interaction-authority.matrix-20260921.test.ts > matrix: a concurrent provider failure after liveness check must prevent new Work
+PROVIDER_FAILURE_ADMISSION {"status":409,"checks":2,"source":"reconcile_required","tasks":1,"sessions":0}
+
+ ✓ tests/interaction-authority.matrix-20260921.test.ts (13 tests) 5361ms
+   ✓ matrix: HTTP cancellation after work-input preserves the task and admits no Work  499ms
+   ✓ matrix: real ask message after work-input prevents new Work  569ms
+   ✓ matrix: real plan message after work-input prevents new Work  510ms
+   ✓ matrix: concurrent identical selections converge on one receipt  428ms
+   ✓ matrix: admission first preserves its receipt across cancel, narrowing and observational replay  431ms
+   ✓ matrix: an identical selection retry returns its committed receipt after authority is withdrawn  435ms
+   ✓ matrix: restart after child admission before receipt phase never creates another child  454ms
+   ✓ matrix: late cancelled output cannot overwrite a later conversation generation  395ms
+   ✓ matrix: a concurrent provider failure after liveness check must prevent new Work  549ms
+ ✓ tests/context-accounting-driver.test.ts (4 tests) 1580ms
+   ✓ context accounting on a model-API conversation > past the history budget: the newest stay, the rest are summarised as evidence, and History keeps every message  1073ms
+stderr | tests/native-loop-host.test.ts > stop and restart > Stop on the loop stops the delegate it is waiting for, through the ordinary Stop control
+The harness run stopped: HarnessError: stale attempt
+
+stdout | tests/interaction-seam.review-20260921.test.ts > independent: cancellation after work-input must prevent new work admission
+INDEPENDENT_CANCEL_RACE {"response":409,"state":"cancelled","tasks":1,"sessions":0}
+
+stdout | tests/interaction-seam.review-20260921.test.ts > independent: narrowing Mode during selection must prevent new work admission
+INDEPENDENT_MODE_RACE {"response":200,"mode":"ask","tasks":0,"sessions":0}
+
+ ✓ tests/native-loop-host.test.ts (9 tests) 5941ms
+   ✓ a Diomedes loop through the real host > plan, read, delegate, an approved write and a finish: the finish is Not verified without declared checks  760ms
+   ✓ a Diomedes loop through the real host > declared checks run at the finish: Verified moves the task to done, and the record says Diomedes asked  518ms
+   ✓ a Diomedes loop through the real host > a declared check that fails: Failed verification with its evidence, and the task is not done  507ms
+   ✓ stop and restart > Stop on the loop stops the delegate it is waiting for, through the ordinary Stop control  438ms
+   ✓ stop and restart > a delegate whose route cannot open is failed with the reason, never left running with nobody driving it  699ms
+   ✓ stop and restart > restart while waiting for approval: the reopened host resumes the loop from its record  759ms
+   ✓ stop and restart > an abrupt exit while a delegate is mid-call: the parent resumes, and the unknown call is never resent  1903ms
+stdout | tests/interaction-seam.review-20260921.test.ts > independent: a message still waiting for its first answer is not answered
+INDEPENDENT_PENDING_OUTCOME {"runId":"claude-0c7ed3bf5961540606f7e07b0d67515fa1ff4f6ff00c45d4a01c4e0067368c7c","commandId":"m-pending-review","sourceMessageId":"sm.c833c575a0fddbc4218f7445ea0f3c4a","answerText":null,"interrupted":false,"outcome":{"status":"unresolved","message":"This did not finish. Send the same message again to finish it."}}
+
+ ✓ tests/interaction-seam.review-20260921.test.ts (13 tests) 6203ms
+   ✓ C01: a greeting is answered and creates nothing  401ms
+   ✓ C06: under Automatic a valid act proposal is shown, never started, until the person selects it  308ms
+   ✓ a selection bound to the message, the proposal and the target starts exactly one task and one work session  581ms
+   ✓ a proposal naming another message is not a proposal  313ms
+   ✓ Answer only and Plan only never show or start work, whatever the model proposes  445ms
+   ✓ narrowing the Mode control after a proposal was shown means it can no longer be started  480ms
+   ✓ R-03: a reused command with a changed text, mode or source list is refused before and after projection, and changes nothing  333ms
+   ✓ R-14: a message answered on a cancelled conversation is still readable, and nothing can be started through it  464ms
+   ✓ a busy target is a final refusal: the task exists, the work did not start, and a retry does not try again  1021ms
+   ✓ a receipt that exists without its phase is linked after a restart, never sent again  543ms
+   ✓ independent: cancellation after work-input must prevent new work admission  474ms
+   ✓ independent: narrowing Mode during selection must prevent new work admission  568ms
+ ✓ tests/guidance-maintenance.test.ts (26 tests) 5293ms
+   ✓ the decline-suppression rule > a decline suppresses the same proposal until new evidence arrives, across a restart  322ms
+   ✓ approval and the signed revision chain > tampering is detected, wherever it is, and blocks further revisions  390ms
+   ✓ rollback > rolls any revision back in one step, as a new record, and H11 follows  543ms
+   ✓ the no-reset invariant (DIO-102) > a revision and its rollback leave open conversations and past delivery records exactly as they were  344ms
+ ✓ tests/conversation-engines.test.ts (12 tests | 1 skipped) 5534ms
+   ✓ ChatGPT, and a thread moved between ChatGPT and Claude Code > a ChatGPT thread continues one Codex thread through the conversation, and offers exactly its controls  668ms
+   ✓ ChatGPT, and a thread moved between ChatGPT and Claude Code > a ChatGPT answer without runtime model metadata is unverified in the saved thread and evidence  373ms
+   ✓ ChatGPT, and a thread moved between ChatGPT and Claude Code > provider-only secrets are absent from live output, HTTP answers, saved threads, replay, and run evidence  326ms
+   ✓ ChatGPT, and a thread moved between ChatGPT and Claude Code > ChatGPT signed out while its thread waits: the next message is refused in its own words, nothing is sent, and the thread keeps ChatGPT  432ms
+   ✓ ChatGPT, and a thread moved between ChatGPT and Claude Code > a thread moved from ChatGPT to Claude Code and back opens a new lineage each time, and nothing crosses engines  753ms
+   ✓ a cursor conversation > continues its ACP session through the conversation, and offers exactly its controls  689ms
+   ✓ a cursor conversation > signed out while its thread waits: the next message is refused in Cursor's own words, nothing is sent, and the thread keeps Cursor  564ms
+   ✓ a devin conversation > continues its ACP session through the conversation, and offers exactly its controls  631ms
+   ✓ an OpenCode conversation > continues its OpenCode session through the conversation, and offers exactly its controls  847ms
+stderr | tests/aws-conversation-authority.review-20260921.test.ts > AWS Luna in the actual Diomedes conversation > stop AWS Work with the Console's Stop; after a restart nothing was written and the call stays uncertain
+Skipped a harness run whose capability is unavailable.
+
+stdout | tests/aws-conversation-authority.review-20260921.test.ts > AWS conversation authority: independent integration counterexamples > a real ask message after work-input prevents new Work
+AWS_AUTHORITY_MODE {"mode":"ask","barrierReached":true,"status":200,"body":{"runId":"model-84710aeb2152b4c112486612e70a188c0e9e772ae47e8bf61bc8e3dfdaa80251","commandId":"review-mode-ask","sourceMessageId":"sm.97943f99f00a84cabd80700bba32e610","answerText":null,"interrupted":false,"outcome":{"status":"not-started","reason":"refused","message":"This conversation is limited, so nothing was started.","taskId":"T1"}},"tasks":1,"work":0}
+
+stdout | tests/aws-conversation-authority.review-20260921.test.ts > AWS conversation authority: independent integration counterexamples > a real plan message after work-input prevents new Work
+AWS_AUTHORITY_MODE {"mode":"plan","barrierReached":true,"status":200,"body":{"runId":"model-47a39302873e4415c25a5257a5e306a7547b48466db670fdfe0c78ee9a28d1ce","commandId":"review-mode-plan","sourceMessageId":"sm.e538a8edecef1aa4aa6dc48d84206f24","answerText":null,"interrupted":false,"outcome":{"status":"not-started","reason":"refused","message":"This conversation is limited, so nothing was started.","taskId":"T1"}},"tasks":1,"work":0}
+
+stdout | tests/aws-conversation-authority.review-20260921.test.ts > AWS conversation authority: independent integration counterexamples > an acknowledged interrupted turn remains interrupted when polled before and after restart
+AWS_AUTHORITY_INTERRUPT {"post":{"runId":"model-2ddd1a1c0309a41dade6e4c28a7aa4d17a9dcd2bf7ab349f1ddecb1105d566b4","commandId":"review-interrupted","sourceMessageId":"sm.ec1feb902696a53da767fabdc6b5c6a5","answerText":null,"interrupted":true,"outcome":{"status":"unresolved","message":"This did not finish. Send the same message again to finish it."}},"beforeRestart":{"runId":"model-2ddd1a1c0309a41dade6e4c28a7aa4d17a9dcd2bf7ab349f1ddecb1105d566b4","commandId":"review-interrupted","sourceMessageId":"sm.ec1feb902696a53da767fabdc6b5c6a5","answerText":null,"interrupted":true,"outcome":{"status":"unresolved","message":"This did not finish. Send the same message again to finish it."}},"afterRestart":{"runId":"model-2ddd1a1c0309a41dade6e4c28a7aa4d17a9dcd2bf7ab349f1ddecb1105d566b4","commandId":"review-interrupted","sourceMessageId":"sm.ec1feb902696a53da767fabdc6b5c6a5","answerText":null,"interrupted":true,"outcome":{"status":"unresolved","message":"This did not finish. Send the same message again to finish it."}},"calls":1}
+
+stdout | tests/aws-conversation-authority.review-20260921.test.ts > AWS conversation authority: independent integration counterexamples > a matching selection retry returns its existing receipt after source cancellation and narrowing
+AWS_AUTHORITY_RECEIPT {"status":200,"first":{"runId":"model-73c84daa1908234c05bf3d3fed967ca68a07ed2bd69552ee3e5d27e30b72519e","commandId":"review-receipt","sourceMessageId":"sm.2af2187c2ecb00fcd6a1836e222acaf0","answerText":null,"interrupted":false,"outcome":{"status":"started","projectId":"4b3929c882df","taskId":"T1","sessionId":"S7738451883f5"}},"replay":{"runId":"model-73c84daa1908234c05bf3d3fed967ca68a07ed2bd69552ee3e5d27e30b72519e","commandId":"review-receipt","sourceMessageId":"sm.2af2187c2ecb00fcd6a1836e222acaf0","answerText":null,"interrupted":false,"outcome":{"status":"started","projectId":"4b3929c882df","taskId":"T1","sessionId":"S7738451883f5"}},"calls":2}
+
+ ✓ tests/aws-conversation-authority.review-20260921.test.ts (11 tests) 4474ms
+   ✓ AWS Luna in the actual Diomedes conversation > ask about the linen records: a real registered read-tool call, a source-backed answer, attribution and usage  334ms
+   ✓ AWS Luna in the actual Diomedes conversation > request a draft checklist: deny one exact proposal and nothing changes; approve a new one and it is written  857ms
+   ✓ AWS Luna in the actual Diomedes conversation > stop a conversation turn; after a restart its status is honest and the conversation continues  387ms
+   ✓ AWS Luna in the actual Diomedes conversation > stop AWS Work with the Console's Stop; after a restart nothing was written and the call stays uncertain  556ms
+   ✓ AWS Luna in the actual Diomedes conversation > a new key is a new connection generation: the old lineage is retired, and Build from the thread runs on the new key  526ms
+   ✓ AWS conversation authority: independent integration counterexamples > a real ask message after work-input prevents new Work  507ms
+   ✓ AWS conversation authority: independent integration counterexamples > a real plan message after work-input prevents new Work  457ms
+   ✓ AWS conversation authority: independent integration counterexamples > a matching selection retry returns its existing receipt after source cancellation and narrowing  431ms
+stdout | tests/fd01-independent-review.test.ts > FD01 independent packaging contract (substituted packager, not Mac proof) > excludes copied Windows resources and produces a verifiable, honestly unbundled manifest
+Desktop release: /private/var/folders/pn/r7q5jct14vb878nmq0ryw6300000gn/T/fd01-independent-14wziL/release/Diomedes-darwin-arm64
+
+ ✓ tests/fd01-independent-review.test.ts (40 tests) 5226ms
+   ✓ FD01 independent real child-process probe boundary > bounds a hung real child and reports a timeout rather than its plausible version  5002ms
+ ✓ tests/paid-access-lapse/boundaries.test.ts (10 tests) 3588ms
+   ✓ independent free harness and paid Agent boundaries at 05ef1b0 > a free default conversation dispatches to the real direct-engine session driver  461ms
+   ✓ independent free harness and paid Agent boundaries at 05ef1b0 > a paid business member keeps their direct engine in Personal without a business payer  859ms
+   ✓ independent free harness and paid Agent boundaries at 05ef1b0 > two stale callers cannot start Agent work after the business grant is revoked  431ms
+   ✓ independent free harness and paid Agent boundaries at 05ef1b0 > a restored free project and notice preference preserve only direct-engine access  504ms
+ ✓ tests/lineage-continuity-aws.test.ts (15 tests) 5583ms
+   ✓ an open model-API conversation after an update that changed its instructions > a Ask lineage opened under v0.1.7 continues: same generation, its text, and its history  559ms
+   ✓ an open model-API conversation after an update that changed its instructions > a Plan lineage opened under v0.1.7 continues: same generation, its text, and its history  828ms
+   ✓ an open model-API conversation after an update that changed its instructions > a ask lineage opened under main's 0.1.8 text continues under this build: its text, its history, no note  340ms
+   ✓ an open model-API conversation after an update that changed its instructions > a plan lineage opened under main's 0.1.8 text continues under this build: its text, its history, no note  325ms
+   ✓ an open model-API conversation after an update that changed its instructions > a auto lineage opened under main's 0.1.8 text continues under this build: its text, its history, no note  351ms
+   ✓ an open model-API conversation after an update that changed its instructions > a revoked text retires the lineage with exactly one note, even though this build knows it  455ms
+   ✓ a lineage in the exact shape 0.1.7 persisted > continues under the 0.1.8 defaults: same generation, its text and its history, no note  339ms
+   ✓ a lineage in the exact shape 0.1.7 persisted > continues when a style is chosen after the update, at that style’s level, and is left as it is  335ms
+   ✓ a known text is known only for its own mode > an Ask lineage whose run recorded the Automatic text retires with one note, under today’s Ask text  376ms
+   ✓ a message that was sent and never answered > is retried on its own lineage when that lineage's text is now revoked: nothing retires, no note, nothing sent again  338ms
+   ✓ a message that was sent and never answered > is retried on its own lineage when that lineage's text is now unknown: nothing retires, no note, nothing sent again  336ms
+ ✓ tests/h03-native-session-routes.test.ts (5 tests) 2114ms
+   ✓ real HTTP/native runtime reuses one connection, replays outcomes, and projects each response into the normal thread once  604ms
+   ✓ closed and restarted hosts resume the same native identity only through explicit resume  645ms
+   ✓ routes refuse missing consent, request instructions, changed source hashes and disabled sending before provider dispatch  342ms
+ ✓ tests/observability-runtime.test.ts (12 tests) 4855ms
+   ✓ an internal synthetic trace, offline > conversation and Work turns: linked generations and traces with ledger usage and settled cost; a provider failure parks; no canary leaves  717ms
+   ✓ negative controls: zero events > Free, a business with no plan, Personal, a spoofed body, and the host connection test  360ms
+   ✓ negative controls: zero events > a faux business that is not internal, and a real-service customer with no telemetry policy, are refused at bind  501ms
+   ✓ transitions end optional export; nothing is relabelled > sign-out, then another person: the first person’s queued events are dropped, the second’s carry their own admission  471ms
+   ✓ transitions end optional export; nothing is relabelled > a workspace switch drops what was queued for the business  307ms
+   ✓ transitions end optional export; nothing is relabelled > a withdrawn grant, once the account reloads, drops what was queued; the next message is refused and sends nothing  479ms
+   ✓ failure isolation > a projector or an exporter that throws, or a ledger that cannot be read, leaves the answer, the run and the ledger as they were  1276ms
+ ✓ tests/ph07-round2-review.test.ts (13 tests) 5050ms
+   ✓ R F-2 repair: refusals and scope ends > R1 a transient account-service failure on one admission (network, 503, 500) is treated as a revocation: the business’s earlier, admitted turn never leaves  1519ms
+   ✓ R F-2 repair: refusals and scope ends > R2 a workspace switch while a refused admission is in flight: the refusal ends the other business’s scope, and the refused business’s queued events still leave  601ms
+   ✓ R F-2 repair: refusals and scope ends > R4 the refusal the person sees is identical with observation off, on, and on with a `refused` that throws  566ms
+   ✓ R F-2 repair: refusals and scope ends > R5 after the business is granted again, the next admission starts a fresh scope that exports, and the turn dropped at the refusal stays dropped  741ms
+   ✓ R F-2 repair: refusals and scope ends > R6 a refusal after the admission passed (the approved spend limit set to zero) ends nothing: the earlier turn still leaves  334ms
+   ✓ S scope ends that are not sticky > S1 a workspace round trip, or signing out and in again as the same person, before a flush: the queued events of the ended scope leave  608ms
+   ✓ T F-1 classifier and F-7 label > T2 an internal loop through createApp: the plan call is model-plan, the act turns are model, and the registered tool is a tool span  566ms
+ ✓ tests/worktree-sweep-safety.test.ts (11 tests) 1062ms
+   ✓ sweep in an owned temporary repository > removes only the clean landed checkout and preserves its nested junction target  456ms
+stderr | tests/unreadable-run-thread.test.ts > a conversation whose run this build cannot read > a retired lineage whose run is damaged no longer blocks the thread, and the thread says so once
+Skipped an unreadable harness run: This saved run could not be read.
+
+stderr | tests/unreadable-run-thread.test.ts > a conversation whose run this build cannot read > a retired lineage whose run is written by a newer build no longer blocks the thread, and the thread says so once
+Skipped an unreadable harness run: Run model-47c788d67f8f4633833de8b49463de5a30070bd498b29b182454219946dd83e0: The saved run was written by a newer Diomedes (version 999); this build reads up to version 1. Nothing in it was changed.
+
+ ✓ tests/pack-lifecycle.test.ts (40 tests) 3176ms
+stderr | tests/unreadable-run-thread.test.ts > a conversation whose run this build cannot read > an open lineage whose run is damaged retires, the message is answered on a fresh one, and the thread says so once
+Skipped an unreadable harness run: This saved run could not be read.
+
+ ✓ tests/unreadable-run-thread.test.ts (3 tests) 2211ms
+   ✓ a conversation whose run this build cannot read > a retired lineage whose run is damaged no longer blocks the thread, and the thread says so once  932ms
+   ✓ a conversation whose run this build cannot read > a retired lineage whose run is written by a newer build no longer blocks the thread, and the thread says so once  817ms
+   ✓ a conversation whose run this build cannot read > an open lineage whose run is damaged retires, the message is answered on a fresh one, and the thread says so once  461ms
+stderr | tests/aws-conversation-seam.test.ts > AWS Luna in the actual Diomedes conversation > stop AWS Work with the Console's Stop; after a restart nothing was written and the call stays uncertain
+Skipped a harness run whose capability is unavailable.
+
+ ✓ tests/aws-conversation-seam.test.ts (8 tests) 3062ms
+   ✓ AWS Luna in the actual Diomedes conversation > ask about the linen records: a real registered read-tool call, a source-backed answer, attribution and usage  423ms
+   ✓ AWS Luna in the actual Diomedes conversation > H18: the answered turn carries what went into its context, reconciled with what AWS reported  358ms
+   ✓ AWS Luna in the actual Diomedes conversation > request a draft checklist: deny one exact proposal and nothing changes; approve a new one and it is written  811ms
+   ✓ AWS Luna in the actual Diomedes conversation > stop a conversation turn; after a restart its status is honest and the conversation continues  311ms
+   ✓ AWS Luna in the actual Diomedes conversation > stop AWS Work with the Console's Stop; after a restart nothing was written and the call stays uncertain  490ms
+   ✓ AWS Luna in the actual Diomedes conversation > a new key is a new connection generation: the old lineage is retired, and Build from the thread runs on the new key  418ms
+ ✓ tests/h01-runtime-seam.test.ts (6 tests) 3377ms
+   ✓ H01 runtime seam — dispatch, identity and replay under the host RunService > a live dispatch fences off takeover: no resend, and the stale attempt cannot commit  2815ms
+ ✓ tests/software-pack-git.test.ts (42 tests | 1 skipped) 1602ms
+   ✓ reading a real repository > the fingerprint changes with any change a command could see, untracked content included  340ms
+ ✓ tests/lineage-continuity-claude.test.ts (6 tests) 3084ms
+   ✓ an open Claude Code conversation after an update that changed its instructions > on a turn with no read scope it continues, and the resumed session is opened with its recorded text byte for byte  580ms
+   ✓ an open Claude Code conversation after an update that changed its instructions > an Automatic lineage opened under main's 0.1.8 text continues under this build, resumed with that text byte for byte  455ms
+   ✓ an open Claude Code conversation after an update that changed its instructions > a v0.1.7 Ask lineage, which a read scope now covers, retires before anything is sent, with one note, and answers on a fresh session  392ms
+   ✓ an open Claude Code conversation after an update that changed its instructions > a refused turn ends that message; the next is answered on a new generation, with one note  466ms
+   ✓ "Update this conversation" on Claude Code > with history sharing on, the new session starts with the recent messages in its first prompt, and only there  661ms
+   ✓ "Update this conversation" on Claude Code > with history sharing off, nothing is carried and the note says so  529ms
+ ✓ tests/accounts-security-audit.test.ts (45 tests) 3929ms
+ ✓ tests/h20-headless-runner.test.ts (3 tests) 2365ms
+   ✓ the headless runner on the scripted routes > runs the sample, Codex and loop scenarios through the real Core and proves what they exercised  1860ms
+   ✓ the headless runner on the scripted routes > a deliberately broken Codex fixture reads as a mismatch on the cells it breaks  504ms
+stderr | tests/codex-engine.test.ts > revocation while dispatch is waiting prevents the provider send
+The harness run stopped: HarnessError: The run grant is absent, expired, revoked, or changed.
+
+stderr | tests/codex-engine.test.ts > unknown provider completion stays parked and never causes redispatch
+The harness run stopped: Error: Synthetic lost completion
+
+ ✓ tests/h16-external-work.test.ts (6 tests) 3435ms
+   ✓ H16 trigger rules on Work sent to an external engine (Claude Code) > annotate: a phrase is matched while the answer streams, with its exact span, on the text route’s own run and step  890ms
+   ✓ H16 trigger rules on Work sent to an external engine (Claude Code) > stop: a phrase streamed mid-answer stops the Work request through H08 in supervision’s name, and no proposal is made  617ms
+   ✓ H16 trigger rules on Work sent to an external engine (Claude Code) > an answer that streamed nothing is judged whole before it can become a proposal  758ms
+   ✓ H16 trigger rules on Work sent to an external engine (Claude Code) > a stop on an answer that streamed nothing refuses it: no proposal is made from it  721ms
+stderr | tests/codex-engine.test.ts > changed source text prevents application after exact approval
+The harness run stopped: Error: A selected source changed before the approved write was prepared.
+
+stderr | tests/codex-engine.test.ts > a expired grant or context cannot dispatch
+The harness run stopped: HarnessError: The run grant is absent, expired, revoked, or changed.
+
+stderr | tests/codex-engine.test.ts > a forged grant or context cannot dispatch
+The harness run stopped: HarnessError: The run grant is absent, expired, revoked, or changed.
+
+stderr | tests/codex-engine.test.ts > a cross-run grant or context cannot dispatch
+The harness run stopped: HarnessError: The provider step does not match current authorized scope.
+
+stderr | tests/codex-engine.test.ts > a cross-project grant or context cannot dispatch
+The harness run stopped: HarnessError: The provider step does not match current authorized scope.
+
+stderr | tests/codex-engine.test.ts > a destination grant or context cannot dispatch
+The harness run stopped: [
+  {
+    "code": "invalid_value",
+    "values": [
+      "openai:chatgpt"
+    ],
+    "path": [
+      "grant",
+      "destination"
+    ],
+    "message": "Invalid input: expected \"openai:chatgpt\""
+  }
+]
+
+stderr | tests/codex-engine.test.ts > a context grant or context cannot dispatch
+The harness run stopped: HarnessError: The run grant is absent, expired, revoked, or changed.
+
+stderr | tests/codex-engine.test.ts > a generation grant or context cannot dispatch
+The harness run stopped: Error: Authority generation advanced; this run needs reconciliation.
+
+stderr | tests/codex-engine.test.ts > a account grant or context cannot dispatch
+The harness run stopped: HarnessError: Actual provider context or account differs from consent.
+
+stderr | tests/codex-engine.test.ts > Stop after dispatch rejects late proposal output
+The harness run stopped: HarnessError: The run grant is absent, expired, revoked, or changed.
+
+stderr | tests/codex-engine.test.ts > the host grant deadline expires without modifying the saved input
+The harness run stopped: HarnessError: The run grant is absent, expired, revoked, or changed.
+
+stderr | tests/codex-engine.test.ts > sending permission cannot accept a result after reconcile permission is revoked
+The harness run stopped: Error: Current authority lacks egress.reconcile.
+
+ ✓ tests/codex-engine.test.ts (24 tests) 3758ms
+   ✓ durable admission, identical concurrent retry, restart, exact decision and one recorded write  844ms
+   ✓ changed command payload and concurrent different starts cannot dispatch again  557ms
+stdout | tests/interaction-authority.schedules-20260921.test.ts > a terminal transition asked for inside the child commit lands after it, never during
+QUEUE_HOLD_ORDER {"status":409,"during":"waiting","settled":true}
+
+ ✓ tests/observability-first-trace.test.ts (9 tests) 2590ms
+   ✓ export switched off: the PostHog network is never called > the default daily budget of zero  502ms
+   ✓ export switched off: the PostHog network is never called > no funding date  350ms
+   ✓ an offline synthetic internal trace > funded, within budget: the owner’s turn leaves as /batch/ POSTs carrying the capture key, linked events, and no canary  303ms
+stderr | tests/interaction-authority.schedules-20260921.test.ts > a retry after the target project engine changed starts the route this message pinned
+Error: Synthetic stop after the Work input phase
+    at ClaudeSessionRuns.runtime.record [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mtests/interaction-authority.schedules-20260921.test.ts:576:13[90m)[39m
+    at InteractionTurns.settle [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/interaction-service.ts:766:5[90m)[39m
+    at InteractionTurns.choose [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/interaction-service.ts:526:21[90m)[39m
+    at InteractionTurns.select [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/interaction-service.ts:466:14[90m)[39m
+    at [90m/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/engines/interaction-routes.ts:74:18
+
+ ✓ tests/interaction-authority.schedules-20260921.test.ts (7 tests) 4181ms
+   ✓ a terminal transition asked for inside the child commit lands after it, never during  951ms
+   ✓ a competing session admitted after the sample Work path prepared refuses the start  519ms
+   ✓ the native Work path admits a session through the conversation guard  520ms
+   ✓ a task removed after the native Work path prepared refuses the start  615ms
+   ✓ a competing session admitted after the native Work path prepared refuses the start  530ms
+   ✓ a lineage retired between the selection pre-check and the commit refuses the child  463ms
+   ✓ a retry after the target project engine changed starts the route this message pinned  581ms
+ ✓ tests/nectovia-bot-app.test.ts (16 tests) 3705ms
+   ✓ the Nectovia bot > unlinked Home stays Personal until an owner explicitly links it to Business  461ms
+   ✓ the Nectovia bot > a Business owner’s Home message answers on nectovia through the managed gateway, with nothing connected  456ms
+   ✓ the Nectovia bot > each message is its own job: two messages carry two job ids, each the rootJobId its admission names  408ms
+   ✓ the Nectovia bot > a message with a tool step sends the same job on both calls, each with its own attempt  328ms
+   ✓ the Nectovia bot > a tier chosen on the Home thread stays on nectovia: Focused runs the policy’s model at medium, Thorough is refused by name  331ms
+ ✓ tests/conversation-update-routes.test.ts (5 tests) 2938ms
+   ✓ the confirmation, the note, the record and the next send agree > A: history shared with AWS only, a thread recorded on Claude Code whose tier sends to AWS: carried, and said so everywhere  658ms
+   ✓ the confirmation, the note, the record and the next send agree > B: Home sharing history with Claude Code only, a thread recorded on Claude Code whose tier sends to AWS: nothing carried, and said so everywhere  619ms
+   ✓ the confirmation, the note, the record and the next send agree > V1: after an update that carried, a move to another route starts fresh there and says so, once  597ms
+   ✓ the confirmation, the note, the record and the next send agree > V2: Home sharing history with Vertex only: the update says it won't remember, and a move to Vertex carries nothing  546ms
+   ✓ the confirmation, the note, the record and the next send agree > a conversation moved to another route before the update is never carried across to it  518ms
+ ✓ tests/automation-routes.test.ts (12 tests) 4542ms
+   ✓ Run once > admits one run through the harness, and a double press is one run and a duplicate receipt  561ms
+   ✓ Run once > the same command with a different request is refused, not replayed  331ms
+   ✓ Run once > a refused press does not hide the last run’s Waiting for data  302ms
+   ✓ Run once > the legacy brief route converges on the same admission and keeps its words  362ms
+   ✓ Run once > an unknown automation and a missing command id are refused  352ms
+   ✓ who can see it > a non-member gets no existence, title, count or result (A25)  436ms
+   ✓ after a restart > every occurrence and link is rebuilt from the same records, with no ghost Running  641ms
+   ✓ after a restart > an admission a crash left behind is settled once: admitted with its run, or refused (A06, A12)  549ms
+ ✓ tests/agent-profiles.test.ts (19 tests) 3042ms
+   ✓ independent review (review-e): the profiles file stays loadable > archived profiles count toward the file cap, so a save never writes a file its load refuses  2963ms
+ ✓ tests/thread-build-fix-model-api.test.ts (15 tests) 3477ms
+   ✓ Build and Fix from a thread on aws-bedrock > Build: one guarded proposal, nothing written until the exact approval, attributed to the reported model  497ms
+   ✓ Fix on a model-API route keeps its limits > three tries, then the fourth is refused before anything is sent; an approved try writes only the failing file  397ms
+ ✓ tests/h16-console.test.ts (6 tests) 356ms
+ ✓ tests/codex-session.test.ts (20 tests) 2755ms
+   ✓ Stop on a turn Codex never lets go ends the process within the wait, and the thread stays resumable  420ms
+   ✓ the idle timer ends the process, and a turn that begins as it fires runs on a new one that resumes the thread  392ms
+   ✓ two conversations at once have their own processes and threads, and a Stop in one leaves the other answering  524ms
+(node:72433) Warning: AI SDK Warning System: To turn off warning logging, set the AI_SDK_LOG_WARNINGS global to false.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:72433) Warning: AI SDK Warning (aws-bedrock.responses / us.openai.gpt-5.6-luna): The feature "JSON Schema propertyNames" is used in a compatibility mode. OpenAI does not support JSON Schema propertyNames. It was removed before sending the schema, so OpenAI will not enforce property-name constraints.
+(node:72433) Warning: AI SDK Warning (aws-bedrock.responses / us.openai.gpt-5.6-luna): The feature "JSON Schema propertyNames" is used in a compatibility mode. OpenAI does not support JSON Schema propertyNames. It was removed before sending the schema, so OpenAI will not enforce property-name constraints.
+(node:72433) Warning: AI SDK Warning (aws-bedrock.responses / us.openai.gpt-5.6-luna): The feature "JSON Schema propertyNames" is used in a compatibility mode. OpenAI does not support JSON Schema propertyNames. It was removed before sending the schema, so OpenAI will not enforce property-name constraints.
+(node:72433) Warning: AI SDK Warning (aws-bedrock.responses / us.openai.gpt-5.6-luna): The feature "JSON Schema propertyNames" is used in a compatibility mode. OpenAI does not support JSON Schema propertyNames. It was removed before sending the schema, so OpenAI will not enforce property-name constraints.
+stderr | tests/connections-desktop.test.ts > durable signed ingress coalesces replay, rejects conflicts, and registered write never dispatches
+Skipped a harness run whose capability is unavailable.
+Skipped a harness run whose capability is unavailable.
+
+(node:72433) Warning: AI SDK Warning (aws-bedrock.responses / us.openai.gpt-5.6-luna): The feature "JSON Schema propertyNames" is used in a compatibility mode. OpenAI does not support JSON Schema propertyNames. It was removed before sending the schema, so OpenAI will not enforce property-name constraints.
+(node:72433) Warning: AI SDK Warning (aws-bedrock.responses / us.openai.gpt-5.6-luna): The feature "JSON Schema propertyNames" is used in a compatibility mode. OpenAI does not support JSON Schema propertyNames. It was removed before sending the schema, so OpenAI will not enforce property-name constraints.
+ ✓ tests/model-read-tools-routes.test.ts (11 tests) 2942ms
+   ✓ a read tool round trip on each model-API route > AWS Bedrock: read_file runs on the host, inside the project, and each call reads as one sentence  357ms
+   ✓ the boundary holds, and a refusal does not end the turn > an unapproved connector tool is refused before any connector is started; an approved one answers  325ms
+   ✓ the boundary holds, and a refusal does not end the turn > a page on a private address is refused before any request; a public page is read as text  414ms
+   ✓ no read tools outside Ask and Plan > through the conversation route: Ask carries the web and approved-connector tools, not the project folder; Automatic carries neither  503ms
+stderr | tests/connections-desktop.test.ts > fresh session recovers accepted event at before-triage without replaying old authority
+Skipped a harness run whose capability is unavailable.
+
+stderr | tests/connections-desktop.test.ts > fresh session recovers accepted event at after-task-commit without replaying old authority
+Skipped a harness run whose capability is unavailable.
+
+ ✓ tests/connections-desktop.test.ts (12 tests) 2487ms
+   ✓ ordinary app dispatch preserves raw bad output, freezes context, then adopts and rolls back a scoped revision  450ms
+   ✓ durable signed ingress coalesces replay, rejects conflicts, and registered write never dispatches  327ms
+   ✓ malformed persisted rule scope cannot acquire broader ownership through exact adoption  369ms
+ ✓ tests/change-review-git.test.ts (7 tests) 1849ms
+   ✓ git source — end-of-line agreement with the person’s own Git > a file nobody edited is never reported, however stale its stat data  303ms
+   ✓ git source — the subject is the project folder > a project inside a larger repository does not snapshot the repository  306ms
+ ✓ tests/home-luna-routing.test.ts (16 tests) 2664ms
+   ✓ a consequential proposal from home still needs an explicit target, and home is never one  375ms
+   ✓ a fresh Home sends typed messages with no grant, and no document or history without one  460ms
+   ✓ Home's earlier messages go with a follow-up only while the page's grant covers this route  710ms
+ ✓ tests/native-loop-vertex-host.test.ts (2 tests) 1869ms
+   ✓ a Diomedes loop on Google Vertex AI through the real host > plan, a refused unshared read, a read, an approved write and a Verified finish, attributed to Gemini under Diomedes  1210ms
+   ✓ a Diomedes loop on Google Vertex AI through the real host > a local delegate under a Google parent reads only what the project shares with Google, so nothing unshared reaches it  658ms
+ ✓ tests/operations-routing-harness.test.ts (22 tests) 3140ms
+   ✓ source privacy through the existing durable native loop > pages immutable conversation receipts across newly appended messages without repeats  2111ms
+ ✓ tests/agent-admission-answer.test.ts (25 tests) 685ms
+ ✓ tests/codex-session-runtime.test.ts (10 tests) 2334ms
+   ✓ kept ChatGPT conversation over the native conversation driver > holds a message sent while ChatGPT answers and sends it next on the same thread, never with turn/steer  950ms
+   ✓ kept ChatGPT conversation over the native conversation driver > a restart mid-turn is reconciled from the record, resumed with thread/resume and never resent  326ms
+ ✓ tests/h12-attack-matrix.test.ts (65 tests | 2 skipped) 2559ms
+   ✓ containedSpawn: minimal environment, bounded output, process-tree cleanup > a timeout kills the whole process tree  1562ms
+ ✓ tests/rule-delivery-coverage.test.ts (8 tests) 2090ms
+   ✓ model-API conversations (AWS Bedrock, Diomedes-owned system text) > a project thread message is sent the instruction file and product knowledge after its recorded text  365ms
+   ✓ model-API conversations (AWS Bedrock, Diomedes-owned system text) > an open conversation gets the edited rules on its next message and does not retire  431ms
+   ✓ Claude Code (native session, one-shot Ask) > a conversation message carries the rules in the message the session writes, and the turn records them  397ms
+   ✓ Claude Code (native session, one-shot Ask) > the explicit native session route sends the rules the same way  362ms
+   ✓ Claude Code (native session, one-shot Ask) > a direct Ask is sent the rules in its instruction channel  347ms
+ ✓ tests/owner-rules-trigger-rules.test.ts (4 tests) 1595ms
+   ✓ trigger rules are the owner’s, so the feature decides whether they run > Juniper Street Bakery holds the plan: its rule watches the run and fires  677ms
+   ✓ trigger rules are the owner’s, so the feature decides whether they run > Harbor Hardware holds no plan: the rule stays written, is never evaluated, and the view says why  499ms
+   ✓ trigger rules are the owner’s, so the feature decides whether they run > with accounts off nothing is gated: the view resolves and the watch opens  328ms
+ ✓ tests/task-workflow-runtime.test.ts (5 tests) 2396ms
+   ✓ task workflow on the real loop runtime > a task playbook reaches Work with its pinned version and digest  487ms
+   ✓ task workflow on the real loop runtime > stop on phase change parks before build, replays the duplicate command, and resumes on the exact approval only  353ms
+   ✓ task workflow on the real loop runtime > the review gate finishes the run with consistent executions and history, across a restart  679ms
+   ✓ task workflow on the real loop runtime > full approval skips phase needs but still asks for the file write within the turn budget  504ms
+   ✓ task workflow on the real loop runtime > Stop at the phase gate leaves nothing queued behind it  374ms
+ ✓ tests/claude-session.test.ts (29 tests) 2297ms
+   ✓ Claude persistent native transport > ends the process when a stopped turn does not finish within the grace, and says so (H03)  305ms
+stderr | tests/connections.test.ts > Connections end-to-end and durability > three scoped locations -> typed Runtime read -> signed event -> one durable Task -> restart -> revoke
+Skipped a harness run whose capability is unavailable.
+Skipped a harness run whose capability is unavailable.
+
+stderr | tests/connections.test.ts > Connections end-to-end and durability > crash after issue commit but before Runtime checkpoint recovers through the same receipt
+Skipped a harness run whose capability is unavailable.
+
+stderr | tests/connections.test.ts > Connections end-to-end and durability > interruption after Runtime start retains an exact recoverable binding
+Skipped a harness run whose capability is unavailable.
+
+stderr | tests/connections.test.ts > Connections end-to-end and durability > an ignored-event receipt also completes its Runtime checkpoint after interruption
+Skipped a harness run whose capability is unavailable.
+Skipped a harness run whose capability is unavailable.
+
+stderr | tests/artifact-steps.test.ts > the model-API driver records an answer's artifacts > a failure between two artifacts is finished by a retry of the same command, with no second model call
+Error: the process died between two artifacts
+    at HostRunService.runs.step [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mtests/artifact-steps.test.ts:397:78[90m)[39m
+    at ModelSessionRuns.writeSteps [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/harness/model-session-run.ts:486:23[90m)[39m
+    at ModelSessionRuns.drive [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/harness/model-session-run.ts:1018:5[90m)[39m
+    at EngineService.modelSession [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/engines/service.ts:2378:22[90m)[39m
+    at InteractionTurns.answer [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/interaction-service.ts:411:16[90m)[39m
+    at InteractionTurns.message [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/interaction-service.ts:386:14[90m)[39m
+    at [90m/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/engines/interaction-routes.ts:74:18
+
+ ✓ tests/connections.test.ts (40 tests) 2576ms
+ ✓ tests/artifact-steps.test.ts (14 tests) 2813ms
+   ✓ the model-API driver records an answer's artifacts > once, after its decision, as free steps the run read returns intact, pointing at the turn that shows them  574ms
+   ✓ the model-API driver records an answer's artifacts > under Automatic, only what the person sees: nothing after the decision block, and nothing for a proposal without one  394ms
+ ✓ tests/acp-session-runtime.test.ts (6 tests) 1374ms
+   ✓ kept Cursor conversation over the native conversation driver > a restart mid-turn is reconciled from the record and resumed with session/load, never resent  347ms
+ ✓ tests/team-any-route.test.ts (20 tests) 1680ms
+   ✓ a model-API team member runs its team tools on the host > an OpenRouter member wakes, calls a team tool through a RunService step, and its proposal waits for exact approval  506ms
+ ✓ tests/owner-rules-delivery.test.ts (8 tests) 1238ms
+   ✓ through the account session > Juniper Street Bakery holds the Business plan: its instructions are sent and its trigger rules watch  345ms
+ ✓ tests/browser-sign-in.test.ts (22 tests) 2320ms
+   ✓ the host API the Console uses > POST /account/browser-sign-in opens the browser, and every other route waits for the sign-in  308ms
+ ✓ tests/paid-access-lapse/downgrade-routing.test.ts (2 tests) 1105ms
+   ✓ a known downgrade releases a default thread to the free engine without manual account refresh  543ms
+   ✓ after a revoke and a re-grant the next admitted message reads the business as paid again without a manual refresh  561ms
+ ✓ tests/project-conversation.test.ts (12 tests) 814ms
+ ✓ tests/conversation-interrupt.test.ts (6 tests) 2200ms
+   ✓ the interrupt endpoint names the command in its path and takes nothing else  431ms
+   ✓ an answered command is settled; a failed turn and a terminal run are idle  418ms
+   ✓ a Stop for an older command while a newer one is active is superseded and touches nothing  369ms
+   ✓ a Stop follows the command's own run across a route change, and replay keeps the original driver  422ms
+   ✓ a connection dropped while preparation is held aborts the admitted input and dispatches nothing  304ms
+ ✓ tests/automations-paid-plan.test.ts (5 tests) 2026ms
+   ✓ a business without a plan is told why, and neither Run once nor its schedule starts anything  466ms
+   ✓ a free person who creates a business gets no Automations from it (review F01)  335ms
+   ✓ a business on a plan runs them: Run once is admitted and its schedule turns on  498ms
+   ✓ a one-person business holding an Individual person grant is still refused: Individual covers Personal work only  376ms
+   ✓ a schedule turned on under a plan starts nothing once the plan ends, and says why  350ms
+ ✓ tests/omp-adapter.test.ts (34 tests) 1121ms
+ ✓ tests/ai-setup-api.test.ts (9 tests) 1078ms
+ ✓ tests/model-session-activity.test.ts (13 tests) 2174ms
+   ✓ thinking on a model-API conversation > an AWS Bedrock conversation asks for summaries only while watched, and streams and saves them  304ms
+ ✓ tests/paid-abilities-matrix.test.ts (3 tests) 2000ms
+   ✓ the paid-abilities matrix > Harbor Hardware, with no grant, is refused at every entry point before anything is sent  475ms
+   ✓ the paid-abilities matrix > Juniper Street Bakery, on Business, is admitted at every entry point  1149ms
+   ✓ the paid-abilities matrix > a service agreement, the Agent without included AI usage: Diomedes-funded work is refused here and at the gateway, Agent work on its own connection runs, and Business passes the gateway  375ms
+stdout | tests/phone-relay-desktop.test.ts > reaching this computer from a phone > lets an owner turn it on: the computer registers, dials out, proves its key and shows online; off removes it
+Phone access for relay_device_f701cacb-a787-4bae-a018-576cad5e7fc0: connecting.
+
+stdout | tests/phone-relay-desktop.test.ts > reaching this computer from a phone > lets an owner turn it on: the computer registers, dials out, proves its key and shows online; off removes it
+Phone access for relay_device_f701cacb-a787-4bae-a018-576cad5e7fc0: reachable.
+
+stdout | tests/phone-relay-desktop.test.ts > reaching this computer from a phone > lets an owner turn it on: the computer registers, dials out, proves its key and shows online; off removes it
+Phone access for relay_device_f701cacb-a787-4bae-a018-576cad5e7fc0: stopped.
+
+stdout | tests/phone-relay-desktop.test.ts > reaching this computer from a phone > lets a Manager turn it on; an Employee sees who can; a business without phone access sees why
+Phone access for relay_device_6014a6d6-afd8-49d6-aff6-0fe1f51a8c3b: connecting.
+
+stdout | tests/phone-relay-desktop.test.ts > reaching this computer from a phone > lets a Manager turn it on; an Employee sees who can; a business without phone access sees why
+Phone access for relay_device_6014a6d6-afd8-49d6-aff6-0fe1f51a8c3b: reachable.
+
+stdout | tests/phone-relay-desktop.test.ts > reaching this computer from a phone > lets a Manager turn it on; an Employee sees who can; a business without phone access sees why
+Phone access for relay_device_6014a6d6-afd8-49d6-aff6-0fe1f51a8c3b: stopped.
+
+stdout | tests/phone-relay-desktop.test.ts > reaching this computer from a phone > closes the connection and removes the record when the person signs out
+Phone access for relay_device_a8099cf5-23cf-4be6-af6f-223bb8eac77f: connecting.
+
+stdout | tests/phone-relay-desktop.test.ts > reaching this computer from a phone > closes the connection and removes the record when the person signs out
+Phone access for relay_device_a8099cf5-23cf-4be6-af6f-223bb8eac77f: reachable.
+
+stdout | tests/phone-relay-desktop.test.ts > reaching this computer from a phone > closes the connection and removes the record when the person signs out
+Phone access for relay_device_a8099cf5-23cf-4be6-af6f-223bb8eac77f: stopped.
+
+ ✓ tests/read-scope-opencode.test.ts (14 tests) 1298ms
+stdout | tests/phone-relay-desktop.test.ts > reaching this computer from a phone > removes the previous person's record when someone else signs in on this computer
+Phone access for relay_device_80b1df5e-73cb-4d02-baa9-9690ff4872d7: connecting.
+
+stdout | tests/phone-relay-desktop.test.ts > reaching this computer from a phone > removes the previous person's record when someone else signs in on this computer
+Phone access for relay_device_80b1df5e-73cb-4d02-baa9-9690ff4872d7: reachable.
+
+stdout | tests/phone-relay-desktop.test.ts > reaching this computer from a phone > removes the previous person's record when someone else signs in on this computer
+Phone access for relay_device_80b1df5e-73cb-4d02-baa9-9690ff4872d7: stopped.
+
+stdout | tests/phone-relay-desktop.test.ts > reaching this computer from a phone > forgets its key when phone access is stopped from another device, and says so once
+Phone access for relay_device_f0804516-423a-4ab2-9456-62f74b4adee0: connecting.
+
+stdout | tests/phone-relay-desktop.test.ts > reaching this computer from a phone > forgets its key when phone access is stopped from another device, and says so once
+Phone access for relay_device_f0804516-423a-4ab2-9456-62f74b4adee0: reachable.
+
+stdout | tests/phone-relay-desktop.test.ts > reaching this computer from a phone > forgets its key when phone access is stopped from another device, and says so once
+Phone access for relay_device_f0804516-423a-4ab2-9456-62f74b4adee0: closed 4410 device_revoked.
+Phone access for relay_device_f0804516-423a-4ab2-9456-62f74b4adee0: stopped.
+
+stdout | tests/phone-relay-desktop.test.ts > reaching this computer from a phone > forgets its key when phone access is stopped from another device, and says so once
+Phone access for relay_device_26952c88-5891-4c3f-b2ea-b530c813e764: connecting.
+
+stdout | tests/phone-relay-desktop.test.ts > reaching this computer from a phone > forgets its key when phone access is stopped from another device, and says so once
+Phone access for relay_device_26952c88-5891-4c3f-b2ea-b530c813e764: reachable.
+
+stdout | tests/phone-relay-desktop.test.ts > reaching this computer from a phone > forgets its key when phone access is stopped from another device, and says so once
+Phone access for relay_device_26952c88-5891-4c3f-b2ea-b530c813e764: stopped.
+
+stdout | tests/phone-relay-desktop.test.ts > reaching this computer from a phone > ends a demoted Manager's connection at the hub's next recheck, keeps the registration, and says why
+Phone access for relay_device_553cdac7-649c-4126-ab95-efe51a322be7: connecting.
+
+stdout | tests/phone-relay-desktop.test.ts > reaching this computer from a phone > ends a demoted Manager's connection at the hub's next recheck, keeps the registration, and says why
+Phone access for relay_device_553cdac7-649c-4126-ab95-efe51a322be7: reachable.
+
+stdout | tests/phone-relay-desktop.test.ts > reaching this computer from a phone > ends a demoted Manager's connection at the hub's next recheck, keeps the registration, and says why
+Phone access for relay_device_553cdac7-649c-4126-ab95-efe51a322be7: closed 4403 role_not_allowed.
+Phone access for relay_device_553cdac7-649c-4126-ab95-efe51a322be7: stopped.
+
+stdout | tests/phone-relay-desktop.test.ts > reaching this computer from a phone > dials again with the same record after the app restarts with a kept sign-in
+Phone access for relay_device_29fd4418-a36a-4c81-8bb7-983efa185605: connecting.
+
+stdout | tests/phone-relay-desktop.test.ts > reaching this computer from a phone > dials again with the same record after the app restarts with a kept sign-in
+Phone access for relay_device_29fd4418-a36a-4c81-8bb7-983efa185605: reachable.
+
+stdout | tests/phone-relay-desktop.test.ts > reaching this computer from a phone > dials again with the same record after the app restarts with a kept sign-in
+Phone access for relay_device_29fd4418-a36a-4c81-8bb7-983efa185605: stopped.
+
+stdout | tests/phone-relay-desktop.test.ts > reaching this computer from a phone > dials again with the same record after the app restarts with a kept sign-in
+Phone access for relay_device_29fd4418-a36a-4c81-8bb7-983efa185605: connecting.
+
+stdout | tests/phone-relay-desktop.test.ts > reaching this computer from a phone > dials again with the same record after the app restarts with a kept sign-in
+Phone access for relay_device_29fd4418-a36a-4c81-8bb7-983efa185605: reachable.
+
+stdout | tests/phone-relay-desktop.test.ts > reaching this computer from a phone > dials again with the same record after the app restarts with a kept sign-in
+Phone access for relay_device_29fd4418-a36a-4c81-8bb7-983efa185605: stopped.
+
+stdout | tests/phone-relay-desktop.test.ts > reaching this computer from a phone > never listens: nothing in its source opens a server, and turning it on and off listens on nothing
+Phone access for relay_device_80f48f98-935d-44b3-9ec7-ec18904dd3a0: connecting.
+
+stdout | tests/phone-relay-desktop.test.ts > reaching this computer from a phone > never listens: nothing in its source opens a server, and turning it on and off listens on nothing
+Phone access for relay_device_80f48f98-935d-44b3-9ec7-ec18904dd3a0: reachable.
+
+stdout | tests/phone-relay-desktop.test.ts > reaching this computer from a phone > never listens: nothing in its source opens a server, and turning it on and off listens on nothing
+Phone access for relay_device_80f48f98-935d-44b3-9ec7-ec18904dd3a0: stopped.
+
+ ✓ tests/phone-relay-desktop.test.ts (10 tests) 1584ms
+ ✓ tests/observability-managed-payer.test.ts (1 test) 654ms
+   ✓ the payer comes from the admitted decision > a Nectovia send is observed as managed with its cost pending at the gateway; an owner AWS send stays byo, whatever the request claims  653ms
+ ✓ tests/nectovia-loop-refused.test.ts (8 tests) 1781ms
+   ✓ a paid Nectovia work loop through managed wiring > one paid start under its deterministic id; a replay admits nothing new on the same job  441ms
+   ✓ a paid Nectovia work loop through managed wiring > Board Work uses the paid native loop and replays its durable Work receipt  472ms
+ ✓ tests/delegate-sandbox.test.ts (31 tests | 4 skipped) 1533ms
+stderr | tests/google-vertex-conversation.test.ts > an API key from the billed project > disconnecting removes the key; a record that cannot be written leaves no key behind
+Error: simulated rename EPERM
+    at VertexConnections.connections.write [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mtests/google-vertex-conversation.test.ts:439:13[90m)[39m
+    at [90m/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/engines/provider-routes.ts:702:57
+    at [90m/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/store.ts:560:16
+
+ ✓ tests/google-vertex-conversation.test.ts (15 tests) 2131ms
+   ✓ a native Nectovia conversation on Gemini 3.8 Flash > a read_source round trip: canonical tool, recorded result, provider continuation, attribution and spend  362ms
+ ✓ tests/interaction-authority.repair-20260921.test.ts (2 tests) 1010ms
+   ✓ a Work command already bound to different work is never this message’s start  668ms
+   ✓ an identical selection with nothing committed is refused once the conversation moved on  342ms
+ ✓ tests/task-board-journey.test.ts (6 tests) 1730ms
+   ✓ an agent-proposed task keeps one identity and one run across a restart, then runs again only when the person starts it  880ms
+ ✓ tests/native-loop.test.ts (15 tests) 1759ms
+   ✓ delegation: carved budgets, four per run, several at once > a handoff record, a child with a budget carved from the parent’s, and the answer observed by the parent  302ms
+stderr | tests/jev-managed-evaluations.test.ts > a business conversation on nectovia > no provider meeting the data policy is a named refusal that charged nothing, released on both ledgers
+{"event":"managed-evaluation-provider-policy","attemptId":"exp-bb74c19dcc13677ef5648558569c39c345f0d6a1"}
+
+ ✓ tests/organization-setup-app.test.ts (8 tests) 1472ms
+ ✓ tests/jev-managed-evaluations.test.ts (22 tests) 1890ms
+ ✓ tests/codex-conversation-port.test.ts (10 tests | 1 skipped) 1286ms
+   ✓ an interrupt Codex never answers is reported within the wait, and closing ends the turn  358ms
+   ✓ a conversation's turn outlives the direct path's deadline: Stop bounds it, as it bounds Claude Code's  449ms
+ ✓ tests/claude-session-runtime.test.ts (21 tests) 1588ms
+ ✓ tests/read-scope-app.test.ts (5 tests) 565ms
+ ✓ tests/integrations.test.ts (81 tests) 1559ms
+   ✓ opt-in Diomedes team boundary > stops after five re-lists if the team stays starting  1009ms
+stderr | tests/automation-weekly-brief.test.ts > the weekly brief capability > an output project that is no longer bound gets no write
+The harness run stopped: Error: Choose the project Fernbrook Joinery writes into.
+
+stderr | tests/automation-weekly-brief.test.ts > the weekly brief capability > membership is rechecked at the write
+The harness run stopped: Error: That business workspace does not exist here.
+
+stderr | tests/automation-weekly-brief.test.ts > the weekly brief capability > a different project is never substituted
+The harness run stopped: Error: This business now writes somewhere else, so this run wrote nothing. Run it again.
+
+ ✓ tests/automation-weekly-brief.test.ts (8 tests) 876ms
+ ✓ tests/h16-external-model-api.test.ts (3 tests) 1292ms
+   ✓ H16 trigger rules on model-API Work > Work without a team: the answer is judged whole before it becomes a proposal, on the text route’s run, and the proposal is unchanged  418ms
+   ✓ H16 trigger rules on model-API Work > a team member: a tool rule holds its team tool call before it runs, and the member’s run is paused for you  407ms
+   ✓ H16 trigger rules on model-API Work > a team member’s answer does not stream, so a text rule judges it whole before it becomes a proposal  466ms
+ ✓ tests/work-style-home.test.ts (3 tests) 1786ms
+   ✓ no style sends what it sent before; a style sends its level and opens its own lineage  883ms
+   ✓ a tier whose mapped route is not connected, or has no model, is refused by name and nothing is sent  688ms
+ ✓ tests/file-imports.test.ts (19 tests) 1903ms
+ ✓ tests/claude-adapter.test.ts (26 tests) 990ms
+ ✓ tests/provider-setup-routes.test.ts (10 tests) 1223ms
+ ✓ tests/plain-writing-routes.test.ts (8 tests) 2400ms
+   ✓ a model-API conversation: code fixes, then one rewrite of the flagged sentences > the answer is sent the standard, repaired in code and by one rewrite, and the record says what changed  978ms
+   ✓ a model-API conversation: code fixes, then one rewrite of the flagged sentences > a clean answer costs no second call  382ms
+   ✓ Claude Code: the native session is checked and fixed in code, and Work proposals too > the session message carries the standard; the answer is fixed in code and the owner’s phrase recorded  541ms
+   ✓ Claude Code: the native session is checked and fixed in code, and Work proposals too > a Work proposal: the summary and the Markdown it writes are fixed; a code file is not touched  494ms
+ ✓ tests/organization-export.test.ts (8 tests) 2952ms
+   ✓ the Business owner's export (OPS-05) > switching to a Manager while the export is fetched refuses the write  324ms
+   ✓ the Business owner's export (OPS-05) > writes every file into a project of the business, readable back, with no bearer token or other credential in it  496ms
+   ✓ the Business owner's export (OPS-05) > exporting again writes a new folder and never touches the first  585ms
+   ✓ the Business owner's export (OPS-05) > revoking a person stops their future work, and the records the business keeps are unchanged by it  814ms
+ ✓ tests/harness.test.ts (51 tests) 2299ms
+ ✓ tests/incremental-setup-app.test.ts (3 tests) 831ms
+   ✓ a business setup across versions of the questions (ORG-02) > the shipped rewording carries an owner answer unchanged when a Manager resumes it  311ms
+ ✓ tests/release-version-guard.test.ts (5 tests) 990ms
+   ✓ the release version guard > refuses app changes after a tag under the same version, naming them  315ms
+ ✓ tests/read-connector-routes.test.ts (15 tests) 854ms
+ ✓ tests/business-access-routes.test.ts (6 tests) 1055ms
+ ✓ tests/individual-plan.test.ts (19 tests) 689ms
+ ✓ tests/coordination.test.ts (85 tests | 1 skipped) 1079ms
+stderr | tests/h16-rules-on-disk.test.ts > review-g finding 7: rules read from disk are re-validated and fail closed > a project rule hand-edited into a pattern the grammar refuses stops the run before its model is called, naming the rule
+The harness run stopped: HarnessError: A project trigger rule (hand-edited) on disk is not one Nectovia can run: A pattern varies in one place at most (one *, +, ?, {m,n} or (a|b) choice); write two rules instead. Fix or remove it through the rules API; until then no run it would watch goes ahead.
+
+stderr | tests/h16-rules-on-disk.test.ts > review-g finding 7: rules read from disk are re-validated and fail closed > an organization rule whose pattern is not a regular expression fails closed with the same sentence, never a raw SyntaxError
+The harness run stopped: HarnessError: An organization trigger rule (broken) on disk is not one Nectovia can run: This pattern is not a valid regular expression. Fix or remove it through the rules API; until then no run it would watch goes ahead.
+
+ ✓ tests/h16-rules-on-disk.test.ts (4 tests) 822ms
+ ✓ tests/customer-accounts-app.test.ts (8 tests) 1528ms
+   ✓ customer accounts in the desktop host > milestone: a Free person with a working connection cannot start the Agent; a Business member can; revoking stops the next message and deletes nothing  618ms
+ ✓ tests/accounts-security-personal-access.test.ts (7 tests) 683ms
+ ✓ tests/native-loop-routes.test.ts (8 tests) 1390ms
+   ✓ the Diomedes loop on 'aws-bedrock' > plan, read, an approved write and a finish over the provider wire, attributed to the reported model under Diomedes  386ms
+   ✓ the Diomedes loop on 'google-vertex' > plan, read, an approved write and a finish over the provider wire, attributed to the reported model under Diomedes  435ms
+ ✓ tests/live-activity-server.test.ts (7 tests) 1370ms
+   ✓ thread Ask on an external engine > a tool between text fragments cannot expose a split key through HTTP Store events  318ms
+ ✓ tests/business-output-routes.test.ts (11 tests) 1206ms
+   ✓ a business gets a brief it can read > answers, an activated setup and a chosen project produce a draft on disk  446ms
+ ✓ tests/thread-conversation-model-api.test.ts (6 tests) 2563ms
+   ✓ a project thread on AWS through its tier > Ask goes through the conversation: streamed, one sentence per tool call, saved in the thread  1264ms
+   ✓ a project thread on AWS through its tier > Plan goes through the conversation and, as there, saves no Plan document  520ms
+   ✓ a project thread on AWS through its tier > Stop during a turn interrupts that command; the thread keeps going  394ms
+ ✓ tests/file-drops.test.ts (37 tests) 2522ms
+   ✓ drop and paste import through the one recorded write path > pictures, PDFs, workbooks, drawings and text land in Imports/ as one attributed History entry  426ms
+ ✓ tests/answer-format.test.ts (8 tests) 324ms
+   ✓ the ask route > sends an Ask or Plan answer with the answer format, and a Build proposal with its own text alone  319ms
+ ✓ tests/ph07-round4-review.test.ts (6 tests) 1015ms
+   ✓ G2 on the production fetch path, a turn reaches POST <host>/batch/ and nothing else > G2 a Nectovia turn and an AWS turn, bound, projected and exported: every request that leaves the process is the one POST  574ms
+ ✓ tests/operations-routing-client.test.ts (20 tests) 1151ms
+stderr | tests/live-reasoning-server.test.ts > the Diomedes conversation driver > a home message that fails still shows what it had held back, redacted
+Error: The provider stopped.
+    at [90m/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mtests/live-reasoning-server.test.ts:434:29
+    at Object.turn [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mtests/live-reasoning-server.test.ts:362:11[90m)[39m
+    at [90m/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/harness/claude-session-run.ts:1188:24
+    at HostRunService.step [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/harness/run-service.ts:1041:22[90m)[39m
+    at HostRunService.step [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/harness/host.ts:380:14[90m)[39m
+    at ClaudeSessionRuns.drive [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/harness/claude-session-run.ts:1137:18[90m)[39m
+    at EngineService.nativeTurn [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/engines/service.ts:1990:22[90m)[39m
+    at InteractionTurns.answer [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/interaction-service.ts:411:16[90m)[39m
+    at InteractionTurns.message [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/interaction-service.ts:386:14[90m)[39m
+    at [90m/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mserver/engines/interaction-routes.ts:74:18 {
+  code: [32m'PROVIDER_ERROR'[39m
+}
+
+ ✓ tests/live-reasoning-server.test.ts (6 tests) 1154ms
+ ✓ tests/connection-test-wiring.test.ts (7 tests) 635ms
+ ✓ tests/rule-hooks.test.ts (9 tests) 496ms
+ ✓ tests/small-business-skills.test.ts (19 tests) 994ms
+   ✓ the ask route > sends the playbook in the instruction channel, keeps the message as typed, and records it on the turn  380ms
+ ✓ tests/conversation-turn-id.test.ts (2 tests) 665ms
+   ✓ the page names a command's answer exactly as the server projected it  554ms
+ ✓ tests/final-server-binding-record.test.ts (6 tests) 1032ms
+   ✓ a binding record that could not be read this once > refuses the save rather than replacing a record it still cannot read  400ms
+   ✓ a binding record that could not be read this once > clears the state on the next read that succeeds, without a restart  399ms
+ ✓ tests/delegate-change-sets.test.ts (6 tests) 690ms
+ ✓ tests/cursor-adapter.test.ts (61 tests) 1023ms
+   ✓ Cursor ACP text route > names a host deadline a timeout rather than the person stopping the request  303ms
+ ✓ tests/name-contract.test.ts (16 tests) 915ms
+   ✓ the product name on screen > says Nectovia wherever the product is named, apart from the named exceptions  594ms
+ ✓ tests/fd02-discovery-routes.test.ts (7 tests) 1056ms
+   ✓ no-account discovery preserves owner corrections, negative outcomes and recorded exports across restart  314ms
+ ✓ tests/conversation-interrupt-drivers.test.ts (14 tests) 929ms
+stdout | tests/pack-contributions.test.ts > only the index counts until a body is loaded > measured: the twelve Small Business playbooks as an index against all twelve bodies
+P04_MEASURE {"entries":12,"indexBytes":2490,"indexTokens":623,"allBodiesBytes":27016,"allBodiesTokens":6754,"savedBytes":24526,"savedTokens":6131}
+
+ ✓ tests/b00-h01-repair.test.ts (45 tests) 940ms
+   ✓ B00: the source map is a module/export handoff, not a comment > no second implementation of a named authority exists beside the declared one  433ms
+ ✓ tests/pack-contributions.test.ts (11 tests) 1050ms
+ ✓ tests/account-foundation.test.ts (16 tests) 674ms
+   ✓ durable hosted account membership foundation > fresh process sees the durable session tombstone and cannot replay the revoked token  347ms
+ ✓ tests/h16-rule-budget.test.ts (3 tests) 349ms
+   ✓ review-g finding 6: a budget for unbounded patterns > the heaviest rules both authorities may write cost little per streamed delta  343ms
+ ✓ tests/read-scope-omp.test.ts (14 tests) 490ms
+ ✓ tests/interaction-driver.test.ts (13 tests) 927ms
+ ✓ tests/engine-process.test.ts (13 tests | 1 skipped) 620ms
+   ✓ owned engine processes > preserves cancellation when owned-process cleanup cannot be confirmed  368ms
+ ✓ tests/app-icon.test.ts (4 tests) 460ms
+   ✓ keeps the committed icon identical to the drawing at every size  455ms
+ ✓ tests/read-scope-claude.test.ts (21 tests) 602ms
+ ✓ tests/inventory-stock-independent.test.ts (117 tests) 825ms
+ ✓ tests/customization-benefit.test.ts (8 tests) 569ms
+ ✓ tests/managed-usage-routes.test.ts (15 tests) 778ms
+stdout | tests/pack-playbooks-driver.test.ts > pack playbooks on a model-API conversation turn > index only until the model asks; the body loads through the pin even after the pack is turned off
+P04_TURN_MEASURE {"indexToolBytes":3056,"allBodiesBytes":27016,"loadedTurnToolResultBytes":3734}
+
+ ✓ tests/pack-playbooks-driver.test.ts (2 tests) 498ms
+   ✓ pack playbooks on a model-API conversation turn > index only until the model asks; the body loads through the pin even after the pack is turned off  366ms
+stderr | tests/themes.test.ts > a corrupt active pack falls back to last-known-good, then to the base scheme
+The active theme fragile could not be applied: the file is missing or is not readable JSON
+
+stderr | tests/themes.test.ts > a corrupt active pack falls back to last-known-good, then to the base scheme
+Skipping the stored theme fragile: the file is missing or is not readable JSON
+
+stderr | tests/themes.test.ts > a corrupt active pack falls back to last-known-good, then to the base scheme
+The active theme fragile could not be applied: the file is missing or is not readable JSON
+
+stderr | tests/themes.test.ts > a corrupt active pack falls back to last-known-good, then to the base scheme
+The active theme fragile could not be applied: the file is missing or is not readable JSON
+
+ ✓ tests/themes.test.ts (11 tests) 723ms
+ ✓ tests/design-center.test.ts (13 tests) 839ms
+ ✓ tests/google-vertex-model-api.test.ts (39 tests) 653ms
+ ✓ tests/sample-businesses.test.ts (19 tests) 204ms
+ ✓ tests/artifact-steps-claude.test.ts (6 tests) 616ms
+ ✓ tests/pack-routes.test.ts (4 tests) 543ms
+ ✓ tests/theme-assets.test.ts (16 tests) 815ms
+ ✓ tests/update-reconcile.test.ts (21 tests) 931ms
+ ✓ tests/hostile-binding-record.test.ts (17 tests) 580ms
+ ✓ tests/picker-setup.test.ts (16 tests) 671ms
+ ✓ tests/evaluation-step.test.ts (14 tests) 234ms
+ ✓ tests/support-bundle.test.ts (24 tests) 741ms
+   ✓ the support bundle route > answers without a project, and the text names what it excludes  712ms
+ ✓ tests/task-proposal-tool.test.ts (7 tests) 447ms
+ ✓ tests/model-api-thinking.test.ts (11 tests) 525ms
+ ✓ tests/connection-test.test.ts (18 tests | 1 skipped) 536ms
+ ✓ tests/incremental-setup-carry.test.ts (4 tests) 561ms
+ ✓ tests/run-store-reader-gate.test.ts (1 test) 614ms
+   ✓ a record replacement waits for reads in flight and holds back new ones  614ms
+ ✓ tests/aws-bedrock-transport.test.ts (36 tests) 481ms
+ ✓ tests/managed-client-bundle.test.ts (3 tests) 486ms
+   ✓ customer builds carry no company Google credential > no Google key, service-account key or access token is tracked in the repository  423ms
+ ✓ tests/observability-r3-repair.test.ts (14 tests) 516ms
+ ✓ tests/aws-gpt6-luna.test.ts (7 tests) 287ms
+ ✓ tests/capability-packs.test.ts (18 tests) 703ms
+ ✓ tests/aws-model-adapter.test.ts (9 tests) 671ms
+ ✓ tests/inventory-stock-authority-review.test.ts (13 tests | 1 skipped) 481ms
+ ✓ tests/c00-independent.test.ts (27 tests) 184ms
+ ✓ tests/nested-instructions.test.ts (28 tests) 649ms
+ ✓ tests/membership-refusal-code.test.ts (6 tests) 270ms
+ ✓ tests/job-caps.test.ts (25 tests) 454ms
+ ✓ tests/customization-entitlement.test.ts (23 tests) 526ms
+ ✓ tests/native-sign-in-repair.test.ts (30 tests) 301ms
+ ✓ tests/native-sign-in-repair-review-independent.test.ts (15 tests) 456ms
+ ✓ tests/fd02-adversarial.test.ts (16 tests) 220ms
+ ✓ tests/read-scope-binding.test.ts (28 tests) 574ms
+ ✓ tests/connection-compiler.test.ts (8 tests) 473ms
+ ✓ tests/swe2-independent-review.test.ts (22 tests) 160ms
+ ✓ tests/inventory-durable-stock.test.ts (15 tests) 637ms
+ ✓ tests/h12-effect-admission.test.ts (14 tests) 393ms
+ ✓ tests/read-scope-cursor.test.ts (16 tests) 86ms
+ ✓ tests/harness-negative.test.ts (40 tests) 439ms
+ ✓ tests/h01-event-stream.test.ts (9 tests) 86ms
+ ✓ tests/identity-host.test.ts (17 tests) 224ms
+ ✓ tests/inventory-command-authorization.test.ts (10 tests) 323ms
+ ✓ tests/hostile-adapters-defects.test.ts (11 tests) 316ms
+ ✓ tests/b00-acceptance-20260917.test.ts (18 tests) 306ms
+stderr | tests/automation-occurrences.test.ts > the versioned file > a file from another version is refused and left alone
+The automation record org_new.json was written by another build and was left alone.
+
+ ✓ tests/automation-occurrences.test.ts (10 tests) 260ms
+ ✓ tests/step-origin.test.ts (9 tests) 274ms
+ ✓ tests/paid-access-lapse/notice-lapse.test.ts (1 test) 318ms
+   ✓ the free notice returns after a subscription starts and lapses, as the branch promises  317ms
+ ✓ tests/nectovia-route.test.ts (22 tests) 460ms
+ ✓ tests/needs-you.test.ts (7 tests) 45ms
+ ✓ tests/inventory-commands.test.ts (77 tests) 344ms
+ ✓ tests/hostile-binding-revision.test.ts (4 tests) 180ms
+ ✓ tests/fd03-readiness-routes.test.ts (3 tests) 232ms
+ ✓ tests/azure-openai-model-api.test.ts (18 tests) 269ms
+ ✓ tests/engine-service.test.ts (20 tests) 206ms
+ ✓ tests/fd04-industry-registry.test.ts (7 tests) 64ms
+ ✓ tests/governance-integration.test.ts (7 tests) 88ms
+stderr | tests/native-sign-in-review-independent.test.ts > independent SDK and synthetic provider boundary > cancels delayed refresh A without overwriting new account B
+[authkit-electron] getUser: keeping the session after a non-fatal validateAndRefresh error (will retry next call): Error: The account session changed.
+    at assertCurrent [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mdesktop/native-auth-storage.ts:37:13[90m)[39m
+    at Object.setSession [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mdesktop/native-auth-storage.ts:55:7[90m)[39m
+    at Object.getUser [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mnode_modules/[4m@workos/authkit-electron[24m/src/main/session-manager.ts:115:17[90m)[39m
+    at [90m/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mdesktop/native-auth.ts:409:24
+    at [90m/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mdesktop/native-auth-storage.ts:99:24
+
+ ✓ tests/hostile-truth-support-bundle.test.ts (12 tests) 65ms
+ ✓ tests/native-sign-in-review-independent.test.ts (33 tests) 285ms
+ ✓ tests/hostile-adapters-holds.test.ts (19 tests | 3 skipped) 142ms
+ ✓ tests/conversation-send.test.ts (56 tests) 255ms
+stderr | tests/migrations.test.ts > readers wired through the framework > an automation definition from a newer build is left alone and refused
+The automation definition org_new.json was written by another build and was left alone.
+
+ ✓ tests/migrations.test.ts (46 tests) 223ms
+ ✓ tests/openrouter-model-api.test.ts (16 tests) 279ms
+ ✓ tests/account-foundation-independent.test.ts (7 tests) 103ms
+stdout | tests/desktop-packaging.test.ts > FD01 same desktop packaging entry point > generates verified notices privately while preserving committed checkout inputs
+Desktop release: /private/var/folders/pn/r7q5jct14vb878nmq0ryw6300000gn/T/fd01-package-QTB4sX/release/Diomedes-win32-x64
+
+ ✓ tests/fd04-adversarial.test.ts (9 tests) 49ms
+stdout | tests/desktop-packaging.test.ts > FD01 same desktop packaging entry point > stages the real source path for darwin/arm64 without Windows runtime carry-over
+Desktop release: /private/var/folders/pn/r7q5jct14vb878nmq0ryw6300000gn/T/fd01-package-ub4HSv/release/Diomedes-darwin-arm64
+
+stdout | tests/desktop-packaging.test.ts > FD01 same desktop packaging entry point > declares the diomedes-auth sign-in scheme in the macOS app bundle
+Desktop release: /private/var/folders/pn/r7q5jct14vb878nmq0ryw6300000gn/T/fd01-package-VQTziX/release/Diomedes-darwin-arm64
+
+stdout | tests/desktop-packaging.test.ts > FD01 same desktop packaging entry point > bakes the account service and WorkOS client from wrangler.jsonc into the service bundle
+Desktop release: /private/var/folders/pn/r7q5jct14vb878nmq0ryw6300000gn/T/fd01-package-zwCCe7/release/Diomedes-darwin-arm64
+
+ ✓ tests/desktop-packaging.test.ts (16 tests) 335ms
+ ✓ tests/candidate-binding.test.ts (35 tests | 2 skipped) 196ms
+ ✓ tests/sign-in-recheck-wiring.test.ts (3 tests | 2 skipped) 116ms
+ ✓ tests/task-skills.test.ts (8 tests) 131ms
+ ✓ tests/dev-server-guard-platform.test.ts (20 tests) 61ms
+ ✓ tests/discovery.test.ts (32 tests) 269ms
+ ✓ tests/markup-text.test.ts (29 tests) 213ms
+ ✓ tests/plain-writing.test.ts (24 tests) 250ms
+ ✓ tests/nectovia-board-work.test.ts (6 tests) 311ms
+ ✓ tests/spend-exposure.test.ts (19 tests) 263ms
+ ✓ tests/vertex-managed-funding.test.ts (10 tests) 262ms
+ ✓ tests/h01-preview-repair.test.ts (4 tests) 136ms
+ ✓ tests/harness-provider-outcomes.test.ts (6 tests) 127ms
+ ✓ tests/organization-setup-sync.test.ts (25 tests) 197ms
+ ✓ tests/observability-no-posthog-ai.test.ts (9 tests) 228ms
+ ✓ tests/hostile-truth-capability-record.test.ts (15 tests) 135ms
+ ✓ tests/cloud-sharing-upgrade.test.ts (3 tests) 108ms
+stderr | tests/native-auth.test.ts > official SDK native boundary > drops a late refresh result after logout without restoring the stored session
+[authkit-electron] getUser: keeping the session after a non-fatal validateAndRefresh error (will retry next call): Error: The account session changed.
+    at assertCurrent [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mdesktop/native-auth-storage.ts:37:13[90m)[39m
+    at Object.setSession [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mdesktop/native-auth-storage.ts:55:7[90m)[39m
+    at Object.getUser [90m(/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mnode_modules/[4m@workos/authkit-electron[24m/src/main/session-manager.ts:115:17[90m)[39m
+    at [90m/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mdesktop/native-auth.ts:409:24
+    at [90m/Users/andrewgodowsky/dev/diomedes-reset-boundary-verify/[39mdesktop/native-auth-storage.ts:99:24
+
+ ✓ tests/native-auth.test.ts (32 tests) 172ms
+ ✓ tests/native-runtime-release.test.ts (14 tests) 65ms
+ ✓ tests/account-deployment.test.ts (14 tests) 176ms
+ ✓ tests/h16-hold-admission.test.ts (4 tests) 103ms
+ ✓ tests/h01-conformance.test.ts (84 tests) 158ms
+ ✓ tests/live-redaction.test.ts (27 tests) 179ms
+ ✓ tests/h14-team-delegation.test.ts (26 tests) 114ms
+ ✓ tests/native-auth-packaging.test.ts (3 tests) 100ms
+ ✓ tests/jev-default-route.test.ts (2 tests) 98ms
+ ✓ tests/fd02-discovery.test.ts (16 tests) 165ms
+ ✓ tests/artifact-pane.test.ts (16 tests) 84ms
+ ✓ tests/nectovia-motion.test.ts (11 tests) 85ms
+ ✓ tests/swe2-acceptance-20260917.test.ts (4 tests) 84ms
+ ✓ tests/text-diff.test.ts (23 tests) 32ms
+ ✓ tests/model-read-tools.test.ts (18 tests) 210ms
+ ✓ tests/perf-gate.test.ts (8 tests) 118ms
+ ✓ tests/model-transcripts.test.ts (13 tests) 112ms
+ ✓ tests/trust.test.ts (18 tests) 68ms
+ ✓ tests/observability-posthog-transport.test.ts (12 tests) 99ms
+ ✓ tests/capture-polish.test.ts (18 tests) 53ms
+ ✓ tests/automation-schedule.test.ts (46 tests) 47ms
+ ✓ tests/board-moves.adversarial.test.ts (11 tests) 125ms
+ ✓ tests/attribution-shared-ui.test.ts (14 tests) 51ms
+ ✓ tests/native-login-recheck.test.ts (13 tests) 40ms
+ ✓ tests/desktop-app-updates.test.ts (21 tests) 160ms
+ ✓ tests/store-registry-guard.test.ts (12 tests) 72ms
+ ✓ tests/observability-exporter.test.ts (11 tests) 104ms
+stdout | tests/inventory-catalog.test.ts > scope-bound recorded inventory > measures exact lookups on 100 deterministic synthetic items
+{"measurement":"pure-catalog-local","items":100,"sites":2,"bins":3,"constructionMs":3.8041670000000067,"requests":1000,"failedRequests":0,"p50Ms":0.010250000000041837,"p95Ms":0.022625000000005002}
+
+stdout | tests/inventory-catalog.test.ts > scope-bound recorded inventory > measures exact lookups on 1000 deterministic synthetic items
+{"measurement":"pure-catalog-local","items":1000,"sites":2,"bins":3,"constructionMs":14.733083999999963,"requests":1000,"failedRequests":0,"p50Ms":0.0061249999999972715,"p95Ms":0.011708999999996195}
+
+ ✓ tests/inventory-catalog.test.ts (18 tests) 95ms
+ ✓ tests/interaction-admission.test.ts (12 tests) 16ms
+ ✓ tests/product-knowledge-checkout.test.ts (1 test) 182ms
+ ✓ tests/macos-runtime-discovery.test.ts (20 tests) 88ms
+ ✓ tests/workbench-board.test.ts (12 tests) 68ms
+ ✓ tests/job-cap-client.test.ts (13 tests) 27ms
+stderr | tests/identity-workos.test.ts > WorkOS access-token and active-session verification (offline HTTP fixtures) > rejects issuer before authenticated provider lookup
+{"event":"identity-refused","check":"issuer"}
+
+stderr | tests/identity-workos.test.ts > WorkOS access-token and active-session verification (offline HTTP fixtures) > rejects audience before authenticated provider lookup
+{"event":"identity-refused","check":"audience"}
+
+stderr | tests/identity-workos.test.ts > WorkOS access-token and active-session verification (offline HTTP fixtures) > rejects missing audience before authenticated provider lookup
+{"event":"identity-refused","check":"claims-shape"}
+
+stderr | tests/identity-workos.test.ts > WorkOS access-token and active-session verification (offline HTTP fixtures) > rejects client before authenticated provider lookup
+{"event":"identity-refused","check":"client"}
+
+stderr | tests/identity-workos.test.ts > WorkOS access-token and active-session verification (offline HTTP fixtures) > rejects missing client before authenticated provider lookup
+{"event":"identity-refused","check":"claims-shape"}
+
+stderr | tests/identity-workos.test.ts > WorkOS access-token and active-session verification (offline HTTP fixtures) > rejects expired before authenticated provider lookup
+{"event":"identity-refused","check":"lifetime"}
+
+stderr | tests/identity-workos.test.ts > WorkOS access-token and active-session verification (offline HTTP fixtures) > rejects future issued before authenticated provider lookup
+{"event":"identity-refused","check":"lifetime"}
+
+stderr | tests/identity-workos.test.ts > WorkOS access-token and active-session verification (offline HTTP fixtures) > rejects not yet valid before authenticated provider lookup
+{"event":"identity-refused","check":"lifetime"}
+
+stderr | tests/identity-workos.test.ts > WorkOS access-token and active-session verification (offline HTTP fixtures) > rejects invalid subject before authenticated provider lookup
+{"event":"identity-refused","check":"claims-shape"}
+
+stderr | tests/identity-workos.test.ts > WorkOS access-token and active-session verification (offline HTTP fixtures) > rejects missing session before authenticated provider lookup
+{"event":"identity-refused","check":"claims-shape"}
+
+stderr | tests/identity-workos.test.ts > WorkOS access-token and active-session verification (offline HTTP fixtures) > rejects impersonation before authenticated provider lookup
+{"event":"identity-refused","check":"actor"}
+
+stderr | tests/identity-workos.test.ts > WorkOS access-token and active-session verification (offline HTTP fixtures) > rejects none and refuses header-selected keys
+{"event":"identity-refused","check":"header"}
+
+stderr | tests/identity-workos.test.ts > WorkOS access-token and active-session verification (offline HTTP fixtures) > rejects HS256 and refuses header-selected keys
+{"event":"identity-refused","check":"header"}
+
+stderr | tests/identity-workos.test.ts > WorkOS access-token and active-session verification (offline HTTP fixtures) > rejects RS512 and refuses header-selected keys
+{"event":"identity-refused","check":"header"}
+
+stderr | tests/identity-workos.test.ts > WorkOS access-token and active-session verification (offline HTTP fixtures) > rejects tampered signatures and unknown keys
+{"event":"identity-refused","check":"signature"}
+
+stderr | tests/identity-workos.test.ts > WorkOS access-token and active-session verification (offline HTTP fixtures) > rejects tampered signatures and unknown keys
+{"event":"identity-refused","check":"signing-key"}
+
+stderr | tests/identity-workos.test.ts > WorkOS access-token and active-session verification (offline HTTP fixtures) > provider outage is unavailable, not successful or an invalid-token response
+{"event":"identity-unavailable","step":"jwks"}
+
+ ✓ tests/identity-workos.test.ts (26 tests) 89ms
+ ✓ tests/attribution-ui.test.ts (4 tests) 51ms
+ ✓ tests/hostile-binding-inventory.test.ts (11 tests) 142ms
+ ✓ tests/read-connector-windows-launch.test.ts (5 tests | 4 skipped) 65ms
+ ✓ tests/inventory-records-independent.test.ts (91 tests) 126ms
+ ✓ tests/inline-visuals.test.ts (38 tests) 115ms
+ ✓ tests/h12-tool-contract.test.ts (18 tests) 15ms
+ ✓ tests/capability-record.test.ts (23 tests) 55ms
+ ✓ tests/work-style.test.ts (126 tests) 42ms
+ ✓ tests/diomedes-page.test.ts (6 tests) 17ms
+ ✓ tests/engine-asks.test.ts (4 tests) 59ms
+ ✓ tests/contract-revision.test.ts (33 tests) 84ms
+ ✓ tests/codex-setup.test.ts (10 tests) 61ms
+ ✓ tests/aws-bedrock-view.test.ts (10 tests) 30ms
+ ✓ tests/account-readiness.test.ts (19 tests) 31ms
+ ✓ tests/hostile-binding-boundary.test.ts (6 tests) 25ms
+ ✓ tests/read-scope-codex.test.ts (17 tests) 54ms
+ ✓ tests/capability-record-pack-index.test.ts (20 tests) 47ms
+ ✓ tests/hostile-truth-next-action.test.ts (6 tests) 24ms
+ ✓ tests/conversation-sessions.test.ts (4 tests) 53ms
+ ✓ tests/jev-advisor.test.ts (45 tests) 57ms
+ ✓ tests/release-updater-compat.test.ts (19 tests) 64ms
+ ✓ tests/hostile-binding-freshness.test.ts (5 tests) 19ms
+ ✓ tests/rule-authority.test.ts (21 tests) 29ms
+ ✓ tests/task-create-client.test.ts (14 tests) 20ms
+ ✓ tests/credit-usage.test.ts (20 tests) 27ms
+ ✓ tests/inventory-import.test.ts (82 tests) 53ms
+ ✓ tests/automations-projection.test.ts (52 tests) 22ms
+ ✓ tests/harness-lifecycle.test.ts (21 tests) 11ms
+ ✓ tests/jev-advisor-measure.test.ts (7 tests) 42ms
+ ✓ tests/work-start-client.test.ts (19 tests) 60ms
+ ✓ tests/theme-pack.test.ts (80 tests) 86ms
+ ✓ tests/approval-decisions-client.test.ts (37 tests) 65ms
+ ✓ tests/reasoning-contract.test.ts (13 tests) 39ms
+ ✓ tests/engine-install.test.ts (19 tests | 1 skipped) 72ms
+ ✓ tests/nectovia-usage-ui.test.ts (28 tests) 35ms
+ ✓ tests/inventory-contract-independent.test.ts (67 tests) 28ms
+ ✓ tests/phone-relay-link.test.ts (12 tests) 58ms
+ ✓ tests/h01-adapter-contract.test.ts (18 tests) 23ms
+ ✓ tests/managed-inference-policy.test.ts (5 tests) 41ms
+ ✓ tests/work-style-ui.test.ts (9 tests) 23ms
+ ✓ tests/business-setup.test.ts (21 tests) 26ms
+ ✓ tests/organization-export-archive.test.ts (11 tests) 42ms
+ ✓ tests/workforce-constraints.test.ts (14 tests) 26ms
+ ✓ tests/svg-check.test.ts (77 tests) 46ms
+ ✓ tests/inventory-concurrency.test.ts (5 tests) 24ms
+ ✓ tests/agents.test.ts (24 tests) 42ms
+ ✓ tests/home-brief.test.ts (19 tests) 43ms
+ ✓ tests/file-identity.test.ts (23 tests) 9ms
+ ✓ tests/live-activity-client.test.ts (23 tests) 46ms
+ ✓ tests/ready-queue.test.ts (24 tests) 19ms
+ ✓ tests/evaluation-wire.test.ts (7 tests) 28ms
+ ✓ tests/outcome-evidence.test.ts (23 tests) 23ms
+ ✓ tests/inventory-contract.test.ts (36 tests) 27ms
+ ✓ tests/observability-record.test.ts (24 tests) 25ms
+ ✓ tests/hostile-truth-documents.test.ts (7 tests) 14ms
+ ✓ tests/skill-connectors.test.ts (5 tests) 4ms
+ ✓ tests/packs.test.ts (14 tests) 37ms
+ ✓ tests/thread-send.test.ts (12 tests) 24ms
+ ✓ tests/interaction-contract.test.ts (48 tests) 15ms
+ ✓ tests/vertex-setup-view.test.ts (8 tests) 26ms
+stderr | tests/artifact-frame.test.ts > mermaid input > keeps every element and attribute KaTeX writes for Mermaid within that allowlist, or known to be dropped
+LaTeX-incompatible input and strict mode is set to 'warn': HTML extension is disabled on strict mode [htmlExtension]
+LaTeX-incompatible input and strict mode is set to 'warn': HTML extension is disabled on strict mode [htmlExtension]
+LaTeX-incompatible input and strict mode is set to 'warn': HTML extension is disabled on strict mode [htmlExtension]
+LaTeX-incompatible input and strict mode is set to 'warn': HTML extension is disabled on strict mode [htmlExtension]
+
+ ✓ tests/artifact-frame.test.ts (38 tests) 45ms
+ ✓ tests/final-client-support-bundle.test.ts (2 tests) 22ms
+ ✓ tests/segment-bar.test.ts (22 tests) 24ms
+ ✓ tests/rules-assembly.test.ts (12 tests) 23ms
+ ✓ tests/engine-runtime-knowledge.test.ts (5 tests) 28ms
+ ✓ tests/worktree-sweep.test.ts (14 tests) 23ms
+ ✓ tests/packaged-release-check.test.ts (4 tests) 16ms
+ ✓ tests/fd02-discovery-ui.test.ts (3 tests) 21ms
+ ✓ tests/board-model.test.ts (10 tests) 20ms
+ ✓ tests/codex-runtime-discovery.test.ts (13 tests) 31ms
+ ✓ tests/turn-blocks.test.ts (31 tests) 25ms
+ ✓ tests/review-c-h18-context.test.ts (5 tests) 27ms
+ ✓ tests/artifact-save.test.ts (7 tests) 20ms
+ ✓ tests/free-plan-notice.test.ts (6 tests) 15ms
+ ✓ tests/verification-projection.test.ts (24 tests) 19ms
+ ✓ tests/read-connectors-view.test.ts (3 tests) 4ms
+ ✓ tests/progress-bars.test.ts (19 tests) 21ms
+ ✓ tests/inventory-receipt-client.test.ts (15 tests) 18ms
+ ✓ tests/hostile-truth-build-identity.test.ts (14 tests) 29ms
+ ✓ tests/capabilities.test.ts (14 tests) 18ms
+ ✓ tests/read-scope.test.ts (29 tests) 28ms
+ ✓ tests/artifacts.test.ts (26 tests) 27ms
+ ✓ tests/desktop-fresh-start.test.ts (4 tests) 21ms
+ ✓ tests/handoff.test.ts (20 tests) 19ms
+ ✓ tests/evaluation-acceptance.test.ts (14 tests) 29ms
+ ✓ tests/evaluation-contract.test.ts (34 tests) 17ms
+ ✓ tests/console-activity.test.ts (11 tests) 30ms
+ ✓ tests/evaluation-price.test.ts (27 tests) 7ms
+ ✓ tests/usage-presentation.test.ts (5 tests) 25ms
+ ✓ tests/pack-manifest.test.ts (55 tests) 23ms
+ ✓ tests/context-accounting.test.ts (16 tests) 31ms
+ ✓ tests/usage-contract.test.ts (23 tests) 12ms
+ ✓ tests/diomedes-view.test.ts (41 tests) 19ms
+ ✓ tests/evaluation-adapter.test.ts (24 tests) 13ms
+ ✓ tests/openapi-candidate.test.ts (14 tests) 17ms
+ ✓ tests/workbench-task-evidence.test.ts (8 tests) 16ms
+ ✓ tests/instruction-view.test.ts (14 tests) 20ms
+ ✓ tests/artifact-evidence.test.ts (11 tests) 16ms
+ ✓ tests/luna-route-labels.test.ts (7 tests) 4ms
+ ✓ tests/h16-console-model.test.ts (10 tests) 11ms
+ ✓ tests/included-usage.test.ts (15 tests) 7ms
+ ✓ tests/reviewer.test.ts (16 tests) 16ms
+ ✓ tests/phone-relay-setting.test.ts (4 tests) 15ms
+ ✓ tests/h20-route-matrix.test.ts (11 tests) 20ms
+ ✓ tests/windows-installer-script.test.ts (9 tests) 9ms
+ ✓ tests/onboarding.test.ts (17 tests) 7ms
+ ✓ tests/workbench-run-evidence.test.ts (11 tests) 13ms
+ ✓ tests/managed-usage.test.ts (26 tests) 9ms
+ ✓ tests/working-words.test.ts (4 tests) 10ms
+ ✓ tests/models.test.ts (9 tests) 12ms
+ ✓ tests/b00-control-plane-contract.test.ts (22 tests) 8ms
+ ✓ tests/execution-resolver.test.ts (21 tests) 6ms
+ ✓ tests/setup-ready.test.ts (3 tests) 14ms
+ ✓ tests/send-confirmation-read-access.test.ts (3 tests) 19ms
+ ✓ tests/build-identity.test.ts (20 tests) 15ms
+ ✓ tests/setup-question-changes.test.ts (14 tests) 10ms
+ ✓ tests/configuration.test.ts (35 tests) 18ms
+ ✓ tests/tier-setup-view.test.ts (5 tests) 13ms
+ ✓ tests/codex-protocol-evidence.test.ts (4 tests) 8ms
+ ✓ tests/review-g-h16.test.ts (6 tests) 7ms
+ ✓ tests/conversation-history.test.ts (9 tests) 7ms
+ ✓ tests/interaction-turn.test.ts (21 tests) 10ms
+ ✓ tests/editor-guard.test.ts (10 tests) 9ms
+ ✓ tests/interaction-contract.astra.test.ts (11 tests) 6ms
+ ✓ tests/tier-map.test.ts (14 tests) 12ms
+ ✓ tests/error-boundary.test.ts (6 tests) 4ms
+ ✓ tests/execution.test.ts (32 tests) 9ms
+ ✓ tests/task-document-select.test.ts (2 tests) 12ms
+ ✓ tests/connection-policy.test.ts (45 tests) 9ms
+ ✓ tests/spec-coverage.test.ts (4 tests) 5ms
+ ✓ tests/app-csp.test.ts (6 tests) 4ms
+ ✓ tests/data-coverage.test.ts (10 tests) 17ms
+ ✓ tests/hardware.test.ts (7 tests) 7ms
+ ✓ tests/ai-setup-states.test.ts (44 tests) 19ms
+ ✓ tests/final-server-failure-classification.test.ts (3 tests) 5ms
+ ✓ tests/workbench-palette.test.ts (5 tests) 8ms
+ ✓ tests/evidence-rows.test.ts (11 tests) 8ms
+ ✓ tests/engine-reasoning-client.test.ts (5 tests) 8ms
+ ✓ tests/h08-control-profile.test.ts (7 tests) 11ms
+ ✓ tests/thread-preview.test.ts (8 tests) 9ms
+ ✓ tests/engine-routes.test.ts (8 tests) 9ms
+ ✓ tests/release-assets.test.ts (13 tests) 7ms
+ ✓ tests/observability-eligibility.test.ts (20 tests) 19ms
+ ✓ tests/provider-setup-view.test.ts (9 tests) 10ms
+ ✓ tests/h15-drift-detectors.test.ts (62 tests) 12ms
+ ✓ tests/display-names.test.ts (5 tests) 4ms
+ ✓ tests/candidate-record-gates.test.ts (17 tests) 13ms
+ ✓ tests/evaluation-supplier-journey.test.ts (14 tests) 14ms
+ ✓ tests/home-history.test.ts (19 tests) 6ms
+ ✓ tests/native-auth-storage.test.ts (5 tests) 10ms
+ ✓ tests/predicates.test.ts (16 tests) 7ms
+ ✓ tests/h15-ladder.test.ts (13 tests) 7ms
+ ✓ tests/individual-period.test.ts (9 tests) 10ms
+ ✓ tests/evaluation-selection.test.ts (21 tests) 7ms
+ ✓ tests/vertex-usage-normalization.test.ts (7 tests) 10ms
+ ✓ tests/tool-activity-contract.test.ts (3 tests) 9ms
+ ✓ tests/harness-present.test.ts (10 tests) 7ms
+ ✓ tests/sse.test.ts (21 tests) 11ms
+ ✓ tests/business-output.test.ts (11 tests) 5ms
+ ✓ tests/nectovia-scheme.test.ts (3 tests) 5ms
+ ✓ tests/release-gates.test.ts (5 tests) 6ms
+ ✓ tests/work-style-mimo.test.ts (9 tests) 6ms
+ ✓ tests/theme-runtime.test.ts (4 tests) 6ms
+ ✓ tests/first-task-handoff.test.ts (17 tests) 6ms
+ ✓ tests/acceptance-matrix.test.ts (8 tests) 16ms
+ ✓ tests/conversation-update-client.test.ts (4 tests) 4ms
+ ✓ tests/evaluation-eligibility.test.ts (20 tests) 8ms
+ ✓ tests/kill-owned-process.test.ts (4 tests) 6ms
+ ✓ tests/instruction-digests.test.ts (10 tests) 9ms
+ ✓ tests/task-sources.test.ts (12 tests) 7ms
+ ✓ tests/business-access.test.ts (13 tests) 9ms
+ ✓ tests/h16-supervision-feed.test.ts (4 tests) 6ms
+ ✓ tests/effort.test.ts (7 tests) 4ms
+ ✓ tests/final-client-signin-settle.test.ts (3 tests) 3ms
+ ✓ tests/desktop-shell-title-bar.test.ts (5 tests) 5ms
+ ✓ tests/final-client-setup-unions.test.ts (5 tests) 7ms
+ ✓ tests/found-engines.test.ts (4 tests) 5ms
+ ✓ tests/engine-stage.test.ts (15 tests) 5ms
+ ✓ tests/reasoning-conformance.test.ts (1 test) 5ms
+ ✓ tests/desktop-shell-menu.test.ts (5 tests) 8ms
+ ✓ tests/native-session-view.test.ts (6 tests) 13ms
+ ✓ tests/agent-project-attribution.test.ts (5 tests) 6ms
+ ✓ tests/desktop-shell-lifecycle.test.ts (3 tests) 3ms
+ ✓ tests/package-scripts.test.ts (14 tests) 7ms
+ ✓ tests/files-pane-ux-20260917.test.ts (5 tests) 8ms
+ ✓ tests/engine-selection.test.ts (7 tests) 4ms
+ ✓ tests/shared-parser-move.test.ts (3 tests) 6ms
+ ✓ tests/secrets-baseline.test.ts (6 tests) 4ms
+ ✓ tests/attribution.test.ts (6 tests) 4ms
+ ✓ tests/retired-workbook-settings.test.ts (5 tests) 5ms
+ ✓ tests/acp-thought-chunks.test.ts (2 tests) 5ms
+ ✓ tests/desktop-shell-setup-links.test.ts (5 tests) 6ms
+ ✓ tests/everything-hover.test.ts (5 tests) 5ms
+ ✓ tests/interface-scale.test.ts (2 tests) 3ms
+ ✓ tests/modes.test.ts (5 tests) 4ms
+ ✓ tests/final-server-redaction.test.ts (2 tests) 3ms
+ ✓ tests/final-client-release-readme.test.ts (2 tests) 4ms
+ ✓ tests/composer-attachments.test.ts (1 test) 2ms
+ ↓ tests/windows-installer-registration.test.ts (2 tests | 2 skipped)
+ ↓ tests/run-store-windows-lock.test.ts (2 tests | 2 skipped)
+
+ Test Files  525 passed | 2 skipped (527)
+      Tests  8668 passed | 32 skipped (8700)
+   Start at  00:55:58
+   Duration  462.75s (transform 7.61s, setup 0ms, collect 146.64s, tests 693.43s, environment 57ms, prepare 22.37s)
+
+exit=0

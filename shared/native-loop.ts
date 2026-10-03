@@ -28,6 +28,9 @@ import type { OriginSnapshot } from './attribution.js';
 import type { ContextAccount } from './context-accounting.js';
 import type { HandoffEnvelope } from './handoff.js';
 import type { TeamConfig, TeamRetry } from './team-delegation.js';
+import type { AgentTeamGrant } from './agent-collaboration.js';
+import type { AgentReviewGrant, AgentReviewSelection } from './agent-review.js';
+import type { HarnessPrincipal } from './harness.js';
 import type { ChangeSetSummary } from './sandbox.js';
 import type {
   HarnessBudget,
@@ -105,6 +108,39 @@ export const LOOP_LIMITS = Object.freeze({
 });
 
 /** What a loop run was admitted with, pinned in `HarnessRun.input` at start. */
+export interface LoopHelperBinding {
+  readonly route: string;
+  readonly model: string;
+  readonly accountRoute: string;
+  readonly effort: string | null;
+  readonly profile: { readonly id: string; readonly revision: number; readonly digest: string };
+}
+
+/** Host-issued composition. The renderer supplies selections, never this authority record. */
+export interface LoopCollaborationInput {
+  readonly v: 1;
+  readonly projectId: string;
+  readonly taskId: string;
+  readonly rootRunId: string;
+  /** The existing scoped ledger key, distinct from the run and original command ids. */
+  readonly rootJobId: string;
+  readonly commandId: string;
+  readonly principal: HarnessPrincipal;
+  readonly authorityRef: import('../server/trust/types.js').PrincipalRef;
+  readonly route: string;
+  readonly model: string;
+  readonly accountRoute: string;
+  readonly sources: AgentTeamGrant['sources'];
+  readonly persistentTeam: AgentTeamGrant | null;
+  readonly helper: LoopHelperBinding | null;
+  readonly reviewSelection: AgentReviewSelection | null;
+  readonly review: Omit<AgentReviewGrant, 'reportDigest'> | null;
+  /** A cold start is a bounded hypothesis; measured comparisons require project evidence. */
+  readonly qualityStatus: 'hypothesis' | 'measured';
+  readonly selectionReason: string;
+  readonly paidAdmissionDigest: string;
+}
+
 export interface LoopRunInput {
   readonly v: 1;
   readonly kind: 'diomedes-loop';
@@ -112,6 +148,11 @@ export interface LoopRunInput {
   readonly route: string;
   readonly model: string | null;
   readonly accountRoute: string | null;
+  readonly effort?: string | null;
+  readonly rootJobId?: string;
+  readonly rootJobRequestId?: string;
+  readonly threadId?: string | null;
+  readonly collaboration?: LoopCollaborationInput | null;
   readonly maxTurns: number;
   /** The H11 instruction section this run was admitted with, or empty. */
   readonly instructions: string;
@@ -122,6 +163,7 @@ export interface LoopRunInput {
     readonly route: string;
     readonly model: string | null;
     readonly accountRoute: string | null;
+    readonly effort?: string | null;
     /** The H09 profile revision that named the route and model, when one did. */
     readonly profile?: import('./team-delegation.js').TeamRole['profile'];
   } | null;
@@ -358,7 +400,7 @@ export function loopView(run: HarnessRun, children: readonly HarnessRun[] = []):
           ? 'workers'
           : advise
             ? 'advice'
-            : tool
+            : tool || observation?.action === 'tool'
           ? 'tool'
           : observation?.action === 'refused'
             ? 'refused'
@@ -368,7 +410,8 @@ export function loopView(run: HarnessRun, children: readonly HarnessRun[] = []):
       turn,
       decision,
       tool: action?.intent.name ?? observation?.tool ?? null,
-      actionState: action?.state ?? null,
+      // Host-owned tools such as review_report complete through a recorded observation.
+      actionState: action?.state ?? (observation?.action === 'tool' ? (observation.ok ? 'succeeded' : 'failed') : null),
       approval: action?.intent.approval === true,
       observation,
     });

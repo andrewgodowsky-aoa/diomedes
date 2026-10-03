@@ -16,7 +16,7 @@ import {
   vertexConnectionSchema,
   type VertexConnection,
 } from '../engines/google-vertex.js';
-import { CONVERSATION_LIMITS, type CallExposure, type RespondLimits, type StreamSinks } from '../engines/model-api-core.js';
+import { CONVERSATION_LIMITS, ModelApiError, type CallExposure, type RespondLimits, type StreamSinks } from '../engines/model-api-core.js';
 import type { ModelRateCard } from '../spend-exposure.js';
 import { createModelApiAdapter, modelApiContract } from './model-api-adapter.js';
 import type { ModelTranscripts } from './model-transcripts.js';
@@ -45,6 +45,15 @@ export interface VertexModelAdapterOptions extends StreamSinks {
 }
 
 export function createVertexModelAdapter(options: VertexModelAdapterOptions): ModelAdapter & { profileHash: string } {
+  return vertexModelAdapter(options, options.secret);
+}
+
+/** Loop setup uses the exact profile without minting a credential or permitting dispatch. */
+export function createVertexModelDescriptor(options: Omit<VertexModelAdapterOptions, 'secret'>): ModelAdapter & { profileHash: string } {
+  return vertexModelAdapter(options, null);
+}
+
+function vertexModelAdapter(options: Omit<VertexModelAdapterOptions, 'secret'>, secret: string | null): ModelAdapter & { profileHash: string } {
   const connection = Object.freeze(vertexConnectionSchema.parse(options.connection));
   const limits = options.limits ?? CONVERSATION_LIMITS;
   return createModelApiAdapter({
@@ -86,10 +95,12 @@ export function createVertexModelAdapter(options: VertexModelAdapterOptions): Mo
       'Stopping a call closes the HTTP read. It does not prove Google stopped processing, so the spend hold stays uncertain.',
     ],
     sinks: { onDelta: options.onDelta, onToolActivity: options.onToolActivity, onReasoningDelta: options.onReasoningDelta },
-    respond: (call) =>
-      respondVertex({
+    respond: (call) => {
+      if (secret === null)
+        throw new ModelApiError('vertex_credential_missing', 'This setup descriptor has no credential opened for dispatch. Nothing was sent.', false);
+      return respondVertex({
         connection,
-        secret: options.secret,
+        secret,
         card: options.card,
         exposure: options.exposure,
         instructions: options.instructions,
@@ -98,6 +109,7 @@ export function createVertexModelAdapter(options: VertexModelAdapterOptions): Mo
         transport: options.transport,
         now: options.now,
         ...call,
-      }),
+      });
+    },
   });
 }
