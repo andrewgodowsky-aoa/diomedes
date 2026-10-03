@@ -74,6 +74,10 @@ const child = (handoffId: string, route: string | null, outcome: HandoffView['ou
   reason: null,
   models: [{ reported: 'secret-model-name', engine: route } as never],
   verification: verified ?? null,
+  openedAt: null,
+  execution: 'loop',
+  payer: null,
+  usage: null,
 });
 
 class FakeStore extends EventEmitter {
@@ -182,6 +186,38 @@ describe('ProductionWorkRows', () => {
     // A Session's loop run is looked up once; later reads reuse it.
     await rows.snapshot('P1');
     expect(harness.runIdFor).toHaveBeenCalledTimes(1);
+  });
+
+  test('a worker whose hand-off recorded its funding shows that payer, not the route’s', async () => {
+    const run = { id: 'R-lead', state: 'running', sessionId: 'S-loop' } as HarnessRun;
+    const view = {
+      workers: [
+        // The same engine can run on a key: the recorded funding decides (S2).
+        { ...child('h6', 'claude-code', 'completed'), execution: 'external-proposal', payer: 'person-key' },
+        { ...child('h7', 'codex', 'running'), execution: 'external-proposal', payer: 'person-subscription' },
+      ],
+      advice: [],
+    } as unknown as TeamLeadView;
+    const harness: WorkRowsHarness = {
+      runIdFor: vi.fn(async () => 'R-lead'),
+      run: vi.fn(async () => run),
+      teamView: vi.fn(async () => view),
+    };
+    const { rows } = source(
+      {
+        tasks: [task('T-lead', 'Plan the reopening')],
+        sessions: [
+          session('S-loop', { route: 'nectovia', taskId: 'T-lead', state: 'working', engine: { name: 'diomedes-loop', model: null, worker: 1, branch: null, context: null, events: 1 } }),
+        ],
+      },
+      harness,
+    );
+    const snapshot = (await rows.snapshot('P1'))!;
+    expect(snapshot.rows.map((row) => [row.rowId, row.payer])).toEqual([
+      ['session:S-loop', 'nectovia-credits'],
+      ['h14:h6', 'your-key'],
+      ['h14:h7', 'your-subscription'],
+    ]);
   });
 
   test('a card a wake made from Team mail is titled by whose wake it is and never becomes the task title', async () => {

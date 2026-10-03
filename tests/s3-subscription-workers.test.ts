@@ -47,6 +47,7 @@ import {
 } from '../shared/subscription-workers.js';
 import { MANAGED_LUNA, NECTOVIA_ROUTE } from '../shared/model-api.js';
 import { TEAM_LIMITS, TEAM_WORKER_CAPABILITY, type TeamConfig } from '../shared/team-delegation.js';
+import { manualTaskWorkflow } from '../shared/task-workflow.js';
 import type { ModelRequest } from '../shared/harness.js';
 import type { UsageWindow } from '../shared/types.js';
 import { NO_TRAINING_RESTRICTIONS, ROUTING_CONSENT_VERSION, type ModelBinding, type ProviderConnection } from '../shared/routing-policy.js';
@@ -564,6 +565,39 @@ describe('a Nectovia start takes its worker from the person’s preference', () 
     expect(input.subscriptionWorker).toBeUndefined();
     expect(externalCalls).toEqual([]);
     expect(admitManagedCalls).toHaveLength(1);
+  });
+
+  test('a manual Team card never takes a subscription worker: the loop refuses it before any tool is asked (S1, D12)', async () => {
+    await workers.save(ON);
+    await store.locked(async () => {
+      const state = store.state(projectId);
+      const card = state.tasks.find((item) => item.id === taskId)!;
+      card.workflow = manualTaskWorkflow();
+      await store.persist(state);
+    });
+    const started = await start();
+    expect(started.status, JSON.stringify(started.json)).toBe(409);
+    // Whichever guard speaks first, the workflow's or the manual card's own, it refuses before any tool or admission.
+    expect(['task_workflow_blocked', 'manual_card_loop']).toContain(started.json.code);
+    expect(started.input).toBeUndefined();
+    expect(externalCalls).toEqual([]);
+    expect(admitManagedCalls).toEqual([]);
+    await expect(
+      store.locked(() =>
+        routes.startHostLocked(projectId, {
+          protocolVersion: 1,
+          commandId: 's3-manual-host-start',
+          taskId,
+          goal: 'Check the linen order.',
+          route: NECTOVIA_ROUTE,
+          consent: true,
+          workerConsent: { revision: SUBSCRIPTION_WORKERS_CONSENT_REVISION, engines: ['codex', 'claude-code'] },
+          sources: ['order.md'],
+        }),
+      ),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(externalCalls).toEqual([]);
+    expect(admitManagedCalls).toEqual([]);
   });
 
   test('a tool that refuses gives way to the next one in the person’s order', async () => {

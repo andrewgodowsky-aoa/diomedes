@@ -29,6 +29,7 @@ import { routeDisplayName, isExternalEngine } from '../shared/engines.js';
 import type { HarnessRun } from '../shared/harness.js';
 import { isModelApiRoute, NECTOVIA_ROUTE } from '../shared/model-api.js';
 import { NATIVE_LOOP_ENGINE } from '../shared/native-loop.js';
+import { workerRowPayerOf } from '../shared/funding-source.js';
 import type { HandoffView, TeamLeadView } from '../shared/team-delegation.js';
 import { isManualCard } from '../shared/task-workflow.js';
 import type { ProjectState, Session, Task, TeamMember } from '../shared/types.js';
@@ -272,7 +273,9 @@ export class ProductionWorkRows implements WorkRowsSource {
               state: CHILD_STATE[child.outcome] ?? 'unknown',
               startedAt: null,
               verification: child.verification ? VERIFICATION[child.verification.state] : 'not-run',
-              payer: payerForRoute(child.route),
+              // The funding the hand-off recorded for an external worker's turn (S2), since one
+              // engine can run on a subscription or on a key; the route, for a record without it.
+              payer: child.payer ? workerRowPayerOf(child.payer) : payerForRoute(child.route),
             });
         }
       }
