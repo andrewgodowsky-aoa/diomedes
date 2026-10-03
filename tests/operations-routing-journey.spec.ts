@@ -152,7 +152,10 @@ test('publishes in Operations, accepts customer privacy, and preserves a non-Lun
   await customer.getByRole('navigation', { name: 'Settings', exact: true }).getByRole('button', { name: 'Account', exact: true }).click();
   const privacy = customer.getByRole('region', { name: 'AI routing and privacy' });
   await expect(privacy).toBeVisible();
-  await privacy.getByRole('radio', { name: /^Strict/ }).check();
+  // Strict is on request: a new account starts on Balanced and has no Strict choice.
+  await expect(privacy.getByRole('radio', { name: /^Balanced/ })).toBeChecked();
+  await expect(privacy.getByRole('radio', { name: /^Strict/ })).toHaveCount(0);
+  await expect(privacy).toContainText("It's available on request: write to hello@diomedes.net.");
   await privacy.getByRole('checkbox', { name: /I accept this profile/ }).check();
   await privacy.getByRole('button', { name: 'Save routing preference', exact: true }).click();
   await expect(privacy.getByRole('status')).toContainText('Routing preference saved.');
@@ -181,18 +184,18 @@ test('publishes in Operations, accepts customer privacy, and preserves a non-Lun
   await expect(details).toContainText('settled');
   await customer.screenshot({ path: info.outputPath('customer-response.png'), fullPage: true });
 
-  // Moving from Strict to Balanced gives up limits, and the screen names them before the owner accepts.
+  // Balanced and Lowest cost share one floor, so moving between them gives up nothing and names nothing.
   await customer.getByRole('button', { name: 'Settings', exact: true }).first().click();
   await customer.getByRole('navigation', { name: 'Settings', exact: true }).getByRole('button', { name: 'Account', exact: true }).click();
-  await privacy.getByRole('radio', { name: /^Balanced/ }).check();
-  await expect(privacy.getByRole('note')).toHaveText('Saving this lets requests run outside the US and lets providers store content.');
+  await privacy.getByRole('radio', { name: /^Lowest cost/ }).check();
+  await expect(privacy.getByRole('note')).toHaveCount(0);
   await expect(privacy.getByRole('button', { name: 'Save routing preference', exact: true })).toBeDisabled();
   await privacy.getByRole('checkbox', { name: /I accept this profile/ }).check();
   await privacy.getByRole('button', { name: 'Save routing preference', exact: true }).click();
   await expect(privacy.getByRole('status')).toContainText('Routing preference saved.');
   await expect(privacy).toContainText('Preference revision 2.');
   await expect(privacy.getByRole('note')).toHaveCount(0);
-  await privacy.screenshot({ path: info.outputPath('customer-relaxation.png') });
+  await privacy.screenshot({ path: info.outputPath('customer-profile-change.png') });
 });
 
 test('funds Personal access separately and keeps its override and receipt outside the Business account', async ({ page, context }, info) => {
@@ -242,7 +245,7 @@ test('funds Personal access separately and keeps its override and receipt outsid
   await customer.getByRole('navigation', { name: 'Settings', exact: true }).getByRole('button', { name: 'Account', exact: true }).click();
   const privacy = customer.getByRole('region', { name: 'AI routing and privacy' });
   await expect(privacy).toContainText('Your Individual account');
-  await privacy.getByRole('radio', { name: /^Strict/ }).check();
+  await expect(privacy.getByRole('radio', { name: /^Balanced/ })).toBeChecked();
   await privacy.getByRole('checkbox', { name: /I accept this profile/ }).check();
   await privacy.getByRole('button', { name: 'Save routing preference', exact: true }).click();
   await expect(privacy.getByRole('status')).toContainText('Routing preference saved.');
