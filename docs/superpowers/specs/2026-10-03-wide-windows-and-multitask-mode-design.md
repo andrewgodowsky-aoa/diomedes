@@ -173,6 +173,8 @@ current viewport.
   settings file. A browser that refuses storage gets the defaults and everything still works.
 - One key, `console.multitask.layout`, holds: open on wide windows, arrangement, both widths, and
   per slot its tabs (tool id plus that tool's saved state) and the active tab.
+- The Side panel layout row in Settings, Appearance reads and writes this same local key. It is
+  a preference for this computer, and it adds no server Settings key.
 - On a wide window the panel restores exactly that layout.
 - On a small window the panel always starts closed. Opening it there slides it over and does not
   change the stored open state for wide windows. Tab changes made there are still stored.
@@ -238,7 +240,8 @@ interface SlotContext {
 
 ## Dragging into the ask box
 
-Two payload kinds, both through paths `client/console/Composer.tsx` already has:
+The ask box has no drop target today (`client/console/Composer.tsx` has no `onDrop`), so it
+gains one. What it receives goes through two inputs the composer already has:
 
 - A file: a project document becomes an attachment chip through `onAttachments`. The existing
   rules hold: at most eight documents per message, and `attachmentProblem` flags a file that
