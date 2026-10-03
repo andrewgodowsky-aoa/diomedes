@@ -160,4 +160,17 @@ describe('manual teams on the Board', () => {
     expect(markup).toContain('Soup price');
     expect(markup.split('>Hand off</button>')).toHaveLength(3);
   });
+  it('offers Retire hand-off on a live hand-off and shows a retired one no more', () => {
+    const next = { ...task, id: 'next', name: 'Proofread', assignedTo: bram.slotId };
+    const record = { id: 'H1', fromTaskId: task.id, toTaskId: next.id, fromSlot: astra.slotId, toSlot: bram.slotId,
+      outcome: 'The draft is done.', changedFiles: ['Fall menu.md'], checks: [], openIssues: [],
+      createdBy: 'you' as const, createdAt: '2026-10-03T10:00:00.000Z' };
+    const tasks = [{ ...task, assignedTo: astra.slotId }, next];
+    const live = board({ tasks, team: team([astra, bram]), manualHandoffs: [record] });
+    expect(live.split('>Retire hand-off</button>')).toHaveLength(2);
+    const retired = board({ tasks, team: team([astra, bram]),
+      manualHandoffs: [{ ...record, retiredAt: '2026-10-03T11:00:00.000Z' }] });
+    expect(retired).not.toContain('Hand-off from Astra');
+    expect(retired).not.toContain('Retire hand-off');
+  });
 });

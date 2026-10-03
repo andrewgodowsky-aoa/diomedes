@@ -446,6 +446,19 @@ export function BoardView({
     await onRoute(task, to);
     setRouteId(null);
   }
+  // A retired hand-off keeps its record and stops counting for the card's start; the card's
+  // notes follow the records when the project's state comes back.
+  async function retireHandoff(task: Task, record: ManualHandoff): Promise<void> {
+    setMoveIssue(null);
+    try {
+      await api(`/projects/${project.id}/handoffs/${encodeURIComponent(record.id)}`, 'DELETE');
+    } catch (error) {
+      setMoveIssue({
+        taskId: task.id,
+        reason: error instanceof Error ? error.message : 'The hand-off was not retired.',
+      });
+    }
+  }
   function handleReview(task: Task): void {
     noteTravel(task, 'review', 220);
     onReview(task);
@@ -813,6 +826,7 @@ export function BoardView({
                       dragging={dragId === task.id}
                       routeOpen={routeId === task.id}
                       handoffs={handoffsInto(state.manualHandoffs, task.id)}
+                      onRetireHandoff={(record) => void retireHandoff(task, record)}
                       canHandOff={canHandOff(task)}
                       handoffForm={
                         handId === task.id ? (
@@ -976,6 +990,7 @@ function TaskRow({
   dragging,
   routeOpen,
   handoffs,
+  onRetireHandoff,
   canHandOff,
   handoffForm,
   onToggleHand,
@@ -1021,8 +1036,9 @@ function TaskRow({
   menu: { to: Column; move: BoardMove }[] | null;
   dragging: boolean;
   routeOpen: boolean;
-  /** Manual hand-offs into this card, newest first (S1). */
+  /** Live manual hand-offs into this card, newest first (S1). */
   handoffs: ManualHandoff[];
+  onRetireHandoff(record: ManualHandoff): void;
   canHandOff: boolean;
   /** The open hand-off form under this card, or null. */
   handoffForm: React.ReactNode;
@@ -1300,7 +1316,13 @@ function TaskRow({
       )}
       {handoffForm}
       {handoffs.map((record) => (
-        <HandoffNote key={record.id} record={record} members={members} />
+        <HandoffNote
+          key={record.id}
+          record={record}
+          members={members}
+          busy={busy}
+          onRetire={() => onRetireHandoff(record)}
+        />
       ))}
     </li>
   );

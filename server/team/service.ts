@@ -9,7 +9,15 @@ import type {
   TeamState,
 } from '../../shared/types.js';
 import { ApiError } from '../paths.js';
-import { emptyTaskWorkflow, manualTaskWorkflow, taskWorkflowBlocker } from '../../shared/task-workflow.js';
+import {
+  emptyTaskWorkflow,
+  isManualCard,
+  MANUAL_CARD_ASSIGN_REFUSED,
+  MANUAL_CARD_DELETE_REFUSED,
+  manualTaskWorkflow,
+  stoppedMemberRefusal,
+  taskWorkflowBlocker,
+} from '../../shared/task-workflow.js';
 import { identifier, now, type Store } from '../store.js';
 import { migrateTeam } from '../store.js';
 import {
@@ -72,6 +80,13 @@ function activeMember(team: TeamState, slotId: Slot): TeamMember {
   const member = findMember(team, slotId);
   if (member.status === 'stopped')
     throw new ApiError(401, 'This member token was not recognized.');
+  return member;
+}
+
+/** A member a card may name as its owner: one that exists (404) and was not stopped (409). */
+function assignableMember(team: TeamState, slotId: Slot): TeamMember {
+  const member = findMember(team, slotId);
+  if (member.status === 'stopped') throw new ApiError(409, stoppedMemberRefusal(member.name));
   return member;
 }
 
@@ -604,7 +619,7 @@ export class TeamService {
       if (typeof args.owner !== 'string' || !args.owner.trim())
         throw new ApiError(400, 'Provide a valid owner slot.');
       const ownerSlot = args.owner as string;
-      if (ownerSlot !== 'owner') findMember(team, ownerSlot);
+      if (ownerSlot !== 'owner') assignableMember(team, ownerSlot);
       assignedTo = ownerSlot;
     }
     const blocked = validateBlockedBy(state.tasks, args.blocked_by as string[] | undefined);
@@ -655,6 +670,18 @@ export class TeamService {
     if (!task) throw new ApiError(404, 'This task was not found.');
     if (task.ownedAssignment)
       throw new ApiError(409, 'This assignment belongs to its admitted root response. Only that Runtime may update its progress.');
+    // Checked before anything changes. An owner must be a current member. S1: only the person
+    // assigns or removes a manual Team card; a member's tool proposes, so it is told to ask.
+    let ownerSlot: Slot | null = null;
+    if (args.owner !== undefined && args.owner !== null) {
+      if (typeof args.owner !== 'string' || !args.owner.trim())
+        throw new ApiError(400, 'Provide a valid owner slot.');
+      ownerSlot = args.owner as string;
+      if (ownerSlot !== 'owner') assignableMember(team, ownerSlot);
+      if (isManualCard(task) && (task.assignedTo ?? null) !== ownerSlot)
+        throw new ApiError(409, MANUAL_CARD_ASSIGN_REFUSED);
+    }
+    if (args.status === 'deleted' && isManualCard(task)) throw new ApiError(409, MANUAL_CARD_DELETE_REFUSED);
     if (args.status !== undefined && args.status !== 'pending') {
       const workflowBlocker = taskWorkflowBlocker(task);
       if (workflowBlocker) throw new ApiError(409, workflowBlocker);
@@ -669,15 +696,9 @@ export class TeamService {
         changed = true;
       }
     }
-    if (args.owner !== undefined && args.owner !== null) {
-      if (typeof args.owner !== 'string' || !args.owner.trim())
-        throw new ApiError(400, 'Provide a valid owner slot.');
-      const ownerSlot = args.owner as string;
-      if (ownerSlot !== 'owner') findMember(team, ownerSlot);
-      if (task.assignedTo !== ownerSlot) {
-        task.assignedTo = ownerSlot;
-        changed = true;
-      }
+    if (ownerSlot !== null && task.assignedTo !== ownerSlot) {
+      task.assignedTo = ownerSlot;
+      changed = true;
     }
     if (args.blocked_by !== undefined && args.blocked_by !== null) {
       const blocked = validateBlockedBy(state.tasks, args.blocked_by as string[] | undefined);

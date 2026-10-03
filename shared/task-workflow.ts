@@ -104,6 +104,15 @@ export const MANUAL_CARD_LOOP_REFUSED =
   "A manual Team card runs on its member's engine when you start it, not in the work loop.";
 export const MANUAL_CARD_PHASE_REFUSED = "A manual Team card's phase moves only when you move it.";
 export const MANUAL_CARD_HOLD = "Start it yourself: a manual Team card doesn't start on its own";
+/** What a Team member's tool is told when it tries to reassign a manual card: a model proposes, the person decides. */
+export const MANUAL_CARD_ASSIGN_REFUSED =
+  'Only the person assigns a manual Team card. To suggest someone else, ask them in the Team mailbox: send a message to owner.';
+/** What a Team member's tool is told when it tries to remove a manual card. */
+export const MANUAL_CARD_DELETE_REFUSED =
+  'Only the person removes a manual Team card. If it should go, ask them in the Team mailbox: send a message to owner.';
+
+/** Why a stopped member can't be given a card. Stopping is the Team's only removal, and a stopped member never resumes. */
+export const stoppedMemberRefusal = (name: string) => `${name} was stopped and can't take work. Choose a current member.`;
 
 export type ManualCardStart =
   | { ok: true; member: TeamMember; route: ManualCardEngine }
@@ -129,7 +138,7 @@ export function manualCardStart(
   if (!(MANUAL_CARD_ENGINES as readonly string[]).includes(member.engine))
     return {
       ok: false,
-      reason: `${member.name} works through ${routeName(member.engine)}. A manual card runs on ChatGPT or Claude Code for now, so assign it to a member on one of those.`,
+      reason: `${member.name} works through ${routeName(member.engine)}. A manual card runs on ${MANUAL_CARD_ENGINES.map(routeName).join(' or ')}, so assign it to a member on one of those.`,
     };
   return { ok: true, member, route: member.engine as ManualCardEngine };
 }

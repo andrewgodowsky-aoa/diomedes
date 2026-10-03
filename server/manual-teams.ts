@@ -2,9 +2,12 @@
  * S1 free manual teams on the Board (DIO-175 lane S1, DIO-176, 2026-10-03): the server half.
  *
  * - The person's assignment of a card to a Team member through the Board's task route.
- * - Manual hand-offs between cards (shared/manual-handoff.ts): create and list, persisted on
- *   the project record with the Store's durable write, and the Work start check that every
- *   file a hand-off names is among the documents the person consented to send (N05).
+ * - Manual hand-offs between cards (shared/manual-handoff.ts): create, list and retire,
+ *   persisted on the project record with the Store's durable write, and the Work start check
+ *   that every file a live hand-off names is among the documents the person consented to send
+ *   (N05). The files a card's live hand-offs name must fit one Work start, and a named file
+ *   that is no longer in the project doesn't hold a start back: the start goes ahead without
+ *   it and History says so.
  *
  * Nothing here starts work, calls a model, consults the Agent gate or touches a managed
  * route: free accounts use manual teams (A01). Starting a manual card stays in `admitWork`
@@ -13,12 +16,16 @@
 import type { Express, NextFunction, Request, Response } from 'express';
 import {
   MANUAL_HANDOFF_LIMITS,
+  handoffsInto,
   manualHandoffProblem,
   manualHandoffRequestSchema,
   uncoveredHandoffFiles,
   type ManualHandoff,
 } from '../shared/manual-handoff.js';
-import type { Task, TeamMember } from '../shared/types.js';
+import { TASK_SOURCE_KINDS } from '../shared/task-sources.js';
+import { stoppedMemberRefusal } from '../shared/task-workflow.js';
+import type { DocumentInfo, Task, TeamMember } from '../shared/types.js';
+import { MAX_BYTES as WORK_SOURCE_BYTES, MAX_FILES as WORK_SOURCE_FILES } from './native-work.js';
 import { ApiError, relativeName } from './paths.js';
 import { identifier, now, type Store } from './store.js';
 
@@ -32,8 +39,7 @@ export const ASSIGNMENT_REFUSED = {
   running: "Stop this work before you change who it's assigned to.",
 } as const;
 
-const stoppedMember = (member: TeamMember) =>
-  `${member.name} was stopped and can't take work. Choose a current member.`;
+const stoppedMember = (member: TeamMember) => stoppedMemberRefusal(member.name);
 
 /**
  * Applies the person's `assignedTo` from the Board's task route. A string must name a current
@@ -66,17 +72,88 @@ export function applyTaskAssignment(store: Store, state: State, task: Task, valu
 }
 
 /**
- * N05: a start that sends documents must include every file a hand-off into this card names.
- * Applies to every non-sample start of a card that has a hand-off into it.
+ * N05: a start that sends documents must include every file a live hand-off into this card
+ * names. Applies to every non-sample start of a card that has a live hand-off into it.
+ *
+ * A named file that is no longer one of the project's documents can't be sent, so it doesn't
+ * hold the start back: the answer is the names left out that way, for `recordHandoffFilesGone`
+ * once the start has happened. The listing is read only when a name is missing, since it walks
+ * the project folder.
  */
-export function requireHandoffCoverage(state: State, taskId: string, sources: readonly string[]): void {
-  const missing = uncoveredHandoffFiles(state.manualHandoffs, taskId, sources);
-  if (!missing.length) return;
-  throw new ApiError(
-    409,
-    `The hand-off into this card names ${listOf(missing)}. Add ${missing.length === 1 ? 'it' : 'them'} to the documents you send, then start again.`,
-    { code: 'handoff_files_uncovered', files: missing },
+export async function requireHandoffCoverage(
+  store: Store,
+  projectId: string,
+  taskId: string,
+  sources: readonly string[],
+): Promise<string[]> {
+  const missing = uncoveredHandoffFiles(store.state(projectId).manualHandoffs, taskId, sources);
+  if (!missing.length) return [];
+  const listed = new Set(
+    (await store.listDocuments(projectId))
+      .filter((document) => document.kind !== 'unsupported')
+      .map((document) => document.path.toLowerCase()),
   );
+  const uncovered = missing.filter((name) => listed.has(name.toLowerCase()));
+  if (uncovered.length)
+    throw new ApiError(
+      409,
+      `The hand-off into this card names ${listOf(uncovered)}. Add ${uncovered.length === 1 ? 'it' : 'them'} to the documents you send, then start again.`,
+      { code: 'handoff_files_uncovered', files: uncovered },
+    );
+  return missing;
+}
+
+/**
+ * The History line for hand-off files a start went ahead without because they are no longer in
+ * the project. Written only after the start happened, by the caller that persists it.
+ */
+export function recordHandoffFilesGone(store: Store, state: State, taskId: string, gone: readonly string[]): void {
+  if (!gone.length) return;
+  const one = gone.length === 1;
+  store.addEntry(state, {
+    kind: 'manual-handoff-files-gone',
+    sentence: `${listOf(gone)} from the hand-off ${one ? 'is' : 'are'} no longer in this project, so ${one ? "it wasn't" : "they weren't"} sent.`,
+    actor: 'diomedes',
+    taskId,
+  });
+}
+
+/**
+ * The files a card's live hand-offs name must fit one Work start, since its start has to send
+ * them all (N05): Native Work sends at most `WORK_SOURCE_FILES` documents and `WORK_SOURCE_BYTES`
+ * of source text. Sizes come from the project's listing, which is the byte count a start reads.
+ * A named file no longer listed doesn't count, because a start goes ahead without it. Checked
+ * only when this hand-off adds a file; one that adds none can't make the card harder to start.
+ */
+function requireHandoffFilesFit(
+  listed: readonly DocumentInfo[],
+  records: readonly ManualHandoff[],
+  to: Task,
+  adding: readonly string[],
+): void {
+  const byName = new Map(listed.map((document) => [document.path.toLowerCase(), document.size]));
+  const named = new Map<string, number>();
+  for (const record of handoffsInto(records, to.id))
+    for (const name of record.changedFiles) {
+      const size = byName.get(name.toLowerCase());
+      if (size !== undefined) named.set(name.toLowerCase(), size);
+    }
+  const before = named.size;
+  for (const name of adding) named.set(name.toLowerCase(), byName.get(name.toLowerCase()) ?? 0);
+  if (named.size === before) return;
+  const bytes = [...named.values()].reduce((total, size) => total + size, 0);
+  if (named.size > WORK_SOURCE_FILES)
+    throw new ApiError(
+      409,
+      `${to.name} would then have ${named.size} files handed into it, and a start sends at most ${WORK_SOURCE_FILES}. Name fewer files, or retire an earlier hand-off.`,
+      { code: 'handoff_files_over_limit', files: named.size, limit: WORK_SOURCE_FILES },
+    );
+  if (bytes > WORK_SOURCE_BYTES)
+    throw new ApiError(
+      409,
+      `The files handed into ${to.name} would then come to ${Math.ceil(bytes / 1000)} KB, and a start sends at most ${WORK_SOURCE_BYTES / 1000} KB. Name fewer files, or retire an earlier hand-off.`,
+      { code: 'handoff_files_over_limit', bytes, limit: WORK_SOURCE_BYTES },
+    );
 }
 
 function listOf(names: readonly string[]): string {
@@ -90,7 +167,11 @@ const liveCard = (state: State, taskId: string): Task => {
   return task;
 };
 
-/** POST and GET /api/projects/:id/handoffs. */
+/**
+ * POST and GET /api/projects/:id/handoffs, and DELETE /api/projects/:id/handoffs/:handoffId to
+ * retire one. Like every mutating route here they are the person's: the local client's own
+ * requests, never a Team member's tools, which have no hand-off tool at all.
+ */
 export function mountManualHandoffRoutes(app: Express, store: Store): void {
   const handle =
     (action: (req: Request) => Promise<unknown>) =>
@@ -134,24 +215,25 @@ export function mountManualHandoffRoutes(app: Express, store: Store): void {
             code: 'handoff_member_mismatch',
           });
         const records = (state.manualHandoffs ??= []);
-        if (records.length >= MANUAL_HANDOFF_LIMITS.perProject)
+        if (records.filter((item) => !item.retiredAt).length >= MANUAL_HANDOFF_LIMITS.perProject)
           throw new ApiError(
             409,
-            `This project already keeps ${MANUAL_HANDOFF_LIMITS.perProject} hand-offs, the most it can.`,
+            `This project already keeps ${MANUAL_HANDOFF_LIMITS.perProject} live hand-offs, the most it can. Retire one, then hand off again.`,
             { code: 'handoff_limit' },
           );
-        // Each changed file is one of this project's documents that a Work start can send, by
-        // the name the project's listing gives it.
+        // Each changed file is one of this project's documents that the Board's start can send
+        // (shared/task-sources.ts), by the name the project's listing gives it.
         const listed = request.changedFiles.length ? await store.listDocuments(projectId) : [];
         const changedFiles = request.changedFiles.map((name) => {
           const relative = relativeName(name);
           const found = listed.find((document) => document.path.toLowerCase() === relative.toLowerCase());
-          if (!found || found.kind === 'unsupported')
+          if (!found || !(TASK_SOURCE_KINDS as readonly string[]).includes(found.kind))
             throw new ApiError(400, `${relative} isn't one of this project's text documents.`, {
               code: 'handoff_file_unknown',
             });
           return found.path;
         });
+        if (changedFiles.length) requireHandoffFilesFit(listed, records, to, changedFiles);
         const record: ManualHandoff = {
           id: identifier('H'),
           fromTaskId: from.id,
@@ -189,5 +271,29 @@ export function mountManualHandoffRoutes(app: Express, store: Store): void {
       );
       return { handoffs: structuredClone(records).reverse() };
     }),
+  );
+
+  // Retiring keeps the record, stamped with `retiredAt`: it stops counting for the card's start,
+  // for the files a card's hand-offs may name and for the per-project cap. Retiring one again
+  // changes nothing and writes nothing.
+  app.delete(
+    '/api/projects/:id/handoffs/:handoffId',
+    handle((req) =>
+      store.locked(async () => {
+        const state = store.state(String(req.params.id));
+        const record = (state.manualHandoffs ?? []).find((item) => item.id === req.params.handoffId);
+        if (!record) throw new ApiError(404, 'This hand-off was not found.', { code: 'handoff_missing' });
+        if (record.retiredAt) return structuredClone(record);
+        record.retiredAt = now();
+        const named = (id: string) => state.tasks.find((task) => task.id === id)?.name ?? 'a removed card';
+        store.addEntry(state, {
+          kind: 'manual-handoff-retired',
+          sentence: `You retired the hand-off from ${named(record.fromTaskId)} to ${named(record.toTaskId)}`,
+          taskId: record.toTaskId,
+        });
+        await store.persist(state);
+        return structuredClone(record);
+      }),
+    ),
   );
 }

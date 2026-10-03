@@ -8,6 +8,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { createApp } from '../server/app.js';
 import { Store } from '../server/store.js';
 import type { TeamService } from '../server/team/service.js';
+import { MANUAL_CARD_DELETE_REFUSED } from '../shared/task-workflow.js';
 
 let server: Server, app: Awaited<ReturnType<typeof createApp>>, temp: string, url: string;
 const jsonHeaders = { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' };
@@ -392,16 +393,26 @@ describe('team MCP endpoint', () => {
       expect(done.ok).toBe(true);
       expect(done.data.task.status).toBe('completed');
 
-      const deleted = await leadMcp.call('team_task_update', {
+      // A card a member makes is a manual Team card (S1), and only the person removes one: the
+      // tool is told to ask. A card that is not manual is still removed through the tool.
+      const kept = await leadMcp.call('team_task_update', {
         task_id: created.data.task.id,
+        status: 'deleted',
+      });
+      expect(kept.ok).toBe(false);
+      expect(kept.data.error).toBe(MANUAL_CARD_DELETE_REFUSED);
+      const plain = (await request(`/projects/${id}/tasks`, 'POST', { name: 'Stack the chairs' })).data;
+      const deleted = await leadMcp.call('team_task_update', {
+        task_id: plain.id,
         status: 'deleted',
       });
       expect(deleted.ok).toBe(true);
       expect(deleted.data.task.status).toBe('deleted');
       const hidden = await leadMcp.call('team_task_list', {});
-      expect(hidden.data.tasks.some((t: any) => t.id === created.data.task.id)).toBe(false);
+      expect(hidden.data.tasks.some((t: any) => t.id === plain.id)).toBe(false);
+      expect(hidden.data.tasks.some((t: any) => t.id === created.data.task.id)).toBe(true);
       const shown = await leadMcp.call('team_task_list', { include_deleted: true });
-      expect(shown.data.tasks.some((t: any) => t.id === created.data.task.id)).toBe(true);
+      expect(shown.data.tasks.some((t: any) => t.id === plain.id)).toBe(true);
       const limited = await leadMcp.call('team_task_list', {
         include_deleted: true,
         limit: 1,

@@ -127,7 +127,13 @@ import {
   isManualCard,
   manualCardStart,
 } from '../shared/task-workflow.js';
-import { applyTaskAssignment, mountManualHandoffRoutes, requireHandoffCoverage } from './manual-teams.js';
+import {
+  applyTaskAssignment,
+  mountManualHandoffRoutes,
+  recordHandoffFilesGone,
+  requireHandoffCoverage,
+} from './manual-teams.js';
+import { hasLiveHandoffInto } from '../shared/manual-handoff.js';
 import { checkCompletionAllowed } from './team/board.js';
 import { NATIVE_LOOP_CAPABILITY, NATIVE_LOOP_ENGINE } from '../shared/native-loop.js';
 import { ProductionWorkRows } from './work-rows.js';
@@ -1713,8 +1719,15 @@ export async function createApp(options: AppOptions) {
         memberThread.engine = member.engine as TeamRoute;
         memberThread.requested = member.model ? { model: member.model, effort: null } : null;
       }
+      // A wake carries no documents, so it never binds a card a live hand-off goes into: that
+      // card's start has to send the hand-off's files (N05). The member's next open card is
+      // bound instead, or none, and then the wake makes a card of its own for the mail.
       const openTask = state.tasks.find(
-        (item) => item.assignedTo === member.slotId && !item.deletedAt && item.state !== 'done',
+        (item) =>
+          item.assignedTo === member.slotId &&
+          !item.deletedAt &&
+          item.state !== 'done' &&
+          !hasLiveHandoffInto(state.manualHandoffs, item.id),
       );
       const started = await startCodexWork(
         {
@@ -2847,6 +2860,16 @@ export async function createApp(options: AppOptions) {
       throw new ApiError(409, 'Saved Work commands for team helpers are not available yet.', {
         code: 'unsupported_work_target',
       });
+    // Hand-off files this start goes ahead without, because they are no longer in the project.
+    let handoffGone: string[] = [];
+    // Recorded only once the start has happened: a refused start or a replayed receipt says nothing.
+    const started = async <T>(session: T): Promise<T> => {
+      if (handoffGone.length) {
+        recordHandoffFilesGone(store, store.state(projectId), taskId, handoffGone);
+        await store.persist(store.state(projectId));
+      }
+      return session;
+    };
     if (selectedRoute !== 'sample') {
       if (selectedRoute !== NECTOVIA_ROUTE && store.settings.services?.[selectedRoute] !== true)
         throw new ApiError(409, 'Turn the selected engine on in Settings before using it.');
@@ -2862,8 +2885,9 @@ export async function createApp(options: AppOptions) {
           'Provide the explicitly selected source documents, or an empty list to propose new files.',
         );
       requireCloudSharing(state, selectedRoute, b.sources.map(relativeName));
-      // N05: every file a hand-off into this card names must be among the documents sent.
-      requireHandoffCoverage(state, taskId, b.sources.map(relativeName));
+      // N05: every file a live hand-off into this card names must be among the documents sent,
+      // unless it is no longer in the project; History says so once the start has happened.
+      handoffGone = await requireHandoffCoverage(store, projectId, taskId, b.sources.map(relativeName));
     }
     // Recheck the current local scope and service consent before returning a cached
     // receipt. Replay never scans source files or dispatches another adapter call.
@@ -2958,13 +2982,13 @@ export async function createApp(options: AppOptions) {
         ...(preparedSession ? {preparedSessionId:preparedSession.id} : {})});
       const result = commit ? await commit(start) : await start();
       if (!result.session) throw new ApiError(409, 'The saved loop no longer has its session.');
-      return result.session;
+      return started(result.session);
     }
     if (selectedRoute !== 'sample') {
       // A manual card runs as its member was recorded: the member's Agent and requested model,
       // like a member's wake. A member with no model of its own takes the route's default.
       const member = manual?.ok ? manual.member : null;
-      return nativeWork.start(projectId, taskId, {
+      return started(await nativeWork.start(projectId, taskId, {
         engine: selectedRoute,
         threadId,
         agentId: member
@@ -2999,7 +3023,7 @@ export async function createApp(options: AppOptions) {
         permission: threadPermission,
         admission: command?.admission,
         commit,
-      });
+      }));
     }
     return work.start(
       projectId,
@@ -5609,20 +5633,31 @@ export async function createApp(options: AppOptions) {
         });
       }
       requireCloudSharing(state, engine, sources, wake === true);
+      // N05 again, in depth: a start that binds a card a live hand-off goes into sends the
+      // hand-off's files. A wake binds only the card its starter chose (never one with a live
+      // hand-off into it); the thread's last card isn't run by a wake, which makes its own card.
+      const handoffCard = wake && taskId === undefined ? undefined : boundTask;
+      const handoffGone = handoffCard
+        ? await requireHandoffCoverage(store, projectId, handoffCard.id, sources)
+        : [];
       if (
         state.sessions.some((session) => ['queued', 'working', 'waiting'].includes(session.state))
       )
         throw new ApiError(409, 'This project already has work in progress.');
-      const task =
-        (taskId !== undefined
+      const existing =
+        taskId !== undefined
           ? state.tasks.find((item) => item.id === taskId && !item.deletedAt)
-          : undefined) ??
+          : undefined;
+      const task =
+        existing ??
         store.createTask(state, {
           // A wake's text opens with the sender line; the task is named for the ask itself.
           name: taskNameFromText(wake ? text.replace(/^From [^:\n]{1,80}: /, '') : text),
           description: text,
           owner: 'diomedes-with-ok',
         });
+      // Its name and description are the mail's words, which worker rows never carry.
+      if (wake && !existing) task.createdFrom = 'team-mail';
       let conversation =
         threadId !== undefined
           ? state.conversations.find((item) => item.id === threadId)!
@@ -5756,6 +5791,7 @@ export async function createApp(options: AppOptions) {
       };
       conversation.turns.push(turn);
       touchThread(conversation, turn.at, state.tasks);
+      if (handoffCard) recordHandoffFilesGone(store, store.state(projectId), handoffCard.id, handoffGone);
       await store.persist(store.state(projectId));
       return {
         turn,
@@ -6350,7 +6386,17 @@ export async function createApp(options: AppOptions) {
       return snapshot;
     }, false),
   );
-  app.get('/api/events', (req, res) => {
+  /**
+   * The Console's event stream. Without `topics` it carries each changed project's `state`
+   * payload and its per-field copies, settings, engine previews and usage, and no worker rows.
+   * `?topics=work-rows` is the worker rows' own stream (client/work-rows.ts): the `ready` frame
+   * and `work-rows` frames only, never a `state` payload, so a page showing rows doesn't take a
+   * second copy of every project's state.
+   */
+  app.get('/api/events', (req, res, next) => {
+    const topics = req.query.topics;
+    if (topics !== undefined && topics !== 'work-rows')
+      return next(new ApiError(400, 'Ask for topics=work-rows, or leave topics out for the whole stream.'));
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
@@ -6358,30 +6404,43 @@ export async function createApp(options: AppOptions) {
     const send = (event: string, data: unknown) => {
       if (!res.destroyed) res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
     };
-    // The rows each project last sent on this stream, without their time, and the latest read
-    // asked for: a read that resolves after a newer one began is dropped, so rows never go back.
-    const rowsSent = new Map<string, string>();
-    const rowsAsked = new Map<string, number>();
-    let rowsSeq = 0;
-    const sendRows = (projectId: string) => {
-      const asked = ++rowsSeq;
-      rowsAsked.set(projectId, asked);
-      workRows.snapshot(projectId).then(
-        (snapshot) => {
-          if (!snapshot || rowsAsked.get(projectId) !== asked) return;
-          const { at: _at, ...content } = snapshot;
-          const key = JSON.stringify(content);
-          if (rowsSent.get(projectId) === key) return;
-          rowsSent.set(projectId, key);
-          send('work-rows', snapshot);
-        },
-        () => undefined,
-      );
-    };
+    const heartbeat = setInterval(() => {
+      if (!res.destroyed) res.write(': keep-alive\n\n');
+    }, 15000);
+    heartbeat.unref();
+    if (topics === 'work-rows') {
+      // The rows each project last sent on this stream, without their time, and the latest read
+      // asked for: a read that resolves after a newer one began is dropped, so rows never go back.
+      const rowsSent = new Map<string, string>();
+      const rowsAsked = new Map<string, number>();
+      let rowsSeq = 0;
+      const sendRows = (projectId: string) => {
+        const asked = ++rowsSeq;
+        rowsAsked.set(projectId, asked);
+        workRows.snapshot(projectId).then(
+          (snapshot) => {
+            if (!snapshot || rowsAsked.get(projectId) !== asked) return;
+            const { at: _at, ...content } = snapshot;
+            const key = JSON.stringify(content);
+            if (rowsSent.get(projectId) === key) return;
+            rowsSent.set(projectId, key);
+            send('work-rows', snapshot);
+          },
+          () => undefined,
+        );
+      };
+      const offRows = workRows.subscribe(sendRows);
+      // A reconnect replays nothing; the client reads its rows again on this frame.
+      send('ready', { ok: true });
+      req.on('close', () => {
+        clearInterval(heartbeat);
+        offRows();
+      });
+      return;
+    }
     const listener = (projectId: string) => {
       const state = store.state(projectId);
       send('state', { projectId, state: statePayload(state) });
-      sendRows(projectId);
       for (const event of [
         'project',
         'tasks',
@@ -6425,10 +6484,6 @@ export async function createApp(options: AppOptions) {
     const offUsage: () => void = usageService.subscribe(usageListener);
     // The client re-fetches /api/usage on this event, like it does for settings.
     send('ready', { ok: true });
-    const heartbeat = setInterval(() => {
-      if (!res.destroyed) res.write(': keep-alive\n\n');
-    }, 15000);
-    heartbeat.unref();
     req.on('close', () => {
       clearInterval(heartbeat);
       store.off('change', listener);

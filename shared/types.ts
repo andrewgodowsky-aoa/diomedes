@@ -237,6 +237,13 @@ export interface Task {
   origin?: TaskOrigin;
   createdBy: Owner;
   createdAt: string;
+  /**
+   * `team-mail` on a card a Team member's wake made from the mail it answered, when the member
+   * had no open card to take it (server/app.ts `startCodexWork`): its name and description are
+   * the mail's words, so worker rows title it by whose wake it is (server/work-rows.ts). Absent
+   * on every other card, and on every card written before the field existed.
+   */
+  createdFrom?: 'team-mail';
   assignedTo?: Slot | null;
   deletedAt?: string | null;
   moves: {
@@ -826,7 +833,10 @@ export interface ProjectState {
   streamTriggerFirings?: import('./stream-rules.js').StreamTriggerFiring[];
   /** P07 Software Engineering pack: declared commands, their runs and worktrees. Absent until first used. */
   softwarePack?: import('./software-pack.js').SoftwarePackRecord;
-  /** S1 manual hand-offs between Team cards, oldest first. Append-only; absent until the first. */
+  /**
+   * S1 manual hand-offs between Team cards, oldest first. Append-only: retiring one stamps its
+   * `retiredAt` and keeps it. Absent until the first.
+   */
   manualHandoffs?: import('./manual-handoff.js').ManualHandoff[];
 }
 /** How Diomedes knows whether an engine is signed in. 'first-use' means the first run reports it. */

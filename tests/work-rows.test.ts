@@ -184,6 +184,36 @@ describe('ProductionWorkRows', () => {
     expect(harness.runIdFor).toHaveBeenCalledTimes(1);
   });
 
+  test('a card a wake made from Team mail is titled by whose wake it is and never becomes the task title', async () => {
+    const { rows } = source({
+      tasks: [
+        task('T-mail', 'Please ring the squash grower about Thursday', { createdFrom: 'team-mail' }),
+        // The person may assign such a card later; the member's row still names only the member.
+        task('T-mail-2', 'Ask the landlord about the patio lease', { createdFrom: 'team-mail', assignedTo: 'S3' }),
+        task('T-plain', 'Try the sample'),
+      ],
+      team: {
+        members: [member('S1', 'Astra', 'claude-code'), member('S3', 'Cleo', 'codex', 'waiting')],
+        messages: [],
+        runs: [],
+      },
+      sessions: [
+        session('S-wake', { route: 'claude-code', slotId: 'S1', taskId: 'T-mail', state: 'working' }),
+        session('S-plain', { route: 'codex', taskId: 'T-plain', state: 'done', endedAt: '2026-10-03T09:30:00.000Z' }),
+      ],
+    });
+    const snapshot = (await rows.snapshot('P1'))!;
+    expect(snapshot.taskTitle).toBeNull();
+    expect(snapshot.rows.map((row) => [row.rowId, row.kind, row.title, row.state])).toEqual([
+      ['session:S-wake', 'team-member', 'Astra is answering Team mail', 'working'],
+      // An ordinary card's row is unchanged.
+      ['session:S-plain', 'session', 'Try the sample', 'answered'],
+      ['member:S3', 'team-member', 'Cleo is answering Team mail', 'waiting'],
+    ]);
+    const wire = JSON.stringify(snapshot);
+    for (const forbidden of ['squash', 'grower', 'landlord', 'lease', MAIL, PATH]) expect(wire).not.toContain(forbidden);
+  });
+
   test('a stop the runtime has not confirmed reads stop requested; verification comes from History', async () => {
     const declared = { digest: 'd1', checks: [{ id: 'c1', kind: 'review' }] };
     const check = (outcome: 'passed' | 'failed') => ({

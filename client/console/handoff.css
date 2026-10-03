@@ -73,3 +73,6 @@
 .console .handoff-k {
   color: var(--t3);
 }
+.console .handoff-note .handoff-actions {
+  margin-top: 4px;
+}

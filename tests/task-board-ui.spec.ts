@@ -330,5 +330,14 @@ test('a hand-off from one card shows on the next card', async ({ page }) => {
   const saved = await records();
   expect(saved.manualHandoffs).toHaveLength(1);
   expect(saved.manualHandoffs![0]).toMatchObject({ toTaskId: next.id, changedFiles: ['Fall menu.md'], createdBy: 'you' });
+  // Retiring it keeps the record and takes the note off the card.
+  await note.getByRole('button', { name: 'Retire hand-off', exact: true }).click();
+  await expect(note).toHaveCount(0);
+  const retired = await records();
+  expect(retired.manualHandoffs).toHaveLength(1);
+  expect(retired.manualHandoffs![0].retiredAt).toEqual(expect.any(String));
+  expect(retired.history.map((entry) => entry.sentence)).toContain(
+    'You retired the hand-off from Count the patio chairs to Order the missing chairs',
+  );
   expect(errors).toEqual([]);
 });

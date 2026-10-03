@@ -13,10 +13,17 @@
  *   none exist before S2/S3, and they are mapped by route now.
  *
  * Which runs: every active one, then the three that ended last. Rows carry labels, titles,
- * states, verification and payer only: never a file path, an answer, a hand-off text or a mail
- * body, and never anything read from the full `state` event. A managed row is named Nectovia
- * and never by its model or vendor. Reading rows writes nothing, admits nothing and calls no
- * model (A38): verification is read from History with the pure H17 reader.
+ * states, verification and payer only, and never anything read from the full `state` event.
+ * A title is the name of the card the work is on, as the Board shows it, capped at
+ * `WORK_ROW_TITLE_LIMIT`; a member working with no card is titled by its own name. Nothing else
+ * from a card or a run reaches a row: no document text or file list, no answer, no hand-off
+ * text, no mailbox message and no log line. A card's name is the person's words or a proposal
+ * the person sees on the Board, with one exception: a card a member's wake made from the mail
+ * it answered (`Task.createdFrom` `team-mail`) is named by the mail's words, so its rows are
+ * titled by whose wake it is ("Bram is answering Team mail") and it never becomes the
+ * snapshot's `taskTitle`. A managed row is named Nectovia and never by its model or vendor.
+ * Reading rows writes nothing, admits nothing and calls no model (A38): verification is read
+ * from History with the pure H17 reader.
  */
 import { routeDisplayName, isExternalEngine } from '../shared/engines.js';
 import type { HarnessRun } from '../shared/harness.js';
@@ -71,6 +78,20 @@ function externalRoute(route: string | null | undefined): boolean {
 export function rowTitle(text: string): string {
   const title = text.replace(/\s+/g, ' ').trim();
   return title.length > WORK_ROW_TITLE_LIMIT ? `${title.slice(0, WORK_ROW_TITLE_LIMIT - 1).trimEnd()}…` : title;
+}
+
+/** True for a card a member's wake made from Team mail: its name is the mail's words. */
+function namedByMail(task: Task | undefined): boolean {
+  return task?.createdFrom === 'team-mail';
+}
+
+/**
+ * A row's title from its card: the card's name, or, for a card made from Team mail, only whose
+ * wake it is. `fallback` titles a row with no card.
+ */
+function cardTitle(task: Task | undefined, member: TeamMember | undefined, fallback = ''): string {
+  if (namedByMail(task)) return rowTitle(member ? `${member.name} is answering Team mail` : 'Answering Team mail');
+  return rowTitle(task?.name ?? fallback);
 }
 
 const VERIFICATION: Record<VerificationState, WorkerRowVerification> = {
@@ -227,26 +248,27 @@ export class ProductionWorkRows implements WorkRowsSource {
         rowId: `session:${session.id}`,
         kind,
         label: labelForRoute(route),
-        title: rowTitle(task?.name ?? ''),
+        title: cardTitle(task, member),
         state: sessionState(session, task),
         startedAt: session.startedAt,
         verification: sessionVerification(state, session, task),
         payer: payerForRoute(route),
       });
-      if (taskTitle === null && ACTIVE.includes(session.state) && task) taskTitle = rowTitle(task.name);
+      if (taskTitle === null && ACTIVE.includes(session.state) && task && !namedByMail(task))
+        taskTitle = rowTitle(task.name);
       // The live (or last) H14 lead's children follow its own row.
       if (session.engine.name === NATIVE_LOOP_ENGINE && rootRunId === null) {
         const lead = await this.lead(projectId, session);
         if (lead) {
           rootRunId = lead.runId;
-          if (ACTIVE.includes(session.state) && task) taskTitle = rowTitle(task.name);
+          if (ACTIVE.includes(session.state) && task && !namedByMail(task)) taskTitle = rowTitle(task.name);
           for (const child of lead.workers)
             rows.push({
               rowId: `h14:${child.handoffId}`,
               kind: externalRoute(child.route) ? 'external-worker' : 'h14-worker',
               label: labelForRoute(child.route),
               // The lead's task, never the handed text: that is model-written and may name files.
-              title: rowTitle(task?.name ?? ''),
+              title: cardTitle(task, member),
               state: CHILD_STATE[child.outcome] ?? 'unknown',
               startedAt: null,
               verification: child.verification ? VERIFICATION[child.verification.state] : 'not-run',
@@ -266,7 +288,7 @@ export class ProductionWorkRows implements WorkRowsSource {
         rowId: `member:${member.slotId}`,
         kind: 'team-member',
         label: labelForRoute(member.engine),
-        title: rowTitle(task?.name ?? member.name),
+        title: cardTitle(task, member, member.name),
         state: memberState,
         startedAt: null,
         verification: 'not-run',

@@ -57,10 +57,53 @@ Free accounts use manual teams, so nothing in this lane calls the Agent gate or 
    sample and fixtures `local`, anything else `unknown`. Labels are the Console route names (a
    managed row reads Nectovia). Verification is read from History with the pure H17 reader;
    `not-run` when there is no record. `GET /api/projects/:id/work/rows` returns the snapshot, and
-   the existing `/api/events` listener sends a small `work-rows` event with only the snapshot,
-   when it changed. The client hook (`client/work-rows.ts`) reads the endpoint and the event; the
-   Team view shows the rows above its composer and the Agent conversation shows the running ones
-   in a new `workers` slot. `app.locals.workRows` exposes the source for the relay.
+   `GET /api/events?topics=work-rows` is the rows' own stream: the `ready` frame and a small
+   `work-rows` event with only the snapshot, when it changed, and never a `state` payload. The
+   default stream carries no `work-rows` frames. The client hook (`client/work-rows.ts`) reads
+   the endpoint and the filtered stream; the Team view shows the rows above its composer and the
+   Agent conversation shows the running ones in a new `workers` slot. `app.locals.workRows`
+   exposes the source for the relay.
+
+## Review fixes
+
+Five findings on the first patch, fixed on the same branch.
+
+1. **Hand-off coverage could make a card impossible to start.** POST now refuses a hand-off
+   whose files, together with those of the live hand-offs already into the same card, would
+   pass what one Work start sends (Native Work's `MAX_FILES`, 8, and `MAX_BYTES`, 128,000,
+   exported from `server/native-work.ts`), measured from the listing's sizes, which are the bytes
+   a start reads: a 409 with code `handoff_files_over_limit`. A named file no longer in the
+   project counts for neither, and a hand-off that adds no file is never refused for it. At a
+   start, a named file that has left the project no longer blocks it; once the start has
+   happened, History says so ("Q3 plan.md from the hand-off is no longer in this project, so it
+   wasn't sent.", kind `manual-handoff-files-gone`, actor Diomedes). The person can retire a
+   hand-off: `DELETE /api/projects/:id/handoffs/:handoffId` (locked; 404 `handoff_missing` for an
+   unknown id; retiring again changes nothing) stamps `retiredAt`, keeps the record and writes
+   "You retired the hand-off from X to Y". A retired hand-off stops counting for a start, for the
+   files limit and for the per-project cap, which now counts live records only. The Board's
+   hand-off note on a card has a Retire hand-off button and shows live hand-offs only. Changed
+   files are now limited to the kinds the Board's start sends (`TASK_SOURCE_KINDS`: Markdown,
+   text and plans), because the Board refuses to send a drawing.
+2. **A member's tool could reassign a manual card.** `taskUpdateAsMember` refuses an owner
+   change on a manual card with a 409 that tells the model only the person assigns it and to ask
+   in the Team mailbox, and refuses `status: 'deleted'` on one. Both checks come before the Inbox
+   check and before anything changes. In `taskCreateAsMember` and `taskUpdateAsMember` an owner
+   other than `owner` must be a current member; a stopped one is a 409. Other cards behave as
+   before.
+3. **A wake could run a person-assigned card without the hand-off's files.** The wake starter
+   skips a card with a live hand-off into it when it picks the member's open assigned card, and
+   binds the next one or none. `startCodexWork` checks coverage for the card it binds: for a
+   wake, only the card the starter chose (a wake with no card runs on a new card, so the
+   thread's last card is not checked); for a person's direct start, the attached or
+   thread-bound card, as the workflow guard reads it.
+4. **Worker rows could carry Team mail.** A card a wake makes from mail carries
+   `createdFrom: 'team-mail'` (absent on every other and every older card). Its rows are titled
+   "<member> is answering Team mail" and it never becomes the snapshot's `taskTitle`; the Board
+   keeps its name. Older wake-made cards have no marker and keep their names in rows.
+5. **The rows hook opened a second full-state stream.** See the filtered stream above.
+
+Copy: the manual-card engine refusal names the engines through `routeName` and no longer says
+"for now".
 
 ## Choices
 
@@ -102,9 +145,9 @@ Free accounts use manual teams, so nothing in this lane calls the Agent gate or 
 
 - `subscribe` listens to Store changes only, so an H14 child's progress that writes nothing to
   the project shows on the next project change.
-- A member's mail wake binds to the member's first open assigned card. When that card is a
-  manual card (as it was for every team-created card before S1), the wake path refuses it
-  because the card has a workflow. Unchanged by this lane.
+- A member's mail wake binds to the member's first open assigned card that no live hand-off
+  goes into. When that card is a manual card (as it was for every team-created card before S1),
+  the wake path refuses it because the card has a workflow. Unchanged by this lane.
 - The Team view's header point still reads members' own status only.
 
 ## Gates
@@ -126,3 +169,28 @@ Each ran under the coordination heavy slot, one at a time, on this tree.
 
 Focused: `tests/manual-teams.test.ts` 14 passed, `tests/work-rows.test.ts` 8 passed and
 `tests/workbench-board.test.ts` 15 passed. The screenshots Playwright rewrote were restored.
+
+### Review fix gates
+
+The same way, after the review fixes.
+
+- `npx tsc --noEmit`: exit 0, no diagnostics.
+- The S1 and touched test files, 15 files: 379 passed (`manual-teams` 31, `work-rows` 9,
+  `workbench-board` 16, `team` 10, and `task-sources`, `local-trust-backend`, `loopback-auth`,
+  `team-auth-security`, `task-workflow-admission`, `team-any-route`, `agent-team-response`,
+  `drawings-trust`, `backend`, `work-admission` and `native-work`).
+- `npx vitest run`: `Test Files 3 failed | 559 passed (562)` and
+  `Tests 3 failed | 9522 passed | 5 skipped (9530)`, with one unhandled `listen ENOBUFS` error.
+  The failures: `automatic-work-host.test.ts` (a wait for a writer's need that timed out),
+  `business-access-routes.test.ts` (a 30 second timeout while the machine was out of socket
+  buffers, the ENOBUFS) and `opencode-adapter.test.ts` (its local fixture server could not be
+  reached). None of the three files is changed here, and run on their own they pass: 3 files,
+  122 passed. The machine carried 58 node processes from other lanes.
+- `npx vite build`: 2562 modules transformed, built in 8.72s.
+- `npx playwright test tests/ui.spec.ts tests/native-ui.spec.ts tests/field.spec.ts tests/task-board-ui.spec.ts`:
+  42 passed (17, 11, 8 and 6), with the hand-off flow now retiring its hand-off.
+- `npx playwright test tests/h01-preview-repair.spec.ts`, which finds the main stream by its
+  exact URL: 8 passed.
+- `npx playwright test -c playwright.agent-team.config.ts`: 11 passed.
+
+The screenshots Playwright rewrote were restored.

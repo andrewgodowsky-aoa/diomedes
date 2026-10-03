@@ -7,10 +7,12 @@ person assigns a card to a Team member from the card (DIO-176). A card a member 
 on that member's own ChatGPT or Claude Code engine through Native Work, with the usual send
 confirmation, and only the person moves its phase. A manual hand-off carries what came of one
 card, its changed files, checks and open issues to the next card, whose start begins with those
-files. Worker rows for Sessions, Team members and H14 workers come from a production source
-behind `GET /api/projects/:id/work/rows` and a small `work-rows` event. Nothing in this lane
-calls the Agent gate or a managed route. See
-[the implementation record](../implementation/2026-10-03-manual-teams.md).
+files; the files must fit one start, a file that left the project no longer blocks it, and the
+person can retire a hand-off. Only the person assigns or removes a manual card; a member's tool
+is told to ask. Worker rows for Sessions, Team members and H14 workers come from a production
+source behind `GET /api/projects/:id/work/rows` and a `work-rows` event on its own stream,
+`/api/events?topics=work-rows`, and never carry Team mail. Nothing in this lane calls the Agent
+gate or a managed route. See [the implementation record](../implementation/2026-10-03-manual-teams.md).
 
 ## Agent Team reconciliation onto main, 2026-10-03
 

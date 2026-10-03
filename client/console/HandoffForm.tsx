@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { MANUAL_HANDOFF_LIMITS, type ManualHandoff } from '../../shared/manual-handoff';
+import { TASK_SOURCE_KINDS } from '../../shared/task-sources';
 import type { DocumentInfo, Slot, Task, TeamMember } from '../../shared/types';
 import { api, listDocuments } from '../api';
 import './handoff.css';
@@ -54,7 +55,11 @@ export function HandoffForm({
   useEffect(() => {
     const control = new AbortController();
     listDocuments(projectId, control.signal).then(
-      (listed) => setDocuments(listed.documents.filter((document) => document.kind !== 'unsupported')),
+      // Only what the next card's start can send (shared/task-sources.ts).
+      (listed) =>
+        setDocuments(
+          listed.documents.filter((document) => (TASK_SOURCE_KINDS as readonly string[]).includes(document.kind)),
+        ),
       () => {
         if (!control.signal.aborted) setDocuments([]);
       },
@@ -197,8 +202,21 @@ export function HandoffForm({
   );
 }
 
-/** A hand-off as the next card shows it: who handed it over, what came of it, and the rest. */
-export function HandoffNote({ record, members }: { record: ManualHandoff; members: readonly TeamMember[] }) {
+/**
+ * A live hand-off as the next card shows it: who handed it over, what came of it, and the rest.
+ * Retiring it keeps the record but stops the card's start from needing its files.
+ */
+export function HandoffNote({
+  record,
+  members,
+  busy = false,
+  onRetire,
+}: {
+  record: ManualHandoff;
+  members: readonly TeamMember[];
+  busy?: boolean;
+  onRetire?(): void;
+}) {
   const giver = members.find((member) => member.slotId === record.fromSlot)?.name ?? 'A Team member';
   return (
     <details className="handoff-note" data-handoff-id={record.id}>
@@ -218,6 +236,13 @@ export function HandoffNote({ record, members }: { record: ManualHandoff; member
         <p>
           <span className="handoff-k">Open issues</span> {record.openIssues.join('; ')}
         </p>
+      )}
+      {onRetire && (
+        <div className="handoff-actions">
+          <button type="button" disabled={busy} onClick={onRetire}>
+            Retire hand-off
+          </button>
+        </div>
       )}
     </details>
   );

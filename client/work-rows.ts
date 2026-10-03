@@ -1,10 +1,11 @@
 /**
  * Worker rows in the Console (plan section 4.8, S1): one project's rows, read once from
  * `GET /api/projects/:id/work/rows` and then kept current by the small `work-rows` event on
- * the existing stream. Never derived from the `state` event, and reading or refreshing rows
- * calls no model (A38): the server projects them from its records.
+ * the rows' own stream, `/api/events?topics=work-rows`, which carries no `state` payload.
+ * Never derived from the `state` event, and reading or refreshing rows calls no model (A38):
+ * the server projects them from its records.
  *
- * Every hook on the page shares one event stream, opened while any of them listens.
+ * Every hook on the page shares that one stream, opened while any of them listens.
  */
 import { useEffect, useState } from 'react';
 import type { WorkRowsSnapshot } from '../shared/work-rows';
@@ -32,7 +33,7 @@ function onReady() {
 function listen(listener: Listener): () => void {
   listeners.add(listener);
   if (!source && typeof EventSource !== 'undefined') {
-    source = new EventSource('/api/events');
+    source = new EventSource('/api/events?topics=work-rows');
     source.addEventListener('work-rows', onRows);
     source.addEventListener('ready', onReady);
   }

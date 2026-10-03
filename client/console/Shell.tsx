@@ -1414,10 +1414,17 @@ export function Shell({
       try {
         const listed = (await listDocuments(projectId)).documents;
         if (currentId.current !== projectId) return;
-        // The files a hand-off into this card names come first (N08); otherwise keep an
-        // unavailable saved path visible so the person can replace it.
+        // The files a live hand-off into this card names come first (N08), by the listing's
+        // own names. One no longer in the project can't be sent, and the start goes ahead
+        // without it. Otherwise keep an unavailable saved path visible so the person can
+        // replace it.
+        const listedName = new Map(listed.map((document) => [document.path.toLowerCase(), document.path]));
         const handed = [
-          ...new Set(handoffsInto(state?.manualHandoffs, task.id).flatMap((record) => record.changedFiles)),
+          ...new Set(
+            handoffsInto(state?.manualHandoffs, task.id).flatMap((record) =>
+              record.changedFiles.flatMap((name) => listedName.get(name.toLowerCase()) ?? []),
+            ),
+          ),
         ];
         const sources = handed.length
           ? handed

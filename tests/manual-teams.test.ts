@@ -23,6 +23,8 @@ import { requestTaskHandoff } from '../server/task-workflow.js';
 import { testOnlySecretBox } from '../server/connection-secrets.js';
 import { NATIVE_LOOP_ENGINE } from '../shared/native-loop.js';
 import {
+  MANUAL_CARD_ASSIGN_REFUSED,
+  MANUAL_CARD_DELETE_REFUSED,
   MANUAL_CARD_HOLD,
   MANUAL_CARD_PHASE_REFUSED,
   boardStartRoute,
@@ -31,9 +33,14 @@ import {
   workflowOf,
 } from '../shared/task-workflow.js';
 import { routeDisplayName } from '../shared/engines.js';
-import { manualHandoffRequestSchema, manualHandoffSchema } from '../shared/manual-handoff.js';
+import {
+  MANUAL_HANDOFF_LIMITS,
+  manualHandoffRequestSchema,
+  manualHandoffSchema,
+  type ManualHandoff,
+} from '../shared/manual-handoff.js';
 import type { WorkRowsSnapshot } from '../shared/work-rows.js';
-import type { ProjectState, Task, TeamMember } from '../shared/types.js';
+import type { CloudSharingPolicy, ProjectState, Task, TeamMember } from '../shared/types.js';
 import { SendConfirmation } from '../client/console/SendConfirmation.js';
 
 type NativeResult = Awaited<ReturnType<NativeGenerator>>;
@@ -332,7 +339,7 @@ describe('N03 and N04: a manual card runs on its member and moves only when the 
     const members: TeamMember[] = [{ ...astra, engine: 'openrouter' }];
     expect(manualCardStart({ assignedTo: astra.slotId }, members, routeDisplayName)).toEqual({
       ok: false,
-      reason: 'Astra works through OpenRouter. A manual card runs on ChatGPT or Claude Code for now, so assign it to a member on one of those.',
+      reason: 'Astra works through OpenRouter. A manual card runs on ChatGPT or Claude Code, so assign it to a member on one of those.',
     });
     expect(asked).toEqual([]);
   });
@@ -575,9 +582,9 @@ describe('N06, N07, A01, A03 and A38: the free Team works in turn with no paid c
     expect((await start(task.id, 'codex')).status).toBe(200);
     await settle(task.id);
     const calls = asked.length;
-    // The event stream carries a small work-rows event from the existing listener.
+    // The rows' own event stream carries a small work-rows event.
     const event = await new Promise<WorkRowsSnapshot>((resolve, reject) => {
-      const req = http.get(`${url}/api/events`, { headers: { Accept: 'text/event-stream' } }, (res) => {
+      const req = http.get(`${url}/api/events?topics=work-rows`, { headers: { Accept: 'text/event-stream' } }, (res) => {
         let buffer = '';
         res.setEncoding('utf8');
         res.on('data', (chunk: string) => {
@@ -602,5 +609,374 @@ describe('N06, N07, A01, A03 and A38: the free Team works in turn with no paid c
     const rows = (await request<WorkRowsSnapshot>(`/projects/${projectId}/work/rows`)).data.rows;
     expect(rows.every((row) => row.payer !== 'nectovia-credits')).toBe(true);
     expect(rows[0]).toMatchObject({ label: 'ChatGPT', payer: 'your-subscription' });
+  });
+});
+
+// Review fixes on the first S1 patch, 2026-10-03.
+
+/** The project folder, where a test adds or removes documents the way a person would. */
+const folder = async () => (await state()).project.folder;
+const handOff = (body: Record<string, unknown>) => request(`/projects/${projectId}/handoffs`, 'POST', body);
+const retire = (handoffId: string) => request(`/projects/${projectId}/handoffs/${handoffId}`, 'DELETE');
+/** A Team member's own tool call, run under the Store lock as the team server runs it. */
+function asMember<T>(action: (team: TeamService) => Promise<T>): Promise<T> {
+  const store = app.locals.store as Store;
+  return store.locked(() => action(new TeamService(store)));
+}
+
+describe('review fixes: a card with hand-offs into it can always start', () => {
+  async function pair() {
+    const astra = await member('Astra', 'codex');
+    const bram = await member('Bram', 'claude-code', 'opus');
+    const first = await manualCard(astra, 'Draft the menu');
+    const second = await manualCard(astra, 'Proofread the menu');
+    expect((await accept(first)).status).toBe(200);
+    expect((await accept(second)).status).toBe(200);
+    expect((await assign(second.id, bram.slotId)).status).toBe(200);
+    const base = {
+      fromTaskId: first.id,
+      toTaskId: second.id,
+      fromSlot: astra.slotId,
+      toSlot: bram.slotId,
+      outcome: 'Drafted.',
+      checks: [] as string[],
+      openIssues: [] as string[],
+    };
+    return { second, base };
+  }
+
+  test('a ninth file across the hand-offs into one card is refused, since a start sends at most eight', async () => {
+    const { base } = await pair();
+    const names = Array.from({ length: 9 }, (_, index) => `Note ${index + 1}.md`);
+    for (const name of names) await fs.writeFile(path.join(await folder(), name), `# ${name}\n`, 'utf8');
+    expect((await handOff({ ...base, changedFiles: names.slice(0, 8) })).status).toBe(200);
+    const refused = await handOff({ ...base, changedFiles: [names[8]] });
+    expect(refused.status).toBe(409);
+    expect(refused.data.code).toBe('handoff_files_over_limit');
+    expect(refused.data.error).toBe(
+      'Proofread the menu would then have 9 files handed into it, and a start sends at most 8. Name fewer files, or retire an earlier hand-off.',
+    );
+    // A hand-off that adds no file of its own can't make the card harder to start.
+    expect((await handOff({ ...base, changedFiles: [names[0].toLowerCase()] })).status).toBe(200);
+    expect((await handOff({ ...base, changedFiles: [] })).status).toBe(200);
+    expect((await state()).manualHandoffs).toHaveLength(3);
+  });
+
+  test('hand-off files over 128 KB together are refused, measured as a start reads them', async () => {
+    const { base } = await pair();
+    await fs.writeFile(path.join(await folder(), 'Supplier list.md'), 'a'.repeat(100_000), 'utf8');
+    await fs.writeFile(path.join(await folder(), 'Price sheet.md'), 'b'.repeat(30_000), 'utf8');
+    expect((await handOff({ ...base, changedFiles: ['Supplier list.md'] })).status).toBe(200);
+    const refused = await handOff({ ...base, changedFiles: ['Price sheet.md'] });
+    expect(refused.status).toBe(409);
+    expect(refused.data.code).toBe('handoff_files_over_limit');
+    expect(refused.data.error).toBe(
+      'The files handed into Proofread the menu would then come to 130 KB, and a start sends at most 128 KB. Name fewer files, or retire an earlier hand-off.',
+    );
+    expect((await state()).manualHandoffs).toHaveLength(1);
+  });
+
+  test('a named file that left the project no longer blocks the start, and History says it was not sent', async () => {
+    const { second, base } = await pair();
+    expect((await handOff({ ...base, changedFiles: ['Fall menu.md', 'Opening notes.txt'] })).status).toBe(200);
+    await fs.rm(path.join(await folder(), 'Opening notes.txt'));
+    // The file still in the project is still required, and a refused start notes nothing.
+    const before = (await state()).history.length;
+    const refused = await start(second.id, 'claude-code', []);
+    expect(refused.status).toBe(409);
+    expect(refused.data).toMatchObject({ code: 'handoff_files_uncovered', files: ['Fall menu.md'] });
+    expect(refused.data.error).toBe(
+      'The hand-off into this card names Fall menu.md. Add it to the documents you send, then start again.',
+    );
+    expect((await state()).history.length).toBe(before);
+    expect((await start(second.id, 'claude-code', ['Fall menu.md'])).status).toBe(200);
+    const current = await settle(second.id);
+    expect(asked).toEqual(['claude-code']);
+    expect(current.history.slice(before).filter((entry) => entry.kind === 'manual-handoff-files-gone')).toEqual([
+      expect.objectContaining({
+        sentence: "Opening notes.txt from the hand-off is no longer in this project, so it wasn't sent.",
+        taskId: second.id,
+        actor: 'diomedes',
+      }),
+    ]);
+  });
+
+  test('a retired hand-off no longer blocks a start; its record stays, and retiring it again changes nothing', async () => {
+    const { second, base } = await pair();
+    const created = (await handOff({ ...base, changedFiles: ['Fall menu.md'] })).data as ManualHandoff;
+    expect((await start(second.id, 'claude-code', [])).status).toBe(409);
+    const before = (await state()).history.length;
+    const retired = await retire(created.id);
+    expect(retired.status).toBe(200);
+    expect(retired.data).toMatchObject({ id: created.id, changedFiles: ['Fall menu.md'], retiredAt: expect.any(String) });
+    expect(manualHandoffSchema.safeParse(retired.data).success).toBe(true);
+    const current = await state();
+    expect(current.manualHandoffs).toEqual([retired.data]);
+    expect(current.history.slice(before).map((entry) => [entry.kind, entry.sentence, entry.actor, entry.taskId])).toEqual([
+      ['manual-handoff-retired', 'You retired the hand-off from Draft the menu to Proofread the menu', 'you', second.id],
+    ]);
+    const again = await retire(created.id);
+    expect(again.status).toBe(200);
+    expect(again.data).toEqual(retired.data);
+    expect((await state()).history.length).toBe(before + 1);
+    expect((await start(second.id, 'claude-code', [])).status).toBe(200);
+    await settle(second.id);
+    expect(asked).toEqual(['claude-code']);
+  });
+
+  test('retiring a hand-off that does not exist is refused', async () => {
+    await pair();
+    const refused = await retire('H-nobody');
+    expect(refused.status).toBe(404);
+    expect(refused.data).toMatchObject({ code: 'handoff_missing', error: 'This hand-off was not found.' });
+  });
+
+  test('the per-project cap counts live hand-offs only', async () => {
+    const { base } = await pair();
+    const store = app.locals.store as Store;
+    await store.locked(async () => {
+      const current = store.state(projectId);
+      current.manualHandoffs = Array.from({ length: MANUAL_HANDOFF_LIMITS.perProject }, (_, index) => ({
+        id: `H-old-${index}`,
+        ...base,
+        changedFiles: [],
+        createdBy: 'you' as const,
+        createdAt: new Date().toISOString(),
+      }));
+      await store.persist(current);
+    });
+    const full = await handOff({ ...base, changedFiles: [] });
+    expect(full.status).toBe(409);
+    expect(full.data).toMatchObject({
+      code: 'handoff_limit',
+      error: 'This project already keeps 500 live hand-offs, the most it can. Retire one, then hand off again.',
+    });
+    expect((await retire('H-old-0')).status).toBe(200);
+    expect((await handOff({ ...base, changedFiles: [] })).status).toBe(200);
+    const records = (await state()).manualHandoffs!;
+    expect(records).toHaveLength(MANUAL_HANDOFF_LIMITS.perProject + 1);
+    expect(records.filter((item) => !item.retiredAt)).toHaveLength(MANUAL_HANDOFF_LIMITS.perProject);
+  });
+
+  test('a hand-off names only documents the Board can send with a start', async () => {
+    const { base } = await pair();
+    await fs.writeFile(path.join(await folder(), 'Patio layout.svg'), '<svg xmlns="http://www.w3.org/2000/svg"/>', 'utf8');
+    const refused = await handOff({ ...base, changedFiles: ['Patio layout.svg'] });
+    expect(refused.status).toBe(400);
+    expect(refused.data.error).toBe("Patio layout.svg isn't one of this project's text documents.");
+  });
+});
+
+describe("review fixes: a member's tools can't reassign or remove a manual card", () => {
+  test('an owner change on a manual card is refused with a way to ask; the same owner is no change', async () => {
+    const astra = await member('Astra', 'codex');
+    const bram = await member('Bram', 'claude-code', 'opus');
+    const task = await manualCard(astra, 'Check the supplier quotes');
+    const entries = (await state()).history.length;
+    for (const owner of [bram.slotId, 'owner'])
+      await expect(
+        asMember((team) => team.taskUpdateAsMember(projectId, astra, { task_id: task.id, owner, description: 'Moved' })),
+      ).rejects.toMatchObject({ status: 409, message: MANUAL_CARD_ASSIGN_REFUSED });
+    expect(await card(task.id)).toMatchObject({ assignedTo: astra.slotId, description: '' });
+    expect((await state()).history.length).toBe(entries);
+    const same = await asMember((team) => team.taskUpdateAsMember(projectId, astra, { task_id: task.id, owner: astra.slotId }));
+    expect(same.owner).toBe(astra.slotId);
+  });
+
+  test('removing a manual card is refused, in the Inbox and once accepted', async () => {
+    const astra = await member('Astra', 'codex');
+    const task = await manualCard(astra, 'Tidy the notes');
+    const remove = () => asMember((team) => team.taskUpdateAsMember(projectId, astra, { task_id: task.id, status: 'deleted' }));
+    await expect(remove()).rejects.toMatchObject({ status: 409, message: MANUAL_CARD_DELETE_REFUSED });
+    expect((await accept(task)).status).toBe(200);
+    await expect(remove()).rejects.toMatchObject({ status: 409, message: MANUAL_CARD_DELETE_REFUSED });
+    expect((await card(task.id)).deletedAt ?? null).toBeNull();
+  });
+
+  test('a stopped member is refused as the owner a tool names, when it creates or updates a card', async () => {
+    const astra = await member('Astra', 'codex');
+    const bram = await member('Bram', 'claude-code', 'opus');
+    expect((await request(`/projects/${projectId}/team/members/${bram.slotId}/stop`, 'POST', {})).status).toBe(200);
+    const stopped = "Bram was stopped and can't take work. Choose a current member.";
+    const tasks = (await state()).tasks.length;
+    await expect(
+      asMember((team) => team.taskCreateAsMember(projectId, astra, { subject: 'Count the chairs', owner: bram.slotId })),
+    ).rejects.toMatchObject({ status: 409, message: stopped });
+    expect((await state()).tasks).toHaveLength(tasks);
+    const plain = (await request<Task>(`/projects/${projectId}/tasks`, 'POST', { name: 'Order napkins' })).data;
+    await expect(
+      asMember((team) => team.taskUpdateAsMember(projectId, astra, { task_id: plain.id, owner: bram.slotId })),
+    ).rejects.toMatchObject({ status: 409, message: stopped });
+    expect((await card(plain.id)).assignedTo ?? null).toBeNull();
+  });
+
+  test('a card that is not manual still changes owner and can be removed through the tools', async () => {
+    const astra = await member('Astra', 'codex');
+    const bram = await member('Bram', 'claude-code', 'opus');
+    const plain = (await request<Task>(`/projects/${projectId}/tasks`, 'POST', { name: 'Order napkins' })).data;
+    expect((await asMember((team) => team.taskUpdateAsMember(projectId, astra, { task_id: plain.id, owner: bram.slotId }))).owner).toBe(
+      bram.slotId,
+    );
+    expect((await card(plain.id)).assignedTo).toBe(bram.slotId);
+    expect((await asMember((team) => team.taskUpdateAsMember(projectId, astra, { task_id: plain.id, owner: 'owner' }))).owner).toBe(
+      'owner',
+    );
+    await asMember((team) => team.taskUpdateAsMember(projectId, astra, { task_id: plain.id, status: 'deleted' }));
+    expect((await card(plain.id)).deletedAt).toBeTruthy();
+    // A member's new card may still name another current member as its owner, for the person to accept.
+    const made = await asMember((team) => team.taskCreateAsMember(projectId, astra, { subject: 'Call the supplier', owner: bram.slotId }));
+    expect(made.owner).toBe(bram.slotId);
+  });
+});
+
+describe('review fixes: a wake never runs a card without its hand-off files, and rows never carry its mail', () => {
+  /** A person's Board card assigned to Bram, with a hand-off into it from Astra's card. */
+  async function handedCard() {
+    const astra = await member('Astra', 'codex');
+    const bram = await member('Bram', 'codex');
+    const draft = (await request<Task>(`/projects/${projectId}/tasks`, 'POST', { name: 'Draft the order' })).data;
+    const order = (await request<Task>(`/projects/${projectId}/tasks`, 'POST', { name: 'Place the order' })).data;
+    expect((await assign(draft.id, astra.slotId)).status).toBe(200);
+    expect((await assign(order.id, bram.slotId)).status).toBe(200);
+    const handed = await handOff({
+      fromTaskId: draft.id,
+      toTaskId: order.id,
+      fromSlot: astra.slotId,
+      toSlot: bram.slotId,
+      outcome: 'Drafted.',
+      changedFiles: ['Fall menu.md'],
+      checks: [],
+      openIssues: [],
+    });
+    expect(handed.status).toBe(200);
+    return { bram, order };
+  }
+  /** A wake sends Team mail, which is conversation history, so the project has to share it. */
+  async function shareConversation() {
+    const policy = (await request<CloudSharingPolicy>(`/projects/${projectId}/cloud-sharing`)).data;
+    const shared = await request(`/projects/${projectId}/cloud-sharing`, 'PUT', {
+      expectedVersion: policy.version,
+      routes: policy.routes,
+      documents: policy.documents,
+      shareConversationHistory: true,
+      shareReviewPackets: false,
+    });
+    expect(shared.status).toBe(200);
+  }
+
+  test('a member whose assigned card has a live hand-off into it wakes on a card of its own, titled in rows by whose wake it is', async () => {
+    const { bram, order } = await handedCard();
+    await shareConversation();
+    const mail = 'Please ring the squash grower about Thursday.';
+    expect((await request(`/projects/${projectId}/team/messages`, 'POST', { to: bram.slotId, content: mail })).status).toBe(200);
+    expect((await request(`/projects/${projectId}/team/members/${bram.slotId}/wake`, 'POST', {})).status).toBe(200);
+    const current = await until((value) =>
+      value.sessions.some((session) => session.slotId === bram.slotId && ['done', 'stopped', 'failed'].includes(session.state)),
+    );
+    const session = current.sessions.find((item) => item.slotId === bram.slotId)!;
+    expect(session.taskId).not.toBe(order.id);
+    expect(current.sessions.filter((item) => item.taskId === order.id)).toEqual([]);
+    const made = current.tasks.find((task) => task.id === session.taskId)!;
+    expect(made.createdFrom).toBe('team-mail');
+    expect(made.description).toContain(mail);
+    expect(asked).toEqual(['codex']);
+    // The Board keeps the card's name; the rows never carry it or the mail.
+    const rows = (await request<WorkRowsSnapshot>(`/projects/${projectId}/work/rows`)).data;
+    expect(rows.rows).toEqual([expect.objectContaining({ rowId: `session:${session.id}`, kind: 'team-member', title: 'Bram is answering Team mail' })]);
+    const wire = JSON.stringify(rows);
+    expect(wire).not.toContain('squash');
+    expect(wire).not.toContain(made.name);
+  });
+
+  test("the wake binds the member's next open card instead of the hand-off card", async () => {
+    const { bram, order } = await handedCard();
+    const sweep = (await request<Task>(`/projects/${projectId}/tasks`, 'POST', { name: 'Sweep the patio' })).data;
+    expect((await assign(sweep.id, bram.slotId)).status).toBe(200);
+    await shareConversation();
+    expect((await request(`/projects/${projectId}/team/messages`, 'POST', { to: bram.slotId, content: 'Sweep first.' })).status).toBe(200);
+    expect((await request(`/projects/${projectId}/team/members/${bram.slotId}/wake`, 'POST', {})).status).toBe(200);
+    const current = await until((value) =>
+      value.sessions.some((session) => session.slotId === bram.slotId && ['done', 'stopped', 'failed'].includes(session.state)),
+    );
+    expect(current.sessions.map((session) => session.taskId)).toEqual([sweep.id]);
+    expect(current.tasks.find((task) => task.id === sweep.id)!.createdFrom).toBeUndefined();
+    expect(current.tasks.some((task) => task.createdFrom === 'team-mail')).toBe(false);
+    expect(current.sessions.some((session) => session.taskId === order.id)).toBe(false);
+  });
+
+  test('a direct start that binds a hand-off card without its files is refused', async () => {
+    const { order } = await handedCard();
+    const ask = (sources: string[]) =>
+      request(`/projects/${projectId}/ask`, 'POST', {
+        mode: 'build',
+        route: 'codex',
+        text: 'Place the order with the supplier.',
+        sources,
+        consent: true,
+        attachedTo: { kind: 'task', ref: order.id },
+      });
+    const refused = await ask([]);
+    expect(refused.status).toBe(409);
+    expect(refused.data).toMatchObject({ code: 'handoff_files_uncovered', files: ['Fall menu.md'] });
+    expect((await state()).sessions).toEqual([]);
+    expect(asked).toEqual([]);
+    expect((await ask(['Fall menu.md'])).status).toBe(200);
+    await until((value) => value.sessions.some((session) => ['done', 'stopped', 'failed'].includes(session.state)));
+    expect(asked).toEqual(['codex']);
+  });
+});
+
+describe('review fixes: the rows stream carries rows only, and the main stream carries no rows', () => {
+  /** The event names a stream carried from its opening until `ms` after `poke` finished. */
+  function streamed(route: string, poke: () => Promise<unknown>, ms = 300): Promise<string[]> {
+    return new Promise((resolve, reject) => {
+      let buffer = '';
+      let poked = false;
+      const req = http.get(`${url}/api${route}`, { headers: { Accept: 'text/event-stream' } }, (res) => {
+        res.setEncoding('utf8');
+        res.on('data', (chunk: string) => {
+          buffer += chunk;
+          if (poked || !buffer.includes('event: ready')) return;
+          poked = true;
+          poke().then(
+            () =>
+              setTimeout(() => {
+                req.destroy();
+                resolve([...buffer.matchAll(/^event: (.+)$/gm)].map((match) => match[1]));
+              }, ms),
+            reject,
+          );
+        });
+      });
+      req.on('error', (error) => (poked ? undefined : reject(error)));
+    });
+  }
+  async function runOnce() {
+    const astra = await member('Astra', 'codex');
+    const task = await manualCard(astra, 'Draft the menu');
+    expect((await accept(task)).status).toBe(200);
+    return async () => {
+      expect((await start(task.id, 'codex')).status).toBe(200);
+      await settle(task.id);
+    };
+  }
+
+  test('topics=work-rows sends the ready frame and work-rows frames, never state', async () => {
+    const seen = await streamed('/events?topics=work-rows', await runOnce());
+    expect(seen[0]).toBe('ready');
+    expect(seen).toContain('work-rows');
+    expect([...new Set(seen)].sort()).toEqual(['ready', 'work-rows']);
+  });
+
+  test('the default stream sends state and never work-rows', async () => {
+    const seen = await streamed('/events', await runOnce());
+    expect(seen).toContain('state');
+    expect(seen).toContain('tasks');
+    expect(seen).not.toContain('work-rows');
+  });
+
+  test('an unknown topic is refused', async () => {
+    const refused = await request('/events?topics=state');
+    expect(refused.status).toBe(400);
   });
 });

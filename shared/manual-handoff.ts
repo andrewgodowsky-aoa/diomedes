@@ -3,11 +3,15 @@
  * next when the person passes work from one member to another by hand. The person writes it;
  * no model summarises anything. The next card's sources start as `changedFiles`, and starting
  * that card still asks for consent naming its engine and its documents: a start whose sources
- * leave out a file a hand-off names is refused until they include it (N05).
+ * leave out a file a live hand-off names is refused until they include it (N05). A named file
+ * that is no longer in the project can't be sent, so it never holds a start back.
  *
- * Pure: the record, its caps and the strict validators. The server stamps `id`, `createdBy`
- * and `createdAt`, checks the tasks, slots and files against the project, and persists
- * (server/manual-teams.ts).
+ * The person can retire a hand-off. Its record stays, with `retiredAt`, and it no longer counts
+ * for a start, for the files a card's hand-offs may name or for the per-project cap.
+ *
+ * Pure: the record, its caps and the strict validators. The server stamps `id`, `createdBy`,
+ * `createdAt` and `retiredAt`, checks the tasks, slots and files against the project, and
+ * persists (server/manual-teams.ts).
  */
 import { z } from 'zod';
 
@@ -15,6 +19,8 @@ export interface ManualHandoff {
   id: string; fromTaskId: string; toTaskId: string; fromSlot: string; toSlot: string;
   outcome: string; changedFiles: string[]; checks: string[]; openIssues: string[];
   createdBy: 'you'; createdAt: string;
+  /** When the person retired it. Absent while it is live. */
+  retiredAt?: string;
 }
 
 export const MANUAL_HANDOFF_CONTRACT_VERSION = 1 as const;
@@ -31,7 +37,7 @@ export const MANUAL_HANDOFF_LIMITS = Object.freeze({
   checks: 10,
   openIssues: 10,
   line: 300,
-  /** Hand-offs kept per project; the oldest stays and a new one past this is refused. */
+  /** Live hand-offs per project. A new one past this is refused; a retired one doesn't count. */
   perProject: 500,
 });
 
@@ -70,6 +76,7 @@ export const manualHandoffSchema = z
     ...fields,
     createdBy: z.literal('you'),
     createdAt: z.iso.datetime(),
+    retiredAt: z.iso.datetime().optional(),
   })
   .refine(differentCards, { message: 'Hand off to a different card.' });
 
@@ -93,14 +100,19 @@ export function manualHandoffProblem(error: z.ZodError): string {
   return 'Check the hand-off and send it again.';
 }
 
-/** Hand-offs into this card, newest first. */
+/** Live (not retired) hand-offs into this card, newest first. */
 export function handoffsInto(records: readonly ManualHandoff[] | undefined, taskId: string): ManualHandoff[] {
-  return (records ?? []).filter((item) => item.toTaskId === taskId).reverse();
+  return (records ?? []).filter((item) => item.toTaskId === taskId && !item.retiredAt).reverse();
+}
+
+/** Whether a live hand-off goes into this card, so its start has to send the hand-off's files. */
+export function hasLiveHandoffInto(records: readonly ManualHandoff[] | undefined, taskId: string): boolean {
+  return (records ?? []).some((item) => item.toTaskId === taskId && !item.retiredAt);
 }
 
 /**
- * Every file a hand-off into this card names that `sources` leaves out, compared the way a
- * Work start compares names (case-insensitively). Empty when the sources cover them all.
+ * Every file a live hand-off into this card names that `sources` leaves out, compared the way
+ * a Work start compares names (case-insensitively). Empty when the sources cover them all.
  */
 export function uncoveredHandoffFiles(
   records: readonly ManualHandoff[] | undefined,
@@ -110,7 +122,7 @@ export function uncoveredHandoffFiles(
   const chosen = new Set(sources.map((source) => source.replaceAll('\\', '/').toLowerCase()));
   const missing: string[] = [];
   for (const record of records ?? [])
-    if (record.toTaskId === taskId)
+    if (record.toTaskId === taskId && !record.retiredAt)
       for (const name of record.changedFiles)
         if (!chosen.has(name.toLowerCase()) && !missing.some((item) => item.toLowerCase() === name.toLowerCase()))
           missing.push(name);

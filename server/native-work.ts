@@ -175,8 +175,10 @@ interface NativeRun {
   releaseToken?: () => void;
   redact?: (text: string) => string;
 }
-const MAX_FILES = 8;
-const MAX_BYTES = 128_000;
+/** The most source documents one Work start sends; a manual hand-off's files must fit (server/manual-teams.ts). */
+export const MAX_FILES = 8;
+/** The most source text one Work start sends, in bytes; a manual hand-off's files must fit too. */
+export const MAX_BYTES = 128_000;
 const RAW_REPLY_CAP = 4000;
 const active = (session: Session) => ['queued', 'working', 'waiting'].includes(session.state);
 const object = (value: unknown): value is Record<string, unknown> =>
