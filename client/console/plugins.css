@@ -1,0 +1,41 @@
+.plugin-settings,
+.plugin-project,
+.plugin-details {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.plugin-project {
+  display: grid;
+  gap: 6px;
+  margin-block: 16px;
+}
+
+.plugin-project select {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.plugin-details {
+  margin-block: 12px;
+}
+
+.plugin-details summary {
+  cursor: pointer;
+}
+
+.plugin-details dl {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 6px 12px;
+}
+
+.plugin-details dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.plugin-settings .pack-settings {
+  margin-top: 16px;
+}
