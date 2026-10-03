@@ -287,6 +287,8 @@ const BROWSER_SENTENCES = {
   notSetUp: "Sign-in through the browser isn't set up on this installation.",
   noSafeStorage: "This computer can't keep a sign-in in protected storage, so you can't sign in here.",
   waiting: 'Finish signing in in your browser.',
+  accepting: 'Signing you in.',
+  unfinished: 'Sign-in could not finish. Try again.',
   notOpened: "The browser couldn't open for sign-in. Try again.",
   notForUs: "That sign-in isn't for the Nectovia account service. Sign in again.",
   refused: "The Nectovia account service didn't accept that sign-in. Sign in again.",
@@ -375,6 +377,10 @@ export class AccountSessionService {
   private browserChanges = 0;
   private readonly closingBrowserSessions = new Set<{ sessionId: string }>();
   private following: Promise<void> = Promise.resolve();
+  /** Browser reconciles queued and not yet settled: what separates "signing you in" from a silent end. */
+  private reconciling = 0;
+  /** The errors `signedOutError` made, so a reconcile can tell being superseded from failing. */
+  private readonly supersessions = new WeakSet<object>();
 
   constructor(
     readonly backend: AccountBackend,
@@ -472,7 +478,9 @@ export class AccountSessionService {
   }
 
   private signedOutError() {
-    return new ApiError(401, 'Sign in to use Nectovia.', { code: SIGN_IN_REQUIRED });
+    const error = new ApiError(401, 'Sign in to use Nectovia.', { code: SIGN_IN_REQUIRED });
+    this.supersessions.add(error);
+    return error;
   }
 
   private requireCurrent(): Current {
@@ -821,12 +829,26 @@ export class AccountSessionService {
   /** Follow the WorkOS sign-in, one step at a time: begin the session when it has one, end it when it has none. */
   private followBrowser(): Promise<void> {
     const lifecycle = this.lifecycle;
-    const next = this.following.then(() => this.reconcileBrowser(lifecycle));
+    this.reconciling++;
+    const next = this.following.then(() => this.reconcileBrowser(lifecycle)).finally(() => void this.reconciling--);
     this.following = next.catch(() => {});
     return next;
   }
 
   private async reconcileBrowser(lifecycle: number) {
+    try {
+      await this.reconcileBrowserSteps(lifecycle);
+    } catch (error) {
+      // A newer attempt, a sign-out or a cancel owns the view when this one was superseded. Otherwise a
+      // WorkOS sign-in that did not become an account session says so.
+      const superseded = this.lifecycle !== lifecycle || this.supersessions.has(error as object);
+      if (!superseded && !this.current && !this.browserFailure && this.browser?.identity.status().status === 'signed-in')
+        this.browserFailure = BROWSER_SENTENCES.unfinished;
+      throw error;
+    }
+  }
+
+  private async reconcileBrowserSteps(lifecycle: number) {
     this.assertLifecycle(lifecycle);
     const browser = this.browser;
     if (!browser || !this.browserMode()) return;
@@ -922,6 +944,9 @@ export class AccountSessionService {
     const now = identity.status();
     if (now.status === 'unavailable') return { status: 'unavailable', message: BROWSER_SENTENCES.noSafeStorage };
     if (now.status === 'signing-in') return { status: 'waiting', message: BROWSER_SENTENCES.waiting };
+    // WorkOS has the sign-in and the account service has not taken it yet.
+    if (now.status === 'signed-in' && !this.current && this.reconciling > 0)
+      return { status: 'accepting', message: BROWSER_SENTENCES.accepting };
     const failure = this.browserFailure ?? (now.message || null);
     return failure ? { status: 'failed', message: failure } : { status: 'ready', message: '' };
   }

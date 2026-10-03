@@ -35,7 +35,7 @@ import { EngineService } from '../server/engines/service';
 import { createFauxCloud, FAUX_BACKEND_LABEL, type FauxCloud } from '../services/control-plane/src/faux/cloud';
 import { DEMO_ACCOUNTS, seedDemo } from '../services/control-plane/src/faux/seed';
 import { createWorkOSStandIn, STANDIN_AUDIENCE, STANDIN_CLIENT_ID, WORKOS_ISSUER } from '../services/control-plane/src/faux/workos-standin';
-import type { AccountStateView } from '../shared/accounts';
+import { browserSignInPending, type AccountStateView } from '../shared/accounts';
 
 const SERVICE = 'https://accounts.diomedes.net';
 const ORIGIN = 'http://127.0.0.1:43611';
@@ -48,6 +48,8 @@ const packaged = browserSignIn({ env: {}, packaged: true, deployment })!;
 const OWNER = DEMO_ACCOUNTS.owner.email;
 const SENTENCES = {
   waiting: 'Finish signing in in your browser.',
+  accepting: 'Signing you in.',
+  unfinished: 'Sign-in could not finish. Try again.',
   notForUs: "That sign-in isn't for the Nectovia account service. Sign in again.",
   refused: "The Nectovia account service didn't accept that sign-in. Sign in again.",
   unreachable: "You're signed in with WorkOS, but the Nectovia account service didn't answer. Check the connection, then try again.",
@@ -64,6 +66,8 @@ let calls: string[];
 let workos: string[];
 /** The account service stops answering (its front door still does). */
 let down: boolean;
+/** When set, the account service holds its answer to the session call until this settles. */
+let holdSession: Promise<void> | null;
 const owned: Array<{ dispose(): void }> = [];
 
 beforeEach(async () => {
@@ -71,6 +75,7 @@ beforeEach(async () => {
   calls = [];
   workos = [];
   down = false;
+  holdSession = null;
   cloud = await createFauxCloud({ file: null, identity: 'workos-standin' });
   orgs = (await seedDemo(cloud)).organizations!;
   const loopback = globalThis.fetch;
@@ -99,6 +104,7 @@ async function deployedService(request: Request): Promise<Response> {
   // The faux cloud describes itself here; the deployed Worker checks the bearer first, and refuses.
   if (pathname === '/faux/status') return Response.json({ error: 'A verified bearer session is required.' }, { status: 401 });
   if (down) throw new TypeError('fetch failed');
+  if (pathname === '/account/session' && holdSession) await holdSession;
   return cloud.handle(request);
 }
 const packagedBackend = () =>
@@ -194,6 +200,15 @@ async function accountSession(identity: BrowserIdentity | null, accepts: Browser
   await session.init();
   return session;
 }
+const deferred = () => {
+  let release!: () => void;
+  const promise = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return { promise, release };
+};
+/** Waits for every reconcile the session has queued, which a held service answer keeps open. */
+const settled = (session: AccountSessionService) => (session as unknown as { following: Promise<void> }).following;
 const signedIn = (session: AccountSessionService) => vi.waitFor(() => expect(session.state().signedIn).toBe(true));
 
 /** Sign the owner in through the browser, start to finish. */
@@ -433,6 +448,135 @@ describe('what the account service says about a browser sign-in', () => {
   });
 });
 
+describe('between the browser step and the account service accepting the sign-in', () => {
+  test('the view says it is signing the person in, not that nothing has started, until the service answers', async () => {
+    const { auth, opened } = launch(protectedStorage().open());
+    const session = await accountSession(auth.identity);
+    await session.signInWithBrowser();
+    const gate = deferred();
+    holdSession = gate.promise;
+    expect(await auth.handleCallback(await signInAtWorkOS(opened, OWNER))).toBe(true);
+    // The callback is in, the account service has not answered: signed out, and not "ready".
+    expect(session.state()).toMatchObject({ signedIn: false, browser: { status: 'accepting', message: SENTENCES.accepting } });
+    await vi.waitFor(() => expect(accountCalls()).toContain('GET /account/session'));
+    expect(session.state()).toMatchObject({ signedIn: false, browser: { status: 'accepting', message: SENTENCES.accepting } });
+    gate.release();
+    await signedIn(session);
+    expect(session.state()).toMatchObject({ signedIn: true, browser: { status: 'ready', message: '' } });
+  });
+
+  test('a reconcile that fails before the account session exists ends as failed, not ready', async () => {
+    const backend = await packagedBackend();
+    const real = backend.client.session.bind(backend.client);
+    // The service answers, then the app cannot use its answer: nothing has set the session yet.
+    vi.spyOn(backend.client, 'session').mockImplementation(async (token) => {
+      const page = await real(token);
+      return {
+        ...page,
+        get organizations(): typeof page.organizations {
+          throw new Error('The answer could not be read.');
+        },
+      };
+    });
+    const identity = identityWith(await ownerToken());
+    const session = await accountSession(identity, packaged, undefined, backend);
+    expect(session.state()).toMatchObject({ signedIn: false, browser: { status: 'failed', message: SENTENCES.unfinished } });
+    // The WorkOS sign-in is kept, as for an unreachable service.
+    expect(identity.signedOut).toBe(0);
+  });
+
+  test('signing out while the service is still answering leaves no failure and no "signing you in"', async () => {
+    const { auth, opened } = launch(protectedStorage().open());
+    const session = await accountSession(auth.identity);
+    await session.signInWithBrowser();
+    const gate = deferred();
+    holdSession = gate.promise;
+    expect(await auth.handleCallback(await signInAtWorkOS(opened, OWNER))).toBe(true);
+    expect(session.state().browser?.status).toBe('accepting');
+    const out = await session.signOut();
+    expect(out).toMatchObject({ signedIn: false, browser: { status: 'ready', message: '' } });
+    gate.release();
+    await settled(session);
+    expect(session.state()).toMatchObject({ signedIn: false, browser: { status: 'ready', message: '' } });
+  });
+
+  test('a cancel followed by a late failure of the superseded reconcile leaves no failure', async () => {
+    const { auth, opened } = launch(protectedStorage().open());
+    const session = await accountSession(auth.identity);
+    await session.signInWithBrowser();
+    // The account service answered; the step after it is held, then fails with an error of its own.
+    const gate = deferred();
+    const loadAccess = vi.spyOn(session as unknown as { loadAccess(): Promise<void> }, 'loadAccess').mockImplementationOnce(async () => {
+      await gate.promise;
+      throw new Error('The write did not finish.');
+    });
+    expect(await auth.handleCallback(await signInAtWorkOS(opened, OWNER))).toBe(true);
+    await vi.waitFor(() => expect(loadAccess).toHaveBeenCalledTimes(1));
+    expect(session.state().browser?.status).toBe('accepting');
+    const out = await session.signOut();
+    expect(out).toMatchObject({ signedIn: false, browser: { status: 'ready', message: '' } });
+    gate.release();
+    await settled(session);
+    expect(session.state()).toMatchObject({ signedIn: false, browser: { status: 'ready', message: '' } });
+  });
+
+  test('a reconcile that a newer attempt superseded sets no failure, though the identity still has a sign-in', async () => {
+    const identity = identityWith(null);
+    let changed = () => {};
+    identity.onChange = (listener: () => void) => {
+      changed = listener;
+      return () => {};
+    };
+    const session = await accountSession(identity);
+    // The launch reconcile found nothing. Now WorkOS keeps a sign-in for this computer.
+    const token = await ownerToken();
+    identity.session = async () => token;
+    identity.status = () => ({ status: 'signed-in' as const, message: '' });
+    const gate = deferred();
+    const loadAccess = vi.spyOn(session as unknown as { loadAccess(): Promise<void> }, 'loadAccess').mockImplementationOnce(async () => {
+      await gate.promise;
+      throw new Error('The write did not finish.');
+    });
+    changed();
+    await vi.waitFor(() => expect(loadAccess).toHaveBeenCalledTimes(1));
+    // A newer attempt moves the lifecycle and queues behind the held one; it ends quietly.
+    changed();
+    identity.session = async () => null;
+    gate.release();
+    await settled(session);
+    expect(identity.status().status).toBe('signed-in');
+    expect(session.state()).toMatchObject({ signedIn: false, browser: { status: 'ready', message: '' } });
+  });
+
+  test('a reconcile that ends the local session after WorkOS ended its own says nothing, though the end failed', async () => {
+    const identity = identityWith(await ownerToken());
+    let changed = () => {};
+    identity.onChange = (listener: () => void) => {
+      changed = listener;
+      return () => {};
+    };
+    const session = await accountSession(identity);
+    expect(session.state().signedIn).toBe(true);
+    // WorkOS ends the session elsewhere. Ending the local one then fails to write.
+    await identity.signOut();
+    vi.spyOn(session as unknown as { save(): Promise<void> }, 'save').mockRejectedValueOnce(new Error('The write did not finish.'));
+    changed();
+    await settled(session);
+    expect(session.state()).toMatchObject({ signedIn: false, browser: { status: 'ready', message: '' } });
+  });
+});
+
+describe('when the gate keeps asking whether the sign-in arrived', () => {
+  test('it does while the browser is open or the service is accepting, and not otherwise', () => {
+    expect(browserSignInPending({ status: 'waiting', message: SENTENCES.waiting })).toBe(true);
+    expect(browserSignInPending({ status: 'accepting', message: SENTENCES.accepting })).toBe(true);
+    expect(browserSignInPending({ status: 'ready', message: '' })).toBe(false);
+    expect(browserSignInPending({ status: 'failed', message: SENTENCES.unfinished })).toBe(false);
+    expect(browserSignInPending({ status: 'unavailable', message: SENTENCES.notSetUp })).toBe(false);
+    expect(browserSignInPending(null)).toBe(false);
+  });
+});
+
 describe('renewing the bearer', () => {
   test('a bearer near its end is renewed through WorkOS, and the kept sign-in follows', async () => {
     let clock = Date.now();
@@ -561,8 +705,20 @@ describe('the host API the Console uses', () => {
     expect(await view('/account')).toMatchObject({ signedIn: false, browser: { status: 'ready' } });
     expect((await call('/settings')).status).toBe(401);
     expect(await view('/account/browser-sign-in', 'POST')).toMatchObject({ browser: { status: 'waiting', message: SENTENCES.waiting } });
+    // The account service answers the session call late: the gate polls GET /account in that gap.
+    const gate = deferred();
+    holdSession = gate.promise;
     expect(await auth.handleCallback(await signInAtWorkOS(opened, OWNER))).toBe(true);
-    await vi.waitFor(async () => expect((await view('/account')).signedIn).toBe(true));
+    const seen: AccountStateView[] = [await view('/account')];
+    expect(seen[0]).toMatchObject({ signedIn: false, browser: { status: 'accepting', message: SENTENCES.accepting } });
+    gate.release();
+    await vi.waitFor(async () => {
+      const next = await view('/account');
+      seen.push(next);
+      expect(next.signedIn).toBe(true);
+    });
+    // Every answer is a signed-in one, or one the gate keeps polling through: never "ready" and signed out.
+    for (const answer of seen) expect(answer.signedIn || browserSignInPending(answer.browser), JSON.stringify(answer.browser)).toBe(true);
     expect((await call('/settings')).status).toBe(200);
     expect(await view('/account/sign-out', 'POST')).toMatchObject({ signedIn: false });
     expect((await call('/settings')).status).toBe(401);
