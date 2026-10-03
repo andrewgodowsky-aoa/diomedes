@@ -4,6 +4,8 @@
  * turns the setting on, registers, dials out to the business's relay hub over a
  * real WebSocket, proves its key, and shows online to a phone's presence read.
  * Only the account service's clock is shifted, to reach the hub's recheck.
+ * The last part opens a phone's own socket to the same hub and answers its
+ * commands with the desktop's real paths (relay plan steps 3 and 4).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import dgram from 'node:dgram';
@@ -20,13 +22,18 @@ import { testOnlySecretBox } from '../server/connection-secrets';
 import { EngineService } from '../server/engines/service';
 import { computerLabel, openRelayKey, publicHalf } from '../server/relay/keys';
 import { LINK_SENTENCES } from '../server/relay/link';
+import { ALREADY_ANSWERED } from '../server/relay/messages';
 import { PHONE_RELAY_SENTENCES } from '../server/relay/service';
 import { FAUX_BACKEND_LABEL } from '../services/control-plane/src/faux/cloud';
 import { DEMO_ACCOUNTS, FAUX_DEMO_PASSWORD, type DemoAccount } from '../services/control-plane/src/faux/seed';
 import { startFauxCloud, type RunningFauxCloud } from '../services/control-plane/src/faux/server';
-import { RELAY_TIMINGS } from '../services/control-plane/src/relay/protocol';
+import {
+  RELAY_TIMINGS, parsePhoneBound, phoneRelayUrl, type DesktopToPhoneMessage, type ResultMessage,
+} from '../services/control-plane/src/relay/protocol';
 import { PHONE_RELAY_NOT_INCLUDED_REASON } from '../shared/access';
+import type { AccountStateView } from '../shared/accounts';
 import type { PhoneRelayView } from '../shared/phone-relay';
+import type { ProjectState } from '../shared/types';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const headers = { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' };
@@ -282,7 +289,9 @@ describe('reaching this computer from a phone', () => {
   it('never listens: nothing in its source opens a server, and turning it on and off listens on nothing', async () => {
     const dir = path.join(REPO, 'server', 'relay');
     const names = await fs.readdir(dir);
-    expect(names.sort()).toEqual(['keys.ts', 'link.ts', 'routes.ts', 'service.ts']);
+    expect(names.sort()).toEqual([
+      'commands.ts', 'frames.ts', 'keys.ts', 'link.ts', 'messages.ts', 'outbound.ts', 'ports.ts', 'routes.ts', 'service.ts', 'work-rows.ts',
+    ]);
     for (const name of names) {
       const source = await fs.readFile(path.join(dir, name), 'utf8');
       for (const pattern of [/\.listen\s*\(/, /\bcreateServer\s*\(/, /\bcreateSocket\s*\(/, /WebSocketServer/, /from ['"]node:(?:net|dgram|http|https|http2|tls)['"]/])
@@ -304,5 +313,94 @@ describe('reaching this computer from a phone', () => {
     await open(null);
     expect((await desktop('GET', `/account/organizations/${juniper}/phone-relay`)).status).toBe(404);
     expect((await desktop('GET', '/account')).body).toMatchObject({ off: true });
+  });
+});
+
+/** Node's WebSocket (undici) takes request headers; the DOM typing does not say so. */
+const NodeWebSocket = WebSocket as unknown as new (url: string, init: { headers: Record<string, string> }) => WebSocket;
+
+/** A phone on the business's relay hub, with its own socket, as the phone app opens it. */
+function phoneOn(token: string) {
+  const socket = new NodeWebSocket(phoneRelayUrl(running.url, juniper), { headers: { authorization: `Bearer ${token}` } });
+  const frames: string[] = [];
+  let state: 'connecting' | 'open' | 'closed' = 'connecting';
+  socket.addEventListener('open', () => (state = 'open'));
+  socket.addEventListener('message', (event) => frames.push(String(event.data)));
+  socket.addEventListener('close', () => (state = 'closed'));
+  const parsed = () => frames.map((text) => JSON.parse(text) as DesktopToPhoneMessage);
+  const results = () => parsed().filter((frame): frame is ResultMessage => frame.type === 'result');
+  return {
+    socket, frames, parsed, results,
+    send: (message: object) => socket.send(JSON.stringify(message)),
+    opened: () => until(async () => state, (current) => current !== 'connecting', 'the phone to open'),
+    next: async (match: (frame: DesktopToPhoneMessage) => boolean, what: string): Promise<DesktopToPhoneMessage> =>
+      (await until(async () => parsed().find(match), (found) => found !== undefined, what))!,
+  };
+}
+
+describe("a phone's commands on this computer (relay plan steps 3 and 4)", () => {
+  it("decides a Need from the owner's phone through the Need answer path, once, and records that it came from the phone", async () => {
+    await signIn('owner');
+    await turn(true);
+    await reachable();
+    const [entry] = await computers();
+    const ownerId = (await desktop<AccountStateView>('GET', '/account')).body.person!.id;
+
+    // Sample work in a project of this business waits on a decision that names files.
+    const project = (await desktop<{ id: string }>('POST', '/projects/sample', {})).body;
+    expect((await desktop('POST', `/workspace/organizations/${juniper}/projects`, { projectId: project.id })).status).toBe(200);
+    const task = (await desktop<{ id: string }>('POST', `/projects/${project.id}/tasks`, { name: 'Update the menu' })).body;
+    expect((await desktop<{ state: string }>('POST', `/projects/${project.id}/work/start`, { taskId: task.id })).body.state).toBe('waiting');
+    const projectState = async () => (await desktop<ProjectState>('GET', `/projects/${project.id}/state`)).body;
+    const need = (await projectState()).needs.find((item) => item.state === 'open')!;
+    expect(need.files.length).toBeGreaterThan(0);
+
+    const phone = phoneOn(await bearer('owner'));
+    expect(await phone.opened()).toBe('open');
+    phone.send({ v: 1, type: 'hello', deviceId: entry.deviceId });
+    const summary = await phone.next((frame) => frame.type === 'need.summary', 'the summary');
+    expect(summary).toMatchObject({
+      needId: need.id, projectId: project.id, taskTitle: 'Update the menu', what: need.what, why: need.why, consequence: need.consequence, part: 1, parts: 1,
+      files: [...new Set(need.files.map((file) => file.split(/[\\/]/).at(-1)))],
+    });
+    expect(await phone.next((frame) => frame.type === 'board.counts', 'the Board')).toMatchObject({
+      projectId: project.id, cards: [{ taskId: task.id, title: 'Update the menu', column: 'Review', workerLabel: 'Sample', payer: 'local' }],
+    });
+    expect(await phone.next((frame) => frame.type === 'work.rows', 'the worker rows')).toMatchObject({
+      projectId: project.id, rows: [expect.objectContaining({ kind: 'session', label: 'Sample', title: 'Update the menu', state: 'waiting', payer: 'local' })],
+    });
+
+    const decision = { v: 1, type: 'need.decision', deviceId: entry.deviceId, commandId: 'phone_command_0001', needId: need.id, decision: 'go-ahead' };
+    phone.send(decision);
+    expect(await phone.next((frame) => frame.type === 'result', 'the answer')).toEqual({
+      v: 1, type: 'result', commandId: 'phone_command_0001', outcome: 'accepted',
+    });
+    const decided = await projectState();
+    expect(decided.needs.find((item) => item.id === need.id)).toMatchObject({ state: 'go-ahead', decidedFrom: 'phone', allowForTask: false });
+    const recorded = decided.history.filter((item) => item.taskId === task.id && ['decision', 'phone-decision'].includes(item.kind));
+    expect(recorded.map((item) => [item.kind, item.sentence])).toEqual([
+      ['decision', `You said go ahead: ${need.what}`],
+      ['phone-decision', 'You went ahead from your phone'],
+    ]);
+    expect(recorded[1]).toMatchObject({ approvalId: need.id, origin: { executorId: 'diomedes:phone-relay', producerId: `person:${ownerId}` } });
+
+    // The phone didn't hear the answer and sends the same command again: the same answer, decided once.
+    phone.send(decision);
+    await until(async () => phone.results().length, (count) => count === 2, 'the repeated answer');
+    expect(phone.results()[1]).toEqual(phone.results()[0]);
+    // A new command for the same Need: already answered.
+    phone.send({ ...decision, commandId: 'phone_command_0002', decision: 'declined' });
+    await until(async () => phone.results().length, (count) => count === 3, 'the second answer');
+    expect(phone.results()[2]).toEqual({
+      v: 1, type: 'result', commandId: 'phone_command_0002', outcome: 'already-done', code: 'already_answered', message: ALREADY_ANSWERED,
+    });
+    expect((await projectState()).history.filter((item) => item.kind === 'phone-decision')).toHaveLength(1);
+
+    // Every frame is one the contract allows, and none names a folder on this computer.
+    for (const text of phone.frames) {
+      expect(parsePhoneBound(text)).not.toBeNull();
+      expect(text).not.toContain(path.basename(root));
+    }
+    phone.socket.close();
   });
 });

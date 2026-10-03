@@ -14,6 +14,10 @@
  * the key the record can never connect again. A sign-in the service ended stops the links and
  * keeps the registrations, so signing in again resumes them. Closing the app closes the links, and
  * the next start dials again. Revocation never touches the desktop's files or history.
+ *
+ * Steps 3 and 4: once the app attaches its ports, each link answers the phone commands the hub
+ * relays to it and sends its person's phones the desktop's rows, Board and open Needs
+ * (messages.ts), remembering each command it answered for a day (commands.ts).
  */
 import type { KeyObject } from 'node:crypto';
 import path from 'node:path';
@@ -28,6 +32,7 @@ import type { AccountSessionService } from '../accounts/session.js';
 import type { SecretBox } from '../connection-secrets.js';
 import { ApiError } from '../paths.js';
 import { durableWrite, readJson } from '../store.js';
+import { CommandLedger } from './commands.js';
 import { computerLabel, newRelayKey, openRelayKey, sealRelayKey } from './keys.js';
 import {
   RelayLink,
@@ -38,6 +43,7 @@ import {
   type RelayBearer,
   type RelaySocketFactory,
 } from './link.js';
+import { PhoneRelayMessages, type PhoneRelayPorts } from './messages.js';
 
 /** The most entries the file keeps. Tombstones go first. */
 const MAX_ENTRIES = 100;
@@ -108,6 +114,10 @@ export interface PhoneRelayOptions {
 export class PhoneRelayService {
   private entries: Entry[] = [];
   private readonly links = new Map<string, RelayLink>();
+  /** Each link's answers to its phones, made once the app attaches its ports. */
+  private readonly handlers = new Map<string, PhoneRelayMessages>();
+  private ports: PhoneRelayPorts | null = null;
+  private readonly commands: CommandLedger;
   private readonly statuses = new Map<string, LinkStatus>();
   /** Why a switch went off without the person turning it off, until they change it. */
   private readonly notices = new Map<string, string>();
@@ -129,6 +139,39 @@ export class PhoneRelayService {
     this.socket = options.socket === undefined ? runtimeRelaySocket() : options.socket;
     this.hostname = options.hostname ?? (() => computerLabel());
     this.log = options.log ?? ((line) => console.info(line));
+    this.commands = new CommandLedger(dataDir);
+  }
+
+  /**
+   * The desktop's own paths, once every service exists (relay plan steps 3 and 4). Until then a
+   * relayed command finds no handler and is dropped; the phone says hello again.
+   */
+  attach(ports: PhoneRelayPorts): void {
+    this.ports = ports;
+  }
+
+  /** The handler for one link's phone frames, made on first use. */
+  private handler(k: string, entry: Entry): PhoneRelayMessages | null {
+    const link = this.links.get(k);
+    if (!this.ports || this.closed || !link) return null;
+    let handler = this.handlers.get(k);
+    if (!handler) {
+      handler = new PhoneRelayMessages({
+        organizationId: entry.organizationId,
+        deviceId: entry.deviceId,
+        send: (text) => link.send(text),
+        ports: this.ports,
+        commands: this.commands,
+        log: this.log,
+      });
+      this.handlers.set(k, handler);
+    }
+    return handler;
+  }
+
+  private dropHandler(k: string) {
+    this.handlers.get(k)?.close();
+    this.handlers.delete(k);
   }
 
   private get file() {
@@ -159,6 +202,7 @@ export class PhoneRelayService {
     const saved = await readJson<unknown>(this.file, () => ({ v: 1, computers: [] })).catch(() => null);
     const parsed = fileSchema.safeParse(saved);
     this.entries = parsed.success ? parsed.data.computers : [];
+    await this.commands.init();
   }
 
   private async save() {
@@ -302,6 +346,7 @@ export class PhoneRelayService {
       check: () => this.check(entry),
       socket: this.socket,
       refusals: REFUSALS,
+      receive: (message) => this.handler(k, entry)?.receive(message),
       log: this.log,
       status: (status) => {
         if (this.links.get(k) === link) this.statuses.set(k, status);
@@ -314,6 +359,7 @@ export class PhoneRelayService {
   }
 
   private stopLink(k: string) {
+    this.dropHandler(k);
     this.links.get(k)?.stop();
     this.links.delete(k);
     this.statuses.delete(k);
@@ -342,6 +388,7 @@ export class PhoneRelayService {
     return this.serial(async () => {
       if (this.links.get(k) !== link) return;
       this.links.delete(k);
+      this.dropHandler(k);
       if (stop.forget) {
         // The device record is gone at the account service, so this computer's key goes too.
         this.notices.set(k, stop.sentence);
@@ -450,11 +497,12 @@ export class PhoneRelayService {
     this.closed = true;
     if (this.retry) clearTimeout(this.retry);
     this.retry = null;
+    for (const k of [...this.handlers.keys()]) this.dropHandler(k);
     for (const link of this.links.values()) link.stop();
     this.links.clear();
     let timer: NodeJS.Timeout | undefined;
     await Promise.race([
-      this.chain,
+      Promise.all([this.chain, this.commands.settled()]),
       new Promise<void>((resolve) => {
         timer = setTimeout(resolve, CLOSE_WAIT_MS);
       }),

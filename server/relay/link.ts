@@ -9,8 +9,9 @@
  * Shortly before the bearer it dialled with expires, it dials a second
  * connection and lets the hub replace the first, so the computer stays
  * reachable across a sign-in's renewal. A refusal stops the link and says why
- * in one sentence. Frames it doesn't know are ignored: later steps add message
- * types after `ready` without changing the handshake.
+ * in one sentence. Frames it doesn't know are ignored. After `ready`, a phone's
+ * command the hub relayed (steps 3 and 4) goes to `receive`, and `send` writes a
+ * frame for the person's phones; neither changes the handshake.
  */
 import type { KeyObject } from 'node:crypto';
 import {
@@ -18,7 +19,9 @@ import {
   RELAY_DEVICE_HEADER,
   RELAY_PING_FRAME,
   parseHubMessage,
+  parseRelayedPhoneMessage,
   type ReadyMessage,
+  type RelayedPhoneMessage,
 } from '../../services/control-plane/src/relay/protocol.js';
 import { proveChallenge } from './keys.js';
 
@@ -89,6 +92,8 @@ export interface RelayLinkOptions {
   stopped(stop: LinkStop): void;
   /** The sentence for each 4403 reason: not_a_member, role_not_allowed, phone_relay_not_included. */
   refusals: Record<string, string>;
+  /** A phone's command the hub relayed after `ready`, `from` stamped by the hub (relay plan steps 3 and 4). */
+  receive?: (message: RelayedPhoneMessage) => void;
   log?: (line: string) => void;
   now?: () => number;
   random?: () => number;
@@ -140,6 +145,18 @@ export class RelayLink {
     void this.dial(false);
   }
 
+  /** Writes one frame for this person's phones on the ready connection. False when none is ready. */
+  send(text: string): boolean {
+    const dial = this.current;
+    if (this.ended || !dial?.ready || dial.done) return false;
+    try {
+      dial.socket.send(text);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   /** Closes every socket and cancels every timer. Nothing is sent or reported after this. */
   stop(): void {
     if (this.ended) return;
@@ -188,7 +205,12 @@ export class RelayLink {
     if (dial.done || this.ended || typeof data !== 'string') return;
     dial.heardAt = this.now();
     const message = parseHubMessage(data);
-    if (!message) return;
+    if (!message) {
+      // After `ready`, the only other frames the hub sends are phone commands it relayed.
+      const relayed = dial.ready ? parseRelayedPhoneMessage(data) : null;
+      if (relayed) this.options.receive?.(relayed);
+      return;
+    }
     if (message.type === 'challenge') {
       if (dial.proved || message.organizationId !== this.options.organizationId || message.deviceId !== this.options.deviceId) {
         this.detach(dial, RELAY_CLOSE.protocolError.code, RELAY_CLOSE.protocolError.reason);
