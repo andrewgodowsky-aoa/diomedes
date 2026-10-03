@@ -8,4 +8,15 @@ Deliver the explicit create/join/switch Business flow and a short resumable Busi
 
 Implement the actual supported host/UI/persistence path, not just mock screens. If production identity is unavailable, keep its boundary explicit and isolate development fixtures; do not fake paid readiness or rebuild an unrelated identity stack.
 
+WorkOS amendment, 2026-10-03: read [WA-2026-10-03.1](../../../architecture/workos-agent-authority.md)
+and the [prepared implementation prompts](../../PROMPT_workos-agent-authority-2026-10-03.md)
+when changing identity/session contracts. Preserve human-only login and membership
+APIs; agent tokens and Connect MCP/M2M credentials must never become Persons,
+human sessions, approvers or staff keys. WorkOS organization IDs need a verified
+mapping to existing Nectovia organizations, not a matching name or email domain.
+Keep Personal's existing path until a personal mapping is explicitly approved.
+No Agent Auth, EMA, token broker or early-access production wiring is added to
+PB-01 by this amendment. Record the missing Business Trust/revocation prerequisites
+for the existing Runtime/Trust owner rather than creating another auth system.
+
 This slice excludes billing, live connector creation, full Team orchestration and the GLM correction loop. Follow the current Console/Engines visual system and repository quality/publication rules. Give a brief handoff with what works, contracts changed, actual check results and PB-02 prerequisites. Make routine implementation judgments without widening the task.

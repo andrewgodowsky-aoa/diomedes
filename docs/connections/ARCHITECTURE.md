@@ -5,6 +5,20 @@ Base: origin/main `11829e1962b448360d3fc7aaba7c38fda6833a84`.
 Roadmap read completely: **2026-09-09.5**, from the active Runtime worktree.
 The branch's tracked roadmap is .4; this feature does not overwrite that mirror.
 
+## WorkOS identity and enterprise MCP amendment, 2026-10-03
+
+For future authenticated transports, consume
+[WA-2026-10-03.1](../architecture/workos-agent-authority.md) and its
+[implementation prompts](../product/PROMPT_workos-agent-authority-2026-10-03.md).
+WorkOS Agent Auth supplies first-party identity and a credential ceiling; MCP
+Enterprise-Managed Authorization supplies a configured enterprise connection.
+Both remain behind current account isolation, Connections bindings, Runtime,
+Trust, capability checks and existing effect approvals. A token, IdP consent,
+pack or feature flag cannot grant local action authority. The inspected main
+has no approved Agent Auth/EMA integration path, so this amendment is research
+and contract direction only. The historical fixture design below remains its
+recorded scope; it is not a production HTTP MCP or tenant-isolation claim.
+
 ## Current state and ownership
 
 `RunService.start/step` already own durable admission, step identity, budgets,
