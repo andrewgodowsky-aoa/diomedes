@@ -321,7 +321,7 @@ export async function callManagedProvider(call: BoundProviderCall, transport: ty
   try { response = await transport(endpoint, { method: 'POST', body: serialized, headers, signal: abort.signal, redirect: 'manual' }); }
   catch (error) { complete(); throw error; }
   if (!response.ok) { complete(); return response; }
-  const requestId = ['x-amzn-requestid', 'x-request-id', 'request-id', 'x-goog-request-id'].map(h => response.headers.get(h)).find(Boolean) ?? null;
+  const requestId = ['x-amzn-requestid', 'x-request-id', 'request-id', 'apim-request-id', 'x-goog-request-id'].map(h => response.headers.get(h)).find(Boolean) ?? null;
   return normalizeProviderResponse(response, {
     protocol: call.route.binding!.protocol, model: call.route.model,
     upstreamEndpoint: connection.provider === 'openrouter' ? call.route.binding!.upstreamEndpoint : null,
