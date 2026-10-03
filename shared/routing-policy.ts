@@ -403,7 +403,7 @@ export function routeEligibility(input: {
     if (r.zeroRetention && (!privacy.zeroRetention || privacy.contentLogging)) reject('retention_forbidden', 'This endpoint does not meet the required zero-retention policy.');
     if (!subset(privacy.ingressCountries, r.ingressCountries) || !privacy.decryptionCountries?.length ||
         !subset(privacy.decryptionCountries, r.ingressCountries) || !subset(privacy.processingCountries, r.processingCountries)) {
-      if (countries(privacy).includes(UNPINNED_REGION)) reject('geography_unpinned', 'This route does not pin its region, and an applicable policy requires named countries.');
+      if (countries(privacy).includes(UNPINNED_REGION)) reject('geography_unpinned', 'This provider doesn\'t say which country it runs in, and a policy here requires named countries.');
       else reject('geography_forbidden', 'Ingress, decryption or processing geography is unknown or outside the accepted policy.');
     }
     if (r.allowedConnections !== null && !r.allowedConnections.includes(connection.id)) reject('destination_forbidden', 'A source or account rule excludes this destination.');

@@ -56,6 +56,8 @@ The following were taken from the issue's recommendations, not from owner answer
 - **The Console writes the floor.** It writes exactly `PROFILE_FLOORS[profile]`. The limits line
   shows the chosen floor. A notice names what saving gives up when the chosen floor is looser than
   the stored one. A row saved under 09-27.1 asks to be saved again.
+- **Browser coverage.** `tests/operations-routing-journey.spec.ts` drives the relaxation step: Strict
+  to Balanced, the notice, acceptance, revision 2. The issue's offers panel no longer exists.
 
 ## Mandatory default
 
@@ -86,9 +88,13 @@ because `STRICT_RESTRICTIONS` spreads it.
 
 ## Limits and follow-ups
 
-- **Disabled fallback.** With `fallbackEnabled: false` only the primary is a candidate, so Lowest
-  cost cannot choose a cheaper route. Staff enable fallback (`maxAttempts` may stay 1) to let a
-  profile choose among routes. A real providers-by-models matrix belongs to DIO-145.
+- **Disabled fallback.** With `fallbackEnabled: false` only the primary is a candidate. Lowest cost
+  then cannot choose a cheaper route, and Balanced cannot move a retaining primary behind a
+  zero-retention backup. Staff enable fallback (`maxAttempts` may stay 1) to let a profile choose
+  among routes. A real providers-by-models matrix belongs to DIO-145.
+- **Receipt wording.** A first attempt that the profile ranked ahead of the primary reads "Chosen by
+  the routing preference." on the receipt, not "Backup reason". Nothing else reads the
+  `X-Nectovia-Fallback-Reason` header.
 - **Installed builds.** The Console ships inside the desktop app; the Worker serves no Console
   assets. After this deploys, a build that predates it gets a 422 when saving routing settings. A
   rebuild from main is needed first.
@@ -114,3 +120,6 @@ because `STRICT_RESTRICTIONS` spreads it.
   passed, 5 skipped).
 - The Postgres-backed `scoped-routing-postgres.integration.test.ts` was skipped. It needs a
   disposable database.
+- Follow-up (receipt wording, journey relaxation step, plainer unpinned message), same night:
+  root tsc passed; the two routing test files passed (79); `npx vite build` passed; the same four
+  Playwright specs passed (36).
