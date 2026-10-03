@@ -12,6 +12,7 @@
  * amendment (D1).
  */
 import type { AgentGatePort } from './accounts/agent-gate.js';
+import { routeName } from './harness/external-worker.js';
 import { ApiError } from './paths.js';
 import type { Store } from './store.js';
 import { NECTOVIA_ROUTE } from '../shared/model-api.js';
@@ -21,9 +22,11 @@ import {
   SUBSCRIPTION_WORKERS_VERSION,
   subscriptionWorkersPreferenceSchema,
   subscriptionWorkersWriteSchema,
+  type SubscriptionWorkerStartView,
   type SubscriptionWorkersPreference,
+  type SubscriptionWorkersView,
 } from '../shared/subscription-workers.js';
-import type { ExternalWorkerRoute } from '../shared/team-delegation.js';
+import { EXTERNAL_WORKER_ROUTES, type ExternalWorkerRoute } from '../shared/team-delegation.js';
 
 /** What one start may use: nothing, these tools in this order, or nothing for a reason the preference gives. */
 export type SubscriptionWorkerChoice =
@@ -78,13 +81,31 @@ export class SubscriptionWorkers {
     return { kind: 'candidates', preference, engines: preference.engines };
   }
 
-  /** The Settings view: the person's preference, what they'd agree to, and whether this build offers it. */
-  view() {
+  /**
+   * What the person's own Nectovia start in this project would do, for its start dialog: the tools
+   * by name in the person's order and the consent revision to echo. Read only, like `choice`, so
+   * another person's preference reads as off here too.
+   */
+  startView(projectId: string): SubscriptionWorkerStartView {
+    const choice = this.choice(projectId);
+    if (choice.kind === 'off') return { kind: 'off' };
+    if (choice.kind === 'unavailable') return { kind: 'unavailable', reason: choice.reason };
+    return {
+      kind: 'candidates',
+      engines: [...choice.engines],
+      names: choice.engines.map(routeName),
+      consentRevision: choice.preference.consentRevision,
+    };
+  }
+
+  /** The Settings view: the person's preference, what they'd agree to, the tools by name and whether this build offers it. */
+  view(): SubscriptionWorkersView {
     return {
       available: this.deps.available(),
       signedIn: this.deps.personId() !== null,
       preference: this.preference(),
       consent: { revision: SUBSCRIPTION_WORKERS_CONSENT_REVISION, text: SUBSCRIPTION_WORKERS_CONSENT },
+      tools: EXTERNAL_WORKER_ROUTES.map((route) => ({ route, name: routeName(route) })),
     };
   }
 

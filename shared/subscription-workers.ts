@@ -82,6 +82,42 @@ export const subscriptionWorkersPreferenceSchema = z.strictObject({
   updatedAt: z.string().min(1).max(40),
 });
 
+/** A coding tool a task may go to, by the name the server gives it (`routeName`). */
+export interface SubscriptionWorkerTool {
+  readonly route: ExternalWorkerRoute;
+  readonly name: string;
+}
+
+/** What `GET /api/settings/subscription-workers` answers: everything the Settings section shows. */
+export interface SubscriptionWorkersView {
+  /** The launch gate and the engine port, both. False: the build doesn't offer it. */
+  readonly available: boolean;
+  readonly signedIn: boolean;
+  /** The signed-in person's own preference. Someone else's reads as none. */
+  readonly preference: SubscriptionWorkersPreference | null;
+  /** What the person agrees to when they turn it on, and its revision. */
+  readonly consent: { readonly revision: string; readonly text: string };
+  /** Every tool a task may go to. */
+  readonly tools: readonly SubscriptionWorkerTool[];
+}
+
+/**
+ * What the person's own Nectovia start in one project would do with their tools, as
+ * `GET /api/projects/:id/subscription-workers` answers it: nothing; these tools in the person's
+ * order, named, with the consent revision a start echoes in `workerConsent`; or nothing, for a
+ * reason the preference gives.
+ */
+export type SubscriptionWorkerStartView =
+  | { readonly kind: 'off' }
+  | {
+      readonly kind: 'candidates';
+      readonly engines: readonly ExternalWorkerRoute[];
+      /** `engines` by name, in the same order. */
+      readonly names: readonly string[];
+      readonly consentRevision: string;
+    }
+  | { readonly kind: 'unavailable'; readonly reason: string };
+
 /**
  * What a Nectovia lead was admitted with, kept on its run so its labels and its reserve come from
  * the run and never from later settings (N21).

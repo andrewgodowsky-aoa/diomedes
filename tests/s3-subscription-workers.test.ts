@@ -33,9 +33,11 @@ import { SubscriptionWorkers, paidWorkerAdmission } from '../server/subscription
 import {
   ExternalWorkerGate,
   externalWorkerAdapter,
+  routeName,
   type ExternalWorkerAdmission,
   type ExternalWorkerPort,
 } from '../server/harness/external-worker.js';
+import { loopToolConsent, loopToolConsentRefusal } from '../client/console/loop-start-model';
 import { EXTERNAL_WORKER_INSTRUCTIONS } from '../server/harness/capabilities/team-loop.js';
 import {
   RESERVE_READING_MAX_AGE_MS,
@@ -192,6 +194,53 @@ describe('the subscription worker preference', () => {
     expect(view).toMatchObject({ available: true, signedIn: true, preference: null, consent: { revision: SUBSCRIPTION_WORKERS_CONSENT_REVISION } });
     expect(view.consent.text).toMatch(/signed in with your account, never through a chat app/);
     expect(view.consent.text).not.toMatch(/[—–]/);
+  });
+
+  test('the Settings view names every tool a task may go to, the way the server names a worker', () => {
+    expect(workers.view().tools).toEqual([
+      { route: 'claude-code', name: 'Claude Code' },
+      { route: 'codex', name: 'Codex' },
+      { route: 'opencode', name: 'OpenCode' },
+    ]);
+    expect(workers.view().tools.map((tool) => tool.name)).toEqual(workers.view().tools.map((tool) => routeName(tool.route)));
+    // Off, or signed out, it still names them; the build decides whether there's anything to show.
+    flags.available = false;
+    flags.person = null;
+    expect(workers.view()).toMatchObject({ available: false, signedIn: false, preference: null });
+    expect(workers.view().tools).toHaveLength(3);
+  });
+
+  test('the start dialog’s view names the person’s tools in their order, and reads as off for anyone else', async () => {
+    expect(workers.startView('p1')).toEqual({ kind: 'off' });
+    await workers.save(ON);
+    expect(workers.startView('p1')).toEqual({
+      kind: 'candidates',
+      engines: ['codex', 'claude-code'],
+      names: ['Codex', 'Claude Code'],
+      consentRevision: SUBSCRIPTION_WORKERS_CONSENT_REVISION,
+    });
+    await workers.save({ ...ON, engines: ['opencode', 'claude-code', 'codex'] });
+    expect(workers.startView('p1')).toMatchObject({ engines: ['opencode', 'claude-code', 'codex'], names: ['OpenCode', 'Claude Code', 'Codex'] });
+    // Never another person's, never a business's project, never in a build that doesn't offer it.
+    flags.person = 'person_b';
+    expect(workers.startView('p1')).toEqual({ kind: 'off' });
+    flags.person = null;
+    expect(workers.startView('p1')).toEqual({ kind: 'off' });
+    flags.person = 'person_a';
+    flags.owner = 'org_juniper';
+    expect(workers.startView('p1')).toEqual({ kind: 'off' });
+    flags.owner = null;
+    flags.available = false;
+    expect(workers.startView('p1')).toEqual({ kind: 'off' });
+    flags.available = true;
+    // The person's own reasons it can't hand anything off, as the start would give them.
+    const stored = store.settings.subscriptionWorkers!;
+    await store.saveSettings({ ...store.settings, subscriptionWorkers: { ...stored, consentRevision: '2026-01-01.1' } });
+    expect(workers.startView('p1')).toEqual({ kind: 'unavailable', reason: expect.stringMatching(/Confirm it again in Settings/) });
+    await store.saveSettings({ ...store.settings, subscriptionWorkers: { ...stored, engines: [] } });
+    expect(workers.startView('p1')).toEqual({ kind: 'unavailable', reason: expect.stringMatching(/^No coding tool is chosen/) });
+    await workers.save({ ...ON, enabled: false });
+    expect(workers.startView('p1')).toEqual({ kind: 'off' });
   });
 });
 
@@ -450,6 +499,50 @@ describe('a Nectovia start takes its worker from the person’s preference', () 
     const started = await start({ workerConsent: { ...confirm, engines: ['claude-code', 'codex'] } });
     expect(started.status).toBe(200);
     expect(started.input.team.worker.route).toBe('codex');
+  });
+
+  test('the start dialog reads what a start here would do, and its consent says what the start asks', async () => {
+    const read = async (id = projectId) => {
+      const response = await fetch(`${base}/api/projects/${id}/subscription-workers`);
+      return { status: response.status, json: (await response.json()) as any };
+    };
+    expect(await read()).toEqual({ status: 200, json: { kind: 'off' } });
+    expect((await read('no-such-project')).status).toBe(404);
+    const cases = [
+      { engines: ['codex'], names: ['Codex'], joined: 'Codex' },
+      { engines: ['codex', 'claude-code'], names: ['Codex', 'Claude Code'], joined: 'Codex or Claude Code' },
+      { engines: ['codex', 'claude-code', 'opencode'], names: ['Codex', 'Claude Code', 'OpenCode'], joined: 'Codex, Claude Code or OpenCode' },
+    ] as const;
+    for (const { engines: chosen, names, joined } of cases) {
+      await workers.save({ ...ON, engines: [...chosen] });
+      const view = (await read()).json;
+      expect(view).toEqual({ kind: 'candidates', engines: chosen, names, consentRevision: SUBSCRIPTION_WORKERS_CONSENT_REVISION });
+      // The dialog's sentence, made from the view, is the start's own sentence less its last words.
+      const dialog = loopToolConsent(view, null)!;
+      expect(dialog.text).toBe(
+        `Your goal and the files the loop reads will be sent to Nectovia, and a task it hands off goes to ${joined} with the files it needs, signed in with your own account.`,
+      );
+      const refused = await start({ consent: false, workerConsent: undefined });
+      expect(refused.status).toBe(409);
+      expect(refused.json.error).toBe(`${dialog.text} Confirm before sending.`);
+      // What the dialog takes from that refusal is the sentence and exactly what it would have sent.
+      expect(loopToolConsentRefusal(refused.status, refused.json)).toEqual({ text: refused.json.error, workerConsent: dialog.workerConsent });
+    }
+    expect(runs.size).toBe(0);
+    // Ticked, the dialog's confirmation is what the start takes.
+    const started = await start({ workerConsent: loopToolConsent((await read()).json, null)!.workerConsent });
+    expect(started.status, JSON.stringify(started.json)).toBe(200);
+    expect(started.input.team.worker.route).toBe('codex');
+    // It never reads another person's preference, a business's project or a stale consent as tools to name.
+    flags.person = 'person_b';
+    expect((await read()).json).toEqual({ kind: 'off' });
+    flags.person = 'person_a';
+    flags.owner = 'org_juniper';
+    expect((await read()).json).toEqual({ kind: 'off' });
+    flags.owner = null;
+    await store.saveSettings({ ...store.settings, subscriptionWorkers: { ...store.settings.subscriptionWorkers!, consentRevision: '2026-01-01.1' } });
+    expect((await read()).json).toMatchObject({ kind: 'unavailable', reason: expect.stringMatching(/Confirm it again in Settings/) });
+    expect(loopToolConsent((await read()).json, null)).toBeNull();
   });
 
   test('a host start keeps the lead single-agent: Board work and the Ready queue never use a subscription (D12)', async () => {

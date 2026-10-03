@@ -150,11 +150,63 @@ before the consent and host-start change, the 26 files around S3 passed 385 test
 
 Not covered: a live engine. Every engine turn here was scripted.
 
+## UI
+
+Added on 2026-10-03 on top of 1894a07. S3 ships turned off, so with the launch gates unset the
+Settings rail has no entry for it and the start dialog works exactly as before.
+
+- **Settings, "Your coding tools".** A Settings section that exists only when
+  `GET /api/settings/subscription-workers` says the build offers it (`available`); a failed read
+  offers nothing. Signed out, it shows only "Sign in to choose your coding tools." Otherwise: the
+  intro, the consent text exactly as the server sends it, `I understand`, the switch, the tools by
+  the server's names with Move up and Move down, the reserve (none, or keep 1 to 90% of each tool's
+  limit) and what happens when no tool can take a task (`single-agent` preselected). Each change
+  saves at once through `PUT /api/settings/subscription-workers` and shows the server's sentence
+  when it's refused. The switch reads on only for a choice saved on under the current consent. A
+  choice saved on under an older consent shows the notice, with `I understand` unticked and the
+  switch off until confirmed. Consent is never read from a choice that's off: the write needs a
+  revision every time, so a save while off keeps the saved one, or names the current text when
+  nothing is saved, and the server reads none from it. A save made while a stale choice shows off
+  saves it off, so a `pause` choice stops holding work.
+- **LoopStart.** The dialog reads `GET /api/projects/:id/subscription-workers`. On the Nectovia
+  route with a `candidates` choice, the consent names the tools as the start route names them, and
+  the start sends `workerConsent` beside `consent: true`. When a start answers 409 `consentRequired`
+  with a `workerConsent`, the box takes the server's sentence, unticked, and the next start sends
+  the returned tools under the same command id. That's safe because the start route looks for a run
+  under the command id before anything else, so this refusal means none exists. Every other route,
+  choice and refusal works as before, including a plain consent refusal, which still keeps the
+  exact command as it did.
+- **Server.** The settings view adds `tools: { route, name }[]` for every external worker route,
+  named by `routeName`. `GET /api/projects/:id/subscription-workers` (in `native-loop-routes.ts`,
+  unlocked) answers `off`, `candidates` (engines, names, consent revision) or `unavailable`
+  (reason) from `SubscriptionWorkers.choice`, so another person's preference reads as off.
+
+Still not built: the worker row in the Agent conversation and the payer in the Team view. Both
+wait for S1.
+
+| File | Change |
+| --- | --- |
+| `client/CodingTools.tsx`, `client/coding-tools-view.ts` | New. The Settings section and its plain-data model |
+| `client/Settings.tsx`, `client/styles.css` | The rail entry, offered only when the build offers it; the reserve input's width |
+| `client/console/LoopStart.tsx`, `client/console/loop-start-model.ts` | Tool-naming consent, `workerConsent` on the command, the asked-again refusal |
+| `server/subscription-workers.ts`, `server/native-loop-routes.ts`, `shared/subscription-workers.ts` | `tools` on the settings view, the project read and their shared types |
+| `tests/s3-subscription-workers-ui.test.ts` | New. The command, the retained-command rule, the consent sentence and the Settings section |
+| `tests/s3-subscription-workers.test.ts` | The settings view's names, the project read, and the dialog's sentence checked against the start's own |
+| `tests/native-loop-ui.spec.ts`, `tests/settings-usage.spec.ts` | Browser runs of both, the Settings ones over the real preference routes with S3 on in that spec's own app |
+
+Gates for the UI, run in this worktree under the heavy slot on 2026-10-03, on the committed code:
+
+| Gate | Result |
+| --- | --- |
+| `npx tsc --noEmit` | No errors |
+| The new and touched test files (S3, S3 UI, Agent collaboration start, H16 Console model) | 4 files, 85 passed |
+| Full `npx vitest run` | 563 files: 9,556 passed, 5 skipped, none failed |
+| `npx vite build` | Built |
+| Playwright `ui`, `native-ui`, `field`, `native-loop-ui` and `settings-usage` | 51 passed |
+
 ## Not in S3
 
-- The UI: the Settings opt-in (copy through nectovia-voice, `single-agent` preselected), the worker
-  row in the Agent conversation, the payer in the Team view, and the LoopStart consent naming the
-  tools. Until the LoopStart echoes `workerConsent`, a start with S3 on asks for consent again.
+- The worker row in the Agent conversation and the payer in the Team view, which wait for S1.
 - Telling an engine's own mid-turn refusal from an uncertain turn (A17), and keeping an answer that
   arrives after Stop (N33).
 - A live engine turn. Every engine turn here was scripted.

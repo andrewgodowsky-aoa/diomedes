@@ -76,7 +76,12 @@ import {
 import { routeName as engineName } from './harness/external-worker.js';
 import { CODEX_ACCOUNT_ROUTE } from './engines/codex-session.js';
 import type { SubscriptionWorkerChoice, SubscriptionWorkers } from './subscription-workers.js';
-import { reserveRefusal, type SubscriptionReserve, type SubscriptionWorkerRecord } from '../shared/subscription-workers.js';
+import {
+  reserveRefusal,
+  type SubscriptionReserve,
+  type SubscriptionWorkerRecord,
+  type SubscriptionWorkerStartView,
+} from '../shared/subscription-workers.js';
 import type { Route, Session } from '../shared/types.js';
 import { OWNER_RULES_NOT_INCLUDED_REASON } from '../shared/access.js';
 import { taskWorkflowBlocker } from '../shared/task-workflow.js';
@@ -809,6 +814,20 @@ export function mountNativeLoopRoutes(
     if (!taskId) throw new ApiError(400, 'Select the task these roles will work on.');
     return host ? host.options(projectId, taskId) : { leads: [], members: [], helpers: [], reviews: [], reason: 'This host has no qualified collaboration choices.' };
   }));
+
+  /**
+   * S3: what the person's own Nectovia start in this project would do with their coding tools, so
+   * the start dialog can name them in its consent and echo what was confirmed (`workerConsent`).
+   * Read only: nothing is admitted, sent or recorded, and another person's preference reads as off.
+   */
+  app.get(
+    '/api/projects/:id/subscription-workers',
+    handle(async (req): Promise<SubscriptionWorkerStartView> => {
+      const projectId = String(req.params.id);
+      store.state(projectId);
+      return subscription ? subscription.startView(projectId) : { kind: 'off' };
+    }),
+  );
 
   /**
    * The routes a Console start control may offer, each with the start route's own admission

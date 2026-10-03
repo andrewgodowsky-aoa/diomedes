@@ -1,13 +1,16 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import { api, listDocuments } from '../api';
+import { ApiError, api, listDocuments } from '../api';
 import { Modal } from '../components';
 import { AGENT_NAME } from '../../shared/agent-name';
+import { NECTOVIA_ROUTE } from '../../shared/model-api';
 import { LOOP_LIMITS, type LoopRouteOffer } from '../../shared/native-loop';
+import type { SubscriptionWorkerStartView } from '../../shared/subscription-workers';
 import { selectTaskSources } from '../../shared/task-sources';
 import type { DocumentInfo, Session, Task } from '../../shared/types';
 import {
-  defaultLoopGoal, loopStartCommand, newLoopCommandId, retainLoopStartCommand,
-  LOOP_REVIEW_PROFILE, type LoopCollaborationOptions, type LoopStartCommand,
+  defaultLoopGoal, loopStartCommand, loopToolConsent, loopToolConsentRefusal, newLoopCommandId,
+  retainAfterFailure, retainLoopStartCommand,
+  LOOP_REVIEW_PROFILE, type LoopCollaborationOptions, type LoopStartCommand, type LoopToolConsent,
 } from './loop-start-model';
 import './trigger-rules.css';
 
@@ -21,6 +24,11 @@ import './trigger-rules.css';
  * turns to H13's default, and a refusal — consent, a file the project does not
  * share with the route, the route's own admission — is shown as the server
  * said it. The run then appears in this thread's run inspector.
+ *
+ * A Nectovia start that may hand a task to the person's own coding tools (S3,
+ * `GET /api/projects/:id/subscription-workers`) names those tools in its consent
+ * and sends what was confirmed. When the server asks again with other tools, the
+ * box says what the server says, unticked, and the next start confirms those.
  */
 export function LoopStart({
   projectId,
@@ -53,6 +61,11 @@ export function LoopStart({
   const [memberSlotId, setMemberSlotId] = useState('');
   const [helperProfileId, setHelperProfileId] = useState('');
   const [reviewConnectionId, setReviewConnectionId] = useState('');
+  // S3: what a Nectovia start here would do with the person's own coding tools, and the
+  // server's own sentence once it asked again for them.
+  const [workers, setWorkers] = useState<SubscriptionWorkerStartView | null>(null);
+  const [askedAgain, setAskedAgain] = useState<LoopToolConsent | null>(null);
+  const consentBox = useRef<HTMLInputElement | null>(null);
   const starting = useRef(false);
   const submitted = useRef<LoopStartCommand | null>(null);
 
@@ -91,6 +104,11 @@ export function LoopStart({
         reason: failure instanceof Error ? failure.message : 'Collaboration choices could not be read.',
       }),
     );
+    // A host without this read starts as it always has.
+    api<SubscriptionWorkerStartView>(`/projects/${projectId}/subscription-workers`).then(
+      (view) => live && setWorkers(view),
+      () => undefined,
+    );
     return () => {
       live = false;
     };
@@ -120,6 +138,14 @@ export function LoopStart({
       .filter(offer => !offer.admitted && offer.reason)
       .map(offer => offer.reason!),
   )];
+  const toolConsent = chosen?.route === NECTOVIA_ROUTE ? loopToolConsent(workers, askedAgain) : null;
+  const consentText = chosen?.sends
+    ? (toolConsent?.text ?? `Send the goal and the files it reads to ${chosen.label}.`)
+    : null;
+  // A tick was given to the words beside it. When they change, the person confirms again.
+  useEffect(() => {
+    setConsent(false);
+  }, [consentText]);
 
   async function start() {
     // React's disabled state is painted later; the ref closes two submits in one turn.
@@ -130,6 +156,7 @@ export function LoopStart({
     try {
       const command = retainLoopStartCommand(submitted.current, loopStartCommand({
         commandId, taskId: task.id, goal, route: chosen.route, sources, consent, maxTurns: turns,
+        workerConsent: consent && toolConsent ? toolConsent.workerConsent : null,
         persistentTeam: leadSlotId && memberSlotId ? { leadSlotId, memberSlotId } : null,
         team: helperProfileId ? { scope: sources, worker: { profileId: helperProfileId }, advisor: null } : null,
         review: reviewConnectionId ? { profileId: LOOP_REVIEW_PROFILE, connectionId: reviewConnectionId } : null,
@@ -142,7 +169,14 @@ export function LoopStart({
       );
       onStarted(started.session);
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : 'The loop could not be started.');
+      const refusal = failure instanceof ApiError ? loopToolConsentRefusal(failure.status, failure.data) : null;
+      submitted.current = retainAfterFailure(submitted.current, refusal);
+      if (refusal) {
+        // The server named the tools again: its sentence goes beside the box, said once.
+        setAskedAgain(refusal);
+        setConsent(false);
+        consentBox.current?.focus();
+      } else setError(failure instanceof Error ? failure.message : 'The loop could not be started.');
     } finally {
       starting.current = false;
       setBusy(false);
@@ -295,10 +329,10 @@ export function LoopStart({
             onChange={(event) => setTurns(event.target.value === '' ? null : Number(event.target.value))}
           />
         </label>
-        {chosen?.sends && (
+        {consentText && (
           <label className="trigger-rule-choice">
-            <input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} />
-            <span>Send the goal and the files it reads to {chosen.label}.</span>
+            <input ref={consentBox} type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} />
+            <span>{consentText}</span>
           </label>
         )}
         {error && (
