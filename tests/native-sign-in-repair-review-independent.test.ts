@@ -213,7 +213,7 @@ describe('v2 independent admitted callback work', () => {
     const delivered: string[] = [];
     r.capture.connect(async (url) => { delivered.push(url); return url === r.url('a') ? gate.promise : false; });
     for (const name of ['a', 'b', 'c']) r.emit(r.url(name));
-    for (const bad of [callback + '/?code=x&state=y', callback + '?code=x&state=y&state=z',
+    for (const bad of [callback + '//?code=x&state=y', callback + '?code=x&state=y&state=z',
       'https://callback?code=x&state=y', callback + '?code=x&state=y#fragment']) r.emit(bad, 'open-url');
     r.emit(r.url('d'));
     gate.resolve(false);

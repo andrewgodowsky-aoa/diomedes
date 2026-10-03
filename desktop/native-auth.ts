@@ -61,15 +61,23 @@ function isTrustedIssuer(value: unknown): value is string {
   }
 }
 
+/**
+ * Windows' shell adds one slash before the query when it hands a protocol URL to its handler,
+ * whichever browser launched it: diomedes-auth://callback?code=… reaches a second instance's
+ * argv, or a cold launch's, as diomedes-auth://callback/?code=… (checked on Windows 11,
+ * 2026-10-02; electron/electron#10786). That exact form is the same callback. Every other path
+ * is still refused.
+ */
+const WINDOWS_SHELL_CALLBACK = NATIVE_AUTH_CALLBACK + '/?';
+
 export function parseNativeCallback(input: unknown): Callback | null {
-  if (
-    typeof input !== 'string' ||
-    input.length > 8192 ||
-    !input.startsWith(NATIVE_AUTH_CALLBACK + '?')
-  )
-    return null;
+  if (typeof input !== 'string' || input.length > 8192) return null;
+  const canonical = input.startsWith(WINDOWS_SHELL_CALLBACK)
+    ? NATIVE_AUTH_CALLBACK + input.slice(WINDOWS_SHELL_CALLBACK.length - 1)
+    : input;
+  if (!canonical.startsWith(NATIVE_AUTH_CALLBACK + '?')) return null;
   try {
-    const url = new URL(input);
+    const url = new URL(canonical);
     if (
       url.protocol !== SCHEME + ':' ||
       url.host !== 'callback' ||
