@@ -195,7 +195,7 @@ test('a Codex build that advertises steer, resume and fork is offered all three,
     .fill('Mention the cider pairing.');
   await followUps(page).getByRole('button', { name: 'Steer', exact: true }).click();
   await expect(receipt(page, 'steer')).toHaveAttribute('data-outcome', 'applied');
-  await expect(receipt(page, 'steer')).toContainText('by ChatGPT · fixture-codex-model');
+  await expect(receipt(page, 'steer')).toContainText('by Codex · fixture-codex-model');
   await expect(receipt(page, 'steer')).toContainText(
     'Codex took the message into the running turn',
   );
@@ -210,10 +210,10 @@ test('a Codex build that advertises steer, resume and fork is offered all three,
   await expect(bar(page).getByRole('button')).toHaveText(['Resume', 'Retry', 'Fork']);
   await bar(page).getByRole('button', { name: 'Resume' }).click();
   const confirm = page.getByRole('group', { name: 'Confirm resume' });
-  await expect(confirm).toContainText('Continues this run on ChatGPT from where it stopped.');
+  await expect(confirm).toContainText('Continues this run on Codex from where it stopped.');
   await confirm.getByRole('button', { name: 'Resume now' }).click();
   await expect(receipt(page, 'resume')).toHaveAttribute('data-outcome', 'applied');
-  await expect(receipt(page, 'resume')).toContainText('by ChatGPT · fixture-codex-model');
+  await expect(receipt(page, 'resume')).toContainText('by Codex · fixture-codex-model');
   const stopped = (await api<ProjectState>(`/projects/${project.id}/state`)).sessions.find(
     (s) => s.id === second.id,
   )!;
@@ -241,7 +241,7 @@ test('a Codex build that advertises steer, resume and fork is offered all three,
   const before = await api<ProjectState>(`/projects/${project.id}/state`);
   await bar(page).getByRole('button', { name: 'Fork' }).click();
   await expect(receipt(page, 'fork')).toHaveAttribute('data-outcome', 'applied');
-  await expect(receipt(page, 'fork')).toContainText('by ChatGPT · fixture-codex-model');
+  await expect(receipt(page, 'fork')).toContainText('by Codex · fixture-codex-model');
   await expect(receipt(page, 'fork')).toContainText('Codex forked thread');
   const after = await api<ProjectState>(`/projects/${project.id}/state`);
   expect(after.sessions.filter((s) => s.taskId === task.id)).toEqual(
@@ -271,7 +271,7 @@ test('a Codex build without them offers Queue and a labelled fresh-start Resume,
   const when = followUps(page).getByRole('radiogroup', { name: 'When this follow-up runs' });
   await expect(when.getByRole('radio')).toHaveText(['after this turn', 'after the task is done']);
   await expect(followUps(page).locator('.follow-up-steer-note')).toHaveText(
-    'ChatGPT can’t steer a running turn, so a message waits for the turn to end.',
+    'Codex can’t steer a running turn, so a message waits for the turn to end.',
   );
 
   await liveRecord(page).getByRole('button', { name: 'Stop', exact: true }).click();
@@ -281,7 +281,7 @@ test('a Codex build without them offers Queue and a labelled fresh-start Resume,
   await bar(page).getByRole('button', { name: 'Resume' }).click();
   const confirm = page.getByRole('group', { name: 'Confirm resume' });
   await expect(confirm).toContainText(
-    'Sends the same request to ChatGPT in a new thread; ChatGPT cannot continue this one.',
+    'Sends the same request to Codex in a new thread; Codex cannot continue this one.',
   );
   await confirm.getByRole('button', { name: 'Resume now' }).click();
   await expect(receipt(page, 'resume')).toHaveAttribute('data-outcome', 'applied');

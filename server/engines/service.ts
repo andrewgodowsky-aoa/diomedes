@@ -1960,7 +1960,7 @@ export class EngineService {
   ) {
     const conversations = this.codexConversations;
     return this.nativeTurn(
-      { engine: 'codex', routeId: 'codex-session', driver: this.codexSessions, name: 'ChatGPT' },
+      { engine: 'codex', routeId: 'codex-session', driver: this.codexSessions, name: 'Codex' },
       mode,
       runId,
       input,
@@ -1970,7 +1970,7 @@ export class EngineService {
         contract: routeContractFor('codex-session'),
         admit: async () => {
           if (!conversations)
-            throw new EngineError('RUNTIME_UNAVAILABLE', 'The ChatGPT conversation runtime is not attached.');
+            throw new EngineError('RUNTIME_UNAVAILABLE', 'The Codex conversation runtime is not attached.');
           if (input.accountRoute !== CODEX_ACCOUNT_ROUTE)
             throw new EngineError(
               'ACCOUNT_CHANGED',

@@ -112,7 +112,7 @@ describe('payer and label by route', () => {
   });
 
   test('labels are the Console route names; a managed row is Nectovia and names no model or vendor', () => {
-    expect(labelForRoute('codex')).toBe('ChatGPT');
+    expect(labelForRoute('codex')).toBe('Codex');
     expect(labelForRoute('claude-code')).toBe('Claude Code');
     expect(labelForRoute('openrouter')).toBe('OpenRouter');
     expect(labelForRoute('nectovia')).toBe('Nectovia');
@@ -171,11 +171,11 @@ describe('ProductionWorkRows', () => {
       ['session:S-loop', 'session', 'Nectovia', 'Plan the reopening', 'working', 'not-run', 'nectovia-credits'],
       ['h14:h1', 'h14-worker', 'Nectovia', 'Plan the reopening', 'working', 'not-run', 'nectovia-credits'],
       ['h14:h2', 'h14-worker', 'AWS Bedrock', 'Plan the reopening', 'answered', 'verified', 'your-key'],
-      ['h14:h3', 'external-worker', 'ChatGPT', 'Plan the reopening', 'failed', 'unverified', 'your-subscription'],
+      ['h14:h3', 'external-worker', 'Codex', 'Plan the reopening', 'failed', 'unverified', 'your-subscription'],
       ['h14:h4', 'h14-worker', 'Sample', 'Plan the reopening', 'answered', 'not-run', 'local'],
       ['h14:h5', 'h14-worker', 'mystery', 'Plan the reopening', 'unknown', 'not-run', 'unknown'],
       ['session:S-sample', 'session', 'Sample', 'Try the sample', 'failed', 'not-run', 'local'],
-      ['session:S-manual', 'team-member', 'ChatGPT', 'Proofread the menu', 'stopped', 'not-run', 'your-subscription'],
+      ['session:S-manual', 'team-member', 'Codex', 'Proofread the menu', 'stopped', 'not-run', 'your-subscription'],
       ['session:S-member', 'team-member', 'Claude Code', 'Answer the team mail', 'answered', 'not-run', 'your-subscription'],
       ['member:S3', 'team-member', 'OpenRouter', 'Cleo', 'working', 'not-run', 'your-key'],
     ]);

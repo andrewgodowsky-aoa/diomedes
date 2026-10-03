@@ -23,8 +23,8 @@ export function isFoundEngine(connection: EngineConnection | undefined): connect
 }
 
 /**
- * ChatGPT is found when Diomedes' own Codex runtime answered and ChatGPT is signed in there: the
- * status reads signed in only after the runtime started and reported a ChatGPT account.
+ * Codex is found when Diomedes' own Codex runtime answered and a ChatGPT account is signed in
+ * there: the status reads signed in only after the runtime started and reported a ChatGPT account.
  */
 export function isChatGptFound(status: IntegrationStatus | undefined): boolean {
   return status?.id === 'codex' && status.found && status.signIn === 'signed-in';

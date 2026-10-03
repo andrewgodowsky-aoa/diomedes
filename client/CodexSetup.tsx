@@ -26,7 +26,7 @@ export function CodexSetup({
       if (!signal?.aborted) setView(next);
     } catch (reason) {
       if (!signal?.aborted)
-        setError(reason instanceof Error ? reason.message : 'Could not read ChatGPT setup.');
+        setError(reason instanceof Error ? reason.message : 'Could not read Codex setup.');
     }
   }, []);
   useEffect(() => {
@@ -51,7 +51,7 @@ export function CodexSetup({
     try {
       await action();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'ChatGPT setup could not complete.');
+      setError(reason instanceof Error ? reason.message : 'Codex setup could not complete.');
     } finally {
       setWorking(false);
     }
@@ -143,8 +143,8 @@ export function CodexSetup({
           }
         >
           {settings.services?.codex === true && settings.services.defaultEngine === 'codex'
-            ? 'ChatGPT selected'
-            : 'Use ChatGPT'}
+            ? 'Codex selected'
+            : 'Use Codex'}
         </Button>
       )}
       {error && <p role="alert">{error}</p>}
@@ -153,8 +153,8 @@ export function CodexSetup({
   return embedded ? (
     <div>{controls}</div>
   ) : (
-    <section className="service" aria-label="ChatGPT through Codex">
-      <h3>ChatGPT</h3>
+    <section className="service" aria-label="Codex">
+      <h3>Codex</h3>
       {controls}
     </section>
   );

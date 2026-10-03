@@ -2187,7 +2187,7 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
         },
         async turn(input) {
           if (running)
-            throw new IntegrationError('NATIVE_BUSY', 'ChatGPT is still answering the previous message.');
+            throw new IntegrationError('NATIVE_BUSY', 'Codex is still answering the previous message.');
           if (input.signal.aborted) throw abortError();
           const watch = watchTurn(client, input.threadId, {
             scope: input.scope,
@@ -2216,7 +2216,7 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
               return { text: await watch.completed, model: watch.model() ?? null };
             } catch (error) {
               if (watch.ended() === 'interrupted')
-                throw new IntegrationError('TURN_INTERRUPTED', 'ChatGPT stopped the answer when asked.');
+                throw new IntegrationError('TURN_INTERRUPTED', 'Codex stopped the answer when asked.');
               throw error;
             }
           } finally {

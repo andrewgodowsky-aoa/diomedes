@@ -399,7 +399,7 @@ describe("worker rows from this computer's records", () => {
     expect(snapshot!.rows.map((item) => [item.rowId, item.kind, item.label, item.state, item.payer, item.verification])).toEqual([
       ['session_member', 'team-member', 'Ada', 'waiting', 'your-subscription', 'not-run'],
       ['session_running', 'session', 'Nectovia', 'stop-requested', 'nectovia-credits', 'not-run'],
-      ['session_recent', 'external-worker', 'ChatGPT', 'answered', 'your-subscription', 'not-run'],
+      ['session_recent', 'external-worker', 'Codex', 'answered', 'your-subscription', 'not-run'],
     ]);
     expect(await workRowsOf({ state: () => ({ tasks, sessions: [], history: [] }), projectIds: () => [], onChange: noChanges, now: () => START }, 'project_menu')).toBeNull();
   });
@@ -425,7 +425,7 @@ describe("worker rows from this computer's records", () => {
     expect(snapshot).toMatchObject({ rootRunId: 'lead_new', taskTitle: 'Draft the winter menu' });
     expect(snapshot!.rows.map((item) => [item.rowId, item.kind, item.label, item.title, item.state, item.payer, item.startedAt])).toEqual([
       ['child_b', 'h14-worker', 'AWS Bedrock', 'Price the menu', 'working', 'your-key', minutesAgo(5)],
-      ['child_c', 'h14-worker', 'ChatGPT', 'Check the notes', 'answered', 'your-subscription', minutesAgo(5)],
+      ['child_c', 'h14-worker', 'Codex', 'Check the notes', 'answered', 'your-subscription', minutesAgo(5)],
     ]);
   });
 });

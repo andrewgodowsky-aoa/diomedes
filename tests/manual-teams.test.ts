@@ -339,7 +339,7 @@ describe('N03 and N04: a manual card runs on its member and moves only when the 
     const members: TeamMember[] = [{ ...astra, engine: 'openrouter' }];
     expect(manualCardStart({ assignedTo: astra.slotId }, members, routeDisplayName)).toEqual({
       ok: false,
-      reason: 'Astra works through OpenRouter. A manual card runs on ChatGPT or Claude Code, so assign it to a member on one of those.',
+      reason: 'Astra works through OpenRouter. A manual card runs on Codex or Claude Code, so assign it to a member on one of those.',
     });
     expect(asked).toEqual([]);
   });
@@ -531,7 +531,7 @@ describe('N06, N07, A01, A03 and A38: the free Team works in turn with no paid c
     await until((value) => value.sessions.some((session) => session.taskId === first.id && session.state === 'working'));
     let rows = (await request<WorkRowsSnapshot>(`/projects/${projectId}/work/rows`)).data;
     expect(rows.rows).toEqual([
-      expect.objectContaining({ kind: 'team-member', label: 'ChatGPT', title: 'Draft the menu', state: 'working', payer: 'your-subscription', verification: 'not-run' }),
+      expect.objectContaining({ kind: 'team-member', label: 'Codex', title: 'Draft the menu', state: 'working', payer: 'your-subscription', verification: 'not-run' }),
     ]);
     // One run per project: the second member waits for the first.
     const busy = await start(second.id, 'claude-code');
@@ -546,7 +546,7 @@ describe('N06, N07, A01, A03 and A38: the free Team works in turn with no paid c
     rows = (await request<WorkRowsSnapshot>(`/projects/${projectId}/work/rows`)).data;
     expect(rows.rows.map((row) => [row.kind, row.label, row.title, row.payer])).toEqual([
       ['team-member', 'Claude Code', 'Proofread the menu', 'your-subscription'],
-      ['team-member', 'ChatGPT', 'Draft the menu', 'your-subscription'],
+      ['team-member', 'Codex', 'Draft the menu', 'your-subscription'],
     ]);
     expect(rows.rows.map((row) => row.state)).toEqual(['answered', 'answered']);
     expect(asked).toEqual(['codex', 'claude-code']);
@@ -608,7 +608,7 @@ describe('N06, N07, A01, A03 and A38: the free Team works in turn with no paid c
     expect(transportCalls).toBe(0);
     const rows = (await request<WorkRowsSnapshot>(`/projects/${projectId}/work/rows`)).data.rows;
     expect(rows.every((row) => row.payer !== 'nectovia-credits')).toBe(true);
-    expect(rows[0]).toMatchObject({ label: 'ChatGPT', payer: 'your-subscription' });
+    expect(rows[0]).toMatchObject({ label: 'Codex', payer: 'your-subscription' });
   });
 });
 

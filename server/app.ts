@@ -3795,7 +3795,7 @@ export async function createApp(options: AppOptions) {
     )
       throw new ApiError(
         409,
-        `The chosen model ${chosen.model} is no longer offered on ChatGPT. Choose another model or return to a style.`,
+        `The chosen model ${chosen.model} is no longer offered on Codex. Choose another model or return to a style.`,
       );
     const model = chosen?.model ?? codexModelSetting();
     const effort = chosen?.model ? (chosen.effort ?? undefined) : codexEffortSetting();

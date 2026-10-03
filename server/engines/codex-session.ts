@@ -89,15 +89,15 @@ export interface CodexSessionTuning {
 }
 
 const ACCOUNT_CHANGED =
-  "ChatGPT is signed in to a different account than this conversation started with, so it can't continue here. Nothing was sent. Sign in to the earlier account, or start a new conversation.";
+  "Codex is signed in to a different ChatGPT account than this conversation started with, so it can't continue here. Nothing was sent. Sign in to the earlier account, or start a new conversation.";
 
 const continuityDetail = (origin: CodexSessionOrigin, interrupted: boolean): string | null => {
   const restart = interrupted
     ? "Diomedes restarted while an earlier message was being answered. That message wasn't completed or sent again. "
     : '';
   if (origin === 'restarted-fresh')
-    return `${restart}ChatGPT no longer had this conversation's thread, so this message started a new one. Earlier messages weren't carried into it.`;
-  if (interrupted) return `${restart}This conversation continued from ChatGPT's saved thread.`;
+    return `${restart}Codex no longer had this conversation's thread, so this message started a new one. Earlier messages weren't carried into it.`;
+  if (interrupted) return `${restart}This conversation continued from Codex's saved thread.`;
   return null;
 };
 
@@ -181,7 +181,7 @@ export class CodexNativeSession {
       digest(input.instructions) !== this.saved.instructionDigest ||
       readScopeDigest(input.readScope) !== this.saved.scopeDigest
     )
-      throw new EngineError('SESSION_MISMATCH', 'This input does not match the ChatGPT conversation scope.');
+      throw new EngineError('SESSION_MISMATCH', 'This input does not match the Codex conversation scope.');
     const requestDigest = digest(prompt);
     if (this.active?.id === input.requestId) {
       if (this.active.digest !== requestDigest)
@@ -189,8 +189,8 @@ export class CodexNativeSession {
       return this.active.promise;
     }
     if (this.closed || this.saved.state !== 'idle')
-      throw new EngineError('RECONCILE_REQUIRED', 'The ChatGPT conversation is closed or its last turn is uncertain.', true);
-    if (this.active) throw new EngineError('SESSION_BUSY', 'ChatGPT is still answering the previous message.');
+      throw new EngineError('RECONCILE_REQUIRED', 'The Codex conversation is closed or its last turn is uncertain.', true);
+    if (this.active) throw new EngineError('SESSION_BUSY', 'Codex is still answering the previous message.');
     // Before anything is awaited: the idle timer can't end the process this turn is about to use.
     this.disarm();
     const active: Active = {
@@ -341,7 +341,7 @@ export class CodexNativeSession {
    */
   async stop(graceMs: number = this.tuning.interruptWaitMs): Promise<'interrupted' | 'killed'> {
     const active = this.active;
-    if (!active) throw new EngineError('SESSION_IDLE', 'No ChatGPT turn is running.');
+    if (!active) throw new EngineError('SESSION_IDLE', 'No Codex turn is running.');
     const live = this.live;
     if (active.turnId && live?.thread && !live.process.closed) {
       const acknowledged = await live.process
@@ -417,14 +417,14 @@ export async function openCodexSession(
   if (scope && readAccessOf(scope) === 'project')
     throw new EngineError(
       'POLICY_MISMATCH',
-      "ChatGPT can't read the whole project folder, because its reads can't be checked before they run. Choose the documents to include instead.",
+      "Codex can't read the whole project folder, because its reads can't be checked before they run. Choose the documents to include instead.",
       false,
       'dispatch',
     );
   const restore = options.restore ? codexCheckpointSchema.parse(options.restore) : undefined;
   const scopeDigest = readScopeDigest(scope);
   if (options.fork && !restore)
-    throw new EngineError('SESSION_INVALID', 'A fork needs a saved ChatGPT conversation to start from.');
+    throw new EngineError('SESSION_INVALID', 'A fork needs a saved Codex conversation to start from.');
   if (restore) {
     if (
       restore.projectId !== input.projectId ||
@@ -435,12 +435,12 @@ export async function openCodexSession(
       restore.instructionDigest !== digest(input.instructions) ||
       restore.scopeDigest !== scopeDigest
     )
-      throw new EngineError('SESSION_MISMATCH', 'The saved ChatGPT conversation belongs to a different scope.');
+      throw new EngineError('SESSION_MISMATCH', 'The saved Codex conversation belongs to a different scope.');
     // No version gate (2026-09-23): a runtime that changed since this was saved continues it.
     if (restore.state !== 'idle')
-      throw new EngineError('RECONCILE_REQUIRED', 'The saved ChatGPT turn outcome is uncertain.', true);
+      throw new EngineError('RECONCILE_REQUIRED', 'The saved Codex turn outcome is uncertain.', true);
     if (!restore.nativeSessionId)
-      throw new EngineError('SESSION_INVALID', 'This conversation has no confirmed ChatGPT thread.');
+      throw new EngineError('SESSION_INVALID', 'This conversation has no confirmed Codex thread.');
   }
   let saved: CodexSessionCheckpoint = restore ?? {
     version: 1,
@@ -509,6 +509,6 @@ export function recoverCodexCheckpoint(
     return { resume: { ...saved, state: 'idle', origin: 'recovered', interruptedRequestId } };
   return {
     refuse:
-      "Diomedes restarted while ChatGPT was answering, and no ChatGPT thread was confirmed to continue, so this conversation couldn't resume. Start again.",
+      "Diomedes restarted while Codex was answering, and no Codex thread was confirmed to continue, so this conversation couldn't resume. Start again.",
   };
 }

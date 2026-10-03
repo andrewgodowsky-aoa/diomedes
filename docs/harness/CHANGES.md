@@ -1,5 +1,13 @@
 # Harness host integration changes, 2026-09-09
 
+## The Codex route is named Codex, 2026-10-03
+
+The codex route is named Codex everywhere a person sees it: the model picker, Settings, run
+cards, attribution, receipts, worker rows and the route's own messages (owner decision,
+2026-10-03). The account it signs in with is still called the ChatGPT account, so the sign-in,
+connection check and account messages keep that name. The name comes from `ROUTE_NAMES` in
+`shared/engines.ts`, and every label built from it follows.
+
 ## Subscription workers under a Personal Nectovia lead, 2026-10-03
 
 A Nectovia loop a person starts in their Personal workspace can hand one task to their own Codex,

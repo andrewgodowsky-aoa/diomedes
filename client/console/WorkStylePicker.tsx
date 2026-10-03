@@ -41,7 +41,7 @@ export function styleButtonLabel(thread: Conversation, settings: Settings): stri
 
 /**
  * The resolved model and level, as the details line writes them. Only a route
- * whose adapter reads a level shows one: ChatGPT and AWS today.
+ * whose adapter reads a level shows one: Codex and AWS today.
  */
 export function resolvedDetail(view: WorkStyleView | null): string {
   const r = view?.resolution;

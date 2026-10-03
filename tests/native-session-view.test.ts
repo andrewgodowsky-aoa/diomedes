@@ -35,7 +35,7 @@ describe('what the Console says about a native session (H03)', () => {
 
   it('names ChatGPT, OpenCode, Cursor and Devin as a person reads them, never by their route ids', () => {
     for (const [route, name] of [
-      ['codex-session', 'ChatGPT'],
+      ['codex-session', 'Codex'],
       ['opencode-session', 'OpenCode'],
       ['cursor-session', 'Cursor'],
       ['devin-session', 'Devin'],

@@ -88,12 +88,12 @@ describe('"Nectovia chooses" resolves each member from the WorkStyle resolver', 
     expect(asked.outcome).toBe('ask');
     const none = resolveTeamMemberModel({ role: 'member', style: 'focused', candidates: [] });
     expect(none).toMatchObject({ outcome: 'ask' });
-    if (none.outcome === 'ask') expect(none.reason).toMatch(/Turn on and connect ChatGPT, Claude Code/);
+    if (none.outcome === 'ask') expect(none.reason).toMatch(/Turn on and connect Codex, Claude Code/);
   });
 
   test('a route that cannot carry the team tools is named', () => {
     expect(teamRouteRefusal('cursor')).toBe(
-      'Cursor cannot carry the Diomedes team tools yet: Diomedes does not give its sessions the team service. Choose ChatGPT, Claude Code, AWS Bedrock, Azure OpenAI, OpenRouter or Google Vertex AI.',
+      'Cursor cannot carry the Diomedes team tools yet: Diomedes does not give its sessions the team service. Choose Codex, Claude Code, AWS Bedrock, Azure OpenAI, OpenRouter or Google Vertex AI.',
     );
     for (const route of ['codex', 'claude-code', 'aws-bedrock', 'azure-openai', 'openrouter'])
       expect(teamRouteRefusal(route)).toBeNull();
@@ -751,7 +751,7 @@ describe('capability commands keep the route their driver needs', () => {
         capabilityId: 'codex-report',
         sources: [],
       }),
-    ).toThrow('The codex-report capability runs only on ChatGPT (Codex). Choose that route for it, or start ordinary Work on this route.');
+    ).toThrow('The codex-report capability runs only on Codex. Choose that route for it, or start ordinary Work on this route.');
   });
 });
 
@@ -764,7 +764,7 @@ describe('the add-member form offers connected routes and "Nectovia chooses"', (
       createElement(AddMember, {
         routes: {
           routes: [
-            { route: 'codex', name: 'ChatGPT', ready: false, models: [], savedModel: null, reason: 'Turn ChatGPT on.' },
+            { route: 'codex', name: 'Codex', ready: false, models: [], savedModel: null, reason: 'Turn Codex on.' },
             { route: 'claude-code', name: 'Claude Code', ready: true, models: [{ slug: 'opus', name: 'Opus 5.5' }], savedModel: null },
             { route: 'openrouter', name: 'OpenRouter', ready: true, models: [], savedModel: OR_MODEL },
           ],
@@ -785,7 +785,7 @@ describe('the add-member form offers connected routes and "Nectovia chooses"', (
     expect(options).toEqual(['Leader', 'Member', 'Efficient', 'Focused', 'Thorough']);
     expect(html).not.toContain('aria-label="Route"');
     expect(html).not.toContain('aria-label="Model"');
-    for (const word of ['Claude Code', 'OpenRouter', 'ChatGPT', 'Opus', OR_MODEL, 'Nectovia chooses</option>'])
+    for (const word of ['Claude Code', 'OpenRouter', 'ChatGPT', 'Codex', 'Opus', OR_MODEL, 'Nectovia chooses</option>'])
       expect(html).not.toContain(word);
     expect(html).toContain('a leader works one tier above it');
   });

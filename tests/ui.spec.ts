@@ -251,9 +251,9 @@ test('F01-F02: first run preserves detail and approvals, supports AI skip, and r
     page.getByRole('heading', { name: 'Connect an AI service', exact: true }),
   ).toBeVisible();
   await expect(page.getByRole('button', { name: 'Check this computer' })).toBeVisible();
-  await expect(page.getByRole('region', { name: 'ChatGPT through Codex' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Codex', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Sign in to ChatGPT', exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Use ChatGPT', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Use Codex', exact: true })).toBeDisabled();
   await page.getByRole('button', { name: 'Sign in to ChatGPT', exact: true }).click();
   await expect(page.getByRole('link', { name: 'Continue to OpenAI' })).toHaveAttribute('href', 'https://auth.openai.com/oauth/authorize?state=fixture');
   expect(codexStarts).toBe(1);
@@ -1078,14 +1078,14 @@ test('Services roster: every reported engine listed with switch discipline at ev
   // at Guided; the Console lists the same roster at every detail level, so
   // Guided and Standard are both checked against the whole list below.
   await expect(service('Sample work')).toHaveCount(0);
-  await expect(service(/ChatGPT/)).toBeVisible();
+  await expect(service(/Codex/)).toBeVisible();
   await expect(service('LocalAI supervisor')).toBeVisible();
   await expect(service('AionCore')).toBeVisible();
   // The Codex entry has a switch; Sample work has none.
-  await expect(service(/ChatGPT/).locator('input[type="checkbox"]')).toHaveCount(1);
+  await expect(service(/Codex/).locator('input[type="checkbox"]')).toHaveCount(1);
   await expect(service('Sample work').locator('input[type="checkbox"]')).toHaveCount(0);
-  await expect(service(/ChatGPT/).getByRole('button', { name: 'What is sent' })).toHaveCount(1);
-  await expect(service(/ChatGPT/).getByRole('button', { name: 'Sign in to ChatGPT', exact: true })).toBeVisible();
+  await expect(service(/Codex/).getByRole('button', { name: 'What is sent' })).toHaveCount(1);
+  await expect(service(/Codex/).getByRole('button', { name: 'Sign in to ChatGPT', exact: true })).toBeVisible();
   await expect(rail.getByRole('button', { name: 'Engines', exact: true })).toHaveCount(0);
   // Check connections reaches the server with a refresh request.
   const [refreshRequest] = await Promise.all([
@@ -1099,7 +1099,7 @@ test('Services roster: every reported engine listed with switch discipline at ev
 
   // Standard shows the same roster, the observe-only entries included.
   await chooseDetail(page, 'Standard');
-  await expect(service(/ChatGPT/)).toBeVisible();
+  await expect(service(/Codex/)).toBeVisible();
   await expect(service('LocalAI supervisor')).toBeVisible();
   await expect(service('AionCore')).toBeVisible();
   // Entries without a switch offer no "What is sent" button either.
@@ -1116,7 +1116,7 @@ test('Services roster: every reported engine listed with switch discipline at ev
   await expect(rail.getByRole('button', { name: 'Connections', exact: true })).toHaveCount(0);
   await rail.getByRole('button', { name: 'Engines', exact: true }).click();
   await expect(service('Sample work')).toHaveCount(0);
-  await expect(service(/ChatGPT/)).toBeVisible();
+  await expect(service(/Codex/)).toBeVisible();
 
   const back = await page.request.put('/api/settings', {
     headers: HEADERS,
@@ -1163,14 +1163,14 @@ test('Usage: chip, signal bar and Settings bars from the test-mode snapshot', as
   await page.reload();
   const chip = page.locator('.usage-chip');
   await expect(chip).toBeVisible();
-  await expect(chip).toContainText(/ChatGPT, week, 9% left/);
+  await expect(chip).toContainText(/Codex, week, 9% left/);
   // Bars fill with what is left; under 20 percent left takes the signal colour.
   await expect(chip.locator('.usage-fill.signal')).toBeVisible();
   // The chip opens Settings at the engines section with both bars.
   await chip.click();
   await expect(page.getByRole('heading', { level: 1, name: 'Helpers on this computer', exact: true })).toBeVisible();
   const codexService = page.locator('.service', {
-    has: page.getByRole('heading', { name: /ChatGPT/ }),
+    has: page.getByRole('heading', { name: /Codex/ }),
   });
   await expect(codexService.locator('.usage-row')).toHaveCount(2);
   await expect(codexService).toContainText(/5 hours/);

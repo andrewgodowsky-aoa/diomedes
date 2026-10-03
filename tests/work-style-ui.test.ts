@@ -73,7 +73,7 @@ describe('the style picker', () => {
     // The only choices are the three tiers: no route, no model, no Advanced, no default-model row.
     const choices = [...html.matchAll(/role="menuitem(?:radio)?"[^>]*><span>([^<]*)<\/span>/g)].map((m) => m[1]);
     expect(choices).toEqual(WORK_STYLES.map((style) => WORK_STYLE_LABELS[style]));
-    for (const word of ['Advanced', 'Default model', 'gpt-', 'gemini', 'AWS', 'Bedrock', 'Azure', 'OpenRouter', 'Vertex', 'Claude', 'ChatGPT'])
+    for (const word of ['Advanced', 'Default model', 'gpt-', 'gemini', 'AWS', 'Bedrock', 'Azure', 'OpenRouter', 'Vertex', 'Claude', 'ChatGPT', 'Codex'])
       expect(html).not.toContain(word);
   });
 
@@ -123,7 +123,7 @@ describe('the style picker', () => {
   });
 
   it('writes the resolved model and level for the details line, level only where it is read', () => {
-    expect(resolvedDetail(view())).toBe('gpt-6-luna low · ChatGPT');
+    expect(resolvedDetail(view())).toBe('gpt-6-luna low · Codex');
     expect(resolvedDetail({ ...view({ model: 'opus', effort: null }), route: 'claude-code' })).toBe('opus · Claude Code');
     expect(resolvedDetail({ ...view({ effort: 'high' }), route: 'opencode' })).toBe('gpt-6-luna · OpenCode');
     expect(resolvedDetail(null)).toBe('');

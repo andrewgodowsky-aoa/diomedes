@@ -113,7 +113,7 @@ Copy: the manual-card engine refusal names the engines through `routeName` and n
 - The same assignment is checked after the slot is validated and before the running and
   owned refusals, so a repeated click during a run is a harmless 200, while an unknown or
   stopped slot is still refused.
-- A manual card runs only on a ChatGPT (`codex`) or Claude Code member. A model-API member
+- A manual card runs only on a Codex (`codex`) or Claude Code member. A model-API member
   would pass the Agent gate in `admitModelApi`, which S1 must never call; other routes are
   refused by name. The run carries no team tools and no slot: the Board's start is a versioned
   Work command, and team helpers are refused for those (`unsupported_work_target`).

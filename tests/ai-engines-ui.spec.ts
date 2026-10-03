@@ -625,7 +625,7 @@ test('Console keeps the Codex sending preference and sample route separate from 
     await composer.press('Enter');
     const confirmation = page.getByRole('dialog', { name: 'Send this message?' });
     if (scenario.confirm) {
-      await expect(confirmation).toContainText('ChatGPT');
+      await expect(confirmation).toContainText('Codex');
       expect(sent).toHaveLength(count);
       await confirmation.getByRole('button', { name: 'Send message', exact: true }).click();
     }
