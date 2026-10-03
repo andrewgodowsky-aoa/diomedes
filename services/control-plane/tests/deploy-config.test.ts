@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { spendControls } from '../src/managed-inference.js';
+import { approvedConnections } from '../src/managed-bindings.js';
 import * as worker from '../src/worker.js';
 
 // Workers Builds deploys the repository root's wrangler.jsonc on every merge to
@@ -58,6 +59,27 @@ describe('the deployed Worker configuration', () => {
     const controls = spendControls(deployed.vars ?? {});
     expect(controls.ceilingMicroUsd).toBe(100_000_000);
     expect(controls.maxOutputTokens).toBe(2000);
+  });
+
+  // The gateway reads MANAGED_CONNECTIONS on every managed call and refuses all of them when it
+  // does not parse, so the deployed value is checked the way the gateway reads it.
+  it('carries the approved provider connections, read as the gateway reads them', () => {
+    const connections = approvedConnections(deployed.vars ?? {});
+    expect(connections.map(c => [c.id, c.provider, c.secretRef])).toEqual([
+      ['azure-foundry-dev', 'azure-openai', 'AZURE_OPENAI_API_KEY'],
+      ['aws-bedrock-us-east-1', 'aws-bedrock', 'BEDROCK_API_KEY'],
+      ['openrouter', 'openrouter', 'OPENROUTER_API_KEY'],
+      ['vertex-diomedes-dev', 'google-vertex', 'VERTEX_API_KEY'],
+    ]);
+    expect(connections.find(c => c.provider === 'azure-openai')).toMatchObject({
+      resource: 'diomedes-foundry-dev-rg', host: 'services.ai.azure.com', deployments: ['gpt-6.1-sol', 'gpt-6-luna', 'claude-opus-5-5'],
+    });
+    expect(connections.find(c => c.provider === 'aws-bedrock')).toMatchObject({
+      region: 'us-east-1', endpointFamily: 'runtime', allowedProfiles: ['us.moonshotai.kimi-k3'],
+      modelProtocols: { 'us.moonshotai.kimi-k3': ['chat-completions'] },
+    });
+    expect(connections.find(c => c.provider === 'google-vertex')).toMatchObject({ project: 'diomedes-dev', location: 'global', publisher: 'google' });
+    expect(connections.every(c => c.revision === 1 && c.payer === 'company' && c.enabled)).toBe(true);
   });
 
   // Every main merge deploys the root file. A binding or migration naming a class the Worker
