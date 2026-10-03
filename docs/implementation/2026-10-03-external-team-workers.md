@@ -37,9 +37,10 @@ person's own key already runs as a model-API worker.
   child as `reconcile_required`, which reads as `died`, and the lead stops. An H08 Retry of that
   lead refuses the worker by name instead of sending it again: "Its earlier turn on Claude Code may
   have run, so it wasn't sent again. Start a new task to ask again." The rule is any recorded model
-  step, so an answer refused for its length (it ran) is refused on retry too, while a worker refused
-  before its turn (sign-in, files, size) sent nothing and runs again on retry. A restart in between
-  changes nothing: the guard reads the record cold.
+  step, so an answer refused for its length (it ran) is refused on retry too, and so is a worker
+  stopped during its turn, by the person or by its wall time. A worker refused before its turn
+  (sign-in, files, size) sent nothing and runs again on retry. A restart in between changes nothing:
+  the guard reads the record cold.
 - Every check that can refuse without sending runs in `validatePrepared`, before the step: the
   engine's admission (re-read when older than 30 seconds), no tools offered, the worker's files read
   whole with cloud sharing checked for every route the text can reach, and the 160 KB context limit
@@ -101,7 +102,7 @@ Gates, run in this worktree under the heavy slot on 2026-10-03:
 | Gate | Result |
 | --- | --- |
 | `npx tsc --noEmit` | No errors, on the committed bytes |
-| `tests/h14-external-worker.test.ts` | 24 passed |
+| `tests/h14-external-worker.test.ts` | 24 passed (25 after the follow-up below) |
 | 16 related files: H14, team, loop routes and hosts, handoff, engine service, integrations, Vertex funding | 334 passed, on the committed bytes |
 | Full `npx vitest run` | 561 files: 9,505 passed, 5 skipped, 0 failed |
 | `npx vite build` | Built |
@@ -110,7 +111,11 @@ Gates, run in this worktree under the heavy slot on 2026-10-03:
 The full run predates the last cleanup: comment wording in `shared/team-delegation.ts`, `execution`
 saved only on an external role in `native-loop-routes.ts`, and in `server/engines/service.ts` a doc
 comment moved back to `generate` and an unused method removed. The typecheck and the 16 related files
-ran again on the final bytes.
+ran again on those bytes.
+
+A follow-up commit holds a stopped external worker to the Retry rule (a Stop can land after the
+engine was called) and adds a test for it. After it, the typecheck is clean and the 16 related files
+pass: 335 tests, 25 of them in the new file.
 
 Not covered: a live engine. Every engine turn here was scripted; no real Claude Code, Codex or
 OpenCode turn ran.

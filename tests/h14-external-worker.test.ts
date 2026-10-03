@@ -595,6 +595,41 @@ describe('a lead with a worker on the person\'s own Claude Code', () => {
     expect(log.sends).toHaveLength(1);
   });
 
+  test('a worker stopped during its turn may have run, so a retry does not send it again', async () => {
+    // The engine holds the turn until it is stopped, as a real one mid-answer would.
+    const { port, log } = scriptedPort(
+      (turn) =>
+        new Promise<ExternalWorkerReply>((_resolve, reject) =>
+          turn.signal.addEventListener('abort', () => reject(new Error('The Claude Code turn was stopped.')), { once: true }),
+        ),
+    );
+    await seed(port);
+    await connect();
+    const first = await call<{ runId: string; session: Session }>('/loop/start', 'POST', startBody());
+    expect(first.status, JSON.stringify(first.data)).toBe(200);
+    await vi.waitFor(() => expect(log.sends).toHaveLength(1), { timeout: 15_000 });
+    const stopped = await call<Session>(`/work/${first.data.session.id}/stop`, 'POST', {});
+    expect(stopped.status, JSON.stringify(stopped.data)).toBe(200);
+    await untilRun(first.data.runId, 'cancelled');
+    expect((await loop(first.data.runId)).data.team!.workers.map((worker) => worker.outcome)).toEqual(['stopped']);
+
+    const retried = await call<{ receipt: ControlReceipt }>('/controls', 'POST', {
+      protocolVersion: 1,
+      commandId: 'retry-stopped-external-lead',
+      taskId,
+      control: 'retry',
+      sessionId: first.data.session.id,
+    });
+    expect(retried.status, JSON.stringify(retried.data)).toBe(200);
+    expect(retried.data.receipt.outcome, JSON.stringify(retried.data.receipt)).toBe('applied');
+    const nextSession = retried.data.receipt.result.sessionId!;
+    const nextRun = (await host().list(projectId)).find((run) => run.sessionId === nextSession)!;
+    await untilRun(nextRun.id, 'completed');
+    const after = (await loop(nextRun.id)).data.team!;
+    expect(after.workers[0]).toMatchObject({ outcome: 'refused', reason: NOT_AGAIN });
+    expect(log.sends).toHaveLength(1);
+  });
+
   test('a worker refused before its turn sent nothing, so a retry runs it once the cause is fixed', async () => {
     const { port, log } = scriptedPort();
     await seed(port);

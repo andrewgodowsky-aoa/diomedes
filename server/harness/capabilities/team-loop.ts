@@ -338,6 +338,12 @@ export function createTeamPort(deps: TeamPortDeps) {
         const sent =
           item.outcome === 'died' || (child ? child.steps.some((step) => step.intent.kind === 'model') : item.outcome !== 'failed');
         failed.set(key, { handoffId: item.handoffId, attempt: item.attempt, outcome: item.outcome, route: item.route, sent });
+      } else if (item.outcome === 'stopped' && item.route !== null && isExternalWorkerRoute(item.route)) {
+        // A Stop, the person's or its wall time, can land after the engine was called. A stopped
+        // loop worker simply runs again; an external one that reached its turn is held to the rule.
+        const child = children.find((run) => run.id === item.childRunId);
+        if (!child || child.steps.some((step) => step.intent.kind === 'model'))
+          failed.set(key, { handoffId: item.handoffId, attempt: item.attempt, outcome: item.outcome, route: item.route, sent: true });
       }
     }
     return { finished, failed };
