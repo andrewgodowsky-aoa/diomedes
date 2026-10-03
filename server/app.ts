@@ -116,9 +116,11 @@ import { codexCatalog, engineCatalog, isKnownChoice, recordEngineCatalog } from 
 import { ReviewerService, type ReviewerAdapter } from './trust/reviewer.js';
 import { codexReviewerAdapter } from './trust/codex-reviewer.js';
 import { VerificationService } from './verification/service.js';
-import { mountNativeLoopRoutes } from './native-loop-routes.js';
+import { mountNativeLoopRoutes, loopRunId } from './native-loop-routes.js';
+import { mintAutomaticWorkRequest, admitAutomaticWork } from './automatic-work-admission.js';
+import { AUTOMATIC_WORK_POLICY, type AutomaticWorkRequest } from '../shared/automatic-work.js';
 import { mountTaskWorkflowRoutes } from './task-workflow.js';
-import { taskWorkflowBlocker, workflowOf } from '../shared/task-workflow.js';
+import { taskWorkflowBlocker, workflowOf, emptyTaskWorkflow } from '../shared/task-workflow.js';
 import { checkCompletionAllowed } from './team/board.js';
 import { NATIVE_LOOP_ENGINE } from '../shared/native-loop.js';
 import { mountVerificationRoutes } from './verification/routes.js';
@@ -146,7 +148,12 @@ import {
 import { teamToolRegistry } from './team/tools.js';
 import type { UsageSnapshot } from '../shared/types.js';
 import { mountTeamRoutes } from './team/routes.js';
-import { createHarnessHost } from './harness/host.js';
+import { TeamService } from './team/service.js';
+import { createProductionAgentTeamHost } from './agent-team-host.js';
+import { currentAuthority as currentTrustAuthority, denial as trustDenial } from './trust/index.js';
+import { createLocalTrustBackend } from './trust/local-backend.js';
+import { planAutomaticWork, selectAutomaticTeam, automaticTeamStillCurrent } from './harness/automatic-team-selection.js';
+import { createHarnessHost, type HarnessHost } from './harness/host.js';
 import { watchedGenerator } from './stream-rules/work-watch.js';
 import { mountHarnessRoutes } from './harness/routes.js';
 import { localHarnessPrincipal } from './harness/bridge.js';
@@ -158,11 +165,11 @@ import {
   type ToolActivity,
   type TransientPreview,
 } from '../shared/adapter-contract.js';
-import { FIXTURE_ENGINE } from './harness/approval.js';
+import { FIXTURE_ENGINE, REPORT_PATH } from './harness/approval.js';
 import { CODEX_ENGINE, type ResolveHarnessAuthority } from './harness/codex-engine.js';
 import { roleInstructions } from './team/prompts.js';
 import { unreadForSlot } from './team/mailbox.js';
-import { JobCaps } from './job-caps.js';
+import { JobCaps, jobKeyFor } from './job-caps.js';
 import { jobRatesOf, mountJobCapRoutes, type JobPlan } from './job-cap-routes.js';
 import { approvedJobCap, jobTierOf, type JobShape } from '../shared/job-caps.js';
 import { CONVERSATION_LIMITS, WORK_LIMITS as MODEL_WORK_LIMITS } from './engines/model-api-core.js';
@@ -239,7 +246,7 @@ import {
 import { answerInstructions } from './answer-format.js';
 import { repairWriting, type PlainWritingRecord } from './plain-writing.js';
 import { AGENT_NAME } from '../shared/agent-name.js';
-import { admitInteraction } from './interaction-admission.js';
+import { admitInteraction, conversationCommandIds } from './interaction-admission.js';
 import {
   blockedMessage,
   commandBinding,
@@ -397,6 +404,15 @@ interface AppOptions {
   };
   /** H13: tests replace the Diomedes loop's model-API routes here. Production uses the engine service. */
   loopModelRoutes?: import('./harness/capabilities/native-loop.js').LoopModelRoutes;
+  /** Host-qualified exact Decisions account/billing bounds; never supplied by a message or UI. */
+  agentReviewQualification?: Parameters<typeof createProductionAgentTeamHost>[0]['trustedReviewQualification'];
+  /** Offline host fixture; production composes the existing services above. */
+  agentCollaboration?: (context:{
+    store:Store;team:TeamService;runs:HarnessHost['runs'];modelSessions:HarnessHost['modelSessions'];
+    currentAuthority:ResolveHarnessAuthority;ownerId:string;
+    rootLedger:ReturnType<typeof createProductionAgentTeamHost>['rootLedger'];
+  }) => import('./harness/agent-collaboration.js').AgentCollaborationHost
+    | Promise<import('./harness/agent-collaboration.js').AgentCollaborationHost>;
   /**
    * The first launch of a new build (server/update-reconcile.ts). `build` is
    * the running build, read from its build record when omitted; tests pass an
@@ -457,7 +473,7 @@ interface RunChoice {
  * default again. The pair is checked against the engine's own list, which keeps
  * a choice that has since been withdrawn from reaching `thread/start`.
  */
-function parseRequested(value: unknown, engine: Route = 'codex'): Conversation['requested'] {
+function parseRequested(value: unknown, engine: Route = 'codex', offeredModels?: readonly EngineModel[]): Conversation['requested'] {
   if (value === null) return null;
   if (!value || typeof value !== 'object' || Array.isArray(value))
     throw new ApiError(400, 'Provide a helper choice, or null to use the default.');
@@ -491,7 +507,10 @@ function parseRequested(value: unknown, engine: Route = 'codex'): Conversation['
     effort: effort === null ? null : String(effort).trim(),
     ...(agent === null ? {} : { agent }),
   };
-  if (!isKnownChoice(engine, chosen.model, chosen.effort))
+  const offered = offeredModels?.find(entry => entry.slug === chosen.model);
+  const known = offeredModels === undefined ? isKnownChoice(engine, chosen.model, chosen.effort)
+    : Boolean(offered && (chosen.effort === null || offered.efforts.some(level => level.id === chosen.effort)));
+  if (!known)
     throw new ApiError(400, 'That helper choice is not one this computer offers.');
   return chosen;
 }
@@ -809,6 +828,7 @@ export async function createApp(options: AppOptions) {
   const agentProfileStore = new AgentProfileStore(store.dataDir);
   await agentProfileStore.load();
   const agentProfiles = new AgentProfileService(agentProfileStore, store, agents);
+  const teamService = new TeamService(store);
   // Organizations, membership and the Business intake. Identity for them comes
   // from server/trust/, whose production backend is not installed, so what this
   // creates is a labelled local fixture rather than a hosted organization.
@@ -1146,10 +1166,27 @@ export async function createApp(options: AppOptions) {
     changeReview,
     agentProfiles,
   );
+  // Only the protected desktop main process supplies this fresh loopback secret.
+  // The unprotected development/browser host cannot promote a workspace fixture.
+  let personalTrust: Awaited<ReturnType<typeof createLocalTrustBackend>> | null = null;
+  if (options.loopbackToken && !options.harnessAuthority) {
+    try {
+      await workspaces.openPersonalAuthority();
+      personalTrust = await createLocalTrustBackend({store,
+        accountFacts:()=>accountSession?.authorityFacts() ?? null,
+        personalFacts:projectId=>workspaces.personalAuthorityFacts(projectId)});
+    } catch {
+      // Files and sign-in remain usable; genuine work stays refused on an unproved host.
+    }
+  }
+  const scopedTrustUnavailable: ResolveHarnessAuthority = async () => trustDenial(403,'no-resolver',
+    'The protected desktop could not establish current personal Trust authority.');
+  const resolveHarnessAuthority = options.harnessAuthority ?? (options.loopbackToken
+    ? personalTrust?.resolve ?? scopedTrustUnavailable : currentTrustAuthority);
   const harness = createHarnessHost({
     store,
     dataDir: store.dataDir,
-    currentAuthority: options.harnessAuthority,
+    currentAuthority: resolveHarnessAuthority,
     textLeaseMs: options.harnessTextLeaseMs,
     // The one job an activated setup can run, as a harness procedure: the
     // workspace decides where it writes and refuses rather than guessing.
@@ -1264,15 +1301,31 @@ export async function createApp(options: AppOptions) {
   };
   // H13: a model-API route drives a Diomedes work loop through the engine service's own
   // admission. A loop resumed at startup waits until every route and the verifier exist.
+  const productionTeam = createProductionAgentTeamHost({
+    store, team:teamService, harness, engines, profiles:agentProfiles, profileStore:agentProfileStore,
+    workspaces, currentAuthority:resolveHarnessAuthority,
+    ...(personalTrust ? {ownerAuthority:personalTrust.ownerAuthority} : {}),
+    modelApiTransport:options.modelApiTransport, trustedReviewQualification:options.agentReviewQualification,
+  });
+  const collaborationHost = options.agentCollaboration ? await options.agentCollaboration({
+    store,team:teamService,runs:harness.runs,modelSessions:harness.modelSessions,
+    currentAuthority:resolveHarnessAuthority,
+    ownerId:workspaces.currentPerson().id,rootLedger:productionTeam.rootLedger,
+  }) : productionTeam.collaboration;
+  harness.loop.attachCollaboration(collaborationHost);
   harness.loop.hold();
-  harness.loop.setModelRoutes(options.loopModelRoutes ?? {
+  harness.loop.setModelRoutes(options.loopModelRoutes ? {
+    ...options.loopModelRoutes,
+    rootLedger:options.loopModelRoutes.rootLedger ?? productionTeam.rootLedger,
+  } : {
     admit: async (route, input) => {
       if (!isModelApiRoute(route) || !input.model || !input.accountRoute)
         throw new ApiError(409, 'Connect this route and choose its model in AI setup first.');
       const admission = await engines.admitModelApi(
         route,
-        { model: input.model, accountRoute: input.accountRoute, projectId: input.projectId },
-        { surface: 'loop', rootJobId: null },
+        { model: input.model, accountRoute: input.accountRoute, projectId: input.projectId,
+          requestId:input.rootRunId, threadId:input.threadId ?? undefined, effort:input.effort ?? undefined },
+        { surface: 'loop', rootJobId: input.rootJobId ?? input.rootRunId ?? null },
       );
       return { model: admission.model, accountRoute: admission.accountRoute };
     },
@@ -1287,10 +1340,13 @@ export async function createApp(options: AppOptions) {
           model: request.model,
           accountRoute: request.accountRoute,
           instructions: request.instructions,
+          rootRunId:request.rootRunId, rootJobId:request.rootJobId, threadId:request.threadId,
+          scopedLedger:request.scopedLedger, effort:request.effort, callLimits:request.callLimits,
         },
         stop,
       );
     },
+    rootLedger:productionTeam.rootLedger,
   });
   await harness.init();
   await engineAsks.expireOpen();
@@ -1434,7 +1490,7 @@ export async function createApp(options: AppOptions) {
   if (phoneRelay) mountPhoneRelayRoutes(app, phoneRelay);
   connections.mountRaw(app);
   app.use(express.json({ limit: '9mb' }));
-  const teamService = mountTeamRoutes(app, store);
+  mountTeamRoutes(app, store, teamService);
   mountHarnessRoutes(app, store, harness);
   /**
    * The Agent catalog for this project. Compatibility is computed from the
@@ -1504,16 +1560,18 @@ export async function createApp(options: AppOptions) {
         return { admitted: false, model: null, reason: error instanceof Error ? error.message : 'Nectovia is unavailable.' };
       }
     },
-    admitManaged: async (projectId, runId, input, taskId) => {
+    admitManaged: async (projectId, runId, input, taskId, rootJobId = runId) => {
       const thread = store.state(projectId).conversations.find((item) => item.taskId === taskId);
       // Pin the task thread's tier before the adapter resumes under the loop id.
       await jobCaps.scope(projectId, runId, thread?.id ?? null);
       const admitted = await engines.admitModelApi(NECTOVIA_ROUTE,
         { ...input, projectId, requestId: runId, threadId: thread?.id },
-        { surface: 'loop', rootJobId: runId });
+        { surface: 'loop', rootJobId });
       return { model: admitted.model, accountRoute: admitted.accountRoute };
     },
-  }, () => packLifecycle.contributions);
+  }, () => packLifecycle.contributions, {
+    host:collaborationHost, rootLedger:productionTeam.rootLedger,
+  });
   mountTaskWorkflowRoutes(app, store);
   mountWorkspaceRoutes(app, store, workspaces, configuration, automations);
   mountAutomationRoutes(app, store, automations);
@@ -2209,6 +2267,10 @@ export async function createApp(options: AppOptions) {
       } else if (isExternalEngine(engine)) {
         await engines.check(engine);
       }
+      if (isModelApiRoute(engine)) {
+        const models = await currentChoiceModels(engine);
+        return {engine,models,detail:models.length ? 'Models configured on this connection.' : 'No model is configured on this connection.'};
+      }
       return engineCatalog(engine);
     }),
   );
@@ -2472,7 +2534,7 @@ export async function createApp(options: AppOptions) {
    * message, so the protocol check, the receipt replay and the journal entry are the ones a
    * person's task goes through. Nothing here is duplicated elsewhere.
    */
-  const createTaskFrom = async (projectId: string, b: Record<string, unknown>, origin?: Task['origin']) => {
+  const createTaskFrom = async (projectId: string, b: Record<string, unknown>, origin?: Task['origin'], automaticWork?: AutomaticWorkRequest) => {
     refuseHomeWork(projectId);
     const state = store.state(projectId);
     const command = parseTaskCommand(b);
@@ -2483,7 +2545,11 @@ export async function createApp(options: AppOptions) {
         command.admission.commandId,
         command.admission.payloadDigest,
       );
-      if (replay) return replay;
+      if (replay) {
+        if (automaticWork && replay.automaticWork?.request.requestDigest !== automaticWork.requestDigest)
+          throw new ApiError(409, 'This task command belongs to another original request.', {code:'stale-request'});
+        return replay;
+      }
     }
     // The document is checked against a fresh listing on both the versioned and the
     // unversioned path, before anything is created.
@@ -2504,9 +2570,17 @@ export async function createApp(options: AppOptions) {
       ...(sourceDocument !== undefined ? { sourceDocument } : {}),
     });
     if (origin) task.origin = structuredClone(origin);
+    if (automaticWork) {
+      task.workflow = { ...emptyTaskWorkflow(), continuation:'full-approval', maxTurns:12 };
+      const ids=conversationCommandIds(automaticWork.sourceMessageId);
+      task.automaticWork = {request:structuredClone(automaticWork),
+        rootRunId:loopRunId(projectId,ids.workCommandId),rootJobId:jobKeyFor(projectId,automaticWork.commandId),
+        admissionRef:`conversation:${origin?.runId ?? ''}:${automaticWork.commandId}`,policyRevision:AUTOMATIC_WORK_POLICY};
+    }
     const entry = store.addEntry(state, {
       kind: 'tasks-made',
-      sentence: `You made a task: ${task.name}`,
+      sentence: automaticWork ? `Diomedes created a task for your request: ${task.name}` : `You made a task: ${task.name}`,
+      ...(automaticWork ? {actor:'diomedes' as const} : {}),
       taskId: task.id,
     });
     if (command) {
@@ -2766,32 +2840,93 @@ export async function createApp(options: AppOptions) {
     // receipt. Replay never scans source files or dispatches another adapter call.
     if (!state.tasks.some((task) => task.id === taskId && !task.deletedAt))
       throw new ApiError(404, 'This task was not found.');
+    let preparedSession: Session | undefined;
     if (command) {
-      const previous = store.workCommand(
-        projectId,
-        command.admission.commandId,
-        command.admission.payloadDigest,
-      );
-      if (previous) return structuredClone(previous);
-      store.checkWorkReceiptCapacity(projectId);
+      const previous = store.workCommand(projectId, command.admission.commandId, command.admission.payloadDigest);
+      if (previous) {
+        if (!useLoop || !requestedTask.automaticWork) return structuredClone(previous);
+        if (!requestedTask.automaticWork.rootRunId) throw new ApiError(409, 'The original root binding is absent.', {code:'stale-request'});
+        const known = await harness.get(projectId, requestedTask.automaticWork.rootRunId).catch((error: unknown) => {
+          if (error instanceof ApiError && error.status === 404) return null;
+          throw error;
+        });
+        if (known) return structuredClone(previous);
+        // The receipt survived a process exit before run-file creation. All current
+        // admission checks below still apply; the bridge reuses only that untouched Session.
+        preparedSession = previous;
+      } else store.checkWorkReceiptCapacity(projectId);
     }
     const workflowBlocker = taskWorkflowBlocker(requestedTask);
     if (workflowBlocker) throw new ApiError(409, workflowBlocker, { code: 'task_workflow_blocked' });
     if (useLoop) {
       if (team || (b.agentId && b.agentId !== 'auto'))
         throw new ApiError(409, 'This task runs in the Diomedes work loop. A separate team or worker selection cannot join it.');
-      const start = () => loopRoutes.startLocked(projectId, {
-        protocolVersion: 1,
-        commandId: command?.admission.commandId ?? identifier('loop-work-'),
-        taskId,
-        route: selectedRoute === 'sample' ? 'native-fixture' : selectedRoute,
-        goal: typeof b.instruction === 'string' && b.instruction.trim()
-          ? asString(b.instruction, 'an instruction', 16000)
-          : requestedTask.description || requestedTask.name,
-        sources: Array.isArray(b.sources) ? b.sources.map(relativeName) : [],
-        consent: b.consent === true,
-        maxTurns: workflowOf(requestedTask).maxTurns,
-      }, { admission: command?.admission });
+      const commandId = command?.admission.commandId ?? identifier('loop-work-');
+      const runId = loopRunId(projectId, commandId);
+      const goal = typeof b.instruction === 'string' && b.instruction.trim()
+        ? asString(b.instruction, 'an instruction', 16000) : requestedTask.description || requestedTask.name;
+      const sourceThread = state.conversations.find(item=>item.id === threadId);
+      let picked: {model?:string;effort?:string|null} = {};
+      if (selectedRoute === NECTOVIA_ROUTE) {
+        await accountRouting?.refresh(projectId);
+        picked = managedLoopChoice(projectId, taskId);
+      } else if (selectedRoute !== 'sample') {
+        const routing = await agentProfiles.resolve({projectId,taskId,thread:sourceThread,projectFolder:state.project.folder});
+        if (routing.outcome === 'refused') throw new ApiError(409,routing.reason,{code:'profile_unavailable'});
+        if (routing.outcome === 'resolved') {
+          if (routing.pick.engine !== selectedRoute) throw new ApiError(409,'The current profile selects a different work route.',{code:'profile_changed'});
+          picked={model:routing.pick.model,effort:routing.pick.effort};
+        } else picked=nativeChoice(selectedRoute,projectId,sourceThread,{mode:'build',text:goal});
+      }
+      const account = selectedRoute === 'sample' ? null : routeAccount(selectedRoute,projectId);
+      if (selectedRoute !== 'sample' && (!picked.model || typeof account !== 'string'))
+        throw new ApiError(409,'This work has no exact selected model and account.',{code:'route_unavailable'});
+      const automatic = requestedTask.automaticWork;
+      if (automatic && (!automatic.request.executionPin || evidenceDigest(await automaticExecutionPin(automatic.request)) !== evidenceDigest(automatic.request.executionPin)))
+        throw new ApiError(409,'The original work execution binding changed.',{code:'stale-request'});
+      if (automatic?.request.executionPin) {
+        const pin=automatic.request.executionPin;
+        if (pin.route !== selectedRoute || pin.model !== picked.model || pin.accountRoute !== account || pin.effort !== (picked.effort ?? null))
+          throw new ApiError(409,'The work route differs from its original execution binding.',{code:'stale-request'});
+      }
+      const rawJobId = automatic?.request.commandId ?? runId;
+      const scopedLedger = await productionTeam.rootLedger(projectId,rawJobId,threadId ?? null);
+      const rootJobId = scopedLedger.jobScope?.id;
+      if (!rootJobId || (automatic && (automatic.rootRunId !== runId || automatic.rootJobId !== rootJobId)))
+        throw new ApiError(409,'This work no longer belongs to its original request and spend scope.',{code:'stale-request'});
+      let selectedTeam: {leadSlotId:string;memberSlotId:string}|null = null;
+      let selectionReason: string|undefined;
+      if (automatic && picked.model && typeof account === 'string') {
+        const candidates = await productionTeam.candidates(projectId);
+        const remaining = Math.max(0,scopedLedger.jobScope!.capMicroUsd-scopedLedger.jobUsed(rootJobId));
+        const supportedSources = automatic.request.sources.length > 0
+          && !automatic.request.sources.some(source=>source.path.toLocaleLowerCase() === REPORT_PATH.toLocaleLowerCase());
+        const decision = automatic.teamDecision ?? (supportedSources ? selectAutomaticTeam({request:automatic.request,
+          plan:planAutomaticWork(automatic.request),candidates,leadRoute:selectedRoute,leadModel:picked.model,
+          leadAccountRoute:account,remainingMicroUsd:remaining,now:Date.now()})
+          : {mode:'single' as const,reason:'This Team composition needs immutable source evidence separate from its recorded report output.'});
+        if (decision.mode === 'team') {
+          if (!automaticTeamStillCurrent(decision,candidates,Date.now()) || decision.lead.route !== selectedRoute
+            || decision.lead.model !== picked.model || decision.lead.accountRoute !== account || decision.lead.effort !== (picked.effort ?? null)
+            || decision.reserve.totalMicroUsd > remaining)
+            throw new ApiError(409,'The admitted Team qualification or available root budget changed.',{code:'team_qualification_changed'});
+          selectedTeam={leadSlotId:decision.lead.slotId,memberSlotId:decision.worker.slotId};
+        }
+        selectionReason=decision.reason;
+        if (!automatic.teamDecision) {
+          requestedTask.automaticWork={...automatic,teamDecision:structuredClone(decision)};
+          await store.persist(state);
+        }
+      }
+      const start = () => loopRoutes.startHostLocked(projectId, {
+        protocolVersion:1,commandId,taskId,route:selectedRoute === 'sample' ? 'native-fixture' : selectedRoute,
+        goal,model:picked.model ?? null,accountRoute:typeof account === 'string' ? account : null,
+        effort:(picked.effort ?? null) as 'low'|'medium'|'high'|null,
+        sources:Array.isArray(b.sources) ? b.sources.map(relativeName) : [],consent:b.consent === true,
+        maxTurns:workflowOf(requestedTask).maxTurns,persistentTeam:selectedTeam,
+      },{admission:command?.admission,rootJobId,rootJobRequestId:rawJobId,threadId:threadId ?? null,
+        scopedLedger,qualityStatus:selectedTeam ? 'measured' : 'hypothesis',selectionReason,
+        ...(preparedSession ? {preparedSessionId:preparedSession.id} : {})});
       const result = commit ? await commit(start) : await start();
       if (!result.session) throw new ApiError(409, 'The saved loop no longer has its session.');
       return result.session;
@@ -3502,7 +3637,8 @@ export async function createApp(options: AppOptions) {
         b.engine === undefined
           ? selectedEngine(store.settings, state.project, conversation)
           : choice(b.engine, ROUTES, 'engine');
-      if (b.requested !== undefined) conversation.requested = parseRequested(b.requested, engine);
+      if (b.requested !== undefined) conversation.requested = parseRequested(b.requested, engine,
+        isModelApiRoute(engine) ? await currentChoiceModels(engine) : undefined);
       // A style changes which offered model leads and how hard it reasons, from the next
       // request on. It never touches the mode, the permission or the route.
       if (b.workStyle !== undefined)
@@ -3559,39 +3695,37 @@ export async function createApp(options: AppOptions) {
     const saved = store.settings.services?.workStyle;
     return isWorkStyle(saved) ? saved : DEFAULT_WORK_STYLE;
   };
-  /**
-   * What a route offers a style to choose from: the engine's own list. The AWS route reports
-   * no list; its one connected model is what it can run, with the three levels its adapter
-   * accepts. Nothing here adds a model a route did not report.
-   */
+  /** API routes offer only their current connection; inspected engines keep their own catalogue. */
   const routeModels = (engine: string): EngineModel[] => {
-    const listed = engineCatalog(engine).models;
-    if (listed.length > 0) return listed;
-    // Azure and OpenRouter offer exactly the models the owner connected: each Azure deployment
-    // (with levels only where the owner declared it a reasoning model) and each allow-listed
-    // OpenRouter model, which this route sends no level for.
-    const levels = ['low', 'medium', 'high'].map((level) => ({ id: level, description: '' }));
+    const levels = ['low', 'medium', 'high'].map((id) => ({id,description:''}));
     if (engine === AZURE_OPENAI_ROUTE)
       return (engines.modelApi?.azure?.connections.peek()?.deployments ?? []).map((entry) => ({
-        slug: entry.model,
-        name: entry.model,
-        description: '',
-        defaultEffort: entry.reasoning ? 'low' : null,
-        efforts: entry.reasoning ? levels : [],
+        slug:entry.model,name:entry.model,description:'',defaultEffort:entry.reasoning ? 'low' : null,
+        efforts:entry.reasoning ? levels : [],
       }));
     if (engine === OPENROUTER_ROUTE)
       return (engines.modelApi?.openrouter?.connections.peek()?.models ?? []).map((entry) => ({
-        slug: entry.id,
-        name: entry.id,
-        description: '',
-        defaultEffort: null,
-        efforts: [],
+        slug:entry.id,name:entry.id,description:'',defaultEffort:null,
+        efforts:(entry.reasoning?.supported ?? []).map(id => ({id,description:''})),
       }));
-    if (engine !== AWS_BEDROCK_ROUTE) return listed;
-    const saved = store.settings.services?.[`${engine}Model`];
-    if (typeof saved !== 'string' || !saved) return [];
-    const efforts = ['low', 'medium', 'high'].map((level) => ({ id: level, description: '' }));
-    return [{ slug: saved, name: saved, description: '', defaultEffort: 'low', efforts }];
+    if (engine === 'google-vertex') {
+      const current = engines.modelApi?.vertex?.connections.peek();
+      return current ? [{slug:current.model,name:current.model,description:'',defaultEffort:'low',efforts:levels}] : [];
+    }
+    if (engine === AWS_BEDROCK_ROUTE) {
+      // Style selection is synchronous; dispatch separately rechecks the exact saved connection.
+      const model = store.settings.services?.[`${engine}Model`];
+      return typeof model === 'string' && model
+        ? [{slug:model,name:model,description:'',defaultEffort:'low',efforts:levels}] : [];
+    }
+    return engineCatalog(engine).models;
+  };
+  /** Public choices also read the current AWS record, so a stale setting cannot offer a removed model. */
+  const currentChoiceModels = async (engine:string):Promise<EngineModel[]> => {
+    if (engine !== AWS_BEDROCK_ROUTE) return routeModels(engine);
+    const current = await engines.modelApi?.connections.read();
+    return current ? [{slug:current.modelId,name:current.modelId,description:'',defaultEffort:'low',
+      efforts:['low','medium','high'].map(id => ({id,description:''}))}] : [];
   };
   /**
    * The Nectovia route's account for work in one project: the business that owns it, as the
@@ -3713,7 +3847,7 @@ export async function createApp(options: AppOptions) {
         policy: nectoviaAccount?.policy(projectId) ?? null,
         text: options.text ?? null,
       });
-    if (conversation?.requested?.model) return null;
+    if (conversation?.requested?.model || conversation?.requested?.profile) return null;
     const style = styleOf(conversation);
     if (!style) return null;
     return resolveTier({
@@ -3767,7 +3901,7 @@ export async function createApp(options: AppOptions) {
         ? { model: tier.model, ...(tier.effort ? { effort: tier.effort } : {}), selection: 'automatic', reason: tier.reason }
         : null;
     }
-    if (conversation?.requested?.model) return null;
+    if (conversation?.requested?.model || conversation?.requested?.profile) return null;
     const style = styleOf(conversation);
     if (!style) return null;
     // The owner's tier map decides the model on the tier's own route. A caller that named
@@ -3890,7 +4024,25 @@ export async function createApp(options: AppOptions) {
     if (!model) throw new ApiError(409, 'Select a model for this engine in Settings.');
     // The adapter rechecks the live catalogue before sending. Persisted overrides
     // never disappear just because the connection is stale or unavailable.
-    return { model };
+    return { model, ...(isModelApiRoute(engine) && conversation?.requested?.effort
+      ? {effort:conversation.requested.effort} : {}) };
+  };
+  const automaticExecutionPin = async (request:AutomaticWorkRequest):Promise<NonNullable<AutomaticWorkRequest['executionPin']>> => {
+    const state=store.state(request.sourceProjectId);
+    const thread=state.conversations.find(item=>item.id === request.threadId);
+    if (!thread) throw new ApiError(409,'The original request thread changed.',{code:'stale-request'});
+    const route=threadRoute(request.sourceProjectId,thread,{mode:'build',text:request.goal});
+    const routing=await agentProfiles.resolve({projectId:request.sourceProjectId,taskId:null,thread,projectFolder:state.project.folder});
+    if (routing.outcome === 'refused') throw new ApiError(409,routing.reason,{code:'profile_unavailable'});
+    const profile=routing.outcome === 'resolved' ? routing.pick : null;
+    if (profile && profile.engine !== route) throw new ApiError(409,'The profile selects a different work route.',{code:'profile_changed'});
+    if (profile && !/^sha256:[a-f0-9]{64}$/.test(profile.digest))
+      throw new ApiError(409,'The saved profile digest is invalid.',{code:'profile_changed'});
+    const choice=profile ? {model:profile.model,effort:profile.effort}
+      : route === 'sample' ? {} : nativeChoice(route,request.sourceProjectId,thread,{mode:'build',text:request.goal});
+    const account=route === 'sample' ? null : routeAccount(route,request.sourceProjectId);
+    return {route,model:choice.model ?? null,accountRoute:typeof account === 'string' ? account : null,
+      effort:choice.effort ?? null,profile:profile ? {id:profile.profileId,revision:profile.revision,digest:profile.digest.slice('sha256:'.length)} : null};
   };
   /**
    * What the add-member form may offer: every route that can carry the team tools, whether
@@ -4335,7 +4487,7 @@ export async function createApp(options: AppOptions) {
   /** The same, for the Work command, from the route and task its own input phase pinned. */
   const conversationWorkDigest = (
     commandId: string,
-    work: { taskId: string; route: string; instruction: string },
+    work: { taskId: string; route: string; instruction: string; sources?: string[]; threadId?: string },
   ) => {
     try {
       return parseWorkCommand({
@@ -4344,7 +4496,8 @@ export async function createApp(options: AppOptions) {
         taskId: work.taskId,
         route: work.route,
         instruction: work.instruction,
-        sources: [],
+        sources: work.sources ?? [],
+        ...(work.threadId ? {threadId:work.threadId} : {}),
         consent: true,
       })!.admission.payloadDigest;
     } catch {
@@ -4387,16 +4540,24 @@ export async function createApp(options: AppOptions) {
       throw new ApiError(409, 'This conversation moved on before this was started.', {
         code: 'conversation_settled',
       });
-    const verdict = admitInteraction({
-      decision: source.decision,
-      restriction: narrower(
-        source.restriction,
-        restrictionOf(thread.mode === 'auto' || thread.mode === 'plan' ? thread.mode : 'ask'),
-      ),
-      conversationProjectId: source.projectId,
-      ...(await admissionContext()),
-      selection: source.selection,
-    });
+    const currentRestriction=narrower(source.restriction,restrictionOf(thread.mode === 'auto' || thread.mode === 'plan' ? thread.mode : 'ask'));
+    if (source.automaticWork) {
+      const phases=await conversationDriver(source.runId).phases(source.projectId,source.runId,source.sourceMessageId);
+      const recorded=decisionOf(phases);
+      if (!recorded?.automaticWork || evidenceDigest(recorded.automaticWork) !== evidenceDigest(source.automaticWork)
+        || recorded.text !== source.automaticWork.goal || source.automaticWork.threadId !== source.threadId
+        || source.automaticWork.commandId !== source.commandId)
+        throw new ApiError(409, 'The original request does not match the saved message.', {code:'stale-request'});
+      if (!source.automaticWork.executionPin || evidenceDigest(await automaticExecutionPin(source.automaticWork)) !== evidenceDigest(source.automaticWork.executionPin))
+        throw new ApiError(409,'The original work model, profile, effort or account changed before admission.',{code:'stale-request'});
+      if (family === 'work') for (const selected of source.automaticWork.sources) {
+        const document=await store.readDocument(projectId,selected.path);
+        if (document.sha !== selected.sha) throw new ApiError(409, 'A requested source changed before work started.', {code:'source_changed'});
+      }
+    }
+    const verdict = source.automaticWork
+      ? admitAutomaticWork({request:source.automaticWork,decision:source.decision,restriction:currentRestriction,conversationProjectId:source.projectId,...(await admissionContext())})
+      : admitInteraction({decision:source.decision,restriction:currentRestriction,conversationProjectId:source.projectId,...(await admissionContext()),selection:source.selection});
     if (verdict.outcome === 'blocked')
       throw new ApiError(409, blockedMessage(verdict.reason), { code: verdict.reason });
     if (
@@ -4639,6 +4800,10 @@ export async function createApp(options: AppOptions) {
         // lineage that already exists may be sent with the text that lineage recorded instead
         // (owner decisions 2026-09-23), so the text is bound below, once the lineage is chosen.
         const composed = answerInstructions(command.mode);
+        const automaticOriginal = mintAutomaticWorkRequest({
+          projectId,threadId,commandId:command.commandId,sourceMessageId,mode:command.mode,text:command.text,
+          sources:command.sources,homeProjectId:store.homeBinding()?.projectId ?? null,requestDigest:commandBinding('message',command),
+        });
         const request = {
           projectId,
           threadId,
@@ -4649,7 +4814,7 @@ export async function createApp(options: AppOptions) {
           binding: commandBinding('message', command),
           interaction: {
             sourceMessageId,
-            decide: decideWith(sourceMessageId, restriction, command.text),
+            decide: decideWith(sourceMessageId, restriction, command.text, automaticOriginal),
           },
         };
         const resolved = { projectId, threadId, commandId: command.commandId, sourceMessageId };
@@ -4661,6 +4826,9 @@ export async function createApp(options: AppOptions) {
           command.commandId,
         );
         if (located?.answered) {
+          const savedDecision = decisionOf(await conversationDriver(located.runId).phases(projectId, located.runId, sourceMessageId));
+          // Reuse the host pin recorded before dispatch; a replay cannot mint today's selection.
+          request.interaction.decide = decideWith(sourceMessageId, restriction, command.text, savedDecision?.automaticWork ?? null);
           // Nothing is sent on a read-back, so the text the answering run recorded is bound as
           // it stands: its driver compares a turn saved before bindings existed on that text.
           const replayed = recordedInstructions(await recordedScope(projectId, located.runId), command.mode);
@@ -4728,7 +4896,15 @@ export async function createApp(options: AppOptions) {
           : routeDisplayName(conversationRoute);
         if (!routeOn(conversationRoute))
           throw new ApiError(409, `Turn ${routeName} on in Settings before sending.`);
+        if (!located) {
+          // The new message sets its Mode before dispatch. Later projection
+          // cannot overwrite a person's narrowing while the answer is pending.
+          thread.mode=command.mode;
+          await store.persist(state);
+        }
         const accountRoute = routeAccount(conversationRoute, projectId);
+        if (automaticOriginal) request.interaction.decide = decideWith(sourceMessageId,restriction,command.text,
+          {...automaticOriginal,executionPin:await automaticExecutionPin(automaticOriginal)});
         // A WorkStyle, when one applies, chooses from what the route offers; on a model-API
         // route its level follows style and mode only, because that route binds it into the
         // lineage's saved context. Without one, each route keeps its own path.
@@ -4737,11 +4913,15 @@ export async function createApp(options: AppOptions) {
           text: command.text,
           stableEffort: isModelApiRoute(conversationRoute),
         });
-        const selection: { model?: unknown; effort?: string } =
-          styled ??
-          (isModelApiRoute(conversationRoute)
-            ? { model: store.settings.services?.[`${conversationRoute}Model`] }
-            : nativeChoice(conversationRoute, projectId, thread));
+        const selectedProfile = thread.requested?.profile
+          ? await agentProfiles.resolve({ projectId, taskId: null, thread, projectFolder: state.project.folder }) : null;
+        if (selectedProfile?.outcome === 'refused') throw new ApiError(409, selectedProfile.reason, { code: 'profile_unavailable' });
+        const profilePick = selectedProfile?.outcome === 'resolved' ? selectedProfile.pick : null;
+        if (thread.requested?.profile && (!profilePick || profilePick.engine !== conversationRoute))
+          throw new ApiError(409, 'The selected profile does not match this conversation route.', { code: 'profile_changed' });
+        const selection: { model?: unknown; effort?: string } = profilePick
+          ? { model: profilePick.model, ...(profilePick.effort !== null ? { effort: profilePick.effort } : {}) }
+          : styled ?? nativeChoice(conversationRoute,projectId,thread,{mode:command.mode,text:command.text});
         if (typeof selection.model !== 'string' || !selection.model || typeof accountRoute !== 'string')
           throw new ApiError(409, `Connect ${routeName} and choose its model in AI setup first.`);
         requireCloudSharing(state, conversationRoute, command.sources.map((source) => source.path), false, {
@@ -5216,8 +5396,8 @@ export async function createApp(options: AppOptions) {
           },
         );
         thread.helper = { engine: answeredBy, model: result.model };
-        // A repair never moves the Mode control: the person may have narrowed it since.
-        if (!resolved.replay) thread.mode = resolved.mode;
+        // The admission recorded the Mode. The person may have narrowed it
+        // while this answer was pending; projection never changes that control.
         touchThread(thread, at, state.tasks);
         await store.persist(state);
       }),
@@ -5240,18 +5420,20 @@ export async function createApp(options: AppOptions) {
         const started = intent?.work && conversationWorkDigest(ids.workCommandId, intent.work);
         const work = findCommand(state, ids.workCommandId);
         assertReplay(work, 'work.start');
-        return {
-          projectId,
-          taskId: task?.id ?? null,
-          sessionId:
-            work?.type === 'work.start' && started && work.digest === started
-              ? work.subject.id
-              : null,
-        };
+        let sessionId = work?.type === 'work.start' && started && work.digest === started ? work.subject.id : null;
+        if (sessionId && task?.automaticWork) {
+          const root = task.automaticWork.rootRunId ? await harness.get(projectId, task.automaticWork.rootRunId).catch((error: unknown) => {
+            if (error instanceof ApiError && error.status === 404) return null;
+            throw error;
+          }) : null;
+          if (!root || root.sessionId !== sessionId) sessionId = null;
+        }
+        return { projectId, taskId: task?.id ?? null, sessionId };
       }),
-    workRoute: async (projectId) =>
-      // The target project's own engine, as a person's Start there would use.
-      selectedEngine(store.settings, store.state(projectId).project, null),
+    workRoute: async (projectId,request) =>
+      request?.executionPin ? request.executionPin.route
+        : request ? threadRoute(projectId,store.state(projectId).conversations.find(thread=>thread.id === request.threadId),{mode:'build',text:request.goal})
+        : selectedEngine(store.settings, store.state(projectId).project, null),
     createTask: (projectId, command, source) =>
       store.locked(async () => {
         const driver = conversationDriver(source.runId);
@@ -5265,7 +5447,7 @@ export async function createApp(options: AppOptions) {
               name: command.name,
               description: command.description,
               owner: 'diomedes-with-ok',
-            }, { projectId: source.projectId, threadId: source.threadId, turnId: projectedTurnIds(hash(turnIdentityText(source.runId, source.commandId))!).user, runId: source.runId })
+            }, { projectId: source.projectId, threadId: source.threadId, turnId: projectedTurnIds(hash(turnIdentityText(source.runId, source.commandId))!).user, runId: source.runId }, source.automaticWork)
           ).id,
         }));
       }),
@@ -5283,8 +5465,9 @@ export async function createApp(options: AppOptions) {
             // The route this message's own Work input pinned, not the setting as it stands.
             route: command.route,
             instruction: command.instruction,
-            sources: [],
-            // The person's selection of this exact proposal carried this consent.
+            sources: command.sources ?? [],
+            ...(command.threadId ? {threadId:command.threadId} : {}),
+            // The existing project cloud-sharing consent and source pins are rechecked by Work.
             consent: true,
           },
           undefined,
@@ -6419,10 +6602,13 @@ export async function createApp(options: AppOptions) {
   app.locals.automations = automations;
   app.locals.softwarePack = softwarePack;
   app.locals.accounts = accountSession;
+  // Internal diagnostics/test seam only: never serialized as a capability or API response.
+  app.locals.personalTrust = personalTrust;
   app.locals.close = async () => {
     // A window closed on the way out must not start a check against services
     // that are already shutting down.
     closing = true;
+    personalTrust?.close();
     // Stop listening before anything is stopped, or shutting a run down would
     // announce a settled session and schedule a delivery on the way out.
     deliveryClosed = true;

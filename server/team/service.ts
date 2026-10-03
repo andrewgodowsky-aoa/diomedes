@@ -29,6 +29,7 @@ import {
 import { ownerPinFrom, tierMapFrom } from '../../shared/tier-map.js';
 import { isRoute } from '../../shared/engines.js';
 import { isWorkStyle, type WorkStyle } from '../../shared/work-style.js';
+import { isOwnedTeamRun } from '../../shared/agent-collaboration.js';
 import {
   checkCompletionAllowed,
   engineLabel,
@@ -85,6 +86,18 @@ export type RunStarter = (input: RunStarterInput) => Promise<{ sessionId: string
 /** The routes the person turned on and connected, with what each reported, for "Nectovia chooses". */
 export type TeamRouteCandidates = (projectId: string) => TeamRouteCandidate[];
 
+/** Host-only staging: an owned exchange commits the mutation and its ownership in one Store persist. */
+export interface TeamMutationOptions {
+  persist?: boolean;
+  wake?: boolean;
+  runId?: string | null;
+}
+export interface OwnedTeamControl {
+  suppressWake(projectId: string, to: Slot, from: Slot): boolean;
+  /** Called in the owner's existing mutation lock; must never acquire Store.locked or await model work. */
+  stopMember(projectId: string, slotId: Slot): Promise<void>;
+}
+
 /** At most this many automatic wakes per slot inside AUTO_WAKE_WINDOW_MS. */
 const AUTO_WAKE_LIMIT = 5;
 const AUTO_WAKE_WINDOW_MS = 10 * 60 * 1000;
@@ -103,6 +116,7 @@ export class TeamService {
   private candidates: TeamRouteCandidates | null = null;
   private wakeLog = new Map<string, number[]>();
   private clock: () => number = () => Date.now();
+  private ownedControl: OwnedTeamControl | null = null;
 
   constructor(private store: Store) {}
 
@@ -114,6 +128,22 @@ export class TeamService {
   /** Wire the host's connected-route facts; until then "Nectovia chooses" is refused. */
   setRouteCandidates(fn: TeamRouteCandidates): void {
     this.candidates = fn;
+  }
+
+  setOwnedControl(control: OwnedTeamControl): void {
+    this.ownedControl = control;
+  }
+
+  /** Persisted ownership still fences wakes before the response host has been wired after restart. */
+  private suppressOwnedWake(projectId: string, to: Slot, from: Slot): boolean {
+    const blocked = this.teamState(projectId).runs.some((run) => {
+      if (isOwnedTeamRun(run))
+        return (!run.rootClosed || run.unknownOutcome) &&
+          [run.grant.lead.slotId, run.grant.member.slotId].some((slot) => slot === to || slot === from);
+      // A malformed owned record cannot fall through to an unowned provider dispatch.
+      return (run as { ownership?: unknown }).ownership === 'agent-team-response';
+    });
+    return blocked || (this.ownedControl?.suppressWake(projectId, to, from) ?? false);
   }
 
   /** Test seam for the auto-wake budget clock (avoids fake timers around network tests). */
@@ -332,6 +362,7 @@ export class TeamService {
     const member = findMember(team, slotId);
     this.setMemberStatus(projectId, slotId, 'stopped');
     await this.store.persist(state);
+    await this.ownedControl?.stopMember(projectId, slotId);
     return structuredClone(member);
   }
 
@@ -343,6 +374,8 @@ export class TeamService {
     const state = this.store.state(projectId);
     const team = migrateTeam(state);
     const member = activeMember(team, slotId);
+    if (this.suppressOwnedWake(projectId, slotId, 'owner'))
+      throw new ApiError(409, 'This member is answering an Agent-owned Team request. Its root run controls the response.');
     const waiting = unreadForSlot(team.messages, slotId);
     if (waiting.length === 0)
       throw new ApiError(400, 'Nothing is waiting for this helper.');
@@ -366,6 +399,7 @@ export class TeamService {
 
   private async maybeWake(projectId: string, to: Slot, from: Slot): Promise<void> {
     if (to === 'owner' || to === from) return;
+    if (this.suppressOwnedWake(projectId, to, from)) return;
     const state = this.store.state(projectId);
     const team = migrateTeam(state);
     const recipient = team.members.find((m) => m.slotId === to);
@@ -454,6 +488,7 @@ export class TeamService {
     projectId: string,
     sender: TeamMember,
     args: { to: unknown; message: unknown; files?: unknown; summary?: unknown },
+    options: TeamMutationOptions = {},
   ): Promise<MailboxMessage> {
     const state = this.store.state(projectId);
     const team = migrateTeam(state);
@@ -485,7 +520,7 @@ export class TeamService {
       summary,
       files,
       threadId: live.threadId,
-      runId: null,
+      runId: options.runId ?? null,
       approvalId: null,
     });
     live.lastSeenAt = now();
@@ -495,9 +530,9 @@ export class TeamService {
     ) {
       this.setMemberStatus(projectId, live.slotId, 'stopped');
     }
-    await this.store.persist(state);
+    if (options.persist !== false) await this.store.persist(state);
     const stored = structuredClone(message);
-    await this.maybeWake(projectId, to, live.slotId);
+    if (options.wake !== false) await this.maybeWake(projectId, to, live.slotId);
     return stored;
   }
 
@@ -505,13 +540,15 @@ export class TeamService {
     projectId: string,
     reader: TeamMember,
     sinceMessageId?: string,
+    messageIds?: readonly string[],
   ): Promise<MailboxMessage[]> {
     const state = this.store.state(projectId);
     const team = migrateTeam(state);
     const live = activeMember(team, reader.slotId);
     if (sinceMessageId !== undefined && typeof sinceMessageId !== 'string')
       throw new ApiError(400, 'Provide a valid message id.');
-    const found = peekForSlot(team.messages, live.slotId, sinceMessageId);
+    const scope = messageIds === undefined ? null : new Set(messageIds);
+    const found = peekForSlot(team.messages, live.slotId, sinceMessageId).filter((message) => scope === null || scope.has(message.id));
     acknowledge(
       team.messages,
       found.map((m) => m.id),
@@ -531,6 +568,7 @@ export class TeamService {
       blocked_by?: unknown;
       idempotency_key?: unknown;
     },
+    options: Pick<TeamMutationOptions, 'persist'> = {},
   ) {
     const state = this.store.state(projectId);
     const team = migrateTeam(state);
@@ -578,7 +616,7 @@ export class TeamService {
       actor: 'diomedes',
       taskId: task.id,
     });
-    await this.store.persist(state);
+    if (options.persist !== false) await this.store.persist(state);
     return toTeamTask(task, meta.blockedBy);
   }
 
@@ -601,6 +639,8 @@ export class TeamService {
       throw new ApiError(400, 'Provide a task id.');
     const task = state.tasks.find((t) => t.id === args.task_id);
     if (!task) throw new ApiError(404, 'This task was not found.');
+    if (task.ownedAssignment)
+      throw new ApiError(409, 'This assignment belongs to its admitted root response. Only that Runtime may update its progress.');
     if (args.status !== undefined && args.status !== 'pending') {
       const workflowBlocker = taskWorkflowBlocker(task);
       if (workflowBlocker) throw new ApiError(409, workflowBlocker);
@@ -775,3 +815,6 @@ export class TeamService {
     return engineLabel(member.engine);
   }
 }
+
+export { OwnedTeamResponses } from './owned-response.js';
+export type { OwnedTeamResponseDependencies, OwnedTeamResponseWait } from './owned-response.js';

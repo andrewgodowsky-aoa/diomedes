@@ -127,9 +127,8 @@ describe('a call that must not be made', () => {
   });
 
   test('estimates state size conservatively, never optimistically', () => {
-    // Four characters per token would under-count a dense payload; three is the
-    // bound this route reserves against.
-    expect(serializedStateTokens('x'.repeat(300))).toBeGreaterThanOrEqual(100);
+    // The host reserve counts every serialized byte, including the string's quotes.
+    expect(serializedStateTokens('x'.repeat(300))).toBeGreaterThanOrEqual(302);
   });
 });
 
@@ -273,7 +272,7 @@ describe('the Vercel gateway port', () => {
       modelId: 'typesafe-ai/jev',
       loadSdk: async () => module,
     });
-    await port.evaluate({ state: 'x', questions: {}, signal: new AbortController().signal });
+    await port.evaluate({ state: 'x', questions: providerQuestions(profile()), signal: new AbortController().signal });
     expect(evaluate.mock.calls[0][0]).toMatchObject({ maxRetries: 0 });
   });
 
@@ -287,7 +286,7 @@ describe('the Vercel gateway port', () => {
         modelId: 'typesafe-ai/jev',
         loadSdk: async () => module,
       });
-      await port.evaluate({ state: 'x', questions: {}, signal: new AbortController().signal });
+      await port.evaluate({ state: 'x', questions: providerQuestions(profile()), signal: new AbortController().signal });
       expect(createGateway.mock.calls[0][0]).toMatchObject({ apiKey: 'the-payer-we-admitted' });
     } finally {
       if (previous === undefined) delete process.env.AI_GATEWAY_API_KEY;
@@ -310,7 +309,7 @@ describe('the Vercel gateway port', () => {
       },
     });
     await expect(
-      port.evaluate({ state: 'x', questions: {}, signal: new AbortController().signal }),
+      port.evaluate({ state: 'x', questions: providerQuestions(profile()), signal: new AbortController().signal }),
     ).rejects.toMatchObject({ code: 'transport_unavailable' });
   });
 

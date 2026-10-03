@@ -14,6 +14,7 @@
  * it is refused as `telemetry-policy-absent` in production.
  */
 import type { AdmittedAgentWork } from '../accounts/agent-gate.js';
+import type { OwnedTeamResponseMetadata } from '../../shared/agent-collaboration.js';
 import {
   MANAGED_ROUTE,
   OBSERVATION_ENVIRONMENTS,
@@ -160,6 +161,9 @@ export type ObservationDenial =
    */
   | 'scope-evicted';
 
+/** Identity copied only after the production host validates its persisted owned child. */
+export type OwnedTeamObservation = OwnedTeamResponseMetadata & { readonly runId: string; readonly commandId: string };
+
 export interface ObservationScope {
   /** `osc_` + 24 hex of the admission id. */
   readonly scopeId: string;
@@ -174,7 +178,11 @@ export interface ObservationScope {
   readonly activeOrganizationAtBind: string | null;
   readonly bindKey: string;
   readonly connectionId: string;
+  readonly connectionRevision: number | null;
+  /** Exact host qualification; the exported plan label can collapse distinct plans to `other`. */
+  readonly planId: string | null;
   readonly requestedModel: string | null;
+  readonly ownedTeam?: OwnedTeamObservation;
   /** Host epoch milliseconds. Only attempts started at or after this are observed. */
   readonly boundAt: number;
 }
@@ -191,7 +199,9 @@ export interface EligibilityInput {
     readonly rootJobId: string | null;
     readonly route: string;
     readonly connectionId: string;
+    readonly connectionRevision?: number;
     readonly model: string | null;
+    readonly ownedTeam?: OwnedTeamObservation;
   };
   /** The active business when the admission was asked (see `ObservationScope.activeOrganizationAtBind`). */
   readonly activeOrganizationId: string | null;
@@ -255,7 +265,10 @@ export function decideObservationEligibility(input: EligibilityInput): Eligibili
       activeOrganizationAtBind: input.activeOrganizationId,
       bindKey: bindKeyFor(admission.surface, work.rootJobId),
       connectionId: work.connectionId,
+      connectionRevision: work.connectionRevision ?? null,
+      planId: admission.planId,
       requestedModel: work.model,
+      ...(work.ownedTeam ? { ownedTeam: structuredClone(work.ownedTeam) } : {}),
       boundAt: input.now,
     },
   };

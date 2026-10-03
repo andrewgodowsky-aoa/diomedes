@@ -48,6 +48,7 @@ export const OPENROUTER_SDK = 'ai@7.0.107+@openrouter/ai-sdk-provider@3.1.0';
 export const OPENROUTER_PROTOCOL = 'openai-chat-completions';
 export const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1' as const;
 export const OPENROUTER_CONNECTION_ID = 'openrouter-1';
+export type OpenRouterEffort = 'low' | 'medium' | 'high';
 
 /** `vendor/model`, no `:variant`: a suffix such as `:free`, `:online` or `:nitro` changes terms or routing. */
 export const OPENROUTER_MODEL = /^[a-z0-9][a-z0-9._-]{0,63}\/[a-z0-9][a-z0-9._-]{0,127}$/;
@@ -57,6 +58,12 @@ export const OPENROUTER_UPSTREAM = /^[a-z0-9][a-z0-9._-]{0,63}(?:\/[a-z0-9][a-z0
 // --- the connection record ------------------------------------------------------
 
 const iso = z.string().datetime({ offset: true });
+/** Owner-declared capability for this connection/model, not live qualification. */
+export const openRouterReasoningSchema = z.strictObject({
+  supported: z.array(z.enum(['low', 'medium', 'high'])).max(3)
+    .refine(levels => new Set(levels).size === levels.length, 'Each reasoning level appears once.'),
+  source: z.string().trim().min(1).max(300),
+});
 export const openRouterModelSchema = z.strictObject({
   id: z
     .string()
@@ -65,6 +72,8 @@ export const openRouterModelSchema = z.strictObject({
   /** The only upstream endpoints this model may run on. Never empty: an empty list means "any". */
   upstreams: z.array(z.string().regex(OPENROUTER_UPSTREAM)).min(1).max(8),
   rates: declaredRatesSchema,
+  /** Missing means unknown: do not advertise or send any reasoning level. */
+  reasoning: openRouterReasoningSchema.optional(),
   /** Endpoint-level ZDR filter, distinct from the no-training data-collection policy. */
   zdr: z.boolean().optional(),
 });
@@ -115,6 +124,13 @@ export function openRouterModelFor(connection: OpenRouterConnection, model: stri
       false,
     );
   return entry;
+}
+
+/** Refuse before adapter preparation or reservation, even for a direct host caller. */
+export function assertOpenRouterEffort(entry: OpenRouterModel, effort: OpenRouterEffort | undefined): void {
+  if (effort !== undefined && !entry.reasoning?.supported.includes(effort))
+    throw new ModelApiError('openrouter_effort_unsupported',
+      `The ${effort} reasoning level is not declared for ${entry.id} on this OpenRouter connection. Nothing was sent.`, false);
 }
 
 /** The owner-declared price of one allowed model, versioned by the connection generation. */
@@ -309,7 +325,7 @@ const refuseBody = () =>
   );
 
 /** The serialized request carries exactly the admitted model and preferences, and no way to widen them. */
-function inspectOpenRouterBody(entry: OpenRouterModel) {
+function inspectOpenRouterBody(entry: OpenRouterModel, effort?: OpenRouterEffort) {
   const expected = JSON.stringify(openRouterPreferences(entry));
   return (text: string) => {
     let body: Record<string, unknown> | null;
@@ -338,6 +354,9 @@ function inspectOpenRouterBody(entry: OpenRouterModel) {
       'web_search_options' in body ||
       body.stream !== true ||
       record(body.usage)?.include !== true ||
+      (effort === undefined
+        ? body.reasoning !== undefined
+        : JSON.stringify(body.reasoning) !== JSON.stringify({ effort })) ||
       canonical !== expected ||
       keys.join(',') !== `allow_fallbacks,data_collection,only,require_parameters${entry.zdr === undefined ? '' : ',zdr'}`
     )
@@ -345,7 +364,12 @@ function inspectOpenRouterBody(entry: OpenRouterModel) {
   };
 }
 
-export function openRouterBinding(connection: OpenRouterConnection, entry: OpenRouterModel): RouteBinding {
+export function openRouterBinding(
+  connection: OpenRouterConnection,
+  entry: OpenRouterModel,
+  effort?: OpenRouterEffort,
+): RouteBinding {
+  assertOpenRouterEffort(entry, effort);
   const allowed = new Set(entry.upstreams.map(s => s.includes('/') ? s : upstreamSlug(s)));
   return {
     route: OPENROUTER_ROUTE,
@@ -366,11 +390,12 @@ export function openRouterBinding(connection: OpenRouterConnection, entry: OpenR
         provider: openRouterPreferences(entry),
         usage: { include: true },
         parallelToolCalls: false,
+        ...(effort === undefined ? {} : { reasoning: { effort } }),
       }),
     guard: {
       expectedUrl: `${OPENROUTER_BASE_URL}/chat/completions`,
       attach: attachOpenRouterKey,
-      inspectBody: inspectOpenRouterBody(entry),
+      inspectBody: inspectOpenRouterBody(entry, effort),
       requestIdHeaders: ['x-request-id', 'x-generation-id'],
     },
     providerOptions: {},
@@ -412,6 +437,7 @@ export async function respondOpenRouter(
     exposure: SpendExposure;
     attempt: ExposureAttempt;
     instructions: string;
+    effort?: OpenRouterEffort;
     messages: ModelMessage[];
     tools: readonly ToolDescriptor[];
     limits: RespondLimits;
@@ -422,6 +448,6 @@ export async function respondOpenRouter(
 ): Promise<RespondResult> {
   const connection = openRouterConnectionSchema.parse(input.connection);
   const entry = openRouterModelFor(connection, input.model);
-  const { connection: _connection, model: _model, ...rest } = input;
-  return respondStream({ ...rest, binding: openRouterBinding(connection, entry) });
+  const { connection: _connection, model: _model, effort, ...rest } = input;
+  return respondStream({ ...rest, binding: openRouterBinding(connection, entry, effort) });
 }

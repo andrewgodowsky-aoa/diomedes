@@ -3,7 +3,7 @@
  * host's view alone (`GET /api/ai/model-api/aws-bedrock`). Pure, so every
  * sentence a person reads here is testable without a browser.
  */
-import { MANAGED_LUNA, type AwsConnectionView } from '../shared/model-api';
+import { AWS_DIRECT_MODEL_IDS, MANAGED_LUNA, type AwsConnectionView } from '../shared/model-api';
 
 export const AWS_ACCOUNT_PATTERN = /^\d{12}$/;
 export const AWS_MIN_KEY_LENGTH = 20;
@@ -62,14 +62,16 @@ export function awsStateRows(view: AwsConnectionView, nowMs = Date.now()): AwsSt
     {
       key: 'route',
       label: 'Route',
-      text: view.enabled ? 'On' : 'Off',
-      value: view.enabled ? 'ok' : 'waiting',
+      text: view.enabled ? (view.next ? `Blocked: ${view.next}` : 'On') : 'Off',
+      value: view.enabled ? (view.next ? 'blocked' : 'ok') : 'waiting',
     },
   ];
 }
 
 export interface AwsConnectInput {
   accountId: string;
+  /** Omission retains the existing Luna default; an explicit identity is never substituted. */
+  model?: string;
   apiKey: string;
   /** A `datetime-local` value, or empty for none. */
   expiresLocal: string;
@@ -82,6 +84,9 @@ export function awsConnectBody(input: AwsConnectInput, nowMs = Date.now()):
   | { ok: false; message: string } {
   const accountId = input.accountId.replace(/[\s-]/g, '');
   if (!AWS_ACCOUNT_PATTERN.test(accountId)) return { ok: false, message: 'Enter the 12-digit AWS account number.' };
+  const model = input.model ?? MANAGED_LUNA.model;
+  if (!AWS_DIRECT_MODEL_IDS.some((candidate) => candidate === model))
+    return { ok: false, message: 'Choose a listed AWS Bedrock model for the US processing route.' };
   const apiKey = input.apiKey.trim();
   if (apiKey.length < AWS_MIN_KEY_LENGTH) return { ok: false, message: 'Paste the Bedrock API key for this account.' };
   let expiresAt: string | null = null;
@@ -95,7 +100,7 @@ export function awsConnectBody(input: AwsConnectInput, nowMs = Date.now()):
     return { ok: false, message: 'Confirm that conversations and chosen files may be sent to AWS under this account.' };
   return {
     ok: true,
-    body: { accountId, region: 'us-east-1', model: MANAGED_LUNA.model, apiKey, expiresAt, consent: true },
+    body: { accountId, region: 'us-east-1', model, apiKey, expiresAt, consent: true },
   };
 }
 

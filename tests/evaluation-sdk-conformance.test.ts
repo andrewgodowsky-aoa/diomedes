@@ -87,6 +87,38 @@ const gatewayReply = {
   usage: { inputTokens: 120 },
 };
 
+describe('direct evaluate() on the installed SDKs', () => {
+  test.each(['gateway', 'openrouter'] as const)('%s refuses 33 questions before fetch without runEvaluation', async (route) => {
+    const ids = Array.from({ length: 33 }, (_, index) => `q${index}`);
+    const questions = Object.fromEntries(ids.map((id) => [id, { type: 'boolean' as const, instructions: 'Yes?' }]));
+    const answers = Object.fromEntries(ids.map((id) => [id, route === 'gateway'
+      ? { type: 'boolean', probability: 0.5 }
+      : { type: 'noul', noul: 0.5 },
+    ]));
+    const { fetch, seen } = fakeFetch([{ body: { answers, usage: {}, model: 'typesafe/jev-1.13' } }]);
+    const settings = { apiKey: 'invented-test-key', modelId: 'typesafe/jev-1.13', fetch };
+    const port = route === 'gateway' ? gatewayEvaluationPort(settings) : openRouterEvaluationPort(settings);
+    await expect(port.evaluate({ state: 's', questions, signal: new AbortController().signal })).rejects
+      .toMatchObject({ code: 'request_too_large', usage: null });
+    expect(seen).toHaveLength(0);
+  });
+
+  test('gateway sends nullable score levels and one-sided boolean criteria supported by its SDK', async () => {
+    const { fetch, seen } = fakeFetch([{ body: {
+      answers: { effort: { type: 'score', score: 1 }, urgent: { type: 'boolean', probability: 0.5 } },
+      usage: { inputTokens: 10 },
+    } }]);
+    const port = gatewayEvaluationPort({ apiKey: 'invented-test-key', modelId: 'typesafe-ai/jev', fetch });
+    const questions = {
+      effort: { type: 'score' as const, instructions: 'Rate the effort.', criteria: ['low', null, 'high'] },
+      urgent: { type: 'boolean' as const, instructions: 'Is it urgent?', criteria: { true: 'Due today.' } },
+    };
+    await port.evaluate({ state: 's', questions, signal: new AbortController().signal });
+    expect(seen).toHaveLength(1);
+    expect(seen[0].body.questions).toEqual(questions);
+  });
+});
+
 let savedGateway: string | undefined;
 let savedOpenRouter: string | undefined;
 beforeEach(() => {
@@ -362,7 +394,7 @@ describe('the whole-request bound', () => {
     const port = gatewayEvaluationPort({ apiKey: 'k', modelId: 'typesafe-ai/jev', fetch });
     // The state alone fits the 32k state bound; with 20 long questions the
     // complete request does not.
-    const state = 'x'.repeat(28_000 * 3);
+    const state = 'x'.repeat(28_000);
     const questions = Array.from({ length: 20 }, (_v, i) =>
       booleanQuestion({ id: `q${i}`, instructions: 'y'.repeat(3_900) }),
     );
@@ -391,7 +423,7 @@ describe('the whole-request bound', () => {
     const scripted = scriptedEvaluationPort({ result: gatewayReply });
     const port = { ...scripted, limits: TYPESAFE_DOCUMENTED_LIMITS };
     const seen = scripted.calls;
-    const state = 'x'.repeat((UNPROVEN_ROUTE_LIMITS.maxStatePlusLongestQuestionTokens - 500) * 3);
+    const state = 'x'.repeat(UNPROVEN_ROUTE_LIMITS.maxStatePlusLongestQuestionTokens - 500);
     const long = evaluationProfile({
       profileId: 'long',
       revision: 1,

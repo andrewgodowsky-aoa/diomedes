@@ -9,6 +9,7 @@ import {
   checkEvaluationRequest,
   UNPROVEN_ROUTE_LIMITS as WIRE_LIMITS,
   serializedRequestTokens as wireTokens,
+  serializedStateTokens,
 } from '../shared/evaluation-wire.js';
 import {
   providerQuestions,
@@ -44,6 +45,23 @@ describe('the evaluation wire', () => {
     expect(UNPROVEN_ROUTE_LIMITS).toBe(WIRE_LIMITS);
     expect(serializedRequestTokens).toBe(wireTokens);
   });
+
+  test.each([
+    ['dense ASCII', 'x'.repeat(300), 302],
+    ['Unicode', '界'.repeat(100), 302],
+    ['astral Unicode', '😀'.repeat(100), 402],
+    ['escaped controls', '\u0000'.repeat(100), 602],
+  ] as const)('holds at least every serialized UTF-8 byte for %s state', (_name, state, minimum) => {
+    expect(serializedStateTokens(state)).toBeGreaterThanOrEqual(minimum);
+  });
+
+  test.each(['界'.repeat(11_000), '\u0000'.repeat(6_000)])(
+    'refuses state that fits an optimistic character estimate but exceeds the serialized byte bound',
+    (state) => {
+      expect(checkEvaluationRequest({ state, questions: { q: { type: 'boolean', instructions: 'Yes?' } } }))
+        .toMatchObject({ ok: false, code: 'request_too_large', field: 'state' });
+    },
+  );
 
   test('accepts exactly what the preflight sends, and rebuilds the questions it checked', () => {
     const { state, questions } = asked();
@@ -94,9 +112,9 @@ describe('the evaluation wire', () => {
   });
 
   test('refuses as too large exactly what the adapter refuses as too large, before either sends', async () => {
-    // About 31.5k tokens of state, under the 32k state bound; the questions and the
+    // About 31k bytes of state, under the 32k state bound; the questions and the
     // envelope take the complete request over the 32k total.
-    const { state, questions, profile } = asked({ intent: 'Plan this. '.repeat(8_700) });
+    const { state, questions, profile } = asked({ intent: 'Plan this. '.repeat(2_800) });
     expect(checkEvaluationRequest({ state, questions })).toMatchObject({ ok: false, code: 'request_too_large' });
     const port = scriptedEvaluationPort({ result: {} });
     await expect(

@@ -76,7 +76,8 @@ export function workflowOf(task: Pick<Task, 'workflow'>): TaskWorkflow {
  * phase holds tasks whose agent asked to continue under Stop on phase change.
  * The reason is a sentence for the refusal, not a state machine of its own.
  */
-export function taskWorkflowBlocker(task: Pick<Task, 'workflow'>): string | null {
+export function taskWorkflowBlocker(task: Pick<Task, 'workflow' | 'ownedAssignment'>): string | null {
+  if (task.ownedAssignment) return 'This assignment is owned by its root run. It cannot start as an independent job.';
   const workflow = task.workflow;
   if (!workflow) return null;
   if (workflow.inbox) return 'This task is in the Inbox. Accept it before starting work.';

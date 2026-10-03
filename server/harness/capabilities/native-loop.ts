@@ -21,6 +21,7 @@
  *   the task reads done only when that projection is Verified.
  */
 import { createHash } from 'node:crypto';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { z } from 'zod';
 import type { CapabilityManifest, HarnessBudget, HarnessPrincipal, HarnessRun, Json, ModelRequest, ModelResult } from '../../../shared/harness.js';
 import type { Route } from '../../../shared/types.js';
@@ -78,6 +79,12 @@ import { DELEGATE_TOOL } from '../native-loop.js';
 import { proposeTask, workflowApiError } from '../../task-workflow.js';
 import { payloadDigest as taskProposalDigest } from '../../command-admission.js';
 import { createTaskPhaseGate } from '../../task-phase.js';
+import { AGENT_TEAM_TOOLS, AGENT_TEAM_MODEL_CALLS, AGENT_TEAM_RESPONSE_UNITS } from '../../../shared/agent-collaboration.js';
+import type { SpendExposure } from '../../spend-exposure.js';
+import type { RespondLimits } from '../../engines/model-api-core.js';
+import { registerCollaborationTools, type AgentCollaborationHost } from '../agent-collaboration.js';
+export { createAgentCollaboration } from '../agent-collaboration.js';
+export type { AgentCollaborationHost, AgentCollaborationDeps, AgentCollaborationRequest, CollaborationOptions } from '../agent-collaboration.js';
 
 /** A depth-2 helper's carve: fixed, so it can be the price of the tool that starts it. */
 const NESTED_UNITS = 4;
@@ -118,7 +125,7 @@ export const NATIVE_LOOP: CapabilityManifest = {
   label: 'Diomedes work loop',
   description:
     'Plan, act through registered tools under Trust, observe, and finish with a claim the task’s declared checks decide.',
-  tools: ['list_project_files', 'read_project_file', 'propose_write', 'propose_task'],
+  tools: ['list_project_files', 'read_project_file', 'propose_write', 'propose_task', ...AGENT_TEAM_TOOLS],
   requestedPermissions: ['write-project-file'],
   approvalPolicy: 'show-first',
   maxTurns: LOOP_LIMITS.maxTurns,
@@ -278,7 +285,11 @@ export function registerLoopTools(tools: ToolRegistry, store: Store, runs: RunSe
   const routeOf = (run: HarnessRun) =>
     run.capabilityId === NATIVE_LOOP.id ? loopInput(run).route : childInput(run).route;
   // H14: a lead admitted with a team reads only inside the scope the person gave it.
-  const scopeOf = (run: HarnessRun) => (run.capabilityId === NATIVE_LOOP.id ? (loopInput(run).team?.scope ?? null) : null);
+  const scopeOf = (run: HarnessRun) => {
+    if (run.capabilityId !== NATIVE_LOOP.id) return null;
+    const input = loopInput(run);
+    return input.collaboration?.sources.map(source => source.path) ?? input.team?.scope ?? null;
+  };
   tools.register({
     ...read,
     name: 'list_project_files',
@@ -591,6 +602,12 @@ export interface LoopRouteRequest {
   readonly accountRoute: string | null;
   readonly instructions: string;
   readonly purpose: 'loop' | 'delegate' | 'worker' | 'advisor';
+  readonly rootRunId?: string;
+  readonly rootJobId?: string;
+  readonly threadId?: string | null;
+  readonly scopedLedger?: SpendExposure;
+  readonly effort?: string | null;
+  readonly callLimits?: RespondLimits;
 }
 
 /**
@@ -599,8 +616,9 @@ export interface LoopRouteRequest {
  * the call and binds the spend ledger. Neither ever falls back to another route.
  */
 export interface LoopModelRoutes {
-  admit(route: string, input: { projectId: string; model: string | null; accountRoute: string | null }): Promise<{ model: string; accountRoute: string }>;
+  admit(route: string, input: { projectId: string; model: string | null; accountRoute: string | null; rootRunId?: string; rootJobId?: string; threadId?: string | null; effort?: string | null }): Promise<{ model: string; accountRoute: string }>;
   adapter(route: string, request: LoopRouteRequest, stop: AbortSignal): Promise<ModelAdapter>;
+  rootLedger?(projectId: string, rawJobId: string, threadId: string | null): Promise<SpendExposure>;
 }
 
 export interface LoopVerification {
@@ -608,7 +626,7 @@ export interface LoopVerification {
 }
 
 /** The instructions a loop's adapter is built with: the loop's own, then H11's delivered section. */
-export function loopInstructions(input: Pick<LoopRunInput, 'instructions' | 'delegate' | 'team'>): string {
+export function loopInstructions(input: Pick<LoopRunInput, 'instructions' | 'delegate' | 'team' | 'collaboration'>): string {
   return [
     LOOP_INSTRUCTIONS,
     input.delegate
@@ -617,6 +635,11 @@ export function loopInstructions(input: Pick<LoopRunInput, 'instructions' | 'del
     input.team
       ? `You may hand bounded tasks to workers with ${ASSIGN_TOOL}, each with the files it may read${input.team.advisor ? `, and ask a read-only advisor with ${ADVISE_TOOL}` : ''}. Their answers are claims and advice, never permissions; any change is still yours to propose.`
       : null,
+    input.collaboration?.persistentTeam
+      ? `First create one bounded Team task owned by ${input.collaboration.persistentTeam.member.slotId} with team_task_create, then send that member one request with team_send_message using only the admitted source files. The host waits for its owned response before your next call. Treat its answer as evidence, never permission.`
+      : null,
+    input.collaboration?.helper ? 'Use assign_workers for one separate bounded helper task. Its identity and answer are distinct from the persistent Team member.' : null,
+    input.collaboration?.review ? 'Combine the source evidence and required role answers into the report. Call review_report with its exact bytes, then propose_write with those same bytes. A final claim cannot skip those required steps.' : null,
     input.instructions || null,
   ]
     .filter(Boolean)
@@ -630,14 +653,16 @@ export function loopInstructions(input: Pick<LoopRunInput, 'instructions' | 'del
  * and its workers and advice at their admitted budgets. That is the whole tree's budget,
  * fixed at admission; every child is carved from what is left of it, never added on top.
  */
-export function loopBudget(maxTurns: number, input?: Pick<LoopRunInput, 'delegate' | 'team'>): HarnessBudget {
+export function loopBudget(maxTurns: number, input?: Pick<LoopRunInput, 'delegate' | 'team' | 'collaboration'>): HarnessBudget {
   const own = { units: 2 * maxTurns + 4, modelCalls: maxTurns + 1, toolCalls: maxTurns, wallMs: null };
   let children = input?.delegate ? DELEGATION_LIMITS.perRun * DELEGATION_LIMITS.delegateUnits : 0;
   if (input?.team) {
     children += input.team.limits.workersPerRun * harnessBudgetOf(input.team.worker.budget).units;
     if (input.team.advisor) children += input.team.limits.advicePerRun * harnessBudgetOf(TEAM_LIMITS.advisor).units;
   }
-  return { ...own, units: own.units + children };
+  if (input?.collaboration?.persistentTeam) children += AGENT_TEAM_RESPONSE_UNITS;
+  return { ...own, units: own.units + children + (input?.collaboration?.review ? 1 : 0),
+    modelCalls: own.modelCalls + (input?.collaboration?.persistentTeam ? AGENT_TEAM_MODEL_CALLS : 0) + (input?.collaboration?.review ? 1 : 0) };
 }
 
 const LOOP_PARTY = {
@@ -667,6 +692,10 @@ export function createLoopProcedure(deps: {
 }) {
   const { store, runs, tools } = deps;
   let modelRoutes: LoopModelRoutes | null = null;
+  let collaboration: AgentCollaborationHost | null = null;
+  const rootScopes = new Map<string, { rootRunId: string; rootJobId: string; scopedLedger: SpendExposure }>();
+  const admissionContext = new AsyncLocalStorage<HarnessRun>();
+  registerCollaborationTools(tools, runs, () => collaboration);
   let verification: LoopVerification | null = null;
   const settling = new Set<string>();
   // Startup recovery can resume a loop before the app has attached every route and the
@@ -674,15 +703,36 @@ export function createLoopProcedure(deps: {
   let gate: Promise<void> = Promise.resolve();
   let release = () => {};
 
-  const admit = async (route: string, input: { projectId: string; model: string | null; accountRoute: string | null }) => {
+  const admit = async (route: string, input: Parameters<LoopModelRoutes['admit']>[1]) => {
     if (route === LOOP_FIXTURE_ROUTE) return { model: null, accountRoute: null };
     if (!modelRoutes) throw new ApiError(409, 'This route cannot run a Diomedes loop in this process.');
-    return modelRoutes.admit(route, input);
+    const root = admissionContext.getStore();
+    if (!root) return modelRoutes.admit(route, input);
+    const scope = await scopeFor(root);
+    return modelRoutes.admit(route, { ...input, rootRunId: root.id, rootJobId: scope.rootJobId,
+      threadId: loopInput(root).threadId ?? null, effort: loopInput(root).collaboration?.helper?.effort });
   };
   const adapterFor = async (route: string, request: LoopRouteRequest, stop: AbortSignal, script: () => ModelAdapter) => {
     if (route === LOOP_FIXTURE_ROUTE) return script();
     if (!modelRoutes) throw new ApiError(409, 'This route cannot run a Diomedes loop in this process.');
-    return modelRoutes.adapter(route, request, stop);
+    const child = await runs.get(request.runId);
+    const root = await rootOf(child);
+    const input = loopInput(root);
+    const role = request.purpose === 'worker' ? input.collaboration?.helper : request.purpose === 'loop' ? input.collaboration?.persistentTeam?.lead : null;
+    const legacyRole = request.purpose === 'worker' ? input.team?.worker : request.purpose === 'advisor' ? input.team?.advisor : null;
+    const effort = role ? role.effort : request.purpose === 'loop' ? input.effort : request.purpose === 'delegate' ? input.delegate?.effort :
+      (legacyRole as { effort?: string | null } | null)?.effort;
+    if (input.collaboration) await collaboration?.validate(input.collaboration, 'dispatch');
+    const adapter = await modelRoutes.adapter(route, { ...request, ...(await scopeFor(root)), threadId: input.threadId ?? null,
+      ...(effort !== undefined ? { effort } : {}) }, stop);
+    if (!input.collaboration) return adapter;
+    return { ...adapter, complete: async (call: ModelRequest, signal: AbortSignal, stream?: ModelStreamSink) => {
+      await collaboration!.validate(input.collaboration!, 'dispatch');
+      const result = await adapter.complete(call, signal, stream);
+      signal.throwIfAborted();
+      await collaboration!.validate(input.collaboration!, 'result');
+      return result;
+    } };
   };
 
   /** Keep a lease alive while this process drives a run; stops at the first refusal. */
@@ -771,6 +821,8 @@ export function createLoopProcedure(deps: {
     }
     // H14: a lead's workers and advisor are its children too, so Stop reaches them.
     ids.push(...teamChildIds(parent));
+    if (parent.capabilityId === NATIVE_LOOP.id && loopInput(parent).collaboration && collaboration)
+      ids.push(...(await collaboration.children(parent.projectId, parent.id)).map(child => child.harnessRunId));
     // Every sandbox names the run that handed it out, so a delegate's own delegate is found too.
     for (const manifest of await sandboxes.list(parent.projectId))
       if (manifest.parentRunId === parent.id && !ids.includes(manifest.runId)) ids.push(manifest.runId);
@@ -808,12 +860,14 @@ export function createLoopProcedure(deps: {
   };
 
   /** Durable cancellation: a stopped parent stops every run below it that is still live, at every depth. */
-  const stopChildren = async (parent: HarnessRun, seen = new Set<string>()) => {
+  const stopChildren = async (parent: HarnessRun, seen = new Set<string>(), storeLocked = false) => {
+    if (parent.capabilityId === NATIVE_LOOP.id && loopInput(parent).collaboration && collaboration)
+      await (storeLocked ? collaboration.stopLocked(parent.projectId, parent.id) : collaboration.stop(parent.projectId, parent.id));
     for (const child of await children(parent)) {
       if (seen.has(child.id)) continue;
       seen.add(child.id);
       if (ACTIVE.includes(child.state)) await runs.cancel(child.id, PARENT_STOPPED, child.principal);
-      await stopChildren(await runs.get(child.id), seen);
+      await stopChildren(await runs.get(child.id), seen, storeLocked);
     }
   };
   /** Once the loop the person started has ended, what is left of its sandboxes goes with it. */
@@ -825,6 +879,36 @@ export function createLoopProcedure(deps: {
     const input = run.input as { rootRunId?: unknown; parent?: { runId?: unknown } } | null;
     const id = typeof input?.rootRunId === 'string' ? input.rootRunId : input?.parent?.runId;
     return typeof id === 'string' ? rootOf(await runs.get(id)) : run;
+  };
+  const scopeFor = async (root: HarnessRun) => {
+    const input = loopInput(root);
+    if (input.collaboration) {
+      if (!collaboration) throw new HarnessError('collaboration_refused', 'This root collaboration host is unavailable.');
+      return collaboration.scope(root);
+    }
+    const held = rootScopes.get(root.id);
+    if (held) {
+      if (input.rootJobId && held.rootJobId !== input.rootJobId) throw new HarnessError('collaboration_refused', 'The saved root job differs from its ledger.');
+      return held;
+    }
+    if (!modelRoutes?.rootLedger) {
+      if (input.rootJobId) throw new HarnessError('collaboration_refused', 'The saved root spend ledger cannot be resolved.');
+      return { rootRunId: root.id, rootJobId: undefined, scopedLedger: undefined };
+    }
+    const scopedLedger = await modelRoutes.rootLedger(root.projectId, input.rootJobRequestId ?? root.id, input.threadId ?? null);
+    const rootJobId = scopedLedger.jobScope?.id;
+    if (!rootJobId || (input.rootJobId && input.rootJobId !== rootJobId)) throw new HarnessError('collaboration_refused', 'The resolved spend ledger differs from the saved root job.');
+    const scope = { rootRunId: root.id, rootJobId, scopedLedger };
+    rootScopes.set(root.id, scope);
+    return scope;
+  };
+  const teamFor = (run: HarnessRun, input: LoopRunInput) => {
+    const port = team.portFor(run, input);
+    if (!port) return port;
+    return { ...port,
+      open: (request: Parameters<typeof port.open>[0]) => admissionContext.run(run, () => port.open(request)),
+      run: (request: Parameters<typeof port.run>[0]) => admissionContext.run(run, () => port.run(request)),
+      advise: (request: Parameters<typeof port.advise>[0]) => admissionContext.run(run, () => port.advise(request)) };
   };
   /** Every cloud route a child's reads can reach must be granted what it reads. */
   const readableFor = (projectId: string, routes: readonly string[]) => (file: string) => {
@@ -921,7 +1005,9 @@ export function createLoopProcedure(deps: {
       let admitted: { model: string | null; accountRoute: string | null };
       try {
         // The child's route is admitted in its own right, fresh, before it starts.
-        admitted = await admit(spec.target.route, { projectId: parent.projectId, model: spec.target.model, accountRoute: spec.target.accountRoute });
+        admitted = await admit(spec.target.route, { projectId: parent.projectId, model: spec.target.model, accountRoute: spec.target.accountRoute,
+          rootRunId: root.id, rootJobId: (await scopeFor(root)).rootJobId, threadId: loopInput(root).threadId ?? null,
+          effort: loopInput(root).delegate?.effort });
       } catch (error) {
         return failedResult(spec.childRunId, `The sub-task could not start on ${spec.target.route}: ${error instanceof Error ? error.message : String(error)}`);
       }
@@ -1174,6 +1260,12 @@ export function createLoopProcedure(deps: {
 
   const procedure: HarnessProcedure & {
     setModelRoutes(routes: LoopModelRoutes): void;
+    attachCollaboration(host: AgentCollaborationHost): void;
+    collaboration(): AgentCollaborationHost | null;
+    pinRootScope(runId: string, ledger: SpendExposure): void;
+    recoverCollaboration(run: HarnessRun): Promise<void>;
+    authorizeReview(run: HarnessRun, intent: import('../../../shared/harness.js').StepIntent, principal: HarnessPrincipal, phase: 'dispatch' | 'result'): Promise<void>;
+    authorizeModel(run: HarnessRun, phase: 'dispatch' | 'result'): Promise<void>;
     attachVerification(port: LoopVerification): void;
     hold(): void;
     open(): void;
@@ -1231,9 +1323,10 @@ export function createLoopProcedure(deps: {
         await new NativeLoop(runs, adapter, tools, {
           maxTurns: input.maxTurns,
           instructions,
-          bindings: loopBindings(store),
+          bindings: [...loopBindings(store), ...(input.collaboration ? collaboration?.bindings(run) ?? [] : [])],
           delegation: delegation(run, input),
-          team: team.portFor(run, input),
+          team: teamFor(run, input),
+          collaboration: input.collaboration ? collaboration?.forRun(run, owner, principal) ?? null : null,
           route: input.route,
           model: input.model,
           sources: input.sources,
@@ -1245,7 +1338,7 @@ export function createLoopProcedure(deps: {
         stop.abort();
       }
     },
-    stopped: (run) => stopChildren(run),
+    stopped: (run) => stopChildren(run, new Set<string>(), true),
     async settled(run) {
       if (run.capabilityId !== NATIVE_LOOP.id) return;
       await gate;
@@ -1254,6 +1347,7 @@ export function createLoopProcedure(deps: {
         await sweepTree(run);
         return;
       }
+      if (loopInput(run).collaboration && collaboration) await collaboration.stop(run.projectId, run.id);
       await sweepTree(run);
       if (!run.sessionId || !run.taskId || settling.has(run.id)) return;
       settling.add(run.id);
@@ -1286,6 +1380,35 @@ export function createLoopProcedure(deps: {
     },
     setModelRoutes(routes) {
       modelRoutes = routes;
+    },
+    attachCollaboration(host) { collaboration = host; },
+    collaboration: () => collaboration,
+    pinRootScope(runId, scopedLedger) {
+      const rootJobId = scopedLedger.jobScope?.id;
+      if (!rootJobId) throw new HarnessError('collaboration_refused', 'A root needs its existing scoped ledger.');
+      const held = rootScopes.get(runId);
+      if (held && (held.rootJobId !== rootJobId || held.scopedLedger !== scopedLedger)) throw new HarnessError('collaboration_refused', 'The root spend scope is already pinned.');
+      rootScopes.set(runId, { rootRunId: runId, rootJobId, scopedLedger });
+    },
+    async recoverCollaboration(run) {
+      if (run.capabilityId === NATIVE_LOOP.id && loopInput(run).collaboration) {
+        if (!collaboration) throw new HarnessError('collaboration_refused', 'The saved collaboration host must be attached before recovery.');
+        await collaboration.recover(run.projectId, run.id);
+        if (['completed', 'failed', 'cancelled'].includes(run.state)) await collaboration.stop(run.projectId, run.id);
+      }
+    },
+    async authorizeReview(run, intent, principal, phase) {
+      if (!collaboration) throw new HarnessError('egress_denied', 'This exact review has no attached collaboration host.');
+      await collaboration.authorizeReview(run, intent, principal, phase);
+    },
+    async authorizeModel(run, phase) {
+      const root = await rootOf(run);
+      if (!ACTIVE.includes(root.state)) throw new HarnessError('egress_denied', 'The native root is stopped or requires reconciliation.');
+      const input = loopInput(root);
+      if (input.collaboration) {
+        if (!collaboration) throw new HarnessError('collaboration_refused', 'The recorded collaboration host is unavailable.');
+        await collaboration.validate(input.collaboration, phase);
+      }
     },
     hold() {
       gate = new Promise<void>((resolve) => {

@@ -53,7 +53,7 @@ export interface ActionSelection {
 export type BlockReason =
   | 'above-ceiling' | 'needs-target' | 'home-is-not-a-target' | 'unknown-target'
   | 'cross-project-read' | 'build-not-reachable' | 'send-not-reachable'
-  | 'control-not-reachable' | 'stale-selection';
+  | 'control-not-reachable' | 'stale-selection' | 'stale-request' | 'request-out-of-scope';
 
 export interface AdmissionInput {
   decision: InteractionDecision;

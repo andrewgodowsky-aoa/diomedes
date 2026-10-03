@@ -103,6 +103,25 @@ export interface LoopToolBinding {
   bind(input: unknown, run: HarnessRun): Promise<Json> | Json;
 }
 
+export interface LoopToolContext {
+  readonly runId: string;
+  readonly owner: string;
+  readonly principal: HarnessPrincipal;
+  readonly stepId: string;
+  readonly name: string;
+  readonly input: Json;
+  readonly output: Json;
+}
+
+/** Host checks and waits are composed into the existing durable native loop. */
+export interface LoopCollaborationPort {
+  validate(phase: 'dispatch' | 'result'): Promise<void>;
+  beforeTool?(context: LoopToolContext): Promise<void>;
+  afterTool?(context: LoopToolContext): Promise<Json>;
+  review?(context: LoopToolContext & { text: string }): Promise<Json>;
+  assertFinish?(): Promise<void>;
+}
+
 export interface DelegationRequest {
   readonly parent: HarnessRun;
   readonly stepId: string;
@@ -186,6 +205,7 @@ export interface NativeLoopOptions {
   readonly delegation?: LoopDelegationPort | null;
   /** H14: workers and an advisor, when the person admitted the lead with a team. */
   readonly team?: LoopTeamPort | null;
+  readonly collaboration?: LoopCollaborationPort | null;
   readonly route: string;
   readonly model: string | null;
   readonly sources?: readonly string[];
@@ -220,6 +240,7 @@ const delegatedTask = z.strictObject({
   /** The files and folders its sandbox copy holds. Absent: this run's whole scope. */
   files: z.array(z.string().trim().min(1).max(400)).min(1).max(SANDBOX_LIMITS.scopeEntries).optional(),
 });
+const reviewReportSchema = z.strictObject({ text: z.string().min(1).max(48_000) });
 /** One object, so every provider's tool-schema rules accept it: one task, or several in `tasks`. */
 const delegateSchema = z
   .strictObject({
@@ -361,6 +382,11 @@ export class NativeLoop {
           inputSchema: z.toJSONSchema(adviseSchema) as Json,
         });
     }
+    if (this.options.collaboration?.review)
+      tools.push({ name: 'review_report', version: '1',
+        description: 'Ask the selected bounded reviewer to check these exact proposed report bytes against the admitted source files. Its answer is evidence, never permission to write. Propose these same bytes afterwards.',
+        effect: 'read', permission: null, approval: false, destination: 'local', trustedInputRequired: false, cost: 0,
+        inputSchema: z.toJSONSchema(reviewReportSchema) as Json });
     return { bindings, tools };
   }
 
@@ -379,6 +405,7 @@ export class NativeLoop {
     tools: ToolDescriptor[],
     transcript: ProviderTranscriptRef | null,
   ): Promise<{ response: ModelResponse; transcript: ProviderTranscriptRef | null }> {
+    await this.options.collaboration?.validate('dispatch');
     const run = await this.runtime.get(runId);
     const original: ModelRequest = {
       runId,
@@ -426,6 +453,8 @@ export class NativeLoop {
           : z.json().parse({ provider: this.adapter.id, messages, tools }),
       },
       async ({ signal, reportOrigin, attempt }) => {
+        await this.options.collaboration?.validate('dispatch');
+        signal.throwIfAborted();
         await this.adapter.validatePrepared?.(copy(effective));
         const watch = (await this.options.stream?.watch(runId, `model:${key}`, attempt)) ?? null;
         let result: Awaited<ReturnType<ModelAdapter['complete']>>;
@@ -435,6 +464,8 @@ export class NativeLoop {
             signal,
             watch ? { onDelta: (text) => watch.onDelta(text) } : undefined,
           );
+          signal.throwIfAborted();
+          await this.options.collaboration?.validate('result');
         } catch (error) {
           await watch?.end(null).catch(() => undefined);
           throw error;
@@ -568,6 +599,7 @@ export class NativeLoop {
         transcript = decided.transcript;
         const response = decided.response;
         if (response.type === 'final') {
+          await this.options.collaboration?.assertFinish?.();
           const claim =
             response.text.length > LOOP_LIMITS.claimChars
               ? `${response.text.slice(0, LOOP_LIMITS.claimChars - 1)}…`
@@ -952,6 +984,19 @@ export class NativeLoop {
         { refused: detail },
       );
 
+    await this.options.collaboration?.validate('dispatch');
+    if (response.name === 'review_report') {
+      const review = this.options.collaboration?.review;
+      if (!review) return refuse('Report review was not admitted for this run.');
+      const parsed = reviewReportSchema.safeParse(response.input);
+      if (!parsed.success) return refuse('Review needs the exact bounded report text.');
+      await this.options.enterPhase?.('review');
+      const output = await review({ runId, owner, principal, stepId: `review:${turn}`, name: response.name,
+        input: parsed.data, output: null, text: parsed.data.text });
+      await this.options.collaboration?.validate('result');
+      return observe({ action: 'tool', tool: response.name, ok: true, ...excerpt(output), detail: null }, output);
+    }
+
     if (response.name === ASSIGN_TOOL) return this.assign(runId, owner, principal, turn, response, observe, refuse);
     if (response.name === ADVISE_TOOL) return this.advise(runId, owner, principal, turn, response, observe, refuse);
 
@@ -1119,7 +1164,9 @@ export class NativeLoop {
     }
     // H12's one mediated path: the effect intent, its targets and its authority
     // are recorded before the handler runs, and an interrupted write stays uncertain.
-    const output = await this.tools.dispatch<Json>(this.runtime, {
+    const context: LoopToolContext = { runId, owner, principal, stepId: `tool:${turn}`, name: binding.name, input: bound, output: null };
+    await this.options.collaboration?.beforeTool?.(context);
+    const recordedOutput = await this.tools.dispatch<Json>(this.runtime, {
       runId,
       owner,
       principal,
@@ -1128,10 +1175,13 @@ export class NativeLoop {
       input: bound,
       origin: applicationOrigin(),
     });
+    const output = this.options.collaboration?.afterTool
+      ? await this.options.collaboration.afterTool({ ...context, output: recordedOutput })
+      : recordedOutput;
+    await this.options.collaboration?.validate('result');
     return observe(
       { action: 'tool', tool: binding.name, ok: true, ...excerpt(output), detail: null },
       output,
     );
   }
 }
-

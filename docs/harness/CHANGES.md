@@ -1,5 +1,12 @@
 # Harness host integration changes, 2026-09-09
 
+## Agent Team reconciliation onto main, 2026-10-03
+
+The Agent Team, automatic work and Personal Trust work now sits on current main as
+`feature/agent-team-automatic-work` (DIO-177). The Individual funding repair, the Mac
+packaging changes and the release workflow stay with their owners. See
+[the reconciliation record](../implementation/2026-10-01-agent-team-automatic-work.md#reconciliation-onto-main-2026-10-03).
+
 ## Current engine compatibility amendment, 2026-09-27
 
 Vendor build equality no longer admits or refuses native/subscription engines.

@@ -119,6 +119,17 @@ export interface JobScope {
   capMicroUsd: MicroUsd;
 }
 
+/** The provider's original monetary report, independent of a later owner decision. */
+export interface ExposureReportedCost {
+  readonly version: 1;
+  readonly usd: number;
+  readonly microUsd: MicroUsd;
+  readonly reportedModel: string | null;
+  readonly providerRequestId: string | null;
+  readonly originalMaxMicroUsd: MicroUsd;
+  readonly observedAt: string;
+}
+
 /** One hold on the cap, from before the call until what it cost is known. */
 export interface ExposureReservation {
   /** `exp-` and the first 40 hex of `digest({ connectionId, attempt })`. */
@@ -150,6 +161,8 @@ export interface ExposureReservation {
   providerRequestId: string | null;
   reconciledFrom: 'response' | 'owner-entry' | 'write-off' | null;
   note: string | null;
+  /** Absent on older holds. Reconciliation and write-off preserve this fact. */
+  reportedCost?: ExposureReportedCost;
 }
 
 /** The owner's approved cap for one connection. Replaced, never edited. */
@@ -207,6 +220,21 @@ export class JobCapReached extends SpendExposureError {
       402,
     );
     this.name = 'JobCapReached';
+  }
+}
+
+/** A role cannot consume the root's reserved verification and correction funds. */
+export class RunBudgetReached extends SpendExposureError {
+  constructor(
+    readonly jobId: string,
+    readonly runId: string,
+    readonly usedMicroUsd: MicroUsd,
+    readonly capMicroUsd: MicroUsd,
+    readonly neededMicroUsd: MicroUsd,
+  ) {
+    super('run_budget_reached',
+      `This run has used or holds ${formatMoney(usedMicroUsd)} of its ${formatMoney(capMicroUsd)} allocation, and its next step could take it to ${formatMoney(neededMicroUsd)}. Nothing more was held or sent.`, 402);
+    this.name = 'RunBudgetReached';
   }
 }
 
@@ -300,6 +328,20 @@ function moneyFrom(amount: bigint, code: string, what: string): MicroUsd {
 /** Integer division rounded up, for amounts that are never negative. */
 const ceilDiv = (numerator: bigint, denominator: bigint) =>
   (numerator + denominator - 1n) / denominator;
+
+/** A provider's decimal USD report, rounded up once without floating-point multiplication. */
+export function reportedCostMicroUsd(usd: unknown): MicroUsd {
+  if (typeof usd !== 'number' || !Number.isFinite(usd) || usd < 0)
+    throw refuse('invalid_amount', 'A provider cost must be a finite nonnegative USD amount.');
+  const [mantissa, exponent = '0'] = usd.toString().split('e');
+  const [whole, fraction = ''] = mantissa.split('.');
+  const digits = BigInt(whole + fraction);
+  const scale = 6 + Number(exponent) - fraction.length;
+  const amount = scale >= 0
+    ? digits * 10n ** BigInt(scale)
+    : ceilDiv(digits, 10n ** BigInt(-scale));
+  return moneyFrom(amount, 'invalid_amount', 'That provider cost');
+}
 
 function attemptProblem(value: unknown): string | null {
   if (!isRecord(value)) return 'there is no attempt.';
@@ -490,6 +532,7 @@ const emptyStored = (): StoredExposure => ({ v: 1, allowance: null, reservations
 function freezeReservation(reservation: ExposureReservation): ExposureReservation {
   Object.freeze(reservation.attempt);
   if (reservation.usage) Object.freeze(reservation.usage);
+  if (reservation.reportedCost) Object.freeze(reservation.reportedCost);
   return Object.freeze(reservation);
 }
 
@@ -574,6 +617,7 @@ function readReservation(
     throw bad('is settled with no amount.');
   if ((value.state === 'uncertain' || value.state === 'written-off') && value.uncertainAt === null)
     throw bad('is uncertain with no record of when it became so.');
+  const reportedCost = value.reportedCost === undefined ? undefined : readReportedCost(value.reportedCost, bad);
   return {
     id: value.id as string,
     connectionId,
@@ -596,7 +640,22 @@ function readReservation(
     providerRequestId: value.providerRequestId as string | null,
     reconciledFrom: value.reconciledFrom as ExposureReservation['reconciledFrom'],
     note: value.note as string | null,
+    ...(reportedCost === undefined ? {} : { reportedCost }),
   };
+}
+
+function readReportedCost(value: unknown, bad: (why: string) => SpendExposureError): ExposureReportedCost {
+  if (!isRecord(value) || value.version !== 1 || !isMoney(value.microUsd) ||
+      !isMoney(value.originalMaxMicroUsd) || value.originalMaxMicroUsd <= 0 || !isTime(value.observedAt))
+    throw bad('has an unreadable original provider cost receipt.');
+  let rounded: MicroUsd;
+  try { rounded = reportedCostMicroUsd(value.usd); } catch { throw bad('has an invalid original provider USD report.'); }
+  if (rounded !== value.microUsd) throw bad('has an original provider USD report that disagrees with its rounded amount.');
+  for (const key of ['reportedModel', 'providerRequestId'] as const)
+    if (value[key] !== null && !isLabel(value[key])) throw bad(`has an unreadable original provider ${key}.`);
+  return { version: 1, usd: value.usd as number, microUsd: rounded,
+    reportedModel: value.reportedModel as string | null, providerRequestId: value.providerRequestId as string | null,
+    originalMaxMicroUsd: value.originalMaxMicroUsd, observedAt: value.observedAt };
 }
 
 /**
@@ -675,11 +734,11 @@ function summarize(connectionId: string, stored: StoredExposure): ExposureSummar
  * they cost, and pending, uncertain and written-off holds at their ceiling, the
  * same terms the connection cap counts them on. Released holds count nothing.
  */
-function jobExposure(files: ReadonlyMap<string, StoredExposure>, jobId: string): MicroUsd {
+function jobExposure(files: ReadonlyMap<string, StoredExposure>, jobId: string, runId?: string): MicroUsd {
   const amounts: MicroUsd[] = [];
   for (const [connectionId, stored] of files)
     for (const reservation of stored.reservations) {
-      if (reservation.jobId !== jobId || reservation.state === 'released') continue;
+      if (reservation.jobId !== jobId || (runId !== undefined && reservation.attempt.runId !== runId) || reservation.state === 'released') continue;
       if (reservation.state === 'settled') {
         if (reservation.settledMicroUsd === null)
           throw corrupt(`${connectionId}.json`, `reservation ${reservation.id} is settled with no amount.`);
@@ -725,6 +784,8 @@ export class SpendExposure {
   private chain: Promise<void> = Promise.resolve();
   /** Told when an open hold reaches a final cost; see `onResolved`. */
   private resolvedListener: ((reservation: ExposureReservation) => void) | null = null;
+  /** Rebound from the persisted host decision before dispatch after startup; no money record is duplicated. */
+  private readonly runBudgets = new Map<string, Readonly<{ jobId: string; maxMicroUsd: MicroUsd; rootCapMicroUsd: MicroUsd }>>();
 
   constructor(
     private readonly dataDir: string,
@@ -988,6 +1049,29 @@ export class SpendExposure {
     return null;
   }
 
+  /** Narrow one existing root role's monetary allocation; a base ledger cannot issue it. */
+  async limitRunBudget(runId: string, maxMicroUsd: MicroUsd, jobId: string): Promise<void> {
+    return this.pinRunBudget(this.jobScope, runId, maxMicroUsd, jobId);
+  }
+
+  private async pinRunBudget(scope: JobScope | null, runId: string, amount: MicroUsd, jobId: string): Promise<void> {
+    this.assertReady();
+    return this.exclusive(async () => {
+      if (!scope || jobId !== scope.id || !JOB_KEY.test(jobId))
+        throw refuse('invalid_job', 'A run allocation must name this existing root job view.');
+      if (!isLabel(runId)) throw refuse('invalid_run_budget', 'A run allocation needs the exact persisted run identity.');
+      const maxMicroUsd = moneyOf(amount, 'invalid_run_budget', 'That run allocation');
+      if (maxMicroUsd > scope.capMicroUsd)
+        throw refuse('invalid_run_budget', 'A run allocation cannot exceed its original root job cap.');
+      const previous = this.runBudgets.get(runId);
+      if (previous && (previous.jobId !== scope.id || previous.maxMicroUsd !== maxMicroUsd || previous.rootCapMicroUsd !== scope.capMicroUsd))
+        throw refuse('run_budget_changed', 'This run already has a different immutable allocation or root scope.', 409);
+      if ([...this.files.values()].some(stored => stored.reservations.some(held => held.attempt.runId === runId && held.jobId !== scope.id)))
+        throw refuse('invalid_job', 'Existing holds for this run belong to a different root job.');
+      if (!previous) this.runBudgets.set(runId, Object.freeze({ jobId: scope.id, maxMicroUsd, rootCapMicroUsd: scope.capMicroUsd }));
+    });
+  }
+
   /**
    * The same ledger, held to one job's cap: every `reserve` through the view
    * carries the job, and is refused when the job's next hold would pass its cap.
@@ -1003,6 +1087,8 @@ export class SpendExposure {
         if (property === 'jobScope') return job;
         if (property === 'reserve')
           return (input: Parameters<SpendExposure['reserve']>[0]) => target.reserve({ ...input, job });
+        if (property === 'limitRunBudget')
+          return (runId: string, maxMicroUsd: MicroUsd, jobId: string) => target.pinRunBudget(job, runId, maxMicroUsd, jobId);
         if (property === 'forJob')
           return () => {
             throw refuse('invalid_job', 'A job view cannot be re-scoped to another job.');
@@ -1028,6 +1114,8 @@ export class SpendExposure {
     maxMicroUsd: MicroUsd;
     /** The parent job this hold counts against. Its cap is checked in the same queue as the hold. */
     job?: JobScope;
+    /** One external dispatch for this root job/run/step, even if request bytes change. */
+    singleAttempt?: true;
   }): Promise<ExposureReservation> {
     this.assertReady();
     return this.exclusive(async () => {
@@ -1039,6 +1127,9 @@ export class SpendExposure {
           `That rate card prices ${card.modelId} on ${card.route}, not the call being reserved.`,
         );
       const attempt = attemptOf(input.attempt);
+      const job = input.job ?? null;
+      if (input.singleAttempt !== undefined && (input.singleAttempt !== true || !job || attempt.attempt !== 1))
+        throw refuse('invalid_attempt', 'A single-dispatch step requires its existing root job and attempt 1.');
       const maxMicroUsd = moneyOf(
         input.maxMicroUsd,
         'invalid_ceiling',
@@ -1050,12 +1141,26 @@ export class SpendExposure {
           'A hold must be more than zero. A paid call with no ceiling is exactly what this ledger exists to refuse.',
         );
       const id = reservationIdFor(connectionId, attempt);
-      if (this.locate(id))
+      const stepExists = input.singleAttempt && [...this.files.values()].some((stored) =>
+        stored.reservations.some((held) => held.jobId === job!.id
+          && held.attempt.runId === attempt.runId && held.attempt.stepId === attempt.stepId));
+      if (this.locate(id) || stepExists)
         throw refuse(
           'attempt_exists',
           'This attempt already has a hold, so it is not sent again. A retry is a new attempt with the next number.',
           409,
         );
+      const runBudget = this.runBudgets.get(attempt.runId);
+      if (runBudget) {
+        if (!job || job.id !== runBudget.jobId)
+          throw refuse('invalid_job', 'This allocated run must reserve on its original root job.');
+        if (job.capMicroUsd !== runBudget.rootCapMicroUsd)
+          throw refuse('run_budget_changed', 'This allocated run cannot reserve through a different root cap.', 409);
+        const decision = decideJobStep({ capMicroUsd: runBudget.maxMicroUsd,
+          usedMicroUsd: jobExposure(this.files, job.id, attempt.runId), nextMicroUsd: maxMicroUsd });
+        if (!decision.ok)
+          throw new RunBudgetReached(job.id, attempt.runId, decision.usedMicroUsd, decision.capMicroUsd, decision.neededMicroUsd);
+      }
       const current = this.files.get(connectionId);
       if (!current?.allowance)
         throw refuse(
@@ -1063,7 +1168,6 @@ export class SpendExposure {
           'No spending cap has been approved for this connection, so no paid call can be sent on it.',
           402,
         );
-      const job = input.job ?? null;
       if (job) {
         if (!JOB_KEY.test(job.id)) throw refuse('invalid_job', 'A job scope needs the job key the host issued.');
         const decision = decideJobStep({
@@ -1158,6 +1262,78 @@ export class SpendExposure {
     });
   }
 
+  /** Original root and pricing identity for a provider-reported monetary response. */
+  private reportedHold(
+    id: string,
+    input: { jobId: string; card: ModelRateCard; providerRequestId: string | null },
+  ): { found: Located; providerRequestId: string | null } {
+    const card = validateRateCard(input?.card);
+    const found = this.located(id);
+    if (typeof input.jobId !== 'string' || !JOB_KEY.test(input.jobId) || found.reservation.jobId !== input.jobId)
+      throw refuse('invalid_job', 'The provider amount must stay on the root job of its original hold.');
+    if (card.version !== found.reservation.rateCardVersion)
+      throw refuse('rate_card_changed', `This call was reserved under rate card ${found.reservation.rateCardVersion}, not ${card.version}.`, 409);
+    if (card.route !== found.reservation.route || card.modelId !== found.reservation.modelId)
+      throw refuse('invalid_rate_card', 'The provider amount names a different route or model from its original hold.');
+    const providerRequestId = input.providerRequestId === null
+      ? null : textOf(input.providerRequestId, 'The provider request id', LABEL_MAX);
+    return { found, providerRequestId };
+  }
+
+  private reportedCostEvidence(
+    reservation: ExposureReservation,
+    costUsd: number,
+    providerRequestId: string | null,
+    reportedModel: string | null,
+  ): ExposureReportedCost {
+    const microUsd = reportedCostMicroUsd(costUsd);
+    const model = reportedModel === null ? null : textOf(reportedModel, 'The answering model', LABEL_MAX);
+    const previous = reservation.reportedCost;
+    if (previous) {
+      if (previous.usd !== costUsd || previous.microUsd !== microUsd || previous.reportedModel !== model ||
+          previous.providerRequestId !== providerRequestId)
+        throw refuse('reported_cost_changed', 'The original provider cost receipt cannot be replaced by a different report.', 409);
+      return previous;
+    }
+    return { version: 1, usd: costUsd, microUsd, reportedModel: model, providerRequestId,
+      originalMaxMicroUsd: reservation.maxMicroUsd, observedAt: this.stamp() };
+  }
+
+  /**
+   * Settle an existing root hold from the provider's dollar receipt. Unknown
+   * token/cache/reasoning counts stay null; they are never invented to fit pricing.
+   */
+  async settleReportedCost(
+    id: string,
+    input: { jobId: string; microUsd: MicroUsd; card: ModelRateCard; providerRequestId: string | null; costUsd?: number; reportedModel?: string | null },
+  ): Promise<ExposureReservation> {
+    this.assertReady();
+    return this.exclusive(async () => {
+      const settledMicroUsd = moneyOf(input?.microUsd, 'invalid_amount', 'That provider amount');
+      if (input.costUsd !== undefined && reportedCostMicroUsd(input.costUsd) !== settledMicroUsd)
+        throw refuse('invalid_amount', 'The rounded amount does not match the provider dollar receipt.');
+      const { found, providerRequestId } = this.reportedHold(id, input);
+      const state = transition(found.reservation, 'settle');
+      const reportedCost = input.costUsd === undefined ? undefined
+        : this.reportedCostEvidence(found.reservation, input.costUsd, providerRequestId, input.reportedModel ?? null);
+      return this.replace(found, {
+        ...found.reservation,
+        state,
+        resolvedAt: this.stamp(),
+        settledMicroUsd,
+        usage: null,
+        band: null,
+        overCeiling: found.reservation.overCeiling || settledMicroUsd > found.reservation.maxMicroUsd,
+        providerRequestId,
+        reconciledFrom: 'response',
+        ...(reportedCost === undefined ? {} : { reportedCost }),
+        note: input.costUsd === undefined
+          ? `Provider reported ${settledMicroUsd} micro-USD; complete token usage was not reported.`
+          : `Provider reported usage.cost=${input.costUsd} USD, rounded up to ${settledMicroUsd} micro-USD; complete token usage was not reported.`,
+      });
+    });
+  }
+
   /**
    * Return a hold for a call that was provably never sent. Only a pending hold
    * can be released; once a call may have reached the provider its hold is
@@ -1174,14 +1350,34 @@ export class SpendExposure {
   }
 
   /** Park a hold whose outcome or usage is unknown. Its ceiling keeps counting. */
-  async markUncertain(id: string, reason: string): Promise<ExposureReservation> {
+  async markUncertain(id: string, reason: string, observed?: {
+    jobId: string; card: ModelRateCard; providerRequestId: string | null;
+    costUsd: number; reportedModel: string | null;
+  }): Promise<ExposureReservation> {
     this.assertReady();
     return this.exclusive(async () => {
       const uncertainReason = textOf(reason, 'The reason a call is uncertain', NOTE_MAX);
       const found = this.located(id);
       const state = transition(found.reservation, 'lose');
+      let evidence: Partial<ExposureReservation> = {};
+      if (observed) {
+        const checked = this.reportedHold(id, observed);
+        const reportedCost = this.reportedCostEvidence(found.reservation, observed.costUsd, checked.providerRequestId, observed.reportedModel);
+        const amount = reportedCost.microUsd;
+        const model = reportedCost.reportedModel;
+        evidence = {
+          providerRequestId: checked.providerRequestId,
+          reportedCost,
+          // Preserve an observed amount even when model identity cannot settle
+          // it. A cost above the original ceiling must also count in exposure.
+          maxMicroUsd: micro(Math.max(found.reservation.maxMicroUsd, amount)),
+          overCeiling: found.reservation.overCeiling || amount > found.reservation.maxMicroUsd,
+          note: `Provider reported usage.cost=${observed.costUsd} USD, rounded up to ${amount} micro-USD; reported model=${model ?? 'unknown'}. Original hold=${reportedCost.originalMaxMicroUsd} micro-USD. Held pending reconciliation.`,
+        };
+      }
       return this.replace(found, {
         ...found.reservation,
+        ...evidence,
         state,
         uncertainAt: this.stamp(),
         uncertainReason,
@@ -1212,7 +1408,7 @@ export class SpendExposure {
         state,
         resolvedAt: this.stamp(),
         settledMicroUsd,
-        overCeiling: settledMicroUsd > found.reservation.maxMicroUsd,
+        overCeiling: found.reservation.overCeiling || settledMicroUsd > found.reservation.maxMicroUsd,
         reconciledFrom: 'owner-entry',
         note,
       });

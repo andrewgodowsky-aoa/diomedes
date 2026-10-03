@@ -129,7 +129,8 @@ export interface StepRecord {
   leaseFence: number;
   startedAt: string | null;
   endedAt: string | null;
-  error: { name: string; message: string; managed?: RoutingReceipt } | null;
+  /** Stable bounded Runtime refusal code; legacy records can omit it. */
+  error: { name: string; message: string; code?: string; managed?: RoutingReceipt } | null;
 }
 
 /**
@@ -219,7 +220,7 @@ export interface HarnessRun {
   contextRevision: number;
   transcripts: Record<string, ProviderTranscriptRef>;
   result: Json | null;
-  failure: { name: string; message: string } | null;
+  failure: { name: string; message: string; code?: string } | null;
   cancelReason: string | null;
   createdAt: string;
   updatedAt: string;

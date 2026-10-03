@@ -30,10 +30,11 @@ import type { Store } from '../store.js';
 import {
   accountEvidence,
   AWS_BEDROCK_ROUTE,
-  AWS_LUNA_MODEL,
-  AWS_LUNA_RATE_CARD,
   AWS_RESPONSES_ENDPOINTS,
   awsAccountRoute,
+  awsConnectionSchema,
+  awsModelRateCard,
+  awsModelRefusal,
   AwsConnectionRetired,
   redactedAccount,
   type AwsConnection,
@@ -51,7 +52,7 @@ const RECENT_HOLDS = 20;
 const connectBody = z.strictObject({
   accountId: z.string().regex(/^\d{12}$/, 'Enter the 12-digit AWS account number.'),
   region: z.literal('us-east-1'),
-  model: z.literal(AWS_LUNA_MODEL),
+  model: awsConnectionSchema.shape.modelId,
   apiKey: z.string().min(20).max(16_384),
   expiresAt: z.string().datetime({ offset: true }).nullable(),
   consent: z.literal(true),
@@ -109,6 +110,7 @@ export function mountModelApiRoutes(app: Express, deps: { store: Store; engines:
       !!connection?.credential.expiresAt && Date.parse(connection.credential.expiresAt) <= Date.now() + 60_000;
     const summary = connection ? exposure.summary(connection.id) : null;
     const allowance = connection ? exposure.allowance(connection.id) : null;
+    const modelRefusal = connection ? awsModelRefusal(connection.modelId) : null;
     const next = !protectedStorage
       ? 'Open the Diomedes desktop app to connect AWS: this process has no protected credential storage.'
       : retired
@@ -117,11 +119,13 @@ export function mountModelApiRoutes(app: Express, deps: { store: Store; engines:
           ? 'Connect your AWS account: account number and a Bedrock API key.'
           : expired
             ? 'The saved AWS key has expired. Enter a new key.'
-            : !allowance || !summary || summary.availableMicroUsd <= 0
-              ? 'Approve a spend limit for AWS before sending.'
-              : !enabled
-                ? 'Turn AWS Bedrock on.'
-                : null;
+            : modelRefusal
+              ? modelRefusal
+              : !allowance || !summary || summary.availableMicroUsd <= 0
+                ? 'Approve a spend limit for AWS before sending.'
+                : !enabled
+                  ? 'Turn AWS Bedrock on.'
+                  : null;
     return {
       route: AWS_BEDROCK_ROUTE,
       configured: !!connection,
@@ -144,7 +148,7 @@ export function mountModelApiRoutes(app: Express, deps: { store: Store; engines:
       spend:
         connection && summary
           ? {
-              rateCard: AWS_LUNA_RATE_CARD.version,
+              rateCard: awsModelRateCard(connection.modelId).version,
               capMicroUsd: summary.capMicroUsd,
               settledMicroUsd: summary.settledMicroUsd,
               pendingMicroUsd: summary.pendingMicroUsd,

@@ -223,6 +223,12 @@ export interface Task {
    * unchanged and the task runs exactly as before.
    */
   workflow?: TaskWorkflow;
+  /** Host-bound original request, distinct from a model-suggested Inbox proposal. */
+  automaticWork?: import('./automatic-work.js').AutomaticWorkBinding;
+  /** A root-owned response assignment; it cannot start as an independent job. */
+  ownedAssignment?: { readonly rootTaskId:string;readonly rootRunId:string;readonly admissionRef:string };
+  /** Cursor of the existing run event projection. No execution state is kept here. */
+  runtimeProgress?: import('./automatic-work.js').TaskRuntimeProgress;
   /**
    * Immutable origin of a runtime-proposed task: the project, thread, turn and
    * run it came from. Absent on person-made and legacy tasks. Provenance, never
@@ -540,6 +546,8 @@ export interface FileRecord {
   binary?: true;
 }
 export interface HistoryEntry {
+  /** Exact existing Runtime event behind a phase/failure/success note. */
+  progress?: import('./automatic-work.js').TaskProgressEvidence;
   origin?: OriginSnapshot;
   authorization?: ScopedAuthorization | RememberedAuthorization;
   /** Mirrors the reviewer decision this event records, for audit without the Need. */
@@ -896,6 +904,8 @@ export interface TeamState {
   members: TeamMember[];
   messages: MailboxMessage[];
   runs: TeamRun[];
+  /** Host-recorded measured evidence; empty until exact accounts and profiles qualify. */
+  qualifications?: import('./automatic-team.js').AutomaticTeamQualification[];
 }
 export interface UsageWindow {
   id: string;

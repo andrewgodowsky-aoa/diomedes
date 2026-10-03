@@ -19,6 +19,8 @@ export type NotStartedReason =
   | 'send-not-reachable'
   | 'control-not-reachable'
   | 'stale-selection'
+  | 'stale-request'
+  | 'request-out-of-scope'
   | 'refused';
 
 /** What the person is told about one message. Nothing reads as started that did not start. */

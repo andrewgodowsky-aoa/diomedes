@@ -593,7 +593,7 @@ export function OpenRouterSetup(props: CardProps) {
                     autoComplete="off"
                     spellCheck={false}
                     value={entry.id}
-                    onChange={(event) => change(index, { id: event.target.value })}
+                    onChange={(event) => change(index, { id: event.target.value, reasoning: undefined })}
                     placeholder="vendor/model"
                   />
                 </label>
@@ -608,6 +608,30 @@ export function OpenRouterSetup(props: CardProps) {
                   />
                 </label>
                 <RatesFields label={label} rates={entry.rates} onChange={(rates) => change(index, { rates })} />
+                <label>
+                  <input type="checkbox" checked={entry.reasoning !== undefined}
+                    onChange={event => change(index, { reasoning: event.target.checked ? { supported: [], source: '' } : undefined })} />
+                  Declare supported reasoning levels
+                </label>
+                {entry.reasoning && (
+                  <fieldset>
+                    <legend>Reasoning levels for {label}</legend>
+                    {(['low', 'medium', 'high'] as const).map(level => (
+                      <label key={level}>
+                        <input type="checkbox" checked={entry.reasoning!.supported.includes(level)}
+                          onChange={event => change(index, { reasoning: { ...entry.reasoning!, supported: event.target.checked
+                            ? [...entry.reasoning!.supported, level]
+                            : entry.reasoning!.supported.filter(item => item !== level) } })} />
+                        {level}
+                      </label>
+                    ))}
+                    <label>
+                      Source of capability information
+                      <input value={entry.reasoning.source} required maxLength={300}
+                        onChange={event => change(index, { reasoning: { ...entry.reasoning!, source: event.target.value } })} />
+                    </label>
+                  </fieldset>
+                )}
                 {models.length > 1 && (
                   <Button tone="quiet" onClick={() => setModels(models.filter((_, i) => i !== index))} disabled={disabled}>
                     Remove this model
