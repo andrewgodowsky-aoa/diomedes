@@ -142,6 +142,28 @@ cp_runtime login (or cp_runtime_ suffix). Only sslmode/channel_binding query
 parameters are allowed. Credentials never enter public assets, responses or
 logs. Missing/invalid config and unavailable storage return 503 without fallback.
 
+Staff credit corrections require `POST /ops/customers/:id/funding` with exactly
+`{ requestId, credits, reason }`: an ID matching `[A-Za-z0-9][A-Za-z0-9._:-]{0,127}`,
+1–100000 whole credits and a nonempty reason of at most 500 characters (trimmed).
+The authenticated staff person, customer and request ID identify the operation.
+A 201 response is the original committed credit-adjustment row, including its
+original period and timestamp. Retry an uncertain outcome with the same ID and
+terms; changing terms returns 409 `funding_request_conflict`. An incomplete or
+inconsistent receipt returns 409 `funding_receipt_conflict` for reconciliation.
+
+These corrections and optional grant allocations use only the separately
+configured `STAFF_FUNDING_DATABASE_URL`, naming `cp_staff_funding` (or a reviewed
+suffix) on the same Neon endpoint and database as `DATABASE_URL`. Missing or
+invalid configuration refuses corrections with 503 `staff_funding_unavailable`;
+grant issuance keeps its own audited transaction and reports optional allocation
+unavailable. Each allocation/correction and its receipt commit on one client in
+one transaction, after current staff authority is rechecked under the staff lock.
+`scripts/staff-funding-permissions.sql` is an unapplied six-table review template:
+no grant mutation, purchased-credit, member-limit, reservation, settlement,
+credential, UPDATE or DELETE authority. Existing runtime/gateway grants and
+migrations remain unchanged. Configuration and role rollout require a separate
+operational decision; this source change applies no live permissions.
+
 `npm run dev` listens only on 127.0.0.1:8791. An authorized operator may place
 local secrets in ignored .dev.vars; none is supplied here. With no configuration,
 the local server correctly refuses requests. There is no fake-success dev flag.

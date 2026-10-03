@@ -47,8 +47,8 @@ GRANT SELECT ON control_plane.credit_periods, control_plane.funding_reservations
 -- admission and /ops/* routes run, and nothing more. The upserts (ON CONFLICT
 -- DO UPDATE) need UPDATE. Policies, the staff audit and admissions are
 -- append-only: INSERT without UPDATE, and their triggers refuse rewrites anyway.
--- Funding stays with the reviewed funding role above: until it exists, a staff
--- grant is issued but its month's included credits are not allocated (the answer
+-- Staff funding uses cp_staff_funding (staff-funding-permissions.sql). Until
+-- configured, a staff grant is issued without its optional monthly allocation (the answer
 -- says so), and a staff funding correction is refused.
 GRANT SELECT, INSERT, UPDATE ON control_plane.invitation_codes, control_plane.feature_grants,
   control_plane.organization_access, control_plane.route_entries, control_plane.operators TO cp_runtime;
