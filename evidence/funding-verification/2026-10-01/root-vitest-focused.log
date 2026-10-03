@@ -1,0 +1,46 @@
+
+ RUN  v3.2.7 /Users/andrewgodowsky/dev/diomedes-funding-verify
+
+ ✓ tests/credit-limits-desktop.test.ts (21 tests) 1599ms
+ ✓ tests/purchased-usage-reserve.test.ts (33 tests) 1289ms
+ ✓ tests/credit-ask-real-wiring.test.ts (4 tests) 1250ms
+   ✓ the ask from a stopped message, through the real app > names the job the gateway refused, and records one ask  396ms
+   ✓ the ask from a stopped message, through the real app > a stop after an answered message names its own job, not the earlier one  464ms
+stderr | tests/credit-purchases-routes.test.ts > when the account service can’t be asked > a price that isn’t set up is the service’s own 503, passed on
+{"event":"credit-purchases-price-unavailable","setting":"CREDIT_PRICE_CENTS_PER_100","rule":"not-set"}
+
+ ✓ tests/credit-purchases-routes.test.ts (22 tests) 893ms
+ ✓ tests/individual-plan.test.ts (19 tests) 606ms
+ ✓ tests/out-of-credits-stop.test.ts (11 tests) 6697ms
+   ✓ an Agent conversation turn that meets the end of the credits > owner: the earlier steps stay, the turn ends at the refused step with one sentence, and nothing is retried  798ms
+   ✓ an Agent conversation turn that meets the end of the credits > admin: the earlier steps stay, the turn ends at the refused step with one sentence, and nothing is retried  662ms
+   ✓ an Agent conversation turn that meets the end of the credits > member: the earlier steps stay, the turn ends at the refused step with one sentence, and nothing is retried  665ms
+   ✓ an Agent conversation turn that meets the end of the credits > the first call refused: nothing ran, the same sentence, one call  587ms
+   ✓ an Agent conversation turn that meets the end of the credits > credits bought afterwards let the next message through; the refused message is not replayed  385ms
+   ✓ a Work loop that meets the end of the credits > owner: the run ends at the refused step, keeps what it did, and the Work record says why  812ms
+   ✓ a Work loop that meets the end of the credits > admin: the run ends at the refused step, keeps what it did, and the Work record says why  731ms
+   ✓ a Work loop that meets the end of the credits > member: the run ends at the refused step, keeps what it did, and the Work record says why  762ms
+   ✓ a Work text turn and a team member turn that meet the end of the credits > the one-call text turn is refused in plain words, its record is failed not parked, and a replay sends nothing  537ms
+   ✓ a Work text turn and a team member turn that meet the end of the credits > the team member turn is refused in plain words and its record is failed, not parked  543ms
+ ✓ tests/nectovia-route.test.ts (29 tests) 419ms
+ ✓ tests/out-of-credits-harness.test.ts (7 tests) 248ms
+ ✓ tests/staff-reserve-session.test.ts (11 tests) 494ms
+ ✓ tests/nectovia-board-work.test.ts (6 tests) 232ms
+ ✓ tests/allowance-reserve-access.test.ts (21 tests) 235ms
+ ✓ tests/usage-center-ui.test.ts (93 tests) 24ms
+ ✓ tests/managed-gateway.test.ts (23 tests) 130ms
+ ✓ tests/purchased-credits-ui.test.ts (8 tests) 19ms
+ ✓ tests/individual-term-local-guard.test.ts (2 tests) 23ms
+ ✓ tests/credit-purchase-flow.test.ts (37 tests) 18ms
+ ✓ tests/credit-usage.test.ts (23 tests) 16ms
+ ✓ tests/handoff.test.ts (20 tests) 10ms
+ ✓ tests/individual-period.test.ts (9 tests) 5ms
+ ✓ tests/agent-project-attribution.test.ts (5 tests) 3ms
+ ✓ tests/credit-asks.test.ts (11 tests) 8ms
+
+ Test Files  21 passed (21)
+      Tests  415 passed (415)
+   Start at  22:39:12
+   Duration  11.56s (transform 2.02s, setup 0ms, collect 6.37s, tests 14.22s, environment 2ms, prepare 633ms)
+
+exit=0

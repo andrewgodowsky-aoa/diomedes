@@ -1,0 +1,204 @@
+
+> @diomedes/control-plane@0.0.1 test
+> vitest run --maxWorkers=1 --minWorkers=1
+
+
+ RUN  v3.2.7 /Users/andrewgodowsky/dev/diomedes-funding-verify/services/control-plane
+
+ ✓ tests/scoped-routing.test.ts (34 tests) 1700ms
+stderr | tests/managed-inference.test.ts > the company spend ceiling (MANAGED_SPEND_CEILING_MICRO_USD) > counts an open hold in full: of two calls near the edge at once, exactly one passes
+{"event":"managed-spend-ceiling-reached","attemptId":"run-1:2"}
+
+stderr | tests/managed-inference.test.ts > the company spend ceiling (MANAGED_SPEND_CEILING_MICRO_USD) > counts an uncertain hold in full
+{"event":"managed-spend-ceiling-reached","attemptId":"run-1:2"}
+
+stderr | tests/managed-inference.test.ts > the company spend ceiling (MANAGED_SPEND_CEILING_MICRO_USD) > refuses every call, sending and holding nothing, when a setting cannot be read; empty means unset
+{"event":"managed-spend-ceiling-reached","attemptId":"run-1:1"}
+
+ ✓ tests/managed-inference.test.ts (49 tests) 1673ms
+ ✓ tests/account-capacity-repair.test.ts (13 tests) 1724ms
+   ✓ active admission and over-limit account recovery > ignores retained revoked rows when admitting a member and rejoining a workspace  320ms
+   ✓ active admission and over-limit account recovery > provides bounded continuation over a preexisting account above 100 active workspaces  897ms
+stderr | tests/managed-evaluations.test.ts > the faux cloud’s evaluation provider > refuses to start with a live OpenRouter key and no readable spend ceiling, before anything opens
+{"event":"managed-setting-unreadable","setting":"MANAGED_SPEND_CEILING_MICRO_USD"}
+
+stderr | tests/managed-evaluations.test.ts > the faux cloud’s evaluation provider > refuses to start with a live OpenRouter key and no readable spend ceiling, before anything opens
+{"event":"managed-setting-unreadable","setting":"MANAGED_SPEND_CEILING_MICRO_USD"}
+
+ ✓ tests/managed-evaluations.test.ts (29 tests) 769ms
+ ✓ tests/individual-plans.test.ts (18 tests) 557ms
+ ✓ tests/customer-access.test.ts (20 tests) 505ms
+stderr | tests/credit-purchases.test.ts > the webhook > changes nothing for a session it does not know, or one whose purchase, business or tenant does not match
+{"event":"credit-purchase-mismatch","reason":"metadata_mismatch","purchaseId":"cpurch_f232ed25-23cd-4d04-8748-8c7e4c3b21b5","eventId":"evt_odd_2"}
+
+stderr | tests/credit-purchases.test.ts > the webhook > changes nothing for a session it does not know, or one whose purchase, business or tenant does not match
+{"event":"credit-purchase-mismatch","reason":"metadata_mismatch","purchaseId":"cpurch_f232ed25-23cd-4d04-8748-8c7e4c3b21b5","eventId":"evt_odd_3"}
+
+stderr | tests/credit-purchases.test.ts > the webhook > changes nothing for a session it does not know, or one whose purchase, business or tenant does not match
+{"event":"credit-purchase-mismatch","reason":"metadata_mismatch","purchaseId":"cpurch_f232ed25-23cd-4d04-8748-8c7e4c3b21b5","eventId":"evt_odd_4"}
+
+stderr | tests/credit-purchases.test.ts > the webhook > changes nothing for a session it does not know, or one whose purchase, business or tenant does not match
+{"event":"credit-purchase-mismatch","reason":"metadata_mismatch","purchaseId":"cpurch_f232ed25-23cd-4d04-8748-8c7e4c3b21b5","eventId":"evt_odd_5"}
+
+stderr | tests/credit-purchases.test.ts > the webhook > changes nothing for a session it does not know, or one whose purchase, business or tenant does not match
+{"event":"credit-purchase-mismatch","reason":"metadata_mismatch","purchaseId":"cpurch_f232ed25-23cd-4d04-8748-8c7e4c3b21b5","eventId":"evt_odd_6"}
+
+stderr | tests/credit-purchases.test.ts > the webhook > changes nothing for a session it does not know, or one whose purchase, business or tenant does not match
+{"event":"credit-purchase-mismatch","reason":"metadata_mismatch","purchaseId":"cpurch_f232ed25-23cd-4d04-8748-8c7e4c3b21b5","eventId":"evt_odd_7"}
+
+stderr | tests/credit-purchases.test.ts > the webhook > does not pay a purchase from a session another purchase made
+{"event":"credit-purchase-mismatch","reason":"metadata_mismatch","purchaseId":"cpurch_73158a75-b797-42d6-906d-09e4c6d49b9e","eventId":"evt_paid_1"}
+
+stderr | tests/credit-purchases.test.ts > the webhook > writes the paid purchase and its top-up in one transaction: a failed commit leaves neither, and the retry lands both
+{"event":"credit-purchase-webhook-failed","eventId":"evt_paid_1"}
+
+stderr | tests/credit-purchases.test.ts > one Stripe customer per business, and the stored event a top-up names > takes the business and tenant from the stored purchase, never from the event
+{"event":"credit-purchase-mismatch","reason":"metadata_mismatch","purchaseId":"cpurch_f8ca63dc-34e5-42c9-8277-7ef682516fef","eventId":"evt_other"}
+
+stderr | tests/credit-purchases.test.ts > one Stripe customer per business, and the stored event a top-up names > lets Stripe's retry finish a payment whose funding step failed, with the event and the customer stored once
+{"event":"credit-purchase-webhook-failed","eventId":"evt_paid_1"}
+
+ ✓ tests/credit-purchases.test.ts (76 tests) 364ms
+ ✓ tests/gateway-funding-login.test.ts (14 tests) 329ms
+stderr | tests/workos-standin.test.ts > the faux cloud in workos-standin mode > rotates refresh tokens, and a token without the audience is refused
+{"event":"identity-refused","check":"audience"}
+
+ ✓ tests/workos-standin.test.ts (6 tests) 360ms
+ ✓ tests/account-service-repair-review-independent.test.ts (31 tests | 3 skipped) 333ms
+   ✓ independent repair recovery and enumeration > does not count revoked owners as replacements when recovering an over-limit organization  309ms
+ ✓ tests/relay-devices.test.ts (10 tests) 322ms
+ ✓ tests/organization-setup.test.ts (12 tests) 305ms
+ ✓ tests/organization-export.test.ts (8 tests) 286ms
+ ✓ tests/relay-socket.test.ts (7 tests) 279ms
+ ✓ tests/staff-keys.test.ts (11 tests) 191ms
+ ✓ tests/staff-marker.test.ts (7 tests) 195ms
+ ✓ tests/relay-hub.test.ts (26 tests) 191ms
+stderr | tests/member-limits.test.ts > the account API > answers 503 when the funding login is not configured, instead of writing as the Worker login
+{"event":"member-limits-funding-database-unavailable","setting":"FUNDING_DATABASE_URL","rule":"not-set"}
+
+ ✓ tests/member-limits.test.ts (34 tests) 138ms
+ ✓ tests/funding-permissions.test.ts (5 tests) 251ms
+ ✓ tests/funding.test.ts (35 tests) 144ms
+ ✓ tests/membership-refusal-code.test.ts (5 tests) 142ms
+ ✓ tests/faux-server-managed.test.ts (3 tests) 125ms
+stderr | tests/managed-worker.test.ts > the Worker entry for managed inference > answers every managed refusal in the managed error shape, before configuration and at the edge
+{"event":"managed-configuration-unavailable","setting":"ENVIRONMENT","rule":"missing"}
+{"event":"managed-gateway-unavailable"}
+
+ ✓ tests/managed-worker.test.ts (3 tests) 119ms
+ ✓ tests/managed-body.test.ts (65 tests) 99ms
+stderr | tests/purchased-usage.test.ts > the worker keeps its funding writes narrow > answers 503 when the funding login is not configured, instead of writing as the Worker login
+{"event":"purchased-usage-funding-database-unavailable","setting":"FUNDING_DATABASE_URL","rule":"not-set"}
+
+stderr | tests/purchased-usage.test.ts > the lease on a hold (Andrew, 2026-10-01: a stale hold lets go on its own, never while the work could still be running) > answers 503 for a renewal when the funding login is not configured
+{"event":"purchased-usage-funding-database-unavailable","setting":"FUNDING_DATABASE_URL","rule":"not-set"}
+
+ ✓ tests/purchased-usage.test.ts (44 tests) 101ms
+ ✓ tests/payment-ledger-permissions.test.ts (19 tests) 87ms
+ ✓ tests/managed-bindings.test.ts (31 tests) 87ms
+ ✓ tests/account-service-review-independent.test.ts (30 tests) 80ms
+ ✓ tests/company-spend-ceiling.test.ts (4 tests) 70ms
+ ✓ tests/managed-providers.test.ts (9 tests) 75ms
+ ✓ tests/funding-dispatch-release.test.ts (7 tests) 62ms
+stderr | tests/identity-workos.test.ts > WorkOS access-token and active-session verification (offline HTTP fixtures) > rejects issuer before authenticated provider lookup
+{"event":"identity-refused","check":"issuer"}
+
+stderr | tests/identity-workos.test.ts > WorkOS access-token and active-session verification (offline HTTP fixtures) > rejects another client’s issuer before authenticated provider lookup
+{"event":"identity-refused","check":"issuer"}
+
+stderr | tests/identity-workos.test.ts > WorkOS access-token and active-session verification (offline HTTP fixtures) > rejects a longer issuer path before authenticated provider lookup
+{"event":"identity-refused","check":"issuer"}
+
+stderr | tests/identity-workos.test.ts > WorkOS access-token and active-session verification (offline HTTP fixtures) > rejects the client issuer with a trailing slash before authenticated provider lookup
+{"event":"identity-refused","check":"issuer"}
+
+stderr | tests/identity-workos.test.ts > WorkOS access-token and active-session verification (offline HTTP fixtures) > rejects the user-management root before authenticated provider lookup
+{"event":"identity-refused","check":"issuer"}
+
+stderr | tests/identity-workos.test.ts > WorkOS access-token and active-session verification (offline HTTP fixtures) > rejects audience before authenticated provider lookup
+{"event":"identity-refused","check":"audience"}
+
+stderr | tests/identity-workos.test.ts > WorkOS access-token and active-session verification (offline HTTP fixtures) > rejects missing audience before authenticated provider lookup
+{"event":"identity-refused","check":"claims-shape"}
+
+stderr | tests/identity-workos.test.ts > WorkOS access-token and active-session verification (offline HTTP fixtures) > rejects client before authenticated provider lookup
+{"event":"identity-refused","check":"client"}
+
+stderr | tests/identity-workos.test.ts > WorkOS access-token and active-session verification (offline HTTP fixtures) > rejects missing client before authenticated provider lookup
+{"event":"identity-refused","check":"claims-shape"}
+
+stderr | tests/identity-workos.test.ts > WorkOS access-token and active-session verification (offline HTTP fixtures) > rejects expired before authenticated provider lookup
+{"event":"identity-refused","check":"lifetime"}
+
+stderr | tests/identity-workos.test.ts > WorkOS access-token and active-session verification (offline HTTP fixtures) > rejects future issued before authenticated provider lookup
+{"event":"identity-refused","check":"lifetime"}
+
+stderr | tests/identity-workos.test.ts > WorkOS access-token and active-session verification (offline HTTP fixtures) > rejects not yet valid before authenticated provider lookup
+{"event":"identity-refused","check":"lifetime"}
+
+stderr | tests/identity-workos.test.ts > WorkOS access-token and active-session verification (offline HTTP fixtures) > rejects invalid subject before authenticated provider lookup
+{"event":"identity-refused","check":"claims-shape"}
+
+stderr | tests/identity-workos.test.ts > WorkOS access-token and active-session verification (offline HTTP fixtures) > rejects missing session before authenticated provider lookup
+{"event":"identity-refused","check":"claims-shape"}
+
+stderr | tests/identity-workos.test.ts > WorkOS access-token and active-session verification (offline HTTP fixtures) > rejects impersonation before authenticated provider lookup
+{"event":"identity-refused","check":"actor"}
+
+stderr | tests/identity-workos.test.ts > WorkOS access-token and active-session verification (offline HTTP fixtures) > rejects none and refuses header-selected keys
+{"event":"identity-refused","check":"header"}
+
+stderr | tests/identity-workos.test.ts > WorkOS access-token and active-session verification (offline HTTP fixtures) > rejects HS256 and refuses header-selected keys
+{"event":"identity-refused","check":"header"}
+
+stderr | tests/identity-workos.test.ts > WorkOS access-token and active-session verification (offline HTTP fixtures) > rejects RS512 and refuses header-selected keys
+{"event":"identity-refused","check":"header"}
+
+stderr | tests/identity-workos.test.ts > WorkOS access-token and active-session verification (offline HTTP fixtures) > rejects tampered signatures and unknown keys
+{"event":"identity-refused","check":"signature"}
+
+stderr | tests/identity-workos.test.ts > WorkOS access-token and active-session verification (offline HTTP fixtures) > rejects tampered signatures and unknown keys
+{"event":"identity-refused","check":"signing-key"}
+
+stderr | tests/identity-workos.test.ts > WorkOS access-token and active-session verification (offline HTTP fixtures) > provider outage is unavailable, not successful or an invalid-token response
+{"event":"identity-unavailable","step":"jwks"}
+
+ ✓ tests/identity-workos.test.ts (36 tests) 52ms
+ ✓ tests/organization-export-postgres.test.ts (6 tests) 52ms
+ ✓ tests/organization-setup-postgres.test.ts (7 tests) 50ms
+ ✓ tests/relay-postgres.test.ts (8 tests) 51ms
+ ✓ tests/funding-postgres.test.ts (27 tests) 22ms
+ ✓ tests/usage-contract-funding.test.ts (16 tests) 21ms
+ ✓ tests/individual-funding.test.ts (9 tests) 20ms
+ ✓ tests/usage-route.test.ts (6 tests) 19ms
+stderr | tests/worker.test.ts > actual Fetch API failure boundaries > fails a cold start with missing configuration before creating adapters
+{"event":"control-plane-unavailable","setting":"ENVIRONMENT","rule":"missing"}
+
+stderr | tests/worker.test.ts > actual Fetch API failure boundaries > maps unavailable database/quota to refusal without exposing driver secrets
+{"event":"control-plane-unavailable"}
+
+ ✓ tests/worker.test.ts (5 tests) 18ms
+ ✓ tests/accounts.test.ts (11 tests) 20ms
+ ✓ tests/relay-durable-object.test.ts (7 tests) 15ms
+ ✓ tests/migrations.test.ts (16 tests) 15ms
+ ✓ tests/staff-identity.test.ts (26 tests) 10ms
+ ✓ tests/operations-routing-policy.test.ts (28 tests) 10ms
+ ✓ tests/configuration-diagnostics.test.ts (26 tests) 9ms
+ ✓ tests/config.test.ts (38 tests) 6ms
+ ✓ tests/admission-read.test.ts (2 tests) 6ms
+ ✓ tests/inbox.test.ts (2 tests) 5ms
+ ✓ tests/client-lifecycle-repair.test.ts (5 tests) 4ms
+ ✓ tests/postgres.test.ts (5 tests) 4ms
+ ✓ tests/deploy-config.test.ts (4 tests) 2ms
+ ↓ tests/account-capacity.integration.test.ts (6 tests | 6 skipped)
+ ↓ tests/individual-funding-postgres.integration.test.ts (12 tests | 12 skipped)
+ ↓ tests/postgres-role-independent.test.ts (15 tests | 15 skipped)
+ ↓ tests/postgres.integration.test.ts (13 tests | 13 skipped)
+ ↓ tests/scoped-routing-postgres.integration.test.ts (6 tests | 6 skipped)
+
+ Test Files  52 passed | 5 skipped (57)
+      Tests  952 passed | 55 skipped (1007)
+   Start at  22:38:25
+   Duration  24.09s (transform 674ms, setup 141ms, collect 5.68s, tests 12.07s, environment 4ms, prepare 1.60s)
+
+exit=0

@@ -311,6 +311,70 @@ describe('a member’s limit at admission', () => {
   });
 });
 
+// A hold on bought credits draws on the same shared pool, so it is held to the same limit, under the same
+// lock, as a funded step: past the limit it needs an approval that lets this member use bought credits.
+describe('a member’s limit on a hold of bought credits', () => {
+  it('refuses a member’s bought-credit hold past their limit, through the service and the account API, and holds nothing', async () => {
+    const f = await fixture();
+    await f.funding.recordTopUp({ ...f.ref, topUpId: 'topup_1', amountMicroUsd: c(100), provider: 'stripe', sourceEventId: 'evt_1' });
+    await f.setLimit('alice', 'bob', 'limit', 20);
+    await f.spend('bob', 'a1', 20);
+    const purchased = new PurchasedUsageService(f.accounts, f.funding);
+    const refused = await refusal(purchased.hold('bob', f.organization.id, { holdId: 'hold_1', amountMicroUsd: c(15), requestDigest: 'digest-1' }));
+    expect(refused).toMatchObject({ status: 402, code: 'member_limit_reached' });
+    const answer = await f.call('/purchased-usage/holds', 'bob', { method: 'POST', body: { holdId: 'hold_2', amountMicroUsd: c(15), requestDigest: 'digest-2' } });
+    expect(answer.status).toBe(402);
+    expect((await answer.json()).code).toBe('member_limit_reached');
+    expect(f.repository.snapshot().topUpHolds).toEqual([]);
+    expect(await f.usage('bob')).toMatchObject({ includedMicroUsd: c(20), purchasedMicroUsd: 0 });
+  });
+
+  it('holds what fits under the limit, and past it only with an approval that lets the member use bought credits', async () => {
+    const f = await fixture();
+    await f.funding.recordTopUp({ ...f.ref, topUpId: 'topup_1', amountMicroUsd: c(100), provider: 'stripe', sourceEventId: 'evt_1' });
+    await f.setLimit('alice', 'bob', 'limit', 20);
+    await f.spend('bob', 'a1', 10);
+    const purchased = new PurchasedUsageService(f.accounts, f.funding);
+    await expect(purchased.hold('bob', f.organization.id, { holdId: 'hold_1', amountMicroUsd: c(10), requestDigest: 'digest-1' })).resolves.toMatchObject({ state: 'held' });
+    // At the limit now. A month raise without bought credits is room the member can't use here.
+    await f.ask('bob', 'req_1', 'month');
+    await f.decide('alice', 'req_1', true, { extraMicroUsd: c(15) });
+    const needsBought = await refusal(purchased.hold('bob', f.organization.id, { holdId: 'hold_2', amountMicroUsd: c(15), requestDigest: 'digest-2' }));
+    expect(needsBought).toMatchObject({ status: 402, code: 'member_limit_reached' });
+    expect(needsBought.message).toBe('This step would use credits your business bought, and an owner or admin hasn’t approved that for you yet.');
+    await f.ask('bob', 'req_2', 'month');
+    await f.decide('alice', 'req_2', true, { extraMicroUsd: c(15), allowPurchased: true });
+    await expect(purchased.hold('bob', f.organization.id, { holdId: 'hold_2', amountMicroUsd: c(15), requestDigest: 'digest-2' })).resolves.toMatchObject({ state: 'held' });
+  });
+
+  it('finds a landed hold on retry even after the member reached the limit, and leaves owners and admins with no limit set alone', async () => {
+    const f = await fixture();
+    await f.funding.recordTopUp({ ...f.ref, topUpId: 'topup_1', amountMicroUsd: c(100), provider: 'stripe', sourceEventId: 'evt_1' });
+    await f.setLimit('alice', 'bob', 'limit', 20);
+    const purchased = new PurchasedUsageService(f.accounts, f.funding);
+    const first = await purchased.hold('bob', f.organization.id, { holdId: 'hold_1', amountMicroUsd: c(15), requestDigest: 'digest-1' });
+    await f.setLimit('alice', 'bob', 'limit', 5);
+    expect(await purchased.hold('bob', f.organization.id, { holdId: 'hold_1', amountMicroUsd: c(15), requestDigest: 'digest-1' })).toEqual(first);
+    await f.spend('alice', 'o1', 20);
+    await f.spend('carol', 'c1', 20);
+    await expect(purchased.hold('alice', f.organization.id, { holdId: 'hold_o', amountMicroUsd: c(40), requestDigest: 'digest-o' })).resolves.toMatchObject({ state: 'held' });
+    await expect(purchased.hold('carol', f.organization.id, { holdId: 'hold_c', amountMicroUsd: c(40), requestDigest: 'digest-c' })).resolves.toMatchObject({ state: 'held' });
+  });
+
+  it('applies a limit set for the member or their role in a month whose included credits are not recorded yet', async () => {
+    const f = await fixture();
+    await f.funding.recordTopUp({ ...f.ref, topUpId: 'topup_1', amountMicroUsd: c(100), provider: 'stripe', sourceEventId: 'evt_1' });
+    await f.setLimit('alice', 'bob', 'limit', 10);
+    await f.setRole('alice', 'member', 'limit', 12);
+    // October: nothing has used the month yet, so no October grant is recorded.
+    f.setClock('2026-10-02T12:00:00.000Z');
+    const purchased = new PurchasedUsageService(f.accounts, f.funding);
+    expect((await refusal(purchased.hold('bob', f.organization.id, { holdId: 'hold_1', amountMicroUsd: c(11), requestDigest: 'digest-1' }))).code).toBe('member_limit_reached');
+    await expect(purchased.hold('bob', f.organization.id, { holdId: 'hold_2', amountMicroUsd: c(10), requestDigest: 'digest-2' })).resolves.toMatchObject({ state: 'held' });
+    expect((await refusal(purchased.hold('dave', f.organization.id, { holdId: 'hold_3', amountMicroUsd: c(13), requestDigest: 'digest-3' }))).code).toBe('member_limit_reached');
+  });
+});
+
 describe('member limits belong to businesses, not to a personal Individual billing scope', () => {
   it('leaves an Individual-term reservation untouched by member limits, and still enforces them for the business in the same ledger', async () => {
     const f = await fixture();
