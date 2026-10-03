@@ -133,7 +133,8 @@ export class WorkOSIdentityVerifier implements IdentityVerifier {
     this.issuer = config.issuer;
     this.audience = config.audience;
     this.apiKey = config.apiKey;
-    this.fetcher = config.fetch ?? fetch;
+    // workerd refuses fetch called as this.fetcher(...) ("Illegal invocation"); call the global itself.
+    this.fetcher = config.fetch ?? ((input, init) => globalThis.fetch(input, init));
     this.now = config.now ?? Date.now;
   }
 
@@ -145,7 +146,8 @@ export class WorkOSIdentityVerifier implements IdentityVerifier {
       try {
         response = await this.fetcher(url, {
           method: 'GET',
-          redirect: 'error',
+          // workerd refuses 'error'; with 'manual' a 3xx fails the !response.ok check below unfollowed.
+          redirect: 'manual',
           headers: authenticated
             ? { Authorization: `Bearer ${this.apiKey}`, Accept: 'application/json' }
             : { Accept: 'application/json' },
