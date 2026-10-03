@@ -6357,8 +6357,8 @@ export async function createApp(options: AppOptions) {
         interactionTurns.message(projectId, threadId, command, context),
       teamMessage: (projectId, slotId, text) =>
         store.locked(() => teamService.ownerSendMessage(projectId, slotId, text)),
-      teamWake: (projectId, slotId) =>
-        store.locked(() => teamService.wakeMember(projectId, slotId as TeamMember['slotId'])),
+      // Run under the Store lock the relay's wake takes, right after its check of the waiting mail.
+      teamWake: (projectId, slotId) => teamService.wakeMember(projectId, slotId as TeamMember['slotId']),
       messageWarns: async (projectId, threadId, text, mode) => {
         const plan = await jobCapDeps.messagePlan(projectId, threadId, { text, mode, sources: [] });
         return estimateView(jobCaps.tierFor(projectId, plan.threadId), plan).warning !== null;

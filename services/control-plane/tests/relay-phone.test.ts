@@ -494,6 +494,41 @@ describe('the relay hub: phones', () => {
     expect(lone.side.closes).toEqual([RELAY_CLOSE.recheckUnavailable]);
   });
 
+  it('ends a phone past a deadline when its next frame arrives, before the alarm, passing nothing on and answering no ping', async () => {
+    const core = new RelayHubCore({ authority: authority().authority, now });
+    // No recheck has run since the front checked this phone, and no alarm has run: 30 seconds on, its window has closed.
+    const lapsed = phone(core);
+    clock = START + RELAY_TIMINGS.authorityWindowMs;
+    // A computer the front has just checked, so only the phone is past its authority.
+    const owners = await desktop(core, { checkedAt: new Date(clock).toISOString() });
+    await core.message(lapsed.id, frame(decision));
+    expect(lapsed.side.closes).toEqual([RELAY_CLOSE.recheckUnavailable]);
+    expect(lapsed.side.saved()).toBeNull();
+    expect(core.has(lapsed.id)).toBe(false);
+    expect(lapsed.side.frames).toEqual([]);
+    expect(owners.side.frames).toEqual([]);
+
+    // Past its sign-in, a ping goes unanswered and ends it.
+    const expiring = phone(core, { authorizedUntil: new Date(clock + 1_000).toISOString(), checkedAt: new Date(clock).toISOString() });
+    clock += 1_000;
+    await core.message(expiring.id, RELAY_PING_FRAME);
+    expect(expiring.side.closes).toEqual([RELAY_CLOSE.sessionExpired]);
+    expect(expiring.side.frames).toEqual([]);
+
+    // Checked, but silent for 60 seconds: the late frame doesn't count as heard first.
+    clock = START;
+    const quietHub = new RelayHubCore({ authority: authority().authority, now });
+    const silent = phone(quietHub);
+    for (const ms of [20_000, 40_000]) {
+      clock = START + ms;
+      await quietHub.tick();
+    }
+    clock = START + RELAY_TIMINGS.heartbeatTimeoutMs;
+    await quietHub.message(silent.id, RELAY_PING_FRAME);
+    expect(silent.side.closes).toEqual([RELAY_CLOSE.heartbeatTimeout]);
+    expect(silent.side.frames).toEqual([]);
+  });
+
   it('forgets a phone that closed, and stops sending it frames', async () => {
     const events: HubEvent[] = [];
     const core = new RelayHubCore({ authority: authority().authority, now, record: (event) => events.push(event) });
@@ -607,6 +642,35 @@ describe('the RelayHub Durable Object with phones', () => {
     await woken.webSocketClose(phoneServer, 1000);
     await woken.webSocketMessage(desktopServer, frame(workRows));
     expect(phoneServer.frames.filter((text) => text !== RELAY_PONG_FRAME)).toHaveLength(1);
+  });
+
+  it('ends a phone whose frame arrives after its authority lapsed, before the alarm runs, and passes nothing on', async () => {
+    const { ctx, accepted, alarms } = runtime();
+    const auth = authority();
+    const hub = new TestHub(ctx, {}, { authority: auth.authority, now, record: quiet });
+    await hub.fetch(upgrade('/desktop', desktopOf));
+    const [desktopServer] = accepted;
+    await hub.webSocketMessage(desktopServer, proof(desktopServer));
+    await hub.fetch(upgrade('/phone', phoneGrant()));
+    const phoneServer = accepted[1];
+    // The phone's recheck can't run while the computer's still passes.
+    auth.answer(async () => {
+      throw new Error('database down');
+    });
+    clock = START + RELAY_TIMINGS.recheckMs;
+    await hub.webSocketMessage(desktopServer, RELAY_PING_FRAME);
+    await hub.webSocketMessage(phoneServer, RELAY_PING_FRAME);
+    await hub.alarm();
+    desktopServer.frames.length = 0;
+
+    // The phone's window closes at 30 seconds; its frame wakes the hub before the alarm does.
+    clock = START + RELAY_TIMINGS.authorityWindowMs;
+    await hub.webSocketMessage(phoneServer, frame(hello));
+    expect(phoneServer.closes).toEqual([RELAY_CLOSE.recheckUnavailable]);
+    expect(phoneServer.attachment).toBeNull();
+    expect(desktopServer.frames).toEqual([]);
+    // What the hub waits for next is the computer's recheck, not the phone's lapsed window.
+    expect(alarms.at(-1)).toBe(START + 2 * RELAY_TIMINGS.recheckMs);
   });
 
   it("refuses a phone upgrade without a phone's grant, and wakes without a phone whose state it can't read", async () => {

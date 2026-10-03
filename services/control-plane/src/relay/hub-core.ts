@@ -26,7 +26,9 @@
  * a phone command goes only to the ready desktop it names when that desktop was
  * registered by the same person, stamped with the phone's verified `from`; a
  * desktop frame goes only to the phones of the person who registered it. Rate
- * limits and refusals answer the phone with a `result`; nothing is queued.
+ * limits and refusals answer the phone with a `result`; nothing is queued. A
+ * frame from a phone already past one of its deadlines ends that phone instead
+ * of being read, so nothing it sends reaches a desktop before the alarm runs.
  *
  * It reads only the closed set of frames in protocol.ts and never records keys,
  * nonces, signatures or frame text. Its two hosts are the Durable Object
@@ -401,16 +403,24 @@ export class RelayHubCore {
   }
 
   /**
-   * A phone's frame. A ping is answered; a command goes to the ready desktop it names, only
-   * when that desktop was registered by the same person, with `from` stamped from the phone's
-   * own sign-in over anything the phone sent. Anything else is dropped. A command that can't
-   * be passed on is answered with a `result` saying why.
+   * A phone's frame. A phone past a deadline is ended first. Otherwise a ping is answered; a
+   * command goes to the ready desktop it names, only when that desktop was registered by the
+   * same person, with `from` stamped from the phone's own sign-in over anything the phone sent.
+   * Anything else is dropped. A command that can't be passed on is answered with a `result`
+   * saying why.
    */
   private phoneMessage(phone: PhoneConnection, data: string | ArrayBuffer | ArrayBufferView): void {
+    const at = this.now();
+    // A phone past its sign-in, its authority window or its heartbeat is ended here, as tick()
+    // would end it, before anything it sent is read: nothing reaches a desktop between that
+    // deadline and the host's alarm. Judged before this frame counts as heard, so a phone silent
+    // past the heartbeat timeout is ended too, and before a ping is answered, so an ended phone
+    // gets no pong. (On Cloudflare the runtime answers an exact ping itself without waking the hub.)
+    const ending = this.phoneEnding(phone, at);
+    if (ending) return this.finishPhone(phone, ending);
     const text = frameText(data);
     const message = text === null ? null : parsePhoneMessage(text);
     if (!message) return;
-    const at = this.now();
     this.updatePhone(phone, { heardAt: at });
     if (message.type === 'ping') {
       phone.transport.send(RELAY_PONG_FRAME);
@@ -457,9 +467,16 @@ export class RelayHubCore {
 
   /** A phone connection that is live right now. */
   private phoneLive(phone: PhoneConnection, at: number): boolean {
+    return this.phoneEnding(phone, at) === null;
+  }
+
+  /** How the hub ends a phone connection that is past a deadline now, or null while it may stay. */
+  private phoneEnding(phone: PhoneConnection, at: number): RelayClose | null {
     const { state } = phone;
-    if (at >= Date.parse(state.grant.authorizedUntil) || at >= state.checkedAt + RELAY_TIMINGS.authorityWindowMs) return false;
-    return at < this.phoneHeard(phone) + RELAY_TIMINGS.heartbeatTimeoutMs;
+    if (at >= Date.parse(state.grant.authorizedUntil)) return RELAY_CLOSE.sessionExpired;
+    if (at >= state.checkedAt + RELAY_TIMINGS.authorityWindowMs) return RELAY_CLOSE.recheckUnavailable;
+    if (at >= this.phoneHeard(phone) + RELAY_TIMINGS.heartbeatTimeoutMs) return RELAY_CLOSE.heartbeatTimeout;
+    return null;
   }
 
   /** The socket closed from the desktop's or the phone's side, or failed. */
@@ -556,11 +573,9 @@ export class RelayHubCore {
       }
     }
     for (const phone of [...this.phones.values()]) {
-      const { state } = phone;
-      if (at >= Date.parse(state.grant.authorizedUntil)) this.finishPhone(phone, RELAY_CLOSE.sessionExpired);
-      else if (at >= state.checkedAt + RELAY_TIMINGS.authorityWindowMs) this.finishPhone(phone, RELAY_CLOSE.recheckUnavailable);
-      else if (at >= this.phoneHeard(phone) + RELAY_TIMINGS.heartbeatTimeoutMs) this.finishPhone(phone, RELAY_CLOSE.heartbeatTimeout);
-      else if (!phone.checking && at >= state.nextCheckAt) work.push(this.recheckPhone(phone));
+      const ending = this.phoneEnding(phone, at);
+      if (ending) this.finishPhone(phone, ending);
+      else if (!phone.checking && at >= phone.state.nextCheckAt) work.push(this.recheckPhone(phone));
     }
     await Promise.all(work);
     await this.settle();

@@ -1,9 +1,10 @@
 /**
  * The frames this computer sends a phone (relay plan steps 3 and 4), built from the desktop's own
  * records. Pure: no store, no clock, no socket. Every frame built here fits RELAY_MAX_MESSAGE_BYTES,
- * and none carries a path, a document's contents, an answer's reasoning, a setting or an account.
- * A file is named in words: its last part only. Text that names a path keeps only the path's last
- * part, so `notes/winter/menu.md` reads `menu.md` on the phone.
+ * and none carries a document's contents, an answer's reasoning, a setting or an account. A file is
+ * named in words: its last part only. Text that names a path keeps only the path's last part, so
+ * `C:\Users\Pat\Q3 plan.docx` reads `Q3 plan.docx` and `notes/winter/menu.md` reads `menu.md` on the
+ * phone. Only a folder written without a root, like `notes/winter`, stays as written (withoutPaths).
  */
 import { taskEvidence, type TaskColumn } from '../../shared/task-evidence.js';
 import type { Change, Need, Session, Task } from '../../shared/types.js';
@@ -27,8 +28,6 @@ export const fitsFrame = (message: object) => bytes(JSON.stringify(message)) <= 
 
 const CONTROL = /[\u0000-\u001f\u007f]/g;
 const PROSE_CONTROL = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g;
-/** A run of characters between spaces, quotes and brackets: where a path could be. */
-const TOKEN = /[^\s"'`<>|()[\]{}]+/g;
 const isHigh = (code: number) => code >= 0xd800 && code <= 0xdbff;
 
 /** The last part of a path, in either separator: `C:\menus\winter.md` and `menus/winter.md` read `winter.md`. */
@@ -36,16 +35,189 @@ export function lastPart(value: string): string {
   return value.split(/[\\/]+/).filter(Boolean).at(-1) ?? '';
 }
 
-/** A token that reads as a path rather than words: rooted, nested, or ending in a file's extension. */
-function pathLike(token: string): boolean {
-  if (/^(?:[\\/~.]|[A-Za-z]:)/.test(token)) return true;
-  if ((token.match(/[\\/]/g)?.length ?? 0) >= 2) return true;
-  return /\.[A-Za-z0-9]{1,8}[,.;:!?]*$/.test(token);
+// --- paths in text ------------------------------------------------------------------------
+
+/** A character of a word where a path could be: not whitespace, a quote, a bracket, `|`, `<`, `>` or `*`. */
+const WORD_CHAR = /[^\s"'`<>|()[\]{}*]/;
+/** A character a folder or file name holds: not whitespace, a separator, `"`, `<`, `>`, `|`, `*`, `?`, a backtick or a control character. */
+const NAME_CHAR = /[^\s\\/"<>|*?`\u0000-\u001f\u007f]/;
+const isSeparator = (char: string | undefined) => char === '\\' || char === '/';
+/** A link with a scheme, such as `https://`. A `file://` link names a path on this computer and is read as one. */
+const LINK = /([A-Za-z][A-Za-z0-9+.-]+):\/\//;
+/** A date written with slashes: `10/15/2026`, `2026/10/15` or `1/2`. */
+const DATE = /^\d{1,4}(?:\/\d{1,4}){1,2}[.,;:!?]*$/;
+/** A file's extension ending a name, with a letter in it (`.md`, `.mp3`, not `.2`), before any closing punctuation. */
+const EXTENSION = /\.(?=\d*[A-Za-z])[A-Za-z0-9]{1,8}[.,;:!?')\]}]*$/;
+/** A word that ends a clause. */
+const CLAUSE_END = /[.,;:!?][')\]}]*$/;
+/** A word that starts a path of its own: a drive, home, `.` or `..`. */
+const ROOT_WORD = /^[([{']*(?:[A-Za-z]:|~|\.\.?)$/;
+/** What follows a path's last separator when the path ends in one: nothing, or closing punctuation. */
+const PUNCTUATION_ONLY = /^[.,;:!?')\]}]*$/;
+/** The most spaces one folder name may hold. */
+const NAME_SPACES = 5;
+
+interface Root {
+  /** Where the root starts. */
+  at: number;
+  /** What a path of its root alone reads: `C:`, `~`, `.`, `..` or `file:`. */
+  name: string;
+  /** The separator a folder name with spaces must be followed by: the one the path began with. */
+  style: string;
+  /** Where the first name after the root starts. */
+  first: number;
+  /** One leading separator, which is a root only with a folder after it. */
+  lone: boolean;
 }
 
-/** Text with every path in it reduced to the path's last part. `and/or` and `1/2` stay as written. */
+/** The roots a path may start with: a `file://` link, a drive, a UNC share, home, `./` or `../`, and one leading separator. */
+const ROOTS: readonly (readonly [RegExp, boolean])[] = [
+  [/file:(?=\/\/)/iy, false],
+  [/[A-Za-z]:(?=[\\/])/y, false],
+  [/\\\\(?=[^\s\\/"<>|*?`\u0000-\u001f\u007f])/y, false],
+  [/~(?=[\\/])/y, false],
+  [/\.\.?(?=[\\/])/y, false],
+  [/(?=[\\/][^\s\\/"<>|*?`\u0000-\u001f\u007f])/y, true],
+];
+
+function rootAt(text: string, at: number): Root | null {
+  for (const [pattern, lone] of ROOTS) {
+    pattern.lastIndex = at;
+    const match = pattern.exec(text);
+    if (!match) continue;
+    let first = at + match[0].length;
+    const style = match[0] === '\\\\' ? '\\' : text[first];
+    while (isSeparator(text[first])) first += 1;
+    return { at, name: match[0], style, first, lone };
+  }
+  return null;
+}
+
+/** Where a path starts in a word: any root at its start, or a drive after anything but a letter or digit inside it (`path=C:\menus`). */
+function rootIn(text: string, start: number, end: number): Root | null {
+  const first = rootAt(text, start);
+  if (first) return first;
+  for (let at = start + 1; at + 2 < end; at += 1)
+    if (/[A-Za-z]/.test(text[at]) && text[at + 1] === ':' && isSeparator(text[at + 2]) && !/[A-Za-z0-9]/.test(text[at - 1])) return rootAt(text, at);
+  return null;
+}
+
+/** Where the word that starts at `at` ends. */
+function wordEnd(text: string, at: number): number {
+  let end = at;
+  while (end < text.length && WORD_CHAR.test(text[end])) end += 1;
+  return end;
+}
+
+/**
+ * Where a folder name with spaces in it ends: the separator after it, or -1 when its words aren't
+ * one name. `start` is where the name starts and `end` the space after its first word.
+ */
+function spacedName(text: string, start: number, end: number, style: string): number {
+  const words = [text.slice(start, end)];
+  let at = end;
+  while (text[at] === ' ') {
+    if (words.length > NAME_SPACES) return -1;
+    let next = at + 1;
+    while (next < text.length && NAME_CHAR.test(text[next])) next += 1;
+    if (next === at + 1) return -1;
+    words.push(text.slice(at + 1, next));
+    at = next;
+  }
+  if (text[at] !== style) return -1;
+  const last = words[words.length - 1];
+  if (words.slice(0, -1).some((word) => CLAUSE_END.test(word) || EXTENSION.test(word))) return -1;
+  if (ROOT_WORD.test(last)) return -1;
+  const lastStart = at - last.length;
+  const following = text.slice(lastStart, wordEnd(text, lastStart));
+  return DATE.test(following) || LINK.test(following) ? -1 : at;
+}
+
+/**
+ * A rooted path from its root: what it reads as and where it ends. Null for one leading separator
+ * with no folder after it (`/5`, `\n`), which the rules for other words decide.
+ */
+function rootedRun(text: string, root: Root): { text: string; end: number } | null {
+  let last = root.first - 1;
+  let folder = root.name;
+  let folders = 0;
+  for (let at = root.first; ; at = last + 1) {
+    let end = at;
+    while (end < text.length && NAME_CHAR.test(text[end])) end += 1;
+    if (end === at) break;
+    const separator = isSeparator(text[end]) ? end : text[end] === ' ' ? spacedName(text, at, end, root.style) : -1;
+    if (separator < 0) break;
+    folder = text.slice(at, separator);
+    folders += 1;
+    last = separator;
+    while (isSeparator(text[last + 1])) last += 1;
+  }
+  if (root.lone && folders === 0) return null;
+  let end = last + 1;
+  while (end < text.length && NAME_CHAR.test(text[end])) end += 1;
+  const tail = text.slice(last + 1, end);
+  return { text: PUNCTUATION_ONLY.test(tail) ? folder + tail : tail, end };
+}
+
+/** A word with no root, rewritten to its last part only when that part has a file's extension. */
+function plainWord(word: string): string {
+  if (!/[\\/]/.test(word) || DATE.test(word)) return word;
+  const part = lastPart(word);
+  return EXTENSION.test(part) ? part : word;
+}
+
+/**
+ * Text with every path in it reduced to the path's last part: `C:\Program Files\Acme Corp\Q3
+ * plan.docx` reads `Q3 plan.docx` and `notes/winter/menu.md` reads `menu.md`.
+ *
+ * A rooted path starts a word: a drive (`C:\` or `C:/`), a UNC share (`\\server\share`), home
+ * (`~/`), `./` or `../`, a `file://` link, or one leading `/` or `\` with at least one folder after
+ * it, so `/5` and `\n` aren't paths. A drive also starts one inside a word after anything but a
+ * letter or digit (`path=C:\menus`). The path runs through its last separator, and that whole run
+ * reads as its last part: what follows the last separator stays as written, so a last part with
+ * spaces (`Q3 plan.docx`) comes out whole, and a path ending in a separator reads as its last
+ * folder's name. Where the run's last separator is:
+ * 1. A name without spaces followed by a separator of either kind always continues the path.
+ * 2. Words with single spaces between them continue it as one folder name only when all of these
+ *    hold: the separator after them is the kind the path began with; there are at most five
+ *    spaces; no word but the last ends a clause (`.`, `,`, `;`, `:`, `!`, `?`) or has a file's
+ *    extension; and the last word doesn't start something else (a drive, `~`, `.`, `..`, a date
+ *    or a link). `C:\a.md and D:\b.md` is two paths, and `/Users/pat/Docs, then` ends at `Docs`.
+ * 3. Anything else ends the path: a line break, a tab, two spaces, a quote, `<`, `>`, `|`, `*`,
+ *    `?` or a backtick.
+ *
+ * Any other word with a separator is rewritten only when its last part has a file's extension
+ * (`menus/winter.md` reads `winter.md`). Links with a scheme (`https://…`), dates (`10/15/2026`),
+ * `and/or`, a lone `/`, and folders written without a root (`notes/winter`) stay as written.
+ */
 export function withoutPaths(text: string): string {
-  return text.replace(TOKEN, (token) => (/[\\/]/.test(token) && pathLike(token) ? lastPart(token) || 'a folder' : token));
+  let out = '';
+  let at = 0;
+  while (at < text.length) {
+    if (!WORD_CHAR.test(text[at])) {
+      out += text[at];
+      at += 1;
+      continue;
+    }
+    const end = wordEnd(text, at);
+    const word = text.slice(at, end);
+    const link = LINK.exec(word);
+    if (link && link[1].toLowerCase() !== 'file') {
+      out += word;
+      at = end;
+      continue;
+    }
+    const root = rootIn(text, at, end);
+    const run = root ? rootedRun(text, root) : null;
+    if (root && run) {
+      out += text.slice(at, root.at) + run.text;
+      at = run.end;
+    } else {
+      out += plainWord(word);
+      at = end;
+    }
+  }
+  return out;
 }
 
 /** At most `max` UTF-16 units, never splitting a character. */

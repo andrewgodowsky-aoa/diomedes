@@ -35,7 +35,7 @@ export interface DesktopPaths {
   message(projectId: string, threadId: string, command: MessageCommand, context: RequestContext): Promise<MessageResult>;
   /** The Team mailbox's owner message path, which takes the Store lock as the route does. */
   teamMessage(projectId: string, slotId: string, text: string): Promise<unknown>;
-  /** The Team wake path, which takes the Store lock as the route does. */
+  /** The Team wake route's own body (TeamService.wakeMember). Called under the Store lock, as the route is. */
   teamWake(projectId: string, slotId: string): Promise<unknown>;
   /** Whether the job-cap estimate the Console reads before a send would warn. */
   messageWarns(projectId: string, threadId: string, text: string, mode: ConversationMode): Promise<boolean>;
@@ -171,8 +171,12 @@ export function desktopRelayPorts(paths: DesktopPaths): PhoneRelayPorts {
       await paths.teamMessage(projectId, slotId, text);
     },
     wakeWarns: (projectId, slotId) => paths.wakeWarns(projectId, slotId),
-    wake: async (projectId, slotId) => {
-      await paths.teamWake(projectId, slotId);
-    },
+    wake: (projectId, slotId, check) =>
+      store.locked(async () => {
+        // The wake hands over all of the member's unread mail as it stands under this lock, so
+        // the relay judges that mail here, in the same locked step, and not a moment before.
+        check();
+        await paths.teamWake(projectId, slotId);
+      }),
   };
 }

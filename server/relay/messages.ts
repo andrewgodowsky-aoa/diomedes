@@ -86,8 +86,8 @@ export interface PhoneRelayPorts {
   memberMessage(projectId: string, slotId: string, text: string): Promise<void>;
   /** Whether waking this member would stop at the job cap's question first. */
   wakeWarns(projectId: string, slotId: string): Promise<boolean>;
-  /** Wakes a Team member on its recorded route. */
-  wake(projectId: string, slotId: string): Promise<void>;
+  /** Wakes a Team member on its recorded route. `check` runs first, under the Store lock the wake takes; a throw from it stops the wake. */
+  wake(projectId: string, slotId: string, check: () => void): Promise<void>;
 }
 
 /** The refusals a desktop answers with, each with the one sentence the phone shows. */
@@ -360,16 +360,23 @@ export class PhoneRelayMessages {
   }
 
   private async wake(message: Extract<Command, { type: 'member.wake' }>): Promise<Outcome> {
-    this.requireBusiness(message.projectId);
-    const team = this.ports.state(message.projectId).team;
-    if (!team?.members.some((member) => member.slotId === message.slotId)) throw new RelayRefusal('member_not_found');
-    const waiting = unreadForSlot([...team.messages], message.slotId);
-    if (waiting.length === 0) throw new RelayRefusal('nothing_waiting');
-    // A wake hands the member its waiting mail; mail that names documents is decided on the computer.
-    if (waiting.some((item) => (item.files?.length ?? 0) > 0)) throw new RelayRefusal('names_documents');
-    if (await this.ports.wakeWarns(message.projectId, message.slotId)) throw new RelayRefusal('cap_question');
-    await this.ports.mutation(() => this.ports.wake(message.projectId, message.slotId));
+    const { projectId, slotId } = message;
+    this.requireBusiness(projectId);
+    // Answered at once from what is here now, then judged again under the lock the wake takes:
+    // the wake hands over all of the member's unread mail, including mail that arrived meanwhile.
+    this.wakeable(projectId, slotId);
+    if (await this.ports.wakeWarns(projectId, slotId)) throw new RelayRefusal('cap_question');
+    await this.ports.mutation(() => this.ports.wake(projectId, slotId, () => this.wakeable(projectId, slotId)));
     return this.accepted(message);
+  }
+
+  /** Refuses a wake that would hand a Team member nothing, or mail that names documents, which is decided on the computer. */
+  private wakeable(projectId: string, slotId: string): void {
+    const team = this.ports.state(projectId).team;
+    if (!team?.members.some((member) => member.slotId === slotId)) throw new RelayRefusal('member_not_found');
+    const waiting = unreadForSlot([...team.messages], slotId);
+    if (waiting.length === 0) throw new RelayRefusal('nothing_waiting');
+    if (waiting.some((item) => (item.files?.length ?? 0) > 0)) throw new RelayRefusal('names_documents');
   }
 
   /**

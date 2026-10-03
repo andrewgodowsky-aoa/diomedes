@@ -2,7 +2,8 @@
  * Relay plan steps 3 and 4 on the desktop: the frames this computer builds for a phone, the gate
  * that paces them, the memory of answered commands, the worker rows, and the handlers that answer
  * a phone's commands through the desktop's own paths. The handlers run here against stand-in
- * ports; phone-relay-desktop.test.ts runs the real ports end to end over a loopback hub.
+ * ports, and the real wake port against a stand-in Store lock; phone-relay-desktop.test.ts runs
+ * the real ports end to end over a loopback hub.
  */
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -17,7 +18,9 @@ import {
   ALREADY_ANSWERED, DESKTOP_REFUSALS, PhoneRelayMessages, RelayRefusal, type PhoneRelayPorts, type RelayTurnResult,
 } from '../server/relay/messages';
 import { OUTBOUND_FRAMES_PER_MINUTE, OutboundGate } from '../server/relay/outbound';
+import { desktopRelayPorts, type DesktopPaths } from '../server/relay/ports';
 import { RECENT_WORK_MS, payerOf, workRowsOf } from '../server/relay/work-rows';
+import type { Store } from '../server/store';
 import {
   RELAY_LIMITS, RELAY_MESSAGE_TIMINGS, parseDesktopToPhone, parsePhoneBound, parseRelayedPhoneMessage,
   type ConversationRef, type DesktopToPhoneMessage, type RelayedPhoneMessage, type ResultMessage, type TurnUpdateMessage,
@@ -73,6 +76,53 @@ describe('the frames a phone is sent', () => {
     const title = words(`Fix\tthe ${'very '.repeat(30)}long title`, 80);
     expect(title).toHaveLength(80);
     expect(title.endsWith('…')).toBe(true);
+  });
+
+  it('reads a rooted path with spaces in its folders as its last part, whole, and keeps the words around it', () => {
+    // Drives, a UNC share, home, `./`, a file link, profile and cloud folders, each with spaces.
+    expect(withoutPaths('C:\\Program Files\\Acme Corp\\Q3 plan.docx')).toBe('Q3 plan.docx');
+    expect(withoutPaths('Signed /Users/pat/Client Files/Acme Corp/contract.pdf today')).toBe('Signed contract.pdf today');
+    expect(withoutPaths('Open C:\\Users\\First Last\\Documents\\menu.md now')).toBe('Open menu.md now');
+    expect(withoutPaths('C:\\Users\\pat\\OneDrive - Juniper Bakery\\Menus\\winter.md')).toBe('winter.md');
+    expect(withoutPaths('/Users/pat/Google Drive/My Drive/Menus/winter menu.md')).toBe('winter menu.md');
+    expect(withoutPaths('G:\\My Drive\\Q3 plan.docx')).toBe('Q3 plan.docx');
+    expect(withoutPaths('From \\\\bakery-nas\\Shared Docs\\Q3 plan.docx')).toBe('From Q3 plan.docx');
+    expect(withoutPaths('See ~/My Files/x.md and ./My Files/y.md')).toBe('See x.md and y.md');
+    expect(withoutPaths('C:\\Program Files (x86)\\Acme\\setup.exe')).toBe('setup.exe');
+    expect(withoutPaths('file:///C:/Users/Pat Smith/menu.md')).toBe('menu.md');
+    expect(withoutPaths('path=C:\\Users\\First Last\\x.md')).toBe('path=x.md');
+    // At the end of a sentence the punctuation stays, and the next sentence is untouched.
+    expect(withoutPaths('Saved to C:\\Users\\Pat Smith\\Client Files\\menu.md. Then I checked it.')).toBe('Saved to menu.md. Then I checked it.');
+    expect(withoutPaths("It's in /Users/pat/Client Files/Acme Corp, with the rest.")).toBe("It's in Acme Corp, with the rest.");
+    expect(withoutPaths('Is it in C:\\Users\\Pat Smith\\menus?')).toBe('Is it in menus?');
+    // A path that ends in a separator reads as its last folder.
+    expect(withoutPaths('Saved to C:\\Users\\Pat Smith\\Client Files\\.')).toBe('Saved to Client Files.');
+    // Two paths stay two, a file name followed by words ends a path, and a date after a folder isn't part of it.
+    expect(withoutPaths('Moved C:\\Users\\Pat Smith\\a.md to D:\\Shared Docs\\b.md')).toBe('Moved a.md to b.md');
+    expect(withoutPaths('Saved /Users/pat/menus/winter.md and notes/winter/menu.md')).toBe('Saved winter.md and menu.md');
+    expect(withoutPaths('/Users/pat/Documents on 10/15/2026')).toBe('Documents on 10/15/2026');
+    expect(withoutPaths('C:\\Users\\pat\\Documents on 10/15/2026')).toBe('Documents on 10/15/2026');
+
+    const [part] = needSummaryParts({
+      needId: 'need_menu', projectId: 'project_menu', taskTitle: 'Winter menu', what: 'Change the plan', why: 'The quarter is over.',
+      consequence: 'Your C:\\Users\\Pat Smith\\OneDrive - Juniper Bakery\\Q3 plan.docx changes.',
+      files: ['C:\\Users\\Pat Smith\\OneDrive - Juniper Bakery\\Q3 plan.docx'], expiresAt: AT,
+    });
+    expect(part).toMatchObject({ consequence: 'Your Q3 plan.docx changes.', files: ['Q3 plan.docx'] });
+    for (const folder of ['Pat Smith', 'OneDrive', 'Users']) expect(JSON.stringify(part)).not.toContain(folder);
+  });
+
+  it("leaves text that isn't a path as written, so a Need reads on the phone as it does on the computer", () => {
+    const text = 'On 10/15/2026 (or 2026/10/15) see https://docs.example.com/guide/setup and/or/not; yes / no, 1/2.';
+    expect(withoutPaths(text)).toBe(text);
+    // A path written without a root is rewritten only when its last part is a file.
+    expect(withoutPaths('Open menus/winter.md, not notes/winter.')).toBe('Open winter.md, not notes/winter.');
+    const [part] = needSummaryParts({
+      needId: 'need_menu', projectId: 'project_menu', taskTitle: 'Winter menu', what: 'Change the menu', why: 'It is time.',
+      consequence: 'On 10/15/2026 the menu at https://juniper.example/menu/winter changes, and/or the prices in menus/prices.csv.',
+      files: [], expiresAt: AT,
+    });
+    expect(part.consequence).toBe('On 10/15/2026 the menu at https://juniper.example/menu/winter changes, and/or the prices in prices.csv.');
   });
 
   it("summarizes a Need in parts that each fit one frame, carrying its consequence whole and only file names", () => {
@@ -469,7 +519,9 @@ function desktop() {
       world.calls.push({ port: 'memberMessage', input: { projectId, slotId, text } });
     },
     wakeWarns: async () => world.warns.wake,
-    wake: async (projectId, slotId) => {
+    // As the desktop's port does under the Store lock: the relay's check first, then the wake.
+    wake: async (projectId, slotId, check) => {
+      check();
       world.calls.push({ port: 'wake', input: { projectId, slotId } });
     },
   };
@@ -717,6 +769,29 @@ describe("a computer answering its person's phone", () => {
     expect(world.called('wake')).toEqual([{ projectId: 'project_menu', slotId: 'slot-1' }]);
   });
 
+  it('judges the waiting mail again as the wake runs, so mail that names documents arriving meanwhile is refused and nothing wakes', async () => {
+    const { world, ports, menu } = bakery();
+    const team = { members: [memberFixture('slot-1', 'Ada')], messages: [mailFixture()] };
+    menu.team = team;
+    // The cap's estimate runs between the first look and the wake: a message naming a document lands then.
+    ports.wakeWarns = async () => {
+      team.messages.push(mailFixture({ id: 'mail_2', files: [`${FOLDER}\\menu.md`] }));
+      return false;
+    };
+    const phone = await link(ports);
+    phone.receive(wake('command_0025', 'slot-1'));
+    expect(await phone.result('command_0025')).toEqual(refusal('command_0025', 'names_documents'));
+    // Mail read on the computer meanwhile leaves nothing to wake for.
+    team.messages = [mailFixture()];
+    ports.wakeWarns = async () => {
+      for (const item of team.messages) item.read = true;
+      return false;
+    };
+    phone.receive(wake('command_0026', 'slot-1'));
+    expect(await phone.result('command_0026')).toEqual(refusal('command_0026', 'nothing_waiting'));
+    expect(world.called('wake')).toEqual([]);
+  });
+
   it("puts a message to a Team member in its mailbox, as the owner's", async () => {
     const { world, ports, menu } = bakery();
     menu.team = { members: [memberFixture('slot-1', 'Ada')], messages: [] };
@@ -856,5 +931,52 @@ describe("a computer answering its person's phone", () => {
     phone.receive(hello());
     await phone.idle();
     expect(phone.sent).toEqual([]);
+  });
+});
+
+// --- the desktop's own paths ------------------------------------------------------------------------
+
+describe("the desktop's paths, as the relay reaches them", () => {
+  it("wakes a Team member only after the relay's check passes, inside the same Store lock", async () => {
+    const steps: string[] = [];
+    let queue = Promise.resolve();
+    // A Store as the wake port uses it: one lock at a time, each marking where it starts and ends.
+    const store = {
+      locked<T>(action: () => Promise<T>): Promise<T> {
+        const result = queue.then(async () => {
+          steps.push('lock');
+          try {
+            return await action();
+          } finally {
+            steps.push('unlock');
+          }
+        });
+        queue = result.then(() => undefined, () => undefined);
+        return result;
+      },
+      on: () => {},
+      off: () => {},
+    } as unknown as Store;
+    const unused = (): never => {
+      throw new Error('Not used here.');
+    };
+    const paths: DesktopPaths = {
+      store, personId: () => null, includes: () => false, organizationFor: () => null, resolveNeed: unused, stop: unused, harnessRuns: unused,
+      message: unused, teamMessage: unused, messageWarns: unused, wakeWarns: unused, updates: { closing: () => false, hold: () => () => {} },
+      teamWake: async () => {
+        steps.push('wake');
+      },
+    };
+    const ports = desktopRelayPorts(paths);
+    await ports.wake('project_menu', 'slot-1', () => steps.push('check'));
+    expect(steps).toEqual(['lock', 'check', 'wake', 'unlock']);
+
+    steps.length = 0;
+    const refused = ports.wake('project_menu', 'slot-1', () => {
+      throw new RelayRefusal('names_documents');
+    });
+    await expect(refused).rejects.toBeInstanceOf(RelayRefusal);
+    await expect(refused).rejects.toMatchObject({ code: 'names_documents', message: DESKTOP_REFUSALS.names_documents });
+    expect(steps).toEqual(['lock', 'unlock']);
   });
 });
