@@ -115,8 +115,11 @@ describe('the frames a phone is sent', () => {
   it("leaves text that isn't a path as written, so a Need reads on the phone as it does on the computer", () => {
     const text = 'On 10/15/2026 (or 2026/10/15) see https://docs.example.com/guide/setup and/or/not; yes / no, 1/2.';
     expect(withoutPaths(text)).toBe(text);
-    // A path written without a root is rewritten only when its last part is a file.
+    // A path written without a root keeps its words only with one separator, or as short words.
     expect(withoutPaths('Open menus/winter.md, not notes/winter.')).toBe('Open winter.md, not notes/winter.');
+    // Two or more folders without a root still name a place on this computer: only the last part goes.
+    expect(withoutPaths('Filed in clients/acme/payroll/2026, and/or/not.')).toBe('Filed in 2026, and/or/not.');
+    expect(withoutPaths('See Documents\\Invoices\\Q3 then src/app/lib.')).toBe('See Q3 then src/app/lib.');
     const [part] = needSummaryParts({
       needId: 'need_menu', projectId: 'project_menu', taskTitle: 'Winter menu', what: 'Change the menu', why: 'It is time.',
       consequence: 'On 10/15/2026 the menu at https://juniper.example/menu/winter changes, and/or the prices in menus/prices.csv.',

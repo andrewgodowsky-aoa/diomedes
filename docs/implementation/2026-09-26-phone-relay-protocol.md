@@ -140,7 +140,7 @@ Each registration of this computer answers its phones through `server/relay/mess
 
 ### Never relayed
 
-The payer switch, settings, routes, Trust, access profiles, files and the shell (owner decisions D9 and D10, and the relay plan's never-list). No frame names them and no handler reaches them. Frames carry titles, states, counts, file names and a turn's saved answer. A path in their text is cut to its last part, folder names with spaces included. Only a folder written without a root, like `notes/winter`, stays as written, and dates and links stay whole. They never carry a document's contents, an answer's reasoning, a mailbox message, a log line, a setting or an account. Phone access stays a paid feature.
+The payer switch, settings, routes, Trust, access profiles, files and the shell (owner decisions D9 and D10, and the relay plan's never-list). No frame names them and no handler reaches them. Frames carry titles, states, counts, file names and a turn's saved answer. A path in their text is cut to its last part, folder names with spaces included. A folder written without a root keeps its words only with one separator, like `notes/winter`, or when every part is a short word, like `and/or/not`; one running through two or more folders, like `clients/acme/payroll`, is cut to its last part. Dates and links stay whole. They never carry a document's contents, an answer's reasoning, a mailbox message, a log line, a setting or an account. Phone access stays a paid feature.
 
 ### Worker rows
 

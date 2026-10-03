@@ -4,7 +4,8 @@
  * and none carries a document's contents, an answer's reasoning, a setting or an account. A file is
  * named in words: its last part only. Text that names a path keeps only the path's last part, so
  * `C:\Users\Pat\Q3 plan.docx` reads `Q3 plan.docx` and `notes/winter/menu.md` reads `menu.md` on the
- * phone. Only a folder written without a root, like `notes/winter`, stays as written (withoutPaths).
+ * phone. A folder written without a root keeps its words only with one separator (`notes/winter`) or
+ * when every part is a short word (`and/or/not`); any other is cut to its last part (withoutPaths).
  */
 import { taskEvidence, type TaskColumn } from '../../shared/task-evidence.js';
 import type { Change, Need, Session, Task } from '../../shared/types.js';
@@ -159,11 +160,20 @@ function rootedRun(text: string, root: Root): { text: string; end: number } | nu
   return { text: PUNCTUATION_ONLY.test(tail) ? folder + tail : tail, end };
 }
 
-/** A word with no root, rewritten to its last part only when that part has a file's extension. */
+/** Words of up to three lowercase letters between separators: `and/or/not`, `km/h`. */
+const SHORT_WORDS = /^[a-z]{1,3}(?:[\\/][a-z]{1,3})+[.,;:!?')\]}]*$/;
+
+/**
+ * A word with no root, rewritten to its last part when that part has a file's extension or the
+ * word runs through two or more folders (`clients/acme/payroll` reads `payroll`). One separator
+ * (`notes/winter`, `and/or`) and short words (`and/or/not`) stay as written.
+ */
 function plainWord(word: string): string {
   if (!/[\\/]/.test(word) || DATE.test(word)) return word;
   const part = lastPart(word);
-  return EXTENSION.test(part) ? part : word;
+  if (EXTENSION.test(part)) return part;
+  const separators = word.match(/[\\/]+/g)?.length ?? 0;
+  return separators >= 2 && !SHORT_WORDS.test(word) ? part || 'a folder' : word;
 }
 
 /**
@@ -186,9 +196,11 @@ function plainWord(word: string): string {
  * 3. Anything else ends the path: a line break, a tab, two spaces, a quote, `<`, `>`, `|`, `*`,
  *    `?` or a backtick.
  *
- * Any other word with a separator is rewritten only when its last part has a file's extension
- * (`menus/winter.md` reads `winter.md`). Links with a scheme (`https://…`), dates (`10/15/2026`),
- * `and/or`, a lone `/`, and folders written without a root (`notes/winter`) stay as written.
+ * Any other word with a separator is rewritten to its last part when that part has a file's
+ * extension (`menus/winter.md` reads `winter.md`) or the word runs through two or more folders
+ * (`clients/acme/payroll` reads `payroll`). Links with a scheme (`https://…`), dates
+ * (`10/15/2026`), a lone `/`, a folder with one separator (`notes/winter`, `and/or`) and short
+ * words (`and/or/not`) stay as written.
  */
 export function withoutPaths(text: string): string {
   let out = '';
