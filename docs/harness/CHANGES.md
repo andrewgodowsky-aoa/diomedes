@@ -21,6 +21,20 @@ in one turn, one external turn runs per engine account at a time, and a turn tha
 is never sent again by Retry. It's off unless `DIOMEDES_EXTERNAL_WORKERS=1`. See
 [the record](../implementation/2026-10-03-external-team-workers.md).
 
+## Free manual teams on the Board (S1), 2026-10-03
+
+A person-run Team now works from the Board without the paid Agent (DIO-175 lane S1). The
+person assigns a card to a Team member from the card (DIO-176). A card a member makes starts
+on that member's own Codex or Claude Code engine through Native Work, with the usual send
+confirmation, and only the person moves its phase. A manual hand-off carries what came of one
+card, its changed files, checks and open issues to the next card, whose start begins with those
+files; the files must fit one start, a file that left the project no longer blocks it, and the
+person can retire a hand-off. Only the person assigns or removes a manual card; a member's tool
+is told to ask. Worker rows for Sessions, Team members and H14 workers come from a production
+source behind `GET /api/projects/:id/work/rows` and a `work-rows` event on its own stream,
+`/api/events?topics=work-rows`, and never carry Team mail. Nothing in this lane calls the Agent
+gate or a managed route. See [the implementation record](../implementation/2026-10-03-manual-teams.md).
+
 ## Agent Team reconciliation onto main, 2026-10-03
 
 The Agent Team, automatic work and Personal Trust work now sits on current main as

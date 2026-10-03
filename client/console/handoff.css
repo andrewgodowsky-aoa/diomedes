@@ -1,0 +1,78 @@
+/* Manual hand-offs (HandoffForm.tsx): the form under a card or in the Team view, and the note
+   on the next card. Caption type, hairlines; paths wrap where they are written. */
+.console .handoff-form {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  margin: 6px 0 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--hair-2);
+  border-radius: var(--rb);
+  font-size: var(--dm-type-caption);
+  color: var(--t2);
+}
+.console .handoff-form label,
+.console .handoff-form fieldset {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.console .handoff-form legend {
+  padding: 0 0 4px;
+}
+.console .handoff-form select,
+.console .handoff-form textarea {
+  width: 100%;
+  min-width: 0;
+  background-color: var(--surface);
+  color: var(--t1);
+  border: 1px solid var(--hair-2);
+  border-radius: var(--rb);
+  padding: 4px 6px;
+  font: inherit;
+}
+.console .handoff-files {
+  display: grid;
+  gap: 2px;
+  max-height: 140px;
+  overflow-y: auto;
+}
+.console .handoff-form label.handoff-file {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+}
+.console .handoff-file span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.console .handoff-form .issue {
+  margin: 0;
+  color: var(--fail);
+}
+.console .handoff-actions {
+  display: flex;
+  gap: 8px;
+}
+.console .handoff-note {
+  min-width: 0;
+  font-size: var(--dm-type-caption);
+  color: var(--t2);
+}
+.console .handoff-note summary {
+  cursor: pointer;
+  color: var(--t1);
+}
+.console .handoff-note p {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+}
+.console .handoff-k {
+  color: var(--t3);
+}
+.console .handoff-note .handoff-actions {
+  margin-top: 4px;
+}

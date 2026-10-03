@@ -41,7 +41,9 @@ import {
   handoffRecord,
   hasActiveRun,
   isContinuation,
+  isManualCard,
   isWorkflowPhase,
+  MANUAL_CARD_PHASE_REFUSED,
   nextPhase,
   workflowOf,
 } from '../shared/task-workflow.js';
@@ -170,6 +172,8 @@ export function requestTaskHandoff(
   by: Owner,
 ): TaskHandoffResult {
   if (!isWorkflowPhase(next)) throw new WorkflowValidationError('Choose a valid next phase.');
+  // S1 (N04): only the person moves a manual card's phase, through the routes below.
+  if (by !== 'you' && isManualCard(task)) throw new WorkflowConflictError(MANUAL_CARD_PHASE_REFUSED);
   const workflow = workflowOf(task);
   const expected = nextPhase(workflow.phase);
   if (expected === null || expected !== next)

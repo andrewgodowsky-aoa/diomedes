@@ -39,6 +39,7 @@ import {
   type ReadyQueueView,
 } from '../shared/ready-queue.js';
 import type { ProjectState, Route, Task } from '../shared/types.js';
+import { isManualCard, MANUAL_CARD_HOLD } from '../shared/task-workflow.js';
 import { ApiError } from './paths.js';
 import { HOME_REFUSES_WORK, identifier, jsonWrite, now, readJson, type Store } from './store.js';
 import { assertReadable } from './migrations/framework.js';
@@ -199,6 +200,8 @@ export class ReadyScheduler {
         );
         let hold: string | null;
         if (state.project.missing) hold = 'The project folder is missing';
+        // S1: a manual Team card runs when the person starts it, on its member's engine.
+        else if (isManualCard(task)) hold = MANUAL_CARD_HOLD;
         else
           try {
             const route = this.routeFor(state, task);
