@@ -46,13 +46,15 @@ WHAT IS NEW
   Tasks the Nectovia Agent proposes wait in Inbox, and Start on a Board task
   can run on the Nectovia Agent.
 
-  Settings > Account > AI routing and privacy has three profiles. Strict keeps
-  requests in the US, with no provider storage and no training. Balanced and
-  Lowest cost never allow training, but requests can run outside the US:
-  Balanced prefers providers that don't store your content, then US
-  processing, and Lowest cost uses the least expensive AI that can do the job.
-  Saving names what a looser choice gives up, and a choice saved under the
-  earlier rules asks to be saved again.
+  Settings > Account > AI routing and privacy offers two profiles, with
+  Balanced selected for a new account. Neither uses your content for training,
+  and requests can run outside the US. Balanced prefers providers that don't
+  store your content, then US processing, and Lowest cost uses the least
+  expensive AI that can do the job. Strict keeps requests in the US with no
+  provider storage, and it's available on request at hello@diomedes.net. An
+  account that already chose Strict keeps it. Saving names what a looser
+  choice gives up, and a choice saved under the earlier rules asks to be saved
+  again.
 
 FIXED
   On Windows, signing in no longer stops at a gray screen after you finish in
@@ -79,6 +81,11 @@ FIXED
   Windows briefly locking a record or run file no longer fails the save, a run
   or the weekly brief.
 
+  On a Mac, the red, yellow and green window buttons no longer cover the top
+  left of the Console. Search and Stop take Command as well as Ctrl, and
+  shortcut hints show the Command key. AI setup no longer links a Mac to a
+  Windows installer.
+
 UPDATES
   Settings > App updates offers stable releases only. Nothing is downloaded,
   verified or installed until you confirm it, and a download is accepted only
@@ -103,21 +110,28 @@ UPDATES
   account service no longer accepts them from 0.2.1. A choice saved in 0.2.1
   keeps working under its earlier rules until you save it again here.
 
-  This release has no Mac build. A Mac keeps the version it has, and Check for
-  updates there doesn't offer this Windows release.
+  An installed 0.2.0 or 0.2.1 on a Mac can find this release when you press
+  Check for updates. You then download it from the release page yourself.
 
 LIMITS
   This build is unsigned and experimental. On Windows, SmartScreen may warn
   before the installer runs: choose More info, then Run anyway, after checking
-  the file's SHA-256.
+  the file's SHA-256. The Mac build has an ad hoc signature with no Apple
+  Developer ID and isn't notarized. The first time you open it, macOS blocks
+  it. Then choose Open Anyway in System Settings, Privacy and Security. On
+  macOS 14 and earlier, you can also right-click the app and choose Open.
+
+  There's no build for Intel Macs, and the Apple silicon build has been built
+  and launched only on one MacBook Air.
 
   Signing in, Settings > Account and the Nectovia Agent's AI service were
   tested only against stand-ins for the Nectovia account service and its
   sign-in page. The Windows sign-in repair was checked against the exact form
   Windows hands the app, but a real sign-in on an installed copy hasn't been
-  run yet. The account service this version uses is still a staging service
-  with a fixed testing budget: while it is, the Nectovia Agent's answers are
-  kept short, and the Agent stops answering once that budget is spent.
+  run yet. On a Mac, the return to the app after signing in hasn't been tried.
+  The account service this version uses is still a staging service with a
+  fixed testing budget: while it is, the Nectovia Agent's answers are kept
+  short, and the Agent stops answering once that budget is spent.
 
   Signing in needs the Nectovia account service, so if it can't be reached
   when Nectovia starts, you can't open anything, your own projects included;
