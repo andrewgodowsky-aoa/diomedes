@@ -7,7 +7,8 @@ Status words: **present** (code and test on this branch or on main), **carried f
 ## Extension contract amendment, 2026-10-03
 
 [EXT-01: Nectovia extensions](EXTENSION_CONTRACT.md) compares current Claude Code
-mods with remote main `4b17aec4df927425778a9232c19f3e463404f3c3` and defines
+mods with its original research baseline and audits current main
+`efcc554b71cd1be6100bda0d2dd1ae9cd7dc82c2`. It defines
 proposed observe, hold, candidate-transform and Console-render boundaries.
 It extends the existing Runtime and pack host; it does not implement executable
 plugins or introduce another scheduler, permission model or file writer.
@@ -15,8 +16,14 @@ plugins or introduce another scheduler, permission model or file writer.
 Current `RunService.use` hooks receive copies and run between mandatory policy
 checks. Their return contract now supports an evidenced hold at the existing
 approval gate; it still cannot rewrite or approve the captured intent.
+Hold reasons are re-collected on retry; waiting state alone is not a durable
+required-extension gate, and approval does not bind a gate revision. EXT04 must
+persist and validate those requirements before exposing such gates.
 `createHarnessHost` installs the bridge and H16 stream-rule hooks.
 These trusted in-process hooks do not establish third-party containment.
+Native-loop composition callbacks and Team/worker grants remain host-owned.
+Personal Trust, automatic Team qualification, worker consent/reserves, manual
+card routing and phase/review guards must use their current owners.
 The H05 entry below describes the older checkpoint; the unified program uses
 different H01-H15 identifiers.
 

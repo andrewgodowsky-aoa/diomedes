@@ -3,7 +3,8 @@
 Status: **Proposed architecture; no executable extension support is implemented by this record.**
 Date: 2026-10-03 (America/New_York).
 Decision owner: Andrew. Existing Runtime, Trust and pack invariants remain binding.
-Source baseline: remote main 4b17aec4df927425778a9232c19f3e463404f3c3.
+Current source audit: remote main efcc554b71cd1be6100bda0d2dd1ae9cd7dc82c2.
+Original research baseline: 4b17aec4df927425778a9232c19f3e463404f3c3.
 Canonical mirrors read: Core Pillars, Live Roadmap and Project Memory, all 2026-09-27.2.
 
 ## Decision
@@ -160,6 +161,38 @@ installed; installGovernance is not called there. Future prompts must verify the
 actual route they extend, rather than assuming that helper's presence proves
 every effect recheck is installed.
 
+### Current-main authority audit
+
+The rebase includes 23 commits after the original research base. These owners
+are now part of the extension implementation prerequisites:
+
+| Boundary                         | Current owner and limit                                                                                                                                                                                                                                                                                                                                                                              |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Personal owner and Team identity | [Local Trust backend](../../server/trust/local-backend.ts) issues protected account/workspace/project-bound identities. [Team host](../../server/agent-team-host.ts) revalidates genuine authority, the root, sources, member, route and review. A person ID or serialized principal is not owner authority.                                                                                         |
+| Automatic Team selection         | [Selection](../../server/harness/automatic-team-selection.ts) pins measured candidates, qualification and the root cost reserve. Extensions cannot replace that decision, turn a single-agent root into a Team or insert an unqualified member.                                                                                                                                                      |
+| Personal subscription workers    | [Preference](../../server/subscription-workers.ts) is person-bound, consent-versioned, Personal-only and launch-gated. [External worker](../../server/harness/external-worker.ts) supplies one tools-off text turn with current account/model and reserve checks. The person's subscription pays; no Nectovia managed credit is debited. Paid Agent admission still applies beneath a Nectovia lead. |
+| Manual Teams                     | [Manual service](../../server/manual-teams.ts) records the person's assignment and exact handoff-file coverage. Manual cards start through Native Work on that member's recorded engine, without automatic subscription-worker selection. Extensions cannot assign cards as the person or convert them into paid orchestration.                                                                      |
+| Workflow and review              | [Workflow](../../server/task-workflow.ts) separates human acceptance/phase approval from runtime proposals. [Native loop](../../server/harness/native-loop.ts) and [collaboration](../../server/harness/agent-collaboration.ts) preserve proposed bytes, phase continuation, selected review and root admission. A review finding never grants a write.                                              |
+| Scoped and remembered approvals  | [ScopeGrants](../../server/trust/scope-grants.ts) pins the host lease, task, Codex account, text operations and budgets. [Remembered approvals](../../server/trust/remembered-approvals.ts) validates exact patterns and revocation. Neither is a general extension capability.                                                                                                                      |
+
+Current RunService.use is a trusted application callback API. It supplies full
+copied step/principal data, not an authorized third-party field projection, and
+invokes hooks before checking a completed step's cached observation. The new
+protocol must authorize projections before delivery and replay recorded outcomes
+without re-running executable hooks or their I/O. Do not expose this API as an SDK.
+
+Current holds are collected on each step call. The gate checks
+intent.approval || holds.length > 0 and records waiting state/hold events, but
+does not persist an independently required gate or bind approval to the hold's
+identity/configuration. Removing a hook can let a waiting approval:false step
+run; an approval of the same action can satisfy a newly changed hold reason.
+EXT04 must close both gaps before required extension gates are available.
+Today's trusted H16 hooks do not provide durable third-party enforcement.
+
+Native-loop beforeTool, afterTool, review and validate callbacks are likewise
+trusted composition seams. Extensions cannot inherit their Team grant, change
+host-bound input after admission, replace a recorded result or become the reviewer.
+
 ## Where extensions may observe, hold, rewrite and render
 
 The host offers a small typed protocol, not Claude's general next middleware.
@@ -200,6 +233,9 @@ flowchart TD
    capability, current grant generations, source restrictions and run bounds.
    The host seals that envelope and applies mandatory policy before delivering
    anything to an extension. Plugin-authored identity, origin or labels are data.
+   Include the root job, Team role/slot, worker/review bindings, source pins,
+   continuation revision and applicable person-confirmed worker consent.
+   Extensions cannot choose or override any of these fields.
 2. Fix the enabled extension identities/order for the admitted unit. The pack
    dependency lock, executable digest, API version and configuration revision
    identify each contribution. Host policy remains outside this order. Cycles,
@@ -224,6 +260,9 @@ flowchart TD
    approval/grant identity and actual origin. Retain the raw result and its
    receipt separately from derived views. Evidence persistence failure blocks
    an effect whose receipt cannot be safely recorded.
+   A changed call cannot reuse exact-pattern remembered authorization or a
+   reviewer answer unless its owner validates the final bytes, targets, source
+   restrictions, account and current grant generations again.
 7. Recheck revocation immediately before the effect and at each broker request.
    Completed irreversible work is not repeated. Replay uses recorded extension
    outcomes with matching inputs/digests/order, never a fresh advisor opinion.
@@ -237,10 +276,16 @@ their existing separately admitted operation, where that capability is supported
 
 ### Holds and deterministic workflows
 
-A hold is a persisted Runtime state bound to the exact final action. The host
-raises the existing Need and records the decision through approval admission.
-Only that decision or the existing applicable authority can resume it.
-Extension UI choices can navigate to a Need; they cannot settle it.
+A required extension hold needs persisted Runtime requirements bound to the
+final action, contribution/configuration digest and gate revision. Extend the
+existing step/Need/decision persistence and validated reader; reuse its approval
+lifecycle rather than adding an extension approval store. Record gate identity,
+reason, refs, owner, expiry and authorized release disposition before suspending.
+Resumption checks that record even if the callback does not run. An approval
+predating or referring to different gate requirements cannot release it. Ordinary
+scoped grants cover their existing work; they do not clear an unresolved required
+gate. Only the existing authorized decision path records release. Extension UI
+can navigate to the Need, but cannot settle it or choose its reviewer.
 
 Record a deadline, owner and cancellation behavior. An unanswered, expired,
 interrupted or unsupported interactive hold never becomes permission to run.
@@ -254,6 +299,14 @@ reorder DAG nodes, pick a new branch during replay, clear a phase approval,
 replenish a child budget or consume a completed effect twice. An advisory note
 arriving between nodes is a proposal; the existing task/runtime owner decides
 whether and where to apply it.
+
+Keep human and runtime requests distinct. Extension-origin proposals cannot call
+task acceptance, assignment, workflow configuration or approve-phase as the
+person. Full approval covers phase continuation inside the existing scope only;
+Stop on phase change still parks. Inbox acceptance does not start work. Children
+receive no copied grants; callbacks cannot reset creation, depth or turn limits.
+Review-selected work cannot finish by skipping review or supplying a synthetic
+PASS. Preserve manual-card and handoff coverage guards at all admitted starts.
 
 ## Packaging, versioning and provenance
 
@@ -337,6 +390,30 @@ Never expose raw secrets or a general fs/process/http/model API. Validate each
 callback against the captured envelope and current authority, even if the
 extension was reviewed or its model says the operation is safe.
 
+Bind an authenticated isolated connection to a host-issued runner identity,
+admitted root and contribution digest. Accept typed operations, never arbitrary
+HTTP URLs, application endpoints, callbacks or serialized authority. Deduplicate
+requests inside their issued scope. Reject forged principal/PrincipalRef, owner
+ID, Team token, origin, grant, authorization, receipt and policy fields. Loopback
+or a local client header alone cannot distinguish an extension from the person;
+never forward that header or expose the owner's session/device credentials.
+
+The trusted host persists only opaque authority references and resolves them
+through Trust at admission, dispatch, result acceptance and a later write.
+Resolved Authority objects are not cached callback capabilities. Revocation,
+account/workspace switches, membership and source changes invalidate broker
+bindings. Reads need scope checks: permission:null on a host tool is not an
+extension read grant. Lease-bound Codex text scope and remembered approvals do
+not authorize another route, raw file I/O, commands, deletion or disclosure.
+
+The broker exposes no grant/Need/phase decision, human task acceptance/assignment,
+reviewer selection, worker-consent edit or launch-flag operation. Runtime
+proposals use their typed service path with truthful extension origin. UI may
+navigate to host-owned consent controls, but cannot submit those decisions.
+Declared tools map to host-owned handlers/schemas; never import extension code
+into ToolRegistry.execute/targets or let it supply RunService permission,
+approval, effect metadata or handler continuations.
+
 Enforce wall-clock deadlines including broker waits, not only module CPU.
 Terminate the isolated worker to stop loops that ignore cancellation. Apply
 per-contribution and aggregate limits, deterministic ordering, queue
@@ -366,6 +443,15 @@ restricted built-in/MCP tool lists, and nonessential traffic disabled.
 Preserve that isolation. Do not enable Claude-native mods to implement a
 Nectovia extension, or treat a vendor plugin's declared effect as a Runtime effect.
 
+Apply this boundary to Team and H14/subscription-worker turns too. Tools-off
+capabilities and an empty tool result do not prove vendor built-in mods cannot
+perform ambient I/O or hidden model calls. Extension support cannot enable
+native plugins, recruit workers, reuse Team mail credentials or widen a
+proposal-only worker into a tool dispatcher. Preserve launch gates, person and
+Personal scope, consent revision, reserve rules, explicit-tool requests and
+manual-Team routing. Requalify native controls in an owned profile before
+enabling executable integrations.
+
 Claude documents that safe mode and disableAllHooks leave built-in mods active.
 Therefore these launch controls alone do not prove absence of built-in model
 calls or side effects. Qualify the current installed engine's extension
@@ -392,7 +478,7 @@ Stop and account switching outside extension rendering. An extension may show a
 Trust preview but cannot impersonate one. Derived content must not erase,
 relabel or overwrite raw model/tool text.
 
-An action carries a host-issued capability token bound to the view revision,
+An action carries a host-issued action token bound to the view revision,
 account/project, contribution digest, command, payload digest, nonce and expiry.
 Validate live membership, scope and expected revision on click; reject stale
 buttons after reload, update, restart or account switch. Consume or deduplicate
@@ -400,6 +486,8 @@ the nonce through the durable request record before dispatch; a replayed click
 must not repeat the effect. A click to execute work
 uses the ordinary admitted request/command-receipt path. Mere rendering never
 runs a tool.
+The token proves a view/request binding, not an effect grant. The receiving
+service still admits and authorizes the operation through its normal boundary.
 
 In headless clients the same typed contribution may provide an annotation or
 command result. A graphical view's absence is not a silent approval or an
@@ -430,6 +518,9 @@ admitted parent-linked model step and its durable usage path.
    answers. Recheck paid Agent entitlement where required, current membership,
    data restrictions, payer and exposure reservation. An opt-in advisor cannot
    silently charge a different account or wake after the job stops.
+   Worker preference is not consent for background advice. A separately admitted
+   subscription turn records its actual payer and usage/reserve facts without
+   inventing a managed-credit debit. Business work cannot borrow Personal consent.
 3. **Resolve a role, not a brand.** Use the existing routing/eligibility layer
    to choose a currently available local, subscription, BYO or managed route
    with the necessary capability and data policy. The managed evaluator
@@ -542,6 +633,14 @@ unsigned/tampered/revoked code, missing sandbox, runaway hooks, failed required
 guards, stale UI actions, offline sync replay and an uncertain effect followed
 by extension crash. Tests must assert absence of forbidden sink calls, not only
 an error message.
+
+The independent architecture audit repaired stale Team/worker/Trust assumptions,
+callback/replay exposure, durable hold/decision binding and broker impersonation
+gaps in these docs and prompts. Exact candidate and repository gate evidence is
+recorded in [PR #206](https://github.com/andrewgodowsky-aoa/diomedes/pull/206).
+Passing existing host tests proves their tested boundaries only. No extension
+sandbox, broker, required-gate implementation or EXT01-EXT07 acceptance follows
+from this documentation review; implementation review follows those patches.
 
 Pillar impact: advances one configurable product, interchangeable models,
 private processing, truthful evidence and scoped autonomy. Authority, paid

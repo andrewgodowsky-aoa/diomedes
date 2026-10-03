@@ -177,7 +177,8 @@ may be described as shipped anywhere, including the website.
 
 ## 7. Current pack host and executable extension proposal, 2026-10-03
 
-Source inspected: remote main `4b17aec4df927425778a9232c19f3e463404f3c3`.
+Source audited: remote main `efcc554b71cd1be6100bda0d2dd1ae9cd7dc82c2`.
+Original research baseline: `4b17aec4df927425778a9232c19f3e463404f3c3`.
 The sections above retain their original historical scope. The current host has
 versioned installable manifests, deterministic dependency resolution, local and
 bundled acquisition, atomic installation, recorded lifecycle operations and
@@ -199,6 +200,12 @@ broker. Current strict v1 manifests do not accept executable fields. Activation,
 signature validity and marketplace review remain separate from authorization.
 The current outward-effect restriction is preserved. Existing Runtime/Trust,
 Store, account, routing, spend and Console owners keep their authority.
+Team composition callbacks, protected Personal identities and worker preferences
+are host inputs, not pack capabilities. Activation cannot approve a phase,
+accept a task, grant file access, select a reviewer or enable a worker. The broker
+must scope each call without exposing human mutation endpoints or Team secrets.
+Required executable holds need durable gate/decision binding beyond today's
+re-evaluated trusted-hook verdicts.
 
 [Draft implementation prompts](PROMPT_mod-extensions-2026-10-03.md) cover setup
 auditing, executable declarations, isolation, holds/transforms, UI, a model-neutral
