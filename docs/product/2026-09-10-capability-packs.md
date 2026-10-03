@@ -174,3 +174,33 @@ point. Since then the pack mechanism, the Software Engineering pack's instructio
 and the Files pane landed (`docs/implementation/2026-09-11-*.md`), and the Small Business
 pack's playbooks landed on a feature branch (section 4b). Nothing beyond what those records prove
 may be described as shipped anywhere, including the website.
+
+## 7. Current pack host and executable extension proposal, 2026-10-03
+
+Source inspected: remote main `4b17aec4df927425778a9232c19f3e463404f3c3`.
+The sections above retain their original historical scope. The current host has
+versioned installable manifests, deterministic dependency resolution, local and
+bundled acquisition, atomic installation, recorded lifecycle operations and
+digest-checked on-demand contribution pins. See the
+[P01/P03 lifecycle record](../implementation/2026-09-24-p01-p03-pack-lifecycle.md)
+and [P04 loading record](../implementation/2026-09-24-p04-on-demand-contributions.md).
+Those source features do not establish distributed signing, arbitrary downloaded
+handler execution, a marketplace or account sync.
+
+Playbooks are also guidance for task Work and compatible Build/Fix paths:
+[task-skills.ts](../../server/task-skills.ts) records the selected active pack's
+version/digest. Ask/Plan remains the built-in playbook's recommended launch
+metadata. See [Board workflows](../implementation/2026-09-27-board-workflows.md).
+Using guidance in Work grants no action permission.
+
+[EXT-01](../harness/EXTENSION_CONTRACT.md) proposes executable hooks as additional
+pack contributions with declared access, verified provenance and an isolated
+broker. Current strict v1 manifests do not accept executable fields. Activation,
+signature validity and marketplace review remain separate from authorization.
+The current outward-effect restriction is preserved. Existing Runtime/Trust,
+Store, account, routing, spend and Console owners keep their authority.
+
+[Draft implementation prompts](PROMPT_mod-extensions-2026-10-03.md) cover setup
+auditing, executable declarations, isolation, holds/transforms, UI, a model-neutral
+work advisor, and reviewed distribution/sync. This is proposed follow-up scope,
+not a shipped feature or a completion-ledger update.
