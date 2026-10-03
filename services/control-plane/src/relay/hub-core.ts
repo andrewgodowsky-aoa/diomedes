@@ -18,6 +18,16 @@
  * - closes a proven connection that has been silent for 60 seconds;
  * - answers presence: the devices with a proven, live connection now.
  *
+ * Steps 3 and 4 add phones. A phone has no device key: the Worker front checks
+ * its sign-in, membership and plan and hands over a PhoneGrant, and the
+ * connection is open at once. The hub then rechecks those by id every 20
+ * seconds, closes a phone silent for 60 seconds, keeps at most five phone
+ * connections per person (a newer one replaces the oldest, 4409), and routes:
+ * a phone command goes only to the ready desktop it names when that desktop was
+ * registered by the same person, stamped with the phone's verified `from`; a
+ * desktop frame goes only to the phones of the person who registered it. Rate
+ * limits and refusals answer the phone with a `result`; nothing is queued.
+ *
  * It reads only the closed set of frames in protocol.ts and never records keys,
  * nonces, signatures or frame text. Its two hosts are the Durable Object
  * (durable-object.ts) and the faux cloud's hubs (faux/relay-hubs.ts). They hand
@@ -29,6 +39,7 @@ import { base64url, fromBase64url } from '../crypto.js';
 import { accountId } from '../domain.js';
 import {
   RELAY_CLOSE,
+  RELAY_LIMITS,
   RELAY_MAX_MESSAGE_BYTES,
   RELAY_NONCE,
   RELAY_PONG_FRAME,
@@ -37,10 +48,16 @@ import {
   challengePayload,
   closeForRefusal,
   parseDesktopMessage,
+  parseDesktopToPhone,
+  parsePhoneMessage,
+  serializeFrame,
   type ChallengeMessage,
+  type DesktopToPhoneMessage,
   type ReadyMessage,
   type RelayClose,
+  type RelayHubRefusal,
   type RelayRefusalCode,
+  type ResultMessage,
 } from './protocol.js';
 
 /** What the Worker front vouches for when it hands a desktop to the business's hub. */
@@ -84,6 +101,37 @@ export const connectionStateSchema = z.strictObject({
 });
 export type ConnectionState = z.infer<typeof connectionStateSchema>;
 
+/** What the Worker front vouches for when it hands a phone to the business's hub (relay plan step 3). */
+export const phoneGrantSchema = z.strictObject({
+  organizationId: accountId,
+  tenantId: accountId,
+  /** The person signed in on the phone. */
+  personId: accountId,
+  /** The sign-in the connection was opened with, rechecked by id. */
+  issuer: z.string().min(1).max(512),
+  sessionId: accountId,
+  /** When the bearer the connection was opened with expires. The hub ends the connection then (4000). */
+  authorizedUntil: z.iso.datetime(),
+  /** When the Worker front checked all of this. */
+  checkedAt: z.iso.datetime(),
+});
+export type PhoneGrant = z.infer<typeof phoneGrantSchema>;
+
+/** One phone connection's state, kept on its socket like a desktop's. `kind` tells the two apart. */
+export const phoneConnectionStateSchema = z.strictObject({
+  v: z.literal(1),
+  kind: z.literal('phone'),
+  id: z.string().regex(/^[A-Za-z0-9_-]{22}$/),
+  grant: phoneGrantSchema,
+  openedAt: moment,
+  /** The last valid frame from the phone. */
+  heardAt: moment,
+  /** The last check that passed, the Worker front's included. */
+  checkedAt: moment,
+  nextCheckAt: moment,
+});
+export type PhoneConnectionState = z.infer<typeof phoneConnectionStateSchema>;
+
 export interface HubTransport {
   send(text: string): void;
   close(code: number, reason: string): void;
@@ -93,17 +141,34 @@ export interface HubTransport {
   heardAt?(): number | null;
 }
 
+/** A phone's socket, as the hub uses it. */
+export interface PhoneTransport {
+  send(text: string): void;
+  close(code: number, reason: string): void;
+  save(state: PhoneConnectionState | null): void;
+  heardAt?(): number | null;
+}
+
 export interface HubAuthority {
   /** Null while the connection may stay; otherwise why not. Throws when it cannot tell. */
   recheck(grant: DesktopGrant, at: string): Promise<RelayRefusalCode | null>;
   /** Moves the device's last-seen time forward. */
   seen(grant: DesktopGrant, at: string): Promise<void>;
+  /**
+   * A phone's recheck: null while it may stay, otherwise why not; throws when it cannot tell.
+   * Absent means it can never tell, so a phone connection lasts only the authority window.
+   */
+  recheckPhone?(grant: PhoneGrant, at: string): Promise<RelayRefusalCode | null>;
 }
 
 /** What a hub records about its connections: ids and outcomes, never keys, nonces, signatures or frames. */
 export type HubEvent =
   | { event: 'relay-desktop-opened' | 'relay-desktop-ready'; organizationId: string; deviceId: string }
-  | { event: 'relay-desktop-closed'; organizationId: string; deviceId: string; code: number; reason: string };
+  | { event: 'relay-desktop-closed'; organizationId: string; deviceId: string; code: number; reason: string }
+  | { event: 'relay-phone-opened'; organizationId: string; personId: string }
+  | { event: 'relay-phone-closed'; organizationId: string; personId: string; code: number; reason: string }
+  /** A frame the hub would not pass on: its type and why, never its content. */
+  | { event: 'relay-frame-refused'; organizationId: string; from: 'phone' | 'desktop'; id: string; type: string; reason: RelayHubRefusal };
 
 export interface HubOptions {
   authority: HubAuthority;
@@ -121,6 +186,15 @@ interface Connection {
   /** A last-seen write is in flight. */
   seeing: boolean;
 }
+
+interface PhoneConnection {
+  transport: PhoneTransport;
+  state: PhoneConnectionState;
+  /** A recheck is in flight. */
+  checking: boolean;
+}
+
+const RATE_WINDOW_MS = 60_000;
 
 const randomToken = (bytes: number) => base64url(crypto.getRandomValues(new Uint8Array(bytes)));
 
@@ -143,6 +217,9 @@ function frameText(data: string | ArrayBuffer | ArrayBufferView): string | null 
 
 export class RelayHubCore {
   private readonly connections = new Map<string, Connection>();
+  private readonly phones = new Map<string, PhoneConnection>();
+  /** Recent frame times per rate-limited sender (`person:<id>` or `desktop:<id>`), newest last. */
+  private readonly rates = new Map<string, number[]>();
   private readonly authority: HubAuthority;
   private readonly now: () => number;
   private readonly record: (event: HubEvent) => void;
@@ -156,13 +233,18 @@ export class RelayHubCore {
     this.record = options.record ?? (() => {});
   }
 
-  /** How many connections the hub holds, proven or not. */
+  /** How many connections the hub holds, desktops proven or not and phones. */
   get size(): number {
-    return this.connections.size;
+    return this.connections.size + this.phones.size;
   }
 
   has(id: string): boolean {
-    return this.connections.has(id);
+    return this.connections.has(id) || this.phones.has(id);
+  }
+
+  /** How many phone connections the hub holds. */
+  get phoneCount(): number {
+    return this.phones.size;
   }
 
   /** A desktop the Worker front authorized. Sends the challenge; answers the connection's id. */
@@ -209,11 +291,53 @@ export class RelayHubCore {
   }
 
   /**
-   * A frame from a desktop. While it is challenged, anything but one valid
-   * proof closes it. Once it is ready, frames outside the closed set are
-   * dropped; step 3 adds its message types here.
+   * A phone the Worker front authorized (relay plan step 3). It has no key to prove, so it is
+   * open at once; the hub sends it nothing until a desktop does. Answers the connection's id.
+   */
+  openPhone(transport: PhoneTransport, grant: PhoneGrant): string {
+    const at = this.now();
+    const id = randomToken(16);
+    const state: PhoneConnectionState = {
+      v: 1,
+      kind: 'phone',
+      id,
+      grant,
+      openedAt: at,
+      heardAt: at,
+      checkedAt: Math.min(at, Date.parse(grant.checkedAt)),
+      nextCheckAt: at + RELAY_TIMINGS.recheckMs,
+    };
+    const phone: PhoneConnection = { transport, state, checking: false };
+    this.phones.set(id, phone);
+    this.record({ event: 'relay-phone-opened', organizationId: grant.organizationId, personId: grant.personId });
+    if (at >= Date.parse(grant.authorizedUntil)) {
+      this.finishPhone(phone, RELAY_CLOSE.sessionExpired);
+      return id;
+    }
+    transport.save(state);
+    // Replace, not refuse: the newest is the screen the person is looking at.
+    const mine = [...this.phones.values()].filter((other) => other.state.grant.personId === grant.personId);
+    for (const old of mine.slice(0, Math.max(0, mine.length - RELAY_LIMITS.phoneSocketsPerPerson)))
+      this.finishPhone(old, RELAY_CLOSE.replaced);
+    return id;
+  }
+
+  /** A phone socket that outlived the hub's memory, with the state it saved. False: the host should close it. */
+  restorePhone(transport: PhoneTransport, saved: unknown): boolean {
+    const parsed = phoneConnectionStateSchema.safeParse(saved);
+    if (!parsed.success) return false;
+    if (!this.phones.has(parsed.data.id)) this.phones.set(parsed.data.id, { transport, state: parsed.data, checking: false });
+    return true;
+  }
+
+  /**
+   * A frame from a desktop or a phone. While a desktop is challenged, anything
+   * but one valid proof closes it. Once it is ready, its frames for phones
+   * (steps 3 and 4) go to its person's phones, and anything else is dropped.
    */
   async message(id: string, data: string | ArrayBuffer | ArrayBufferView): Promise<void> {
+    const phone = this.phones.get(id);
+    if (phone) return this.phoneMessage(phone, data);
     const connection = this.connections.get(id);
     if (!connection) return;
     const text = frameText(data);
@@ -250,14 +374,103 @@ export class RelayHubCore {
       return this.settle();
     }
 
-    if (!message) return;
+    if (!message) {
+      const forPhones = text === null ? null : parseDesktopToPhone(text);
+      if (!forPhones) return;
+      this.update(connection, { heardAt: this.now() });
+      this.toPhones(connection, forPhones);
+      return;
+    }
     this.update(connection, { heardAt: this.now() });
     if (message.type === 'ping') connection.transport.send(RELAY_PONG_FRAME);
     // A second proof after ready changes nothing.
   }
 
-  /** The socket closed from the desktop's side, or failed. */
+  /** A ready desktop's frame for phones: only to the phones of the person who registered it, within its rate. */
+  private toPhones(desktop: Connection, message: DesktopToPhoneMessage): void {
+    const { grant } = desktop.state;
+    const at = this.now();
+    if (!this.allow(`desktop:${grant.deviceId}`, RELAY_LIMITS.desktopFramesPerMinute, at)) {
+      this.record({ event: 'relay-frame-refused', organizationId: grant.organizationId, from: 'desktop', id: grant.deviceId, type: message.type, reason: 'rate_limited' });
+      return;
+    }
+    const text = serializeFrame(message);
+    if (text === null) return;
+    for (const phone of [...this.phones.values()])
+      if (phone.state.grant.personId === grant.personId && this.phoneLive(phone, at)) phone.transport.send(text);
+  }
+
+  /**
+   * A phone's frame. A ping is answered; a command goes to the ready desktop it names, only
+   * when that desktop was registered by the same person, with `from` stamped from the phone's
+   * own sign-in over anything the phone sent. Anything else is dropped. A command that can't
+   * be passed on is answered with a `result` saying why.
+   */
+  private phoneMessage(phone: PhoneConnection, data: string | ArrayBuffer | ArrayBufferView): void {
+    const text = frameText(data);
+    const message = text === null ? null : parsePhoneMessage(text);
+    if (!message) return;
+    const at = this.now();
+    this.updatePhone(phone, { heardAt: at });
+    if (message.type === 'ping') {
+      phone.transport.send(RELAY_PONG_FRAME);
+      return;
+    }
+    const { grant } = phone.state;
+    const refuse = (reason: RelayHubRefusal) => {
+      this.record({ event: 'relay-frame-refused', organizationId: grant.organizationId, from: 'phone', id: grant.personId, type: message.type, reason });
+      if (!('commandId' in message)) return;
+      const result: ResultMessage = { v: 1, type: 'result', commandId: message.commandId, outcome: 'refused', code: reason };
+      phone.transport.send(JSON.stringify(result));
+    };
+    if (!this.allow(`person:${grant.personId}`, RELAY_LIMITS.phoneCommandsPerMinute, at)) return refuse('rate_limited');
+    const desktop = [...this.connections.values()].find(
+      (connection) => connection.state.grant.deviceId === message.deviceId && this.desktopLive(connection, at),
+    );
+    if (!desktop) return refuse('device_offline');
+    if (desktop.state.grant.personId !== grant.personId) return refuse('not_your_device');
+    const { from: _sent, ...command } = message;
+    const stamped = serializeFrame({ ...command, from: { personId: grant.personId, sessionId: grant.sessionId } });
+    if (stamped === null) return refuse('too_large');
+    desktop.transport.send(stamped);
+  }
+
+  /** Counts one frame against a sender's per-minute limit. False: over it, and not counted. */
+  private allow(key: string, limit: number, at: number): boolean {
+    const recent = (this.rates.get(key) ?? []).filter((moment) => moment > at - RATE_WINDOW_MS);
+    if (recent.length >= limit) {
+      this.rates.set(key, recent);
+      return false;
+    }
+    recent.push(at);
+    this.rates.set(key, recent);
+    return true;
+  }
+
+  /** A proven desktop connection that is live right now: what presence counts. */
+  private desktopLive(connection: Connection, at: number): boolean {
+    const { state } = connection;
+    if (state.phase !== 'ready') return false;
+    if (at >= Date.parse(state.grant.authorizedUntil) || at >= state.checkedAt + RELAY_TIMINGS.authorityWindowMs) return false;
+    return at < this.heard(connection) + RELAY_TIMINGS.heartbeatTimeoutMs;
+  }
+
+  /** A phone connection that is live right now. */
+  private phoneLive(phone: PhoneConnection, at: number): boolean {
+    const { state } = phone;
+    if (at >= Date.parse(state.grant.authorizedUntil) || at >= state.checkedAt + RELAY_TIMINGS.authorityWindowMs) return false;
+    return at < this.phoneHeard(phone) + RELAY_TIMINGS.heartbeatTimeoutMs;
+  }
+
+  /** The socket closed from the desktop's or the phone's side, or failed. */
   async closed(id: string, code = 1006): Promise<void> {
+    const phone = this.phones.get(id);
+    if (phone) {
+      this.phones.delete(id);
+      const { grant } = phone.state;
+      this.record({ event: 'relay-phone-closed', organizationId: grant.organizationId, personId: grant.personId, code, reason: 'closed_by_phone' });
+      return;
+    }
     const connection = this.connections.get(id);
     if (!connection) return;
     this.connections.delete(id);
@@ -279,17 +492,12 @@ export class RelayHubCore {
     return ended;
   }
 
-  /** The devices with a proven connection that is live right now. */
+  /** The devices with a proven connection that is live right now. Desktops only: phones are not devices. */
   presence(): Set<string> {
     const at = this.now();
     const online = new Set<string>();
-    for (const connection of this.connections.values()) {
-      const { state } = connection;
-      if (state.phase !== 'ready') continue;
-      if (at >= Date.parse(state.grant.authorizedUntil) || at >= state.checkedAt + RELAY_TIMINGS.authorityWindowMs) continue;
-      if (at >= this.heard(connection) + RELAY_TIMINGS.heartbeatTimeoutMs) continue;
-      online.add(state.grant.deviceId);
-    }
+    for (const connection of this.connections.values())
+      if (this.desktopLive(connection, at)) online.add(connection.state.grant.deviceId);
     return online;
   }
 
@@ -310,6 +518,16 @@ export class RelayHubCore {
       next = Math.min(next, this.heard(connection) + RELAY_TIMINGS.heartbeatTimeoutMs);
       if (!connection.checking) next = Math.min(next, state.nextCheckAt);
       if (!connection.seeing) next = Math.min(next, state.nextSeenAt);
+    }
+    for (const phone of this.phones.values()) {
+      const { state } = phone;
+      next = Math.min(
+        next,
+        Date.parse(state.grant.authorizedUntil),
+        state.checkedAt + RELAY_TIMINGS.authorityWindowMs,
+        this.phoneHeard(phone) + RELAY_TIMINGS.heartbeatTimeoutMs,
+      );
+      if (!phone.checking) next = Math.min(next, state.nextCheckAt);
     }
     return Number.isFinite(next) ? next : null;
   }
@@ -337,8 +555,33 @@ export class RelayHubCore {
         if (!connection.seeing && at >= state.nextSeenAt) work.push(this.markSeen(connection));
       }
     }
+    for (const phone of [...this.phones.values()]) {
+      const { state } = phone;
+      if (at >= Date.parse(state.grant.authorizedUntil)) this.finishPhone(phone, RELAY_CLOSE.sessionExpired);
+      else if (at >= state.checkedAt + RELAY_TIMINGS.authorityWindowMs) this.finishPhone(phone, RELAY_CLOSE.recheckUnavailable);
+      else if (at >= this.phoneHeard(phone) + RELAY_TIMINGS.heartbeatTimeoutMs) this.finishPhone(phone, RELAY_CLOSE.heartbeatTimeout);
+      else if (!phone.checking && at >= state.nextCheckAt) work.push(this.recheckPhone(phone));
+    }
     await Promise.all(work);
     await this.settle();
+  }
+
+  private async recheckPhone(phone: PhoneConnection): Promise<void> {
+    phone.checking = true;
+    const started = this.now();
+    let outcome: RelayRefusalCode | null | undefined;
+    try {
+      outcome = this.authority.recheckPhone ? await this.authority.recheckPhone(phone.state.grant, new Date(started).toISOString()) : undefined;
+    } catch {
+      outcome = undefined;
+    } finally {
+      phone.checking = false;
+    }
+    if (this.phones.get(phone.state.id) !== phone) return;
+    // Could not tell: try again shortly. The 30-second window still closes it if that keeps failing.
+    if (outcome === undefined) this.updatePhone(phone, { nextCheckAt: this.now() + RELAY_TIMINGS.recheckRetryMs });
+    else if (outcome !== null) this.finishPhone(phone, closeForRefusal(outcome));
+    else this.updatePhone(phone, { checkedAt: started, nextCheckAt: started + RELAY_TIMINGS.recheckMs });
   }
 
   private async recheck(connection: Connection): Promise<void> {
@@ -392,9 +635,36 @@ export class RelayHubCore {
     return Math.max(connection.state.heardAt, connection.transport.heardAt?.() ?? 0);
   }
 
+  private phoneHeard(phone: PhoneConnection): number {
+    return Math.max(phone.state.heardAt, phone.transport.heardAt?.() ?? 0);
+  }
+
   private update(connection: Connection, change: Partial<ConnectionState>): void {
     connection.state = { ...connection.state, ...change };
     connection.transport.save(connection.state);
+  }
+
+  private updatePhone(phone: PhoneConnection, change: Partial<PhoneConnectionState>): void {
+    phone.state = { ...phone.state, ...change };
+    phone.transport.save(phone.state);
+  }
+
+  /** Ends a phone connection from the hub's side: forget its saved state, then close the socket. */
+  private finishPhone(phone: PhoneConnection, close: RelayClose): void {
+    if (this.phones.get(phone.state.id) !== phone) return;
+    this.phones.delete(phone.state.id);
+    const { grant } = phone.state;
+    this.record({ event: 'relay-phone-closed', organizationId: grant.organizationId, personId: grant.personId, code: close.code, reason: close.reason });
+    try {
+      phone.transport.save(null);
+    } catch {
+      // The socket is already gone.
+    }
+    try {
+      phone.transport.close(close.code, close.reason);
+    } catch {
+      // The socket is already gone.
+    }
   }
 
   /** Ends a connection from the hub's side: forget its saved state, then close the socket. */
