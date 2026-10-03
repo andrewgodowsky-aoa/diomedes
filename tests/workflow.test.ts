@@ -25,12 +25,12 @@ const context: WorkflowContext = {
   maxAttempts: 3,
 };
 
-const graph = (nodes: WorkflowNode[], maxNodeRuns = 32): WorkflowDefinition => ({
+const graph = (nodes: WorkflowNode[], maxSteps = 32): WorkflowDefinition => ({
   id: 'format-report-graph',
   version: 'v1',
   capabilityId: 'format-report',
   nodes,
-  limits: { maxNodeRuns },
+  limits: { maxSteps },
 });
 
 const read: WorkflowNode = { id: 'read', kind: 'tool', tool: 'read_fixture', input: { value: { name: 'a' } }, after: [] };
@@ -65,7 +65,7 @@ describe('checkWorkflow', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.order).toEqual(['read', 'format']);
-    expect(result.worstCase).toEqual({ nodeRuns: 2, units: 6, modelCalls: 0, toolCalls: 6 });
+    expect(result.worstCase).toEqual({ steps: 2, units: 6, modelCalls: 0, toolCalls: 6 });
   });
 
   test('the order is the same however the nodes are listed', () => {
@@ -161,7 +161,7 @@ describe('checkWorkflow', () => {
     const attempt: WorkflowNode = { ...format, id: 'attempt', after: ['retry'], input: { from: 'read' } };
     const result = checkWorkflow(graph([read, loop, attempt]), context);
     expect(result.ok).toBe(true);
-    if (result.ok) expect(result.worstCase).toEqual({ nodeRuns: 6, units: 15, modelCalls: 0, toolCalls: 15 });
+    if (result.ok) expect(result.worstCase).toEqual({ steps: 9, units: 15, modelCalls: 0, toolCalls: 15 });
     expect(codes(graph([read, loop, { ...attempt, after: ['retry', 'read'] }]))).toEqual(['loop_body']);
     expect(codes(graph([read, { ...loop, body: 'ghost' }]))).toEqual(['loop_body', 'unknown_reference']);
     const approve: WorkflowNode = { id: 'attempt', kind: 'approval', what: 'Approve the attempt', after: ['retry'] };
@@ -181,10 +181,10 @@ describe('checkWorkflow', () => {
   test('a worst case above the node limit or the start budget is refused', () => {
     const loop: WorkflowNode = { id: 'retry', kind: 'loop', body: 'attempt', until: { from: 'attempt' }, maxIterations: 16, after: [] };
     const attempt: WorkflowNode = { id: 'attempt', kind: 'model', prompt: { value: 'again' }, after: ['retry'] };
-    expect(codes(graph([loop, attempt], 8))).toEqual(['node_runs']);
+    expect(codes(graph([loop, attempt], 8))).toEqual(['step_limit']);
     const budget: HarnessBudget = { units: 10, modelCalls: 100, toolCalls: 100, wallMs: null };
-    expect(codes(graph([loop, attempt]), { ...context, budget })).toEqual(['budget']);
-    expect(codes(graph([loop, attempt]), { ...context, budget: { ...budget, units: 48 } })).toEqual([]);
+    expect(codes(graph([loop, attempt], 64), { ...context, budget })).toEqual(['budget']);
+    expect(codes(graph([loop, attempt], 64), { ...context, budget: { ...budget, units: 48 } })).toEqual([]);
   });
 
   test('reports every problem in one pass', () => {
@@ -197,6 +197,61 @@ describe('checkWorkflow', () => {
       ['unknown_tool', 'mail'],
       ['wait_unsupported', 'hold'],
     ]);
+  });
+});
+
+describe('checkWorkflow after the WF-1 audit', () => {
+  const loop: WorkflowNode = { id: 'retry', kind: 'loop', body: 'attempt', until: { from: 'attempt' }, maxIterations: 2, after: ['read'] };
+
+  test('a loop body cannot read its own unfinished loop, but may read what came before it', () => {
+    const own: WorkflowNode = { ...format, id: 'attempt', input: { from: 'retry' }, after: ['retry'] };
+    expect(codes(graph([read, loop, own]))).toEqual(['reference_not_upstream']);
+    const before: WorkflowNode = { ...format, id: 'attempt', input: { from: 'read' }, after: ['retry'] };
+    expect(codes(graph([read, loop, before]))).toEqual([]);
+  });
+
+  test('loop stop decisions and model context steps count toward the step limit', () => {
+    const long: WorkflowNode = { ...loop, maxIterations: 16, after: [] };
+    const body: WorkflowNode = { ...read, id: 'attempt', after: ['retry'] };
+    const result = checkWorkflow(graph([long, body], 128), context);
+    expect(result.ok && result.worstCase.steps).toBe(32);
+    expect(codes(graph([long, body], 31))).toEqual(['step_limit']);
+    const model: WorkflowNode = { id: 'ask', kind: 'model', prompt: { value: 'hi' }, after: [] };
+    const asked = checkWorkflow(graph([model]), context);
+    expect(asked.ok && asked.worstCase.steps).toBe(2);
+    const three = [0, 1, 2].flatMap((n): WorkflowNode[] => [
+      { ...long, id: `retry${n}`, body: `attempt${n}`, until: { from: `attempt${n}` } },
+      { ...body, id: `attempt${n}`, after: [`retry${n}`] },
+    ]);
+    expect(codes(graph(three, 64))).toEqual(['step_limit']);
+  });
+
+  test('a join reads each source once, and a dependency is listed once', () => {
+    const child: WorkflowNode = { ...read, id: 'child' };
+    const twice: WorkflowNode = { id: 'all', kind: 'join', from: ['child', 'child'], reducer: 'collect', after: ['child'] };
+    expect(codes(graph([child, twice]))).toEqual(['join_source']);
+    expect(codes(graph([read, { ...format, after: ['read', 'read'] }]))).toEqual(['duplicate_dependency']);
+  });
+
+  test('a deeply nested definition is refused as a shape, not thrown', () => {
+    let deep: unknown = { value: 1 };
+    for (let i = 0; i < 2000; i++) deep = { object: { child: deep } };
+    const result = checkWorkflow(graph([{ ...read, input: deep as never }]), context);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.problems.map((p) => p.code)).toEqual(['invalid_shape']);
+    let literal: unknown = 1;
+    for (let i = 0; i < 2000; i++) literal = [literal];
+    expect(codes(graph([{ ...read, input: { value: literal as never } }]))).toEqual(['invalid_shape']);
+  });
+
+  test('attempts, costs and budgets must be whole numbers before any bound is computed', () => {
+    const zeroBudget: HarnessBudget = { units: 0, modelCalls: 0, toolCalls: 0, wallMs: null };
+    for (const maxAttempts of [0, Number.NaN, 1.5, -1, Infinity])
+      expect(codes(graph([read]), { ...context, maxAttempts, budget: zeroBudget })).toEqual(['invalid_context']);
+    const badCost = new Map([['read_fixture', { cost: -1 }]]);
+    expect(codes(graph([read]), { ...context, tools: badCost })).toEqual(['invalid_context']);
+    expect(codes(graph([read]), { ...context, budget: { ...zeroBudget, units: Number.NaN } })).toEqual(['invalid_context']);
+    expect(codes(graph([read]), { ...context, budget: zeroBudget })).toEqual(['budget', 'budget']);
   });
 });
 
@@ -247,5 +302,52 @@ describe('workflowProgress', () => {
       retry: 'failed',
       attempt: 'failed',
     });
+  });
+
+  test('a join after a branch reconverges when one arm is skipped', () => {
+    const route: WorkflowNode = { id: 'route', kind: 'branch', on: { from: 'read' }, cases: { x: 'a' }, otherwise: 'b', after: ['read'] };
+    const a: WorkflowNode = { ...read, id: 'a', after: ['route'] };
+    const b: WorkflowNode = { ...read, id: 'b', after: ['route'] };
+    const all: WorkflowNode = { id: 'all', kind: 'join', from: ['a', 'b'], reducer: 'collect', after: ['a', 'b'] };
+    const diamond = graph([read, route, a, b, all]);
+    const decided = [
+      step(nodeStepId('read'), 'succeeded', 'x'),
+      step(decideStepId('route'), 'succeeded', { v: 1, matched: 'x', next: 'a' }),
+    ];
+    expect(workflowProgress(diamond, [...decided, step(nodeStepId('a'), 'succeeded')])).toMatchObject({
+      a: 'done',
+      b: 'skipped',
+      all: 'not-started',
+    });
+    expect(
+      workflowProgress(diamond, [...decided, step(nodeStepId('a'), 'succeeded'), step(joinStepId('all'), 'succeeded')]),
+    ).toMatchObject({ b: 'skipped', all: 'done' });
+    const after: WorkflowNode = { ...read, id: 'tail', after: ['all'] };
+    expect(workflowProgress(graph([read, route, a, b, all, after]), decided).tail).toBe('not-started');
+  });
+
+  test('a recorded step reports its own status before anything it waits for', () => {
+    const route: WorkflowNode = { id: 'route', kind: 'branch', on: { from: 'read' }, cases: { x: 'a' }, otherwise: 'b', after: ['read'] };
+    const a: WorkflowNode = { ...read, id: 'a', after: ['route'] };
+    const b: WorkflowNode = { ...read, id: 'b', after: ['route'] };
+    const progress = workflowProgress(graph([read, route, a, b]), [
+      step(decideStepId('route'), 'succeeded', { v: 1, matched: 'x', next: 'a' }),
+      step(nodeStepId('b'), 'succeeded'),
+    ]);
+    expect(progress.b).toBe('done');
+  });
+
+  test('a node named constructor is reported as an own entry, as a root and as a dependency', () => {
+    const root: WorkflowNode = { ...read, id: 'constructor' };
+    const child: WorkflowNode = { ...read, id: 'tostring', after: ['constructor'] };
+    const progress = workflowProgress(graph([root, child]), [step(nodeStepId('constructor'), 'succeeded')]);
+    expect(Object.hasOwn(progress, 'constructor')).toBe(true);
+    expect(progress).toEqual({ constructor: 'done', tostring: 'not-started' });
+    expect(JSON.parse(JSON.stringify(progress))).toEqual({ constructor: 'done', tostring: 'not-started' });
+    const asChild = workflowProgress(graph([read, { ...read, id: 'constructor', after: ['read'] }]), [
+      step(nodeStepId('read'), 'succeeded'),
+      step(nodeStepId('constructor'), 'running'),
+    ]);
+    expect(asChild).toEqual({ read: 'done', constructor: 'running' });
   });
 });

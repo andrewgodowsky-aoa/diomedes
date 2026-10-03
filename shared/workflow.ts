@@ -22,6 +22,21 @@
  * could pass the budget the run is started with. Bindings are data: a literal,
  * or a JSON pointer into an earlier node's output. Nothing here evaluates code.
  *
+ * What the driver owes these checks (WF-2), so a passing graph grants nothing:
+ * - the tool and cost map comes from the run's own capability intersected with
+ *   the host registry, the graph's `capabilityId` matches the run's, and the
+ *   admitted graph revision is pinned on the run;
+ * - every tool node goes through `ToolRegistry.dispatch` and every model node
+ *   through the existing adapter seam, so authority comes from the registry and
+ *   Trust, never from the graph;
+ * - an approval node is a step with `approval: true` (its kind alone gates
+ *   nothing), and it authorizes no later step nor weakens that step's policy;
+ * - `onFailure: 'continue'` never overrides a denial, a cancellation, a revoked
+ *   identity, an exhausted budget, a lost lease or an effect that waits for
+ *   reconciliation;
+ * - these bounds are static: `RunService` still reserves and refuses at every
+ *   step, and wall time and provider spend are not bounded here.
+ *
  * Pure: no clock, no disk, no request. Client and server share it.
  */
 import { z } from 'zod';
@@ -31,8 +46,15 @@ export const WORKFLOW_CONTRACT_VERSION = 1 as const;
 
 export const WORKFLOW_LIMITS = {
   nodes: 48,
-  /** Node runs across every loop iteration; bounds the run file. */
-  maxNodeRuns: 64,
+  /**
+   * Durable step records one run of a graph can create: node steps, every loop
+   * iteration's body and stop decision, branch decisions, joins and the context
+   * step a model call may add. Attempts reuse their step's record, so this bounds
+   * the step records in the run file; its events grow with attempts as well.
+   */
+  maxSteps: 128,
+  /** Nesting depth of the raw definition, checked before any recursive parse. */
+  inputDepth: 64,
   maxIterations: 16,
   bindingDepth: 8,
   whatChars: 400,
@@ -73,7 +95,7 @@ export interface WorkflowDefinition {
   /** The capability a run of this graph starts under. Every tool node must be among its tools. */
   capabilityId: string;
   nodes: WorkflowNode[];
-  limits: { maxNodeRuns: number };
+  limits: { maxSteps: number };
 }
 
 const nodeId = z.string().regex(WORKFLOW_NODE_ID);
@@ -121,7 +143,7 @@ export const workflowDefinitionSchema = z.strictObject({
   version: z.string().min(1).max(32),
   capabilityId: z.string().min(1).max(128),
   nodes: z.array(nodeSchema).min(1).max(WORKFLOW_LIMITS.nodes),
-  limits: z.strictObject({ maxNodeRuns: z.number().int().min(1).max(WORKFLOW_LIMITS.maxNodeRuns) }),
+  limits: z.strictObject({ maxSteps: z.number().int().min(1).max(WORKFLOW_LIMITS.maxSteps) }),
 }) satisfies z.ZodType<WorkflowDefinition>;
 
 // --- step ids --------------------------------------------------------------------
@@ -148,7 +170,9 @@ export type WorkflowProblemCode =
   | 'loop_body'
   | 'unknown_tool'
   | 'wait_unsupported'
-  | 'node_runs'
+  | 'duplicate_dependency'
+  | 'invalid_context'
+  | 'step_limit'
   | 'budget';
 
 export interface WorkflowProblem {
@@ -169,7 +193,8 @@ export interface WorkflowContext {
 
 /** The most one run of the graph could spend, every attempt failing but the last. */
 export interface WorkflowWorstCase {
-  nodeRuns: number;
+  /** Durable step records, control steps included. */
+  steps: number;
   units: number;
   modelCalls: number;
   toolCalls: number;
@@ -204,12 +229,61 @@ function bindingsOf(node: WorkflowNode): WorkflowBinding[] {
 /** A cost model per node kind. Model calls cost one unit, as the loop's model steps do. */
 const MODEL_STEP_COST = 1;
 
+/** Whether a JSON-like value nests no deeper than `max`, walked without recursion. */
+function depthWithin(value: unknown, max: number): boolean {
+  const stack: [unknown, number][] = [[value, 0]];
+  while (stack.length) {
+    const [item, depth] = stack.pop()!;
+    if (item === null || typeof item !== 'object') continue;
+    if (depth >= max) return false;
+    for (const child of Array.isArray(item) ? item : Object.values(item)) stack.push([child, depth + 1]);
+  }
+  return true;
+}
+
+const wholeUnits = (value: unknown, positive = false) =>
+  typeof value === 'number' && Number.isSafeInteger(value) && value >= (positive ? 1 : 0);
+
+/**
+ * The static bounds are only as sound as the numbers they multiply, so the
+ * context is refused unless every attempt limit, cost and budget is a whole
+ * number. This is not the enforcement: `RunService` still reserves and refuses
+ * at every step.
+ */
+function contextProblems(context: WorkflowContext): WorkflowProblem[] {
+  const problems: WorkflowProblem[] = [];
+  const refuse = (message: string) => problems.push({ code: 'invalid_context', node: null, message });
+  if (!context || typeof context !== 'object') {
+    refuse('A workflow is checked against the capability and host it runs under.');
+    return problems;
+  }
+  if (!wholeUnits(context.maxAttempts, true)) refuse('The attempt limit must be a positive whole number.');
+  if (!(context.tools instanceof Map)) refuse('The capability tools must be a map of names to costs.');
+  else
+    for (const [name, tool] of context.tools)
+      if (!wholeUnits(tool?.cost)) refuse(`Tool ${name} must cost a whole number of units, zero or more.`);
+  if (context.budget !== undefined)
+    for (const key of ['units', 'modelCalls', 'toolCalls'] as const)
+      if (!wholeUnits(context.budget?.[key])) refuse(`The run's ${key} budget must be a whole number, zero or more.`);
+  return problems;
+}
+
 /**
  * Check a graph. Every problem is reported, not only the first, so an author
  * fixes them in one pass. A graph that passes comes back with a deterministic
  * order (dependencies first, then by node id) and its worst case.
  */
 export function checkWorkflow(input: unknown, context: WorkflowContext): WorkflowCheck {
+  const refused = contextProblems(context);
+  if (refused.length) return { ok: false, problems: refused };
+  // The schema recurses through bindings and literals, so a deep input is refused before it parses.
+  if (!depthWithin(input, WORKFLOW_LIMITS.inputDepth))
+    return {
+      ok: false,
+      problems: [
+        { code: 'invalid_shape', node: null, message: `The definition nests deeper than ${WORKFLOW_LIMITS.inputDepth} levels.` },
+      ],
+    };
   const parsed = workflowDefinitionSchema.safeParse(input);
   if (!parsed.success)
     return {
@@ -231,8 +305,10 @@ export function checkWorkflow(input: unknown, context: WorkflowContext): Workflo
     else byId.set(node.id, node);
   }
   for (const node of byId.values())
-    for (const dep of node.after) {
-      if (dep === node.id) problem('self_dependency', node.id, `Node ${node.id} waits for itself.`);
+    for (const [index, dep] of node.after.entries()) {
+      if (node.after.indexOf(dep) !== index)
+        problem('duplicate_dependency', node.id, `Node ${node.id} lists ${dep} twice in after.`);
+      else if (dep === node.id) problem('self_dependency', node.id, `Node ${node.id} waits for itself.`);
       else if (!byId.has(dep)) problem('unknown_dependency', node.id, `Node ${node.id} waits for ${dep}, which is not in the graph.`);
     }
   if (problems.length) return { ok: false, problems };
@@ -294,9 +370,12 @@ export function checkWorkflow(input: unknown, context: WorkflowContext): Workflo
           problem('branch_target', node.id, `${target} is already chosen by branch ${targeted.get(target)}.`);
         else targeted.set(target, node.id);
       }
+    // Each source is consumed exactly once, so a repeated source is refused rather than read twice.
     if (node.kind === 'join')
-      for (const source of node.from)
-        if (!node.after.includes(source))
+      for (const [index, source] of node.from.entries())
+        if (node.from.indexOf(source) !== index)
+          problem('join_source', node.id, `Join ${node.id} lists ${source} twice; each source is read once.`);
+        else if (!node.after.includes(source))
           problem('join_source', node.id, `Join ${node.id} reads ${source}, so it must wait for it.`);
     if (node.kind === 'tool' && !context.tools.has(node.tool))
       problem('unknown_tool', node.id, `Tool ${node.tool} is not offered by capability ${definition.capabilityId}.`);
@@ -309,6 +388,9 @@ export function checkWorkflow(input: unknown, context: WorkflowContext): Workflo
         // A loop's stop condition reads its own body's latest output; nothing else may.
         const ownBody = node.kind === 'loop' && ref === node.body;
         if (!byId.has(ref)) problem('unknown_reference', node.id, `${node.id} reads ${ref}, which is not in the graph.`);
+        // A body waits for its loop to start it, not to finish: the loop's result exists only after the body.
+        else if (bodies.get(node.id) === ref)
+          problem('reference_not_upstream', node.id, `${node.id} reads its own loop ${ref}, whose result needs this body to finish first.`);
         else if (!ownBody && bodies.has(ref))
           problem('reference_not_upstream', node.id, `${node.id} reads loop body ${ref}; read loop ${bodies.get(ref)} instead.`);
         else if (!ownBody && !upstream.get(node.id)!.has(ref))
@@ -321,10 +403,12 @@ export function checkWorkflow(input: unknown, context: WorkflowContext): Workflo
     const loop = bodies.get(node.id);
     return loop ? (byId.get(loop) as Extract<WorkflowNode, { kind: 'loop' }>).maxIterations : 1;
   };
-  const worstCase: WorkflowWorstCase = { nodeRuns: 0, units: 0, modelCalls: 0, toolCalls: 0 };
+  const worstCase: WorkflowWorstCase = { steps: 0, units: 0, modelCalls: 0, toolCalls: 0 };
   for (const node of byId.values()) {
     const runs = runsOf(node);
-    worstCase.nodeRuns += runs;
+    // A model call may add its prepared-context step; a loop records a stop decision per iteration.
+    worstCase.steps +=
+      node.kind === 'model' ? runs * 2 : node.kind === 'loop' ? node.maxIterations : runs;
     const attempts = runs * context.maxAttempts;
     if (node.kind === 'tool') {
       worstCase.toolCalls += attempts;
@@ -334,8 +418,8 @@ export function checkWorkflow(input: unknown, context: WorkflowContext): Workflo
       worstCase.units += attempts * MODEL_STEP_COST;
     }
   }
-  if (worstCase.nodeRuns > definition.limits.maxNodeRuns)
-    problem('node_runs', null, `The graph can run ${worstCase.nodeRuns} nodes, above its limit of ${definition.limits.maxNodeRuns}.`);
+  if (worstCase.steps > definition.limits.maxSteps)
+    problem('step_limit', null, `The graph can record ${worstCase.steps} steps, above its limit of ${definition.limits.maxSteps}.`);
   const budget = context.budget;
   if (budget)
     for (const key of ['units', 'modelCalls', 'toolCalls'] as const)
@@ -355,12 +439,26 @@ export interface WorkflowDecision {
   next: string;
 }
 
+/**
+ * One source a join consumed, in `from` order, as `wf:<join>:join` records it.
+ * A source on a branch arm that was not chosen is consumed as `skipped`; a
+ * source whose node may `continue` past a failure is consumed as `failed`.
+ */
+export interface WorkflowJoinEntry {
+  source: string;
+  status: 'done' | 'skipped' | 'failed';
+  /** The source step's output hash when it finished; null otherwise. */
+  outputHash: string | null;
+}
+
 export type WorkflowNodeStatus = 'not-started' | 'running' | 'waiting' | 'done' | 'failed' | 'skipped';
 
 /**
- * Each node's status, read from the run's steps on every call. A node is
- * skipped when a branch it waits for chose another target, or when anything
- * it waits for was skipped. Nothing here is stored.
+ * Each node's status, read from the run's steps on every call. A node with a
+ * durable record reports that record. Otherwise it is skipped when a branch it
+ * waits for chose another target, or when anything it waits for was skipped;
+ * a join is skipped only when every source it reads was, so a fan-in after a
+ * branch reconverges. Nothing here is stored.
  */
 export function workflowProgress(
   definition: WorkflowDefinition,
@@ -389,29 +487,6 @@ export function workflowProgress(
       const decision = step?.state === 'succeeded' ? (step.output as unknown as WorkflowDecision | null) : null;
       chosen.set(node.id, decision?.next ?? null);
     }
-  const result: Record<string, WorkflowNodeStatus> = {};
-  const visit = (id: string): WorkflowNodeStatus => {
-    if (result[id]) return result[id];
-    const node = byId.get(id)!;
-    for (const dep of node.after) {
-      const above = byId.get(dep)!;
-      if (visit(dep) === 'skipped') return (result[id] = 'skipped');
-      if (above.kind === 'branch') {
-        const next = chosen.get(dep);
-        const targets = new Set([...Object.values(above.cases), above.otherwise]);
-        if (next && targets.has(id) && next !== id) return (result[id] = 'skipped');
-      }
-    }
-    const own =
-      node.kind === 'branch'
-        ? statusOfStep(decideStepId(id))
-        : node.kind === 'join'
-          ? statusOfStep(joinStepId(id))
-          : node.kind === 'loop'
-            ? loopStatus(node)
-            : statusOfStep(nodeStepId(id));
-    return (result[id] = own ?? 'not-started');
-  };
   const loopStatus = (node: Extract<WorkflowNode, { kind: 'loop' }>): WorkflowNodeStatus | null => {
     let last: WorkflowNodeStatus | null = null;
     for (let i = 0; i < node.maxIterations; i++) {
@@ -426,8 +501,41 @@ export function workflowProgress(
     }
     return last;
   };
+  const ownStatus = (node: WorkflowNode): WorkflowNodeStatus | null =>
+    node.kind === 'branch'
+      ? statusOfStep(decideStepId(node.id))
+      : node.kind === 'join'
+        ? statusOfStep(joinStepId(node.id))
+        : node.kind === 'loop'
+          ? loopStatus(node)
+          : statusOfStep(nodeStepId(node.id));
+  // A Map, so a node id such as `constructor` never meets an inherited property.
+  const result = new Map<string, WorkflowNodeStatus>();
+  const visit = (id: string): WorkflowNodeStatus => {
+    const known = result.get(id);
+    if (known) return known;
+    const node = byId.get(id)!;
+    const settle = (status: WorkflowNodeStatus) => (result.set(id, status), status);
+    const own = ownStatus(node);
+    if (own) return settle(own);
+    const sources = node.kind === 'join' ? new Set(node.from) : new Set<string>();
+    let skippedSources = 0;
+    for (const dep of node.after) {
+      const above = byId.get(dep)!;
+      const skipped = visit(dep) === 'skipped';
+      if (skipped && sources.has(dep)) skippedSources += 1;
+      else if (skipped) return settle('skipped');
+      if (above.kind === 'branch') {
+        const next = chosen.get(dep);
+        const targets = new Set([...Object.values(above.cases), above.otherwise]);
+        if (next && targets.has(id) && next !== id) return settle('skipped');
+      }
+    }
+    if (sources.size > 0 && skippedSources === sources.size) return settle('skipped');
+    return settle('not-started');
+  };
   for (const node of definition.nodes) visit(node.id);
   // A loop's body is reported with its loop.
-  for (const node of definition.nodes) if (node.kind === 'loop') result[node.body] = result[node.id];
-  return result;
+  for (const node of definition.nodes) if (node.kind === 'loop') result.set(node.body, result.get(node.id)!);
+  return Object.fromEntries(result);
 }
