@@ -143,8 +143,12 @@ describe('native callback parser', () => {
   it.each([
     'https://callback?code=x&state=y',
     'diomedes-auth://other?code=x&state=y',
-    'diomedes-auth://callback/?code=x&state=y',
     'diomedes-auth://callback/../?code=x&state=y',
+    'diomedes-auth://callback//?code=x&state=y',
+    'diomedes-auth://callback/x?code=x&state=y',
+    'diomedes-auth://callback/%2e%2e/?code=x&state=y',
+    'diomedes-auth://callback/?code=x&state=y#x',
+    'diomedes-auth://callback/',
     'diomedes-auth://user@callback?code=x&state=y',
     'diomedes-auth://callback:12?code=x&state=y',
     'diomedes-auth://callback?code=x&state=y#x',
@@ -163,6 +167,19 @@ describe('native callback parser', () => {
     expect(
       parseNativeCallback(callback + '?error=access_denied&state=xyz&error_description=secret'),
     ).toEqual({ error: true, state: 'xyz' });
+  });
+  // Windows' shell hands a protocol handler the URL with one slash added before the query,
+  // whichever browser launched it: diomedes-auth://callback?code=… arrives as
+  // diomedes-auth://callback/?code=… (checked on Windows 11, 2026-10-02).
+  it('accepts the Windows shell form, with one slash before the query, as the same callback', () => {
+    expect(parseNativeCallback(callback + '/?code=abc&state=xyz')).toEqual({
+      code: 'abc',
+      state: 'xyz',
+    });
+    expect(parseNativeCallback(callback + '/?error=access_denied&state=xyz')).toEqual({
+      error: true,
+      state: 'xyz',
+    });
   });
 });
 
@@ -282,6 +299,16 @@ describe('official SDK native boundary', () => {
     ).toBe(true);
     expect((await reopened.invoke('getUser')).data.account.id).toBe('user_a');
     expect(reopened.openExternal).not.toHaveBeenCalled();
+  });
+
+  it('completes sign-in from the URL Windows hands the app after the browser finishes', async () => {
+    const f = fixture();
+    const state = await f.signIn();
+    expect(
+      await f.auth.handleCallback(callback + '/?code=windows&state=' + encodeURIComponent(state)),
+    ).toBe(true);
+    expect(f.exchange).toHaveBeenCalledOnce();
+    expect((await f.invoke('getUser')).data.account.id).toBe('user_a');
   });
 
   it('drops a late refresh result after logout without restoring the stored session', async () => {
@@ -412,5 +439,22 @@ describe('official SDK native boundary', () => {
     expect(app.requestSingleInstanceLock).not.toHaveBeenCalled();
     capture.dispose();
     expect(app.listenerCount('open-url')).toBe(0);
+  });
+
+  it('delivers the Windows shell form from a cold launch and from a second instance', async () => {
+    const app = new EventEmitter() as any;
+    app.requestSingleInstanceLock = vi.fn(() => {
+      throw new Error('Already owned by main');
+    });
+    const cold = callback + '/?code=abc&state=cold';
+    const capture = captureNativeAuthCallbacks(app, ['app.exe', cold]);
+    const deliver = vi.fn(async () => true);
+    capture.connect(deliver);
+    await vi.waitFor(() => expect(deliver).toHaveBeenCalledExactlyOnceWith(cold));
+    const warm = callback + '/?code=def&state=warm';
+    app.emit('second-instance', {}, ['app.exe', '--allow-file-access-from-files', warm]);
+    await vi.waitFor(() => expect(deliver).toHaveBeenLastCalledWith(warm));
+    expect(deliver).toHaveBeenCalledTimes(2);
+    capture.dispose();
   });
 });
