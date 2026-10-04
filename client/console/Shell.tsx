@@ -1999,7 +1999,7 @@ export function Shell({
               {elsewhere.length === 1 ? 'Something needs your OK' : `${elsewhere.length} things need your OK`}
             </button>
           )}
-          {selected && !conversation && (
+          {selected && !conversation && route !== 'bonsai' && (
             <AgentPicker
               projectId={projectId}
               thread={selected}
@@ -2023,6 +2023,7 @@ export function Shell({
               busy={busy}
               onPick={pick}
               onStyle={pickStyle}
+              onLocalChanged={thread => { if (thread.engine) setRoute(thread.engine); void load(); }}
             />
           )}
           <span

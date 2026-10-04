@@ -7,6 +7,9 @@ import { askDraftKey } from '../components';
 import { reducedMotion, spring } from './motion';
 import { SendConfirmation } from './SendConfirmation';
 import './attachments.css';
+import { modelAttachmentProblem } from './attachments';
+import { api } from '../api';
+import { BONSAI_ROUTE, type LocalModelsView } from '../../shared/bonsai';
 
 /**
  * The composer's own accessible name. Exported so the Console can put focus in
@@ -98,12 +101,7 @@ interface ComposerProps {
  * sending the message without it.
  */
 export function attachmentProblem(file: Pick<DocumentInfo, 'path' | 'kind' | 'size'>): string | null {
-  const name = file.path.slice(file.path.lastIndexOf('/') + 1);
-  if (!['markdown', 'text', 'plan'].includes(file.kind))
-    return `${name} is not a text document, so a message cannot carry it to an engine. It stays in Files; remove it to send.`;
-  if (file.size > TASK_SOURCE_LIMITS.bytes)
-    return `${name} is larger than the 128 KB a message can carry. Remove it to send.`;
-  return null;
+  return modelAttachmentProblem(file);
 }
 
 /** Pure, because React may run a state initializer twice; the effect below clears it. */
@@ -157,6 +155,18 @@ export function Composer({
   const [preparing, setPreparing] = useState(false);
   const [error, setError] = useState('');
   const preparingRef = useRef(false);
+  const [imageChoice, setImageChoice] = useState<string | null>(null);
+  const acceptsImages = route === BONSAI_ROUTE && imageChoice === thread.requested?.model
+    && (mode === 'ask' || mode === 'plan' || mode === 'auto');
+  useEffect(() => {
+    if (route !== BONSAI_ROUTE) { setImageChoice(null); return; }
+    const controller = new AbortController();
+    void api<LocalModelsView>('/ai/local-models', 'GET', undefined, controller.signal).then(view => {
+      const profile = view.route === route ? view.models.find(model => model.slug === thread.requested?.model) : undefined;
+      setImageChoice(profile?.inputModalities.includes('image') ? profile.slug : null);
+    }).catch(() => { if (!controller.signal.aborted) setImageChoice(null); });
+    return () => controller.abort();
+  }, [route, thread.requested?.model]);
   const preparation = useRef(0);
   const box = useRef<HTMLTextAreaElement>(null);
   const modes = useRef<HTMLDivElement>(null);
@@ -333,7 +343,7 @@ export function Composer({
     const value = text.trim();
     if (!value || busy || !online || preparingRef.current) return;
     if (mode === 'fix' && !fixReady) return;
-    const blocked = attachments.map(attachmentProblem).find((problem) => problem !== null);
+    const blocked = attachments.map(file => modelAttachmentProblem(file, acceptsImages)).find((problem) => problem !== null);
     if (blocked) {
       setError(blocked);
       return;
@@ -404,7 +414,7 @@ export function Composer({
             <span className="mono">attached</span>
             <span className="attach-chips">
               {attachments.map((file) => {
-                const problem = attachmentProblem(file);
+                const problem = modelAttachmentProblem(file, acceptsImages);
                 const name = file.path.slice(file.path.lastIndexOf('/') + 1);
                 return (
                   <span className={`attach-chip${problem ? ' blocked' : ''}`} key={file.path} title={problem ?? file.path}>

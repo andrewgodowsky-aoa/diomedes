@@ -33,7 +33,7 @@ export interface TextRequest {
   threadId: string;
   requestId: string;
   prompt: string;
-  documents: { path: string; text: string }[];
+  documents: { path: string; text: string; image?: import('../../shared/bonsai.js').ModelImage }[];
   instructions: string;
   model: string;
   accountRoute: string;

@@ -56,6 +56,7 @@ import { AZURE_MODEL_CONTRACT } from './harness/azure-model-adapter.js';
 import { NECTOVIA_MODEL_CONTRACT } from './harness/nectovia-model-adapter.js';
 import { OPENROUTER_MODEL_CONTRACT } from './harness/openrouter-model-adapter.js';
 import { VERTEX_MODEL_CONTRACT } from './harness/vertex-model-adapter.js';
+import { BONSAI_MODEL_CONTRACT } from './engines/bonsai.js';
 import { ApiError } from './paths.js';
 import { hash, identifier, now, type Store } from './store.js';
 import { UNCERTAIN_AFTER_STOP, type WorkControl } from './work-control.js';
@@ -71,6 +72,7 @@ const MODEL_API_CONTRACTS: Record<string, AdapterRouteContract> = Object.fromEnt
     OPENROUTER_MODEL_CONTRACT,
     VERTEX_MODEL_CONTRACT,
     NECTOVIA_MODEL_CONTRACT,
+    BONSAI_MODEL_CONTRACT,
   ].map(
     (contract) => [contract.routeId, contract],
   ),

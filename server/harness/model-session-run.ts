@@ -47,6 +47,7 @@ import { ToolRegistry } from './tools.js';
 import { PLAYBOOK_TOOL, registerPlaybookTool } from './capabilities/pack-playbooks.js';
 import { TEAM_TOOL_NAMES } from '../../shared/team-routes.js';
 import { NECTOVIA_ROUTE } from '../../shared/model-api.js';
+import { BONSAI_ROUTE, bonsaiProfile } from '../../shared/bonsai.js';
 import { contextMessage } from '../engines/contract.js';
 import { answeredTurns, carriedRun } from './conversation-history.js';
 import { artifactSteps, unrecordedArtifacts } from './artifact-steps.js';
@@ -145,6 +146,8 @@ export const turnRunId = (runId: string, commandId: string) => `${runId}.t${dige
 /** What admission established for this message. Identifiers only. */
 export interface ModelSessionAdmission {
   route: string;
+  /** The host-resolved project used to read this turn's immutable local image versions. */
+  projectId?: string;
   connectionId: string;
   revision: number;
   model: string;
@@ -739,7 +742,7 @@ export class ModelSessionRuns {
 
   private compose(input: TextRequest, history: string) {
     const sources = input.documents.length
-      ? input.documents.map((doc) => `- ${doc.path} (sha-256 ${sourceSha(doc.text).slice(0, 12)})`).join('\n')
+      ? input.documents.map((doc) => `- ${doc.path} (sha-256 ${(doc.image?.sha ?? sourceSha(doc.text)).slice(0, 12)})${doc.image ? ' [image bytes attached to this message]' : ''}`).join('\n')
       : '- none';
     // The person's message goes last: its final line carries the issued identity the decision
     // format tells the model to copy "from the last line of the message".
@@ -759,6 +762,7 @@ export class ModelSessionRuns {
   private async drive(request: ModelSessionTurn): Promise<ModelSessionTurnResult> {
     const { input, runId } = request;
     const route = request.route ?? this.route;
+    const turnWallMs = route === BONSAI_ROUTE ? bonsaiProfile(input.model)?.turnTimeoutMs ?? TURN_WALL_MS : TURN_WALL_MS;
     const principal = localHarnessPrincipal(input.projectId);
     let run: HarnessRun | undefined;
     try {
@@ -839,7 +843,7 @@ export class ModelSessionRuns {
       turnDefinition,
       async (context: StepContext) => {
         context.signal.throwIfAborted();
-        const wall = AbortSignal.timeout(TURN_WALL_MS);
+        const wall = AbortSignal.timeout(turnWallMs);
         const stop = AbortSignal.any([context.signal, wall, ...(input.signal ? [input.signal] : [])]);
         const childId = turnRunId(runId, input.requestId);
         // The host policy is read for each turn. A saved lineage does not grant
@@ -910,7 +914,7 @@ export class ModelSessionRuns {
               ...(input.carriedFrom && history.carried > 0
                 ? { carriedFrom: input.carriedFrom, carriedMessages: history.carried }
                 : {}),
-              sources: input.documents.map((doc) => ({ path: doc.path, sha256: sourceSha(doc.text) })),
+              sources: input.documents.map((doc) => ({ path: doc.path, sha256: doc.image?.sha ?? sourceSha(doc.text) })),
               // Which rules this turn was sent under, as evidence: shas and paths, never a body.
               ...(input.rules ? { rules: input.rules.record } : {}),
               // What this turn could read, as evidence. Never a path or a connector's command.
@@ -923,10 +927,10 @@ export class ModelSessionRuns {
                 ? { history: { selection: history.selection, compaction: history.compaction } as unknown as Json }
                 : {}),
             },
-            budget: { units: 32, modelCalls: 8, toolCalls: 16, wallMs: TURN_WALL_MS },
+            budget: { units: 32, modelCalls: 8, toolCalls: 16, wallMs: turnWallMs },
           });
           // The lease outlives the turn's own wall clock, which aborts the loop first.
-          await this.runs.claim(childId, this.owner, TURN_WALL_MS + 60_000);
+          await this.runs.claim(childId, this.owner, turnWallMs + 60_000);
           // The stable part first, byte-identical on every turn of this conversation; what this
           // message's read scope adds comes after it (H18). The rule path's section for this
           // message (product knowledge and the project's instruction files) is variable too: it
@@ -960,6 +964,7 @@ export class ModelSessionRuns {
             parts: composed.parts,
             separatorBytes: composed.separatorBytes,
             documents: input.documents.length,
+            images: input.documents.filter(document => document.image).length,
             requestLimitBytes: CONVERSATION_LIMITS.maxRequestBytes,
             prefix: { sha: system.sha, bytes: system.bytes },
             previousPrefixSha: previousPrefix(run!, turnId),
@@ -1217,7 +1222,7 @@ export class ModelSessionRuns {
           accountRoute: input.accountRoute,
           model: input.model,
           commandId: input.requestId,
-          sources: input.documents.map((doc) => ({ path: doc.path, sha256: sourceSha(doc.text) })),
+          sources: input.documents.map((doc) => ({ path: doc.path, sha256: doc.image?.sha ?? sourceSha(doc.text) })),
           ...(metadata ? { rootRunId: metadata.rootRunId, parent: metadata.parent, ownedTeam: metadata,
             workBinding: binding, maxModelCalls: maxCalls, effort: input.effort ?? null, connectionId: admission.connectionId, connectionRevision: admission.revision } : {}),
         },
