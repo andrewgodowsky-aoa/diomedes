@@ -155,7 +155,7 @@ describe('FD01 same desktop packaging entry point', () => {
       return [output];
     });
     await packageDesktop({ root, hostPlatform: 'win32', hostArch: 'x64' }, {
-      ...deps, collectNotices, verifyNativePublisher: async () => {},
+      ...deps, collectNotices, verifyNativePublishers: async () => {},
     });
     expect(deps.packager).toHaveBeenCalledOnce();
     expect(licenseSnapshot()).toBe(before);
@@ -172,7 +172,7 @@ describe('FD01 same desktop packaging entry point', () => {
       if (condition === 'changed') await fs.writeFile(path.join(output, 'codex-LICENSE.txt'), 'changed after collection');
     });
     await expect(packageDesktop({ root, hostPlatform: 'win32', hostArch: 'x64' }, {
-      ...deps, collectNotices, verifyNativePublisher: async () => {},
+      ...deps, collectNotices, verifyNativePublishers: async () => {},
     }))
       .rejects.toThrow(condition === 'stale' ? 'do not match the selected snapshot' : 'notice verification failed');
     expect(deps.build).not.toHaveBeenCalled();

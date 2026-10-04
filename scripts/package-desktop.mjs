@@ -7,11 +7,11 @@ import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { buildDesktopAuth } from './build-desktop-auth.mjs';
 import { checkReleaseVersion } from './packaged-release-check.mjs';
-import { verifyNativePublisher } from './release-support/verify-native-publisher.mjs';
+import { verifyNativePublishers } from './release-support/verify-native-publisher.mjs';
 import { sha256File } from './release-support/acquire-native-runtime.mjs';
 
 /** A package records its selected runtime snapshot; future builds resolve afresh. */
-export async function readNativeRuntimeManifest(root, verifyPublisher = verifyNativePublisher) {
+export async function readNativeRuntimeManifest(root, verifyPublishers = verifyNativePublishers) {
   const manifest = JSON.parse(await fs.readFile(path.join(root, '.data/native-runtime/manifest.json'), 'utf8'));
   if (typeof manifest.version !== 'string' || !/^[0-9A-Za-z.+-]{1,100}$/.test(manifest.version) ||
       !Array.isArray(manifest.files) || manifest.files.length > 20)
@@ -26,11 +26,13 @@ export async function readNativeRuntimeManifest(root, verifyPublisher = verifyNa
     if (!hashes[name]) throw new Error(`Native runtime is missing ${name}.`);
   // A local manifest is an integrity receipt, not a trust anchor. Verify before
   // the sandbox capability probe or any other packaged executable can run.
+  const files = [];
   for (const [name, digest] of Object.entries(hashes)) {
     const file = path.join(root, '.data/native-runtime', name);
     if (await sha256File(file) !== digest) throw new Error('Native runtime hash mismatch: ' + name);
-    await verifyPublisher(file);
+    files.push(file);
   }
+  await verifyPublishers(files);
   return { version: manifest.version, hashes };
 }
 
@@ -167,7 +169,7 @@ export async function packageDesktop(options = {}, dependencies = {}) {
       "macOS packaging is blocked pending review of the installed packager's automatic ad-hoc Framework signing for ASAR integrity. This work order authorizes no signing; do not disable integrity. Installed-engine discovery is unaffected. The release workflow accepts it explicitly with DIOMEDES_MAC_ADHOC_FRAMEWORK_RESIGN=accept.",
     );
   const nativeManifest = platform === 'win32'
-    ? await readNativeRuntimeManifest(root, dependencies.verifyNativePublisher ?? verifyNativePublisher) : null;
+    ? await readNativeRuntimeManifest(root, dependencies.verifyNativePublishers ?? verifyNativePublishers) : null;
   if (nativeManifest) {
     // Refuse changed binaries before generating notices or packaging anything.
     for (const [name, expected] of Object.entries(nativeManifest.hashes))

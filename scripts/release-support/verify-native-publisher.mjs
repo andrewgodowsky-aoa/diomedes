@@ -7,28 +7,55 @@ import { promisify } from 'node:util';
 // rotate, so pin the reviewed organization identity rather than one certificate.
 const publisher = 'CN="OpenAI OpCo, LLC", O="OpenAI OpCo, LLC", L=San Francisco, S=California, C=US';
 const execute = promisify(execFile);
-async function windowsSignature(file) {
+const unavailable = 'Codex publisher signature could not be verified';
+// One Windows PowerShell process reads every file of a set: each launch is a
+// process an antivirus behaviour monitor may inspect, so a package's binaries
+// share one. The answer is positional, one entry per requested file.
+async function windowsSignatures(files) {
   if (process.platform !== 'win32') throw new Error('Codex publisher verification requires Windows.');
-  const literal = "'" + path.resolve(file).replace(/'/g, "''") + "'";
+  const literals = files.map(file => "'" + path.resolve(file).replace(/'/g, "''") + "'");
   const script = "$ErrorActionPreference='Stop'\n" +
-    '$signature=Get-AuthenticodeSignature -LiteralPath ' + literal + '\n' +
-    '@{status=[string]$signature.Status;subject=$signature.SignerCertificate.Subject} | ConvertTo-Json -Compress';
+    '$signatures=@(foreach ($file in @(' + literals.join(',') + ')) {\n' +
+    '$signature=Get-AuthenticodeSignature -LiteralPath $file\n' +
+    '@{status=[string]$signature.Status;subject=$signature.SignerCertificate.Subject} })\n' +
+    'ConvertTo-Json -InputObject $signatures -Compress';
   const powershell = path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0');
   // Do not inherit PowerShell 7 or user module search paths into Windows PowerShell.
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => key.toLowerCase() !== 'psmodulepath'));
   env.PSModulePath = path.join(powershell, 'Modules');
+  let stdout;
   try {
-    const { stdout } = await execute(path.join(powershell, 'powershell.exe'),
+    ({ stdout } = await execute(path.join(powershell, 'powershell.exe'),
       ['-NoProfile', '-NonInteractive', '-OutputFormat', 'Text', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')],
-      { env, windowsHide: true, timeout: 30_000, maxBuffer: 16_384 });
+      { env, windowsHide: true, timeout: 30_000, maxBuffer: 16_384 }));
+  } catch (cause) {
+    // A stopped, blocked or timed-out check is not a verdict on the file. Say
+    // which it was, so it is never mistaken for an invalid signature.
+    const how = cause?.killed ? 'was stopped' + (cause.signal ? ' (' + cause.signal + ')' : '')
+      : typeof cause?.code === 'number' ? 'exited with code ' + cause.code : 'could not run' + (cause?.code ? ' (' + cause.code + ')' : '');
+    throw new Error(unavailable + ': Windows PowerShell ' + how + '.', { cause });
+  }
+  try {
     return JSON.parse(stdout.replace(/^\uFEFF/, '').trim());
   } catch (cause) {
-    throw new Error('Codex publisher signature could not be verified.', { cause });
+    throw new Error(unavailable + ': Windows PowerShell returned no readable answer.', { cause });
   }
 }
 
-export async function verifyNativePublisher(file, readSignature = windowsSignature) {
-  const signature = await readSignature(file);
-  if (signature.status !== 'Valid' || signature.subject !== publisher)
+function requireReviewedPublisher(signature, file) {
+  if (signature?.status !== 'Valid' || signature.subject !== publisher)
     throw new Error('Codex publisher signature is not valid for the reviewed OpenAI identity: ' + path.basename(file));
+}
+
+/** Verifies every file with one signature read; refuses unless each is Valid and from the reviewed publisher. */
+export async function verifyNativePublishers(files, readSignatures = windowsSignatures) {
+  if (files.length === 0) return;
+  const signatures = await readSignatures(files);
+  if (!Array.isArray(signatures) || signatures.length !== files.length)
+    throw new Error(unavailable + ': expected ' + files.length + ' signature results.');
+  files.forEach((file, index) => requireReviewedPublisher(signatures[index], file));
+}
+
+export async function verifyNativePublisher(file, readSignature = async one => (await windowsSignatures([one]))[0]) {
+  requireReviewedPublisher(await readSignature(file), file);
 }
