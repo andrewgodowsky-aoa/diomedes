@@ -428,6 +428,11 @@
   color: var(--t1);
   box-shadow: inset 0 0 0 1px var(--hair-2);
 }
+/* N4 names the agent alone in the closed box. Which agent Auto would pick is in its menu, and the
+   box's accessible name is its own, so the row stays one line at a full window. */
+.console .ask-row .picker > button .eff {
+  display: none;
+}
 .console .ask-row .picker {
   position: static;
 }

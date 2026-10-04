@@ -176,6 +176,18 @@ describe('the Engine box', () => {
     });
     expect(entries.map((entry) => entry.id)).toContain('codex');
   });
+
+  it('names Sample work once, with nothing under the name', () => {
+    const entries = engineEntries({
+      integrations: [integration({ id: 'sample', name: 'Sample work', kind: 'sample' })],
+      settings: settings(),
+      connections: {},
+      free: false,
+      route: 'sample',
+      local: null,
+    });
+    expect(entries.find((entry) => entry.id === 'sample')).toMatchObject({ name: 'Sample work', sub: '' });
+  });
 });
 
 describe('the Model and Effort boxes', () => {

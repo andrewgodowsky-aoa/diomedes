@@ -168,11 +168,13 @@ export function engineEntries(input: EngineInput): EngineEntry[] {
       disabled: !local.running,
       locked: false,
     });
+  // The thread's own route stays listed so the box can name it, with no line under it that would
+  // only repeat the name.
   if (!onLocal && !entries.some((entry) => entry.id === route))
     entries.push({
       id: route,
       name: engineName(route, integrations),
-      sub: route === 'sample' ? 'Sample work' : '',
+      sub: '',
       online: false,
       disabled: false,
       locked: false,
