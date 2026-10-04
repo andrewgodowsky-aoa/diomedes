@@ -431,7 +431,10 @@
 .console .ask-row .picker {
   position: static;
 }
+/* Absolute at every width: the narrow-window rule that pins every menu to the viewport would
+   otherwise lift this one off the top of the window. */
 .console .ask-row .picker .pmenu {
+  position: absolute;
   top: auto;
   bottom: calc(100% + 8px);
   right: auto;
