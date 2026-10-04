@@ -492,7 +492,7 @@ export function AskRow({
         {(close) => (
           <Menu label="How much care" onOpen={local ? () => void readCatalog(local.route) : undefined}>
             <p className="ask-head">How much care</p>
-            {tierEntries(local, localName, names).map((entry) => (
+            {tierEntries(local, localName, names, onLocal).map((entry) => (
               <Item
                 key={entry.id}
                 checked={entry.id === tier}

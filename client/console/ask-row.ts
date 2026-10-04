@@ -58,16 +58,20 @@ export function effortWord(id: string): string {
 /**
  * A model running on this computer, offered as a Nectovia option (DIO-201).
  *
- * The contract a binding meets to light it up: an integration with `kind: 'local'`, a ready
- * adapter and an id that is a route. The app never calls a loopback address and never names a
- * model: the host's integration status says whether it runs, and that route's catalogue names
- * the model. Hidden when no such integration exists, which is every computer until a binding
- * lands. Grayed when it exists but is not running. Never chosen automatically, never a default,
- * and choosing it changes no tool permission. When it stops, the thread keeps its route: the
- * host refuses the send rather than falling back to a cloud model.
+ * The contract a binding meets to light it up (Andrew, 2026-10-03: the binding's lane adds the
+ * entry): an integration with `kind: 'local'`, a ready adapter and an id that is a route, with
+ * `found` saying the model is set up on this computer and `available` saying it is running.
+ * The app never calls a loopback address and never names a model: the host's integration status
+ * says whether it runs, and that route's catalogue names the model. Hidden when no such
+ * integration exists or nothing is set up, unless the thread is already on it. Grayed when set
+ * up but not running. Never chosen automatically, never a default, and choosing it changes no
+ * tool permission. When it stops, the thread keeps its route: the host refuses the send rather
+ * than falling back to a cloud model.
  */
 export interface LocalModel {
   route: Route;
+  /** Set up on this computer. */
+  found: boolean;
   running: boolean;
 }
 
@@ -76,7 +80,7 @@ export function localModel(integrations: readonly IntegrationStatus[]): LocalMod
     (item) => item.kind === 'local' && item.adapter === 'ready' && isRoute(item.id),
   );
   if (!entry) return null;
-  return { route: entry.id as Route, running: entry.found && entry.available };
+  return { route: entry.id as Route, found: entry.found, running: entry.found && entry.available };
 }
 
 /** One row of the Engine menu. */
@@ -152,9 +156,10 @@ export function engineEntries(input: EngineInput): EngineEntry[] {
     else if (isExternalEngine(id) && settings.services?.[id] === true)
       entries.push({ id, name: engineName(id, integrations), sub: 'Check it in Settings > Engines', online: false, disabled: true, locked: false });
   }
+  const onLocal = local !== null && route === local.route;
   // On the free version Nectovia's tier box cannot open, so a local model is listed as the
   // person's own engine, which Work allows on every plan.
-  if (local && free)
+  if (local && free && (local.found || onLocal))
     entries.push({
       id: local.route,
       name: LOCAL_MODEL,
@@ -163,7 +168,6 @@ export function engineEntries(input: EngineInput): EngineEntry[] {
       disabled: !local.running,
       locked: false,
     });
-  const onLocal = local !== null && route === local.route;
   if (!onLocal && !entries.some((entry) => entry.id === route))
     entries.push({
       id: route,
@@ -200,10 +204,16 @@ export interface TierEntry {
 }
 
 /**
- * Efficient, Focused and Thorough, then the local model when one is set up. A model's own name
- * shows only where model names are allowed (Work, or a paid person on their own engine).
+ * Efficient, Focused and Thorough, then the local model when one is set up or the thread is on
+ * it. A model's own name shows only where model names are allowed (Work, or a paid person on
+ * their own engine).
  */
-export function tierEntries(local: LocalModel | null, localName: string | null, names: boolean): TierEntry[] {
+export function tierEntries(
+  local: LocalModel | null,
+  localName: string | null,
+  names: boolean,
+  onLocal = false,
+): TierEntry[] {
   const entries: TierEntry[] = WORK_STYLES.map((style, index) => ({
     id: style,
     name: WORK_STYLE_LABELS[style],
@@ -211,7 +221,7 @@ export function tierEntries(local: LocalModel | null, localName: string | null, 
     bars: index + 1,
     disabled: false,
   }));
-  if (local)
+  if (local && (local.found || onLocal))
     entries.push({
       id: 'local',
       name: LOCAL_MODEL,

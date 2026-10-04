@@ -83,8 +83,8 @@ const shippedLocal = [
   integration({ id: 'localai', name: 'LocalAI supervisor', kind: 'local', adapter: 'none', found: false, available: false }),
   integration({ id: 'ollama', name: 'Ollama', kind: 'local', adapter: 'none' }),
 ];
-const binding = (running: boolean) =>
-  integration({ id: LOCAL_ROUTE, name: 'On this computer', kind: 'local', found: true, available: running });
+const binding = (running: boolean, found = true) =>
+  integration({ id: LOCAL_ROUTE, name: 'On this computer', kind: 'local', found, available: found && running });
 
 describe('the Local model option (DIO-201)', () => {
   it('is hidden until a binding that can send exists', () => {
@@ -93,9 +93,22 @@ describe('the Local model option (DIO-201)', () => {
     expect(tierEntries(null, null, true).map((entry) => entry.name)).not.toContain(LOCAL_MODEL);
   });
 
+  it('is hidden while the binding reports nothing set up, unless the thread is already on it', () => {
+    const local = localModel([binding(false, false)]);
+    expect(local).toEqual({ route: LOCAL_ROUTE, found: false, running: false });
+    expect(tierEntries(local, null, true).map((entry) => entry.id)).toEqual([...WORK_STYLES]);
+    expect(tierEntries(local, null, true, true).at(-1)).toMatchObject({ id: 'local', sub: NOT_RUNNING, disabled: true });
+    const input = { integrations: [binding(false, false)], settings: settings(), connections: {}, free: true, local };
+    expect(engineEntries({ ...input, route: NECTOVIA_ROUTE }).map((entry) => entry.id)).not.toContain(LOCAL_ROUTE);
+    expect(engineEntries({ ...input, route: LOCAL_ROUTE }).find((entry) => entry.id === LOCAL_ROUTE)).toMatchObject({
+      name: LOCAL_MODEL,
+      disabled: true,
+    });
+  });
+
   it('is grayed with one short line when set up but not running', () => {
     const local = localModel([...shippedLocal, binding(false)]);
-    expect(local).toEqual({ route: LOCAL_ROUTE, running: false });
+    expect(local).toEqual({ route: LOCAL_ROUTE, found: true, running: false });
     const entry = tierEntries(local, 'Some model', true).at(-1)!;
     expect(entry).toMatchObject({ id: 'local', name: LOCAL_MODEL, sub: NOT_RUNNING, disabled: true });
   });
