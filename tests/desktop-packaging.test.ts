@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto';
 // @ts-expect-error The desktop packaging entry is an executable JavaScript module.
 import { packageDesktop } from '../scripts/package-desktop.mjs';
 import { deploymentFromWrangler } from '../server/accounts/deployment.js';
+import { verifyNativePublishers as verifyPublishers } from '../scripts/release-support/verify-native-publisher.mjs';
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -317,7 +318,11 @@ describe('FD01 same desktop packaging entry point', () => {
   it('refuses matching but unsigned runtime bytes before any build or packaging work', async () => {
     const { root, deps } = await fixture();
     await windowsRuntime(root);
-    await expect(packageDesktop({ root, hostPlatform: 'win32', hostArch: 'x64' }, deps)).rejects.toThrow(/publisher/);
+    // The real signature read is covered once in native-runtime-release; this reads the bytes as unsigned.
+    const verifyNativePublishers = (files: string[]) =>
+      verifyPublishers(files, async read => read.map(() => ({ status: 'NotSigned', subject: null })));
+    await expect(packageDesktop({ root, hostPlatform: 'win32', hostArch: 'x64' }, { ...deps, verifyNativePublishers }))
+      .rejects.toThrow('Codex publisher signature is not valid for the reviewed OpenAI identity: codex.exe');
     expect(deps.build).not.toHaveBeenCalled();
     expect(deps.packager).not.toHaveBeenCalled();
   });

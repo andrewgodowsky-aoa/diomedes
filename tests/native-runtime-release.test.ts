@@ -14,9 +14,13 @@ const roots: string[] = [];
 afterEach(async () => { for (const root of roots.splice(0)) await fs.rm(root, { recursive: true, force: true }); });
 const payload = 'synthetic native binary';
 const digest = createHash('sha256').update(payload).digest('hex');
-// Synthetic binary fixtures have no real publisher. Only success-path tests
-// replace this external verification boundary; attack tests use the default.
+// Synthetic binary fixtures have no real publisher. Success-path tests accept
+// them; attack tests read every file as unsigned through the real verdict
+// logic. Only the packaging forgery test below launches Windows PowerShell.
 const verifyFixturePublishers = vi.fn(async (_files: string[]) => {});
+const verifyUnsignedPublishers = (files: string[]) =>
+  verifyNativePublishers(files, async read => read.map(() => ({ status: 'NotSigned', subject: null })));
+const invalid = 'Codex publisher signature is not valid for the reviewed OpenAI identity: ';
 const metadata = () => ({ tag_name: 'rust-v99.0.0', assets: ['codex', 'codex-command-runner', 'codex-windows-sandbox-setup'].map(base => ({
   name: base + '-x86_64-pc-windows-msvc.exe', size: Buffer.byteLength(payload), digest: 'sha256:' + digest,
   browser_download_url: 'https://github.com/openai/codex/releases/download/rust-v99.0.0/' + base + '-x86_64-pc-windows-msvc.exe',
@@ -62,7 +66,8 @@ test('matching attacker-controlled release bytes and metadata do not establish p
   await fs.mkdir(dest, { recursive: true });
   await fs.writeFile(path.join(dest, 'codex.exe'), 'previous snapshot');
   await expect(acquireNativeRuntime({ dest, cache: path.join(root, 'cache'), fetcher: async () => Response.json(metadata()),
-    fetchTo: async (_url: string, file: string) => fs.writeFile(file, payload) })).rejects.toThrow(/publisher/);
+    verifyPublishers: verifyUnsignedPublishers, fetchTo: async (_url: string, file: string) => fs.writeFile(file, payload) }))
+    .rejects.toThrow(invalid + 'codex.exe');
   expect(await fs.readFile(path.join(dest, 'codex.exe'), 'utf8')).toBe('previous snapshot');
   expect(await fs.readdir(dest)).toEqual(['codex.exe']);
 });
@@ -87,7 +92,8 @@ async function installedFixture() {
 test('untrusted installed bytes are refused before the version command can execute', async () => {
   const { sourceFiles, destination } = await installedFixture();
   const readVersion = vi.fn(async () => '99.0.0');
-  await expect(prepareInstalledRuntime({ sourceFiles, destination, readVersion })).rejects.toThrow(/publisher/);
+  await expect(prepareInstalledRuntime({ sourceFiles, destination, readVersion, verifyPublishers: verifyUnsignedPublishers }))
+    .rejects.toThrow(invalid + 'codex.exe');
   expect(readVersion).not.toHaveBeenCalled();
   expect(await fs.readFile(path.join(destination, 'codex.exe'), 'utf8')).toBe('previous executable');
 });
@@ -135,7 +141,7 @@ test.each([
   { status: 'HashMismatch', subject: 'CN="OpenAI OpCo, LLC", O="OpenAI OpCo, LLC", L=San Francisco, S=California, C=US' },
   { status: 'Valid', subject: 'CN=Another Publisher, C=US' },
 ])('refuses a native signature without both chain validity and the pinned publisher: $status', async signature => {
-  await expect(verifyNativePublisher('codex.exe', async () => signature)).rejects.toThrow(/publisher/);
+  await expect(verifyNativePublisher('codex.exe', async () => signature)).rejects.toThrow(invalid + 'codex.exe');
 });
 
 const reviewed = { status: 'Valid', subject: 'CN="OpenAI OpCo, LLC", O="OpenAI OpCo, LLC", L=San Francisco, S=California, C=US' };
@@ -170,11 +176,14 @@ test('acquisition and packaging authenticate each runtime set with one read, bef
   expect(packaging.mock.calls[0][0].map((file: string) => path.basename(file))).toEqual(names);
 });
 
-test('packaging rejects a forged manifest even when every untrusted byte matches its declared digest', async () => {
+// The one real Windows PowerShell signature read in this suite, through the
+// default packaging path. It must reach a verdict: a check that is stopped,
+// blocked or timed out throws "could not be verified" and fails this test.
+test.runIf(process.platform === 'win32')('packaging rejects a forged manifest even when every untrusted byte matches its declared digest', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'diomedes-package-untrusted-'));
   roots.push(root);
   const dest = path.join(root, '.data/native-runtime');
   await acquireNativeRuntime({ dest, cache: path.join(root, 'cache'), fetcher: async () => Response.json(metadata()),
     verifyPublishers: verifyFixturePublishers, fetchTo: async (_url: string, file: string) => fs.writeFile(file, payload) });
-  await expect(readNativeRuntimeManifest(root)).rejects.toThrow(/publisher/);
+  await expect(readNativeRuntimeManifest(root)).rejects.toThrow(invalid + 'codex.exe');
 });
