@@ -4134,7 +4134,15 @@ export async function createApp(options: AppOptions) {
       store.state(projectId).project,
       conversation,
     );
-    if (!model) throw new ApiError(409, 'Select a model for this engine in Settings.');
+    // A model-API route with no model refuses by its own name, the same refusal the send path
+    // gives when its account route is missing, so the person learns which route to set up.
+    if (!model)
+      throw new ApiError(
+        409,
+        isModelApiRoute(engine)
+          ? `Connect ${MODEL_API_NAMES[engine]} and choose its model in AI setup first.`
+          : 'Select a model for this engine in Settings.',
+      );
     // The adapter rechecks the live catalogue before sending. Persisted overrides
     // never disappear just because the connection is stale or unavailable.
     return { model, ...(isModelApiRoute(engine) && conversation?.requested?.effort

@@ -1,5 +1,15 @@
 # Harness host integration changes, 2026-09-09
 
+## A route with no model refuses by name, and the export section draws once, 2026-10-04
+
+A send on a model-API route with no model chosen refuses with the route's own name again ("Connect
+AWS Bedrock (GPT-5.6 Luna) and choose its model in AI setup first."). Since the Agent Team work came
+onto main, the send asked `nativeChoice`, whose generic "Select a model for this engine in Settings."
+ran first and lost the route; the other engines keep that sentence. In Workspaces, the business
+owner's records section and the credit asks below it carried the same React key, so the records
+section could be drawn more than once (three times in the browser test); each now has its own. `tests/home-luna.spec.ts` and
+`tests/organization-export-ui.spec.ts` hold them (DIO-203).
+
 ## Type and spacing keep one size at every window width, 2026-10-03
 
 The Nectovia home greeting no longer grows with the window. It reads a new fixed token,
