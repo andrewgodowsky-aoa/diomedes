@@ -84,7 +84,8 @@ describe('portable account rules from the foundation candidate', () => {
     const identity: IdentityVerifier = { issuer: verifier.issuer, async verify(token) { const proof = await verifier.verify(token); verified(); return proof; } };
     const accounts = new AccountService(repository, identity, { now: () => time });
     const pending = accounts.createOrganization('alice', 'Expired while queued');
-    const rejected = expect(pending).rejects.toMatchObject({ status: 401 });
+    // Stale is the service's delay, not the person's (DIO-188): the second check is stale too, so 503.
+    const rejected = expect(pending).rejects.toMatchObject({ status: 503, code: 'identity_recheck' });
     await seen; time += 5001; release(); await holding; await rejected;
     expect(repository.snapshot().organizations).toEqual([]);
     expect(repository.snapshot().persons).toEqual([]);

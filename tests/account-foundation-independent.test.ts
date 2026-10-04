@@ -6,6 +6,7 @@ import { Store } from '../server/store.js';
 import { FileAccountRepository } from '../server/business/account-store.js';
 import { AccountService } from '../server/business/account-service.js';
 import type { AccountRepository } from '../server/business/account-contract.js';
+import { ApiError } from '../server/paths.js';
 import { createAccountHandler } from '../server/business/identity-host.js';
 
 // The provider seam supplies already-verified identities. All account policy,
@@ -17,10 +18,11 @@ let now: number;
 const issuer = 'https://identity.example.test';
 const origin = 'https://inventory.example.test';
 
-function service(repository: AccountRepository = new FileAccountRepository(store)) {
+function service(repository: AccountRepository = new FileAccountRepository(store), onVerify?: () => void) {
   return new AccountService(repository, {
     issuer,
     verify: async token => {
+      onVerify?.();
       const result = {
         issuer, subject: `user_${token}`, sessionId: `session_${token}`,
         displayName: 'Same displayed name', emailVerified: true,
@@ -45,7 +47,9 @@ afterEach(async () => {
   await fs.rm(root, { recursive: true, force: true });
 });
 
-test('a provider proof that expires in the Store queue cannot create an organization', async () => {
+// DIO-188: the wait was the Store's and not the person's, so a proof that aged in the queue is
+// dropped and the identity is verified again at the later time.
+test('a provider proof that expires in the Store queue is checked again before it creates an organization', async () => {
   let release!: () => void;
   let entered!: () => void;
   const held = new Promise<void>(resolve => { release = resolve; });
@@ -55,6 +59,7 @@ test('a provider proof that expires in the Store queue cannot create an organiza
   let queued!: () => void;
   const transactionQueued = new Promise<void>(resolve => { queued = resolve; });
   const repository = new FileAccountRepository(store);
+  let verifications = 0;
   accounts = service({
     scope: repository.scope,
     read: action => repository.read(action),
@@ -63,6 +68,45 @@ test('a provider proof that expires in the Store queue cannot create an organiza
       queued();
       return pending;
     },
+  }, () => { verifications++; });
+  const result = accounts.createOrganization('alice', 'Created after the check');
+  const settled = result.then(value => value, (error: unknown) => error);
+  await transactionQueued;
+  now += 5001;
+  const later = new Date(now).toISOString();
+  release();
+  await blocker;
+  const created = await result;
+  await settled;
+  expect(verifications).toBe(2);
+  expect(created.createdAt).toBe(later);
+  const { organizations } = await accounts.listWorkspaces('alice');
+  expect(organizations).toHaveLength(1);
+  expect(organizations[0].organization.id).toBe(created.id);
+});
+
+test('a person the provider refuses on that second check gets no organization', async () => {
+  let release!: () => void;
+  let entered!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  const inQueue = new Promise<void>(resolve => { entered = resolve; });
+  const blocker = store.locked(async () => { entered(); await held; });
+  await inQueue;
+  let queued!: () => void;
+  const transactionQueued = new Promise<void>(resolve => { queued = resolve; });
+  const repository = new FileAccountRepository(store);
+  let verifications = 0;
+  accounts = service({
+    scope: repository.scope,
+    read: action => repository.read(action),
+    transact: action => {
+      const pending = repository.transact(action);
+      queued();
+      return pending;
+    },
+  }, () => {
+    verifications++;
+    if (verifications === 2) throw new ApiError(401, 'The provider no longer accepts this session.');
   });
   const result = accounts.createOrganization('alice', 'Must not exist');
   const refusal = expect(result).rejects.toMatchObject({ status: 401 });
@@ -71,7 +115,8 @@ test('a provider proof that expires in the Store queue cannot create an organiza
   release();
   await blocker;
   await refusal;
-  expect((await accounts.listWorkspaces('alice')).organizations).toEqual([]);
+  expect(verifications).toBe(2);
+  expect((await service().listWorkspaces('alice')).organizations).toEqual([]);
 });
 
 test('concurrent owner removals serialize and preserve exactly one owner', async () => {

@@ -74,9 +74,11 @@ At the repository root:
 - `npx playwright test tests/ui.spec.ts tests/native-ui.spec.ts tests/field.spec.ts`: 36 passed
   (ui 17, native-ui 11, field 8).
 
-## Not yet proven
+## Proven on 2026-10-03
 
-A real sign-in against the deployed service. The steps after the signing keys have never run in
-production: the session list and the user lookup with the API key, the five-second freshness window on
-a cold database (DIO-188), and the subject check on a first sign-in. The Worker log names the step if
-one of them fails.
+Pull request 210 merged as 4dbbd88. Workers Builds deployed version 0bff8bf9 at 22:38Z. The installed
+0.2.2 build signed in at 22:42Z, and again after an account swap at 22:43Z. `GET /account/session`
+answered 200 both times. The session list, the user lookup, the freshness window and the subject check
+on a first sign-in all passed.
+
+The behaviour on a cold database was not observed. It is the subject of DIO-188.
