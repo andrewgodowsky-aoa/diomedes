@@ -163,4 +163,15 @@ state expires after ten minutes, and the listener does not close on its own at t
 
 ## Gates
 
-Filled in by the integrator.
+Run on 2026-10-04 from 03:21Z to 03:38Z on commit `98ee7f8`. That commit is this change with main at `cb4c490` merged in, so the tree is the one main gets. Each command ran alone, under the coordination heavy slot.
+
+| Gate | Result |
+|---|---|
+| Root typecheck | clean |
+| Root unit suite, two workers | 567 of 567 files. 9,674 tests passed, 5 skipped |
+| Production build | passed |
+| Browser suite | 36 passed |
+
+Before that, on the uncommitted change: the eight sign-in test files passed 191 of 191 with a clean typecheck, and the two release notes test files passed 50 of 50.
+
+This change touches nothing under `services/control-plane`, so the service gates were not run for it. They ran for the service change that main already holds (pull request 213).
