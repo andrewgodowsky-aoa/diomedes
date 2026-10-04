@@ -195,7 +195,7 @@ function Box({
         aria-haspopup={popup}
         aria-expanded={open}
         aria-label={label}
-        title={title ?? text}
+        title={title}
         disabled={disabled}
         onClick={() => setOpen(!open)}
       >

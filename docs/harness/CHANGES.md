@@ -1,5 +1,22 @@
 # Harness host integration changes, 2026-09-09
 
+## The ask box's row, 2026-10-03
+
+The project thread's ask box is round 2 board N4 (DIO-200, slice 1). Under the message line one
+row holds the modes, then Engine, Model or tier, Effort and Agent, then Attach, a context ring and
+Send (`client/console/AskRow.tsx`, its logic in `ask-row.ts`). The header's model and agent
+pickers moved into it, so each choice shows once. Engine lists Nectovia first, then the engines
+this computer offers; on the free version Nectovia stays listed, grayed, with the way to use it.
+On Nectovia the second box is the tier, resolved the way the host resolves it. On another engine
+it lists that engine's catalog, and Effort is a slider of that model's own levels with Fix's
+ceiling shown. No model name, level or default is written into the app. Choosing an engine pins
+its saved or first model, so the owner's tier map can't move the thread. A Local model tier
+(DIO-201) shows once an integration reports `kind: 'local'`, a ready adapter and a route id. No
+binding does yet, so it's hidden on every computer today. The context ring reads the newest
+answer's context record and never shows a percentage without a declared window. Every popup opens
+above its box inside the bar, so an open menu can't widen the page. `tests/ask-row.test.ts` holds
+the logic.
+
 ## Type and spacing keep one size at every window width, 2026-10-03
 
 The Nectovia home greeting no longer grows with the window. It reads a new fixed token,
