@@ -547,3 +547,153 @@ test.describe('accessibility sweep', () => {
     });
   }
 });
+
+// ---------------------------------------------------------------------------
+// N4: the ask box's row (DIO-200, slice 1). The suite's server reads the Codex fixture
+// catalogue (playwright.config.ts), so the model and effort boxes are filled from it alone, and
+// the suite signs in on a paid plan, so Nectovia can be chosen.
+
+test.describe('N4: the ask row', () => {
+  let rowProject: Project;
+  let threadId: string;
+
+  test.beforeAll(async ({ request }) => {
+    const made = await request.post('/api/projects', { headers, data: { name: 'Ask row fixture' } });
+    expect(made.ok(), await made.text()).toBe(true);
+    rowProject = await made.json();
+    const opened = await request.post(`/api/projects/${rowProject.id}/threads`, {
+      headers,
+      data: { name: 'Ask row thread', mode: 'ask' },
+    });
+    expect(opened.ok(), await opened.text()).toBe(true);
+    threadId = (await opened.json()).id;
+  });
+  // Each test starts from the same thread: Codex, pinned to GPT-6-Astra at Extra high, with the
+  // Focused style kept for when it moves to Nectovia. The host checks a pin against the
+  // catalogue it last read, so that is read first.
+  test.beforeEach(async ({ request }) => {
+    expect((await request.get('/api/engines/codex/models', { headers })).ok()).toBe(true);
+    const pinned = await request.put(`/api/projects/${rowProject.id}/threads/${threadId}`, {
+      headers,
+      data: {
+        mode: 'ask',
+        engine: 'codex',
+        requested: { model: 'gpt-6-astra', effort: 'xhigh' },
+        workStyle: 'focused',
+      },
+    });
+    expect(pinned.ok(), await pinned.text()).toBe(true);
+  });
+
+  async function openRow(page: Page) {
+    const put = await page.request.put('/api/settings', {
+      headers,
+      data: {
+        onboarding: { ...saved.onboarding, resumeAt: 'done' },
+        openProjects: [rowProject.id],
+        appearance: { ...saved.appearance, motion: 'reduced' },
+      },
+    });
+    expect(put.ok()).toBe(true);
+    await page.goto('/');
+    await reopenLastProject(page);
+    await rail(page).getByRole('button', { name: /^Ask row thread/ }).click();
+    const row = page.getByRole('group', { name: 'Engine, model and agent' });
+    await expect(row).toBeVisible();
+    return row;
+  }
+  const update = (page: Page) =>
+    page.waitForRequest((r) => r.method() === 'PUT' && r.url().endsWith(`/threads/${threadId}`));
+
+  test('another engine lists its own models and levels, and each choice is one update', async ({ page }) => {
+    const row = await openRow(page);
+    await expect(row.getByRole('button', { name: 'Engine: Codex' })).toBeVisible();
+    // Closed, the box names the pin; the engine's own name for it arrives with its list.
+    await expect(row.getByRole('button', { name: 'Model: gpt-6-astra' })).toBeVisible();
+    await expect(row.getByRole('button', { name: 'Effort: Extra high' })).toBeVisible();
+    await expect(row.getByRole('button', { name: /^How much care/ })).toHaveCount(0);
+
+    await row.getByRole('button', { name: /^Model: / }).click();
+    const models = page.getByRole('menu', { name: 'Model' });
+    await expect(models.getByRole('menuitemradio')).toHaveCount(2);
+    await expect(models.getByRole('menuitemradio', { name: /^GPT-6-Astra/ })).toHaveAttribute('aria-checked', 'true');
+    let sent = update(page);
+    await models.getByRole('menuitemradio', { name: /^GPT-5\.5/ }).click();
+    expect((await sent).postDataJSON()).toEqual({ engine: 'codex', requested: { model: 'gpt-5.5', effort: 'low' } });
+    await expect(row.getByRole('button', { name: 'Model: GPT-5.5' })).toBeVisible();
+    await expect(row.getByRole('button', { name: 'Effort: Low' })).toBeVisible();
+
+    await row.getByRole('button', { name: /^Effort: / }).click();
+    const effort = page.getByRole('dialog', { name: 'Effort' });
+    await expect(effort.getByRole('radio')).toHaveCount(2);
+    sent = update(page);
+    await effort.getByRole('radio', { name: 'Medium', exact: true }).click();
+    expect((await sent).postDataJSON()).toEqual({ engine: 'codex', requested: { model: 'gpt-5.5', effort: 'medium' } });
+    await expect(row.getByRole('button', { name: 'Effort: Medium' })).toBeVisible();
+  });
+
+  test('Fix runs at its ceiling, and the choice stands for the other modes', async ({ page }) => {
+    const row = await openRow(page);
+    await page.getByRole('radio', { name: 'fix', exact: true }).click();
+    await expect(row.getByRole('button', { name: 'Effort: Medium' })).toBeVisible();
+    await row.getByRole('button', { name: /^Effort: / }).click();
+    const effort = page.getByRole('dialog', { name: 'Effort' });
+    await expect(effort).toContainText('Fix runs at Medium. Your choice still governs Ask, Plan and Build.');
+    await expect(effort.getByRole('radio', { name: 'Extra high' })).toHaveAttribute('aria-checked', 'true');
+    await page.keyboard.press('Escape');
+    await expect(effort).toHaveCount(0);
+    await page.getByRole('radio', { name: 'ask', exact: true }).click();
+    await expect(row.getByRole('button', { name: 'Effort: Extra high' })).toBeVisible();
+  });
+
+  test('Nectovia is listed first and online, and on it the second box is the tier', async ({ page }) => {
+    const row = await openRow(page);
+    await row.getByRole('button', { name: /^Engine: / }).click();
+    const first = page.getByRole('menu', { name: 'Engines' }).getByRole('menuitemradio').first();
+    await expect(first).toContainText('Nectovia');
+    await expect(first).toContainText('Online');
+    await expect(first).toBeEnabled();
+    let sent = update(page);
+    await first.click();
+    expect((await sent).postDataJSON()).toEqual({ engine: 'nectovia', requested: null });
+    await expect(row.getByRole('button', { name: 'Engine: Nectovia' })).toBeVisible();
+    await expect(row.getByRole('button', { name: 'How much care: Focused' })).toBeVisible();
+    await expect(row.getByRole('button', { name: /^Effort/ })).toHaveCount(0);
+
+    await row.getByRole('button', { name: /^How much care/ }).click();
+    const tiers = page.getByRole('menu', { name: 'How much care' });
+    // No local model is set up on the suite's computer, so only the three tiers are offered.
+    await expect(tiers.getByRole('menuitemradio')).toHaveCount(3);
+    sent = update(page);
+    await tiers.getByRole('menuitemradio', { name: /^Thorough/ }).click();
+    expect((await sent).postDataJSON()).toEqual({ workStyle: 'thorough' });
+    await expect(row.getByRole('button', { name: 'How much care: Thorough' })).toBeVisible();
+  });
+
+  test('at a narrow width every popup opens above its box and inside the composer', async ({ page }) => {
+    await page.setViewportSize({ width: 400, height: 760 });
+    const row = await openRow(page);
+    const bar = page.locator('.bar.ask-bar');
+    const popup = bar.locator('.ask-menu, .pmenu.open');
+    for (const opener of [
+      row.getByRole('button', { name: /^Engine: / }),
+      row.getByRole('button', { name: /^Model: / }),
+      row.getByRole('button', { name: /^Effort: / }),
+      row.getByRole('button', { name: 'Worker for this thread' }),
+      page.getByRole('button', { name: 'No context used yet' }),
+    ]) {
+      await opener.click();
+      await expect(popup).toHaveCount(1);
+      const edge = (await bar.boundingBox())!;
+      const box = (await popup.boundingBox())!;
+      expect(box.x).toBeGreaterThanOrEqual(edge.x - 1);
+      expect(box.x + box.width).toBeLessThanOrEqual(edge.x + edge.width + 1);
+      expect(box.y + box.height).toBeLessThanOrEqual(edge.y + 1);
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 2),
+      ).toBe(true);
+      await page.keyboard.press('Escape');
+      await expect(popup).toHaveCount(0);
+    }
+  });
+});
