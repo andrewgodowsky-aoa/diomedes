@@ -78,7 +78,8 @@ describe('independent repair recovery and enumeration', () => {
       delayed.workspaceRows = async (...args) => { const rows = await tx.workspaceRows(...args); time += 5001; return rows; };
       return action(delayed);
     }) }, seed.identity, { now: () => time });
-    await expect(accounts.workspacePage('alice')).rejects.toMatchObject({ status: 401 });
+    // Aged after the action ran: never replayed, and never a sign-out (DIO-188).
+    await expect(accounts.workspacePage('alice')).rejects.toMatchObject({ status: 503, code: 'identity_recheck' });
     expect(memory.snapshot()).toEqual(before);
   });
 });

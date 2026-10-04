@@ -70,7 +70,7 @@ const signedFor = (clientId) => {
     .map((value) => Buffer.from(JSON.stringify(value)).toString('base64url')).join('.');
   return `${body}.${sign('RSA-SHA256', Buffer.from(body), pair.privateKey).toString('base64url')}`;
 };
-async function defaultOutbound(clientId, register) {
+async function defaultOutbound(clientId, register, { requests = 1, concurrent = false, run } = {}) {
   const agent = new MockAgent();
   agent.disableNetConnect();
   register(agent.get('https://api.workos.com'));
@@ -94,10 +94,30 @@ async function defaultOutbound(clientId, register) {
       logLevel: 'error', outboundService, structuredLogsHandler: (log) => logs.push(log.message) } });
   try {
     await worker.ready;
-    const response = await worker.fetch('http://127.0.0.1/', { method: 'POST', body: JSON.stringify({ token: signedFor(clientId), clientId }) });
-    const result = { status: response.status, body: await response.json(), trace: [...trace], unmatched: [...unmatched],
+    // Each request is a separate invocation of the same isolate. A request with no answer in 15 s is an
+    // answer with status 0 and the error, so a hang fails the case instead of stalling the run.
+    const send = async (extra = {}) => {
+      const started = performance.now();
+      let timer;
+      const bound = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('No answer within 15 s.')), 15_000); });
+      try {
+        const response = await Promise.race([worker.fetch('http://127.0.0.1/', { method: 'POST',
+          body: JSON.stringify({ token: signedFor(clientId), clientId, ...extra }) }), bound]);
+        const text = await Promise.race([response.text(), bound]);
+        let body; try { body = JSON.parse(text); } catch { body = { text }; }
+        return { status: response.status, body, ms: Math.round(performance.now() - started) };
+      } catch (error) {
+        return { status: 0, error: `${error?.name ?? 'Error'}: ${error?.message ?? error}`, ms: Math.round(performance.now() - started) };
+      } finally { clearTimeout(timer); }
+    };
+    const answers = [];
+    if (run) answers.push(...await run(send));
+    else if (concurrent) answers.push(...await Promise.all(Array.from({ length: requests }, () => send())));
+    else for (let i = 0; i < requests; i++) answers.push(await send());
+    const result = { status: answers[0].status, body: answers[0].body, statuses: answers.map((answer) => answer.status),
+      answers, trace: [...trace], unmatched: [...unmatched],
       pending: agent.pendingInterceptors().map((value) => `${value.method} ${value.origin}${value.path}`),
-      logs: logs.filter((line) => /identity-/.test(line)) };
+      logs: logs.filter((line) => /identity-/.test(line)), runtimeLogs: logs.filter((line) => !/identity-/.test(line)) };
     console.log(JSON.stringify({ defaultOutbound: clientId, ...result }));
     return result;
   } finally { await worker.dispose(); await agent.close(); }
@@ -136,6 +156,40 @@ assert.deepEqual(keyHeld.unmatched, []);
 assert.ok(keyHeld.trace.includes('GET https://api.workos.com/user_management/users/user_runtime/sessions?limit=100 auth 302'));
 assert.ok(!keyHeld.trace.some((line) => line.includes('redirect_target')));
 assert.ok(keyHeld.pending.includes('GET https://api.workos.com/user_management/redirect_target'));
+// DIO-188: the Worker keeps the customer signing keys per isolate, so they are fetched once and a
+// second request reuses them. The session list and the user are still read on every request.
+const jwksOnce = 'GET https://api.workos.com/sso/jwks/client_kept_keys anon 200';
+const twice = (pool, clientId, delay = 0, keyFetches = 1) => {
+  const keys = pool.intercept({ path: `/sso/jwks/${clientId}`, method: 'GET' }).reply(...json({ keys: [fixture.key] })).times(keyFetches);
+  if (delay > 0) keys.delay(delay);
+  pool.intercept({ path: '/user_management/users/user_runtime/sessions?limit=100', method: 'GET' }).reply(...json({ data: [{ id: 'session_runtime', user_id: 'user_runtime', status: 'active', expires_at: fixture.expiresAt, ended_at: null }], list_metadata: { after: null } })).times(2);
+  pool.intercept({ path: '/user_management/users/user_runtime', method: 'GET' }).reply(...json({ id: 'user_runtime', email_verified: true, first_name: 'Fixture' })).times(2);
+};
+const kept = await defaultOutbound('client_kept_keys', (pool) => twice(pool, 'client_kept_keys'), { requests: 2 });
+assert.deepEqual(kept.statuses, [200, 200], 'A second request in the same isolate must verify with the kept signing keys.');
+assert.deepEqual(kept.unmatched, []);
+assert.equal(kept.trace.filter((line) => line.includes('/sso/jwks/')).length, 1, 'The signing keys must be fetched once per isolate.');
+assert.ok(kept.trace.includes(jwksOnce));
+assert.equal(kept.trace.filter((line) => line.includes('/sessions?')).length, 2, 'The session list is read on every request.');
+assert.deepEqual(kept.pending, []);
+// Two requests at once on a cold isolate, the signing keys held 300 ms. Each request fetches with its
+// own verifier and waits only on that fetch, so the keys may be fetched once or twice.
+const concurrent = await defaultOutbound('client_concurrent_cold', (pool) => twice(pool, 'client_concurrent_cold', 300, 2), { requests: 2, concurrent: true });
+assert.deepEqual(concurrent.statuses, [200, 200], 'Two requests at once on a cold isolate must both verify.');
+assert.deepEqual(concurrent.unmatched, []);
+assert.ok([1, 2].includes(concurrent.trace.filter((line) => line.includes('/sso/jwks/')).length));
+// Request A returns at once, its verification never awaited and not held by waitUntil, while its
+// signing-key fetch is held 2000 ms. Then request B arrives in the same isolate. workerd cancels what
+// A left in flight; with a key fetch shared across requests, B waited on it and had no answer in
+// 15 s. B must answer, fetching the signing keys itself. A client abort is not covered: through Wrangler's
+// local server it does not cancel the request, which runs on to the end.
+const abandoned = await defaultOutbound('client_abandoned_refresh', (pool) => {
+  pool.intercept({ path: '/sso/jwks/client_abandoned_refresh', method: 'GET' }).reply(...json({ keys: [fixture.key] })).delay(2000);
+  twice(pool, 'client_abandoned_refresh');
+}, { run: async (send) => [await send({ abandon: true }), await send()] });
+assert.equal(abandoned.answers[0].status, 202, 'Request A returns before its signing-key fetch answers.');
+assert.equal(abandoned.answers[1].status, 200, `A request after an abandoned signing-key fetch must verify: ${JSON.stringify(abandoned.answers[1])}`);
+assert.deepEqual(abandoned.unmatched, []);
 const benchmark = await start('tests/runtime/crypto-worker.ts', 'tests/runtime/wrangler.jsonc');
 let socket;
 try {
@@ -188,6 +242,7 @@ try {
   const evidence = { runtime: 'local workerd via Wrangler 4.135.0', compatibilityDate: '2026-09-19',
     productionEntryAssertions: 4, signatureRequests: 111, tamperedSignatureRefused: true,
     defaultOutboundVerified: true, defaultOutboundRequests: verified.trace.length, defaultOutboundRedirectRefused: true, defaultOutboundKeyNotForwarded: true,
+    signingKeysKeptAcrossRequests: true, concurrentColdRequestsVerified: true, abandonedRequestNotAwaited: true,
     coldWallMs, warmWallP50Ms: walls[49], warmWallP95Ms: walls[94],
     sampledActiveV8MsPerRequest: activeMicroseconds / 1000 / walls.length,
     workersFreeCpuLimitMs: 10,
