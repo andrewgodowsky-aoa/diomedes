@@ -1,5 +1,5 @@
 import { createContext, Fragment, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
-import type { AccountStateView, AccountsOffView } from '../shared/accounts';
+import { browserSignInPending, type AccountStateView, type AccountsOffView } from '../shared/accounts';
 import { api } from './api';
 import { Brand, Button } from './components';
 import './accounts.css';
@@ -286,15 +286,16 @@ function SignIn({
 
 /**
  * The deployed account service signs people in through WorkOS in the system browser. This asks the
- * desktop to open it, and looks for the sign-in to arrive while the browser is open.
+ * desktop to open it, and looks for the sign-in to arrive. The screen keeps asking while the browser is
+ * open and while the account service is accepting a sign-in the browser finished.
  */
 function BrowserSignIn({ state, onChange }: { state: AccountStateView; onChange: (state: AccountStateView) => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const browser = state.browser ?? { status: 'unavailable' as const, message: "Sign-in through the browser isn't set up on this installation." };
-  const waiting = browser.status === 'waiting';
+  const pending = browserSignInPending(browser);
   useEffect(() => {
-    if (!waiting) return;
+    if (!pending) return;
     let active = true;
     const timer = window.setInterval(() => {
       void api<AccountStateView>('/account')
@@ -307,7 +308,7 @@ function BrowserSignIn({ state, onChange }: { state: AccountStateView; onChange:
       active = false;
       window.clearInterval(timer);
     };
-  }, [waiting, onChange]);
+  }, [pending, onChange]);
   const act = async (route: string) => {
     setBusy(true);
     setError('');
@@ -327,7 +328,7 @@ function BrowserSignIn({ state, onChange }: { state: AccountStateView; onChange:
     );
   return (
     <>
-      {waiting ? (
+      {pending ? (
         <>
           <p className="prose" role="status">
             {browser.message}
