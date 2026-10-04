@@ -79,6 +79,12 @@ FIXED
   the browser. The app now accepts the sign-in callback in the form Windows
   hands it.
 
+  After you finish in the browser, Nectovia signs you in by itself. You no
+  longer have to press Sign in with your browser a second time.
+
+  When sign-in finishes, the browser tab shows a page that says you're signed
+  in and can close it. Before, the tab stayed on a loading bar.
+
   If the account service can't read your plan while you sign in, sign-in still
   finishes. Free work goes ahead, and Nectovia Agent work is refused until
   your access can be confirmed.
@@ -142,14 +148,21 @@ LIMITS
   There's no build for Intel Macs, and the Apple silicon build has been built
   and launched only on one MacBook Air.
 
-  Signing in, Settings > Account and the Nectovia Agent's AI service were
-  tested only against stand-ins for the Nectovia account service and its
-  sign-in page. The Windows sign-in repair was checked against the exact form
-  Windows hands the app, but a real sign-in on an installed copy hasn't been
-  run yet. On a Mac, the return to the app after signing in hasn't been tried.
-  The account service this version uses is still a staging service with a
-  fixed testing budget: while it is, the Nectovia Agent's answers are kept
-  short, and the Agent stops answering once that budget is spent.
+  Settings > Account and the Nectovia Agent's AI service were tested only
+  against stand-ins for the Nectovia account service. A real sign-in has run
+  on one installed Windows copy of an earlier build of this version. Two
+  sign-in fixes came after it: finishing without a second press, and the page
+  the browser tab ends on. Both were tested only against stand-ins. On a Mac,
+  signing in hasn't been tried. The account service this version uses is still
+  a staging service with a fixed testing budget: while it is, the Nectovia
+  Agent's answers are kept short, and the Agent stops answering once that
+  budget is spent.
+
+  The page in the browser tab needs port 47319 on your computer. If another
+  program is using that port, the tab stays on a loading bar as before, and
+  sign-in still finishes in the app. If you quit Nectovia before you finish in
+  the browser, the browser says it can't connect. Open Nectovia and sign in
+  again.
 
   Signing in needs the Nectovia account service, so if it can't be reached
   when Nectovia starts, you can't open anything, your own projects included;
