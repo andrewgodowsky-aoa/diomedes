@@ -47,12 +47,18 @@ export interface AccountWorkspaceView {
 /** Where a sign-in through the system browser stands, for a service that signs people in that way. */
 export interface BrowserSignInView {
   /**
-   * `ready`: nothing has started. `waiting`: the browser is open at the sign-in page. `failed`: the
-   * last attempt ended without a sign-in. `unavailable`: this installation cannot open one.
+   * `ready`: nothing has started. `waiting`: the browser is open at the sign-in page. `accepting`: the
+   * browser step is done and the app is asking the account service to accept the sign-in. `failed`:
+   * the last attempt ended without a sign-in. `unavailable`: this installation cannot open one.
    */
-  status: 'ready' | 'waiting' | 'failed' | 'unavailable';
+  status: 'ready' | 'waiting' | 'accepting' | 'failed' | 'unavailable';
   /** What to tell the person; empty when there is nothing to say. */
   message: string;
+}
+
+/** Whether the sign-in screen should keep asking: a sign-in is under way and its end is not drawn yet. */
+export function browserSignInPending(browser: BrowserSignInView | null): boolean {
+  return browser?.status === 'waiting' || browser?.status === 'accepting';
 }
 
 /** The person's plan, as far as the free-version notice needs it. */

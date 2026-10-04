@@ -1,7 +1,8 @@
 /** Synthetic provider and OS-event fixtures. No live identity or protocol registration. */
 import { EventEmitter } from 'node:events';
 import { createHash, createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import net from 'node:net';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { exportJWK, generateKeyPair, SignJWT, type JWTPayload } from 'jose';
 import { createPublicWorkOS, IPC_CHANNELS } from '@workos/authkit-electron/internals';
 import type { BrowserWindow } from 'electron';
@@ -17,6 +18,19 @@ const customIssuer = 'https://login.fixture.invalid/user_management/client_repai
 const callback = 'diomedes-auth://callback';
 const origin = 'http://127.0.0.1:43611';
 const owned: Array<{ dispose(): void }> = [];
+
+// A port this file holds, so no sign-in here binds the loopback callback (or 47319, which the
+// installed app may be using): every attempt returns through diomedes-auth://callback as before.
+let heldServer: net.Server;
+let callbackPort: number;
+beforeAll(async () => {
+  heldServer = net.createServer();
+  await new Promise<void>((resolve) => heldServer.listen(0, '127.0.0.1', resolve));
+  callbackPort = (heldServer.address() as net.AddressInfo).port;
+});
+afterAll(async () => {
+  await new Promise<void>((resolve) => heldServer.close(() => resolve()));
+});
 let keys: Awaited<ReturnType<typeof generateKeyPair>>;
 let jwk: Awaited<ReturnType<typeof exportJWK>>;
 
@@ -98,6 +112,7 @@ function fixture(options: { tokenIssuer?: string; claims?: JWTPayload } = { toke
     getWindow: () => window as unknown as BrowserWindow, storage, client: createPublicWorkOS(clientId),
     ipcMain: { handle: (name, fn) => { handlers.set(name, fn); }, removeHandler: (name) => { handlers.delete(name); } },
     registerProtocol, shell: { openExternal: async (url) => { opened.push(url); authorization = new URL(url); } },
+    callbackPort,
   });
   owned.push(auth);
   const invoke = async (name: keyof typeof IPC_CHANNELS) =>

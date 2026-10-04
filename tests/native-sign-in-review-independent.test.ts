@@ -9,7 +9,8 @@ import { createHash, createCipheriv, createDecipheriv, randomBytes } from 'node:
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import vm from 'node:vm';
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import net from 'node:net';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { exportJWK, generateKeyPair, SignJWT, type JWTPayload } from 'jose';
 import { AuthKitCore, sessionEncryption } from '@workos/authkit-session';
 import { createPublicWorkOS, IPC_CHANNELS, toAuthKitConfig } from '@workos/authkit-electron/internals';
@@ -25,6 +26,19 @@ const callback = 'diomedes-auth://callback';
 let keys: Awaited<ReturnType<typeof generateKeyPair>>;
 let jwk: Awaited<ReturnType<typeof exportJWK>>;
 const owned: Array<{ dispose(): void }> = [];
+
+// A port this file holds, so no sign-in here binds the loopback callback (or 47319, which the
+// installed app may be using): every attempt returns through diomedes-auth://callback as before.
+let heldServer: net.Server;
+let callbackPort: number;
+beforeAll(async () => {
+  heldServer = net.createServer();
+  await new Promise<void>((resolve) => heldServer.listen(0, '127.0.0.1', resolve));
+  callbackPort = (heldServer.address() as net.AddressInfo).port;
+});
+afterAll(async () => {
+  await new Promise<void>((resolve) => heldServer.close(() => resolve()));
+});
 beforeAll(async () => {
   keys = await generateKeyPair('RS256', { extractable: true });
   jwk = { ...(await exportJWK(keys.publicKey)), kid: 'independent-synthetic-key', alg: 'RS256', use: 'sig' };
@@ -134,7 +148,7 @@ function fixture(options: { vault?: ReturnType<typeof memoryVault>; configured?:
     tokenIssuer: options.tokenIssuer ?? 'https://api.workos.com', // Explicit synthetic fixture issuer.
     origin, getWindow: () => win as unknown as BrowserWindow, storage, client,
     ipcMain: { handle: (name, fn) => { handlers.set(name, fn); }, removeHandler: (name) => { handlers.delete(name); } },
-    shell: { openExternal }, registerProtocol,
+    shell: { openExternal }, registerProtocol, callbackPort,
   });
   owned.push(auth);
   const invoke = async (name: keyof typeof IPC_CHANNELS, ...args: unknown[]) =>

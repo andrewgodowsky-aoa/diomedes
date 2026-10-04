@@ -69,6 +69,9 @@ try {
   const origin = `http://127.0.0.1:${server.address().port}`;
   const config = {
     clientId, origin, getWindow: () => mainWindow,
+    // The fixture's own server holds this port, so sign-in here returns through diomedes-auth://callback
+    // and never binds 47319, which the installed app may be using.
+    callbackPort: server.address().port,
     tokenIssuer, // Explicit custom-domain/default-application synthetic issuer.
     registerProtocol: () => { protocolFixtureCalls++; return true; },
     shell: { openExternal: async (url) => {

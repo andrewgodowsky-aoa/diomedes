@@ -1,3 +1,5 @@
+import { createHash, timingSafeEqual } from 'node:crypto';
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { app, ipcMain, shell, type BrowserWindow, type IpcMainInvokeEvent } from 'electron';
 import {
   AuthKitCore,
@@ -25,6 +27,69 @@ import type { BrowserIdentity, BrowserSession } from '../server/accounts/browser
 import { createNativeTokenStorage, type NativeTokenStorage } from './native-auth-storage.js';
 
 export const NATIVE_AUTH_CALLBACK = 'diomedes-auth://callback';
+/**
+ * The redirect WorkOS accepts for a sign-in that returns to a page of the app: exactly this host,
+ * port and path (checked against the customer environment 2026-10-03; another port, "localhost" or
+ * another path is redirect-uri-invalid). The custom protocol above stays the fallback.
+ */
+export const NATIVE_AUTH_LOOPBACK_CALLBACK = 'http://127.0.0.1:47319/callback';
+const LOOPBACK_HOST = '127.0.0.1';
+const LOOPBACK_PATH = '/callback';
+const LOOPBACK_PORT = Number(new URL(NATIVE_AUTH_LOOPBACK_CALLBACK).port);
+/** The browser tab gets its page within this time, whatever WorkOS or the account service do. */
+const PAGE_TIME_LIMIT_MS = 15_000;
+const SIGN_IN_UNFINISHED = 'Sign-in could not finish. Try again.';
+const PAGE_STYLE =
+  ':root{color-scheme:light dark}' +
+  'body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;' +
+  'background:#f6f6f4;color:#1c1c1c;font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}' +
+  'p{margin:0 16px;max-width:32rem;text-align:center}' +
+  '@media (prefers-color-scheme: dark){body{background:#16171a;color:#e9e9e6}}';
+/** Fixed bytes: nothing from the request ever reaches the page. */
+const page = (sentence: string) =>
+  Buffer.from(
+    '<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n' +
+      '<meta name="viewport" content="width=device-width, initial-scale=1">\n' +
+      '<meta name="color-scheme" content="light dark">\n<title>Nectovia</title>\n' +
+      `<style>${PAGE_STYLE}</style>\n</head>\n<body>\n<p>${sentence}</p>\n</body>\n</html>\n`,
+    'utf8',
+  );
+const SIGNED_IN_PAGE = page("You're signed in. You can close this tab.");
+const UNFINISHED_PAGE = page(SIGN_IN_UNFINISHED);
+const PAGE_HEADERS = {
+  'Content-Type': 'text/html; charset=utf-8',
+  'Cache-Control': 'no-store',
+  'X-Content-Type-Options': 'nosniff',
+  'Referrer-Policy': 'no-referrer',
+  // Nothing but the one inline style: no script, image, font, frame, form, base or connection.
+  'Content-Security-Policy':
+    `default-src 'none'; style-src 'sha256-${createHash('sha256').update(PAGE_STYLE).digest('base64')}'; ` +
+    "base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+  Connection: 'close',
+};
+function answerPage(response: ServerResponse, signedIn: boolean) {
+  const body = signedIn ? SIGNED_IN_PAGE : UNFINISHED_PAGE;
+  try {
+    response.writeHead(signedIn ? 200 : 400, { ...PAGE_HEADERS, 'Content-Length': String(body.byteLength) });
+    response.end(body);
+  } catch {
+    // The tab went away; there is no one to answer.
+  }
+}
+function answerEmpty(response: ServerResponse, status: 403 | 404 | 405) {
+  try {
+    response.writeHead(status, {
+      'Cache-Control': 'no-store',
+      'Content-Length': '0',
+      Connection: 'close',
+      ...(status === 405 ? { Allow: 'GET' } : {}),
+    });
+    response.end();
+  } catch {
+    // The tab went away; there is no one to answer.
+  }
+}
+const digestOf = (value: string) => createHash('sha256').update(value, 'utf8').digest();
 const SCHEME = 'diomedes-auth';
 const API_ORIGIN = 'https://api.workos.com';
 const failure = () => ({
@@ -199,12 +264,47 @@ export function createNativeAuth(options: {
   ipcMain?: IpcMainLike;
   shell?: ShellLike;
   registerProtocol?: () => boolean;
+  /** Where a sign-in attempt listens for the browser on 127.0.0.1. Tests pass a free port. */
+  callbackPort?: number;
+  /** How long the browser tab waits for its page, fifteen seconds by default. Tests pass a short one. */
+  callbackPageLimitMs?: number;
 }) {
   const ipc = options.ipcMain ?? (ipcMain as unknown as IpcMainLike);
   let state = signedOut();
   let disposed = false;
   let handling: number | null = null;
   let reading: Promise<AuthResult> | undefined;
+  const port = options.callbackPort ?? LOOPBACK_PORT;
+  const pageLimit = options.callbackPageLimitMs ?? PAGE_TIME_LIMIT_MS;
+  const loopbackRedirect =
+    Number.isInteger(port) && port > 0 && port < 65536
+      ? `http://${LOOPBACK_HOST}:${port}${LOOPBACK_PATH}`
+      : undefined;
+  /**
+   * The waiting sign-in attempt: the redirect it chose, the session manager built for that
+   * redirect, its loopback listener (null when it uses the custom protocol) and a digest of its
+   * OAuth state, recorded as its authorize URL opens. Neither the state nor the code is kept.
+   */
+  type Attempt = {
+    redirect: string;
+    manager: ReturnType<typeof createSessionManager>;
+    server: Server | null;
+    digest: Buffer | null;
+  };
+  let attempt: Attempt | undefined;
+  let closing: Promise<void> = Promise.resolve();
+  let loopbackManager: ReturnType<typeof createSessionManager> | undefined;
+  /** Stop listening. A page already being answered still gets its answer, unless the app is quitting. */
+  const closeListener = (server: Server, now = false) => {
+    closing = new Promise<void>((resolve) => server.close(() => resolve()));
+    server.closeIdleConnections();
+    if (now) server.closeAllConnections();
+  };
+  const endAttempt = (now = false) => {
+    const ending = attempt;
+    attempt = undefined;
+    if (ending?.server) closeListener(ending.server, now);
+  };
   const tokenIssuers: readonly unknown[] =
     typeof options.tokenIssuer === 'string' ? [options.tokenIssuer] : Array.isArray(options.tokenIssuer) ? options.tokenIssuer : [];
   const audience = options.audience;
@@ -227,6 +327,7 @@ export function createNativeAuth(options: {
   let storage: NativeTokenStorage | undefined;
   let manager: ReturnType<typeof createSessionManager> | undefined;
   const unavailable = (message: string) => {
+    endAttempt();
     state = { status: 'unavailable', account: null, message };
   };
   const trustedWindow = () => {
@@ -352,6 +453,7 @@ export function createNativeAuth(options: {
       const browser = options.shell ?? shell;
       const safeBrowser: ShellLike = {
         async openExternal(destination) {
+          const chosen = attempt;
           const url = new URL(destination);
           for (const key of url.searchParams.keys())
             if (url.searchParams.getAll(key).length !== 1) throw providerError();
@@ -367,7 +469,8 @@ export function createNativeAuth(options: {
             throw providerError();
           if (
             url.pathname.endsWith('/authorize') &&
-            (url.searchParams.get('redirect_uri') !== NATIVE_AUTH_CALLBACK ||
+            (!chosen ||
+              url.searchParams.get('redirect_uri') !== chosen.redirect ||
               url.searchParams.get('client_id') !== clientId ||
               url.searchParams.get('code_challenge_method') !== 'S256')
           )
@@ -378,6 +481,11 @@ export function createNativeAuth(options: {
               !/^session_[A-Za-z0-9_-]+$/.test(url.searchParams.get('session_id') ?? ''))
           )
             throw providerError();
+          if (url.pathname.endsWith('/authorize')) {
+            // The loopback page tells this attempt's callback from any other request by this digest.
+            const sealed = url.searchParams.get('state');
+            chosen!.digest = sealed ? digestOf(sealed) : null;
+          }
           try {
             await browser.openExternal(destination);
           } catch {
@@ -396,6 +504,26 @@ export function createNativeAuth(options: {
           { shell: safeBrowser },
         ),
       });
+      // The SDK fixes the redirect when it is built, so an attempt that returns to the loopback page
+      // uses a manager built for that redirect. It shares the core, client and storage: kept
+      // sessions, refresh and sign-out stay with the manager above, and the code exchange sends no
+      // redirect at all.
+      if (loopbackRedirect) {
+        const loopbackConfig = toAuthKitConfig({ clientId, redirectUri: loopbackRedirect }, () =>
+          storage!.sdk.getOrCreateCookiePassword(),
+        );
+        loopbackManager = createSessionManager({
+          core,
+          client,
+          clientId,
+          storage: storage.sdk,
+          operations: new AuthOperations(core, client, loopbackConfig, sessionEncryption),
+          ceremony: createCeremony(
+            { clientId, redirectUri: loopbackRedirect, ceremony: { mode: 'system-browser' } },
+            { shell: safeBrowser },
+          ),
+        });
+      }
     } catch {
       unavailable('Secure account storage is unavailable. Personal is ready to use.');
     }
@@ -434,6 +562,7 @@ export function createNativeAuth(options: {
   };
   async function signOut() {
     if (!storage || !manager || disposed) throw new Error('Sign-in is unavailable.');
+    endAttempt();
     storage.invalidate();
     handling = null;
     reading = undefined;
@@ -453,23 +582,159 @@ export function createNativeAuth(options: {
       throw new Error('Finish or cancel the current sign-in first.');
     if (!(options.registerProtocol ?? (() => registerProtocol(SCHEME, { app })))())
       throw new Error('The callback could not be registered.');
+    endAttempt();
     current.storage.invalidate();
     const epoch = current.storage.generation;
     reading = undefined;
     state = { status: 'signing-in', account: null, message: 'Finish sign-in in your browser.' };
     notify();
     try {
+      // Each attempt tries the loopback page first, and returns through the custom protocol when
+      // the port cannot be had for any reason.
+      const server = await listen();
+      if (current.storage.generation !== epoch || disposed) {
+        if (server) closeListener(server, true);
+        throw new Error('The account session changed.');
+      }
+      // Say why the browser tab will not land on the page this time. Nothing about the attempt.
+      if (!server && loopbackRedirect && loopbackManager)
+        console.warn('Native sign-in could not listen on its callback port, so this attempt returns through the app protocol.');
+      const chosen: Attempt =
+        server && loopbackManager && loopbackRedirect
+          ? { redirect: loopbackRedirect, manager: loopbackManager, server, digest: null }
+          : { redirect: NATIVE_AUTH_CALLBACK, manager: current.manager, server: null, digest: null };
+      attempt = chosen;
       await current.storage.run(async () => {
         current.storage.sdk.clearSession();
-        await current.manager.beginSignIn();
+        await chosen.manager.beginSignIn();
       });
     } catch (error) {
       if (current.storage.generation === epoch) {
+        endAttempt();
         current.storage.invalidate();
         state = signedOut();
         notify();
       }
       throw error;
+    }
+  }
+  /** Bind 127.0.0.1 for one attempt, or null when the port cannot be had for any reason. */
+  async function listen(): Promise<Server | null> {
+    if (!loopbackRedirect || !loopbackManager) return null;
+    // The previous attempt's listener lets go of the port first, so the same port binds again.
+    await Promise.race([closing, new Promise((resolve) => setTimeout(resolve, 2000).unref())]);
+    return new Promise((resolve) => {
+      try {
+        const server = createServer((request, response) => serve(server, request, response));
+        server.headersTimeout = 10_000;
+        server.requestTimeout = 10_000;
+        server.maxRequestsPerSocket = 1;
+        server.once('error', () => resolve(null));
+        server.listen({ host: LOOPBACK_HOST, port, exclusive: true }, () => {
+          server.removeAllListeners('error');
+          server.on('error', () => {});
+          resolve(server);
+        });
+      } catch {
+        resolve(null);
+      }
+    });
+  }
+  /**
+   * The page the browser lands on. Only GET /callback for this exact Host is answered with a page,
+   * and only a callback for the waiting attempt's state goes on to the sign-in; any web page on the
+   * machine can send requests here, and none of them may end or use up the attempt.
+   */
+  function serve(server: Server, request: IncomingMessage, response: ServerResponse) {
+    request.resume();
+    const target = request.url ?? '';
+    const mark = target.indexOf('?');
+    const pathname = mark === -1 ? target : target.slice(0, mark);
+    const hosts = request.rawHeaders.filter((name, index) => index % 2 === 0 && name.toLowerCase() === 'host');
+    if (hosts.length !== 1 || request.headers.host !== `${LOOPBACK_HOST}:${port}`)
+      return answerEmpty(response, 403);
+    if (pathname !== LOOPBACK_PATH) return answerEmpty(response, 404);
+    if (request.method !== 'GET') return answerEmpty(response, 405);
+    const waiting = attempt;
+    // The same callback the operating system would hand over, so the state and PKCE checks stay
+    // where they are.
+    const callbackUrl = NATIVE_AUTH_CALLBACK + (mark === -1 ? '' : target.slice(mark));
+    const parsed = parseNativeCallback(callbackUrl);
+    if (
+      !waiting ||
+      waiting.server !== server ||
+      !waiting.digest ||
+      !parsed ||
+      !timingSafeEqual(digestOf(parsed.state), waiting.digest)
+    )
+      return answerPage(response, false);
+    void new Promise<boolean>((resolve) => {
+      const timer = setTimeout(() => {
+        // The tab is about to say the sign-in could not finish, so the attempt ends here.
+        if (attempt === waiting) abandon();
+        resolve(false);
+      }, pageLimit);
+      timer.unref();
+      handleCallback(callbackUrl)
+        .then(
+          (finished) => resolve(finished && state.status === 'signed-in'),
+          () => resolve(false),
+        )
+        .finally(() => clearTimeout(timer));
+    }).then((signedIn) => answerPage(response, signedIn));
+  }
+  /**
+   * End the waiting attempt as failed while its code exchange is still pending. The generation
+   * advances, so a late result can neither keep a session nor sign anyone in, and the lock is
+   * released for the next attempt's callback.
+   */
+  function abandon() {
+    endAttempt();
+    try {
+      storage?.invalidate();
+    } catch {
+      // The generation advanced before the deletion failed, so the old exchange still cannot write.
+    }
+    handling = null;
+    reading = undefined;
+    state = { ...signedOut(), message: SIGN_IN_UNFINISHED };
+    notify();
+  }
+  async function handleCallback(url: string): Promise<boolean> {
+    const parsed = parseNativeCallback(url);
+    if (!parsed || !storage || !manager || disposed || handling !== null) return false;
+    const epoch = storage.generation;
+    const consumed = storage.consumed;
+    // The manager built for the attempt's redirect, or the protocol one for a callback from before
+    // this launch. Completing a callback reads only the shared core, client and storage.
+    const completing = attempt?.manager ?? manager;
+    handling = epoch;
+    try {
+      const auth = await storage.run(async () => {
+        if ('error' in parsed) {
+          const verifier = storage!.sdk.takePendingVerifier(parsed.state);
+          if (!verifier) return null;
+          return { user: null } as AuthResult;
+        }
+        return completing.completeCallback(parsed.code, parsed.state);
+      });
+      if (!auth || storage.generation !== epoch || disposed) return false;
+      display(auth);
+      // WorkOS sent the person back with an error: the sign-in could not finish.
+      if (!auth.user) state = { ...signedOut(), message: SIGN_IN_UNFINISHED };
+      endAttempt();
+      notify();
+      return true;
+    } catch {
+      // Invalid/replayed/foreign callbacks never overwrite an active ceremony.
+      if (storage.generation === epoch && storage.consumed !== consumed) {
+        endAttempt();
+        state = { ...signedOut(), message: SIGN_IN_UNFINISHED };
+        notify();
+      }
+      return false;
+    } finally {
+      if (handling === epoch) handling = null;
     }
   }
   const guardedIpc: IpcMainLike = {
@@ -550,38 +815,10 @@ export function createNativeAuth(options: {
 
   return {
     identity,
-    async handleCallback(url: string): Promise<boolean> {
-      const parsed = parseNativeCallback(url);
-      if (!parsed || !storage || !manager || disposed || handling !== null) return false;
-      const epoch = storage.generation;
-      const consumed = storage.consumed;
-      handling = epoch;
-      try {
-        const auth = await storage.run(async () => {
-          if ('error' in parsed) {
-            const verifier = storage!.sdk.takePendingVerifier(parsed.state);
-            if (!verifier) return null;
-            return { user: null } as AuthResult;
-          }
-          return manager!.completeCallback(parsed.code, parsed.state);
-        });
-        if (!auth || storage.generation !== epoch || disposed) return false;
-        display(auth);
-        notify();
-        return true;
-      } catch {
-        // Invalid/replayed/foreign callbacks never overwrite an active ceremony.
-        if (storage.generation === epoch && storage.consumed !== consumed) {
-          state = { ...signedOut(), message: 'Sign-in could not finish. Try again.' };
-          notify();
-        }
-        return false;
-      } finally {
-        if (handling === epoch) handling = null;
-      }
-    },
+    handleCallback,
     dispose() {
       disposed = true;
+      endAttempt(true);
       listeners.clear();
       cleanup();
       storage?.dispose();
