@@ -467,7 +467,7 @@ export function WorkspacePanel({
           activeOrganization.membership.role === 'owner' &&
           activeOrganization.setup?.source !== undefined && (
           <OrganizationExport
-            key={activeOrganization.organization.id}
+            key={`export:${activeOrganization.organization.id}`}
             organizationId={activeOrganization.organization.id}
             name={activeOrganization.organization.name}
             output={activeOrganization.output ?? null}
@@ -490,7 +490,9 @@ export function WorkspacePanel({
 
         {activeOrganization && (
           <CreditAsks
-            key={activeOrganization.organization.id}
+            // Siblings share this parent, so each keys its business under its own name: two
+            // children with one key leave stale copies behind when the export section mounts.
+            key={`credit-asks:${activeOrganization.organization.id}`}
             organizationId={activeOrganization.organization.id}
             membership={activeOrganization.membership}
             members={activeOrganization.members}

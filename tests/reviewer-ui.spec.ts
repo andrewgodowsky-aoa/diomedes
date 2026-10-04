@@ -5,6 +5,7 @@ import path from 'node:path';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createApp } from '../server/app';
+import { codexCatalog, forgetCatalog, recordEngineCatalog } from '../server/models';
 import type { Project, ProjectState, TaskCandidate } from '../shared/types';
 import { reopenLastProject } from './fixtures/landing';
 import { shareAfter, shareFixtureProject } from './fixtures/cloud-sharing-grant';
@@ -159,6 +160,8 @@ test.afterAll(async () => {
   }
   if (savedCodexHome === undefined) delete process.env.CODEX_HOME;
   else process.env.CODEX_HOME = savedCodexHome;
+  // The fixture list was recorded in this worker's module state; later specs share it.
+  forgetCatalog();
 });
 
 async function makeTaskProject(taskName: string) {
@@ -215,6 +218,15 @@ async function startFromBoard(page: Page, taskName: string): Promise<void> {
   await send.getByRole('button', { name: 'Send task', exact: true }).click();
   await expect(send).toHaveCount(0);
 }
+/**
+ * The reviewer models are the Codex list a completed inspection recorded; production never
+ * reads the cache file for them. This host has no Codex to inspect, and its own status check
+ * records an empty list when it fails, so the fixture list is recorded as that inspection's
+ * result just before the dialog asks for it.
+ */
+function inspectFixtureReviewers(): void {
+  recordEngineCatalog(codexCatalog());
+}
 async function openThread(page: Page, taskName: string): Promise<void> {
   await rail(page)
     .getByRole('button', { name: new RegExp(taskName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) })
@@ -238,6 +250,7 @@ test('the four choices are offered honestly, and Full access says why it is not'
   await expect(page.getByRole('region', { name: 'Needs your OK' })).toBeVisible({
     timeout: 20_000,
   });
+  inspectFixtureReviewers();
   await page.locator('.task-permission').getByRole('button', { name: 'Review changes' }).click();
   const dialog = page.getByRole('dialog', { name: 'Task permissions' });
   await expect(dialog).toBeVisible();
@@ -302,6 +315,7 @@ test('an eligible change set is applied after a reviewer approval, recorded as a
   await expect(need).toBeVisible({ timeout: 20_000 });
 
   // Confirm Approve for me through the real panel.
+  inspectFixtureReviewers();
   await page.locator('.task-permission').getByRole('button', { name: 'Review changes' }).click();
   const dialog = page.getByRole('dialog', { name: 'Task permissions' });
   await dialog
