@@ -18,8 +18,8 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import type { Server } from 'node:http';
-import type { AddressInfo } from 'node:net';
-import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import net, { type AddressInfo } from 'node:net';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
 import { createPublicWorkOS } from '@workos/authkit-electron/internals';
 
 vi.mock('electron', () => ({ app: {}, safeStorage: {}, ipcMain: {}, shell: {}, BrowserWindow: {} }));
@@ -69,6 +69,21 @@ let down: boolean;
 /** When set, the account service holds its answer to the session call until this settles. */
 let holdSession: Promise<void> | null;
 const owned: Array<{ dispose(): void }> = [];
+/**
+ * A port this file holds for its whole run. A launch given it cannot bind the loopback callback, so it
+ * returns through diomedes-auth://callback exactly as before. No test touches 47319, which the installed
+ * app may be using.
+ */
+let held: net.Server;
+let heldPort: number;
+beforeAll(async () => {
+  held = net.createServer();
+  await new Promise<void>((resolve) => held.listen(0, '127.0.0.1', resolve));
+  heldPort = (held.address() as AddressInfo).port;
+});
+afterAll(async () => {
+  await new Promise<void>((resolve) => held.close(() => resolve()));
+});
 
 beforeEach(async () => {
   dir = await fs.mkdtemp(path.join(os.tmpdir(), 'nectovia-browser-sign-in-'));
@@ -149,7 +164,7 @@ function protectedStorage(available = true) {
 }
 
 /** One launch of the app's native sign-in, as desktop/main.mjs creates it from `browserSignIn`. */
-function launch(storage: NativeTokenStorage, accepts: BrowserSignInConfig = packaged) {
+function launch(storage: NativeTokenStorage, accepts: BrowserSignInConfig = packaged, callbackPort = heldPort) {
   const opened: string[] = [];
   const auth = createNativeAuth({
     clientId: accepts.clientId,
@@ -162,6 +177,7 @@ function launch(storage: NativeTokenStorage, accepts: BrowserSignInConfig = pack
     client: createPublicWorkOS(accepts.clientId),
     ipcMain: { handle: () => {}, removeHandler: () => {} },
     registerProtocol: () => true,
+    callbackPort,
     shell: {
       openExternal: async (url) => {
         opened.push(url);
@@ -342,6 +358,33 @@ describe('signing in through the browser', () => {
     const { auth, session } = await signInThroughBrowser();
     await auth.identity.signOut();
     await vi.waitFor(() => expect(session.state().signedIn).toBe(false));
+  });
+});
+
+describe('the browser lands on a page of the app', () => {
+  test('with the callback port free, WorkOS returns the browser to the loopback page, which signs in', async () => {
+    const probe = net.createServer();
+    await new Promise<void>((resolve) => probe.listen(0, '127.0.0.1', resolve));
+    const port = (probe.address() as AddressInfo).port;
+    await new Promise<void>((resolve) => probe.close(() => resolve()));
+    const { auth, opened } = launch(protectedStorage().open(), packaged, port);
+    const session = await accountSession(auth.identity);
+    expect((await session.signInWithBrowser()).browser).toEqual({ status: 'waiting', message: SENTENCES.waiting });
+    const authorize = new URL(opened.at(-1)!);
+    expect(authorize.searchParams.get('redirect_uri')).toBe(`http://127.0.0.1:${port}/callback`);
+    authorize.searchParams.set('login_hint', OWNER);
+    const answer = await cloud.standIn!.handle(new Request(authorize));
+    const landing = new URL(answer.headers.get('location')!);
+    expect(landing.origin + landing.pathname).toBe(`http://127.0.0.1:${port}/callback`);
+    // The browser follows WorkOS's redirect to the app's own listener.
+    const page = await fetch(landing);
+    expect(page.status).toBe(200);
+    expect(page.headers.get('content-type')).toBe('text/html; charset=utf-8');
+    expect(await page.text()).toContain("You're signed in. You can close this tab.");
+    await signedIn(session);
+    expect(workos.filter((call) => call === 'POST /user_management/authenticate')).toHaveLength(1);
+    // The listener is gone once the attempt is over.
+    await expect(fetch(landing)).rejects.toThrow();
   });
 });
 
