@@ -130,6 +130,8 @@ async function audit(page: Page) {
       body: sample('.console .body p'),
       input: sample('.console .composer textarea'),
       col: sample('.console .transcript .col'),
+      mode: sample('.console .modes button'),
+      ui: sample('.console'),
       transcript: sample('.console .transcript'),
       instruments: sample('.console .instr'),
       documentWidth: document.documentElement.scrollWidth,
@@ -203,12 +205,31 @@ test('maximizing preserves type and explicit scaling persists through reload and
   page,
 }) => {
   await open(page);
-  await page.setViewportSize({ width: 1280, height: 800 });
-  const before = await audit(page);
-  await page.setViewportSize({ width: 2560, height: 1440 });
-  const after = await audit(page);
-  expect(after.body?.font).toBe(before.body?.font);
-  expect(after.input?.font).toBe(before.input?.font);
+  // A bigger window adds margin and nothing else (wide windows spec, Phase 1): every type
+  // role measures the same from a small window to a 1440p one, and once the column has room
+  // it holds at 920. A small window keeps today's layout, so its column is what fits.
+  const sizes = [];
+  for (const size of [
+    { width: 1280, height: 800 },
+    { width: 1920, height: 1080 },
+    { width: 2560, height: 1440 },
+  ]) {
+    await page.setViewportSize(size);
+    sizes.push(await audit(page));
+  }
+  const [small, ...wider] = sizes;
+  expect(small.body?.font).toBe(15);
+  expect(small.input?.font).toBe(15);
+  expect(small.mode?.font).toBe(16);
+  expect(small.ui?.font).toBe(14);
+  expect(small.col!.width).toBeLessThanOrEqual(920);
+  for (const wide of wider) {
+    expect(wide.body?.font).toBe(small.body?.font);
+    expect(wide.input?.font).toBe(small.input?.font);
+    expect(wide.mode?.font).toBe(small.mode?.font);
+    expect(wide.ui?.font).toBe(small.ui?.font);
+    expect(wide.col?.width).toBe(920);
+  }
   await page.keyboard.press('Control+=');
   await page.keyboard.press('Control+=');
   await expect

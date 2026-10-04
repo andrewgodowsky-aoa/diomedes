@@ -32,6 +32,13 @@ function invitationCode(): string {
 /** A code's public id: enough of its hash to name it, never enough to redeem it. */
 export const codeId = (hash: string) => hash.slice(0, 16);
 const id = (kind: string) => `${kind}_${crypto.randomUUID()}`;
+/**
+ * A correct proof that aged past five seconds inside this service, behind a database start or a
+ * lock wait (DIO-188). The delay is ours, not the person's, so it is never a 401: the desktop app
+ * ends a sign-in on 401 and keeps it on 503.
+ */
+export const IDENTITY_RECHECK = 'identity_recheck';
+const recheck = () => new AccountError(503, 'The sign-in check took too long. Try again.', IDENTITY_RECHECK);
 
 /**
  * Portable extraction of the foundation rules. Both adapters execute these
@@ -47,8 +54,9 @@ export class AccountService {
   private fresh(proof: VerifiedIdentity) {
     const now = this.now();
     if (Date.parse(proof.expiresAt) <= now || Date.parse(proof.issuedAt) > now + 5000 ||
-        Date.parse(proof.verifiedAt) > now + 5000 || now - Date.parse(proof.verifiedAt) > 5000)
+        Date.parse(proof.verifiedAt) > now + 5000)
       throw new AccountError(401, 'The verified session has expired or must be checked again.');
+    if (now - Date.parse(proof.verifiedAt) > 5000) throw recheck();
   }
   private async verified(token: string) {
     const result = verifiedIdentitySchema.safeParse(await this.identity.verify(token));
@@ -58,14 +66,28 @@ export class AccountService {
     this.fresh(result.data);
     return result.data;
   }
+  /**
+   * A proof found stale before the action ran is checked again once, with the identity verified
+   * anew, in a new transaction after the first rolled back. Stale after the action, or stale
+   * twice, answers 503 identity_recheck and nothing is kept. Every check still runs against a
+   * proof verified at most five seconds earlier.
+   */
   private async act<T>(token: string, action: (tx: AccountTransaction, actor: AccountSession, proof: VerifiedIdentity) => Promise<T>) {
-    const proof = await this.verified(token);
-    return this.repository.transaction(async (tx) => {
-      const actor = await this.session(tx, proof);
-      const result = await action(tx, actor, proof);
-      this.fresh(proof);
-      return result;
-    });
+    for (let attempt = 0; ; attempt++) {
+      let acted = false;
+      try {
+        const proof = await this.verified(token);
+        return await this.repository.transaction(async (tx) => {
+          const actor = await this.session(tx, proof);
+          acted = true;
+          const result = await action(tx, actor, proof);
+          this.fresh(proof);
+          return result;
+        });
+      } catch (error) {
+        if (attempt > 0 || acted || !(error instanceof AccountError) || error.code !== IDENTITY_RECHECK) throw error;
+      }
+    }
   }
   private async session(tx: AccountTransaction, proof: VerifiedIdentity): Promise<AccountSession> {
     await tx.lockIdentity(proof);
