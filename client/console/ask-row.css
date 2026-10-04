@@ -1,0 +1,453 @@
+/* The ask box's row (round 2 board N4). Sizes are today's tokens at every window width, never
+   the board's presentation sizes, and no viewport unit sizes type or spacing (wide windows spec,
+   Phase 1; tests/viewport-units.test.ts). Every box that can hold a model or agent name
+   truncates where it is written (decision 5). */
+
+/* The bar is where every popup in the row is placed: each opens above its own box (AskRow.tsx
+   `place`) but never past the bar's right edge, so an open menu cannot widen the page. */
+.console .bar.ask-bar {
+  position: relative;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  padding: 2px 8px 6px 4px;
+  /* The message line and its row are one region, so no rule runs between them. */
+  border-top: 0;
+}
+.console .bar.ask-bar .cap {
+  margin-left: 8px;
+}
+
+.console .ask-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.console .ask-end {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.console .ask-box {
+  min-width: 0;
+  max-width: 100%;
+}
+.console .ask-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  max-width: 100%;
+  min-width: 0;
+  padding: 0 9px;
+  border-radius: var(--rb);
+  box-shadow: inset 0 0 0 1px var(--hair-2);
+  font: 400 var(--dm-type-ui) / 1.2 var(--dm-font-ui);
+  color: var(--t1);
+  white-space: nowrap;
+  transition: background var(--quick);
+}
+.console .ask-pick:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--t1) 6%, transparent);
+}
+.console .ask-pick:disabled {
+  cursor: default;
+  color: var(--t3);
+}
+.console .ask-glyph {
+  display: inline-flex;
+  flex: none;
+  color: var(--light);
+}
+.console .ask-pick:disabled .ask-glyph,
+.console .ask-pick:disabled .ask-chev {
+  color: var(--t3);
+}
+.console .ask-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.console .ask-model .ask-text,
+.console .ask-tier .ask-text {
+  max-width: 180px;
+}
+.console .ask-chev {
+  display: inline-flex;
+  flex: none;
+  color: var(--t3);
+}
+.console .ask-effort.capped .ask-text {
+  color: var(--attn);
+}
+
+.console .ask-nv {
+  position: relative;
+  display: inline-flex;
+}
+.console .ask-online,
+.console .ask-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--light);
+}
+.console .ask-online {
+  position: absolute;
+  right: -3px;
+  bottom: -2px;
+  box-shadow: 0 0 0 2px var(--raised);
+}
+.console .ask-dot {
+  margin-right: 6px;
+  vertical-align: 1px;
+}
+
+.console .ask-bars {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 12px;
+}
+.console .ask-bars span {
+  display: block;
+  width: 3px;
+  border-radius: 1px;
+  background: currentColor;
+  opacity: 0.32;
+}
+.console .ask-bars span:nth-child(1) {
+  height: 5px;
+}
+.console .ask-bars span:nth-child(2) {
+  height: 8px;
+}
+.console .ask-bars span:nth-child(3) {
+  height: 12px;
+}
+.console .ask-bars span.on {
+  opacity: 1;
+}
+
+/* A menu escapes its box's layout but not its inherited typography, so it resets white-space at
+   its edge, and a tall one scrolls rather than running off the window. It opens upward and from
+   the box's left edge: the row sits at the foot of the conversation. */
+.console .ask-menu {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  z-index: 20;
+  width: 320px;
+  max-width: 100%;
+  max-height: min(60vh, 480px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--hair-2) transparent;
+  white-space: normal;
+  background: var(--raised);
+  border: 1px solid var(--hair-2);
+  border-radius: var(--r);
+  box-shadow: 0 24px 60px -30px rgba(0, 0, 0, 0.9);
+  padding: 6px;
+  font: 400 var(--dm-type-ui) / 1.4 var(--dm-font-ui);
+  color: var(--t1);
+  text-align: left;
+}
+.console .ask-engines {
+  width: 360px;
+}
+.console .ask-head {
+  margin: 0;
+  padding: 6px 8px 4px;
+  font-size: var(--dm-type-caption);
+  font-weight: 600;
+  color: var(--t2);
+}
+.console .ask-note {
+  margin: 0;
+  padding: 4px 8px 6px;
+  font-size: var(--dm-type-caption);
+  color: var(--t3);
+}
+.console .ask-note b {
+  color: var(--attn);
+  font-weight: 500;
+}
+.console .ask-item {
+  display: grid;
+  grid-template-columns: 16px 20px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 40px;
+  padding: 6px 8px;
+  border-radius: var(--rb);
+  text-align: left;
+  font-size: var(--dm-type-ui);
+  color: var(--t1);
+}
+.console .ask-item:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--t1) 7%, transparent);
+}
+.console .ask-item:disabled {
+  cursor: default;
+  color: var(--t3);
+}
+.console .ask-item:disabled .ask-mark {
+  opacity: 0.5;
+}
+.console .ask-check {
+  display: inline-flex;
+  color: var(--light);
+}
+.console .ask-mark {
+  display: inline-flex;
+  justify-content: center;
+  color: var(--light);
+}
+.console .ask-mark .ask-bars {
+  color: var(--t1);
+}
+.console .ask-name {
+  min-width: 0;
+}
+.console .ask-title {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.console .ask-sub {
+  display: block;
+  margin-top: 1px;
+  font-size: var(--dm-type-caption);
+  color: var(--t2);
+  overflow-wrap: anywhere;
+}
+.console .ask-item:disabled .ask-sub {
+  color: var(--t3);
+}
+.console .ask-lock {
+  display: inline-flex;
+  margin-left: 6px;
+  vertical-align: -2px;
+  color: var(--t3);
+}
+.console .ask-right {
+  font-size: var(--dm-type-caption);
+  color: var(--t2);
+  white-space: nowrap;
+}
+
+/* Effort: the levels the model lists, as stops on one line. */
+.console .ask-effort-menu {
+  width: 340px;
+  padding: 8px 12px 10px;
+}
+.console .ask-slider {
+  position: relative;
+  height: 56px;
+  margin: 6px 28px 0;
+}
+.console .ask-track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 14px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--hair-2);
+}
+.console .ask-fill {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--light);
+  transition: width 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.console .ask-stop {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  min-width: 40px;
+  min-height: 40px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.console .ask-knob {
+  width: 12px;
+  height: 12px;
+  margin-top: 10px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 2px var(--hair-2);
+  transition:
+    transform 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+    background-color 0.2s;
+}
+.console .ask-stop.on .ask-knob {
+  background: var(--light);
+  box-shadow: none;
+}
+.console .ask-stop.cur .ask-knob {
+  transform: scale(1.4);
+  box-shadow: 0 0 0 3px var(--raised);
+}
+.console .ask-level {
+  font-size: var(--dm-type-caption);
+  color: var(--t2);
+  white-space: nowrap;
+}
+.console .ask-stop[aria-checked='true'] .ask-level {
+  color: var(--t1);
+  font-weight: 600;
+}
+.console .ask-stop.capped .ask-level {
+  text-decoration: line-through;
+  text-decoration-color: var(--attn);
+}
+
+/* The context ring and what it opens. */
+.console .ask-ring {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: var(--t2);
+}
+.console .ask-ring:hover {
+  background: color-mix(in srgb, var(--t1) 6%, transparent);
+}
+.console .ask-ring-track {
+  stroke: var(--hair-2);
+}
+.console .ask-ring-fill {
+  stroke: var(--t2);
+  transition: stroke-dasharray 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.console .ask-context {
+  left: auto;
+  right: 0;
+  width: 300px;
+  padding: 12px 14px;
+}
+.console .ask-context-line {
+  margin: 0;
+  font-weight: 600;
+}
+.console .ask-context ul {
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.console .ask-context li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 12px;
+  font-size: var(--dm-type-caption);
+}
+.console .ask-num {
+  color: var(--t2);
+  font-variant-numeric: tabular-nums;
+}
+.console .ask-meter {
+  grid-column: 1 / -1;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--surface);
+  overflow: hidden;
+}
+.console .ask-meter span {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--t2);
+}
+
+/* The local model stopped while the thread is on it: said once, under the row. */
+.console .ask-stopped {
+  flex-basis: 100%;
+  margin: 2px 0 0;
+  font-size: var(--dm-type-caption);
+  color: var(--attn);
+}
+
+/* The composer's own buttons at the row's end: attach, then send. */
+.console .bar.ask-bar .attach {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--rb);
+  color: var(--t2);
+}
+.console .bar.ask-bar .attach:hover:not(:disabled),
+.console .bar.ask-bar .attach[aria-expanded='true'] {
+  background: color-mix(in srgb, var(--t1) 6%, transparent);
+  color: var(--t1);
+}
+.console .bar.ask-bar .send {
+  width: 32px;
+  height: 32px;
+  margin-left: 0;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: var(--t3);
+  box-shadow: inset 0 0 0 1px var(--hair-2);
+}
+.console .bar.ask-bar .send.ready {
+  background: var(--light);
+  color: var(--surface);
+  box-shadow: none;
+}
+.console .bar.ask-bar .send.ready:hover {
+  background: color-mix(in srgb, var(--light) 88%, var(--t1));
+}
+
+/* The Agent control keeps its own menu and logic; in the row it reads as one of the boxes and
+   its menu opens upward like theirs. */
+.console .ask-row .picker > button {
+  min-height: 32px;
+  align-items: center;
+  padding: 0 9px;
+  font-size: var(--dm-type-ui);
+  color: var(--t1);
+  box-shadow: inset 0 0 0 1px var(--hair-2);
+}
+.console .ask-row .picker {
+  position: static;
+}
+.console .ask-row .picker .pmenu {
+  top: auto;
+  bottom: calc(100% + 8px);
+  right: auto;
+  left: 0;
+  max-width: 100%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .console .ask-fill,
+  .console .ask-knob,
+  .console .ask-ring-fill {
+    transition: none;
+  }
+}
+html[data-motion='reduced'] .console .ask-fill,
+html[data-motion='reduced'] .console .ask-knob,
+html[data-motion='reduced'] .console .ask-ring-fill {
+  transition: none;
+}

@@ -374,9 +374,9 @@ async function driveTheConsole(page: Page, check: (where: string) => Promise<voi
     await rail(page).getByRole('button', { name: new RegExp(`^${view}\\b(?! for)`) }).click();
     await check(`${view} view`);
   }
-  await page.locator('.style-picker > button').click();
-  await expect(page.getByRole('menu')).toBeVisible();
-  await check('style menu');
+  await page.locator('.ask-engine .ask-pick').click();
+  await expect(page.getByRole('menu', { name: 'Engines' })).toBeVisible();
+  await check('engine menu');
   await page.keyboard.press('Escape');
   await page.keyboard.press('Control+k');
   await expect(page.getByRole('dialog', { name: 'Find and act' })).toBeVisible();
@@ -507,7 +507,7 @@ test.describe('accessibility sweep', () => {
     await expect(page.locator('#scrThread')).toBeVisible();
     const openers = [
       { opener: page.getByRole('button', { name: 'Ctrl K', exact: true }), open: page.getByRole('dialog', { name: 'Find and act' }) },
-      { opener: page.locator('.style-picker > button'), open: page.getByRole('menu') },
+      { opener: page.locator('.ask-engine .ask-pick'), open: page.getByRole('menu', { name: 'Engines' }) },
       { opener: page.getByRole('button', { name: 'Worker for this thread' }), open: page.getByRole('menu') },
       { opener: page.getByRole('button', { name: 'Interface detail menu' }), open: page.getByRole('menu') },
     ];
