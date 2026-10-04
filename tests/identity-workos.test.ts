@@ -1,5 +1,5 @@
 import { generateKeyPairSync, sign, type KeyObject } from 'node:crypto';
-import { beforeEach, describe, expect, test } from 'vitest';
+import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { WorkOSIdentityVerifier } from '../server/business/identity-workos.js';
 
 const issuer = 'https://api.workos.com/';
@@ -128,9 +128,26 @@ describe('WorkOS access-token and active-session verification (offline HTTP fixt
     await expect(verifier.verify(jwt(claims, rotated.privateKey))).rejects.toMatchObject({
       status: 401,
     });
+    // The keys were fetched moments ago, so an unknown key id is unavailable until the thirty
+    // seconds pass, then refused once the keys are fetched again (DIO-188).
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const fetches = () => requests.filter((request) => request.url.includes('/sso/jwks/')).length;
+    expect(fetches()).toBe(1);
     await expect(
       verifier.verify(jwt(claims, rotated.privateKey, { alg: 'RS256', kid: 'unknown' })),
+    ).rejects.toMatchObject({ status: 503 });
+    expect(fetches()).toBe(1);
+    time += 30_000;
+    await expect(
+      verifier.verify(
+        jwt({ ...claims, iat: time / 1000 - 1, exp: time / 1000 + 300 }, rotated.privateKey, {
+          alg: 'RS256',
+          kid: 'unknown',
+        }),
+      ),
     ).rejects.toMatchObject({ status: 401 });
+    expect(fetches()).toBe(2);
+    logged.mockRestore();
   });
 
   test('refreshes bounded JWKS cache for a legitimate key rotation', async () => {

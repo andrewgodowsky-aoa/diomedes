@@ -395,6 +395,13 @@ describe('a token that is not for the Nectovia account service', () => {
 
 describe('what the account service says about a browser sign-in', () => {
   test('its own refusal ends the WorkOS sign-in, and the next attempt starts clean', async () => {
+    // DIO-188: an unknown key moments after the service fetched its keys is a 503, not a refusal. The
+    // service fetched its keys thirty seconds ago, so the foreign token makes it fetch them again and
+    // the refusal comes from that fetch.
+    let ago = 30_000;
+    cloud = await createFauxCloud({ file: null, identity: 'workos-standin', now: () => Date.now() - ago });
+    await seedDemo(cloud);
+    ago = 0;
     // Signed by another WorkOS environment's key: the right claims, but not a token the service can verify.
     const elsewhere = await createWorkOSStandIn({ clientId: STANDIN_CLIENT_ID });
     const foreign = await elsewhere.signInDirect(OWNER);
@@ -408,6 +415,18 @@ describe('what the account service says about a browser sign-in', () => {
     const next = await session.signInWithBrowser();
     expect(identity.began).toBe(1);
     expect(next.browser).toEqual({ status: 'waiting', message: SENTENCES.waiting });
+  });
+
+  test('a key the service has not seen, moments after it fetched its keys, is not a sign-out', async () => {
+    // Signed by another WorkOS environment's key, and the keys were fetched when the cloud was seeded.
+    const elsewhere = await createWorkOSStandIn({ clientId: STANDIN_CLIENT_ID });
+    const foreign = await elsewhere.signInDirect(OWNER);
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const identity = identityWith({ accessToken: foreign.access_token, user: { id: foreign.user.id, email: OWNER, name: 'Maya Ortiz' } });
+    const session = await accountSession(identity);
+    expect(session.state()).toMatchObject({ signedIn: false, browser: { status: 'failed', message: SENTENCES.unreachable } });
+    expect(identity.signedOut).toBe(0);
+    expect(JSON.stringify(logged.mock.calls)).toContain('signing-key-recent');
   });
 
   test('a service that does not answer keeps the WorkOS sign-in, and "Try again" signs in once it does', async () => {
