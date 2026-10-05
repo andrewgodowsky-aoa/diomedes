@@ -68,6 +68,11 @@ const OFFLINE_ENV_REMOVALS = new Set([
   'WORKOS_API_KEY', 'CODEX_HOME', 'CP_EVIDENCE_DIRECTORY', 'PLAYWRIGHT_EXECUTABLE_PATH',
   'TEST_WORKER_INDEX', 'VITEST_WORKER_ID', 'NODE_OPTIONS', 'WRANGLER_SEND_METRICS',
 ]);
+// The Team tests chain real provider calls, Store writes and host restarts. Idle, the first
+// one reaches its writer Need in about 3 s; a full suite run has slowed this file 2.6x, which
+// left a 12 s wait too little headroom. Each wait still fires before its test timeout.
+const TEAM_WAIT = { timeout: 30_000 };
+const TEAM_TEST = { timeout: 90_000 };
 type Item = Record<string, unknown>;
 type Seen = { body: Item; kind: 'conversation' | 'native' | 'team' | 'helper'; sourceMessageId: string | null };
 let dir: string, projectId: string, base: string, thread: Conversation;
@@ -231,14 +236,14 @@ function ownedTeam(): OwnedTeamRun {
 }
 
 async function waitOwnedChild() {
-  await vi.waitFor(() => expect(state().team?.runs.some(isOwnedTeamRun)).toBe(true), { timeout: 12_000 });
+  await vi.waitFor(() => expect(state().team?.runs.some(isOwnedTeamRun)).toBe(true), TEAM_WAIT);
   const record = ownedTeam();
-  await vi.waitFor(async () => expect(await host().get(projectId, record.harnessRunId).catch(() => null)).not.toBeNull(), { timeout: 12_000 });
+  await vi.waitFor(async () => expect(await host().get(projectId, record.harnessRunId).catch(() => null)).not.toBeNull(), TEAM_WAIT);
   return record;
 }
 
 async function waitWriter(sessionId: string) {
-  await vi.waitFor(() => expect(state().needs.some(need => need.sessionId === sessionId && need.state === 'open' && need.approval)).toBe(true), { timeout: 12_000 });
+  await vi.waitFor(() => expect(state().needs.some(need => need.sessionId === sessionId && need.state === 'open' && need.approval)).toBe(true), TEAM_WAIT);
   await host().bridge.flush();
   return structuredClone(state().needs.find(need => need.sessionId === sessionId && need.state === 'open' && need.approval)!);
 }
@@ -692,7 +697,7 @@ setTimeout(()=>process.exit(77),12000);`;
   );
 });
 
-describe('real production Team factory, public profile selection and root scope', () => {
+describe('real production Team factory, public profile selection and root scope', TEAM_TEST, () => {
   test('F2: production owned Team generations resolve their exact child and parent while sharing the original spend cap', async () => {
     const sink = new MemoryObservationSink();
     await setupPaidTeam({ helper: true, observationSink: sink });
@@ -742,7 +747,7 @@ describe('real production Team factory, public profile selection and root scope'
     expect(runtime.scopes.resolve(changed)).toBeNull();
     expect(runtime.scopes.resolve({ ...child, id: 'R-unadmitted-other-child' })).toBeNull();
     await approveWriter(need);
-    await vi.waitFor(async () => expect((await host().get(projectId, root.id)).state).toBe('completed'), { timeout: 12_000 });
+    await vi.waitFor(async () => expect((await host().get(projectId, root.id)).state).toBe('completed'), TEAM_WAIT);
   });
 
   test('F2: an eligible child from another business cannot borrow internal observation', async () => {
@@ -771,7 +776,7 @@ describe('real production Team factory, public profile selection and root scope'
     const task = await api<Task>(`/projects/${projectId}/tasks`, 'POST', { name: 'Recreated adapter observation' });
     const result = await startSelectedTeam('recreated-loop-adapter', task.id);
     expect(result.status).toBe(200);
-    await vi.waitFor(() => expect(heldNative).toBeDefined(), { timeout: 12_000 });
+    await vi.waitFor(() => expect(heldNative).toBeDefined(), TEAM_WAIT);
     const runtime = app.locals.observation as ObservationRuntime;
     const root = await host().get(projectId, result.data.runId);
     const first = runtime.scopes.resolve(root)!.scope;
@@ -889,7 +894,7 @@ describe('real production Team factory, public profile selection and root scope'
     expect(standalone.data.code).toBe('task_workflow_blocked');
     await approveWriter(need);
     await finished(input.commandId);
-    await vi.waitFor(() => expect(ownedTeam().rootClosed).toBe(true), { timeout: 12_000 });
+    await vi.waitFor(() => expect(ownedTeam().rootClosed).toBe(true), TEAM_WAIT);
     expect(taskFor(input.commandId)!.state).not.toBe('done');
     expect(state().tasks.find(task => task.id === assignment.id)!.state).not.toBe('done');
     const rows = exposureFor([result.runId, native.id, child.id], input.commandId);
@@ -926,9 +931,9 @@ describe('real production Team factory, public profile selection and root scope'
       expect(call.body.max_tokens, 'selected Team and distinct H14 calls retain the bounded output envelope').toBeLessThanOrEqual(4096);
     }
     await approveWriter(need);
-    await vi.waitFor(async () => expect((await host().get(projectId, root.id)).state).toBe('completed'), { timeout: 12_000 });
+    await vi.waitFor(async () => expect((await host().get(projectId, root.id)).state).toBe('completed'), TEAM_WAIT);
     await host().bridge.flush();
-    await vi.waitFor(() => expect(ownedTeam().rootClosed).toBe(true), { timeout: 12_000 });
+    await vi.waitFor(() => expect(ownedTeam().rootClosed).toBe(true), TEAM_WAIT);
     const rows = exposureFor([root.id, record.harnessRunId, helper!.id]);
     const rootJob = (root.input as { rootJobId: string; rootJobRequestId: string }).rootJobId;
     expect(new Set(rows.map(row => row.jobId))).toEqual(new Set([rootJob]));
@@ -948,7 +953,7 @@ describe('real production Team factory, public profile selection and root scope'
     expect(result.outcome.status).toBe('started');
     const record = await waitOwnedChild();
     await vi.waitFor(async () => expect((await host().get(projectId, record.harnessRunId)).steps
-      .some(step => step.error?.code === 'openrouter_spend_refused' && step.error.message.includes('allocation'))).toBe(true), { timeout: 12_000 });
+      .some(step => step.error?.code === 'openrouter_spend_refused' && step.error.message.includes('allocation'))).toBe(true), TEAM_WAIT);
     const task = taskFor(input.commandId)!;
     expect(task.automaticWork!.teamDecision).toMatchObject({ mode: 'team', reserve: { workerMicroUsd: 1_000 } });
     expect(seen.filter(call => call.kind === 'team')).toHaveLength(0);
@@ -978,7 +983,7 @@ describe('real production Team factory, public profile selection and root scope'
     expect(result.outcome.status).toBe('started');
     const record = await waitOwnedChild();
     await vi.waitFor(async () => expect((await host().get(projectId, record.harnessRunId)).steps
-      .some(step => step.error?.code === 'openrouter_spend_refused' && step.error.message.includes('allocation'))).toBe(true), { timeout: 12_000 });
+      .some(step => step.error?.code === 'openrouter_spend_refused' && step.error.message.includes('allocation'))).toBe(true), TEAM_WAIT);
     const calls = seen.filter(call => call.kind === 'team');
     expect(calls.length).toBeGreaterThan(0);
     expect(calls.length).toBeLessThan(6);
@@ -1002,18 +1007,18 @@ describe('real production Team factory, public profile selection and root scope'
     const result = await send(input);
     expect(result.outcome.status).toBe('started');
     if (result.outcome.status !== 'started') throw new Error('No root was started.');
-    await vi.waitFor(() => expect(heldTeam).toBeDefined(), { timeout: 12_000 });
+    await vi.waitFor(() => expect(heldTeam).toBeDefined(), TEAM_WAIT);
     const record = await waitOwnedChild();
     const pending = exposureFor([record.harnessRunId]);
     expect(pending).toHaveLength(1);
     expect(pending[0]!.maxMicroUsd).toBeGreaterThan(0);
     const callCount = seen.length;
     await api(`/projects/${projectId}/work/${result.outcome.sessionId}/stop`, 'POST', {});
-    await vi.waitFor(async () => expect((await host().get(projectId, record.harnessRunId)).state).toBe('cancelled'), { timeout: 12_000 });
-    await vi.waitFor(async () => expect((await host().get(projectId, record.rootRunId)).state).toBe('cancelled'), { timeout: 12_000 });
+    await vi.waitFor(async () => expect((await host().get(projectId, record.harnessRunId)).state).toBe('cancelled'), TEAM_WAIT);
+    await vi.waitFor(async () => expect((await host().get(projectId, record.rootRunId)).state).toBe('cancelled'), TEAM_WAIT);
     expect(heldTeam!.signal!.aborted).toBe(true);
     heldTeam!.release();
-    await vi.waitFor(() => expect(exposureFor([record.harnessRunId])[0]!.state).toBe('uncertain'), { timeout: 12_000 });
+    await vi.waitFor(() => expect(exposureFor([record.harnessRunId])[0]!.state).toBe('uncertain'), TEAM_WAIT);
     await host().bridge.flush();
     expect(ownedTeam()).toMatchObject({ rootClosed: true, unknownOutcome: true, result: null, replyMessageId: null });
     const child = await host().get(projectId, record.harnessRunId);
@@ -1047,7 +1052,7 @@ describe('real production Team factory, public profile selection and root scope'
     const input = await message(`team-${change}-revoked-before-result`);
     const result = await send(input);
     expect(result.outcome.status).toBe('started');
-    await vi.waitFor(() => expect(heldTeam).toBeDefined(), { timeout: 12_000 });
+    await vi.waitFor(() => expect(heldTeam).toBeDefined(), TEAM_WAIT);
     const record = await waitOwnedChild();
     if (change === 'source') await fs.writeFile(path.join(state().project.folder, 'inventory.txt'), 'Changed during the exact admitted response.\n');
     if (change === 'profile') await api(`/agent-profiles/${teamFixture!.workerProfile.profileId}`, 'PUT', {
@@ -1058,7 +1063,7 @@ describe('real production Team factory, public profile selection and root scope'
     const calls = seen.length;
     heldTeam!.release();
     await vi.waitFor(async () => expect((await host().get(projectId, record.harnessRunId)).steps
-      .some(step => step.error?.code === 'collaboration_refused')).toBe(true), { timeout: 12_000 });
+      .some(step => step.error?.code === 'collaboration_refused')).toBe(true), TEAM_WAIT);
     await host().bridge.flush();
     expect(ownedTeam().result).toBeNull();
     expect(ownedTeam().replyMessageId).toBeNull();
@@ -1130,21 +1135,24 @@ describe('real production Team factory, public profile selection and root scope'
   });
 });
 
-describe('fresh explicit Team ownership after host restart', () => {
+describe('fresh explicit Team ownership after host restart', TEAM_TEST, () => {
   test('a closed uncertain response keeps exact history and spend while a new command binds one distinct response', async () => {
     await setupPaidTeam({ helper: true });
     teamResponse = 'hold';
     const task = await api<Task>('/projects/' + projectId + '/tasks', 'POST', { name: 'Restart a bounded Team' });
     const first = await startSelectedTeam('restart-team-old', task.id);
     expect(first.status, JSON.stringify(first.data)).toBe(200);
-    await vi.waitFor(() => expect(heldTeam).toBeDefined(), { timeout: 12_000 });
+    await vi.waitFor(() => expect(heldTeam).toBeDefined(), TEAM_WAIT);
     const oldRecord = await waitOwnedChild();
     await api('/projects/' + projectId + '/work/' + first.data.session.id + '/stop', 'POST', {});
     expect(heldTeam!.signal!.aborted).toBe(true);
     heldTeam!.release();
-    await vi.waitFor(() => expect(exposureFor([oldRecord.harnessRunId])[0]!.state).toBe('uncertain'), { timeout: 12_000 });
+    await vi.waitFor(() => expect(exposureFor([oldRecord.harnessRunId])[0]!.state).toBe('uncertain'), TEAM_WAIT);
     await host().bridge.flush();
-    await vi.waitFor(() => expect(ownedTeam()).toMatchObject({ status: 'cancelled', rootClosed: true, unknownOutcome: true }), { timeout: 12_000 });
+    // Stop closes the record first; the aborted response then records its own failure summary
+    // and member status. Snapshot only after that second write, or the copy is not terminal.
+    await vi.waitFor(() => expect(ownedTeam()).toMatchObject({ status: 'cancelled', rootClosed: true, unknownOutcome: true,
+      summary: expect.any(String) }), TEAM_WAIT);
     const teamBefore = structuredClone(state().team);
     const oldRoot = await host().get(projectId, first.data.runId);
     const oldChild = await host().get(projectId, oldRecord.harnessRunId);
@@ -1191,7 +1199,7 @@ describe('fresh explicit Team ownership after host restart', () => {
     expect(duplicate.data).toMatchObject({ runId: fresh.data.runId, replayed: true });
     expect(seen).toHaveLength(callCount);
     await approveWriter(need);
-    await vi.waitFor(async () => expect((await host().get(projectId, fresh.data.runId)).state).toBe('completed'), { timeout: 12_000 });
+    await vi.waitFor(async () => expect((await host().get(projectId, fresh.data.runId)).state).toBe('completed'), TEAM_WAIT);
     await host().bridge.flush();
     expect(await host().get(projectId, first.data.runId)).toEqual(oldRoot);
     expect(await host().get(projectId, oldRecord.harnessRunId)).toEqual(oldChild);
