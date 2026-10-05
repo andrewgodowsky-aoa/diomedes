@@ -38,6 +38,12 @@ import {
   type PromptCacheSupport,
 } from '../../shared/context-accounting.js';
 import {
+  cacheAccount,
+  type CacheMark,
+  type CachePolicy,
+  type RouteCapability,
+} from '../../shared/route-capabilities.js';
+import {
   MAX_HISTORY_CHARS,
   MAX_HISTORY_TURNS,
   answeredTurns,
@@ -306,6 +312,44 @@ export function cacheSupport(route: string): { support: PromptCacheSupport; note
         note: 'Whether the upstream reuses a prefix depends on the model, and this build sends no cache directive. Cached input tokens are recorded when reported.',
       };
   }
+}
+
+/**
+ * What a turn's adapter reports about the owner's cache setting (DIO-215): the setting its calls
+ * were sent under, the capability record of the model they went to, and what the breakpoint marked.
+ */
+export interface TurnCacheReport {
+  policy: CachePolicy;
+  record: RouteCapability | null;
+  marked: CacheMark;
+}
+
+const count_ = (value: number) => value.toLocaleString('en-US');
+
+/**
+ * The account's cache line under the owner's setting: the setting, whether `off` is verified on
+ * this identity, what the breakpoint marked and `cacheAccount`'s sentence. When the marked start
+ * (the tool definitions and the marked system text, by the estimator) is under the record's
+ * declared minimum for a cache checkpoint, the note says it is too short to be cached. With no
+ * report the account is returned as it was.
+ */
+export function withCacheSetting(
+  account: ContextAccount,
+  report: TurnCacheReport | null,
+  system: { prefix: string; instructions: string },
+): ContextAccount {
+  if (!report) return account;
+  const line = cacheAccount(report.policy, report.record, report.marked);
+  const minimum = report.record?.cache.minimumTokens.value ?? null;
+  const markedText =
+    line.marked === 'stable-prefix' ? system.prefix : line.marked === 'whole-instructions' ? system.instructions : null;
+  const tools = account.sections.find((item) => item.id === 'tools')?.estimatedTokens ?? 0;
+  const markedTokens = markedText === null ? null : tools + estimateTokens(markedText);
+  const note =
+    minimum !== null && markedTokens !== null && markedTokens < minimum
+      ? `${line.note} The marked start is about ${count_(markedTokens)} tokens, under this model’s minimum of ${count_(minimum)} tokens for a cache checkpoint, so it is too short to be cached.`
+      : line.note;
+  return { ...account, cache: { support: account.cache.support, ...line, note } };
 }
 
 // --- the account --------------------------------------------------------------------------

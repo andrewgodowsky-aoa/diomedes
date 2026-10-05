@@ -17,10 +17,19 @@
  * the answer is accepted only after the provider's terminal event is
  * classified and its usage settled on the ledger.
  */
+import { isDeepStrictEqual } from 'node:util';
 import { jsonSchema, stepCountIs, streamText, type LanguageModel, type ModelMessage, type ToolSet } from 'ai';
 import { z } from 'zod';
 import type { RawToolActivity } from '../../shared/adapter-contract.js';
 import type { Json, ToolDescriptor } from '../../shared/harness.js';
+import {
+  cacheRequest,
+  systemParts,
+  type CacheMark,
+  type CacheNamespace,
+  type CacheRequest,
+  type SystemPart,
+} from '../../shared/route-capabilities.js';
 import { HarnessError } from '../harness/policy.js';
 import { readToolSummary } from '../harness/capabilities/read-scope-tools.js';
 import { normalizeUsage } from '../../shared/usage-contract.js';
@@ -497,6 +506,11 @@ export interface RespondResult {
   warnings: number;
   /** Which upstream served the call, when the route reports it. Evidence only. */
   servedBy?: string | null;
+  /**
+   * What the call's cache breakpoint marked: the stable prefix, the whole instructions, or nothing.
+   * Present only when the call carried a cache request.
+   */
+  marked?: CacheMark;
 }
 
 /** The input-token ceiling a request can reach, from its bytes. One rule, shared with the job estimate. */
@@ -608,6 +622,12 @@ export interface RouteBinding {
   /** The guarded transport's route-specific parts. */
   guard: Pick<GuardedFetchOptions, 'expectedUrl' | 'expectedQuery' | 'attach' | 'inspectBody' | 'requestIdHeaders'>;
   providerOptions: Record<string, Record<string, unknown>>;
+  /**
+   * Where this binding's SDK model reads prompt cache options and part breakpoints
+   * (`cacheNamespace(route, protocol)`). Only a binding that names one carries the owner's cache
+   * setting; on any other, a setting other than the provider's default is refused.
+   */
+  cacheNamespace?: CacheNamespace;
   /** Reads a finished envelope. `readable: false` when it holds no complete answer. */
   classify(envelope: StreamEnvelope): { readable: boolean; classified: ClassifiedEnvelope | null };
   /** The usage a failed call can still be settled from. */
@@ -625,6 +645,136 @@ export interface RouteBinding {
 
 const RELEASABLE_STATUSES = new Set([400, 401, 403, 404, 413, 422, 429]);
 export const CREDENTIAL_PLACEHOLDER = 'diomedes-guarded-credential';
+
+// --- the owner's cache setting on the wire ----------------------------------------------
+
+const CACHE_FIELD_NAMES = ['prompt_cache_key', 'prompt_cache_options', 'prompt_cache_breakpoint'] as const;
+type CacheFieldName = (typeof CACHE_FIELD_NAMES)[number];
+type BodyPath = readonly (string | number)[];
+
+/** Every cache field a serialized request carries, wherever it sits, with where it sits. */
+function cacheFieldsOf(body: unknown): { name: CacheFieldName; path: BodyPath; value: unknown }[] {
+  const found: { name: CacheFieldName; path: BodyPath; value: unknown }[] = [];
+  const walk = (value: unknown, path: BodyPath) => {
+    if (Array.isArray(value)) value.forEach((item, index) => walk(item, [...path, index]));
+    else if (value && typeof value === 'object')
+      for (const [key, inner] of Object.entries(value)) {
+        if ((CACHE_FIELD_NAMES as readonly string[]).includes(key))
+          found.push({ name: key as CacheFieldName, path, value: inner });
+        walk(inner, [...path, key]);
+      }
+  };
+  walk(body, []);
+  return found;
+}
+
+/**
+ * Whether a serialized request's cache fields are exactly what its cache request asked for, by
+ * the request's own bytes. Every cache field is found wherever it sits, so a field the SDK added
+ * in an unexpected place counts too.
+ * - provider-default: no key, no cache options and no breakpoint anywhere.
+ * - off: the explicit mode alone at the top level, no key and no breakpoint.
+ * - explicit-prefix: the derived key and the explicit mode with its lifetime at the top level, and
+ *   exactly one breakpoint, on the first part of the first message, which is a system message.
+ */
+export function cacheFieldsMatch(text: string, request: CacheRequest): boolean {
+  let body: unknown;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    return false;
+  }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return false;
+  const fields = cacheFieldsOf(body);
+  const named = (name: CacheFieldName) => fields.filter((field) => field.name === name);
+  const topLevel = (name: CacheFieldName, expected: unknown) => {
+    const found = named(name);
+    return found.length === 1 && found[0].path.length === 0 && isDeepStrictEqual(found[0].value, expected);
+  };
+  const keys = named('prompt_cache_key');
+  const options = named('prompt_cache_options');
+  const breakpoints = named('prompt_cache_breakpoint');
+  const { promptCacheKey, promptCacheOptions } = request.options;
+  if (promptCacheKey === undefined ? keys.length > 0 : !topLevel('prompt_cache_key', promptCacheKey)) return false;
+  if (promptCacheOptions === undefined ? options.length > 0 : !topLevel('prompt_cache_options', promptCacheOptions))
+    return false;
+  if (!request.breakpoint) return breakpoints.length === 0;
+  if (breakpoints.length !== 1 || !isDeepStrictEqual(breakpoints[0].value, request.breakpoint)) return false;
+  // Chat Completions lists messages under `messages`, Responses under `input`.
+  const [list, message, content, part] = breakpoints[0].path;
+  const record = body as Record<string, unknown>;
+  const first = Array.isArray(record[list as string]) ? (record[list as string] as unknown[])[0] : null;
+  const role = first && typeof first === 'object' ? (first as Record<string, unknown>).role : null;
+  return (
+    breakpoints[0].path.length === 4 &&
+    (list === 'messages' || list === 'input') &&
+    message === 0 &&
+    content === 'content' &&
+    part === 0 &&
+    (role === 'system' || role === 'developer')
+  );
+}
+
+/**
+ * A binding that sends one cache request: its options merged under the namespace its SDK model
+ * reads, and its guard's body check extended so a request whose cache fields differ from what
+ * this cache request asked for is refused before it leaves. The SDK drops options and breakpoints
+ * under the wrong namespace without a word: its Chat Completions model reads only `openai`,
+ * whatever the provider instance is named, and its Responses model reads `azure` when the
+ * provider's name contains "azure" and `openai` otherwise. The check catches that too. With no
+ * options the provider options are the binding's own, unchanged. Apply it once per call.
+ */
+export function withCacheOptions(binding: RouteBinding, namespace: CacheNamespace, request: CacheRequest): RouteBinding {
+  const own = binding.guard.inspectBody;
+  return {
+    ...binding,
+    guard: {
+      ...binding.guard,
+      inspectBody: (text) => {
+        own?.(text);
+        if (!cacheFieldsMatch(text, request))
+          throw new ModelApiError(
+            `${binding.prefix}_cache_refused`,
+            'The request’s cache fields differ from the cache setting this call was given.',
+            false,
+          );
+      },
+    },
+    providerOptions: Object.keys(request.options).length
+      ? {
+          ...binding.providerOptions,
+          [namespace]: { ...binding.providerOptions[namespace], ...request.options },
+        }
+      : binding.providerOptions,
+  };
+}
+
+/**
+ * Why a call's cache request cannot be sent, before anything is held: it is not one of the three
+ * shapes `cacheRequest` makes (an explicit prefix's key is a derived key, or there is none), or the
+ * route has no cache setting at all.
+ */
+function cacheRefusal(binding: RouteBinding, request: CacheRequest): ModelApiError | null {
+  const expected =
+    request.policy === 'explicit-prefix'
+      ? cacheRequest({ policy: 'explicit-prefix', key: request.options.promptCacheKey ?? '' })
+      : request.policy === 'off' || request.policy === 'provider-default'
+        ? cacheRequest({ policy: request.policy })
+        : null;
+  if (!expected || !isDeepStrictEqual(expected, request))
+    return new ModelApiError(
+      `${binding.prefix}_cache_refused`,
+      'This call’s cache setting is not one Diomedes can send.',
+      false,
+    );
+  if (!binding.cacheNamespace && request.policy !== 'provider-default')
+    return new ModelApiError(
+      `${binding.prefix}_cache_refused`,
+      `The ${binding.label} route has no cache setting other than the provider’s default.`,
+      false,
+    );
+  return null;
+}
 
 /** Descriptor-only tools: no `execute`, so the SDK can never run one. */
 function descriptorTools(prefix: string, descriptors: readonly ToolDescriptor[]): ToolSet {
@@ -696,6 +846,16 @@ export type RespondStreamInput = {
   now?: () => Date;
   /** Told once what the call observed, on success and on every refusal. It never changes the outcome. */
   observe?: (observation: CallObservation) => void;
+  /**
+   * The stable start of `instructions`, the same on every turn of a conversation, or null where a
+   * path has none. It only decides where an explicit cache breakpoint goes.
+   */
+  stablePrefix?: string | null;
+  /**
+   * The owner's cache setting for this call, as `cacheRequest(...)` made it. Absent or null sends
+   * the request exactly as before any cache setting existed, and reports no `marked`.
+   */
+  cache?: CacheRequest | null;
 } & StreamSinks;
 
 /** What one exchange has seen so far, filled in as it goes so an observer can be told once. */
@@ -776,18 +936,32 @@ export async function respondStream(input: RespondStreamInput): Promise<RespondR
 }
 
 async function exchange(input: RespondStreamInput, facts: CallFacts): Promise<RespondResult> {
-  const { binding } = input;
-  const { prefix, label } = binding;
+  const { prefix, label } = input.binding;
   const now = input.now ?? (() => new Date());
   const scrub = secretScrubber([input.secret]);
-  if (input.card.route !== binding.route || input.card.modelId !== binding.modelId)
+  if (input.card.route !== input.binding.route || input.card.modelId !== input.binding.modelId)
     throw new ModelApiError(`${prefix}_rate_card_mismatch`, 'No rate card is approved for this model.', false);
-  if (binding.expiresAt && Date.parse(binding.expiresAt) <= now().getTime() + 60_000)
+  if (input.binding.expiresAt && Date.parse(input.binding.expiresAt) <= now().getTime() + 60_000)
     throw new ModelApiError(
       `${prefix}_credential_expired`,
       `The saved ${label} key has expired or is about to. A pasted short-term key does not renew itself; enter a new one in AI setup.`,
       false,
     );
+  // The owner's cache setting, checked before anything is held: its options under the namespace
+  // the SDK reads, the body check that refuses any other cache fields, and the system text in
+  // parts when a breakpoint marks the stable prefix. With no setting the request is as it was.
+  const cache = input.cache ?? null;
+  let binding = input.binding;
+  let system: string | SystemPart[] = input.instructions;
+  let marked: CacheMark = null;
+  if (cache) {
+    const refusal = cacheRefusal(binding, cache);
+    if (refusal) throw refusal;
+    if (binding.cacheNamespace) {
+      ({ system, marked } = systemParts(input.instructions, input.stablePrefix ?? null, cache, binding.cacheNamespace));
+      binding = withCacheOptions(binding, binding.cacheNamespace, cache);
+    }
+  }
   const tools = descriptorTools(prefix, input.tools);
   const ceiling = callCeiling({
     prefix,
@@ -944,7 +1118,8 @@ async function exchange(input: RespondStreamInput, facts: CallFacts): Promise<Re
     const offered = new Set(input.tools.map((tool) => tool.name));
     const result = streamText({
       model: binding.model(fetch),
-      system: input.instructions,
+      // A string exactly as before, or the SDK's system messages when a breakpoint marks a part.
+      system: typeof system === 'string' ? system : (system as never),
       messages: input.messages,
       tools,
       toolChoice: 'auto',
@@ -1153,6 +1328,7 @@ async function exchange(input: RespondStreamInput, facts: CallFacts): Promise<Re
     reservation,
     warnings: read_.warnings,
     ...(classified.servedBy !== undefined ? { servedBy: classified.servedBy } : {}),
+    ...(cache ? { marked } : {}),
   };
 }
 

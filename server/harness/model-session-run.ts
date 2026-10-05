@@ -52,7 +52,14 @@ import { contextMessage } from '../engines/contract.js';
 import { answeredTurns, carriedRun } from './conversation-history.js';
 import { artifactSteps, unrecordedArtifacts } from './artifact-steps.js';
 import type { CompactionRecord, ContextAccount, HistorySelection } from '../../shared/context-accounting.js';
-import { accountContext, reconcileContext, selectHistory, stablePrefix } from './context-assembly.js';
+import {
+  accountContext,
+  reconcileContext,
+  selectHistory,
+  stablePrefix,
+  withCacheSetting,
+  type TurnCacheReport,
+} from './context-assembly.js';
 import { CONVERSATION_LIMITS } from '../engines/model-api-core.js';
 import { ARTIFACT_FORMAT } from '../answer-format.js';
 import { VISUAL_INSTRUCTIONS } from '../modes.js';
@@ -159,6 +166,18 @@ export interface ModelSessionAdmission {
    */
   managed?: ManagedAdmission;
 }
+/**
+ * What a turn tells its adapter about the owner's cache setting (DIO-215), and how the adapter
+ * reports back. The adapter reads the setting itself, on the host; the turn only says where its
+ * stable prefix ends and keeps what the adapter reports for the turn's context record.
+ */
+export interface TurnCache {
+  /** The lineage's instructions and the tool note: the same bytes on every turn of the conversation. */
+  stablePrefix: string | null;
+  /** The setting the turn's calls are sent under and what they marked; the last report is kept. */
+  report(report: TurnCacheReport): void;
+}
+
 export interface ModelSessionTurn {
   mode: 'start' | 'follow-up' | 'resume';
   runId: string;
@@ -173,13 +192,15 @@ export interface ModelSessionTurn {
   /**
    * The adapter for this turn, bound to the admitted connection, the turn's
    * instructions, a stop signal and the turn's raw preview sinks. Called inside
-   * the turn step, after the admission step committed.
+   * the turn step, after the admission step committed. `cache` is given only for the
+   * turn's own answer, never for the plain-writing rewrite.
    */
   adapter(
     admission: ModelSessionAdmission,
     instructions: string,
     signal: AbortSignal,
     sinks?: StreamSinks,
+    cache?: TurnCache,
   ): Promise<ModelAdapter>;
   /** What tests substitute below the read tools (DNS, page transport, connector transport). */
   readTools?: ReadToolDeps;
@@ -891,6 +912,9 @@ export class ModelSessionRuns {
         // answer, with a short instruction of its own and no preview.
         let rewriter: (() => Promise<ModelAdapter>) | null = null;
         let account: ContextAccount | undefined;
+        // The turn's system text and what its adapter reported about the owner's cache setting (DIO-215).
+        let system: ReturnType<typeof stablePrefix> | undefined;
+        let cacheReport: TurnCacheReport | null = null;
         try {
           await this.runs.start({
             id: childId,
@@ -940,11 +964,16 @@ export class ModelSessionRuns {
             input.rules?.text ?? null,
             input.readScope ? readToolsNote(input.readScope) : null,
           ].filter((part): part is string => Boolean(part));
-          const system = stablePrefix(
+          system = stablePrefix(
             `${input.instructions}\n\n${TOOL_NOTE}`,
             variable.length ? variable.join('\n\n') : null,
           );
-          const adapter = await request.adapter(admission, system.instructions, stop, sinks);
+          const adapter = await request.adapter(admission, system.instructions, stop, sinks, {
+            stablePrefix: system.prefix,
+            report: (value) => {
+              cacheReport = value;
+            },
+          });
           version = adapter.version;
           rewriter = () => request.adapter(admission, REWRITE_INSTRUCTIONS, stop);
           const check = () => this.sharingPolicy(
@@ -1025,7 +1054,9 @@ export class ModelSessionRuns {
           interrupted: false,
           nativeSession: null,
           // What the provider reported for each call, beside what Diomedes estimated it sent.
-          ...(account ? { context: reconcileContext(account, child) } : {}),
+          ...(account && system
+            ? { context: withCacheSetting(reconcileContext(account, child), cacheReport, system) }
+            : {}),
         };
       },
       principal,
