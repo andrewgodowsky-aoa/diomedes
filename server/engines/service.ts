@@ -4,6 +4,9 @@ import { promisify } from 'node:util';
 import { createHash, randomUUID } from 'node:crypto';
 import type { OwnedTeamObservation } from '../observability/eligibility.js';
 import path from 'node:path';
+import { BONSAI_ACCOUNT, BONSAI_ROUTE, bonsaiProfile, type ModelImage } from '../../shared/bonsai.js';
+import type { BonsaiRuntime } from '../bonsai/runtime.js';
+import { BONSAI_CONNECTION, BONSAI_VERSION, bonsaiLimits, bonsaiRateCard, createBonsaiAdapter, respondBonsai } from './bonsai.js';
 import type { ExternalEngine, IntegrationStatus } from '../../shared/types.js';
 import {
   ENGINE_NAMES,
@@ -2307,7 +2310,7 @@ export class EngineService {
       throw new EngineError('ROUTE_REFUSED', routeUnavailable(long), true);
     const blocked = await handle.credential.check();
     if (blocked) throw new EngineError('ROUTE_REFUSED', routeUnavailable(long), true);
-    if (!api.exposure.allowance(handle.connectionId) || api.exposure.summary(handle.connectionId).availableMicroUsd <= 0)
+    if (route !== BONSAI_ROUTE && (!api.exposure.allowance(handle.connectionId) || api.exposure.summary(handle.connectionId).availableMicroUsd <= 0))
       throw new EngineError(
         'SPEND_LIMIT',
         `The approved ${short} spend limit has no room left. Nothing was sent. The owner can review usage and approve more in AI setup.`,
@@ -2332,6 +2335,7 @@ export class EngineService {
       }
     return {
       route,
+      ...(route === BONSAI_ROUTE ? { projectId: input.projectId } : {}),
       connectionId: handle.connectionId,
       revision: handle.revision,
       model: input.model,
@@ -2460,7 +2464,7 @@ export class EngineService {
   }
   private async modelApiHandle(admission: ModelSessionAdmission): Promise<ConnectedRoute> {
     const api = this.modelApi!;
-    const handle = await modelApiRoute(api, admission.route as ModelApiRoute, { managed: admission.managed ?? null });
+    const handle = await modelApiRoute(api, admission.route as ModelApiRoute, { managed: admission.managed ?? null, projectId: admission.projectId });
     if (!handle.connected || handle.connectionId !== admission.connectionId || handle.revision !== admission.revision)
       throw new EngineError(
         'ACCOUNT_CHANGED',
@@ -2522,7 +2526,8 @@ export class EngineService {
             secret,
             exposure: handle.exposure(await this.jobLedger(api, input), runId),
             instructions,
-            effort: selectedEffortOf(input.effort),
+            effort: route === BONSAI_ROUTE ? input.effort : selectedEffortOf(input.effort),
+            images: input.documents.flatMap(document => document.image ? [document.image] : []),
             transport: api.transport,
             sinks,
           });
@@ -2594,7 +2599,7 @@ export class EngineService {
             context,
             attemptSignal,
           );
-          let result: RespondResult;
+          let result: Omit<RespondResult, 'reservation'>;
           try {
             result = await handle.respond({
               model: admission.model,
@@ -2604,8 +2609,8 @@ export class EngineService {
               instructions: input.instructions,
               messages: [{ role: 'user', content: contextMessage(input) }],
               tools: [],
-              effort: selectedEffortOf(input.effort),
-              limits: WORK_LIMITS,
+              effort: route === BONSAI_ROUTE ? input.effort : selectedEffortOf(input.effort),
+              limits: route === BONSAI_ROUTE ? bonsaiLimits(admission.model, WORK_LIMITS) : WORK_LIMITS,
               signal: attemptSignal,
               transport: api.transport,
               sinks: { onDelta: sinks.onDelta, onToolActivity: sinks.onToolActivity },
@@ -2670,7 +2675,7 @@ export class EngineService {
         instructions: input.instructions,
         messages: [{ role: 'user', content: contextMessage(input) }],
         tools: [],
-        limits: WORK_LIMITS,
+        limits: route === BONSAI_ROUTE ? bonsaiLimits(input.model, WORK_LIMITS) : WORK_LIMITS,
       });
     } catch {
       // Too large for the route: the call itself refuses it, with the route's own words, before sending.
@@ -2723,7 +2728,8 @@ export class EngineService {
             secret,
             exposure: await this.jobLedger(api, input),
             instructions,
-            effort: selectedEffortOf(input.effort),
+            effort: route === BONSAI_ROUTE ? input.effort : selectedEffortOf(input.effort),
+            images: input.documents.flatMap(document => document.image ? [document.image] : []),
             transport: api.transport,
           });
           return {
@@ -2787,9 +2793,9 @@ export class EngineService {
       throw new HarnessError('collaboration_refused', 'This role was supplied a different root spend ledger.');
     const rootJobId = ledger.jobScope?.id ?? rootRunId;
     const effort = request.effort === undefined ? 'medium' : request.effort === null ? undefined : request.effort;
-    if (effort !== undefined && !['low', 'medium', 'high'].includes(effort))
+    if (effort !== undefined && !(route === BONSAI_ROUTE ? ['low', 'medium', 'xhigh'] : ['low', 'medium', 'high']).includes(effort))
       throw new HarnessError('collaboration_refused', 'The pinned model effort is unsupported on this API route.');
-    const callOptions = { instructions: request.instructions, effort: effort as 'low' | 'medium' | 'high' | undefined,
+    const callOptions = { instructions: request.instructions, effort,
       transport: api.transport, ...(request.callLimits ? { limits: request.callLimits } : {}) };
     const admission = await this.admitModelApi(
       route,
@@ -2877,6 +2883,8 @@ export interface JobCapsPort {
  * unavailable in this process, never served by another route.
  */
 export interface ModelApiServices {
+  bonsai?: { runtime: BonsaiRuntime; configured: boolean; transcripts: ModelTranscripts;
+    loadImage(image: ModelImage, projectId: string): Promise<string> };
   connections: AwsConnections;
   secrets: ConnectionSecrets;
   exposure: SpendExposure;
@@ -2928,7 +2936,8 @@ interface RouteCallOptions {
   secret: string;
   exposure: CallExposure;
   instructions: string;
-  effort?: 'low' | 'medium' | 'high';
+  effort?: string;
+  images?: readonly ModelImage[];
   limits?: RespondLimits;
   transport?: typeof globalThis.fetch;
   sinks?: StreamSinks;
@@ -2965,7 +2974,7 @@ type ConnectedRoute = {
       limits: RespondLimits;
       signal: AbortSignal;
     },
-  ): Promise<RespondResult>;
+  ): Promise<Omit<RespondResult, 'reservation'>>;
 };
 type RouteHandle = ConnectedRoute | { connected: false; route: ModelApiRoute; names: { short: string; long: string } };
 
@@ -2975,6 +2984,7 @@ const ROUTE_WORDS: Record<ModelApiRoute, { short: string; long: string }> = {
   openrouter: { short: 'OpenRouter', long: 'OpenRouter' },
   'google-vertex': { short: 'Google Vertex AI', long: 'Google Vertex AI' },
   nectovia: { short: 'Nectovia', long: 'Nectovia' },
+  bonsai: { short: 'Bonsai', long: 'Bonsai (local)' },
 };
 
 /**
@@ -3010,6 +3020,22 @@ async function modelApiRoute(api: ModelApiServices, route: ModelApiRoute, work: 
   const unavailable = () =>
     new EngineError('RUNTIME_UNAVAILABLE', 'This model-API route is not available in this process.', true);
   switch (route) {
+    case BONSAI_ROUTE: {
+      const services = api.bonsai;
+      if (!services?.configured) return { connected: false, route, names };
+      return {
+        connected: true, route, prefix: 'bonsai', names, sdk: BONSAI_VERSION,
+        connectionId: BONSAI_CONNECTION, revision: 1, accountRoute: BONSAI_ACCOUNT,
+        expiresAt: null, serving: 'bonsai-2-27b', serves: model => !!bonsaiProfile(model), card: bonsaiRateCard,
+        credential: { check: async () => null, open: async () => '' }, exposure: localLedger,
+        adapter: options => createBonsaiAdapter({ ...options, runtime: services.runtime, transcripts: services.transcripts,
+          loadImage: image => {
+            if (!work.projectId) throw new EngineError('ROUTE_REFUSED', 'An image needs its admitted project.');
+            return services.loadImage(image, work.projectId);
+          } }),
+        respond: ({ sinks, ...options }) => respondBonsai({ ...options, runtime: services.runtime, ...sinks }),
+      };
+    }
     case AWS_BEDROCK_ROUTE: {
       // A connection saved for a retired model is refused with the reconnect sentence; nothing is
       // sent on it and nothing moves it to the current model.
@@ -3126,13 +3152,14 @@ async function modelApiRoute(api: ModelApiServices, route: ModelApiRoute, work: 
             exposure: localCallLedger(options.exposure),
             transcripts: services.transcripts,
             instructions: options.instructions,
-            effort: options.effort,
+            effort: selectedEffortOf(options.effort),
             transport: options.transport,
             limits: options.limits,
             ...options.sinks,
           }),
         respond: ({ sinks, ...options }) =>
-          respondOpenRouter({ connection, card: openRouterRateCard(connection, options.model), ...options, exposure: localCallLedger(options.exposure), ...sinks }),
+          respondOpenRouter({ connection, card: openRouterRateCard(connection, options.model), ...options,
+            effort: selectedEffortOf(options.effort), exposure: localCallLedger(options.exposure), ...sinks }),
       };
     }
     case GOOGLE_VERTEX_ROUTE: {

@@ -9,6 +9,23 @@ Azure deployment: up to eight small live requests on the route's own key and spe
 as a receipt (`shared/route-qualification.ts`). No live provider call was made to build this; see
 [the record](../implementation/2026-10-05-route-qualification.md).
 
+## The Local model joins the ask row, 2026-10-05
+
+The ask row's Local model option (DIO-201) is lit by the native local engine (PR #214). The server
+reports the installed model as one `kind: 'local'` integration on its route: found once it's
+installed, available only while its worker runs, and `loaded` naming the profile that worker has.
+Nothing is reported when it isn't installed. `GET /api/integrations/local` answers that entry
+alone, so the row can read it again after a Start. On the local route the second box lists the
+profiles from the route's catalogue, Effort holds the profile's own levels and the context ring
+uses its declared window; on a paid plan the same menu leads with the tiers, the way back to
+Nectovia. Choosing the model or a profile starts nothing. The person's Start, offered beside the
+grayed choice or under a profile that isn't loaded, is the one action that wakes it: inference now
+asks the helper with `-NoStart`, so a send, an Automatic run or a Routine on a stopped model is
+refused (409) rather than starting it, and never moves to a cloud model. In Work the ask row
+replaces the local controls #214 put in the header; Home keeps them, with the same Start, until it
+has its own row. No client file names the model (`tests/local-model-names.test.ts`). See
+[the record](../implementation/2026-10-03-bonsai-agent-integration.md#reconciled-with-the-ask-row).
+
 ## A route with no model refuses by name, and the export section draws once, 2026-10-04
 
 A send on a model-API route with no model chosen refuses with the route's own name again ("Connect
@@ -18,6 +35,24 @@ ran first and lost the route; the other engines keep that sentence. In Workspace
 owner's records section and the credit asks below it carried the same React key, so the records
 section could be drawn more than once (three times in the browser test); each now has its own. `tests/home-luna.spec.ts` and
 `tests/organization-export-ui.spec.ts` hold them (DIO-203).
+
+## The ask box's row, 2026-10-03
+
+The project thread's ask box is round 2 board N4 (DIO-200, slice 1). Under the message line one
+row holds the modes, then Engine, Model or tier, Effort and Agent, then Attach, a context ring and
+Send (`client/console/AskRow.tsx`, its logic in `ask-row.ts`). The header's model and agent
+pickers moved into it, so each choice shows once. Engine lists Nectovia first, then the engines
+this computer offers; on the free version Nectovia stays listed, grayed, with the way to use it.
+On Nectovia the second box is the tier, resolved the way the host resolves it. On another engine
+it lists that engine's catalog, and Effort is a slider of that model's own levels with Fix's
+ceiling shown. No model name, level or default is written into the app. Choosing an engine pins
+its saved or first model, so the owner's tier map can't move the thread. A Local model tier
+(DIO-201) shows once an integration reports `kind: 'local'`, a ready adapter, a route id and a
+model set up on this computer (`found`), and stays grayed while that model isn't running. No
+binding on main reports one yet, so it's hidden on every computer today. The context ring reads the newest
+answer's context record and never shows a percentage without a declared window. Every popup opens
+above its box inside the bar, so an open menu can't widen the page. `tests/ask-row.test.ts` holds
+the logic.
 
 ## Type and spacing keep one size at every window width, 2026-10-03
 

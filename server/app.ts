@@ -1,4 +1,11 @@
 import { parseApprovalCommand } from './approval-admission.js';
+import { fileURLToPath } from 'node:url';
+import { BONSAI_ACCOUNT, BONSAI_PROFILES, BONSAI_ROUTE, bonsaiProfile, imageMediaType, MODEL_IMAGE_COUNT } from '../shared/bonsai.js';
+import { BonsaiRuntime, type BonsaiHost } from './bonsai/runtime.js';
+import { WindowsBonsaiHost } from './bonsai/windows-host.js';
+import { localModelIntegrations, mountBonsaiRoutes } from './bonsai/routes.js';
+import { inspectModelImage } from './bonsai/images.js';
+import type { TextRequest } from './engines/contract.js';
 import { taskDocumentProblem } from '../shared/task-sources.js';
 import { mountPermissionRoutes } from './permission-routes.js';
 import { WorkspaceService } from './workspaces.js';
@@ -342,6 +349,8 @@ import {
 
 interface AppOptions {
   dataDir: string;
+  /** Tests substitute lifecycle control; production uses the optional local installation. */
+  bonsai?: { host: BonsaiHost; configured: boolean };
   /** Fresh per-launch secret held by the desktop main process, never persisted. */
   loopbackToken?: string;
   projectRoot?: string;
@@ -808,6 +817,12 @@ export async function createApp(options: AppOptions) {
     throw new Error('The desktop local-service token is invalid.');
   const store = new Store(path.resolve(options.dataDir), options.projectRoot, options.secretBox ?? null);
   await store.init();
+  const bonsaiHost = new WindowsBonsaiHost(store.dataDir,
+    fileURLToPath(new URL('../resources/bonsai-host.ps1', import.meta.url)),
+    process.env.VITEST || process.env.DIOMEDES_TEST_MODE === '1'
+      ? { NECTOVIA_BONSAI_HOME: path.join(store.dataDir, 'no-installed-bonsai') } : process.env);
+  const bonsai = new BonsaiRuntime(options.bonsai?.host ?? bonsaiHost);
+  const bonsaiConfigured = options.bonsai?.configured ?? bonsaiHost.configured;
   // Before anything reads a setting: an update carries never-chosen values to
   // this build's defaults and records what it did. A no-op on every other launch.
   const running = currentBuildIdentity(packageInfo.version);
@@ -1197,6 +1212,7 @@ export async function createApp(options: AppOptions) {
     agents,
     changeReview,
     agentProfiles,
+    route => route === BONSAI_ROUTE && bonsaiConfigured ? { accountRoute: BONSAI_ACCOUNT } : null,
   );
   // Only the protected desktop main process supplies this fresh loopback secret.
   // The unprotected development/browser host cannot promote a workspace fixture.
@@ -1302,6 +1318,19 @@ export async function createApp(options: AppOptions) {
     exposure,
     transcripts: new FileModelTranscripts(path.join(store.dataDir, 'model-transcripts'), AWS_BEDROCK_ROUTE),
     transport: options.modelApiTransport,
+    bonsai: {
+      runtime: bonsai,
+      configured: bonsaiConfigured,
+      transcripts: new FileModelTranscripts(path.join(store.dataDir, 'model-transcripts-bonsai'), BONSAI_ROUTE),
+      loadImage: async (image, projectId) => {
+        const bytes = await store.objectBytes(projectId, image.sha);
+        if (!bytes) throw new ApiError(409, 'The selected image version is no longer available. Choose it again.');
+        const actual = inspectModelImage(image.path, bytes);
+        if (actual.sha !== image.sha || actual.mediaType !== image.mediaType || actual.bytes !== image.bytes)
+          throw new ApiError(409, 'The selected image version changed. Choose it again.');
+        return bytes.toString('base64');
+      },
+    },
     // Each route keeps its own connection record and private transcripts: funds, data terms
     // and provider continuation state are never shared between payers.
     azure: {
@@ -2174,11 +2203,12 @@ export async function createApp(options: AppOptions) {
             : item.adapter === 'ready' && item.kind !== 'sample'
               ? { ...item, enabled: store.settings.services?.[item.id] === true }
               : item,
-        ),
+        ).concat(await localModelIntegrations(bonsai, bonsaiConfigured)),
       }),
       false,
     ),
   );
+  mountBonsaiRoutes(app, bonsai, store, bonsaiConfigured);
   app.get(
     '/api/usage',
     route(async (req) => {
@@ -2922,7 +2952,7 @@ export async function createApp(options: AppOptions) {
       return session;
     };
     if (selectedRoute !== 'sample') {
-      if (selectedRoute !== NECTOVIA_ROUTE && store.settings.services?.[selectedRoute] !== true)
+      if (!routeOn(selectedRoute))
         throw new ApiError(409, 'Turn the selected engine on in Settings before using it.');
       if (b.consent !== true)
         throw new ApiError(
@@ -3812,6 +3842,7 @@ export async function createApp(options: AppOptions) {
   };
   /** API routes offer only their current connection; inspected engines keep their own catalogue. */
   const routeModels = (engine: string): EngineModel[] => {
+    if (engine === BONSAI_ROUTE) return bonsaiConfigured ? structuredClone([...BONSAI_PROFILES]) : [];
     const levels = ['low', 'medium', 'high'].map((id) => ({id,description:''}));
     if (engine === AZURE_OPENAI_ROUTE)
       return (engines.modelApi?.azure?.connections.peek()?.deployments ?? []).map((entry) => ({
@@ -3876,14 +3907,15 @@ export async function createApp(options: AppOptions) {
     return { model: tier.model, accountRoute };
   };
   /** Whether a route takes a send: Nectovia has no switch; every other route is turned on in Settings. */
-  const routeOn = (route: string) => route === NECTOVIA_ROUTE || store.settings.services?.[route] === true;
+  const routeOn = (route: string) => route === BONSAI_ROUTE ? bonsaiConfigured
+    : route === NECTOVIA_ROUTE || store.settings.services?.[route] === true;
   /**
    * The account a send on this route runs under, as Settings or the account session records it.
    * ChatGPT signs in under one account route (`codex:chatgpt`), the one its scope grants assume,
    * unless Settings recorded another.
    */
   const routeAccount = (route: string, projectId: string): unknown =>
-    route === NECTOVIA_ROUTE
+    route === BONSAI_ROUTE ? BONSAI_ACCOUNT : route === NECTOVIA_ROUTE
       ? nectoviaAccountFor(projectId)
       : route === 'codex'
         ? (store.settings.services?.codexAccountRoute ?? CODEX_ACCOUNT_ROUTE)
@@ -3950,6 +3982,8 @@ export async function createApp(options: AppOptions) {
     options: RunHints = {},
   ): TierResolution | null => {
     const conversation = routed(projectId, unrouted);
+    // A local selection is never handed to the cloud tier map, even if its saved profile is missing.
+    if (conversation?.engine === BONSAI_ROUTE) return null;
     // A tier routes to Nectovia's policy or to a model-API route; both are the Agent. Where no
     // subscription pays for it, no tier applies and the thread keeps its own engine.
     if (conversation?.engine !== NECTOVIA_ROUTE && agentGate && !agentGate.paidFor(projectId)) return null;
@@ -4009,6 +4043,7 @@ export async function createApp(options: AppOptions) {
     conversation: Conversation | null | undefined,
     options: RunHints = {},
   ): (RunChoice & { reason: string }) | null => {
+    if (engine === BONSAI_ROUTE) return null;
     // On Nectovia the published policy's model for the tier is the only choice there is.
     if (engine === NECTOVIA_ROUTE) {
       const tier = tierFor(projectId, conversation, options);
@@ -5057,12 +5092,24 @@ export async function createApp(options: AppOptions) {
           home: store.isHomeProject(projectId),
         });
         const paths = new Set<string>();
-        const documents = [];
+        const documents: TextRequest['documents'] = [];
         for (const source of command.sources) {
           const name = relativeName(source.path);
           if (paths.has(name.toLowerCase()))
             throw new ApiError(400, 'Choose each source file once.');
           paths.add(name.toLowerCase());
+          if (imageMediaType(name)) {
+            if (conversationRoute !== BONSAI_ROUTE || !bonsaiProfile(selection.model)?.inputModalities.includes('image'))
+              throw new ApiError(415, 'This model takes text only. Choose Bonsai Full to send images.');
+            if (documents.filter(document => document.image).length >= MODEL_IMAGE_COUNT)
+              throw new ApiError(413, `Choose at most ${MODEL_IMAGE_COUNT} images for one message.`);
+            const image = await store.readModelImage(projectId, name);
+            if (image.sha !== source.sha)
+              throw new ApiError(409, `${name} changed. Choose its current version before sending.`);
+            documents.push({ path: name, image,
+              text: `[Image: ${name}; SHA-256 ${image.sha}. The selected image bytes accompany this message.]` });
+            continue;
+          }
           const document = await store.readDocument(projectId, name);
           if (document.sha !== source.sha)
             throw new ApiError(409, `${name} changed. Choose its current version before sending.`);
@@ -5611,8 +5658,7 @@ export async function createApp(options: AppOptions) {
    * Where Diomedes' own conversation lives: the reserved home Project and its
    * one thread. The read answers null until a binding is both saved and valid,
    * and creates nothing, so opening the app provisions no home. The page posts
-   * here when the person sends their first message, and that is the only thing
-   * that ever makes one.
+   * here when the person sends their first message or explicitly chooses a local model.
    */
   app.get(
     '/api/home/conversation',
@@ -5953,7 +5999,7 @@ export async function createApp(options: AppOptions) {
         !store.state(projectId).conversations.some((c) => c.id === threadId)
       )
         throw new ApiError(404, 'This thread was not found.');
-      if (serviceRoute !== 'sample' && store.settings.services?.[serviceRoute] !== true)
+      if (serviceRoute !== 'sample' && !routeOn(serviceRoute))
         throw new ApiError(409, 'Turn the selected engine on in Settings before using it.');
       const needsConsent =
         isExternalEngine(serviceRoute) ||

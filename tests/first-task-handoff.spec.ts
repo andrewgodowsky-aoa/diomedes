@@ -299,8 +299,12 @@ test('A verified route carries the person to a composer, chooses itself for the 
         return { engine: thread?.engine, model: thread?.requested?.model };
       })
       .toEqual({ engine: 'opencode', model: MODEL });
-    // The thread header offers tiers only; a thread pinned to one model says so by name.
-    await expect(page.locator('.style-picker > button')).toContainText('Chosen model');
+    // The ask row names the engine and the model that were tested.
+    await expect(page.locator('.ask-engine .ask-pick')).toHaveAttribute('aria-label', 'Engine: OpenCode');
+    await expect(page.locator('.ask-model .ask-pick')).toHaveAttribute(
+      'aria-label',
+      /^Model: (OpenCode fixture model|opencode\/fixture-model)$/,
+    );
 
     // Nothing was sent: no provider call, and no turn on the thread.
     expect(calls).toHaveLength(generated);

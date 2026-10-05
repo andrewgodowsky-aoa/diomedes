@@ -15,6 +15,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { SecretBox } from './connection-secrets.js';
 import { createHash, randomBytes } from 'node:crypto';
+import { inspectModelImage } from './bonsai/images.js';
 import { EventEmitter } from 'node:events';
 import { diffLines } from 'diff';
 import type {
@@ -1307,6 +1308,23 @@ export class Store extends EventEmitter {
     if (text === null || sha === null)
       throw new ApiError(404, 'This document no longer exists.', { outsideChange });
     return { path: name, text, sha, outsideChange };
+  }
+  /** A selected image uses the same guarded path, content-addressed objects and History as text. */
+  async readModelImage(id: string, input: string) {
+    const state = this.state(id), name = relativeName(input);
+    const bytes = await this.currentBytes(id, name);
+    if (!bytes) throw new ApiError(404, 'This image no longer exists.');
+    const image = inspectModelImage(name, bytes);
+    const last = this.latestFile(state, name);
+    if (!last || last.file.after !== image.sha) {
+      await this.saveObjectBytes(id, bytes);
+      const entry = this.addEntry(state, { kind: last ? 'outside' : 'observed',
+        sentence: last ? `${name} changed outside Diomedes` : `Diomedes recorded the first version it read of ${name}` });
+      entry.files.push({ path: name, op: 'modified', before: last?.file.after ?? image.sha,
+        after: image.sha, recorded: true, reason: null, binary: true });
+      await this.persist(state);
+    }
+    return image;
   }
   addEntry(state: StoredState, options: WriteOptions): HistoryEntry {
     const entry: HistoryEntry = {

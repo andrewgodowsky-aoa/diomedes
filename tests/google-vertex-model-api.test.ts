@@ -193,7 +193,7 @@ describe('google-vertex is its own route', () => {
     expect(isModelApiRoute(GOOGLE_VERTEX_ROUTE)).toBe(true);
     expect(MODEL_API_PROVIDERS).toEqual(['aws-bedrock', 'azure-openai', 'openrouter', 'google-vertex']);
     // Nectovia's managed route is a model-API route too, never a provider (bot-mode item 1).
-    expect(MODEL_API_ROUTES).toEqual([...MODEL_API_PROVIDERS, 'nectovia']);
+    expect(MODEL_API_ROUTES).toEqual([...MODEL_API_PROVIDERS, 'nectovia', 'bonsai']);
     expect(VERTEX_GEMINI_MODEL).toBe('gemini-3.8-flash');
   });
 

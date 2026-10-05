@@ -25,7 +25,8 @@ export type ModelApiProvider = (typeof MODEL_API_PROVIDERS)[number];
  * meters it, and no provider credential exists on this computer for it.
  */
 export const NECTOVIA_ROUTE = 'nectovia' as const;
-export const MODEL_API_ROUTES = [...MODEL_API_PROVIDERS, NECTOVIA_ROUTE] as const;
+// Bonsai uses the native Agent's model interface, but is local and never a cloud provider/payer.
+export const MODEL_API_ROUTES = [...MODEL_API_PROVIDERS, NECTOVIA_ROUTE, 'bonsai'] as const;
 export type ModelApiRoute = (typeof MODEL_API_ROUTES)[number];
 
 export const isModelApiRoute = (value: unknown): value is ModelApiRoute =>
@@ -39,6 +40,7 @@ export const MODEL_API_NAMES: Record<ModelApiRoute, string> = {
   openrouter: 'OpenRouter',
   'google-vertex': 'Google Vertex AI (Gemini 3.8 Flash)',
   nectovia: 'Nectovia',
+  bonsai: 'Bonsai (local)',
 };
 
 /**

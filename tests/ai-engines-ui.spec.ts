@@ -328,15 +328,14 @@ test('Console discovers, selects, streams, cancels, and approves every fixture e
 
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   await expect(page.locator('.console')).toBeVisible();
-  // The thread header offers tiers only (owner decision 2026-09-23), so each engine and model
-  // is pinned on the thread through the same route an API client uses, and the header then
-  // names the pin as a chosen model.
-  const picker = page.locator('.style-picker > button');
-  const pinThread = async (engine: string, model: string) => {
+  // Each engine and model is pinned on the thread through the same route an API client uses,
+  // and the ask row then names the engine.
+  const engineBox = page.locator('.ask-engine .ask-pick');
+  const pinThread = async (engine: ExternalEngine, model: string) => {
     const { threads } = await api<{ threads: Conversation[] }>(`/projects/${project.id}/threads`);
     const thread = threads.find((item) => item.name === 'Engine UI thread')!;
-    // The header already says "Chosen model" from the previous pin, so wait for the Console
-    // to reload the project state carrying this pin before sending on it.
+    // The row can already name this engine from an earlier pin, so wait for the Console to
+    // reload the project state carrying this pin before sending on it.
     // A reload already in flight can still carry the previous pin, so wait for one that has it.
     const reloaded = page.waitForResponse(async (response) => {
       if (
@@ -353,7 +352,7 @@ test('Console discovers, selects, streams, cancels, and approves every fixture e
       requested: { model, effort: null },
     });
     await reloaded;
-    await expect(picker).toContainText('Chosen model');
+    await expect(engineBox).toHaveAttribute('aria-label', `Engine: ${names[engine]}`);
   };
   const documentScope = [
     { path: 'Scoped notes.md', text: 'Only this selected note belongs in scope.\n' },
