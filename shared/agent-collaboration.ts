@@ -1,6 +1,6 @@
 /** Admission evidence for one native Agent's persistent Team exchange. No grant here authorizes itself. */
 import { z } from 'zod';
-import { MODEL_API_PROVIDERS } from './model-api.js';
+import { TEAM_MODEL_ROUTES } from './model-api.js';
 import type { TeamRun } from './types.js';
 
 export const AGENT_TEAM_MODEL_CALLS = 6;
@@ -25,7 +25,7 @@ const bindingSchema = z.strictObject({
   agentId: id.nullable(),
   createdAt: z.string().min(1).max(80),
   threadId: id,
-  route: z.enum(MODEL_API_PROVIDERS),
+  route: z.enum(TEAM_MODEL_ROUTES),
   model: z.string().min(1).max(120),
   accountRoute: z.string().min(1).max(256),
   effort: z.string().min(1).max(40).nullable(),

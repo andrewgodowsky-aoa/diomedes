@@ -135,6 +135,12 @@ export interface Settings {
    * signed-in person (`server/subscription-workers.ts`). Absent or null: off.
    */
   subscriptionWorkers?: import('./subscription-workers.js').SubscriptionWorkersPreference | null;
+  /**
+   * DIO-201: the folder a local model is installed in, which holds its `nectovia-connection.json`.
+   * Absent or null: the `NECTOVIA_LOCAL_MODEL_HOME` environment variable, then the older
+   * `NECTOVIA_BONSAI_HOME`; with none of them set, no local model is offered.
+   */
+  localModelFolder?: string | null;
 }
 /**
  * One thing waiting on the person, by name: an approval, work to review, or a run that failed
@@ -770,6 +776,10 @@ export interface EngineModel {
   /** The engine's own default, guaranteed to appear in `efforts` when not null. */
   defaultEffort: string | null;
   efforts: { id: string; description: string }[];
+  /** The context window the host declares for this entry, in tokens. Absent when none is declared. */
+  contextTokens?: number;
+  /** What this entry accepts in a message, when the host declares it. Absent means text. */
+  inputModalities?: readonly ('text' | 'image')[];
 }
 export interface EngineCatalog {
   engine: string; // integration id
@@ -872,6 +882,11 @@ export interface IntegrationStatus {
   /** Where the engine was found. Shown on the Console only. */
   location?: string;
   disclosure: string[];
+  /**
+   * A model on this computer: the catalogue entry (`EngineModel.slug`) loaded and answering now,
+   * or null when none is. Absent on every other integration.
+   */
+  loaded?: string | null;
 }
 export interface TaskCandidate {
   line: number;

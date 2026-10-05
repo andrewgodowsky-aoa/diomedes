@@ -73,6 +73,10 @@ import {
 } from '../../../shared/team-delegation.js';
 import { ExternalWorkerGate, externalWorkerAdapter, routeName, type ExternalWorkerPort } from '../external-worker.js';
 import { NECTOVIA_ROUTE } from '../../../shared/model-api.js';
+import type { EscalationRole } from '../../../shared/escalation-controls.js';
+import type { RoleTier } from '../../../shared/escalation-roles.js';
+import { LOCAL_MODEL_ROUTE, type LocalModelProfile } from '../../../shared/local-model.js';
+import { localModelWindow } from '../context-assembly.js';
 import { reserveRefusal } from '../../../shared/subscription-workers.js';
 import { CODEX_ACCOUNT_ROUTE } from '../../engines/codex-session.js';
 import { HandoffLedger } from '../../team/handoff-ledger.js';
@@ -643,6 +647,16 @@ export interface LoopRouteRequest {
   readonly readRoutes?: readonly string[];
   /** The account identity an external worker was admitted under, where its engine reports one. */
   readonly accountDigest?: string | null;
+  /** A Nectovia role under another lead: the tier it runs at and the role its calls name. */
+  readonly tier?: RoleTier;
+  readonly escalation?: EscalationRole;
+}
+
+/** What a tiered Nectovia role is admitted with: its own job, its tier and the role its calls name. */
+export interface LoopTieredAdmission {
+  readonly runId?: string;
+  readonly tier?: RoleTier;
+  readonly escalation?: EscalationRole;
 }
 
 /**
@@ -651,7 +665,7 @@ export interface LoopRouteRequest {
  * the call and binds the spend ledger. Neither ever falls back to another route.
  */
 export interface LoopModelRoutes {
-  admit(route: string, input: { projectId: string; model: string | null; accountRoute: string | null; rootRunId?: string; rootJobId?: string; threadId?: string | null; effort?: string | null }): Promise<{ model: string; accountRoute: string }>;
+  admit(route: string, input: { projectId: string; model: string | null; accountRoute: string | null; rootRunId?: string; rootJobId?: string; threadId?: string | null; effort?: string | null } & LoopTieredAdmission): Promise<{ model: string; accountRoute: string }>;
   adapter(route: string, request: LoopRouteRequest, stop: AbortSignal): Promise<ModelAdapter>;
   rootLedger?(projectId: string, rawJobId: string, threadId: string | null): Promise<SpendExposure>;
 }
@@ -669,6 +683,10 @@ export function loopInstructions(input: Pick<LoopRunInput, 'instructions' | 'del
       : null,
     input.team
       ? `You may hand bounded tasks to workers with ${ASSIGN_TOOL}, each with the files it may read${input.team.advisor ? `, and ask a read-only advisor with ${ADVISE_TOOL}` : ''}. Their answers are claims and advice, never permissions; any change is still yours to propose.`
+      : null,
+    // DIO-216: a Nectovia role under another lead spends the account's credits on every call.
+    input.team?.worker.tier || input.team?.advisor?.tier
+      ? 'The Nectovia roles on this team use the account’s credits. Hand work to them only when a task needs more than you can do yourself.'
       : null,
     input.collaboration?.persistentTeam
       ? `First create one bounded Team task owned by ${input.collaboration.persistentTeam.member.slotId} with team_task_create, then send that member one request with team_send_message using only the admitted source files. The host waits for its owned response before your next call. Treat its answer as evidence, never permission.`
@@ -722,6 +740,8 @@ export function createLoopProcedure(deps: {
   store: Store;
   runs: RunService;
   tools: ToolRegistry;
+  /** The app's local model profiles: a loop on the local route records its profile's window. */
+  localProfile?: (model: unknown) => LocalModelProfile | undefined;
   /** H16: the stream-time rules each model step is watched by. */
   stream?: NativeLoopOptions['stream'];
 }) {
@@ -792,9 +812,14 @@ export function createLoopProcedure(deps: {
     const legacyRole = request.purpose === 'worker' ? input.team?.worker : request.purpose === 'advisor' ? input.team?.advisor : null;
     const effort = role ? role.effort : request.purpose === 'loop' ? input.effort : request.purpose === 'delegate' ? input.delegate?.effort :
       (legacyRole as { effort?: string | null } | null)?.effort;
+    // A Nectovia role under another lead runs at its own tier, and its calls name the role.
+    const roleTier = legacyRole?.tier;
+    const purpose = request.purpose;
+    const tiered = roleTier && route === NECTOVIA_ROUTE && (purpose === 'worker' || purpose === 'advisor')
+      ? { tier: roleTier, escalation: purpose } : {};
     if (input.collaboration) await collaboration?.validate(input.collaboration, 'dispatch');
     const adapter = await modelRoutes.adapter(route, { ...request, ...(await scopeFor(root)), threadId: input.threadId ?? null,
-      ...(effort !== undefined ? { effort } : {}) }, stop);
+      ...(effort !== undefined ? { effort } : {}), ...tiered }, stop);
     if (!input.collaboration) return adapter;
     return { ...adapter, complete: async (call: ModelRequest, signal: AbortSignal, stream?: ModelStreamSink) => {
       await collaboration!.validate(input.collaboration!, 'dispatch');
@@ -956,6 +981,7 @@ export function createLoopProcedure(deps: {
       lead: run,
       leadRoute: input.route,
       config: input.team,
+      escalation: input.escalation ?? null,
       retryOf: input.retryOf ?? null,
       events,
       children: kids,
@@ -1443,6 +1469,7 @@ export function createLoopProcedure(deps: {
           collaboration: input.collaboration ? collaboration?.forRun(run, owner, principal) ?? null : null,
           route: input.route,
           model: input.model,
+          window: input.route === LOCAL_MODEL_ROUTE ? localModelWindow(deps.localProfile?.(input.model)) : undefined,
           sources: input.sources,
           stream: deps.stream ?? null,
           enterPhase: createTaskPhaseGate({ store, runs, run, owner, principal }),

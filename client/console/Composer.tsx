@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import type { Conversation, DocumentInfo, Mode, Route } from '../../shared/types';
 import { TASK_SOURCE_LIMITS } from '../../shared/task-sources';
 import type { ReadAccess } from '../../shared/read-access';
@@ -6,7 +6,9 @@ import { AGENT_NAME } from '../../shared/agent-name';
 import { askDraftKey } from '../components';
 import { reducedMotion, spring } from './motion';
 import { SendConfirmation } from './SendConfirmation';
+import { AskIcon } from './AskRow';
 import './attachments.css';
+import { modelAttachmentProblem } from './attachments';
 
 /**
  * The composer's own accessible name. Exported so the Console can put focus in
@@ -87,6 +89,15 @@ interface ComposerProps {
   attachable?(): Promise<DocumentInfo[]>;
   /** Opens an attached file in Files. */
   onOpenFile?(path: string): void;
+  /** The ask box's row (AskRow.tsx): engine, model or tier, effort and agent, after the modes. */
+  controls?: ReactNode;
+  /** The context ring (AskRow.tsx), beside Send. */
+  ring?: ReactNode;
+  /**
+   * The thread's model takes images, as its catalogue entry declares (`inputModalities`). An
+   * attached project image then travels as exact bytes in Ask, Plan and Automatic.
+   */
+  imageInput?: boolean;
 }
 
 /**
@@ -98,12 +109,7 @@ interface ComposerProps {
  * sending the message without it.
  */
 export function attachmentProblem(file: Pick<DocumentInfo, 'path' | 'kind' | 'size'>): string | null {
-  const name = file.path.slice(file.path.lastIndexOf('/') + 1);
-  if (!['markdown', 'text', 'plan'].includes(file.kind))
-    return `${name} is not a text document, so a message cannot carry it to an engine. It stays in Files; remove it to send.`;
-  if (file.size > TASK_SOURCE_LIMITS.bytes)
-    return `${name} is larger than the 128 KB a message can carry. Remove it to send.`;
-  return null;
+  return modelAttachmentProblem(file);
 }
 
 /** Pure, because React may run a state initializer twice; the effect below clears it. */
@@ -117,13 +123,15 @@ function carriedAsk(projectId: string): string {
 }
 
 /**
- * The prototype composer 1:1: autosizing box, the mode strip with its
- * point-and-line indicator, the caption, Send and the Enter hint, plus the
- * Build/Fix aux rows.
+ * The ask box (round 2 board N4): one line that grows as you type, and under it one row: the
+ * mode strip with its point-and-line indicator, then the engine, model or tier, effort and agent
+ * boxes, then Attach, the context ring and Send. A mode's promise is its button's tooltip; the
+ * caption speaks only when the box is waiting on something. Build and Fix keep their aux rows.
  */
 export function Composer({
   thread, projectId, mode, onMode, busy, online, route, confirmSend, prepareSources, onSend,
   skill = null, onClearSkill, attachments = [], onAttachments, attachable, onOpenFile, insert = null,
+  controls = null, ring = null, imageInput = false,
 }: ComposerProps) {
   const [picking, setPicking] = useState<DocumentInfo[] | null>(null);
   const [pickFailure, setPickFailure] = useState('');
@@ -157,6 +165,9 @@ export function Composer({
   const [preparing, setPreparing] = useState(false);
   const [error, setError] = useState('');
   const preparingRef = useRef(false);
+  // Images travel only to a model whose catalogue entry takes them, and only in a conversation:
+  // Build and Fix keep their text proposal contract.
+  const acceptsImages = imageInput && (mode === 'ask' || mode === 'plan' || mode === 'auto');
   const preparation = useRef(0);
   const box = useRef<HTMLTextAreaElement>(null);
   const modes = useRef<HTMLDivElement>(null);
@@ -333,7 +344,7 @@ export function Composer({
     const value = text.trim();
     if (!value || busy || !online || preparingRef.current) return;
     if (mode === 'fix' && !fixReady) return;
-    const blocked = attachments.map(attachmentProblem).find((problem) => problem !== null);
+    const blocked = attachments.map(file => modelAttachmentProblem(file, acceptsImages)).find((problem) => problem !== null);
     if (blocked) {
       setError(blocked);
       return;
@@ -404,7 +415,7 @@ export function Composer({
             <span className="mono">attached</span>
             <span className="attach-chips">
               {attachments.map((file) => {
-                const problem = attachmentProblem(file);
+                const problem = modelAttachmentProblem(file, acceptsImages);
                 const name = file.path.slice(file.path.lastIndexOf('/') + 1);
                 return (
                   <span className={`attach-chip${problem ? ' blocked' : ''}`} key={file.path} title={problem ?? file.path}>
@@ -509,7 +520,7 @@ export function Composer({
             <span style={{ marginLeft: 'auto' }}>Up to three tries.</span>
           </div>
         )}
-        <div className="bar">
+        <div className="bar ask-bar">
           <div className="modes" ref={modes} role="radiogroup" aria-label="Mode">
             {MODE_ORDER.map((m) => (
               <button
@@ -522,6 +533,7 @@ export function Composer({
                 role="radio"
                 aria-checked={mode === m}
                 className={mode === m ? 'on' : ''}
+                title={CAPS[m]}
                 onClick={() => onMode(m)}
               >
                 {m}
@@ -532,44 +544,51 @@ export function Composer({
               <b ref={line} />
             </span>
           </div>
-          {onAttachments && attachable && (
-            <button
-              type="button"
-              className="attach"
-              aria-expanded={picking !== null}
-              disabled={preparing || pending !== null}
-              onClick={() => {
-                if (picking) return setPicking(null);
-                setPickFailure('');
-                attachable()
-                  .then((files) => setPicking(files))
-                  .catch((e: unknown) =>
-                    setPickFailure(e instanceof Error ? e.message : 'The project files could not be listed.'),
-                  );
-              }}
-            >
-              Attach
-            </button>
-          )}
+          {controls}
           {/* The box is locked while the message is prepared, so the caption says
               why: a locked box with the text still in it reads as a send that
-              never happened. */}
-          <span className="cap" role={preparing ? 'status' : undefined}>
-            {preparing
-              ? 'Checking project documents before sending.'
-              : mode === 'fix' && !fixReady
-                ? 'Pick the document or paste what went wrong to send.'
-                : CAPS[mode]}
+              never happened. Otherwise the mode's promise is on its button. */}
+          {(preparing || (mode === 'fix' && !fixReady)) && (
+            <span className="cap" role={preparing ? 'status' : undefined}>
+              {preparing
+                ? 'Checking project documents before sending.'
+                : 'Pick the document or paste what went wrong to send.'}
+            </span>
+          )}
+          <span className="ask-end">
+            {onAttachments && attachable && (
+              <button
+                type="button"
+                className="attach"
+                aria-label="Attach"
+                title="Attach a project file"
+                aria-expanded={picking !== null}
+                disabled={preparing || pending !== null}
+                onClick={() => {
+                  if (picking) return setPicking(null);
+                  setPickFailure('');
+                  attachable()
+                    .then((files) => setPicking(files))
+                    .catch((e: unknown) =>
+                      setPickFailure(e instanceof Error ? e.message : 'The project files could not be listed.'),
+                    );
+                }}
+              >
+                <AskIcon name="attach" size={18} stroke={1.7} />
+              </button>
+            )}
+            {ring}
+            <button
+              type="submit"
+              className={`send ${ready ? 'ready' : ''}`}
+              aria-label="Send"
+              title="Send"
+              aria-disabled={!ready || busy || !online || preparing || pending !== null}
+              disabled={busy || !online || preparing || pending !== null}
+            >
+              <AskIcon name="send" size={16} stroke={2.2} />
+            </button>
           </span>
-          <button
-            type="submit"
-            className={`send ${ready ? 'ready' : ''}`}
-            aria-disabled={!ready || busy || !online || preparing || pending !== null}
-            disabled={busy || !online || preparing || pending !== null}
-          >
-            Send
-          </button>
-          <span className="hint">Enter</span>
         </div>
       </form>
       {error && <p className="caption" role="alert">{error}</p>}

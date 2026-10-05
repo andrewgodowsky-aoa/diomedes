@@ -19,6 +19,7 @@ import { AZURE_MODEL_CONTRACT } from '../harness/azure-model-adapter.js';
 import { NECTOVIA_MODEL_CONTRACT } from '../harness/nectovia-model-adapter.js';
 import { OPENROUTER_MODEL_CONTRACT } from '../harness/openrouter-model-adapter.js';
 import { VERTEX_MODEL_CONTRACT } from '../harness/vertex-model-adapter.js';
+import { LOCAL_MODEL_CONTRACT } from '../engines/bonsai.js';
 
 export function advertisedContracts(): AdapterRouteContract[] {
   const contracts = [
@@ -28,6 +29,7 @@ export function advertisedContracts(): AdapterRouteContract[] {
     OPENROUTER_MODEL_CONTRACT,
     VERTEX_MODEL_CONTRACT,
     NECTOVIA_MODEL_CONTRACT,
+    LOCAL_MODEL_CONTRACT,
   ];
   const ids = new Set(contracts.map((contract) => contract.routeId));
   const missing = ROUTES.filter((route) => !ids.has(route));

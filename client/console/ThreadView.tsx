@@ -4,6 +4,7 @@ import type {
   Conversation,
   DocumentInfo,
   HistoryEntry,
+  IntegrationStatus,
   MailboxMessage,
   Mode,
   Need,
@@ -36,6 +37,7 @@ import { taskEvidence } from '../workbench/task-evidence';
 import { controlProfiles } from '../api';
 import { routeDisplayName } from '../../shared/engines';
 import { Composer } from './Composer';
+import { AskRow, ContextRing, useLocalProfile, type AskChange } from './AskRow';
 import { ProjectInstructions } from './ProjectInstructions';
 import { ProjectTriggerRules } from './ProjectTriggerRules';
 import { FollowUpQueue } from './FollowUpQueue';
@@ -188,6 +190,16 @@ interface ThreadViewProps {
   onRemember?(need: Need): void;
   /** P06 review comments, for the task's change review. */
   reviewComments?: ReviewComment[];
+  /** The integrations the host reports, for the ask row's engines and the local model. */
+  integrations?: IntegrationStatus[];
+  /** The free version: Nectovia is listed grayed in the ask row. */
+  free?: boolean;
+  /** A run of this thread's task is in flight, so the ask row's choices wait for it. */
+  askLocked?: boolean;
+  /** One choice from the ask row. Without it the row is not drawn. */
+  onChoose?(change: AskChange): void;
+  /** The Agent control, drawn at the end of the ask row. */
+  agentControl?: ReactNode;
 }
 
 /**
@@ -253,6 +265,11 @@ export function ThreadView({
   onAnswerOffer,
   onRemember,
   reviewComments = [],
+  integrations = [],
+  free = false,
+  askLocked = false,
+  onChoose,
+  agentControl = null,
 }: ThreadViewProps) {
   const technical = settings.detail === 'technical';
   const permission: ThreadPermission = thread.permission ?? 'show-first';
@@ -288,6 +305,8 @@ export function ThreadView({
   // own route). The confirmation names it and decides by it; the recorded route stands only
   // until the host has answered.
   const sendRoute: Route = styleView && isRoute(styleView.route) ? styleView.route : route;
+  // On a local model, the profile the host declares: the ring's window and whether images go.
+  const localProfile = useLocalProfile(route, integrations, thread.requested?.model);
   const [styleDetails, setStyleDetails] = useState(false);
   const showStyleDetails = settings.detail === 'technical' || styleDetails;
   const context =
@@ -847,6 +866,25 @@ export function ThreadView({
         onAttachments={onAttachments}
         attachable={attachable}
         onOpenFile={onOpenFile}
+        controls={
+          onChoose ? (
+            <AskRow
+              thread={thread}
+              mode={mode}
+              route={route}
+              integrations={integrations}
+              settings={settings}
+              styleView={styleView}
+              free={free}
+              names
+              locked={askLocked || busy}
+              onChoose={onChoose}
+              agent={agentControl}
+            />
+          ) : null
+        }
+        imageInput={localProfile?.inputModalities?.includes('image') ?? false}
+        ring={<ContextRing turns={thread.turns} window={localProfile?.contextTokens ?? null} />}
       />
       {/* A follow-up waits behind a run. With nothing running and nothing queued,
           the composer above sends at once, so a second box would only ask the

@@ -26,6 +26,9 @@ import { createAwsModelAdapter } from '../server/harness/aws-model-adapter.js';
 import { createAzureModelAdapter } from '../server/harness/azure-model-adapter.js';
 import { MODEL_API_REASONING } from '../server/harness/model-api-adapter.js';
 import { FileModelTranscripts } from '../server/harness/model-transcripts.js';
+import { createLocalAdapter } from '../server/engines/bonsai.js';
+import { LocalModelRuntime } from '../server/bonsai/runtime.js';
+import { BONSAI_MODEL, FixedLocalModel } from './fixtures/local-model.js';
 import type { ModelAdapter } from '../server/harness/native-agent.js';
 import { createNectoviaModelAdapter } from '../server/harness/nectovia-model-adapter.js';
 import { createOpenRouterModelAdapter } from '../server/harness/openrouter-model-adapter.js';
@@ -171,6 +174,20 @@ const NECTOVIA_POLICY: NectoviaPolicy = {
 };
 
 const ROWS: Record<ModelApiRoute, Row> = {
+  bonsai: {
+    adapter: (fetch, sinks) => createLocalAdapter({
+      runtime: new LocalModelRuntime(new FixedLocalModel(), {
+        inspect: async () => ({ state: 'unloaded', installed: true, mode: null, owned: false, detail: '' }),
+        acquire: async profile => ({ status: { state: 'ready', installed: true, mode: profile.mode, owned: true, detail: '' },
+          release: async () => {} }),
+      }),
+      model: 'local:gaming', instructions: INSTRUCTIONS, transcripts: transcripts('bonsai'), transport: fetch, sinks,
+    }),
+    answer: (thinking, text) => Response.json({ id: 'local-1', model: BONSAI_MODEL,
+      choices: [{ finish_reason: 'stop', message: { content: text, reasoning_content: thinking } }],
+      usage: { prompt_tokens: 80, completion_tokens: 12, total_tokens: 92 } }),
+    asked: () => null,
+  },
   'aws-bedrock': {
     adapter: (fetch, sinks) =>
       createAwsModelAdapter({
@@ -303,6 +320,8 @@ afterEach(async () => {
 async function turn(route: ModelApiRoute, listening: boolean) {
   const sent: Item[] = [];
   const fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(_input).endsWith('/apply-template')) return Response.json({ prompt: 'Fixture prompt' });
+    if (String(_input).endsWith('/tokenize')) return Response.json({ tokens: [1, 2, 3] });
     sent.push(JSON.parse(String(init?.body)) as Item);
     return ROWS[route].answer(THINKING, ANSWER);
   }) as typeof globalThis.fetch;

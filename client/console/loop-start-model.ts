@@ -6,6 +6,8 @@
 import type { AgentTeamSelection } from '../../shared/agent-collaboration';
 import { AGENT_NAME } from '../../shared/agent-name';
 import type { AgentReviewSelection } from '../../shared/agent-review';
+import { nectoviaRoleLine, type EscalationOffer, type RoleTier } from '../../shared/escalation-roles';
+import { NECTOVIA_ROUTE } from '../../shared/model-api';
 import type { SubscriptionWorkerStartView } from '../../shared/subscription-workers';
 
 /** The fixed review is selected by saved connection, never by editable questions. */
@@ -17,11 +19,49 @@ export interface LoopHelperSelection {
   advisor: null;
 }
 
+/** The Nectovia roles a start names beside a lead that is not Nectovia (DIO-216), each by its tier. */
+export interface LoopNectoviaRoles {
+  worker: RoleTier;
+  advisor: RoleTier | null;
+}
+
+/** The team a start sends for its Nectovia roles: a tier for each role, never a model. */
+export interface LoopTierTeam {
+  scope: string[] | null;
+  worker: { route: typeof NECTOVIA_ROUTE; tier: RoleTier };
+  advisor: { route: typeof NECTOVIA_ROUTE; tier: RoleTier } | null;
+}
+
+/** What `GET /api/projects/:id/loop/escalation` answers: each tier as a role, read now. */
+export interface LoopEscalationOffers {
+  offers: EscalationOffer[];
+  credits: string;
+}
+
+/** The reasons the tiers a start can't name as roles give, each said once. */
+export function escalationOfferReasons(view: LoopEscalationOffers | null): string[] {
+  return [...new Set((view?.offers ?? []).filter((offer) => !offer.admitted && offer.reason).map((offer) => offer.reason!))];
+}
+
+/** What the consent box says when a start names Nectovia roles: where each role's work goes, and its cost. */
+export function nectoviaRolesConsentText(leadLabel: string, roles: LoopNectoviaRoles): string {
+  const lines = [nectoviaRoleLine('worker', roles.worker), ...(roles.advisor ? [nectoviaRoleLine('advisor', roles.advisor)] : [])];
+  return `Send the goal and the files it reads to ${leadLabel}. ${lines.join(' ')} ${roles.advisor ? 'They use' : 'It uses'} your account’s credits.`;
+}
+
 interface CollaborationOffer {
   name: string;
   model: string | null;
+  /** How the host names the model for a person, where that differs from its id (a local profile). */
+  modelName?: string;
   admitted: boolean;
   reason: string | null;
+}
+
+/** "Name · model", with the model as the host names it for a person. */
+export function collaborationOfferLabel(offer: CollaborationOffer): string {
+  const model = offer.modelName ?? offer.model;
+  return model ? `${offer.name} · ${model}` : offer.name;
 }
 
 export interface LoopCollaborationOptions {
@@ -50,7 +90,7 @@ export interface LoopStartCommand {
   maxTurns?: number;
   composition?: true;
   persistentTeam?: AgentTeamSelection;
-  team?: LoopHelperSelection;
+  team?: LoopHelperSelection | LoopTierTeam;
   review?: AgentReviewSelection;
 }
 
@@ -77,9 +117,13 @@ export function loopStartCommand(input: {
   persistentTeam?: AgentTeamSelection | null;
   team?: LoopHelperSelection | null;
   review?: AgentReviewSelection | null;
+  /** Nectovia roles beside a lead that is not Nectovia. Never with a composition. */
+  nectovia?: LoopNectoviaRoles | null;
 }): LoopStartCommand {
   if (input.review && input.review.profileId !== LOOP_REVIEW_PROFILE)
     throw new Error('Only the inventory reconciliation review is available here.');
+  if (input.nectovia && (input.persistentTeam || input.team || input.review))
+    throw new Error('Choose Nectovia roles or a Team, not both.');
   return {
     protocolVersion: 1,
     commandId: input.commandId,
@@ -108,6 +152,14 @@ export function loopStartCommand(input: {
     } : {}),
     ...(input.review ? {
       review: { profileId: LOOP_REVIEW_PROFILE, connectionId: input.review.connectionId },
+    } : {}),
+    // Nectovia roles are an H14 team, not a composition: each names its tier, never a model.
+    ...(input.nectovia ? {
+      team: {
+        scope: input.sources.length ? [...input.sources] : null,
+        worker: { route: NECTOVIA_ROUTE, tier: input.nectovia.worker },
+        advisor: input.nectovia.advisor ? { route: NECTOVIA_ROUTE, tier: input.nectovia.advisor } : null,
+      },
     } : {}),
   };
 }

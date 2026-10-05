@@ -47,11 +47,20 @@ import { ToolRegistry } from './tools.js';
 import { PLAYBOOK_TOOL, registerPlaybookTool } from './capabilities/pack-playbooks.js';
 import { TEAM_TOOL_NAMES } from '../../shared/team-routes.js';
 import { NECTOVIA_ROUTE } from '../../shared/model-api.js';
+import { LOCAL_MODEL_ROUTE, type LocalModelProfile } from '../../shared/local-model.js';
 import { contextMessage } from '../engines/contract.js';
 import { answeredTurns, carriedRun } from './conversation-history.js';
 import { artifactSteps, unrecordedArtifacts } from './artifact-steps.js';
 import type { CompactionRecord, ContextAccount, HistorySelection } from '../../shared/context-accounting.js';
-import { accountContext, reconcileContext, selectHistory, stablePrefix } from './context-assembly.js';
+import {
+  accountContext,
+  localModelWindow,
+  reconcileContext,
+  selectHistory,
+  stablePrefix,
+  withCacheSetting,
+  type TurnCacheReport,
+} from './context-assembly.js';
 import { CONVERSATION_LIMITS } from '../engines/model-api-core.js';
 import { ARTIFACT_FORMAT } from '../answer-format.js';
 import { VISUAL_INSTRUCTIONS } from '../modes.js';
@@ -145,6 +154,8 @@ export const turnRunId = (runId: string, commandId: string) => `${runId}.t${dige
 /** What admission established for this message. Identifiers only. */
 export interface ModelSessionAdmission {
   route: string;
+  /** The host-resolved project used to read this turn's immutable local image versions. */
+  projectId?: string;
   connectionId: string;
   revision: number;
   model: string;
@@ -156,6 +167,18 @@ export interface ModelSessionAdmission {
    */
   managed?: ManagedAdmission;
 }
+/**
+ * What a turn tells its adapter about the owner's cache setting (DIO-215), and how the adapter
+ * reports back. The adapter reads the setting itself, on the host; the turn only says where its
+ * stable prefix ends and keeps what the adapter reports for the turn's context record.
+ */
+export interface TurnCache {
+  /** The lineage's instructions and the tool note: the same bytes on every turn of the conversation. */
+  stablePrefix: string | null;
+  /** The setting the turn's calls are sent under and what they marked; the last report is kept. */
+  report(report: TurnCacheReport): void;
+}
+
 export interface ModelSessionTurn {
   mode: 'start' | 'follow-up' | 'resume';
   runId: string;
@@ -170,13 +193,15 @@ export interface ModelSessionTurn {
   /**
    * The adapter for this turn, bound to the admitted connection, the turn's
    * instructions, a stop signal and the turn's raw preview sinks. Called inside
-   * the turn step, after the admission step committed.
+   * the turn step, after the admission step committed. `cache` is given only for the
+   * turn's own answer, never for the plain-writing rewrite.
    */
   adapter(
     admission: ModelSessionAdmission,
     instructions: string,
     signal: AbortSignal,
     sinks?: StreamSinks,
+    cache?: TurnCache,
   ): Promise<ModelAdapter>;
   /** What tests substitute below the read tools (DNS, page transport, connector transport). */
   readTools?: ReadToolDeps;
@@ -388,6 +413,12 @@ export class ModelSessionRuns {
     shareHistory: (projectId: string, route: string) => boolean = () => false,
   ) {
     this.historyPolicy = shareHistory;
+  }
+
+  /** The app's local model profiles: a local turn's deadline and window follow its profile. */
+  private localProfile: (model: unknown) => LocalModelProfile | undefined = () => undefined;
+  setLocalProfiles(lookup: (model: unknown) => LocalModelProfile | undefined) {
+    this.localProfile = lookup;
   }
 
   setSharingPolicy(
@@ -739,7 +770,7 @@ export class ModelSessionRuns {
 
   private compose(input: TextRequest, history: string) {
     const sources = input.documents.length
-      ? input.documents.map((doc) => `- ${doc.path} (sha-256 ${sourceSha(doc.text).slice(0, 12)})`).join('\n')
+      ? input.documents.map((doc) => `- ${doc.path} (sha-256 ${(doc.image?.sha ?? sourceSha(doc.text)).slice(0, 12)})${doc.image ? ' [image bytes attached to this message]' : ''}`).join('\n')
       : '- none';
     // The person's message goes last: its final line carries the issued identity the decision
     // format tells the model to copy "from the last line of the message".
@@ -759,6 +790,8 @@ export class ModelSessionRuns {
   private async drive(request: ModelSessionTurn): Promise<ModelSessionTurnResult> {
     const { input, runId } = request;
     const route = request.route ?? this.route;
+    const local = route === LOCAL_MODEL_ROUTE ? this.localProfile(input.model) : undefined;
+    const turnWallMs = local?.turnTimeoutMs ?? TURN_WALL_MS;
     const principal = localHarnessPrincipal(input.projectId);
     let run: HarnessRun | undefined;
     try {
@@ -839,7 +872,7 @@ export class ModelSessionRuns {
       turnDefinition,
       async (context: StepContext) => {
         context.signal.throwIfAborted();
-        const wall = AbortSignal.timeout(TURN_WALL_MS);
+        const wall = AbortSignal.timeout(turnWallMs);
         const stop = AbortSignal.any([context.signal, wall, ...(input.signal ? [input.signal] : [])]);
         const childId = turnRunId(runId, input.requestId);
         // The host policy is read for each turn. A saved lineage does not grant
@@ -887,6 +920,9 @@ export class ModelSessionRuns {
         // answer, with a short instruction of its own and no preview.
         let rewriter: (() => Promise<ModelAdapter>) | null = null;
         let account: ContextAccount | undefined;
+        // The turn's system text and what its adapter reported about the owner's cache setting (DIO-215).
+        let system: ReturnType<typeof stablePrefix> | undefined;
+        let cacheReport: TurnCacheReport | null = null;
         try {
           await this.runs.start({
             id: childId,
@@ -910,7 +946,7 @@ export class ModelSessionRuns {
               ...(input.carriedFrom && history.carried > 0
                 ? { carriedFrom: input.carriedFrom, carriedMessages: history.carried }
                 : {}),
-              sources: input.documents.map((doc) => ({ path: doc.path, sha256: sourceSha(doc.text) })),
+              sources: input.documents.map((doc) => ({ path: doc.path, sha256: doc.image?.sha ?? sourceSha(doc.text) })),
               // Which rules this turn was sent under, as evidence: shas and paths, never a body.
               ...(input.rules ? { rules: input.rules.record } : {}),
               // What this turn could read, as evidence. Never a path or a connector's command.
@@ -923,10 +959,10 @@ export class ModelSessionRuns {
                 ? { history: { selection: history.selection, compaction: history.compaction } as unknown as Json }
                 : {}),
             },
-            budget: { units: 32, modelCalls: 8, toolCalls: 16, wallMs: TURN_WALL_MS },
+            budget: { units: 32, modelCalls: 8, toolCalls: 16, wallMs: turnWallMs },
           });
           // The lease outlives the turn's own wall clock, which aborts the loop first.
-          await this.runs.claim(childId, this.owner, TURN_WALL_MS + 60_000);
+          await this.runs.claim(childId, this.owner, turnWallMs + 60_000);
           // The stable part first, byte-identical on every turn of this conversation; what this
           // message's read scope adds comes after it (H18). The rule path's section for this
           // message (product knowledge and the project's instruction files) is variable too: it
@@ -936,11 +972,16 @@ export class ModelSessionRuns {
             input.rules?.text ?? null,
             input.readScope ? readToolsNote(input.readScope) : null,
           ].filter((part): part is string => Boolean(part));
-          const system = stablePrefix(
+          system = stablePrefix(
             `${input.instructions}\n\n${TOOL_NOTE}`,
             variable.length ? variable.join('\n\n') : null,
           );
-          const adapter = await request.adapter(admission, system.instructions, stop, sinks);
+          const adapter = await request.adapter(admission, system.instructions, stop, sinks, {
+            stablePrefix: system.prefix,
+            report: (value) => {
+              cacheReport = value;
+            },
+          });
           version = adapter.version;
           rewriter = () => request.adapter(admission, REWRITE_INSTRUCTIONS, stop);
           const check = () => this.sharingPolicy(
@@ -954,12 +995,14 @@ export class ModelSessionRuns {
           account = accountContext({
             route,
             model: input.model,
+            window: localModelWindow(local),
             system: system.instructions,
             guidance: [ARTIFACT_FORMAT, VISUAL_INSTRUCTIONS, DECISION_FORMAT],
             tools: registry.describe(),
             parts: composed.parts,
             separatorBytes: composed.separatorBytes,
             documents: input.documents.length,
+            images: input.documents.filter(document => document.image).length,
             requestLimitBytes: CONVERSATION_LIMITS.maxRequestBytes,
             prefix: { sha: system.sha, bytes: system.bytes },
             previousPrefixSha: previousPrefix(run!, turnId),
@@ -1020,7 +1063,9 @@ export class ModelSessionRuns {
           interrupted: false,
           nativeSession: null,
           // What the provider reported for each call, beside what Diomedes estimated it sent.
-          ...(account ? { context: reconcileContext(account, child) } : {}),
+          ...(account && system
+            ? { context: withCacheSetting(reconcileContext(account, child), cacheReport, system) }
+            : {}),
         };
       },
       principal,
@@ -1217,7 +1262,7 @@ export class ModelSessionRuns {
           accountRoute: input.accountRoute,
           model: input.model,
           commandId: input.requestId,
-          sources: input.documents.map((doc) => ({ path: doc.path, sha256: sourceSha(doc.text) })),
+          sources: input.documents.map((doc) => ({ path: doc.path, sha256: doc.image?.sha ?? sourceSha(doc.text) })),
           ...(metadata ? { rootRunId: metadata.rootRunId, parent: metadata.parent, ownedTeam: metadata,
             workBinding: binding, maxModelCalls: maxCalls, effort: input.effort ?? null, connectionId: admission.connectionId, connectionRevision: admission.revision } : {}),
         },

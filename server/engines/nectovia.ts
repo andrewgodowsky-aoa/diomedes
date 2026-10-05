@@ -24,6 +24,7 @@
 import { createOpenAI } from '@ai-sdk/openai';
 import { creditAmount, publishedMonthlyGrant, type JobTier, type UsageClass } from '../../shared/managed-usage.js';
 import { MEMBER_LIMIT_REACHED } from '../../shared/credit-allotments.js';
+import { ESCALATION_HEADER, escalationAllows, type EscalationRole } from '../../shared/escalation-controls.js';
 import { GPT6_LUNA, MANAGED_LUNA, NECTOVIA_ROUTE } from '../../shared/model-api.js';
 import type { TierResolution } from '../../shared/tier-map.js';
 import { routingPriceSchema, routingReceiptSchema, routingScopeKey, type ResolvedRoutingSnapshot, type AccountScope, type HardRestrictions, type RoutingReceipt } from '../../shared/routing-policy.js';
@@ -108,6 +109,12 @@ export interface ManagedAdmission {
   /** Authenticated per-account snapshot, never a model table from the owner settings. */
   routing?: ResolvedRoutingSnapshot;
   sourceRestrictions?: HardRestrictions[];
+  /**
+   * Set when a Nectovia role under another lead makes the call: the role, sent as
+   * `ESCALATION_HEADER` so the gateway checks the account's escalation control. Absent for a
+   * Nectovia lead and for a person's conversation.
+   */
+  escalation?: EscalationRole;
 }
 
 /** The effort each tier asks for. The route does not change by tier; the effort does. */
@@ -293,6 +300,13 @@ export function gatewayRefusal(
       };
     case 'route_unavailable':
       return { code: 'nectovia_route_unavailable', message: NECTOVIA_UNAVAILABLE };
+    case 'escalation_off':
+    case 'escalation_tier_off': {
+      // The account's escalation control refused a role's call. The gateway and this app say it
+      // in the same words (`shared/escalation-controls.ts`).
+      const refusal = escalationAllows({ enabled: error.code === 'escalation_tier_off', tiers: [] }, tier);
+      return { code: `nectovia_${error.code}`, message: said ?? (refusal.ok ? NECTOVIA_UNAVAILABLE : refusal.reason) };
+    }
     case 'invalid_header':
     case 'unsupported_field':
     case 'provider_refused':
@@ -350,6 +364,9 @@ export function nectoviaBinding(input: {
     headers.set('x-nectovia-attempt', attempt);
     if (input.parentAttemptId) headers.set('x-nectovia-parent-attempt', input.parentAttemptId);
     headers.set('x-nectovia-tier', managed.tier);
+    // Only a role under another lead names itself; nothing else may carry the header.
+    headers.delete(ESCALATION_HEADER);
+    if (managed.escalation) headers.set(ESCALATION_HEADER, managed.escalation);
     headers.set('x-nectovia-usage-class', managed.usageClass);
     headers.set('x-nectovia-policy-revision', String(managed.policyRevision));
     const snapshot = input.routing ?? managed.routing;

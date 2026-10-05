@@ -1,4 +1,13 @@
 import { parseApprovalCommand } from './approval-admission.js';
+import { fileURLToPath } from 'node:url';
+import { localSlug, LOCAL_MODEL_ACCOUNT, LOCAL_MODEL_ROUTE } from '../shared/local-model.js';
+import { imageMediaType, MODEL_IMAGE_COUNT } from '../shared/model-images.js';
+import { LocalModelRuntime, LOCAL_MODEL_NOT_INSTALLED, type LocalModelHost } from './bonsai/runtime.js';
+import { FolderLocalModelSource, isFullLocalPath, type LocalModelSource } from './bonsai/descriptor.js';
+import { WindowsLocalModelHost } from './bonsai/windows-host.js';
+import { localModelIntegrations, mountLocalModelRoutes } from './bonsai/routes.js';
+import { inspectModelImage } from './bonsai/images.js';
+import type { TextRequest } from './engines/contract.js';
 import { taskDocumentProblem } from '../shared/task-sources.js';
 import { mountPermissionRoutes } from './permission-routes.js';
 import { WorkspaceService } from './workspaces.js';
@@ -158,6 +167,7 @@ import {
   type WorkStyleResolution,
 } from '../shared/work-style.js';
 import {
+  isPersonOnlyTeamRoute,
   TEAM_ROUTES,
   teamRouteRefusal,
   type TeamRoute,
@@ -189,7 +199,9 @@ import { roleInstructions } from './team/prompts.js';
 import { unreadForSlot } from './team/mailbox.js';
 import { JobCaps, jobKeyFor } from './job-caps.js';
 import { estimateView, jobRatesOf, mountJobCapRoutes, type JobCapRouteDeps, type JobPlan } from './job-cap-routes.js';
-import { approvedJobCap, jobTierOf, type JobShape } from '../shared/job-caps.js';
+import { approvedJobCap, jobTierOf, type JobShape, type JobTier } from '../shared/job-caps.js';
+import type { EscalationView } from '../shared/escalation-controls.js';
+import { escalationRefusal } from '../shared/escalation-roles.js';
 import { CONVERSATION_LIMITS, WORK_LIMITS as MODEL_WORK_LIMITS } from './engines/model-api-core.js';
 import { MODEL_TURN_CAPABILITY, TEAM_WORK_CAPABILITY } from './harness/model-session-run.js';
 import { parseWorkCommand, validateWorkCommandId } from './work-admission.js';
@@ -288,6 +300,8 @@ import { modelSessionRunId } from './harness/model-session-run.js';
 import { FileModelTranscripts } from './harness/model-transcripts.js';
 import { AWS_BEDROCK_ROUTE, AwsConnections } from './engines/aws-bedrock.js';
 import { RouteQualifications } from './engines/route-qualification-store.js';
+import { CACHE_POLICY_ROUTES, LOCAL_CACHE_TENANT } from './engines/route-cache.js';
+import { cachePolicyKey, readCachePolicy } from '../shared/route-capabilities.js';
 import { AZURE_OPENAI_ROUTE, AzureConnections } from './engines/azure-openai.js';
 import { OPENROUTER_ROUTE, OpenRouterConnections } from './engines/openrouter.js';
 import { mountModelApiRoutes } from './engines/model-api-routes.js';
@@ -342,6 +356,12 @@ import {
 
 interface AppOptions {
   dataDir: string;
+  /**
+   * Tests substitute the local model: a host for the PowerShell helper, a source for the folder
+   * Settings or the environment names, or the environment that folder is read from. Production
+   * reads the folder and runs the helper.
+   */
+  localModel?: { host?: LocalModelHost; source?: LocalModelSource; env?: Readonly<Record<string, string | undefined>> };
   /** Fresh per-launch secret held by the desktop main process, never persisted. */
   loopbackToken?: string;
   projectRoot?: string;
@@ -730,6 +750,9 @@ function validateSettings(current: Settings, body: unknown): Settings {
         services[key] = String(on).trim();
         continue;
       }
+      // The owner's cache setting per route (DIO-215) is written only by its own route. A whole
+      // settings save keeps whatever is stored, so echoing it back can neither fail nor change it.
+      if (CACHE_POLICY_ROUTES.some((route) => key === cachePolicyKey(route))) continue;
       if (
         ['codex', ...EXTERNAL_ENGINES, ...MODEL_API_ROUTES].some(
           (engine) =>
@@ -747,7 +770,21 @@ function validateSettings(current: Settings, body: unknown): Settings {
         throw new ApiError(400, 'A helper setting must be true or false.');
       services[key] = on;
     }
+    for (const route of CACHE_POLICY_ROUTES) {
+      const stored = current.services?.[cachePolicyKey(route)];
+      if (stored !== undefined) services[cachePolicyKey(route)] = stored;
+    }
     result.services = services as Settings['services'];
+  }
+  // The local model's folder (DIO-201): a full path to the folder holding its
+  // nectovia-connection.json, or null to read the environment instead. What the
+  // folder holds is checked each time it is read, not here.
+  if (supplied.localModelFolder !== undefined) {
+    const folder = supplied.localModelFolder;
+    if (folder === null || (typeof folder === 'string' && !folder.trim())) result.localModelFolder = null;
+    else if (typeof folder !== 'string' || folder.trim().length > 260 || !isFullLocalPath(folder.trim()))
+      throw new ApiError(400, 'Enter the local model folder as a full path, such as F:\\Models\\Local.');
+    else result.localModelFolder = folder.trim();
   }
   if (supplied.openProjects) {
     if (
@@ -808,6 +845,14 @@ export async function createApp(options: AppOptions) {
     throw new Error('The desktop local-service token is invalid.');
   const store = new Store(path.resolve(options.dataDir), options.projectRoot, options.secretBox ?? null);
   await store.init();
+  // The local model is the folder Settings names, else the one the environment names (DIO-201).
+  // Under test the environment is the test's own, so a developer's folder never reaches a fixture.
+  const localSource = options.localModel?.source ?? new FolderLocalModelSource({
+    setting: () => store.settings.localModelFolder,
+    env: options.localModel?.env ?? (process.env.VITEST || process.env.DIOMEDES_TEST_MODE === '1' ? {} : process.env),
+  });
+  const localRuntime = new LocalModelRuntime(localSource, options.localModel?.host ?? new WindowsLocalModelHost(store.dataDir,
+    fileURLToPath(new URL('../resources/bonsai-host.ps1', import.meta.url)), process.env));
   // Before anything reads a setting: an update carries never-chosen values to
   // this build's defaults and records what it did. A no-op on every other launch.
   const running = currentBuildIdentity(packageInfo.version);
@@ -1197,6 +1242,7 @@ export async function createApp(options: AppOptions) {
     agents,
     changeReview,
     agentProfiles,
+    route => route === LOCAL_MODEL_ROUTE && localRuntime.configured() ? { accountRoute: LOCAL_MODEL_ACCOUNT } : null,
   );
   // Only the protected desktop main process supplies this fresh loopback secret.
   // The unprotected development/browser host cannot promote a workspace fixture.
@@ -1232,6 +1278,8 @@ export async function createApp(options: AppOptions) {
     },
     // H16 trigger rules are the owner's: they evaluate only where the business holds 'owner-rules'.
     ownerRules,
+    // A local turn's deadline and context window follow its profile, read from the descriptor.
+    localProfile: (model) => localRuntime.profile(model),
   });
   // External text turns run through the host's RunService: the adapter is only
   // the provider transport inside the fenced dispatch step.
@@ -1298,10 +1346,32 @@ export async function createApp(options: AppOptions) {
   engines.modelApi = {
     connections: new AwsConnections(store.dataDir),
     qualifications: new RouteQualifications(store.dataDir),
+    // DIO-215: the owner's cache setting per route, read fresh for every call it applies to.
+    cachePolicy: (route) => readCachePolicy(store.settings.services, route),
+    // The tenant an explicit cache key is scoped to: the business that owns the work while someone
+    // is signed in, else the signed-in person, and `local` with nobody signed in.
+    cacheTenant: (projectId) => {
+      if (!accountSession?.signedIn() || !accountRouting) return LOCAL_CACHE_TENANT;
+      const scope = accountRouting.scopeFor(projectId);
+      const tenant = scope?.kind === 'organization' ? workspaces.organization(scope.id)?.tenantId : null;
+      return tenant || accountSession.personId() || LOCAL_CACHE_TENANT;
+    },
     secrets: new ConnectionSecrets(store.dataDir, options.secretBox ?? null),
     exposure,
     transcripts: new FileModelTranscripts(path.join(store.dataDir, 'model-transcripts'), AWS_BEDROCK_ROUTE),
     transport: options.modelApiTransport,
+    bonsai: {
+      runtime: localRuntime,
+      transcripts: new FileModelTranscripts(path.join(store.dataDir, 'model-transcripts-bonsai'), LOCAL_MODEL_ROUTE),
+      loadImage: async (image, projectId) => {
+        const bytes = await store.objectBytes(projectId, image.sha);
+        if (!bytes) throw new ApiError(409, 'The selected image version is no longer available. Choose it again.');
+        const actual = inspectModelImage(image.path, bytes);
+        if (actual.sha !== image.sha || actual.mediaType !== image.mediaType || actual.bytes !== image.bytes)
+          throw new ApiError(409, 'The selected image version changed. Choose it again.');
+        return bytes.toString('base64');
+      },
+    },
     // Each route keeps its own connection record and private transcripts: funds, data terms
     // and provider continuation state are never shared between payers.
     azure: {
@@ -1354,10 +1424,20 @@ export async function createApp(options: AppOptions) {
     admit: async (route, input) => {
       if (!isModelApiRoute(route) || !input.model || !input.accountRoute)
         throw new ApiError(409, 'Connect this route and choose its model in AI setup first.');
+      // A Nectovia role under another lead (DIO-216): its own child run is its job, at its own tier,
+      // and it starts only while the account's escalation control still allows that tier.
+      const tiered = input.tier ? { tier: input.tier, escalation: input.escalation } : null;
+      if (tiered) {
+        if (route !== NECTOVIA_ROUTE || !input.runId || !tiered.escalation)
+          throw new ApiError(409, 'Only a Nectovia role runs at a tier.', { code: 'team_role_invalid' });
+        const refusal = escalationRefusal(await escalationFor(input.projectId, false), tiered.tier);
+        if (refusal) throw new ApiError(409, refusal, { code: 'escalation_refused', role: tiered.escalation });
+      }
       const admission = await engines.admitModelApi(
         route,
         { model: input.model, accountRoute: input.accountRoute, projectId: input.projectId,
-          requestId:input.rootRunId, threadId:input.threadId ?? undefined, effort:input.effort ?? undefined },
+          requestId: tiered ? input.runId : input.rootRunId, threadId:input.threadId ?? undefined, effort:input.effort ?? undefined,
+          ...(tiered ? { tier: tiered.tier, escalation: tiered.escalation } : {}) },
         { surface: 'loop', rootJobId: input.rootJobId ?? input.rootRunId ?? null },
       );
       return { model: admission.model, accountRoute: admission.accountRoute };
@@ -1375,6 +1455,8 @@ export async function createApp(options: AppOptions) {
           instructions: request.instructions,
           rootRunId:request.rootRunId, rootJobId:request.rootJobId, threadId:request.threadId,
           scopedLedger:request.scopedLedger, effort:request.effort, callLimits:request.callLimits,
+          // A Nectovia role under another lead: its tier and role, admitted again on every step.
+          ...(request.tier && route === NECTOVIA_ROUTE ? { tier: request.tier, escalation: request.escalation } : {}),
         },
         stop,
       );
@@ -1627,9 +1709,26 @@ export async function createApp(options: AppOptions) {
         { surface: 'loop', rootJobId });
       return { model: admitted.model, accountRoute: admitted.accountRoute };
     },
+    // DIO-216: a Nectovia role under another lead, at the tier it names, with the same checks.
+    managedTier: async (projectId, tier, fresh) => {
+      if (fresh) await accountRouting?.refresh(projectId);
+      return managedChoiceAt(projectId, () => tier);
+    },
+    escalation: (projectId, fresh) => escalationFor(projectId, fresh),
+    admitManagedRole: async (projectId, jobId, input, tier, role, rootJobId) => {
+      // The role's own job pins its tier; every call it makes names the role to the gateway.
+      const admitted = await engines.admitModelApi(NECTOVIA_ROUTE,
+        { ...input, projectId, requestId: jobId, tier, escalation: role },
+        { surface: 'loop', rootJobId });
+      return { model: admitted.model, accountRoute: admitted.accountRoute };
+    },
   }, () => packLifecycle.contributions, {
     host:collaborationHost, rootLedger:productionTeam.rootLedger,
-  }, subscriptionWorkers);
+  }, subscriptionWorkers, {
+    // The same route-on every send uses. The local model's status is read now, never started.
+    on: (route) => routeOn(route),
+    localRefusal: (model) => localRuntime.refusal(model, { fresh: true }),
+  });
   mountTaskWorkflowRoutes(app, store);
   mountManualHandoffRoutes(app, store);
   mountWorkspaceRoutes(app, store, workspaces, configuration, automations);
@@ -1806,6 +1905,8 @@ export async function createApp(options: AppOptions) {
       a === preferred ? -1 : b === preferred ? 1 : 0,
     );
     return ordered.flatMap((teamRoute) => {
+      // The local model is the person's own pick, never a candidate Nectovia may choose.
+      if (isPersonOnlyTeamRoute(teamRoute)) return [];
       if (services[teamRoute] !== true) return [];
       if (teamRoute !== 'codex' && typeof services[`${teamRoute}AccountRoute`] !== 'string')
         return [];
@@ -1821,6 +1922,8 @@ export async function createApp(options: AppOptions) {
     });
   };
   teamService.setRouteCandidates(teamCandidates);
+  // A local member names a profile the local model's folder lists now.
+  teamService.setLocalModel(localRuntime);
   const route =
     (action: (req: Request, res: Response) => Promise<unknown>, locked = true) =>
     async (req: Request, res: Response, next: express.NextFunction) => {
@@ -2174,11 +2277,12 @@ export async function createApp(options: AppOptions) {
             : item.adapter === 'ready' && item.kind !== 'sample'
               ? { ...item, enabled: store.settings.services?.[item.id] === true }
               : item,
-        ),
+        ).concat(await localModelIntegrations(localRuntime, { fresh: req.query.refresh === '1' })),
       }),
       false,
     ),
   );
+  mountLocalModelRoutes(app, localRuntime, store);
   app.get(
     '/api/usage',
     route(async (req) => {
@@ -2922,7 +3026,7 @@ export async function createApp(options: AppOptions) {
       return session;
     };
     if (selectedRoute !== 'sample') {
-      if (selectedRoute !== NECTOVIA_ROUTE && store.settings.services?.[selectedRoute] !== true)
+      if (!routeOn(selectedRoute))
         throw new ApiError(409, 'Turn the selected engine on in Settings before using it.');
       if (b.consent !== true)
         throw new ApiError(
@@ -3752,7 +3856,12 @@ export async function createApp(options: AppOptions) {
         b.engine === undefined
           ? selectedEngine(store.settings, state.project, conversation)
           : choice(b.engine, ROUTES, 'engine');
-      if (b.requested !== undefined) conversation.requested = parseRequested(b.requested, engine,
+      // A local profile saved under its earlier slug, as an Agent pick echoes it back, is written
+      // under the slug the description lists it as now.
+      const requested = engine === LOCAL_MODEL_ROUTE && b.requested && typeof b.requested === 'object'
+        && typeof (b.requested as { model?: unknown }).model === 'string'
+        ? { ...(b.requested as object), model: localSlug((b.requested as { model: string }).model) } : b.requested;
+      if (b.requested !== undefined) conversation.requested = parseRequested(requested, engine,
         isModelApiRoute(engine) ? await currentChoiceModels(engine) : undefined);
       // A style changes which offered model leads and how hard it reasons, from the next
       // request on. It never touches the mode, the permission or the route.
@@ -3805,6 +3914,15 @@ export async function createApp(options: AppOptions) {
     return { model, ...(effort ? { effort } : {}) };
   };
   /** The thread's WorkStyle, else the Settings default, else none. */
+  /**
+   * A thread's model pin as its route lists it now. A local profile saved under its earlier slug
+   * reads as that profile's slug, so the resolver finds it among the descriptor's profiles.
+   */
+  const pinOf = (engine: string, requested: Conversation['requested']) =>
+    requested?.model
+      ? { model: engine === LOCAL_MODEL_ROUTE ? (localSlug(requested.model) ?? requested.model) : requested.model,
+          effort: requested.effort ?? null }
+      : null;
   const styleOf = (conversation?: Conversation | null): WorkStyle | null => {
     if (isWorkStyle(conversation?.workStyle)) return conversation.workStyle;
     const saved = store.settings.services?.workStyle;
@@ -3812,6 +3930,8 @@ export async function createApp(options: AppOptions) {
   };
   /** API routes offer only their current connection; inspected engines keep their own catalogue. */
   const routeModels = (engine: string): EngineModel[] => {
+    // The descriptor's profiles, named for the model its server listed at the last check.
+    if (engine === LOCAL_MODEL_ROUTE) return localRuntime.catalog();
     const levels = ['low', 'medium', 'high'].map((id) => ({id,description:''}));
     if (engine === AZURE_OPENAI_ROUTE)
       return (engines.modelApi?.azure?.connections.peek()?.deployments ?? []).map((entry) => ({
@@ -3837,6 +3957,11 @@ export async function createApp(options: AppOptions) {
   };
   /** Public choices also read the current AWS record, so a stale setting cannot offer a removed model. */
   const currentChoiceModels = async (engine:string):Promise<EngineModel[]> => {
+    // The local profiles as a recent status check names them. Reading the status starts nothing.
+    if (engine === LOCAL_MODEL_ROUTE) {
+      await localRuntime.status();
+      return localRuntime.catalog();
+    }
     if (engine !== AWS_BEDROCK_ROUTE) return routeModels(engine);
     const current = await engines.modelApi?.connections.read();
     return current ? [{slug:current.modelId,name:current.modelId,description:'',defaultEffort:'low',
@@ -3857,7 +3982,11 @@ export async function createApp(options: AppOptions) {
     }
     return nectoviaAccountRoute(organizationId);
   };
-  const managedLoopChoice = (projectId: string, taskId?: string) => {
+  /**
+   * The managed model and account at one tier, with the Agent's checks: signed in, the work's
+   * business includes the Nectovia Agent and managed AI usage, and the tier has a published model.
+   */
+  const managedChoiceAt = (projectId: string, style: () => JobTier) => {
     const accountRoute = nectoviaAccountFor(projectId);
     const organizationId = nectoviaAccount!.organizationFor(projectId)!;
     const scope = accountRouting?.scopeFor(projectId);
@@ -3866,24 +3995,41 @@ export async function createApp(options: AppOptions) {
       throw new EngineError(AGENT_NOT_INCLUDED, entitlement?.reason || 'This account does not include the Nectovia Agent.', false);
     if (!accountRouting.includes(scope, 'managed-inference'))
       throw new EngineError(AGENT_NOT_INCLUDED, 'This account does not include managed AI usage.', false);
-    const thread = taskId ? store.state(projectId).conversations.find((item) => item.taskId === taskId) : undefined;
     const tier = nectoviaTier({
-      style: jobCaps.tierFor(projectId, thread?.id ?? null),
+      style: style(),
       signedIn: nectoviaAccount?.signedIn() ?? false,
       policy: nectoviaAccount?.policy(projectId) ?? null,
     });
     if (tier.outcome !== 'run' || !tier.model) throw new ApiError(409, tier.reason);
     return { model: tier.model, accountRoute };
   };
+  const managedLoopChoice = (projectId: string, taskId?: string) =>
+    managedChoiceAt(projectId, () => {
+      const thread = taskId ? store.state(projectId).conversations.find((item) => item.taskId === taskId) : undefined;
+      return jobCaps.tierFor(projectId, thread?.id ?? null);
+    });
+  /**
+   * A scope's escalation control: the last read while it is current, else read again. Null when it
+   * could not be read, or nobody is signed in, and a role is then refused, never run under the default.
+   */
+  const escalationFor = async (projectId: string, fresh: boolean): Promise<EscalationView | null> => {
+    if (!accountRouting) return null;
+    try {
+      return (fresh ? null : accountRouting.escalation(projectId)) ?? (await accountRouting.refreshEscalation(projectId));
+    } catch {
+      return null;
+    }
+  };
   /** Whether a route takes a send: Nectovia has no switch; every other route is turned on in Settings. */
-  const routeOn = (route: string) => route === NECTOVIA_ROUTE || store.settings.services?.[route] === true;
+  const routeOn = (route: string) => route === LOCAL_MODEL_ROUTE ? localRuntime.configured()
+    : route === NECTOVIA_ROUTE || store.settings.services?.[route] === true;
   /**
    * The account a send on this route runs under, as Settings or the account session records it.
    * ChatGPT signs in under one account route (`codex:chatgpt`), the one its scope grants assume,
    * unless Settings recorded another.
    */
   const routeAccount = (route: string, projectId: string): unknown =>
-    route === NECTOVIA_ROUTE
+    route === LOCAL_MODEL_ROUTE ? LOCAL_MODEL_ACCOUNT : route === NECTOVIA_ROUTE
       ? nectoviaAccountFor(projectId)
       : route === 'codex'
         ? (store.settings.services?.codexAccountRoute ?? CODEX_ACCOUNT_ROUTE)
@@ -3950,6 +4096,8 @@ export async function createApp(options: AppOptions) {
     options: RunHints = {},
   ): TierResolution | null => {
     const conversation = routed(projectId, unrouted);
+    // A local selection is never handed to the cloud tier map, even if its saved profile is missing.
+    if (conversation?.engine === LOCAL_MODEL_ROUTE) return null;
     // A tier routes to Nectovia's policy or to a model-API route; both are the Agent. Where no
     // subscription pays for it, no tier applies and the thread keeps its own engine.
     if (conversation?.engine !== NECTOVIA_ROUTE && agentGate && !agentGate.paidFor(projectId)) return null;
@@ -4009,6 +4157,7 @@ export async function createApp(options: AppOptions) {
     conversation: Conversation | null | undefined,
     options: RunHints = {},
   ): (RunChoice & { reason: string }) | null => {
+    if (engine === LOCAL_MODEL_ROUTE) return null;
     // On Nectovia the published policy's model for the tier is the only choice there is.
     if (engine === NECTOVIA_ROUTE) {
       const tier = tierFor(projectId, conversation, options);
@@ -4179,6 +4328,19 @@ export async function createApp(options: AppOptions) {
       const ready = new Map(teamCandidates(projectId).map((item) => [item.route, item]));
       return {
         routes: TEAM_ROUTES.map((teamRoute) => {
+          if (teamRoute === LOCAL_MODEL_ROUTE) {
+            // Ready where the local model is set up here; its profiles are named as its descriptor
+            // names them. Whether one is running is asked again when a run admits the member.
+            const on = routeOn(teamRoute);
+            return {
+              route: teamRoute,
+              name: routeDisplayName(teamRoute),
+              ready: on,
+              models: routeModels(teamRoute).map((model) => ({ slug: model.slug, name: model.name })),
+              savedModel: null,
+              ...(on ? {} : { reason: LOCAL_MODEL_NOT_INSTALLED }),
+            };
+          }
           const candidate = ready.get(teamRoute);
           return {
             route: teamRoute,
@@ -4291,9 +4453,7 @@ export async function createApp(options: AppOptions) {
             escalation: null,
           } satisfies WorkStyleResolution,
         };
-      const pin = thread.requested?.model
-        ? { model: thread.requested.model, effort: thread.requested.effort ?? null }
-        : null;
+      const pin = pinOf(engine, thread.requested);
       const savedModel =
         engine === 'codex'
           ? codexModelSetting()
@@ -4344,9 +4504,7 @@ export async function createApp(options: AppOptions) {
             mode: thread.mode,
             route: engine,
             availableModels: routeModels(engine),
-            pin: thread.requested?.model
-              ? { model: thread.requested.model, effort: thread.requested.effort ?? null }
-              : null,
+            pin: pinOf(engine, thread.requested),
             savedModel: savedModel ?? null,
             routeDefaultAllowed: engine === 'codex',
             stableEffort: isModelApiRoute(engine),
@@ -5057,12 +5215,24 @@ export async function createApp(options: AppOptions) {
           home: store.isHomeProject(projectId),
         });
         const paths = new Set<string>();
-        const documents = [];
+        const documents: TextRequest['documents'] = [];
         for (const source of command.sources) {
           const name = relativeName(source.path);
           if (paths.has(name.toLowerCase()))
             throw new ApiError(400, 'Choose each source file once.');
           paths.add(name.toLowerCase());
+          if (imageMediaType(name)) {
+            if (conversationRoute !== LOCAL_MODEL_ROUTE || !localRuntime.profile(selection.model)?.inputModalities.includes('image'))
+              throw new ApiError(415, 'This model takes text only. Choose a model that takes images to send them.');
+            if (documents.filter(document => document.image).length >= MODEL_IMAGE_COUNT)
+              throw new ApiError(413, `Choose at most ${MODEL_IMAGE_COUNT} images for one message.`);
+            const image = await store.readModelImage(projectId, name);
+            if (image.sha !== source.sha)
+              throw new ApiError(409, `${name} changed. Choose its current version before sending.`);
+            documents.push({ path: name, image,
+              text: `[Image: ${name}; SHA-256 ${image.sha}. The selected image bytes accompany this message.]` });
+            continue;
+          }
           const document = await store.readDocument(projectId, name);
           if (document.sha !== source.sha)
             throw new ApiError(409, `${name} changed. Choose its current version before sending.`);
@@ -5611,8 +5781,7 @@ export async function createApp(options: AppOptions) {
    * Where Diomedes' own conversation lives: the reserved home Project and its
    * one thread. The read answers null until a binding is both saved and valid,
    * and creates nothing, so opening the app provisions no home. The page posts
-   * here when the person sends their first message, and that is the only thing
-   * that ever makes one.
+   * here when the person sends their first message or explicitly chooses a local model.
    */
   app.get(
     '/api/home/conversation',
@@ -5953,7 +6122,7 @@ export async function createApp(options: AppOptions) {
         !store.state(projectId).conversations.some((c) => c.id === threadId)
       )
         throw new ApiError(404, 'This thread was not found.');
-      if (serviceRoute !== 'sample' && store.settings.services?.[serviceRoute] !== true)
+      if (serviceRoute !== 'sample' && !routeOn(serviceRoute))
         throw new ApiError(409, 'Turn the selected engine on in Settings before using it.');
       const needsConsent =
         isExternalEngine(serviceRoute) ||

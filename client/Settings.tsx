@@ -22,6 +22,7 @@ import { CodexSetup } from './CodexSetup';
 import { CodingTools, useCodingToolsView } from './CodingTools';
 import { CODING_TOOLS_SECTION, codingToolsOffered } from './coding-tools-view';
 import { ReadConnectors } from './ReadConnectors';
+import { LocalModelFolder } from './LocalModelFolder';
 import { AgentProfiles } from './console/AgentProfiles';
 import { AccountSettings } from './AccountSettings';
 import { TriggerRules } from './console/TriggerRules';
@@ -533,6 +534,8 @@ export function SettingsPage({
                       </section>
                     ))}
                 </div>
+                {/* A model on this computer: its folder's description says what it is. */}
+                <LocalModelFolder settings={settings} save={save} refresh={refresh} />
                 {/* What Ask and Plan may read beyond the project folder. */}
                 <ReadConnectors />
               </>

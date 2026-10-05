@@ -4,6 +4,10 @@ import { promisify } from 'node:util';
 import { createHash, randomUUID } from 'node:crypto';
 import type { OwnedTeamObservation } from '../observability/eligibility.js';
 import path from 'node:path';
+import { LOCAL_MODEL_ACCOUNT, LOCAL_MODEL_ROUTE } from '../../shared/local-model.js';
+import type { ModelImage } from '../../shared/model-images.js';
+import type { LocalModelRuntime } from '../bonsai/runtime.js';
+import { LOCAL_MODEL_CONNECTION, LOCAL_MODEL_SDK, localLimits, localRateCard, createLocalAdapter, respondLocal } from './bonsai.js';
 import type { ExternalEngine, IntegrationStatus } from '../../shared/types.js';
 import {
   ENGINE_NAMES,
@@ -84,6 +88,7 @@ import {
   awsModelRateCard,
   awsModelRefusal,
   awsQualificationFor,
+  awsProtocolFor,
   AwsConnectionRetired,
   respondOnce,
   type AwsConnection,
@@ -91,6 +96,7 @@ import {
 } from './aws-bedrock.js';
 import type { RouteQualifications } from './route-qualification-store.js';
 import {
+  AZURE_OPENAI_PROTOCOL,
   AZURE_OPENAI_ROUTE,
   AZURE_OPENAI_SDK,
   azureAccountRoute,
@@ -99,6 +105,17 @@ import {
   type AzureConnection,
   type AzureConnections,
 } from './azure-openai.js';
+import {
+  cacheNamespace,
+  DEFAULT_CACHE_POLICY,
+  systemParts,
+  type CacheMark,
+  type CacheNamespace,
+  type CachePolicy,
+  type CacheRequest,
+  type RouteCapability,
+} from '../../shared/route-capabilities.js';
+import { awsCapability, azureCapability, LOCAL_CACHE_TENANT, routeCacheRequest, type CachePolicyRoute } from './route-cache.js';
 import {
   OPENROUTER_ROUTE,
   OPENROUTER_SDK,
@@ -122,6 +139,7 @@ import {
 } from './google-vertex.js';
 import { callCeiling, type CallExposure, type RespondLimits, type RespondResult, type StreamSinks } from './model-api-core.js';
 import { decideJobStep, DEFAULT_JOB_TIER, type JobTier } from '../../shared/job-caps.js';
+import type { EscalationRole } from '../../shared/escalation-controls.js';
 import type { MicroUsd } from '../../shared/managed-usage.js';
 import { createAwsModelAdapter } from '../harness/aws-model-adapter.js';
 import { createAzureModelAdapter } from '../harness/azure-model-adapter.js';
@@ -145,7 +163,13 @@ import {
 import type { ModelAdapter } from '../harness/native-agent.js';
 import type { ExposureAttempt, JobScope, ModelRateCard } from '../spend-exposure.js';
 import type { ModelTranscripts } from '../harness/model-transcripts.js';
-import { turnRunId, type ModelSessionAdmission, type ModelSessionRuns, type ModelSessionTurn } from '../harness/model-session-run.js';
+import {
+  turnRunId,
+  type ModelSessionAdmission,
+  type ModelSessionRuns,
+  type ModelSessionTurn,
+  type TurnCache,
+} from '../harness/model-session-run.js';
 import type { ReadToolDeps } from '../harness/capabilities/read-scope-tools.js';
 import type { ConnectionSecrets } from '../connection-secrets.js';
 import { SpendExposure } from '../spend-exposure.js';
@@ -2249,6 +2273,12 @@ export class EngineService {
       prompt?: string;
       requestId?: string;
       threadId?: string | null;
+      /**
+       * A Nectovia role under another lead: the tier it runs at, pinned on its own job, and the
+       * role its calls name to the gateway. Only the Nectovia route reads them.
+       */
+      tier?: JobTier;
+      escalation?: EscalationRole;
     },
     agent?: Pick<AgentWork, 'surface' | 'rootJobId'>,
     observe?: { readonly runId: string; readonly ownedTeam?: OwnedTeamObservation } | false,
@@ -2307,7 +2337,7 @@ export class EngineService {
       throw new EngineError('ROUTE_REFUSED', routeUnavailable(long), true);
     const blocked = await handle.credential.check();
     if (blocked) throw new EngineError('ROUTE_REFUSED', routeUnavailable(long), true);
-    if (!api.exposure.allowance(handle.connectionId) || api.exposure.summary(handle.connectionId).availableMicroUsd <= 0)
+    if (route !== LOCAL_MODEL_ROUTE && (!api.exposure.allowance(handle.connectionId) || api.exposure.summary(handle.connectionId).availableMicroUsd <= 0))
       throw new EngineError(
         'SPEND_LIMIT',
         `The approved ${short} spend limit has no room left. Nothing was sent. The owner can review usage and approve more in AI setup.`,
@@ -2332,6 +2362,7 @@ export class EngineService {
       }
     return {
       route,
+      ...(route === LOCAL_MODEL_ROUTE ? { projectId: input.projectId } : {}),
       connectionId: handle.connectionId,
       revision: handle.revision,
       model: input.model,
@@ -2348,7 +2379,9 @@ export class EngineService {
    */
   private async admitNectovia(
     api: ModelApiServices,
-    input: Pick<TextRequest, 'model' | 'accountRoute'> & { projectId?: string; requestId?: string; threadId?: string | null },
+    input: Pick<TextRequest, 'model' | 'accountRoute'> & {
+      projectId?: string; requestId?: string; threadId?: string | null; tier?: JobTier; escalation?: EscalationRole;
+    },
     agent: Pick<AgentWork, 'surface' | 'rootJobId'> | undefined,
     admitted: AdmittedAgentWork | null,
     ask?: ObservationAsk,
@@ -2399,6 +2432,9 @@ export class EngineService {
       tier,
       usageClass: usageClassFor(admitted.surface),
       rootJobId,
+      // A role under another lead names itself on every call it makes, so the gateway can check
+      // the account's escalation control. A Nectovia lead and a person's conversation name none.
+      ...(input.escalation ? { escalation: input.escalation } : {}),
     };
     const handle = await modelApiRoute(api, NECTOVIA_ROUTE, { managed, projectId: input.projectId });
     if (!handle.connected) throw new EngineError(AGENT_SIGN_IN_REQUIRED, NECTOVIA_SIGN_IN, false);
@@ -2434,9 +2470,13 @@ export class EngineService {
       managed,
     };
   }
-  /** The tier a managed job is metered under: the one its job record pinned from its thread. */
-  private async managedTier(input: { projectId?: string; requestId?: string; threadId?: string | null }): Promise<JobTier> {
-    if (!this.jobCaps || !input.projectId || !input.requestId) return DEFAULT_JOB_TIER;
+  /**
+   * The tier a managed job is metered under: the one its job record pinned from its thread, or for
+   * a Nectovia role under another lead, the role's own tier, pinned on the role's own job.
+   */
+  private async managedTier(input: { projectId?: string; requestId?: string; threadId?: string | null; tier?: JobTier }): Promise<JobTier> {
+    if (!this.jobCaps || !input.projectId || !input.requestId) return input.tier ?? DEFAULT_JOB_TIER;
+    if (input.tier) return (await this.jobCaps.scope(input.projectId, input.requestId, null, input.tier)).tier;
     return (await this.jobCaps.scope(input.projectId, input.requestId, input.threadId ?? null)).tier;
   }
   /**
@@ -2460,7 +2500,7 @@ export class EngineService {
   }
   private async modelApiHandle(admission: ModelSessionAdmission): Promise<ConnectedRoute> {
     const api = this.modelApi!;
-    const handle = await modelApiRoute(api, admission.route as ModelApiRoute, { managed: admission.managed ?? null });
+    const handle = await modelApiRoute(api, admission.route as ModelApiRoute, { managed: admission.managed ?? null, projectId: admission.projectId });
     if (!handle.connected || handle.connectionId !== admission.connectionId || handle.revision !== admission.revision)
       throw new EngineError(
         'ACCOUNT_CHANGED',
@@ -2515,16 +2555,18 @@ export class EngineService {
                 };
               }
             : undefined,
-        adapter: async (admission, instructions, stop, sinks) => {
+        adapter: async (admission, instructions, stop, sinks, turnCache) => {
           const { handle, secret } = await this.openModelApi(admission);
           const adapter = handle.adapter({
             model: admission.model,
             secret,
             exposure: handle.exposure(await this.jobLedger(api, input), runId),
             instructions,
-            effort: selectedEffortOf(input.effort),
+            effort: route === LOCAL_MODEL_ROUTE ? input.effort : selectedEffortOf(input.effort),
+            images: input.documents.flatMap(document => document.image ? [document.image] : []),
             transport: api.transport,
             sinks,
+            ...(await cacheCall(handle, admission.model, input.projectId ?? null, instructions, turnCache)),
           });
           return {
             ...adapter,
@@ -2594,7 +2636,7 @@ export class EngineService {
             context,
             attemptSignal,
           );
-          let result: RespondResult;
+          let result: Omit<RespondResult, 'reservation'>;
           try {
             result = await handle.respond({
               model: admission.model,
@@ -2604,11 +2646,13 @@ export class EngineService {
               instructions: input.instructions,
               messages: [{ role: 'user', content: contextMessage(input) }],
               tools: [],
-              effort: selectedEffortOf(input.effort),
-              limits: WORK_LIMITS,
+              effort: route === LOCAL_MODEL_ROUTE ? input.effort : selectedEffortOf(input.effort),
+              limits: route === LOCAL_MODEL_ROUTE ? localLimits(api.bonsai?.runtime.profile(admission.model), WORK_LIMITS) : WORK_LIMITS,
               signal: attemptSignal,
               transport: api.transport,
               sinks: { onDelta: sinks.onDelta, onToolActivity: sinks.onToolActivity },
+              // A Work turn has no stable prefix: an explicit setting marks its whole instructions.
+              ...(await cacheCall(handle, admission.model, input.projectId ?? null, input.instructions)),
             });
           } catch (error) {
             // Drain ordered publications before the step can fail; the call's own failure is reported.
@@ -2670,7 +2714,7 @@ export class EngineService {
         instructions: input.instructions,
         messages: [{ role: 'user', content: contextMessage(input) }],
         tools: [],
-        limits: WORK_LIMITS,
+        limits: route === LOCAL_MODEL_ROUTE ? localLimits(this.modelApi?.bonsai?.runtime.profile(input.model), WORK_LIMITS) : WORK_LIMITS,
       });
     } catch {
       // Too large for the route: the call itself refuses it, with the route's own words, before sending.
@@ -2723,8 +2767,10 @@ export class EngineService {
             secret,
             exposure: await this.jobLedger(api, input),
             instructions,
-            effort: selectedEffortOf(input.effort),
+            effort: route === LOCAL_MODEL_ROUTE ? input.effort : selectedEffortOf(input.effort),
+            images: input.documents.flatMap(document => document.image ? [document.image] : []),
             transport: api.transport,
+            ...(await cacheCall(handle, admission.model, input.projectId ?? null, instructions)),
           });
           return {
             ...adapter,
@@ -2769,7 +2815,9 @@ export class EngineService {
     route: ModelApiRoute,
     request: { projectId: string; runId: string; model: string; accountRoute: string; instructions: string;
       rootRunId?: string; rootJobId?: string; threadId?: string | null; scopedLedger?: SpendExposure;
-      effort?: string | null; callLimits?: RespondLimits; ownedTeamObservation?: OwnedTeamObservation },
+      effort?: string | null; callLimits?: RespondLimits; ownedTeamObservation?: OwnedTeamObservation;
+      /** A Nectovia role under another lead: its tier and its role, read again on every step. */
+      tier?: JobTier; escalation?: EscalationRole },
     stop: AbortSignal,
   ): Promise<ModelAdapter> {
     const api = this.modelApi;
@@ -2787,9 +2835,9 @@ export class EngineService {
       throw new HarnessError('collaboration_refused', 'This role was supplied a different root spend ledger.');
     const rootJobId = ledger.jobScope?.id ?? rootRunId;
     const effort = request.effort === undefined ? 'medium' : request.effort === null ? undefined : request.effort;
-    if (effort !== undefined && !['low', 'medium', 'high'].includes(effort))
+    if (effort !== undefined && !(route === LOCAL_MODEL_ROUTE ? ['low', 'medium', 'xhigh'] : ['low', 'medium', 'high']).includes(effort))
       throw new HarnessError('collaboration_refused', 'The pinned model effort is unsupported on this API route.');
-    const callOptions = { instructions: request.instructions, effort: effort as 'low' | 'medium' | 'high' | undefined,
+    const callOptions = { instructions: request.instructions, effort,
       transport: api.transport, ...(request.callLimits ? { limits: request.callLimits } : {}) };
     const admission = await this.admitModelApi(
       route,
@@ -2817,13 +2865,15 @@ export class EngineService {
         secret,
         exposure: handle.exposure(ledger, request.runId),
         ...callOptions,
+        ...(await cacheCall(handle, admission.model, request.projectId, request.instructions)),
       });
     }
     // Every role re-admits, re-opens and rebuilds the call's adapter
     // on every step. Route, model, account, job and ledger stay pinned to what
     // the loop was admitted with; the token, policy, membership and cap are
     // read again. Stale policy, expiry and revocation refuse here, unsent.
-    const pinned = { route, model: request.model, accountRoute: request.accountRoute, runId: request.runId, projectId: request.projectId, instructions: request.instructions };
+    const pinned = { route, model: request.model, accountRoute: request.accountRoute, runId: request.runId, projectId: request.projectId, instructions: request.instructions,
+      tier: request.tier, escalation: request.escalation };
     return {
       ...adapter,
       complete: async (call, signal, stream) => {
@@ -2831,7 +2881,8 @@ export class EngineService {
         callSignal.throwIfAborted();
         const fresh = await this.admitModelApi(
           pinned.route,
-          { model: pinned.model, accountRoute: pinned.accountRoute, projectId: pinned.projectId, requestId: pinned.runId, threadId },
+          { model: pinned.model, accountRoute: pinned.accountRoute, projectId: pinned.projectId, requestId: pinned.runId, threadId,
+            tier: pinned.tier, escalation: pinned.escalation },
           { surface, rootJobId },
           false,
         );
@@ -2843,12 +2894,15 @@ export class EngineService {
           secret: opened.secret,
           exposure: opened.handle.exposure(ledger, pinned.runId),
           ...callOptions,
+          // The owner's cache setting is read again for every step, like the rest of the route.
+          ...(await cacheCall(opened.handle, fresh.model, pinned.projectId, pinned.instructions)),
         });
         callSignal.throwIfAborted();
         const result = await step.complete(call, callSignal, stream);
         callSignal.throwIfAborted();
         const accepted = await this.admitModelApi(pinned.route,
-          { model: pinned.model, accountRoute: pinned.accountRoute, projectId: pinned.projectId, requestId: pinned.runId, threadId },
+          { model: pinned.model, accountRoute: pinned.accountRoute, projectId: pinned.projectId, requestId: pinned.runId, threadId,
+            tier: pinned.tier, escalation: pinned.escalation },
           { surface, rootJobId }, false);
         if (accepted.model !== pinned.model || accepted.accountRoute !== pinned.accountRoute)
           throw new EngineError('ACCOUNT_CHANGED', 'The selected route changed while this role was in flight. Its answer was not accepted.', true);
@@ -2864,7 +2918,7 @@ export class EngineService {
 
 /** What the engine service needs from the host's parent-job caps (`server/job-caps.ts`). */
 export interface JobCapsPort {
-  scope(projectId: string, jobId: string, threadId: string | null): Promise<JobScope & { tier: JobTier }>;
+  scope(projectId: string, jobId: string, threadId: string | null, tier?: JobTier): Promise<JobScope & { tier: JobTier }>;
   noteStop(key: string, stop: { usedMicroUsd: MicroUsd; capMicroUsd: MicroUsd; neededMicroUsd: MicroUsd }): Promise<void>;
 }
 
@@ -2877,6 +2931,9 @@ export interface JobCapsPort {
  * unavailable in this process, never served by another route.
  */
 export interface ModelApiServices {
+  /** The local model route: its runtime reads the folder's descriptor, so it is set up when that is. */
+  bonsai?: { runtime: LocalModelRuntime; transcripts: ModelTranscripts;
+    loadImage(image: ModelImage, projectId: string): Promise<string> };
   connections: AwsConnections;
   secrets: ConnectionSecrets;
   exposure: SpendExposure;
@@ -2914,6 +2971,17 @@ export interface ModelApiServices {
     /** Tests only: the clock the month's local guard is named by. */
     now?: () => Date;
   };
+  /**
+   * The owner's cache setting for a route (DIO-215), read from Settings each time a route's calls
+   * are prepared. Absent reads as the provider's default: every request goes out as it did before
+   * the setting existed.
+   */
+  cachePolicy?: (route: string) => CachePolicy;
+  /**
+   * The tenant an explicit cache key is scoped to for work in one project: the signed-in
+   * principal's tenant when accounts are on, `local` otherwise. Absent reads as `local`.
+   */
+  cacheTenant?: (projectId: string | null) => string;
   /** Tests substitute the network here, below the SDK. Production leaves it unset. */
   transport?: typeof globalThis.fetch;
   /**
@@ -2928,10 +2996,17 @@ interface RouteCallOptions {
   secret: string;
   exposure: CallExposure;
   instructions: string;
-  effort?: 'low' | 'medium' | 'high';
+  effort?: string;
+  images?: readonly ModelImage[];
   limits?: RespondLimits;
   transport?: typeof globalThis.fetch;
   sinks?: StreamSinks;
+  /** The owner's cache setting for these calls (DIO-215); absent sends them as before. */
+  cache?: CacheRequest | null;
+  /** The stable start of `instructions`, or null where the path has none. */
+  stablePrefix?: string | null;
+  /** Told what each answered call's cache breakpoint marked (a conversation turn's record). */
+  onCacheMarked?: (marked: CacheMark) => void;
 }
 type ConnectedRoute = {
   connected: true;
@@ -2956,6 +3031,11 @@ type ConnectedRoute = {
   exposure(base: SpendExposure, runId: string): CallExposure;
   /** A pure descriptor/profile for loop setup; it cannot dispatch without a credential. */
   descriptor?(options: Omit<RouteCallOptions, 'secret'>): ModelAdapter;
+  /**
+   * The owner's cache setting for calls to one model of this connection (DIO-215), read fresh.
+   * Only routes with the setting have it; their calls carry what it returns.
+   */
+  cache?(model: string, projectId: string | null): Promise<RouteCachePlan>;
   adapter(options: RouteCallOptions): ModelAdapter;
   respond(
     options: RouteCallOptions & {
@@ -2965,7 +3045,7 @@ type ConnectedRoute = {
       limits: RespondLimits;
       signal: AbortSignal;
     },
-  ): Promise<RespondResult>;
+  ): Promise<Omit<RespondResult, 'reservation'>>;
 };
 type RouteHandle = ConnectedRoute | { connected: false; route: ModelApiRoute; names: { short: string; long: string } };
 
@@ -2975,6 +3055,7 @@ const ROUTE_WORDS: Record<ModelApiRoute, { short: string; long: string }> = {
   openrouter: { short: 'OpenRouter', long: 'OpenRouter' },
   'google-vertex': { short: 'Google Vertex AI', long: 'Google Vertex AI' },
   nectovia: { short: 'Nectovia', long: 'Nectovia' },
+  bonsai: { short: 'Local model', long: 'Local model' },
 };
 
 /**
@@ -3000,6 +3081,67 @@ function localCallLedger(exposure: CallExposure): SpendExposure {
   return exposure;
 }
 
+/** The owner's cache setting for one route's calls, read when they are prepared (DIO-215). */
+interface RouteCachePlan {
+  policy: CachePolicy;
+  request: CacheRequest;
+  /** Where the route's SDK model reads cache options and breakpoints. */
+  namespace: CacheNamespace;
+  /** The capability record of the model the calls go to; null when it could not be read. */
+  record: RouteCapability | null;
+}
+
+/**
+ * The setting's request for one connection and model. An explicit prefix's key is derived from the
+ * whole scope here, on the host; a key that cannot be made refuses the call before anything is held.
+ */
+async function routeCachePlan(
+  api: ModelApiServices,
+  target: {
+    prefix: string;
+    route: CachePolicyRoute;
+    connectionId: string;
+    revision: number;
+    model: string;
+    namespace: CacheNamespace;
+    record: () => Promise<RouteCapability>;
+  },
+  projectId: string | null,
+): Promise<RouteCachePlan> {
+  const policy = api.cachePolicy?.(target.route) ?? DEFAULT_CACHE_POLICY;
+  const request = routeCacheRequest(target.prefix, policy, {
+    tenantId: policy === 'explicit-prefix' ? (api.cacheTenant?.(projectId) ?? LOCAL_CACHE_TENANT) : LOCAL_CACHE_TENANT,
+    route: target.route,
+    connectionId: target.connectionId,
+    connectionRevision: target.revision,
+    model: target.model,
+  });
+  const record = await target.record().catch(() => null);
+  return { policy, request, namespace: target.namespace, record };
+}
+
+/**
+ * The cache fields one opened route's calls carry: the owner's setting read fresh and the stable
+ * prefix where the path has one. A conversation turn also gets the report its context record
+ * keeps: what the setting marks, said before the first call and again after each answered call.
+ * A route with no setting carries nothing.
+ */
+async function cacheCall(
+  handle: ConnectedRoute,
+  model: string,
+  projectId: string | null,
+  instructions: string,
+  turn?: TurnCache,
+): Promise<Pick<RouteCallOptions, 'cache' | 'stablePrefix' | 'onCacheMarked'>> {
+  if (!handle.cache) return {};
+  const plan = await handle.cache(model, projectId);
+  const stablePrefix = turn?.stablePrefix ?? null;
+  if (!turn) return { cache: plan.request, stablePrefix };
+  const report = (marked: CacheMark) => turn.report({ policy: plan.policy, record: plan.record, marked });
+  report(systemParts(instructions, stablePrefix, plan.request, plan.namespace).marked);
+  return { cache: plan.request, stablePrefix, onCacheMarked: report };
+}
+
 /**
  * One model-API route's saved connection, read fresh, with the calls it can make. Each branch
  * builds only its own route's adapter and exchange from its own record: there is no path from
@@ -3010,6 +3152,25 @@ async function modelApiRoute(api: ModelApiServices, route: ModelApiRoute, work: 
   const unavailable = () =>
     new EngineError('RUNTIME_UNAVAILABLE', 'This model-API route is not available in this process.', true);
   switch (route) {
+    case LOCAL_MODEL_ROUTE: {
+      const services = api.bonsai;
+      // Set up means a folder whose descriptor passed every check; its profiles are what it serves.
+      const descriptor = services?.runtime.descriptor();
+      if (!services || !descriptor) return { connected: false, route, names };
+      return {
+        connected: true, route, prefix: 'bonsai', names, sdk: LOCAL_MODEL_SDK,
+        connectionId: LOCAL_MODEL_CONNECTION, revision: 1, accountRoute: LOCAL_MODEL_ACCOUNT,
+        expiresAt: null, serving: descriptor.model, serves: model => !!services.runtime.profile(model),
+        card: model => localRateCard(services.runtime.profile(model)),
+        credential: { check: async () => null, open: async () => '' }, exposure: localLedger,
+        adapter: options => createLocalAdapter({ ...options, runtime: services.runtime, transcripts: services.transcripts,
+          loadImage: image => {
+            if (!work.projectId) throw new EngineError('ROUTE_REFUSED', 'An image needs its admitted project.');
+            return services.loadImage(image, work.projectId);
+          } }),
+        respond: ({ sinks, ...options }) => respondLocal({ ...options, runtime: services.runtime, ...sinks }),
+      };
+    }
     case AWS_BEDROCK_ROUTE: {
       // A connection saved for a retired model is refused with the reconnect sentence; nothing is
       // sent on it and nothing moves it to the current model.
@@ -3051,10 +3212,27 @@ async function modelApiRoute(api: ModelApiServices, route: ModelApiRoute, work: 
             transport: options.transport,
             limits: options.limits,
             qualification,
+            cache: options.cache,
+            stablePrefix: options.stablePrefix,
+            onCacheMarked: options.onCacheMarked,
             ...options.sinks,
           }),
-        respond: ({ sinks, model: _model, ...options }) =>
+        respond: ({ sinks, model: _model, onCacheMarked: _marked, ...options }) =>
           respondOnce({ connection, card: awsModelRateCard(connection.modelId), ...options, effort: effortOf(options.effort), exposure: localCallLedger(options.exposure), qualification, ...sinks }),
+        cache: (_model, projectId) =>
+          routeCachePlan(
+            api,
+            {
+              prefix: 'aws',
+              route,
+              connectionId: connection.id,
+              revision: connection.revision,
+              model: connection.modelId,
+              namespace: cacheNamespace(route, awsProtocolFor(connection.modelId)),
+              record: () => awsCapability(api.qualifications, connection, Date.now()),
+            },
+            projectId,
+          ),
       };
     }
     case AZURE_OPENAI_ROUTE: {
@@ -3090,10 +3268,27 @@ async function modelApiRoute(api: ModelApiServices, route: ModelApiRoute, work: 
             effort: effortOf(options.effort),
             transport: options.transport,
             limits: options.limits,
+            cache: options.cache,
+            stablePrefix: options.stablePrefix,
+            onCacheMarked: options.onCacheMarked,
             ...options.sinks,
           }),
-        respond: ({ sinks, ...options }) =>
+        respond: ({ sinks, onCacheMarked: _marked, ...options }) =>
           respondAzure({ connection, card: azureRateCard(connection, options.model), ...options, effort: effortOf(options.effort), exposure: localCallLedger(options.exposure), ...sinks }),
+        cache: (model, projectId) =>
+          routeCachePlan(
+            api,
+            {
+              prefix: 'azure',
+              route,
+              connectionId: connection.id,
+              revision: connection.revision,
+              model,
+              namespace: cacheNamespace(route, AZURE_OPENAI_PROTOCOL),
+              record: () => azureCapability(api.qualifications, connection, model, Date.now()),
+            },
+            projectId,
+          ),
       };
     }
     case OPENROUTER_ROUTE: {
@@ -3126,13 +3321,14 @@ async function modelApiRoute(api: ModelApiServices, route: ModelApiRoute, work: 
             exposure: localCallLedger(options.exposure),
             transcripts: services.transcripts,
             instructions: options.instructions,
-            effort: options.effort,
+            effort: selectedEffortOf(options.effort),
             transport: options.transport,
             limits: options.limits,
             ...options.sinks,
           }),
         respond: ({ sinks, ...options }) =>
-          respondOpenRouter({ connection, card: openRouterRateCard(connection, options.model), ...options, exposure: localCallLedger(options.exposure), ...sinks }),
+          respondOpenRouter({ connection, card: openRouterRateCard(connection, options.model), ...options,
+            effort: selectedEffortOf(options.effort), exposure: localCallLedger(options.exposure), ...sinks }),
       };
     }
     case GOOGLE_VERTEX_ROUTE: {

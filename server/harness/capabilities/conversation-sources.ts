@@ -16,6 +16,7 @@ import { z } from 'zod';
 import type { Json } from '../../../shared/harness.js';
 import { HarnessError } from '../policy.js';
 import { ToolRegistry } from '../tools.js';
+import type { ModelImage } from '../../../shared/model-images.js';
 
 export const SOURCE_TOOLS = ['list_sources', 'read_source'] as const;
 const MAX_SOURCE_TEXT = 131_072;
@@ -23,6 +24,7 @@ const MAX_SOURCE_TEXT = 131_072;
 export interface AdmittedSource {
   path: string;
   text: string;
+  image?: ModelImage;
 }
 
 export const sourceSha = (text: string) => createHash('sha256').update(text, 'utf8').digest('hex');
@@ -55,8 +57,8 @@ export function sourceTools(sources: readonly AdmittedSource[]): ToolRegistry {
     execute: () => ({
       sources: [...byPath.values()].map((source) => ({
         path: source.path,
-        sha256: sourceSha(source.text),
-        bytes: Buffer.byteLength(source.text),
+        sha256: source.image?.sha ?? sourceSha(source.text),
+        bytes: source.image?.bytes ?? Buffer.byteLength(source.text),
       })),
     }),
   });
@@ -89,7 +91,7 @@ export function sourceTools(sources: readonly AdmittedSource[]): ToolRegistry {
       return {
         found: true,
         path: source.path,
-        sha256: sourceSha(source.text),
+        sha256: source.image?.sha ?? sourceSha(source.text),
         truncated,
         text: truncated ? source.text.slice(0, MAX_SOURCE_TEXT) : source.text,
       };

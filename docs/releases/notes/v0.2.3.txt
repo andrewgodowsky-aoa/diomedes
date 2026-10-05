@@ -1,7 +1,7 @@
 WHAT IS NEW
-  A free version beside paid plans, a Team of your own AI tools on the Board,
-  a Usage section with member credit limits, paid Automations, a repaired
-  Windows sign-in and routing profiles that keep to the limits you accept.
+  A free version beside paid plans, a model on your own computer that can hand
+  work to Nectovia, a Team of your own AI tools on the Board, a Usage section
+  with member credit limits, paid Automations and a repaired Windows sign-in.
 
   Nectovia has a free version. Without a paid plan you keep your projects,
   files and workspace, the task board, conversations and work on your own AI
@@ -63,6 +63,36 @@ WHAT IS NEW
 
   ChatGPT is now called Codex, after the coding tool it runs through. You
   still sign in with your ChatGPT account.
+
+  The ask box has one row under the message line: the modes, then Engine,
+  Model or tier, Effort and Agent, then Attach, a context ring and Send. The
+  pickers that were in the header moved into it, so each choice shows once.
+
+  Nectovia can use a model that runs on this computer. In Settings, set Local
+  model folder to a folder whose nectovia-connection.json describes the model,
+  its server on this computer, its profiles and its own start and stop
+  scripts. The ask row then offers it by the name and context size its running
+  server reports. It starts only when you press Start, a send to a stopped
+  model is refused rather than moved to a cloud model, and local work uses no
+  credits.
+
+  When a Loop run is led by one of your own connected services rather than
+  Nectovia, the Loop run dialog can add a Nectovia worker and a Nectovia
+  advisor at the tier you choose, such as Focused or Thorough, and they use
+  your account's credits once you confirm where their work goes. If your
+  account has handing work to Nectovia turned off, for every tier or for one,
+  that tier shows as unavailable with the reason and nothing is sent to it.
+
+  AI setup has a Prompt caching setting for your own AWS Bedrock and Azure
+  OpenAI connections: Provider default, Off or Explicit prefix. Provider
+  default sends requests as before. Beside it, AI setup shows what each model
+  can do and where each fact comes from: a cited page, a route check, or not
+  known.
+
+  For your own AWS and Azure connections, AI setup can run route checks on a
+  model: a few small live requests on that connection's key and spend limit,
+  kept as a receipt. Kimi K3 on your AWS connection sends only while a current
+  check covers it.
 
   Settings > Account > AI routing and privacy offers two profiles, with
   Balanced selected for a new account. Neither uses your content for training,
@@ -224,13 +254,29 @@ LIMITS
   rule that asks a work loop run to correct still can't reach it: the
   correction is recorded and shown as not sent.
 
-  Helpers that take pieces of a loop run's work, each in its own copy of the
-  files, and a lead that runs a small team of them are built but cannot be
-  started from the app yet. The Console still has no History screen and no
-  Make tasks from this plan.
+  Delegates that change files in their own copy, and a lead that runs a team
+  of them on your own connected services, are built but can't be started from
+  the app yet, though the Loop run dialog can now add a Nectovia worker and
+  advisor. The Console still has no History screen and no Make tasks from this
+  plan.
 
   Every route except the Nectovia Agent still runs on, and is billed to, your
   own account. A provider connection you saved yourself works only for a
   business whose plan includes the Nectovia Agent, or for Personal work on an
   Individual plan. You can still choose such a connection for a thread, and
   Settings has no place to change or remove it.
+
+  The local model needs a server that answers llama.cpp's props request, so
+  Nectovia can tell which profile is running. Without it the model shows as
+  running, and work that names a profile is refused.
+
+  Prompt caching and the route checks were built and tested against stand-ins.
+  No call reached a provider while building them, so whether a provider honors
+  Off shows only in a route check on your own connection.
+
+  The local model can't be chosen for a Team member or a loop run from the app
+  yet.
+
+  The Nectovia worker and advisor in the Loop run dialog were tested only
+  against stand-ins, a scripted local model server and the offline scripted
+  account service, never a live Nectovia tier or the live account service.

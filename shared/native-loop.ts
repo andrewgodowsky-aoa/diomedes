@@ -182,6 +182,11 @@ export interface LoopRunInput {
    * worker role or why none did, and the reserve its workers are held to. Absent: not in play.
    */
   readonly subscriptionWorker?: import('./subscription-workers.js').SubscriptionWorkerRecord;
+  /**
+   * DIO-216 slice C: on a local lead started with no team, the Nectovia roles it took by default
+   * and the ones left out, each with why. Absent: default roles were not in play.
+   */
+  readonly escalation?: import('./escalation-roles.js').EscalationRecord;
 }
 
 /** What a delegate child run was admitted with. */

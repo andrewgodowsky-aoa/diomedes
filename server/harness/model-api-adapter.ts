@@ -47,6 +47,7 @@ export const MODEL_API_REASONING: Readonly<
   'google-vertex': 'reasoning-delta',
   // Asks for summaries only when the gateway's routing policy says it accepts them.
   nectovia: 'reasoning-delta',
+  bonsai: 'reasoning-delta',
 });
 
 /** The route contract every model-API route shares; only its identity and wording differ. */
@@ -108,6 +109,7 @@ export interface ModelApiAdapterSpec {
   profile: Record<string, unknown>;
   transcripts: ModelTranscripts;
   notes: string[];
+  destination?: 'local' | 'external';
   sourceRestrictionPolicy?: 'gateway';
   /** One provider exchange. */
   respond(
@@ -118,7 +120,7 @@ export interface ModelApiAdapterSpec {
       signal: AbortSignal;
       sourceRestrictions?: HardRestrictions[];
     } & StreamSinks,
-  ): Promise<RespondResult>;
+  ): Promise<Omit<RespondResult, 'reservation'>>;
   /** The raw preview sinks this turn's calls feed. */
   sinks?: StreamSinks;
   /**
@@ -244,7 +246,7 @@ export function createModelApiAdapter(spec: ModelApiAdapterSpec): ModelAdapter &
     id: spec.route,
     version: spec.sdk,
     contract: spec.contract,
-    destination: 'external',
+    destination: spec.destination ?? 'external',
     ...(spec.sourceRestrictionPolicy === 'gateway' ? { enforcesSourceRestrictions: true as const } : {}),
     profileHash,
     capabilities: () => ({

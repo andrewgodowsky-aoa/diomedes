@@ -4,6 +4,7 @@
  * the connection's own resource and the admitted model's deployment.
  */
 import type { AdapterRouteContract } from '../../shared/adapter-contract.js';
+import type { CacheMark, CacheRequest } from '../../shared/route-capabilities.js';
 import {
   AZURE_OPENAI_PROTOCOL,
   AZURE_OPENAI_ROUTE,
@@ -40,6 +41,16 @@ export interface AzureModelAdapterOptions extends StreamSinks {
   limits?: RespondLimits;
   transport?: typeof globalThis.fetch;
   now?: () => Date;
+  /**
+   * The owner's cache setting for every call this adapter makes, as `cacheRequest(...)` made it.
+   * Absent sends each call exactly as before any cache setting existed. Not part of the bound
+   * profile: it changes how a provider may reuse a prefix, never what a saved step means.
+   */
+  cache?: CacheRequest | null;
+  /** The stable start of `instructions`, or null where the path has none. */
+  stablePrefix?: string | null;
+  /** Told what each answered call's cache breakpoint marked. It never changes the call. */
+  onCacheMarked?: (marked: CacheMark) => void;
 }
 
 export function createAzureModelAdapter(options: AzureModelAdapterOptions): ModelAdapter & { profileHash: string } {
@@ -89,8 +100,8 @@ export function createAzureModelAdapter(options: AzureModelAdapterOptions): Mode
         limits,
         ...call,
       }),
-    respond: (call) =>
-      respondAzure({
+    respond: async (call) => {
+      const result = await respondAzure({
         connection,
         model: entry.model,
         secret: options.secret,
@@ -101,7 +112,16 @@ export function createAzureModelAdapter(options: AzureModelAdapterOptions): Mode
         limits,
         transport: options.transport,
         now: options.now,
+        ...(options.cache ? { cache: options.cache, stablePrefix: options.stablePrefix ?? null } : {}),
         ...call,
-      }),
+      });
+      if (result.marked !== undefined)
+        try {
+          options.onCacheMarked?.(result.marked);
+        } catch {
+          // What was marked is a record; it never decides a call's outcome.
+        }
+      return result;
+    },
   });
 }

@@ -159,12 +159,13 @@ for (const [width, height, scale] of [
     );
     await open(page, scale);
     const nav = page.getByRole('navigation', { name: 'Threads and views' });
-    for (const name of ['Thread', 'Board', 'Team']) {
+    // Thread last: the ask row and its menus live in the thread's composer.
+    for (const name of ['Board', 'Team', 'Thread']) {
       await nav.getByRole('button', { name: new RegExp(`^${name}\\b`) }).click();
       await fits(page);
     }
-    await page.locator('.style-picker > button').click();
-    await expect(page.getByRole('menu')).toBeVisible();
+    await page.locator('.ask-engine .ask-pick').click();
+    await expect(page.getByRole('menu', { name: 'Engines' })).toBeVisible();
     await fits(page);
     await page.keyboard.press('Escape');
     await page.keyboard.press('Control+k');

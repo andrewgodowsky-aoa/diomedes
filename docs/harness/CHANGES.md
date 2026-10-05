@@ -1,5 +1,67 @@
 # Harness host integration changes, 2026-09-09
 
+## Prompt caching is the owner's setting per route, 2026-10-05
+
+The owner chooses Provider default, Off or Explicit prefix for AWS Bedrock and for Azure OpenAI in
+AI setup (DIO-215). Provider default, which every route keeps until the owner chooses, sends every
+request byte for byte as before. Off sends the explicit cache mode alone. Explicit prefix sends a
+key scoped to the tenant, route, connection revision and model, made on the host as a hash, with
+the 30-minute lifetime and one breakpoint on the stable start of a conversation's instructions.
+Each route's guard refuses a request whose cache fields differ from what its call asked for. Beside
+the setting, AI setup shows what each model can do, with each fact declared from a cited page,
+observed by a route check, or not known, and whether a route check confirmed caching off. A turn's
+context record says which setting it was sent under and what it marked. No live provider call was
+made to build this; see [the record](../implementation/2026-10-05-route-capabilities-cache.md).
+
+## The local model can be an Agent Team member, 2026-10-05
+
+An Agent Team started from the Console can now take a member on the local model (DIO-216, slice
+B). One list, `TEAM_MODEL_ROUTES` in `shared/model-api.ts`, names the routes a team role may run
+on: the four provider routes and the local model. The Agent Team grant, its host and the member
+bindings all ask it. The person adds a local member by name with a profile, for example
+`{ "name": "Counter", "role": "member", "engine": "bonsai", "model": "local:gaming" }`, the slug
+the local model's folder gives its Gaming profile. A model the folder doesn't list is refused with
+"Choose a local model profile." Where no local model is set up, the add is refused with "The local
+model isn't installed on this computer." The host admits that member only while the person keeps its profile running. It
+reads the status and never starts the model, and a profile that isn't running is refused in the
+runtime's own words, which the start dialog shows beside the member as it shows every refusal. The
+dialog names the member's model by its profile, as the local model's folder names it. The member
+uses the local zero-cost card and holds no spend. Nothing chooses the local model on the Team's
+behalf: "Nectovia chooses" skips it, mail never wakes a local member into a run, and automatic work
+never picks one. `tests/three-model-team-host.test.ts` covers the
+host, and `tests/three-model-team-ui.spec.ts` starts a run in the built Console with a Sol lead, the
+local member and a Kimi K3 helper profile. See
+[the record](../implementation/2026-10-05-three-model-team.md).
+
+## The local model comes from its own folder, 2026-10-05
+
+The local model is no longer one fixed model with two fixed profiles (DIO-201). It is the model in
+the folder Settings names under Local model folder, else the folder in `NECTOVIA_LOCAL_MODEL_HOME`,
+else the older `NECTOVIA_BONSAI_HOME`. With none set the option stays hidden; the earlier default
+folder is gone. The folder's `nectovia-connection.json` gives the model id, its loopback server, its
+profiles and its own start and stop scripts, each checked and refused in a sentence that names the
+field (`shared/local-model.ts`). The status is read from the running server: its health check, its
+model list and llama.cpp's `/props`, whose context picks the running profile. Profiles are listed as
+`local:<name>`; the earlier `bonsai-gaming` and `bonsai-full` still read as Gaming and Full where the
+folder has them. The host script runs the folder's own scripts, only on the person's Start, and keeps
+the lease and the one queue. Saved ids keep their values, and the price stays zero. See
+[the record](../implementation/2026-10-05-general-local-route.md).
+
+## The local model can work on a team, 2026-10-05
+
+A Diomedes work loop's worker or advisor can now run on the local model (DIO-216, slice A). The
+loop start asks the same route-on question every send asks: a provider route is on when its
+Settings switch is on, and the local model is on where it is set up. A local role names its profile
+and the local account route, for example `{ "route": "bonsai", "model": "local:gaming",
+"accountRoute": "bonsai:local" }`. At the start the host reads which profile the local model is
+running, and never starts it. A profile that isn't the running one is refused with 409 and the
+runtime's own sentence, such as "The local model isn't running. Start it first." A team's roles are
+now admitted before their lead, so a role that refuses leaves nothing admitted for the lead. Local
+calls hold no spend. Every provider route still refuses when its Settings switch is off.
+`tests/three-model-team.test.ts` runs a Sol lead on Azure, a local Gaming worker and a Kimi K3
+advisor on AWS on fixture transports. See
+[the record](../implementation/2026-10-05-three-model-team.md).
+
 ## Kimi K3 sends after a route check, 2026-10-05
 
 The direct AWS route sends Kimi K3 over Chat Completions, and only under a current route check
@@ -8,6 +70,30 @@ refuses before any spend is held. The owner runs the route checks from AI setup,
 Azure deployment: up to eight small live requests on the route's own key and spend limit, recorded
 as a receipt (`shared/route-qualification.ts`). No live provider call was made to build this; see
 [the record](../implementation/2026-10-05-route-qualification.md).
+
+## The Local model joins the ask row, 2026-10-05
+
+The ask row's Local model option (DIO-201) is lit by the native local engine (PR #214). The server
+reports the installed model as one `kind: 'local'` integration on its route: found once it's
+installed, available only while its worker runs, and `loaded` naming the profile that worker has.
+Nothing is reported when it isn't installed. `GET /api/integrations/local` answers that entry
+alone, so the row can read it again after a Start. On the local route the second box lists the
+profiles from the route's catalogue, Effort holds the profile's own levels and the context ring
+uses its declared window; on a paid plan the same menu leads with the tiers, the way back to
+Nectovia. Choosing the model or a profile starts nothing. The person's Start, offered beside the
+grayed choice or under a profile that isn't loaded, is the one action that wakes it: inference now
+asks the helper with `-NoStart`, so a send, an Automatic run or a Routine on a stopped model is
+refused (409) rather than starting it, and never moves to a cloud model. In Work the ask row
+replaces the local controls #214 put in the header; Home keeps them, with the same Start, until it
+has its own row. No client file names the model (`tests/local-model-names.test.ts`). See
+[the record](../implementation/2026-10-03-bonsai-agent-integration.md#reconciled-with-the-ask-row).
+
+The integration list no longer waits on a fresh PowerShell status check for every request: one check
+answers repeat questions for ten seconds, questions asked together share it, and a Start, a send,
+a refresh or the local reads (`/api/integrations/local`, `/api/ai/local-models`) ask again. Work
+rows, execution evidence and the funding rule now name the local route as local, not as a key, and
+the Build and Fix send dialog says the instruction goes to the local model on this computer rather
+than to an account that bills.
 
 ## A route with no model refuses by name, and the export section draws once, 2026-10-04
 
@@ -18,6 +104,24 @@ ran first and lost the route; the other engines keep that sentence. In Workspace
 owner's records section and the credit asks below it carried the same React key, so the records
 section could be drawn more than once (three times in the browser test); each now has its own. `tests/home-luna.spec.ts` and
 `tests/organization-export-ui.spec.ts` hold them (DIO-203).
+
+## The ask box's row, 2026-10-03
+
+The project thread's ask box is round 2 board N4 (DIO-200, slice 1). Under the message line one
+row holds the modes, then Engine, Model or tier, Effort and Agent, then Attach, a context ring and
+Send (`client/console/AskRow.tsx`, its logic in `ask-row.ts`). The header's model and agent
+pickers moved into it, so each choice shows once. Engine lists Nectovia first, then the engines
+this computer offers; on the free version Nectovia stays listed, grayed, with the way to use it.
+On Nectovia the second box is the tier, resolved the way the host resolves it. On another engine
+it lists that engine's catalog, and Effort is a slider of that model's own levels with Fix's
+ceiling shown. No model name, level or default is written into the app. Choosing an engine pins
+its saved or first model, so the owner's tier map can't move the thread. A Local model tier
+(DIO-201) shows once an integration reports `kind: 'local'`, a ready adapter, a route id and a
+model set up on this computer (`found`), and stays grayed while that model isn't running. No
+binding on main reports one yet, so it's hidden on every computer today. The context ring reads the newest
+answer's context record and never shows a percentage without a declared window. Every popup opens
+above its box inside the bar, so an open menu can't widen the page. `tests/ask-row.test.ts` holds
+the logic.
 
 ## Type and spacing keep one size at every window width, 2026-10-03
 

@@ -1,4 +1,5 @@
 import { api, readDocument } from '../api';
+import { imageMediaType } from '../../shared/model-images';
 import {
   interruptMessage,
   sendMessage,
@@ -126,7 +127,10 @@ export async function conversationSources(
 ): Promise<{ path: string; sha: string }[]> {
   const unique = [...new Set(paths)];
   return Promise.all(
-    unique.map(async (path) => ({ path, sha: (await readDocument(projectId, path, signal)).sha })),
+    unique.map(async (path) => ({ path, sha: imageMediaType(path)
+      ? (await api<{ sha: string }>(`/projects/${encodeURIComponent(projectId)}/image-source?path=${encodeURIComponent(path)}`,
+        'GET', undefined, signal)).sha
+      : (await readDocument(projectId, path, signal)).sha })),
   );
 }
 

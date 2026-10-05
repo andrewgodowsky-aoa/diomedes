@@ -1,4 +1,5 @@
 import { lunaLabel, type LunaModelId } from './luna-models.js';
+import type { CacheAccount, CachePolicy, RouteCapability } from './route-capabilities.js';
 import type { QualificationProtocol, RouteQualificationReceipt } from './route-qualification.js';
 
 /** The Luna model ids the desktop route sends and the one kept for older policies. */
@@ -25,13 +26,23 @@ export type ModelApiProvider = (typeof MODEL_API_PROVIDERS)[number];
  * meters it, and no provider credential exists on this computer for it.
  */
 export const NECTOVIA_ROUTE = 'nectovia' as const;
-export const MODEL_API_ROUTES = [...MODEL_API_PROVIDERS, NECTOVIA_ROUTE] as const;
+// The local model (route id 'bonsai', kept from its first release) uses the native Agent's model
+// interface, but runs on this computer and is never a cloud provider or payer.
+export const MODEL_API_ROUTES = [...MODEL_API_PROVIDERS, NECTOVIA_ROUTE, 'bonsai'] as const;
 export type ModelApiRoute = (typeof MODEL_API_ROUTES)[number];
 
 export const isModelApiRoute = (value: unknown): value is ModelApiRoute =>
   typeof value === 'string' && (MODEL_API_ROUTES as readonly string[]).includes(value);
 export const isModelApiProvider = (value: unknown): value is ModelApiProvider =>
   typeof value === 'string' && (MODEL_API_PROVIDERS as readonly string[]).includes(value);
+/**
+ * The model routes a team role may run on: the provider routes and the local model on this
+ * computer. The Agent Team grant, its host and the member bindings all ask this one list.
+ */
+export const TEAM_MODEL_ROUTES = [...MODEL_API_PROVIDERS, 'bonsai'] as const;
+export type TeamModelRoute = (typeof TEAM_MODEL_ROUTES)[number];
+export const isTeamModelRoute = (value: unknown): value is TeamModelRoute =>
+  typeof value === 'string' && (TEAM_MODEL_ROUTES as readonly string[]).includes(value);
 
 export const MODEL_API_NAMES: Record<ModelApiRoute, string> = {
   'aws-bedrock': `AWS Bedrock (${lunaLabel(MANAGED_LUNA_ID)})`,
@@ -39,6 +50,7 @@ export const MODEL_API_NAMES: Record<ModelApiRoute, string> = {
   openrouter: 'OpenRouter',
   'google-vertex': 'Google Vertex AI (Gemini 3.8 Flash)',
   nectovia: 'Nectovia',
+  bonsai: 'Local model',
 };
 
 /**
@@ -250,6 +262,36 @@ export interface RouteQualificationView {
   ceilingMicroUsd: number | null;
   /** True while route checks are running on this route. */
   running: boolean;
+}
+
+/**
+ * One model's capability record on a route with the owner's cache setting (DIO-215), and what a
+ * conversation turn's context record would say about caching under the current setting.
+ */
+export interface RouteCacheModelView {
+  model: string;
+  /** The Azure deployment that serves the model; null elsewhere. */
+  deployment: string | null;
+  capability: RouteCapability;
+  preview: CacheAccount;
+}
+
+/** What `GET` and `PUT /api/ai/model-api/<route>/cache-policy` return. Never a cache key or its scope. */
+export interface RouteCachePolicyView {
+  route: 'aws-bedrock' | 'azure-openai';
+  policy: CachePolicy;
+  /** False until the owner chooses; the provider's default applies until then. */
+  chosen: boolean;
+  /** One entry per model the connection serves; empty with no connection. */
+  models: RouteCacheModelView[];
+}
+
+/** What `GET /api/ai/model-api/<route>/capabilities` returns: one model's record, null with no connection. */
+export interface RouteCapabilityView {
+  route: 'aws-bedrock' | 'azure-openai';
+  model: string | null;
+  deployment: string | null;
+  capability: RouteCapability | null;
 }
 
 /** What `GET /api/ai/model-api/openrouter` returns. Identifiers and state only, never a credential. */

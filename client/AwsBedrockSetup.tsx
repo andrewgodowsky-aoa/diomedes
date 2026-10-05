@@ -12,6 +12,7 @@ import {
   usd,
 } from './aws-bedrock-view';
 import { Button } from './components';
+import { PromptCaching } from './PromptCaching';
 import { RouteChecks } from './RouteChecks';
 
 const BASE = '/ai/model-api/aws-bedrock';
@@ -263,6 +264,8 @@ export function AwsBedrockSetup({
       {connection && (
         <RouteChecks base={BASE} revision={connection.revision} disabled={disabled} onChanged={() => void load()} />
       )}
+
+      {connection && <PromptCaching route="aws-bedrock" refresh={view} disabled={disabled} />}
 
       {spend && (
         <div className="ai-aws-usage">

@@ -122,6 +122,7 @@ export default defineConfig({
     'instructions-inspector.spec.ts',
     'verification-ui.spec.ts',
     'context-used.spec.ts',
+    'prompt-caching.spec.ts',
     'ready-queue-ui.spec.ts',
     'task-board-ui.spec.ts',
     'task-workflow-ui.spec.ts',

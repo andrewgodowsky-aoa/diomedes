@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { routeDisplayName } from '../../shared/engines';
+import { nectoviaTierName } from '../../shared/escalation-roles';
+import { nectoviaRolesNote, roleLine } from './lead-workers-model';
 import type { LoopModel, LoopOutcome, LoopOutcomeState, LoopView } from '../../shared/native-loop';
 import type { HandoffView, TeamLeadView, TeamRole } from '../../shared/team-delegation';
 import { VERIFICATION_LABEL, type VerificationState } from '../../shared/verification';
@@ -79,15 +81,6 @@ function modelsLine(list: readonly LoopModel[], route: string | null) {
     .join('; ');
 }
 
-function roleLine(role: TeamRole) {
-  const where = role.profile
-    ? `${role.profile.name} (revision ${role.profile.revision})`
-    : role.route === 'native-fixture'
-      ? 'a fixed local script'
-      : `${routeDisplayName(role.route) || role.route}${role.model ? ` · ${role.model}` : ''}`;
-  return `${role.agent.name} · ${where}`;
-}
-
 function budgetLine(item: HandoffView) {
   if (!item.budget) return null;
   const used = item.used;
@@ -103,13 +96,16 @@ function Handoff({
   index,
   projectId,
   changeSet = null,
+  tier,
 }: {
   item: HandoffView;
   index: number;
   projectId?: string;
   changeSet?: ChangeSetView | null;
+  /** The role's Nectovia tier, which names where it ran instead of a model. */
+  tier?: TeamRole['tier'];
 }) {
-  const ran = modelsLine(item.models, item.route);
+  const ran = tier ? nectoviaTierName(tier) : modelsLine(item.models, item.route);
   const budget = budgetLine(item);
   return (
     <li className="lw-handoff" data-handoff={item.handoffId} data-outcome={item.outcome}>
@@ -238,6 +234,9 @@ function Lead({
           </>
         )}
       </dl>
+      {nectoviaRolesNote(team).map((line) => (
+        <p className="loop-obs-detail lw-nectovia" key={line}>{line}</p>
+      ))}
       <h3>Workers</h3>
       {team.workers.length ? (
         <ol className="loop-turns lw-workers">
@@ -248,6 +247,7 @@ function Lead({
               index={index}
               projectId={projectId}
               changeSet={lead.changeSets?.find((set) => set.childRunId === item.childRunId) ?? null}
+              tier={team.worker.tier}
             />
           ))}
         </ol>
@@ -259,7 +259,7 @@ function Lead({
           <h3>Advice</h3>
           <ol className="loop-turns lw-advice">
             {team.advice.map((item, index) => (
-              <Handoff key={item.handoffId} item={item} index={index} />
+              <Handoff key={item.handoffId} item={item} index={index} tier={team.advisor?.tier} />
             ))}
           </ol>
         </>
