@@ -26,7 +26,11 @@ async function windowsSignatures(files) {
   let stdout;
   try {
     ({ stdout } = await execute(path.join(powershell, 'powershell.exe'),
-      ['-NoProfile', '-NonInteractive', '-OutputFormat', 'Text', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')],
+      // Plain -Command text: Norton Behavior Shield flags -NonInteractive with
+      // -EncodedCommand as IDP.HELU.PSE91 on every launch, and the same script as
+      // -Command drew nothing (DIO-202, 2026-10-04 A/B). The script holds no
+      // double quote, so the argument survives Windows command-line quoting.
+      ['-NoProfile', '-NonInteractive', '-OutputFormat', 'Text', '-Command', script.replace(/\n/g, '; ')],
       { env, windowsHide: true, timeout: 30_000, maxBuffer: 16_384 }));
   } catch (cause) {
     // A stopped, blocked or timed-out check is not a verdict on the file. Say
