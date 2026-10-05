@@ -17,6 +17,7 @@
  *
  * The Azure OpenAI and OpenRouter routes' setup mirrors this and is mounted from
  * here (`provider-routes.ts`), so the app mounts every model-API route in one place.
+ * So are the owner's route checks for AWS and Azure (`route-qualification-routes.ts`).
  */
 import type { Express, NextFunction, Request, Response } from 'express';
 import { z } from 'zod';
@@ -35,6 +36,7 @@ import {
   awsConnectionSchema,
   awsModelRateCard,
   awsModelRefusal,
+  awsQualificationFor,
   AwsConnectionRetired,
   redactedAccount,
   type AwsConnection,
@@ -42,6 +44,7 @@ import {
 } from './aws-bedrock.js';
 import { EngineError } from './process.js';
 import { mountProviderRoutes } from './provider-routes.js';
+import { mountQualificationRoutes } from './route-qualification-routes.js';
 import type { EngineService } from './service.js';
 
 const BASE = `/api/ai/model-api/${AWS_BEDROCK_ROUTE}`;
@@ -100,7 +103,7 @@ export function mountModelApiRoutes(app: Express, deps: { store: Store; engines:
     };
 
   const view = async (): Promise<AwsConnectionView> => {
-    const { connections, secrets, exposure } = api();
+    const { connections, secrets, exposure, qualifications } = api();
     // A connection an earlier version saved for a retired model shows as not set up, with the
     // reconnect sentence as the next step.
     const { connection, retired } = await savedConnection(connections);
@@ -110,7 +113,10 @@ export function mountModelApiRoutes(app: Express, deps: { store: Store; engines:
       !!connection?.credential.expiresAt && Date.parse(connection.credential.expiresAt) <= Date.now() + 60_000;
     const summary = connection ? exposure.summary(connection.id) : null;
     const allowance = connection ? exposure.allowance(connection.id) : null;
-    const modelRefusal = connection ? awsModelRefusal(connection.modelId) : null;
+    const modelRefusal = connection
+      ? awsModelRefusal(connection, await awsQualificationFor(qualifications, connection), Date.now())
+      : null;
+    // The spend limit comes before the route check sentence: the checks cannot run without one.
     const next = !protectedStorage
       ? 'Open the Diomedes desktop app to connect AWS: this process has no protected credential storage.'
       : retired
@@ -119,10 +125,10 @@ export function mountModelApiRoutes(app: Express, deps: { store: Store; engines:
           ? 'Connect your AWS account: account number and a Bedrock API key.'
           : expired
             ? 'The saved AWS key has expired. Enter a new key.'
-            : modelRefusal
-              ? modelRefusal
-              : !allowance || !summary || summary.availableMicroUsd <= 0
-                ? 'Approve a spend limit for AWS before sending.'
+            : !allowance || !summary || summary.availableMicroUsd <= 0
+              ? 'Approve a spend limit for AWS before sending.'
+              : modelRefusal
+                ? modelRefusal
                 : !enabled
                   ? 'Turn AWS Bedrock on.'
                   : null;
@@ -307,4 +313,5 @@ export function mountModelApiRoutes(app: Express, deps: { store: Store; engines:
   );
 
   mountProviderRoutes(app, deps, route);
+  mountQualificationRoutes(app, deps, route);
 }

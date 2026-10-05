@@ -1,6 +1,8 @@
 /**
- * The AWS Bedrock Responses route as a `ModelAdapter` for the existing native
- * loop, built on the shared model-API adapter (`model-api-adapter.ts`).
+ * The AWS Bedrock route as a `ModelAdapter` for the existing native
+ * loop, built on the shared model-API adapter (`model-api-adapter.ts`). Luna goes
+ * over Responses; Kimi K3 over Chat Completions, and only under a current route
+ * check receipt for this exact connection, model, protocol and rate card.
  * `NativeAgent` owns the loop, `RunService` owns every step and the registry
  * owns every tool; this adapter performs exactly one provider exchange per
  * `complete` and nothing else.
@@ -16,13 +18,16 @@
  * resumable conversation.
  */
 import type { AdapterRouteContract } from '../../shared/adapter-contract.js';
+import type { RouteQualificationReceipt } from '../../shared/route-qualification.js';
 import {
   AWS_BEDROCK_PROTOCOL,
   AWS_BEDROCK_ROUTE,
   AWS_BEDROCK_SDK,
+  AWS_CHAT_PROTOCOL,
   CONVERSATION_LIMITS,
   assertAwsModelQualified,
   awsConnectionSchema,
+  awsProtocolFor,
   respondOnce,
   type AwsConnection,
   type RespondLimits,
@@ -41,6 +46,20 @@ export const AWS_MODEL_CONTRACT: AdapterRouteContract = modelApiContract({
   label: 'AWS',
 });
 
+/**
+ * The contract one AWS model is served under. `AWS_MODEL_CONTRACT` is the route's registered one
+ * (Luna, Responses). Kimi K3 goes over Chat Completions, whose SDK model streams no thinking, so
+ * its contract names that protocol and says no reasoning is streamed.
+ */
+export function awsModelContract(modelId: string): AdapterRouteContract {
+  if (awsProtocolFor(modelId) !== AWS_CHAT_PROTOCOL) return AWS_MODEL_CONTRACT;
+  return {
+    ...AWS_MODEL_CONTRACT,
+    engine: { ...AWS_MODEL_CONTRACT.engine, protocolVersion: AWS_CHAT_PROTOCOL },
+    streaming: { ...AWS_MODEL_CONTRACT.streaming, reasoning: 'none' },
+  };
+}
+
 export interface AwsModelAdapterOptions extends StreamSinks {
   connection: AwsConnection;
   secret: string;
@@ -53,25 +72,37 @@ export interface AwsModelAdapterOptions extends StreamSinks {
   limits?: RespondLimits;
   transport?: typeof globalThis.fetch;
   now?: () => Date;
+  /** The newest route check receipt for this connection. A model that needs one is refused without it. */
+  qualification?: RouteQualificationReceipt | null;
 }
 
 export function createAwsModelAdapter(options: AwsModelAdapterOptions): ModelAdapter & { profileHash: string } {
   const connection = Object.freeze(awsConnectionSchema.parse(options.connection));
-  assertAwsModelQualified(connection.modelId);
+  assertAwsModelQualified(
+    connection,
+    options.qualification,
+    (options.now ?? (() => new Date()))().getTime(),
+    options.card.version,
+  );
+  const protocol = awsProtocolFor(connection.modelId);
   const limits = options.limits ?? CONVERSATION_LIMITS;
   return createModelApiAdapter({
     route: AWS_BEDROCK_ROUTE,
     prefix: 'aws',
     label: 'AWS',
     sdk: AWS_BEDROCK_SDK,
-    protocol: AWS_BEDROCK_PROTOCOL,
-    contract: AWS_MODEL_CONTRACT,
+    protocol,
+    contract: awsModelContract(connection.modelId),
     connectionId: connection.id,
     revision: connection.revision,
     requestedModel: connection.modelId,
     profile: {
       route: AWS_BEDROCK_ROUTE,
       sdk: AWS_BEDROCK_SDK,
+      // The wire protocol decides what a saved continuation means, so it binds K3's profile. Luna's
+      // Responses profile stays exactly as it was before protocols were named, so its saved steps
+      // still resume.
+      ...(protocol === AWS_CHAT_PROTOCOL ? { protocol } : {}),
       connectionId: connection.id,
       revision: connection.revision,
       baseUrl: connection.baseUrl,
@@ -83,7 +114,9 @@ export function createAwsModelAdapter(options: AwsModelAdapterOptions): ModelAda
     },
     transcripts: options.transcripts,
     notes: [
-      'One streamed Responses call per model step, store:false, SDK retries off, one tool call at most; tools are descriptors run only by the harness.',
+      protocol === AWS_CHAT_PROTOCOL
+        ? 'One streamed Chat Completions call per model step, sent only under a current route check receipt for this connection, store:false, SDK retries off, one tool call at most; tools are descriptors run only by the harness.'
+        : 'One streamed Responses call per model step, store:false, SDK retries off, one tool call at most; tools are descriptors run only by the harness.',
       'The credential is attached only to the approved runtime origin and path; redirects are refused.',
       'The reported model is the provider envelope’s model field, recorded beside the requested model.',
       'Stopping a call closes the HTTP read and leaves its spend hold uncertain.',
@@ -110,6 +143,7 @@ export function createAwsModelAdapter(options: AwsModelAdapterOptions): ModelAda
         limits,
         transport: options.transport,
         now: options.now,
+        qualification: options.qualification,
         ...call,
       }),
   });

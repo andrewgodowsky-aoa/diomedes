@@ -21,6 +21,7 @@ import type { ModelAdapter } from '../server/harness/native-agent.js';
 
 const SOURCE = 'A 10/10\nB 8/6 at $3.75\nC 5/5\n';
 const ANSWER = 'inventory.txt: B is the sole discrepant row (8 expected, 6 counted).';
+const ADMISSION = { route: 'openrouter', model: 'openai/gpt-6.1-sol', accountRoute: 'openrouter:member@r1', connectionId: 'member', revision: 1 };
 const TOOLS = ['team_members', 'team_task_create', 'team_task_update', 'team_task_list', 'team_send_message', 'team_read_messages'];
 let dir: string, store: Store, projectId: string, taskId: string, runs: RunService, sessions: ModelSessionRuns;
 let principal: HarnessPrincipal, team: teamModule.TeamService, lead: TeamMember, member: TeamMember;
@@ -56,7 +57,7 @@ function binding(slot: TeamMember, accountRoute: string, effort: string | null) 
     profile: { id: `pr-${slot.slotId}-profile`, revision: 1, digest: digest(slot.slotId) },
   };
 }
-function owned() {
+function owned(overrides: Record<string, unknown> = {}) {
   // The missing host seam is an explicit RED assertion, never an unresolved module/configuration error.
   const Constructor = (teamModule as unknown as { OwnedTeamResponses?: new (deps: any) => any }).OwnedTeamResponses;
   expect(Constructor, 'root-owned Team response host is implemented').toBeTypeOf('function');
@@ -65,12 +66,13 @@ function owned() {
     resolveGrant: async () => structuredClone(currentGrant),
     resolveGrantLocal: () => structuredClone(currentGrant),
     documents: async () => [{ path: 'inventory.txt', text: source }],
-    admit: async () => ({ route: 'openrouter', model: 'openai/gpt-6.1-sol', accountRoute: 'openrouter:member@r1', connectionId: 'member', revision: 1 }),
+    admit: async () => ({ ...ADMISSION }),
     adapter: async (_grant: unknown, _admission: unknown, instructions: string) => {
       expect(instructions).toMatch(/final.*(?:answer|response|reply)/i);
       expect(instructions).not.toContain('final answer must still be the file proposal');
       return adapter();
     },
+    ...overrides,
   });
 }
 async function tool(host: any, name: string, input: unknown, stepId: string) {
@@ -91,8 +93,9 @@ function instrumentLock() {
   const locked = store.locked.bind(store);
   store.locked = (action) => locked(async () => { lockDepth++; try { return await action(); } finally { lockDepth--; } });
 }
-async function reloadRuntime(claimRoot = true) {
-  await sessions.closeAll();
+async function reloadRuntime(claimRoot = true, closeSessions = true) {
+  // A killed process closes nothing; its last saved files are all the next start reads.
+  if (closeSessions) await sessions.closeAll();
   store = new Store(path.join(dir, 'data'), path.join(dir, 'projects'));
   await store.init();
   team = new teamModule.TeamService(store);
@@ -612,6 +615,101 @@ describe('terminal owned response history', () => {
     expect(store.state(projectId).history).toEqual(historyBefore);
     expect(calls).toBe(terminal === 'cancelled' ? 0 : 1);
     expect(wakeCalls).toBe(0);
+  });
+});
+
+describe('Stop settles the owned member without the stopped response', () => {
+  // The stopped response wrote the member status and summary after Stop returned, so a host
+  // that exited in between kept the member `working` for good, and mail never wakes `working`.
+  test.each(['in-flight', 'before-dispatch'] as const)('%s: an exit before the response settles keeps the stopped member and summary', async (moment) => {
+    const entered = deferred<void>();
+    const admitted = deferred<void>();
+    const late = deferred<ModelResult>();
+    const host = owned(moment === 'before-dispatch'
+      ? { admit: async () => { entered.resolve(); await admitted.promise; return { ...ADMISSION }; } } : {});
+    await queue(host);
+    script = async () => { entered.resolve(); return late.promise; };
+    const response = wait(host).then(() => null, (error: unknown) => error);
+    await entered.promise;
+    expect(team.requireActive(projectId, member.slotId).status).toBe('working');
+    await runs.cancel('agent-root', 'HTTP Stop', principal);
+    await host.stopRoot(projectId, 'agent-root');
+    // Hold every later Store write of this host, as an exit right after Stop would.
+    const exited = deferred<void>();
+    const locked = store.locked.bind(store);
+    store.locked = (action) => locked(async () => { await exited.promise; return action(); });
+    admitted.resolve();
+    late.resolve({ response: { type: 'final', text: 'A late answer after Stop' } });
+    try {
+      await reloadRuntime(false);
+      const reopened = owned();
+      expect(reopened.ownedChildren(projectId, 'agent-root')[0]).toMatchObject({
+        status: 'cancelled', rootClosed: true, unknownOutcome: moment === 'in-flight', result: null, summary: expect.any(String) });
+      expect(team.requireActive(projectId, member.slotId).status).toBe('idle');
+      const settled = structuredClone(team.teamState(projectId));
+      for (let repeat = 0; repeat < 2; repeat++) {
+        await reopened.recoverRoot(projectId, 'agent-root');
+        expect(team.teamState(projectId)).toEqual(settled);
+      }
+      // A known stop frees the member for ordinary mail; an unknown outcome stays fenced.
+      await store.locked(() => team.sendAsMember(projectId, team.requireActive(projectId, 'other'), {
+        to: member.slotId, message: 'A new question about inventory.txt.' }));
+      expect(wakeCalls).toBe(moment === 'in-flight' ? 0 : 1);
+      expect(calls).toBe(moment === 'in-flight' ? 1 : 0);
+    } finally {
+      exited.resolve();
+      expect(await response).toBeInstanceOf(Error);
+    }
+  });
+
+  test('an exit mid-response without Stop is settled by recovery, not left working', async () => {
+    const host = owned();
+    await queue(host);
+    const entered = deferred<void>();
+    const late = deferred<ModelResult>();
+    script = async () => { entered.resolve(); return late.promise; };
+    const response = wait(host).then(() => null, (error: unknown) => error);
+    await entered.promise;
+    const exited = deferred<void>();
+    const locked = store.locked.bind(store);
+    store.locked = (action) => locked(async () => { await exited.promise; return action(); });
+    const killed = sessions;
+    try {
+      await reloadRuntime(true, false);
+      const reopened = owned();
+      await reopened.recoverRoot(projectId, 'agent-root');
+      expect(reopened.ownedChildren(projectId, 'agent-root')[0]).toMatchObject({
+        status: 'failed', rootClosed: false, unknownOutcome: true, result: null, summary: expect.any(String) });
+      expect(team.requireActive(projectId, member.slotId).status).toBe('error');
+      const settled = structuredClone(team.teamState(projectId));
+      await reopened.recoverRoot(projectId, 'agent-root');
+      expect(team.teamState(projectId)).toEqual(settled);
+    } finally {
+      exited.resolve();
+      late.resolve({ response: { type: 'final', text: 'A late answer after the exit' } });
+      await killed.closeAll();
+      expect(await response).toBeInstanceOf(Error);
+    }
+  });
+
+  test.each(['in-flight', 'before-dispatch'] as const)('%s: the stopped response settling later leaves what Stop wrote', async (moment) => {
+    const entered = deferred<void>();
+    const admitted = deferred<void>();
+    const late = deferred<ModelResult>();
+    const host = owned(moment === 'before-dispatch'
+      ? { admit: async () => { entered.resolve(); await admitted.promise; return { ...ADMISSION }; } } : {});
+    await queue(host);
+    script = async () => { entered.resolve(); return late.promise; };
+    const response = wait(host).then(() => null, (error: unknown) => error);
+    await entered.promise;
+    await runs.cancel('agent-root', 'HTTP Stop', principal);
+    await host.stopRoot(projectId, 'agent-root');
+    const stopped = structuredClone({ team: team.teamState(projectId), tasks: store.state(projectId).tasks, history: store.state(projectId).history });
+    admitted.resolve();
+    late.resolve({ response: { type: 'final', text: 'A late answer after Stop' } });
+    expect(await response).toBeInstanceOf(Error);
+    await host.stopRoot(projectId, 'agent-root');
+    expect({ team: team.teamState(projectId), tasks: store.state(projectId).tasks, history: store.state(projectId).history }).toEqual(stopped);
   });
 });
 

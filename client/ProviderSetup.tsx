@@ -25,6 +25,7 @@ import {
   type RatesInput,
 } from './provider-setup-view';
 import { Button } from './components';
+import { RouteChecks } from './RouteChecks';
 
 const messageOf = (error: unknown) =>
   error instanceof ApiError || error instanceof Error ? error.message : 'The request could not be completed.';
@@ -87,6 +88,7 @@ function ProviderCard<V extends ProviderView>({
   busy = false,
   caption,
   facts,
+  checks,
   form,
   editing,
   setEditing,
@@ -95,6 +97,8 @@ function ProviderCard<V extends ProviderView>({
   card: Card<V>;
   caption: string;
   facts?: ReactNode;
+  /** The route's own route checks, when it has them (Azure, one block per deployment). */
+  checks?: ReactNode;
   form: ReactNode;
   editing: boolean;
   setEditing: (value: boolean) => void;
@@ -219,6 +223,8 @@ function ProviderCard<V extends ProviderView>({
           </div>
         </form>
       )}
+
+      {connection && checks}
 
       {spend && (
         <div className="ai-aws-usage">
@@ -430,6 +436,17 @@ export function AzureOpenAISetup(props: CardProps) {
       setEditing={setEditing}
       caption="Your company’s own Azure OpenAI resource. Only the deployments you list are called, and every call is billed to that Azure subscription."
       facts={connection && <p className="caption">{connection.endpoint}</p>}
+      checks={connection?.deployments.map((entry) => (
+        <RouteChecks
+          key={`${entry.model}:${entry.deployment}`}
+          base={card.base}
+          model={entry.model}
+          title={`Route checks: ${entry.model} (${entry.deployment})`}
+          revision={revision}
+          disabled={disabled}
+          onChanged={() => void card.load()}
+        />
+      ))}
       form={
         <form
           className="ai-aws-connect ai-provider-connect"

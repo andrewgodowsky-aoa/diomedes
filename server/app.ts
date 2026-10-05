@@ -294,6 +294,7 @@ import { EngineAskNeeds } from './engines/engine-asks.js';
 import { modelSessionRunId } from './harness/model-session-run.js';
 import { FileModelTranscripts } from './harness/model-transcripts.js';
 import { AWS_BEDROCK_ROUTE, AwsConnections } from './engines/aws-bedrock.js';
+import { RouteQualifications } from './engines/route-qualification-store.js';
 import { AZURE_OPENAI_ROUTE, AzureConnections } from './engines/azure-openai.js';
 import { OPENROUTER_ROUTE, OpenRouterConnections } from './engines/openrouter.js';
 import { mountModelApiRoutes } from './engines/model-api-routes.js';
@@ -1312,6 +1313,7 @@ export async function createApp(options: AppOptions) {
       : null;
   engines.modelApi = {
     connections: new AwsConnections(store.dataDir),
+    qualifications: new RouteQualifications(store.dataDir),
     secrets: new ConnectionSecrets(store.dataDir, options.secretBox ?? null),
     exposure,
     transcripts: new FileModelTranscripts(path.join(store.dataDir, 'model-transcripts'), AWS_BEDROCK_ROUTE),
@@ -1656,7 +1658,11 @@ export async function createApp(options: AppOptions) {
     },
   }, () => packLifecycle.contributions, {
     host:collaborationHost, rootLedger:productionTeam.rootLedger,
-  }, subscriptionWorkers);
+  }, subscriptionWorkers, {
+    // The same route-on every send uses. The local model's status is read, never started.
+    on: (route) => routeOn(route),
+    localRefusal: (model) => bonsai.refusal(model),
+  });
   mountTaskWorkflowRoutes(app, store);
   mountManualHandoffRoutes(app, store);
   mountWorkspaceRoutes(app, store, workspaces, configuration, automations);

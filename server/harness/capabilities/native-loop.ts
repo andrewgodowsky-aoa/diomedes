@@ -742,6 +742,7 @@ export function createLoopProcedure(deps: {
   // verifier. `hold` closes this gate until `open`; a host that never holds it is open.
   let gate: Promise<void> = Promise.resolve();
   let release = () => {};
+  let closing = false;
 
   const admit = async (route: string, input: Parameters<LoopModelRoutes['admit']>[1]) => {
     if (route === LOOP_FIXTURE_ROUTE) return { model: null, accountRoute: null };
@@ -1377,6 +1378,11 @@ export function createLoopProcedure(deps: {
     attachVerification(port: LoopVerification): void;
     hold(): void;
     open(): void;
+    /**
+     * The host is closing: from now on a settle returns before its work, one parked behind hold()
+     * included, and the next start settles that run again. A settle already past the gate finishes.
+     */
+    close(): void;
     admit: typeof admit;
     recoverChild(run: HarnessRun): Promise<void>;
     sweep(projectId: string): Promise<void>;
@@ -1450,6 +1456,7 @@ export function createLoopProcedure(deps: {
     async settled(run) {
       if (run.capabilityId !== NATIVE_LOOP.id) return;
       await gate;
+      if (closing) return;
       if (run.state !== 'completed') {
         await stopChildren(run);
         await sweepTree(run);
@@ -1531,6 +1538,10 @@ export function createLoopProcedure(deps: {
       });
     },
     open() {
+      release();
+    },
+    close() {
+      closing = true;
       release();
     },
     attachVerification(port) {
