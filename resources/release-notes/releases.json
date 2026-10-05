@@ -2,12 +2,11 @@
   "schemaVersion": 1,
   "releases": [
     {
-      "version": "0.2.2",
-      "date": "2026-10-03",
+      "version": "0.2.3",
+      "date": "2026-10-04",
       "channel": "stable",
       "platforms": [
-        "windows",
-        "macos"
+        "windows"
       ],
       "headline": "A free version beside paid plans, a Team of your own AI tools on the Board, a Usage section with member credit limits, paid Automations, a repaired Windows sign-in and routing profiles that keep to the limits you accept.",
       "sections": [
@@ -41,7 +40,8 @@
             "Account changes and sign-out cannot restore a stale session or borrow an admission made for another person. Streamed replies and thinking summaries redact secrets split across engine output chunks.",
             "Marking a task Done by hand is refused while a change waits for review or a Need is open.",
             "Windows briefly locking a record or run file no longer fails the save, a run or the weekly brief.",
-            "On a Mac, the red, yellow and green window buttons no longer cover the top left of the Console. Search and Stop take Command as well as Ctrl, and shortcut hints show the Command key. AI setup no longer links a Mac to a Windows installer."
+            "The greeting on Home no longer grows as the window gets wider. Text keeps one size at every window width, and a bigger window adds margin instead.",
+            "On Windows, installing OpenCode no longer sets off a Norton antivirus alert. The step that unpacks it now starts Windows PowerShell in a form Norton's behavior check doesn't flag."
           ]
         },
         {
@@ -49,18 +49,18 @@
           "items": [
             "Settings > App updates offers stable releases only. Nothing is downloaded, verified or installed until you confirm it, and a download is accepted only when its SHA-256 matches the digest the release publishes. An installed 0.1.7, 0.1.8, 0.1.9, 0.1.10, 0.1.11, 0.2.0 or 0.2.1 on Windows can find this release when you press Check for updates.",
             "An update from 0.1.9, 0.1.10, 0.1.11, 0.2.0 or 0.2.1 keeps your settings, routes, saved keys, projects and conversations. An update from 0.1.7 or 0.1.8 that skips 0.1.9 still gets the one-time fresh start 0.1.9 introduced: the earlier version's data and the Documents\\Diomedes folder are set aside, renamed with \"before 0.1.9\" and the date, and nothing is deleted.",
-            "Your install is refreshed the first time this version opens, and again after each later update. Settings you never changed move to the new defaults, anything you chose is kept, cached screens are cleared, and a byte-for-byte backup and a record of what moved are kept. A custom look keeps its colours, fonts and artwork, while text sizes, line spacing and density follow the new version. You see it once: Updated to 0.2.2, with how many settings moved.",
+            "Your install is refreshed the first time this version opens, and again after each later update. Settings you never changed move to the new defaults, anything you chose is kept, cached screens are cleared, and a byte-for-byte backup and a record of what moved are kept. A custom look keeps its colours, fonts and artwork, while text sizes, line spacing and density follow the new version. You see it once: Updated to 0.2.3, with how many settings moved.",
             "Saving AI routing and privacy settings needs this version, because the account service no longer accepts them from 0.2.1. A choice saved in 0.2.1 keeps working under its earlier rules until you save it again here.",
-            "An installed 0.2.0 or 0.2.1 on a Mac can find this release when you press Check for updates. You then download it from the release page yourself."
+            "This release has no Mac build. A Mac keeps the version it has, and Check for updates there doesn't offer this Windows release."
           ]
         },
         {
           "title": "Known limits",
           "items": [
-            "This build is unsigned and experimental. On Windows, SmartScreen may warn before the installer runs: choose More info, then Run anyway, after checking the file's SHA-256. The Mac build has an ad hoc signature with no Apple Developer ID and isn't notarized. The first time you open it, macOS blocks it. Then choose Open Anyway in System Settings, Privacy and Security. On macOS 14 and earlier, you can also right-click the app and choose Open.",
-            "There's no build for Intel Macs, and the Apple silicon build has been built and launched only on one MacBook Air.",
-            "Settings > Account and the Nectovia Agent's AI service were tested only against stand-ins for the Nectovia account service. A real sign-in has run on one installed Windows copy of an earlier build of this version. Two sign-in fixes came after it: finishing without a second press, and the page the browser tab ends on. Both were tested only against stand-ins. On a Mac, signing in hasn't been tried. The account service this version uses is still a staging service with a fixed testing budget: while it is, the Nectovia Agent's answers are kept short, and the Agent stops answering once that budget is spent.",
+            "This build is unsigned and experimental. On Windows, SmartScreen may warn before the installer runs: choose More info, then Run anyway, after checking the file's SHA-256.",
+            "Settings > Account and the Nectovia Agent's AI service were tested only against stand-ins for the Nectovia account service. A real sign-in has run on one installed Windows copy of an earlier build of this release. Two sign-in fixes came after it: finishing without a second press, and the page the browser tab ends on. Both were tested only against stand-ins. The account service this version uses is still a staging service with a fixed testing budget: while it is, the Nectovia Agent's answers are kept short, and the Agent stops answering once that budget is spent.",
             "The page in the browser tab needs port 47319 on your computer. If another program is using that port, the tab stays on a loading bar as before, and sign-in still finishes in the app. If you quit Nectovia before you finish in the browser, the browser says it can't connect. Open Nectovia and sign in again.",
+            "The Norton change was checked with Norton on one Windows computer. Other antivirus programs weren't tried.",
             "Signing in needs the Nectovia account service, so if it can't be reached when Nectovia starts, you can't open anything, your own projects included; the sign-in screen says why. A connection lost after you sign in doesn't sign you out.",
             "Buying credits isn't available yet. Until payments are set up on the account service, Settings, Usage answers that buying isn't available right now, and buying has run only against a stand-in payment service.",
             "Credit limits, bought credits, Individual credits and the paid-access changes were tested against stand-ins and test databases, not against the live account service.",

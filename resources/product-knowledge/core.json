@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "diomedes-core",
   "version": "2026-09-27.1",
-  "buildVersion": "0.2.2",
+  "buildVersion": "0.2.3",
   "title": "Diomedes installed product and route knowledge",
   "qualification": {
     "status": "unverified",
