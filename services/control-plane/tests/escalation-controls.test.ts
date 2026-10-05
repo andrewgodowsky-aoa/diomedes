@@ -265,3 +265,48 @@ describe('the managed gateway', () => {
     expect(holds()).toBe(2);
   });
 });
+
+describe('a publish that keeps the routing and changes the control', () => {
+  const dayAfter = '2026-10-06T00:00:00.000Z';
+  /** A second route whose qualification ends a day after `at`; its other evidence runs to `until`. */
+  async function saveExpiringRoute() {
+    const saved = await call('POST', '/ops/routes', routing, { id: 'expiring', provider: 'azure-openai', model: 'synthetic-v1', label: 'Expiring',
+      region: 'US', processing: 'Transport fixture only', status: 'qualified', evidence: 'Transport fixture only',
+      binding: { ...binding(), qualification: { id: 'synthetic-qualification', evidence: 'Transport fixture only', validUntil: dayAfter,
+        tiers: ['efficient', 'focused', 'thorough'], qualityFloor: 0.9 } } });
+    expect(saved.status, JSON.stringify(saved.body)).toBe(200);
+  }
+  /** The next day: the expiring route's qualification has ended. Sign-ins last minutes, so people sign in again. */
+  async function qualificationEnds() {
+    clock = Date.parse(dayAfter) + 60_000;
+    owner = await signIn('owner'); routing = await signIn('staffRouting');
+  }
+  const onExpiring = () => ({ ...configuration(), efficient: { ...tier(), primary: 'expiring' } });
+
+  it('turns escalation off while a published route’s qualification has expired', async () => {
+    await saveExpiringRoute();
+    await publish(global, undefined, { routing: onExpiring() });
+    await publish(org(), undefined, { routing: onExpiring() });
+    await qualificationEnds();
+    // The same routing with its keys in another order, as jsonb hands them back, and escalation turned off.
+    const reordered = Object.fromEntries(Object.entries(onExpiring()).reverse()
+      .map(([name, policy]) => [name, Object.fromEntries(Object.entries(policy).reverse())]));
+    await publish(global, { enabled: false, tiers: [] }, { routing: reordered });
+    await publish(org(), { enabled: false, tiers: [] }, { routing: reordered });
+    expect(ownRecord(global)).toMatchObject({ revision: 4, escalation: { enabled: false, tiers: [] } });
+    expect(ownRecord(org())).toMatchObject({ revision: 2, inherit: false, escalation: { enabled: false, tiers: [] } });
+    expect((await memberRead()).body).toEqual({ enabled: false, tiers: [], source: 'scope', scopeRevision: 2, globalRevision: 4 });
+  });
+
+  it('still refuses an unqualified route when one tier’s primary changes', async () => {
+    await saveExpiringRoute();
+    await qualificationEnds();
+    const refusal = { status: 422, body: { error: 'Route expiring needs current qualification, access, privacy, health and price evidence before publication.' } };
+    expect(await call('POST', '/ops/routing/scopes/publish', routing, { scope: global, ...revisions(global), routing: onExpiring(),
+      note: 'Synthetic publication', escalation: { enabled: false, tiers: [] } })).toEqual(refusal);
+    expect(await call('POST', '/ops/routing/scopes/publish', routing, { scope: org(), ...revisions(org()), routing: onExpiring(),
+      note: 'Synthetic publication', escalation: { enabled: false, tiers: [] } })).toEqual(refusal);
+    expect(ownRecord(global).revision).toBe(2);
+    expect(ownRecord(org())).toBeUndefined();
+  });
+});

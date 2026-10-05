@@ -13,6 +13,7 @@ import {
 import type { AccountService } from './account-service.js';
 import { AccountError } from './errors.js';
 import { approvedConnections, connectionCredential, connectionView, supportsReasoningSummaries } from './managed-bindings.js';
+import { canonicalJson } from './managed-normalization.js';
 import type { CommercialRepository, CommercialTransaction, Operator, TierPolicy } from './commercial.js';
 import { entitlementFromGrants, individualEntitlement, individualTerms, agentAdmissionInput, featureGrantSchema, revokeGrantInput, ensureIndividualAccount } from './commercial.js';
 import type { FundingService } from './funding.js';
@@ -39,6 +40,17 @@ export function scopeEscalation(scope: RoutingScope, own: Pick<TierPolicy, 'revi
   return scope.kind === 'global'
     ? effectiveEscalation(null, global?.escalation, revisions)
     : effectiveEscalation(own?.escalation, global?.escalation, revisions);
+}
+
+/**
+ * Whether a publication keeps the scope's own current routing exactly. It then changes no route, so
+ * its routes are not checked again: a publish that only turns escalation off never waits on route
+ * evidence. An inherited or legacy record has no routing of its own to keep. Keys are compared in
+ * canonical order, because jsonb reorders them.
+ */
+function keepsOwnRouting(current: Pick<TierPolicy, 'inherit' | 'routing'> | undefined, routing: RoutingConfiguration | null): boolean {
+  return current !== undefined && current.inherit !== true && current.routing !== undefined && routing !== null
+    && canonicalJson(current.routing) === canonicalJson(routing);
 }
 
 /** Implemented on the same transaction as route/policy/grant writes, in Postgres and the faux store. */
@@ -307,7 +319,9 @@ export class RoutingService {
       throw new AccountError(409, 'The scope or global policy changed. Refresh and preview again.');
     if (input.scope.kind === 'global' && input.routing === null) throw new AccountError(422, 'Global policy cannot inherit.');
     const routes = await routesWithCircuits(tx, this.now()), connections = approvedConnections(env).filter(c => connectionCredential(c, env));
-    for (const tier of ROUTING_TIERS) for (const id of input.routing ? [input.routing[tier].primary, ...input.routing[tier].backups] : []) {
+    // Route evidence is checked whenever the routing changes, a legacy record becoming versioned included.
+    const changed = !keepsOwnRouting(current, input.routing);
+    for (const tier of ROUTING_TIERS) for (const id of input.routing && changed ? [input.routing[tier].primary, ...input.routing[tier].backups] : []) {
       if (id === null) continue;
       const r = routes.find(r => r.id === id), c = connections.find(c => c.id === r?.binding?.connectionId);
       if (!r || r.status !== 'qualified' || !r.binding || !c || !connectionCredential(c, env) || bindingProblems(r, c).length)
@@ -360,8 +374,9 @@ export class RoutingService {
         return { ...rest, routing: restored!.inherit ? null : restored!.routing, escalation: restored!.escalation ?? null }; })() : request;
       const input = scopedPublicationInput.parse(publication);
       const preview = await this.previewIn(tx, input, env);
-      // A scope-specific override must have a primary permitted by its actual customer's profile.
-      if (input.scope.kind !== 'global' && input.routing !== null && preview.affected.some(a => ROUTING_TIERS.some(t => input.routing![t].primary !== null && !a.tiers[t].eligible.includes(input.routing![t].primary!))))
+      // A scope-specific override must have a primary permitted by its actual customer's profile. Checked when the
+      // override changes; one kept exactly changes no route, and its routes' evidence must not block the escalation control.
+      if (input.scope.kind !== 'global' && input.routing !== null && !keepsOwnRouting(await tx.policy(undefined, key), input.routing) && preview.affected.some(a => ROUTING_TIERS.some(t => input.routing![t].primary !== null && !a.tiers[t].eligible.includes(input.routing![t].primary!))))
         throw new AccountError(422, 'The override primary conflicts with this account privacy or capability requirements. Review the exclusions.');
       const routes = await tx.routes(), global = await tx.policy();
       const row: TierPolicy = { v: 1, scope: input.scope, revision: input.baseRevision + 1, routing: input.routing ?? undefined,
