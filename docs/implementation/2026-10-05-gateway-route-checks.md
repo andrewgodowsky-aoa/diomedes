@@ -193,6 +193,12 @@ the same control before it admits the role.
   `routing` stays required: a control-only publish sends the scope's current own routing (null for an
   inherited or record-less account scope, the current routing on global). A rollback restores the whole
   record, its control included. The audit detail records the resulting control.
+- **Keeping the routing.** A publish whose routing is the scope's current own routing, unchanged, does
+  not check its routes again: neither the preview's route evidence check nor, on an account scope, the
+  override's eligibility check. So expired route evidence never blocks turning escalation off. The
+  comparison uses `canonicalJson`, because jsonb reorders keys. Any change to the routing, a legacy
+  record becoming versioned included, is checked in full. The revision checks, the global inherit
+  refusal and the affected accounts preview are unchanged.
 - **The Ops view.** `GET /ops/routing/scopes/{global | organization/:id | individual/:id}` adds
   `escalation`, the record's own control (null when it has none or there is no record), and
   `effectiveEscalation`. A preview answers the same two fields for the would-be record.
@@ -218,3 +224,6 @@ Tests: `services/control-plane/tests/escalation-controls.test.ts` covers inherit
 over default), publish with the control omitted, null and set, an inherited scope with its own control,
 the preview, rollback, refused controls, the member read and its authorization, the strict snapshot
 unchanged, and the gateway's refusals before any hold or send, with calls without the header unchanged.
+It also turns escalation off on the global and an account scope while a published route's
+qualification has expired, with the routing's keys reordered, and still refuses that route when a
+tier's primary changes to it.
