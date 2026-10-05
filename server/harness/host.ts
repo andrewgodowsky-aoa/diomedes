@@ -766,6 +766,7 @@ export function createHarnessHost({
       await devinSessions.closeAll();
       await codexSessions.closeAll();
       await modelSessions.closeAll();
+      loop.close();
       await bridge.close();
     },
   };
