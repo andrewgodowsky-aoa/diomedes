@@ -262,6 +262,53 @@
   overflow-wrap: anywhere;
 }
 
+/* Route checks: one ruled block per connection or deployment. Model ids and the
+   checks' own sentences are machine strings and wrap inside the block. Each line
+   says its outcome in words; the rule colour only repeats it. */
+.ai-connections .service .ai-route-checks {
+  border-top: 1px solid var(--dm-rule-2);
+  margin: 10px 0;
+  padding-top: 8px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.ai-connections .service .ai-route-checks h4 {
+  margin: 0 0 4px;
+}
+
+.ai-connections .service .ai-route-checks p {
+  margin: 0 0 6px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.ai-connections .service .ai-route-check-lines {
+  display: grid;
+  gap: 4px;
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+}
+
+.ai-connections .service .ai-route-check-lines li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  min-width: 0;
+  border-left: 3px solid var(--dm-rule);
+  padding-left: 8px;
+}
+
+.ai-connections .service .ai-route-check-lines li[data-outcome='passed'] {
+  border-left-color: var(--dm-done);
+}
+
+.ai-connections .service .ai-route-check-lines li[data-outcome='failed'] {
+  border-left-color: var(--dm-fault);
+}
+
 /* Approved read connectors: one ruled block per connector. A name, command or
    tool list is a machine string and wraps inside its row. */
 .read-connectors .read-connector {

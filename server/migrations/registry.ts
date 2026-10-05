@@ -245,6 +245,9 @@ export const DURABLE_FAMILIES: readonly DurableFamily[] = Object.freeze([
     'server/engines/read-connector-routes.ts', 'Validated by schema with version 1.'),
   own('aws-bedrock-connection', 'AWS Bedrock connection', 'connections/aws-bedrock.json', 'v',
     'server/engines/aws-bedrock.ts', 'Validated by schema with v 1.'),
+  own('route-qualifications', 'route check receipts', 'connections/qualifications/*.json', 'v',
+    'server/engines/route-qualification-store.ts',
+    'Validated by schema with v 1. An unreadable file reads as no receipt and is set aside, never overwritten.'),
 ]);
 
 export function durableFamily(id: string): DurableFamily {
