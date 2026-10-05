@@ -224,26 +224,26 @@ export function mountQualificationRoutes(
     if (prepared.blocked || !prepared.ready)
       throw new QualificationRefused(
         prepared.blocked?.code ?? 'qualify_no_connection',
-        `${prepared.blocked?.message ?? 'Connect the route before running route checks.'} Nothing was sent.`,
+        prepared.blocked?.message ?? 'Connect the route before running route checks.',
       );
     const { target, fingerprint } = prepared.ready;
     const key = runKey(target.route, target.connectionId);
     // Checked again with no await before the add: two requests cannot both start.
     if (running.has(key))
-      throw new QualificationRefused('qualify_running', 'Route checks are already running on this connection. Nothing was sent.');
+      throw new QualificationRefused('qualify_running', 'Route checks are already running on this connection.');
     running.add(key);
     try {
       let secret: string;
       try {
         secret = await services.secrets.get(target.connectionId);
       } catch (error) {
-        if (error instanceof HarnessError) throw new QualificationRefused(error.code, `${error.message} Nothing was sent.`);
+        if (error instanceof HarnessError) throw new QualificationRefused(error.code, error.message);
         throw error;
       }
       if (secretFingerprint(secret) !== fingerprint)
         throw new QualificationRefused(
           'qualify_key_mismatch',
-          'The saved key does not match this connection. Enter the key again before running route checks. Nothing was sent.',
+          'The saved key does not match this connection. Enter the key again before running route checks.',
         );
       const receipt = await runRouteQualification({
         target,

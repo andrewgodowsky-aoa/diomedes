@@ -348,7 +348,7 @@ export async function runRouteQualification(input: QualificationRunInput): Promi
   const now = input.now ?? (() => new Date());
   const effort = input.effort ?? 'low';
   const id = (input.idFactory ?? newReceiptId)();
-  if (!RECEIPT_ID.test(id)) throw new QualificationRefused('qualify_invalid_target', 'The route check could not be named. Nothing was sent.');
+  if (!RECEIPT_ID.test(id)) throw new QualificationRefused('qualify_invalid_target', 'The route check could not be named.');
   const { prefix, label } = target.binding({}, CHECK_OUTPUT_TOKENS, false);
   const createdAt = now();
   const identity = {
@@ -376,10 +376,10 @@ export async function runRouteQualification(input: QualificationRunInput): Promi
     spend: { settledMicroUsd: 0, uncertainMicroUsd: 0 },
   });
   if (!skeleton.success)
-    throw new QualificationRefused('qualify_invalid_target', 'This connection cannot be recorded as a route check. Nothing was sent.');
+    throw new QualificationRefused('qualify_invalid_target', 'This connection cannot be recorded as a route check.');
   const plan = planFor();
   const room = qualificationRoom(input.exposure, target.connectionId, ceilingOf(target, plan), label);
-  if (room) throw new QualificationRefused(room.code, `${room.message} Nothing was sent.`);
+  if (room) throw new QualificationRefused(room.code, room.message);
 
   const scrub = secretScrubber([input.secret]);
   const send = async (planned: PlannedCall, messages: ModelMessage[] = planned.messages): Promise<Sent> => {
@@ -486,7 +486,7 @@ export async function runRouteQualification(input: QualificationRunInput): Promi
   const failure = (sent: Sent): string => {
     const o = sent.observation;
     if (signal.aborted && (o.code === `${prefix}_cancelled` || !o.dispatched)) return STOPPED;
-    if (!o.dispatched) return 'Nothing was sent: the call was refused before it left this computer.';
+    if (!o.dispatched) return 'Refused before it left this computer.';
     if (o.code === `${prefix}_timeout`) return `${label} did not finish within the time limit.`;
     if (o.status === 401 || o.status === 403) return `${label} refused the key (HTTP ${o.status}).`;
     if (o.status !== null && o.status >= 500) return `${label} answered with a server error (HTTP ${o.status}).`;

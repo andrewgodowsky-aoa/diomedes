@@ -85,7 +85,7 @@ describe('route check gating', () => {
     const none = await qualifyAws();
     expect(none).toMatchObject({
       status: 409,
-      data: { code: 'qualify_no_connection', error: 'Connect AWS Bedrock before running route checks. Nothing was sent.' },
+      data: { code: 'qualify_no_connection', error: 'Connect AWS Bedrock before running route checks.' },
     });
     expect(await awsQualification()).toEqual({
       route: 'aws-bedrock',
@@ -104,13 +104,13 @@ describe('route check gating', () => {
     expect((await connectAws(new Date(Date.now() + 30_000).toISOString())).status).toBe(200);
     expect((await qualifyAws()).data).toEqual({
       code: 'qualify_key_expired',
-      error: 'The saved AWS key has expired. Enter a new key before running route checks. Nothing was sent.',
+      error: 'The saved AWS key has expired. Enter a new key before running route checks.',
     });
 
     expect((await connectAws()).status).toBe(200);
     expect((await qualifyAws()).data).toEqual({
       code: 'qualify_no_limit',
-      error: 'Approve a spend limit for AWS before running route checks. Nothing was sent.',
+      error: 'Approve a spend limit for AWS before running route checks.',
     });
 
     expect((await limitAws(0.05)).status).toBe(200);
@@ -119,7 +119,7 @@ describe('route check gating', () => {
     const dollars = `$${(Math.ceil(view.ceilingMicroUsd! / 10_000) / 100).toFixed(2)}`;
     const room = `The route checks can hold up to ${dollars}, and $0.05 of the AWS spend limit is left. Raise the limit or resolve open calls first.`;
     expect(view.blocked).toBe(room);
-    expect(await qualifyAws()).toMatchObject({ status: 409, data: { code: 'qualify_no_room', error: `${room} Nothing was sent.` } });
+    expect(await qualifyAws()).toMatchObject({ status: 409, data: { code: 'qualify_no_room', error: room } });
     expect(net.seen).toEqual([]);
   });
 
@@ -127,7 +127,7 @@ describe('route check gating', () => {
     await open({ protectedStorage: false });
     const sentence = 'Open the Diomedes desktop app to run route checks: this process has no protected credential storage.';
     expect((await awsQualification()).blocked).toBe(sentence);
-    expect(await qualifyAws()).toMatchObject({ status: 409, data: { code: 'qualify_no_storage', error: `${sentence} Nothing was sent.` } });
+    expect(await qualifyAws()).toMatchObject({ status: 409, data: { code: 'qualify_no_storage', error: sentence } });
     expect(net.seen).toEqual([]);
   });
 });
@@ -202,7 +202,7 @@ describe('route checks on the AWS Kimi K3 connection', () => {
     await vi.waitFor(() => expect(net.seen).toHaveLength(1), { timeout: 10_000 });
     expect(await qualifyAws()).toMatchObject({
       status: 409,
-      data: { code: 'qualify_running', error: 'Route checks are already running on this connection. Nothing was sent.' },
+      data: { code: 'qualify_running', error: 'Route checks are already running on this connection.' },
     });
     expect(await awsQualification()).toMatchObject({ running: true, blocked: 'Route checks are already running on this connection.' });
     release();

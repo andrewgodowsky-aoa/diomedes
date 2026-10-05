@@ -462,7 +462,7 @@ export function inspectAwsChatBody(modelId: string, maxOutputTokens: number) {
     )
       throw new ModelApiError(
         'aws_request_refused',
-        'The request did not name the admitted model with a usage report and its exact output limit. Nothing was sent.',
+        'The request did not name the admitted model with a usage report and its exact output limit.',
         false,
       );
   };

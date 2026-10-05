@@ -308,7 +308,7 @@ describe('route checks on the AWS Kimi K3 route, over Chat Completions', () => {
     await expect(runOn(awsTarget(), net)).rejects.toMatchObject({
       name: 'QualificationRefused',
       code: 'qualify_no_room',
-      message: `The route checks can hold up to ${dollars}, and $0.05 of the AWS spend limit is left. Raise the limit or resolve open calls first. Nothing was sent.`,
+      message: `The route checks can hold up to ${dollars}, and $0.05 of the AWS spend limit is left. Raise the limit or resolve open calls first.`,
     });
     expect(net.seen).toEqual([]);
     expect(exposure.list(K3_CONNECTION.id)).toEqual([]);
@@ -320,7 +320,7 @@ describe('route checks on the AWS Kimi K3 route, over Chat Completions', () => {
     const net = awsProvider();
     await expect(
       runRouteQualification({ target: awsTarget(), secret: AWS_SECRET, exposure: empty, signal: new AbortController().signal, transport: net.fetch }),
-    ).rejects.toMatchObject({ code: 'qualify_no_limit', message: 'Approve a spend limit for AWS before running route checks. Nothing was sent.' });
+    ).rejects.toMatchObject({ code: 'qualify_no_limit', message: 'Approve a spend limit for AWS before running route checks.' });
     expect(net.seen).toEqual([]);
   });
 
