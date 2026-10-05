@@ -1,5 +1,19 @@
 # Harness host integration changes, 2026-09-09
 
+## The local model comes from its own folder, 2026-10-05
+
+The local model is no longer one fixed model with two fixed profiles (DIO-201). It is the model in
+the folder Settings names under Local model folder, else the folder in `NECTOVIA_LOCAL_MODEL_HOME`,
+else the older `NECTOVIA_BONSAI_HOME`. With none set the option stays hidden; the earlier default
+folder is gone. The folder's `nectovia-connection.json` gives the model id, its loopback server, its
+profiles and its own start and stop scripts, each checked and refused in a sentence that names the
+field (`shared/local-model.ts`). The status is read from the running server: its health check, its
+model list and llama.cpp's `/props`, whose context picks the running profile. Profiles are listed as
+`local:<name>`; the earlier `bonsai-gaming` and `bonsai-full` still read as Gaming and Full where the
+folder has them. The host script runs the folder's own scripts, only on the person's Start, and keeps
+the lease and the one queue. Saved ids keep their values, and the price stays zero. See
+[the record](../implementation/2026-10-05-general-local-route.md).
+
 ## The local model can work on a team, 2026-10-05
 
 A Diomedes work loop's worker or advisor can now run on the local model (DIO-216, slice A). The
