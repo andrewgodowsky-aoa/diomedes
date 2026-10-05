@@ -1611,6 +1611,12 @@ export function createLoopProcedure(deps: {
 export type LoopProcedure = ReturnType<typeof createLoopProcedure>;
 
 /**
+ * The loop runs that may send to Nectovia: a Nectovia lead, and a Nectovia worker or advisor at a
+ * tier under a lead that is not Nectovia (DIO-216). A delegate never runs on Nectovia.
+ */
+const NECTOVIA_SENDERS: readonly string[] = [NATIVE_LOOP.id, TEAM_WORKER_CAPABILITY, TEAM_ADVISOR_CAPABILITY];
+
+/**
  * Egress for loop runs and their delegates: only model steps leave the
  * computer, and only while the admitted route is on and still the connection
  * the run was admitted under. The same rule the model-API conversation runs keep.
@@ -1627,8 +1633,11 @@ export function loopEgressAuthorizer(
     const input = run.input as { route?: unknown; accountRoute?: unknown } | null;
     const route = input?.route;
     if (route === 'nectovia') {
-      if (run.capabilityId !== NATIVE_LOOP.id || !input?.accountRoute ||
-          managedAccount?.(run.projectId) !== input.accountRoute)
+      // A Nectovia role under another lead is a worker or advisor child, so the kind of run is checked
+      // on its own. Every one of them sends only while the signed-in account is the one it was admitted under.
+      if (!NECTOVIA_SENDERS.includes(run.capabilityId))
+        throw new HarnessError('egress_denied', 'Nectovia works only as a loop lead, a worker or an advisor.');
+      if (!input?.accountRoute || managedAccount?.(run.projectId) !== input.accountRoute)
         throw new HarnessError('egress_denied', 'The signed-in Nectovia account no longer matches this run.');
       return;
     }

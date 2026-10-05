@@ -23,6 +23,7 @@ import { ControlPlaneClient } from '../server/accounts/client.js';
 import type { AccountBackend } from '../server/accounts/backend.js';
 import { NECTOVIA_SIGN_IN } from '../server/engines/nectovia.js';
 import { EngineService } from '../server/engines/service.js';
+import { loopEgressAuthorizer } from '../server/harness/capabilities/native-loop.js';
 import type { HarnessHost } from '../server/harness/host.js';
 import { jobKeyFor, type JobCaps } from '../server/job-caps.js';
 import { NECTOVIA_LOOP_TEAM_REFUSED } from '../server/native-loop-routes.js';
@@ -45,9 +46,15 @@ import {
 } from '../shared/escalation-roles.js';
 import type { HarnessRun } from '../shared/harness.js';
 import { LOCAL_MODEL_ACCOUNT } from '../shared/local-model.js';
-import type { LoopRunInput } from '../shared/native-loop.js';
+import { NATIVE_LOOP_CAPABILITY, NATIVE_LOOP_DELEGATE_CAPABILITY, type LoopRunInput } from '../shared/native-loop.js';
 import { ROUTING_TIERS } from '../shared/routing-policy.js';
-import { TEAM_LIMITS, type TeamLeadView, type TeamRole } from '../shared/team-delegation.js';
+import {
+  TEAM_ADVISOR_CAPABILITY,
+  TEAM_LIMITS,
+  TEAM_WORKER_CAPABILITY,
+  type TeamLeadView,
+  type TeamRole,
+} from '../shared/team-delegation.js';
 import type { Project } from '../shared/types.js';
 import { escalationOfferReasons, loopStartCommand, nectoviaRolesConsentText } from '../client/console/loop-start-model.js';
 import { nectoviaRolesNote, roleLine } from '../client/console/lead-workers-model.js';
@@ -66,8 +73,13 @@ const NO_MANAGED_USAGE = 'This account does not include managed AI usage.';
 const TIERED = { worker: { route: 'nectovia', tier: 'focused' }, advisor: { route: 'nectovia', tier: 'thorough' } } as const;
 
 interface GatewayCall { path: string; tier: string | null; escalation: string | null; job: string | null }
-interface Admission { route: string; requestId: string | null; tier: string | null; escalation: string | null; rootJobId: string | null }
-interface AdapterCall { route: string; runId: string; tier: string | null; escalation: string | null }
+/** `error`: what the admission or the adapter refused with, when it did. */
+interface Admission { route: string; requestId: string | null; tier: string | null; escalation: string | null; rootJobId: string | null; error?: string }
+interface AdapterCall { route: string; runId: string; tier: string | null; escalation: string | null; error?: string }
+const refusedWith = (row: { error?: string }) => (error: unknown): never => {
+  row.error = error instanceof Error ? error.message : String(error);
+  throw error;
+};
 
 let root: string | undefined;
 let cloud: FauxCloud;
@@ -170,14 +182,16 @@ async function open(options: { accounts?: boolean } = {}) {
   });
   const admit = engines.admitModelApi.bind(engines);
   vi.spyOn(engines, 'admitModelApi').mockImplementation((route, input, agent, observe) => {
-    admissions.push({ route, requestId: input.requestId ?? null, tier: input.tier ?? null, escalation: input.escalation ?? null,
-      rootJobId: agent?.rootJobId ?? null });
-    return admit(route, input, agent, observe);
+    const row: Admission = { route, requestId: input.requestId ?? null, tier: input.tier ?? null, escalation: input.escalation ?? null,
+      rootJobId: agent?.rootJobId ?? null };
+    admissions.push(row);
+    return admit(route, input, agent, observe).catch(refusedWith(row));
   });
   const adapter = engines.loopAdapter.bind(engines);
   vi.spyOn(engines, 'loopAdapter').mockImplementation((route, request, stop) => {
-    adapters.push({ route, runId: request.runId, tier: request.tier ?? null, escalation: request.escalation ?? null });
-    return adapter(route, request, stop);
+    const row: AdapterCall = { route, runId: request.runId, tier: request.tier ?? null, escalation: request.escalation ?? null };
+    adapters.push(row);
+    return adapter(route, request, stop).catch(refusedWith(row));
   });
   server = await new Promise<Server>((resolve) => {
     const listener = app!.listen(0, '127.0.0.1', () => resolve(listener));
@@ -264,12 +278,48 @@ const localStart = (projectId: string, taskId: string, extra: Record<string, unk
     ...extra,
   });
 
+/** Every child run id a lead's recorded handoffs name, at any depth of their outputs. */
+function childRunIds(value: unknown, found = new Set<string>()): Set<string> {
+  if (Array.isArray(value)) for (const item of value) childRunIds(item, found);
+  else if (value && typeof value === 'object')
+    for (const [key, item] of Object.entries(value)) {
+      if (key === 'childRunId' && typeof item === 'string') found.add(item);
+      else childRunIds(item, found);
+    }
+  return found;
+}
+const stepsOf = (run: HarnessRun) => run.steps.map((step) => ({ id: step.intent.stepId, state: step.state, error: step.error }));
+
+/**
+ * How a run ended, said whole: its reason and failure, each step, what a stop or a handoff
+ * recorded, each role's own run, and any admission or adapter that refused on the way.
+ */
+async function how(projectId: string, run: HarnessRun): Promise<string> {
+  const handoffs = run.steps.filter((step) => /^(stop|team|workers|advise):/.test(step.intent.stepId));
+  const children = await Promise.all([...childRunIds(handoffs.map((step) => step.output))].map(async (id) => {
+    const child = await harness().get(projectId, id).catch(() => null);
+    return child ? { id, state: child.state, cancelReason: child.cancelReason, failure: child.failure, steps: stepsOf(child) } : { id, missing: true };
+  }));
+  return JSON.stringify({
+    state: run.state,
+    cancelReason: run.cancelReason,
+    failure: run.failure,
+    steps: stepsOf(run),
+    handoffs: handoffs.map((step) => ({ id: step.intent.stepId, output: step.output })),
+    children,
+    refusedAdmissions: admissions.filter((row) => row.error),
+    refusedAdapters: adapters.filter((row) => row.error),
+  });
+}
+
+/** Waits until the run ends, however it ends, and fails at once with how it ended unless it completed. */
 async function settled(projectId: string, runId: string): Promise<HarnessRun> {
-  await vi.waitFor(async () => {
+  const ended = await vi.waitFor(async () => {
     const run = await harness().get(projectId, runId);
-    expect(run.state, JSON.stringify(run.steps.map((step: { state: string; error?: unknown }) => ({ state: step.state, error: step.error }))))
-      .toBe('completed');
+    if (!['completed', 'failed', 'cancelled', 'reconcile_required'].includes(run.state)) throw new Error(`The run is still ${run.state}.`);
+    return run;
   }, { timeout: 20_000 });
+  expect(ended.state, await how(projectId, ended)).toBe('completed');
   await harness().bridge.flush();
   await cloud.idle();
   return harness().get(projectId, runId);
@@ -356,6 +406,33 @@ describe('a local lead with a Nectovia Focused worker and a Nectovia Thorough ad
       expect(call.job).toBe(rootJobId);
     }
     expect(fixture.acquires.every((options) => !options?.start)).toBe(true);
+  });
+});
+
+describe('what a Nectovia role may send', () => {
+  const ACCOUNT = 'nectovia:org_fixture';
+  const NO_LONGER = 'The signed-in Nectovia account no longer matches this run.';
+  const send = { destination: 'external', kind: 'model' };
+  const run = (capabilityId: string) =>
+    ({ capabilityId, projectId: 'p1', input: { route: 'nectovia', accountRoute: ACCOUNT } }) as unknown as HarnessRun;
+  const SENDERS = [NATIVE_LOOP_CAPABILITY, TEAM_WORKER_CAPABILITY, TEAM_ADVISOR_CAPABILITY];
+
+  test('a worker or an advisor sends as a Nectovia lead does, only while the account it was admitted under is signed in', async () => {
+    let signedIn: string | null = ACCOUNT;
+    const authorize = loopEgressAuthorizer(() => ({}), () => signedIn);
+    for (const capabilityId of SENDERS)
+      for (const phase of ['dispatch', 'result'] as const)
+        await expect(authorize(run(capabilityId), send, phase)).resolves.toBeUndefined();
+    signedIn = 'nectovia:org_other';
+    for (const capabilityId of SENDERS) await expect(authorize(run(capabilityId), send, 'dispatch')).rejects.toThrow(NO_LONGER);
+    signedIn = null;
+    for (const capabilityId of SENDERS) await expect(authorize(run(capabilityId), send, 'result')).rejects.toThrow(NO_LONGER);
+  });
+
+  test('a delegate never sends to Nectovia, whoever is signed in', async () => {
+    const authorize = loopEgressAuthorizer(() => ({}), () => ACCOUNT);
+    await expect(authorize(run(NATIVE_LOOP_DELEGATE_CAPABILITY), send, 'dispatch'))
+      .rejects.toThrow('Nectovia works only as a loop lead, a worker or an advisor.');
   });
 });
 
