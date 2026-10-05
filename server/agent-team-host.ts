@@ -130,9 +130,10 @@ export function createProductionAgentTeamHost(deps: ProductionAgentTeamHostDepen
       // The local model has no key, no account setting and no expiry. It is on where it is set up
       // here, and takes a role's work only while the person keeps that profile running: its status
       // is read, never started, and a profile that isn't running is refused in the runtime's words.
+      // It is read now, not answered from the runtime's last check, which may be ten seconds old.
       const local = api.bonsai;
       if (!local?.runtime.configured()) return refuse(LOCAL_MODEL_NOT_INSTALLED);
-      const refusal = await local.runtime.refusal(model);
+      const refusal = await local.runtime.refusal(model, { fresh: true });
       if (refusal) return refuse(refusal);
       // The local lane's own zero-cost card: inference here has no provider charge.
       if (!(await engines.modelApiCard(route, model))) return refuse('The selected model has no current bounded price card.');

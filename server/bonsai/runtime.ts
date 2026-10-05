@@ -157,14 +157,16 @@ export class LocalModelRuntime {
   /**
    * Why work on this profile would be refused now, in the runtime's own words, or null when it is the
    * profile running. Running means ready or busy, as the integration reports it. Reads the status
-   * only: it never starts or switches the worker.
+   * only: it never starts or switches the worker. `fresh` asks the host again rather than answering
+   * from a check up to `LOCAL_MODEL_STATUS_TTL_MS` old, as an admission does: the person may have
+   * stopped or switched the model since that check.
    */
-  async refusal(model: string | null): Promise<string | null> {
+  async refusal(model: string | null, options: { fresh?: boolean } = {}): Promise<string | null> {
     const descriptor = this.descriptor();
     if (!descriptor) return LOCAL_MODEL_NOT_INSTALLED;
     const profile = findLocalProfile(descriptor, model);
     if (!profile) return localProfileRefusal(model);
-    const status = await this.status();
+    const status = await this.status(options);
     if (!status.installed) return LOCAL_MODEL_NOT_INSTALLED;
     const running = status.state === 'ready' || status.state === 'busy';
     if (running && status.mode === profile.mode) return null;
