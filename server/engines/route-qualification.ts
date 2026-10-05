@@ -100,13 +100,13 @@ export const CHECK_CACHE_OFF: CacheRequest = cacheRequest({ policy: 'off' })!;
 
 // --- the fixed requests -----------------------------------------------------------------
 
-const INSTRUCTIONS = 'This is an automated route check. Follow the request exactly and keep the answer short.';
-const SHORT_ANSWER = 'Reply with the single word OK.';
-const OUTPUT_BOUND_ASK =
+export const INSTRUCTIONS = 'This is an automated route check. Follow the request exactly and keep the answer short.';
+export const SHORT_ANSWER = 'Reply with the single word OK.';
+export const OUTPUT_BOUND_ASK =
   'Think step by step. Factor 9699690 into primes, then list every factor pair of 9699690, showing all of your work for each pair.';
-const TOOL_ASK = 'Use the lookup_fact tool to look up the key alpha. Then reply with the value it returns and nothing else.';
-const TOOL_KEY = 'alpha';
-const TOOL_VALUE = 'blue-42';
+export const TOOL_ASK = 'Use the lookup_fact tool to look up the key alpha. Then reply with the value it returns and nothing else.';
+export const TOOL_KEY = 'alpha';
+export const TOOL_VALUE = 'blue-42';
 /** Every check call's output limit, except the output bound's own. */
 export const CHECK_OUTPUT_TOKENS = 512;
 /** The output limit the output-bound check is sent with. */

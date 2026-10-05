@@ -14,6 +14,7 @@
 import type { FauxCloud } from './cloud.js';
 import { bootstrapFirstAdmin, type RouteEntry } from '../commercial.js';
 import { lunaLabel } from '../../../../shared/luna-models.js';
+import { fauxRouteCheckEnvironment, fauxRouteCheckRoutes } from './route-checks.js';
 
 export const FAUX_DEMO_PASSWORD = 'nectovia-demo';
 export const FAUX_SEED_ID = 'demo-2026-09-25';
@@ -110,6 +111,12 @@ export async function seedDemo(cloud: FauxCloud): Promise<SeedResult> {
 
   // The route registry and the first policy, by the Routing role.
   for (const entry of DEMO_ROUTES) await cloud.commercial.saveRoute(tokens.staffRouting, entry);
+  // Kimi K3 on AWS and GPT-6.1 Sol on Azure, bound to their connections, for the gateway route
+  // checks (DIO-217). Unqualified, so no tier resolves to them. Seeded only on the faux cloud's own
+  // connections: a test that brings connections of its own saves its own routes.
+  if (cloud.connectionSettings.MANAGED_CONNECTIONS === fauxRouteCheckEnvironment().MANAGED_CONNECTIONS)
+    for (const entry of fauxRouteCheckRoutes(new Date().toISOString()))
+      await cloud.commercial.saveRoute(tokens.staffRouting, entry, cloud.connectionSettings);
   await cloud.commercial.publishPolicy(tokens.staffRouting, {
     ...DEMO_POLICY,
     baseRevision: 0,

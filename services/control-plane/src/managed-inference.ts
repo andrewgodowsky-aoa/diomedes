@@ -569,7 +569,7 @@ class TerminalTap {
 }
 
 /** Responses usage in the `nectovia-usage/1` counts, mapped the way the desktop's AWS route maps it. */
-function responsesUsage(usage: Record<string, unknown>) {
+export function responsesUsage(usage: Record<string, unknown>) {
   const input = isObject(usage.input_tokens_details) ? usage.input_tokens_details : {};
   const output = isObject(usage.output_tokens_details) ? usage.output_tokens_details : {};
   return {
@@ -625,7 +625,7 @@ async function providerRefusal(response: Response, credential: string): Promise<
   }
 }
 
-async function providerMessage(response: Response, credential: string): Promise<string> {
+export async function providerMessage(response: Response, credential: string): Promise<string> {
   return (await providerRefusal(response, credential)).message;
 }
 

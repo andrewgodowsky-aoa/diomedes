@@ -39,11 +39,18 @@ import { RoutingService, preferenceInputSchema, individualAgreementInput } from 
 import { scopedPublicationSchema, scopedRollbackSchema, type AccountScope } from '../../../shared/routing-policy.js';
 import { approvedConnections, discoverConnectionModels } from './managed-bindings.js';
 import { PostgresOrganizationExportRepository } from './organization-export/postgres.js';
+import { RouteChecksService, postgresRouteCheckSpend, workerFetch } from './route-checks.js';
+import { routeChecksInputSchema } from '../../../shared/gateway-route-checks.js';
+import { routeInputRefusal } from './route-field-refusals.js';
 
 /** The phone relay's per-business hub, bound as RELAY_HUB (both wrangler.jsonc files). */
 export { RelayHub } from './relay/durable-object.js';
 
-async function body<T>(request: Request, schema: z.ZodType<T>): Promise<T> {
+/**
+ * The JSON body of an account request, parsed by its schema. A body the schema refuses gets the
+ * generic sentence, or the refusal `refuse` builds from the schema's issues (route saving names fields).
+ */
+async function body<T>(request: Request, schema: z.ZodType<T>, refuse?: (issues: readonly z.core.$ZodIssue[], input: unknown) => AccountError): Promise<T> {
   if (request.headers.get('content-type')?.split(';')[0].trim().toLowerCase() !== 'application/json')
     throw new AccountError(415, 'Use a JSON request body.');
   let bytes;
@@ -60,7 +67,7 @@ async function body<T>(request: Request, schema: z.ZodType<T>): Promise<T> {
     throw error;
   }
   const parsed = schema.safeParse(input);
-  if (!parsed.success) throw new AccountError(422, 'The account request contains invalid or unexpected fields.');
+  if (!parsed.success) throw refuse?.(parsed.error.issues, input) ?? new AccountError(422, 'The account request contains invalid or unexpected fields.');
   return parsed.data;
 }
 
@@ -110,6 +117,8 @@ export interface HandlerOptions {
   createOrganizationSetup?: (config: Configuration, accounts: AccountService) => OrganizationSetupService;
   /** Test and faux-cloud seam for the owner's export (OPS-05): the faux store and the faux services' views. */
   createOrganizationExport?: (config: Configuration, accounts: AccountService, env: Record<string, unknown>) => OrganizationExportService;
+  /** Test and faux-cloud seam for the gateway route checks (DIO-217): the faux store and a scripted provider. */
+  createRouteChecks?: (config: Configuration, accounts: AccountService) => RouteChecksService;
 }
 
 /**
@@ -126,6 +135,8 @@ export function customerSigningKeys(clientId: string): SigningKeyCache {
 }
 
 const MANAGED_ATTEMPT = /^\/managed\/v1\/attempts\/([A-Za-z0-9][A-Za-z0-9._:-]{0,127})$/;
+/** A route id as routeChecksPath encodes it. The service decodes it and holds it to the route id rule. */
+const ROUTE_CHECKS = /^\/ops\/routes\/([^/]{1,400})\/checks$/;
 
 /**
  * Factory injection is only a test seam; no environment flag enables fake identity/storage.
@@ -223,6 +234,16 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
       devices: (token, organizationId) => relay.devices(token, organizationId),
     }, new PostgresOrganizationExportRepository(neonClientFactory(config.databaseUrl)));
   });
+  // The gateway route checks (DIO-217) read routes, staff and earlier runs, and append their audit row,
+  // on the Worker login. Its company spend read is the funding ceiling's own query, which that login may run.
+  // The transport is the global fetch behind a wrapper: workerd refuses fetch called as a stored member.
+  const createRouteChecks = options.createRouteChecks ?? ((config: Configuration, accounts: AccountService) =>
+    new RouteChecksService({
+      accounts,
+      commercial: new PostgresCommercialRepository(neonClientFactory(config.databaseUrl)),
+      spend: postgresRouteCheckSpend(neonClientFactory(config.databaseUrl)),
+      transport: workerFetch,
+    }));
 
   /**
    * The managed gateway (contract nectovia-managed/1). Its own header rules, a
@@ -492,7 +513,9 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
         if ((match = route('/ops/customers/:id/funding').exec(pathname)) && method === 'POST')
           return json(await ops.addFunding(token, match[1], await body(request, addFundingInput)), 201);
         if (pathname === '/ops/routing' && method === 'GET') return json(await ops.routes(token));
-        if (pathname === '/ops/routes' && method === 'POST') return json(await ops.saveRoute(token, await body(request, saveRouteInput), env));
+        if (pathname === '/ops/routes' && method === 'POST') return json(await ops.saveRoute(token, await body(request, saveRouteInput, routeInputRefusal), env));
+        if ((match = ROUTE_CHECKS.exec(pathname)) && method === 'POST')
+          return json(await createRouteChecks(config, accounts).run(token, match[1], await body(request, routeChecksInputSchema), env));
         if (pathname === '/ops/routing/preview' && method === 'POST') return json(await ops.previewPolicy(token, await body(request, publishPolicyInput)));
         if (pathname === '/ops/routing/publish' && method === 'POST') return json(await ops.publishPolicy(token, await body(request, publishPolicyInput)), 201);
         if (pathname === '/ops/routing/rollback' && method === 'POST') return json(await ops.rollbackPolicy(token, await body(request, rollbackPolicyInput)), 201);
@@ -517,7 +540,9 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
         // The proof aged inside this service. The header tells a client it may ask again; the desktop
         // keeps the sign-in and the person can try again.
         if (code === IDENTITY_RECHECK) headers.set('Retry-After', '1');
-        return json(typeof code === 'string' ? { error: error.message, code } : { error: error.message }, error.status);
+        // Every refusal of a route save names its fields, an empty list when it is about none (DIO-198).
+        const fields = error.fields ?? (entry === '/ops/routes' && request.method === 'POST' ? [] : undefined);
+        return json({ error: error.message, ...(typeof code === 'string' ? { code } : {}), ...(fields ? { fields } : {}) }, error.status);
       }
       // Names the setting and rule a configuration refusal broke, never its value.
       console.error(JSON.stringify({ event: 'control-plane-unavailable', ...(error instanceof ConfigurationError ? error.problem : {}) }));
