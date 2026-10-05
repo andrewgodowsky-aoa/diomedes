@@ -35,8 +35,8 @@ import { OrganizationSetupService } from './organization-setup/service.js';
 import { PostgresOrganizationSetupRepository } from './organization-setup/postgres.js';
 import { organizationSetupWriteSchema } from './organization-setup/schema.js';
 import { OrganizationExportService } from './organization-export/service.js';
-import { RoutingService, preferenceInputSchema, individualAgreementInput } from './routing.js';
-import { scopedPublicationSchema, scopedRollbackSchema, type AccountScope } from '../../../shared/routing-policy.js';
+import { RoutingService, preferenceInputSchema, individualAgreementInput, scopedPublicationInput } from './routing.js';
+import { scopedRollbackSchema, type AccountScope } from '../../../shared/routing-policy.js';
 import { approvedConnections, discoverConnectionModels } from './managed-bindings.js';
 import { PostgresOrganizationExportRepository } from './organization-export/postgres.js';
 import { RouteChecksService, postgresRouteCheckSpend, workerFetch } from './route-checks.js';
@@ -463,10 +463,12 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
       if (pathname === '/account/routing-policy' && method === 'GET')
         return json(await createCommercial(config, accounts).routingPolicy(token));
       if (pathname === '/account/individual' && method === 'POST') return json(await createRouting(config, accounts).individual(token));
-      if ((match = new RegExp(`^/account/routing/(organization|individual)/${ID}/(policy|preference|admit|access)$`).exec(pathname))) {
+      if ((match = new RegExp(`^/account/routing/(organization|individual)/${ID}/(policy|preference|admit|access|escalation)$`).exec(pathname))) {
         const scope: AccountScope = { kind: match[1] as AccountScope['kind'], id: match[2] }, routing = createRouting(config, accounts);
         if (match[3] === 'policy' && method === 'GET') return json(await routing.snapshot(token, scope, env));
         if (match[3] === 'access' && method === 'GET') return json(await routing.access(token, scope));
+        // Escalation controls: the scope's effective control, never part of the strict routing snapshot.
+        if (match[3] === 'escalation' && method === 'GET') return json(await routing.escalation(token, scope));
         if (match[3] === 'preference' && method === 'GET') return json(await routing.preference(token, scope));
         if (match[3] === 'preference' && method === 'POST') {
           const input = await body(request, preferenceInputSchema);
@@ -494,8 +496,8 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
         if (pathname === '/ops/routing/scopes/global' && method === 'GET') return json(await routing.view(token, { kind: 'global' }, env));
         if ((match = new RegExp(`^/ops/routing/scopes/(organization|individual)/${ID}$`).exec(pathname)) && method === 'GET')
           return json(await routing.view(token, { kind: match[1] as AccountScope['kind'], id: match[2] }, env));
-        if (pathname === '/ops/routing/scopes/preview' && method === 'POST') return json(await routing.preview(token, await body(request, scopedPublicationSchema), env));
-        if (pathname === '/ops/routing/scopes/publish' && method === 'POST') return json(await routing.publish(token, await body(request, scopedPublicationSchema), env), 201);
+        if (pathname === '/ops/routing/scopes/preview' && method === 'POST') return json(await routing.preview(token, await body(request, scopedPublicationInput), env));
+        if (pathname === '/ops/routing/scopes/publish' && method === 'POST') return json(await routing.publish(token, await body(request, scopedPublicationInput), env), 201);
         if (pathname === '/ops/routing/scopes/rollback' && method === 'POST') return json(await routing.publish(token, await body(request, scopedRollbackSchema), env, true), 201);
         if ((match = route('/ops/connections/:id/models').exec(pathname)) && method === 'GET') {
           const staff = await ops.me(token);

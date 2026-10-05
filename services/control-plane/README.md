@@ -116,6 +116,26 @@ by index (`binding.price.validUntil`, `binding.privacy.ingressCountries.0`), or
 sentence for each failing field, such as "binding.price.evidence is required."
 Other endpoints' refusals are unchanged.
 
+Escalation controls (`shared/escalation-controls.ts`). A scope's routing
+record carries `escalation`: whether work led by a model that is not Nectovia
+may hand work to Nectovia's managed tiers, and to which tiers. Staff set it with
+`POST /ops/routing/scopes/publish` (and preview it): omitted keeps the previous
+revision's control, null clears it so the scope inherits, and an object sets
+it. On the global record it is the default for every account, and a rollback
+restores the whole record. `GET /ops/routing/scopes/...` answers the record's
+own `escalation` and the `effectiveEscalation`; members read the effective
+control at `GET /account/routing/{organization|individual}/{id}/escalation`.
+The routing snapshot does not carry it. A managed call that names a role in
+`X-Nectovia-Escalation` (worker or advisor; anything else is 400
+`invalid_header`) is refused with 403 `escalation_off` or `escalation_tier_off`
+before any hold or send when the scope's control does not allow its tier.
+Calls without the header are unchanged. A publish that creates an
+organization's first record, even one carrying only an escalation control,
+moves that organization onto versioned routing. It then needs an accepted
+preference and a global or own routing record before managed calls succeed.
+On the global scope, a control-only publish makes the global record versioned.
+So publish the global routing first, or in the same publication.
+
 ## Entry and configuration
 
 `src/worker.ts` is the actual Fetch entry. Existing route shapes are retained:
