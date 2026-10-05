@@ -12,6 +12,7 @@ import { LOCAL_MODEL_NOT_RUNNING } from '../server/bonsai/runtime';
 import { AGENT_NAME } from '../shared/agent-name';
 import type { Project, ProjectState, Task, TeamMember } from '../shared/types';
 import { reopenLastProject } from './fixtures/landing';
+import { BONSAI_MODEL, FixedLocalModel } from './fixtures/local-model';
 import {
   addTeam, connectTeamRoutes, DELIVERY, fixtureGate, fixtureTrust, K3, localHost, MEMBER_ANSWER, ORDER,
   SOURCES, teamFixture, teamTransport,
@@ -60,7 +61,7 @@ test.beforeAll(async () => {
     port, clientPort: port, dataDir: path.join(fixtureRoot, 'data'), projectRoot: path.join(fixtureRoot, 'projects'),
     engineService: engines, reviewerAdapter: null, verificationReviewer: null, automationTickMs: null,
     secretBox: testOnlySecretBox(), modelApiTransport: teamTransport(fixture),
-    bonsai: { host: localHost(fixture), configured: true },
+    localModel: { host: localHost(fixture), source: new FixedLocalModel() },
     harnessAuthority: (claim) => currentAuthority(claim, fixtureTrust),
   });
   application.use(express.static(dist));
@@ -116,7 +117,7 @@ test('a local member whose profile is not running is listed with the runtime’s
   fixture.running = null;
   const form = await openStart(page, await task('Check the linen delivery while the local model is stopped'));
   const option = form.getByLabel('Team member', { exact: true }).locator(`option[value="${member.slotId}"]`);
-  await expect(option).toHaveText('Counter · Bonsai Gaming');
+  await expect(option).toHaveText(`Counter · ${BONSAI_MODEL} Gaming`);
   // Read the option's native state; generic enabled matchers can retarget its enclosing select.
   await expect(option).toHaveJSProperty('disabled', true);
   await expect(form.getByText(LOCAL_MODEL_NOT_RUNNING, { exact: true })).toBeVisible();

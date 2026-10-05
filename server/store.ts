@@ -266,6 +266,8 @@ export const defaults = (): Settings => ({
   // S3: listed so a client echoing the whole settings object back is accepted. Like `home`,
   // `validateSettings` never reads it; only the subscription workers route writes it.
   subscriptionWorkers: null,
+  // DIO-201: no local model folder until the person sets one in Settings.
+  localModelFolder: null,
 });
 
 /**

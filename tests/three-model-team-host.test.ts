@@ -14,7 +14,7 @@ import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createApp } from '../server/app.js';
 import { testOnlySecretBox } from '../server/connection-secrets.js';
-import { BONSAI_CONNECTION } from '../server/engines/bonsai.js';
+import { LOCAL_MODEL_CONNECTION } from '../server/engines/bonsai.js';
 import { EngineService } from '../server/engines/service.js';
 import {
   LOCAL_MODEL_NOT_INSTALLED,
@@ -27,15 +27,20 @@ import { LOCAL_PROFILE_REFUSED } from '../server/agent-team-host.js';
 import type { CollaborationOptions } from '../server/harness/agent-collaboration.js';
 import type { HarnessHost } from '../server/harness/host.js';
 import type { Store } from '../server/store.js';
-import { BONSAI_ACCOUNT, BONSAI_PROFILES } from '../shared/bonsai.js';
+import { localModelCatalog, LOCAL_MODEL_ACCOUNT, parseLocalModelDescriptor } from '../shared/local-model.js';
 import type { LoopRunInput } from '../shared/native-loop.js';
 import { resolveTeamMemberModel } from '../shared/team-routes.js';
 import type { TeamMember } from '../shared/types.js';
 import { collaborationOfferLabel } from '../client/console/loop-start-model.js';
+import { BONSAI_DESCRIPTOR, BONSAI_FOLDER, BONSAI_MODEL, FixedLocalModel } from './fixtures/local-model.js';
 import {
-  addTeam, connectTeamRoutes, DELIVERY, fixtureGate, fixtureTrust, HELPER_ANSWER, K3, localHost, MEMBER_ANSWER,
-  ORDER, SOL, SOURCES, teamFixture, teamTransport, type TeamFixture,
+  addTeam, connectTeamRoutes, DELIVERY, fixtureGate, fixtureTrust, HELPER_ANSWER, K3, LOCAL_FULL, LOCAL_GAMING, localHost,
+  MEMBER_ANSWER, ORDER, SOL, SOURCES, teamFixture, teamTransport, type TeamFixture,
 } from './fixtures/three-model-team.js';
+
+/** The local model's profiles as its folder lists them, and the Gaming profile's name. */
+const LOCAL_PROFILES = localModelCatalog(parseLocalModelDescriptor(BONSAI_DESCRIPTOR, BONSAI_FOLDER), null);
+const GAMING_NAME = `${BONSAI_MODEL} Gaming`;
 
 const headers = { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' };
 let root: string, url: string, projectId: string, taskId: string;
@@ -69,7 +74,7 @@ async function setUp(options: { configured?: boolean; team?: boolean } = {}) {
     verificationReviewer: null,
     secretBox: testOnlySecretBox(),
     modelApiTransport: teamTransport(fixture),
-    bonsai: { host: localHost(fixture), configured: options.configured ?? true },
+    localModel: { host: localHost(fixture), source: options.configured === false ? new FixedLocalModel(null) : new FixedLocalModel() },
     harnessAuthority: (claim) => currentAuthority(claim, fixtureTrust),
     automationTickMs: null,
   });
@@ -122,10 +127,11 @@ describe('the Agent Team host admits a member on the local model only while its 
     const leadRow = offered.leads.find((row) => row.slotId === lead.slotId)!;
     expect(leadRow).toMatchObject({ route: 'azure-openai', model: SOL, admitted: true, reason: null });
     const row = offered.members.find((item) => item.slotId === member.slotId)!;
-    expect(row).toEqual({ slotId: member.slotId, name: 'Counter', route: 'bonsai', model: 'bonsai-gaming',
-      modelName: 'Bonsai Gaming', admitted: true, reason: null });
-    // The dialog names the member by its profile, and a cloud model by its id, as before.
-    expect(collaborationOfferLabel(row)).toBe('Counter · Bonsai Gaming');
+    expect(row).toEqual({ slotId: member.slotId, name: 'Counter', route: 'bonsai', model: LOCAL_GAMING,
+      modelName: GAMING_NAME, admitted: true, reason: null });
+    // The dialog names the member by its profile, as the local model's folder names it, and a cloud
+    // model by its id, as before.
+    expect(collaborationOfferLabel(row)).toBe(`Counter · ${GAMING_NAME}`);
     expect(collaborationOfferLabel(leadRow)).toBe(`Planner · ${SOL}`);
     expect(offered.helpers.find((item) => item.profileId === helperProfileId))
       .toMatchObject({ route: 'aws-bedrock', model: K3, admitted: true, reason: null });
@@ -141,7 +147,7 @@ describe('the Agent Team host admits a member on the local model only while its 
   ])('a local model that %s refuses the member in the runtime’s own words', async (_case, arrange, sentence) => {
     await setUp();
     arrange(fixture);
-    expect(await memberRow()).toMatchObject({ route: 'bonsai', model: 'bonsai-gaming', admitted: false, reason: sentence });
+    expect(await memberRow()).toMatchObject({ route: 'bonsai', model: LOCAL_GAMING, admitted: false, reason: sentence });
     // A start that names the member anyway is refused with the same sentence, and nothing runs.
     const refused = await request(`/projects/${projectId}/loop/start`, 'POST', {
       protocolVersion: 1, commandId: 'refused-member', taskId, goal: 'Say what is short.', route: 'azure-openai',
@@ -152,7 +158,7 @@ describe('the Agent Team host admits a member on the local model only while its 
     expect(refused.data.error).toBe(sentence);
     expect(await harness().list(projectId)).toEqual([]);
     expect(fixture.calls).toEqual([]);
-    for (const connection of [azureConnection, awsConnection.id, BONSAI_CONNECTION]) expect(holds(connection)).toEqual([]);
+    for (const connection of [azureConnection, awsConnection.id, LOCAL_MODEL_CONNECTION]) expect(holds(connection)).toEqual([]);
     expect(fixture.acquires).toEqual([]);
     neverStarted();
   });
@@ -160,9 +166,9 @@ describe('the Agent Team host admits a member on the local model only while its 
   test('a saved profile on the local model is refused plainly: saved profiles do not run there yet', async () => {
     await setUp();
     const saved = await ok<{ profileId: string }>('/agent-profiles', 'POST',
-      { name: 'Local checker', engine: 'bonsai', model: 'bonsai-gaming', effort: 'medium', agentId: 'auto', rules: [] });
+      { name: 'Local checker', engine: 'bonsai', model: LOCAL_GAMING, effort: 'medium', agentId: 'auto', rules: [] });
     expect((await options()).helpers.find((row) => row.profileId === saved.profileId)).toMatchObject({
-      route: 'bonsai', model: 'bonsai-gaming', modelName: 'Bonsai Gaming', admitted: false, reason: LOCAL_PROFILE_REFUSED,
+      route: 'bonsai', model: LOCAL_GAMING, modelName: GAMING_NAME, admitted: false, reason: LOCAL_PROFILE_REFUSED,
     });
     expect(fixture.acquires).toEqual([]);
   });
@@ -170,43 +176,52 @@ describe('the Agent Team host admits a member on the local model only while its 
   test('a local member keeps medium reasoning, as every member does', async () => {
     await setUp();
     await ok(`/projects/${projectId}/threads/${member.threadId}`, 'PUT',
-      { engine: 'bonsai', requested: { model: 'bonsai-gaming', effort: 'xhigh' } });
+      { engine: 'bonsai', requested: { model: LOCAL_GAMING, effort: 'xhigh' } });
     expect(await memberRow()).toMatchObject({ admitted: false, reason: 'The selected Team member must use medium reasoning.' });
   });
 });
 
 describe('only the person puts the local model on the Team', () => {
-  test('the roster takes a local member only with a profile; other routes keep their own check', async () => {
+  test('the roster takes a local member only with a profile its folder lists; other routes keep their own check', async () => {
     await setUp({ team: false });
     const add = (body: Record<string, unknown>) => request(`/projects/${projectId}/team/members`, 'POST', { role: 'member', ...body });
-    for (const model of ['gpt-5.6-sol', undefined]) {
+    for (const model of ['gpt-5.6-sol', 'local:turbo', undefined]) {
       const refused = await add({ name: 'Counter', engine: 'bonsai', ...(model ? { model } : {}) });
       expect(refused.status).toBe(400);
       expect(refused.data.error).toBe(LOCAL_MODEL_UNKNOWN_PROFILE);
     }
-    const full = await add({ name: 'Reader', engine: 'bonsai', model: 'bonsai-full' });
+    const full = await add({ name: 'Reader', engine: 'bonsai', model: LOCAL_FULL });
     expect(full.status, full.text).toBe(200);
-    expect(full.data.member).toMatchObject({ engine: 'bonsai', model: 'bonsai-full', selection: { by: 'person' } });
+    expect(full.data.member).toMatchObject({ engine: 'bonsai', model: LOCAL_FULL, selection: { by: 'person' } });
+    // A slug saved before profiles came from the folder still names its profile. The member keeps
+    // the slug the folder lists now.
+    const older = await add({ name: 'Archivist', engine: 'bonsai', model: 'bonsai-full' });
+    expect(older.status, older.text).toBe(200);
+    expect(older.data.member).toMatchObject({ engine: 'bonsai', model: LOCAL_FULL });
     // A provider route still takes any model name up to 200 characters, as before.
     const cloud = await add({ name: 'Writer', engine: 'azure-openai', model: 'any-deployment-name' });
     expect(cloud.status, cloud.text).toBe(200);
 
     const routes = await ok<{ routes: { route: string }[] }>(`/projects/${projectId}/team/routes`);
     expect(routes.routes.find((item) => item.route === 'bonsai')).toEqual({
-      route: 'bonsai', name: 'Bonsai (local)', ready: true, savedModel: null,
-      models: BONSAI_PROFILES.map((profile) => ({ slug: profile.slug, name: profile.name })),
+      route: 'bonsai', name: 'Local model', ready: true, savedModel: null,
+      models: LOCAL_PROFILES.map((profile) => ({ slug: profile.slug, name: profile.name })),
     });
     expect(fixture.acquires).toEqual([]);
   });
 
-  test('a computer without the local model lists the route as not ready, with the reason', async () => {
+  test('a computer without the local model lists the route as not ready, and takes no local member', async () => {
     await setUp({ configured: false, team: false });
     const routes = await ok<{ routes: { route: string }[] }>(`/projects/${projectId}/team/routes`);
     expect(routes.routes.find((item) => item.route === 'bonsai')).toMatchObject({ ready: false, models: [], reason: LOCAL_MODEL_NOT_INSTALLED });
+    const refused = await request(`/projects/${projectId}/team/members`, 'POST',
+      { name: 'Counter', role: 'member', engine: 'bonsai', model: LOCAL_GAMING });
+    expect(refused.status).toBe(409);
+    expect(refused.data.error).toBe(LOCAL_MODEL_NOT_INSTALLED);
   });
 
   test('“Nectovia chooses” never picks the local model, even when it is the only route offered', () => {
-    const local = { route: 'bonsai' as const, models: BONSAI_PROFILES, savedModel: 'bonsai-gaming', routeDefaultAllowed: false };
+    const local = { route: 'bonsai' as const, models: LOCAL_PROFILES, savedModel: LOCAL_GAMING, routeDefaultAllowed: false };
     for (const role of ['lead', 'member'] as const)
       expect(resolveTeamMemberModel({ role, style: 'efficient', candidates: [local] })).toMatchObject({ outcome: 'ask' });
   });
@@ -236,7 +251,7 @@ describe('an Agent Team start: Sol leads on Azure, the local model answers as th
     // The admitted composition binds the member to the local profile, its account and medium reasoning.
     const admitted = (await harness().runs.get(started.runId)).input as unknown as LoopRunInput;
     expect(admitted.collaboration?.persistentTeam?.member).toMatchObject({
-      slotId: member.slotId, route: 'bonsai', model: 'bonsai-gaming', accountRoute: BONSAI_ACCOUNT, effort: 'medium',
+      slotId: member.slotId, route: 'bonsai', model: LOCAL_GAMING, accountRoute: LOCAL_MODEL_ACCOUNT, effort: 'medium',
     });
     expect(admitted.collaboration?.helper).toMatchObject({ route: 'aws-bedrock', model: K3 });
 
@@ -262,7 +277,7 @@ describe('an Agent Team start: Sol leads on Azure, the local model answers as th
     // Spend is held only on the two cloud connections. The local member held nothing.
     expect(holds(azureConnection).length).toBeGreaterThan(0);
     expect(holds(awsConnection.id)).toHaveLength(1);
-    expect(holds(BONSAI_CONNECTION)).toEqual([]);
+    expect(holds(LOCAL_MODEL_CONNECTION)).toEqual([]);
     neverStarted();
     expect(fixture.acquires).toEqual([{ start: false }]);
   });

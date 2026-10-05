@@ -27,7 +27,7 @@ import type { RunService, StepContext, StepDefinition } from './run-service.js';
 import { localHarnessPrincipal } from './bridge.js';
 import { isExternalEngine } from '../../shared/engines.js';
 import { isModelApiRoute } from '../../shared/model-api.js';
-import { BONSAI_ROUTE, bonsaiProfile } from '../../shared/bonsai.js';
+import { LOCAL_MODEL_ROUTE, type LocalModelProfile } from '../../shared/local-model.js';
 import { CODEX_ACCOUNT_ROUTE } from '../engines/codex-session.js';
 import type {
   CapabilityManifest,
@@ -108,7 +108,7 @@ const dispatchStep = (engine: string, requestId: string): StepDefinition => ({
   // One dispatch per run, ever. An unknown outcome parks for reconciliation;
   // it is never resent on the strength of a retry.
   maxAttempts: 1,
-  destination: engine === BONSAI_ROUTE ? 'local' : 'external',
+  destination: engine === LOCAL_MODEL_ROUTE ? 'local' : 'external',
 });
 
 export class TextRouteRuntime {
@@ -119,6 +119,8 @@ export class TextRouteRuntime {
       owner?: string;
       /** Lease TTL for the claim; must outlive a slow provider turn. */
       leaseMs?: number;
+      /** The app's local model profiles: a local call's lease outlives its profile's call deadline. */
+      localProfile?: (model: unknown) => Pick<LocalModelProfile, 'callTimeoutMs'> | undefined;
     } = {},
   ) {}
   private get owner() {
@@ -218,7 +220,8 @@ export class TextRouteRuntime {
     };
     request.signal?.addEventListener('abort', cancel, { once: true });
     try {
-      const localProfile = engine === BONSAI_ROUTE ? bonsaiProfile((request.intent as { model?: unknown }).model) : undefined;
+      const localProfile = engine === LOCAL_MODEL_ROUTE
+        ? this.options.localProfile?.((request.intent as { model?: unknown }).model) : undefined;
       const leaseMs = this.options.leaseMs ?? Math.max(300_000, (localProfile?.callTimeoutMs ?? 0) + 60_000);
       await this.runs.claim(runId, this.owner, leaseMs);
       const admission = await this.runs.step<A>(

@@ -37,7 +37,7 @@ import type { AgentCollaborationHost } from './harness/agent-collaboration.js';
 import type { SpendExposure } from './spend-exposure.js';
 import { REPORT_PATH } from './harness/approval.js';
 import { isModelApiRoute, MODEL_API_NAMES, MODEL_API_PROVIDERS, NECTOVIA_ROUTE } from '../shared/model-api.js';
-import { BONSAI_ROUTE } from '../shared/bonsai.js';
+import { LOCAL_MODEL_ROUTE } from '../shared/local-model.js';
 import { LOCAL_MODEL_NOT_INSTALLED } from './bonsai/runtime.js';
 import {
   LOOP_LIMITS,
@@ -351,7 +351,7 @@ export function mountNativeLoopRoutes(
         throw new ApiError(409, error instanceof Error ? error.message : 'This route refused the loop.', { code: 'route_refused' });
       }
     }
-    if (route === BONSAI_ROUTE && gates) {
+    if (route === LOCAL_MODEL_ROUTE && gates) {
       // The local model has no Settings switch: it is on where it is set up. A send never starts it,
       // so a profile that isn't running refuses here, before consent, sharing or any admission.
       const refusal = gates.on(route) ? await gates.localRefusal(requested.model ?? null) : LOCAL_MODEL_NOT_INSTALLED;

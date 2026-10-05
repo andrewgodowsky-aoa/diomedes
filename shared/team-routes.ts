@@ -1,6 +1,6 @@
 import type { EngineModel } from './types.js';
 import { MODEL_API_PROVIDERS } from './model-api.js';
-import { BONSAI_ROUTE } from './bonsai.js';
+import { LOCAL_MODEL_ROUTE } from './local-model.js';
 import { routeDisplayName } from './engines.js';
 import { resolveWorkStyle, WORK_STYLES, type WorkStyle } from './work-style.js';
 import { resolveTier, type OwnerPin, type TierMap } from './tier-map.js';
@@ -21,7 +21,7 @@ import { resolveTier, type OwnerPin, type TierMap } from './tier-map.js';
  * A route not listed here cannot carry the tools today, and is refused by name
  * rather than silently swapped for one that can.
  */
-export const TEAM_ROUTES = ['codex', 'claude-code', ...MODEL_API_PROVIDERS, BONSAI_ROUTE] as const;
+export const TEAM_ROUTES = ['codex', 'claude-code', ...MODEL_API_PROVIDERS, LOCAL_MODEL_ROUTE] as const;
 export type TeamRoute = (typeof TEAM_ROUTES)[number];
 export const TEAM_CARRIAGE: Record<TeamRoute, 'mcp' | 'host'> = {
   codex: 'mcp',
@@ -43,7 +43,7 @@ export function isTeamRoute(value: unknown): value is TeamRoute {
  * never picks it.
  */
 export function isPersonOnlyTeamRoute(route: unknown): boolean {
-  return route === BONSAI_ROUTE;
+  return route === LOCAL_MODEL_ROUTE;
 }
 
 /** The tool names the team service offers, identical on every carriage. */

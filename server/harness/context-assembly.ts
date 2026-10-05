@@ -22,6 +22,7 @@
  */
 import { createHash } from 'node:crypto';
 import type { HarnessRun } from '../../shared/harness.js';
+import type { LocalModelProfile } from '../../shared/local-model.js';
 import {
   CONTEXT_ACCOUNT_VERSION,
   CONTEXT_ESTIMATOR,
@@ -323,9 +324,21 @@ const section = (id: ContextSectionId, bytes: number, detail?: string): ContextS
  * contain, counted apart from the rest of the instructions. `separatorBytes` is what joins the
  * user message's parts, counted with the message.
  */
+/**
+ * The window a local profile declares, for the context account. The running profile is the one
+ * whose context the server reports, so this is the server's window while that profile runs.
+ */
+export function localModelWindow(
+  profile: Pick<LocalModelProfile, 'contextTokens'> | undefined,
+): ContextAccount['window'] | undefined {
+  return profile ? { tokens: profile.contextTokens, source: 'The local profile, whose context the running server reports' } : undefined;
+}
+
 export function accountContext(input: {
   route: string;
   model: string;
+  /** The window when the caller knows it from elsewhere, such as a local profile. */
+  window?: ContextAccount['window'];
   system: string;
   guidance: readonly string[];
   tools: readonly unknown[];
@@ -363,7 +376,7 @@ export function accountContext(input: {
     route: input.route,
     model: input.model,
     estimator: CONTEXT_ESTIMATOR,
-    window: modelContextWindow(input.route, input.model),
+    window: input.window ?? modelContextWindow(input.route, input.model),
     requestLimitBytes: input.requestLimitBytes,
     sections,
     estimatedTokens: sections.reduce((sum, item) => sum + item.estimatedTokens, 0),

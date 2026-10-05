@@ -35,8 +35,8 @@ import {
   type TeamMemberSelection,
   type TeamRouteCandidate,
 } from '../../shared/team-routes.js';
-import { BONSAI_ROUTE, bonsaiProfile } from '../../shared/bonsai.js';
-import { LOCAL_MODEL_UNKNOWN_PROFILE } from '../bonsai/runtime.js';
+import { localProfileRefusal, LOCAL_MODEL_ROUTE, type LocalModelProfile } from '../../shared/local-model.js';
+import { LOCAL_MODEL_NOT_INSTALLED } from '../bonsai/runtime.js';
 import { ownerPinFrom, tierMapFrom } from '../../shared/tier-map.js';
 import { isRoute } from '../../shared/engines.js';
 import { isWorkStyle, type WorkStyle } from '../../shared/work-style.js';
@@ -52,6 +52,12 @@ import {
   validateBlockedBy,
   type TeamTaskStatus,
 } from './board.js';
+
+/** The local model as the team service reads it: set up here or not, and the profiles its folder lists. */
+export interface TeamLocalModel {
+  configured(): boolean;
+  profile(model: unknown): LocalModelProfile | undefined;
+}
 
 /** Routes with no provider behind them, kept for demos and tests. They never run team work. */
 const localEngines: TeamMember['engine'][] = ['sample', 'probe'];
@@ -132,6 +138,7 @@ function renderWakeText(team: TeamState, unread: MailboxMessage[]): string {
 export class TeamService {
   private runStarter: RunStarter | null = null;
   private candidates: TeamRouteCandidates | null = null;
+  private localModel: TeamLocalModel | null = null;
   private wakeLog = new Map<string, number[]>();
   private clock: () => number = () => Date.now();
   private ownedControl: OwnedTeamControl | null = null;
@@ -146,6 +153,11 @@ export class TeamService {
   /** Wire the host's connected-route facts; until then "Nectovia chooses" is refused. */
   setRouteCandidates(fn: TeamRouteCandidates): void {
     this.candidates = fn;
+  }
+
+  /** Wire the local model's runtime; until then no member is added on the local model. */
+  setLocalModel(local: TeamLocalModel): void {
+    this.localModel = local;
   }
 
   setOwnedControl(control: OwnedTeamControl): void {
@@ -318,10 +330,17 @@ export class TeamService {
           throw new ApiError(400, 'Provide a model of up to 200 characters.');
         model = input.model;
       }
-      // A local member runs one of the local model's profiles, by its slug. Every other route keeps
-      // the check above: any model name up to 200 characters, or none for the route's own default.
-      if (engine === BONSAI_ROUTE && !bonsaiProfile(model))
-        throw new ApiError(400, LOCAL_MODEL_UNKNOWN_PROFILE);
+      // A local member runs one of the profiles the local model's folder lists, by its slug
+      // (`local:gaming`). A slug saved before profiles came from the folder still names its
+      // profile, and the member keeps the slug listed now. A run asks the runtime again when it
+      // admits the member. Every other route keeps the check above: any model name up to 200
+      // characters, or none for the route's own default.
+      if (engine === LOCAL_MODEL_ROUTE) {
+        if (!this.localModel?.configured()) throw new ApiError(409, LOCAL_MODEL_NOT_INSTALLED);
+        const profile = this.localModel.profile(model);
+        if (!profile) throw new ApiError(400, localProfileRefusal(model));
+        model = profile.slug;
+      }
       selection = {
         by: 'person',
         style: null,

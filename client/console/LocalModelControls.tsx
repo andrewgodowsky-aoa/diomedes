@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Conversation, DocumentInfo, EngineModel, Mode, Route } from '../../shared/types';
 import { imageMediaType, MODEL_IMAGE_COUNT } from '../../shared/model-images';
+import { localSlug } from '../../shared/local-model';
 import { api, listDocuments } from '../api';
 import { AgentPicker } from './AgentPicker';
 import { AGENT_NAME } from '../../shared/agent-name';
@@ -12,6 +13,9 @@ export interface LocalModelStatus {
   state: string;
   installed: boolean;
   mode: string | null;
+  /** The model id its server lists, and the context it runs, while it answers. */
+  model?: string | null;
+  contextTokens?: number | null;
   owned: boolean;
   detail: string;
 }
@@ -28,6 +32,10 @@ export interface LocalModelProfile extends EngineModel {
 export interface LocalModelsView {
   route: Route;
   kind: 'local';
+  /** The name the model's own description gives it, or null when none was read. */
+  name?: string | null;
+  /** The folder it was read from, and whether Settings or the environment named it. */
+  folder?: { path: string; source: 'settings' | 'environment' } | null;
   status: LocalModelStatus;
   models: readonly LocalModelProfile[];
 }
@@ -76,7 +84,9 @@ export function LocalModelControls({ projectId, thread, route, mode, busy, live,
   const [error, setError] = useState<string | null>(null);
   const active = useRef<AbortController | null>(null);
   const selected = view?.route === route;
-  const profile = selected ? view?.models.find(model => model.slug === thread.requested?.model) : undefined;
+  // A profile saved under its earlier name reads as the profile it was.
+  const requested = localSlug(thread.requested?.model);
+  const profile = selected ? view?.models.find(model => model.slug === requested) : undefined;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -150,12 +160,12 @@ export function LocalModelControls({ projectId, thread, route, mode, busy, live,
   const level = profile ? effortFor(mode, thread.requested?.effort, profile.defaultEffort ?? '') : '';
   const ready = profile && view.status.mode === profile.mode && view.status.state === 'ready';
   const recorded = [...thread.turns].reverse().find(turn => turn.context?.route === route
-    && turn.context.model === profile?.slug)?.context?.provider?.firstCallInputTokens;
+    && localSlug(turn.context.model) === profile?.slug)?.context?.provider?.firstCallInputTokens;
   return <div className="local-model-controls" aria-label="Local model controls">
     <div className="local-model-row">
       {selected && <span className="local-engine">{profile?.engineLabel ?? AGENT_NAME}</span>}
       <select aria-label="Local model" disabled={locked || !view.status.installed}
-        value={selected ? thread.requested?.model ?? '' : ''} onChange={e => void change(e.target.value)}>
+        value={selected ? requested ?? '' : ''} onChange={e => void change(e.target.value)}>
         <option value="">{selected ? 'Choose a local model' : 'Local model'}</option>
         {view.models.map(model => <option key={model.slug} value={model.slug}>{model.name}</option>)}
       </select>
@@ -204,7 +214,8 @@ export function LocalImageAttachments({ projectId, route, model, paths, onPaths,
       .catch(() => { if (!controller.signal.aborted) setView(null); });
     return () => controller.abort();
   }, [route, model]);
-  const images = view?.route === route && view.models.some(profile => profile.slug === model && profile.inputModalities.includes('image'));
+  const slug = localSlug(model);
+  const images = view?.route === route && view.models.some(profile => profile.slug === slug && profile.inputModalities.includes('image'));
   if (!images && !paths.length) return null;
   return <div className="local-image-attachments">
     {images && <button type="button" disabled={busy || paths.length >= MODEL_IMAGE_COUNT} onClick={() => {

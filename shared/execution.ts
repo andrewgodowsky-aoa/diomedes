@@ -32,6 +32,7 @@
  * about what was decided.
  */
 import type { AgentResolution } from './agents.js';
+import { LOCAL_MODEL_ROUTE } from './local-model.js';
 import type { ProcessingPolicy } from './configuration.js';
 import type { GoverningRecord } from './rule-authority.js';
 import type { PermissionChoiceId } from './permissions.js';
@@ -112,7 +113,7 @@ export interface Payer {
 }
 
 /** Routes that never leave this computer, and therefore never bill anybody. */
-const LOCAL_ROUTES: readonly string[] = Object.freeze(['sample', 'harness-runtime']);
+const LOCAL_ROUTES: readonly string[] = Object.freeze(['sample', 'harness-runtime', LOCAL_MODEL_ROUTE]);
 
 /**
  * Who is paying for this work.

@@ -135,6 +135,12 @@ export interface Settings {
    * signed-in person (`server/subscription-workers.ts`). Absent or null: off.
    */
   subscriptionWorkers?: import('./subscription-workers.js').SubscriptionWorkersPreference | null;
+  /**
+   * DIO-201: the folder a local model is installed in, which holds its `nectovia-connection.json`.
+   * Absent or null: the `NECTOVIA_LOCAL_MODEL_HOME` environment variable, then the older
+   * `NECTOVIA_BONSAI_HOME`; with none of them set, no local model is offered.
+   */
+  localModelFolder?: string | null;
 }
 /**
  * One thing waiting on the person, by name: an approval, work to review, or a run that failed

@@ -9,6 +9,7 @@
  *
  * Pure: no clock, no disk, no request. Client and server share it.
  */
+import { LOCAL_MODEL_ROUTE } from './local-model.js';
 import { LOCAL_ROUTES as MANAGED_LOCAL_ROUTES } from './managed-usage.js';
 import { isModelApiRoute, NECTOVIA_ROUTE } from './model-api.js';
 import { isExternalWorkerRoute, type ExternalWorkerRoute } from './team-delegation.js';
@@ -47,6 +48,8 @@ const LOCAL_ROUTES: readonly string[] = Object.freeze([
   'native-fixture',
   'sample',
   'harness-runtime',
+  // The local model route: its calls go to a model on this computer, never to a provider.
+  LOCAL_MODEL_ROUTE,
   ...MANAGED_LOCAL_ROUTES,
 ]);
 

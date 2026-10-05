@@ -9,10 +9,11 @@
 import path from 'node:path';
 import { AWS_BEDROCK_SDK, AWS_RESPONSES_ENDPOINTS, awsQualificationIdentity } from '../../server/engines/aws-bedrock.js';
 import { RouteQualifications } from '../../server/engines/route-qualification-store.js';
-import { BonsaiError, LOCAL_MODEL_NOT_RUNNING, type BonsaiHost } from '../../server/bonsai/runtime.js';
+import { LocalModelError, LOCAL_MODEL_NOT_RUNNING, type LocalModelHost } from '../../server/bonsai/runtime.js';
 import type { Principal, TrustBackend } from '../../server/trust/index.js';
 import type { AgentGatePort } from '../../server/accounts/agent-gate.js';
-import { BONSAI_MODEL, type BonsaiMode, type BonsaiStatus } from '../../shared/bonsai.js';
+import type { LocalModelStatus } from '../../shared/local-model.js';
+import { BONSAI_MODEL } from './local-model.js';
 import { AWS_KIMI_K3, type AwsConnectionView, type AzureConnectionView } from '../../shared/model-api.js';
 import type { TeamMember } from '../../shared/types.js';
 import { chatEvents, responsesEvents, sseResponse } from './model-api-streams.js';
@@ -29,6 +30,9 @@ export const MEMBER_ANSWER = 'delivery.md: six napkins short.';
 export const HELPER_ANSWER = 'order.md asks for 100 napkins and delivery.md shows 94, so six are short.';
 export const REPORT = '# Linen delivery\n\nSix napkins are short: 100 ordered, 94 delivered.\n';
 export const SOURCES = ['order.md', 'delivery.md'];
+/** The Gaming profile as the local model's folder lists it (`tests/fixtures/local-model.ts`). */
+export const LOCAL_GAMING = 'local:gaming';
+export const LOCAL_FULL = 'local:full';
 const rates = {
   inputUsdPerMillion: 3,
   outputUsdPerMillion: 15,
@@ -49,7 +53,8 @@ export interface TeamFixture {
   /** The tool outputs the lead saw on its latest call, for assertions and failure messages. */
   leadOutputs: unknown[];
   memberSlotId: string;
-  running: BonsaiMode | null;
+  /** The running profile's name in the local model's folder (`Gaming`, `Full`), or null. */
+  running: string | null;
   installed: boolean;
   inspects: number;
   /** The options of every acquire. Only the person's own Start may ask for `start: true`. */
@@ -120,9 +125,9 @@ export function teamTransport(fixture: TeamFixture): typeof globalThis.fetch {
 }
 
 /** The local host: an inspect reports which profile runs; an acquire never starts one unless asked. */
-export function localHost(fixture: TeamFixture): BonsaiHost {
+export function localHost(fixture: TeamFixture): LocalModelHost {
   return {
-    inspect: async (): Promise<BonsaiStatus> => {
+    inspect: async (): Promise<LocalModelStatus> => {
       fixture.inspects += 1;
       return !fixture.installed
         ? { state: 'missing', installed: false, mode: null, owned: false, detail: 'Not installed.' }
@@ -133,7 +138,7 @@ export function localHost(fixture: TeamFixture): BonsaiHost {
     // A send acquires without starting: a profile that isn't the running one is refused, as the host script does.
     acquire: async (profile, options) => {
       fixture.acquires.push(options);
-      if (fixture.running !== profile.mode && !options?.start) throw new BonsaiError('unloaded', LOCAL_MODEL_NOT_RUNNING);
+      if (fixture.running !== profile.mode && !options?.start) throw new LocalModelError('unloaded', LOCAL_MODEL_NOT_RUNNING);
       return { status: { state: 'ready' as const, installed: true, mode: profile.mode, owned: true, detail: 'Ready.' }, release: async () => {} };
     },
   };
@@ -198,10 +203,10 @@ export async function addTeam(api: Api, projectId: string) {
   const lead = (await api<{ member: TeamMember }>(`/projects/${projectId}/team/members`, 'POST',
     { name: 'Planner', role: 'lead', engine: 'azure-openai', model: SOL })).member;
   const member = (await api<{ member: TeamMember }>(`/projects/${projectId}/team/members`, 'POST',
-    { name: 'Counter', role: 'member', engine: 'bonsai', model: 'bonsai-gaming' })).member;
+    { name: 'Counter', role: 'member', engine: 'bonsai', model: LOCAL_GAMING })).member;
   // Every Agent Team member runs at medium reasoning; the person sets it on the member's thread.
   await api(`/projects/${projectId}/threads/${member.threadId}`, 'PUT',
-    { engine: 'bonsai', requested: { model: 'bonsai-gaming', effort: 'medium' } });
+    { engine: 'bonsai', requested: { model: LOCAL_GAMING, effort: 'medium' } });
   const helperProfileId = (await api<{ profileId: string }>('/agent-profiles', 'POST',
     { name: 'Checker', engine: 'aws-bedrock', model: K3, effort: 'medium', agentId: 'auto', rules: [] })).profileId;
   return { lead, member, helperProfileId };
