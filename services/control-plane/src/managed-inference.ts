@@ -65,7 +65,8 @@ import { DEFAULT_MANDATORY_RESTRICTIONS, hardRestrictionsSchema, resolveRoutingC
   type AccountScope, type RequestEnvelope, type FailureKind, type RoutingReceipt } from '../../../shared/routing-policy.js';
 import { approvedConnections, callManagedProvider, connectionCredential, providerBody, prepareManagedProvider, nativeRouteId, supportsReasoningSummaries } from './managed-bindings.js';
 import { BindingError, canonicalJson, sseObjects } from './managed-normalization.js';
-import { authorizeScope, effectivePolicy, defaultEnvelope, routesWithCircuits } from './routing.js';
+import { authorizeScope, effectivePolicy, defaultEnvelope, routesWithCircuits, scopeEscalation } from './routing.js';
+import { ESCALATION_HEADER, ESCALATION_ROLES, escalationAllows, type EscalationRole } from '../../../shared/escalation-controls.js';
 import { FundingError, RELEASABLE_REFUSALS, type AttemptRef, type FundingRepository, type FundingService } from './funding.js';
 import { MEMBER_LIMIT_REACHED } from '../../../shared/credit-allotments.js';
 import type { MemberRole } from '../../../shared/workspaces.js';
@@ -424,6 +425,18 @@ function gatewayHeaders(headers: Headers): GatewayHeaders {
     checkpoint: headers.get('X-Nectovia-Checkpoint'), sourceRestrictions: sourceRestrictionHeaders(headers) };
 }
 
+/**
+ * The role an escalated call names: a Nectovia role working under a lead that is not Nectovia.
+ * Null when the call carries no escalation header. Any other value is a bad header.
+ */
+function escalationRole(headers: Headers): EscalationRole | null {
+  const value = headers.get(ESCALATION_HEADER);
+  if (value === null) return null;
+  if (!(ESCALATION_ROLES as readonly string[]).includes(value))
+    throw new ManagedError(400, 'invalid_header', `The ${ESCALATION_HEADER} header must name ${ESCALATION_ROLES.join(' or ')}.`);
+  return value as EscalationRole;
+}
+
 function sourceRestrictionHeaders(headers: Headers): GatewayHeaders['sourceRestrictions'] {
   let sourceRestrictions: GatewayHeaders['sourceRestrictions'] = [];
   const source = headers.get('X-Nectovia-Source-Restrictions');
@@ -569,7 +582,7 @@ class TerminalTap {
 }
 
 /** Responses usage in the `nectovia-usage/1` counts, mapped the way the desktop's AWS route maps it. */
-function responsesUsage(usage: Record<string, unknown>) {
+export function responsesUsage(usage: Record<string, unknown>) {
   const input = isObject(usage.input_tokens_details) ? usage.input_tokens_details : {};
   const output = isObject(usage.output_tokens_details) ? usage.output_tokens_details : {};
   return {
@@ -625,7 +638,7 @@ async function providerRefusal(response: Response, credential: string): Promise<
   }
 }
 
-async function providerMessage(response: Response, credential: string): Promise<string> {
+export async function providerMessage(response: Response, credential: string): Promise<string> {
   return (await providerRefusal(response, credential)).message;
 }
 
@@ -792,8 +805,11 @@ export class ManagedInferenceService {
   private async run(request: Request, env: ProviderEnv, headers: Headers, ctx?: ManagedContext): Promise<Response> {
     // 1. Headers.
     const h = gatewayHeaders(request.headers);
+    const escalated = escalationRole(request.headers) !== null;
     // 2 to 4. Membership, the stored admission and the entitlement.
     const { tenantId, state, member } = await this.admitted(h);
+    // Escalated work only: the account's escalation control decides, before the body, any hold or any send.
+    if (escalated) await this.escalationAllowed(h);
     // 5. The body.
     const bytes = await this.readBody(request, MAX_REQUEST_BYTES);
     const parsed = parseBody(bytes);
@@ -831,6 +847,17 @@ export class ManagedInferenceService {
     // and the output cap the hold was priced at.
     const forwarded = JSON.stringify({ ...body, model: entry.model, store: false, stream: true, max_output_tokens: maxOutputTokens });
     return this.dispatch({ ref, row, credential, body: forwarded, headers, ctx });
+  }
+
+  /**
+   * An escalated call's tier must be one the scope's effective escalation control allows: its own
+   * control, else the global record's, else the default. Refused with the contract's code and sentence.
+   */
+  private async escalationAllowed(h: GatewayHeaders): Promise<void> {
+    const view = await this.options.commercial.transaction(async tx =>
+      scopeEscalation(h.scope, await tx.policy(undefined, routingScopeKey(h.scope)), await tx.policy()));
+    const allowed = escalationAllows(view, h.tier);
+    if (!allowed.ok) throw new ManagedError(403, allowed.code, allowed.reason);
   }
 
   /** One request can spend on several explicitly configured attempts; all use the existing root job cap. */

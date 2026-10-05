@@ -1,4 +1,5 @@
 import { lunaLabel, type LunaModelId } from './luna-models.js';
+import type { CacheAccount, CachePolicy, RouteCapability } from './route-capabilities.js';
 import type { QualificationProtocol, RouteQualificationReceipt } from './route-qualification.js';
 
 /** The Luna model ids the desktop route sends and the one kept for older policies. */
@@ -261,6 +262,36 @@ export interface RouteQualificationView {
   ceilingMicroUsd: number | null;
   /** True while route checks are running on this route. */
   running: boolean;
+}
+
+/**
+ * One model's capability record on a route with the owner's cache setting (DIO-215), and what a
+ * conversation turn's context record would say about caching under the current setting.
+ */
+export interface RouteCacheModelView {
+  model: string;
+  /** The Azure deployment that serves the model; null elsewhere. */
+  deployment: string | null;
+  capability: RouteCapability;
+  preview: CacheAccount;
+}
+
+/** What `GET` and `PUT /api/ai/model-api/<route>/cache-policy` return. Never a cache key or its scope. */
+export interface RouteCachePolicyView {
+  route: 'aws-bedrock' | 'azure-openai';
+  policy: CachePolicy;
+  /** False until the owner chooses; the provider's default applies until then. */
+  chosen: boolean;
+  /** One entry per model the connection serves; empty with no connection. */
+  models: RouteCacheModelView[];
+}
+
+/** What `GET /api/ai/model-api/<route>/capabilities` returns: one model's record, null with no connection. */
+export interface RouteCapabilityView {
+  route: 'aws-bedrock' | 'azure-openai';
+  model: string | null;
+  deployment: string | null;
+  capability: RouteCapability | null;
 }
 
 /** What `GET /api/ai/model-api/openrouter` returns. Identifiers and state only, never a credential. */

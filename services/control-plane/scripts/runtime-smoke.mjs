@@ -190,6 +190,101 @@ const abandoned = await defaultOutbound('client_abandoned_refresh', (pool) => {
 assert.equal(abandoned.answers[0].status, 202, 'Request A returns before its signing-key fetch answers.');
 assert.equal(abandoned.answers[1].status, 200, `A request after an abandoned signing-key fetch must verify: ${JSON.stringify(abandoned.answers[1])}`);
 assert.deepEqual(abandoned.unmatched, []);
+
+// DIO-217: POST /ops/routes/:id/checks in workerd, through the Worker's own handler and its own route
+// checks transport (workerFetch); only the staff, route and audit stores are memory stand-ins. Every
+// provider call leaves through workerd's global fetch and reaches the outbound handler below, which
+// answers offline as Bedrock's Chat Completions would for Kimi K3. The second run is answered with a
+// redirect, which workerd must hand back to the checks, never follow.
+const BEDROCK_CHAT = 'https://bedrock-runtime.us-east-1.amazonaws.com/openai/v1/chat/completions';
+function bedrockChatAnswer(body, prefixes, requestId) {
+  const messages = Array.isArray(body.messages) ? body.messages : [];
+  const text = (role) => messages.filter((message) => message.role === role).map((message) => String(message.content ?? '')).join('\n');
+  const system = text('system');
+  const toolResult = messages.find((message) => message.role === 'tool');
+  const offered = (body.tools ?? []).some((tool) => tool?.function?.name === 'lookup_fact');
+  const limit = Number(body.max_completion_tokens);
+  const prefix = Math.ceil(Buffer.byteLength(system) / 4);
+  const cached = prefix >= 1024 && prefixes.has(system) ? Math.floor(prefix / 128) * 128 : 0;
+  if (prefix >= 1024) prefixes.add(system);
+  const input = Math.max(Math.ceil(Buffer.byteLength(JSON.stringify(body)) / 4), cached);
+  const created = Math.floor(Date.now() / 1000);
+  const chunk = (delta, finish = null) => ({ id: `chatcmpl-${requestId}`, object: 'chat.completion.chunk', created, model: body.model,
+    choices: [{ index: 0, delta, finish_reason: finish, logprobs: null }] });
+  const chunks = [chunk({ role: 'assistant', content: '' }), chunk({ reasoning_content: 'Reading the request.' })];
+  let output = 18; let reasoning = 14; let finish = 'stop';
+  if (toolResult) chunks.push(chunk({ content: JSON.parse(String(toolResult.content)).value }));
+  else if (offered) {
+    chunks.push(chunk({ tool_calls: [{ index: 0, id: 'functions.lookup_fact:0', type: 'function', function: { name: 'lookup_fact', arguments: '' } }] }));
+    chunks.push(chunk({ tool_calls: [{ index: 0, function: { arguments: '{"key":"alpha"}' } }] }));
+    output = 26; reasoning = 12; finish = 'tool_calls';
+  } else if (text('user').includes('9699690')) {
+    chunks.push(chunk({ content: 'The prime factors of 9699690 are 2, 3, 5,' }));
+    output = limit; reasoning = limit - 6; finish = 'length';
+  } else chunks.push(chunk({ content: 'OK' }));
+  chunks.push(chunk({}, finish));
+  chunks.push({ id: `chatcmpl-${requestId}`, object: 'chat.completion.chunk', created, model: body.model, choices: [],
+    usage: { prompt_tokens: input, completion_tokens: output, total_tokens: input + output,
+      prompt_tokens_details: { cached_tokens: cached }, completion_tokens_details: { reasoning_tokens: reasoning } } });
+  return [...chunks.map((value) => `data: ${JSON.stringify(value)}\n\n`), 'data: [DONE]\n\n'].join('');
+}
+async function routeChecksInWorkerd() {
+  const requests = []; const logs = []; const prefixes = new Set();
+  let mode = 'answer';
+  const outboundService = async (request) => {
+    const body = await request.text();
+    const seen = { mode, method: request.method, url: request.url, bearer: /^Bearer \S+$/.test(request.headers.get('authorization') ?? '') };
+    requests.push(seen);
+    if (request.method !== 'POST' || request.url !== BEDROCK_CHAT) return new MiniflareResponse('', { status: 404 });
+    const requestId = `runtime-${requests.length}`;
+    if (mode === 'redirect')
+      return new MiniflareResponse('', { status: 302, headers: { location: `${BEDROCK_CHAT}/redirect-target`, 'x-amzn-requestid': requestId } });
+    return new MiniflareResponse(bedrockChatAnswer(JSON.parse(body), prefixes, requestId),
+      { status: 200, headers: { 'content-type': 'text/event-stream', 'x-amzn-requestid': requestId } });
+  };
+  const worker = await unstable_startWorker({ config: 'tests/runtime/route-checks.wrangler.jsonc',
+    dev: { server: { hostname: '127.0.0.1', port: await port() }, inspector: false, watch: false, persist: false,
+      logLevel: 'error', outboundService, structuredLogsHandler: (log) => logs.push(log.message) } });
+  try {
+    await worker.ready;
+    const run = async () => {
+      let timer;
+      const bound = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('No answer within 30 s.')), 30_000); });
+      try {
+        const response = await Promise.race([worker.fetch('http://127.0.0.1/ops/routes/aws-kimi-k3/checks', { method: 'POST',
+          headers: { authorization: 'Bearer runtime-staff', 'content-type': 'application/json' }, body: JSON.stringify({ baseRevision: 1 }) }), bound]);
+        return { status: response.status, ...JSON.parse(await Promise.race([response.text(), bound])) };
+      } finally { clearTimeout(timer); }
+    };
+    const answered = await run();
+    mode = 'redirect';
+    const redirected = await run();
+    const result = { answered, redirected, requests, runtimeLogs: logs };
+    console.log(JSON.stringify({ routeChecks: { statuses: [answered.status, answered.body?.receipt ? 'receipt' : answered.body,
+      redirected.status], requests, runtimeLogs: logs } }));
+    return result;
+  } finally { await worker.dispose(); }
+}
+const routeChecks = await routeChecksInWorkerd();
+const checked = (run) => run.body.receipt.checks.map((check) => [check.id, check.outcome]);
+assert.equal(routeChecks.answered.status, 200, `The route checks harness must answer: ${JSON.stringify(routeChecks.answered)}`);
+assert.equal(routeChecks.answered.body?.receipt?.id?.startsWith('rq_'), true, `The route checks must answer a receipt in workerd: ${JSON.stringify(routeChecks.answered.body)}`);
+assert.deepEqual(checked(routeChecks.answered), [['short-answer', 'passed'], ['output-bound', 'passed'], ['tool-round-trip', 'passed'],
+  ['cache-default', 'passed'], ['cache-off', 'unsupported']]);
+assert.deepEqual(routeChecks.answered.body.qualifies, { ok: true });
+assert.equal(routeChecks.answered.body.uncertainMicroUsd, 0);
+assert.deepEqual(routeChecks.answered.audits.map((row) => [row.action, row.targetId, row.reason]),
+  [['route.checked', 'aws-kimi-k3', routeChecks.answered.body.evidence]]);
+assert.equal(routeChecks.answered.keyInAnswer, false, 'The provider key must never reach the answer.');
+const firstRun = routeChecks.requests.filter((seen) => seen.mode === 'answer');
+assert.equal(firstRun.length, 6, 'One run makes six provider calls through the global fetch.');
+assert.ok(firstRun.every((seen) => seen.method === 'POST' && seen.url === BEDROCK_CHAT && seen.bearer));
+assert.deepEqual(checked(routeChecks.redirected), [['short-answer', 'failed'], ['output-bound', 'not-run'], ['tool-round-trip', 'not-run'],
+  ['cache-default', 'not-run'], ['cache-off', 'unsupported']]);
+assert.match(routeChecks.redirected.body.receipt.checks[0].detail, /redirect \(HTTP 302\)/);
+assert.deepEqual(routeChecks.requests.filter((seen) => seen.mode === 'redirect').map((seen) => seen.url), [BEDROCK_CHAT],
+  'workerd must hand a provider redirect back to the checks, never follow it.');
+assert.ok(!routeChecks.runtimeLogs.some((line) => /route-checks-audit-unwritten|Illegal invocation/.test(line)));
 const benchmark = await start('tests/runtime/crypto-worker.ts', 'tests/runtime/wrangler.jsonc');
 let socket;
 try {
@@ -243,6 +338,7 @@ try {
     productionEntryAssertions: 4, signatureRequests: 111, tamperedSignatureRefused: true,
     defaultOutboundVerified: true, defaultOutboundRequests: verified.trace.length, defaultOutboundRedirectRefused: true, defaultOutboundKeyNotForwarded: true,
     signingKeysKeptAcrossRequests: true, concurrentColdRequestsVerified: true, abandonedRequestNotAwaited: true,
+    routeChecksEndpointVerified: true, routeChecksProviderRequests: firstRun.length, routeChecksRedirectRefused: true,
     coldWallMs, warmWallP50Ms: walls[49], warmWallP95Ms: walls[94],
     sampledActiveV8MsPerRequest: activeMicroseconds / 1000 / walls.length,
     workersFreeCpuLimitMs: 10,

@@ -37,8 +37,8 @@ same bearer, origin and query rules:
   /account/organizations/:id/agent-admissions, GET /account/routing-policy.
 - Staff (the Operations app): GET /ops/me, GET /ops/customers(?q), GET
   /ops/customers/:id, POST .../grants, POST .../grants/:id/revoke, POST
-  .../funding, GET /ops/routing, POST /ops/routes, POST
-  /ops/routing/preview|publish|rollback, GET|POST /ops/staff, PATCH
+  .../funding, GET /ops/routing, POST /ops/routes, POST /ops/routes/:id/checks,
+  POST /ops/routing/preview|publish|rollback, GET|POST /ops/staff, PATCH
   /ops/staff/:id, GET /ops/people(?q), GET /ops/audit(?organizationId&limit).
 
 The **faux cloud** (`src/faux/`) runs this handler over a JSON store and local
@@ -92,6 +92,53 @@ unset, anything unreadable refusing every managed call with 503
 - `MANAGED_MAX_OUTPUT_TOKENS`: lowers the registry's output cap (16,000),
   never raises it. A larger request is clamped silently, and the response
   names the clamp in `X-Nectovia-Max-Output`.
+
+Gateway route checks (DIO-217, `src/route-checks.ts`). `POST
+/ops/routes/:id/checks` with `{ baseRevision }`, staff with `routes.write`
+only, runs the five route checks on one saved Bedrock or Azure OpenAI route
+(Responses or Chat Completions) through `callManagedProvider`, the call
+customer requests take, with the Worker's key for that route's connection.
+It answers `RouteChecksResult` (`shared/gateway-route-checks.ts`) and writes
+one `route.checked` audit row; it never changes the route. Before anything is
+sent, company spend, every earlier run's spent and uncertain amounts and this
+run's bound must stay within `MANAGED_SPEND_CEILING_MICRO_USD`, or it refuses
+with 409 `company_ceiling`. Customer calls' own ceiling check does not count
+route check spend, because the funding login cannot read the audit log. Two
+runs at once can both pass, so together they can pass the ceiling by at most
+one run's bound. The faux cloud seeds an unqualified Kimi K3 route on Bedrock
+and GPT-6.1 Sol on Azure Foundry, and a scripted provider answers their checks
+offline.
+
+Every refusal of `POST /ops/routes` carries `fields` beside `error` (DIO-198
+item 3): the request body paths it is about, joined with dots and array members
+by index (`binding.price.validUntil`, `binding.privacy.ingressCountries.0`), or
+`[]` when it is about no field. A body the schema refuses gets one plain
+sentence for each failing field, such as "binding.price.evidence is required."
+Other endpoints' refusals are unchanged.
+
+Escalation controls (`shared/escalation-controls.ts`). A scope's routing
+record carries `escalation`: whether work led by a model that is not Nectovia
+may hand work to Nectovia's managed tiers, and to which tiers. Staff set it with
+`POST /ops/routing/scopes/publish` (and preview it): omitted keeps the previous
+revision's control, null clears it so the scope inherits, and an object sets
+it. On the global record it is the default for every account, and a rollback
+restores the whole record. A publish that keeps the scope's own routing
+exactly, such as one that only turns escalation off, re-checks none of its
+routes, so the state of those routes never blocks the switch. Each call still
+checks its route when it runs. Any change to the routing is checked in full.
+`GET /ops/routing/scopes/...` answers the record's own `escalation` and the
+`effectiveEscalation`; members read the effective
+control at `GET /account/routing/{organization|individual}/{id}/escalation`.
+The routing snapshot does not carry it. A managed call that names a role in
+`X-Nectovia-Escalation` (worker or advisor; anything else is 400
+`invalid_header`) is refused with 403 `escalation_off` or `escalation_tier_off`
+before any hold or send when the scope's control does not allow its tier.
+Calls without the header are unchanged. A publish that creates an
+organization's first record, even one carrying only an escalation control,
+moves that organization onto versioned routing. It then needs an accepted
+preference and a global or own routing record before managed calls succeed.
+On the global scope, a control-only publish makes the global record versioned.
+So publish the global routing first, or in the same publication.
 
 ## Entry and configuration
 

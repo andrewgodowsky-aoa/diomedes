@@ -19,11 +19,12 @@ import { createAzure } from '@ai-sdk/azure';
 import type { ModelMessage } from 'ai';
 import { z } from 'zod';
 import type { ToolDescriptor } from '../../shared/harness.js';
+import { cacheNamespace, type CacheRequest } from '../../shared/route-capabilities.js';
 import type { QualificationIdentity } from '../../shared/route-qualification.js';
 import { digest } from '../harness/policy.js';
 import type { ExposureAttempt, ModelRateCard, SpendExposure } from '../spend-exposure.js';
 import { ConnectionFile } from './connection-file.js';
-import { withCacheOptions, type QualificationTarget } from './route-qualification.js';
+import type { QualificationTarget } from './route-qualification.js';
 import {
   classifyEnvelope,
   CREDENTIAL_PLACEHOLDER,
@@ -208,6 +209,8 @@ export function azureBinding(
       inspectBody: inspectAzureBody(entry.deployment),
       requestIdHeaders: AZURE_REQUEST_ID_HEADERS,
     },
+    // The Responses model reads cache options under `azure` for a provider named for Azure.
+    cacheNamespace: cacheNamespace(AZURE_OPENAI_ROUTE, AZURE_OPENAI_PROTOCOL),
     providerOptions: {
       azure: entry.reasoning
         ? {
@@ -250,8 +253,8 @@ export function azureQualificationIdentity(connection: AzureConnection, model: s
 }
 
 /**
- * The route checks' view of one deployment: its exact identity and its own binding, the checks'
- * cache options under `azure`, the namespace the SDK's Responses model reads for an Azure provider.
+ * The route checks' view of one deployment: its exact identity and its own binding, whose cache
+ * namespace is `azure`, the one the SDK's Responses model reads for an Azure provider.
  */
 export function azureQualificationTarget(
   connection: AzureConnection,
@@ -273,7 +276,7 @@ export function azureQualificationTarget(
     rateCard: card.version,
     card,
     // The Responses request carries its output limit as `max_output_tokens`; the core sets it.
-    binding: (extra) => withCacheOptions(azureBinding(parsed, entry, effort, false), 'azure', extra),
+    binding: () => azureBinding(parsed, entry, effort, false),
   };
 }
 
@@ -295,6 +298,10 @@ export async function respondAzure(
     signal: AbortSignal;
     transport?: typeof globalThis.fetch;
     now?: () => Date;
+    /** The stable start of `instructions`, or null where the path has none (`respondStream`). */
+    stablePrefix?: string | null;
+    /** The owner's cache setting for this call; absent sends the request as before. */
+    cache?: CacheRequest | null;
   } & StreamSinks,
 ): Promise<RespondResult> {
   const connection = azureConnectionSchema.parse(input.connection);

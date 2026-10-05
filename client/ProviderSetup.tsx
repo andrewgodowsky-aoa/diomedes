@@ -25,6 +25,7 @@ import {
   type RatesInput,
 } from './provider-setup-view';
 import { Button } from './components';
+import { PromptCaching } from './PromptCaching';
 import { RouteChecks } from './RouteChecks';
 
 const messageOf = (error: unknown) =>
@@ -436,17 +437,24 @@ export function AzureOpenAISetup(props: CardProps) {
       setEditing={setEditing}
       caption="Your company’s own Azure OpenAI resource. Only the deployments you list are called, and every call is billed to that Azure subscription."
       facts={connection && <p className="caption">{connection.endpoint}</p>}
-      checks={connection?.deployments.map((entry) => (
-        <RouteChecks
-          key={`${entry.model}:${entry.deployment}`}
-          base={card.base}
-          model={entry.model}
-          title={`Route checks: ${entry.model} (${entry.deployment})`}
-          revision={revision}
-          disabled={disabled}
-          onChanged={() => void card.load()}
-        />
-      ))}
+      checks={
+        connection && (
+          <>
+            {connection.deployments.map((entry) => (
+              <RouteChecks
+                key={`${entry.model}:${entry.deployment}`}
+                base={card.base}
+                model={entry.model}
+                title={`Route checks: ${entry.model} (${entry.deployment})`}
+                revision={revision}
+                disabled={disabled}
+                onChanged={() => void card.load()}
+              />
+            ))}
+            <PromptCaching route="azure-openai" refresh={card.view} disabled={disabled} />
+          </>
+        )
+      }
       form={
         <form
           className="ai-aws-connect ai-provider-connect"

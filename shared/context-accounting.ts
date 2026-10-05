@@ -19,6 +19,10 @@
  * History (decision 10): the turns a compaction summarised stay exactly where they were.
  */
 
+import { KIMI_K3_CONTEXT_TOKENS, KIMI_K3_MODEL_CARD } from './declared-capabilities.js';
+import { AWS_KIMI_K3 } from './model-api.js';
+import type { CacheMark, CachePolicy } from './route-capabilities.js';
+
 export const CONTEXT_ACCOUNT_VERSION = 1 as const;
 
 /** Diomedes' estimator: one token per four bytes of UTF-8, rounded up. Stated, never hidden. */
@@ -157,17 +161,28 @@ export interface ContextAccount {
    * first turn with an account.
    */
   stablePrefix: { sha: string; bytes: number; sameAsPrevious: boolean | null };
-  cache: { support: PromptCacheSupport; note: string };
+  cache: {
+    support: PromptCacheSupport;
+    note: string;
+    /** The owner's cache setting this turn was sent under (DIO-215). Absent on older records. */
+    policy?: CachePolicy;
+    /** For `off`: whether a route check on this connection saw no cache reads or writes with it. */
+    offVerified?: boolean | null;
+    /** For `explicit-prefix`: what the breakpoint marked on this turn's calls. */
+    marked?: CacheMark;
+  };
   history: HistorySelection | null;
   compaction: CompactionRecord | null;
 }
 
 /**
  * The model registry for context windows. An entry exists only where a declared source names the
- * window; nothing is guessed from a model's name. Empty in this build: no connection or rate card
- * this build ships declares a window, so every model reads as not declared.
+ * window; nothing is guessed from a model's name. Kimi K3 on the direct AWS route is the one entry
+ * in this build, from its model card; every other model reads as not declared.
  */
-export const MODEL_CONTEXT_WINDOWS: readonly { route: string; model: string; tokens: number; source: string }[] = [];
+export const MODEL_CONTEXT_WINDOWS: readonly { route: string; model: string; tokens: number; source: string }[] = [
+  { route: 'aws-bedrock', model: AWS_KIMI_K3.model, tokens: KIMI_K3_CONTEXT_TOKENS, source: KIMI_K3_MODEL_CARD },
+];
 
 export function modelContextWindow(route: string, model: string): { tokens: number | null; source: string } {
   const entry = MODEL_CONTEXT_WINDOWS.find((item) => item.route === route && item.model === model);

@@ -300,6 +300,8 @@ import { modelSessionRunId } from './harness/model-session-run.js';
 import { FileModelTranscripts } from './harness/model-transcripts.js';
 import { AWS_BEDROCK_ROUTE, AwsConnections } from './engines/aws-bedrock.js';
 import { RouteQualifications } from './engines/route-qualification-store.js';
+import { CACHE_POLICY_ROUTES, LOCAL_CACHE_TENANT } from './engines/route-cache.js';
+import { cachePolicyKey, readCachePolicy } from '../shared/route-capabilities.js';
 import { AZURE_OPENAI_ROUTE, AzureConnections } from './engines/azure-openai.js';
 import { OPENROUTER_ROUTE, OpenRouterConnections } from './engines/openrouter.js';
 import { mountModelApiRoutes } from './engines/model-api-routes.js';
@@ -748,6 +750,9 @@ function validateSettings(current: Settings, body: unknown): Settings {
         services[key] = String(on).trim();
         continue;
       }
+      // The owner's cache setting per route (DIO-215) is written only by its own route. A whole
+      // settings save keeps whatever is stored, so echoing it back can neither fail nor change it.
+      if (CACHE_POLICY_ROUTES.some((route) => key === cachePolicyKey(route))) continue;
       if (
         ['codex', ...EXTERNAL_ENGINES, ...MODEL_API_ROUTES].some(
           (engine) =>
@@ -764,6 +769,10 @@ function validateSettings(current: Settings, body: unknown): Settings {
       if (!/^[a-z][a-z0-9-]{0,39}$/.test(key) || typeof on !== 'boolean')
         throw new ApiError(400, 'A helper setting must be true or false.');
       services[key] = on;
+    }
+    for (const route of CACHE_POLICY_ROUTES) {
+      const stored = current.services?.[cachePolicyKey(route)];
+      if (stored !== undefined) services[cachePolicyKey(route)] = stored;
     }
     result.services = services as Settings['services'];
   }
@@ -1337,6 +1346,16 @@ export async function createApp(options: AppOptions) {
   engines.modelApi = {
     connections: new AwsConnections(store.dataDir),
     qualifications: new RouteQualifications(store.dataDir),
+    // DIO-215: the owner's cache setting per route, read fresh for every call it applies to.
+    cachePolicy: (route) => readCachePolicy(store.settings.services, route),
+    // The tenant an explicit cache key is scoped to: the business that owns the work while someone
+    // is signed in, else the signed-in person, and `local` with nobody signed in.
+    cacheTenant: (projectId) => {
+      if (!accountSession?.signedIn() || !accountRouting) return LOCAL_CACHE_TENANT;
+      const scope = accountRouting.scopeFor(projectId);
+      const tenant = scope?.kind === 'organization' ? workspaces.organization(scope.id)?.tenantId : null;
+      return tenant || accountSession.personId() || LOCAL_CACHE_TENANT;
+    },
     secrets: new ConnectionSecrets(store.dataDir, options.secretBox ?? null),
     exposure,
     transcripts: new FileModelTranscripts(path.join(store.dataDir, 'model-transcripts'), AWS_BEDROCK_ROUTE),

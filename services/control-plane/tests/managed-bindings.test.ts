@@ -5,6 +5,7 @@ import { callManagedProvider, providerBody, approvedConnections, providerEndpoin
 import { sseObjects } from '../src/managed-normalization.js';
 import type { ResponsesBody } from '../src/managed-inference.js';
 import type { CatalogRoute, ModelBinding, ProviderConnection, ManagedProtocol } from '../../../shared/routing-policy.js';
+import { ROUTE_CHECKS_SCOPE_KEY } from '../../../shared/gateway-route-checks.js';
 
 const encoder = new TextEncoder();
 const credential = 'synthetic-test-key';
@@ -374,5 +375,69 @@ describe('real managed provider transports at the Responses SDK boundary', () =>
     ]));
     const events = []; for await (const e of sseObjects(response.body!)) events.push(e);
     expect(events.at(-1)).toMatchObject({ type: 'response.completed', response: { usage: null, output: [{ content: [{ type: 'refusal', refusal: 'Refused.' }] }] } });
+  });
+  it('sends no store field on Bedrock Chat Completions and keeps store false everywhere else', () => {
+    const bedrock = setup('aws-bedrock', 'chat-completions');
+    const toBedrock = JSON.parse(providerBody(bedrock.route, bedrock.connection, request));
+    expect(Object.hasOwn(toBedrock, 'store')).toBe(false);
+    expect(toBedrock).toMatchObject({ model: 'us.anthropic.fixture', stream: true, max_completion_tokens: 2048 });
+    const azure = setup('azure-openai', 'chat-completions');
+    expect(JSON.parse(providerBody(azure.route, azure.connection, request))).toMatchObject({ model: 'fixture-deployment', store: false });
+    const bedrockResponses = setup('aws-bedrock', 'responses');
+    expect(JSON.parse(providerBody(bedrockResponses.route, bedrockResponses.connection, request)).store).toBe(false);
+  });
+});
+
+describe('the Operations route checks scope (DIO-217)', () => {
+  const nativeEvents = (encrypted: string) => {
+    const native = { type: 'reasoning', id: 'rs_provider', summary: [], encrypted_content: encrypted };
+    return [responsesEvents[0], { type: 'response.output_item.added', output_index: 0, item: { ...native, encrypted_content: null } },
+      { type: 'response.output_item.done', output_index: 0, item: native },
+      { ...responsesEvents.at(-1), response: { ...responsesEvents.at(-1)!.response, output: [native] } }];
+  };
+  /** A provider reasoning item, sealed by the gateway under one scope key. */
+  async function sealedUnder(scopeKey: string) {
+    const config = setup('azure-openai', 'responses');
+    const response = await callManagedProvider({ ...config, credential, body: request, scopeKey, signal: new AbortController().signal },
+      async () => sse(nativeEvents('provider-ciphertext')));
+    let sealed = '';
+    for await (const event of sseObjects(response.body!)) {
+      const item = event.item as { type?: string; encrypted_content?: unknown } | undefined;
+      if (event.type === 'response.output_item.done' && item?.type === 'reasoning' && typeof item.encrypted_content === 'string') sealed = item.encrypted_content;
+    }
+    expect(sealed).toMatch(/^nectovia-native-v1:fixture:/);
+    return sealed;
+  }
+
+  it('sends a call under the route checks scope key', async () => {
+    const config = setup('azure-openai', 'responses');
+    let sends = 0;
+    const response = await callManagedProvider({ ...config, credential, body: request, scopeKey: ROUTE_CHECKS_SCOPE_KEY, signal: new AbortController().signal },
+      async () => { sends++; return sse(responsesEvents); });
+    const events = []; for await (const e of sseObjects(response.body!)) events.push(e);
+    expect(sends).toBe(1);
+    expect(events.at(-1)).toMatchObject({ type: 'response.completed' });
+  });
+  it('refuses any other scope key outside an account before sending', async () => {
+    const config = setup('azure-openai', 'responses');
+    let sends = 0;
+    for (const scopeKey of ['ops:anything-else', 'ops:route-checks:extra', 'ops:route-check', 'OPS:ROUTE-CHECKS'])
+      await expect(callManagedProvider({ ...config, scopeKey, credential, body: request, signal: new AbortController().signal },
+        async () => { sends++; return sse(responsesEvents); })).rejects.toMatchObject({ code: 'account_scope_required' });
+    expect(sends).toBe(0);
+  });
+  it('never opens a checkpoint sealed under an account with the route checks key, or the reverse', async () => {
+    const config = setup('azure-openai', 'responses');
+    let sends = 0;
+    const replay = (encrypted: string, scopeKey: string) => callManagedProvider({ ...config, scopeKey, credential, signal: new AbortController().signal,
+      body: { ...request, input: [...request.input, { type: 'reasoning', encrypted_content: encrypted, summary: [] }] } },
+    async () => { sends++; return sse(responsesEvents); });
+    await expect(replay(await sealedUnder('organization:fixture'), ROUTE_CHECKS_SCOPE_KEY)).rejects.toMatchObject({ code: 'nonportable_continuation' });
+    await expect(replay(await sealedUnder(ROUTE_CHECKS_SCOPE_KEY), 'organization:fixture')).rejects.toMatchObject({ code: 'nonportable_continuation' });
+    expect(sends).toBe(0);
+    // Under its own key a sealed checkpoint still opens: the key separates scopes, it does not break them.
+    const own = await replay(await sealedUnder(ROUTE_CHECKS_SCOPE_KEY), ROUTE_CHECKS_SCOPE_KEY);
+    await own.body!.cancel();
+    expect(sends).toBe(1);
   });
 });

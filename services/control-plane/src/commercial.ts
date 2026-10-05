@@ -75,6 +75,8 @@ import type { RoutingTransaction } from './routing.js';
 import { approvedConnections } from './managed-bindings.js';
 import { registryRow } from './managed-providers.js';
 import type { FundingService } from './funding.js';
+import { bindingProblemFields, routeInputRefusal } from './route-field-refusals.js';
+import { escalationControlSchema } from '../../../shared/escalation-controls.js';
 
 export const COMMERCIAL_VERSION = 1 as const;
 
@@ -218,6 +220,12 @@ export const tierPolicySchema = z.strictObject({
   routing: routingConfigurationSchema.optional(),
   inherit: z.boolean().optional(),
   mandatory: hardRestrictionsSchema.optional(),
+  /**
+   * The scope's own escalation control, independent of `inherit`: an inherited account scope can
+   * still carry one. On the global record it is the default for every account. Null or absent
+   * inherits (`effectiveEscalation`). Never part of the routing snapshot.
+   */
+  escalation: escalationControlSchema.nullable().optional(),
 });
 export type TierPolicy = z.infer<typeof tierPolicySchema>;
 
@@ -245,6 +253,8 @@ export const AUDIT_ACTIONS = [
   'staff.changed',
   'person-grant.issued',
   'person-grant.revoked',
+  /** One gateway route checks run (DIO-217): the receipt and its spend, on the route it checked. */
+  'route.checked',
 ] as const;
 export const auditEventSchema = z.strictObject({
   id: accountId,
@@ -1263,11 +1273,12 @@ export class CommercialService {
    * new policy stops using it: the policy names what customers run on.
    */
   async saveRoute(token: string, input: z.infer<typeof saveRouteInput>, env: Readonly<Record<string, unknown>> = {}) {
+    // Each refusal names the request body fields it is about (DIO-198 item 3), none for a stale editor.
     const parsed = saveRouteInput.safeParse(input);
-    if (!parsed.success) throw new AccountError(422, 'A route needs an id, provider, model id, name and status.');
+    if (!parsed.success) throw routeInputRefusal(parsed.error.issues, input);
     const actor = await this.staff(token, 'routes.write');
     if (parsed.data.status === 'qualified' && !parsed.data.evidence)
-      throw new AccountError(422, 'Say what qualified this route: a live proof, a run or a dated account check.');
+      throw new AccountError(422, 'Say what qualified this route: a live proof, a run or a dated account check.', undefined, ['evidence']);
     return this.repository.transaction(async (tx) => {
       await tx.lockPolicy();
       await tx.lockStaff();
@@ -1275,17 +1286,19 @@ export class CommercialService {
       const existing = (await tx.routes()).find((row) => row.id === parsed.data.id);
       if (parsed.data.binding) {
         const connection = approvedConnections(env).find(c => c.id === parsed.data.binding!.connectionId);
-        if (!connection) throw new AccountError(422, 'Select an approved company connection.');
-        const problems = bindingProblems({ ...parsed.data, revision: existing?.revision ?? 0 }, connection);
-        if (problems.length) throw new AccountError(422, problems.map(p => p.message).join(' '));
+        if (!connection) throw new AccountError(422, 'Select an approved company connection.', undefined, ['binding.connectionId']);
+        const candidate = { ...parsed.data, revision: existing?.revision ?? 0 };
+        const problems = bindingProblems(candidate, connection);
+        if (problems.length) throw new AccountError(422, problems.map(p => p.message).join(' '), undefined,
+          [...new Set(problems.flatMap(p => bindingProblemFields(p.message, candidate, connection)))]);
         const identity = (r: typeof parsed.data) => JSON.stringify([r.provider, r.model, r.binding?.connectionId, r.binding?.connectionRevision,
           r.binding?.modelVersion, r.binding?.protocol, r.binding?.deployment, r.binding?.upstreamEndpoint]);
         if (existing?.binding && identity(existing) !== identity(parsed.data)) {
           for (const key of ['privacy', 'qualification', 'access'] as const)
             if (parsed.data.binding[key] !== null && JSON.stringify(parsed.data.binding[key]) === JSON.stringify(existing.binding[key]))
-              throw new AccountError(422, `Changing the binding requires fresh ${key} evidence or an explicitly unverified state.`);
+              throw new AccountError(422, `Changing the binding requires fresh ${key} evidence or an explicitly unverified state.`, undefined, [`binding.${key}`]);
         }
-      } else if (existing?.binding) throw new AccountError(422, 'A versioned binding cannot be removed. Retire the route instead.');
+      } else if (existing?.binding) throw new AccountError(422, 'A versioned binding cannot be removed. Retire the route instead.', undefined, ['binding']);
       if (existing && parsed.data.baseRevision !== existing.revision)
         throw new AccountError(409, 'Someone changed this route since you opened it. Reload and try again.');
       if (!existing && parsed.data.baseRevision !== undefined)
@@ -1293,7 +1306,9 @@ export class CommercialService {
       const policy = await tx.policy();
       const inUse = policy ? POLICY_TIERS.filter((tier) => policy.tiers[tier]?.entryId === parsed.data.id) : [];
       if (existing && !existing.binding && inUse.length && (parsed.data.status !== 'qualified' || parsed.data.provider !== existing.provider || parsed.data.model !== existing.model))
-        throw new AccountError(409, `This route serves ${inUse.join(', ')} in the current policy. Publish a policy without it first.`);
+        throw new AccountError(409, `This route serves ${inUse.join(', ')} in the current policy. Publish a policy without it first.`, undefined,
+          [...(parsed.data.status !== 'qualified' ? ['status'] : []), ...(parsed.data.provider !== existing.provider ? ['provider'] : []),
+            ...(parsed.data.model !== existing.model ? ['model'] : [])]);
       const { baseRevision: _base, ...fields } = parsed.data;
       const row: RouteEntry = { v: 1, ...fields, revision: (existing?.revision ?? 0) + 1, updatedAt: this.at(), updatedBy: actor.person.id };
       await tx.saveRoute(row);

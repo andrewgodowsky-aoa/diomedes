@@ -3,6 +3,7 @@ import { z } from 'zod';
 import {
   bindingProblems, providerConnectionSchema, type CatalogRoute, type ModelBinding, type ProviderConnection,
 } from '../../../shared/routing-policy.js';
+import { ROUTE_CHECKS_SCOPE_KEY } from '../../../shared/gateway-route-checks.js';
 import { BindingError, canonicalJson, normalizeProviderResponse, type NativeCheckpoint } from './managed-normalization.js';
 import type { ResponsesBody } from './managed-inference.js';
 import { MANAGED_PROVIDERS } from './managed-providers.js';
@@ -193,7 +194,9 @@ export function providerBody(route: CatalogRoute, connection: ProviderConnection
         require_parameters: true, data_collection: 'deny', zdr: b.privacy?.zeroRetention === true,
         max_price: { prompt: Math.max(...bands.map(p => p.inputMicroUsdPerMillion)) / 1_000_000,
           completion: Math.max(...bands.flatMap(p => [p.outputMicroUsdPerMillion, p.reasoningMicroUsdPerMillion])) / 1_000_000 } };
-    } else outgoing.store = false;
+    }
+    // Bedrock's Chat Completions keeps no completions and documents no store field, so none is sent there.
+    else if (connection.provider !== 'aws-bedrock') outgoing.store = false;
   } else if (b.protocol === 'messages') {
     outgoing = {
       stream: true, max_tokens: max,
@@ -254,7 +257,8 @@ export function nativeRouteId(value: string): string | null {
   const rest = value.slice(nativePrefix.length); return rest.slice(0, rest.lastIndexOf(':')) || null;
 }
 async function continuationCodec(call: BoundProviderCall) {
-  if (!/^(organization|individual):[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(call.scopeKey))
+  // An account's own scope, or the Operations route checks' scope, which names no account.
+  if (call.scopeKey !== ROUTE_CHECKS_SCOPE_KEY && !/^(organization|individual):[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(call.scopeKey))
     throw new BindingError('account_scope_required', 'A native checkpoint requires its authenticated account scope. Nothing was sent.');
   const b = call.route.binding!;
   const identity = encoder.encode(JSON.stringify([call.scopeKey, call.route.id, call.connection.id, call.connection.revision, call.route.model,
