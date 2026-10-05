@@ -5,6 +5,7 @@ import path from 'node:path';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createApp } from '../server/app';
+import { codexCatalog, forgetCatalog, recordEngineCatalog } from '../server/models';
 import type { Conversation, Project, TaskCandidate } from '../shared/types';
 import { reopenLastProject } from './fixtures/landing';
 
@@ -158,7 +159,19 @@ test.afterAll(async () => {
   }
   if (savedCodexHome === undefined) delete process.env.CODEX_HOME;
   else process.env.CODEX_HOME = savedCodexHome;
+  // The fixture list was recorded in this worker's module state; later specs share it.
+  forgetCatalog();
 });
+
+/**
+ * The thread route accepts a model only from the Codex list a completed inspection recorded;
+ * production never reads the cache file for it. This host has no Codex to inspect, and its own
+ * status check records an empty list when it fails, so the fixture list is recorded as that
+ * inspection's result just before a request is checked against it.
+ */
+function inspectFixtureModels(): void {
+  recordEngineCatalog(codexCatalog());
+}
 
 const agentButton = (page: Page) => page.getByRole('button', { name: 'Worker for this thread' });
 // The thread's model control offers tiers only (owner decision 2026-09-23); it names a
@@ -227,6 +240,7 @@ test('choosing a worker leaves the model alone, and the model leaves the worker 
    * does with two choices present.
    */
   const current = await thread();
+  inspectFixtureModels();
   await api(`/projects/${projectId}/threads/${current.id}`, 'PUT', {
     requested: { model: 'fixture-model-b', effort: 'low', agent: 'diomedes.reviewer' },
     engine: 'codex',
@@ -236,6 +250,7 @@ test('choosing a worker leaves the model alone, and the model leaves the worker 
   await expect(modelButton(page)).toContainText('Chosen model');
 
   // Switching the worker back to Auto must not disturb the model.
+  inspectFixtureModels();
   await agentButton(page).click();
   await page.getByRole('menuitemradio', { name: /^Auto/ }).click();
   await expect(agentButton(page)).toContainText('Auto');
