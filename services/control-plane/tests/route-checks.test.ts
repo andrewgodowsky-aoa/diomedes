@@ -34,7 +34,8 @@ import { usageCost } from '../../../shared/managed-usage.js';
 import type { ProviderConnection } from '../../../shared/routing-policy.js';
 
 const AT = Date.parse('2026-10-05T12:00:00.000Z');
-const KEY = 'test-provider-key-0123456789abcdef';
+// Shares no 12 characters with the receipt id below, so the leak check sees only a real leak.
+const KEY = 'test-provider-key-zq7v4k9m2x8w5j3n';
 const RECEIPT = 'rq_0123456789abcdef01234567';
 
 type RouteId = 'aws-kimi-k3' | 'azure-sol-6-1';
