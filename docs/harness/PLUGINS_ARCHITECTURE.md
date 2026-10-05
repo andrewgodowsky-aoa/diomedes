@@ -1,8 +1,9 @@
 # Plugins, tools and instruction delivery
 
 Status: implementation has begun; this is the joint integration plan, not release acceptance.
-Date: 2026-10-03 (America/New_York).
-Decision owner: Andrew. Implementation baseline: `4dbbd885e9363d29c0f66fbcd21ab89fa0d5ee78`.
+Date: 2026-10-03; independently audited 2026-10-05 (America/New_York).
+Decision owner: Andrew. Rebased implementation baseline: `6c697d142315038cf62e6a1a721ce3afada4ea77`.
+Original implementation baseline: `4dbbd885e9363d29c0f66fbcd21ab89fa0d5ee78`.
 Core Pillars, Live Roadmap and Project Memory mirrors: `2026-09-27.2`.
 
 ## Context and source reconciliation
@@ -18,10 +19,11 @@ Source proposals:
   Its source audit was at `4b17aec4df927425778a9232c19f3e463404f3c3`.
 - [EXTENSION_CONTRACT.md at 2d44793](https://github.com/andrewgodowsky-aoa/diomedes/blob/2d447935947b43b769fd2da687189990a3d7b7cc/docs/harness/EXTENSION_CONTRACT.md)
   and its [EXT01-EXT07 packets](https://github.com/andrewgodowsky-aoa/diomedes/blob/2d447935947b43b769fd2da687189990a3d7b7cc/docs/product/PROMPT_mod-extensions-2026-10-03.md).
-  These are the more recent authority audit, based on `efcc554` and reviewed in
+  These are the more recent authority audit, based on `efcc554` and recorded in
   [PR #206](https://github.com/andrewgodowsky-aoa/diomedes/pull/206).
-  That contract is not present on the implementation baseline's main tree;
-  use the pinned source until its separate documentation change is integrated.
+  PR #206 is still an open draft at that exact head on 2026-10-05. Its contract
+  is absent from the rebased main tree; use the pinned source until its separate
+  documentation change is integrated. This audit does not accept EXT01-EXT07.
 
 The proposals supply requirements and rationale. Their instructions to future
 workers do not authorize delegation, publication, provider use or policy changes.
@@ -129,12 +131,22 @@ must consume that host result, not infer availability from a body field or an id
 - Authorize observer projections before delivery. Denied data cannot escape in
   an event. Recheck current authority on each broker call and after async work.
 - A required hold must survive extension removal/crash and bind a fresh decision
-  to the current gate/action. Current trusted callbacks do not prove this behavior.
+  to the final action, contribution/configuration digest and gate revision.
+  Removing a hook, disabling a pack, restarting or reusing an earlier action
+  approval cannot release that hold. Current trusted callbacks do not prove it.
 - Execute third-party code only inside a qualified OS boundary. No ambient
   filesystem, network, credentials, native bridge or hidden model client; no
   fallback to an unrestricted subprocess or renderer.
 - UI commands submit typed host requests. Preserve nonce/revision/scope binding,
   workspace invalidation and truthful attribution. Rendered text is not an effect.
+- Bind each future broker channel to an authenticated host-issued runner, admitted
+  root and contribution digest. Refuse serialized principals, Team tokens,
+  grants, receipts, local-client headers and arbitrary endpoint forwarding.
+  Trusted callbacks do not transfer their host identity or handler continuation.
+- Keep Need/grant/phase decisions, human acceptance and assignment, reviewers,
+  worker consent, tool handlers and effect metadata in their current host owners.
+  A contributed view may navigate to host controls. Its action token binds a
+  request; the receiving service still admits and authorizes that request.
 - All model work uses existing eligibility, data, payer and shared root accounting.
   Advisor findings remain evidence-linked advice, never a permission or verdict
   that a task succeeded. Subscription-worker consent is not advisor consent.

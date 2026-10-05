@@ -154,7 +154,12 @@ export function PackSettings({
       else setError(failure instanceof Error ? failure.message : 'That could not be changed.');
     } finally {
       try {
-        setView(await api<PacksView>(base));
+        const loaded = await api<PacksView>(base);
+        setView(loaded);
+        if (loaded.storeProblem) {
+          setPending(null);
+          setInspected(null);
+        }
         setReadError('');
       } catch (failure) {
         setView(null);
@@ -210,6 +215,7 @@ export function PackSettings({
   async function inspect() {
     setBusy('folder');
     setError('');
+    setPending(null);
     setInspected(null);
     try {
       const result = await api<{ manifest: PackManifest }>('/packs/inspect', 'POST', {
@@ -305,6 +311,12 @@ export function PackSettings({
                     {record.name ?? record.contributionId} · {record.packVersion} ·{' '}
                     {record.reason ?? 'loaded'}
                     {record.runKey && <span className="mono"> · {record.runKey}</span>}
+                    {record.kind && record.contributionId && (
+                      <div className="mono">
+                        {record.packId}/{record.kind}/{record.contributionId}
+                      </div>
+                    )}
+                    {record.digest && <div className="mono">{record.digest}</div>}
                   </li>
                 ))}
               </ul>
@@ -507,6 +519,7 @@ export function PackSettings({
           onChange={(event) => {
             setFolder(event.target.value);
             setInspected(null);
+            setPending(null);
           }}
         />
         <button

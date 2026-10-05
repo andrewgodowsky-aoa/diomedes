@@ -24,14 +24,14 @@ let otherProjectId = '';
 let sources = '';
 let pageErrors: string[] = [];
 
-async function localPack(name: string, version: string) {
+async function localPack(name: string, version: string, id = 'acme.bookkeeping') {
   const folder = path.join(sources, name);
   await fs.mkdir(path.join(folder, 'playbooks'), { recursive: true });
   const text = `# Month-end close ${version}\n`;
   await fs.writeFile(path.join(folder, 'playbooks', 'close.md'), text);
   const manifest = sealManifest({
     schemaVersion: 1,
-    id: 'acme.bookkeeping',
+    id,
     version,
     name: 'Bookkeeping',
     publisher: { id: 'acme', name: 'Acme' },
@@ -106,7 +106,7 @@ test.beforeAll(async ({ request }) => {
 
 test.afterAll(async ({ request }) => {
   // Leave the shared service as later specs expect it: nothing extra on or installed.
-  for (const id of ['diomedes.industry.carpentry', 'diomedes.weekly-brief'])
+  for (const id of ['acme.bookkeeping', 'diomedes.industry.carpentry', 'diomedes.weekly-brief'])
     await request.post(`/api/projects/${projectId}/packs/${id}/deactivate`, {
       headers: HEADERS,
       data: {},
@@ -214,6 +214,8 @@ test('PLUGINS-02: imported metadata stays declared-only and load receipts stay a
   await section.getByRole('combobox', { name: 'Project', exact: true }).selectOption(projectId);
   await imported.getByText('Components and provenance', { exact: true }).click();
   await expect(imported).toContainText('Close accounts · 1.0.0 · opened');
+  await expect(imported).toContainText(loaded.digest);
+  await expect(imported).toContainText(`${loaded.kind}/${loaded.id}`);
   await expect(imported).toContainText('not permission to act or a successful result');
   await imported.getByRole('button', { name: 'Turn off', exact: true }).click();
   await expect(imported).toContainText('Inactive in this project');
@@ -277,6 +279,110 @@ test('PLUGINS-04: an unavailable list offers retry without actionable stale inve
   fail = false;
   await section.getByRole('button', { name: 'Try again', exact: true }).click();
   await expect(section.locator('[data-pack="diomedes.software-engineering"]')).toBeVisible();
+});
+
+test('PLUGINS-05: checking another folder discards the previous install confirmation', async ({
+  page,
+}) => {
+  const first = await localPack('pending-first', '1.0.0', 'acme.pending');
+  const second = await localPack('pending-second', '1.1.0', 'acme.pending');
+  const requested: string[] = [];
+  await page.route('**/api/packs/install', async (route) => {
+    requested.push(route.request().postDataJSON().source.path);
+    await route.fulfill({
+      status: 409,
+      json: {
+        error: 'Bookkeeping needs Weekly brief installed too.',
+        code: 'needs-dependencies',
+        dependencies: [{ id: 'diomedes.weekly-brief', name: 'Weekly brief', version: '1.0.0' }],
+      },
+    });
+  });
+  const section = await openPlugins(page);
+  const input = section.getByRole('textbox', { name: 'Pack folder' });
+  const inspected = section.locator('.pack-inspected');
+  await input.fill(first);
+  await section.getByRole('button', { name: 'Check folder', exact: true }).click();
+  await inspected.getByRole('button', { name: 'Install 1.0.0', exact: true }).click();
+  await expect(inspected.getByRole('group', { name: 'Confirm', exact: true })).toBeVisible();
+  await expect(input).toBeEnabled();
+  await input.fill(second);
+  await section.getByRole('button', { name: 'Check folder', exact: true }).click();
+  await expect(inspected.getByRole('button', { name: 'Install 1.1.0', exact: true })).toBeVisible();
+  await expect(section.getByRole('group', { name: 'Confirm', exact: true })).toHaveCount(0);
+  expect(requested).toEqual([first]);
+});
+
+test('PLUGINS-06: a damaged store response discards confirmations before retry', async ({
+  page,
+}) => {
+  const section = await openPlugins(page);
+  const snapshot = await (await page.request.get(`/api/projects/${projectId}/packs`)).json();
+  let broken = true;
+  await page.route(`**/api/projects/${projectId}/packs`, async (route) => {
+    await route.fulfill({
+      json: { ...snapshot, storeProblem: broken ? 'STORE_UNREADABLE' : null },
+    });
+  });
+  await page.route('**/api/packs/install', async (route) => {
+    await route.fulfill({
+      status: 409,
+      json: {
+        error: 'Carpentry needs Weekly brief installed too.',
+        code: 'needs-dependencies',
+        dependencies: [{ id: 'diomedes.weekly-brief', name: 'Weekly brief', version: '1.0.0' }],
+      },
+    });
+  });
+  await section
+    .locator('[data-pack="diomedes.industry.carpentry"]')
+    .getByRole('button', { name: 'Install', exact: true })
+    .click();
+  await expect(section.getByRole('alert')).toHaveText('STORE_UNREADABLE');
+  await expect(section.locator('[data-pack]')).toHaveCount(0);
+  broken = false;
+  await section.getByRole('button', { name: 'Try again', exact: true }).click();
+  await expect(section.locator('[data-pack="diomedes.software-engineering"]')).toBeVisible();
+  await expect(section.getByRole('group', { name: 'Confirm', exact: true })).toHaveCount(0);
+});
+
+test('PLUGINS-07: a late activation response stays with the project that requested it', async ({
+  page,
+}) => {
+  const section = await openPlugins(page);
+  const engineering = section.locator('[data-pack="diomedes.software-engineering"]');
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const endpoint = `/api/projects/${projectId}/packs/diomedes.software-engineering/activate`;
+  await page.route(`**${endpoint}`, async (route) => {
+    await held;
+    await route.fulfill({ response: await route.fetch() });
+  });
+  try {
+    await engineering.getByRole('button', { name: 'Activate', exact: true }).click();
+    await expect(
+      engineering.getByRole('button', { name: 'Saving...', exact: true }),
+    ).toBeDisabled();
+    await section
+      .getByRole('combobox', { name: 'Project', exact: true })
+      .selectOption(otherProjectId);
+    await expect(engineering).toContainText('Inactive in this project');
+    const response = page.waitForResponse((item) => item.url().endsWith(endpoint));
+    release();
+    expect((await response).ok()).toBe(true);
+    const other = await (await page.request.get(`/api/projects/${otherProjectId}/packs`)).json();
+    expect(other.activations).toEqual([]);
+    await expect(engineering).toContainText('Inactive in this project');
+    await expect(section.getByRole('alert')).toHaveCount(0);
+  } finally {
+    release();
+    await page.request.post(
+      `/api/projects/${projectId}/packs/diomedes.software-engineering/deactivate`,
+      { headers: HEADERS, data: {} },
+    );
+  }
 });
 
 async function openCapabilities(page: Page) {
