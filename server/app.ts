@@ -199,7 +199,9 @@ import { roleInstructions } from './team/prompts.js';
 import { unreadForSlot } from './team/mailbox.js';
 import { JobCaps, jobKeyFor } from './job-caps.js';
 import { estimateView, jobRatesOf, mountJobCapRoutes, type JobCapRouteDeps, type JobPlan } from './job-cap-routes.js';
-import { approvedJobCap, jobTierOf, type JobShape } from '../shared/job-caps.js';
+import { approvedJobCap, jobTierOf, type JobShape, type JobTier } from '../shared/job-caps.js';
+import type { EscalationView } from '../shared/escalation-controls.js';
+import { escalationRefusal } from '../shared/escalation-roles.js';
 import { CONVERSATION_LIMITS, WORK_LIMITS as MODEL_WORK_LIMITS } from './engines/model-api-core.js';
 import { MODEL_TURN_CAPABILITY, TEAM_WORK_CAPABILITY } from './harness/model-session-run.js';
 import { parseWorkCommand, validateWorkCommandId } from './work-admission.js';
@@ -1422,10 +1424,20 @@ export async function createApp(options: AppOptions) {
     admit: async (route, input) => {
       if (!isModelApiRoute(route) || !input.model || !input.accountRoute)
         throw new ApiError(409, 'Connect this route and choose its model in AI setup first.');
+      // A Nectovia role under another lead (DIO-216): its own child run is its job, at its own tier,
+      // and it starts only while the account's escalation control still allows that tier.
+      const tiered = input.tier ? { tier: input.tier, escalation: input.escalation } : null;
+      if (tiered) {
+        if (route !== NECTOVIA_ROUTE || !input.runId || !tiered.escalation)
+          throw new ApiError(409, 'Only a Nectovia role runs at a tier.', { code: 'team_role_invalid' });
+        const refusal = escalationRefusal(await escalationFor(input.projectId, false), tiered.tier);
+        if (refusal) throw new ApiError(409, refusal, { code: 'escalation_refused', role: tiered.escalation });
+      }
       const admission = await engines.admitModelApi(
         route,
         { model: input.model, accountRoute: input.accountRoute, projectId: input.projectId,
-          requestId:input.rootRunId, threadId:input.threadId ?? undefined, effort:input.effort ?? undefined },
+          requestId: tiered ? input.runId : input.rootRunId, threadId:input.threadId ?? undefined, effort:input.effort ?? undefined,
+          ...(tiered ? { tier: tiered.tier, escalation: tiered.escalation } : {}) },
         { surface: 'loop', rootJobId: input.rootJobId ?? input.rootRunId ?? null },
       );
       return { model: admission.model, accountRoute: admission.accountRoute };
@@ -1443,6 +1455,8 @@ export async function createApp(options: AppOptions) {
           instructions: request.instructions,
           rootRunId:request.rootRunId, rootJobId:request.rootJobId, threadId:request.threadId,
           scopedLedger:request.scopedLedger, effort:request.effort, callLimits:request.callLimits,
+          // A Nectovia role under another lead: its tier and role, admitted again on every step.
+          ...(request.tier && route === NECTOVIA_ROUTE ? { tier: request.tier, escalation: request.escalation } : {}),
         },
         stop,
       );
@@ -1692,6 +1706,19 @@ export async function createApp(options: AppOptions) {
       await jobCaps.scope(projectId, runId, thread?.id ?? null);
       const admitted = await engines.admitModelApi(NECTOVIA_ROUTE,
         { ...input, projectId, requestId: runId, threadId: thread?.id },
+        { surface: 'loop', rootJobId });
+      return { model: admitted.model, accountRoute: admitted.accountRoute };
+    },
+    // DIO-216: a Nectovia role under another lead, at the tier it names, with the same checks.
+    managedTier: async (projectId, tier, fresh) => {
+      if (fresh) await accountRouting?.refresh(projectId);
+      return managedChoiceAt(projectId, () => tier);
+    },
+    escalation: (projectId, fresh) => escalationFor(projectId, fresh),
+    admitManagedRole: async (projectId, jobId, input, tier, role, rootJobId) => {
+      // The role's own job pins its tier; every call it makes names the role to the gateway.
+      const admitted = await engines.admitModelApi(NECTOVIA_ROUTE,
+        { ...input, projectId, requestId: jobId, tier, escalation: role },
         { surface: 'loop', rootJobId });
       return { model: admitted.model, accountRoute: admitted.accountRoute };
     },
@@ -3955,7 +3982,11 @@ export async function createApp(options: AppOptions) {
     }
     return nectoviaAccountRoute(organizationId);
   };
-  const managedLoopChoice = (projectId: string, taskId?: string) => {
+  /**
+   * The managed model and account at one tier, with the Agent's checks: signed in, the work's
+   * business includes the Nectovia Agent and managed AI usage, and the tier has a published model.
+   */
+  const managedChoiceAt = (projectId: string, style: () => JobTier) => {
     const accountRoute = nectoviaAccountFor(projectId);
     const organizationId = nectoviaAccount!.organizationFor(projectId)!;
     const scope = accountRouting?.scopeFor(projectId);
@@ -3964,14 +3995,30 @@ export async function createApp(options: AppOptions) {
       throw new EngineError(AGENT_NOT_INCLUDED, entitlement?.reason || 'This account does not include the Nectovia Agent.', false);
     if (!accountRouting.includes(scope, 'managed-inference'))
       throw new EngineError(AGENT_NOT_INCLUDED, 'This account does not include managed AI usage.', false);
-    const thread = taskId ? store.state(projectId).conversations.find((item) => item.taskId === taskId) : undefined;
     const tier = nectoviaTier({
-      style: jobCaps.tierFor(projectId, thread?.id ?? null),
+      style: style(),
       signedIn: nectoviaAccount?.signedIn() ?? false,
       policy: nectoviaAccount?.policy(projectId) ?? null,
     });
     if (tier.outcome !== 'run' || !tier.model) throw new ApiError(409, tier.reason);
     return { model: tier.model, accountRoute };
+  };
+  const managedLoopChoice = (projectId: string, taskId?: string) =>
+    managedChoiceAt(projectId, () => {
+      const thread = taskId ? store.state(projectId).conversations.find((item) => item.taskId === taskId) : undefined;
+      return jobCaps.tierFor(projectId, thread?.id ?? null);
+    });
+  /**
+   * A scope's escalation control: the last read while it is current, else read again. Null when it
+   * could not be read, or nobody is signed in, and a role is then refused, never run under the default.
+   */
+  const escalationFor = async (projectId: string, fresh: boolean): Promise<EscalationView | null> => {
+    if (!accountRouting) return null;
+    try {
+      return (fresh ? null : accountRouting.escalation(projectId)) ?? (await accountRouting.refreshEscalation(projectId));
+    } catch {
+      return null;
+    }
   };
   /** Whether a route takes a send: Nectovia has no switch; every other route is turned on in Settings. */
   const routeOn = (route: string) => route === LOCAL_MODEL_ROUTE ? localRuntime.configured()

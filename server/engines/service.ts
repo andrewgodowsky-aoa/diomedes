@@ -139,6 +139,7 @@ import {
 } from './google-vertex.js';
 import { callCeiling, type CallExposure, type RespondLimits, type RespondResult, type StreamSinks } from './model-api-core.js';
 import { decideJobStep, DEFAULT_JOB_TIER, type JobTier } from '../../shared/job-caps.js';
+import type { EscalationRole } from '../../shared/escalation-controls.js';
 import type { MicroUsd } from '../../shared/managed-usage.js';
 import { createAwsModelAdapter } from '../harness/aws-model-adapter.js';
 import { createAzureModelAdapter } from '../harness/azure-model-adapter.js';
@@ -2272,6 +2273,12 @@ export class EngineService {
       prompt?: string;
       requestId?: string;
       threadId?: string | null;
+      /**
+       * A Nectovia role under another lead: the tier it runs at, pinned on its own job, and the
+       * role its calls name to the gateway. Only the Nectovia route reads them.
+       */
+      tier?: JobTier;
+      escalation?: EscalationRole;
     },
     agent?: Pick<AgentWork, 'surface' | 'rootJobId'>,
     observe?: { readonly runId: string; readonly ownedTeam?: OwnedTeamObservation } | false,
@@ -2372,7 +2379,9 @@ export class EngineService {
    */
   private async admitNectovia(
     api: ModelApiServices,
-    input: Pick<TextRequest, 'model' | 'accountRoute'> & { projectId?: string; requestId?: string; threadId?: string | null },
+    input: Pick<TextRequest, 'model' | 'accountRoute'> & {
+      projectId?: string; requestId?: string; threadId?: string | null; tier?: JobTier; escalation?: EscalationRole;
+    },
     agent: Pick<AgentWork, 'surface' | 'rootJobId'> | undefined,
     admitted: AdmittedAgentWork | null,
     ask?: ObservationAsk,
@@ -2423,6 +2432,9 @@ export class EngineService {
       tier,
       usageClass: usageClassFor(admitted.surface),
       rootJobId,
+      // A role under another lead names itself on every call it makes, so the gateway can check
+      // the account's escalation control. A Nectovia lead and a person's conversation name none.
+      ...(input.escalation ? { escalation: input.escalation } : {}),
     };
     const handle = await modelApiRoute(api, NECTOVIA_ROUTE, { managed, projectId: input.projectId });
     if (!handle.connected) throw new EngineError(AGENT_SIGN_IN_REQUIRED, NECTOVIA_SIGN_IN, false);
@@ -2458,9 +2470,13 @@ export class EngineService {
       managed,
     };
   }
-  /** The tier a managed job is metered under: the one its job record pinned from its thread. */
-  private async managedTier(input: { projectId?: string; requestId?: string; threadId?: string | null }): Promise<JobTier> {
-    if (!this.jobCaps || !input.projectId || !input.requestId) return DEFAULT_JOB_TIER;
+  /**
+   * The tier a managed job is metered under: the one its job record pinned from its thread, or for
+   * a Nectovia role under another lead, the role's own tier, pinned on the role's own job.
+   */
+  private async managedTier(input: { projectId?: string; requestId?: string; threadId?: string | null; tier?: JobTier }): Promise<JobTier> {
+    if (!this.jobCaps || !input.projectId || !input.requestId) return input.tier ?? DEFAULT_JOB_TIER;
+    if (input.tier) return (await this.jobCaps.scope(input.projectId, input.requestId, null, input.tier)).tier;
     return (await this.jobCaps.scope(input.projectId, input.requestId, input.threadId ?? null)).tier;
   }
   /**
@@ -2799,7 +2815,9 @@ export class EngineService {
     route: ModelApiRoute,
     request: { projectId: string; runId: string; model: string; accountRoute: string; instructions: string;
       rootRunId?: string; rootJobId?: string; threadId?: string | null; scopedLedger?: SpendExposure;
-      effort?: string | null; callLimits?: RespondLimits; ownedTeamObservation?: OwnedTeamObservation },
+      effort?: string | null; callLimits?: RespondLimits; ownedTeamObservation?: OwnedTeamObservation;
+      /** A Nectovia role under another lead: its tier and its role, read again on every step. */
+      tier?: JobTier; escalation?: EscalationRole },
     stop: AbortSignal,
   ): Promise<ModelAdapter> {
     const api = this.modelApi;
@@ -2854,7 +2872,8 @@ export class EngineService {
     // on every step. Route, model, account, job and ledger stay pinned to what
     // the loop was admitted with; the token, policy, membership and cap are
     // read again. Stale policy, expiry and revocation refuse here, unsent.
-    const pinned = { route, model: request.model, accountRoute: request.accountRoute, runId: request.runId, projectId: request.projectId, instructions: request.instructions };
+    const pinned = { route, model: request.model, accountRoute: request.accountRoute, runId: request.runId, projectId: request.projectId, instructions: request.instructions,
+      tier: request.tier, escalation: request.escalation };
     return {
       ...adapter,
       complete: async (call, signal, stream) => {
@@ -2862,7 +2881,8 @@ export class EngineService {
         callSignal.throwIfAborted();
         const fresh = await this.admitModelApi(
           pinned.route,
-          { model: pinned.model, accountRoute: pinned.accountRoute, projectId: pinned.projectId, requestId: pinned.runId, threadId },
+          { model: pinned.model, accountRoute: pinned.accountRoute, projectId: pinned.projectId, requestId: pinned.runId, threadId,
+            tier: pinned.tier, escalation: pinned.escalation },
           { surface, rootJobId },
           false,
         );
@@ -2881,7 +2901,8 @@ export class EngineService {
         const result = await step.complete(call, callSignal, stream);
         callSignal.throwIfAborted();
         const accepted = await this.admitModelApi(pinned.route,
-          { model: pinned.model, accountRoute: pinned.accountRoute, projectId: pinned.projectId, requestId: pinned.runId, threadId },
+          { model: pinned.model, accountRoute: pinned.accountRoute, projectId: pinned.projectId, requestId: pinned.runId, threadId,
+            tier: pinned.tier, escalation: pinned.escalation },
           { surface, rootJobId }, false);
         if (accepted.model !== pinned.model || accepted.accountRoute !== pinned.accountRoute)
           throw new EngineError('ACCOUNT_CHANGED', 'The selected route changed while this role was in flight. Its answer was not accepted.', true);
@@ -2897,7 +2918,7 @@ export class EngineService {
 
 /** What the engine service needs from the host's parent-job caps (`server/job-caps.ts`). */
 export interface JobCapsPort {
-  scope(projectId: string, jobId: string, threadId: string | null): Promise<JobScope & { tier: JobTier }>;
+  scope(projectId: string, jobId: string, threadId: string | null, tier?: JobTier): Promise<JobScope & { tier: JobTier }>;
   noteStop(key: string, stop: { usedMicroUsd: MicroUsd; capMicroUsd: MicroUsd; neededMicroUsd: MicroUsd }): Promise<void>;
 }
 

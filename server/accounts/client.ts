@@ -26,6 +26,7 @@ import { organizationSetupAnswerSchema } from '../../services/control-plane/src/
 import { organizationAccountExportSchema, type ReadOrganizationExport } from '../../services/control-plane/src/organization-export/schema.js';
 import { individualAccountSchema, resolvedRoutingSnapshotSchema, routingPreferenceSchema,
   type AccountScope, type RoutingPreferenceWrite } from '../../shared/routing-policy.js';
+import { escalationViewSchema } from '../../shared/escalation-controls.js';
 
 export type Fetcher = (request: Request) => Promise<Response>;
 
@@ -444,6 +445,16 @@ export class ControlPlaneClient {
     const answer = resolvedRoutingSnapshotSchema.safeParse(await this.call<unknown>('GET', `${this.scopePath(scope)}/policy`, token));
     if (!answer.success || answer.data.scope.kind !== scope.kind || answer.data.scope.id !== scope.id)
       throw new ControlPlaneError('The account service returned an unreadable routing snapshot.', 502, 'unreadable_answer');
+    return answer.data;
+  }
+  /**
+   * Whether work led by another model may hand work to Nectovia's tiers in this scope, and to which
+   * (`shared/escalation-controls.ts`). Its own read: the routing snapshot does not carry it.
+   */
+  async scopedEscalation(token: string, scope: AccountScope) {
+    const answer = escalationViewSchema.safeParse(await this.call<unknown>('GET', `${this.scopePath(scope)}/escalation`, token));
+    if (!answer.success)
+      throw new ControlPlaneError('The account service returned an unreadable escalation control.', 502, 'unreadable_answer');
     return answer.data;
   }
   async routingPreference(token: string, scope: AccountScope) {
