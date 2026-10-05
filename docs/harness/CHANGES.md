@@ -15,7 +15,9 @@ role in `X-Nectovia-Escalation`. A Nectovia lead still takes no team. A tier on 
 Nectovia role without a tier and a Nectovia role that names a model are refused. A local lead the
 person starts with no team asks first, then takes a Nectovia Focused worker and a Nectovia Thorough
 advisor where each can join. `escalation: false` or `team: null` starts it alone, and the run and
-the Team view record which roles joined and why any were left out. In the Console, the Loop run
+the Team view record which roles joined and why any were left out. A Nectovia worker or advisor
+sends only while the account it was admitted under is signed in, as a Nectovia lead does, and a
+delegate never sends to Nectovia. In the Console, the Loop run
 dialog offers a Nectovia worker and advisor by tier beside a lead on the person's own connected
 service. A tier that can't join is listed as unavailable with its reason. The Team view names each
 role by its tier and says it uses the account's credits. `tests/three-model-team-escalation.test.ts`

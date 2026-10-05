@@ -10,7 +10,7 @@
 | Base | `04954ab` on `feature/model-routes-integration`: origin/main `0104556`, route qualification (`b1d6037`) and the local model connection (`41d0981`) |
 | Merged | `feature/general-local-route` at `541bd65` (DIO-201): the local model comes from its folder's `nectovia-connection.json` |
 | Contract | The escalation controls (`shared/escalation-controls.ts`), cherry-picked from `3bea42b` as `99f1fbd`. The account service serves the read and the gateway check on main since #226 (`746616e`) |
-| Commits | A `6d4d93c`; B `a9adeb6`; merge `ce46934`; C `02bb22a`, `70bb4a5`, `2f4f932`, tests `b459897`; fresh status read `9cac36d` |
+| Commits | A `6d4d93c`; B `a9adeb6`; merge `ce46934`; C `02bb22a`, `70bb4a5`, `2f4f932`, tests `b459897`; fresh status read `9cac36d`; Nectovia role egress `06bd638` |
 
 ## Slice A: the local model as an H14 role
 
@@ -215,6 +215,9 @@ last check.
   `advisor`), and the lead's root job in `x-nectovia-job`. The gateway checks the role header
   against the account's control on every call (main, #226). A Nectovia lead's calls and a
   conversation's calls carry no role header.
+- A worker or advisor child on Nectovia passes the loop's egress check as a Nectovia lead does:
+  only while the signed-in account is the one it was admitted under (`loopEgressAuthorizer`,
+  `server/harness/capabilities/native-loop.ts`). A delegate never sends to Nectovia.
 - A Nectovia lead still takes no delegate and no team the person names, and nothing takes Nectovia
   as a delegate or through a saved profile.
 - The lead's instructions say once that its Nectovia roles use the account's credits, and that it
@@ -313,14 +316,17 @@ answers, for every tier, whether it could join now and why not, without admittin
 `tests/three-model-team-escalation.test.ts` runs the real app over the faux account service in this
 process. Its gateway answers with the offline scripted provider, and a mocked host and a scripted
 transport stand in for the local lead. The escalation read is answered by the test, so each case
-sets the control it needs. The file was committed before it ran: the heavy slot was held for the
-integration run, which runs it there.
+sets the control it needs. Its first run, on the integration branch at `55e04f7`, failed four cases
+and found the fix below. With the fix it passes 20 of 20, on this branch and on a trial merge with
+main at `edac503`.
 
 - A local lead with a Focused worker and a Thorough advisor completes. Each role is admitted under
   `<run>-worker` and `<run>-advisor` at its tier under the root job, and again under its own child
   run at the same tier. The managed adapter runs each child at its tier. The job records pin those
   tiers while the root keeps its thread's. Every managed call names its role, its tier and the root
   job.
+- What a Nectovia role may send: a worker and an advisor send as a lead does, only while the
+  account they were admitted under is signed in, and a delegate never does.
 - Refusals before anything is admitted or sent: signed out, a business without the Agent, a plan
   without managed AI usage, a Nectovia lead with a team, a tier on the local route, a Nectovia role
   without a tier or with a model, and no consent.
@@ -352,6 +358,20 @@ integration run, which runs it there.
   has already been recorded, though no run starts and no call is sent.
 - The roster add (from the merge) refuses a local member with 409 where nothing is set up, and
   keeps the slug the folder lists now.
+
+### Fixed after the integration run
+
+The integration run at `55e04f7` failed four of the escalation file's cases, each a run in which a
+Nectovia worker took a task. Each ended cancelled while every one of the lead's steps succeeded.
+The worker's child run was refused before its first call, so the lead recorded its stop
+(`stop:worker`) and cancelled itself, as a lead does when a worker fails. The refusal came from the
+loop's egress check (`loopEgressAuthorizer`). It let only a loop lead send to Nectovia and gave the
+reason as "The signed-in Nectovia account no longer matches this run." Slice C made a Nectovia
+worker and advisor possible without widening it. The tests were right and the check was wrong.
+Now a worker or an advisor child sends to Nectovia as a lead does, only while the account it was
+admitted under is signed in. A delegate is still refused, with "Nectovia works only as a loop lead,
+a worker or an advisor." The test's wait now ends when the run ends and says how it ended, with
+each role's child run (`06bd638`).
 
 ## What is not claimed
 
