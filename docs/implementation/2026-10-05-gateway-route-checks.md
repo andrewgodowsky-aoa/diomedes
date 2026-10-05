@@ -152,3 +152,27 @@ The first run is the first K3 call on AWS and the first Sol call on Azure throug
 - Bedrock's Chat Completions body no longer carries `store` (Bedrock documents no such field); every
   other connection's body keeps `store: false`.
 - The continuation codec admits `ops:route-checks` beside account scopes, and nothing else new.
+
+## Field-named route refusals (DIO-198 item 3)
+
+Every refusal of `POST /ops/routes` now carries `fields` beside `error` (and `code` where one exists),
+so the Operations app can mark each field. Statuses are unchanged.
+
+- Paths are relative to the request body, joined with dots, array members by index:
+  `binding.price.inputMicroUsdPerMillion`, `binding.privacy.ingressCountries.0`, `id`.
+- A body the schema refuses gets one plain sentence per failing field, five at most, then a count of
+  the rest: "binding.price.evidence is required.", "binding.price.validUntil must be after
+  binding.price.observedAt.", "extra is not a field a route accepts." `fields` lists every one.
+- Rules that span fields name the field to change: a price that expires before it was observed is
+  `binding.price.validUntil`; a repeated long context threshold is `binding.price.longContext`; a
+  protocol the connection does not allow is `binding.protocol`; a profile it does not list is `model`;
+  an unknown or disabled connection is `binding.connectionId`; another connection revision is
+  `binding.connectionRevision`; an Azure deployment it does not list is `binding.deployment`; an
+  identity change without fresh evidence names the stale block (`binding.privacy`,
+  `binding.qualification` or `binding.access`); qualified without evidence is `evidence`; removing a
+  binding is `binding`.
+- A 409 for a route that still serves a tier names what the save changed: `status`, `provider` or `model`.
+- A refusal about no field (403, 409 route changed, 415, an unreadable body) carries `fields: []`.
+- The binding rules' sentences come from `bindingProblems` in `shared/routing-policy.ts`. A test holds
+  the field table to every sentence there, so a new rule fails it until it names its field.
+- Other endpoints' refusals are unchanged and carry no `fields`.

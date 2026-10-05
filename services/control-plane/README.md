@@ -109,6 +109,13 @@ one run's bound. The faux cloud seeds an unqualified Kimi K3 route on Bedrock
 and GPT-6.1 Sol on Azure Foundry, and a scripted provider answers their checks
 offline.
 
+Every refusal of `POST /ops/routes` carries `fields` beside `error` (DIO-198
+item 3): the request body paths it is about, joined with dots and array members
+by index (`binding.price.validUntil`, `binding.privacy.ingressCountries.0`), or
+`[]` when it is about no field. A body the schema refuses gets one plain
+sentence for each failing field, such as "binding.price.evidence is required."
+Other endpoints' refusals are unchanged.
+
 ## Entry and configuration
 
 `src/worker.ts` is the actual Fetch entry. Existing route shapes are retained:

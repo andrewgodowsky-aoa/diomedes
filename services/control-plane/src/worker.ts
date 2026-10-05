@@ -41,11 +41,16 @@ import { approvedConnections, discoverConnectionModels } from './managed-binding
 import { PostgresOrganizationExportRepository } from './organization-export/postgres.js';
 import { RouteChecksService, postgresRouteCheckSpend, workerFetch } from './route-checks.js';
 import { routeChecksInputSchema } from '../../../shared/gateway-route-checks.js';
+import { routeInputRefusal } from './route-field-refusals.js';
 
 /** The phone relay's per-business hub, bound as RELAY_HUB (both wrangler.jsonc files). */
 export { RelayHub } from './relay/durable-object.js';
 
-async function body<T>(request: Request, schema: z.ZodType<T>): Promise<T> {
+/**
+ * The JSON body of an account request, parsed by its schema. A body the schema refuses gets the
+ * generic sentence, or the refusal `refuse` builds from the schema's issues (route saving names fields).
+ */
+async function body<T>(request: Request, schema: z.ZodType<T>, refuse?: (issues: readonly z.core.$ZodIssue[], input: unknown) => AccountError): Promise<T> {
   if (request.headers.get('content-type')?.split(';')[0].trim().toLowerCase() !== 'application/json')
     throw new AccountError(415, 'Use a JSON request body.');
   let bytes;
@@ -62,7 +67,7 @@ async function body<T>(request: Request, schema: z.ZodType<T>): Promise<T> {
     throw error;
   }
   const parsed = schema.safeParse(input);
-  if (!parsed.success) throw new AccountError(422, 'The account request contains invalid or unexpected fields.');
+  if (!parsed.success) throw refuse?.(parsed.error.issues, input) ?? new AccountError(422, 'The account request contains invalid or unexpected fields.');
   return parsed.data;
 }
 
@@ -508,7 +513,7 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
         if ((match = route('/ops/customers/:id/funding').exec(pathname)) && method === 'POST')
           return json(await ops.addFunding(token, match[1], await body(request, addFundingInput)), 201);
         if (pathname === '/ops/routing' && method === 'GET') return json(await ops.routes(token));
-        if (pathname === '/ops/routes' && method === 'POST') return json(await ops.saveRoute(token, await body(request, saveRouteInput), env));
+        if (pathname === '/ops/routes' && method === 'POST') return json(await ops.saveRoute(token, await body(request, saveRouteInput, routeInputRefusal), env));
         if ((match = ROUTE_CHECKS.exec(pathname)) && method === 'POST')
           return json(await createRouteChecks(config, accounts).run(token, match[1], await body(request, routeChecksInputSchema), env));
         if (pathname === '/ops/routing/preview' && method === 'POST') return json(await ops.previewPolicy(token, await body(request, publishPolicyInput)));
@@ -535,7 +540,9 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
         // The proof aged inside this service. The header tells a client it may ask again; the desktop
         // keeps the sign-in and the person can try again.
         if (code === IDENTITY_RECHECK) headers.set('Retry-After', '1');
-        return json(typeof code === 'string' ? { error: error.message, code } : { error: error.message }, error.status);
+        // Every refusal of a route save names its fields, an empty list when it is about none (DIO-198).
+        const fields = error.fields ?? (entry === '/ops/routes' && request.method === 'POST' ? [] : undefined);
+        return json({ error: error.message, ...(typeof code === 'string' ? { code } : {}), ...(fields ? { fields } : {}) }, error.status);
       }
       // Names the setting and rule a configuration refusal broke, never its value.
       console.error(JSON.stringify({ event: 'control-plane-unavailable', ...(error instanceof ConfigurationError ? error.problem : {}) }));
