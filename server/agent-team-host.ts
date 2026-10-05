@@ -16,7 +16,7 @@ import { profileDigest, type AgentProfileService, type AgentProfileStore } from 
 import { AGENT_SIGN_IN_REQUIRED, type AgentGatePort } from './accounts/agent-gate.js';
 import { cloudSharing, requireCloudSharing } from './cloud-sharing.js';
 import { secretFingerprint } from './connection-secrets.js';
-import { awsAccountRoute, awsModelRefusal } from './engines/aws-bedrock.js';
+import { awsAccountRoute, awsModelRefusal, awsQualificationFor } from './engines/aws-bedrock.js';
 import { azureAccountRoute } from './engines/azure-openai.js';
 import { openRouterAccountRoute, openRouterConnectionSchema, openRouterModelFor, openRouterPreferences,
   type OpenRouterConnection } from './engines/openrouter.js';
@@ -120,7 +120,8 @@ export function createProductionAgentTeamHost(deps: ProductionAgentTeamHostDepen
     if (route === 'aws-bedrock') {
       const c = await api.connections.read();
       if (!c || c.modelId !== model) return refuse('The selected model is not on the current AWS connection.');
-      const refusal = awsModelRefusal(model);
+      // Kimi K3 joins a team only under a current route check receipt for this connection.
+      const refusal = awsModelRefusal(c, await awsQualificationFor(api.qualifications, c), Date.now());
       if (refusal) return refuse(refusal);
       facts = { connectionId: c.id, connectionRevision: c.revision, accountRoute: awsAccountRoute(c) };
       expiresAt = c.credential.expiresAt;

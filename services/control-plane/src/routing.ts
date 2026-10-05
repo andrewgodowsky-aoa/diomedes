@@ -13,9 +13,45 @@ import {
 import type { AccountService } from './account-service.js';
 import { AccountError } from './errors.js';
 import { approvedConnections, connectionCredential, connectionView, supportsReasoningSummaries } from './managed-bindings.js';
+import { canonicalJson } from './managed-normalization.js';
 import type { CommercialRepository, CommercialTransaction, Operator, TierPolicy } from './commercial.js';
 import { entitlementFromGrants, individualEntitlement, individualTerms, agentAdmissionInput, featureGrantSchema, revokeGrantInput, ensureIndividualAccount } from './commercial.js';
 import type { FundingService } from './funding.js';
+import { effectiveEscalation, escalationControlSchema, type EscalationControl, type EscalationView } from '../../../shared/escalation-controls.js';
+
+/**
+ * A scoped publication or preview, with the scope's escalation control. Omitted keeps the previous
+ * revision's control, so a publish from an older Operations build never clears it; null clears it,
+ * so the scope inherits; an object sets it. The global scope takes null too: the default applies.
+ */
+export const scopedPublicationInput = scopedPublicationSchema.extend({
+  escalation: escalationControlSchema.nullable().optional(),
+});
+export type ScopedPublicationInput = z.infer<typeof scopedPublicationInput>;
+
+/**
+ * The escalation a scope's records give: an account scope's own control over the global record's
+ * over the default. The global scope has no scope above its own record, so its source is the global
+ * record or the default. Revisions are the records' own, 0 when there is none.
+ */
+export function scopeEscalation(scope: RoutingScope, own: Pick<TierPolicy, 'revision' | 'escalation'> | undefined,
+  global: Pick<TierPolicy, 'revision' | 'escalation'> | undefined): EscalationView {
+  const revisions = { scopeRevision: own?.revision ?? 0, globalRevision: global?.revision ?? 0 };
+  return scope.kind === 'global'
+    ? effectiveEscalation(null, global?.escalation, revisions)
+    : effectiveEscalation(own?.escalation, global?.escalation, revisions);
+}
+
+/**
+ * Whether a publication keeps the scope's own current routing exactly. It then changes no route, so
+ * its routes are not checked again: a publish that only turns escalation off never waits on route
+ * evidence. An inherited or legacy record has no routing of its own to keep. Keys are compared in
+ * canonical order, because jsonb reorders them.
+ */
+function keepsOwnRouting(current: Pick<TierPolicy, 'inherit' | 'routing'> | undefined, routing: RoutingConfiguration | null): boolean {
+  return current !== undefined && current.inherit !== true && current.routing !== undefined && routing !== null
+    && canonicalJson(current.routing) === canonicalJson(routing);
+}
 
 /** Implemented on the same transaction as route/policy/grant writes, in Postgres and the faux store. */
 export interface RoutingTransaction {
@@ -115,6 +151,14 @@ export class RoutingService {
       if (!await tx.scopeRole(scope, actor.person.id)) throw new AccountError(403, 'Account access was withdrawn.');
       return scope.kind === 'individual' ? individualEntitlement(tx, scope.id, actor.person.id, this.at())
         : entitlementFromGrants(await tx.grants(scope.id), await tx.accessRevision(scope.id), this.at());
+    });
+  }
+  /** `GET /account/routing/{kind}/{id}/escalation`: any member of the scope, as for its policy and access. */
+  async escalation(token: string, scope: AccountScope): Promise<EscalationView> {
+    const actor = await authorizeScope(this.accounts, this.repository, token, scope);
+    return this.repository.transaction(async tx => {
+      if (!await tx.scopeRole(scope, actor.person.id)) throw new AccountError(403, 'This account access was withdrawn.');
+      return scopeEscalation(scope, await tx.policy(undefined, routingScopeKey(scope)), await tx.policy());
     });
   }
   async admit(token: string, scope: AccountScope, raw: unknown) {
@@ -234,7 +278,9 @@ export class RoutingService {
       const effective = policy && !policy.inherit ? policy : global;
       return { scope, policy: policy ?? null, globalPolicy: global ?? null, inherited: scope.kind !== 'global' && (!policy || policy.inherit === true),
         preference, routing: effective?.routing ?? legacyRouting(effective), history: await tx.policies(50, key),
-        routes: await routesWithCircuits(tx, this.now()), connections: connections.map(c => connectionView(c, env)) };
+        routes: await routesWithCircuits(tx, this.now()), connections: connections.map(c => connectionView(c, env)),
+        // The scope record's own escalation control, and the one that applies to the scope.
+        escalation: policy?.escalation ?? null, effectiveEscalation: scopeEscalation(scope, policy, global) };
     });
   }
   async snapshot(token: string, scope: AccountScope, env: Readonly<Record<string, unknown>>): Promise<ResolvedRoutingSnapshot> {
@@ -266,14 +312,16 @@ export class RoutingService {
         validUntil: new Date(this.now() + 60_000).toISOString(), tiers, exclusions };
     });
   }
-  private async previewIn(tx: CommercialTransaction, input: z.infer<typeof scopedPublicationSchema>, env: Readonly<Record<string, unknown>>) {
+  private async previewIn(tx: CommercialTransaction, input: ScopedPublicationInput, env: Readonly<Record<string, unknown>>) {
     await this.exists(tx, input.scope);
     const global = await tx.policy(), current = await tx.policy(undefined, routingScopeKey(input.scope));
     if ((current?.revision ?? 0) !== input.baseRevision || (global?.revision ?? 0) !== input.baseGlobalRevision)
       throw new AccountError(409, 'The scope or global policy changed. Refresh and preview again.');
     if (input.scope.kind === 'global' && input.routing === null) throw new AccountError(422, 'Global policy cannot inherit.');
     const routes = await routesWithCircuits(tx, this.now()), connections = approvedConnections(env).filter(c => connectionCredential(c, env));
-    for (const tier of ROUTING_TIERS) for (const id of input.routing ? [input.routing[tier].primary, ...input.routing[tier].backups] : []) {
+    // Route evidence is checked whenever the routing changes, a legacy record becoming versioned included.
+    const changed = !keepsOwnRouting(current, input.routing);
+    for (const tier of ROUTING_TIERS) for (const id of input.routing && changed ? [input.routing[tier].primary, ...input.routing[tier].backups] : []) {
       if (id === null) continue;
       const r = routes.find(r => r.id === id), c = connections.find(c => c.id === r?.binding?.connectionId);
       if (!r || r.status !== 'qualified' || !r.binding || !c || !connectionCredential(c, env) || bindingProblems(r, c).length)
@@ -302,15 +350,19 @@ export class RoutingService {
       affected.push({ scope, paid: access.agent && access.managedInference, profile: preference?.profile ?? null,
         tiers: Object.fromEntries(ROUTING_TIERS.map(t => [t, { eligible: tiers[t].ranked.map(c => c.route.id), excluded: tiers[t].excluded }])) });
     }
-    return { scope: input.scope, baseRevision: current?.revision ?? 0, baseGlobalRevision: global?.revision ?? 0, affected };
+    // The would-be record's own escalation control, and the one that would then apply to the scope.
+    const escalation: EscalationControl | null = input.escalation === undefined ? current?.escalation ?? null : input.escalation;
+    const next = { revision: input.baseRevision + 1, escalation };
+    return { scope: input.scope, baseRevision: current?.revision ?? 0, baseGlobalRevision: global?.revision ?? 0, affected,
+      escalation, effectiveEscalation: scopeEscalation(input.scope, next, input.scope.kind === 'global' ? next : global) };
   }
   async preview(token: string, raw: unknown, env: Readonly<Record<string, unknown>>) {
-    const input = scopedPublicationSchema.parse(raw), actor = await this.accounts.signIn(token);
+    const input = scopedPublicationInput.parse(raw), actor = await this.accounts.signIn(token);
     return this.repository.transaction(async tx => { await this.operator(tx, actor.person.id, 'policy.publish'); return this.previewIn(tx, input, env); });
   }
   async publish(token: string, raw: unknown, env: Readonly<Record<string, unknown>>, rollback = false) {
     const actor = await this.accounts.signIn(token);
-    const request = rollback ? scopedRollbackSchema.parse(raw) : scopedPublicationSchema.parse(raw);
+    const request = rollback ? scopedRollbackSchema.parse(raw) : scopedPublicationInput.parse(raw);
     return this.repository.transaction(async tx => {
       await tx.lockPolicy();
       const operator = await this.operator(tx, actor.person.id, 'policy.publish');
@@ -318,21 +370,25 @@ export class RoutingService {
       const restored = 'toRevision' in request ? await tx.policy(request.toRevision, key) : undefined;
       if ('toRevision' in request && (!restored || !restored.routing && !restored.inherit)) throw new AccountError(422, 'That revision has no versioned route configuration.');
       const publication = 'toRevision' in request ? (() => { const { toRevision: _target, ...rest } = request;
-        return { ...rest, routing: restored!.inherit ? null : restored!.routing }; })() : request;
-      const input = scopedPublicationSchema.parse(publication);
+        // A rollback restores the whole record, its escalation control included.
+        return { ...rest, routing: restored!.inherit ? null : restored!.routing, escalation: restored!.escalation ?? null }; })() : request;
+      const input = scopedPublicationInput.parse(publication);
       const preview = await this.previewIn(tx, input, env);
-      // A scope-specific override must have a primary permitted by its actual customer's profile.
-      if (input.scope.kind !== 'global' && input.routing !== null && preview.affected.some(a => ROUTING_TIERS.some(t => input.routing![t].primary !== null && !a.tiers[t].eligible.includes(input.routing![t].primary!))))
+      // A scope-specific override must have a primary permitted by its actual customer's profile. Checked when the
+      // override changes; one kept exactly changes no route, and its routes' evidence must not block the escalation control.
+      if (input.scope.kind !== 'global' && input.routing !== null && !keepsOwnRouting(await tx.policy(undefined, key), input.routing) && preview.affected.some(a => ROUTING_TIERS.some(t => input.routing![t].primary !== null && !a.tiers[t].eligible.includes(input.routing![t].primary!))))
         throw new AccountError(422, 'The override primary conflicts with this account privacy or capability requirements. Review the exclusions.');
       const routes = await tx.routes(), global = await tx.policy();
       const row: TierPolicy = { v: 1, scope: input.scope, revision: input.baseRevision + 1, routing: input.routing ?? undefined,
         inherit: input.routing === null, mandatory: input.scope.kind === 'global' ? global?.mandatory ?? DEFAULT_MANDATORY_RESTRICTIONS : undefined,
         tiers: Object.fromEntries(ROUTING_TIERS.map(t => { const r = routes.find(r => r.id === input.routing?.[t].primary); return [t, r ? { entryId: r.id, provider: r.provider, model: r.model, label: r.label, entryRevision: r.revision } : null]; })) as TierPolicy['tiers'],
-        kind: rollback ? 'rollback' : 'publish', basedOn: restored?.revision ?? input.baseRevision, note: input.note, publishedAt: this.at(), publishedBy: actor.person.id };
+        kind: rollback ? 'rollback' : 'publish', basedOn: restored?.revision ?? input.baseRevision, note: input.note, publishedAt: this.at(), publishedBy: actor.person.id,
+        ...(preview.escalation ? { escalation: preview.escalation } : {}) };
       await tx.savePolicy(row);
       await tx.audit({ id: `audit_${crypto.randomUUID()}`, at: this.at(), actorPersonId: actor.person.id, actorRole: operator.role,
         action: rollback ? 'policy.rolled-back' : 'policy.published', organizationId: input.scope.kind === 'organization' ? input.scope.id : null,
-        targetKind: 'policy', targetId: key, reason: input.note, detail: { scope: input.scope, revision: row.revision, basedOn: row.basedOn, routing: input.routing } });
+        targetKind: 'policy', targetId: key, reason: input.note, detail: { scope: input.scope, revision: row.revision, basedOn: row.basedOn, routing: input.routing,
+          escalation: preview.escalation } });
       return { policy: row, preview };
     });
   }

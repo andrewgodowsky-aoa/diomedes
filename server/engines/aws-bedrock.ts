@@ -1,15 +1,19 @@
 /**
- * The direct AWS Bedrock Responses route (SDKR-AWS-01, amended by SDKR-CONN-02).
+ * The direct AWS Bedrock route (SDKR-AWS-01, amended by SDKR-CONN-02).
  *
  * One explicitly selected route: the Bedrock runtime's OpenAI-compatible
- * Responses endpoint in us-east-1, the Geo inference profile
+ * endpoints in us-east-1, the Geo inference profile
  * `us.openai.gpt-5.6-luna` by default, the company's own AWS account, `store: false`, one
  * provider exchange per call and no fallback of any kind. There is no Gateway,
  * no bare model string, no ambient `OPENAI_API_KEY` or AWS environment
  * variable, no SDK retry and no SDK tool executor: every tool the model may
  * name is a descriptor, and the Diomedes harness is the only thing that runs it.
- * The published US Kimi K3 profile can be recorded for setup, but all calls stay
- * blocked until its billed reasoning/output envelope is verified for this adapter.
+ *
+ * Each approved model has one protocol (`AWS_MODEL_PROTOCOLS`): Luna goes over Responses and the
+ * published US Kimi K3 profile over Chat Completions. K3 sends only under a current route check
+ * receipt (`route-qualification.ts`) for this exact connection revision, model, protocol and rate
+ * card, because its billed reasoning and output envelope is proven per connection by those
+ * checks, never assumed from a catalog row.
  *
  * What this file owns:
  *   - the connection record (non-secret) and its account route string;
@@ -36,10 +40,25 @@ import type { ModelMessage } from 'ai';
 import { z } from 'zod';
 import type { ToolDescriptor } from '../../shared/harness.js';
 import { micro } from '../../shared/managed-usage.js';
-import { AWS_DIRECT_MODEL_IDS, AWS_KIMI_K3, AWS_KIMI_K3_REFUSAL, MANAGED_LUNA } from '../../shared/model-api.js';
+import {
+  AWS_DIRECT_MODEL_IDS,
+  AWS_KIMI_K3,
+  AWS_KIMI_K3_REFUSAL,
+  awsModelProtocol,
+  MANAGED_LUNA,
+} from '../../shared/model-api.js';
+import {
+  receiptQualifies,
+  type QualificationIdentity,
+  type QualificationProtocol,
+  type RouteQualificationReceipt,
+} from '../../shared/route-qualification.js';
 import { digest, HarnessError } from '../harness/policy.js';
 import type { ExposureAttempt, ModelRateCard, SpendExposure } from '../spend-exposure.js';
 import { jsonWrite } from '../store.js';
+import { chatEnvelopeUsage, classifyChat } from './chat-completions.js';
+import { withCacheOptions, type QualificationTarget } from './route-qualification.js';
+import type { RouteQualifications } from './route-qualification-store.js';
 import {
   classifyEnvelope,
   CREDENTIAL_PLACEHOLDER,
@@ -72,6 +91,8 @@ export const AWS_BEDROCK_ROUTE = 'aws-bedrock' as const;
 /** The exact dependency pair this route was written and tested against. */
 export const AWS_BEDROCK_SDK = 'ai@7.0.107+@ai-sdk/openai@4.0.71';
 export const AWS_BEDROCK_PROTOCOL = 'openai-responses';
+/** The protocol Kimi K3 is sent over, on the same runtime base. */
+export const AWS_CHAT_PROTOCOL = 'openai-chat-completions';
 export const AWS_LUNA_MODEL = MANAGED_LUNA.model;
 export const AWS_KIMI_K3_MODEL = AWS_KIMI_K3.model;
 /**
@@ -129,23 +150,86 @@ export const AWS_KIMI_K3_RATE_CARD: ModelRateCard = {
   long: { ...AWS_KIMI_K3.rates },
 };
 
+const unknownModel = () =>
+  new ModelApiError('aws_unknown_model', 'This model is not an approved AWS Bedrock selection. Nothing was sent.', false);
+
 /** Prices the exact saved direct route selection. Unknown identities fail instead of using Luna's price. */
 export function awsModelRateCard(modelId: string): ModelRateCard {
   if (modelId === AWS_LUNA_MODEL) return AWS_LUNA_RATE_CARD;
   if (modelId === AWS_KIMI_K3_MODEL) return AWS_KIMI_K3_RATE_CARD;
-  throw new ModelApiError('aws_unknown_model', 'This model is not an approved AWS Bedrock selection. Nothing was sent.', false);
+  throw unknownModel();
 }
 
-/** A published catalog row is not a qualified billing envelope for this adapter. */
-export function awsModelRefusal(modelId: string): string | null {
-  awsModelRateCard(modelId); // Also refuses unknown model identities.
-  return modelId === AWS_KIMI_K3_MODEL ? AWS_KIMI_K3_REFUSAL : null;
+/** The one protocol an approved model is sent over on this route. Unknown identities fail. */
+export function awsProtocolFor(modelId: string): QualificationProtocol {
+  const protocol = awsModelProtocol(modelId);
+  if (!protocol) throw unknownModel();
+  return protocol;
+}
+
+// --- the receipt gate ------------------------------------------------------------------
+
+/**
+ * Whether a model sends only under a route check receipt. A published catalog row is not a
+ * qualified billing envelope for this adapter; a passing route check on this connection is.
+ */
+export const awsRequiresQualification = (modelId: string) => modelId === AWS_KIMI_K3_MODEL;
+
+/** What a receipt must match, field for field, for this connection's model to send. */
+export function awsQualificationIdentity(
+  connection: Pick<AwsConnection, 'id' | 'revision' | 'modelId'>,
+  rateCard: string = awsModelRateCard(connection.modelId).version,
+): QualificationIdentity {
+  return {
+    route: AWS_BEDROCK_ROUTE,
+    connectionId: connection.id,
+    connectionRevision: connection.revision,
+    model: connection.modelId,
+    protocol: awsProtocolFor(connection.modelId),
+    rateCard,
+    deployment: null,
+  };
+}
+
+/**
+ * Why a call on this connection's model may not send, or null when it may. Unknown identities
+ * throw. A model that needs a receipt is refused in one sentence unless the receipt qualifies this
+ * exact identity now; the specific reason is the route checks' to show. `rateCard` is the version
+ * the call is priced with, so a receipt never covers another price.
+ */
+export function awsModelRefusal(
+  connection: Pick<AwsConnection, 'id' | 'revision' | 'modelId'>,
+  qualification: RouteQualificationReceipt | null | undefined,
+  now: number,
+  rateCard?: string,
+): string | null {
+  const card = awsModelRateCard(connection.modelId); // Also refuses unknown model identities.
+  if (!awsRequiresQualification(connection.modelId)) return null;
+  const verdict = receiptQualifies(qualification, awsQualificationIdentity(connection, rateCard ?? card.version), now);
+  return verdict.ok ? null : AWS_KIMI_K3_REFUSAL;
 }
 
 /** Runs before any spend reservation, SDK preparation, or credential-bearing dispatch. */
-export function assertAwsModelQualified(modelId: string): void {
-  const refusal = awsModelRefusal(modelId);
+export function assertAwsModelQualified(
+  connection: Pick<AwsConnection, 'id' | 'revision' | 'modelId'>,
+  qualification: RouteQualificationReceipt | null | undefined,
+  now: number,
+  rateCard?: string,
+): void {
+  const refusal = awsModelRefusal(connection, qualification, now, rateCard);
   if (refusal) throw new ModelApiError('aws_model_unqualified', `${refusal} Nothing was sent.`, false);
+}
+
+/**
+ * The receipt a call on this connection is judged by: the newest one recorded for this connection
+ * and model, read only when the model needs one. No store, or an unreadable one, reads as none.
+ */
+export async function awsQualificationFor(
+  receipts: Pick<RouteQualifications, 'latest'> | undefined,
+  connection: Pick<AwsConnection, 'id' | 'modelId'>,
+): Promise<RouteQualificationReceipt | null> {
+  if (!receipts || !awsRequiresQualification(connection.modelId)) return null;
+  return receipts.latest(AWS_BEDROCK_ROUTE, connection.id, { model: connection.modelId });
 }
 
 // --- the connection record ------------------------------------------------------
@@ -280,11 +364,29 @@ export function guardedResponsesFetch(options: {
 
 // --- one call -----------------------------------------------------------------------
 
-/** The AWS route's part of a call: its SDK instance, its endpoint and its reading of the stream. */
+/**
+ * The AWS route's part of a call, by the one protocol the connection's model is sent over: its SDK
+ * instance, its endpoint and its reading of the stream.
+ */
 export function awsBinding(
   connection: AwsConnection,
   effort: 'low' | 'medium' | 'high',
-  /** Whether a thinking sink is listening: summaries are asked for only then. */
+  /** Whether a thinking sink is listening: summaries are asked for only then (Responses only). */
+  summaries: boolean,
+  /** The call's exact output limit; the Chat Completions request is checked against it. */
+  maxOutputTokens: number,
+  /** Whether the call offers any tool (Chat Completions only). */
+  offersTools: boolean,
+): RouteBinding {
+  return awsProtocolFor(connection.modelId) === AWS_CHAT_PROTOCOL
+    ? awsChatBinding(connection, effort, maxOutputTokens, offersTools)
+    : awsResponsesBinding(connection, effort, summaries);
+}
+
+/** Luna over the Responses endpoint. */
+export function awsResponsesBinding(
+  connection: AwsConnection,
+  effort: 'low' | 'medium' | 'high',
   summaries: boolean,
 ): RouteBinding {
   return {
@@ -331,6 +433,116 @@ export function awsBinding(
 }
 
 /**
+ * The serialized Chat Completions request names the admitted model, streams with a usage report,
+ * and carries the call's exact output limit as `max_completion_tokens` with no `max_tokens` beside
+ * it, so the one limit sent is the one the hold was reserved for. Fields this check does not name,
+ * such as the route checks' `prompt_cache_options` and `prompt_cache_key`, pass.
+ */
+export function inspectAwsChatBody(modelId: string, maxOutputTokens: number) {
+  return (text: string) => {
+    let body: Record<string, unknown> | null = null;
+    try {
+      const parsed = JSON.parse(text) as unknown;
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) body = parsed as Record<string, unknown>;
+    } catch {
+      body = null;
+    }
+    const usage = body?.stream_options;
+    if (
+      !body ||
+      body.model !== modelId ||
+      body.stream !== true ||
+      !usage ||
+      typeof usage !== 'object' ||
+      (usage as Record<string, unknown>).include_usage !== true ||
+      !Number.isInteger(body.max_completion_tokens) ||
+      (body.max_completion_tokens as number) <= 0 ||
+      body.max_completion_tokens !== maxOutputTokens ||
+      body.max_tokens !== undefined
+    )
+      throw new ModelApiError(
+        'aws_request_refused',
+        'The request did not name the admitted model with a usage report and its exact output limit.',
+        false,
+      );
+  };
+}
+
+/** Kimi K3 over the Chat Completions endpoint on the same runtime base. */
+export function awsChatBinding(
+  connection: AwsConnection,
+  effort: 'low' | 'medium' | 'high',
+  /** The call's exact output limit: the serialized request must carry exactly this. */
+  maxOutputTokens: number,
+  /** Whether the call offers any tool: the parallel tool call setting is sent only then. */
+  offersTools: boolean,
+): RouteBinding {
+  return {
+    route: AWS_BEDROCK_ROUTE,
+    prefix: 'aws',
+    label: 'AWS',
+    connectionId: connection.id,
+    modelId: connection.modelId,
+    expiresAt: connection.credential.expiresAt,
+    model: (fetch) =>
+      createOpenAI({
+        name: AWS_BEDROCK_ROUTE,
+        baseURL: connection.baseUrl,
+        apiKey: CREDENTIAL_PLACEHOLDER,
+        fetch,
+      }).chat(connection.modelId),
+    guard: {
+      expectedUrl: `${connection.baseUrl}/chat/completions`,
+      attach: attachBedrockKey,
+      inspectBody: inspectAwsChatBody(connection.modelId, maxOutputTokens),
+      requestIdHeaders: AWS_REQUEST_ID_HEADERS,
+    },
+    providerOptions: {
+      // The Chat Completions model reads only `openai`, whatever the provider instance is named.
+      openai: {
+        // The Geo model id does not match the SDK's reasoning-model pattern. Forcing reasoning
+        // sends the limit as `max_completion_tokens` (reasoning and answer together) instead of
+        // `max_tokens`, and keeps `reasoning_effort`. K3 takes the plain system role.
+        forceReasoning: true,
+        systemMessageMode: 'system',
+        reasoningEffort: effort,
+        // Only beside a tool: the SDK sends the setting whenever it is set, and an OpenAI-style
+        // Chat Completions endpoint can refuse it on a request that offers no tool.
+        ...(offersTools ? { parallelToolCalls: false } : {}),
+        store: false,
+      },
+    },
+    classify: classifyChat,
+    usage: chatEnvelopeUsage,
+  };
+}
+
+/**
+ * The route checks' view of this connection: its exact identity and its own binding, the checks'
+ * cache options under `openai`, the namespace the SDK reads for either protocol on this route.
+ * The checks are the one path that sends a receipt model without a receipt, because they are how
+ * it gets one; they run only on the owner's consent and inside this connection's spend limit.
+ */
+export function awsQualificationTarget(connection: AwsConnection, effort: 'low' | 'medium' | 'high'): QualificationTarget {
+  const parsed = awsConnectionSchema.parse(connection);
+  const card = awsModelRateCard(parsed.modelId);
+  return {
+    route: AWS_BEDROCK_ROUTE,
+    connectionId: parsed.id,
+    connectionRevision: parsed.revision,
+    endpoint: parsed.baseUrl,
+    deployment: null,
+    model: parsed.modelId,
+    protocol: awsProtocolFor(parsed.modelId),
+    sdk: AWS_BEDROCK_SDK,
+    rateCard: card.version,
+    card,
+    binding: (extra, maxOutputTokens, offersTools) =>
+      withCacheOptions(awsBinding(parsed, effort, false, maxOutputTokens, offersTools), 'openai', extra),
+  };
+}
+
+/**
  * One provider exchange: reserve, stream once, classify, settle. Never retried.
  * Throws `ModelApiError` for everything that is not a complete, valid answer or
  * a single, offered tool call.
@@ -350,12 +562,18 @@ export async function respondOnce(
     signal: AbortSignal;
     transport?: typeof globalThis.fetch;
     now?: () => Date;
+    /** The newest route check receipt for this connection. A model that needs one is refused without it. */
+    qualification?: RouteQualificationReceipt | null;
   } & StreamSinks,
 ): Promise<RespondResult> {
   const connection = awsConnectionSchema.parse(input.connection);
-  assertAwsModelQualified(connection.modelId);
-  const { connection: _connection, effort, ...rest } = input;
-  return respondStream({ ...rest, binding: awsBinding(connection, effort, Boolean(rest.onReasoningDelta)) });
+  const now = (input.now ?? (() => new Date()))().getTime();
+  assertAwsModelQualified(connection, input.qualification, now, input.card.version);
+  const { connection: _connection, effort, qualification: _qualification, ...rest } = input;
+  return respondStream({
+    ...rest,
+    binding: awsBinding(connection, effort, Boolean(rest.onReasoningDelta), rest.limits.maxOutputTokens, rest.tools.length > 0),
+  });
 }
 
 /** A spend hold's identity, fixed before anything is sent. */

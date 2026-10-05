@@ -658,11 +658,30 @@ function descriptorTools(prefix: string, descriptors: readonly ToolDescriptor[])
 }
 
 /**
- * One provider exchange: reserve, stream once, classify, settle. Never retried.
- * Throws `ModelApiError` for everything that is not a complete, valid answer or
- * a single, offered tool call.
+ * What one call observed, handed once to an optional observer when the call reaches its outcome:
+ * identifiers, counts and states, read from the provider's own bytes and the ledger. `text` is
+ * bounded and is for the observer's own pass or fail only; it is never a record. `code` is the
+ * refusal's code, and null when the call returned an answer.
  */
-export async function respondStream(input: {
+export interface CallObservation {
+  dispatched: boolean;
+  status: number | null;
+  providerRequestId: string | null;
+  responseId: string | null;
+  reportedModel: string | null;
+  classifiedStatus: string | null;
+  incompleteReason: string | null;
+  usage: ProviderUsage | null;
+  functionCalls: number;
+  text: string | null;
+  providerError: { code: string | null; message: string } | null;
+  /** The call's hold as it ended: settled at its cost, released at zero, otherwise at its ceiling. */
+  reservation: { state: string; microUsd: number } | null;
+  code: string | null;
+}
+
+/** What `respondStream` takes. */
+export type RespondStreamInput = {
   binding: RouteBinding;
   secret: string;
   card: ModelRateCard;
@@ -675,7 +694,88 @@ export async function respondStream(input: {
   signal: AbortSignal;
   transport?: typeof globalThis.fetch;
   now?: () => Date;
-} & StreamSinks): Promise<RespondResult> {
+  /** Told once what the call observed, on success and on every refusal. It never changes the outcome. */
+  observe?: (observation: CallObservation) => void;
+} & StreamSinks;
+
+/** What one exchange has seen so far, filled in as it goes so an observer can be told once. */
+interface CallFacts {
+  dispatched: boolean;
+  envelope: StreamEnvelope | null;
+  classified: ClassifiedEnvelope | null;
+  reservation: ExposureReservation | null;
+}
+
+const OBSERVED_TEXT = 2_000;
+
+function observationOf(
+  binding: RouteBinding,
+  facts: CallFacts,
+  outcome: { result: RespondResult } | { error: unknown },
+): CallObservation {
+  const { envelope, classified, reservation } = facts;
+  const result = 'result' in outcome ? outcome.result : null;
+  const error = 'error' in outcome ? outcome.error : null;
+  let usage = result?.usage ?? classified?.usage ?? null;
+  if (!usage && envelope)
+    try {
+      usage = binding.usage(envelope);
+    } catch {
+      usage = null;
+    }
+  const text = result ? (result.outcome.kind === 'final' ? result.outcome.text : classified?.text) : classified?.text;
+  return {
+    dispatched: result ? true : error instanceof ModelApiError ? error.dispatched : facts.dispatched,
+    status: envelope?.status ?? null,
+    providerRequestId: envelope?.providerRequestId ?? null,
+    responseId: classified?.responseId ?? null,
+    reportedModel: classified?.reportedModel ?? null,
+    classifiedStatus: classified?.status ?? null,
+    incompleteReason: classified?.incompleteReason ?? null,
+    usage,
+    functionCalls: classified?.functionCalls.length ?? 0,
+    text: text ? text.slice(0, OBSERVED_TEXT) : null,
+    providerError: classified?.providerError ?? null,
+    reservation: reservation
+      ? {
+          state: reservation.state,
+          microUsd:
+            reservation.state === 'settled'
+              ? (reservation.settledMicroUsd ?? 0)
+              : reservation.state === 'released'
+                ? 0
+                : reservation.maxMicroUsd,
+        }
+      : null,
+    code: result ? null : error instanceof HarnessError ? error.code : `${binding.prefix}_unexpected_error`,
+  };
+}
+
+/**
+ * One provider exchange: reserve, stream once, classify, settle. Never retried.
+ * Throws `ModelApiError` for everything that is not a complete, valid answer or
+ * a single, offered tool call. An observer, when given, is told exactly once what
+ * the call observed, whichever way it ended.
+ */
+export async function respondStream(input: RespondStreamInput): Promise<RespondResult> {
+  const facts: CallFacts = { dispatched: false, envelope: null, classified: null, reservation: null };
+  let outcome: { result: RespondResult } | { error: unknown };
+  try {
+    outcome = { result: await exchange(input, facts) };
+  } catch (error) {
+    outcome = { error };
+  }
+  if (input.observe)
+    try {
+      input.observe(observationOf(input.binding, facts, outcome));
+    } catch {
+      // An observer never changes or breaks a call's outcome.
+    }
+  if ('error' in outcome) throw outcome.error;
+  return outcome.result;
+}
+
+async function exchange(input: RespondStreamInput, facts: CallFacts): Promise<RespondResult> {
   const { binding } = input;
   const { prefix, label } = binding;
   const now = input.now ?? (() => new Date());
@@ -719,6 +819,12 @@ export async function respondStream(input: {
       false,
     );
   }
+  facts.reservation = reservation;
+  /** Every later change to the hold goes through here, so an observer sees how it ended. */
+  const hold = (value: ExposureReservation) => {
+    reservation = value;
+    facts.reservation = value;
+  };
   let dispatched = false;
   let envelope: StreamEnvelope | null = null;
   let transportError: ModelApiError | null = null;
@@ -749,18 +855,22 @@ export async function respondStream(input: {
    */
   const settleOrLose = async (usage: ProviderUsage, why: string, raw?: unknown) => {
     try {
-      reservation = await input.exposure.settle(reservation.id, {
-        usage,
-        card: input.card,
-        providerRequestId: envelope?.providerRequestId ?? null,
-        ...(raw !== undefined ? { raw } : {}),
-      });
+      hold(
+        await input.exposure.settle(reservation.id, {
+          usage,
+          card: input.card,
+          providerRequestId: envelope?.providerRequestId ?? null,
+          ...(raw !== undefined ? { raw } : {}),
+        }),
+      );
       return true;
     } catch {
       try {
-        reservation = await input.exposure.markUncertain(
-          reservation.id,
-          `Sent, and ${label} reported usage, but it could not be recorded (${why}). The cost is unknown until reconciled.`,
+        hold(
+          await input.exposure.markUncertain(
+            reservation.id,
+            `Sent, and ${label} reported usage, but it could not be recorded (${why}). The cost is unknown until reconciled.`,
+          ),
         );
       } catch {
         // The sweep at the next start turns this pending hold uncertain.
@@ -780,18 +890,17 @@ export async function respondStream(input: {
     const usage = envelope ? binding.usage(envelope) : null;
     const releasable = binding.releasableStatuses ?? RELEASABLE_STATUSES;
     try {
-      if (!dispatched) reservation = await input.exposure.release(reservation.id, `Not sent: ${code}.`);
+      if (!dispatched) hold(await input.exposure.release(reservation.id, `Not sent: ${code}.`));
       else if (usage) await settleOrLose(usage, code);
       else if (envelope && releasable.has(envelope.status) && envelope.readable)
         // A provider rejection with an error body is a refusal before inference, not a lost answer.
-        reservation = await input.exposure.release(
-          reservation.id,
-          `${label} refused the request with HTTP ${envelope.status}.`,
-        );
+        hold(await input.exposure.release(reservation.id, `${label} refused the request with HTTP ${envelope.status}.`));
       else
-        reservation = await input.exposure.markUncertain(
-          reservation.id,
-          `Sent, but no usage came back (${code}). The cost is unknown until reconciled.`,
+        hold(
+          await input.exposure.markUncertain(
+            reservation.id,
+            `Sent, but no usage came back (${code}). The cost is unknown until reconciled.`,
+          ),
         );
     } catch {
       // A hold that cannot be resolved stays pending on disk; the startup sweep parks it
@@ -822,9 +931,11 @@ export async function respondStream(input: {
         : {}),
       onDispatch: () => {
         dispatched = true;
+        facts.dispatched = true;
       },
       onEnvelope: (value) => {
         envelope = value;
+        facts.envelope = value;
       },
       onFailure: (error) => {
         transportError ??= error;
@@ -922,6 +1033,7 @@ export async function respondStream(input: {
       `Stopped after ${label} answered. The answer was not used; its reported usage is recorded.`,
     );
   const read = binding.classify(seen);
+  facts.classified = read.classified;
   if (!read.readable || !read.classified)
     return fail(
       `${prefix}_unreadable_response`,

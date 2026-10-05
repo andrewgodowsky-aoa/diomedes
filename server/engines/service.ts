@@ -83,11 +83,13 @@ import {
   awsAccountRoute,
   awsModelRateCard,
   awsModelRefusal,
+  awsQualificationFor,
   AwsConnectionRetired,
   respondOnce,
   type AwsConnection,
   type AwsConnections,
 } from './aws-bedrock.js';
+import type { RouteQualifications } from './route-qualification-store.js';
 import {
   AZURE_OPENAI_ROUTE,
   AZURE_OPENAI_SDK,
@@ -2879,6 +2881,11 @@ export interface ModelApiServices {
   secrets: ConnectionSecrets;
   exposure: SpendExposure;
   transcripts: ModelTranscripts;
+  /**
+   * The route check receipts (`route-qualification.ts`). A model that sends only under a receipt
+   * (Kimi K3 on AWS) is refused while this is absent.
+   */
+  qualifications?: RouteQualifications;
   azure?: { connections: AzureConnections; transcripts: ModelTranscripts };
   openrouter?: { connections: OpenRouterConnections; transcripts: ModelTranscripts };
   /**
@@ -3012,7 +3019,10 @@ async function modelApiRoute(api: ModelApiServices, route: ModelApiRoute, work: 
         throw error;
       });
       if (!connection) return { connected: false, route, names };
-      const refusal = awsModelRefusal(connection.modelId);
+      // Kimi K3 sends only under a current route check receipt for this exact connection, model,
+      // protocol and price. It is read once for this handle and checked again on every call.
+      const qualification = await awsQualificationFor(api.qualifications, connection);
+      const refusal = awsModelRefusal(connection, qualification, Date.now());
       if (refusal) throw new EngineError('ROUTE_REFUSED', `${refusal} Nothing was sent.`, true);
       return {
         connected: true,
@@ -3040,10 +3050,11 @@ async function modelApiRoute(api: ModelApiServices, route: ModelApiRoute, work: 
             effort: effortOf(options.effort),
             transport: options.transport,
             limits: options.limits,
+            qualification,
             ...options.sinks,
           }),
         respond: ({ sinks, model: _model, ...options }) =>
-          respondOnce({ connection, card: awsModelRateCard(connection.modelId), ...options, effort: effortOf(options.effort), exposure: localCallLedger(options.exposure), ...sinks }),
+          respondOnce({ connection, card: awsModelRateCard(connection.modelId), ...options, effort: effortOf(options.effort), exposure: localCallLedger(options.exposure), qualification, ...sinks }),
       };
     }
     case AZURE_OPENAI_ROUTE: {

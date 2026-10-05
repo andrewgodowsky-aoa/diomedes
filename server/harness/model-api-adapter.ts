@@ -150,6 +150,17 @@ function exposureAttempt(runId: string, stepId: string, request: unknown): Expos
   return { runId, stepId, attempt: 1, requestDigest: digest(request) };
 }
 
+/**
+ * The provider-format message that answers one tool call: the provider's own call id, the tool's
+ * name and its result as JSON. Every model-API continuation answers a tool call in this one shape.
+ */
+export function toolResultMessage(callId: string, toolName: string, output: unknown): ModelMessage {
+  return {
+    role: 'tool',
+    content: [{ type: 'tool-result', toolCallId: callId, toolName, output: { type: 'json', value: output as never } }],
+  };
+}
+
 export function createModelApiAdapter(spec: ModelApiAdapterSpec): ModelAdapter & { profileHash: string } {
   const { prefix, label } = spec;
   const profileHash = digest(spec.profile);
@@ -212,17 +223,7 @@ export function createModelApiAdapter(spec: ModelApiAdapterSpec): ModelAdapter &
             false,
           );
         // The provider's own call id, recorded when it asked, answers it now.
-        messages.push({
-          role: 'tool',
-          content: [
-            {
-              type: 'tool-result',
-              toolCallId: saved.pendingTool.callId,
-              toolName: saved.pendingTool.name,
-              output: { type: 'json', value: observation.output as never },
-            },
-          ],
-        });
+        messages.push(toolResultMessage(saved.pendingTool.callId, saved.pendingTool.name, observation.output));
       }
       messages.push(...ordinary(tail));
     } else messages = ordinary(request.messages);

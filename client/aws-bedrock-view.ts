@@ -3,7 +3,18 @@
  * host's view alone (`GET /api/ai/model-api/aws-bedrock`). Pure, so every
  * sentence a person reads here is testable without a browser.
  */
-import { AWS_DIRECT_MODEL_IDS, MANAGED_LUNA, type AwsConnectionView } from '../shared/model-api';
+import {
+  AWS_DIRECT_MODEL_IDS,
+  AWS_DIRECT_MODELS,
+  MANAGED_LUNA,
+  type AwsConnectionView,
+  type RouteQualificationView,
+} from '../shared/model-api';
+import type {
+  QualificationCheckId,
+  QualificationOutcome,
+  RouteQualificationReceipt,
+} from '../shared/route-qualification';
 
 export const AWS_ACCOUNT_PATTERN = /^\d{12}$/;
 export const AWS_MIN_KEY_LENGTH = 20;
@@ -157,4 +168,79 @@ export function awsPickerState(view: AwsConnectionView | null): { offered: boole
 /** Whether AWS is the route new work takes. Connecting never makes it so by itself. */
 export function awsIsDefault(services: Record<string, unknown> | undefined): boolean {
   return services?.defaultEngine === 'aws-bedrock';
+}
+
+// --- route checks (shared with the Azure card) -------------------------------------------
+
+/** The most something can hold, rounded up to the cent: an "at most" never understates. */
+export const usdUp = (micro: number) => `$${(Math.ceil(micro / 10_000) / 100).toFixed(2)}`;
+
+const CHECK_LABELS: Record<QualificationCheckId, string> = {
+  'short-answer': 'Short answer',
+  'output-bound': 'Output limit',
+  'tool-round-trip': 'Tool round trip',
+  'cache-default': 'Caching by default',
+  'cache-off': 'Caching off',
+};
+const OUTCOME_WORDS: Record<QualificationOutcome, string> = {
+  passed: 'Passed',
+  failed: 'Failed',
+  unsupported: 'Not supported',
+  'not-run': 'Not run',
+};
+
+export interface RouteCheckLine {
+  id: QualificationCheckId;
+  label: string;
+  outcome: QualificationOutcome;
+  text: string;
+}
+
+/** One line per check in the newest receipt: its outcome and what it observed, as recorded. */
+export function routeCheckLines(receipt: RouteQualificationReceipt | null): RouteCheckLine[] {
+  return (receipt?.checks ?? []).map((check) => ({
+    id: check.id,
+    label: CHECK_LABELS[check.id],
+    outcome: check.outcome,
+    // A check that did not run already says so in its own words.
+    text: check.outcome === 'not-run' ? check.detail : `${OUTCOME_WORDS[check.outcome]} · ${check.detail}`,
+  }));
+}
+
+/** What the route checks mean for this connection now, in one sentence. Null before anything is connected. */
+export function qualificationSentence(view: RouteQualificationView | null): string | null {
+  if (!view?.model) return null;
+  if (!view.qualifies) return view.reason;
+  if (view.required) {
+    const name = AWS_DIRECT_MODELS.find((entry) => entry.model === view.model)?.label ?? view.model;
+    return `${name} can send on this connection.`;
+  }
+  return view.deployment ? 'The route checks passed for this deployment.' : 'The route checks passed on this connection.';
+}
+
+/** When the newest run happened, which models answered it and what it spent. */
+export function routeCheckSummary(receipt: RouteQualificationReceipt | null): string | null {
+  if (!receipt) return null;
+  const served = receipt.servedModels.length ? `served by ${receipt.servedModels.join(', ')}` : 'no model reported';
+  const unknown = receipt.spend.uncertainMicroUsd ? `, ${usd(receipt.spend.uncertainMicroUsd)} not yet known` : '';
+  return `Last run ${new Date(receipt.createdAt).toLocaleString()} · ${served} · ${usd(receipt.spend.settledMicroUsd)} spent${unknown}`;
+}
+
+/** What a run sends and the most it can hold, said before it starts. */
+export function routeChecksCaption(view: RouteQualificationView | null): string {
+  const scope = view?.deployment ? 'this deployment' : 'this connection';
+  const hold = view?.ceilingMicroUsd != null ? ` They hold at most ${usdUp(view.ceilingMicroUsd)} of the spend limit.` : '';
+  return `Up to eight short requests through ${scope}, billed as usual.${hold}`;
+}
+
+/**
+ * Whether a run can start from this screen, and if not, the one sentence that says why. A run
+ * this screen started shows Stop instead, so it needs no reason.
+ */
+export function routeCheckRunState(
+  view: RouteQualificationView | null,
+  runningHere: boolean,
+): { canRun: boolean; reason: string | null } {
+  if (runningHere || !view) return { canRun: false, reason: null };
+  return view.blocked ? { canRun: false, reason: view.blocked } : { canRun: true, reason: null };
 }

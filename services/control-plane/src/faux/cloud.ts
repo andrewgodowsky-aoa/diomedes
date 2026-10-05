@@ -26,6 +26,11 @@
  * Decisions provider by default, deterministic and offline, and OpenRouter for
  * real only when `liveOpenRouterApiKey` is given (NECTOVIA_FAUX_OPENROUTER_API_KEY,
  * under the same approval and the same ceiling rule).
+ *
+ * The gateway route checks (`POST /ops/routes/:id/checks`, DIO-217) are the
+ * Worker's own too, over the two approved connections of `faux/route-checks.ts`.
+ * Their provider is always the scripted one of that file unless a test passes
+ * `managed.routeChecksTransport`; a live key never reaches it.
  */
 import { z } from 'zod';
 import type { Configuration } from '../config.js';
@@ -65,6 +70,8 @@ import {
   signUpInput,
 } from './identity.js';
 import { FauxRelayHubs } from './relay-hubs.js';
+import { fauxRouteCheckEnvironment, scriptedRouteChecksFetch } from './route-checks.js';
+import { RouteChecksService, stateRouteCheckSpend } from '../route-checks.js';
 import { FauxCloudStore } from './store.js';
 import { createWorkOSStandIn, WORKOS_ISSUER, type WorkOSStandIn } from './workos-standin.js';
 
@@ -90,7 +97,11 @@ export interface FauxCloudOptions {
   managed?: {
     /** The transport the Bedrock caller uses. Default: `scriptedResponsesFetch`. */
     transport?: typeof globalThis.fetch;
-    /** Approved synthetic configuration for transport tests; never populated from user credentials. */
+    /**
+     * Approved synthetic configuration for transport tests; never populated from user credentials.
+     * Omitted: the two connections the gateway route checks run on (`aws-bedrock-us-east-1` and
+     * `azure-foundry-dev`, shaped as deployed) with the faux placeholder as their keys.
+     */
     bindings?: Readonly<Record<string, unknown>>;
     /** What the gateway reads as BEDROCK_API_KEY. Null: no key is configured. */
     credential?: string | null;
@@ -105,6 +116,8 @@ export interface FauxCloudOptions {
     evaluationTransport?: typeof globalThis.fetch;
     /** What the gateway reads as OPENROUTER_API_KEY. Null: no key is configured. */
     evaluationCredential?: string | null;
+    /** The transport the gateway route checks use. Default: `scriptedRouteChecksFetch`, offline. */
+    routeChecksTransport?: typeof globalThis.fetch;
   };
   /**
    * Buying credits without Stripe: the Worker's CREDIT_PRICE_CENTS_PER_100 as a stand-in, a local checkout page and
@@ -144,6 +157,11 @@ export interface FauxCloud {
   readonly provider: 'scripted' | 'live';
   /** Which provider answers typed evaluations. */
   readonly evaluationProvider: 'scripted' | 'live';
+  /**
+   * MANAGED_CONNECTIONS as the faux Worker reads it, and nothing else from its environment: what a
+   * staff route write checks a binding against (`CommercialService.saveRoute`).
+   */
+  readonly connectionSettings: Readonly<Record<string, unknown>>;
   handle(request: Request): Promise<Response>;
   /** Resolves once every managed settlement started so far has finished. */
   idle(): Promise<void>;
@@ -232,7 +250,7 @@ export async function createFauxCloud(options: FauxCloudOptions): Promise<FauxCl
     : options.managed?.evaluationCredential === undefined ? FAUX_SCRIPTED_CREDENTIAL : options.managed.evaluationCredential;
   // The environment the gateway reads its keys and spend settings from, as the Worker's would be.
   const managedEnv: Record<string, unknown> = {
-    ...options.managed?.bindings,
+    ...(options.managed?.bindings ?? fauxRouteCheckEnvironment()),
     ...Object.fromEntries(SPEND_SETTINGS.filter((name) => settings[name] !== undefined).map((name) => [name, settings[name]])),
     ...(credential === null ? {} : { BEDROCK_API_KEY: credential }),
     ...(evaluationCredential === null ? {} : { OPENROUTER_API_KEY: evaluationCredential }),
@@ -249,6 +267,15 @@ export async function createFauxCloud(options: FauxCloudOptions): Promise<FauxCl
     caller: bedrockResponsesCaller(options.managed?.transport ?? (live ? undefined : scriptedResponsesFetch({ now }))),
     bindingTransport: options.managed?.transport ?? scriptedResponsesFetch({ now }),
     evaluationCaller: openRouterDecisionsCaller(options.managed?.evaluationTransport ?? (liveEvaluations ? undefined : scriptedDecisionsFetch())),
+    now,
+    idleTimeoutMs: options.managed?.idleTimeoutMs,
+  });
+  // One service for the cloud's life, so the scripted provider's cache outlives a run, as a provider's would.
+  const routeChecks = new RouteChecksService({
+    accounts,
+    commercial: store.commercial,
+    spend: stateRouteCheckSpend(store.funding, store.commercial),
+    transport: options.managed?.routeChecksTransport ?? scriptedRouteChecksFetch({ now }),
     now,
     idleTimeoutMs: options.managed?.idleTimeoutMs,
   });
@@ -277,6 +304,7 @@ export async function createFauxCloud(options: FauxCloudOptions): Promise<FauxCl
       createRelay: () => relay,
       createOrganizationSetup: () => organizationSetups,
       createOrganizationExport: () => organizationExports,
+      createRouteChecks: () => routeChecks,
     },
   );
 
@@ -389,6 +417,7 @@ export async function createFauxCloud(options: FauxCloudOptions): Promise<FauxCl
     organizationExports,
     provider: live ? 'live' : 'scripted',
     evaluationProvider: liveEvaluations ? 'live' : 'scripted',
+    connectionSettings: Object.freeze(managedEnv.MANAGED_CONNECTIONS === undefined ? {} : { MANAGED_CONNECTIONS: managedEnv.MANAGED_CONNECTIONS }),
     idle: () => managed.idle(),
     completeCheckout,
     paymentLedger,

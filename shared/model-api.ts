@@ -1,4 +1,5 @@
 import { lunaLabel, type LunaModelId } from './luna-models.js';
+import type { QualificationProtocol, RouteQualificationReceipt } from './route-qualification.js';
 
 /** The Luna model ids the desktop route sends and the one kept for older policies. */
 const MANAGED_LUNA_ID = 'us.openai.gpt-5.6-luna' satisfies LunaModelId;
@@ -63,7 +64,10 @@ export const MANAGED_LUNA = {
 /**
  * Published direct-AWS catalog identity and US Geo Standard prices. This row does not
  * qualify an account or a provider exchange, and never changes the managed Luna selection.
- * K3's billed reasoning/output cap remains unverified for the existing Responses adapter.
+ * K3 is sent over Chat Completions, and only under a current route
+ * check receipt for the exact connection revision, model, protocol and rate card
+ * (`shared/route-qualification.ts`): nobody has verified for every account that its billed
+ * reasoning plus output stays inside the limit a request is sent with.
  */
 export const AWS_KIMI_K3 = {
   model: 'us.moonshotai.kimi-k3',
@@ -78,10 +82,28 @@ export const AWS_KIMI_K3 = {
 /** The direct owner's setup choices only; no Global profile or alternate region is implied. */
 export const AWS_DIRECT_MODELS = [MANAGED_LUNA, AWS_KIMI_K3] as const;
 export const AWS_DIRECT_MODEL_IDS = [MANAGED_LUNA.model, AWS_KIMI_K3.model] as const;
+export type AwsDirectModelId = (typeof AWS_DIRECT_MODEL_IDS)[number];
 
-/** Visible in setup and admission; catalog recognition never removes this refusal. */
+/**
+ * The wire protocol each direct AWS model is sent over, named as the route checks name it.
+ * Luna speaks Responses; Kimi K3 speaks Chat Completions, which AWS recommends for it.
+ */
+export const AWS_MODEL_PROTOCOLS: Readonly<Record<AwsDirectModelId, QualificationProtocol>> = Object.freeze({
+  [MANAGED_LUNA.model]: 'openai-responses',
+  [AWS_KIMI_K3.model]: 'openai-chat-completions',
+});
+
+/** A direct AWS model's protocol, or null for an id that is not a direct AWS selection. */
+export function awsModelProtocol(modelId: string): QualificationProtocol | null {
+  return Object.hasOwn(AWS_MODEL_PROTOCOLS, modelId) ? AWS_MODEL_PROTOCOLS[modelId as AwsDirectModelId] : null;
+}
+
+/**
+ * Visible in setup and admission while K3 has no qualifying route check on the saved connection.
+ * Catalog recognition never removes it; only a current receipt for the exact identity does.
+ */
 export const AWS_KIMI_K3_REFUSAL =
-  'Kimi K3 requests are blocked: the Responses limit on all billed reasoning and output tokens has not been verified.';
+  'Kimi K3 needs a passing route check on this connection before it sends. Run the route checks in AI setup.';
 
 /** Compatibility for policies published before versioned routing; no new qualification is implied. */
 export const GPT6_LUNA = {
@@ -199,6 +221,35 @@ export interface AzureConnectionView {
   } | null;
   spend: ModelApiSpendView | null;
   next: string | null;
+}
+
+/**
+ * What `GET /api/ai/model-api/<route>/qualification` and `POST .../qualify` return for the
+ * route's current connection and one logical model: the newest route check receipt and what it
+ * means now. Identifiers, counts and sentences only; never a key, a prompt or an answer. A failed
+ * call's error may quote the provider's own error message, bounded and with the key removed: the
+ * checks' prompts are fixed and carry no person's content.
+ */
+export interface RouteQualificationView {
+  route: 'aws-bedrock' | 'azure-openai';
+  /** The logical model checked: the AWS connection's model, or one Azure deployment's model. */
+  model: string | null;
+  /** The Azure deployment that serves the model; null elsewhere. */
+  deployment: string | null;
+  /** The newest receipt for this connection and model. It may describe an older revision. */
+  receipt: RouteQualificationReceipt | null;
+  /** Whether that receipt qualifies the current connection, model, protocol and price now. */
+  qualifies: boolean;
+  /** Why it does not, in one sentence. Null when it does. */
+  reason: string | null;
+  /** Whether this model sends only under a qualifying receipt (Kimi K3 today). */
+  required: boolean;
+  /** Why a run cannot start now, in one sentence. Null when it can. */
+  blocked: string | null;
+  /** The most every planned check together can hold on the spend limit. Null with no connection. */
+  ceilingMicroUsd: number | null;
+  /** True while route checks are running on this route. */
+  running: boolean;
 }
 
 /** What `GET /api/ai/model-api/openrouter` returns. Identifiers and state only, never a credential. */

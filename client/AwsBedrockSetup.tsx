@@ -12,6 +12,7 @@ import {
   usd,
 } from './aws-bedrock-view';
 import { Button } from './components';
+import { RouteChecks } from './RouteChecks';
 
 const BASE = '/ai/model-api/aws-bedrock';
 
@@ -192,6 +193,8 @@ export function AwsBedrockSetup({
               ))}
             </select>
           </label>
+          {/* Saving starts a new connection revision, which no route check covers yet: the
+              host gives exactly this sentence until one passes on it. */}
           {model === AWS_KIMI_K3.model && <p className="ai-note">{AWS_KIMI_K3_REFUSAL}</p>}
           <label>
             Bedrock API key
@@ -255,6 +258,10 @@ export function AwsBedrockSetup({
             </Button>
           </div>
         </form>
+      )}
+
+      {connection && (
+        <RouteChecks base={BASE} revision={connection.revision} disabled={disabled} onChanged={() => void load()} />
       )}
 
       {spend && (

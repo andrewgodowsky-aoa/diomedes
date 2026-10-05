@@ -19,9 +19,11 @@ import { createAzure } from '@ai-sdk/azure';
 import type { ModelMessage } from 'ai';
 import { z } from 'zod';
 import type { ToolDescriptor } from '../../shared/harness.js';
+import type { QualificationIdentity } from '../../shared/route-qualification.js';
 import { digest } from '../harness/policy.js';
 import type { ExposureAttempt, ModelRateCard, SpendExposure } from '../spend-exposure.js';
 import { ConnectionFile } from './connection-file.js';
+import { withCacheOptions, type QualificationTarget } from './route-qualification.js';
 import {
   classifyEnvelope,
   CREDENTIAL_PLACEHOLDER,
@@ -226,6 +228,52 @@ export function azureBinding(
       return { readable, classified: readable ? classifyEnvelope(body) : null };
     },
     usage: responsesUsage,
+  };
+}
+
+/**
+ * What a route check receipt must match for one logical model on this connection: the deployment
+ * that serves it and the price declared for it on this revision. Azure sends without a receipt; a
+ * receipt here is evidence of what the deployment did.
+ */
+export function azureQualificationIdentity(connection: AzureConnection, model: string): QualificationIdentity {
+  const entry = azureDeploymentFor(connection, model);
+  return {
+    route: AZURE_OPENAI_ROUTE,
+    connectionId: connection.id,
+    connectionRevision: connection.revision,
+    model: entry.model,
+    protocol: AZURE_OPENAI_PROTOCOL,
+    rateCard: azureRateCard(connection, model).version,
+    deployment: entry.deployment,
+  };
+}
+
+/**
+ * The route checks' view of one deployment: its exact identity and its own binding, the checks'
+ * cache options under `azure`, the namespace the SDK's Responses model reads for an Azure provider.
+ */
+export function azureQualificationTarget(
+  connection: AzureConnection,
+  model: string,
+  effort: 'low' | 'medium' | 'high',
+): QualificationTarget {
+  const parsed = azureConnectionSchema.parse(connection);
+  const entry = azureDeploymentFor(parsed, model);
+  const card = azureRateCard(parsed, model);
+  return {
+    route: AZURE_OPENAI_ROUTE,
+    connectionId: parsed.id,
+    connectionRevision: parsed.revision,
+    endpoint: parsed.baseUrl,
+    deployment: entry.deployment,
+    model: entry.model,
+    protocol: AZURE_OPENAI_PROTOCOL,
+    sdk: AZURE_OPENAI_SDK,
+    rateCard: card.version,
+    card,
+    // The Responses request carries its output limit as `max_output_tokens`; the core sets it.
+    binding: (extra) => withCacheOptions(azureBinding(parsed, entry, effort, false), 'azure', extra),
   };
 }
 

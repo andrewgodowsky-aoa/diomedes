@@ -1,5 +1,14 @@
 # Harness host integration changes, 2026-09-09
 
+## Kimi K3 sends after a route check, 2026-10-05
+
+The direct AWS route sends Kimi K3 over Chat Completions, and only under a current route check
+receipt for that connection's revision, model, protocol and rate card. Without one, every K3 path
+refuses before any spend is held. The owner runs the route checks from AI setup, on AWS or on one
+Azure deployment: up to eight small live requests on the route's own key and spend limit, recorded
+as a receipt (`shared/route-qualification.ts`). No live provider call was made to build this; see
+[the record](../implementation/2026-10-05-route-qualification.md).
+
 ## A route with no model refuses by name, and the export section draws once, 2026-10-04
 
 A send on a model-API route with no model chosen refuses with the route's own name again ("Connect
