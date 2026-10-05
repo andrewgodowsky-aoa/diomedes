@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { ApiError, api, listDocuments } from '../api';
 import { Modal } from '../components';
 import { AGENT_NAME } from '../../shared/agent-name';
+import type { RoleTier } from '../../shared/escalation-roles';
 import { NECTOVIA_ROUTE } from '../../shared/model-api';
 import { LOOP_LIMITS, type LoopRouteOffer } from '../../shared/native-loop';
 import type { SubscriptionWorkerStartView } from '../../shared/subscription-workers';
@@ -9,8 +10,9 @@ import { selectTaskSources } from '../../shared/task-sources';
 import type { DocumentInfo, Session, Task } from '../../shared/types';
 import {
   defaultLoopGoal, loopStartCommand, loopToolConsent, loopToolConsentRefusal, newLoopCommandId,
-  collaborationOfferLabel, retainAfterFailure, retainLoopStartCommand,
-  LOOP_REVIEW_PROFILE, type LoopCollaborationOptions, type LoopStartCommand, type LoopToolConsent,
+  collaborationOfferLabel, escalationOfferReasons, nectoviaRolesConsentText, retainAfterFailure, retainLoopStartCommand,
+  LOOP_REVIEW_PROFILE, type LoopCollaborationOptions, type LoopEscalationOffers, type LoopNectoviaRoles,
+  type LoopStartCommand, type LoopToolConsent,
 } from './loop-start-model';
 import './trigger-rules.css';
 
@@ -29,6 +31,11 @@ import './trigger-rules.css';
  * `GET /api/projects/:id/subscription-workers`) names those tools in its consent
  * and sends what was confirmed. When the server asks again with other tools, the
  * box says what the server says, unticked, and the next start confirms those.
+ *
+ * A start on any other lead may name a Nectovia worker and advisor by tier
+ * (DIO-216, `GET /api/projects/:id/loop/escalation`). A tier the account can't
+ * use is listed unavailable with the server's own sentence, and the consent says
+ * where the roles' work goes and that they use the account's credits.
  */
 export function LoopStart({
   projectId,
@@ -65,6 +72,10 @@ export function LoopStart({
   // server's own sentence once it asked again for them.
   const [workers, setWorkers] = useState<SubscriptionWorkerStartView | null>(null);
   const [askedAgain, setAskedAgain] = useState<LoopToolConsent | null>(null);
+  // DIO-216: the Nectovia tiers this start may name as roles, and the ones chosen.
+  const [escalation, setEscalation] = useState<LoopEscalationOffers | null>(null);
+  const [nectoviaWorker, setNectoviaWorker] = useState<RoleTier | ''>('');
+  const [nectoviaAdvisor, setNectoviaAdvisor] = useState<RoleTier | ''>('');
   const consentBox = useRef<HTMLInputElement | null>(null);
   const starting = useRef(false);
   const submitted = useRef<LoopStartCommand | null>(null);
@@ -109,6 +120,11 @@ export function LoopStart({
       (view) => live && setWorkers(view),
       () => undefined,
     );
+    // A host without this read offers no Nectovia roles.
+    api<LoopEscalationOffers>(`/projects/${projectId}/loop/escalation`).then(
+      (view) => live && setEscalation(view),
+      () => undefined,
+    );
     return () => {
       live = false;
     };
@@ -138,9 +154,24 @@ export function LoopStart({
       .filter(offer => !offer.admitted && offer.reason)
       .map(offer => offer.reason!),
   )];
+  // DIO-216: Nectovia roles by tier, beside a lead that is not Nectovia and never with a Team.
+  const composing = Boolean(leadSlotId || memberSlotId || helperProfileId || reviewConnectionId);
+  const offersRoles = Boolean(chosen?.sends && chosen.route !== NECTOVIA_ROUTE && escalation);
+  const tierOffers = escalation?.offers ?? [];
+  const nectovia: LoopNectoviaRoles | null = offersRoles && !composing && nectoviaWorker
+    ? { worker: nectoviaWorker, advisor: nectoviaAdvisor || null }
+    : null;
+  const tierAdmitted = (tier: RoleTier | null) => tier === null || tierOffers.some(offer => offer.tier === tier && offer.admitted);
+  const unavailableRoles = Boolean(nectovia && (!tierAdmitted(nectovia.worker) || !tierAdmitted(nectovia.advisor)));
+  useEffect(() => {
+    if (composing || !offersRoles) {
+      setNectoviaWorker('');
+      setNectoviaAdvisor('');
+    }
+  }, [composing, offersRoles]);
   const toolConsent = chosen?.route === NECTOVIA_ROUTE ? loopToolConsent(workers, askedAgain) : null;
   const consentText = chosen?.sends
-    ? (toolConsent?.text ?? `Send the goal and the files it reads to ${chosen.label}.`)
+    ? (toolConsent?.text ?? (nectovia ? nectoviaRolesConsentText(chosen.label, nectovia) : `Send the goal and the files it reads to ${chosen.label}.`))
     : null;
   // A tick was given to the words beside it. When they change, the person confirms again.
   useEffect(() => {
@@ -149,7 +180,7 @@ export function LoopStart({
 
   async function start() {
     // React's disabled state is painted later; the ref closes two submits in one turn.
-    if (starting.current || !chosen || partialTeam || unavailableSelection) return;
+    if (starting.current || !chosen || partialTeam || unavailableSelection || unavailableRoles) return;
     starting.current = true;
     setBusy(true);
     setError('');
@@ -160,6 +191,7 @@ export function LoopStart({
         persistentTeam: leadSlotId && memberSlotId ? { leadSlotId, memberSlotId } : null,
         team: helperProfileId ? { scope: sources, worker: { profileId: helperProfileId }, advisor: null } : null,
         review: reviewConnectionId ? { profileId: LOOP_REVIEW_PROFILE, connectionId: reviewConnectionId } : null,
+        nectovia,
       }));
       submitted.current = command;
       const started = await api<{ runId: string; session: Session | null }>(
@@ -319,6 +351,38 @@ export function LoopStart({
         </label>
         {collaboration?.reason && <p className="trigger-rules-reach">{collaboration.reason}</p>}
         {collaborationRefusals.map(reason => <p className="loop-start-refused" key={reason}>{reason}</p>)}
+        {offersRoles && (
+          <>
+            <label className="field">
+              <span id={`${labelId}-nectovia-worker`}>{AGENT_NAME} worker</span>
+              <select aria-labelledby={`${labelId}-nectovia-worker`} value={nectoviaWorker} onChange={event => {
+                const next = event.target.value as RoleTier | '';
+                setNectoviaWorker(next);
+                if (!next) setNectoviaAdvisor('');
+              }}
+                disabled={busy || composing || !tierOffers.some(offer => offer.admitted)}>
+                <option value="">None</option>
+                {tierOffers.map(offer => (
+                  <option key={offer.tier} value={offer.tier} disabled={!offer.admitted}>{offer.name}</option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              <span id={`${labelId}-nectovia-advisor`}>{AGENT_NAME} advisor</span>
+              <select aria-labelledby={`${labelId}-nectovia-advisor`} value={nectoviaAdvisor}
+                onChange={event => setNectoviaAdvisor(event.target.value as RoleTier | '')}
+                disabled={busy || composing || !nectoviaWorker || !tierOffers.some(offer => offer.admitted)}>
+                <option value="">None</option>
+                {tierOffers.map(offer => (
+                  <option key={offer.tier} value={offer.tier} disabled={!offer.admitted}>{offer.name}</option>
+                ))}
+              </select>
+            </label>
+            {escalationOfferReasons(escalation).map(reason => (
+              <p className="loop-start-refused" key={`nectovia-${reason}`}>{reason}</p>
+            ))}
+          </>
+        )}
         <label className="field">
           <span>Turns (up to {LOOP_LIMITS.maxTurns})</span>
           <input
@@ -341,7 +405,7 @@ export function LoopStart({
           </p>
         )}
         <div className="trigger-rule-form-acts">
-          <button type="submit" className="button primary" disabled={busy || !chosen || partialTeam || unavailableSelection}>
+          <button type="submit" className="button primary" disabled={busy || !chosen || partialTeam || unavailableSelection || unavailableRoles}>
             {busy ? 'Starting…' : 'Start loop run'}
           </button>
           <button type="button" className="button quiet" onClick={onClose}>
