@@ -2203,7 +2203,7 @@ export async function createApp(options: AppOptions) {
             : item.adapter === 'ready' && item.kind !== 'sample'
               ? { ...item, enabled: store.settings.services?.[item.id] === true }
               : item,
-        ).concat(await localModelIntegrations(bonsai, bonsaiConfigured)),
+        ).concat(await localModelIntegrations(bonsai, bonsaiConfigured, { fresh: req.query.refresh === '1' })),
       }),
       false,
     ),

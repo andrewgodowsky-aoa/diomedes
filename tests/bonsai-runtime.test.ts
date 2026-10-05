@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { BONSAI_PROFILES, bonsaiSelectionFields, type BonsaiStatus } from '../shared/bonsai.js';
-import { BonsaiError, BonsaiRuntime, type BonsaiHost } from '../server/bonsai/runtime.js';
+import { BONSAI_STATUS_TTL_MS, BonsaiError, BonsaiRuntime, type BonsaiHost } from '../server/bonsai/runtime.js';
 
 const ready = (mode: 'Gaming' | 'Full'): BonsaiStatus => ({ state: 'ready', installed: true, mode, owned: true, detail: 'Ready' });
 const deferred = <T>() => { let resolve!: (value: T) => void; const promise = new Promise<T>(r => { resolve = r; }); return { promise, resolve }; };
@@ -121,5 +121,51 @@ describe('Bonsai lifecycle queue', () => {
     expect(h.starts).toEqual(['Full']);
     await expect(runtime.wake('unknown', new AbortController().signal)).rejects.toThrow('profile');
     expect(h.value.acquire).toHaveBeenCalledTimes(2);
+  });
+});
+describe('Bonsai status checks', () => {
+  it('shares one host check between questions asked together, and reuses it for ten seconds', async () => {
+    const h = host();
+    let clock = 1_000;
+    const runtime = new BonsaiRuntime(h.value, () => clock);
+    const pending = deferred<BonsaiStatus>();
+    vi.mocked(h.value.inspect).mockReturnValueOnce(pending.promise);
+    const first = runtime.status(), second = runtime.status();
+    pending.resolve(ready('Gaming'));
+    expect((await first).state).toBe('ready');
+    expect((await second).state).toBe('ready');
+    expect(h.value.inspect).toHaveBeenCalledTimes(1);
+    clock += BONSAI_STATUS_TTL_MS - 1;
+    expect((await runtime.status()).state).toBe('ready');
+    expect(h.value.inspect).toHaveBeenCalledTimes(1);
+    clock += 1;
+    expect((await runtime.status()).state).toBe('unloaded');
+    expect(h.value.inspect).toHaveBeenCalledTimes(2);
+  });
+  it('asks the host again for a fresh question, and later questions reuse that answer', async () => {
+    const h = host(), runtime = new BonsaiRuntime(h.value, () => 0);
+    await runtime.status();
+    vi.mocked(h.value.inspect).mockResolvedValueOnce(ready('Full'));
+    expect((await runtime.status({ fresh: true })).mode).toBe('Full');
+    expect((await runtime.status()).mode).toBe('Full');
+    expect(h.value.inspect).toHaveBeenCalledTimes(2);
+  });
+  it('forgets the last check when the app starts or uses the model, and never keeps a check begun before that', async () => {
+    const h = host(), runtime = new BonsaiRuntime(h.value, () => 0);
+    expect((await runtime.status()).state).toBe('unloaded');
+    await runtime.wake('bonsai-gaming', new AbortController().signal);
+    vi.mocked(h.value.inspect).mockResolvedValueOnce(ready('Gaming'));
+    expect((await runtime.status()).state).toBe('ready');
+    expect(h.value.inspect).toHaveBeenCalledTimes(2);
+    // A check still running when a use begins is answered, but not kept.
+    const stale = deferred<BonsaiStatus>();
+    vi.mocked(h.value.inspect).mockReturnValueOnce(stale.promise);
+    const slow = runtime.status({ fresh: true });
+    await runtime.use('bonsai-gaming', new AbortController().signal, async () => 'done');
+    stale.resolve({ state: 'unloaded', installed: true, mode: null, owned: false, detail: 'Unloaded' });
+    expect((await slow).state).toBe('unloaded');
+    vi.mocked(h.value.inspect).mockResolvedValueOnce(ready('Gaming'));
+    expect((await runtime.status()).state).toBe('ready');
+    expect(h.value.inspect).toHaveBeenCalledTimes(4);
   });
 });

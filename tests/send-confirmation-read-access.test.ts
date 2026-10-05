@@ -55,3 +55,11 @@ test('no route that cannot check reads first, and no Work mode, is offered the c
   // A dialog that is not given the control (a task send) never shows it.
   expect(render('claude-code', 'ask', 'project', false)).not.toContain('look through the project folder');
 });
+
+test('a send to the local model names this computer and no account or plan', () => {
+  const html = render('bonsai' as Route, 'build', undefined, false);
+  expect(html).toContain('Send this instruction to the local model on this computer.');
+  expect(html).not.toContain('account');
+  expect(html).not.toContain('billed');
+  expect(render('aws-bedrock' as Route, 'build', undefined, false)).toContain('Usage is billed under that account');
+});

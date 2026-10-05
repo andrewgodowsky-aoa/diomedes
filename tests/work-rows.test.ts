@@ -108,6 +108,8 @@ describe('payer and label by route', () => {
     for (const route of ['codex', 'claude-code', 'opencode', 'cursor', 'devin', 'oh-my-pi'])
       expect(payerForRoute(route)).toBe('your-subscription');
     for (const route of ['sample', 'native-fixture', 'probe']) expect(payerForRoute(route)).toBe('local');
+    // The local model is a model-API route, and still bills nobody.
+    expect(payerForRoute('bonsai')).toBe('local');
     for (const route of ['mystery', null, undefined, '']) expect(payerForRoute(route)).toBe('unknown');
   });
 

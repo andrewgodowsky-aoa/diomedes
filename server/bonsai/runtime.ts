@@ -31,16 +31,46 @@ function abortable<T>(pending: Promise<T>, signal: AbortSignal): Promise<T> {
   });
 }
 
+/** How long one host check answers repeat questions while this app is not using the model. */
+export const BONSAI_STATUS_TTL_MS = 10_000;
+
 /** One queue for selection and inference. Cancellation never kills a shared startup or somebody else's model. */
 export class BonsaiRuntime {
   private tail: Promise<void> = Promise.resolve();
   private current: BonsaiStatus | null = null;
-  constructor(private readonly host: BonsaiHost) {}
+  /** The last host check while idle, and the one running. Each host check is a PowerShell run. */
+  private checked: { at: number; status: BonsaiStatus } | null = null;
+  private checking: Promise<BonsaiStatus> | null = null;
+  /** Moves whenever this app starts or uses the model, so a check begun before that is never kept. */
+  private generation = 0;
+  constructor(private readonly host: BonsaiHost, private readonly now: () => number = Date.now) {}
 
-  async status(): Promise<BonsaiStatus> {
+  /**
+   * The model's state. While this app is using it, that use answers. Otherwise a host check
+   * answers repeat questions for `BONSAI_STATUS_TTL_MS`, and questions asked while one runs share
+   * it. `fresh` asks the host again: a person's refresh, or the row reading again after a Start.
+   */
+  async status(options: { fresh?: boolean } = {}): Promise<BonsaiStatus> {
     if (this.current) return { ...this.current };
-    try { return await this.host.inspect(); }
-    catch (error) { return this.failure(error); }
+    if (!options.fresh && this.checked && this.now() - this.checked.at < BONSAI_STATUS_TTL_MS) return { ...this.checked.status };
+    if (!options.fresh && this.checking) return { ...(await this.checking) };
+    const generation = this.generation;
+    const check = this.host.inspect().catch((error: unknown) => this.failure(error));
+    this.checking = check;
+    try {
+      const status = await check;
+      if (generation === this.generation) this.checked = { at: this.now(), status };
+      return { ...status };
+    } finally {
+      if (this.checking === check) this.checking = null;
+    }
+  }
+
+  /** A start or a use changes what the host would say: forget the last check and any running one. */
+  private moved() {
+    this.generation += 1;
+    this.checked = null;
+    this.checking = null;
   }
 
   private failure(error: unknown): BonsaiStatus {
@@ -65,6 +95,7 @@ export class BonsaiRuntime {
     const operation = (async () => {
       await before;
       let lease: BonsaiLease | undefined;
+      this.moved();
       try {
         signal.throwIfAborted();
         if (start) this.current = { state: 'starting', installed: true, mode: profile.mode, owned: false,
@@ -87,6 +118,7 @@ export class BonsaiRuntime {
         try { await lease?.release(); }
         finally {
           if (signal.aborted || this.current?.state === 'busy' || this.current?.state === 'starting') this.current = null;
+          this.moved();
           unlock();
         }
       }
