@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { createHash } from 'node:crypto';
+import { projectedTurnIds, turnIdentityText } from '../shared/conversation-turn-id.js';
 import type { ProjectState } from '../shared/types.js';
 import {
   commandIdSchema,
@@ -7,6 +9,10 @@ import {
   usesCommandProtocol,
 } from './command-admission.js';
 import { ApiError } from './paths.js';
+import { automaticWorkRequestSchema } from '../shared/automatic-work.js';
+import { automaticRequestDigest, isExplicitWorkRequest } from './automatic-work-admission.js';
+import { conversationCommandIds } from './interaction-admission.js';
+import { sourceMessageIdFor } from './interaction-turn.js';
 
 const id = z.string().trim().min(1).max(100);
 const requestSchema = z.strictObject({
@@ -77,6 +83,21 @@ export function validateTaskReceipts(state: ProjectState) {
     const receipt = parsed.success ? parsed.data : undefined;
     const event = receipt ? events.get(receipt.eventId) : undefined;
     const harnessProposal = receipt?.actor === 'harness';
+    const requested = automaticWorkRequestSchema.safeParse(task.automaticWork?.request);
+    const originalCommand = receipt && requested.success ? parseTaskCommand({
+      protocolVersion: 1, commandId: receipt.commandId, owner: 'diomedes-with-ok',
+      name: requested.data.goal.trim().split('\n')[0]!.slice(0, 200), description: requested.data.goal,
+    }) : undefined;
+    const automaticCreation = receipt?.actor === 'local-client' && requested.success
+      && requested.data.sourceProjectId === state.project.id && requested.data.targetProjectId === state.project.id
+      && requested.data.sourceMessageId === sourceMessageIdFor(state.project.id, requested.data.threadId, requested.data.commandId)
+      && automaticRequestDigest(requested.data) === requested.data.requestDigest && isExplicitWorkRequest(requested.data.goal)
+      && receipt.commandId === conversationCommandIds(requested.data.sourceMessageId).taskCommandId
+      && task.origin?.projectId === state.project.id && task.origin.threadId === requested.data.threadId
+      && receipt.payloadDigest === originalCommand?.admission.payloadDigest
+      && typeof task.origin.runId === 'string' && task.origin.runId.length > 0
+      && task.origin.turnId === projectedTurnIds(createHash('sha256')
+        .update(turnIdentityText(task.origin.runId, requested.data.commandId)).digest('hex')).user;
     const parent = task.workflow?.parentTaskId;
     const proposalSession = event?.sessionId && state.sessions.find((session) => session.id === event.sessionId);
     if (
@@ -86,7 +107,8 @@ export function validateTaskReceipts(state: ProjectState) {
       receipt.taskId !== task.id ||
       event?.kind !== 'tasks-made' ||
       event.taskId !== task.id ||
-      event.actor !== (harnessProposal ? 'diomedes' : 'you') ||
+      (task.automaticWork !== undefined && !automaticCreation) ||
+      event.actor !== (harnessProposal || automaticCreation ? 'diomedes' : 'you') ||
       (harnessProposal && (!receipt.commandId.startsWith('proposal.') || task.createdBy !== 'diomedes' ||
         !parent || !proposalSession || proposalSession.taskId !== parent)) ||
       event.time !== receipt.admittedAt

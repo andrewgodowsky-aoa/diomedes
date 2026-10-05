@@ -90,7 +90,7 @@ describe('found engines', () => {
 
   it("refuses a gone engine in that engine's own words, and never tells a person to install or choose one", () => {
     expect(engineGoneSentence('codex', 'signed-out')).toBe(
-      "ChatGPT isn't signed in on this computer, so this conversation can't continue here. Nothing was sent.",
+      "Codex isn't signed in on this computer, so this conversation can't continue here. Nothing was sent.",
     );
     expect(engineGoneSentence('cursor', 'not-installed')).toBe(
       "Cursor isn't installed on this computer, so this conversation can't continue here. Nothing was sent.",

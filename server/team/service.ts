@@ -9,7 +9,15 @@ import type {
   TeamState,
 } from '../../shared/types.js';
 import { ApiError } from '../paths.js';
-import { emptyTaskWorkflow, taskWorkflowBlocker } from '../../shared/task-workflow.js';
+import {
+  emptyTaskWorkflow,
+  isManualCard,
+  MANUAL_CARD_ASSIGN_REFUSED,
+  MANUAL_CARD_DELETE_REFUSED,
+  manualTaskWorkflow,
+  stoppedMemberRefusal,
+  taskWorkflowBlocker,
+} from '../../shared/task-workflow.js';
 import { identifier, now, type Store } from '../store.js';
 import { migrateTeam } from '../store.js';
 import {
@@ -29,6 +37,7 @@ import {
 import { ownerPinFrom, tierMapFrom } from '../../shared/tier-map.js';
 import { isRoute } from '../../shared/engines.js';
 import { isWorkStyle, type WorkStyle } from '../../shared/work-style.js';
+import { isOwnedTeamRun } from '../../shared/agent-collaboration.js';
 import {
   checkCompletionAllowed,
   engineLabel,
@@ -74,6 +83,13 @@ function activeMember(team: TeamState, slotId: Slot): TeamMember {
   return member;
 }
 
+/** A member a card may name as its owner: one that exists (404) and was not stopped (409). */
+function assignableMember(team: TeamState, slotId: Slot): TeamMember {
+  const member = findMember(team, slotId);
+  if (member.status === 'stopped') throw new ApiError(409, stoppedMemberRefusal(member.name));
+  return member;
+}
+
 export interface RunStarterInput {
   projectId: string;
   member: TeamMember;
@@ -84,6 +100,18 @@ export interface RunStarterInput {
 export type RunStarter = (input: RunStarterInput) => Promise<{ sessionId: string }>;
 /** The routes the person turned on and connected, with what each reported, for "Nectovia chooses". */
 export type TeamRouteCandidates = (projectId: string) => TeamRouteCandidate[];
+
+/** Host-only staging: an owned exchange commits the mutation and its ownership in one Store persist. */
+export interface TeamMutationOptions {
+  persist?: boolean;
+  wake?: boolean;
+  runId?: string | null;
+}
+export interface OwnedTeamControl {
+  suppressWake(projectId: string, to: Slot, from: Slot): boolean;
+  /** Called in the owner's existing mutation lock; must never acquire Store.locked or await model work. */
+  stopMember(projectId: string, slotId: Slot): Promise<void>;
+}
 
 /** At most this many automatic wakes per slot inside AUTO_WAKE_WINDOW_MS. */
 const AUTO_WAKE_LIMIT = 5;
@@ -103,6 +131,7 @@ export class TeamService {
   private candidates: TeamRouteCandidates | null = null;
   private wakeLog = new Map<string, number[]>();
   private clock: () => number = () => Date.now();
+  private ownedControl: OwnedTeamControl | null = null;
 
   constructor(private store: Store) {}
 
@@ -114,6 +143,31 @@ export class TeamService {
   /** Wire the host's connected-route facts; until then "Nectovia chooses" is refused. */
   setRouteCandidates(fn: TeamRouteCandidates): void {
     this.candidates = fn;
+  }
+
+  setOwnedControl(control: OwnedTeamControl): void {
+    this.ownedControl = control;
+  }
+
+  /** Whether this slot is the lead or the member of an Agent Team exchange that is still open. */
+  private inAgentTeam(team: TeamState, slot: Slot): boolean {
+    return team.runs.some((run) => {
+      if (isOwnedTeamRun(run))
+        return (!run.rootClosed || run.unknownOutcome) && [run.grant.lead.slotId, run.grant.member.slotId].includes(slot);
+      return (run as { ownership?: unknown }).ownership === 'agent-team-response';
+    });
+  }
+
+  /** Persisted ownership still fences wakes before the response host has been wired after restart. */
+  private suppressOwnedWake(projectId: string, to: Slot, from: Slot): boolean {
+    const blocked = this.teamState(projectId).runs.some((run) => {
+      if (isOwnedTeamRun(run))
+        return (!run.rootClosed || run.unknownOutcome) &&
+          [run.grant.lead.slotId, run.grant.member.slotId].some((slot) => slot === to || slot === from);
+      // A malformed owned record cannot fall through to an unowned provider dispatch.
+      return (run as { ownership?: unknown }).ownership === 'agent-team-response';
+    });
+    return blocked || (this.ownedControl?.suppressWake(projectId, to, from) ?? false);
   }
 
   /** Test seam for the auto-wake budget clock (avoids fake timers around network tests). */
@@ -332,6 +386,7 @@ export class TeamService {
     const member = findMember(team, slotId);
     this.setMemberStatus(projectId, slotId, 'stopped');
     await this.store.persist(state);
+    await this.ownedControl?.stopMember(projectId, slotId);
     return structuredClone(member);
   }
 
@@ -343,6 +398,8 @@ export class TeamService {
     const state = this.store.state(projectId);
     const team = migrateTeam(state);
     const member = activeMember(team, slotId);
+    if (this.suppressOwnedWake(projectId, slotId, 'owner'))
+      throw new ApiError(409, 'This member is answering an Agent-owned Team request. Its root run controls the response.');
     const waiting = unreadForSlot(team.messages, slotId);
     if (waiting.length === 0)
       throw new ApiError(400, 'Nothing is waiting for this helper.');
@@ -366,6 +423,7 @@ export class TeamService {
 
   private async maybeWake(projectId: string, to: Slot, from: Slot): Promise<void> {
     if (to === 'owner' || to === from) return;
+    if (this.suppressOwnedWake(projectId, to, from)) return;
     const state = this.store.state(projectId);
     const team = migrateTeam(state);
     const recipient = team.members.find((m) => m.slotId === to);
@@ -454,6 +512,7 @@ export class TeamService {
     projectId: string,
     sender: TeamMember,
     args: { to: unknown; message: unknown; files?: unknown; summary?: unknown },
+    options: TeamMutationOptions = {},
   ): Promise<MailboxMessage> {
     const state = this.store.state(projectId);
     const team = migrateTeam(state);
@@ -485,7 +544,7 @@ export class TeamService {
       summary,
       files,
       threadId: live.threadId,
-      runId: null,
+      runId: options.runId ?? null,
       approvalId: null,
     });
     live.lastSeenAt = now();
@@ -495,9 +554,9 @@ export class TeamService {
     ) {
       this.setMemberStatus(projectId, live.slotId, 'stopped');
     }
-    await this.store.persist(state);
+    if (options.persist !== false) await this.store.persist(state);
     const stored = structuredClone(message);
-    await this.maybeWake(projectId, to, live.slotId);
+    if (options.wake !== false) await this.maybeWake(projectId, to, live.slotId);
     return stored;
   }
 
@@ -505,13 +564,15 @@ export class TeamService {
     projectId: string,
     reader: TeamMember,
     sinceMessageId?: string,
+    messageIds?: readonly string[],
   ): Promise<MailboxMessage[]> {
     const state = this.store.state(projectId);
     const team = migrateTeam(state);
     const live = activeMember(team, reader.slotId);
     if (sinceMessageId !== undefined && typeof sinceMessageId !== 'string')
       throw new ApiError(400, 'Provide a valid message id.');
-    const found = peekForSlot(team.messages, live.slotId, sinceMessageId);
+    const scope = messageIds === undefined ? null : new Set(messageIds);
+    const found = peekForSlot(team.messages, live.slotId, sinceMessageId).filter((message) => scope === null || scope.has(message.id));
     acknowledge(
       team.messages,
       found.map((m) => m.id),
@@ -531,6 +592,7 @@ export class TeamService {
       blocked_by?: unknown;
       idempotency_key?: unknown;
     },
+    options: Pick<TeamMutationOptions, 'persist'> = {},
   ) {
     const state = this.store.state(projectId);
     const team = migrateTeam(state);
@@ -557,7 +619,7 @@ export class TeamService {
       if (typeof args.owner !== 'string' || !args.owner.trim())
         throw new ApiError(400, 'Provide a valid owner slot.');
       const ownerSlot = args.owner as string;
-      if (ownerSlot !== 'owner') findMember(team, ownerSlot);
+      if (ownerSlot !== 'owner') assignableMember(team, ownerSlot);
       assignedTo = ownerSlot;
     }
     const blocked = validateBlockedBy(state.tasks, args.blocked_by as string[] | undefined);
@@ -567,7 +629,12 @@ export class TeamService {
       owner: 'diomedes-with-ok',
     });
     task.createdBy = 'diomedes';
-    task.workflow = { ...emptyTaskWorkflow(), inbox: true };
+    // S1: a card from the person-run Team is a manual card (shared/task-workflow.ts). A member
+    // inside an open Agent Team exchange is not working in the manual team, so its card keeps
+    // the plain proposed workflow; the exchange itself creates its assignments elsewhere.
+    task.workflow = this.inAgentTeam(team, live.slotId)
+      ? { ...emptyTaskWorkflow(), inbox: true }
+      : manualTaskWorkflow();
     task.assignedTo = assignedTo;
     meta.blockedBy[task.id] = blocked;
     if (typeof args.idempotency_key === 'string' && args.idempotency_key.trim())
@@ -578,7 +645,7 @@ export class TeamService {
       actor: 'diomedes',
       taskId: task.id,
     });
-    await this.store.persist(state);
+    if (options.persist !== false) await this.store.persist(state);
     return toTeamTask(task, meta.blockedBy);
   }
 
@@ -601,6 +668,20 @@ export class TeamService {
       throw new ApiError(400, 'Provide a task id.');
     const task = state.tasks.find((t) => t.id === args.task_id);
     if (!task) throw new ApiError(404, 'This task was not found.');
+    if (task.ownedAssignment)
+      throw new ApiError(409, 'This assignment belongs to its admitted root response. Only that Runtime may update its progress.');
+    // Checked before anything changes. An owner must be a current member. S1: only the person
+    // assigns or removes a manual Team card; a member's tool proposes, so it is told to ask.
+    let ownerSlot: Slot | null = null;
+    if (args.owner !== undefined && args.owner !== null) {
+      if (typeof args.owner !== 'string' || !args.owner.trim())
+        throw new ApiError(400, 'Provide a valid owner slot.');
+      ownerSlot = args.owner as string;
+      if (ownerSlot !== 'owner') assignableMember(team, ownerSlot);
+      if (isManualCard(task) && (task.assignedTo ?? null) !== ownerSlot)
+        throw new ApiError(409, MANUAL_CARD_ASSIGN_REFUSED);
+    }
+    if (args.status === 'deleted' && isManualCard(task)) throw new ApiError(409, MANUAL_CARD_DELETE_REFUSED);
     if (args.status !== undefined && args.status !== 'pending') {
       const workflowBlocker = taskWorkflowBlocker(task);
       if (workflowBlocker) throw new ApiError(409, workflowBlocker);
@@ -615,15 +696,9 @@ export class TeamService {
         changed = true;
       }
     }
-    if (args.owner !== undefined && args.owner !== null) {
-      if (typeof args.owner !== 'string' || !args.owner.trim())
-        throw new ApiError(400, 'Provide a valid owner slot.');
-      const ownerSlot = args.owner as string;
-      if (ownerSlot !== 'owner') findMember(team, ownerSlot);
-      if (task.assignedTo !== ownerSlot) {
-        task.assignedTo = ownerSlot;
-        changed = true;
-      }
+    if (ownerSlot !== null && task.assignedTo !== ownerSlot) {
+      task.assignedTo = ownerSlot;
+      changed = true;
     }
     if (args.blocked_by !== undefined && args.blocked_by !== null) {
       const blocked = validateBlockedBy(state.tasks, args.blocked_by as string[] | undefined);
@@ -775,3 +850,6 @@ export class TeamService {
     return engineLabel(member.engine);
   }
 }
+
+export { OwnedTeamResponses } from './owned-response.js';
+export type { OwnedTeamResponseDependencies, OwnedTeamResponseWait } from './owned-response.js';

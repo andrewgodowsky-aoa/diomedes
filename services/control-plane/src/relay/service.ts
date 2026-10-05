@@ -12,6 +12,10 @@
  * never strands a computer's record or blocks a sign-out. A revoked device is a
  * tombstone (revoked_at), never a deleted row, and can never connect again.
  * Public keys are never answered; nothing here holds a signing key.
+ *
+ * Steps 3 and 4 add the phone's own connection: any active member of a business
+ * with phone access may open one with their sign-in alone (no device key), and
+ * the hub passes the person's commands only to computers that person registered.
  */
 import { z } from 'zod';
 import { PHONE_RELAY_FEATURE, PHONE_RELAY_NOT_INCLUDED_REASON } from '../../../../shared/access.js';
@@ -21,7 +25,7 @@ import { entitlementFromGrants, type FeatureGrant } from '../commercial.js';
 import { fromBase64url } from '../crypto.js';
 import { accountId, type AccountMembershipSnapshot, type MembershipRow, type SessionRecord } from '../domain.js';
 import { AccountError } from '../errors.js';
-import { desktopGrantSchema, type DesktopGrant, type HubAuthority } from './hub-core.js';
+import { desktopGrantSchema, phoneGrantSchema, type DesktopGrant, type HubAuthority, type PhoneGrant } from './hub-core.js';
 import { RELAY_CLOSE, RELAY_DEVICE_HEADER, RELAY_PUBLIC_KEY, type RelayClose, type RelayRefusalCode } from './protocol.js';
 
 /** The most computers one business may keep registered at once. */
@@ -135,6 +139,8 @@ export interface RelayHubs {
   connect(grant: DesktopGrant, request: Request): Promise<Response>;
   /** Ends a device's connection now. The hub's own recheck would end it within 30 seconds anyway. */
   end(organizationId: string, deviceId: string, close: RelayClose): Promise<void>;
+  /** Hands an authorized phone's upgrade request to the business's hub, and answers the upgrade (relay plan step 3). */
+  connectPhone(grant: PhoneGrant, request: Request): Promise<Response>;
 }
 
 // --- what a connected computer rests on ------------------------------------------------
@@ -170,11 +176,39 @@ export async function checkDesktop(tx: RelayTransaction, who: DesktopIdentity, a
   return { ok: true, device };
 }
 
+/** The person and sign-in behind a phone connection, by id: a phone has no device key. */
+export interface PhoneIdentity {
+  organizationId: string;
+  personId: string;
+  issuer: string;
+  sessionId: string;
+}
+
+/**
+ * Whether a phone may be connected now: the same checks the presence answer rests
+ * on. The person is an active member, the business's plan includes phone access,
+ * and the sign-in is not revoked. The Worker front runs it at connect and the hub
+ * every 20 seconds. Which computers the phone reaches is the hub's routing rule.
+ */
+export async function checkPhone(tx: RelayTransaction, who: PhoneIdentity, at: string):
+  Promise<{ ok: true } | { ok: false; refusal: RelayRefusalCode }> {
+  const member = await tx.member(who.organizationId, who.personId);
+  if (!member || member.record.state !== 'active') return { ok: false, refusal: 'not_a_member' };
+  if (!includesPhoneRelay(await tx.grants(who.organizationId), at)) return { ok: false, refusal: 'phone_relay_not_included' };
+  const session = await tx.session(who.issuer, who.sessionId);
+  if (!session || session.revokedAt !== null || session.personId !== who.personId) return { ok: false, refusal: 'session_ended' };
+  return { ok: true };
+}
+
 /** The hub's rechecks and last-seen writes, over the repository alone. */
 export class RelayAuthority implements HubAuthority {
   constructor(private readonly repository: RelayRepository) {}
   async recheck(grant: DesktopGrant, at: string): Promise<RelayRefusalCode | null> {
     const result = await this.repository.transaction((tx) => checkDesktop(tx, grant, at));
+    return result.ok ? null : result.refusal;
+  }
+  async recheckPhone(grant: PhoneGrant, at: string): Promise<RelayRefusalCode | null> {
+    const result = await this.repository.transaction((tx) => checkPhone(tx, grant, at));
     return result.ok ? null : result.refusal;
   }
   seen(grant: DesktopGrant, at: string): Promise<void> {
@@ -214,6 +248,13 @@ export interface RelayPresenceAnswer {
 export interface DesktopCheckAnswer {
   organizationId: string;
   deviceId: string;
+  /** When the bearer it checked expires: a connection opened now ends then. */
+  authorizedUntil: string;
+}
+
+/** A phone's dial checked without the upgrade: the same checks, answered in JSON. */
+export interface PhoneCheckAnswer {
+  organizationId: string;
   /** When the bearer it checked expires: a connection opened now ends then. */
   authorizedUntil: string;
 }
@@ -382,5 +423,34 @@ export class RelayService {
       return { organizationId, deviceId: grant.deviceId, authorizedUntil: grant.authorizedUntil };
     if (!this.hubs) throw new RelayError(503, "Phone access isn't available right now. Try again shortly.", 'relay_unavailable');
     return this.hubs.connect(grant, request);
+  }
+
+  /**
+   * Everything a phone's connection rests on, checked with its bearer: the person
+   * is an active member, the plan includes phone access, and the sign-in stands.
+   * The grant carries it to the hub, which stamps the person on every command.
+   */
+  async authorizePhone(token: string, organizationId: string): Promise<PhoneGrant> {
+    const snapshot = await this.member(token, organizationId);
+    const at = this.at();
+    const who: PhoneIdentity = { organizationId, personId: snapshot.person.id, issuer: snapshot.mapping.issuer, sessionId: snapshot.sessionId };
+    const result = await this.repository.transaction((tx) => checkPhone(tx, who, at));
+    if (!result.ok) throw refusal(result.refusal);
+    return phoneGrantSchema.parse({
+      organizationId, tenantId: snapshot.organization.tenantId, personId: who.personId, issuer: who.issuer, sessionId: who.sessionId,
+      authorizedUntil: new Date(snapshot.expiresAt).toISOString(), checkedAt: at,
+    });
+  }
+
+  /**
+   * A phone dialling in (relay plan step 3). With a WebSocket upgrade the
+   * business's hub takes the connection; without one the same checks answer in
+   * JSON, so the phone can learn why a dial was refused.
+   */
+  async phone(token: string, organizationId: string, request: Request): Promise<Response | PhoneCheckAnswer> {
+    const grant = await this.authorizePhone(token, organizationId);
+    if (request.headers.get('upgrade')?.toLowerCase() !== 'websocket') return { organizationId, authorizedUntil: grant.authorizedUntil };
+    if (!this.hubs) throw new RelayError(503, "Phone access isn't available right now. Try again shortly.", 'relay_unavailable');
+    return this.hubs.connectPhone(grant, request);
   }
 }

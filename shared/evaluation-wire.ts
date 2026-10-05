@@ -28,15 +28,18 @@ export const EVALUATION_ROUTE_LIMITS = Object.freeze({
   maxQuestions: 32,
 });
 
+const utf8 = new TextEncoder();
+const serializedBytes = (value: unknown): number =>
+  utf8.encode(JSON.stringify(value ?? null)).byteLength;
+
 /**
- * A deliberately pessimistic token estimate: three characters per token, where
- * English prose averages closer to four. Under-counting here would mean sending
- * a payload the provider rejects after it has already been serialized and
- * disclosed, and reserving less money than the call goes on to cost.
+ * One token of host headroom per serialized UTF-8 byte. Counting JSON includes
+ * escape sequences, and UTF-8 includes every byte of dense and Unicode input.
+ * This conservatively bounds the input we serialize; it does not prove how an
+ * arbitrary provider frames or tokenizes that input internally.
  */
 export function serializedStateTokens(state: unknown): number {
-  const text = typeof state === 'string' ? state : JSON.stringify(state ?? null);
-  return Math.ceil(text.length / 3);
+  return serializedBytes(state);
 }
 
 /**
@@ -72,7 +75,8 @@ export const UNPROVEN_ROUTE_LIMITS: EvaluationRequestLimits = Object.freeze({
 /**
  * Room for what a provider wraps around state and questions: the model id, an
  * empty `providerOptions` (the gateway sends one) and the JSON punctuation.
- * Measured at well under a hundred characters; held at a flat 64 tokens.
+ * The known Jev routes fit within this 64-token host reserve. Provider-internal
+ * framing is not established by the serialized-input estimate.
  */
 export const REQUEST_ENVELOPE_TOKENS = 64;
 
@@ -84,10 +88,10 @@ export function serializedRequestTokens(
   const stateTokens = serializedStateTokens(state);
   let longest = 0;
   for (const [id, question] of Object.entries(questions))
-    longest = Math.max(longest, serializedStateTokens(JSON.stringify({ [id]: question })));
+    longest = Math.max(longest, serializedBytes({ [id]: question }));
   return {
     total:
-      serializedStateTokens(JSON.stringify({ state: state ?? null, questions })) +
+      serializedBytes({ state: state ?? null, questions }) +
       REQUEST_ENVELOPE_TOKENS,
     statePlusLongestQuestion: stateTokens + longest,
   };
@@ -137,6 +141,9 @@ export interface EvaluationRequestRefusal {
   readonly message: string;
 }
 
+/** Chosen by trusted route code, never by a field in the request body. */
+export type EvaluationQuestionShapePolicy = 'strict' | 'gateway';
+
 class Refused {
   constructor(
     readonly code: EvaluationRequestRefusalCode,
@@ -177,7 +184,7 @@ function checkState(value: unknown, depth: number): void {
   for (const item of Object.values(value as Record<string, unknown>)) checkState(item, depth + 1);
 }
 
-function checkQuestion(id: string, value: unknown): ProviderQuestion {
+function checkQuestion(id: string, value: unknown, shapes: EvaluationQuestionShapePolicy): ProviderQuestion {
   const field = `questions.${id}`;
   if (!isPlainObject(value)) return refuse('invalid_body', field, `${field} must be a question.`);
   for (const key of Object.keys(value))
@@ -208,11 +215,13 @@ function checkQuestion(id: string, value: unknown): ProviderQuestion {
     if (criteria.length < EVALUATION_WIRE_BOUNDS.minLevels || criteria.length > EVALUATION_WIRE_BOUNDS.maxLevels)
       refuse('invalid_body', `${field}.criteria`, `A score has ${EVALUATION_WIRE_BOUNDS.minLevels} to ${EVALUATION_WIRE_BOUNDS.maxLevels} levels.`);
     criteria.forEach((level, index) => {
-      if (level === null)
+      if (level === null) {
+        if (shapes === 'gateway') return;
         refuse('unsupported_field', `${field}.criteria[${index}]`, `Every score level needs a description here, and ${field}.criteria[${index}] has none.`);
+      }
       words(level, `${field}.criteria[${index}]`, EVALUATION_WIRE_BOUNDS.maxTextChars);
     });
-    return { type: 'score', instructions, criteria: criteria as string[] };
+    return { type: 'score', instructions, criteria: [...criteria] as (string | null)[] };
   }
 
   if (criteria === undefined) return { type: 'boolean', instructions };
@@ -224,6 +233,8 @@ function checkQuestion(id: string, value: unknown): ProviderQuestion {
   const whenFalse = criteria.false ?? null;
   if (whenTrue !== null) words(whenTrue, `${field}.criteria.true`, EVALUATION_WIRE_BOUNDS.maxTextChars);
   if (whenFalse !== null) words(whenFalse, `${field}.criteria.false`, EVALUATION_WIRE_BOUNDS.maxTextChars);
+  if (shapes === 'gateway')
+    return { type: 'boolean', instructions, criteria: { ...criteria } as { true?: string | null; false?: string | null } };
   if ((whenTrue === null) !== (whenFalse === null))
     refuse('unsupported_field', `${field}.criteria`, `A yes-or-no question describes both true and false here, or neither.`);
   return whenTrue === null
@@ -231,7 +242,7 @@ function checkQuestion(id: string, value: unknown): ProviderQuestion {
     : { type: 'boolean', instructions, criteria: { true: whenTrue as string, false: whenFalse as string } };
 }
 
-function check(value: unknown, limits: EvaluationRequestLimits): EvaluationRequest {
+function check(value: unknown, limits: EvaluationRequestLimits, shapes: EvaluationQuestionShapePolicy): EvaluationRequest {
   if (!isPlainObject(value)) return refuse('invalid_body', 'body', 'The request body must be a JSON object.');
   for (const key of Object.keys(value))
     if (key !== 'state' && key !== 'questions')
@@ -250,7 +261,7 @@ function check(value: unknown, limits: EvaluationRequestLimits): EvaluationReque
   for (const id of ids) {
     if (!id.trim() || id.length > EVALUATION_WIRE_BOUNDS.maxQuestionIdChars)
       refuse('invalid_body', 'questions', `A question id is 1 to ${EVALUATION_WIRE_BOUNDS.maxQuestionIdChars} characters.`);
-    checked.push([id, checkQuestion(id, given[id])]);
+    checked.push([id, checkQuestion(id, given[id], shapes)]);
   }
   // Own properties only, whatever the ids are called.
   const questions: Record<string, ProviderQuestion> = Object.fromEntries(checked);
@@ -275,9 +286,10 @@ function check(value: unknown, limits: EvaluationRequestLimits): EvaluationReque
 export function checkEvaluationRequest(
   value: unknown,
   limits: EvaluationRequestLimits = UNPROVEN_ROUTE_LIMITS,
+  shapes: EvaluationQuestionShapePolicy = 'strict',
 ): { ok: true; request: EvaluationRequest } | EvaluationRequestRefusal {
   try {
-    return { ok: true, request: check(value, limits) };
+    return { ok: true, request: check(value, limits, shapes) };
   } catch (error) {
     if (error instanceof Refused) return { ok: false, code: error.code, field: error.field, message: error.message };
     throw error;

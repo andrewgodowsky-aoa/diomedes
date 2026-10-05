@@ -38,7 +38,15 @@
     "WORKOS_TOKEN_AUDIENCE": "https://accounts.diomedes.net",
     "STAFF_WORKOS_CLIENT_ID": "client_01M3E6R03GCWVQPV3FWZJSDVQW",
     "MANAGED_SPEND_CEILING_MICRO_USD": "100000000",
-    "MANAGED_MAX_OUTPUT_TOKENS": "2000"
+    "MANAGED_MAX_OUTPUT_TOKENS": "2000",
+    // The approved provider connections (providerConnectionSchema in shared/routing-policy.ts), as one
+    // JSON string. Each names the Worker secret it reads, never its value: AZURE_OPENAI_API_KEY for
+    // Azure AI Foundry diomedes-foundry-dev-rg (gpt-6.1-sol, gpt-6-luna, claude-opus-5-5),
+    // BEDROCK_API_KEY for Bedrock us-east-1 (us.moonshotai.kimi-k3), OPENROUTER_API_KEY for four exact
+    // OpenRouter endpoints, and VERTEX_API_KEY for Vertex project diomedes-dev (Google models, global).
+    // A connection whose secret is unset serves nothing. Operations saves routes against these ids;
+    // changing a connection means a new revision, and its routes are saved again.
+    "MANAGED_CONNECTIONS": "[{\"id\":\"azure-foundry-dev\",\"revision\":1,\"label\":\"Azure AI Foundry (diomedes-foundry-dev-rg)\",\"secretRef\":\"AZURE_OPENAI_API_KEY\",\"payer\":\"company\",\"account\":\"Azure resource diomedes-foundry-dev-rg, project diomedes-dev\",\"enabled\":true,\"provider\":\"azure-openai\",\"resource\":\"diomedes-foundry-dev-rg\",\"apiVersion\":\"v1\",\"host\":\"services.ai.azure.com\",\"deployments\":[\"gpt-6.1-sol\",\"gpt-6-luna\",\"claude-opus-5-5\"]},{\"id\":\"aws-bedrock-us-east-1\",\"revision\":1,\"label\":\"Amazon Bedrock (us-east-1)\",\"secretRef\":\"BEDROCK_API_KEY\",\"payer\":\"company\",\"account\":\"Diomedes Systems AWS account\",\"enabled\":true,\"provider\":\"aws-bedrock\",\"region\":\"us-east-1\",\"endpointFamily\":\"runtime\",\"allowedProfiles\":[\"us.moonshotai.kimi-k3\"],\"modelProtocols\":{\"us.moonshotai.kimi-k3\":[\"chat-completions\"]}},{\"id\":\"openrouter\",\"revision\":1,\"label\":\"OpenRouter\",\"secretRef\":\"OPENROUTER_API_KEY\",\"payer\":\"company\",\"account\":\"Diomedes Systems OpenRouter account\",\"enabled\":true,\"provider\":\"openrouter\",\"ingress\":\"global\",\"regionalEntitlement\":false,\"allowedEndpoints\":[\"deepinfra/fp8\",\"baseten/fp8\",\"fireworks/us\",\"sail-research/us\"],\"endpointNames\":{\"deepinfra/fp8\":\"DeepInfra\",\"baseten/fp8\":\"BaseTen\",\"fireworks/us\":\"Fireworks\",\"sail-research/us\":\"Sail Research\"}},{\"id\":\"vertex-diomedes-dev\",\"revision\":1,\"label\":\"Google Vertex AI (diomedes-dev)\",\"secretRef\":\"VERTEX_API_KEY\",\"payer\":\"company\",\"account\":\"Google Cloud project diomedes-dev\",\"enabled\":true,\"provider\":\"google-vertex\",\"project\":\"diomedes-dev\",\"location\":\"global\",\"publisher\":\"google\"}]"
   },
   // Managed inference (/managed/v1/*, contract nectovia-managed/1) reads two more secrets at call
   // time. The owner sets both; neither is ever written here. Until both are set, every managed

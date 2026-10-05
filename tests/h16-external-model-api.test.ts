@@ -137,7 +137,7 @@ async function open() {
   expect(
     (
       await request('/ai/model-api/openrouter', 'PUT', {
-        models: [{ id: OR_MODEL, upstreams: ['anthropic'], rates }],
+        models: [{ reasoning: { supported: ['low', 'medium', 'high'], source: 'Synthetic SDK fixture declaration; not live qualification' }, id: OR_MODEL, upstreams: ['anthropic'], rates }],
         apiKey: OR_KEY,
         expiresAt: null,
         consent: true,

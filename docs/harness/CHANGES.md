@@ -1,5 +1,94 @@
 # Harness host integration changes, 2026-09-09
 
+## A route with no model refuses by name, and the export section draws once, 2026-10-04
+
+A send on a model-API route with no model chosen refuses with the route's own name again ("Connect
+AWS Bedrock (GPT-5.6 Luna) and choose its model in AI setup first."). Since the Agent Team work came
+onto main, the send asked `nativeChoice`, whose generic "Select a model for this engine in Settings."
+ran first and lost the route; the other engines keep that sentence. In Workspaces, the business
+owner's records section and the credit asks below it carried the same React key, so the records
+section could be drawn more than once (three times in the browser test); each now has its own. `tests/home-luna.spec.ts` and
+`tests/organization-export-ui.spec.ts` hold them (DIO-203).
+
+## Type and spacing keep one size at every window width, 2026-10-03
+
+The Nectovia home greeting no longer grows with the window. It reads a new fixed token,
+`--dm-type-display` (3rem), where it had `clamp(2.125rem, 1rem + 2.6vw, 3.5rem)`, so a bigger
+window adds margin and never a bigger line. `tests/viewport-units.test.ts` fails on any new
+viewport or container unit in a font, padding, margin or gap, or in a type, line or measure
+token. Five older padding rules stay on its list with their reasons, and the list can only
+shrink. `tests/readability.spec.ts` expects every type role to measure the same at 1280, 1920
+and 2560, and the work column to hold at 920 at 1920 and 2560. This is Phase 1 of
+`docs/superpowers/specs/2026-10-03-wide-windows-and-multitask-mode-design.md`, which the round 2
+reskin is built against.
+
+## Worker rows read on a timer, 2026-10-03
+
+Worker rows no longer hold an event stream of their own. They're read when shown and again every
+three seconds while they are (`client/work-rows.ts`). The page already keeps its event streams open,
+and a browser keeps at most six connections to one host, so with two windows on the Agent page the
+extra stream left no connection for an ordinary request and the second window waited forever
+(`tests/diomedes-home.spec.ts`, CD05-R-10). The server's `/api/events?topics=work-rows` is unchanged.
+
+## Automatic work only where the work loop runs, 2026-10-03
+
+An explicit request in Automatic mode becomes automatic work only when its conversation's work
+route can run the work loop: a model API route, Nectovia's included. On Codex, Claude Code and the
+other outside tools the request stays the proposal the person starts, as every proposal did before
+automatic work. Without this, a free conversation on an outside tool made a Board task it couldn't
+start and answered "Nothing was started". `tests/interaction-seam.test.ts` holds it. The shipped
+product knowledge names the route Codex too.
+
+## The Codex route is named Codex, 2026-10-03
+
+The codex route is named Codex everywhere a person sees it: the model picker, Settings, run
+cards, attribution, receipts, worker rows and the route's own messages (owner decision,
+2026-10-03). The account it signs in with is still called the ChatGPT account, so the sign-in,
+connection check and account messages keep that name. The name comes from `ROUTE_NAMES` in
+`shared/engines.ts`, and every label built from it follows.
+
+## Subscription workers under a Personal Nectovia lead, 2026-10-03
+
+A Nectovia loop a person starts in their Personal workspace can hand one task to their own Codex,
+Claude Code or OpenCode, when they turned that on (DIO-175, slice S3). The lead spends Nectovia
+credits; the worker runs on the person’s own plan through the tool’s programming interface, and the
+account service records a paid Agent admission for it with no managed hold. Consent names the tools,
+only the person’s own start takes such a worker (Board work and the Ready queue never do), a business
+project keeps its single-agent path, and a reserve keeps the person’s share of their tool’s usage.
+It’s off unless `DIOMEDES_EXTERNAL_WORKERS=1` and `DIOMEDES_SUBSCRIPTION_WORKERS=1`, and stays off
+until the Pillar 07 wording (D1) is approved. See
+[the record](../implementation/2026-10-03-subscription-workers.md).
+
+## External team workers, 2026-10-03
+
+A lead loop can hand a bounded task to a worker on the person's own installed Claude Code, Codex
+or OpenCode (DIO-175, slice S2). Each goes through the tool's programming interface with its tools
+off, signed in through the provider's own flow; nothing reaches a consumer chat. The worker answers
+in one turn, one external turn runs per engine account at a time, and a turn that may have gone out
+is never sent again by Retry. It's off unless `DIOMEDES_EXTERNAL_WORKERS=1`. See
+[the record](../implementation/2026-10-03-external-team-workers.md).
+
+## Free manual teams on the Board (S1), 2026-10-03
+
+A person-run Team now works from the Board without the paid Agent (DIO-175 lane S1). The
+person assigns a card to a Team member from the card (DIO-176). A card a member makes starts
+on that member's own Codex or Claude Code engine through Native Work, with the usual send
+confirmation, and only the person moves its phase. A manual hand-off carries what came of one
+card, its changed files, checks and open issues to the next card, whose start begins with those
+files; the files must fit one start, a file that left the project no longer blocks it, and the
+person can retire a hand-off. Only the person assigns or removes a manual card; a member's tool
+is told to ask. Worker rows for Sessions, Team members and H14 workers come from a production
+source behind `GET /api/projects/:id/work/rows` and a `work-rows` event on its own stream,
+`/api/events?topics=work-rows`, and never carry Team mail. Nothing in this lane calls the Agent
+gate or a managed route. See [the implementation record](../implementation/2026-10-03-manual-teams.md).
+
+## Agent Team reconciliation onto main, 2026-10-03
+
+The Agent Team, automatic work and Personal Trust work now sits on current main as
+`feature/agent-team-automatic-work` (DIO-177). The Individual funding repair, the Mac
+packaging changes and the release workflow stay with their owners. See
+[the reconciliation record](../implementation/2026-10-01-agent-team-automatic-work.md#reconciliation-onto-main-2026-10-03).
+
 ## Current engine compatibility amendment, 2026-09-27
 
 Vendor build equality no longer admits or refuses native/subscription engines.

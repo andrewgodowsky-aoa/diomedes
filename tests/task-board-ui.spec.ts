@@ -5,7 +5,7 @@ import path from 'node:path';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createApp } from '../server/app';
-import type { Project, ProjectState, Task } from '../shared/types';
+import type { Project, ProjectState, Task, TeamMember } from '../shared/types';
 import { reopenLastProject } from './fixtures/landing';
 
 // The executable Board (research 2026-09-26): a card opens in full over the Board, a drag or the
@@ -276,4 +276,68 @@ test('below Technical detail the card says how it runs but offers no route choic
   } finally {
     await api('/settings', 'PUT', { detail: 'technical' });
   }
+});
+
+// S1 free manual teams (DIO-176): the person assigns a card to a Team member from the card, and
+// hands one card on to the next. Both go through the task and hand-off routes; nothing runs.
+test('a card is assigned to a Team member from the Board and shows that member', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  const created = await api<{ member: TeamMember }>(`/projects/${project.id}/team/members`, 'POST', {
+    name: 'Astra', role: 'lead', engine: 'sample',
+  });
+  await api<Task>(`/projects/${project.id}/tasks`, 'POST', { name: 'Count the patio chairs' });
+  await openBoard(page);
+  const row = column(page, 'Ready').locator('.crow', { hasText: 'Count the patio chairs' });
+  await row.hover();
+  await row.getByRole('button', { name: 'Assign', exact: true }).click();
+  await row.getByRole('list', { name: 'Assign Count the patio chairs to' }).getByRole('listitem').filter({ hasText: 'Astra' }).click();
+  await expect(row.locator('.m .mono').filter({ hasText: 'Astra' })).toBeVisible();
+  const saved = await records();
+  expect(saved.tasks.find((task) => task.name === 'Count the patio chairs')?.assignedTo).toBe(created.member.slotId);
+  expect(saved.history.at(-1)?.sentence).toBe('You assigned Count the patio chairs to Astra');
+  expect(errors).toEqual([]);
+});
+
+test('a hand-off from one card shows on the next card', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  const { member: bram } = await api<{ member: TeamMember }>(`/projects/${project.id}/team/members`, 'POST', {
+    name: 'Bram', role: 'member', engine: 'sample',
+  });
+  const next = await api<Task>(`/projects/${project.id}/tasks`, 'POST', { name: 'Order the missing chairs' });
+  await api(`/projects/${project.id}/tasks/${next.id}`, 'PUT', { assignedTo: bram.slotId });
+  await openBoard(page);
+  const from = column(page, 'Ready').locator('.crow', { hasText: 'Count the patio chairs' });
+  await from.hover();
+  await from.getByRole('button', { name: 'Hand off', exact: true }).click();
+  const form = from.getByRole('form', { name: 'Hand off' });
+  await form.getByRole('combobox', { name: /^To/ }).selectOption({ label: 'Order the missing chairs · Bram' });
+  await form.getByLabel('What came of it').fill('Counted 24 chairs. Two need repair.');
+  await form.getByRole('checkbox', { name: 'Fall menu.md' }).check();
+  await form.getByLabel('Checks, one per line').fill('Counted twice');
+  await form.getByLabel('Open issues, one per line').fill('Which supplier');
+  await form.getByRole('button', { name: 'Hand off', exact: true }).click();
+  await expect(form).toBeHidden();
+  const target = column(page, 'Ready').locator('.crow', { hasText: 'Order the missing chairs' });
+  const note = target.locator('.handoff-note');
+  await expect(note.locator('summary')).toHaveText('Hand-off from Astra');
+  await note.locator('summary').click();
+  await expect(note).toContainText('Counted 24 chairs. Two need repair.');
+  await expect(note).toContainText('Fall menu.md');
+  await expect(note).toContainText('Counted twice');
+  await expect(note).toContainText('Which supplier');
+  const saved = await records();
+  expect(saved.manualHandoffs).toHaveLength(1);
+  expect(saved.manualHandoffs![0]).toMatchObject({ toTaskId: next.id, changedFiles: ['Fall menu.md'], createdBy: 'you' });
+  // Retiring it keeps the record and takes the note off the card.
+  await note.getByRole('button', { name: 'Retire hand-off', exact: true }).click();
+  await expect(note).toHaveCount(0);
+  const retired = await records();
+  expect(retired.manualHandoffs).toHaveLength(1);
+  expect(retired.manualHandoffs![0].retiredAt).toEqual(expect.any(String));
+  expect(retired.history.map((entry) => entry.sentence)).toContain(
+    'You retired the hand-off from Count the patio chairs to Order the missing chairs',
+  );
+  expect(errors).toEqual([]);
 });

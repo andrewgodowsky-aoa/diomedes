@@ -1,7 +1,8 @@
 /**
  * Shared routing records and pure eligibility checks. Persistence, identity,
  * publication and funded dispatch remain the account service's authorities.
- * Customer preferences implement NC-SETUP-2026-09-27.1 and are never staff consent.
+ * Customer preferences implement NC-SETUP-2026-10-02.1 (rows accepted under
+ * NC-SETUP-2026-09-27.1 keep that version's rules) and are never staff consent.
  */
 import { z } from 'zod';
 import { micro, type MicroUsd } from './managed-usage.js';
@@ -12,8 +13,11 @@ const count = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER - 1);
 const rate = z.number().int().min(0).max(1_000_000_000);
 const evidenceId = z.string().trim().min(1).max(500);
 const country = z.string().regex(/^[A-Z]{2}$/);
+/** Recorded for a route whose provider may process anywhere, so no honest country fits (E7). */
+export const UNPINNED_REGION = 'ZZ';
 export const ROUTING_PROVIDERS = ['aws-bedrock', 'azure-openai', 'google-vertex', 'openrouter'] as const;
 export const ROUTING_TIERS = ['efficient', 'focused', 'thorough'] as const;
+export const ROUTING_PROFILES = ['lowest-cost', 'balanced', 'strict'] as const;
 export const routingScopeSchema = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('global') }),
   z.strictObject({ kind: z.literal('organization'), id }),
@@ -54,41 +58,65 @@ export const PRIVATE_RESTRICTIONS: HardRestrictions = {
   processingCountries: null, allowedConnections: null, retentionPolicies: null,
   transientCache: 'forbid',
 };
+/** US ingress and processing, verified zero retention, no training and no transient provider cache. */
 export const STRICT_RESTRICTIONS: HardRestrictions = {
   ...PRIVATE_RESTRICTIONS, zeroRetention: true, ingressCountries: ['US'], processingCountries: ['US'],
 };
+/** No training is the floor everywhere. Outside Strict, an evidenced transient provider cache is allowed. */
+export const NO_TRAINING_RESTRICTIONS: HardRestrictions = { ...PRIVATE_RESTRICTIONS, transientCache: 'approved' };
+/** Applies until a global policy publishes its own mandatory floor, which later publications then carry forward. */
+export const DEFAULT_MANDATORY_RESTRICTIONS: HardRestrictions = NO_TRAINING_RESTRICTIONS;
+/** The floor each profile adds under NC-SETUP-2026-10-02.1 (owner decisions E1 and E5, 2026-10-02). */
+export const PROFILE_FLOORS: Readonly<Record<typeof ROUTING_PROFILES[number], HardRestrictions>> = {
+  'lowest-cost': NO_TRAINING_RESTRICTIONS, balanced: NO_TRAINING_RESTRICTIONS, strict: STRICT_RESTRICTIONS,
+};
+/** True when `value` enforces everything `floor` does. Narrower lists and stricter switches pass. */
+export function restrictionsCover(value: HardRestrictions, floor: HardRestrictions): boolean {
+  const within = (actual: readonly string[] | null, allowed: readonly string[] | null) =>
+    allowed === null || (actual !== null && actual.every(x => allowed.includes(x)));
+  return (!floor.noTraining || value.noTraining) && (!floor.zeroRetention || value.zeroRetention) &&
+    within(value.ingressCountries, floor.ingressCountries) && within(value.processingCountries, floor.processingCountries) &&
+    within(value.allowedConnections, floor.allowedConnections) && within(value.retentionPolicies, floor.retentionPolicies) &&
+    (floor.transientCache === 'approved' || value.transientCache === 'forbid');
+}
 
+/** The setup disclosure a preference was accepted under. Only the current one can be written. */
+export const LEGACY_ROUTING_CONSENT = 'NC-SETUP-2026-09-27.1';
+export const ROUTING_CONSENT_VERSION = 'NC-SETUP-2026-10-02.1';
+const routingExceptionSchema = z.strictObject({
+  connectionId: id,
+  model: z.string().min(1).max(200),
+  ingressCountries: z.array(country).min(1),
+  processingCountries: z.array(country).min(1),
+  retentionPolicy: id,
+  acceptedAt: instant,
+  /** Balanced exceptions need approved savings thresholds OR the exact task qualification. */
+  savings: z.strictObject({ version: id, relativeBasisPoints: z.number().int().min(0).max(10_000), absoluteMicroUsd: count }).nullable(),
+  qualificationId: id.nullable(),
+});
 export const routingPreferenceSchema = z.strictObject({
   v: z.literal(1),
   scope: accountScopeSchema,
   revision: count,
-  profile: z.enum(['lowest-cost', 'balanced', 'strict']),
+  profile: z.enum(ROUTING_PROFILES),
   restrictions: hardRestrictionsSchema,
-  consentVersion: z.literal('NC-SETUP-2026-09-27.1'),
+  consentVersion: z.enum([LEGACY_ROUTING_CONSENT, ROUTING_CONSENT_VERSION]),
   acceptedBy: id,
   acceptedAt: instant,
-  exceptions: z.array(z.strictObject({
-    connectionId: id,
-    model: z.string().min(1).max(200),
-    ingressCountries: z.array(country).min(1),
-    processingCountries: z.array(country).min(1),
-    retentionPolicy: id,
-    acceptedAt: instant,
-    /** Balanced exceptions need approved savings thresholds OR the exact task qualification. */
-    savings: z.strictObject({ version: id, relativeBasisPoints: z.number().int().min(0).max(10_000), absoluteMicroUsd: count }).nullable(),
-    qualificationId: id.nullable(),
-  })).max(100),
+  /** Only rows accepted under 09-27.1 carry exceptions. The current version has none. */
+  exceptions: z.array(routingExceptionSchema).max(100),
 });
 export type RoutingPreference = z.infer<typeof routingPreferenceSchema>;
 export const routingPreferenceWriteSchema = routingPreferenceSchema.omit({ v: true, revision: true, acceptedBy: true, acceptedAt: true })
-  .extend({ baseRevision: count, acknowledge: z.literal(true) });
+  .extend({ baseRevision: count, acknowledge: z.literal(true),
+    consentVersion: z.literal(ROUTING_CONSENT_VERSION), exceptions: z.array(routingExceptionSchema).max(0) });
 
 export const protocolSchema = z.enum(['responses', 'chat-completions', 'converse', 'messages', 'generate-content']);
 export type ManagedProtocol = z.infer<typeof protocolSchema>;
 const connectionBase = {
   id, revision: count, label: z.string().trim().min(1).max(120),
   /** Names an installed server secret. Never accepted from a customer or returned with its value. */
-  secretRef: z.enum(['BEDROCK_API_KEY', 'AZURE_OPENAI_API_KEY', 'VERTEX_ACCESS_TOKEN', 'OPENROUTER_API_KEY']),
+  secretRef: z.enum(['BEDROCK_API_KEY', 'AZURE_OPENAI_API_KEY', 'VERTEX_ACCESS_TOKEN', 'VERTEX_API_KEY', 'OPENROUTER_API_KEY']),
   payer: z.literal('company'),
   account: z.string().trim().min(1).max(200),
   enabled: z.boolean(),
@@ -103,8 +131,14 @@ export const providerConnectionSchema = z.discriminatedUnion('provider', [
   z.strictObject({ ...connectionBase, provider: z.literal('azure-openai'), secretRef: z.literal('AZURE_OPENAI_API_KEY'),
     resource: z.string().regex(/^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/),
     apiVersion: z.literal('v1'),
+    /**
+     * Which of the resource's own hosts the gateway addresses. Absent means openai.azure.com. A
+     * Foundry resource also answers on services.ai.azure.com, the only host that serves Claude.
+     */
+    host: z.enum(['openai.azure.com', 'services.ai.azure.com']).optional(),
     deployments: z.array(z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/)).min(1).max(500) }),
-  z.strictObject({ ...connectionBase, provider: z.literal('google-vertex'), secretRef: z.literal('VERTEX_ACCESS_TOKEN'),
+  /** A short-lived access token is a bearer for the named project; an API key is sent as x-goog-api-key. */
+  z.strictObject({ ...connectionBase, provider: z.literal('google-vertex'), secretRef: z.enum(['VERTEX_ACCESS_TOKEN', 'VERTEX_API_KEY']),
     project: z.string().regex(/^[a-z][a-z0-9-]{4,61}[a-z0-9]$/),
     location: z.string().regex(/^(?:global|[a-z]+-[a-z]+\d)$/),
     publisher: z.enum(['google', 'anthropic']) }),
@@ -265,6 +299,18 @@ export interface RequestEnvelope {
 export type EligibilityReason = { code: string; message: string };
 const fresh = (until: string, now: number) => Number.isFinite(Date.parse(until)) && Date.parse(until) > now;
 const subset = (actual: readonly string[], allowed: readonly string[] | null) => allowed === null || actual.every(x => allowed.includes(x));
+type PrivacyEvidence = NonNullable<ModelBinding['privacy']>;
+const countries = (p: PrivacyEvidence) => [...p.ingressCountries, ...(p.decryptionCountries ?? []), ...p.processingCountries];
+/** The evidence Strict demands for zero retention, AWS retention modes included. */
+function zeroRetentionVerified(p: PrivacyEvidence, connection: ProviderConnection): boolean {
+  return p.zeroRetention && !p.contentLogging && (connection.provider !== 'aws-bedrock' ||
+    (p.effectiveRetentionMode !== null && p.allowedRetentionModes.includes(p.effectiveRetentionMode) && p.allowedRetentionModes.includes('none')));
+}
+/** Every recorded country is US, and an OpenRouter route also proves entitled US ingress. */
+function pinnedToUs(p: PrivacyEvidence, connection: ProviderConnection): boolean {
+  return countries(p).every(c => c === 'US') &&
+    (connection.provider !== 'openrouter' || (connection.ingress === 'us' && connection.regionalEntitlement && p.regionalEntitlement));
+}
 
 /** A conservative bound: no cache hit assumed, and all output may be billed reasoning. */
 export function estimateRouteCost(price: RoutingPrice, envelope: Pick<RequestEnvelope, 'inputTokens' | 'outputTokens'>): MicroUsd {
@@ -299,12 +345,16 @@ export function bindingProblems(route: CatalogRoute, connection: ProviderConnect
     if (b.protocol === 'messages' && !/(?:^|\.)anthropic\./.test(route.model)) return fail('AWS Messages requires an Anthropic model.');
     if (b.protocol === 'converse' && connection.endpointFamily !== 'runtime') return fail('Converse requires the Bedrock runtime endpoint.');
   } else if (connection.provider === 'azure-openai') {
-    if (!['responses', 'chat-completions'].includes(b.protocol) || !b.deployment || !connection.deployments.includes(b.deployment))
+    if (!['responses', 'chat-completions', 'messages'].includes(b.protocol) || !b.deployment || !connection.deployments.includes(b.deployment))
       return fail('The Azure deployment or API protocol is not approved.');
+    if (b.protocol === 'messages' && (connection.host !== 'services.ai.azure.com' || !/^claude-[a-z0-9][a-z0-9.-]{0,127}$/.test(route.model)))
+      return fail('Azure Messages requires a Claude model on the Foundry services host.');
   } else if (connection.provider === 'google-vertex') {
     if ((connection.publisher === 'google' && b.protocol !== 'generate-content') ||
         (connection.publisher === 'anthropic' && b.protocol !== 'messages') || !/^[A-Za-z0-9][A-Za-z0-9@._-]{0,199}$/.test(route.model))
       return fail('The Vertex publisher, model or request format is invalid.');
+    if (connection.secretRef === 'VERTEX_API_KEY' && connection.publisher !== 'google')
+      return fail('A Vertex API key reaches Google models only. Use an access token for partner models.');
   } else if (b.protocol !== 'chat-completions' || !b.upstreamEndpoint || !b.upstreamEndpoint.includes('/') ||
       !connection.allowedEndpoints.includes(b.upstreamEndpoint) || !connection.endpointNames[b.upstreamEndpoint] ||
       !/^[a-z0-9][a-z0-9._-]{0,63}\/[a-z0-9][a-z0-9._-]{0,127}$/.test(route.model) || route.model.startsWith('openrouter/'))
@@ -346,14 +396,16 @@ export function routeEligibility(input: {
     reject('privacy_unverified', 'Privacy evidence is missing, stale or mismatched to this account, model, protocol or feature set.');
     return reasons;
   }
-  const restrictions = [input.mandatory, preference.restrictions, ...input.sourceRestrictions];
-  if (preference.profile === 'strict') restrictions.push(STRICT_RESTRICTIONS);
+  // The chosen profile's floor applies on top of the stored restrictions, so a stored row can only narrow it.
+  const restrictions = [input.mandatory, preference.restrictions, ...input.sourceRestrictions, PROFILE_FLOORS[preference.profile]];
   for (const r of restrictions) {
     if (r.noTraining && privacy.training) reject('training_forbidden', 'An applicable policy forbids model training.');
     if (r.zeroRetention && (!privacy.zeroRetention || privacy.contentLogging)) reject('retention_forbidden', 'This endpoint does not meet the required zero-retention policy.');
     if (!subset(privacy.ingressCountries, r.ingressCountries) || !privacy.decryptionCountries?.length ||
-        !subset(privacy.decryptionCountries, r.ingressCountries) || !subset(privacy.processingCountries, r.processingCountries))
-      reject('geography_forbidden', 'Ingress, decryption or processing geography is unknown or outside the accepted policy.');
+        !subset(privacy.decryptionCountries, r.ingressCountries) || !subset(privacy.processingCountries, r.processingCountries)) {
+      if (countries(privacy).includes(UNPINNED_REGION)) reject('geography_unpinned', 'This provider doesn\'t say which country it runs in, and a policy here requires named countries.');
+      else reject('geography_forbidden', 'Ingress, decryption or processing geography is unknown or outside the accepted policy.');
+    }
     if (r.allowedConnections !== null && !r.allowedConnections.includes(connection.id)) reject('destination_forbidden', 'A source or account rule excludes this destination.');
     if (r.retentionPolicies !== null && !r.retentionPolicies.includes(privacy.retentionPolicy)) reject('retention_policy_forbidden', 'This retention policy was not accepted.');
     if (privacy.caching !== 'off' && (r.transientCache === 'forbid' || !privacy.transientCacheEvidence)) reject('cache_forbidden', 'The enabled cache is not permitted by every applicable policy.');
@@ -365,9 +417,9 @@ export function routeEligibility(input: {
   if (connection.provider === 'aws-bedrock' && restrictions.some(r => r.zeroRetention) &&
       (privacy.effectiveRetentionMode === null || !privacy.allowedRetentionModes.includes(privacy.effectiveRetentionMode) || !privacy.allowedRetentionModes.includes('none')))
     reject('aws_retention_unverified', 'The effective AWS retention mode and model allowed_modes do not establish zero retention.');
-  const preferred = privacy.zeroRetention && !privacy.training && !privacy.contentLogging &&
-    privacy.ingressCountries.every(c => c === 'US') && privacy.decryptionCountries?.every(c => c === 'US') && privacy.processingCountries.every(c => c === 'US');
-  if (preference.profile === 'balanced' && !preferred) {
+  // Only a 09-27.1 Balanced row needs exceptions for a route outside its preferred set.
+  const preferred = !privacy.training && zeroRetentionVerified(privacy, connection) && pinnedToUs(privacy, connection);
+  if (preference.profile === 'balanced' && preference.consentVersion === LEGACY_ROUTING_CONSENT && !preferred) {
     const cost = estimateRouteCost(b.price, envelope);
     const accepted = preference.exceptions.some(e => {
       if (e.connectionId !== connection.id || e.model !== route.model || e.retentionPolicy !== privacy.retentionPolicy ||
@@ -391,7 +443,13 @@ export function resolveRoutingCandidates(input: {
   tier: typeof ROUTING_TIERS[number]; envelope: RequestEnvelope; now: number;
   /** Pin the approved primary price for the entire request, including its backups. */
   referencePrice?: ModelBinding['price'] | null;
-}): { candidates: EligibleCandidate[]; excluded: { routeId: string; reasons: EligibilityReason[] }[]; referenceCost: MicroUsd | null } {
+}): {
+  /** The attempts, in order, capped at the policy's maximum. */
+  candidates: EligibleCandidate[];
+  /** Every eligible route in the same order before the cap. Recheck a selected route against this list. */
+  ranked: EligibleCandidate[];
+  excluded: { routeId: string; reasons: EligibilityReason[] }[]; referenceCost: MicroUsd | null;
+} {
   const excluded: { routeId: string; reasons: EligibilityReason[] }[] = [];
   const primary = input.routes.find(r => r.id === input.policy.primary);
   const price = input.referencePrice === undefined ? primary?.binding?.price : input.referencePrice;
@@ -414,11 +472,14 @@ export function resolveRoutingCandidates(input: {
     if (reasons.length || estimate === null || !connection) excluded.push({ routeId, reasons });
     else candidates.push({ route, connection, estimateMicroUsd: estimate });
   }
-  if (input.preference.profile === 'lowest-cost') {
-    // Keep an eligible primary first; rank only its explicitly authorized backups.
-    candidates.sort((a, b) => Number(b.route.id === input.policy.primary) - Number(a.route.id === input.policy.primary) || a.estimateMicroUsd - b.estimateMicroUsd);
-  }
-  return { candidates: candidates.slice(0, input.policy.maxAttempts), excluded, referenceCost };
+  // Lowest cost prices every eligible route, the primary included, and breaks a price tie by privacy.
+  // Balanced puts verified zero retention first and pinned US second. Strict keeps the published order.
+  // The sort is stable, so remaining ties keep the published order too.
+  const privacy = (c: EligibleCandidate) =>
+    (zeroRetentionVerified(c.route.binding!.privacy!, c.connection) ? 0 : 2) + (pinnedToUs(c.route.binding!.privacy!, c.connection) ? 0 : 1);
+  if (input.preference.profile === 'lowest-cost') candidates.sort((a, b) => a.estimateMicroUsd - b.estimateMicroUsd || privacy(a) - privacy(b));
+  else if (input.preference.profile === 'balanced') candidates.sort((a, b) => privacy(a) - privacy(b));
+  return { candidates: candidates.slice(0, input.policy.maxAttempts), ranked: candidates, excluded, referenceCost };
 }
 
 /** No continuation after visible output or an uncertain external effect. */

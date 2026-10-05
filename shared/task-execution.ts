@@ -24,13 +24,15 @@ import type { Route, Session, ThreadPermission } from './types.js';
 export const TASK_EXECUTION_CONTRACT_VERSION = 1 as const;
 
 /** Which choice decided the route a Start would take. */
-export type TaskRouteSource = 'profile' | 'thread' | 'project' | 'settings';
+export type TaskRouteSource = 'profile' | 'thread' | 'project' | 'settings' | 'member';
 
 export const TASK_ROUTE_SOURCE_LABELS: Record<TaskRouteSource, string> = {
   profile: 'A saved profile chose it',
   thread: "This task's thread chose it",
   project: "The project's AI",
   settings: 'The default in Settings',
+  /** S1: a manual Team card runs on its assigned member's engine. */
+  member: 'The assigned Team member works through it',
 };
 
 export interface TaskWorker {

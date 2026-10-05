@@ -123,6 +123,8 @@ export interface DiomedesPageProps {
   recorded?: RecordedSource | null;
   /** H03: what the thread's open native session offers (NativeSessionControls.tsx), above the composer. */
   session?: ReactNode;
+  /** Who is working in the scoped project now (WorkerRows.tsx, compact), above the composer. */
+  workers?: ReactNode;
 }
 
 /** The one control the history line and a refusal for want of history both carry. */
@@ -220,6 +222,7 @@ export function Diomedes({
   menu = null,
   recorded = null,
   session = null,
+  workers = null,
 }: DiomedesPageProps) {
   const [text, setText] = useState('');
   // Only a message in flight streams, and what streamed is shown under it. The waiting line
@@ -420,6 +423,7 @@ export function Diomedes({
                   </div>
                 </div>
               )}
+              {workers}
               {session}
               {unavailable !== null ? (
                 <p className="composer dio-unavailable">{unavailable}</p>

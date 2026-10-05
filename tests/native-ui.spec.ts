@@ -517,7 +517,7 @@ test('Console Start again restarts a faulted task through the same admission', a
   const blocked = board.locator('.column[aria-label="Blocked"]');
   const row = blocked.locator('.crow').filter({ hasText: 'Add NOTES.md for the plan' });
   await expect(row).toContainText('Run failed');
-  await expect(row.getByRole('button', { name: 'Route to', exact: true })).toHaveCount(0);
+  await expect(row.getByRole('button', { name: 'Assign', exact: true })).toHaveCount(0);
   await row.getByRole('button', { name: 'Start again', exact: true }).click();
   const confirm = row.locator('.confirm');
   await expect(confirm).toBeVisible();

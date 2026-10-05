@@ -3,11 +3,13 @@
  *
  * One explicitly selected route: the Bedrock runtime's OpenAI-compatible
  * Responses endpoint in us-east-1, the Geo inference profile
- * `us.openai.gpt-5.6-luna`, the company's own AWS account, `store: false`, one
+ * `us.openai.gpt-5.6-luna` by default, the company's own AWS account, `store: false`, one
  * provider exchange per call and no fallback of any kind. There is no Gateway,
  * no bare model string, no ambient `OPENAI_API_KEY` or AWS environment
  * variable, no SDK retry and no SDK tool executor: every tool the model may
  * name is a descriptor, and the Diomedes harness is the only thing that runs it.
+ * The published US Kimi K3 profile can be recorded for setup, but all calls stay
+ * blocked until its billed reasoning/output envelope is verified for this adapter.
  *
  * What this file owns:
  *   - the connection record (non-secret) and its account route string;
@@ -34,7 +36,7 @@ import type { ModelMessage } from 'ai';
 import { z } from 'zod';
 import type { ToolDescriptor } from '../../shared/harness.js';
 import { micro } from '../../shared/managed-usage.js';
-import { MANAGED_LUNA } from '../../shared/model-api.js';
+import { AWS_DIRECT_MODEL_IDS, AWS_KIMI_K3, AWS_KIMI_K3_REFUSAL, MANAGED_LUNA } from '../../shared/model-api.js';
 import { digest, HarnessError } from '../harness/policy.js';
 import type { ExposureAttempt, ModelRateCard, SpendExposure } from '../spend-exposure.js';
 import { jsonWrite } from '../store.js';
@@ -42,6 +44,7 @@ import {
   classifyEnvelope,
   CREDENTIAL_PLACEHOLDER,
   guardedStreamFetch,
+  ModelApiError,
   respondStream,
   responsesBody,
   responsesUsage,
@@ -70,6 +73,7 @@ export const AWS_BEDROCK_ROUTE = 'aws-bedrock' as const;
 export const AWS_BEDROCK_SDK = 'ai@7.0.107+@ai-sdk/openai@4.0.71';
 export const AWS_BEDROCK_PROTOCOL = 'openai-responses';
 export const AWS_LUNA_MODEL = MANAGED_LUNA.model;
+export const AWS_KIMI_K3_MODEL = AWS_KIMI_K3.model;
 /**
  * Models an earlier version saved a connection for. Such a record is read as retired: the
  * owner reconnects, and nothing is sent on it or silently moved to the current model.
@@ -78,7 +82,7 @@ export const AWS_RETIRED_MODELS: readonly string[] = ['us.openai.gpt-6-luna'];
 export const AWS_RECONNECT =
   'The saved AWS Bedrock connection is for GPT-6 Luna, which this version no longer runs. Reconnect AWS Bedrock with GPT-5.6 Luna in AI setup.';
 /**
- * The runtime endpoint the Luna model card pairs with the Geo profile. The
+ * The runtime endpoint the Luna and Kimi K3 model cards pair with US Geo profiles. The
  * Luna-specific Mantle base (`bedrock-mantle…/openai/v1`, model
  * `openai.gpt-5.6-luna`) is a different route with its own identity; it is not
  * accepted here and is never substituted.
@@ -88,12 +92,13 @@ export const AWS_RESPONSES_ENDPOINTS = {
 } as const;
 export type AwsRegion = keyof typeof AWS_RESPONSES_ENDPOINTS;
 /**
- * Reviewed model candidates. The runtime has no OpenAI `GET /models`, and an
+ * Reviewed catalog identities, not proof of account access or call qualification.
+ * The runtime has no OpenAI `GET /models`, and an
  * invoke-only key may not be allowed to enumerate the Bedrock catalog, so the
  * route uses this explicit, vetted list rather than calling a key invalid.
  */
 export const AWS_VETTED_MODELS: Record<AwsRegion, readonly string[]> = {
-  'us-east-1': [AWS_LUNA_MODEL],
+  'us-east-1': AWS_DIRECT_MODEL_IDS,
 };
 
 /**
@@ -112,6 +117,37 @@ export const AWS_LUNA_RATE_CARD: ModelRateCard = {
   long: { ...MANAGED_LUNA.longRates },
 };
 
+/** Published US Geo Standard estimate; no Global or Priority price is substituted. */
+export const AWS_KIMI_K3_RATE_CARD: ModelRateCard = {
+  version: AWS_KIMI_K3.rateCard,
+  route: AWS_BEDROCK_ROUTE,
+  modelId: AWS_KIMI_K3_MODEL,
+  source: AWS_KIMI_K3.source,
+  // Flat-price ledger convention (declaredRateCard): a local band marker, not a provider context limit.
+  shortContextMaxInputTokens: 10_000_000,
+  short: { ...AWS_KIMI_K3.rates },
+  long: { ...AWS_KIMI_K3.rates },
+};
+
+/** Prices the exact saved direct route selection. Unknown identities fail instead of using Luna's price. */
+export function awsModelRateCard(modelId: string): ModelRateCard {
+  if (modelId === AWS_LUNA_MODEL) return AWS_LUNA_RATE_CARD;
+  if (modelId === AWS_KIMI_K3_MODEL) return AWS_KIMI_K3_RATE_CARD;
+  throw new ModelApiError('aws_unknown_model', 'This model is not an approved AWS Bedrock selection. Nothing was sent.', false);
+}
+
+/** A published catalog row is not a qualified billing envelope for this adapter. */
+export function awsModelRefusal(modelId: string): string | null {
+  awsModelRateCard(modelId); // Also refuses unknown model identities.
+  return modelId === AWS_KIMI_K3_MODEL ? AWS_KIMI_K3_REFUSAL : null;
+}
+
+/** Runs before any spend reservation, SDK preparation, or credential-bearing dispatch. */
+export function assertAwsModelQualified(modelId: string): void {
+  const refusal = awsModelRefusal(modelId);
+  if (refusal) throw new ModelApiError('aws_model_unqualified', `${refusal} Nothing was sent.`, false);
+}
+
 // --- the connection record ------------------------------------------------------
 
 const iso = z.string().datetime({ offset: true });
@@ -122,7 +158,7 @@ export const awsConnectionSchema = z.strictObject({
   accountId: z.string().regex(/^\d{12}$/),
   region: z.literal('us-east-1'),
   baseUrl: z.literal(AWS_RESPONSES_ENDPOINTS['us-east-1']),
-  modelId: z.enum([AWS_LUNA_MODEL]),
+  modelId: z.enum(AWS_DIRECT_MODEL_IDS),
   /** The Geo profile keeps processing inside US AWS Regions. */
   processing: z.literal('us-geo'),
   credential: z.strictObject({
@@ -317,6 +353,7 @@ export async function respondOnce(
   } & StreamSinks,
 ): Promise<RespondResult> {
   const connection = awsConnectionSchema.parse(input.connection);
+  assertAwsModelQualified(connection.modelId);
   const { connection: _connection, effort, ...rest } = input;
   return respondStream({ ...rest, binding: awsBinding(connection, effort, Boolean(rest.onReasoningDelta)) });
 }

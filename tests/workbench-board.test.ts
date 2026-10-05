@@ -1,7 +1,8 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
-import type { Project, ProjectState, Task } from '../shared/types';
+import type { Project, ProjectState, Task, TeamMember } from '../shared/types';
+import { manualTaskWorkflow } from '../shared/task-workflow';
 import { BoardView } from '../client/console/BoardView';
 import { directOrigin } from '../shared/attribution';
 import { needFixture, sessionFixture } from './workbench-fixtures';
@@ -56,14 +57,14 @@ describe('Board controls reflect execution evidence', () => {
   it('does not offer retry routing for an active uncertain effect', () => {
     const markup = board({ tasks: [{ ...task, state: 'waiting', reason: 'went-wrong' }], sessions: [sessionFixture({ state: 'waiting' })] });
     expect(markup).toContain('Check the run before retrying');
-    expect(markup).not.toContain('>Route to</button>');
+    expect(markup).not.toContain('>Assign</button>');
     expect(markup).toContain('>Stop</button>');
   });
   it('keeps historical runtime attribution and escapes external display names', () => {
     const markup = board({ tasks: [{ ...task, state: 'done' }], sessions: [sessionFixture({ state: 'done',
       origin: directOrigin({ engine: 'codex', requestedModel: 'new-choice', reportedModel: '<old-runtime>' }) })] });
     expect(markup).toContain('&lt;old-runtime&gt;');
-    expect(markup).toContain('via ChatGPT');
+    expect(markup).toContain('via Codex');
     expect(markup).not.toContain('new-choice');
     expect(markup).not.toContain('<old-runtime>');
   });
@@ -108,10 +109,10 @@ describe('Board controls reflect execution evidence', () => {
     expect(markup).toContain('>Start again</button>');
     expect(markup).not.toContain('>Start</button>');
   });
-  it('offers no Route to and no hidden Retry on a faulted row with no team', () => {
+  it('offers no Assign and no hidden Retry on a faulted row with no team', () => {
     const markup = board({ tasks: [{ ...task, state: 'waiting', reason: 'went-wrong' }],
       sessions: [sessionFixture({ state: 'failed' })] });
-    expect(markup).not.toContain('>Route to</button>');
+    expect(markup).not.toContain('>Assign</button>');
     expect(markup).not.toContain('>Retry</button>');
   });
   it('does not offer Start again for a stopped run, which Ready already restarts', () => {
@@ -119,5 +120,57 @@ describe('Board controls reflect execution evidence', () => {
     expect(markup).toContain('Stopped; Start begins new work');
     expect(markup).toContain('>Start</button>');
     expect(markup).not.toContain('>Start again</button>');
+  });
+});
+
+// S1 free manual teams (DIO-176): the Board shows the member a card is assigned to, offers the
+// assignment on the card, and shows a hand-off on the card it was handed to.
+const astra: TeamMember = { slotId: 'S-astra', name: 'Astra', role: 'member', engine: 'codex', model: null,
+  status: 'idle', threadId: null, createdAt: '', lastSeenAt: null };
+const bram: TeamMember = { ...astra, slotId: 'S-bram', name: 'Bram', engine: 'claude-code' };
+const team = (members: TeamMember[]) => ({ members, messages: [], runs: [] });
+describe('manual teams on the Board', () => {
+  it('N01: shows the assigned member as the worker and offers Assign with a way to clear it', () => {
+    const markup = board({ tasks: [{ ...task, assignedTo: astra.slotId }], team: team([astra, bram]) });
+    expect(markup).toContain('>Astra</span>');
+    expect(markup).toContain('>Assign</button>');
+    expect(markup).not.toContain('>Route to</button>');
+  });
+  it('keeps a manual card on its member while it runs, and offers no Assign on a running or owned card', () => {
+    const manual = { ...task, assignedTo: bram.slotId, workflow: manualTaskWorkflow() };
+    const running = board({ tasks: [{ ...manual, workflow: { ...manual.workflow, inbox: false } }], team: team([astra, bram]),
+      sessions: [sessionFixture({ origin: directOrigin({ engine: 'claude-code', requestedModel: 'opus', reportedModel: null }) })] });
+    expect(running).toContain('>Bram</span>');
+    expect(running).toContain('title="Bram works through Claude Code"');
+    expect(running).not.toContain('>Assign</button>');
+    const owned = board({ tasks: [{ ...task, ownedAssignment: { rootTaskId: 'r', rootRunId: 'R', admissionRef: 'g' } }],
+      team: team([astra]) });
+    expect(owned).not.toContain('>Assign</button>');
+  });
+  it('N08: shows a hand-off on the next card and offers Hand off on a card with somewhere to go', () => {
+    const next = { ...task, id: 'next', name: 'Proofread', assignedTo: bram.slotId };
+    const markup = board({ tasks: [{ ...task, assignedTo: astra.slotId }, next], team: team([astra, bram]), manualHandoffs: [{
+      id: 'H1', fromTaskId: task.id, toTaskId: next.id, fromSlot: astra.slotId, toSlot: bram.slotId,
+      outcome: 'The draft is done.', changedFiles: ['Fall menu.md'], checks: ['Read it aloud'], openIssues: ['Soup price'],
+      createdBy: 'you', createdAt: '2026-10-03T10:00:00.000Z' }] });
+    expect(markup).toContain('Hand-off from Astra');
+    expect(markup).toContain('The draft is done.');
+    expect(markup).toContain('Fall menu.md');
+    expect(markup).toContain('Read it aloud');
+    expect(markup).toContain('Soup price');
+    expect(markup.split('>Hand off</button>')).toHaveLength(3);
+  });
+  it('offers Retire hand-off on a live hand-off and shows a retired one no more', () => {
+    const next = { ...task, id: 'next', name: 'Proofread', assignedTo: bram.slotId };
+    const record = { id: 'H1', fromTaskId: task.id, toTaskId: next.id, fromSlot: astra.slotId, toSlot: bram.slotId,
+      outcome: 'The draft is done.', changedFiles: ['Fall menu.md'], checks: [], openIssues: [],
+      createdBy: 'you' as const, createdAt: '2026-10-03T10:00:00.000Z' };
+    const tasks = [{ ...task, assignedTo: astra.slotId }, next];
+    const live = board({ tasks, team: team([astra, bram]), manualHandoffs: [record] });
+    expect(live.split('>Retire hand-off</button>')).toHaveLength(2);
+    const retired = board({ tasks, team: team([astra, bram]),
+      manualHandoffs: [{ ...record, retiredAt: '2026-10-03T11:00:00.000Z' }] });
+    expect(retired).not.toContain('Hand-off from Astra');
+    expect(retired).not.toContain('Retire hand-off');
   });
 });

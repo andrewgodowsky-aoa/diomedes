@@ -22,18 +22,23 @@ const request = (path: string, init: RequestInit = {}) => new Request(`https://a
 
 describe('independent freshness and atomic refusal', () => {
   it.each([
-    ['expired', { expiresAt: iso(0) }],
-    ['stale verification', { verifiedAt: iso(-5001) }],
-    ['future verification', { verifiedAt: iso(5001) }],
-    ['future issue', { issuedAt: iso(5001) }],
-    ['wrong issuer', { issuer: 'https://wrong.invalid' }],
-    ['unverified email', { emailVerified: false }],
-  ])('never opens storage for %s proof', async (_label, override) => {
+    // A stale proof is the service's delay, so it is verified again once and answers 503 (DIO-188).
+    ['expired', { expiresAt: iso(0) }, 401, undefined, 1],
+    ['stale verification', { verifiedAt: iso(-5001) }, 503, 'identity_recheck', 2],
+    ['future verification', { verifiedAt: iso(5001) }, 401, undefined, 1],
+    ['future issue', { issuedAt: iso(5001) }, 401, undefined, 1],
+    ['wrong issuer', { issuer: 'https://wrong.invalid' }, 401, undefined, 1],
+    ['unverified email', { emailVerified: false }, 403, undefined, 1],
+  ])('never opens storage for %s proof', async (_label, override, status, code, verifications) => {
     const transaction = vi.fn();
-    const identity: IdentityVerifier = { issuer: verifier.issuer,
-      async verify(token) { return { ...await verifier.verify(token), ...override }; } };
+    const verify = vi.fn(async (token: string) => ({ ...await verifier.verify(token), ...override }));
+    const identity: IdentityVerifier = { issuer: verifier.issuer, verify };
     const accounts = new AccountService({ transaction }, identity, { now: () => now });
-    await expect(accounts.createOrganization('alice', 'Refused')).rejects.toBeInstanceOf(AccountError);
+    const error = await accounts.createOrganization('alice', 'Refused').catch((thrown: unknown) => thrown);
+    expect(error).toBeInstanceOf(AccountError);
+    expect((error as AccountError).status).toBe(status);
+    expect((error as { code?: unknown }).code).toBe(code);
+    expect(verify).toHaveBeenCalledTimes(verifications);
     expect(transaction).not.toHaveBeenCalled();
   });
 
@@ -47,7 +52,8 @@ describe('independent freshness and atomic refusal', () => {
       delayed.savePerson = save;
       return action(delayed);
     }) }, verifier, { now: () => time });
-    await expect(accounts.createOrganization('alice', 'Refused')).rejects.toMatchObject({ status: 401 });
+    // Both attempts are stale (the fixture proves at a fixed time): 503, never a sign-out (DIO-188).
+    await expect(accounts.createOrganization('alice', 'Refused')).rejects.toMatchObject({ status: 503, code: 'identity_recheck' });
     expect(save).not.toHaveBeenCalled();
     expect(memory.snapshot()).toEqual(emptyAccountState());
   });
@@ -60,7 +66,8 @@ describe('independent freshness and atomic refusal', () => {
       delayed.event = async event => { await tx.event(event); time += 5001; };
       return action(delayed);
     }) }, verifier, { now: () => time });
-    await expect(accounts.createOrganization('alice', 'Refused')).rejects.toMatchObject({ status: 401 });
+    // Aged after the action ran: rolled back and never replayed (DIO-188).
+    await expect(accounts.createOrganization('alice', 'Refused')).rejects.toMatchObject({ status: 503, code: 'identity_recheck' });
     expect(memory.snapshot()).toEqual(emptyAccountState());
   });
 
@@ -140,7 +147,7 @@ describe('independent real signature and current provider checks', () => {
     expect(fixture.calls.filter(call => call.url.includes('/sso/jwks/'))).toHaveLength(1);
     expect(fixture.calls.filter(call => call.url.includes('/sessions?'))).toHaveLength(2);
     for (const call of fixture.calls) {
-      expect(call.init?.redirect).toBe('error');
+      expect(call.init?.redirect).toBe('manual');
       expect(call.init?.signal).toBeInstanceOf(AbortSignal);
       const headers = new Headers(call.init?.headers);
       expect(headers.has('Authorization')).toBe(!call.url.includes('/sso/jwks/'));

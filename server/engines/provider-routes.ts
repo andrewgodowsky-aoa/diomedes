@@ -65,6 +65,7 @@ import {
   openRouterConnectionSchema,
   openRouterRateCard,
   type OpenRouterConnection,
+  openRouterReasoningSchema,
 } from './openrouter.js';
 import type { EngineService, ModelApiServices } from './service.js';
 import {
@@ -131,6 +132,7 @@ const openRouterBody = z.strictObject({
         id: z.string().regex(OPENROUTER_MODEL, 'Enter a model id such as vendor/model, with no :variant.'),
         upstreams: z.array(z.string().regex(OPENROUTER_UPSTREAM)).min(1, 'Choose at least one endpoint for each model.').max(8),
         rates: ratesBody,
+        reasoning: openRouterReasoningSchema.optional(),
       }),
     )
     .min(1, 'Allow at least one model.')
@@ -476,6 +478,7 @@ export function mountProviderRoutes(
               id: entry.id,
               upstreams: [...entry.upstreams],
               rates: ratesView(entry.rates),
+              ...(entry.reasoning === undefined ? {} : { reasoning: entry.reasoning }),
             })),
             dataCollection: connection.dataCollection,
             allowFallbacks: connection.allowFallbacks,
@@ -497,6 +500,7 @@ export function mountProviderRoutes(
           id: entry.id,
           upstreams: [...entry.upstreams],
           rates: declared(entry.rates, at),
+          ...(entry.reasoning === undefined ? {} : { reasoning: entry.reasoning }),
         })),
         dataCollection: 'deny',
         allowFallbacks: false,

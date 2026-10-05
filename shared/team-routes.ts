@@ -6,7 +6,7 @@ import { resolveTier, type OwnerPin, type TierMap } from './tier-map.js';
 
 /**
  * Which routes can carry the Diomedes team tools, and how. Team work is not a
- * ChatGPT feature: a team member may run on any route that can reach the team
+ * Codex feature: a team member may run on any route that can reach the team
  * service, and the person picks the route and model per member or lets
  * Nectovia choose them (owner request 2026-09-23).
  *
@@ -50,7 +50,7 @@ export const TEAM_TOOL_NAMES = [
   'team_clear_agent_context',
 ] as const;
 
-/** "ChatGPT, Claude Code, AWS Bedrock, Azure OpenAI or OpenRouter", from the registry. */
+/** "Codex, Claude Code, AWS Bedrock, Azure OpenAI or OpenRouter", from the registry. */
 export function teamRouteList(): string {
   const names = TEAM_ROUTES.map((route) => routeDisplayName(route));
   return `${names.slice(0, -1).join(', ')} or ${names.at(-1)}`;
@@ -115,7 +115,7 @@ export interface TeamRouteCandidate {
   route: TeamRoute;
   models: readonly EngineModel[];
   savedModel: string | null;
-  /** Only ChatGPT may run its own default before it has listed models. */
+  /** Only Codex may run its own default before it has listed models. */
   routeDefaultAllowed: boolean;
 }
 
@@ -189,7 +189,7 @@ export function resolveTeamMemberModel(input: {
       stableEffort: true,
     });
     if (resolved.outcome !== 'run') return [];
-    // Every route but ChatGPT needs a named model to run at all.
+    // Every route but Codex needs a named model to run at all.
     if (!resolved.model && !candidate.routeDefaultAllowed) return [];
     const rank = resolved.model ? (resolved.substituted ? 1 : 0) : 2;
     return [{ candidate, resolved, rank }];

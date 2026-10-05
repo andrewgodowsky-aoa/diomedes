@@ -1108,7 +1108,7 @@ describe('verified helper is stored with every turn and session', () => {
     const entry = current.history.find(
       (item) => item.kind === 'edited' && item.sentence.includes(plan.data.document),
     );
-    expect(entry?.sentence).toContain('Diomedes, with ChatGPT gpt-6-astra');
+    expect(entry?.sentence).toContain('Diomedes, with Codex gpt-6-astra');
   });
   test("sample work carries engine 'sample' with verified true on the turn and session", async () => {
     const id = await sample();

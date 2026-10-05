@@ -15,6 +15,7 @@ import type {
   DeclaredRatesView,
   ModelApiReadiness,
   OpenRouterConnectionView,
+  OpenRouterReasoningView,
 } from '../shared/model-api';
 import { routeDisplayName } from '../shared/engines';
 import { usd } from './aws-bedrock-view';
@@ -232,6 +233,7 @@ export interface OpenRouterModelInput {
   /** Endpoint names separated by commas or spaces. */
   upstreams: string;
   rates: RatesInput;
+  reasoning?: OpenRouterReasoningView;
 }
 
 export const emptyOpenRouterModel = (): OpenRouterModelInput => ({ id: '', upstreams: '', rates: emptyRates() });
@@ -257,7 +259,8 @@ export function openRouterConnectBody(input: OpenRouterConnectInput, nowMs = Dat
     if (upstreams.length === 0) return { ok: false, message: `Name at least one endpoint ${what} may run on.` };
     const rates = ratesBody(entry.rates, what);
     if (!rates.ok) return rates;
-    models.push({ id: entry.id.trim(), upstreams, rates: rates.body });
+    models.push({ id: entry.id.trim(), upstreams, rates: rates.body,
+      ...(entry.reasoning === undefined ? {} : { reasoning: { supported: [...entry.reasoning.supported], source: entry.reasoning.source.trim() } }) });
   }
   const apiKey = input.apiKey.trim();
   if (apiKey.length < PROVIDER_MIN_KEY_LENGTH) return { ok: false, message: 'Paste the OpenRouter API key.' };
@@ -277,6 +280,7 @@ export function openRouterInputFrom(view: OpenRouterConnectionView | null): Pick
       id: entry.id,
       upstreams: entry.upstreams.join(', '),
       rates: ratesInputFrom(entry.rates),
+      ...(entry.reasoning === undefined ? {} : { reasoning: { supported: [...entry.reasoning.supported], source: entry.reasoning.source } }),
     })),
   };
 }

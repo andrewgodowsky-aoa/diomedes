@@ -49,6 +49,8 @@ const scope: ObservationScope = {
   activeOrganizationAtBind: 'org_a',
   bindKey: 'conversation:a',
   connectionId: 'conn-1',
+  connectionRevision: 1,
+  planId: 'business',
   requestedModel: null,
   boundAt: 0,
 };

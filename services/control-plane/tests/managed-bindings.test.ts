@@ -274,6 +274,99 @@ describe('real managed provider transports at the Responses SDK boundary', () =>
     expect(() => approvedConnections({ MANAGED_CONNECTIONS: JSON.stringify([{ ...connection, url: 'https://attacker.invalid' }]) })).toThrow();
     expect(() => approvedConnections({ MANAGED_CONNECTIONS: JSON.stringify([{ ...connection, resource: 'fixture@attacker.invalid' }]) })).toThrow();
   });
+  it('addresses the Foundry services host for OpenAI v1 deployments only when the connection names it', () => {
+    const { route, connection } = setup('azure-openai', 'responses');
+    if (connection.provider !== 'azure-openai') throw new Error('Expected Azure fixture.');
+    connection.host = 'services.ai.azure.com';
+    expect(providerEndpoint(route, connection)).toBe('https://fixture-resource.services.ai.azure.com/openai/v1/responses');
+    route.binding!.protocol = 'chat-completions';
+    expect(providerEndpoint(route, connection)).toBe('https://fixture-resource.services.ai.azure.com/openai/v1/chat/completions');
+    expect(approvedConnections({ MANAGED_CONNECTIONS: JSON.stringify([connection]) })[0]).toMatchObject({ host: 'services.ai.azure.com' });
+    expect(() => approvedConnections({ MANAGED_CONNECTIONS: JSON.stringify([{ ...connection, host: 'attacker.invalid' }]) })).toThrow();
+  });
+  it.each([
+    ['responses', 'openai.azure.com'],
+    ['chat-completions', 'openai.azure.com'],
+    ['responses', 'services.ai.azure.com'],
+    ['chat-completions', 'services.ai.azure.com'],
+  ] as const)('keeps Azure %s on %s authenticated with only api-key', async (protocol, host) => {
+    const config = setup('azure-openai', protocol);
+    if (config.connection.provider !== 'azure-openai') throw new Error('Expected Azure fixture.');
+    if (host === 'services.ai.azure.com') config.connection.host = host;
+    let sent: { url: string; headers: Headers } | undefined;
+    const response = await callManagedProvider({ ...config, credential, body: request, signal: new AbortController().signal }, async (url, init) => {
+      sent = { url: String(url), headers: new Headers(init?.headers) };
+      return protocol === 'responses' ? sse(responsesEvents) : sse(chatEvents());
+    });
+    await response.body!.cancel();
+    expect(sent!.url).toBe(`https://fixture-resource.${host}/openai/v1/${protocol === 'responses' ? 'responses' : 'chat/completions'}`);
+    expect(sent!.headers.get('api-key')).toBe(credential);
+    expect(sent!.headers.get('x-api-key')).toBeNull();
+    expect(sent!.headers.get('authorization')).toBeNull();
+    expect(sent!.headers.get('anthropic-version')).toBeNull();
+  });
+  it('sends Claude on Azure Foundry to the Anthropic Messages path with the deployment and only x-api-key', async () => {
+    const config = setup('azure-openai', 'messages');
+    if (config.connection.provider !== 'azure-openai') throw new Error('Expected Azure fixture.');
+    config.connection.host = 'services.ai.azure.com';
+    config.route.model = 'claude-fixture';
+    let sent: { url: string; headers: Headers; body: Record<string, unknown> } | undefined;
+    const response = await callManagedProvider({ ...config, credential, body: request, signal: new AbortController().signal }, async (url, init) => {
+      sent = { url: String(url), headers: new Headers(init?.headers), body: JSON.parse(String(init?.body)) };
+      return sse(messageEvents);
+    });
+    const events = []; for await (const event of sseObjects(response.body!)) events.push(event);
+    expect(events.at(-1)).toMatchObject({ type: 'response.completed', response: { usage: { input_tokens: 100, output_tokens: 12 } } });
+    expect(sent!.url).toBe('https://fixture-resource.services.ai.azure.com/anthropic/v1/messages');
+    expect(sent!.headers.get('x-api-key')).toBe(credential);
+    expect(sent!.headers.get('authorization')).toBeNull();
+    expect(sent!.headers.get('api-key')).toBeNull();
+    expect(sent!.headers.get('anthropic-version')).toBe('2023-06-01');
+    expect(sent!.body).toMatchObject({ model: 'fixture-deployment', stream: true, max_tokens: 2048 });
+    expect(sent!.body).not.toHaveProperty('anthropic_version');
+  });
+  it('refuses Azure Messages off the Foundry services host or for a model that is not Claude', () => {
+    const config = setup('azure-openai', 'messages');
+    if (config.connection.provider !== 'azure-openai') throw new Error('Expected Azure fixture.');
+    config.route.model = 'claude-fixture';
+    expect(() => providerEndpoint(config.route, config.connection)).toThrow(/Claude model on the Foundry services host/);
+    config.connection.host = 'services.ai.azure.com';
+    expect(providerEndpoint(config.route, config.connection)).toBe('https://fixture-resource.services.ai.azure.com/anthropic/v1/messages');
+    config.route.model = 'fixture-v1';
+    expect(() => providerEndpoint(config.route, config.connection)).toThrow(/Claude model on the Foundry services host/);
+  });
+  it('sends a Vertex API key as x-goog-api-key, never as a bearer token, and only to Google models', async () => {
+    const config = setup('google-vertex', 'generate-content');
+    if (config.connection.provider !== 'google-vertex') throw new Error('Expected Vertex fixture.');
+    config.connection.secretRef = 'VERTEX_API_KEY';
+    let sent: { url: string; headers: Headers } | undefined;
+    const response = await callManagedProvider({ ...config, credential, body: request, signal: new AbortController().signal }, async (url, init) => {
+      sent = { url: String(url), headers: new Headers(init?.headers) };
+      return sse(vertexEvents);
+    });
+    const events = []; for await (const event of sseObjects(response.body!)) events.push(event);
+    expect(events.at(-1)).toMatchObject({ type: 'response.completed' });
+    expect(sent!.url).toBe('https://us-central1-aiplatform.googleapis.com/v1/projects/fixture-project/locations/us-central1/publishers/google/models/fixture-v1:streamGenerateContent?alt=sse');
+    expect(sent!.headers.get('x-goog-api-key')).toBe(credential);
+    expect(sent!.headers.get('authorization')).toBeNull();
+    expect(sent!.headers.get('x-goog-user-project')).toBeNull();
+    const claude = setup('google-vertex', 'messages');
+    if (claude.connection.provider !== 'google-vertex') throw new Error('Expected Vertex fixture.');
+    claude.connection.secretRef = 'VERTEX_API_KEY';
+    expect(() => providerEndpoint(claude.route, claude.connection)).toThrow(/API key reaches Google models only/);
+  });
+  it('keeps the Vertex access token on the bearer path with the billed project named', async () => {
+    const config = setup('google-vertex', 'generate-content');
+    let sent: Headers | undefined;
+    const response = await callManagedProvider({ ...config, credential, body: request, signal: new AbortController().signal }, async (_url, init) => {
+      sent = new Headers(init?.headers);
+      return sse(vertexEvents);
+    });
+    await response.body!.cancel();
+    expect(sent!.get('authorization')).toBe(`Bearer ${credential}`);
+    expect(sent!.get('x-goog-user-project')).toBe('fixture-project');
+    expect(sent!.get('x-goog-api-key')).toBeNull();
+  });
   it('keeps a refusal terminal and rejects missing usage as unknown rather than inventing tokens', async () => {
     const config = setup('azure-openai', 'chat-completions');
     const response = await callManagedProvider({ ...config, credential, body: request, signal: new AbortController().signal }, async () => sse([

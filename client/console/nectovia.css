@@ -757,7 +757,7 @@ html[data-motion-preset='none'] .console.diomedes .nv-band {
 :is(html, .dc-stage)[data-package='nectovia'] .console.diomedes .nv-greeting {
   margin: 16px 0 0;
   max-width: 16ch;
-  font: 600 clamp(2.125rem, 1rem + 2.6vw, 3.5rem) / 1.02 var(--ui);
+  font: 600 var(--dm-type-display) / 1.02 var(--ui);
   letter-spacing: -0.025em;
   color: var(--t1);
   text-wrap: balance;

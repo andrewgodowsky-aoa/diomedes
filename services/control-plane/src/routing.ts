@@ -4,7 +4,7 @@ import { staffCan, type StaffPermission } from '../../../shared/access.js';
 import { CREDIT_MICRO_USD, micro, periodIdFor } from '../../../shared/managed-usage.js';
 import { decideAgentAdmission, snapshotFromView } from '../contract/contract.js';
 import {
-  PRIVATE_RESTRICTIONS, ROUTING_TIERS, bindingProblems, routingScopeKey, routingPreferenceSchema, routingPreferenceWriteSchema,
+  DEFAULT_MANDATORY_RESTRICTIONS, PROFILE_FLOORS, ROUTING_TIERS, bindingProblems, restrictionsCover, routingScopeKey, routingPreferenceSchema, routingPreferenceWriteSchema,
   scopedPublicationSchema, scopedRollbackSchema, resolveRoutingCandidates,
   type AccountScope, type IndividualAccount, type RoutingPreference, type RoutingScope,
   type RoutingConfiguration, type RequestEnvelope, type ResolvedRoutingSnapshot,
@@ -209,6 +209,8 @@ export class RoutingService {
   async acceptPreference(token: string, raw: unknown) {
     const input = preferenceInputSchema.safeParse(raw);
     if (!input.success) throw new AccountError(422, 'Choose a routing profile and explicitly accept its current disclosure.');
+    if (!restrictionsCover(input.data.restrictions, PROFILE_FLOORS[input.data.profile]))
+      throw new AccountError(422, 'These privacy limits are weaker than the chosen profile requires. Read the profile again and accept its limits.');
     const actor = await this.accounts.signIn(token);
     return this.repository.transaction(async tx => {
       await tx.lockOrganization(input.data.scope.id);
@@ -248,7 +250,7 @@ export class RoutingService {
           tiers[tier] = null; exclusions[tier] = [{ routeId: configured.primary ?? '', reasons: [{ code: 'routing_setup_required', message: 'A versioned route policy and accepted account privacy profile are required.' }] }]; continue;
         }
         const selected = resolveRoutingCandidates({ routes, connections, policy: configured, preference: state.preference,
-          mandatory: state.global?.mandatory ?? PRIVATE_RESTRICTIONS, sourceRestrictions: [], tier, envelope: defaultEnvelope(), now: this.now() });
+          mandatory: state.global?.mandatory ?? DEFAULT_MANDATORY_RESTRICTIONS, sourceRestrictions: [], tier, envelope: defaultEnvelope(), now: this.now() });
         const entry = selected.candidates[0]?.route, binding = entry?.binding;
         const catalogEntry = entry && routes.find(r => r.id === entry.id);
         tiers[tier] = entry && binding && catalogEntry ? { entryId: entry.id, entryRevision: entry.revision, model: entry.model,
@@ -294,11 +296,11 @@ export class RoutingService {
       const access = entitlementFromGrants(await tx.grants(scope.id), await tx.accessRevision(scope.id), this.at());
       const preference = await tx.routingPreference(key), routing = input.routing ?? global?.routing;
       const tiers = Object.fromEntries(ROUTING_TIERS.map(tier => [tier, preference && routing
-        ? resolveRoutingCandidates({ routes, connections, preference, mandatory: global?.mandatory ?? PRIVATE_RESTRICTIONS,
+        ? resolveRoutingCandidates({ routes, connections, preference, mandatory: global?.mandatory ?? DEFAULT_MANDATORY_RESTRICTIONS,
           sourceRestrictions: [], tier, policy: routing[tier], envelope: defaultEnvelope(), now: this.now() })
-        : { candidates: [], excluded: [{ routeId: '', reasons: [{ code: 'routing_setup_required', message: 'Accepted customer privacy settings are missing.' }] }] }]));
+        : { candidates: [], ranked: [], excluded: [{ routeId: '', reasons: [{ code: 'routing_setup_required', message: 'Accepted customer privacy settings are missing.' }] }] }]));
       affected.push({ scope, paid: access.agent && access.managedInference, profile: preference?.profile ?? null,
-        tiers: Object.fromEntries(ROUTING_TIERS.map(t => [t, { eligible: tiers[t].candidates.map(c => c.route.id), excluded: tiers[t].excluded }])) });
+        tiers: Object.fromEntries(ROUTING_TIERS.map(t => [t, { eligible: tiers[t].ranked.map(c => c.route.id), excluded: tiers[t].excluded }])) });
     }
     return { scope: input.scope, baseRevision: current?.revision ?? 0, baseGlobalRevision: global?.revision ?? 0, affected };
   }
@@ -324,7 +326,7 @@ export class RoutingService {
         throw new AccountError(422, 'The override primary conflicts with this account privacy or capability requirements. Review the exclusions.');
       const routes = await tx.routes(), global = await tx.policy();
       const row: TierPolicy = { v: 1, scope: input.scope, revision: input.baseRevision + 1, routing: input.routing ?? undefined,
-        inherit: input.routing === null, mandatory: input.scope.kind === 'global' ? global?.mandatory ?? PRIVATE_RESTRICTIONS : undefined,
+        inherit: input.routing === null, mandatory: input.scope.kind === 'global' ? global?.mandatory ?? DEFAULT_MANDATORY_RESTRICTIONS : undefined,
         tiers: Object.fromEntries(ROUTING_TIERS.map(t => { const r = routes.find(r => r.id === input.routing?.[t].primary); return [t, r ? { entryId: r.id, provider: r.provider, model: r.model, label: r.label, entryRevision: r.revision } : null]; })) as TierPolicy['tiers'],
         kind: rollback ? 'rollback' : 'publish', basedOn: restored?.revision ?? input.baseRevision, note: input.note, publishedAt: this.at(), publishedBy: actor.person.id };
       await tx.savePolicy(row);

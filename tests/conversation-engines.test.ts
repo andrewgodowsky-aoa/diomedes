@@ -338,7 +338,7 @@ describe('ChatGPT, and a thread moved between ChatGPT and Claude Code', () => {
     });
     expect(refused.status).toBe(409);
     expect(((await refused.json()) as { error: string }).error).toBe(
-      "ChatGPT isn't signed in on this computer, so this conversation can't continue here. Nothing was sent.",
+      "Codex isn't signed in on this computer, so this conversation can't continue here. Nothing was sent.",
     );
     const thread = recorded(on);
     expect(thread.engine).toBe('codex');
@@ -382,7 +382,7 @@ describe('ChatGPT, and a thread moved between ChatGPT and Claude Code', () => {
     const notes = thread.turns.filter((turn) => turn.role === 'diomedes' && turn.text.includes('started this conversation fresh'));
     expect(notes.map((turn) => turn.text)).toEqual([
       expect.stringContaining('this conversation moved to Claude Code'),
-      expect.stringContaining('this conversation moved to ChatGPT'),
+      expect.stringContaining('this conversation moved to Codex'),
     ]);
     expect(answeredOn(on)).toEqual(['codex', 'claude-code', 'codex']);
 
@@ -530,7 +530,7 @@ describe('a route with no kept session', () => {
     expect(refused.status).toBe(409);
     const said = ((await refused.json()) as { error: string }).error;
     expect(said).toBe("oh-my-pi can't answer this conversation, so nothing was sent.");
-    for (const other of ['Claude Code', 'ChatGPT', 'OpenCode', 'Cursor', 'Devin', 'Nectovia']) expect(said).not.toContain(other);
+    for (const other of ['Claude Code', 'ChatGPT', 'Codex', 'OpenCode', 'Cursor', 'Devin', 'Nectovia']) expect(said).not.toContain(other);
     expect(recorded(on).lineages ?? []).toEqual([]);
   });
 });

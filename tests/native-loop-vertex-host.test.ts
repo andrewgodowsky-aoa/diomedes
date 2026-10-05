@@ -22,6 +22,7 @@ import type { HarnessHost } from '../server/harness/host';
 import type { ApprovalCommand, Need, Project, Session } from '../shared/types';
 import type { VertexConnectionView } from '../shared/model-api';
 import type { LoopOutcome, LoopView } from '../shared/native-loop';
+import type { ModelRequest } from '../shared/harness';
 
 const headers = { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' };
 const TOKEN = 'ya29.test-only-vertex-token-never-real';
@@ -31,7 +32,7 @@ const MENU = '# Lunch\n\nTomato soup and a grilled cheese sandwich.\n';
 const SECRET = 'Payroll: the chef earns a private amount.';
 
 type Item = Record<string, unknown>;
-let seen: { url: string; body: Item }[];
+let seen: { url: string; body: Item; authorization: string | null }[];
 let mints = 0;
 const frames = (parts: Item[]): Item[] => [
   { candidates: [{ content: { role: 'model', parts }, index: 0 }], modelVersion: 'gemini-3.8-flash-001', responseId: `vtx-${seen.length}` },
@@ -66,7 +67,7 @@ const script = (body: Item): Item[] => {
 const network = (async (input: RequestInfo | URL, init?: RequestInit) => {
   const url = String(input);
   const body = JSON.parse(String(init?.body)) as Item;
-  seen.push({ url, body });
+  seen.push({ url, body, authorization: new Headers(init?.headers).get('authorization') });
   if (!url.startsWith('https://aiplatform.googleapis.com/')) throw new Error(`Unexpected provider: ${url}`);
   return new Response(script(body).map((event) => `data: ${JSON.stringify(event)}\r\n\r\n`).join(''), {
     status: 200,
@@ -117,7 +118,7 @@ beforeEach(async () => {
     env: { GOOGLE_APPLICATION_CREDENTIALS: adcFile },
     mint: async () => {
       mints += 1;
-      return { token: TOKEN, expiresAt: null };
+      return { token: `${TOKEN}-${mints}`, expiresAt: null };
     },
     now: () => new Date('2026-09-23T12:00:00.000Z'),
   };
@@ -178,6 +179,9 @@ describe('a Diomedes loop on Google Vertex AI through the real host', () => {
       () => expect(store().state(project.id).needs.some((need) => need.sessionId === started.session.id && need.state === 'open')).toBe(true),
       { timeout: 15_000 },
     );
+    expect(mints).toBe(4);
+    expect(mints).toBe(seen.length);
+    const beforeApproval = mints;
     const need = store().state(project.id).needs.find((item) => item.sessionId === started.session.id && item.state === 'open') as Need;
     const decision: ApprovalCommand = {
       protocolVersion: 1,
@@ -215,12 +219,69 @@ describe('a Diomedes loop on Google Vertex AI through the real host', () => {
     expect(store().state(project.id).tasks.find((task) => task.id === taskId)!.state).toBe('done');
     const report = await fs.readFile(path.join(project.folder, 'Harness report.md'), 'utf8');
     expect(report).toContain('Tomato soup');
-    // Spend: each paid call held and settled on the Vertex ledger. A token is minted when the loop
-    // is driven, once before the approval and once after it resumed, never ahead of admission.
+    // Every actual provider call opens a fresh token after its own admission. Setup and
+    // approval replay mint nothing; the one remaining call after approval also gets a fresh token.
     const holds = service.modelApi!.exposure.list('google-vertex-1');
     expect(holds.map((hold) => hold.state)).toEqual(Array(5).fill('settled'));
-    expect(mints).toBe(2);
+    expect(mints).toBe(5);
+    expect(mints).toBe(seen.length);
+    expect(mints - beforeApproval).toBe(1);
+    expect(seen.map((request) => request.authorization)).toEqual(
+      Array.from({ length: 5 }, (_, index) => `Bearer ${TOKEN}-${index + 1}`),
+    );
     expect(view.connection!.accountRoute).toBeTruthy();
+  });
+
+
+  test('admission and loop setup mint nothing; each call opens a fresh token and a changed ADC refuses the next call', async () => {
+    const view = await api<VertexConnectionView>('/ai/model-api/google-vertex', 'PUT', {
+      projectId: PROJECT, location: 'global', model: 'gemini-3.8-flash', consent: true,
+    });
+    await api('/ai/model-api/google-vertex/spend-limit', 'PUT', { capUsd: 1, consent: true });
+    const runId = 'vertex-fresh-dispatch';
+    const selected = { model: 'gemini-3.8-flash', accountRoute: view.connection!.accountRoute!, projectId: project.id };
+    await service.admitModelApi('google-vertex', selected, { surface: 'loop', rootJobId: runId });
+    expect(mints).toBe(0);
+    const signal = new AbortController().signal;
+    const adapter = await service.loopAdapter('google-vertex', { ...selected, runId, instructions: 'Plan the lunch report.' }, signal);
+    expect(mints).toBe(0);
+    expect(seen).toHaveLength(0);
+    const request = (text: string): ModelRequest => ({
+      runId, capabilityId: 'diomedes-loop', messages: [{ role: 'user', text }], tools: [], transcript: null,
+    });
+    await adapter.complete(request('First plan.'), signal);
+    await adapter.complete(request('Second plan.'), signal);
+    expect(mints).toBe(2);
+    expect(seen.map(item => item.authorization)).toEqual([
+      'Bearer ' + TOKEN + '-1', 'Bearer ' + TOKEN + '-2',
+    ]);
+    await fs.writeFile(adcFile, JSON.stringify({ type: 'authorized_user', client_id: 'different-client', quota_project_id: PROJECT }));
+    await expect(adapter.complete(request('Third plan.'), signal)).rejects.toMatchObject({ code: 'ROUTE_REFUSED' });
+    expect(mints).toBe(2);
+    expect(seen).toHaveLength(2);
+  });
+
+  test('changed ADC while waiting for approval refuses resume before another token or provider call', async () => {
+    await api<VertexConnectionView>('/ai/model-api/google-vertex', 'PUT', {
+      projectId: PROJECT, location: 'global', model: 'gemini-3.8-flash', consent: true,
+    });
+    await api('/ai/model-api/google-vertex/spend-limit', 'PUT', { capUsd: 1, consent: true });
+    const started = await api<{ runId: string; session: Session }>('/projects/' + project.id + '/loop/start', 'POST', {
+      protocolVersion: 1, commandId: 'vertex-changed-approval', taskId,
+      goal: 'Write a lunch report.', route: 'google-vertex', consent: true, sources: ['menu.md'],
+    });
+    await vi.waitFor(() => expect(store().state(project.id).needs.some(need => need.sessionId === started.session.id && need.state === 'open')).toBe(true), { timeout: 15_000 });
+    expect(mints).toBe(4);
+    expect(seen).toHaveLength(4);
+    const need = store().state(project.id).needs.find(item => item.sessionId === started.session.id && item.state === 'open') as Need;
+    await fs.writeFile(adcFile, JSON.stringify({ type: 'authorized_user', client_id: 'different-client', quota_project_id: PROJECT }));
+    await api('/projects/' + project.id + '/needs/' + need.id + '/resolve', 'POST', {
+      protocolVersion: 1, commandId: 'changed-decision-' + need.id, resolution: 'go-ahead',
+      proposalDigest: need.approval!.proposalDigest, actionDigest: need.approval!.actionDigest, baseDigest: need.approval!.baseDigest,
+    });
+    await vi.waitFor(async () => expect(['failed', 'cancelled', 'reconcile_required']).toContain((await host().get(project.id, started.runId)).state), { timeout: 15_000 });
+    expect(mints).toBe(4);
+    expect(seen).toHaveLength(4);
   });
 
   test('a local delegate under a Google parent reads only what the project shares with Google, so nothing unshared reaches it', async () => {

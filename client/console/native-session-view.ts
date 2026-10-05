@@ -17,7 +17,7 @@ export interface SessionLine {
 
 export function sessionLine(view: ThreadSessionView | null): SessionLine | null {
   if (!view?.controls) return null;
-  // Named as people read it (ChatGPT, never its route id), as the transcript names it.
+  // Named as people read it (Codex, never its route id), as the transcript names it.
   const engine = routeDisplayName(view.controls.engine.id);
   // Only a model the engine itself reported is named; a requested alias is not attribution.
   const attribution = view.reportedModel ? `${engine} · ${view.reportedModel}` : engine;

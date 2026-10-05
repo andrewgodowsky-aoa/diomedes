@@ -31,7 +31,7 @@ export type ShellView =
   | 'Automations';
 export type BoardProps = { project: Project; state: ProjectState; tasks: Task[]; policy: 'first' | 'go'; focusTaskId?: string; busy: boolean; onPolicyChange?(policy: 'first' | 'go'): void;
   documents: DocumentInfo[]; documentsLoading: boolean; documentsFailure: string | null;
-  onStart(task: Task): Promise<void>; onPause(task: Task): Promise<void>; onReview(task: Task): void; onRoute(task: Task, to: Slot): Promise<void>; onReopen(task: Task): Promise<void>; onOpenTeam(task: Task): void; onOpenThread(task: Task): void;
+  onStart(task: Task): Promise<void>; onPause(task: Task): Promise<void>; onReview(task: Task): void; onRoute(task: Task, to: Slot | null): Promise<void>; onReopen(task: Task): Promise<void>; onOpenTeam(task: Task): void; onOpenThread(task: Task): void;
   /** Marks a settled task done through the task route, as a drag or menu move to Done asks (shared/board-moves.ts). */
   onMarkDone(task: Task): Promise<void>;
   /** Technical detail: only there does the task inspector offer the task's own profile choice (H09). */

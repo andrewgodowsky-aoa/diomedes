@@ -29,7 +29,7 @@ const jwkSchema = z.object({
   key_ops: z.array(z.literal('verify')).optional(),
   d: z.never().optional(),
 });
-type SigningKey = z.infer<typeof jwkSchema>;
+export type SigningKey = z.infer<typeof jwkSchema>;
 const keysSchema = z.object({ keys: z.array(jwkSchema).min(1).max(32) });
 const userSchema = z.object({
   id: providerId,
@@ -63,7 +63,19 @@ export interface WorkOSIdentityConfiguration {
   apiKey: string;
   fetch?: typeof fetch;
   now?: () => number;
+  /** Signing keys to share with other verifiers; omitted, this verifier keeps its own. */
+  signingKeys?: SigningKeyCache;
 }
+
+/**
+ * The signing keys and when they were fetched: public data, safe to share across requests. Never a
+ * promise, a verifier or a secret, because a fetch belongs to the request that started it and is
+ * cancelled when that request ends.
+ */
+export interface SigningKeyCache { keys: SigningKey[]; fetchedAt: number }
+export const signingKeyCache = (): SigningKeyCache => ({ keys: [], fetchedAt: -Infinity });
+/** Per-cache ordering shared by verifiers, independent of clock resolution or clock changes. */
+const refreshOrders = new WeakMap<SigningKeyCache, { started: bigint; stored: bigint }>();
 
 const invalid = () => new ApiError(401, 'The access token or provider session is invalid.');
 /** A refused token, with the one check it failed in the Worker's log. Never a claim value. */
@@ -73,9 +85,21 @@ const refused = (check: string) => {
 };
 const unavailable = () =>
   new ApiError(503, 'Identity verification is unavailable; try again when the provider recovers.');
-/** An unavailable answer, with the WorkOS step and HTTP status in the Worker's log. Never a body. */
-const unavailableAt = (step: string, status?: number) => {
-  console.error(JSON.stringify({ event: 'identity-unavailable', step, ...(status === undefined ? {} : { status }) }));
+/** The name of what a provider call threw, such as TypeError or AbortError. Never its message. */
+const thrownName = (thrown: unknown) => {
+  try {
+    const name = (thrown as { name?: unknown } | null | undefined)?.name;
+    return typeof name === 'string' && /^[A-Za-z0-9_]{1,60}$/.test(name) ? name : 'unknown';
+  } catch { return 'unknown'; }
+};
+/**
+ * An unavailable answer, with the WorkOS step in the Worker's log, and either the HTTP status or,
+ * when the call itself threw, the thrown value's name as `error` ('unknown' when it has no usable
+ * one). Never a message, a URL, a header or a body.
+ */
+const unavailableAt = (step: string, status?: number, error?: string) => {
+  console.error(JSON.stringify({ event: 'identity-unavailable', step, ...(status === undefined ? {} : { status }),
+    ...(error === undefined ? {} : { error }) }));
   return unavailable();
 };
 
@@ -108,8 +132,8 @@ export class WorkOSIdentityVerifier implements IdentityVerifier {
   private readonly apiKey: string;
   private readonly fetcher: typeof fetch;
   private readonly now: () => number;
-  private keys: SigningKey[] = [];
-  private fetchedAt = -Infinity;
+  private readonly cache: SigningKeyCache;
+  /** This verifier's own key fetch, so a request only ever waits on a fetch it started. */
   private refreshing: Promise<void> | null = null;
 
   constructor(config: WorkOSIdentityConfiguration) {
@@ -133,8 +157,10 @@ export class WorkOSIdentityVerifier implements IdentityVerifier {
     this.issuer = config.issuer;
     this.audience = config.audience;
     this.apiKey = config.apiKey;
-    this.fetcher = config.fetch ?? fetch;
+    // workerd refuses fetch called as this.fetcher(...) ("Illegal invocation"); call the global itself.
+    this.fetcher = config.fetch ?? ((input, init) => globalThis.fetch(input, init));
     this.now = config.now ?? Date.now;
+    this.cache = config.signingKeys ?? signingKeyCache();
   }
 
   private async getJson(url: string, authenticated: boolean, step: string): Promise<unknown> {
@@ -145,14 +171,15 @@ export class WorkOSIdentityVerifier implements IdentityVerifier {
       try {
         response = await this.fetcher(url, {
           method: 'GET',
-          redirect: 'error',
+          // workerd refuses 'error'; with 'manual' a 3xx fails the !response.ok check below unfollowed.
+          redirect: 'manual',
           headers: authenticated
             ? { Authorization: `Bearer ${this.apiKey}`, Accept: 'application/json' }
             : { Accept: 'application/json' },
           signal: controller.signal,
         });
-      } catch {
-        throw unavailableAt(step);
+      } catch (error) {
+        throw unavailableAt(step, undefined, thrownName(error));
       } // Transport only; no fallback or credentials in the error.
       if (response.status === 404 && authenticated) throw invalid();
       if (!response.ok || !response.body) throw unavailableAt(step, response.status);
@@ -170,6 +197,10 @@ export class WorkOSIdentityVerifier implements IdentityVerifier {
   private async refreshKeys() {
     if (!this.refreshing) {
       this.refreshing = (async () => {
+        const started = this.now();
+        const ordering = refreshOrders.get(this.cache) ?? { started: 0n, stored: 0n };
+        refreshOrders.set(this.cache, ordering);
+        const sequence = ++ordering.started;
         const parsed = keysSchema.safeParse(
           await this.getJson(`${API}/sso/jwks/${this.clientId}`, false, 'jwks'),
         );
@@ -178,8 +209,13 @@ export class WorkOSIdentityVerifier implements IdentityVerifier {
           new Set(parsed.data.keys.map((key) => key.kid)).size !== parsed.data.keys.length
         )
           throw unavailableAt('jwks-shape');
-        this.keys = parsed.data.keys;
-        this.fetchedAt = this.now();
+        // Only a successfully parsed response advances the stored sequence. An older response
+        // cannot replace newer keys, even when the start times tie or the clock moves backward.
+        // Store keys, their actual start time and sequence together, with no await between.
+        if (sequence < ordering.stored) return;
+        this.cache.keys = parsed.data.keys;
+        this.cache.fetchedAt = started;
+        ordering.stored = sequence;
       })();
     }
     const pending = this.refreshing;
@@ -191,11 +227,19 @@ export class WorkOSIdentityVerifier implements IdentityVerifier {
   }
 
   private async key(kid: string): Promise<SigningKey> {
-    if (this.now() - this.fetchedAt >= 300_000) await this.refreshKeys();
-    let match = this.keys.find((key) => key.kid === kid);
-    if (!match && this.now() - this.fetchedAt >= 30_000) {
+    let fetched = false;
+    if (this.now() - this.cache.fetchedAt >= 300_000) {
       await this.refreshKeys();
-      match = this.keys.find((key) => key.kid === kid);
+      fetched = true;
+    }
+    let match = this.cache.keys.find((key) => key.kid === kid);
+    if (!match && !fetched) {
+      // The keys are shared across requests, so another request may have fetched them moments
+      // before WorkOS published this key. That is no reason to refuse the token: answer unavailable
+      // until the thirty seconds pass and the keys may be fetched again.
+      if (this.now() - this.cache.fetchedAt < 30_000) throw unavailableAt('signing-key-recent');
+      await this.refreshKeys();
+      match = this.cache.keys.find((key) => key.kid === kid);
     }
     if (!match) throw refused('signing-key');
     let modulus: Uint8Array<ArrayBuffer>;

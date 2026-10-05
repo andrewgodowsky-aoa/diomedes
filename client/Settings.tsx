@@ -19,6 +19,8 @@ import { WhatsNew } from './WhatsNew';
 import { freshnessLine, planLine, shouldShowEmptyDetail } from './usage-presentation';
 import { AIConnections } from './AISetup';
 import { CodexSetup } from './CodexSetup';
+import { CodingTools, useCodingToolsView } from './CodingTools';
+import { CODING_TOOLS_SECTION, codingToolsOffered } from './coding-tools-view';
 import { ReadConnectors } from './ReadConnectors';
 import { AgentProfiles } from './console/AgentProfiles';
 import { AccountSettings } from './AccountSettings';
@@ -260,11 +262,20 @@ export function SettingsPage({
     if (workspace && !usageScreen && !memberUsage && !memberPending)
       setSection((current) => (current === 'Usage' ? 'Account' : current));
   }, [workspace, usageScreen, memberUsage, memberPending]);
+  // Handing tasks to the person's own coding tools (S3) has a section only in a build that
+  // offers it. Until the read answers, and when it can't, there's no entry.
+  const [codingTools, setCodingTools] = useCodingToolsView();
+  const codingToolsHere = codingToolsOffered(codingTools);
+  useEffect(() => {
+    if (codingTools !== undefined && !codingToolsHere)
+      setSection((current) => (current === CODING_TOOLS_SECTION ? 'Account' : current));
+  }, [codingTools, codingToolsHere]);
   const sections = [
     'Account',
     ...(usageScreen || memberUsage ? ['Usage'] : []),
     'Interface detail',
     helpersSection,
+    ...(codingToolsHere ? [CODING_TOOLS_SECTION] : []),
     'Permissions',
     'Appearance',
     'About',
@@ -309,6 +320,9 @@ export function SettingsPage({
               </div>
             )}
             {section === 'Agent profiles' && <AgentProfiles />}
+            {section === CODING_TOOLS_SECTION && codingTools && codingToolsHere && (
+              <CodingTools view={codingTools} onSaved={setCodingTools} />
+            )}
             {section === 'Interface detail' && (
               <>
                 <p className="prose">

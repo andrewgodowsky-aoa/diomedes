@@ -79,8 +79,9 @@ const driver = () => app.locals.harness.claudeSessions as ClaudeSessionRuns;
 
 /**
  * The fake model. It reads the issued identity off the last line, as the instructions tell a
- * real one to, and answers by script: a message starting with ACT proposes work, FORGE names
- * another message's identity, and anything else is an ordinary answer.
+ * real one to, and answers by script: a message starting with ACT, or an explicit request starting
+ * with Fix, proposes work, FORGE names another message's identity, and anything else is an
+ * ordinary answer.
  */
 function scripted(prompt: string) {
   const issued = /\[\[diomedes source_message_id=(sm\.[0-9a-f]{32})\]\]$/.exec(prompt)?.[1];
@@ -99,7 +100,7 @@ function scripted(prompt: string) {
       ...patch,
     }) +
     '\n```';
-  if (text.startsWith('ACT') && issued) return `I can start that.\n\n${block(issued)}`;
+  if ((text.startsWith('ACT') || text.startsWith('Fix ')) && issued) return `I can start that.\n\n${block(issued)}`;
   if (text.startsWith('FORGE')) return `Sure.\n\n${block('sm.' + 'f'.repeat(32))}`;
   return `answer:${text}`;
 }
@@ -780,4 +781,26 @@ test('R-16: the direct Build route cannot admit Work in the reserved home', asyn
     sessions: state.sessions.length,
     mode: state.conversations.find((item) => item.id === home.threadId)!.mode,
   }).toEqual({ status: 409, tasks: 0, sessions: 0, mode: 'auto' });
+});
+
+test('an explicit request in Automatic mode on an outside tool stays the proposal the person starts', async () => {
+  // Automatic work runs in the work loop, which only a model API route runs. On Claude Code, as
+  // on Codex and the other outside tools, a request that opens with a work verb is proposed and
+  // waits for the person, the way every proposal did before automatic work.
+  const proposed = await send('m-fix', 'Fix the linen count');
+  expect(proposed.outcome).toMatchObject({
+    status: 'proposed',
+    projectId: project.id,
+    operationClass: 'write_internal',
+  });
+  expect(await phaseNames(proposed)).toEqual(['decision']);
+  expect(store().state(project.id).tasks).toEqual([]);
+  if (proposed.outcome.status !== 'proposed') throw new Error('expected a proposal');
+  const chosen = await select('m-fix', proposed.outcome.proposalDigest);
+  expect(chosen.status).toBe(200);
+  expect(((await chosen.json()) as MessageResult).outcome).toMatchObject({ status: 'started', projectId: project.id });
+  const made = workFor(proposed.sourceMessageId);
+  expect(made.tasks).toHaveLength(1);
+  expect(made.tasks[0].automaticWork).toBeUndefined();
+  expect(made.sessions).toHaveLength(1);
 });

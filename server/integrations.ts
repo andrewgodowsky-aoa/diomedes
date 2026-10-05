@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { createHash, randomUUID } from 'node:crypto';
 import { ROUTE_NAMES } from '../shared/engines.js';
 import type { IntegrationStatus } from '../shared/types.js';
+import type { UsageReading } from '../shared/subscription-workers.js';
 import {
   createDiscovery,
   emptyDiscovery,
@@ -2061,6 +2062,32 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
       await client.close();
     }
   }
+  /**
+   * A Codex team worker's admission (subscription-aware orchestration S2): this runtime's build
+   * and its ChatGPT account route, read from a fresh app-server. Any other sign-in is refused by
+   * `requireChatGpt`, as for every Codex turn.
+   */
+  async function readCodexWorkerAdmission(): Promise<{ accountRoute: string; version: string; usage: UsageReading | null }> {
+    const client = await dependencies.createClient();
+    try {
+      const version = await initialize(client);
+      const accountRoute = await requireChatGpt(client);
+      // S3: a reserve is decided on the account's windows now, so they're read in the same check,
+      // once the ChatGPT account is confirmed. Advisory: a failed read reports nothing, which a
+      // reserve treats as not met, and the status snapshot keeps what it last had.
+      let usage: UsageReading | null = null;
+      try {
+        const mapped = windowsFromRateLimits(await client.request('account/rateLimits/read', {}));
+        if (mapped.windows.length || mapped.plan || mapped.credits) dependencies.usage.record('codex', { ...mapped, source: 'poll' });
+        if (mapped.windows.length) usage = { windows: mapped.windows, at: new Date().toISOString() };
+      } catch {
+        // Not reported.
+      }
+      return { accountRoute, version, usage };
+    } finally {
+      await client.close();
+    }
+  }
   async function refreshCodexCatalog() {
     const client = await dependencies.createClient();
     try {
@@ -2160,7 +2187,7 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
         },
         async turn(input) {
           if (running)
-            throw new IntegrationError('NATIVE_BUSY', 'ChatGPT is still answering the previous message.');
+            throw new IntegrationError('NATIVE_BUSY', 'Codex is still answering the previous message.');
           if (input.signal.aborted) throw abortError();
           const watch = watchTurn(client, input.threadId, {
             scope: input.scope,
@@ -2189,7 +2216,7 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
               return { text: await watch.completed, model: watch.model() ?? null };
             } catch (error) {
               if (watch.ended() === 'interrupted')
-                throw new IntegrationError('TURN_INTERRUPTED', 'ChatGPT stopped the answer when asked.');
+                throw new IntegrationError('TURN_INTERRUPTED', 'Codex stopped the answer when asked.');
               throw error;
             }
           } finally {
@@ -2230,6 +2257,7 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
     getIntegrationStatuses,
     askCodex,
     readCodexAccountRoute,
+    readCodexWorkerAdmission,
     refreshCodexCatalog,
     closeWarm,
     steerCodex,
@@ -2287,6 +2315,7 @@ const integrations = createIntegrations({
 export const getIntegrationStatuses = integrations.getIntegrationStatuses;
 export const askCodex = integrations.askCodex;
 export const readCodexAccountRoute = integrations.readCodexAccountRoute;
+export const readCodexWorkerAdmission = integrations.readCodexWorkerAdmission;
 export const refreshCodexCatalog = integrations.refreshCodexCatalog;
 /** Closes the kept app-server, if any. The service calls this on shutdown. */
 export const closeWarmCodex = integrations.closeWarm;

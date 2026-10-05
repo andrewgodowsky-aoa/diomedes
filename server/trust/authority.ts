@@ -248,7 +248,10 @@ async function resolveStoredPrototype(ref: PrincipalRef): Promise<Authority | De
  * Resolve authority from a claim. Never throws for an authorization outcome —
  * it returns a Denial, so work-admission keeps its own error shaping.
  */
-export async function currentAuthority(claim: AuthorityClaim): Promise<Authority | Denial> {
+export async function currentAuthority(
+  claim: AuthorityClaim,
+  hostBackend: TrustBackend | null = backend,
+): Promise<Authority | Denial> {
   switch (claim.via) {
     case 'prototype-driver': {
       if (!prototypeGrant)
@@ -267,9 +270,10 @@ export async function currentAuthority(claim: AuthorityClaim): Promise<Authority
     }
 
     case 'local-owner': {
-      if (!backend) return noResolver('local owner');
-      const principal = await backend.localOwner(claim.ownerId);
-      if (!principal) return denial(401, 'unknown-principal', 'This owner was not recognized.');
+      if (!hostBackend) return noResolver('local owner');
+      const principal = await hostBackend.localOwner(claim.ownerId);
+      if (!principal || principal.kind !== 'local-owner' || principal.id !== claim.ownerId)
+        return denial(401, 'unknown-principal', 'This owner was not recognized.');
       return finish(principal, 'owner-local', grantsFor('local-owner'), null, false);
     }
 
@@ -282,9 +286,9 @@ export async function currentAuthority(claim: AuthorityClaim): Promise<Authority
         return denial(401, 'no-claim', 'Provide a member token and slot.');
       if (slotId === 'owner')
         return denial(401, 'no-claim', 'The owner slot cannot call the team server.');
-      if (!backend) return noResolver('team member');
-      const principal = await backend.lookupTeamMember(claim.projectId, slotId, token);
-      if (!principal)
+      if (!hostBackend) return noResolver('team member');
+      const principal = await hostBackend.lookupTeamMember(claim.projectId, slotId, token);
+      if (!principal || principal.kind !== 'team-member' || principal.projectId !== claim.projectId || principal.slotId !== slotId)
         return denial(401, 'unknown-principal', 'This member token was not recognized.');
       return finish(principal, 'shared-secret', grantsFor('team-member'), null, false);
     }
@@ -294,8 +298,8 @@ export async function currentAuthority(claim: AuthorityClaim): Promise<Authority
       // BEFORE the backend, or a prototype reference re-resolves through a
       // production grant table and launders itself into genuine authority.
       if (claim.ref.kind === 'prototype') return resolveStoredPrototype(claim.ref);
-      if (!backend) return noResolver('stored reference');
-      const principal = await backend.lookupPrincipalRef(claim.ref);
+      if (!hostBackend) return noResolver('stored reference');
+      const principal = await hostBackend.lookupPrincipalRef(claim.ref);
       if (!principal)
         return denial(401, 'unknown-principal', 'This principal no longer exists.');
       // A backend may not change what class a reference resolves to. Kind is how
@@ -304,11 +308,11 @@ export async function currentAuthority(claim: AuthorityClaim): Promise<Authority
       // for prototype refs, so equality here also proves the backend did not
       // mint one — the compiler checks that, which is why there is no second
       // clause testing it.
-      if (principal.kind !== claim.ref.kind)
+      if (principal.kind !== claim.ref.kind || principal.id !== claim.ref.id || principal.tenantId !== claim.ref.tenantId)
         return denial(
           403,
           'unknown-principal',
-          'The resolver returned a different identity class than the reference names.',
+          'The resolver returned a different identity than the reference names.',
         );
       // The generation comparison is the whole point of a stored reference:
       // authority valid at dispatch may have been revoked underneath the run.

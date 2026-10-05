@@ -23,6 +23,7 @@
  * decision for at most the minute the service allows.
  */
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import {
   ACCOUNT_VIEW_VERSION,
@@ -286,6 +287,8 @@ const BROWSER_SENTENCES = {
   notSetUp: "Sign-in through the browser isn't set up on this installation.",
   noSafeStorage: "This computer can't keep a sign-in in protected storage, so you can't sign in here.",
   waiting: 'Finish signing in in your browser.',
+  accepting: 'Signing you in.',
+  unfinished: 'Sign-in could not finish. Try again.',
   notOpened: "The browser couldn't open for sign-in. Try again.",
   notForUs: "That sign-in isn't for the Nectovia account service. Sign in again.",
   refused: "The Nectovia account service didn't accept that sign-in. Sign in again.",
@@ -320,6 +323,13 @@ const planNoticeSchema = z.record(
 );
 type PlanNotices = z.infer<typeof planNoticeSchema>;
 
+/** Token-free facts of an actually published cloud sign-in. A password session's
+ * sessionId is a private host-published nonce, not an invented service identifier. */
+export interface AccountAuthorityFacts {
+  backendKind: 'cloud'; backendKey: string; personId: string; sessionId: string;
+  lifecycle: number; publishedLifecycle: number; expiresAt: string;
+}
+
 export class AccountSessionService {
   /** Where "Sign up for a plan" opens. The host sets it from `NECTOVIA_PLANS_URL` when that is given. */
   plansUrl: string = PLANS_URL;
@@ -328,6 +338,28 @@ export class AccountSessionService {
   /** Token rotation replaces a saved entry without creating a different sign-in. */
   private readonly rememberedSignIns = new WeakMap<RememberedEntry, Current>();
   private current: Current | null = null;
+  private readonly authorityPublications = new WeakMap<Current, { lifecycle:number; browserChanges:number; sessionId:string }>();
+  private publishAuthority(current: Current, lifecycle: number): void {
+    this.assertCurrent(current);
+    this.assertSignIn(current, lifecycle);
+    const prior = this.authorityPublications.get(current);
+    this.authorityPublications.set(current, { lifecycle, browserChanges:this.browserChanges,
+      sessionId:current.browserSessionId ?? prior?.sessionId ?? `host-published:${randomUUID()}` });
+  }
+
+  /** Bounded local read: never refreshes tokens, calls the account service or takes Store.locked. */
+  authorityFacts(): AccountAuthorityFacts | null {
+    const current = this.current, published = current ? this.authorityPublications.get(current) : null;
+    const backend = this.backend.view();
+    if (!current || !published || backend.kind !== 'cloud' || !backend.url?.startsWith('https://')
+      || published.lifecycle !== this.lifecycle || published.browserChanges !== this.browserChanges
+      || this.forgotten?.lifecycle === this.lifecycle && this.forgotten.people.has(current.personId)
+      || current.browserSessionId && [...this.closingBrowserSessions].some(item=>item.sessionId === current.browserSessionId)
+      || !Number.isFinite(Date.parse(current.accessExpiresAt)) || Date.parse(current.accessExpiresAt) <= this.now()) return null;
+    return { backendKind:'cloud',backendKey:this.backendKey,personId:current.personId,sessionId:published.sessionId,
+      lifecycle:this.lifecycle,publishedLifecycle:published.lifecycle,expiresAt:current.accessExpiresAt };
+  }
+
   /** The last verified Personal usage read, for the same sign-in and access revision only. */
   private personalUsageCache: { current: Current; revision: number | null; until: number; view: PersonalUsageView } | null = null;
   /** A newer sign-in or sign-out invalidates work that is still awaiting an answer. */
@@ -345,6 +377,10 @@ export class AccountSessionService {
   private browserChanges = 0;
   private readonly closingBrowserSessions = new Set<{ sessionId: string }>();
   private following: Promise<void> = Promise.resolve();
+  /** Browser reconciles queued and not yet settled: what separates "signing you in" from a silent end. */
+  private reconciling = 0;
+  /** The errors `signedOutError` made, so a reconcile can tell being superseded from failing. */
+  private readonly supersessions = new WeakSet<object>();
 
   constructor(
     readonly backend: AccountBackend,
@@ -442,7 +478,9 @@ export class AccountSessionService {
   }
 
   private signedOutError() {
-    return new ApiError(401, 'Sign in to use Nectovia.', { code: SIGN_IN_REQUIRED });
+    const error = new ApiError(401, 'Sign in to use Nectovia.', { code: SIGN_IN_REQUIRED });
+    this.supersessions.add(error);
+    return error;
   }
 
   private requireCurrent(): Current {
@@ -637,6 +675,7 @@ export class AccountSessionService {
     this.assertSignIn(current, lifecycle);
     this.assertCurrent(current);
     await this.projector(this.projection('sign-in'));
+    this.publishAuthority(current, lifecycle);
   }
 
   async signIn(input: { email: string; password: string; remember: boolean }) {
@@ -790,12 +829,26 @@ export class AccountSessionService {
   /** Follow the WorkOS sign-in, one step at a time: begin the session when it has one, end it when it has none. */
   private followBrowser(): Promise<void> {
     const lifecycle = this.lifecycle;
-    const next = this.following.then(() => this.reconcileBrowser(lifecycle));
+    this.reconciling++;
+    const next = this.following.then(() => this.reconcileBrowser(lifecycle)).finally(() => void this.reconciling--);
     this.following = next.catch(() => {});
     return next;
   }
 
   private async reconcileBrowser(lifecycle: number) {
+    try {
+      await this.reconcileBrowserSteps(lifecycle);
+    } catch (error) {
+      // A newer attempt, a sign-out or a cancel owns the view when this one was superseded. Otherwise a
+      // WorkOS sign-in that did not become an account session says so.
+      const superseded = this.lifecycle !== lifecycle || this.supersessions.has(error as object);
+      if (!superseded && !this.current && !this.browserFailure && this.browser?.identity.status().status === 'signed-in')
+        this.browserFailure = BROWSER_SENTENCES.unfinished;
+      throw error;
+    }
+  }
+
+  private async reconcileBrowserSteps(lifecycle: number) {
     this.assertLifecycle(lifecycle);
     const browser = this.browser;
     if (!browser || !this.browserMode()) return;
@@ -815,14 +868,16 @@ export class AccountSessionService {
       return;
     }
     const current = this.current;
-    if (current?.browser) {
-      if (current.accessToken === session.accessToken) return;
+    // A failed initial keep/projection must repeat full verified publication.
+    if (current?.browser && this.authorityPublications.has(current)) {
+      if (current.accessToken === session.accessToken) { this.publishAuthority(current, lifecycle); return; }
       // A newer token for the same WorkOS session preserves the person and their workspace.
       const claims = checkBrowserToken(session.accessToken, browser.expect, this.now());
       if (claims && claims.subject === current.subject && claims.sessionId === current.browserSessionId) {
         current.accessToken = session.accessToken;
         current.accessExpiresAt = claims.expiresAt;
         current.refreshExpiresAt = claims.expiresAt;
+        this.publishAuthority(current, lifecycle);
         return;
       }
     }
@@ -889,6 +944,9 @@ export class AccountSessionService {
     const now = identity.status();
     if (now.status === 'unavailable') return { status: 'unavailable', message: BROWSER_SENTENCES.noSafeStorage };
     if (now.status === 'signing-in') return { status: 'waiting', message: BROWSER_SENTENCES.waiting };
+    // WorkOS has the sign-in and the account service has not taken it yet.
+    if (now.status === 'signed-in' && !this.current && this.reconciling > 0)
+      return { status: 'accepting', message: BROWSER_SENTENCES.accepting };
     const failure = this.browserFailure ?? (now.message || null);
     return failure ? { status: 'failed', message: failure } : { status: 'ready', message: '' };
   }

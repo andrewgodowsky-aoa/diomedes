@@ -11,9 +11,11 @@ import {
   OPENROUTER_SDK,
   openRouterConnectionSchema,
   openRouterModelFor,
+  assertOpenRouterEffort,
   openRouterPreferences,
   respondOpenRouter,
   type OpenRouterConnection,
+  type OpenRouterEffort,
 } from '../engines/openrouter.js';
 import type { ModelRateCard, SpendExposure } from '../spend-exposure.js';
 import { createModelApiAdapter, modelApiContract } from './model-api-adapter.js';
@@ -36,6 +38,7 @@ export interface OpenRouterModelAdapterOptions extends StreamSinks {
   exposure: SpendExposure;
   transcripts: ModelTranscripts;
   instructions: string;
+  effort?: OpenRouterEffort;
   limits?: RespondLimits;
   transport?: typeof globalThis.fetch;
   now?: () => Date;
@@ -47,6 +50,8 @@ export function createOpenRouterModelAdapter(
   const connection = Object.freeze(openRouterConnectionSchema.parse(options.connection));
   const entry = openRouterModelFor(connection, options.model);
   const limits = options.limits ?? CONVERSATION_LIMITS;
+  const effort = options.effort;
+  assertOpenRouterEffort(entry, effort);
   return createModelApiAdapter({
     route: OPENROUTER_ROUTE,
     prefix: 'openrouter',
@@ -66,6 +71,7 @@ export function createOpenRouterModelAdapter(
       model: entry.id,
       preferences: openRouterPreferences(entry),
       instructions: digest(options.instructions),
+      ...(effort === undefined ? {} : { effort }),
       limits,
       rateCard: options.card.version,
     },
@@ -95,6 +101,7 @@ export function createOpenRouterModelAdapter(
         card: options.card,
         exposure: options.exposure,
         instructions: options.instructions,
+        effort,
         limits,
         transport: options.transport,
         now: options.now,

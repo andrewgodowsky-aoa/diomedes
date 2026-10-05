@@ -59,6 +59,15 @@ current Operations app's registered-device-key sign-in. Its store is a separate
 file, and `POST /faux/bootstrap-admin {subject}` mirrors the legacy
 `npm run bootstrap-admin` command against that faux store.
 
+The deployed Worker reads its approved provider connections from the
+`MANAGED_CONNECTIONS` var, which both wrangler files carry. Each connection
+names the Worker secret it reads: `AZURE_OPENAI_API_KEY` (Azure AI Foundry),
+`BEDROCK_API_KEY` (Bedrock), `OPENROUTER_API_KEY` (OpenRouter), and
+`VERTEX_API_KEY` or `VERTEX_ACCESS_TOKEN` (Vertex). Set each with
+`npx wrangler secret put <NAME> --name diomedes`. A connection whose secret is
+unset serves nothing. Operations saves routes only against a connection the
+deployed Worker approves, so a new connection is deployed before its routes.
+
 The faux cloud serves the managed inference gateway (`/managed/v1/*`, contract
 `nectovia-managed/1`) with the Worker's own handler. A scripted provider answers
 it offline with exact usage; the placeholder key it holds stands in for the
@@ -551,10 +560,12 @@ the same.
 
 `npm run test:runtime` requires CP_EVIDENCE_DIRECTORY and uses local workerd.
 It tests the production entry's refusal paths plus real RS256 verification with
-offline provider HTTP. It saves a V8 CPU profile and wall timings. Local sampled
-V8 time does not certify native crypto CPU, hosted quota enforcement or the
-Workers Free 10 ms per-request budget. Real hosted capacity remains a separate
-gate, with no automatic paid upgrade.
+offline provider HTTP. It also runs the verifier with its default fetch in
+workerd, answers the provider calls from fixtures at the runtime boundary, and
+checks that a redirect is refused. It saves a V8 CPU profile and wall timings.
+Local sampled V8 time does not certify native crypto CPU, hosted quota
+enforcement or the Workers Free 10 ms per-request budget. Real hosted capacity
+remains a separate gate, with no automatic paid upgrade.
 
 The parent owns root Wrangler/workflow changes, the desktop foundation extraction,
 independent review, live database qualification and publication. No deploy,

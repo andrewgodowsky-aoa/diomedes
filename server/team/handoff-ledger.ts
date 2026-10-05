@@ -62,6 +62,10 @@ export const handoffEventSchema = z.discriminatedUnion('kind', [
     profile,
     attempt: z.number().int().positive(),
     retryOf: z.string().nullable(),
+    // How an external worker worked and who funded its turn (subscription-aware orchestration S2).
+    // Only an external worker's line carries them, so a loop worker's line still reads in older builds.
+    execution: z.enum(['loop', 'external-proposal', 'external-contained']).optional(),
+    payer: z.enum(['nectovia-credits', 'person-subscription', 'person-key', 'company-key', 'local', 'unknown']).optional(),
   }),
   z.strictObject({
     ...base,

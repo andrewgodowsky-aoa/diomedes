@@ -3,7 +3,8 @@
  */
 import { EventEmitter } from 'node:events';
 import { createHash, createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import net from 'node:net';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { generateKeyPair, exportJWK, SignJWT, type JWTPayload } from 'jose';
 import { AuthKitCore, sessionEncryption } from '@workos/authkit-session';
 import { createPublicWorkOS, IPC_CHANNELS, toAuthKitConfig } from '@workos/authkit-electron/internals';
@@ -17,6 +18,19 @@ const issuer = 'https://login.review-v2.invalid/user_management/client_review_v2
 const origin = 'http://127.0.0.1:45291';
 const callback = 'diomedes-auth://callback';
 const owned: Array<{ dispose(): void }> = [];
+
+// A port this file holds, so no sign-in here binds the loopback callback (or 47319, which the
+// installed app may be using): every attempt returns through diomedes-auth://callback as before.
+let heldServer: net.Server;
+let callbackPort: number;
+beforeAll(async () => {
+  heldServer = net.createServer();
+  await new Promise<void>((resolve) => heldServer.listen(0, '127.0.0.1', resolve));
+  callbackPort = (heldServer.address() as net.AddressInfo).port;
+});
+afterAll(async () => {
+  await new Promise<void>((resolve) => heldServer.close(() => resolve()));
+});
 let key: Awaited<ReturnType<typeof generateKeyPair>>;
 let jwk: Awaited<ReturnType<typeof exportJWK>>;
 beforeAll(async () => {
@@ -93,7 +107,7 @@ function fixture(expectedIssuer: string | undefined = issuer) {
   vi.stubGlobal('fetch', transport);
   const client = createPublicWorkOS(clientId);
   const registerProtocol = vi.fn(() => true);
-  const options = { clientId, tokenIssuer: expectedIssuer, origin, storage, client, registerProtocol,
+  const options = { clientId, tokenIssuer: expectedIssuer, origin, storage, client, registerProtocol, callbackPort,
     getWindow: () => window as unknown as BrowserWindow,
     ipcMain: { handle: (k: string, fn: (...args: unknown[]) => unknown) => { handlers.set(k, fn); }, removeHandler: (k: string) => { handlers.delete(k); } },
     shell: { openExternal: async (destination: string) => {
@@ -213,7 +227,7 @@ describe('v2 independent admitted callback work', () => {
     const delivered: string[] = [];
     r.capture.connect(async (url) => { delivered.push(url); return url === r.url('a') ? gate.promise : false; });
     for (const name of ['a', 'b', 'c']) r.emit(r.url(name));
-    for (const bad of [callback + '/?code=x&state=y', callback + '?code=x&state=y&state=z',
+    for (const bad of [callback + '//?code=x&state=y', callback + '?code=x&state=y&state=z',
       'https://callback?code=x&state=y', callback + '?code=x&state=y#fragment']) r.emit(bad, 'open-url');
     r.emit(r.url('d'));
     gate.resolve(false);

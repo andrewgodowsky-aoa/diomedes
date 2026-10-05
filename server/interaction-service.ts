@@ -23,6 +23,8 @@ import type {
   MessageResult,
 } from '../shared/conversation.js';
 import type { InteractionDecision } from '../shared/interaction.js';
+import type { AutomaticWorkRequest } from '../shared/automatic-work.js';
+import { admitAutomaticWork } from './automatic-work-admission.js';
 import type { ReasoningRecord } from '../shared/adapter-contract.js';
 import {
   admitInteraction,
@@ -121,7 +123,9 @@ export interface AdmissionSource {
   /** The proposal this message recorded, read back from its own first phase. */
   decision: InteractionDecision;
   /** The person's saved choice of that exact proposal. */
-  selection: ActionSelection;
+  selection: ActionSelection | null;
+  /** Host-bound request admission; never an invented human selection. */
+  automaticWork?: AutomaticWorkRequest;
   /** What the choice was pinned to: nothing else may be started under it. */
   proposalDigest: string;
   targetProjectId: string;
@@ -135,7 +139,7 @@ export interface AdmissionSource {
 export interface ChildIntent {
   task: { name: string; description: string };
   /** Null until the Work input phase pinned the task and the route it was resolved on. */
-  work: { taskId: string; route: string; instruction: string } | null;
+  work: { taskId: string; route: string; instruction: string; sources?: string[]; threadId?: string } | null;
 }
 
 /**
@@ -254,7 +258,7 @@ export interface InteractionHost {
   ): Promise<{ taskId: string }>;
   startWork(
     projectId: string,
-    command: { commandId: string; taskId: string; instruction: string; route: string },
+    command: { commandId: string; taskId: string; instruction: string; route: string; sources?: string[]; threadId?: string },
     source: AdmissionSource,
   ): Promise<{ sessionId: string }>;
   /**
@@ -262,7 +266,7 @@ export interface InteractionHost {
    * input, so a retry builds the command this message already sent rather than one made
    * from a setting that has changed since.
    */
-  workRoute(projectId: string): Promise<string>;
+  workRoute(projectId: string, request?: AutomaticWorkRequest): Promise<string>;
 }
 
 export type { MessageResult };
@@ -280,8 +284,8 @@ const MOVED_ON =
  * receipt and a command holding anything else is not this message's child.
  */
 const taskIntent = (body: DecisionPhaseBody) => ({
-  name: (body.decision.publicSummary.trim() || body.text).slice(0, 200),
-  description: body.text,
+  name: (body.automaticWork ? body.automaticWork.goal.trim().split('\n')[0]! : body.decision.publicSummary.trim() || body.text).slice(0, 200),
+  description: body.automaticWork?.goal ?? body.text,
 });
 
 /** What the Work input phase pinned: the task it named and the route it was resolved on. */
@@ -639,13 +643,17 @@ export class InteractionTurns {
     );
     const body = decisionOf(phases);
     const verdict = body
-      ? admitInteraction({
-          decision: body.decision,
-          restriction: narrower(body.restriction, message.restriction),
-          conversationProjectId: message.projectId,
-          ...(await this.host.admissionContext()),
-          selection: selectionOf(phases),
-        })
+      ? body.automaticWork
+        ? admitAutomaticWork({ request: body.automaticWork, decision: body.decision,
+            restriction: narrower(body.restriction, message.restriction),
+            conversationProjectId: message.projectId, ...(await this.host.admissionContext()) })
+        : admitInteraction({
+            decision: body.decision,
+            restriction: narrower(body.restriction, message.restriction),
+            conversationProjectId: message.projectId,
+            ...(await this.host.admissionContext()),
+            selection: selectionOf(phases),
+          })
       : null;
     // Where receipts are looked for: the project the saved task input names, else the
     // proposal's own target. A receipt there is authoritative with or without its phase.
@@ -667,7 +675,8 @@ export class InteractionTurns {
                 task: taskIntent(body),
                 work:
                   typeof pinned?.taskId === 'string' && typeof pinned.route === 'string'
-                    ? { taskId: pinned.taskId, route: pinned.route, instruction: body.text }
+                    ? { taskId: pinned.taskId, route: pinned.route, instruction: body.automaticWork?.goal ?? body.text,
+                        ...(body.automaticWork ? {sources:body.automaticWork.sources.map(source=>source.path),threadId:body.automaticWork.threadId} : {}) }
                     : null,
               }
             : null,
@@ -702,7 +711,7 @@ export class InteractionTurns {
     if (
       settled ||
       done ||
-      !chosen ||
+      (!chosen && !first.body?.automaticWork) ||
       first.verdict?.outcome !== 'escalate' ||
       first.receipts.sessionId
     )
@@ -720,6 +729,7 @@ export class InteractionTurns {
       restriction: body.restriction,
       decision: body.decision,
       selection: chosen,
+      ...(body.automaticWork ? {automaticWork:structuredClone(body.automaticWork)} : {}),
       proposalDigest: verdict.proposalDigest,
       targetProjectId: verdict.projectId,
     };
@@ -732,7 +742,8 @@ export class InteractionTurns {
     const { name, description: instruction } = taskIntent(body);
     const refusal = (error: unknown) =>
       error instanceof ApiError && error.status >= 400 && error.status < 500
-        ? { status: error.status, message: error.message }
+        ? { status: error.status, message: error.message,
+            ...(typeof error.details.code === 'string' ? {code:error.details.code} : {}) }
         : null;
     await record('task-input', {
       projectId: verdict.projectId,
@@ -762,7 +773,7 @@ export class InteractionTurns {
     const route =
       typeof pinned?.route === 'string'
         ? pinned.route
-        : await this.host.workRoute(verdict.projectId);
+        : await this.host.workRoute(verdict.projectId,body.automaticWork);
     await record('work-input', {
       projectId: verdict.projectId,
       workCommandId: verdict.workCommandId,
@@ -772,7 +783,8 @@ export class InteractionTurns {
     try {
       const started = await this.host.startWork(
         verdict.projectId,
-        { commandId: verdict.workCommandId, taskId, instruction, route },
+        { commandId: verdict.workCommandId, taskId, instruction, route,
+          ...(body.automaticWork ? {sources:body.automaticWork.sources.map(source=>source.path),threadId:body.automaticWork.threadId} : {}) },
         source,
       );
       await record('work-receipt', { sessionId: started.sessionId });

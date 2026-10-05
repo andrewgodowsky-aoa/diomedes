@@ -4,7 +4,8 @@ import { writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { createServer } from 'node:net';
-import { unstable_dev } from 'wrangler';
+import { createRequire } from 'node:module';
+import { unstable_dev, unstable_startWorker } from 'wrangler';
 
 // Local workerd only. Fixture identity HTTP never contacts WorkOS or PostgreSQL.
 // Profile data are V8 samples, NOT Cloudflare's billed per-invocation CPU metric.
@@ -51,6 +52,144 @@ const payload = { iss: 'https://api.workos.com', client_id: 'client_runtime', au
 const encoded = [{ alg: 'RS256', kid: 'runtime', typ: 'JWT' }, payload].map((value) => Buffer.from(JSON.stringify(value)).toString('base64url')).join('.');
 const token = `${encoded}.${sign('RSA-SHA256', Buffer.from(encoded), pair.privateKey).toString('base64url')}`;
 const fixture = { token, key: { ...pair.publicKey.export({ format: 'jwk' }), kid: 'runtime', alg: 'RS256', use: 'sig' }, expiresAt: new Date(now + 600_000).toISOString() };
+
+// The verifier's DEFAULT outbound path in workerd. The test Worker passes no fetch,
+// so workerd's own fetch checks the call (its this, its redirect mode) before any
+// request leaves the isolate. Requests that pass reach the Worker's global outbound,
+// which Miniflare binds to the handler below, where an undici MockAgent answers and
+// refuses anything unregistered. Wrangler 4.135.0 types dev.mockFetch but never reads
+// it, so dev.outboundService carries the interceptor. MockAgent is loaded from the
+// undici copy Miniflare itself uses (wrangler -> miniflare -> undici), resolved from
+// Miniflare's own location, because undici is not a declared dependency here.
+const wranglerRequire = createRequire(createRequire(import.meta.url).resolve('wrangler/package.json'));
+const miniflareRequire = createRequire(wranglerRequire.resolve('miniflare'));
+const { Response: MiniflareResponse } = wranglerRequire('miniflare');
+const { MockAgent, request: dispatchRequest } = miniflareRequire('undici');
+const signedFor = (clientId) => {
+  const body = [{ alg: 'RS256', kid: 'runtime', typ: 'JWT' }, { ...payload, client_id: clientId }]
+    .map((value) => Buffer.from(JSON.stringify(value)).toString('base64url')).join('.');
+  return `${body}.${sign('RSA-SHA256', Buffer.from(body), pair.privateKey).toString('base64url')}`;
+};
+async function defaultOutbound(clientId, register, { requests = 1, concurrent = false, run } = {}) {
+  const agent = new MockAgent();
+  agent.disableNetConnect();
+  register(agent.get('https://api.workos.com'));
+  const trace = []; const unmatched = []; const logs = [];
+  const outboundService = async (request) => {
+    const headers = {};
+    for (const name of ['accept', 'authorization']) if (request.headers.has(name)) headers[name] = request.headers.get(name);
+    try {
+      // undici.request never follows a redirect, so only workerd could chase a Location.
+      const answer = await dispatchRequest(request.url, { dispatcher: agent, method: request.method, headers });
+      trace.push(`${request.method} ${request.url} ${headers.authorization ? 'auth' : 'anon'} ${answer.statusCode}`);
+      const replyHeaders = Object.entries(answer.headers).flatMap(([name, value]) => (Array.isArray(value) ? value : [value]).map((one) => [name, one]));
+      return new MiniflareResponse(await answer.body.arrayBuffer(), { status: answer.statusCode, headers: replyHeaders });
+    } catch (error) {
+      unmatched.push(`${request.method} ${request.url} ${error?.name ?? 'Error'}`);
+      throw error;
+    }
+  };
+  const worker = await unstable_startWorker({ config: 'tests/runtime/default-fetch.wrangler.jsonc',
+    dev: { server: { hostname: '127.0.0.1', port: await port() }, inspector: false, watch: false, persist: false,
+      logLevel: 'error', outboundService, structuredLogsHandler: (log) => logs.push(log.message) } });
+  try {
+    await worker.ready;
+    // Each request is a separate invocation of the same isolate. A request with no answer in 15 s is an
+    // answer with status 0 and the error, so a hang fails the case instead of stalling the run.
+    const send = async (extra = {}) => {
+      const started = performance.now();
+      let timer;
+      const bound = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('No answer within 15 s.')), 15_000); });
+      try {
+        const response = await Promise.race([worker.fetch('http://127.0.0.1/', { method: 'POST',
+          body: JSON.stringify({ token: signedFor(clientId), clientId, ...extra }) }), bound]);
+        const text = await Promise.race([response.text(), bound]);
+        let body; try { body = JSON.parse(text); } catch { body = { text }; }
+        return { status: response.status, body, ms: Math.round(performance.now() - started) };
+      } catch (error) {
+        return { status: 0, error: `${error?.name ?? 'Error'}: ${error?.message ?? error}`, ms: Math.round(performance.now() - started) };
+      } finally { clearTimeout(timer); }
+    };
+    const answers = [];
+    if (run) answers.push(...await run(send));
+    else if (concurrent) answers.push(...await Promise.all(Array.from({ length: requests }, () => send())));
+    else for (let i = 0; i < requests; i++) answers.push(await send());
+    const result = { status: answers[0].status, body: answers[0].body, statuses: answers.map((answer) => answer.status),
+      answers, trace: [...trace], unmatched: [...unmatched],
+      pending: agent.pendingInterceptors().map((value) => `${value.method} ${value.origin}${value.path}`),
+      logs: logs.filter((line) => /identity-/.test(line)), runtimeLogs: logs.filter((line) => !/identity-/.test(line)) };
+    console.log(JSON.stringify({ defaultOutbound: clientId, ...result }));
+    return result;
+  } finally { await worker.dispose(); await agent.close(); }
+}
+const json = (value) => [200, JSON.stringify(value), { headers: { 'content-type': 'application/json' } }];
+const verified = await defaultOutbound('client_default_fetch', (pool) => {
+  pool.intercept({ path: '/sso/jwks/client_default_fetch', method: 'GET' }).reply(...json({ keys: [fixture.key] }));
+  pool.intercept({ path: '/user_management/users/user_runtime/sessions?limit=100', method: 'GET' }).reply(...json({ data: [{ id: 'session_runtime', user_id: 'user_runtime', status: 'active', expires_at: fixture.expiresAt, ended_at: null }], list_metadata: { after: null } }));
+  pool.intercept({ path: '/user_management/users/user_runtime', method: 'GET' }).reply(...json({ id: 'user_runtime', email_verified: true, first_name: 'Fixture' }));
+});
+assert.equal(verified.status, 200, 'The default outbound path must verify a signed token in workerd.');
+assert.equal(verified.body.subject, 'user_runtime');
+assert.deepEqual(verified.unmatched, []);
+assert.deepEqual([...verified.trace].sort(), [
+  'GET https://api.workos.com/sso/jwks/client_default_fetch anon 200',
+  'GET https://api.workos.com/user_management/users/user_runtime auth 200',
+  'GET https://api.workos.com/user_management/users/user_runtime/sessions?limit=100 auth 200',
+]);
+assert.deepEqual(verified.pending, []);
+const redirected = await defaultOutbound('client_redirect_refused', (pool) => {
+  pool.intercept({ path: '/sso/jwks/client_redirect_refused', method: 'GET' }).reply(302, '', { headers: { location: 'https://api.workos.com/sso/jwks/redirect_target' } });
+  pool.intercept({ path: '/sso/jwks/redirect_target', method: 'GET' }).reply(...json({ keys: [fixture.key] }));
+});
+assert.equal(redirected.status, 503, 'A provider redirect must be refused, never followed.');
+assert.deepEqual(redirected.unmatched, []);
+assert.deepEqual(redirected.trace, ['GET https://api.workos.com/sso/jwks/client_redirect_refused anon 302']);
+assert.deepEqual(redirected.pending, ['GET https://api.workos.com/sso/jwks/redirect_target']);
+const keyHeld = await defaultOutbound('client_redirect_authenticated', (pool) => {
+  pool.intercept({ path: '/sso/jwks/client_redirect_authenticated', method: 'GET' }).reply(...json({ keys: [fixture.key] }));
+  pool.intercept({ path: '/user_management/users/user_runtime/sessions?limit=100', method: 'GET' }).reply(302, '', { headers: { location: 'https://api.workos.com/user_management/redirect_target' } });
+  pool.intercept({ path: '/user_management/redirect_target', method: 'GET' }).reply(...json({ data: [], list_metadata: { after: null } }));
+  pool.intercept({ path: '/user_management/users/user_runtime', method: 'GET' }).reply(...json({ id: 'user_runtime', email_verified: true, first_name: 'Fixture' }));
+});
+assert.equal(keyHeld.status, 503, 'A redirect on a call that carries the API key must be refused, never followed.');
+assert.deepEqual(keyHeld.unmatched, []);
+assert.ok(keyHeld.trace.includes('GET https://api.workos.com/user_management/users/user_runtime/sessions?limit=100 auth 302'));
+assert.ok(!keyHeld.trace.some((line) => line.includes('redirect_target')));
+assert.ok(keyHeld.pending.includes('GET https://api.workos.com/user_management/redirect_target'));
+// DIO-188: the Worker keeps the customer signing keys per isolate, so they are fetched once and a
+// second request reuses them. The session list and the user are still read on every request.
+const jwksOnce = 'GET https://api.workos.com/sso/jwks/client_kept_keys anon 200';
+const twice = (pool, clientId, delay = 0, keyFetches = 1) => {
+  const keys = pool.intercept({ path: `/sso/jwks/${clientId}`, method: 'GET' }).reply(...json({ keys: [fixture.key] })).times(keyFetches);
+  if (delay > 0) keys.delay(delay);
+  pool.intercept({ path: '/user_management/users/user_runtime/sessions?limit=100', method: 'GET' }).reply(...json({ data: [{ id: 'session_runtime', user_id: 'user_runtime', status: 'active', expires_at: fixture.expiresAt, ended_at: null }], list_metadata: { after: null } })).times(2);
+  pool.intercept({ path: '/user_management/users/user_runtime', method: 'GET' }).reply(...json({ id: 'user_runtime', email_verified: true, first_name: 'Fixture' })).times(2);
+};
+const kept = await defaultOutbound('client_kept_keys', (pool) => twice(pool, 'client_kept_keys'), { requests: 2 });
+assert.deepEqual(kept.statuses, [200, 200], 'A second request in the same isolate must verify with the kept signing keys.');
+assert.deepEqual(kept.unmatched, []);
+assert.equal(kept.trace.filter((line) => line.includes('/sso/jwks/')).length, 1, 'The signing keys must be fetched once per isolate.');
+assert.ok(kept.trace.includes(jwksOnce));
+assert.equal(kept.trace.filter((line) => line.includes('/sessions?')).length, 2, 'The session list is read on every request.');
+assert.deepEqual(kept.pending, []);
+// Two requests at once on a cold isolate, the signing keys held 300 ms. Each request fetches with its
+// own verifier and waits only on that fetch, so the keys may be fetched once or twice.
+const concurrent = await defaultOutbound('client_concurrent_cold', (pool) => twice(pool, 'client_concurrent_cold', 300, 2), { requests: 2, concurrent: true });
+assert.deepEqual(concurrent.statuses, [200, 200], 'Two requests at once on a cold isolate must both verify.');
+assert.deepEqual(concurrent.unmatched, []);
+assert.ok([1, 2].includes(concurrent.trace.filter((line) => line.includes('/sso/jwks/')).length));
+// Request A returns at once, its verification never awaited and not held by waitUntil, while its
+// signing-key fetch is held 2000 ms. Then request B arrives in the same isolate. workerd cancels what
+// A left in flight; with a key fetch shared across requests, B waited on it and had no answer in
+// 15 s. B must answer, fetching the signing keys itself. A client abort is not covered: through Wrangler's
+// local server it does not cancel the request, which runs on to the end.
+const abandoned = await defaultOutbound('client_abandoned_refresh', (pool) => {
+  pool.intercept({ path: '/sso/jwks/client_abandoned_refresh', method: 'GET' }).reply(...json({ keys: [fixture.key] })).delay(2000);
+  twice(pool, 'client_abandoned_refresh');
+}, { run: async (send) => [await send({ abandon: true }), await send()] });
+assert.equal(abandoned.answers[0].status, 202, 'Request A returns before its signing-key fetch answers.');
+assert.equal(abandoned.answers[1].status, 200, `A request after an abandoned signing-key fetch must verify: ${JSON.stringify(abandoned.answers[1])}`);
+assert.deepEqual(abandoned.unmatched, []);
 const benchmark = await start('tests/runtime/crypto-worker.ts', 'tests/runtime/wrangler.jsonc');
 let socket;
 try {
@@ -102,6 +241,8 @@ try {
   walls.sort((a,b) => a-b);
   const evidence = { runtime: 'local workerd via Wrangler 4.135.0', compatibilityDate: '2026-09-19',
     productionEntryAssertions: 4, signatureRequests: 111, tamperedSignatureRefused: true,
+    defaultOutboundVerified: true, defaultOutboundRequests: verified.trace.length, defaultOutboundRedirectRefused: true, defaultOutboundKeyNotForwarded: true,
+    signingKeysKeptAcrossRequests: true, concurrentColdRequestsVerified: true, abandonedRequestNotAwaited: true,
     coldWallMs, warmWallP50Ms: walls[49], warmWallP95Ms: walls[94],
     sampledActiveV8MsPerRequest: activeMicroseconds / 1000 / walls.length,
     workersFreeCpuLimitMs: 10,

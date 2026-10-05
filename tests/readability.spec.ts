@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import type { Project, Settings, TeamState } from '../shared/types';
+import { reopenLastProject } from './fixtures/landing';
 
 const headers = { 'X-Diomedes-Client': '1' };
 let project: Project;
@@ -32,6 +33,7 @@ async function open(page: Page, scale = 1) {
         headers,
         data: {
           onboarding: { ...saved.onboarding, resumeAt: 'done' },
+          detail: 'technical',
           openProjects: [project.id],
           appearance: {
             package: 'graphite',
@@ -74,6 +76,7 @@ async function open(page: Page, scale = 1) {
   };
   await page.route(`**/api/projects/${project.id}/team`, (route) => route.fulfill({ json: team }));
   await page.goto('/');
+  await reopenLastProject(page);
   await expect(page.locator('.console .body p').first()).toBeVisible();
   await page.evaluate(() => document.fonts.ready);
 }
@@ -127,6 +130,8 @@ async function audit(page: Page) {
       body: sample('.console .body p'),
       input: sample('.console .composer textarea'),
       col: sample('.console .transcript .col'),
+      mode: sample('.console .modes button'),
+      ui: sample('.console'),
       transcript: sample('.console .transcript'),
       instruments: sample('.console .instr'),
       documentWidth: document.documentElement.scrollWidth,
@@ -162,7 +167,8 @@ for (const screen of screens) {
       const measurements = [await audit(page)];
       const m = measurements[0];
       expect(m.dpr).toBe(screen.dpr);
-      expect(m.body?.font).toBe(16);
+      // Conversation text has its own 15 px semantic role; ordinary UI prose stays 16 px.
+      expect(m.body?.font).toBe(15);
       expect(m.input?.font).toBe(15);
       expect(m.body!.line / m.body!.font).toBeCloseTo(1.55, 2);
       expect(m.transcript!.top).toBeLessThanOrEqual(m.instruments!.bottom + 2);
@@ -170,11 +176,12 @@ for (const screen of screens) {
       if (screen.width >= 1920) expect(m.col!.width).toBe(920);
       await page.screenshot({ path: info.outputPath('thread.png') });
       const nav = page.getByRole('navigation', { name: 'Threads and views' });
-      for (const name of ['Board', 'Team', 'Connections', 'Engines']) {
+      for (const name of ['Board', 'Team']) {
         await nav.getByRole('button', { name: new RegExp(`^${name}\\b`) }).click();
         measurements.push(await audit(page));
-        if (name === 'Engines') break; // Settings replaces the Console.
       }
+      await page.getByRole('button', { name: 'Settings', exact: true }).click();
+      await expect(page.locator('.settings-layout')).toBeVisible();
       await page
         .locator('.settings-layout .rail')
         .getByRole('button', { name: 'Appearance', exact: true })
@@ -198,12 +205,31 @@ test('maximizing preserves type and explicit scaling persists through reload and
   page,
 }) => {
   await open(page);
-  await page.setViewportSize({ width: 1280, height: 800 });
-  const before = await audit(page);
-  await page.setViewportSize({ width: 2560, height: 1440 });
-  const after = await audit(page);
-  expect(after.body?.font).toBe(before.body?.font);
-  expect(after.input?.font).toBe(before.input?.font);
+  // A bigger window adds margin and nothing else (wide windows spec, Phase 1): every type
+  // role measures the same from a small window to a 1440p one, and once the column has room
+  // it holds at 920. A small window keeps today's layout, so its column is what fits.
+  const sizes = [];
+  for (const size of [
+    { width: 1280, height: 800 },
+    { width: 1920, height: 1080 },
+    { width: 2560, height: 1440 },
+  ]) {
+    await page.setViewportSize(size);
+    sizes.push(await audit(page));
+  }
+  const [small, ...wider] = sizes;
+  expect(small.body?.font).toBe(15);
+  expect(small.input?.font).toBe(15);
+  expect(small.mode?.font).toBe(16);
+  expect(small.ui?.font).toBe(14);
+  expect(small.col!.width).toBeLessThanOrEqual(920);
+  for (const wide of wider) {
+    expect(wide.body?.font).toBe(small.body?.font);
+    expect(wide.input?.font).toBe(small.input?.font);
+    expect(wide.mode?.font).toBe(small.mode?.font);
+    expect(wide.ui?.font).toBe(small.ui?.font);
+    expect(wide.col?.width).toBe(920);
+  }
   await page.keyboard.press('Control+=');
   await page.keyboard.press('Control+=');
   await expect
@@ -215,7 +241,7 @@ test('maximizing preserves type and explicit scaling persists through reload and
   await page.reload();
   await expect(page.locator('html')).toHaveCSS('zoom', '1.25');
   await expect(page.locator('.console .body p').first()).toBeVisible();
-  expect((await audit(page)).body?.font).toBe(16);
+  expect((await audit(page)).body?.font).toBe(15);
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   await page
     .locator('.settings-layout .rail')
@@ -363,7 +389,7 @@ test('the newer Console surfaces take the same semantic roles', async ({ page })
   ).toBe(14);
   await audit(page);
 
-  // A thread that owns a task carries the follow-up queue under its composer.
+  // An idle task uses its ordinary composer. A saved follow-up makes the queue visible.
   const task = await (
     await page.request.post(`/api/projects/${project.id}/tasks`, {
       headers,
@@ -385,6 +411,21 @@ test('the newer Console surfaces take the same semantic roles', async ({ page })
   ).toBe(true);
   await page.reload();
   await nav.getByRole('button', { name: /Confirm the produce order with the supplier/ }).click();
+  await expect(page.locator('.console .follow-ups')).toHaveCount(0);
+  const queued = await page.request.post(`/api/projects/${project.id}/controls`, {
+    headers,
+    data: {
+      protocolVersion: 1,
+      commandId: crypto.randomUUID(),
+      taskId: task.id,
+      control: 'queue',
+      text: 'Check the final delivery date after this task finishes.',
+      waitsFor: 'task',
+      route: 'sample',
+    },
+  });
+  expect(queued.ok()).toBe(true);
+  expect((await queued.json()).receipt.outcome).not.toBe('refused');
   await expect(page.locator('.console .follow-ups')).toBeVisible();
   await audit(page);
   const queue = await page.evaluate(() => {

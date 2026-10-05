@@ -4,6 +4,7 @@ import path from 'node:path';
 import type { ApprovalCommand, Need, Project, ProjectState, Settings, Task } from '../shared/types';
 import { reopenLastProject } from './fixtures/landing';
 import { AGENT_NAME } from '../shared/agent-name';
+import { SUBSCRIPTION_WORKERS_CONSENT_REVISION } from '../shared/subscription-workers';
 
 /**
  * H13 in the Console: a Diomedes work loop's run inspector shows the outcome
@@ -12,6 +13,9 @@ import { AGENT_NAME } from '../shared/agent-name';
  * with what came back, the handoff to a delegate, and the finish claim. A loop
  * stopped at its turn limit says which limit. The loop runs on the scripted
  * fixture route, so no provider is involved and no model is named.
+ *
+ * S3-UI-01 is the start dialog's consent naming the person's own coding tools
+ * on a Nectovia start, over scripted reads and scripted refusals: nothing runs.
  */
 
 test.describe.configure({ mode: 'serial' });
@@ -187,4 +191,102 @@ test('H13-UI-02: a loop stopped at its turn limit says which limit and is never 
   await expect(loop.locator('.loop-turn')).toHaveCount(1);
   await expect(loop.locator('.loop-claim')).toHaveCount(0);
   await expect(loop.getByText('1 of 1 · model calls 2 of 2 · tool calls 1 of 1')).toBeVisible();
+});
+
+const TOOLS_TASK = 'Count the napkins with my own tools';
+const TO_BOTH =
+  'Your goal and the files the loop reads will be sent to Nectovia, and a task it hands off goes to Codex or Claude Code with the files it needs, signed in with your own account.';
+const TO_CODEX_AGAIN =
+  'Your goal and the files the loop reads will be sent to Nectovia, and a task it hands off goes to Codex with the files it needs, signed in with your own account. Confirm before sending.';
+
+async function openStart(page: Page, name: string) {
+  await page
+    .getByRole('navigation', { name: 'Threads and views', exact: true })
+    .getByRole('button', { name: new RegExp(name) })
+    .click();
+  await page.getByRole('complementary', { name: 'This project' }).getByRole('button', { name: 'Loop run' }).click();
+  const form = page.getByRole('form', { name: `Start a ${AGENT_NAME} work loop` });
+  await expect(form).toBeVisible();
+  return form;
+}
+
+test('S3-UI-01: a Nectovia start names the person’s own coding tools and sends exactly what they confirmed', async ({ page, request }) => {
+  await task(request, TOOLS_TASK);
+  // This suite's build doesn't offer handing tasks to a person's tools, so the dialog's reads are
+  // scripted: Nectovia and one provider route on offer, and a project whose Nectovia start would
+  // ask Codex, then Claude Code. Every start answers with a scripted refusal; nothing runs.
+  await page.route(/\/api\/projects\/[^/]+\/loop\/routes$/, (route) =>
+    route.fulfill({
+      status: 200,
+      json: {
+        notIncludedReason: null,
+        routes: [
+          { route: 'nectovia', label: AGENT_NAME, admitted: true, sends: true, model: null, reason: null },
+          { route: 'openrouter', label: 'OpenRouter', admitted: true, sends: true, model: null, reason: null },
+        ],
+      },
+    }),
+  );
+  await page.route(/\/api\/projects\/[^/]+\/subscription-workers$/, (route) =>
+    route.fulfill({
+      status: 200,
+      json: { kind: 'candidates', engines: ['codex', 'claude-code'], names: ['Codex', 'Claude Code'], consentRevision: SUBSCRIPTION_WORKERS_CONSENT_REVISION },
+    }),
+  );
+  const requests: Record<string, any>[] = [];
+  await page.route(/\/api\/projects\/[^/]+\/loop\/start$/, (route) => {
+    requests.push(route.request().postDataJSON());
+    return route.fulfill({
+      status: 409,
+      json:
+        requests.length === 1
+          ? { error: TO_CODEX_AGAIN, consentRequired: true, workerConsent: { revision: SUBSCRIPTION_WORKERS_CONSENT_REVISION, engines: ['codex'] } }
+          : { error: 'Scripted start received.' },
+    });
+  });
+  const opened = await page.request.put('/api/settings', { headers: HEADERS, data: { openProjects: [projectId] } });
+  expect(opened.ok()).toBe(true);
+  await page.goto('/');
+  await reopenLastProject(page);
+  await expect(page.locator('.console')).toBeVisible();
+
+  const form = await openStart(page, TOOLS_TASK);
+  const route = form.getByLabel('Route', { exact: true });
+  await route.selectOption('openrouter');
+  await expect(form.getByRole('checkbox', { name: 'Send the goal and the files it reads to OpenRouter.', exact: true })).toBeVisible();
+  await route.selectOption('nectovia');
+  const toBoth = form.getByRole('checkbox', { name: TO_BOTH, exact: true });
+  await expect(toBoth).not.toBeChecked();
+  await toBoth.check();
+  await form.getByRole('button', { name: 'Start loop run' }).click();
+  await expect.poll(() => requests.length).toBe(1);
+  expect(requests[0]).toMatchObject({
+    route: 'nectovia',
+    consent: true,
+    workerConsent: { revision: SUBSCRIPTION_WORKERS_CONSENT_REVISION, engines: ['codex', 'claude-code'] },
+  });
+
+  // Asked again with Codex alone: the box says what the server said, unticked, and nothing else repeats it.
+  const toCodex = form.getByRole('checkbox', { name: TO_CODEX_AGAIN, exact: true });
+  await expect(toCodex).not.toBeChecked();
+  await expect(toCodex).toBeFocused();
+  await expect(form.getByRole('alert')).toHaveCount(0);
+  await toCodex.check();
+  await form.getByRole('button', { name: 'Start loop run' }).click();
+  await expect(form.getByRole('alert')).toHaveText('Scripted start received.');
+  expect(requests).toHaveLength(2);
+  // The same command, under the same id, now confirming Codex.
+  expect(requests[1]).toEqual({ ...requests[0], workerConsent: { revision: SUBSCRIPTION_WORKERS_CONSENT_REVISION, engines: ['codex'] } });
+
+  // Any other route asks as it always has and sends no tools. A new dialog is a new command.
+  await form.getByRole('button', { name: 'Cancel', exact: true }).click();
+  const next = await openStart(page, TOOLS_TASK);
+  await next.getByLabel('Route', { exact: true }).selectOption('openrouter');
+  await next.getByRole('checkbox', { name: 'Send the goal and the files it reads to OpenRouter.', exact: true }).check();
+  await next.getByRole('button', { name: 'Start loop run' }).click();
+  await expect(next.getByRole('alert')).toHaveText('Scripted start received.');
+  expect(requests).toHaveLength(3);
+  expect(requests[2]).toMatchObject({ route: 'openrouter', consent: true });
+  expect(requests[2]).not.toHaveProperty('workerConsent');
+  expect(requests[2].commandId).not.toBe(requests[0].commandId);
 });

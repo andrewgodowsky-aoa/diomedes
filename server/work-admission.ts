@@ -53,7 +53,7 @@ export function parseWorkCommand(body: Record<string, unknown>) {
   if (required && request.route !== required)
     throw new ApiError(
       400,
-      `The ${request.capabilityId} capability runs only on ${routeDisplayName(required)} (Codex). Choose that route for it, or start ordinary Work on this route.`,
+      `The ${request.capabilityId} capability runs only on ${routeDisplayName(required)}. Choose that route for it, or start ordinary Work on this route.`,
       { code: 'invalid_work_command' },
     );
   if ((request.model || request.effort) && !request.capabilityId)

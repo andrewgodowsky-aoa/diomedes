@@ -23,6 +23,7 @@
  * Nothing here persists. After a restart there are no scopes until work is admitted again.
  */
 import type { HarnessRun } from '../../shared/harness.js';
+import type { OwnedTeamResponseMetadata } from '../../shared/agent-collaboration.js';
 import type { AdmittedAgentWork } from '../accounts/agent-gate.js';
 import {
   ABSENT_TELEMETRY_POLICY,
@@ -36,6 +37,7 @@ import {
   type ObservationScope,
   type ScopeRecheck,
   type TelemetryPolicyPort,
+  type OwnedTeamObservation,
 } from './eligibility.js';
 
 export interface ObservationBindInput {
@@ -43,7 +45,9 @@ export interface ObservationBindInput {
   readonly rootJobId: string | null;
   readonly route: string;
   readonly connectionId: string;
+  readonly connectionRevision?: number;
   readonly model: string | null;
+  readonly ownedTeam?: OwnedTeamObservation;
   /**
    * What `ask` read before the admission's round trip (PH-07 R3-3). The scope is measured from it:
    * a workspace switch that lands while the account service answers is a change since the ask, and
@@ -135,6 +139,10 @@ export interface ObservationScopesOptions {
 const FINAL_RUN_STATES: ReadonlySet<string> = new Set(['completed', 'failed', 'cancelled']);
 /** Forgotten bind keys remembered, so a later save of their run is counted as lost. */
 const FORGOTTEN_REMEMBERED = 10_000;
+/** These are definitive answers about the business, not a temporary inability to ask it. */
+const BUSINESS_WITHDRAWALS: ReadonlySet<ObservationDenial> = new Set([
+  'telemetry-policy-none', 'telemetry-policy-absent', 'customer-export-disabled', 'entitlement-inactive',
+]);
 
 interface Candidate {
   readonly key: string;
@@ -142,6 +150,7 @@ interface Candidate {
   readonly traceRootRunId: string;
   readonly parentRunId: string | null;
   readonly lineageRunId: string | null;
+  readonly ownedTeam?: OwnedTeamObservation;
 }
 
 export const LOOP_CHILD_CAPABILITIES: readonly string[] = Object.freeze([
@@ -154,12 +163,46 @@ const text = (value: unknown): string | null => (typeof value === 'string' && va
 const record = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 
+/**
+ * The observer accepts only the strict persisted identity contract, without loading Team's runtime
+ * schemas. Conformance against ownedTeamResponseMetadataSchema is checked in observation-continuity.
+ */
+function ownedTeamMetadata(value: unknown): OwnedTeamResponseMetadata | null {
+  const metadata = record(value);
+  const keys = ['v', 'grantId', 'rootRunId', 'taskId', 'teamRunId', 'assignmentTaskId', 'parent'];
+  if (Object.keys(metadata).length !== keys.length || Object.keys(metadata).some(key => !keys.includes(key)) || metadata.v !== 1) return null;
+  const bounded = (item: unknown, max: number): item is string => typeof item === 'string' && item.length > 0 && item.length <= max;
+  if (!['grantId', 'taskId', 'teamRunId', 'assignmentTaskId'].every(key => bounded(metadata[key], 128))) return null;
+  const runId = (item: unknown): item is string => typeof item === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(item);
+  const parent = record(metadata.parent);
+  if (!runId(metadata.rootRunId) || Object.keys(parent).length !== 2 ||
+    Object.keys(parent).some(key => key !== 'runId' && key !== 'stepId') || !runId(parent.runId) || !bounded(parent.stepId, 200)) return null;
+  return metadata as unknown as OwnedTeamResponseMetadata;
+}
+
+/** Admission IDs and expiry refresh on readmission; none of the qualifying facts may change. */
+function sameOwnedTeam(a: OwnedTeamObservation | undefined, b: OwnedTeamObservation | undefined): boolean {
+  if (!a || !b) return a === b;
+  return a.runId === b.runId && a.commandId === b.commandId && a.rootRunId === b.rootRunId &&
+    a.grantId === b.grantId && a.taskId === b.taskId && a.teamRunId === b.teamRunId &&
+    a.assignmentTaskId === b.assignmentTaskId && a.parent.runId === b.parent.runId && a.parent.stepId === b.parent.stepId;
+}
+
+function sameQualification(previous: ObservationScope, next: ObservationScope): boolean {
+  return previous.bindKey === next.bindKey && previous.personId === next.personId &&
+    previous.organizationId === next.organizationId && previous.activeOrganizationAtBind === next.activeOrganizationAtBind &&
+    previous.connectionId === next.connectionId && previous.connectionRevision === next.connectionRevision &&
+    previous.requestedModel === next.requestedModel && previous.planId === next.planId && sameOwnedTeam(previous.ownedTeam, next.ownedTeam) &&
+    (['surface', 'route', 'payer', 'policyRevision', 'class', 'synthetic', 'sourceTrust', 'environment',
+      'telemetryRevision', 'organizationKey'] as const).every(key => previous.facts[key] === next.facts[key]);
+}
+
 export class ObservationScopes implements ObservationBinder {
   readonly operator: ObservationOperatorConfig;
   private readonly scopes = new Map<string, ObservationScope>();
   private readonly denied = new Map<ObservationDenial, number>();
-  /** Refused admissions per business. A scope bound before its business's latest refusal has ended. */
-  private readonly refusals = new Map<string, number>();
+  /** Definitive withdrawals per business, including scopes retained outside the binding map. */
+  private readonly refusals = new Map<string, { version: number; denial: ObservationDenial }>();
   /**
    * Who is signed in and which business is active, as last seen, and how many times that has
    * changed. A scope bound before the latest change has ended for good (contract 4.6; PH-07 N-3).
@@ -199,7 +242,7 @@ export class ObservationScopes implements ObservationBinder {
     // A change not yet seen ends what was bound (or asked) before it, never this new scope.
     this.observeContext();
     const ask = input.ask;
-    const decision: EligibilityDecision =
+    let decision: EligibilityDecision =
       // The gate admitted another business than the one asked about: nothing to measure a switch from.
       ask && input.admission && ask.organizationId !== input.admission.organizationId
         ? ({ eligible: false, denial: 'workspace-changed' } as const)
@@ -207,7 +250,8 @@ export class ObservationScopes implements ObservationBinder {
             operator: this.operator,
             backend: this.options.backend(),
             admission: input.admission,
-            work: { rootJobId: input.rootJobId, route: input.route, connectionId: input.connectionId, model: input.model },
+            work: { rootJobId: input.rootJobId, route: input.route, connectionId: input.connectionId,
+              connectionRevision: input.connectionRevision, model: input.model, ownedTeam: input.ownedTeam },
             // The business active when the admission was asked, not when its answer came back (PH-07 R3-3).
             activeOrganizationId: ask ? ask.activeOrganizationId : this.options.authority.activeOrganizationId(),
             telemetry: this.telemetry,
@@ -215,15 +259,28 @@ export class ObservationScopes implements ObservationBinder {
           });
     if (!decision.eligible) {
       this.count(decision.denial);
-      // A later admission that is refused ends the earlier scope for the same work.
+      // Privacy answers apply to every predecessor in this business, including queued rebindings.
+      if (input.admission?.organizationId && BUSINESS_WITHDRAWALS.has(decision.denial))
+        this.endBusiness(input.admission.organizationId, decision.denial);
+      // Other ineligible admissions remove the binding; an account outage is never a revocation.
       if (input.admission && input.rootJobId) this.scopes.delete(bindKeyFor(input.admission.surface, input.rootJobId));
       return decision;
+    }
+    const previous = this.scopes.get(decision.scope.bindKey);
+    if (previous && this.runs.get(previous) !== 'ended' &&
+      (!ask || ask.context === this.contextChanges) && sameQualification(previous, decision.scope) &&
+      this.recheck(previous).live) {
+      // Keep the fresh admission's provenance, but retain the uninterrupted start boundary.
+      const scope = { ...decision.scope, boundAt: previous.boundAt };
+      const runState = this.runs.get(previous);
+      if (runState) this.runs.set(scope, runState);
+      decision = { eligible: true, scope };
     }
     this.scopes.delete(decision.scope.bindKey);
     this.scopes.set(decision.scope.bindKey, decision.scope);
     this.forgotten.delete(decision.scope.bindKey);
     this.generation.set(decision.scope, {
-      refusals: this.refusals.get(decision.scope.organizationId) ?? 0,
+      refusals: this.refusals.get(decision.scope.organizationId)?.version ?? 0,
       // A switch while the account service answered is a change since the ask: it ends this scope.
       context: ask ? Math.min(ask.context, this.contextChanges) : this.contextChanges,
     });
@@ -296,9 +353,13 @@ export class ObservationScopes implements ObservationBinder {
   refused(input: ObservationRefusalInput): void {
     const organizationId = input.organizationId !== undefined ? input.organizationId : this.businessFor(input.projectId);
     if (!organizationId) return;
-    this.refusals.set(organizationId, (this.refusals.get(organizationId) ?? 0) + 1);
-    for (const [key, scope] of this.scopes) if (scope.organizationId === organizationId) this.scopes.delete(key);
+    this.endBusiness(organizationId, 'admission-refused');
     this.count('admission-refused');
+  }
+
+  private endBusiness(organizationId: string, denial: ObservationDenial): void {
+    this.refusals.set(organizationId, { version: (this.refusals.get(organizationId)?.version ?? 0) + 1, denial });
+    for (const [key, scope] of this.scopes) if (scope.organizationId === organizationId) this.scopes.delete(key);
   }
 
   /**
@@ -307,9 +368,9 @@ export class ObservationScopes implements ObservationBinder {
    * run end (`runEnded`).
    */
   resolve(run: HarnessRun): ResolvedScope | null {
-    for (const { key, ...rest } of this.candidates(run)) {
+    for (const { key, ownedTeam, ...rest } of this.candidates(run)) {
       const scope = this.scopes.get(key);
-      if (!scope) continue;
+      if (!scope || !sameOwnedTeam(scope.ownedTeam, ownedTeam)) continue;
       if (!this.runs.has(scope)) this.runs.set(scope, 'live');
       return { scope, ...rest };
     }
@@ -343,6 +404,17 @@ export class ObservationScopes implements ObservationBinder {
         return [{ key: `work:${run.id}`, own: true, traceRootRunId: run.id, parentRunId: null, lineageRunId: null }];
       case 'model-api-team-work': {
         const command = text(input.commandId);
+        if (!command) return [];
+        if (input.ownedTeam !== undefined || input.rootRunId !== undefined || input.parent !== undefined) {
+          const metadata = ownedTeamMetadata(input.ownedTeam);
+          const parent = record(input.parent);
+          if (!metadata || metadata.taskId !== run.taskId || metadata.rootRunId !== input.rootRunId ||
+            metadata.parent.runId !== metadata.rootRunId || metadata.rootRunId === run.id ||
+            parent.runId !== metadata.parent.runId || parent.stepId !== metadata.parent.stepId) return [];
+          return [{ key: `team:${command}`, own: true, traceRootRunId: metadata.rootRunId,
+            parentRunId: metadata.parent.runId, lineageRunId: null,
+            ownedTeam: { ...metadata, runId: run.id, commandId: command } }];
+        }
         return command ? [{ key: `team:${command}`, own: true, traceRootRunId: run.id, parentRunId: null, lineageRunId: null }] : [];
       }
       case 'diomedes-loop':
@@ -367,15 +439,18 @@ export class ObservationScopes implements ObservationBinder {
       this.observeContext();
       const bound = this.generation.get(scope) ?? { refusals: 0, context: 0 };
       const ended = this.ended.get(scope);
-      result = ended
-        ? { live: false, denial: ended }
-        : // Ended by a later refusal, even when the cached entitlement has not caught up yet.
-          bound.refusals < (this.refusals.get(scope.organizationId) ?? 0)
-          ? { live: false, denial: 'admission-refused' }
-          : // Ended by a sign-out, another person or another business since bind, even if it is back.
-            bound.context < this.contextChanges
-            ? { live: false, denial: this.contextEnds.get(bound.context + 1) ?? 'workspace-changed' }
-            : recheckScope(scope, this.options.authority, this.operator, this.telemetry);
+      const refusal = this.refusals.get(scope.organizationId);
+      if (ended) result = { live: false, denial: ended };
+      // A later definitive answer fences old objects even after metadata or entitlement returns.
+      else if (refusal && bound.refusals < refusal.version) result = { live: false, denial: refusal.denial };
+      else if (bound.context < this.contextChanges)
+        result = { live: false, denial: this.contextEnds.get(bound.context + 1) ?? 'workspace-changed' };
+      else {
+        result = recheckScope(scope, this.options.authority, this.operator, this.telemetry);
+        // Only a newly observed business answer advances the fence. Rechecking an old fenced
+        // object must never end a fresh scope authorized after restoration.
+        if (!result.live && BUSINESS_WITHDRAWALS.has(result.denial)) this.endBusiness(scope.organizationId, result.denial);
+      }
     } catch {
       result = { live: false, denial: 'account-service-unavailable' };
     }

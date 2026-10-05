@@ -10,7 +10,7 @@ import path from 'node:path';
 import type { ModelMessage } from 'ai';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import type { RawToolActivity } from '../shared/adapter-contract.js';
-import type { ToolDescriptor } from '../shared/harness.js';
+import type { ModelRequest, ToolDescriptor } from '../shared/harness.js';
 import { micro } from '../shared/managed-usage.js';
 import { exposureAttempt } from '../server/engines/aws-bedrock.js';
 import { CONVERSATION_LIMITS, guardedStreamFetch, ModelApiError } from '../server/engines/model-api-core.js';
@@ -23,6 +23,8 @@ import {
   type OpenRouterConnection,
 } from '../server/engines/openrouter.js';
 import { SpendExposure, usageCost } from '../server/spend-exposure.js';
+import { FileModelTranscripts } from '../server/harness/model-transcripts.js';
+import { createOpenRouterModelAdapter } from '../server/harness/openrouter-model-adapter.js';
 import { chatEvents, sseResponse } from './fixtures/model-api-streams.js';
 
 const SECRET = 'sk-or-test-only-0123456789abcdef';
@@ -49,6 +51,12 @@ const CONNECTION: OpenRouterConnection = {
   revision: 2,
   createdAt: '2026-09-22T08:00:00.000Z',
   updatedAt: '2026-09-22T08:00:00.000Z',
+};
+const SOL_MODEL = 'openai/gpt-6.1-sol';
+const SOL_CONNECTION: OpenRouterConnection = {
+  ...CONNECTION,
+  models: [{ id: SOL_MODEL, upstreams: ['openai'], rates: RATES, zdr: true,
+    reasoning: { supported: ['low', 'medium', 'high'], source: 'Synthetic SDK fixture declaration; not live qualification' } }],
 };
 const READ_SOURCE: ToolDescriptor = {
   name: 'read_source',
@@ -129,11 +137,12 @@ function call(
 ) {
   const messages: ModelMessage[] = overrides.messages ?? [{ role: 'user', content: 'What is on the lunch menu?' }];
   const model = overrides.model ?? MODEL;
+  const connection = overrides.connection ?? CONNECTION;
   return respondOpenRouter({
-    connection: CONNECTION,
+    connection,
     model,
     secret: SECRET,
-    card: openRouterRateCard(CONNECTION, model),
+    card: openRouterRateCard(connection, model),
     exposure,
     attempt: exposureAttempt(`run-${run}`, 'model@1', messages),
     instructions: 'You are Diomedes. Answer only from attached sources.',
@@ -156,6 +165,129 @@ async function failure(promise: Promise<unknown>): Promise<ModelApiError> {
 }
 
 describe('the request the real SDK sends to OpenRouter', () => {
+  test('F1: a partial capability rejects higher levels but still serializes its supported low effort', async () => {
+    const connection: OpenRouterConnection = { ...SOL_CONNECTION, models: [{ ...SOL_CONNECTION.models[0],
+      reasoning: { supported: ['low'], source: 'Synthetic partial capability' } }] };
+    const net = transport([() => answer({ model: SOL_MODEL, provider: 'OpenAI' })]);
+    for (const effort of ['medium', 'high'] as const)
+      await expect(call(net.fetch, { connection, model: SOL_MODEL, effort })).rejects.toMatchObject({ code: 'openrouter_effort_unsupported' });
+    expect(net.sent).toHaveLength(0);
+    expect(exposure.list(CONNECTION.id)).toHaveLength(0);
+    const result = await call(net.fetch, { connection, model: SOL_MODEL, effort: 'low' });
+    expect(net.sent).toHaveLength(1);
+    expect(net.sent[0].body.reasoning).toEqual({ effort: 'low' });
+    expect(result.reservation.state).toBe('settled');
+  });
+  test('F1: an unknown capability sends no reasoning field on the real SDK wire', async () => {
+    const net = transport([() => answer()]);
+    const result = await call(net.fetch);
+    expect(net.sent).toHaveLength(1);
+    expect(net.sent[0].body).not.toHaveProperty('reasoning');
+    expect(net.sent[0].body).toMatchObject({ model: MODEL, max_tokens: CONVERSATION_LIMITS.maxOutputTokens,
+      provider: { only: ['anthropic', 'amazon-bedrock'], allow_fallbacks: false, require_parameters: true, data_collection: 'deny' } });
+    expect(result.reservation.state).toBe('settled');
+    expect(exposure.list(CONNECTION.id)).toHaveLength(1);
+  });
+
+  test('F1: an unknown capability refuses a direct effort before a spend hold or SDK dispatch', async () => {
+    const net = transport([() => answer()]);
+    await expect(call(net.fetch, { effort: 'high' })).rejects.toMatchObject({ code: 'openrouter_effort_unsupported' });
+    expect(net.sent).toHaveLength(0);
+    expect(exposure.list(CONNECTION.id)).toHaveLength(0);
+  });
+
+  test('F1: an adapter refuses an unknown capability before preparation can reserve', () => {
+    const net = transport([]);
+    expect(() => createOpenRouterModelAdapter({
+      connection: CONNECTION, model: MODEL, secret: SECRET, card: openRouterRateCard(CONNECTION, MODEL), exposure,
+      transcripts: new FileModelTranscripts(path.join(dir, 'transcripts'), 'openrouter'),
+      instructions: 'Use only the synthetic menu.', effort: 'high', transport: net.fetch,
+    })).toThrow(expect.objectContaining({ code: 'openrouter_effort_unsupported' }));
+    expect(net.sent).toHaveLength(0);
+    expect(exposure.list(CONNECTION.id)).toHaveLength(0);
+  });
+
+  test('the adapter snapshots selected effort so later option mutation cannot change its bound request', async () => {
+    const net = transport([() => answer({ model: SOL_MODEL, provider: 'OpenAI' })]);
+    const transcripts = new FileModelTranscripts(path.join(dir, 'transcripts'), 'openrouter');
+    const options: Parameters<typeof createOpenRouterModelAdapter>[0] = {
+      connection: SOL_CONNECTION, model: SOL_MODEL, secret: SECRET,
+      card: openRouterRateCard(SOL_CONNECTION, SOL_MODEL), exposure, transcripts,
+      instructions: 'Reconcile the synthetic inventory only.', effort: 'medium', transport: net.fetch,
+    };
+    const adapter = createOpenRouterModelAdapter(options);
+    const mediumProfile = adapter.profileHash;
+    options.effort = 'high';
+    const request: ModelRequest = {
+      runId: `snapshot-${run}`, capabilityId: 'inventory-reconciliation',
+      messages: [{ role: 'user', text: 'Find the discrepancy.' }], tools: [], transcript: null,
+    };
+    const prepared = await adapter.prepare!(request, new AbortController().signal);
+    const result = await adapter.complete(prepared, new AbortController().signal);
+    expect(net.sent).toHaveLength(1);
+    expect(net.sent[0].body.reasoning).toEqual({ effort: 'medium' });
+    expect(adapter.profileHash).toBe(mediumProfile);
+    expect((await transcripts.read(result.transcript!)).profileHash).toBe(mediumProfile);
+  });
+
+  test('the selected effort binds the adapter profile and prepared receipt to that exact request', async () => {
+    const net = transport([]);
+    const adapter = (effort: 'medium' | 'high') => {
+      const selection = { effort };
+      return createOpenRouterModelAdapter({
+        ...selection,
+        connection: SOL_CONNECTION,
+        model: SOL_MODEL,
+        secret: SECRET,
+        card: openRouterRateCard(SOL_CONNECTION, SOL_MODEL),
+        exposure,
+        transcripts: new FileModelTranscripts(path.join(dir, 'transcripts'), 'openrouter'),
+        instructions: 'Reconcile the synthetic inventory only.',
+        transport: net.fetch,
+      });
+    };
+    const medium = adapter('medium');
+    const high = adapter('high');
+    expect(medium.profileHash).not.toBe(high.profileHash);
+    const request: ModelRequest = {
+      runId: `profile-${run}`, capabilityId: 'inventory-reconciliation',
+      messages: [{ role: 'user', text: 'Find the discrepancy.' }], tools: [], transcript: null,
+    };
+    const prepared = await medium.prepare!(request, new AbortController().signal);
+    await expect(high.validatePrepared!(prepared)).rejects.toMatchObject({ code: 'openrouter_profile_changed' });
+    expect(net.sent).toHaveLength(0);
+    expect(exposure.list(CONNECTION.id)).toHaveLength(0);
+  });
+
+  test('Sol medium effort reaches the real SDK wire with the bounded output and saved provider restrictions', async () => {
+    const net = transport([() => answer({ model: SOL_MODEL, provider: 'OpenAI' })]);
+    const effort = { effort: 'medium' as const };
+    const result = await call(net.fetch, {
+      ...effort,
+      connection: SOL_CONNECTION,
+      model: SOL_MODEL,
+      card: openRouterRateCard(SOL_CONNECTION, SOL_MODEL),
+      tools: [READ_SOURCE],
+    });
+
+    expect(result.reportedModel).toBe(SOL_MODEL);
+    expect(net.sent).toHaveLength(1);
+    expect(net.sent[0].body.reasoning).toEqual({ effort: 'medium' });
+    expect(net.sent[0].body.max_tokens).toBe(CONVERSATION_LIMITS.maxOutputTokens);
+    expect(net.sent[0].body).not.toHaveProperty('max_completion_tokens');
+    expect(net.sent[0].body.provider).toEqual({
+      only: ['openai'],
+      allow_fallbacks: false,
+      require_parameters: true,
+      data_collection: 'deny',
+      zdr: true,
+    });
+    expect(net.sent[0].body.tools).toEqual([
+      { type: 'function', function: { name: 'read_source', description: READ_SOURCE.description, parameters: READ_SOURCE.inputSchema } },
+    ]);
+    expect(result.reservation.state).toBe('settled');
+  });
+
   test('a streamed final answer: one endpoint, the saved key only, the exact preferences, no fallback list', async () => {
     const net = transport([() => answer()]);
     const deltas: string[] = [];

@@ -20,6 +20,9 @@ import type { DocumentInfo } from './types.js';
  */
 export const TASK_SOURCE_LIMITS = { files: 8, bytes: 128_000 } as const;
 
+/** The document kinds a Board start sends. A manual hand-off names only these (server/manual-teams.ts). */
+export const TASK_SOURCE_KINDS = ['markdown', 'text', 'plan'] as const;
+
 /** File endings the service reads as Markdown. The server's `textKind` uses this same list. */
 export const MARKDOWN_EXTENSIONS = ['md', 'markdown'] as const;
 /** File endings the service reads as plain text. */
@@ -50,7 +53,7 @@ export function taskDocumentProblem(
   const document = documents.find((item) => item.path === path);
   if (!document)
     return 'The selected document is no longer listed in this project. Choose another document.';
-  if (!['markdown', 'text', 'plan'].includes(document.kind))
+  if (!(TASK_SOURCE_KINDS as readonly string[]).includes(document.kind))
     return 'Select a supported text document.';
   if (document.size > TASK_SOURCE_LIMITS.bytes) return 'Select a document no larger than 128 KB.';
   return null;

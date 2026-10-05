@@ -84,9 +84,7 @@ for (const [width, height, scale] of [
   }) => {
     await page.setViewportSize({ width, height });
     await open(page, scale);
-    await page.getByRole('navigation', { name: 'Threads and views' })
-      .getByRole('button', { name: /^Engines\b/ })
-      .click();
+    await page.getByRole('button', { name: 'Settings', exact: true }).click();
     await expect(page.locator('.settings-layout')).toBeVisible();
     await fits(page);
     const uiFonts = await page
@@ -103,7 +101,6 @@ for (const [width, height, scale] of [
     }
     for (const name of [
       'Interface detail',
-      'Helpers on this computer',
       'Permissions',
       'Appearance',
       'About',
@@ -162,7 +159,7 @@ for (const [width, height, scale] of [
     );
     await open(page, scale);
     const nav = page.getByRole('navigation', { name: 'Threads and views' });
-    for (const name of ['Thread', 'Board', 'Team', 'Connections']) {
+    for (const name of ['Thread', 'Board', 'Team']) {
       await nav.getByRole('button', { name: new RegExp(`^${name}\\b`) }).click();
       await fits(page);
     }

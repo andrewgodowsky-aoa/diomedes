@@ -41,7 +41,9 @@ import {
   handoffRecord,
   hasActiveRun,
   isContinuation,
+  isManualCard,
   isWorkflowPhase,
+  MANUAL_CARD_PHASE_REFUSED,
   nextPhase,
   workflowOf,
 } from '../shared/task-workflow.js';
@@ -170,6 +172,8 @@ export function requestTaskHandoff(
   by: Owner,
 ): TaskHandoffResult {
   if (!isWorkflowPhase(next)) throw new WorkflowValidationError('Choose a valid next phase.');
+  // S1 (N04): only the person moves a manual card's phase, through the routes below.
+  if (by !== 'you' && isManualCard(task)) throw new WorkflowConflictError(MANUAL_CARD_PHASE_REFUSED);
   const workflow = workflowOf(task);
   const expected = nextPhase(workflow.phase);
   if (expected === null || expected !== next)
@@ -277,6 +281,41 @@ export function proposeTask(store: Store, state: MutableState, input: ProposeTas
     actor: 'diomedes',
     taskId: task.id,
     sessionId: input.sessionId ?? null,
+  });
+  return task;
+}
+
+/**
+ * A bounded assignment already admitted under an active root, not a new task
+ * suggestion or a human acceptance. The owned Team service must hold Store
+ * and the root RunService fence and revalidate its recorded grant before this
+ * projection. Existing parent/output/depth/turn gates still apply; no writer,
+ * billing permission, phase advance or approval is copied to this child.
+ */
+export function proposeOwnedTaskAssignment(
+  store: Store,
+  state: MutableState,
+  input: Omit<ProposeTaskInput, 'acceptedByPerson'> & {
+    parentTaskId: string; rootRunId: string; admissionRef: string;
+  },
+): Task {
+  if (!input.rootRunId || input.rootRunId.length > 160 || !input.admissionRef || input.admissionRef.length > 160)
+    throw new WorkflowValidationError('The owned assignment needs its recorded root admission.');
+  const parent = liveTask(state, input.parentTaskId, 'parent');
+  if (parent.state === 'done' || parent.workflow?.inbox || parent.workflow?.pendingPhase)
+    throw new WorkflowConflictError('The root task is not admitted to continue this assignment.');
+  const task = proposeTask(store, state, {
+    name: input.name, description: input.description, owner: input.owner,
+    parentTaskId: input.parentTaskId, output: input.output,
+    sessionId: input.sessionId, origin: input.origin, maxTurns: input.maxTurns,
+  });
+  task.ownedAssignment = {rootTaskId:input.parentTaskId,rootRunId:input.rootRunId,admissionRef:input.admissionRef};
+  task.workflow!.inbox = false;
+  task.workflow!.phase = workflowOf(parent).phase;
+  store.addEntry(state, {
+    kind: 'task-owned-assignment-admitted', actor: 'diomedes', taskId: task.id,
+    sessionId: input.sessionId ?? null,
+    sentence: `Diomedes admitted ${task.name} as a bounded assignment under ${parent.name}.`,
   });
   return task;
 }

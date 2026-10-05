@@ -58,6 +58,33 @@ describe('AWS Bedrock setup view', () => {
     expect(usd(100_000_000)).toBe('$100.00');
   });
 
+  test('an explicit US K3 selection is sent unchanged; leaving the model unset keeps Luna', () => {
+    const input = { accountId: '123456789012', apiKey: KEY, expiresLocal: '', consent: true };
+    expect(awsConnectBody({ ...input, model: 'us.moonshotai.kimi-k3' }, NOW)).toMatchObject({
+      ok: true,
+      body: { model: 'us.moonshotai.kimi-k3', region: 'us-east-1', accountId: input.accountId },
+    });
+    expect(awsConnectBody(input, NOW)).toMatchObject({ ok: true, body: { model: 'us.openai.gpt-5.6-luna' } });
+  });
+
+  test.each(['moonshotai.kimi-k3', 'global.moonshotai.kimi-k3', 'us.moonshotai.kimi-k2.5'])(
+    'setup refuses %s instead of silently saving Luna',
+    (model) => {
+      const result = awsConnectBody({ accountId: '123456789012', apiKey: KEY, expiresLocal: '', consent: true, model }, NOW);
+      expect(result.ok).toBe(false);
+      expect(JSON.stringify(result)).not.toContain(KEY);
+    },
+  );
+
+  test('a configured K3 route with unresolved billed output limits is blocked in the picker', () => {
+    const blocked = view({
+      connection: { ...view().connection!, model: 'us.moonshotai.kimi-k3' },
+      next: 'Kimi K3 requests are blocked because the billed reasoning and output limit has not been verified.',
+    });
+    expect(awsPickerState(blocked)).toEqual({ offered: false, note: expect.stringContaining('billed reasoning and output limit') });
+    expect(byKey(awsStateRows(blocked, NOW)).route).toMatchObject({ value: 'blocked', text: expect.stringContaining('Kimi K3') });
+  });
+
   test('a fresh install waits on every fact, in setup order', () => {
     const rows = awsStateRows(view({ configured: false, enabled: false, connection: null, spend: null }), NOW);
     expect(rows.map((row) => row.key)).toEqual(['connection', 'key', 'limit', 'route']);

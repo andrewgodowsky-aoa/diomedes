@@ -35,7 +35,8 @@ function Receipt({ receipt }: { receipt: RoutingReceipt }) {
           Policy {attempt.routing.policyRevision}; global {attempt.routing.globalRevision}; account {attempt.routing.scopeRevision}; privacy {attempt.routing.preferenceRevision}.
           {' '}Route {attempt.routing.routeId} revision {attempt.routing.routeRevision}; price {attempt.routing.priceVersion}.
           {attempt.routing.upstreamEndpoint && <> Downstream: {attempt.routing.upstreamEndpoint}.</>}
-          {attempt.routing.fallbackReason && <> Backup reason: {attempt.routing.fallbackReason}.</>}
+          {attempt.routing.fallbackReason === 'ranked_by_profile' ? <> Chosen by the routing preference.</>
+            : attempt.routing.fallbackReason && <> Backup reason: {attempt.routing.fallbackReason}.</>}
         </small>}
       </li>)}</ol>
     </div>;

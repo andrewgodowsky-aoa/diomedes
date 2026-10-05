@@ -64,13 +64,14 @@ export const ENGINE_NAMES: Record<ExternalEngine, string> = {
 };
 /**
  * The one place a route is named for a person. The Codex route runs on the
- * person's own ChatGPT account, and it is named for that account everywhere,
- * the same name the model picker and Settings show, so a run card can never
- * call it something the header does not.
+ * person's own ChatGPT account through Codex, and it's named for the coding
+ * tool everywhere, the same name the model picker and Settings show, so a run
+ * card never calls it something the header doesn't. Copy about signing in
+ * still names the ChatGPT account.
  */
 export const ROUTE_NAMES: Record<Route, string> = {
   ...ENGINE_NAMES,
-  codex: 'ChatGPT',
+  codex: 'Codex',
   sample: 'Sample',
   'aws-bedrock': 'AWS Bedrock',
   'azure-openai': 'Azure OpenAI',

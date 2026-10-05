@@ -1,9 +1,9 @@
 import { z } from 'zod';
 import { ConfigurationError, configuration, identityFor, type AccountPool, type Configuration } from './config.js';
-import { AccountService, organizationInput, invitationInput, changeInput, acceptanceInput, codeInvitationInput, redeemCodeInput } from './account-service.js';
+import { AccountService, IDENTITY_RECHECK, organizationInput, invitationInput, changeInput, acceptanceInput, codeInvitationInput, redeemCodeInput } from './account-service.js';
 import { AccountError } from './errors.js';
 import { readBytes } from './crypto.js';
-import { WorkOSIdentityVerifier } from './identity-workos.js';
+import { WorkOSIdentityVerifier, signingKeyCache, type SigningKeyCache } from './identity-workos.js';
 import { StaffKeyVerifier, postgresStaffKeys } from './identity-staff-key.js';
 import { PostgresRepository, neonClientFactory } from './postgres.js';
 import { FundingService, PurchasedUsageService, UsageService, purchasedHoldInput, purchasedReleaseInput, purchasedRenewInput, purchasedSettleInput } from './funding.js';
@@ -112,6 +112,19 @@ export interface HandlerOptions {
   createOrganizationExport?: (config: Configuration, accounts: AccountService, env: Record<string, unknown>) => OrganizationExportService;
 }
 
+/**
+ * The customer signing keys, kept for the life of the isolate so their five-minute cache outlives a
+ * request. Only the keys and their fetch time are kept, for one client id at a time, since the key URL
+ * depends on the client id alone. Each request still builds its own verifier: a key fetch belongs to
+ * the request that started it and is cancelled when that request ends, so no request may wait on
+ * another's. Every session and user check is made again on every request.
+ */
+let customerKeys: { clientId: string; cache: SigningKeyCache } | null = null;
+export function customerSigningKeys(clientId: string): SigningKeyCache {
+  if (customerKeys?.clientId !== clientId) customerKeys = { clientId, cache: signingKeyCache() };
+  return customerKeys.cache;
+}
+
 const MANAGED_ATTEMPT = /^\/managed\/v1\/attempts\/([A-Za-z0-9][A-Za-z0-9._:-]{0,127})$/;
 
 /**
@@ -124,7 +137,8 @@ const MANAGED_ATTEMPT = /^\/managed\/v1\/attempts\/([A-Za-z0-9][A-Za-z0-9._:-]{0
 export function createHandler(create: (config: Configuration, pool: AccountPool) => AccountService = (config, pool) => {
   const repository = new PostgresRepository(neonClientFactory(config.databaseUrl));
   if (pool === 'staff') return new AccountService(repository, new StaffKeyVerifier(postgresStaffKeys(neonClientFactory(config.databaseUrl))));
-  return new AccountService(repository, new WorkOSIdentityVerifier(identityFor(config, pool)));
+  const identity = identityFor(config, pool);
+  return new AccountService(repository, new WorkOSIdentityVerifier({ ...identity, signingKeys: customerSigningKeys(identity.clientId) }));
 },
   // The usage read verifies membership first, then reads funding rows under the
   // organization's own tenant, as the Worker login, which may only read them.
@@ -419,6 +433,11 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
         const answer = await createRelay(config, accounts, env).desktop(token, match[1], request);
         return answer instanceof Response ? answer : json(answer);
       }
+      // A phone dials here (relay plan step 3): the same front checks as presence, no device key.
+      if ((match = route('/relay/v1/organizations/:id/phone').exec(pathname)) && method === 'GET') {
+        const answer = await createRelay(config, accounts, env).phone(token, match[1], request);
+        return answer instanceof Response ? answer : json(answer);
+      }
 
       if (pathname === '/account/routing-policy' && method === 'GET')
         return json(await createCommercial(config, accounts).routingPolicy(token));
@@ -495,6 +514,9 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
     } catch (error) {
       if (error instanceof AccountError) {
         const code = (error as { code?: unknown }).code;
+        // The proof aged inside this service. The header tells a client it may ask again; the desktop
+        // keeps the sign-in and the person can try again.
+        if (code === IDENTITY_RECHECK) headers.set('Retry-After', '1');
         return json(typeof code === 'string' ? { error: error.message, code } : { error: error.message }, error.status);
       }
       // Names the setting and rule a configuration refusal broke, never its value.
@@ -515,6 +537,10 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
  *   Unset, blank or unreadable: every managed call answers 503 route_unavailable.
  * - OPENROUTER_API_KEY, the key /managed/v1/evaluations sends to OpenRouter's
  *   Decisions endpoint; without it that route alone answers 503.
+ * Each approved connection in MANAGED_CONNECTIONS names one more secret by secretRef and is read
+ * as env[secretRef] (src/managed-bindings.ts): BEDROCK_API_KEY and OPENROUTER_API_KEY above,
+ * AZURE_OPENAI_API_KEY for the Azure AI Foundry resource, and VERTEX_API_KEY (or a short-lived
+ * VERTEX_ACCESS_TOKEN) for Vertex. A connection whose secret is unset serves nothing.
  * STAFF_WORKOS_API_KEY and STAFF_WORKOS_CLIENT_ID (src/config.ts) are no longer read by
  * /ops/*: staff sign in with staff keys since 2026-09-26. They go with the staff WorkOS
  * environment.

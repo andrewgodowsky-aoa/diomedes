@@ -56,6 +56,11 @@ import { CONVERSATION_LIMITS } from '../engines/model-api-core.js';
 import { ARTIFACT_FORMAT } from '../answer-format.js';
 import { VISUAL_INSTRUCTIONS } from '../modes.js';
 import { DECISION_FORMAT } from '../interaction-turn.js';
+import {
+  AGENT_TEAM_MEMBER_TOOLS, AGENT_TEAM_MODEL_CALLS, AGENT_TEAM_RESPONSE_UNITS,
+  ownedTeamResponseMetadataSchema, ownedTeamResponseResultSchema,
+  type OwnedTeamResponseResult,
+} from '../../shared/agent-collaboration.js';
 
 export const MODEL_CONVERSATION_CAPABILITY: CapabilityManifest = {
   id: 'model-api-conversation',
@@ -118,6 +123,16 @@ export const teamWorkRunId = (projectId: string, requestId: string) =>
   `model-work-${digest({ projectId, requestId })}`;
 
 const TEAM_WORK_NOTE = `You are working as a member of a Diomedes team. Use the team tools to read your messages, see the board and report back; the host runs each call for you. You have no file, shell or web tools. Your final answer must still be the file proposal the request asks for.`;
+const TEAM_RESPONSE_NOTE = `You are answering one bounded question for the selected Team lead. Read only this assignment and its selected sources. Your final answer is the plain response to the question; the host sends it through the Team mailbox. Task progress follows the recorded response; return your final answer to finish it instead of marking the assignment Done. You have no file, shell, web, delegation or review tools. You cannot complete the lead's task or approve a change.`;
+
+export interface OwnedResponseWork {
+  principal: HarnessPrincipal;
+  /** Parsed before use; only host-issued ownership metadata enters the run. */
+  metadata: unknown;
+  /** At most six calls, narrowed further by the root-owned assignment's inherited turn limit. */
+  maxModelCalls: number;
+  validate(phase: 'dispatch' | 'result'): void | Promise<void>;
+}
 
 export const modelSessionRunId = (projectId: string, commandId: string) =>
   `model-${digest({ projectId, commandId })}`;
@@ -268,7 +283,7 @@ type ToolPhase = 'finished' | 'failed';
  * changed mid-turn stops the next call rather than letting the loop run on
  * (security pass 2026-09-23).
  */
-function sharingGuarded(adapter: ModelAdapter, check: () => void): ModelAdapter {
+function sharingGuarded(adapter: ModelAdapter, check: (phase: 'dispatch' | 'result') => void | Promise<void>): ModelAdapter {
   return {
     id: adapter.id,
     version: adapter.version,
@@ -277,26 +292,26 @@ function sharingGuarded(adapter: ModelAdapter, check: () => void): ModelAdapter 
     ...(adapter.enforcesSourceRestrictions ? { enforcesSourceRestrictions: true as const } : {}),
     capabilities: () => adapter.capabilities(),
     ...(adapter.prepare ? { prepare: async (value, signal) => {
-      check();
+      await check('dispatch');
       const prepared = await adapter.prepare!(value, signal);
-      check();
+      await check('dispatch');
       return prepared;
     } } : {}),
     ...(adapter.validatePrepared ? { validatePrepared: async (value) => {
-      check();
+      await check('dispatch');
       await adapter.validatePrepared!(value);
-      check();
+      await check('dispatch');
     } } : {}),
     ...(adapter.inspect ? { inspect: async (value, answer, signal) => {
-      check();
+      await check('dispatch');
       const inspected = await adapter.inspect!(value, answer, signal);
-      check();
+      await check('result');
       return inspected;
     } } : {}),
     complete: async (value, signal) => {
-      check();
+      await check('dispatch');
       const answer = await adapter.complete(value, signal);
-      check();
+      await check('result');
       return answer;
     },
   };
@@ -413,7 +428,9 @@ export class ModelSessionRuns {
       prompt: request.input.prompt,
       documents: request.input.documents,
       requestId: request.input.requestId,
-      mode: request.mode,
+      // A bound command may resolve as start or follow-up during the same dispatch.
+      // The host binding already contains its actual conversation Mode and payload.
+      mode: request.input.binding === undefined ? request.mode : null,
       binding: request.input.binding ?? null,
     });
     const pending = this.active.get(request.runId);
@@ -1125,15 +1142,39 @@ export class ModelSessionRuns {
     admit(signal?: AbortSignal): Promise<ModelSessionAdmission>;
     adapter(admission: ModelSessionAdmission, instructions: string, signal: AbortSignal): Promise<ModelAdapter>;
     registry: ToolRegistry;
-  }): Promise<{ runId: string; text: string; model: string; version: string }> {
+    ownedResponse?: OwnedResponseWork;
+  }): Promise<OwnedTeamResponseResult> {
     if (this.closed) throw new EngineError('SESSION_CLOSED', 'The conversation runtime is shutting down.');
-    const { input, route } = request;
-    const principal = localHarnessPrincipal(input.projectId);
+    const { input, route, ownedResponse } = request;
+    const metadata = ownedResponse ? ownedTeamResponseMetadataSchema.parse(ownedResponse.metadata) : null;
+    const principal = ownedResponse ? structuredClone(ownedResponse.principal) : localHarnessPrincipal(input.projectId);
+    if (ownedResponse && (!Number.isInteger(ownedResponse.maxModelCalls) || ownedResponse.maxModelCalls < 1 ||
+      ownedResponse.maxModelCalls > AGENT_TEAM_MODEL_CALLS || principal.capabilities.length !== 0 ||
+      principal.projectId !== input.projectId || metadata!.parent.runId !== metadata!.rootRunId))
+      throw new HarnessError('invalid_owned_response', 'A Team response has one root, at most six calls and no write or review permissions.');
+    const maxCalls = ownedResponse?.maxModelCalls ?? TEAM_WORK_CAPABILITY.maxTurns;
     const runId = teamWorkRunId(input.projectId, input.requestId);
+    const binding = ownedResponse ? digest({ route, scope: scope(input, route), prompt: input.prompt,
+      instructions: input.instructions, binding: input.binding ?? null,
+      documents: input.documents, effort: input.effort ?? null, principal, metadata, maxModelCalls: maxCalls }) : null;
     const known = await this.runs.get(runId).catch((error: unknown) => {
       if (error instanceof HarnessError && error.code === 'unknown_run') return null;
       throw error;
     });
+    if (known && ownedResponse) {
+      const saved = known.input as { workBinding?: unknown } | undefined;
+      if (known.projectId !== input.projectId || known.tenantId !== principal.tenantId ||
+        known.capabilityId !== TEAM_WORK_CAPABILITY.id || saved?.workBinding !== binding)
+        throw new HarnessError('intent_mismatch', 'This Team response belongs to a different recorded request.');
+      await ownedResponse.validate('result');
+      if (known.state === 'completed') {
+        const last = [...known.steps].reverse().find((step) => step.intent.kind === 'model' && step.state === 'succeeded');
+        const text = (known.result as { text?: unknown } | null)?.text;
+        const model = (last?.output as { transcript?: { modelId?: string | null } } | null)?.transcript?.modelId ?? '';
+        return ownedTeamResponseResultSchema.parse({ runId, text, model, version: last?.intent.stepVersion });
+      }
+      throw new EngineError('REQUEST_ACTIVE', 'This Team response was already started. An unknown result requires reconciliation; it is never resent.');
+    }
     if (known)
       throw new EngineError(
         'REQUEST_ACTIVE',
@@ -1143,16 +1184,32 @@ export class ModelSessionRuns {
     this.work.add(controller);
     const wall = AbortSignal.timeout(TURN_WALL_MS);
     const stop = AbortSignal.any([controller.signal, wall, ...(input.signal ? [input.signal] : [])]);
+    let cancellation: Promise<void> | null = null;
+    const cancelOwned = () => {
+      if (!ownedResponse) return;
+      cancellation ??= this.runs.cancel(runId, 'The owned Team response was stopped.', principal).catch((failure: unknown) => {
+        if (!(failure instanceof HarnessError && failure.code === 'unknown_run')) throw failure;
+      });
+      // An abort callback cannot throw into the provider's stack. The caller observes
+      // this same promise below, while Stop still records cancellation immediately.
+      void cancellation.catch(() => undefined);
+    };
+    if (ownedResponse) stop.addEventListener('abort', cancelOwned, { once: true });
     try {
+      if (ownedResponse) { stop.throwIfAborted(); await ownedResponse.validate('dispatch'); }
       const admission = await request.admit(stop);
-      if (admission.accountRoute !== input.accountRoute || admission.model !== input.model)
+      if (admission.accountRoute !== input.accountRoute || admission.model !== input.model || (ownedResponse && admission.route !== route))
         throw new EngineError('ACCOUNT_CHANGED', 'The connection changed after this request was admitted. Nothing was sent.');
+      if (ownedResponse) { stop.throwIfAborted(); await ownedResponse.validate('dispatch'); }
+      const responseTools = request.registry.describe().map((tool) => tool.name)
+        .filter((name) => (AGENT_TEAM_MEMBER_TOOLS as readonly string[]).includes(name));
       await this.runs.start({
         id: runId,
         projectId: input.projectId,
         tenantId: principal.tenantId,
         principal,
-        capability: TEAM_WORK_CAPABILITY,
+        ...(metadata ? { taskId: metadata.taskId, sessionId: null } : {}),
+        capability: ownedResponse ? { ...TEAM_WORK_CAPABILITY, tools: responseTools, maxTurns: maxCalls } : TEAM_WORK_CAPABILITY,
         tools: request.registry,
         input: {
           engine: route,
@@ -1161,25 +1218,34 @@ export class ModelSessionRuns {
           model: input.model,
           commandId: input.requestId,
           sources: input.documents.map((doc) => ({ path: doc.path, sha256: sourceSha(doc.text) })),
+          ...(metadata ? { rootRunId: metadata.rootRunId, parent: metadata.parent, ownedTeam: metadata,
+            workBinding: binding, maxModelCalls: maxCalls, effort: input.effort ?? null, connectionId: admission.connectionId, connectionRevision: admission.revision } : {}),
         },
-        budget: { units: 96, modelCalls: 24, toolCalls: 48, wallMs: TURN_WALL_MS },
+        budget: ownedResponse
+          ? { units: AGENT_TEAM_RESPONSE_UNITS, modelCalls: maxCalls, toolCalls: maxCalls, wallMs: TURN_WALL_MS }
+          : { units: 96, modelCalls: 24, toolCalls: 48, wallMs: TURN_WALL_MS },
       });
+      if (ownedResponse) { stop.throwIfAborted(); await ownedResponse.validate('dispatch'); }
       await this.runs.claim(runId, this.owner, TURN_WALL_MS + 60_000);
-      const adapter = await request.adapter(admission, `${input.instructions}\n\n${TEAM_WORK_NOTE}`, stop);
-      const check = () =>
+      const adapter = await request.adapter(admission, `${input.instructions}\n\n${ownedResponse ? TEAM_RESPONSE_NOTE : TEAM_WORK_NOTE}`, stop);
+      const check = async (phase: 'dispatch' | 'result') => {
         this.sharingPolicy(input.projectId, input.documents.map((doc) => doc.path), false, route);
-      check();
+        if (ownedResponse) { stop.throwIfAborted(); await ownedResponse.validate(phase); }
+      };
+      await check('dispatch');
       const agent = new NativeAgent(this.runs, sharingGuarded(adapter, check), request.registry);
       let text: string;
       try {
         text = await agent.run(runId, this.owner, contextMessage(input), principal, {
-          maxTurns: TEAM_WORK_CAPABILITY.maxTurns,
+          maxTurns: maxCalls,
+          ...(metadata ? { sourceRestrictions: sourceRules(await this.runs.get(metadata.rootRunId)) } : {}),
         });
       } catch (error) {
         if (stop.aborted)
           throw new EngineError('CANCELLED', 'The request was stopped. No late response was saved.', true);
         throw error;
       }
+      if (ownedResponse) await check('result');
       const run = await this.runs.get(runId);
       const lastModel = [...run.steps]
         .reverse()
@@ -1187,7 +1253,18 @@ export class ModelSessionRuns {
       const reported =
         (lastModel?.output as { transcript?: { modelId?: string | null } } | null)?.transcript?.modelId ?? null;
       return { runId, text, model: reported ?? '', version: adapter.version };
+    } catch (error) {
+      if (ownedResponse && stop.aborted) {
+        cancelOwned();
+        await cancellation;
+        // Stop can precede creation of the run. Fence it now if creation won that race.
+        await this.runs.cancel(runId, 'The owned Team response was stopped.', principal).catch((failure: unknown) => {
+          if (!(failure instanceof HarnessError && failure.code === 'unknown_run')) throw failure;
+        });
+      }
+      throw error;
     } finally {
+      stop.removeEventListener('abort', cancelOwned);
       this.work.delete(controller);
       controller.abort();
     }

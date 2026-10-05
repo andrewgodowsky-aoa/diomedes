@@ -56,6 +56,8 @@
   --dm-type-code: 0.875rem;
   --dm-type-section: 1.125rem;
   --dm-type-title: 1.25rem;
+  /* The Nectovia home greeting. A fixed size, so a bigger window adds margin and never a bigger line. */
+  --dm-type-display: 3rem;
   --dm-line-body: 1.55;
   --dm-measure: 57.5rem;
   --dm-measure-wide: 75rem;
@@ -1311,6 +1313,11 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
 }
 .setting-rows {
   margin: 20px 0;
+}
+/* The share of each tool's limit kept in Settings' coding tools sits inside its sentence. */
+.coding-tools-keep {
+  width: 8ch;
+  margin: 0 4px;
 }
 /* Appearance swatches are 12 px points in the scheme's own light colour. */
 .palette-dot {
