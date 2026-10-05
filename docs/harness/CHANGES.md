@@ -1,5 +1,28 @@
 # Harness host integration changes, 2026-09-09
 
+## A lead that is not Nectovia can hand work to Nectovia at a tier, 2026-10-05
+
+A loop led by a route that is not Nectovia can now take Nectovia as its worker and its advisor
+(DIO-216, slice C). A role names its tier and never a model, for example
+`{ "route": "nectovia", "tier": "focused" }`: the account's routing decides which model serves the
+tier. A role is admitted with the managed loop's own checks in their order: consent, the project's
+sharing with Nectovia, signed in with the Agent and managed AI usage, and a published model for the
+tier. Then the account's escalation control (`GET /account/routing/{kind}/{id}/escalation`) must
+allow the tier, and a control that can't be read refuses. Last comes a paid managed admission under
+the role's own job (`<run>-worker`, `<run>-advisor`), pinned at its tier, under the lead's root job.
+The role's child run is its own job at the same tier, and every gateway call it makes names its
+role in `X-Nectovia-Escalation`. A Nectovia lead still takes no team. A tier on another route, a
+Nectovia role without a tier and a Nectovia role that names a model are refused. A local lead the
+person starts with no team asks first, then takes a Nectovia Focused worker and a Nectovia Thorough
+advisor where each can join. `escalation: false` or `team: null` starts it alone, and the run and
+the Team view record which roles joined and why any were left out. A Nectovia worker or advisor
+sends only while the account it was admitted under is signed in, as a Nectovia lead does, and a
+delegate never sends to Nectovia. In the Console, the Loop run
+dialog offers a Nectovia worker and advisor by tier beside a lead on the person's own connected
+service. A tier that can't join is listed as unavailable with its reason. The Team view names each
+role by its tier and says it uses the account's credits. `tests/three-model-team-escalation.test.ts`
+covers it. See [the record](../implementation/2026-10-05-three-model-team.md).
+
 ## Prompt caching is the owner's setting per route, 2026-10-05
 
 The owner chooses Provider default, Off or Explicit prefix for AWS Bedrock and for Azure OpenAI in
@@ -23,7 +46,7 @@ bindings all ask it. The person adds a local member by name with a profile, for 
 the local model's folder gives its Gaming profile. A model the folder doesn't list is refused with
 "Choose a local model profile." Where no local model is set up, the add is refused with "The local
 model isn't installed on this computer." The host admits that member only while the person keeps its profile running. It
-reads the status and never starts the model, and a profile that isn't running is refused in the
+reads the status at that moment, not from the runtime's last check, and never starts the model. A profile that isn't running is refused in the
 runtime's own words, which the start dialog shows beside the member as it shows every refusal. The
 dialog names the member's model by its profile, as the local model's folder names it. The member
 uses the local zero-cost card and holds no spend. Nothing chooses the local model on the Team's
