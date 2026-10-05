@@ -1,7 +1,7 @@
 import { parseApprovalCommand } from './approval-admission.js';
 import { fileURLToPath } from 'node:url';
 import { BONSAI_ACCOUNT, BONSAI_PROFILES, BONSAI_ROUTE, bonsaiProfile, imageMediaType, MODEL_IMAGE_COUNT } from '../shared/bonsai.js';
-import { BonsaiRuntime, type BonsaiHost } from './bonsai/runtime.js';
+import { BonsaiRuntime, LOCAL_MODEL_NOT_INSTALLED, type BonsaiHost } from './bonsai/runtime.js';
 import { WindowsBonsaiHost } from './bonsai/windows-host.js';
 import { localModelIntegrations, mountBonsaiRoutes } from './bonsai/routes.js';
 import { inspectModelImage } from './bonsai/images.js';
@@ -165,6 +165,7 @@ import {
   type WorkStyleResolution,
 } from '../shared/work-style.js';
 import {
+  isPersonOnlyTeamRoute,
   TEAM_ROUTES,
   teamRouteRefusal,
   type TeamRoute,
@@ -1839,6 +1840,8 @@ export async function createApp(options: AppOptions) {
       a === preferred ? -1 : b === preferred ? 1 : 0,
     );
     return ordered.flatMap((teamRoute) => {
+      // The local model is the person's own pick, never a candidate Nectovia may choose.
+      if (isPersonOnlyTeamRoute(teamRoute)) return [];
       if (services[teamRoute] !== true) return [];
       if (teamRoute !== 'codex' && typeof services[`${teamRoute}AccountRoute`] !== 'string')
         return [];
@@ -4218,6 +4221,19 @@ export async function createApp(options: AppOptions) {
       const ready = new Map(teamCandidates(projectId).map((item) => [item.route, item]));
       return {
         routes: TEAM_ROUTES.map((teamRoute) => {
+          if (teamRoute === BONSAI_ROUTE) {
+            // Ready where the local model is set up here; its profiles are named as the person
+            // knows them. Whether one is running is asked again when a run admits the member.
+            const on = routeOn(teamRoute);
+            return {
+              route: teamRoute,
+              name: routeDisplayName(teamRoute),
+              ready: on,
+              models: routeModels(teamRoute).map((model) => ({ slug: model.slug, name: model.name })),
+              savedModel: null,
+              ...(on ? {} : { reason: LOCAL_MODEL_NOT_INSTALLED }),
+            };
+          }
           const candidate = ready.get(teamRoute);
           return {
             route: teamRoute,

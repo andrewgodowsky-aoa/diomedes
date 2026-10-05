@@ -5,7 +5,7 @@ import { agentTeamGrantSchema, agentTeamSelectionSchema, AGENT_TEAM_TOOLS, type 
 import { agentReviewGrantSchema, agentReviewSelectionSchema, type AgentReviewGrant, type AgentReviewSelection } from '../../shared/agent-review.js';
 import type { HarnessPrincipal, HarnessRun, Json, StepIntent } from '../../shared/harness.js';
 import type { LoopCollaborationInput, LoopHelperBinding, LoopRunInput } from '../../shared/native-loop.js';
-import { isModelApiProvider } from '../../shared/model-api.js';
+import { isTeamModelRoute } from '../../shared/model-api.js';
 import type { AgentGatePort } from '../accounts/agent-gate.js';
 import { requireCloudSharing } from '../cloud-sharing.js';
 import { ApiError, relativeName } from '../paths.js';
@@ -37,9 +37,10 @@ export interface AgentCollaborationRequest {
   qualityStatus?: 'hypothesis' | 'measured'; selectionReason?: string;
 }
 export interface CollaborationOptions {
-  leads: { slotId: string; name: string; route: string; model: string | null; admitted: boolean; reason: string | null }[];
-  members: { slotId: string; name: string; route: string; model: string | null; admitted: boolean; reason: string | null }[];
-  helpers: { profileId: string; name: string; route: string; model: string | null; admitted: boolean; reason: string | null }[];
+  /** `modelName` names a local profile for a person; other models are named by `model`. */
+  leads: { slotId: string; name: string; route: string; model: string | null; modelName?: string; admitted: boolean; reason: string | null }[];
+  members: { slotId: string; name: string; route: string; model: string | null; modelName?: string; admitted: boolean; reason: string | null }[];
+  helpers: { profileId: string; name: string; route: string; model: string | null; modelName?: string; admitted: boolean; reason: string | null }[];
   reviews: { profileId: 'agent.inventory-reconciliation'; name: string; connectionId: string; model: string; admitted: boolean; reason: string | null }[];
   reason?: string | null;
 }
@@ -93,7 +94,7 @@ export function createAgentCollaboration(deps: AgentCollaborationDeps) {
     const selected = await deps.resolveTeamBinding(projectId, slotId);
     if (selected.slotId !== slotId || selected.role !== role || live!.role !== role || selected.createdAt !== live!.createdAt ||
         selected.threadId !== live!.threadId || selected.route !== live!.engine || selected.model !== live!.model ||
-        (live!.agentId !== undefined && (selected.agentId ?? null) !== (live!.agentId ?? null)) || !isModelApiProvider(selected.route))
+        (live!.agentId !== undefined && (selected.agentId ?? null) !== (live!.agentId ?? null)) || !isTeamModelRoute(selected.route))
       fail('The selected Team binding changed or cannot run on this route.');
     return selected;
   };
@@ -141,7 +142,7 @@ export function createAgentCollaboration(deps: AgentCollaborationDeps) {
     validatePrincipal(request.principal);
     if (request.principal.projectId !== request.projectId || !/^job-[a-f0-9]{40}$/.test(request.rootJobId)) fail('The host must supply the exact root project and job scope.');
     if (request.route === 'nectovia') fail('Managed Nectovia is single-agent only; this composition needs an admitted direct route.');
-    if (!isModelApiProvider(request.route) || !request.model || !request.accountRoute || !request.consent) fail('The collaboration needs a selected direct model, account and source-sharing consent.');
+    if (!isTeamModelRoute(request.route) || !request.model || !request.accountRoute || !request.consent) fail('The collaboration needs a selected direct model, account and source-sharing consent.');
     const state = store.state(request.projectId);
     if (!state.tasks.some(task => task.id === request.taskId && !task.deletedAt)) fail('The root task is missing.');
     const names = [...new Set(request.sources.map(relativeName))];
@@ -170,7 +171,7 @@ export function createAgentCollaboration(deps: AgentCollaborationDeps) {
     let helper: LoopHelperBinding | null = null;
     if (request.helperProfileId) {
       helper = helperSchema.parse(await deps.resolveHelperBinding(request.projectId, request.helperProfileId));
-      if (!isModelApiProvider(helper.route) || helper.profile.id !== request.helperProfileId) fail('The selected helper profile cannot run as a direct helper.');
+      if (!isTeamModelRoute(helper.route) || helper.profile.id !== request.helperProfileId) fail('The selected helper profile cannot run as a direct helper.');
     }
     for (const route of new Set([request.route, persistentTeam?.member.route, helper?.route].filter((route): route is string => Boolean(route))))
       requireCloudSharing(state, route as import('../../shared/types.js').Route, names);

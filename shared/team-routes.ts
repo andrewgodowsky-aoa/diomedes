@@ -1,5 +1,6 @@
 import type { EngineModel } from './types.js';
 import { MODEL_API_PROVIDERS } from './model-api.js';
+import { BONSAI_ROUTE } from './bonsai.js';
 import { routeDisplayName } from './engines.js';
 import { resolveWorkStyle, WORK_STYLES, type WorkStyle } from './work-style.js';
 import { resolveTier, type OwnerPin, type TierMap } from './tier-map.js';
@@ -13,13 +14,14 @@ import { resolveTier, type OwnerPin, type TierMap } from './tier-map.js';
  * - `mcp`: the engine connects to the loopback team MCP service itself, with the
  *   member's bearer token leased into its environment (Codex, Claude Code).
  * - `host`: the host runs the team tools inside its own tool loop and hands the
- *   model only their descriptors (the model-API provider routes). Nectovia
- *   answers the conversation and carries no team member yet.
+ *   model only their descriptors (the model-API provider routes and the local
+ *   model on this computer). Nectovia answers the conversation and carries no
+ *   team member yet.
  *
  * A route not listed here cannot carry the tools today, and is refused by name
  * rather than silently swapped for one that can.
  */
-export const TEAM_ROUTES = ['codex', 'claude-code', ...MODEL_API_PROVIDERS] as const;
+export const TEAM_ROUTES = ['codex', 'claude-code', ...MODEL_API_PROVIDERS, BONSAI_ROUTE] as const;
 export type TeamRoute = (typeof TEAM_ROUTES)[number];
 export const TEAM_CARRIAGE: Record<TeamRoute, 'mcp' | 'host'> = {
   codex: 'mcp',
@@ -28,9 +30,20 @@ export const TEAM_CARRIAGE: Record<TeamRoute, 'mcp' | 'host'> = {
   'azure-openai': 'host',
   openrouter: 'host',
   'google-vertex': 'host',
+  bonsai: 'host',
 };
 export function isTeamRoute(value: unknown): value is TeamRoute {
   return typeof value === 'string' && (TEAM_ROUTES as readonly string[]).includes(value);
+}
+
+/**
+ * A route only the person puts on the Team: the local model. Its member is added by name with a
+ * profile, and runs only while the person keeps that profile running. Nothing chooses it on the
+ * Team's behalf: "Nectovia chooses" skips it, mail never wakes it into a run, and automatic work
+ * never picks it.
+ */
+export function isPersonOnlyTeamRoute(route: unknown): boolean {
+  return route === BONSAI_ROUTE;
 }
 
 /** The tool names the team service offers, identical on every carriage. */
@@ -50,9 +63,12 @@ export const TEAM_TOOL_NAMES = [
   'team_clear_agent_context',
 ] as const;
 
-/** "Codex, Claude Code, AWS Bedrock, Azure OpenAI or OpenRouter", from the registry. */
+/**
+ * "Codex, Claude Code, AWS Bedrock, Azure OpenAI or OpenRouter", from the registry: the routes
+ * Nectovia may choose from. The person-only local route is never offered in its place.
+ */
 export function teamRouteList(): string {
-  const names = TEAM_ROUTES.map((route) => routeDisplayName(route));
+  const names = TEAM_ROUTES.filter((route) => !isPersonOnlyTeamRoute(route)).map((route) => routeDisplayName(route));
   return `${names.slice(0, -1).join(', ')} or ${names.at(-1)}`;
 }
 
@@ -151,8 +167,10 @@ export function resolveTeamMemberModel(input: {
   tiers?: { map: TierMap; pin?: OwnerPin | null };
 }): TeamModelResolution {
   const style = teamRoleStyle(input.role, input.style);
+  // Nectovia never chooses the local model for a member: only the person adds one on it.
+  const candidates = input.candidates.filter((candidate) => !isPersonOnlyTeamRoute(candidate.route));
   if (input.tiers) {
-    const byRoute = new Map(input.candidates.map((candidate) => [candidate.route as string, candidate]));
+    const byRoute = new Map(candidates.map((candidate) => [candidate.route as string, candidate]));
     const resolved = resolveTier({
       style,
       mode: 'build',
@@ -178,7 +196,7 @@ export function resolveTeamMemberModel(input: {
       },
     };
   }
-  const runs = input.candidates.flatMap((candidate) => {
+  const runs = candidates.flatMap((candidate) => {
     const resolved = resolveWorkStyle({
       style,
       mode: 'build',
@@ -196,7 +214,7 @@ export function resolveTeamMemberModel(input: {
   });
   const best = runs.sort((a, b) => a.rank - b.rank)[0];
   if (!best) {
-    const routes = input.candidates.map((c) => routeDisplayName(c.route));
+    const routes = candidates.map((c) => routeDisplayName(c.route));
     return {
       outcome: 'ask',
       reason: routes.length

@@ -3,7 +3,7 @@ import { defineConfig } from '@playwright/test';
 /** The built Team journey starts and closes its own real host with scripted transports. */
 export default defineConfig({
   testDir: './tests',
-  testMatch: ['agent-collaboration-ui.spec.ts'],
+  testMatch: ['agent-collaboration-ui.spec.ts', 'three-model-team-ui.spec.ts'],
   fullyParallel: false,
   workers: 1,
   timeout: 60_000,

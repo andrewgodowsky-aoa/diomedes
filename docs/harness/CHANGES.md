@@ -1,5 +1,23 @@
 # Harness host integration changes, 2026-09-09
 
+## The local model can be an Agent Team member, 2026-10-05
+
+An Agent Team started from the Console can now take a member on the local model (DIO-216, slice
+B). One list, `TEAM_MODEL_ROUTES` in `shared/model-api.ts`, names the routes a team role may run
+on: the four provider routes and the local model. The Agent Team grant, its host and the member
+bindings all ask it. The person adds a local member by name with a profile, for example
+`{ "name": "Counter", "role": "member", "engine": "bonsai", "model": "bonsai-gaming" }`; any
+other model is refused with "Choose a local model profile." The host admits that member only while
+the person keeps its profile running. It reads the status and never starts the model, and a
+profile that isn't running is refused in the runtime's own words, which the start dialog shows
+beside the member as it shows every refusal. The dialog names the member's model by its profile,
+"Bonsai Gaming". The member uses the local zero-cost card and holds no spend. Nothing chooses the
+local model on the Team's behalf: "Nectovia chooses" skips it, mail never wakes a local member
+into a run, and automatic work never picks one. `tests/three-model-team-host.test.ts` covers the
+host, and `tests/three-model-team-ui.spec.ts` starts a run in the built Console with a Sol lead, the
+local member and a Kimi K3 helper profile. See
+[the record](../implementation/2026-10-05-three-model-team.md).
+
 ## The local model can work on a team, 2026-10-05
 
 A Diomedes work loop's worker or advisor can now run on the local model (DIO-216, slice A). The

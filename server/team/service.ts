@@ -28,12 +28,15 @@ import {
   unreadForSlot,
 } from './mailbox.js';
 import {
+  isPersonOnlyTeamRoute,
   isTeamRoute,
   resolveTeamMemberModel,
   teamRouteRefusal,
   type TeamMemberSelection,
   type TeamRouteCandidate,
 } from '../../shared/team-routes.js';
+import { BONSAI_ROUTE, bonsaiProfile } from '../../shared/bonsai.js';
+import { LOCAL_MODEL_UNKNOWN_PROFILE } from '../bonsai/runtime.js';
 import { ownerPinFrom, tierMapFrom } from '../../shared/tier-map.js';
 import { isRoute } from '../../shared/engines.js';
 import { isWorkStyle, type WorkStyle } from '../../shared/work-style.js';
@@ -315,6 +318,10 @@ export class TeamService {
           throw new ApiError(400, 'Provide a model of up to 200 characters.');
         model = input.model;
       }
+      // A local member runs one of the local model's profiles, by its slug. Every other route keeps
+      // the check above: any model name up to 200 characters, or none for the route's own default.
+      if (engine === BONSAI_ROUTE && !bonsaiProfile(model))
+        throw new ApiError(400, LOCAL_MODEL_UNKNOWN_PROFILE);
       selection = {
         by: 'person',
         style: null,
@@ -432,7 +439,8 @@ export class TeamService {
     const conversation = state.conversations.find((c) => c.id === recipient.threadId);
     const permission = conversation?.permission ?? 'show-first';
     recipient.unread = unreadForSlot(team.messages, to).length;
-    if (permission !== 'task') {
+    // A local member waits for the person's own Wake: mail never starts work on the local model.
+    if (permission !== 'task' || isPersonOnlyTeamRoute(recipient.engine)) {
       this.setMemberStatus(projectId, to, 'waiting');
       await this.store.persist(state);
       return;

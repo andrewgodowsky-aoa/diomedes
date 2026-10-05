@@ -103,6 +103,71 @@ runs.
   route not installed; an installation that reports itself missing.
 - Every provider route still refuses, as a lead and as a role, when its Settings switch is off.
 
+## Slice B: the local model as an Agent Team member
+
+### What it does
+
+- One list decides which model routes a team role may run on: `TEAM_MODEL_ROUTES` and
+  `isTeamModelRoute` in `shared/model-api.ts`, the four provider routes and the local model. The
+  Agent Team grant's binding schema (`shared/agent-collaboration.ts`), the collaboration harness
+  (`server/harness/agent-collaboration.ts`: the member binding, the root route and the helper) and
+  the host (`server/agent-team-host.ts`: saved profiles, Team members, helper bindings and the
+  helper offers) all ask it instead of `isModelApiProvider`.
+- The Team roster carries the local route with host carriage (`TEAM_ROUTES` and `TEAM_CARRIAGE` in
+  `shared/team-routes.ts`). A local member's model is a profile slug. The roster add
+  (`POST /api/projects/:id/team/members`) checked every model only as a name of up to 200
+  characters; a local member must now name a profile, and every other route keeps that check
+  unchanged.
+- The host's connection read (`localConnection`) has a local branch: no key, no account setting
+  (the account route is `BONSAI_ACCOUNT`), the local lane's zero-cost price card, no expiry, and
+  the same status read as slice A (`BonsaiRuntime.refusal`). A profile that isn't running refuses
+  the member in the runtime's own words.
+- A member still runs at medium reasoning, and plan gating, Trust authority, consent and cloud
+  sharing are unchanged: a local member passes the same checks every member does.
+- The start dialog (`client/console/LoopStart.tsx`) lists a local member like any other. While its
+  profile isn't running the option is unavailable and the runtime's sentence shows with the other
+  refusals. The host names the model for a person (`modelName`, the profile's display name), so the
+  option reads "Counter · Bonsai Gaming". The dialog has no control that starts the local model.
+- `GET /api/projects/:id/team/routes` lists the local route as ready where it is set up here, with
+  its two profiles by name. Where it isn't, the reason is "The local model isn't installed on this
+  computer."
+- Only the person puts the local model on the Team (`isPersonOnlyTeamRoute`): "Nectovia chooses"
+  skips it, mail never wakes a local member into a run (it waits for the person's own Wake), and
+  automatic work never picks a local member.
+
+### Adding a local member
+
+```json
+{ "name": "Counter", "role": "member", "engine": "bonsai", "model": "bonsai-gaming" }
+```
+
+The member's thread then needs medium reasoning, as every Agent Team member does:
+`PUT /api/projects/:id/threads/:threadId` with
+`{ "engine": "bonsai", "requested": { "model": "bonsai-gaming", "effort": "medium" } }`.
+
+### What is refused, and why
+
+| Case | Where | Sentence |
+| --- | --- | --- |
+| A local member names no profile | Roster add, 400 | "Choose a local model profile." |
+| The profile isn't running | Start dialog, and a start that names the member anyway (409 `collaboration_refused`) | "The local model isn't running. Start it first." |
+| Full runs and the member is on Gaming | The same | "The local model is running its Full profile, not Gaming. Start Gaming first." |
+| The local model isn't set up, or reports itself missing | The same | "The local model isn't installed on this computer." |
+| The member's thread isn't on medium reasoning | The same, unchanged | "The selected Team member must use medium reasoning." |
+
+### Tests
+
+- `tests/three-model-team-host.test.ts`, fixtures only (`tests/fixtures/three-model-team.ts`): a
+  running profile is admitted and named by its profile; not running, the wrong profile and a
+  missing installation each refuse in the runtime's words, with no run, call, hold or start; the
+  roster add takes a local member only with a profile and leaves other routes' checks alone; the
+  routes view lists the local route; "Nectovia chooses" never picks it; mail never wakes it; and
+  one Agent Team start runs a Sol lead on Azure, the local member and a Kimi K3 helper profile on
+  AWS through to the report proposal, with holds only on the two cloud connections.
+- `tests/three-model-team-ui.spec.ts` (`playwright.agent-team.config.ts`), in the built Console:
+  the dialog lists the stopped local member with the runtime's reason and no Start control, then,
+  with Gaming running, starts the same three-model run from the dialog.
+
 ## What is not claimed
 
 - No live run. Nothing here reached Azure, AWS or a real local model, and nothing started one. The
@@ -113,3 +178,8 @@ runs.
   offer the local model as a lead.
 - The status read is a moment's answer. A model stopped after the start is caught by its next call,
   as above, not by admission.
+- The Console's add-member form still offers only "Nectovia chooses" by tier (owner decision
+  2026-09-23), so a local member is added through the roster API, as any explicit route is.
+- Saved Agent profiles (H09) do not run on the local model: their availability check is the
+  Settings switch, which the local model doesn't have. The host refuses a saved local profile, as a
+  helper or behind a member's thread, with "Saved profiles don't run on the local model yet."

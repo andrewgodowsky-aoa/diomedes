@@ -10,14 +10,18 @@ import { profileDigest as evaluationProfileDigest } from '../shared/evaluation.j
 import type { HarnessLabel } from '../shared/harness.js';
 import { micro as usdMicro } from '../shared/managed-usage.js';
 import type { LoopCollaborationInput, LoopHelperBinding, LoopRunInput } from '../shared/native-loop.js';
-import { isModelApiProvider, type ModelApiProvider } from '../shared/model-api.js';
+import { isTeamModelRoute, type TeamModelRoute } from '../shared/model-api.js';
+import { BONSAI_ACCOUNT, BONSAI_ROUTE, bonsaiProfile } from '../shared/bonsai.js';
+import { isPersonOnlyTeamRoute } from '../shared/team-routes.js';
 import type { Conversation, TeamMember } from '../shared/types.js';
 import { profileDigest, type AgentProfileService, type AgentProfileStore } from './agent-profiles.js';
 import { AGENT_SIGN_IN_REQUIRED, type AgentGatePort } from './accounts/agent-gate.js';
+import { LOCAL_MODEL_NOT_INSTALLED } from './bonsai/runtime.js';
 import { cloudSharing, requireCloudSharing } from './cloud-sharing.js';
 import { secretFingerprint } from './connection-secrets.js';
 import { awsAccountRoute, awsModelRefusal, awsQualificationFor } from './engines/aws-bedrock.js';
 import { azureAccountRoute } from './engines/azure-openai.js';
+import { BONSAI_CONNECTION } from './engines/bonsai.js';
 import { openRouterAccountRoute, openRouterConnectionSchema, openRouterModelFor, openRouterPreferences,
   type OpenRouterConnection } from './engines/openrouter.js';
 import { readAdcIdentity, vertexAccountRoute } from './engines/google-vertex.js';
@@ -45,6 +49,10 @@ import type { WorkspaceService } from './workspaces.js';
 
 const refuse = (message: string): never => { throw new HarnessError('collaboration_refused', message); };
 const reasonOf = (error: unknown) => error instanceof Error ? error.message : 'This selection is unavailable on this host.';
+export const LOCAL_PROFILE_REFUSED = "Saved profiles don't run on the local model yet.";
+/** A local profile is named by its display name; every other model by its id, as before. */
+const localModelName = (route: string, model: string | null): string | null =>
+  route === BONSAI_ROUTE ? bonsaiProfile(model)?.name ?? null : null;
 const sha = z.string().regex(/^[a-f0-9]{64}$/);
 /** H09 carries its algorithm prefix; collaboration pins carry the validated SHA bytes. */
 const collaborationProfileDigest = (revision: AgentProfileRevision): string => {
@@ -110,9 +118,22 @@ export function createProductionAgentTeamHost(deps: ProductionAgentTeamHostDepen
       return refuse('The current Trust authority belongs to a different project.');
     return refOf(authority);
   };
-  const localConnection = async (route: ModelApiProvider, model: string): Promise<LocalConnection> => {
+  const localConnection = async (route: TeamModelRoute, model: string): Promise<LocalConnection> => {
     const api = engines.modelApi;
-    if (!api || store.settings.services?.[route] !== true) return refuse('This model route is not enabled on this host.');
+    if (!api) return refuse('This model route is not enabled on this host.');
+    if (route === BONSAI_ROUTE) {
+      // The local model has no key, no account setting and no expiry. It is on where it is set up
+      // here, and takes a role's work only while the person keeps that profile running: its status
+      // is read, never started, and a profile that isn't running is refused in the runtime's words.
+      const local = api.bonsai;
+      if (!local?.configured) return refuse(LOCAL_MODEL_NOT_INSTALLED);
+      const refusal = await local.runtime.refusal(model);
+      if (refusal) return refuse(refusal);
+      // The local lane's own zero-cost card: inference here has no provider charge.
+      if (!(await engines.modelApiCard(route, model))) return refuse('The selected model has no current bounded price card.');
+      return { connectionId: BONSAI_CONNECTION, connectionRevision: 1, accountRoute: BONSAI_ACCOUNT };
+    }
+    if (store.settings.services?.[route] !== true) return refuse('This model route is not enabled on this host.');
     let facts: LocalConnection;
     let expiresAt: string | null | undefined;
     let fingerprint: string;
@@ -166,7 +187,10 @@ export function createProductionAgentTeamHost(deps: ProductionAgentTeamHostDepen
     if (deps.profileStore.damaged) return refuse(deps.profileStore.damaged);
     const saved = deps.profileStore.get(profileId);
     const revision = saved && !saved.archivedAt ? saved.revisions.at(-1) : null;
-    if (!revision || !isModelApiProvider(revision.engine)) return refuse('The selected direct Agent profile is absent or archived.');
+    if (!revision || !isTeamModelRoute(revision.engine)) return refuse('The selected direct Agent profile is absent or archived.');
+    // A saved profile's availability is its route's Settings switch, which the local model doesn't
+    // have, so no saved profile runs there yet. A local Team member is how it joins a team.
+    if (revision.engine === BONSAI_ROUTE) return refuse(LOCAL_PROFILE_REFUSED);
     const unavailable = await deps.profiles.unavailable(revision, store.state(projectId).project.folder);
     if (unavailable) return refuse(unavailable);
     return structuredClone(revision);
@@ -178,7 +202,7 @@ export function createProductionAgentTeamHost(deps: ProductionAgentTeamHostDepen
   });
   const localMember = async (projectId: string, slotId: string): Promise<LocalMember> => {
     const member = structuredClone(deps.team.requireActive(projectId, slotId));
-    if (!member.threadId || !member.model || !isModelApiProvider(member.engine))
+    if (!member.threadId || !member.model || !isTeamModelRoute(member.engine))
       return refuse('Select an existing direct Team member with an explicit model and thread.');
     const thread = structuredClone(store.state(projectId).conversations.find(item => item.id === member.threadId));
     if (!thread || thread.helper?.engine !== member.engine || thread.helper.model !== member.model ||
@@ -209,7 +233,7 @@ export function createProductionAgentTeamHost(deps: ProductionAgentTeamHostDepen
   const resolveTeamBinding = async (projectId: string, slotId: string) => (await localMember(projectId, slotId)).binding;
   const resolveHelperBinding = async (projectId: string, profileId: string): Promise<LoopHelperBinding> => {
     const revision = await profile(projectId, profileId);
-    if (!isModelApiProvider(revision.engine)) return refuse('The selected helper is not a direct model profile.');
+    if (!isTeamModelRoute(revision.engine)) return refuse('The selected helper is not a direct model profile.');
     const connection = await localConnection(revision.engine, revision.model);
     return { route: revision.engine, model: revision.model, accountRoute: connection.accountRoute, effort: revision.effort,
       profile: { id: revision.profileId, revision: revision.revision, digest: collaborationProfileDigest(revision) } };
@@ -219,6 +243,8 @@ export function createProductionAgentTeamHost(deps: ProductionAgentTeamHostDepen
     try { await authorityRef(projectId); authorized = Boolean(engines.agentGate); } catch { /* Unqualified candidates grant nothing. */ }
     const result: AutomaticTeamCandidate[] = [];
     for (const member of [...(store.state(projectId).team?.members ?? [])]) {
+      // Automatic work never picks the local model. It runs only where the person selects it.
+      if (isPersonOnlyTeamRoute(member.engine)) continue;
       try {
         const live = await localMember(projectId, member.slotId);
         if (!live.profile || !live.binding.profile) continue;
@@ -339,16 +365,19 @@ export function createProductionAgentTeamHost(deps: ProductionAgentTeamHostDepen
     for (const member of state.team?.members ?? []) {
       let reason = trustReason;
       try { await localMember(projectId, member.slotId); } catch (error) { reason = reasonOf(error); }
-      const row = { slotId: member.slotId, name: member.name, route: member.engine, model: member.model, admitted: reason === null, reason };
+      const modelName = localModelName(member.engine, member.model);
+      const row = { slotId: member.slotId, name: member.name, route: member.engine, model: member.model,
+        ...(modelName ? { modelName } : {}), admitted: reason === null, reason };
       choices[member.role === 'lead' ? 'leads' : 'members'].push(row);
     }
     await deps.profileStore.load();
     for (const selected of deps.profileStore.list()) {
-      if (!isModelApiProvider(selected.engine)) continue;
+      if (!isTeamModelRoute(selected.engine)) continue;
       let reason = trustReason;
       try { await resolveHelperBinding(projectId, selected.profileId); } catch (error) { reason = reasonOf(error); }
+      const modelName = localModelName(selected.engine, selected.model);
       choices.helpers.push({ profileId: selected.profileId, name: selected.name, route: selected.engine,
-        model: selected.model, admitted: reason === null, reason });
+        model: selected.model, ...(modelName ? { modelName } : {}), admitted: reason === null, reason });
     }
     choices.reviews = await review.offers(projectId);
     if (trustReason) choices.reason = trustReason;
