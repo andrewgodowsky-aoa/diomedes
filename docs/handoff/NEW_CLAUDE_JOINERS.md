@@ -182,7 +182,8 @@ desktop app's chat (not the Code tab):
 
 1. Projects → New project, named **Nectovia**.
 2. Upload as project knowledge: `AGENTS.md`, `docs/DIOMEDES_CORE_PILLARS.md`,
-   `docs/DIOMEDES_PROJECT_MEMORY.md`, `docs/reference/STANDING_DECISIONS.md`, and this file.
+   `docs/DIOMEDES_PROJECT_MEMORY.md`, `docs/reference/STANDING_DECISIONS.md`,
+   `docs/reference/VOICE.md`, and this file.
    Re-upload them when they change; a Project's copies do not update themselves.
 3. Project instructions:
 
