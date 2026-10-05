@@ -71,6 +71,7 @@ export class HarnessBridge {
   private readonly owner = identifier('harness-');
   private readonly mirrors = new Set<Promise<void>>();
   private readonly jobs = new Map<string, Promise<void>>();
+  private readonly settling = new Set<Promise<void>>();
   private readonly procedures = new Map<string, HarnessProcedure>();
   private closed = false;
   private mirrorError: unknown;
@@ -421,13 +422,20 @@ export class HarnessBridge {
     }
   }
 
-  /** Queued behind the current Store lock holder, never awaited inside it. */
+  /**
+   * Queued behind the current Store lock holder, never awaited inside it. Once the bridge is
+   * closing nothing new starts: `settled` is idempotent and recovery settles the run again on
+   * the next start, so work begun now could only land after close returned.
+   */
   private settle(procedure: HarnessProcedure, run: HarnessRun) {
-    void Promise.resolve()
+    if (this.closed) return;
+    const job = Promise.resolve()
       .then(() => procedure.settled!(run))
       .catch((error: unknown) => {
         console.error('A settled harness run could not be finished:', this.redact(String(error)));
       });
+    this.settling.add(job);
+    void job.finally(() => this.settling.delete(job));
   }
 
   /**
@@ -880,6 +888,8 @@ export class HarnessBridge {
     }
     this.codex?.close();
     await Promise.allSettled([...this.jobs.values()]);
+    // A settle already running finishes before close returns; settle() starts none now.
+    while (this.settling.size) await Promise.all([...this.settling]);
     await this.flush();
   }
 }
