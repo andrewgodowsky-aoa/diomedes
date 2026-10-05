@@ -245,6 +245,8 @@ export const AUDIT_ACTIONS = [
   'staff.changed',
   'person-grant.issued',
   'person-grant.revoked',
+  /** One gateway route checks run (DIO-217): the receipt and its spend, on the route it checked. */
+  'route.checked',
 ] as const;
 export const auditEventSchema = z.strictObject({
   id: accountId,

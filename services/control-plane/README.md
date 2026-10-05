@@ -37,8 +37,8 @@ same bearer, origin and query rules:
   /account/organizations/:id/agent-admissions, GET /account/routing-policy.
 - Staff (the Operations app): GET /ops/me, GET /ops/customers(?q), GET
   /ops/customers/:id, POST .../grants, POST .../grants/:id/revoke, POST
-  .../funding, GET /ops/routing, POST /ops/routes, POST
-  /ops/routing/preview|publish|rollback, GET|POST /ops/staff, PATCH
+  .../funding, GET /ops/routing, POST /ops/routes, POST /ops/routes/:id/checks,
+  POST /ops/routing/preview|publish|rollback, GET|POST /ops/staff, PATCH
   /ops/staff/:id, GET /ops/people(?q), GET /ops/audit(?organizationId&limit).
 
 The **faux cloud** (`src/faux/`) runs this handler over a JSON store and local
@@ -92,6 +92,22 @@ unset, anything unreadable refusing every managed call with 503
 - `MANAGED_MAX_OUTPUT_TOKENS`: lowers the registry's output cap (16,000),
   never raises it. A larger request is clamped silently, and the response
   names the clamp in `X-Nectovia-Max-Output`.
+
+Gateway route checks (DIO-217, `src/route-checks.ts`). `POST
+/ops/routes/:id/checks` with `{ baseRevision }`, staff with `routes.write`
+only, runs the five route checks on one saved Bedrock or Azure OpenAI route
+(Responses or Chat Completions) through `callManagedProvider`, the call
+customer requests take, with the Worker's key for that route's connection.
+It answers `RouteChecksResult` (`shared/gateway-route-checks.ts`) and writes
+one `route.checked` audit row; it never changes the route. Before anything is
+sent, company spend, every earlier run's spent and uncertain amounts and this
+run's bound must stay within `MANAGED_SPEND_CEILING_MICRO_USD`, or it refuses
+with 409 `company_ceiling`. Customer calls' own ceiling check does not count
+route check spend, because the funding login cannot read the audit log. Two
+runs at once can both pass, so together they can pass the ceiling by at most
+one run's bound. The faux cloud seeds an unqualified Kimi K3 route on Bedrock
+and GPT-6.1 Sol on Azure Foundry, and a scripted provider answers their checks
+offline.
 
 ## Entry and configuration
 

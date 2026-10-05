@@ -27,6 +27,12 @@ export type RouteChecksInput = z.infer<typeof routeChecksInputSchema>;
 /** The `ops_audit` action of one run. Its `detail` holds the receipt and the run's spend. */
 export const ROUTE_CHECKS_AUDIT_ACTION = 'route.checked' as const;
 
+/**
+ * The scope key every route check call carries into the gateway's provider call. It names no
+ * account, so a continuation sealed under it never opens under a customer's scope, or the reverse.
+ */
+export const ROUTE_CHECKS_SCOPE_KEY = 'ops:route-checks' as const;
+
 export interface RouteChecksResult {
   routeId: string;
   routeRevision: number;

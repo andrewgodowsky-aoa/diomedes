@@ -26,6 +26,11 @@
  * Decisions provider by default, deterministic and offline, and OpenRouter for
  * real only when `liveOpenRouterApiKey` is given (NECTOVIA_FAUX_OPENROUTER_API_KEY,
  * under the same approval and the same ceiling rule).
+ *
+ * The gateway route checks (`POST /ops/routes/:id/checks`, DIO-217) are the
+ * Worker's own too, over the two approved connections of `faux/route-checks.ts`.
+ * Their provider is always the scripted one of that file unless a test passes
+ * `managed.routeChecksTransport`; a live key never reaches it.
  */
 import { z } from 'zod';
 import type { Configuration } from '../config.js';
@@ -65,7 +70,8 @@ import {
   signUpInput,
 } from './identity.js';
 import { FauxRelayHubs } from './relay-hubs.js';
-import { fauxRouteCheckEnvironment } from './route-checks.js';
+import { fauxRouteCheckEnvironment, scriptedRouteChecksFetch } from './route-checks.js';
+import { RouteChecksService, stateRouteCheckSpend } from '../route-checks.js';
 import { FauxCloudStore } from './store.js';
 import { createWorkOSStandIn, WORKOS_ISSUER, type WorkOSStandIn } from './workos-standin.js';
 
@@ -110,6 +116,8 @@ export interface FauxCloudOptions {
     evaluationTransport?: typeof globalThis.fetch;
     /** What the gateway reads as OPENROUTER_API_KEY. Null: no key is configured. */
     evaluationCredential?: string | null;
+    /** The transport the gateway route checks use. Default: `scriptedRouteChecksFetch`, offline. */
+    routeChecksTransport?: typeof globalThis.fetch;
   };
   /**
    * Buying credits without Stripe: the Worker's CREDIT_PRICE_CENTS_PER_100 as a stand-in, a local checkout page and
@@ -262,6 +270,15 @@ export async function createFauxCloud(options: FauxCloudOptions): Promise<FauxCl
     now,
     idleTimeoutMs: options.managed?.idleTimeoutMs,
   });
+  // One service for the cloud's life, so the scripted provider's cache outlives a run, as a provider's would.
+  const routeChecks = new RouteChecksService({
+    accounts,
+    commercial: store.commercial,
+    spend: stateRouteCheckSpend(store.funding, store.commercial),
+    transport: options.managed?.routeChecksTransport ?? scriptedRouteChecksFetch({ now }),
+    now,
+    idleTimeoutMs: options.managed?.idleTimeoutMs,
+  });
   const relayHubs = new FauxRelayHubs(new RelayAuthority(store.relay), now);
   const relay = new RelayService(accounts, store.relay, relayHubs, { now });
   const organizationSetups = new OrganizationSetupService(accounts, store.organizationSetups, { now });
@@ -287,6 +304,7 @@ export async function createFauxCloud(options: FauxCloudOptions): Promise<FauxCl
       createRelay: () => relay,
       createOrganizationSetup: () => organizationSetups,
       createOrganizationExport: () => organizationExports,
+      createRouteChecks: () => routeChecks,
     },
   );
 
