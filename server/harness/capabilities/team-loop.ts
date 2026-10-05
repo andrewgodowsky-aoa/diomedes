@@ -31,6 +31,7 @@ import type {
 import { acceptHandoff, openHandoff } from '../../../shared/handoff.js';
 import type { AgentArtifact } from '../../../shared/agents.js';
 import type { LoopRunInput } from '../../../shared/native-loop.js';
+import type { RoleTier } from '../../../shared/escalation-roles.js';
 import {
   ASSIGN_TOOL,
   TEAM_ADVISOR_CAPABILITY,
@@ -236,7 +237,15 @@ export interface TeamPortDeps {
   readonly ledger: HandoffLedger;
   admit(
     route: string,
-    input: { projectId: string; model: string | null; accountRoute: string | null },
+    input: {
+      projectId: string;
+      model: string | null;
+      accountRoute: string | null;
+      /** A Nectovia role under another lead: admitted under this child's own run, at its tier. */
+      runId?: string;
+      tier?: RoleTier;
+      escalation?: HandoffRole;
+    },
   ): Promise<{ model: string | null; accountRoute: string | null; accountDigest?: string | null }>;
   adapterFor(route: string, request: TeamRouteRequest, stop: AbortSignal, script: () => ModelAdapter): Promise<ModelAdapter>;
   heartbeat(runId: string, owner: string): () => void;
@@ -487,6 +496,8 @@ export function createTeamPort(deps: TeamPortDeps) {
           projectId: parent.projectId,
           model: spec.config.model,
           accountRoute: spec.config.accountRoute,
+          // A Nectovia role under another lead runs at its tier, under this child's own job.
+          ...(spec.config.tier ? { runId: spec.childRunId, tier: spec.config.tier, escalation: spec.role } : {}),
         });
       } catch (error) {
         const reason = `It could not start on ${spec.config.route}: ${error instanceof Error ? error.message : String(error)}`;

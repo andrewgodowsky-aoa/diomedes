@@ -28,6 +28,7 @@ import { reportedModels, type LoopModel } from './native-loop.js';
 import type { VerificationState } from './verification.js';
 import type { FundingKind, UsageObservation } from './funding-source.js';
 import { NECTOVIA_ROUTE } from './model-api.js';
+import type { EscalationRecord, RoleTier } from './escalation-roles.js';
 
 export const TEAM_CONTRACT_VERSION = 1 as const;
 /** The capability a worker run is started under. */
@@ -187,6 +188,11 @@ export interface TeamRole {
   readonly accountRoute: string | null;
   /** How this role works. Set only on an external worker; a loop role, and any older record, has none. */
   readonly execution?: ExecutionStyle;
+  /**
+   * A Nectovia role under another lead (DIO-216 slice C): the tier it runs at. Which model serves
+   * the tier is the account's routing, so `model` is only what admission resolved it to.
+   */
+  readonly tier?: RoleTier;
   /** The H09 profile revision that named the route and model, or null when the route was chosen directly. */
   readonly profile: {
     readonly profileId: string;
@@ -204,8 +210,10 @@ export interface TeamConfig {
   /**
    * S3: the host resolved this team from the person's subscription worker preference. Absent: the
    * person named it in the start request. Only a host-resolved team may join a Nectovia lead.
+   * `escalation-default`: the Nectovia roles a local lead takes by default, which the person
+   * confirmed at its start (DIO-216 slice C).
    */
-  readonly origin?: 'subscription-preference';
+  readonly origin?: 'subscription-preference' | 'escalation-default';
   /** What the lead may read. Null: the whole project, as the lead's route allows. */
   readonly scope: readonly string[] | null;
   readonly worker: TeamRole & { readonly budget: WorkerBudget };
@@ -458,6 +466,10 @@ export interface TeamLeadView {
    * Nectovia lead; null where this view can't tell a person's key from a business's.
    */
   readonly leadPayer: FundingKind | null;
+  /** How the team came to be: absent when the person named it (`TeamConfig.origin`). */
+  readonly origin: TeamConfig['origin'] | null;
+  /** DIO-216: the Nectovia roles a local lead took by default, and the ones left out with why. */
+  readonly escalation: EscalationRecord | null;
   readonly workers: readonly HandoffView[];
   readonly advice: readonly HandoffView[];
 }
@@ -485,6 +497,8 @@ export function teamLeadView(input: {
   /** The lead's own route, for its payer. Absent reads as not known. */
   readonly leadRoute?: string;
   readonly config: TeamConfig;
+  /** The lead's record of its default Nectovia roles, when it took any (`LoopRunInput.escalation`). */
+  readonly escalation?: EscalationRecord | null;
   readonly retryOf: TeamRetry | null;
   readonly events: readonly HandoffEvent[];
   readonly children: readonly HarnessRun[];
@@ -613,6 +627,8 @@ export function teamLeadView(input: {
     advisor: input.config.advisor,
     retryOf: input.retryOf,
     leadPayer: input.leadRoute === NECTOVIA_ROUTE ? 'nectovia-credits' : null,
+    origin: input.config.origin ?? null,
+    escalation: input.escalation ?? null,
     workers: views.filter((view) => view.role === 'worker'),
     advice: views.filter((view) => view.role === 'advisor'),
   };

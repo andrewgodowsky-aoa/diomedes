@@ -14,8 +14,12 @@
  * A team's roles are admitted before their lead, so a role that refuses leaves
  * nothing admitted for the lead. A delegate route,
  * when the person names one, is admitted the same way now and again when the
- * loop hands it work; Nectovia never runs with a delegate or a team the person
- * names. Its one exception (S3) is a worker on the person's own coding tool,
+ * loop hands it work; a Nectovia lead never runs with a delegate or a team the
+ * person names. Under any other lead a team role may be Nectovia at a tier the
+ * role names (DIO-216), admitted on the managed loop's own checks and the
+ * account's escalation control, and a local lead started with no team takes a
+ * Focused worker and a Thorough advisor by default where the account allows them.
+ * A Nectovia lead's one exception (S3) is a worker on the person's own coding tool,
  * resolved here from their subscription worker preference for Personal work, on
  * the person's own start only and only once they confirmed the tools it may go
  * to. A host start (Board work, the Ready queue, a follow-up) never takes one, so
@@ -39,6 +43,21 @@ import { REPORT_PATH } from './harness/approval.js';
 import { isModelApiRoute, MODEL_API_NAMES, MODEL_API_PROVIDERS, NECTOVIA_ROUTE } from '../shared/model-api.js';
 import { LOCAL_MODEL_ROUTE } from '../shared/local-model.js';
 import { LOCAL_MODEL_NOT_INSTALLED } from './bonsai/runtime.js';
+import type { EscalationRole, EscalationView } from '../shared/escalation-controls.js';
+import {
+  ADVISOR_NEEDS_WORKER,
+  DEFAULT_ESCALATION_ROLES,
+  NECTOVIA_ROLE_CREDITS,
+  escalationConsentText,
+  escalationRefusal,
+  nectoviaRoleConsentText,
+  nectoviaTierName,
+  type EscalationOffer,
+  type EscalationRecord,
+  type EscalationRoleKind,
+  type RoleTier,
+} from '../shared/escalation-roles.js';
+import { ROUTING_TIERS } from '../shared/routing-policy.js';
 import {
   LOOP_LIMITS,
   NATIVE_LOOP_CAPABILITY,
@@ -48,7 +67,7 @@ import {
   type LoopRunInput,
 } from '../shared/native-loop.js';
 import { ApiError, relativeName } from './paths.js';
-import { NECTOVIA_LOOP_REFUSED } from './engines/nectovia.js';
+import { NECTOVIA_EFFORT, NECTOVIA_LOOP_REFUSED } from './engines/nectovia.js';
 import { EngineError } from './engines/process.js';
 import { AGENT_NOT_INCLUDED, AGENT_SIGN_IN_REQUIRED } from './accounts/agent-gate.js';
 import type { Store } from './store.js';
@@ -102,6 +121,8 @@ const roleSchema = z.strictObject({
   route: routeName.optional(),
   model: z.string().min(1).max(200).nullable().optional(),
   accountRoute: z.string().min(1).max(400).nullable().optional(),
+  /** A Nectovia role under another lead names the tier it runs at, never a model (DIO-216). */
+  tier: z.enum(ROUTING_TIERS).optional(),
 });
 const startSchema = z.strictObject({
   protocolVersion: z.literal(1),
@@ -144,6 +165,11 @@ const startSchema = z.strictObject({
    * asking again (`.` is the whole project). Absent: every change they return waits for you.
    */
   applyScope: z.array(z.string().min(1).max(400)).min(1).max(32).nullable().optional(),
+  /**
+   * DIO-216: a local lead started with no team takes default Nectovia roles. `true` confirms the
+   * ones that can join; `false` starts without them. Absent: the start asks first.
+   */
+  escalation: z.boolean().optional(),
   /** H14: workers and an advisor for this lead. */
   team: z
     .strictObject({
@@ -234,6 +260,29 @@ export interface NectoviaManagedLoopDeps {
     /** Already validated host spend scope; the run id remains the raw request id. */
     rootJobId?: string,
   ) => Promise<{ model: string; accountRoute: string }>;
+  /**
+   * DIO-216: the managed model and account at one tier, with the managed loop's own checks (signed
+   * in, the Agent and managed usage included, a published model for the tier). `fresh` reads the
+   * account's routing again first. Records nothing.
+   */
+  managedTier?: (projectId: string, tier: RoleTier, fresh: boolean) => Promise<{ model: string; accountRoute: string }>;
+  /** The account's escalation control, read again when `fresh`. Null: it could not be read. */
+  escalation?: (projectId: string, fresh: boolean) => Promise<EscalationView | null>;
+  /** The paid managed admission of a Nectovia role under another lead, under the role's own job. */
+  admitManagedRole?: (
+    projectId: string,
+    jobId: string,
+    input: { model: string; accountRoute: string },
+    tier: RoleTier,
+    role: EscalationRole,
+    rootJobId: string,
+  ) => Promise<{ model: string; accountRoute: string }>;
+}
+
+/** The ids a role is admitted under: the lead's run and its root job. */
+interface RoleIds {
+  readonly runId: string;
+  readonly rootJobId?: string;
 }
 
 /**
@@ -439,6 +488,8 @@ export function mountNativeLoopRoutes(
     teamWorker = false,
     // S3: the part of the tool's usage limit the person keeps, for a worker the host chose.
     reserve?: SubscriptionReserve,
+    // DIO-216: the lead's run and root job, which a Nectovia role is admitted under. A delegate has none.
+    ids?: RoleIds,
   ): Promise<TeamRole & { effort: string | null }> => {
     const state = store.state(projectId);
     const refuse = (message: string, code = 'team_role_refused') => new ApiError(409, message, { code, role: kind });
@@ -478,14 +529,30 @@ export function mountNativeLoopRoutes(
         fallback: pick.fallback ? `${pick.fallback.fromName}: ${pick.fallback.reason}` : null,
       };
     }
-    if (route === NECTOVIA_ROUTE) throw refuse(NECTOVIA_LOOP_TEAM_REFUSED, 'team_route_unsupported');
+    if (spec.tier && route !== NECTOVIA_ROUTE)
+      throw new ApiError(400, 'Only a Nectovia role names a tier.', { code: 'team_role_invalid', role: kind });
+    let tier: RoleTier | null = null;
+    if (route === NECTOVIA_ROUTE) {
+      // Nectovia takes no role under its own lead, as a delegate or by a saved profile. Under another
+      // lead a role names its tier and runs at it, on the account's credits (DIO-216 slice C).
+      if (lead.route === NECTOVIA_ROUTE || !ids || profile) throw refuse(NECTOVIA_LOOP_TEAM_REFUSED, 'team_route_unsupported');
+      if (!spec.tier)
+        throw new ApiError(400, 'A Nectovia role names its tier: efficient, focused or thorough.', { code: 'team_role_invalid', role: kind });
+      if (spec.model != null) throw refuse('The Nectovia model is managed. Send without choosing one.', 'route_refused');
+      if (spec.accountRoute != null) throw refuse('The Nectovia account is managed. Send without choosing one.', 'route_refused');
+      tier = spec.tier;
+      // The effort each tier asks for, as a Nectovia lead at that tier would.
+      effort = NECTOVIA_EFFORT[tier];
+    }
     const resolved = route;
     const external = isExternalWorkerRoute(resolved);
     if (external && !teamWorker)
       throw refuse(`${engineName(resolved)} can be a worker on a team, not ${kind === 'advisor' ? 'an advisor' : 'a delegate'}.`, 'team_route_unsupported');
-    const admitted = external
-      ? await admitExternalWorkerRoute(projectId, resolved, { model, accountRoute }, scope, consent, reserve)
-      : await admitRoute(projectId, resolved, { model, accountRoute }, scope, consent);
+    const admitted = tier && ids
+      ? await admitNectoviaRole(projectId, kind, tier, scope, consent, ids)
+      : external
+        ? await admitExternalWorkerRoute(projectId, resolved, { model, accountRoute }, scope, consent, reserve)
+        : await admitRoute(projectId, resolved, { model, accountRoute }, scope, consent);
     const wanted = agentId ?? (kind === 'advisor' ? ADVISOR_AGENT : WORKER_AGENT);
     const agent: AgentDefinition | undefined = teamAdmission
       ? await teamAdmission.agents.find(wanted, state.project.folder)
@@ -504,9 +571,58 @@ export function mountNativeLoopRoutes(
       accountRoute: admitted.accountRoute,
       // Only an external worker names how it works, so a loop role's saved shape is unchanged.
       ...(external ? { execution: 'external-proposal' as const } : {}),
+      ...(tier ? { tier } : {}),
       profile,
       effort,
     };
+  };
+
+  /**
+   * DIO-216 slice C: a Nectovia role under a lead that is not Nectovia. The managed loop's own
+   * checks in its order (consent, the project's sharing with Nectovia, signed in with the Agent and
+   * managed usage, the tier's published model), then the account's escalation control for the tier,
+   * which refuses when it can't be read, then the paid managed admission under the role's own job.
+   */
+  const admitNectoviaRole = async (
+    projectId: string,
+    kind: EscalationRoleKind,
+    tier: RoleTier,
+    scope: readonly string[],
+    consent: boolean,
+    ids: RoleIds,
+  ): Promise<{ model: string | null; accountRoute: string | null }> => {
+    if (!consent) throw new ApiError(409, nectoviaRoleConsentText(kind, tier), { consentRequired: true, role: kind });
+    requireCloudSharing(store.state(projectId), NECTOVIA_ROUTE, scope);
+    if (!managed?.managedTier || !managed.escalation || !managed.admitManagedRole)
+      throw new ApiError(409, 'Sign in to use the Nectovia Agent.', { code: 'route_refused', role: kind });
+    const refused = (error: unknown): never => {
+      if (error instanceof ApiError) throw error;
+      // The plan's refusal answers as every Agent entry point does (403, or 401 to sign in).
+      if (error instanceof EngineError && (error.code === AGENT_NOT_INCLUDED || error.code === AGENT_SIGN_IN_REQUIRED)) throw error;
+      throw new ApiError(409, error instanceof Error ? error.message : 'Nectovia refused this role.', { code: 'route_refused', role: kind });
+    };
+    const resolved = await managed.managedTier(projectId, tier, true).catch(refused);
+    const refusal = escalationRefusal(await managed.escalation(projectId, true), tier);
+    if (refusal) throw new ApiError(409, refusal, { code: 'escalation_refused', role: kind });
+    return managed
+      .admitManagedRole(projectId, `${ids.runId}-${kind}`, resolved, tier, kind, ids.rootJobId ?? ids.runId)
+      .catch(refused);
+  };
+
+  /**
+   * Why a Nectovia tier could not join as a role now, read without admitting anything: the
+   * project's sharing with Nectovia for these files, the managed checks, then the account's
+   * escalation control. Null: it can join.
+   */
+  const roleOfferReason = async (projectId: string, tier: RoleTier, scope: readonly string[], fresh: boolean): Promise<string | null> => {
+    if (!managed?.managedTier || !managed.escalation || !managed.admitManagedRole) return 'Sign in to use the Nectovia Agent.';
+    try {
+      requireCloudSharing(store.state(projectId), NECTOVIA_ROUTE, scope);
+      await managed.managedTier(projectId, tier, fresh);
+    } catch (error) {
+      return harness.redact(error instanceof Error ? error.message : 'Nectovia is unavailable.');
+    }
+    return escalationRefusal(await managed.escalation(projectId, fresh), tier);
   };
 
   const admitTeam = async (
@@ -515,6 +631,7 @@ export function mountNativeLoopRoutes(
     body: LoopStartRequest,
     sources: readonly string[],
     consent: boolean,
+    ids: RoleIds,
   ): Promise<TeamConfig> => {
     const spec = body.team!;
     const named = spec.scope ? [...new Set(spec.scope.map((file) => relativeName(file)))] : null;
@@ -528,9 +645,69 @@ export function mountNativeLoopRoutes(
     };
     const refusal = budgetRefusal(budget);
     if (refusal) throw new ApiError(400, refusal, { code: 'team_budget_invalid' });
-    const worker = await admitRole(projectId, taskId, 'worker', spec.worker, body, scope ?? [], consent, true);
-    const advisor = spec.advisor ? await admitRole(projectId, taskId, 'advisor', spec.advisor, body, scope ?? [], consent) : null;
+    const worker = await admitRole(projectId, taskId, 'worker', spec.worker, body, scope ?? [], consent, true, undefined, ids);
+    const advisor = spec.advisor
+      ? await admitRole(projectId, taskId, 'advisor', spec.advisor, body, scope ?? [], consent, false, undefined, ids)
+      : null;
     return teamConfig(scope, worker, advisor, budget);
+  };
+
+  /**
+   * DIO-216 slice C: the Nectovia roles a local lead takes when the person names no team: a Focused
+   * worker and a Thorough advisor, each where the account is signed in and includes the Agent and
+   * managed usage, the project shares the files with Nectovia, and the account's escalation control
+   * allows the tier. One that can't join is left out with its reason, and the lead runs on this
+   * computer without it. The start asks before the ones that can join do (`escalation: true`
+   * confirms them, `escalation: false` starts without them), and records which joined.
+   */
+  const defaultEscalation = async (
+    projectId: string,
+    taskId: string,
+    body: LoopStartRequest,
+    sources: readonly string[],
+    ids: RoleIds,
+  ): Promise<{ team: TeamConfig | null; record: EscalationRecord }> => {
+    const scope = sources.length ? [...sources] : null;
+    const leftOut: { role: EscalationRoleKind; tier: RoleTier; reason: string }[] = [];
+    const ready: { role: EscalationRoleKind; tier: RoleTier }[] = [];
+    let fresh = true;
+    for (const offer of DEFAULT_ESCALATION_ROLES) {
+      if (offer.role === 'advisor' && !ready.some((item) => item.role === 'worker')) {
+        leftOut.push({ ...offer, reason: ADVISOR_NEEDS_WORKER });
+        continue;
+      }
+      const reason = await roleOfferReason(projectId, offer.tier, scope ?? [], fresh);
+      fresh = false;
+      if (reason) leftOut.push({ ...offer, reason });
+      else ready.push({ ...offer });
+    }
+    if (!ready.length) return { team: null, record: { attached: [], leftOut } };
+    if (body.escalation !== true)
+      throw new ApiError(409, escalationConsentText(ready), {
+        consentRequired: true,
+        escalation: Object.fromEntries(ready.map((item) => [item.role, item.tier])),
+      });
+    const joined: Partial<Record<EscalationRoleKind, TeamRole & { effort: string | null }>> = {};
+    for (const offer of ready) {
+      if (offer.role === 'advisor' && !joined.worker) {
+        leftOut.push({ ...offer, reason: ADVISOR_NEEDS_WORKER });
+        continue;
+      }
+      try {
+        joined[offer.role] = await admitRole(projectId, taskId, offer.role, { route: NECTOVIA_ROUTE, tier: offer.tier }, body,
+          scope ?? [], true, false, undefined, ids);
+      } catch (error) {
+        // A role refused now, after the read above, is left out the same way. The lead still runs.
+        if (!(error instanceof ApiError || error instanceof EngineError)) throw error;
+        leftOut.push({ ...offer, reason: harness.redact(error.message) });
+      }
+    }
+    const attached = ready.filter((offer) => joined[offer.role]).map((offer) => ({ ...offer }));
+    const budget = { turns: TEAM_LIMITS.worker.turns, tokens: TEAM_LIMITS.worker.tokens, wallMs: TEAM_LIMITS.worker.wallMs };
+    return {
+      team: joined.worker ? teamConfig(scope, joined.worker, joined.advisor ?? null, budget, 'escalation-default') : null,
+      record: { attached, leftOut },
+    };
   };
 
   /** One admitted team. An external worker answers in one turn, and one runs at a time. */
@@ -617,22 +794,38 @@ export function mountNativeLoopRoutes(
    * same scope, roles, profiles and budget. Each role's route is admitted again,
    * fresh, so a route switched off since then refuses the retry.
    */
-  const readmitTeam = async (projectId: string, team: TeamConfig, consent: boolean, reserve?: SubscriptionReserve): Promise<TeamConfig> => {
+  const readmitTeam = async (
+    projectId: string,
+    team: TeamConfig,
+    consent: boolean,
+    reserve: SubscriptionReserve | undefined,
+    lead: { route: string; ids: RoleIds },
+  ): Promise<TeamConfig> => {
     const scope = team.scope ?? [];
-    for (const role of [team.worker, team.advisor]) {
+    let next: TeamConfig = team;
+    for (const kind of ['worker', 'advisor'] as const) {
+      const role = team[kind];
       if (!role) continue;
-      if (role.route === NECTOVIA_ROUTE)
-        throw new ApiError(409, NECTOVIA_LOOP_TEAM_REFUSED, { code: 'team_route_unsupported' });
+      if (role.route === NECTOVIA_ROUTE) {
+        // A Nectovia role under another lead names a tier, not a model (DIO-216): it is admitted
+        // again at that tier, on the model the account's routing gives the tier now.
+        if (!role.tier || lead.route === NECTOVIA_ROUTE)
+          throw new ApiError(409, NECTOVIA_LOOP_TEAM_REFUSED, { code: 'team_route_unsupported' });
+        const admitted = await admitNectoviaRole(projectId, kind, role.tier, scope, consent, lead.ids);
+        const fresh = { model: admitted.model, accountRoute: admitted.accountRoute };
+        next = kind === 'worker' ? { ...next, worker: { ...next.worker, ...fresh } } : { ...next, advisor: { ...role, ...fresh } };
+        continue;
+      }
       const requested = { model: role.model, accountRoute: role.accountRoute };
       const again = isExternalWorkerRoute(role.route)
         ? await admitExternalWorkerRoute(projectId, role.route, requested, scope, consent, reserve)
         : await admitRoute(projectId, role.route, requested, scope, consent);
       if (again.model !== role.model)
-        throw new ApiError(409, `This team's ${role === team.worker ? 'worker' : 'advisor'} used ${role.model}, which its route would not use now, so it was not retried.`, {
+        throw new ApiError(409, `This team's ${kind} used ${role.model}, which its route would not use now, so it was not retried.`, {
           code: 'team_model_changed',
         });
     }
-    return team;
+    return next;
   };
 
   /**
@@ -731,13 +924,27 @@ export function mountNativeLoopRoutes(
       subscriptionWorker = resolved.record;
       subscriptionTeam = resolved.team;
     }
+    const ids: RoleIds = { runId, ...(rootJobId ? { rootJobId } : {}) };
+    // DIO-216: a local lead that won't run refuses before any role is admitted beside it.
+    if (body.route === LOCAL_MODEL_ROUTE && gates) {
+      const refusal = gates.on(LOCAL_MODEL_ROUTE) ? await gates.localRefusal(requestedRoot.model ?? null) : LOCAL_MODEL_NOT_INSTALLED;
+      if (refusal) throw new ApiError(409, refusal, { code: 'local_model_not_ready' });
+    }
+    // DIO-216: the default Nectovia roles beside a local lead the person started with no team,
+    // delegate or composition. A Retry of a lead that took them asks for them again.
+    let escalation: EscalationRecord | undefined;
+    let escalationTeam: TeamConfig | null = null;
+    if (body.route === LOCAL_MODEL_ROUTE && !extra.team && body.team === undefined && !body.delegate && !body.persistentTeam &&
+        !body.review && !body.composition && extra.compose !== true && body.escalation !== false &&
+        (extra.personStart === true || body.escalation === true) && managed?.managedTier && managed.escalation && managed.admitManagedRole)
+      ({ team: escalationTeam, record: escalation } = await defaultEscalation(projectId, task.id, body, sources, ids));
     // A team's roles are admitted before their lead, as S3's worker is above: a role that refuses
     // (a local model that isn't running, a route switched off) leaves nothing admitted for the lead.
     let team = extra.team
-      ? await readmitTeam(projectId, extra.team, consent, hostTeam ? subscriptionWorker?.reserve : undefined)
+      ? await readmitTeam(projectId, extra.team, consent, hostTeam ? subscriptionWorker?.reserve : undefined, { route: body.route, ids })
       : body.team
-        ? await admitTeam(projectId, task.id, body, sources, consent)
-        : subscriptionTeam;
+        ? await admitTeam(projectId, task.id, body, sources, consent, ids)
+        : subscriptionTeam ?? escalationTeam;
     const admitted = await admitRoute(projectId, body.route, requestedRoot, sources, consent,
       { taskId: task.id, runId, rootJobId, threadId: extra.threadId, effort: selectedLead ? selectedLead.effort : body.effort });
     let delegate: LoopRunInput['delegate'] = null;
@@ -801,6 +1008,7 @@ export function mountNativeLoopRoutes(
       ...(team ? { team } : {}),
       ...(extra.retryOf ? { retryOf: extra.retryOf } : {}),
       ...(subscriptionWorker ? { subscriptionWorker } : {}),
+      ...(escalation ? { escalation } : {}),
       command: { id: commandId, digest: commandDigest },
     };
     const session = await harness.bridge.start(
@@ -857,6 +1065,29 @@ export function mountNativeLoopRoutes(
       const projectId = String(req.params.id);
       store.state(projectId);
       return subscription ? subscription.startView(projectId) : { kind: 'off' };
+    }),
+  );
+
+  /**
+   * DIO-216 slice C: the Nectovia tiers a start may name as a role beside a lead that is not
+   * Nectovia, each read now: the project's sharing with Nectovia, signed in with the Agent and
+   * managed usage, a published model for the tier, and the account's escalation control. A tier
+   * that can't join carries the sentence its start would refuse with. Read-only: nothing is
+   * admitted, sent or recorded.
+   */
+  app.get(
+    '/api/projects/:id/loop/escalation',
+    handle(async (req) => {
+      const projectId = String(req.params.id);
+      store.state(projectId);
+      const offers: EscalationOffer[] = [];
+      let fresh = true;
+      for (const tier of ROUTING_TIERS) {
+        const reason = await roleOfferReason(projectId, tier, [], fresh);
+        fresh = false;
+        offers.push({ tier, name: nectoviaTierName(tier), admitted: reason === null, reason });
+      }
+      return { offers, credits: NECTOVIA_ROLE_CREDITS };
     }),
   );
 
@@ -957,6 +1188,8 @@ export function mountNativeLoopRoutes(
         outcome: loopOutcome(view, checked),
         verification: checked,
         team: await harness.loop.teamView(run),
+        // DIO-216: the default Nectovia roles a local lead took, and any left out with why.
+        escalation: (run.input as unknown as LoopRunInput | null)?.escalation ?? null,
         changeSets: await harness.loop.changeSets.views(projectId, { rootRunId: run.id }),
       });
     }),
@@ -1048,6 +1281,9 @@ export function mountNativeLoopRoutes(
       if (ctx.task.automaticWork) return { refused: { code: 'unsupported', reason: 'This work is bound to the original request and its spend records. Send a new original request to start another root.' } };
       if (input.collaboration) return { refused: { code: 'unsupported', reason: 'This root owns bounded response and spend records; select a new authorized task instead of retrying it.' } };
       const attempt = (input.retryOf?.attempt ?? 1) + 1;
+      // DIO-216: default Nectovia roles the person confirmed are asked for again, read fresh at the
+      // account's settings now. A lead that took none takes none on its Retry, and nothing asks.
+      const defaults = input.team?.origin === 'escalation-default';
       const started = await startLocked(
         ctx.projectId,
         {
@@ -1062,8 +1298,9 @@ export function mountNativeLoopRoutes(
           maxTurns: input.maxTurns,
           sources: [...input.sources],
           delegate: input.delegate ? { ...input.delegate } : null,
+          ...(input.escalation ? { escalation: defaults } : {}),
         },
-        { retryOf: { runId: run.id, attempt }, team: input.team ?? null },
+        { retryOf: { runId: run.id, attempt }, team: defaults ? null : (input.team ?? null) },
       );
       return {
         ...(started.session ? { sessionId: started.session.id } : {}),
