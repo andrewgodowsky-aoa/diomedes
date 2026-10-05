@@ -11,6 +11,9 @@ Nectovia to this repository's standards. It has two readers:
 
 Andrew Godowsky owns this project. When this file and Andrew disagree, Andrew wins.
 
+Last checked against `main` on 2026-10-04 (the 0.2.3 tree). If `AGENTS.md`, the gates or CI have
+changed since, they win; tell Andrew this file needs a refresh.
+
 ---
 
 ## 0. Before anything: what Andrew does first
@@ -19,17 +22,21 @@ Nothing below works until these are done. If any is missing, stop and tell the p
 Andrew for it by name.
 
 1. **GitHub access.** The app repository `andrewgodowsky-aoa/diomedes` is public, so anyone can
-   clone it, but only a collaborator can push a branch to it. The site `andrewgodowsky-aoa/diomedes-site`
-   and `andrewgodowsky-aoa/diomedes-mac` are private and cannot even be cloned without an invite.
-   Andrew invites the joiner's GitHub account as a collaborator on the app, and on the site if they
-   will work there. The joiner accepts from the email or from https://github.com/notifications.
-   `main` on the app is protected by a ruleset: every change reaches it through a pull request with
-   CI green, so a mistaken push to `main` is refused rather than landing.
-2. **The three canonical Google Docs** (links in `AGENTS.md`, "Cloud canonical documents") shared
+   clone it and read everything in it, `docs/` included. Only a collaborator can push a branch to it.
+   The site `andrewgodowsky-aoa/diomedes-site` and the other repositories are private and cannot
+   even be cloned without an invite. Andrew invites the joiner's GitHub account as a collaborator on
+   the app, and on the site if they will work there. The joiner accepts from the email or from
+   https://github.com/notifications. `main` on the app is protected by a ruleset: every change
+   reaches it through a pull request Andrew merges, so a mistaken push to `main` is refused rather
+   than landing.
+2. **Tracking access.** Work is tracked in **Linear** (team *Diomedes*), which is the authority on
+   what is open and who has it. The **Notion** Features database mirrors it for reading. Andrew
+   invites the joiner's work email to both. A shared Google Drive holds documents for the team.
+3. **The three canonical Google Docs** (links in `AGENTS.md`, "Cloud canonical documents") shared
    with the joiner's Google account, view access at least. The repository keeps mirrors of all three
    in `docs/`, so the joiner can work without them; the cloud copies win when they differ.
-3. **Their role.** What Andrew wants them working on first. If the person does not know yet, record
-   "not yet assigned" and ask Andrew.
+4. **Their role.** What Andrew wants them working on first, ideally as Linear issues assigned to
+   them. If the person does not know yet, record "not yet assigned" and ask Andrew.
 
 ---
 
@@ -51,7 +58,8 @@ Andrew for it by name.
 
 ## 2. What this project is
 
-- **Nectovia** is the product: a Windows desktop app (with a Mac fork) where a person states an
+- **Nectovia** is the product: a desktop app for Windows and Apple silicon Macs, both built from
+  this one repository, where a person states an
   outcome and an AI agent plans, does and verifies the work, with scoped permissions and a durable
   record of everything it did. It drives AI tools the user already has through adapters; it does not
   ship a model of its own.
@@ -64,7 +72,7 @@ Andrew for it by name.
   |---|---|
   | `andrewgodowsky-aoa/diomedes` | The app: Electron + React client, TypeScript server. This file lives here. |
   | `andrewgodowsky-aoa/diomedes-site` | The marketing site, diomedes.net (Astro). Separate repo, separate `AGENTS.md`. |
-  | `andrewgodowsky-aoa/diomedes-mac` | Private Mac work. Only if Andrew assigns it. |
+  | Other private repositories | The Operations app, the mobile apps and Mac release work. Only if Andrew assigns them. |
 
 ---
 
@@ -72,8 +80,9 @@ Andrew for it by name.
 
 ### 3.1 Find out the machine
 
-Ask the person, or check: Windows or Mac? The app is Windows-first. The commands below are written
-so they work in PowerShell on Windows and in a terminal on Mac; adjust paths yourself.
+Ask the person, or check: Windows or Mac? Both work for development. CI checks every pull request
+on Windows and on an Apple silicon Mac. The commands below are written so they work in PowerShell
+on Windows and in a terminal on Mac; adjust paths yourself.
 
 ### 3.2 Tools
 
@@ -127,6 +136,17 @@ Report the real pass and fail counts to the person. If something fails on untouc
 down the exact test name and error for Andrew. Do not try to fix `main`. Vitest can flake when the
 computer is busy: re-run a single failing file alone before calling it a real failure.
 
+Tell the person before starting: the full `vitest` run is over 500 files and keeps the computer busy
+for a while. Close games and other heavy programs first.
+
+Two more checks apply to some changes:
+
+- **Layout or CSS:** also run `npx playwright test -c playwright.responsive.config.ts`. It checks
+  the Console at several window sizes. `tests/viewport-units.test.ts`, part of the vitest run,
+  refuses viewport units (`vw`, `vh`) in type sizes and spacing; sizes stay fixed at every width.
+- **`services/control-plane`:** CI also runs that service's own `npm run typecheck`, `npm test`
+  and `npm run build`. Run them in that folder if you touched it.
+
 ### 3.5 Memory
 
 Save these as memories so every future session starts with them. Use your own memory mechanism
@@ -150,6 +170,10 @@ words, and tell the person what you saved.
 7. **Names:** Nectovia is the product, Diomedes Systems the company, and shipped `diomedes`
    identifiers stay unchanged.
 8. **Owner-machine paths do not exist here.** See section 5.
+9. **Words a customer reads follow `docs/reference/VOICE.md`.** That covers app screens, error
+   messages, pack skills and anything else a business owner sees.
+10. **Linear is where work is tracked.** Check the issue before starting, and never mark one Done;
+    Andrew does that after the merge.
 
 ### 3.6 Optional: a Claude.ai Project for questions
 
@@ -183,6 +207,10 @@ Read these fully before the first change. Summarise each for the person in a few
 5. `docs/reference/STANDING_DECISIONS.md`: the reasons behind the numbered decisions.
 6. `QUESTIONS.md`: what is still undecided.
 7. `README.md`: what the app does today, and the three states (in source, packaged, verified).
+8. `docs/reference/VOICE.md`: how Nectovia writes. Read it before changing any words a customer sees.
+
+For capability pack work, also read `docs/product/2026-09-10-capability-packs.md` and the comment at
+the top of `shared/capability-packs.ts`.
 
 Do not copy version numbers or "current release" facts from these into memory. They go stale;
 re-read the files instead.
@@ -213,21 +241,27 @@ claiming unshipped capability.
 
 **The joiner's loop instead:**
 
-1. `git fetch origin`, then a branch from `origin/main` named after the feature in plain lowercase
+1. Start from a Linear issue assigned to you. Read it fresh, and move it to In Progress.
+2. `git fetch origin`, then a branch from `origin/main` named after the feature in plain lowercase
    hyphenated words: `feature/<feature-name>`, for example `feature/files-empty-state`. No dates, no
    model names. Optionally a separate worktree of the same name.
-2. Make the change. Keep it to what the task asked. New UI goes in the Console only; the Workbook is
-   frozen.
-3. Run the four gates. Report real counts from this run.
-4. Commit with a message that says what changed and why, in plain sentences like the existing
+3. Check for overlap before editing. `gh pr list` shows the open pull requests, and
+   `gh pr diff <number> --name-only` shows which files one touches. If an open PR already changes a
+   file you need, ask Andrew before you start; two people reshaping the same screen means one of
+   them redoes the work.
+4. Make the change. Keep it to what the task asked. New UI goes in the Console only; the Workbook
+   was removed on 2026-09-23.
+5. Run the four gates, plus the extra checks in 3.4 that apply. Report real counts from this run.
+6. Commit with a message that says what changed and why, in plain sentences like the existing
    history (`git log` shows the voice). No AI trailer.
-5. Ask the person before pushing. Then `git push -u origin <branch>` and `gh pr create`.
-6. The PR description carries the required report from `AGENTS.md`: what changed, gate results with
-   counts, what is implemented versus only recorded, anything left undone, and PILLAR IMPACT or
-   ROADMAP IMPACT when they apply.
-7. CI runs on the PR. Watch it with `gh pr checks`. Fix failures on the same branch.
-8. Andrew reviews and merges. Address his comments on the same branch. Delete the branch and any
-   worktree after the merge.
+7. Ask the person before pushing. Then `git push -u origin <branch>` and `gh pr create`. Put the
+   Linear issue's ID (for example `DIO-181`) in the PR title or description.
+8. GitHub fills the description from `.github/pull_request_template.md`. Fill in every section; it
+   is the required report from `AGENTS.md`. Delete a section only when the template says it is
+   optional and it does not apply.
+9. CI runs on the PR. Watch it with `gh pr checks`. Fix failures on the same branch.
+10. Andrew reviews and merges. Address his comments on the same branch. Delete the branch and any
+    worktree after the merge. Andrew moves the Linear issue to Done.
 
 ---
 
@@ -252,6 +286,26 @@ explaining it. Use the task Andrew gives. The default starter task is **the firs
 
 The point is the loop and a first map of the product, not the size of the change.
 
+### 6.1 Good areas for a joiner
+
+Andrew assigns the actual work in Linear. These are the kinds of work that suit a new teammate,
+because a mistake stays small and the checks catch most of them:
+
+- **Pack skills.** A skill is one playbook for one kind of recurring work, written as data
+  (`PackSkill` in `shared/capability-packs.ts`; the Small Business pack's are in
+  `shared/small-business-skills.ts`). `validateManifest` enforces the safety rules: it runs in a
+  read-and-draft Mode, every input it reads is a declared need, `acts` is always `false`, and the
+  playbook fits in 8 KB. `tests/capability-packs.test.ts` runs those checks. Its text is customer
+  copy, so it follows `docs/reference/VOICE.md`. Adding a new pack, or changing how packs are
+  activated, installed or hooked, is architecture: ask Andrew first.
+- **Screen papercuts.** A confusing word, a clipped label, a dialog that shows a control nobody can
+  use. Fix the smallest thing, and add a test when behaviour changes.
+- **Fresh-eyes review.** Use the app the way a business owner would and file what got in the way.
+  A beginner's confusion is a finding.
+
+Engines, Trust and permissions, billing and credits, accounts and sign-in, migrations and releases
+are on or next to the "Not yours to decide" list. Leave them to Andrew unless he assigns one.
+
 Walk through: branch → change → gates → commit → PR → CI → Andrew's review. At each step say what
 you are doing and why, in a sentence.
 
@@ -262,6 +316,7 @@ you are doing and why, in a sentence.
 Tick these with the person and tell Andrew when all are true:
 
 - [ ] Invite accepted; `gh auth status` is signed in; the repository is cloned.
+- [ ] Signed in to Linear and Notion, and can see the Diomedes team's issues.
 - [ ] Node 22; `npm ci` succeeded.
 - [ ] The four gates ran on untouched `main`; results reported (and any pre-existing failure noted
       for Andrew).
