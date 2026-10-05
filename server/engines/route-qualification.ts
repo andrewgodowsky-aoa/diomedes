@@ -77,8 +77,11 @@ export interface QualificationTarget {
   rateCard: string;
   /** The rate card every check call is reserved and settled under. */
   card: ModelRateCard;
-  /** The route's own binding for one check call, with that call's cache options and output bound. */
-  binding(extra: CacheOptions, maxOutputTokens: number): RouteBinding;
+  /**
+   * The route's own binding for one check call, with that call's cache options and output bound,
+   * and whether the call offers a tool.
+   */
+  binding(extra: CacheOptions, maxOutputTokens: number, offersTools: boolean): RouteBinding;
 }
 
 /**
@@ -244,7 +247,7 @@ export function plannedCeilingMicroUsd(target: QualificationTarget): MicroUsd {
 }
 
 function ceilingOf(target: QualificationTarget, plan: Plan): MicroUsd {
-  const prefix = target.binding({}, CHECK_OUTPUT_TOKENS).prefix;
+  const prefix = target.binding({}, CHECK_OUTPUT_TOKENS, false).prefix;
   return plannedCalls(plan).reduce(
     (sum, call) =>
       sum +
@@ -346,7 +349,7 @@ export async function runRouteQualification(input: QualificationRunInput): Promi
   const effort = input.effort ?? 'low';
   const id = (input.idFactory ?? newReceiptId)();
   if (!RECEIPT_ID.test(id)) throw new QualificationRefused('qualify_invalid_target', 'The route check could not be named. Nothing was sent.');
-  const { prefix, label } = target.binding({}, CHECK_OUTPUT_TOKENS);
+  const { prefix, label } = target.binding({}, CHECK_OUTPUT_TOKENS, false);
   const createdAt = now();
   const identity = {
     v: ROUTE_QUALIFICATION_VERSION,
@@ -386,7 +389,7 @@ export async function runRouteQualification(input: QualificationRunInput): Promi
     const started = now().getTime();
     try {
       result = await respondStream({
-        binding: target.binding(planned.extra, planned.limits.maxOutputTokens),
+        binding: target.binding(planned.extra, planned.limits.maxOutputTokens, planned.tools.length > 0),
         secret: input.secret,
         card: target.card,
         exposure: input.exposure,

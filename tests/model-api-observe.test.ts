@@ -53,7 +53,7 @@ async function observed(
   const messages: ModelMessage[] = [{ role: 'user', content: 'Reply with the single word OK.' }];
   let dispatches = 0;
   const outcome = await respondStream({
-    binding: options.binding ?? aws.awsChatBinding(CONNECTION, 'low', 512),
+    binding: options.binding ?? aws.awsChatBinding(CONNECTION, 'low', 512, false),
     secret: SECRET,
     card: aws.awsModelRateCard(K3),
     exposure: options.exposure ?? exposure,
@@ -147,7 +147,7 @@ describe('the exchange observer', () => {
   test('a call the guard refuses is observed as not sent, its hold released', async () => {
     // The binding was built for a different output limit: the serialized request does not match it.
     const { error, seen, dispatches } = await observed(() => sseResponse(chatEvents({ model: K3, text: 'OK', usage: usage(2) })), {
-      binding: aws.awsChatBinding(CONNECTION, 'low', 100),
+      binding: aws.awsChatBinding(CONNECTION, 'low', 100, false),
     });
     expect(error).toMatchObject({ code: 'aws_request_refused', dispatched: false });
     expect(dispatches).toBe(0);

@@ -226,7 +226,9 @@ export interface AzureConnectionView {
 /**
  * What `GET /api/ai/model-api/<route>/qualification` and `POST .../qualify` return for the
  * route's current connection and one logical model: the newest route check receipt and what it
- * means now. Identifiers, counts and sentences only; never a key, a prompt or provider text.
+ * means now. Identifiers, counts and sentences only; never a key, a prompt or an answer. A failed
+ * call's error may quote the provider's own error message, bounded and with the key removed: the
+ * checks' prompts are fixed and carry no person's content.
  */
 export interface RouteQualificationView {
   route: 'aws-bedrock' | 'azure-openai';

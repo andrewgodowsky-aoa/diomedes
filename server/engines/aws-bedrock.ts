@@ -375,9 +375,11 @@ export function awsBinding(
   summaries: boolean,
   /** The call's exact output limit; the Chat Completions request is checked against it. */
   maxOutputTokens: number,
+  /** Whether the call offers any tool (Chat Completions only). */
+  offersTools: boolean,
 ): RouteBinding {
   return awsProtocolFor(connection.modelId) === AWS_CHAT_PROTOCOL
-    ? awsChatBinding(connection, effort, maxOutputTokens)
+    ? awsChatBinding(connection, effort, maxOutputTokens, offersTools)
     : awsResponsesBinding(connection, effort, summaries);
 }
 
@@ -472,6 +474,8 @@ export function awsChatBinding(
   effort: 'low' | 'medium' | 'high',
   /** The call's exact output limit: the serialized request must carry exactly this. */
   maxOutputTokens: number,
+  /** Whether the call offers any tool: the parallel tool call setting is sent only then. */
+  offersTools: boolean,
 ): RouteBinding {
   return {
     route: AWS_BEDROCK_ROUTE,
@@ -502,9 +506,9 @@ export function awsChatBinding(
         forceReasoning: true,
         systemMessageMode: 'system',
         reasoningEffort: effort,
-        // Sent even when no tool is offered; whether Bedrock accepts that here is shown by the
-        // first route check, which offers none.
-        parallelToolCalls: false,
+        // Only beside a tool: the SDK sends the setting whenever it is set, and an OpenAI-style
+        // Chat Completions endpoint can refuse it on a request that offers no tool.
+        ...(offersTools ? { parallelToolCalls: false } : {}),
         store: false,
       },
     },
@@ -533,7 +537,8 @@ export function awsQualificationTarget(connection: AwsConnection, effort: 'low' 
     sdk: AWS_BEDROCK_SDK,
     rateCard: card.version,
     card,
-    binding: (extra, maxOutputTokens) => withCacheOptions(awsBinding(parsed, effort, false, maxOutputTokens), 'openai', extra),
+    binding: (extra, maxOutputTokens, offersTools) =>
+      withCacheOptions(awsBinding(parsed, effort, false, maxOutputTokens, offersTools), 'openai', extra),
   };
 }
 
@@ -567,7 +572,7 @@ export async function respondOnce(
   const { connection: _connection, effort, qualification: _qualification, ...rest } = input;
   return respondStream({
     ...rest,
-    binding: awsBinding(connection, effort, Boolean(rest.onReasoningDelta), rest.limits.maxOutputTokens),
+    binding: awsBinding(connection, effort, Boolean(rest.onReasoningDelta), rest.limits.maxOutputTokens, rest.tools.length > 0),
   });
 }
 

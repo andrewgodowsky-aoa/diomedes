@@ -7,10 +7,12 @@ import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import { createApp } from '../server/app.js';
 import { testOnlySecretBox } from '../server/connection-secrets.js';
 import * as aws from '../server/engines/aws-bedrock.js';
+import { LOOKUP_FACT } from '../server/engines/route-qualification.js';
 import { RouteQualifications } from '../server/engines/route-qualification-store.js';
 import { EngineService } from '../server/engines/service.js';
 import { AWS_MODEL_CONTRACT, awsModelContract, createAwsModelAdapter } from '../server/harness/aws-model-adapter.js';
 import { FileModelTranscripts } from '../server/harness/model-transcripts.js';
+import { digest } from '../server/harness/policy.js';
 import { ceilingCost, SpendExposure, usageCost, validateRateCard } from '../server/spend-exposure.js';
 import { micro } from '../shared/managed-usage.js';
 import type { Store } from '../server/store.js';
@@ -124,13 +126,17 @@ describe('the direct AWS Kimi K3 selection', () => {
 
 describe('the AWS Chat Completions binding for K3', () => {
   test('binds K3 to the chat endpoint and Luna to the Responses endpoint, with the chat options stated', () => {
-    const chat = aws.awsBinding(k3(), 'medium', true, 512);
+    const chat = aws.awsBinding(k3(), 'medium', true, 512, true);
     expect(chat.guard.expectedUrl).toBe(`${CONNECTION.baseUrl}/chat/completions`);
     expect(chat.guard.inspectBody).toBeTypeOf('function');
     expect(chat.providerOptions).toEqual({
       openai: { forceReasoning: true, systemMessageMode: 'system', reasoningEffort: 'medium', parallelToolCalls: false, store: false },
     });
-    const luna = aws.awsBinding(k3({ modelId: aws.AWS_LUNA_MODEL }), 'medium', true, 512);
+    // With no tool offered, the parallel tool call setting is not sent at all.
+    expect(aws.awsBinding(k3(), 'medium', true, 512, false).providerOptions).toEqual({
+      openai: { forceReasoning: true, systemMessageMode: 'system', reasoningEffort: 'medium', store: false },
+    });
+    const luna = aws.awsBinding(k3({ modelId: aws.AWS_LUNA_MODEL }), 'medium', true, 512, false);
     expect(luna.guard.expectedUrl).toBe(`${CONNECTION.baseUrl}/responses`);
     expect(luna.providerOptions.openai).toMatchObject({ systemMessageMode: 'developer', reasoningSummary: 'auto' });
   });
@@ -205,8 +211,10 @@ describe('the AWS Chat Completions binding for K3', () => {
         max_completion_tokens: aws.CONVERSATION_LIMITS.maxOutputTokens,
         reasoning_effort: 'high',
         store: false,
-        parallel_tool_calls: false,
       });
+      // No tool is offered, so neither tools nor the parallel tool call setting are sent.
+      expect(sent.body).not.toHaveProperty('tools');
+      expect(sent.body).not.toHaveProperty('parallel_tool_calls');
       expect(sent.body).not.toHaveProperty('max_tokens');
       expect(sent.body).not.toHaveProperty('prompt_cache_key');
       expect(sent.body).not.toHaveProperty('prompt_cache_options');
@@ -215,6 +223,43 @@ describe('the AWS Chat Completions binding for K3', () => {
       expect(result).toMatchObject({ reportedModel: KIMI_K3_US, responseId: 'chatcmpl-k3-1', providerRequestId: 'req-k3-1' });
       expect(result.usage).toMatchObject({ inputTokens: 120, outputTokens: 30, reasoningTokens: 12 });
       expect(exposure.list(CONNECTION.id).map((hold) => hold.state)).toEqual(['settled']);
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('a call that offers a tool sends parallel tool calls off beside it', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'diomedes-aws-k3-tools-'));
+    try {
+      const exposure = new SpendExposure(path.join(dir, 'spend'));
+      await exposure.init();
+      await exposure.setCap(CONNECTION.id, micro(10_000_000), { approvedBy: 'test owner', note: 'Fixture cap; no live request.' });
+      const seen: Record<string, unknown>[] = [];
+      const transport = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+        seen.push(JSON.parse(String(init?.body)));
+        return sseResponse(
+          chatEvents({ id: 'chatcmpl-k3-2', model: KIMI_K3_US, text: 'OK', usage: { prompt_tokens: 90, completion_tokens: 4, total_tokens: 94 } }),
+          { 'x-amzn-requestid': 'req-k3-2' },
+        );
+      }) as typeof globalThis.fetch;
+      const messages = [{ role: 'user' as const, content: 'Look up the key alpha.' }];
+      await aws.respondOnce({
+        connection: k3(),
+        secret: SECRET,
+        card: aws.awsModelRateCard(KIMI_K3_US),
+        exposure,
+        attempt: aws.exposureAttempt('k3-tools', 'model:0', messages),
+        instructions: 'Use the offered tool.',
+        messages,
+        tools: [LOOKUP_FACT],
+        effort: 'low',
+        limits: aws.CONVERSATION_LIMITS,
+        signal: new AbortController().signal,
+        transport,
+        qualification: receiptFor(),
+      });
+      expect(seen).toHaveLength(1);
+      expect(seen[0]).toMatchObject({ parallel_tool_calls: false, tools: [expect.objectContaining({ type: 'function' })] });
     } finally {
       await fs.rm(dir, { recursive: true, force: true });
     }
@@ -474,6 +519,24 @@ describe('the K3 receipt gate on a direct call', () => {
     const luna = createAwsModelAdapter({ ...options, connection: k3({ modelId: aws.AWS_LUNA_MODEL }), card: aws.AWS_LUNA_RATE_CARD });
     expect(luna.capabilities().protocolVersion).toBe('openai-responses');
     expect(luna.profileHash).not.toBe(adapter.profileHash);
+    // Luna's profile is exactly the one it had before protocols were named, so a Luna step saved by
+    // an earlier version still resumes; only K3's profile names its protocol.
+    const before = {
+      route: aws.AWS_BEDROCK_ROUTE,
+      sdk: aws.AWS_BEDROCK_SDK,
+      connectionId: CONNECTION.id,
+      revision: CONNECTION.revision,
+      baseUrl: CONNECTION.baseUrl,
+      modelId: aws.AWS_LUNA_MODEL,
+      instructions: digest(options.instructions),
+      effort: options.effort,
+      limits: aws.CONVERSATION_LIMITS,
+      rateCard: aws.AWS_LUNA_RATE_CARD.version,
+    };
+    expect(luna.profileHash).toBe(digest(before));
+    expect(adapter.profileHash).toBe(
+      digest({ ...before, protocol: 'openai-chat-completions', modelId: KIMI_K3_US, rateCard: aws.awsModelRateCard(KIMI_K3_US).version }),
+    );
     expect(dispatches).toBe(0);
   });
 });

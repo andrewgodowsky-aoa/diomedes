@@ -37,7 +37,9 @@ the receipt binds the observation to the connection it was made on.
 guarded transport. Its provider options, under `openai` (the only namespace the SDK's chat model
 reads): `forceReasoning: true` (the Geo model id does not match the SDK's reasoning pattern;
 forcing it sends the limit as `max_completion_tokens` and keeps `reasoning_effort`),
-`systemMessageMode: 'system'`, `reasoningEffort`, `parallelToolCalls: false`, `store: false`.
+`systemMessageMode: 'system'`, `reasoningEffort`, `store: false`, and `parallelToolCalls: false`
+only when the call offers a tool. The SDK sends that setting whenever it is set, and an
+OpenAI-style Chat Completions endpoint can refuse it on a request that offers no tool.
 
 The guard's body check (`inspectAwsChatBody`) refuses the request, with nothing sent, unless it
 names the K3 model, streams with `stream_options.include_usage: true`, carries
@@ -75,9 +77,9 @@ One helper, `awsModelRefusal(connection, receipt, now, rateCard?)`, with the rec
 
 No receipt store, or an unreadable one, reads as no receipt, so K3 stays refused.
 
-The adapter's profile now includes the protocol, so its digest says which wire format a saved
-continuation belongs to. This changes Luna's profile hash too: a Luna step prepared before this
-version and resumed after it is refused as a changed profile, as any profile change is. K3's
+K3's adapter profile includes the protocol, so its digest says which wire format a saved
+continuation belongs to. Luna's profile is exactly what it was before protocols were named, so a
+Luna step prepared by an earlier version still resumes after this one. K3's
 contract (`awsModelContract`) names Chat Completions and streams no thinking (the SDK's chat model
 emits none); `AWS_MODEL_CONTRACT` stays the route's registered one.
 
@@ -162,9 +164,9 @@ revision, which no check covers yet.
 - No live provider call was made in this lane. Every test uses fixture transports; nothing reached
   AWS or Azure.
 - It is not shown that Bedrock serves K3 over Chat Completions for any account, or accepts
-  `max_completion_tokens`, `reasoning_effort`, `store` or `prompt_cache_options` there. The SDK sends
-  `parallel_tool_calls: false` even when no tool is offered, and whether Bedrock accepts that on Chat
-  Completions is unknown. The first check offers no tool, so a 400 on it points there first.
+  `max_completion_tokens`, `reasoning_effort`, `store` or `prompt_cache_options` there. A 400 on the
+  first check points at one of those. `parallel_tool_calls` is sent only beside a tool, so only the
+  tool round trip shows whether Bedrock accepts it.
 - It is not shown that an Azure deployment accepts `prompt_cache_options`.
 - A passing receipt is evidence about the calls that run made, with its prompts, on that day. It does
   not prove every later call stays bounded, which is why it expires and is bound to the revision

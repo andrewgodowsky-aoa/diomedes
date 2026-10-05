@@ -99,8 +99,10 @@ export function createAwsModelAdapter(options: AwsModelAdapterOptions): ModelAda
     profile: {
       route: AWS_BEDROCK_ROUTE,
       sdk: AWS_BEDROCK_SDK,
-      // The wire protocol decides what a saved continuation means, so it binds the profile.
-      protocol,
+      // The wire protocol decides what a saved continuation means, so it binds K3's profile. Luna's
+      // Responses profile stays exactly as it was before protocols were named, so its saved steps
+      // still resume.
+      ...(protocol === AWS_CHAT_PROTOCOL ? { protocol } : {}),
       connectionId: connection.id,
       revision: connection.revision,
       baseUrl: connection.baseUrl,

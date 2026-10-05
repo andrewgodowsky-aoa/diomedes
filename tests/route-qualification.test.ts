@@ -413,7 +413,7 @@ describe('cache options reach the request only under the namespace the SDK reads
     );
 
   test('AWS Chat Completions reads openai; the same option under azure is dropped', async () => {
-    const chat = aws.awsChatBinding(K3_CONNECTION, 'low', CHECK_OUTPUT_TOKENS);
+    const chat = aws.awsChatBinding(K3_CONNECTION, 'low', CHECK_OUTPUT_TOKENS, false);
     const card = aws.awsModelRateCard(K3);
     expect((await one(withCacheOptions(chat, 'openai', { cacheOff: true }), card, AWS_SECRET, chatOk)).prompt_cache_options).toEqual({ mode: 'explicit' });
     expect(await one(withCacheOptions(chat, 'azure', { cacheOff: true }), card, AWS_SECRET, chatOk)).not.toHaveProperty('prompt_cache_options');
