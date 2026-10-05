@@ -123,10 +123,11 @@ may hand work to Nectovia's managed tiers, and to which tiers. Staff set it with
 revision's control, null clears it so the scope inherits, and an object sets
 it. On the global record it is the default for every account, and a rollback
 restores the whole record. A publish that keeps the scope's own routing
-exactly, such as one that only turns escalation off, does not check its routes'
-evidence again, so expired evidence never blocks the switch. Any change to the
-routing is checked in full. `GET /ops/routing/scopes/...` answers the record's
-own `escalation` and the `effectiveEscalation`; members read the effective
+exactly, such as one that only turns escalation off, re-checks none of its
+routes, so the state of those routes never blocks the switch. Each call still
+checks its route when it runs. Any change to the routing is checked in full.
+`GET /ops/routing/scopes/...` answers the record's own `escalation` and the
+`effectiveEscalation`; members read the effective
 control at `GET /account/routing/{organization|individual}/{id}/escalation`.
 The routing snapshot does not carry it. A managed call that names a role in
 `X-Nectovia-Escalation` (worker or advisor; anything else is 400
