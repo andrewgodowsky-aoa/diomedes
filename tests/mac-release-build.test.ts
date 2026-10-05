@@ -24,7 +24,7 @@ const assets = (await import(new URL('../scripts/write-release-assets.mjs', impo
   macLaunchOutcome: (proof: unknown, version: string) => { result: string };
 };
 
-const VERSION = '0.2.2';
+const VERSION = '0.2.3';
 const COMMIT = '0123456789abcdef0123456789abcdef01234567';
 const APP = '/Users/someone/dev/diomedes-mac/release/Diomedes-darwin-arm64/Diomedes.app';
 const launch = {
