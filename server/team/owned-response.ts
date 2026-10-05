@@ -446,7 +446,8 @@ export class OwnedTeamResponses {
     const child = await this.child(record.harnessRunId);
     await this.deps.store.locked(async () => {
       const saved = this.record(grant)!;
-      if (saved.result) return;
+      // Stop owns a closed record's terminal state; the stopped step's late failure leaves it as written.
+      if (saved.result || (saved.rootClosed && saved.summary !== null)) return;
       saved.unknownOutcome = !!child && (child.state === 'reconcile_required' || child.steps.some((step) => step.state === 'reconcile_required'));
       saved.status = saved.rootClosed || child?.state === 'cancelled' ? 'cancelled' : 'failed';
       saved.summary = saved.unknownOutcome ? 'The Team response outcome is unknown; reconciliation is required.' : 'The Team response stopped without an accepted answer.';
@@ -466,7 +467,20 @@ export class OwnedTeamResponses {
       record.unknownOutcome = !!after && (after.state === 'reconcile_required' || after.steps.some((step) => step.state === 'reconcile_required'));
       if (!record.result) this.projectAssignment(record, 'waiting', record.unknownOutcome ? 'went-wrong' : null,
         record.unknownOutcome ? 'The owned Team response stopped with an unknown effect. Reconciliation is required.' : 'The owner stopped this bounded Team assignment.');
+      this.settleUnanswered(record);
     }
+  }
+
+  /**
+   * A response that ends without an accepted answer gets its summary and releases its member here,
+   * in the same write as the stop or recovery that ended it. A host that exits before the stopped
+   * step settles would otherwise keep the member `working`, which no message wakes. A saved summary
+   * means this already ran, so repeated Stop and recovery change nothing.
+   */
+  private settleUnanswered(record: OwnedTeamRun): void {
+    if (record.result || record.summary !== null) return;
+    record.summary = record.unknownOutcome ? 'The Team response outcome is unknown; reconciliation is required.' : 'The Team response stopped without an accepted answer.';
+    this.deps.team.setMemberStatus(record.grant.projectId, record.grant.member.slotId, record.status === 'failed' ? 'error' : 'idle');
   }
 
   private closeRecords(records: OwnedTeamRun[]): void {
@@ -520,6 +534,7 @@ export class OwnedTeamResponses {
           saved.status = recovered.state === 'cancelled' ? 'cancelled' : 'failed';
           saved.endedAt ??= now();
           this.projectAssignment(saved, 'waiting', 'went-wrong', 'The recovered Team response requires attention before continuing.');
+          this.settleUnanswered(saved);
         } else if (saved.result) {
           this.projectAssignment(saved, 'waiting', 'changes-ready', 'The recorded Team response output waits for Review.');
         }

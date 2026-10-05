@@ -1149,8 +1149,8 @@ describe('fresh explicit Team ownership after host restart', TEAM_TEST, () => {
     heldTeam!.release();
     await vi.waitFor(() => expect(exposureFor([oldRecord.harnessRunId])[0]!.state).toBe('uncertain'), TEAM_WAIT);
     await host().bridge.flush();
-    // Stop closes the record first; the aborted response then records its own failure summary
-    // and member status. Snapshot only after that second write, or the copy is not terminal.
+    // Stop writes the stopped summary and member status with the closed record (DIO-209).
+    // Snapshot only once that summary is saved, or the copy is not terminal.
     await vi.waitFor(() => expect(ownedTeam()).toMatchObject({ status: 'cancelled', rootClosed: true, unknownOutcome: true,
       summary: expect.any(String) }), TEAM_WAIT);
     const teamBefore = structuredClone(state().team);
