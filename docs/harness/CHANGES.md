@@ -1,5 +1,20 @@
 # Harness host integration changes, 2026-09-09
 
+## The local model can work on a team, 2026-10-05
+
+A Diomedes work loop's worker or advisor can now run on the local model (DIO-216, slice A). The
+loop start asks the same route-on question every send asks: a provider route is on when its
+Settings switch is on, and the local model is on where it is set up. A local role names its profile
+and the local account route, for example `{ "route": "bonsai", "model": "bonsai-gaming",
+"accountRoute": "bonsai:local" }`. At the start the host reads which profile the local model is
+running, and never starts it. A profile that isn't the running one is refused with 409 and the
+runtime's own sentence, such as "The local model isn't running. Start it first." A team's roles are
+now admitted before their lead, so a role that refuses leaves nothing admitted for the lead. Local
+calls hold no spend. Every provider route still refuses when its Settings switch is off.
+`tests/three-model-team.test.ts` runs a Sol lead on Azure, a local Gaming worker and a Kimi K3
+advisor on AWS on fixture transports. See
+[the record](../implementation/2026-10-05-three-model-team.md).
+
 ## Kimi K3 sends after a route check, 2026-10-05
 
 The direct AWS route sends Kimi K3 over Chat Completions, and only under a current route check

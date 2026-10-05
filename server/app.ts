@@ -1658,7 +1658,11 @@ export async function createApp(options: AppOptions) {
     },
   }, () => packLifecycle.contributions, {
     host:collaborationHost, rootLedger:productionTeam.rootLedger,
-  }, subscriptionWorkers);
+  }, subscriptionWorkers, {
+    // The same route-on every send uses. The local model's status is read, never started.
+    on: (route) => routeOn(route),
+    localRefusal: (model) => bonsai.refusal(model),
+  });
   mountTaskWorkflowRoutes(app, store);
   mountManualHandoffRoutes(app, store);
   mountWorkspaceRoutes(app, store, workspaces, configuration, automations);
