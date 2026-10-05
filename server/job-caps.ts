@@ -249,13 +249,18 @@ export class JobCaps {
   /**
    * The scope a job spends under. The first call pins the job's tier from its
    * thread and writes the record, so the tier cannot move under a running job;
-   * a raise armed on the thread is consumed by this job and no other.
+   * a raise armed on the thread is consumed by this job and no other. A caller
+   * that names the tier pins that one instead: a Nectovia role under another
+   * lead runs at its own tier, under its own job. A job already pinned at
+   * another tier is refused, never moved.
    */
-  scope(projectId: string, jobId: string, threadId: string | null): Promise<JobScope & { tier: JobTier }> {
+  scope(projectId: string, jobId: string, threadId: string | null, tier?: JobTier): Promise<JobScope & { tier: JobTier }> {
     const id = jobIdOf(jobId);
     return this.exclusive(async () => {
       const key = jobKeyFor(projectId, id);
       let record = this.jobs.get(key);
+      if (record && tier !== undefined && record.tier !== tier)
+        throw refuse(409, 'This job already runs under another tier.', 'job_tier_pinned');
       if (!record) {
         const armed = threadId ? this.liveArmed(projectId, threadId) : undefined;
         if (armed) this.armed = this.armed.filter((item) => item !== armed);
@@ -264,7 +269,7 @@ export class JobCaps {
           projectId,
           jobId: id,
           key,
-          tier: this.options.tierOf(projectId, threadId),
+          tier: tier ?? this.options.tierOf(projectId, threadId),
           pinnedAt: at,
           raise: armed ? { ...armed.raise, recordedAt: at } : null,
           stop: null,

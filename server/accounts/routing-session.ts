@@ -5,6 +5,7 @@ import { AGENT_FEATURE, AGENT_FREE_VERSION_REASON } from '../../shared/access.js
 import { AGENT_PERSONAL_INDIVIDUAL_REASON, MANAGED_USAGE_NOT_INCLUDED_PERSONAL } from '../../shared/individual-plan.js';
 import { routingScopeKey, type AccountScope, type IndividualAccount, type RoutingPreferenceWrite } from '../../shared/routing-policy.js';
 import type { AccessFeature } from '../../shared/access.js';
+import type { EscalationView } from '../../shared/escalation-controls.js';
 import type { EntitlementView } from '../../shared/workspaces.js';
 import type { NectoviaPolicy } from '../engines/nectovia.js';
 import { EngineError } from '../engines/process.js';
@@ -40,10 +41,12 @@ export class AccountRoutingSession {
   private individual: IndividualAccount | null = null;
   private individualAccess: { value: EntitlementView; until: number } | null = null;
   private policies = new Map<string, { value: NectoviaPolicy; until: number }>();
+  /** Each scope's escalation control, read on its own and kept the way the routing snapshot is. */
+  private escalations = new Map<string, { value: EscalationView; until: number }>();
   constructor(private readonly session: AccountSessionService,
     private readonly workspaces: Pick<WorkspaceService, 'projectOwner' | 'active'>, private readonly now = Date.now) {}
 
-  invalidate() { this.policies.clear(); this.individualAccess = null; this.current(); }
+  invalidate() { this.policies.clear(); this.escalations.clear(); this.individualAccess = null; this.current(); }
 
   private async ensureIndividual() {
     const person = this.current();
@@ -66,7 +69,9 @@ export class AccountRoutingSession {
 
   private current() {
     const person = this.session.personId();
-    if (person !== this.person) { this.person = person; this.individual = null; this.individualAccess = null; this.policies.clear(); }
+    if (person !== this.person) {
+      this.person = person; this.individual = null; this.individualAccess = null; this.policies.clear(); this.escalations.clear();
+    }
     return person;
   }
   scopeFor(projectId: string | null): AccountScope | null {
@@ -106,6 +111,29 @@ export class AccountRoutingSession {
     if (!this.individualAccess || this.individualAccess.until <= this.now() || scope.kind === 'individual') await this.refreshAccess();
     this.assertScope(projectId, person, scope);
     this.policies.set(key, { value, until: Math.min(Date.parse(snapshot.validUntil), this.now() + 60_000) });
+    return value;
+  }
+  /** The scope's escalation control as last read, while that read is current. Null: not read, or stale. */
+  escalation(projectId: string | null = null): EscalationView | null {
+    const scope = this.scopeFor(projectId), found = scope ? this.escalations.get(routingScopeKey(scope)) : null;
+    return found && found.until > this.now() ? found.value : null;
+  }
+  /**
+   * Read the scope's escalation control again (`GET /account/routing/{kind}/{id}/escalation`), kept
+   * for this person and scope only, for a minute at most, as the routing snapshot is. Null when
+   * nobody is signed in or the work has no account. A failed read throws and keeps nothing.
+   */
+  async refreshEscalation(projectId: string | null = null): Promise<EscalationView | null> {
+    const person = this.current();
+    if (!person) return null;
+    await this.ensureIndividual();
+    const scope = this.scopeFor(projectId);
+    if (!scope) return null;
+    const key = routingScopeKey(scope);
+    this.escalations.delete(key);
+    const value = await this.session.call(token => this.session.backend.client.scopedEscalation(token, scope));
+    this.assertScope(projectId, person, scope);
+    this.escalations.set(key, { value, until: this.now() + 60_000 });
     return value;
   }
   /** Route selection only. Unknown/stale access requires fresh admission instead of
