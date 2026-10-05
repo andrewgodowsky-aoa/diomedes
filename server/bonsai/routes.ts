@@ -38,11 +38,16 @@ export function bonsaiIntegration(status: BonsaiStatus): IntegrationStatus | nul
 /**
  * The installed local model as integrations: one entry, or none when nothing is installed.
  * `/api/integrations` carries it with the rest, and `/api/integrations/local` answers it alone,
- * so the ask row can read it again after a Start without checking every other engine.
+ * so the ask row can read it again after a Start without checking every other engine. `fresh`
+ * asks the host again instead of reusing a recent check.
  */
-export async function localModelIntegrations(runtime: BonsaiRuntime, configured: boolean): Promise<IntegrationStatus[]> {
+export async function localModelIntegrations(
+  runtime: BonsaiRuntime,
+  configured: boolean,
+  options: { fresh?: boolean } = {},
+): Promise<IntegrationStatus[]> {
   if (!configured) return [];
-  const entry = bonsaiIntegration(await runtime.status());
+  const entry = bonsaiIntegration(await runtime.status(options));
   return entry ? [entry] : [];
 }
 
@@ -57,9 +62,13 @@ export function mountBonsaiRoutes(app: Express, runtime: BonsaiRuntime, store: S
         : error instanceof BonsaiError ? new ApiError(409, error.message, { code: `bonsai_${error.state}` }) : error); }
       finally { res.off('close', abort); }
     };
-  app.get('/api/integrations/local', send(async () => ({ integrations: await localModelIntegrations(runtime, configured) })));
+  // Both are the local model's own reads, asked for after a Start or when its controls open, so
+  // they ask the host again. The full integration list reuses a recent check.
+  app.get('/api/integrations/local', send(async () => ({
+    integrations: await localModelIntegrations(runtime, configured, { fresh: true }),
+  })));
   app.get('/api/ai/local-models', send(async (): Promise<LocalModelsView> => {
-    const status = await runtime.status();
+    const status = await runtime.status({ fresh: true });
     return { route: BONSAI_ROUTE, kind: 'local', status, models: status.installed ? BONSAI_PROFILES : [] };
   }));
   app.post('/api/ai/local-models/wake', send(async (req, signal) => {

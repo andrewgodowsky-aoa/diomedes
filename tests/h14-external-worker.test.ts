@@ -275,6 +275,8 @@ describe('funding labels and usage', () => {
     expect(fundingForRoute('google-vertex', { business: false })).toEqual({ kind: 'person-key', route: 'google-vertex' });
     expect(fundingForRoute('google-vertex', { business: true })).toEqual({ kind: 'company-key', route: 'google-vertex' });
     expect(fundingForRoute('native-fixture', { business: false })).toEqual({ kind: 'local', route: 'native-fixture' });
+    // The local model is a model-API route that runs on this computer: neither key pays for it.
+    expect(fundingForRoute('bonsai', { business: true })).toEqual({ kind: 'local', route: 'bonsai' });
     expect(workerRowPayerOf('person-subscription')).toBe('your-subscription');
     expect(workerRowPayerOf('company-key')).toBe('your-key');
     expect(workerRowPayerOf('nectovia-credits')).toBe('nectovia-credits');

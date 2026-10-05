@@ -17,6 +17,13 @@ replaces the local controls #214 put in the header; Home keeps them, with the sa
 has its own row. No client file names the model (`tests/local-model-names.test.ts`). See
 [the record](../implementation/2026-10-03-bonsai-agent-integration.md#reconciled-with-the-ask-row).
 
+The integration list no longer waits on a fresh PowerShell status check for every request: one check
+answers repeat questions for ten seconds, questions asked together share it, and a Start, a send,
+a refresh or the local reads (`/api/integrations/local`, `/api/ai/local-models`) ask again. Work
+rows, execution evidence and the funding rule now name the local route as local, not as a key, and
+the Build and Fix send dialog says the instruction goes to the local model on this computer rather
+than to an account that bills.
+
 ## A route with no model refuses by name, and the export section draws once, 2026-10-04
 
 A send on a model-API route with no model chosen refuses with the route's own name again ("Connect

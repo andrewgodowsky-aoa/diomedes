@@ -161,6 +161,9 @@ describe('who pays', () => {
     });
     expect(payer.kind).toBe('local-machine');
     expect(payer.reason).toContain('machine');
+    // The local model runs here too, even in a business workspace with managed inference.
+    expect(payerFor({ routeId: 'bonsai', workspace: { kind: 'business', organizationId: 'org-1' }, managedInference: true }).kind)
+      .toBe('local-machine');
   });
 
   test('an account the person brought is paid by them, whatever the workspace says', () => {

@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import type { Mode, Route } from '../../shared/types';
 import { routeDisplayName } from '../../shared/engines';
+import { fundingForRoute } from '../../shared/funding-source';
 import {
   readAccessLabel,
   readAccessSentence,
@@ -33,6 +34,8 @@ export function SendConfirmation({
   onSend(): void;
 }) {
   const engine = routeDisplayName(route);
+  // A model on this computer has no account and no plan to bill.
+  const local = fundingForRoute(route, { business: false }).kind === 'local';
   const offered =
     onReadAccess !== undefined && (mode === 'ask' || mode === 'plan') && wholeProjectReadAvailable(route);
   const access: ReadAccess = offered ? readAccess : 'selected';
@@ -40,8 +43,14 @@ export function SendConfirmation({
     <Modal title={`Send this ${kind}?`} onClose={onClose}>
       <p className="prose" style={{ overflowWrap: 'anywhere', whiteSpace: 'normal' }}>{instruction}</p>
       <p className="prose">
-        Send this instruction to {engine} using its selected model and account.
-        {' '}Usage is billed under that account's plan.
+        {local ? (
+          'Send this instruction to the local model on this computer.'
+        ) : (
+          <>
+            Send this instruction to {engine} using its selected model and account.
+            {' '}Usage is billed under that account's plan.
+          </>
+        )}
       </p>
       {picker}
       {offered && (
