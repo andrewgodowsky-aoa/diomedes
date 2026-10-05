@@ -184,7 +184,7 @@ describe('Diomedes staff administration', () => {
     expect(issued.body.funding.allocated).toBe(true);
     expect((await call('POST', `/account/organizations/${orgs.harbor}/agent-admissions`, await token('harborOwner'), { surface: 'work', routeKind: 'managed' })).body.decision.admitted).toBe(true);
     // Credits: this month's 1,000 plus 250 added by Billing.
-    expect((await call('POST', `/ops/customers/${orgs.harbor}/funding`, billing, { credits: 250, reason: 'Implementation includes 250 credits.' })).status).toBe(201);
+    expect((await call('POST', `/ops/customers/${orgs.harbor}/funding`, billing, { requestId: 'billing-test-250', credits: 250, reason: 'Implementation includes 250 credits.' })).status).toBe(201);
     const usage = await call('GET', `/account/organizations/${orgs.harbor}/usage`, await token('harborOwner'));
     expect(usage.body.state).toBe('ready');
     expect((await call('POST', '/ops/staff', support, { personId: 'person_x', role: 'admin' })).status).toBe(403);

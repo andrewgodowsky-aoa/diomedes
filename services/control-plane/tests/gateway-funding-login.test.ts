@@ -7,7 +7,7 @@
  *   (cp_funding): its reads and its writes.
  * - Everything else stays on DATABASE_URL (cp_runtime): the gateway's
  *   admission, grant and routing reads, the usage projection and the
- *   commercial routes.
+ *   commercial routes. Staff credit and audit writes alone use the dedicated\n *   STAFF_FUNDING_DATABASE_URL (cp_staff_funding) in one transaction.
  * - Without a readable FUNDING_DATABASE_URL, every managed call answers 503
  *   route_unavailable before any statement or provider call, and nothing else
  *   changes.
@@ -202,5 +202,59 @@ describe('without a readable FUNDING_DATABASE_URL', () => {
     expect(without.projection[0]).toBe(200);
     expect(without.policy[0]).toBe(200);
     expect(await answers(gatewayEnv)).toEqual(without);
+  });
+});
+
+describe('DIO-132 production Worker staff funding factory', () => {
+  async function staffToken() {
+    const response = await cloud.handle(new Request('http://faux/auth/sign-in', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: DEMO_ACCOUNTS.staffBilling.email, password: FAUX_DEMO_PASSWORD }),
+    }));
+    return (await response.json()).accessToken as string;
+  }
+  const STAFF_URL = FUNDING_URL.replace('cp_funding:', 'cp_staff_funding:');
+  it('writes the credit and audit only on the dedicated staff login and one transaction', async () => {
+    const staff = await staffToken();
+    const state = cloud.store.snapshot();
+    const organization = state.accounts.organizations.find(row => row.record.id === organizationId)!.record;
+    const period = state.funding.periods.find(row => row.organizationId === organizationId)!;
+    db.answer = async (_url, sql, values) => {
+      if (sql.includes('FROM control_plane.operators')) {
+        const record = state.commercial.operators.find(row => row.personId === values[0]);
+        return record ? [{ record }] : [];
+      }
+      if (sql.includes('FROM control_plane.organizations')) return [{ record: organization }];
+      if (sql.includes('FROM control_plane.credit_periods')) return [{ tenant_id: period.tenantId, organization_id: period.organizationId, period_id: period.periodId, plan_id: period.planId,
+        rate_card_version: period.rateCardVersion, granted_micro_usd: period.grantedMicroUsd, starts_at: period.startsAt, ends_at: period.endsAt, source_grant_id: period.sourceGrantId, allocated_at: period.allocatedAt }];
+      return [];
+    };
+    db.log.length = 0;
+    const handle = createHandler(() => cloud.accounts);
+    const response = await handle(new Request(`http://worker/ops/customers/${organizationId}/funding`, {
+      method: 'POST', headers: { authorization: `Bearer ${staff}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ requestId: 'worker-factory-test', credits: 10, reason: 'Ticket 132' }),
+    }), { ...validEnv, STAFF_FUNDING_DATABASE_URL: STAFF_URL });
+    expect(response.status).toBe(201);
+    const writes = db.log.filter(row => /INSERT INTO control_plane\.(credit_adjustments|ops_audit)/.test(row.sql));
+    expect(writes).toHaveLength(2);
+    expect(writes.every(row => row.url === STAFF_URL)).toBe(true);
+    expect(statementsOn(STAFF_URL).filter(sql => sql === 'BEGIN')).toHaveLength(1);
+    expect(statementsOn(STAFF_URL).filter(sql => sql === 'COMMIT')).toHaveLength(1);
+    expect(statementsOn(DATABASE_URL).some(sql => /^INSERT|^UPDATE/.test(sql))).toBe(false);
+  });
+  it('refuses explicitly without the staff writer before any credit statement', async () => {
+    const staff = await staffToken();
+    const operators = cloud.store.snapshot().commercial.operators;
+    db.answer = async (_url, sql, values) => sql.includes('FROM control_plane.operators')
+      ? operators.filter(row => row.personId === values[0]).map(record => ({ record })) : [];
+    db.log.length = 0;
+    const response = await createHandler(() => cloud.accounts)(new Request(`http://worker/ops/customers/${organizationId}/funding`, {
+      method: 'POST', headers: { authorization: `Bearer ${staff}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ requestId: 'worker-missing-writer', credits: 10, reason: 'Ticket 132' }),
+    }), validEnv);
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({ code: 'staff_funding_unavailable' });
+    expect(db.log.some(row => /control_plane\.(credit_|ops_audit)/.test(row.sql))).toBe(false);
   });
 });
