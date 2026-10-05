@@ -1,6 +1,6 @@
 import type { DocumentInfo } from '../../shared/types';
 import { TASK_SOURCE_LIMITS } from '../../shared/task-sources';
-import { imageMediaType, MODEL_IMAGE_LIMIT } from '../../shared/bonsai';
+import { imageMediaType, MODEL_IMAGE_LIMIT } from '../../shared/model-images';
 
 /** Image capability is supplied by the host for the selected profile. All other sources retain their text limits. */
 export function modelAttachmentProblem(file: Pick<DocumentInfo, 'path' | 'kind' | 'size'>,

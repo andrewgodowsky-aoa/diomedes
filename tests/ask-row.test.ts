@@ -4,19 +4,29 @@ import { describe, expect, it } from 'vitest';
 import { defaults } from '../server/store';
 import {
   LOCAL_MODEL,
+  LOCAL_OTHER,
+  LOCAL_OTHER_FREE,
   LOCAL_STOPPED,
+  LOCAL_STOPPED_FREE,
   NECTOVIA_LOCKED,
   NOT_RUNNING,
+  START,
   contextAmount,
   contextGauge,
   contextLine,
+  contextWindowLine,
   currentModel,
   currentTier,
   effortState,
   effortWord,
   engineEntries,
   engineLabel,
+  localChoice,
   localModel,
+  localProfileEntries,
+  localProfileLine,
+  localReady,
+  localStoppedLine,
   offeredEngine,
   shownEngine,
   startingModel,
@@ -27,7 +37,7 @@ import { AskRow, ContextRing, type AskRowProps } from '../client/console/AskRow'
 import type { ContextAccount } from '../shared/context-accounting';
 import type { EngineConnection } from '../shared/engines';
 import { NECTOVIA_ROUTE } from '../shared/model-api';
-import type { Conversation, EngineModel, IntegrationStatus, Route, Settings, Turn } from '../shared/types';
+import type { Conversation, EngineCatalog, EngineModel, IntegrationStatus, Route, Settings, Turn } from '../shared/types';
 import { WORK_STYLES, WORK_STYLE_LABELS } from '../shared/work-style';
 
 const settings = (services: Record<string, boolean | string> = {}): Settings => {
@@ -76,15 +86,29 @@ const found = (engine: EngineConnection['engine'], models: EngineModel[]): Engin
   usage: { state: 'unknown', checkedAt: null },
 });
 
-// No binding to a model on this computer ships yet, so any route id stands in for the one a
-// binding will carry. The integrations that ship today only watch a local service.
+// The local model's route is whatever the host names, so any route id stands in for it: these
+// tests hold the contract, not one model. The other local integrations only watch a service.
 const LOCAL_ROUTE: Route = 'openrouter';
 const shippedLocal = [
   integration({ id: 'localai', name: 'LocalAI supervisor', kind: 'local', adapter: 'none', found: false, available: false }),
   integration({ id: 'ollama', name: 'Ollama', kind: 'local', adapter: 'none' }),
 ];
-const binding = (running: boolean, found = true) =>
-  integration({ id: LOCAL_ROUTE, name: 'On this computer', kind: 'local', found, available: found && running });
+const binding = (running: boolean, found = true, loaded: string | null = running ? 'p-one' : null) =>
+  integration({ id: LOCAL_ROUTE, name: 'On this computer', kind: 'local', found, available: found && running, loaded });
+/** A profile as a host catalogue lists it: its own name, levels, default and declared size. */
+const profile = (slug: string, contextTokens: number, images: boolean, defaultEffort = 'medium'): EngineModel => ({
+  slug,
+  name: `${slug} name`,
+  description: `${slug} description`,
+  defaultEffort,
+  efforts: ['medium', 'xhigh'].map((id) => ({ id, description: '' })),
+  contextTokens,
+  inputModalities: images ? ['text', 'image'] : ['text'],
+});
+const profiles = [profile('p-one', 16_384, false), profile('p-two', 131_072, true, 'xhigh')];
+const catalog: Record<string, EngineCatalog> = {
+  [LOCAL_ROUTE]: { engine: LOCAL_ROUTE, models: profiles, detail: '' },
+};
 
 describe('the Local model option (DIO-201)', () => {
   it('is hidden until a binding that can send exists', () => {
@@ -95,7 +119,7 @@ describe('the Local model option (DIO-201)', () => {
 
   it('is hidden while the binding reports nothing set up, unless the thread is already on it', () => {
     const local = localModel([binding(false, false)]);
-    expect(local).toEqual({ route: LOCAL_ROUTE, found: false, running: false });
+    expect(local).toEqual({ route: LOCAL_ROUTE, found: false, running: false, loaded: null });
     expect(tierEntries(local, null, true).map((entry) => entry.id)).toEqual([...WORK_STYLES]);
     expect(tierEntries(local, null, true, true).at(-1)).toMatchObject({ id: 'local', sub: NOT_RUNNING, disabled: true });
     const input = { integrations: [binding(false, false)], settings: settings(), connections: {}, free: true, local };
@@ -108,7 +132,7 @@ describe('the Local model option (DIO-201)', () => {
 
   it('is grayed with one short line when set up but not running', () => {
     const local = localModel([...shippedLocal, binding(false)]);
-    expect(local).toEqual({ route: LOCAL_ROUTE, found: true, running: false });
+    expect(local).toEqual({ route: LOCAL_ROUTE, found: true, running: false, loaded: null });
     const entry = tierEntries(local, 'Some model', true).at(-1)!;
     expect(entry).toMatchObject({ id: 'local', name: LOCAL_MODEL, sub: NOT_RUNNING, disabled: true });
   });
@@ -142,6 +166,63 @@ describe('the Local model option (DIO-201)', () => {
       name: LOCAL_MODEL,
       disabled: false,
     });
+  });
+});
+
+describe('a thread on the local model (PR #214 reconciled with the row)', () => {
+  it('knows which profile the running worker has, and a profile is ready only when it is that one', () => {
+    const local = localModel([binding(true, true, 'p-two')]);
+    expect(local).toEqual({ route: LOCAL_ROUTE, found: true, running: true, loaded: 'p-two' });
+    expect(localReady(local, 'p-two')).toBe(true);
+    expect(localReady(local, 'p-one')).toBe(false);
+    expect(localReady(local, null)).toBe(false);
+    expect(localReady(localModel([binding(false)]), 'p-one')).toBe(false);
+    expect(localReady(null, 'p-one')).toBe(false);
+    // A stopped worker has nothing loaded, whatever the entry still carries.
+    const stale = integration({ id: LOCAL_ROUTE, kind: 'local', available: false, loaded: 'p-one' });
+    expect(localModel([stale])?.loaded).toBeNull();
+  });
+
+  it('lands on the loaded profile while it runs, else the saved default, else the first listed', () => {
+    expect(localChoice(localModel([binding(true, true, 'p-two')]), profiles, 'p-one')?.slug).toBe('p-two');
+    const stopped = localModel([binding(false)]);
+    expect(localChoice(stopped, profiles, 'p-two')?.slug).toBe('p-two');
+    expect(localChoice(stopped, profiles, 'gone')?.slug).toBe('p-one');
+    expect(localChoice(stopped, [], 'p-one')).toBeNull();
+    expect(localChoice(null, profiles, null)).toBeNull();
+  });
+
+  it('lists the profiles in the catalogue own words, and names them only where names may show', () => {
+    const local = localModel([binding(true, true, 'p-two')])!;
+    expect(localProfileEntries(local, profiles, true)).toEqual([
+      { slug: 'p-one', name: 'p-one name', sub: 'Text only, 16k context', running: false },
+      { slug: 'p-two', name: 'p-two name', sub: 'Text and images, 131k context', running: true },
+    ]);
+    expect(localProfileEntries(local, profiles, false).map((entry) => entry.name)).toEqual([LOCAL_MODEL, LOCAL_MODEL]);
+    // A size the host did not declare is not invented.
+    expect(localProfileLine({ ...profiles[0], contextTokens: undefined, inputModalities: undefined })).toBe('Text only');
+  });
+
+  it('takes Effort from the profile own levels and default, with Fix capped', () => {
+    expect(effortState(profiles[1], null, null, 'ask')).toMatchObject({
+      levels: [{ id: 'medium' }, { id: 'xhigh' }],
+      wanted: 'xhigh',
+      runs: 'xhigh',
+    });
+    expect(effortState(profiles[1], 'xhigh', null, 'fix')).toMatchObject({ runs: 'medium', capped: true });
+    expect(effortState(profiles[0], null, null, 'ask').wanted).toBe('medium');
+  });
+
+  it('withdraws a profile that is not loaded and says so, offering a tier or another engine, never a cloud model', () => {
+    const stopped = localModel([binding(false)]);
+    expect(localStoppedLine(stopped, 'p-one', false)).toBe(LOCAL_STOPPED);
+    expect(localStoppedLine(stopped, 'p-one', true)).toBe(LOCAL_STOPPED_FREE);
+    const other = localModel([binding(true, true, 'p-two')]);
+    expect(localStoppedLine(other, 'p-one', false)).toBe(LOCAL_OTHER);
+    expect(localStoppedLine(other, 'p-one', true)).toBe(LOCAL_OTHER_FREE);
+    expect(localStoppedLine(other, 'p-two', false)).toBeNull();
+    // The thread keeps its route while it is withdrawn: the tier box would still say Local model.
+    expect(currentTier(thread({ workStyle: 'thorough' }), settings(), LOCAL_ROUTE, stopped)).toBe('local');
   });
 });
 
@@ -263,6 +344,21 @@ describe('the context ring', () => {
     expect(html).toContain('aria-label="No context used yet"');
     expect(html).not.toContain('role="dialog"');
   });
+
+  it('measures against the window the thread model declares, which outranks the answer own', () => {
+    const turns = [answered(1000, [['message', 500]])];
+    expect(contextGauge(turns).percent).toBe(50);
+    const declared = contextGauge(turns, 2000);
+    expect(declared).toMatchObject({ percent: 25, window: 2000 });
+    expect(contextWindowLine(declared)).toBe('2k token window');
+    expect(contextWindowLine(contextGauge([answered(null, [['message', 5]])]))).toBeNull();
+    // Before any answer the declared window is still named, and nothing is measured.
+    const empty = contextGauge([], 16_384);
+    expect(empty).toMatchObject({ percent: null, tokens: null, window: 16_384 });
+    const html = renderToStaticMarkup(createElement(ContextRing, { turns: [], window: 16_384 }));
+    expect(html).toContain('aria-label="No context used yet"');
+    expect(html).toContain('title="No context used yet. 16k token window"');
+  });
 });
 
 describe('the row as drawn', () => {
@@ -314,12 +410,62 @@ describe('the row as drawn', () => {
     expect(html).not.toContain('ask-effort');
   });
 
-  it('on a stopped local model: Nectovia, the Local model tier, and one line saying what to do', () => {
+  it('on a stopped local model: Nectovia, the Local model box, and one line saying what to do', () => {
     const html = draw({ route: LOCAL_ROUTE, integrations: [binding(false)] });
     expect(html).toContain('aria-label="Engine: Nectovia"');
-    expect(html).toContain(`aria-label="How much care: ${LOCAL_MODEL}"`);
+    expect(html).toContain(`aria-label="Model: ${LOCAL_MODEL}"`);
     // React writes the apostrophe as an entity.
-    expect(html).toContain(LOCAL_STOPPED.replaceAll("'", "&#x27;"));
+    expect(html).toContain(LOCAL_STOPPED.replaceAll("'", '&#x27;'));
+    // No profile is chosen yet, so there is nothing for Start to load.
+    expect(html).not.toContain('class="ask-start"');
+  });
+
+  const onLocal = (over: Partial<AskRowProps> = {}, requested: Conversation['requested'] = { model: 'p-two', effort: null }) =>
+    draw({
+      route: LOCAL_ROUTE,
+      thread: thread({ engine: LOCAL_ROUTE, requested }),
+      initialCatalogs: catalog,
+      ...over,
+    });
+
+  it('on the local model: its profile and that profile own effort, from the catalogue, and nothing to start', () => {
+    const html = onLocal({ integrations: [binding(true, true, 'p-two')] });
+    expect(html).toContain('aria-label="Engine: Nectovia"');
+    expect(html).toContain('aria-label="Model: p-two name"');
+    expect(html).toContain(`aria-label="Effort: ${effortWord('xhigh')}"`);
+    expect(html).not.toContain('How much care:');
+    expect(html).not.toContain('ask-local');
+  });
+
+  it('where names may not show, the profile reads as the Local model', () => {
+    const html = onLocal({ integrations: [binding(true, true, 'p-two')], names: false });
+    expect(html).toContain(`aria-label="Model: ${LOCAL_MODEL}"`);
+    expect(html).not.toContain('p-two name');
+  });
+
+  it('a stopped local model keeps the thread on it, says so, and offers Start beside the line', () => {
+    const html = onLocal({ integrations: [binding(false)] });
+    expect(html).toContain('aria-label="Model: p-two name"');
+    expect(html).toContain(LOCAL_STOPPED.replaceAll("'", '&#x27;'));
+    expect(html).toMatch(new RegExp(`class="ask-start"[^>]*>${START}</button>`));
+    expect(html).not.toContain('How much care:');
+  });
+
+  it('another profile loaded: says so and offers Start for this one', () => {
+    const html = onLocal({ integrations: [binding(true, true, 'p-one')] });
+    expect(html).toContain(LOCAL_OTHER);
+    expect(html).toMatch(new RegExp(`class="ask-start"[^>]*>${START}</button>`));
+  });
+
+  it('on the free version the local model is an engine of its own, with another engine as the way out', () => {
+    const html = onLocal({ integrations: [binding(false)], free: true });
+    expect(html).toContain(`aria-label="Engine: ${LOCAL_MODEL}"`);
+    expect(html).toContain(LOCAL_STOPPED_FREE.replaceAll("'", '&#x27;'));
+  });
+
+  it('waits for a live run: Start is disabled too', () => {
+    const html = onLocal({ integrations: [binding(false)], locked: true });
+    expect(html).toMatch(new RegExp(`class="ask-start"[^>]*disabled=""[^>]*>${START}</button>`));
   });
 
   it('waits for a live run: every box is disabled', () => {

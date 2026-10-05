@@ -770,6 +770,10 @@ export interface EngineModel {
   /** The engine's own default, guaranteed to appear in `efforts` when not null. */
   defaultEffort: string | null;
   efforts: { id: string; description: string }[];
+  /** The context window the host declares for this entry, in tokens. Absent when none is declared. */
+  contextTokens?: number;
+  /** What this entry accepts in a message, when the host declares it. Absent means text. */
+  inputModalities?: readonly ('text' | 'image')[];
 }
 export interface EngineCatalog {
   engine: string; // integration id
@@ -872,6 +876,11 @@ export interface IntegrationStatus {
   /** Where the engine was found. Shown on the Console only. */
   location?: string;
   disclosure: string[];
+  /**
+   * A model on this computer: the catalogue entry (`EngineModel.slug`) loaded and answering now,
+   * or null when none is. Absent on every other integration.
+   */
+  loaded?: string | null;
 }
 export interface TaskCandidate {
   line: number;

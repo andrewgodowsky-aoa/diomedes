@@ -1,11 +1,36 @@
 import { useEffect, useRef, useState } from 'react';
-import type { Conversation, DocumentInfo, Mode, Route } from '../../shared/types';
-import { imageMediaType, MODEL_IMAGE_COUNT, type BonsaiStatus, type LocalModelsView } from '../../shared/bonsai';
+import type { Conversation, DocumentInfo, EngineModel, Mode, Route } from '../../shared/types';
+import { imageMediaType, MODEL_IMAGE_COUNT } from '../../shared/model-images';
 import { api, listDocuments } from '../api';
 import { AgentPicker } from './AgentPicker';
 import { AGENT_NAME } from '../../shared/agent-name';
 import { effortFor } from '../../shared/effort';
 import './local-models.css';
+
+/** The local model's status as the host reports it. Its words are the host's. */
+export interface LocalModelStatus {
+  state: string;
+  installed: boolean;
+  mode: string | null;
+  owned: boolean;
+  detail: string;
+}
+/** One of the local model's profiles. Its name, levels, size and limits are the host's. */
+export interface LocalModelProfile extends EngineModel {
+  mode: string;
+  engineLabel: string;
+  contextTokens: number;
+  inputModalities: readonly ('text' | 'image')[];
+  callTimeoutMs: number;
+  turnTimeoutMs: number;
+}
+/** What `GET /api/ai/local-models` answers. Nothing in it is written into the app. */
+export interface LocalModelsView {
+  route: Route;
+  kind: 'local';
+  status: LocalModelStatus;
+  models: readonly LocalModelProfile[];
+}
 
 interface Props {
   projectId: string;
@@ -15,18 +40,20 @@ interface Props {
   busy: boolean;
   live: boolean;
   onChanged(thread: Conversation): void;
+  /** Told the local model's route once the host has answered, so the page can tell it apart. */
+  onRoute?(route: Route): void;
   /** Server-rendered fixture; production always reads the host. */
   initialView?: LocalModelsView;
 }
 
 /** A fresh Home has no saved thread. Provision only when the person asks to choose a local model. */
-export function PrepareLocalModels({ onPrepare }: { onPrepare(): Promise<void> }) {
+export function PrepareLocalModels({ onPrepare, onRoute }: { onPrepare(): Promise<void>; onRoute?(route: Route): void }) {
   const [available, setAvailable] = useState(false), [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     const controller = new AbortController();
     void api<LocalModelsView>('/ai/local-models', 'GET', undefined, controller.signal)
-      .then(view => setAvailable(view.status.installed && view.models.length > 0))
+      .then(view => { onRoute?.(view.route); setAvailable(view.status.installed && view.models.length > 0); })
       .catch(() => { /* Optional discovery never blocks a conversation. */ });
     return () => controller.abort();
   }, []);
@@ -38,8 +65,12 @@ export function PrepareLocalModels({ onPrepare }: { onPrepare(): Promise<void> }
   }}>Choose a local model</button>{error && <span role="alert">{error}</span>}</div>;
 }
 
-/** Optional native model controls. Labels, efforts and capabilities come from the host catalogue. */
-export function LocalModelControls({ projectId, thread, route, mode, busy, live, onChanged, initialView }: Props) {
+/**
+ * Optional native model controls for the Home conversation, which has no ask row yet. Labels,
+ * efforts and capabilities come from the host catalogue. Choosing a profile, a level or an Agent
+ * only saves the choice; Start is the one control that wakes the model, as in the ask row.
+ */
+export function LocalModelControls({ projectId, thread, route, mode, busy, live, onChanged, onRoute, initialView }: Props) {
   const [view, setView] = useState<LocalModelsView | null>(initialView ?? null);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -60,20 +91,36 @@ export function LocalModelControls({ projectId, thread, route, mode, busy, live,
     window.addEventListener('focus', refresh);
     return () => { controller.abort(); active.current?.abort(); window.removeEventListener('focus', refresh); };
   }, [projectId, thread.id]);
+  useEffect(() => { if (view) onRoute?.(view.route); }, [view?.route]);
 
+  /** Saves the thread's profile, level and Agent. It starts nothing. */
   async function change(modelId: string, effort?: string, agent = thread.requested?.agent ?? null) {
     const model = view?.models.find(item => item.slug === modelId);
     if (!view || !model || busy || live || active.current) return;
     const controller = new AbortController(); active.current = controller;
     setWorking(true); setError(null);
     try {
-      const next = await api<Conversation>(`/projects/${encodeURIComponent(projectId)}/threads/${encodeURIComponent(thread.id)}`,
+      onChanged(await api<Conversation>(`/projects/${encodeURIComponent(projectId)}/threads/${encodeURIComponent(thread.id)}`,
         'PUT', { engine: view.route, requested: { model: model.slug,
-          effort: effort ?? model.defaultEffort, ...(agent ? { agent } : {}) } }, controller.signal);
-      onChanged(next);
+          effort: effort ?? model.defaultEffort, ...(agent ? { agent } : {}) } }, controller.signal));
+    } catch (error) {
+      if (!controller.signal.aborted) setError(error instanceof Error ? error.message : 'The model choice could not be saved.');
+    } finally {
+      if (active.current === controller) active.current = null;
+      if (!controller.signal.aborted) setWorking(false);
+    }
+  }
+
+  /** The person's Start: the one control here that wakes the model, on the thread's profile. */
+  async function start(modelId: string) {
+    const model = view?.models.find(item => item.slug === modelId);
+    if (!view || !model || busy || live || active.current) return;
+    const controller = new AbortController(); active.current = controller;
+    setWorking(true); setError(null);
+    try {
       setView(current => current ? { ...current, status: { state: 'starting', installed: true,
         owned: false, mode: model.mode, detail: `Starting ${model.name}.` } } : current);
-      const status = await api<BonsaiStatus>('/ai/local-models/wake', 'POST', { model: model.slug }, controller.signal);
+      const status = await api<LocalModelStatus>('/ai/local-models/wake', 'POST', { model: model.slug }, controller.signal);
       setView(current => current ? { ...current, status } : current);
     } catch (error) {
       if (!controller.signal.aborted) {
@@ -114,7 +161,7 @@ export function LocalModelControls({ projectId, thread, route, mode, busy, live,
       </select>
       {profile && <>
         <select aria-label="Local reasoning effort" value={level} disabled={locked}
-          title={mode === 'fix' ? 'Fix uses at most Medium reasoning.' : 'Reasoning effort'}
+          title={mode === 'fix' ? 'Fix caps the reasoning level.' : 'Reasoning effort'}
           onChange={e => void change(profile.slug, e.target.value)}>
           {profile.efforts.map(effort => <option key={effort.id} value={effort.id} disabled={effortFor(mode, effort.id, effort.id) !== effort.id}>
             {'label' in effort ? String(effort.label) : effort.id}
@@ -130,14 +177,14 @@ export function LocalModelControls({ projectId, thread, route, mode, busy, live,
           </svg>
           {profile.contextTokens.toLocaleString('en-US')}
         </span>
-        {!ready && !working && <button type="button" disabled={locked} onClick={() => void change(profile.slug, level)}>Load</button>}
+        {!ready && !working && <button type="button" disabled={locked} onClick={() => void start(profile.slug)}>Start</button>}
       </>}
       {selected && <button type="button" disabled={locked} onClick={() => void online()}>Use online</button>}
     </div>
     {selected && <span className="local-model-status" role="status">{view.status.detail}</span>}
     {profile && profile.callTimeoutMs > 240_000 && <span className="local-model-status">
-      Extra can take several minutes. Each model call stops after {profile.callTimeoutMs / 60_000} minutes;
-      a conversation message stops after {profile.turnTimeoutMs / 60_000} minutes. Medium keeps the same context.
+      Higher effort can take several minutes. Each model call stops after {profile.callTimeoutMs / 60_000} minutes,
+      and a message after {profile.turnTimeoutMs / 60_000} minutes.
     </span>}
     {error && <span className="local-model-error" role="alert">{error}</span>}
   </div>;

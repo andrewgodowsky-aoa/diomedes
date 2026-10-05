@@ -1,5 +1,5 @@
 import { api, readDocument } from '../api';
-import { imageMediaType } from '../../shared/bonsai';
+import { imageMediaType } from '../../shared/model-images';
 import {
   interruptMessage,
   sendMessage,

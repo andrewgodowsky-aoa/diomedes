@@ -91,6 +91,7 @@ import type { WorkStyle } from '../../shared/work-style';
 import { COMPOSER_LABEL } from './Composer';
 import { AgentPicker } from './AgentPicker';
 import type { AskChange } from './AskRow';
+import { localModel } from './ask-row';
 import { useFreePlan } from './FreePlanNotice';
 import { BoardView } from './BoardView';
 import { FilesPane, DEFAULT_WIDTH, clampWidth } from './FilesPane';
@@ -2283,7 +2284,9 @@ export function Shell({
                     live={selectedLive}
                     busy={busy}
                     onPick={pickAgent}
-                    onPickProfile={pickProfile}
+                    // An exact-model profile replaces the thread's model, so on the local
+                    // model it would drop the chosen local profile; the Agent alone stays.
+                    onPickProfile={route === localModel(integrations)?.route ? undefined : pickProfile}
                   />
                 )
               }

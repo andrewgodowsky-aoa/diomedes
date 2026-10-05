@@ -4,7 +4,9 @@ param(
     [ValidateSet('Status', 'Acquire')][string]$Action = 'Status',
     [ValidateSet('Gaming', 'Full')][string]$Mode = 'Gaming',
     [Parameter(Mandatory)][string]$Root,
-    [Parameter(Mandatory)][string]$OwnershipFile
+    [Parameter(Mandatory)][string]$OwnershipFile,
+    # Inference passes this: only the person's explicit Start may start or switch the worker.
+    [switch]$NoStart
 )
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
@@ -87,12 +89,14 @@ try {
             Emit @{ state = 'unloaded'; installed = $true; mode = $null; owned = $false; detail = 'Choose a profile to load Bonsai.' }
             exit 0
         }
+        if ($NoStart) { Fail 'unloaded' "The local model isn't running. Start it first." }
     } elseif ($Action -eq 'Status') {
         $ready = Check-Ready $state
         Emit @{ state = $(if ($ready) { 'ready' } else { 'starting' }); installed = $true; mode = $state.mode; owned = $owned;
             detail = $(if ($ready) { "Bonsai $($state.mode) is ready." } else { "Bonsai $($state.mode) is starting." }) }
         exit 0
     } elseif ($state.mode -ne $Mode) {
+        if ($NoStart) { Fail 'unloaded' "The local model is running its $($state.mode) profile, not $Mode. Start $Mode first." }
         if (-not $owned) { Fail 'busy' "Bonsai $($state.mode) was started outside Nectovia. Stop it in its own app before choosing $Mode." }
         if (-not (Check-Ready $state)) { Fail 'busy' 'Bonsai is still starting. Wait before changing profiles.' }
         $slots = @(Invoke-RestMethod "$baseUrl/slots" -TimeoutSec 3)

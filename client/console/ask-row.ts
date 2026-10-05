@@ -40,6 +40,15 @@ export const LOCAL_MODEL = 'Local model';
 export const NECTOVIA_LOCKED = 'Buy credits or upgrade your plan to use Nectovia';
 export const NOT_RUNNING = 'Not running';
 export const LOCAL_STOPPED = "The local model isn't running. Start it on this computer, or choose a tier.";
+/** The free version has no tiers to fall back on, so the way out is another engine. */
+export const LOCAL_STOPPED_FREE = "The local model isn't running. Start it on this computer, or choose another engine.";
+/** Another of the model's profiles is loaded, so this one needs its own Start. */
+export const LOCAL_OTHER = 'The local model is running another profile. Start this one, or choose a tier.';
+export const LOCAL_OTHER_FREE = 'The local model is running another profile. Start this one, or choose another engine.';
+export const START = 'Start';
+/** The Start inside an open menu, beside the grayed choice it wakes. */
+export const START_LOCAL = 'Start the local model';
+export const STARTING = 'Starting the local model.';
 
 const EFFORT_WORDS: Record<string, string> = {
   low: 'Low',
@@ -66,13 +75,18 @@ export function effortWord(id: string): string {
  * integration exists or nothing is set up, unless the thread is already on it. Grayed when set
  * up but not running. Never chosen automatically, never a default, and choosing it changes no
  * tool permission. When it stops, the thread keeps its route: the host refuses the send rather
- * than falling back to a cloud model.
+ * than falling back to a cloud model, and only the person's Start wakes it again.
+ *
+ * The catalogue (`GET /api/engines/:route/models`) lists the model's profiles, each with its own
+ * efforts and its declared context window. `loaded` names the one the running worker has.
  */
 export interface LocalModel {
   route: Route;
   /** Set up on this computer. */
   found: boolean;
   running: boolean;
+  /** The catalogue entry the running worker has loaded, or null. */
+  loaded: string | null;
 }
 
 export function localModel(integrations: readonly IntegrationStatus[]): LocalModel | null {
@@ -80,7 +94,68 @@ export function localModel(integrations: readonly IntegrationStatus[]): LocalMod
     (item) => item.kind === 'local' && item.adapter === 'ready' && isRoute(item.id),
   );
   if (!entry) return null;
-  return { route: entry.id as Route, found: entry.found, running: entry.found && entry.available };
+  const running = entry.found && entry.available;
+  return { route: entry.id as Route, found: entry.found, running, loaded: running ? (entry.loaded ?? null) : null };
+}
+
+/** Whether a send on this catalogue entry would be answered now, with nothing to start first. */
+export function localReady(local: LocalModel | null, slug: string | null | undefined): boolean {
+  return local !== null && local.running && Boolean(slug) && local.loaded === slug;
+}
+
+/**
+ * The profile a choice of the local model lands on, and the one its Start loads: the loaded one
+ * while the worker runs, else the saved default the catalogue still lists, else its first.
+ */
+export function localChoice(
+  local: LocalModel | null,
+  models: readonly EngineModel[],
+  saved: unknown,
+): EngineModel | null {
+  if (!local) return null;
+  return models.find((item) => local.running && item.slug === local.loaded) ?? startingModel(models, saved);
+}
+
+/** The line under a thread on the local model when its profile isn't loaded; null when it is. */
+export function localStoppedLine(local: LocalModel | null, slug: string | null | undefined, free: boolean): string | null {
+  if (!local || localReady(local, slug)) return null;
+  if (!local.running) return free ? LOCAL_STOPPED_FREE : LOCAL_STOPPED;
+  return slug ? (free ? LOCAL_OTHER_FREE : LOCAL_OTHER) : null;
+}
+
+/**
+ * A profile in words the host declared, for wherever its own name may not show: what it takes
+ * and how much context it holds.
+ */
+export function localProfileLine(model: EngineModel): string {
+  const takes = model.inputModalities?.includes('image') ? 'Text and images' : 'Text only';
+  return model.contextTokens ? `${takes}, ${formatTokens(model.contextTokens)} context` : takes;
+}
+
+/** One row of the local model's profile menu. */
+export interface LocalProfileEntry {
+  slug: string;
+  name: string;
+  sub: string;
+  /** Loaded and answering now. */
+  running: boolean;
+}
+
+/**
+ * The local model's profiles, in the catalogue's order and words. Where model names may not
+ * show, each reads as the Local model with what it declares.
+ */
+export function localProfileEntries(
+  local: LocalModel,
+  models: readonly EngineModel[],
+  names: boolean,
+): LocalProfileEntry[] {
+  return models.map((model) => ({
+    slug: model.slug,
+    name: names ? model.name : LOCAL_MODEL,
+    sub: localProfileLine(model),
+    running: localReady(local, model.slug),
+  }));
 }
 
 /** One row of the Engine menu. */
@@ -330,17 +405,24 @@ export interface ContextGauge {
   /** Tokens sent with the latest answer's first call, by Diomedes' estimate; null before any. */
   tokens: number | null;
   rows: { label: string; tokens: number; percent: number | null }[];
+  /** The window the percentages are of, in tokens, or null when none is declared. */
+  window: number | null;
 }
 
 /**
  * Read from the newest answer's own context record (`Turn.context`), written once when it was
  * answered. Nothing here measures anything: with no record the ring is empty, and with no
- * declared window it counts tokens rather than inventing a percentage.
+ * declared window it counts tokens rather than inventing a percentage. `declared` is the window
+ * the thread's current model declares (a local profile's own size), which outranks the one the
+ * answer was given under: a thread moved to a smaller profile fills that one.
  */
-export function contextGauge(turns: readonly Pick<Turn, 'role' | 'context'>[]): ContextGauge {
+export function contextGauge(
+  turns: readonly Pick<Turn, 'role' | 'context'>[],
+  declared: number | null = null,
+): ContextGauge {
   const account = [...turns].reverse().find((turn) => turn.role !== 'you' && turn.context)?.context;
-  if (!account) return { percent: null, tokens: null, rows: [] };
-  const window = account.window.tokens;
+  if (!account) return { percent: null, tokens: null, rows: [], window: declared };
+  const window = declared ?? account.window.tokens;
   const share = (tokens: number) => (window ? Math.min(100, Math.round((tokens / window) * 100)) : null);
   return {
     percent: share(account.estimatedTokens),
@@ -352,7 +434,13 @@ export function contextGauge(turns: readonly Pick<Turn, 'role' | 'context'>[]): 
         tokens: section.estimatedTokens,
         percent: share(section.estimatedTokens),
       })),
+    window,
   };
+}
+
+/** The window as one line in the ring's popup, or null when none is declared. */
+export function contextWindowLine(gauge: ContextGauge): string | null {
+  return gauge.window ? `${formatTokens(gauge.window)} token window` : null;
 }
 
 /**

@@ -9,8 +9,6 @@ import { SendConfirmation } from './SendConfirmation';
 import { AskIcon } from './AskRow';
 import './attachments.css';
 import { modelAttachmentProblem } from './attachments';
-import { api } from '../api';
-import { BONSAI_ROUTE, type LocalModelsView } from '../../shared/bonsai';
 
 /**
  * The composer's own accessible name. Exported so the Console can put focus in
@@ -95,6 +93,11 @@ interface ComposerProps {
   controls?: ReactNode;
   /** The context ring (AskRow.tsx), beside Send. */
   ring?: ReactNode;
+  /**
+   * The thread's model takes images, as its catalogue entry declares (`inputModalities`). An
+   * attached project image then travels as exact bytes in Ask, Plan and Automatic.
+   */
+  imageInput?: boolean;
 }
 
 /**
@@ -128,7 +131,7 @@ function carriedAsk(projectId: string): string {
 export function Composer({
   thread, projectId, mode, onMode, busy, online, route, confirmSend, prepareSources, onSend,
   skill = null, onClearSkill, attachments = [], onAttachments, attachable, onOpenFile, insert = null,
-  controls = null, ring = null,
+  controls = null, ring = null, imageInput = false,
 }: ComposerProps) {
   const [picking, setPicking] = useState<DocumentInfo[] | null>(null);
   const [pickFailure, setPickFailure] = useState('');
@@ -162,18 +165,9 @@ export function Composer({
   const [preparing, setPreparing] = useState(false);
   const [error, setError] = useState('');
   const preparingRef = useRef(false);
-  const [imageChoice, setImageChoice] = useState<string | null>(null);
-  const acceptsImages = route === BONSAI_ROUTE && imageChoice === thread.requested?.model
-    && (mode === 'ask' || mode === 'plan' || mode === 'auto');
-  useEffect(() => {
-    if (route !== BONSAI_ROUTE) { setImageChoice(null); return; }
-    const controller = new AbortController();
-    void api<LocalModelsView>('/ai/local-models', 'GET', undefined, controller.signal).then(view => {
-      const profile = view.route === route ? view.models.find(model => model.slug === thread.requested?.model) : undefined;
-      setImageChoice(profile?.inputModalities.includes('image') ? profile.slug : null);
-    }).catch(() => { if (!controller.signal.aborted) setImageChoice(null); });
-    return () => controller.abort();
-  }, [route, thread.requested?.model]);
+  // Images travel only to a model whose catalogue entry takes them, and only in a conversation:
+  // Build and Fix keep their text proposal contract.
+  const acceptsImages = imageInput && (mode === 'ask' || mode === 'plan' || mode === 'auto');
   const preparation = useRef(0);
   const box = useRef<HTMLTextAreaElement>(null);
   const modes = useRef<HTMLDivElement>(null);

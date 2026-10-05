@@ -37,7 +37,7 @@ import { taskEvidence } from '../workbench/task-evidence';
 import { controlProfiles } from '../api';
 import { routeDisplayName } from '../../shared/engines';
 import { Composer } from './Composer';
-import { AskRow, ContextRing, type AskChange } from './AskRow';
+import { AskRow, ContextRing, useLocalProfile, type AskChange } from './AskRow';
 import { ProjectInstructions } from './ProjectInstructions';
 import { ProjectTriggerRules } from './ProjectTriggerRules';
 import { FollowUpQueue } from './FollowUpQueue';
@@ -305,6 +305,8 @@ export function ThreadView({
   // own route). The confirmation names it and decides by it; the recorded route stands only
   // until the host has answered.
   const sendRoute: Route = styleView && isRoute(styleView.route) ? styleView.route : route;
+  // On a local model, the profile the host declares: the ring's window and whether images go.
+  const localProfile = useLocalProfile(route, integrations, thread.requested?.model);
   const [styleDetails, setStyleDetails] = useState(false);
   const showStyleDetails = settings.detail === 'technical' || styleDetails;
   const context =
@@ -881,7 +883,8 @@ export function ThreadView({
             />
           ) : null
         }
-        ring={<ContextRing turns={thread.turns} />}
+        imageInput={localProfile?.inputModalities?.includes('image') ?? false}
+        ring={<ContextRing turns={thread.turns} window={localProfile?.contextTokens ?? null} />}
       />
       {/* A follow-up waits behind a run. With nothing running and nothing queued,
           the composer above sends at once, so a second box would only ask the

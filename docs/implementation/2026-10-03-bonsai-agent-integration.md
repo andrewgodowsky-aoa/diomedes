@@ -127,6 +127,59 @@ evidence is retained; a later passing run does not establish its root cause.
 - No roadmap prompt is marked DONE. Main merge, reskin reconciliation, independent
   review, packaging and installed-app acceptance remain separate work.
 
+## Reconciled with the ask row
+
+Branch `feature/local-model-connection` (worktree
+`F:/Diomedes/diomedes-wt/local-model-connection`, from main `6c697d1`) merges the
+reskinned ask row (PR #217) and this branch, then reconciles them, 2026-10-05.
+Where it differs from the sections above, this section is current.
+
+- Only the person's Start starts the worker or switches its profile. Selecting a
+  profile saves the choice and no longer requests loading. Inference acquires
+  with `-NoStart`, so a worker not running the thread's profile is refused as
+  `unloaded` (409 on a send) and is never started, switched or replaced by a
+  cloud model. `POST /api/ai/local-models/wake` alone passes `start: true`. The
+  refusal is not remembered, so a model started outside the app shows on the
+  next status read.
+- The integration entry is no longer always available. `bonsaiIntegration` in
+  `server/bonsai/routes.ts` reports `kind: 'local'` on route `bonsai`: `found`
+  once installed, `available` only while the worker runs, a status word, the
+  host's detail and `loaded`, the catalogue slug of the running profile. No entry
+  when nothing is installed. `/api/integrations` carries it and
+  `GET /api/integrations/local` answers it alone. Reading either starts nothing,
+  but on an installed computer it runs the helper's status check.
+- Work uses the ask row as its one control surface, with no header controls. On a
+  paid plan the tier menu lists the Local model, grayed with "Not running" and a
+  "Start the local model" item while it's stopped. On the local route the engine
+  box reads Nectovia, the second box lists the tiers and the catalogue's profiles
+  with the running one marked, Effort holds the profile's own levels, and the
+  context ring and image input follow the profile's declared window and inputs.
+  A profile that isn't loaded is withdrawn with a line saying so and its own
+  Start. The free version lists the model as an engine of its own, with the same
+  Start. The Agent's exact-model profiles aren't offered there, since they would
+  replace the chosen profile.
+- Home keeps `LocalModelControls` until it has the ask row; its Start button is
+  the one control there that wakes the model.
+- No client file names the model or calls its loopback server
+  (`tests/local-model-names.test.ts`). The image bounds moved to
+  `shared/model-images.ts`, which `shared/bonsai.ts` re-exports.
+  `IntegrationStatus.loaded`, `EngineModel.contextTokens` and
+  `EngineModel.inputModalities` are optional fields in `shared/types.ts`.
+- Unchanged: the route id, the profiles in `shared/bonsai.ts`, Runtime and Trust
+  authority, no permission change on selection, image bytes on Full only, and
+  the Windows host's identity checks.
+
+Verification used fake hosts and fixtures only; nothing started, stopped or
+called the installed model. `tsc --noEmit` passed. The full Vitest run passed
+9,763 tests and skipped five across 574 files; the two files known to flake
+under load passed in it and again alone (39 tests). `vite build` passed with its
+usual chunk-size warning. The standard browser gate ran the five specs the
+default config matches, 60 tests, all passed, and `playwright.bonsai.config.ts`
+passed both local model scenarios: Home, and the Work ask row from a stopped
+model through Start, a profile switch and back to a tier. Tests:
+`tests/ask-row.test.ts`, `tests/bonsai-{controls,integration,runtime,windows-host}.test.ts`,
+`tests/local-model-names.test.ts` and `tests/bonsai-ui.spec.ts`.
+
 ## Files
 
 Controls and hooks: `client/console/LocalModelControls.tsx`, `local-models.css`,

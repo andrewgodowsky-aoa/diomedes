@@ -11,8 +11,6 @@ import {
 import { routeDisplayName } from '../../shared/engines';
 import { api } from '../api';
 import type { PickerProps } from './Picker';
-import { LocalModelControls } from './LocalModelControls';
-import { BONSAI_ROUTE } from '../../shared/bonsai';
 
 /** What `GET /projects/:id/threads/:threadId/work-style` answers. */
 export interface WorkStyleView {
@@ -194,7 +192,6 @@ export function WorkStylePicker({
 export interface ThreadModelControlsProps extends PickerProps {
   projectId: string;
   onStyle(style: WorkStyle | null): void;
-  onLocalChanged?(thread: Conversation): void;
 }
 
 /**
@@ -203,25 +200,20 @@ export interface ThreadModelControlsProps extends PickerProps {
  * rendered from them.
  */
 export function ThreadModelControls(props: ThreadModelControlsProps) {
-  const { projectId, onStyle, onLocalChanged, ...picker } = props;
+  const { projectId, onStyle, ...picker } = props;
   const view = useWorkStyleView(projectId, picker.thread, [
     picker.route,
     picker.mode,
     picker.settings.services?.workStyle,
   ]);
   return (
-    <>
-    {picker.route !== BONSAI_ROUTE && <WorkStylePicker
+    <WorkStylePicker
       thread={picker.thread}
       settings={picker.settings}
       live={picker.live}
       busy={picker.busy}
       view={view}
       onStyle={onStyle}
-    />}
-    <LocalModelControls projectId={projectId} thread={picker.thread} route={picker.route} mode={picker.mode}
-      busy={picker.busy} live={picker.live}
-      onChanged={thread => onLocalChanged ? onLocalChanged(thread) : picker.onPick(thread.requested, thread.engine ?? BONSAI_ROUTE)} />
-    </>
+    />
   );
 }

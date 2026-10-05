@@ -42,6 +42,26 @@ describe.skipIf(process.platform !== 'win32')('Windows Bonsai helper process lif
     await finish;
     expect(child.kill).not.toHaveBeenCalled();
   });
+  it('asks the helper to refuse a start unless the person pressed Start', async () => {
+    const { child, pending } = start(), lease = await pending;
+    expect(vi.mocked(spawn).mock.calls[0][1]).toContain('-NoStart');
+    child.exitCode = 0; child.emit('exit', 0); await lease.release();
+    vi.useRealTimers();
+    const again = Object.assign(new EventEmitter(), {
+      stdout: new PassThrough(), stderr: new PassThrough(), stdin: new PassThrough(),
+      exitCode: null as number | null, killed: false, kill: vi.fn(),
+    });
+    vi.mocked(spawn).mockReturnValue(again as unknown as ReturnType<typeof spawn>);
+    const host = new WindowsBonsaiHost(root, 'helper.ps1', {
+      NECTOVIA_BONSAI_HOME: root, NECTOVIA_BONSAI_POWERSHELL: path.join(root, 'pwsh.exe'),
+    });
+    const woken = host.acquire(BONSAI_PROFILES[1], { start: true });
+    expect(vi.mocked(spawn).mock.calls[1][1]).not.toContain('-NoStart');
+    expect(vi.mocked(spawn).mock.calls[1][1]).toEqual(expect.arrayContaining(['-Action', 'Acquire', '-Mode', 'Full']));
+    again.stdout.write(JSON.stringify({ state: 'ready', installed: true, mode: 'Full', owned: true, detail: 'Ready.' }) + '\n');
+    const held = await woken;
+    again.exitCode = 0; again.emit('exit', 0); await held.release();
+  });
   it('aborts inference when the lease holder exits before release, without waiting for pipe EOF', async () => {
     const { child, pending } = start(), lease = await pending;
     child.exitCode = 1; child.emit('exit', 1);

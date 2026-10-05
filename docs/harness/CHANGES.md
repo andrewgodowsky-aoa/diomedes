@@ -1,5 +1,22 @@
 # Harness host integration changes, 2026-09-09
 
+## The Local model joins the ask row, 2026-10-05
+
+The ask row's Local model option (DIO-201) is lit by the native local engine (PR #214). The server
+reports the installed model as one `kind: 'local'` integration on its route: found once it's
+installed, available only while its worker runs, and `loaded` naming the profile that worker has.
+Nothing is reported when it isn't installed. `GET /api/integrations/local` answers that entry
+alone, so the row can read it again after a Start. On the local route the second box lists the
+profiles from the route's catalogue, Effort holds the profile's own levels and the context ring
+uses its declared window; on a paid plan the same menu leads with the tiers, the way back to
+Nectovia. Choosing the model or a profile starts nothing. The person's Start, offered beside the
+grayed choice or under a profile that isn't loaded, is the one action that wakes it: inference now
+asks the helper with `-NoStart`, so a send, an Automatic run or a Routine on a stopped model is
+refused (409) rather than starting it, and never moves to a cloud model. In Work the ask row
+replaces the local controls #214 put in the header; Home keeps them, with the same Start, until it
+has its own row. No client file names the model (`tests/local-model-names.test.ts`). See
+[the record](../implementation/2026-10-03-bonsai-agent-integration.md#reconciled-with-the-ask-row).
+
 ## A route with no model refuses by name, and the export section draws once, 2026-10-04
 
 A send on a model-API route with no model chosen refuses with the route's own name again ("Connect

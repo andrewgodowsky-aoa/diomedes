@@ -18,12 +18,16 @@ import { api, engineConnections } from '../api';
 import { NectoviaMark } from './NectoviaMark';
 import type { WorkStyleView } from './WorkStylePicker';
 import {
-  LOCAL_STOPPED,
+  LOCAL_MODEL,
   NECTOVIA_LOCKED,
   ROW_ENGINES,
+  START,
+  STARTING,
+  START_LOCAL,
   contextAmount,
   contextGauge,
   contextLine,
+  contextWindowLine,
   currentModel,
   currentTier,
   effortState,
@@ -31,14 +35,20 @@ import {
   engineEntries,
   engineLabel,
   engineName,
+  localChoice,
   localModel,
+  localProfileEntries,
+  localReady,
+  localStoppedLine,
   offeredEngine,
   shownEngine,
   startingModel,
   tierBars,
   tierEntries,
   tierLabel,
+  type EffortState,
   type EngineEntry,
+  type LocalModel,
 } from './ask-row';
 import './ask-row.css';
 
@@ -84,6 +94,12 @@ const PATHS = {
     <>
       <path d="M12 19V5" />
       <path d="M5 12l7-7 7 7" />
+    </>
+  ),
+  power: (
+    <>
+      <path d="M12 4v7" />
+      <path d="M7.4 7.2a7 7 0 1 0 9.2 0" />
     </>
   ),
 } as const;
@@ -214,7 +230,9 @@ function Box({
 function moveFocus(event: KeyboardEvent<HTMLElement>) {
   if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
   const items = [
-    ...event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]:not(:disabled)'),
+    ...event.currentTarget.querySelectorAll<HTMLButtonElement>(
+      '[role="menuitemradio"]:not(:disabled), [role="menuitem"]:not(:disabled)',
+    ),
   ];
   if (!items.length) return;
   event.preventDefault();
@@ -338,6 +356,173 @@ function Item({
   );
 }
 
+/**
+ * The thread's catalogue entry on the local model, as the host declares it: what the ring's
+ * window is and whether a message may carry images. Null on every other route, and until the
+ * catalogue answers.
+ */
+export function useLocalProfile(
+  route: Route,
+  integrations: readonly IntegrationStatus[],
+  slug: string | null | undefined,
+): EngineModel | null {
+  const local = localModel(integrations);
+  const onLocal = local !== null && route === local.route;
+  const [models, setModels] = useState<EngineModel[] | null>(null);
+  useEffect(() => {
+    if (!onLocal) {
+      setModels(null);
+      return;
+    }
+    let alive = true;
+    api<EngineCatalog>(`/engines/${encodeURIComponent(route)}/models`)
+      .then((catalog) => {
+        if (alive) setModels(catalog.models);
+      })
+      .catch(() => {
+        if (alive) setModels(null);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [onLocal, route]);
+  return onLocal && slug ? (models?.find((model) => model.slug === slug) ?? null) : null;
+}
+
+/** The Start inside an open menu: the one way the row wakes the local model. */
+function StartItem({ starting, disabled, onStart }: { starting: boolean; disabled: boolean; onStart(): void }) {
+  return (
+    <button
+      type="button"
+      className="ask-item ask-start-item"
+      role="menuitem"
+      disabled={disabled || starting}
+      onClick={onStart}
+    >
+      <span className="ask-check" />
+      <span className="ask-mark">
+        <AskIcon name="power" />
+      </span>
+      <span className="ask-name">
+        <span className="ask-title">{starting ? STARTING : START_LOCAL}</span>
+      </span>
+    </button>
+  );
+}
+
+/**
+ * The Effort box: the model's own levels as a slider, the thread's choice, and Fix's ceiling.
+ * The words around it are the caller's, so a local profile and another engine each say theirs.
+ */
+function EffortBox({
+  mode,
+  effort,
+  current,
+  waiting,
+  locked,
+  head,
+  unlisted,
+  defaultLine,
+  onOpen,
+  onPick,
+}: {
+  mode: Mode;
+  effort: EffortState;
+  current: { slug: string; model: EngineModel | null } | null;
+  waiting?: string;
+  locked: boolean;
+  head: string;
+  /** What the popup says before the model's levels are listed. */
+  unlisted: string;
+  /** The line naming the model's own default, or null. */
+  defaultLine: string | null;
+  onOpen?(): void;
+  onPick(level: string): void;
+}) {
+  const at = effort.wanted ? effort.levels.findIndex((level) => level.id === effort.wanted) : -1;
+  const effortText = effort.runs ? effortWord(effort.runs) : 'Default';
+  const listsNoLevels = Boolean(current?.model) && effort.levels.length === 0;
+  const step = (index: number) => (effort.levels.length > 1 ? (index / (effort.levels.length - 1)) * 100 : 50);
+  return (
+    <Box
+      className={`ask-effort${effort.capped ? ' capped' : ''}`}
+      label={`Effort: ${effortText}`}
+      text={effortText}
+      popup="dialog"
+      title={
+        waiting ??
+        (listsNoLevels
+          ? 'This model has no effort setting.'
+          : effort.capped && effort.wanted
+            ? `${effortWord(effort.wanted)}, runs ${effortText}`
+            : undefined)
+      }
+      disabled={locked || listsNoLevels}
+      glyph={<AskIcon name="gauge" />}
+    >
+      {(close) => (
+        <Menu label="Effort" role="dialog" className="ask-effort-menu" onOpen={onOpen}>
+          <p className="ask-head">{head}</p>
+          {effort.levels.length > 0 && current ? (
+            <div
+              className="ask-slider"
+              role="radiogroup"
+              aria-label="Effort"
+              onKeyDown={(event) => {
+                if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
+                event.preventDefault();
+                const stops = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="radio"]')];
+                const from = stops.indexOf(document.activeElement as HTMLButtonElement);
+                const delta = event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : 1;
+                stops[Math.max(0, Math.min(stops.length - 1, (from < 0 ? at : from) + delta))]?.focus();
+              }}
+            >
+              <span className="ask-track">
+                <span className="ask-fill" style={{ width: `${at >= 0 ? step(at) : 0}%` }} />
+              </span>
+              {effort.levels.map((level, index) => (
+                <button
+                  key={level.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={level.id === effort.wanted}
+                  aria-label={effortWord(level.id)}
+                  title={level.description || undefined}
+                  className={[
+                    'ask-stop',
+                    index <= at ? 'on' : '',
+                    level.id === effort.wanted ? 'cur' : '',
+                    effortFor(mode, level.id, level.id) !== level.id ? 'capped' : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' ')}
+                  style={{ left: `${step(index)}%` }}
+                  onClick={() => {
+                    close();
+                    onPick(level.id);
+                  }}
+                >
+                  <span className="ask-knob" />
+                  <span className="ask-level">{effortWord(level.id)}</span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className="ask-note">{current?.model ? 'This model has no effort setting.' : unlisted}</p>
+          )}
+          {effort.ceiling && mode === 'fix' ? (
+            <p className="ask-note">
+              <b>Fix runs at {effortWord(effort.ceiling)}.</b> Your choice still governs Ask, Plan and Build.
+            </p>
+          ) : (
+            defaultLine && <p className="ask-note">{defaultLine}</p>
+          )}
+        </Menu>
+      )}
+    </Box>
+  );
+}
+
 export interface AskRowProps {
   thread: Conversation;
   mode: Mode;
@@ -356,12 +541,20 @@ export interface AskRowProps {
   onChoose(change: AskChange): void;
   /** The Agent control, drawn by the caller. */
   agent?: ReactNode;
+  /** Server-rendered fixture; production reads each engine's catalogue when it is needed. */
+  initialCatalogs?: Record<string, EngineCatalog>;
 }
 
 /**
  * The ask box's row: Engine, Model or tier, Effort (an engine other than Nectovia only), then
  * the Agent. Each choice is one thread update. Opening a menu reads its engine again, so a model
  * list follows the account and any update made outside the app.
+ *
+ * On the local model the second box lists its profiles from the host's catalogue and Effort
+ * holds the profile's own levels, as for any other engine; on a paid plan the same menu leads
+ * with the tiers, the way back to Nectovia. Choosing the local model or a profile never wakes
+ * it: only the person's Start does, offered where the choice is grayed or the profile is not
+ * loaded.
  */
 export function AskRow({
   thread,
@@ -375,9 +568,14 @@ export function AskRow({
   locked,
   onChoose,
   agent = null,
+  initialCatalogs = {},
 }: AskRowProps) {
   const [connections, setConnections] = useState<Partial<Record<string, EngineConnection>>>({});
-  const [catalogs, setCatalogs] = useState<Record<string, EngineCatalog>>({});
+  const [catalogs, setCatalogs] = useState<Record<string, EngineCatalog>>(initialCatalogs);
+  // The local model's entry as last read on its own. The page reads its list once, at start.
+  const [fresh, setFresh] = useState<IntegrationStatus[] | null>(null);
+  const [starting, setStarting] = useState(false);
+  const [startError, setStartError] = useState<string | null>(null);
   const alive = useRef(true);
   useEffect(() => {
     alive.current = true;
@@ -385,9 +583,13 @@ export function AskRow({
       alive.current = false;
     };
   }, []);
-  const local = localModel(integrations);
+  // A failed Start is said where it was pressed, and not carried to another thread.
+  useEffect(() => setStartError(null), [thread.id, route]);
+  const listed = localModel(integrations);
+  const local: LocalModel | null = fresh ? localModel(fresh) : listed;
   const shown = shownEngine(route, local, free);
   const onNectovia = shown === NECTOVIA_ROUTE;
+  const localRoute = local && route === local.route ? local.route : null;
 
   const readRoster = () =>
     engineConnections()
@@ -403,14 +605,40 @@ export function AskRow({
     void readRoster();
   }, []);
 
-  const readCatalog = (id: string) =>
+  const readCatalog = (id: string): Promise<EngineCatalog | null> =>
     api<EngineCatalog>(`/engines/${encodeURIComponent(id)}/models`)
       .then((catalog) => {
         if (alive.current) setCatalogs((prev) => ({ ...prev, [id]: catalog }));
+        return catalog;
       })
       .catch(() => {
         // An engine that cannot answer keeps whatever it last listed.
+        return null;
       });
+
+  /** The local model's status, read on its own. Reading it starts nothing. */
+  const readLocal = () =>
+    api<{ integrations: IntegrationStatus[] }>('/integrations/local')
+      .then((answer) => {
+        if (alive.current) setFresh(answer.integrations);
+      })
+      .catch(() => {
+        // A failed read leaves the last answer in place.
+      });
+  // Once the page lists a local model, its status is read again: the page's list is from its start.
+  const listedRoute = listed?.route ?? null;
+  useEffect(() => {
+    if (listedRoute) void readLocal();
+  }, [listedRoute]);
+  // A thread on the local model lists its profiles, and reads its status again whenever the
+  // window comes back, since the model can be started or stopped outside the app.
+  useEffect(() => {
+    if (!localRoute) return;
+    void readCatalog(localRoute);
+    const again = () => void readLocal();
+    window.addEventListener('focus', again);
+    return () => window.removeEventListener('focus', again);
+  }, [localRoute]);
 
   /** Checks every engine that is on again, then the roster, as the thread picker did. */
   const recheck = () => {
@@ -418,7 +646,10 @@ export function AskRow({
       (id) => offeredEngine(id, { integrations, settings, connections }) || settings.services?.[id] === true,
     );
     void Promise.all(ids.map(readCatalog)).then(readRoster);
-    if (local) void readCatalog(local.route);
+    if (local) {
+      void readCatalog(local.route);
+      void readLocal();
+    }
   };
 
   function modelsFor(id: string): EngineModel[] {
@@ -430,16 +661,63 @@ export function AskRow({
   const entries = engineEntries({ integrations, settings, connections, free, route, local });
   const waiting = locked ? 'Waiting for the current run to finish' : undefined;
   const engineText = engineLabel(route, { integrations, local, free });
+  const savedLocal = local ? settings.services?.[`${local.route}Model`] : undefined;
+  const localPick = local ? localChoice(local, modelsFor(local.route), savedLocal) : null;
+
+  /** The person's Start: the one call that wakes the local model. Choosing it never does. */
+  const start = (slug: string | null | undefined) => {
+    if (!slug || starting) return;
+    setStarting(true);
+    setStartError(null);
+    void api<unknown>('/ai/local-models/wake', 'POST', { model: slug })
+      .catch((e: unknown) => {
+        if (alive.current) setStartError(e instanceof Error ? e.message : 'The local model could not start.');
+      })
+      .then(readLocal)
+      .finally(() => {
+        if (alive.current) setStarting(false);
+      });
+  };
+
+  /**
+   * Moves the thread to the local model on the profile `localChoice` names, with that profile's
+   * own default effort, the way a picked engine pins its model. It starts nothing.
+   */
+  const chooseLocal = async () => {
+    if (!local) return;
+    const listedModels = modelsFor(local.route);
+    const models = listedModels.length ? listedModels : ((await readCatalog(local.route))?.models ?? []);
+    const pick = localChoice(local, models, savedLocal);
+    if (!pick || !alive.current) return;
+    onChoose({ engine: local.route, requested: { model: pick.slug, effort: pick.defaultEffort } });
+  };
 
   function pickEngine(id: Route) {
     if (id === shown) return;
-    if (id === NECTOVIA_ROUTE || (local && id === local.route)) {
+    if (local && id === local.route) {
+      void chooseLocal();
+      return;
+    }
+    if (id === NECTOVIA_ROUTE) {
       onChoose({ engine: id, requested: null });
       return;
     }
-    const start = startingModel(modelsFor(id), settings.services?.[`${id}Model`]);
-    onChoose({ engine: id, requested: start ? { model: start.slug, effort: start.defaultEffort } : null });
+    const first = startingModel(modelsFor(id), settings.services?.[`${id}Model`]);
+    onChoose({ engine: id, requested: first ? { model: first.slug, effort: first.defaultEffort } : null });
   }
+
+  // Where the local model is listed but grayed, its Start sits beside it in the open menu.
+  const startItem =
+    local && local.found && !local.running ? (
+      <>
+        <StartItem starting={starting} disabled={locked || !localPick} onStart={() => start(localPick?.slug)} />
+        {startError && (
+          <p className="ask-note" role="alert">
+            {startError}
+          </p>
+        )}
+      </>
+    ) : null;
 
   const engineBox = (
     <Box
@@ -468,17 +746,144 @@ export function AskRow({
             close();
             pickEngine(id);
           }}
+          // On the free version the local model is listed here as an engine of its own.
+          extra={free ? startItem : null}
         />
       )}
     </Box>
   );
 
-  let modelBox: ReactNode;
+  let modelBox: ReactNode = null;
   let effortBox: ReactNode = null;
-  if (onNectovia) {
+  let localLine: ReactNode = null;
+  if (local && localRoute) {
+    const models = modelsFor(local.route);
+    const slug = thread.requested?.model ?? null;
+    const current = currentModel(models, slug, null);
+    const named = names && current?.model ? current.model.name : null;
+    const modelText = names && current ? (current.model?.name ?? current.slug) : LOCAL_MODEL;
+    modelBox = (
+      <Box
+        className="ask-model"
+        label={`Model: ${modelText}`}
+        text={modelText}
+        title={waiting}
+        disabled={locked}
+        glyph={<AskIcon name="chip" />}
+      >
+        {(close) => (
+          <Menu
+            label={free ? 'Model' : 'How much care'}
+            onOpen={() => {
+              void readCatalog(local.route);
+              void readLocal();
+            }}
+          >
+            {/* A paid plan's way back to Nectovia: the local model is one of its options. */}
+            {!free && (
+              <>
+                <p className="ask-head">How much care</p>
+                {tierEntries(null, null, names).map((entry) => (
+                  <Item
+                    key={entry.id}
+                    checked={false}
+                    glyph={<Bars lit={entry.bars} />}
+                    name={entry.name}
+                    sub={entry.sub}
+                    onPick={() => {
+                      close();
+                      if (entry.id === 'local') return;
+                      onChoose({ engine: NECTOVIA_ROUTE, requested: null, workStyle: entry.id });
+                    }}
+                  />
+                ))}
+              </>
+            )}
+            <p className="ask-head">{LOCAL_MODEL}</p>
+            {models.length === 0 && !catalogs[local.route] && (
+              <p className="ask-note">The local model has not listed its profiles yet.</p>
+            )}
+            {localProfileEntries(local, models, names).map((entry) => (
+              <Item
+                key={entry.slug}
+                checked={current?.slug === entry.slug}
+                glyph={<AskIcon name="chip" />}
+                name={entry.name}
+                sub={entry.sub}
+                right={
+                  entry.running ? (
+                    <>
+                      <span className="ask-dot" aria-hidden="true" />
+                      Running
+                    </>
+                  ) : undefined
+                }
+                onPick={() => {
+                  close();
+                  if (slug === entry.slug) return;
+                  const model = models.find((item) => item.slug === entry.slug);
+                  onChoose({
+                    engine: local.route,
+                    requested: { model: entry.slug, effort: model?.defaultEffort ?? null },
+                  });
+                }}
+              />
+            ))}
+          </Menu>
+        )}
+      </Box>
+    );
+    if (current) {
+      const effort = effortState(current.model, thread.requested?.effort, null, mode);
+      const fallback = current.model?.defaultEffort ? effortWord(current.model.defaultEffort) : null;
+      effortBox = (
+        <EffortBox
+          mode={mode}
+          effort={effort}
+          current={current}
+          waiting={waiting}
+          locked={locked}
+          head={named ? `Effort for ${named}` : 'Effort'}
+          unlisted="The local model has not listed this profile's levels yet."
+          defaultLine={fallback ? (named ? `The default for ${named} is ${fallback}.` : `The default is ${fallback}.`) : null}
+          onPick={(level) => {
+            if (level === effort.wanted && slug === current.slug) return;
+            onChoose({ engine: local.route, requested: { model: current.slug, effort: level } });
+          }}
+        />
+      );
+    }
+    // Withdrawn and said so: a profile that isn't loaded is never swapped for a cloud model.
+    const line = starting ? STARTING : localStoppedLine(local, slug, free);
+    if (line || startError)
+      localLine = (
+        <div className="ask-local">
+          {line && (
+            <p className="ask-stopped" role="status">
+              {line}
+            </p>
+          )}
+          {startError && !starting && (
+            <p className="ask-stopped" role="alert">
+              {startError}
+            </p>
+          )}
+          {slug && !localReady(local, slug) && (
+            <button
+              type="button"
+              className="ask-start"
+              disabled={locked || starting}
+              title={waiting}
+              onClick={() => start(slug)}
+            >
+              {START}
+            </button>
+          )}
+        </div>
+      );
+  } else if (onNectovia) {
     const tier = currentTier(thread, settings, route, local);
-    const onLocal = local !== null && route === local.route;
-    const localName = local ? (catalogs[local.route]?.models[0]?.name ?? null) : null;
+    const localName = names && localPick ? localPick.name : null;
     modelBox = (
       <Box
         className="ask-tier"
@@ -490,9 +895,19 @@ export function AskRow({
         glyph={tier === 'local' ? <AskIcon name="chip" /> : <Bars lit={tierBars(tier)} />}
       >
         {(close) => (
-          <Menu label="How much care" onOpen={local ? () => void readCatalog(local.route) : undefined}>
+          <Menu
+            label="How much care"
+            onOpen={
+              local
+                ? () => {
+                    void readCatalog(local.route);
+                    void readLocal();
+                  }
+                : undefined
+            }
+          >
             <p className="ask-head">How much care</p>
-            {tierEntries(local, localName, names, onLocal).map((entry) => (
+            {tierEntries(local, localName, names).map((entry) => (
               <Item
                 key={entry.id}
                 checked={entry.id === tier}
@@ -504,18 +919,18 @@ export function AskRow({
                   close();
                   if (entry.id === tier) return;
                   if (entry.id === 'local') {
-                    if (local) onChoose({ engine: local.route, requested: null });
+                    void chooseLocal();
                     return;
                   }
                   onChoose({
-                    ...(onLocal ? { engine: NECTOVIA_ROUTE } : {}),
                     // A model pin left from another engine goes with a style; the Agent stays.
-                    ...(thread.requested?.model || onLocal ? { requested: null } : {}),
+                    ...(thread.requested?.model ? { requested: null } : {}),
                     workStyle: entry.id,
                   });
                 }}
               />
             ))}
+            {startItem}
           </Menu>
         )}
       </Box>
@@ -531,7 +946,6 @@ export function AskRow({
     const effort = effortState(current?.model ?? null, thread.requested?.effort, savedEffort ?? answered?.effort, mode);
     const engine = engineName(route, integrations);
     const modelText = current ? (current.model?.name ?? current.slug) : 'Default';
-    const listsNoLevels = Boolean(current?.model) && effort.levels.length === 0;
     modelBox = (
       <Box
         className="ask-model"
@@ -564,98 +978,27 @@ export function AskRow({
         )}
       </Box>
     );
-    const at = effort.wanted ? effort.levels.findIndex((level) => level.id === effort.wanted) : -1;
-    const effortText = effort.runs ? effortWord(effort.runs) : 'Default';
-    const step = (index: number) => (effort.levels.length > 1 ? (index / (effort.levels.length - 1)) * 100 : 50);
     effortBox = (
-      <Box
-        className={`ask-effort${effort.capped ? ' capped' : ''}`}
-        label={`Effort: ${effortText}`}
-        text={effortText}
-        popup="dialog"
-        title={
-          waiting ??
-          (listsNoLevels
-            ? 'This model has no effort setting.'
-            : effort.capped && effort.wanted
-              ? `${effortWord(effort.wanted)}, runs ${effortText}`
-              : undefined)
+      <EffortBox
+        mode={mode}
+        effort={effort}
+        current={current}
+        waiting={waiting}
+        locked={locked}
+        head={current?.model ? `Effort for ${current.model.name}` : 'Effort'}
+        unlisted={`${engine} has not listed this model's levels yet.`}
+        defaultLine={
+          current?.model?.defaultEffort
+            ? `${engine}’s default for ${current.model.name} is ${effortWord(current.model.defaultEffort)}.`
+            : null
         }
-        disabled={locked || listsNoLevels}
-        glyph={<AskIcon name="gauge" />}
-      >
-        {(close) => (
-          <Menu
-            label="Effort"
-            role="dialog"
-            className="ask-effort-menu"
-            onOpen={!catalogs[route] && !isExternalEngine(route) ? () => void readCatalog(route) : undefined}
-          >
-            <p className="ask-head">{current?.model ? `Effort for ${current.model.name}` : 'Effort'}</p>
-            {effort.levels.length > 0 && current ? (
-              <div
-                className="ask-slider"
-                role="radiogroup"
-                aria-label="Effort"
-                onKeyDown={(event) => {
-                  if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
-                  event.preventDefault();
-                  const stops = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="radio"]')];
-                  const from = stops.indexOf(document.activeElement as HTMLButtonElement);
-                  const delta = event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : 1;
-                  stops[Math.max(0, Math.min(stops.length - 1, (from < 0 ? at : from) + delta))]?.focus();
-                }}
-              >
-                <span className="ask-track">
-                  <span className="ask-fill" style={{ width: `${at >= 0 ? step(at) : 0}%` }} />
-                </span>
-                {effort.levels.map((level, index) => (
-                  <button
-                    key={level.id}
-                    type="button"
-                    role="radio"
-                    aria-checked={level.id === effort.wanted}
-                    aria-label={effortWord(level.id)}
-                    title={level.description || undefined}
-                    className={[
-                      'ask-stop',
-                      index <= at ? 'on' : '',
-                      level.id === effort.wanted ? 'cur' : '',
-                      effortFor(mode, level.id, level.id) !== level.id ? 'capped' : '',
-                    ]
-                      .filter(Boolean)
-                      .join(' ')}
-                    style={{ left: `${step(index)}%` }}
-                    onClick={() => {
-                      close();
-                      if (level.id === effort.wanted && thread.requested?.model === current.slug) return;
-                      onChoose({ engine: route, requested: { model: current.slug, effort: level.id } });
-                    }}
-                  >
-                    <span className="ask-knob" />
-                    <span className="ask-level">{effortWord(level.id)}</span>
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <p className="ask-note">
-                {current?.model ? 'This model has no effort setting.' : `${engine} has not listed this model's levels yet.`}
-              </p>
-            )}
-            {effort.ceiling && mode === 'fix' ? (
-              <p className="ask-note">
-                <b>Fix runs at {effortWord(effort.ceiling)}.</b> Your choice still governs Ask, Plan and Build.
-              </p>
-            ) : (
-              current?.model?.defaultEffort && (
-                <p className="ask-note">
-                  {engine}&rsquo;s default for {current.model.name} is {effortWord(current.model.defaultEffort)}.
-                </p>
-              )
-            )}
-          </Menu>
-        )}
-      </Box>
+        onOpen={!catalogs[route] && !isExternalEngine(route) ? () => void readCatalog(route) : undefined}
+        onPick={(level) => {
+          if (!current) return;
+          if (level === effort.wanted && thread.requested?.model === current.slug) return;
+          onChoose({ engine: route, requested: { model: current.slug, effort: level } });
+        }}
+      />
     );
   }
 
@@ -665,11 +1008,7 @@ export function AskRow({
       {modelBox}
       {effortBox}
       {agent && <AgentBox>{agent}</AgentBox>}
-      {local && route === local.route && !local.running && (
-        <p className="ask-stopped" role="status">
-          {LOCAL_STOPPED}
-        </p>
-      )}
+      {localLine}
     </div>
   );
 }
@@ -679,11 +1018,14 @@ function EngineMenu({
   shown,
   onOpen,
   onPick,
+  extra = null,
 }: {
   entries: EngineEntry[];
   shown: Route;
   onOpen(): void;
   onPick(id: Route): void;
+  /** Drawn after the engines: the local model's Start, where it is listed grayed. */
+  extra?: ReactNode;
 }) {
   return (
     <Menu label="Engines" className="ask-engines" onOpen={onOpen}>
@@ -710,6 +1052,7 @@ function EngineMenu({
           onPick={() => onPick(entry.id)}
         />
       ))}
+      {extra}
     </Menu>
   );
 }
@@ -717,10 +1060,19 @@ function EngineMenu({
 /**
  * The context ring: always present, filled from the newest answer's own record. Opening it lists
  * what filled the context. With no declared window it counts tokens instead of a percentage.
+ * `window` is the window the thread's current model declares, when it declares one: a local
+ * profile's own size.
  */
-export function ContextRing({ turns }: { turns: readonly Pick<Turn, 'role' | 'context'>[] }) {
-  const gauge = contextGauge(turns);
+export function ContextRing({
+  turns,
+  window: declared = null,
+}: {
+  turns: readonly Pick<Turn, 'role' | 'context'>[];
+  window?: number | null;
+}) {
+  const gauge = contextGauge(turns, declared);
   const line = contextLine(gauge);
+  const size = contextWindowLine(gauge);
   const circumference = 2 * Math.PI * 8;
   const filled = gauge.percent === null ? 0 : (gauge.percent / 100) * circumference;
   const { open, setOpen, root, opener, onKeyDown } = usePopup();
@@ -731,7 +1083,7 @@ export function ContextRing({ turns }: { turns: readonly Pick<Turn, 'role' | 'co
         type="button"
         className="ask-ring"
         aria-label={line}
-        title={line}
+        title={size ? `${line}. ${size}` : line}
         aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => setOpen(!open)}
@@ -754,6 +1106,7 @@ export function ContextRing({ turns }: { turns: readonly Pick<Turn, 'role' | 'co
       {open && (
         <div className="ask-menu ask-context" role="dialog" aria-label="Context">
           <p className="ask-context-line">{line}</p>
+          {size && <p className="ask-context-size">{size}</p>}
           {gauge.rows.length > 0 && (
             <ul>
               {gauge.rows.map((row) => (

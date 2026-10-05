@@ -209,6 +209,8 @@ export function DiomedesHome(props: DiomedesHomeProps) {
   const [pinnedModel, setPinnedModel] = useState<string | null>(null);
   const [modelThread, setModelThread] = useState<Conversation | null>(null);
   const [imagePaths, setImagePaths] = useState<string[]>([]);
+  // The local model's route, as the host names it once the local controls have asked.
+  const [localRoute, setLocalRoute] = useState<string | null>(null);
   // All projects' Cloud sharing record, read once that conversation exists; null until then.
   // `sharingReads` asks for it again, after a refusal that another window's change may explain.
   const [sharing, setSharing] = useState<HomeSharing | null>(null);
@@ -913,15 +915,16 @@ export function DiomedesHome(props: DiomedesHomeProps) {
         onStop={stopDelivery}
         route={effective}
         routeModel={effective === NECTOVIA_ROUTE ? (nectovia?.tiers?.efficient?.label ?? null) : null}
-        workStyle={binding !== null && effective !== 'bonsai' ? workStyle : undefined}
+        workStyle={binding !== null && effective !== localRoute ? workStyle : undefined}
         onWorkStyle={pickStyle}
         modelControls={binding && modelThread ? <><LocalModelControls projectId={binding.projectId}
           thread={modelThread} route={effective} mode={modeFor(restriction)} busy={pending} live={pending}
+          onRoute={setLocalRoute}
           onChanged={conversation => {
             setModelThread(conversation); setRoute(conversation.engine ?? null);
             setPinnedModel(conversation.requested?.model ?? null); setWorkStyle(conversation.workStyle ?? null);
           }} /><LocalImageAttachments projectId={binding.projectId} route={effective} model={pinnedModel}
-            paths={imagePaths} onPaths={setImagePaths} busy={pending} /></> : <PrepareLocalModels onPrepare={async () => {
+            paths={imagePaths} onPaths={setImagePaths} busy={pending} /></> : <PrepareLocalModels onRoute={setLocalRoute} onPrepare={async () => {
               const visit = turn.current;
               await ensure(scopeId);
               if (turn.current === visit) await load(scopeId);

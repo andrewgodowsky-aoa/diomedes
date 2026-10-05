@@ -18,7 +18,7 @@ describe('local profile controls', () => {
     expect(html).toContain('Nectovia'); expect(html).toContain(`value="${model}" selected=""`);
     expect(html).toContain('value="xhigh" selected="">Extra'); expect(html).toContain('Auto');
     expect(html).toContain(model === 'bonsai-gaming' ? '16,384 token context' : '131,072 token context');
-    expect(html).not.toContain('Codex'); expect(html).toContain('>Load</button>');
+    expect(html).not.toContain('Codex'); expect(html).toContain('>Start</button>');
   });
   it('uses host labels, never a model-name list in the renderer', () => {
     const changed = { ...view, models: [{ ...BONSAI_PROFILES[0], name: 'My local profile' }] };

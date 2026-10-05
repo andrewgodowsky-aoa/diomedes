@@ -8,9 +8,10 @@ import type { AddressInfo } from 'node:net';
 import { createApp } from '../server/app.js';
 import { Store } from '../server/store.js';
 import { EngineService } from '../server/engines/service.js';
-import { BonsaiError, type BonsaiHost } from '../server/bonsai/runtime.js';
+import { BonsaiError, BonsaiRuntime, type BonsaiHost } from '../server/bonsai/runtime.js';
+import { localModelIntegrations } from '../server/bonsai/routes.js';
 import { BONSAI_MODEL, type BonsaiStatus, type LocalModelsView, type ModelImage } from '../shared/bonsai.js';
-import type { Conversation, Project } from '../shared/types.js';
+import type { Conversation, IntegrationStatus, Project } from '../shared/types.js';
 import { conversationSources } from '../client/console/thread-send.js';
 import { turnRunId } from '../server/harness/model-session-run.js';
 import type { RunService } from '../server/harness/run-service.js';
@@ -151,6 +152,46 @@ describe('Bonsai through the native Nectovia host', () => {
     expect(response.status).toBe(409); expect(await response.text()).toContain('12288');
     expect((await api<LocalModelsView>('/ai/local-models')).status.state).toBe('insufficient-memory');
     expect(calls).toEqual([]);
+  });
+  it('reports the installed model as a local integration with its loaded profile, starting nothing to say so', async () => {
+    const local = async (route = '/integrations') =>
+      (await api<{ integrations: IntegrationStatus[] }>(route)).integrations.filter(item => item.id === 'bonsai');
+    expect(await local()).toEqual([expect.objectContaining({ id: 'bonsai', kind: 'local', adapter: 'ready',
+      found: true, available: false, loaded: null, status: 'Not running' })]);
+    expect(await local('/integrations/local')).toEqual(await local());
+    vi.mocked(host.inspect).mockResolvedValue({ state: 'ready', installed: true, mode: 'Full', owned: true, detail: 'Bonsai Full is ready.' });
+    expect(await local('/integrations/local')).toEqual([expect.objectContaining({ found: true, available: true,
+      loaded: 'bonsai-full', status: 'Running', detail: 'Bonsai Full is ready.' })]);
+    vi.mocked(host.inspect).mockResolvedValue({ state: 'missing', installed: false, mode: null, owned: false, detail: 'Not installed.' });
+    expect(await local('/integrations/local')).toEqual([]);
+    expect(await local()).toEqual([]);
+    expect(host.acquire).not.toHaveBeenCalled();
+    // A host with no installation is never asked at all.
+    const absent = { inspect: vi.fn(), acquire: vi.fn() } as unknown as BonsaiHost;
+    expect(await localModelIntegrations(new BonsaiRuntime(absent), false)).toEqual([]);
+    expect(absent.inspect).not.toHaveBeenCalled();
+  });
+  it('never starts the model for a send: a stopped profile is refused, stays chosen, and nothing is sent anywhere', async () => {
+    await select('bonsai-gaming');
+    let running: string | null = null;
+    vi.mocked(host.acquire).mockImplementation(async (profile, options) => {
+      if (running !== profile.mode && !options?.start) throw new BonsaiError('unloaded', "The local model isn't running. Start it first.");
+      running = profile.mode;
+      return { status: { state: 'ready' as const, installed: true, mode: profile.mode, owned: true, detail: 'Ready.' }, release: async () => {} };
+    });
+    const refused = await request(`${threadPath()}/messages`, 'POST', body());
+    expect(refused.status).toBe(409);
+    expect(await refused.text()).toContain("isn't running");
+    expect(calls).toEqual([]);
+    expect(vi.mocked(host.acquire).mock.calls.map(call => call[1])).toEqual([{ start: false }]);
+    // Withdrawn, not replaced: the thread keeps its local profile and no tier or cloud route took over.
+    expect(store().state(project.id).conversations.find(t => t.id === thread.id))
+      .toMatchObject({ engine: 'bonsai', requested: { model: 'bonsai-gaming' } });
+    // Only the person's Start may start it, and the next send then runs on it.
+    await api('/ai/local-models/wake', 'POST', { model: 'bonsai-gaming' });
+    expect(await api(`${threadPath()}/messages`, 'POST', body('Again.'))).toMatchObject({ answerText: 'Bonsai answered locally.' });
+    expect(vi.mocked(host.acquire).mock.calls.map(call => call[1])).toEqual([{ start: false }, { start: true }, { start: false }]);
+    expect(calls).toHaveLength(1);
   });
   it('will not substitute a cloud tier for a local route with no profile', async () => {
     await api(threadPath(), 'PUT', { engine: 'bonsai', requested: null, workStyle: 'thorough' });

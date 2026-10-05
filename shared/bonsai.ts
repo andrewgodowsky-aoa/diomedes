@@ -52,20 +52,8 @@ export interface LocalModelsView {
   models: readonly BonsaiProfile[];
 }
 
-/** Exact source bytes remain in the existing project version store, never in a URL from a model. */
-export type ModelImage = {
-  path: string;
-  sha: string;
-  mediaType: 'image/png' | 'image/jpeg' | 'image/webp';
-  bytes: number;
-};
-export const MODEL_IMAGE_LIMIT = 4 * 1024 * 1024;
-export const MODEL_IMAGE_COUNT = 4;
-export function imageMediaType(name: string): ModelImage['mediaType'] | null {
-  const extension = name.split('.').at(-1)?.toLowerCase();
-  return extension === 'png' ? 'image/png' : extension === 'jpg' || extension === 'jpeg'
-    ? 'image/jpeg' : extension === 'webp' ? 'image/webp' : null;
-}
+// The image bounds live in a module that names no model, so the client can share them.
+export { imageMediaType, MODEL_IMAGE_COUNT, MODEL_IMAGE_LIMIT, type ModelImage } from './model-images.js';
 
 /** The reskin renders each field separately and preserves the existing agent/effort controls. */
 export function bonsaiSelectionFields(model: string, effort: string | null, agentLabel: string) {

@@ -32,16 +32,20 @@ export class WindowsBonsaiHost implements BonsaiHost {
     await lease.release();
     return lease.status;
   }
-  acquire(profile: BonsaiProfile): Promise<BonsaiLease> { return this.open('Acquire', profile.mode); }
+  /** Starts or switches the worker only with `start: true`, the person's explicit Start. */
+  acquire(profile: BonsaiProfile, options: { start?: boolean } = {}): Promise<BonsaiLease> {
+    return this.open('Acquire', profile.mode, options.start === true);
+  }
 
-  private open(action: 'Status' | 'Acquire', mode: 'Gaming' | 'Full' = 'Gaming'): Promise<BonsaiLease> {
+  private open(action: 'Status' | 'Acquire', mode: 'Gaming' | 'Full' = 'Gaming', start = false): Promise<BonsaiLease> {
     if (!this.configured) return Promise.reject(new BonsaiError('missing', 'Bonsai is not installed on this computer.'));
     const powershell = this.powershell;
     if (!powershell) return Promise.reject(new BonsaiError('error', 'Bonsai needs PowerShell 7.4 or newer. Set NECTOVIA_BONSAI_POWERSHELL to its installed executable.'));
     return new Promise((resolve, reject) => {
       const child = spawn(powershell, ['-NoLogo', '-NoProfile', '-NonInteractive', '-File', this.script,
         '-Action', action, '-Mode', mode, '-Root', this.root,
-        '-OwnershipFile', path.join(this.dataDir, 'bonsai-ownership.json')],
+        '-OwnershipFile', path.join(this.dataDir, 'bonsai-ownership.json'),
+        ...(action === 'Acquire' && !start ? ['-NoStart'] : [])],
       { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
       let output = '', errors = '', answered = false, released = false;
       const leaseLost = new AbortController();

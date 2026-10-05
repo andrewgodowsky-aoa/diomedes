@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { BONSAI_ACCOUNT, BONSAI_PROFILES, BONSAI_ROUTE, bonsaiProfile, imageMediaType, MODEL_IMAGE_COUNT } from '../shared/bonsai.js';
 import { BonsaiRuntime, type BonsaiHost } from './bonsai/runtime.js';
 import { WindowsBonsaiHost } from './bonsai/windows-host.js';
-import { mountBonsaiRoutes } from './bonsai/routes.js';
+import { localModelIntegrations, mountBonsaiRoutes } from './bonsai/routes.js';
 import { inspectModelImage } from './bonsai/images.js';
 import type { TextRequest } from './engines/contract.js';
 import { taskDocumentProblem } from '../shared/task-sources.js';
@@ -2201,15 +2201,12 @@ export async function createApp(options: AppOptions) {
             : item.adapter === 'ready' && item.kind !== 'sample'
               ? { ...item, enabled: store.settings.services?.[item.id] === true }
               : item,
-        ).concat(bonsaiConfigured ? [{ id: BONSAI_ROUTE, name: 'Bonsai', kind: 'local', found: true,
-          available: true, enabled: true, status: 'Optional local model',
-          detail: 'Choose a profile to load Bonsai on this computer.', capabilities: ['text', 'tools', 'images in Full'],
-          signIn: 'not-needed', adapter: 'ready', disclosure: ['Local inference. Model startup checks available GPU memory.'] }] : []),
+        ).concat(await localModelIntegrations(bonsai, bonsaiConfigured)),
       }),
       false,
     ),
   );
-  mountBonsaiRoutes(app, bonsai, store);
+  mountBonsaiRoutes(app, bonsai, store, bonsaiConfigured);
   app.get(
     '/api/usage',
     route(async (req) => {
