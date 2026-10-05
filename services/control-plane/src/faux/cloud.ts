@@ -65,6 +65,7 @@ import {
   signUpInput,
 } from './identity.js';
 import { FauxRelayHubs } from './relay-hubs.js';
+import { fauxRouteCheckEnvironment } from './route-checks.js';
 import { FauxCloudStore } from './store.js';
 import { createWorkOSStandIn, WORKOS_ISSUER, type WorkOSStandIn } from './workos-standin.js';
 
@@ -90,7 +91,11 @@ export interface FauxCloudOptions {
   managed?: {
     /** The transport the Bedrock caller uses. Default: `scriptedResponsesFetch`. */
     transport?: typeof globalThis.fetch;
-    /** Approved synthetic configuration for transport tests; never populated from user credentials. */
+    /**
+     * Approved synthetic configuration for transport tests; never populated from user credentials.
+     * Omitted: the two connections the gateway route checks run on (`aws-bedrock-us-east-1` and
+     * `azure-foundry-dev`, shaped as deployed) with the faux placeholder as their keys.
+     */
     bindings?: Readonly<Record<string, unknown>>;
     /** What the gateway reads as BEDROCK_API_KEY. Null: no key is configured. */
     credential?: string | null;
@@ -144,6 +149,11 @@ export interface FauxCloud {
   readonly provider: 'scripted' | 'live';
   /** Which provider answers typed evaluations. */
   readonly evaluationProvider: 'scripted' | 'live';
+  /**
+   * MANAGED_CONNECTIONS as the faux Worker reads it, and nothing else from its environment: what a
+   * staff route write checks a binding against (`CommercialService.saveRoute`).
+   */
+  readonly connectionSettings: Readonly<Record<string, unknown>>;
   handle(request: Request): Promise<Response>;
   /** Resolves once every managed settlement started so far has finished. */
   idle(): Promise<void>;
@@ -232,7 +242,7 @@ export async function createFauxCloud(options: FauxCloudOptions): Promise<FauxCl
     : options.managed?.evaluationCredential === undefined ? FAUX_SCRIPTED_CREDENTIAL : options.managed.evaluationCredential;
   // The environment the gateway reads its keys and spend settings from, as the Worker's would be.
   const managedEnv: Record<string, unknown> = {
-    ...options.managed?.bindings,
+    ...(options.managed?.bindings ?? fauxRouteCheckEnvironment()),
     ...Object.fromEntries(SPEND_SETTINGS.filter((name) => settings[name] !== undefined).map((name) => [name, settings[name]])),
     ...(credential === null ? {} : { BEDROCK_API_KEY: credential }),
     ...(evaluationCredential === null ? {} : { OPENROUTER_API_KEY: evaluationCredential }),
@@ -389,6 +399,7 @@ export async function createFauxCloud(options: FauxCloudOptions): Promise<FauxCl
     organizationExports,
     provider: live ? 'live' : 'scripted',
     evaluationProvider: liveEvaluations ? 'live' : 'scripted',
+    connectionSettings: Object.freeze(managedEnv.MANAGED_CONNECTIONS === undefined ? {} : { MANAGED_CONNECTIONS: managedEnv.MANAGED_CONNECTIONS }),
     idle: () => managed.idle(),
     completeCheckout,
     paymentLedger,
