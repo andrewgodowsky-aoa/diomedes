@@ -61,6 +61,10 @@ import { nectoviaRolesNote, roleLine } from '../client/console/lead-workers-mode
 import { BONSAI_MODEL, FixedLocalModel } from './fixtures/local-model.js';
 import { DELIVERY, LOCAL_BASE, LOCAL_GAMING, ORDER, SOURCES, localHost, teamFixture, type TeamFixture } from './fixtures/three-model-team.js';
 
+// A run here ends in about a second alone, but in the full suite on a loaded machine it took more
+// than 20 s once (the 0.2.3 build, 2026-10-05). settled() waits up to 60 s, so a test may take 90.
+vi.setConfig({ testTimeout: 90_000 });
+
 const headers = { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' };
 const LEAD_ANSWER = 'Six napkins are short.';
 /** What the account service answers when it sets no control: every tier may take escalated work. */
@@ -318,7 +322,7 @@ async function settled(projectId: string, runId: string): Promise<HarnessRun> {
     const run = await harness().get(projectId, runId);
     if (!['completed', 'failed', 'cancelled', 'reconcile_required'].includes(run.state)) throw new Error(`The run is still ${run.state}.`);
     return run;
-  }, { timeout: 20_000 });
+  }, { timeout: 60_000 });
   expect(ended.state, await how(projectId, ended)).toBe('completed');
   await harness().bridge.flush();
   await cloud.idle();
