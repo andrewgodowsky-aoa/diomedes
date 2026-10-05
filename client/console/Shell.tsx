@@ -87,10 +87,11 @@ import { PermissionPanel } from './PermissionPanel';
 import { LoopStart } from './LoopStart';
 import { CloudSharing } from './CloudSharing';
 import { Ledger } from './Ledger';
-import { ThreadModelControls } from './WorkStylePicker';
 import type { WorkStyle } from '../../shared/work-style';
 import { COMPOSER_LABEL } from './Composer';
 import { AgentPicker } from './AgentPicker';
+import type { AskChange } from './AskRow';
+import { useFreePlan } from './FreePlanNotice';
 import { BoardView } from './BoardView';
 import { FilesPane, DEFAULT_WIDTH, clampWidth } from './FilesPane';
 import { Repository } from './Repository';
@@ -252,6 +253,8 @@ export function Shell({
     };
   }, [skillDraft?.n]);
   const [route, setRoute] = useState<Route>(selectedEngine(settings));
+  // The free version lists Nectovia grayed in the ask row; null when accounts are off.
+  const freePlan = useFreePlan();
   const [busy, setBusy] = useState(false);
   const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
   const [previewNeed, setPreviewNeed] = useState<Need | null>(null);
@@ -1235,19 +1238,31 @@ export function Shell({
     });
   }
   /**
-   * A thread's WorkStyle. It never changes the mode, the permission or the route. Picking one
-   * clears a pinned model, because a pin outranks every style and the choice would do nothing;
-   * the Agent stays.
+   * One choice from the ask row (engine, model, effort or style), written to the thread in one
+   * update behind the same guard as `pick()`. No choice changes the mode or the permission, and
+   * whatever else changes, the Agent stays. A refused write puts the route back.
    */
-  function pickStyle(style: WorkStyle | null) {
-    if (!selected || selectedLive || current.current.busy) return;
-    const thread = selected;
+  function chooseAsk(change: AskChange) {
+    const thread = selected ?? null;
+    if (!thread || selectedLive || current.current.busy) return;
+    if (change.engine !== undefined && !isRoute(change.engine)) return;
     const agent = thread.requested?.agent ?? null;
-    const unpin = thread.requested?.model
-      ? { requested: agent ? { model: null, effort: null, agent } : null }
-      : {};
+    const body: { engine?: Route; requested?: Conversation['requested']; workStyle?: WorkStyle | null } = {};
+    if (change.engine !== undefined) body.engine = change.engine;
+    if (change.workStyle !== undefined) body.workStyle = change.workStyle;
+    if (change.requested !== undefined)
+      body.requested = agent
+        ? { model: change.requested?.model ?? null, effort: change.requested?.effort ?? null, agent }
+        : change.requested;
+    const before = route;
+    if (body.engine) setRoute(body.engine);
     void perform(async () => {
-      await api(`${base}/threads/${thread.id}`, 'PUT', { workStyle: style, ...unpin });
+      try {
+        await api(`${base}/threads/${thread.id}`, 'PUT', body);
+      } catch (e) {
+        setRoute(before);
+        throw e;
+      }
       await load();
     });
   }
@@ -1999,32 +2014,6 @@ export function Shell({
               {elsewhere.length === 1 ? 'Something needs your OK' : `${elsewhere.length} things need your OK`}
             </button>
           )}
-          {selected && !conversation && (
-            <AgentPicker
-              projectId={projectId}
-              thread={selected}
-              mode={mode}
-              route={route}
-              live={selectedLive}
-              busy={busy}
-              onPick={pickAgent}
-              onPickProfile={pickProfile}
-            />
-          )}
-          {selected && (
-            <ThreadModelControls
-              projectId={projectId}
-              thread={selected}
-              mode={mode}
-              route={route}
-              live={selectedLive}
-              integrations={integrations}
-              settings={settings}
-              busy={busy}
-              onPick={pick}
-              onStyle={pickStyle}
-            />
-          )}
           <span
             className="mono link"
             role="button"
@@ -2280,6 +2269,24 @@ export function Shell({
               route={route}
               busy={busy}
               online={online}
+              integrations={integrations}
+              free={freePlan !== null}
+              askLocked={selectedLive}
+              onChoose={chooseAsk}
+              agentControl={
+                conversation ? null : (
+                  <AgentPicker
+                    projectId={projectId}
+                    thread={selected}
+                    mode={mode}
+                    route={route}
+                    live={selectedLive}
+                    busy={busy}
+                    onPick={pickAgent}
+                    onPickProfile={pickProfile}
+                  />
+                )
+              }
               onMode={changeMode}
               onPermission={(p) => void setPermission(selected, p)}
               onRename={() => setRenaming({ id: selected.id, name: threadName(selected, state) })}
