@@ -193,7 +193,9 @@ export function providerBody(route: CatalogRoute, connection: ProviderConnection
         require_parameters: true, data_collection: 'deny', zdr: b.privacy?.zeroRetention === true,
         max_price: { prompt: Math.max(...bands.map(p => p.inputMicroUsdPerMillion)) / 1_000_000,
           completion: Math.max(...bands.flatMap(p => [p.outputMicroUsdPerMillion, p.reasoningMicroUsdPerMillion])) / 1_000_000 } };
-    } else outgoing.store = false;
+    }
+    // Bedrock's Chat Completions keeps no completions and documents no store field, so none is sent there.
+    else if (connection.provider !== 'aws-bedrock') outgoing.store = false;
   } else if (b.protocol === 'messages') {
     outgoing = {
       stream: true, max_tokens: max,

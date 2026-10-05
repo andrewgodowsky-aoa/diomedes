@@ -375,4 +375,14 @@ describe('real managed provider transports at the Responses SDK boundary', () =>
     const events = []; for await (const e of sseObjects(response.body!)) events.push(e);
     expect(events.at(-1)).toMatchObject({ type: 'response.completed', response: { usage: null, output: [{ content: [{ type: 'refusal', refusal: 'Refused.' }] }] } });
   });
+  it('sends no store field on Bedrock Chat Completions and keeps store false everywhere else', () => {
+    const bedrock = setup('aws-bedrock', 'chat-completions');
+    const toBedrock = JSON.parse(providerBody(bedrock.route, bedrock.connection, request));
+    expect(Object.hasOwn(toBedrock, 'store')).toBe(false);
+    expect(toBedrock).toMatchObject({ model: 'us.anthropic.fixture', stream: true, max_completion_tokens: 2048 });
+    const azure = setup('azure-openai', 'chat-completions');
+    expect(JSON.parse(providerBody(azure.route, azure.connection, request))).toMatchObject({ model: 'fixture-deployment', store: false });
+    const bedrockResponses = setup('aws-bedrock', 'responses');
+    expect(JSON.parse(providerBody(bedrockResponses.route, bedrockResponses.connection, request)).store).toBe(false);
+  });
 });
