@@ -19,7 +19,6 @@
  * History (decision 10): the turns a compaction summarised stay exactly where they were.
  */
 
-import { BONSAI_ROUTE, bonsaiProfile } from './bonsai.js';
 import { KIMI_K3_CONTEXT_TOKENS, KIMI_K3_MODEL_CARD } from './declared-capabilities.js';
 import { AWS_KIMI_K3 } from './model-api.js';
 import type { CacheMark, CachePolicy } from './route-capabilities.js';
@@ -186,8 +185,6 @@ export const MODEL_CONTEXT_WINDOWS: readonly { route: string; model: string; tok
 ];
 
 export function modelContextWindow(route: string, model: string): { tokens: number | null; source: string } {
-  const profile = route === BONSAI_ROUTE ? bonsaiProfile(model) : null;
-  if (profile) return { tokens: profile.contextTokens, source: 'Bonsai launch profile; rechecked against the live server before inference' };
   const entry = MODEL_CONTEXT_WINDOWS.find((item) => item.route === route && item.model === model);
   return entry ? { tokens: entry.tokens, source: entry.source } : { tokens: null, source: 'not declared' };
 }

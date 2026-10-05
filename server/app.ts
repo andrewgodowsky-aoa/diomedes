@@ -1,9 +1,11 @@
 import { parseApprovalCommand } from './approval-admission.js';
 import { fileURLToPath } from 'node:url';
-import { BONSAI_ACCOUNT, BONSAI_PROFILES, BONSAI_ROUTE, bonsaiProfile, imageMediaType, MODEL_IMAGE_COUNT } from '../shared/bonsai.js';
-import { BonsaiRuntime, type BonsaiHost } from './bonsai/runtime.js';
-import { WindowsBonsaiHost } from './bonsai/windows-host.js';
-import { localModelIntegrations, mountBonsaiRoutes } from './bonsai/routes.js';
+import { localSlug, LOCAL_MODEL_ACCOUNT, LOCAL_MODEL_ROUTE } from '../shared/local-model.js';
+import { imageMediaType, MODEL_IMAGE_COUNT } from '../shared/model-images.js';
+import { LocalModelRuntime, type LocalModelHost } from './bonsai/runtime.js';
+import { FolderLocalModelSource, isFullLocalPath, type LocalModelSource } from './bonsai/descriptor.js';
+import { WindowsLocalModelHost } from './bonsai/windows-host.js';
+import { localModelIntegrations, mountLocalModelRoutes } from './bonsai/routes.js';
 import { inspectModelImage } from './bonsai/images.js';
 import type { TextRequest } from './engines/contract.js';
 import { taskDocumentProblem } from '../shared/task-sources.js';
@@ -351,8 +353,12 @@ import {
 
 interface AppOptions {
   dataDir: string;
-  /** Tests substitute lifecycle control; production uses the optional local installation. */
-  bonsai?: { host: BonsaiHost; configured: boolean };
+  /**
+   * Tests substitute the local model: a host for the PowerShell helper, a source for the folder
+   * Settings or the environment names, or the environment that folder is read from. Production
+   * reads the folder and runs the helper.
+   */
+  localModel?: { host?: LocalModelHost; source?: LocalModelSource; env?: Readonly<Record<string, string | undefined>> };
   /** Fresh per-launch secret held by the desktop main process, never persisted. */
   loopbackToken?: string;
   projectRoot?: string;
@@ -767,6 +773,16 @@ function validateSettings(current: Settings, body: unknown): Settings {
     }
     result.services = services as Settings['services'];
   }
+  // The local model's folder (DIO-201): a full path to the folder holding its
+  // nectovia-connection.json, or null to read the environment instead. What the
+  // folder holds is checked each time it is read, not here.
+  if (supplied.localModelFolder !== undefined) {
+    const folder = supplied.localModelFolder;
+    if (folder === null || (typeof folder === 'string' && !folder.trim())) result.localModelFolder = null;
+    else if (typeof folder !== 'string' || folder.trim().length > 260 || !isFullLocalPath(folder.trim()))
+      throw new ApiError(400, 'Enter the local model folder as a full path, such as F:\\Models\\Local.');
+    else result.localModelFolder = folder.trim();
+  }
   if (supplied.openProjects) {
     if (
       !Array.isArray(supplied.openProjects) ||
@@ -826,12 +842,14 @@ export async function createApp(options: AppOptions) {
     throw new Error('The desktop local-service token is invalid.');
   const store = new Store(path.resolve(options.dataDir), options.projectRoot, options.secretBox ?? null);
   await store.init();
-  const bonsaiHost = new WindowsBonsaiHost(store.dataDir,
-    fileURLToPath(new URL('../resources/bonsai-host.ps1', import.meta.url)),
-    process.env.VITEST || process.env.DIOMEDES_TEST_MODE === '1'
-      ? { NECTOVIA_BONSAI_HOME: path.join(store.dataDir, 'no-installed-bonsai') } : process.env);
-  const bonsai = new BonsaiRuntime(options.bonsai?.host ?? bonsaiHost);
-  const bonsaiConfigured = options.bonsai?.configured ?? bonsaiHost.configured;
+  // The local model is the folder Settings names, else the one the environment names (DIO-201).
+  // Under test the environment is the test's own, so a developer's folder never reaches a fixture.
+  const localSource = options.localModel?.source ?? new FolderLocalModelSource({
+    setting: () => store.settings.localModelFolder,
+    env: options.localModel?.env ?? (process.env.VITEST || process.env.DIOMEDES_TEST_MODE === '1' ? {} : process.env),
+  });
+  const localRuntime = new LocalModelRuntime(localSource, options.localModel?.host ?? new WindowsLocalModelHost(store.dataDir,
+    fileURLToPath(new URL('../resources/bonsai-host.ps1', import.meta.url)), process.env));
   // Before anything reads a setting: an update carries never-chosen values to
   // this build's defaults and records what it did. A no-op on every other launch.
   const running = currentBuildIdentity(packageInfo.version);
@@ -1221,7 +1239,7 @@ export async function createApp(options: AppOptions) {
     agents,
     changeReview,
     agentProfiles,
-    route => route === BONSAI_ROUTE && bonsaiConfigured ? { accountRoute: BONSAI_ACCOUNT } : null,
+    route => route === LOCAL_MODEL_ROUTE && localRuntime.configured() ? { accountRoute: LOCAL_MODEL_ACCOUNT } : null,
   );
   // Only the protected desktop main process supplies this fresh loopback secret.
   // The unprotected development/browser host cannot promote a workspace fixture.
@@ -1257,6 +1275,8 @@ export async function createApp(options: AppOptions) {
     },
     // H16 trigger rules are the owner's: they evaluate only where the business holds 'owner-rules'.
     ownerRules,
+    // A local turn's deadline and context window follow its profile, read from the descriptor.
+    localProfile: (model) => localRuntime.profile(model),
   });
   // External text turns run through the host's RunService: the adapter is only
   // the provider transport inside the fenced dispatch step.
@@ -1338,9 +1358,8 @@ export async function createApp(options: AppOptions) {
     transcripts: new FileModelTranscripts(path.join(store.dataDir, 'model-transcripts'), AWS_BEDROCK_ROUTE),
     transport: options.modelApiTransport,
     bonsai: {
-      runtime: bonsai,
-      configured: bonsaiConfigured,
-      transcripts: new FileModelTranscripts(path.join(store.dataDir, 'model-transcripts-bonsai'), BONSAI_ROUTE),
+      runtime: localRuntime,
+      transcripts: new FileModelTranscripts(path.join(store.dataDir, 'model-transcripts-bonsai'), LOCAL_MODEL_ROUTE),
       loadImage: async (image, projectId) => {
         const bytes = await store.objectBytes(projectId, image.sha);
         if (!bytes) throw new ApiError(409, 'The selected image version is no longer available. Choose it again.');
@@ -1677,7 +1696,11 @@ export async function createApp(options: AppOptions) {
     },
   }, () => packLifecycle.contributions, {
     host:collaborationHost, rootLedger:productionTeam.rootLedger,
-  }, subscriptionWorkers);
+  }, subscriptionWorkers, {
+    // The same route-on every send uses. The local model's status is read, never started.
+    on: (route) => routeOn(route),
+    localRefusal: (model) => localRuntime.refusal(model),
+  });
   mountTaskWorkflowRoutes(app, store);
   mountManualHandoffRoutes(app, store);
   mountWorkspaceRoutes(app, store, workspaces, configuration, automations);
@@ -2222,12 +2245,12 @@ export async function createApp(options: AppOptions) {
             : item.adapter === 'ready' && item.kind !== 'sample'
               ? { ...item, enabled: store.settings.services?.[item.id] === true }
               : item,
-        ).concat(await localModelIntegrations(bonsai, bonsaiConfigured, { fresh: req.query.refresh === '1' })),
+        ).concat(await localModelIntegrations(localRuntime, { fresh: req.query.refresh === '1' })),
       }),
       false,
     ),
   );
-  mountBonsaiRoutes(app, bonsai, store, bonsaiConfigured);
+  mountLocalModelRoutes(app, localRuntime, store);
   app.get(
     '/api/usage',
     route(async (req) => {
@@ -3801,7 +3824,12 @@ export async function createApp(options: AppOptions) {
         b.engine === undefined
           ? selectedEngine(store.settings, state.project, conversation)
           : choice(b.engine, ROUTES, 'engine');
-      if (b.requested !== undefined) conversation.requested = parseRequested(b.requested, engine,
+      // A local profile saved under its earlier slug, as an Agent pick echoes it back, is written
+      // under the slug the description lists it as now.
+      const requested = engine === LOCAL_MODEL_ROUTE && b.requested && typeof b.requested === 'object'
+        && typeof (b.requested as { model?: unknown }).model === 'string'
+        ? { ...(b.requested as object), model: localSlug((b.requested as { model: string }).model) } : b.requested;
+      if (b.requested !== undefined) conversation.requested = parseRequested(requested, engine,
         isModelApiRoute(engine) ? await currentChoiceModels(engine) : undefined);
       // A style changes which offered model leads and how hard it reasons, from the next
       // request on. It never touches the mode, the permission or the route.
@@ -3854,6 +3882,15 @@ export async function createApp(options: AppOptions) {
     return { model, ...(effort ? { effort } : {}) };
   };
   /** The thread's WorkStyle, else the Settings default, else none. */
+  /**
+   * A thread's model pin as its route lists it now. A local profile saved under its earlier slug
+   * reads as that profile's slug, so the resolver finds it among the descriptor's profiles.
+   */
+  const pinOf = (engine: string, requested: Conversation['requested']) =>
+    requested?.model
+      ? { model: engine === LOCAL_MODEL_ROUTE ? (localSlug(requested.model) ?? requested.model) : requested.model,
+          effort: requested.effort ?? null }
+      : null;
   const styleOf = (conversation?: Conversation | null): WorkStyle | null => {
     if (isWorkStyle(conversation?.workStyle)) return conversation.workStyle;
     const saved = store.settings.services?.workStyle;
@@ -3861,7 +3898,8 @@ export async function createApp(options: AppOptions) {
   };
   /** API routes offer only their current connection; inspected engines keep their own catalogue. */
   const routeModels = (engine: string): EngineModel[] => {
-    if (engine === BONSAI_ROUTE) return bonsaiConfigured ? structuredClone([...BONSAI_PROFILES]) : [];
+    // The descriptor's profiles, named for the model its server listed at the last check.
+    if (engine === LOCAL_MODEL_ROUTE) return localRuntime.catalog();
     const levels = ['low', 'medium', 'high'].map((id) => ({id,description:''}));
     if (engine === AZURE_OPENAI_ROUTE)
       return (engines.modelApi?.azure?.connections.peek()?.deployments ?? []).map((entry) => ({
@@ -3887,6 +3925,11 @@ export async function createApp(options: AppOptions) {
   };
   /** Public choices also read the current AWS record, so a stale setting cannot offer a removed model. */
   const currentChoiceModels = async (engine:string):Promise<EngineModel[]> => {
+    // The local profiles as a recent status check names them. Reading the status starts nothing.
+    if (engine === LOCAL_MODEL_ROUTE) {
+      await localRuntime.status();
+      return localRuntime.catalog();
+    }
     if (engine !== AWS_BEDROCK_ROUTE) return routeModels(engine);
     const current = await engines.modelApi?.connections.read();
     return current ? [{slug:current.modelId,name:current.modelId,description:'',defaultEffort:'low',
@@ -3926,7 +3969,7 @@ export async function createApp(options: AppOptions) {
     return { model: tier.model, accountRoute };
   };
   /** Whether a route takes a send: Nectovia has no switch; every other route is turned on in Settings. */
-  const routeOn = (route: string) => route === BONSAI_ROUTE ? bonsaiConfigured
+  const routeOn = (route: string) => route === LOCAL_MODEL_ROUTE ? localRuntime.configured()
     : route === NECTOVIA_ROUTE || store.settings.services?.[route] === true;
   /**
    * The account a send on this route runs under, as Settings or the account session records it.
@@ -3934,7 +3977,7 @@ export async function createApp(options: AppOptions) {
    * unless Settings recorded another.
    */
   const routeAccount = (route: string, projectId: string): unknown =>
-    route === BONSAI_ROUTE ? BONSAI_ACCOUNT : route === NECTOVIA_ROUTE
+    route === LOCAL_MODEL_ROUTE ? LOCAL_MODEL_ACCOUNT : route === NECTOVIA_ROUTE
       ? nectoviaAccountFor(projectId)
       : route === 'codex'
         ? (store.settings.services?.codexAccountRoute ?? CODEX_ACCOUNT_ROUTE)
@@ -4002,7 +4045,7 @@ export async function createApp(options: AppOptions) {
   ): TierResolution | null => {
     const conversation = routed(projectId, unrouted);
     // A local selection is never handed to the cloud tier map, even if its saved profile is missing.
-    if (conversation?.engine === BONSAI_ROUTE) return null;
+    if (conversation?.engine === LOCAL_MODEL_ROUTE) return null;
     // A tier routes to Nectovia's policy or to a model-API route; both are the Agent. Where no
     // subscription pays for it, no tier applies and the thread keeps its own engine.
     if (conversation?.engine !== NECTOVIA_ROUTE && agentGate && !agentGate.paidFor(projectId)) return null;
@@ -4062,7 +4105,7 @@ export async function createApp(options: AppOptions) {
     conversation: Conversation | null | undefined,
     options: RunHints = {},
   ): (RunChoice & { reason: string }) | null => {
-    if (engine === BONSAI_ROUTE) return null;
+    if (engine === LOCAL_MODEL_ROUTE) return null;
     // On Nectovia the published policy's model for the tier is the only choice there is.
     if (engine === NECTOVIA_ROUTE) {
       const tier = tierFor(projectId, conversation, options);
@@ -4345,9 +4388,7 @@ export async function createApp(options: AppOptions) {
             escalation: null,
           } satisfies WorkStyleResolution,
         };
-      const pin = thread.requested?.model
-        ? { model: thread.requested.model, effort: thread.requested.effort ?? null }
-        : null;
+      const pin = pinOf(engine, thread.requested);
       const savedModel =
         engine === 'codex'
           ? codexModelSetting()
@@ -4398,9 +4439,7 @@ export async function createApp(options: AppOptions) {
             mode: thread.mode,
             route: engine,
             availableModels: routeModels(engine),
-            pin: thread.requested?.model
-              ? { model: thread.requested.model, effort: thread.requested.effort ?? null }
-              : null,
+            pin: pinOf(engine, thread.requested),
             savedModel: savedModel ?? null,
             routeDefaultAllowed: engine === 'codex',
             stableEffort: isModelApiRoute(engine),
@@ -5118,8 +5157,8 @@ export async function createApp(options: AppOptions) {
             throw new ApiError(400, 'Choose each source file once.');
           paths.add(name.toLowerCase());
           if (imageMediaType(name)) {
-            if (conversationRoute !== BONSAI_ROUTE || !bonsaiProfile(selection.model)?.inputModalities.includes('image'))
-              throw new ApiError(415, 'This model takes text only. Choose Bonsai Full to send images.');
+            if (conversationRoute !== LOCAL_MODEL_ROUTE || !localRuntime.profile(selection.model)?.inputModalities.includes('image'))
+              throw new ApiError(415, 'This model takes text only. Choose a model that takes images to send them.');
             if (documents.filter(document => document.image).length >= MODEL_IMAGE_COUNT)
               throw new ApiError(413, `Choose at most ${MODEL_IMAGE_COUNT} images for one message.`);
             const image = await store.readModelImage(projectId, name);

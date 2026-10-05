@@ -12,6 +12,7 @@ import type {
 import type { EngineConnection } from '../../shared/engines';
 import { isExternalEngine } from '../../shared/engines';
 import { NECTOVIA_ROUTE } from '../../shared/model-api';
+import { localSlug } from '../../shared/local-model';
 import { effortFor } from '../../shared/effort';
 import type { WorkStyle } from '../../shared/work-style';
 import { api, engineConnections } from '../api';
@@ -386,7 +387,9 @@ export function useLocalProfile(
       alive = false;
     };
   }, [onLocal, route]);
-  return onLocal && slug ? (models?.find((model) => model.slug === slug) ?? null) : null;
+  // A profile saved under its earlier name reads as the profile it was.
+  const wanted = localSlug(slug);
+  return onLocal && wanted ? (models?.find((model) => model.slug === wanted) ?? null) : null;
 }
 
 /** The Start inside an open menu: the one way the row wakes the local model. */
@@ -661,7 +664,7 @@ export function AskRow({
   const entries = engineEntries({ integrations, settings, connections, free, route, local });
   const waiting = locked ? 'Waiting for the current run to finish' : undefined;
   const engineText = engineLabel(route, { integrations, local, free });
-  const savedLocal = local ? settings.services?.[`${local.route}Model`] : undefined;
+  const savedLocal = local ? localSlug(settings.services?.[`${local.route}Model`]) : undefined;
   const localPick = local ? localChoice(local, modelsFor(local.route), savedLocal) : null;
 
   /** The person's Start: the one call that wakes the local model. Choosing it never does. */
@@ -758,7 +761,7 @@ export function AskRow({
   let localLine: ReactNode = null;
   if (local && localRoute) {
     const models = modelsFor(local.route);
-    const slug = thread.requested?.model ?? null;
+    const slug = localSlug(thread.requested?.model);
     const current = currentModel(models, slug, null);
     const named = names && current?.model ? current.model.name : null;
     const modelText = names && current ? (current.model?.name ?? current.slug) : LOCAL_MODEL;

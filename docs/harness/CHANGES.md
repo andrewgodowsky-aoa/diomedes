@@ -13,6 +13,35 @@ observed by a route check, or not known, and whether a route check confirmed cac
 context record says which setting it was sent under and what it marked. No live provider call was
 made to build this; see [the record](../implementation/2026-10-05-route-capabilities-cache.md).
 
+## The local model comes from its own folder, 2026-10-05
+
+The local model is no longer one fixed model with two fixed profiles (DIO-201). It is the model in
+the folder Settings names under Local model folder, else the folder in `NECTOVIA_LOCAL_MODEL_HOME`,
+else the older `NECTOVIA_BONSAI_HOME`. With none set the option stays hidden; the earlier default
+folder is gone. The folder's `nectovia-connection.json` gives the model id, its loopback server, its
+profiles and its own start and stop scripts, each checked and refused in a sentence that names the
+field (`shared/local-model.ts`). The status is read from the running server: its health check, its
+model list and llama.cpp's `/props`, whose context picks the running profile. Profiles are listed as
+`local:<name>`; the earlier `bonsai-gaming` and `bonsai-full` still read as Gaming and Full where the
+folder has them. The host script runs the folder's own scripts, only on the person's Start, and keeps
+the lease and the one queue. Saved ids keep their values, and the price stays zero. See
+[the record](../implementation/2026-10-05-general-local-route.md).
+
+## The local model can work on a team, 2026-10-05
+
+A Diomedes work loop's worker or advisor can now run on the local model (DIO-216, slice A). The
+loop start asks the same route-on question every send asks: a provider route is on when its
+Settings switch is on, and the local model is on where it is set up. A local role names its profile
+and the local account route, for example `{ "route": "bonsai", "model": "bonsai-gaming",
+"accountRoute": "bonsai:local" }`. At the start the host reads which profile the local model is
+running, and never starts it. A profile that isn't the running one is refused with 409 and the
+runtime's own sentence, such as "The local model isn't running. Start it first." A team's roles are
+now admitted before their lead, so a role that refuses leaves nothing admitted for the lead. Local
+calls hold no spend. Every provider route still refuses when its Settings switch is off.
+`tests/three-model-team.test.ts` runs a Sol lead on Azure, a local Gaming worker and a Kimi K3
+advisor on AWS on fixture transports. See
+[the record](../implementation/2026-10-05-three-model-team.md).
+
 ## Kimi K3 sends after a route check, 2026-10-05
 
 The direct AWS route sends Kimi K3 over Chat Completions, and only under a current route check

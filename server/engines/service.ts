@@ -4,9 +4,10 @@ import { promisify } from 'node:util';
 import { createHash, randomUUID } from 'node:crypto';
 import type { OwnedTeamObservation } from '../observability/eligibility.js';
 import path from 'node:path';
-import { BONSAI_ACCOUNT, BONSAI_ROUTE, bonsaiProfile, type ModelImage } from '../../shared/bonsai.js';
-import type { BonsaiRuntime } from '../bonsai/runtime.js';
-import { BONSAI_CONNECTION, BONSAI_VERSION, bonsaiLimits, bonsaiRateCard, createBonsaiAdapter, respondBonsai } from './bonsai.js';
+import { LOCAL_MODEL_ACCOUNT, LOCAL_MODEL_ROUTE } from '../../shared/local-model.js';
+import type { ModelImage } from '../../shared/model-images.js';
+import type { LocalModelRuntime } from '../bonsai/runtime.js';
+import { LOCAL_MODEL_CONNECTION, LOCAL_MODEL_SDK, localLimits, localRateCard, createLocalAdapter, respondLocal } from './bonsai.js';
 import type { ExternalEngine, IntegrationStatus } from '../../shared/types.js';
 import {
   ENGINE_NAMES,
@@ -2329,7 +2330,7 @@ export class EngineService {
       throw new EngineError('ROUTE_REFUSED', routeUnavailable(long), true);
     const blocked = await handle.credential.check();
     if (blocked) throw new EngineError('ROUTE_REFUSED', routeUnavailable(long), true);
-    if (route !== BONSAI_ROUTE && (!api.exposure.allowance(handle.connectionId) || api.exposure.summary(handle.connectionId).availableMicroUsd <= 0))
+    if (route !== LOCAL_MODEL_ROUTE && (!api.exposure.allowance(handle.connectionId) || api.exposure.summary(handle.connectionId).availableMicroUsd <= 0))
       throw new EngineError(
         'SPEND_LIMIT',
         `The approved ${short} spend limit has no room left. Nothing was sent. The owner can review usage and approve more in AI setup.`,
@@ -2354,7 +2355,7 @@ export class EngineService {
       }
     return {
       route,
-      ...(route === BONSAI_ROUTE ? { projectId: input.projectId } : {}),
+      ...(route === LOCAL_MODEL_ROUTE ? { projectId: input.projectId } : {}),
       connectionId: handle.connectionId,
       revision: handle.revision,
       model: input.model,
@@ -2545,7 +2546,7 @@ export class EngineService {
             secret,
             exposure: handle.exposure(await this.jobLedger(api, input), runId),
             instructions,
-            effort: route === BONSAI_ROUTE ? input.effort : selectedEffortOf(input.effort),
+            effort: route === LOCAL_MODEL_ROUTE ? input.effort : selectedEffortOf(input.effort),
             images: input.documents.flatMap(document => document.image ? [document.image] : []),
             transport: api.transport,
             sinks,
@@ -2629,8 +2630,8 @@ export class EngineService {
               instructions: input.instructions,
               messages: [{ role: 'user', content: contextMessage(input) }],
               tools: [],
-              effort: route === BONSAI_ROUTE ? input.effort : selectedEffortOf(input.effort),
-              limits: route === BONSAI_ROUTE ? bonsaiLimits(admission.model, WORK_LIMITS) : WORK_LIMITS,
+              effort: route === LOCAL_MODEL_ROUTE ? input.effort : selectedEffortOf(input.effort),
+              limits: route === LOCAL_MODEL_ROUTE ? localLimits(api.bonsai?.runtime.profile(admission.model), WORK_LIMITS) : WORK_LIMITS,
               signal: attemptSignal,
               transport: api.transport,
               sinks: { onDelta: sinks.onDelta, onToolActivity: sinks.onToolActivity },
@@ -2697,7 +2698,7 @@ export class EngineService {
         instructions: input.instructions,
         messages: [{ role: 'user', content: contextMessage(input) }],
         tools: [],
-        limits: route === BONSAI_ROUTE ? bonsaiLimits(input.model, WORK_LIMITS) : WORK_LIMITS,
+        limits: route === LOCAL_MODEL_ROUTE ? localLimits(this.modelApi?.bonsai?.runtime.profile(input.model), WORK_LIMITS) : WORK_LIMITS,
       });
     } catch {
       // Too large for the route: the call itself refuses it, with the route's own words, before sending.
@@ -2750,7 +2751,7 @@ export class EngineService {
             secret,
             exposure: await this.jobLedger(api, input),
             instructions,
-            effort: route === BONSAI_ROUTE ? input.effort : selectedEffortOf(input.effort),
+            effort: route === LOCAL_MODEL_ROUTE ? input.effort : selectedEffortOf(input.effort),
             images: input.documents.flatMap(document => document.image ? [document.image] : []),
             transport: api.transport,
             ...(await cacheCall(handle, admission.model, input.projectId ?? null, instructions)),
@@ -2816,7 +2817,7 @@ export class EngineService {
       throw new HarnessError('collaboration_refused', 'This role was supplied a different root spend ledger.');
     const rootJobId = ledger.jobScope?.id ?? rootRunId;
     const effort = request.effort === undefined ? 'medium' : request.effort === null ? undefined : request.effort;
-    if (effort !== undefined && !(route === BONSAI_ROUTE ? ['low', 'medium', 'xhigh'] : ['low', 'medium', 'high']).includes(effort))
+    if (effort !== undefined && !(route === LOCAL_MODEL_ROUTE ? ['low', 'medium', 'xhigh'] : ['low', 'medium', 'high']).includes(effort))
       throw new HarnessError('collaboration_refused', 'The pinned model effort is unsupported on this API route.');
     const callOptions = { instructions: request.instructions, effort,
       transport: api.transport, ...(request.callLimits ? { limits: request.callLimits } : {}) };
@@ -2909,7 +2910,8 @@ export interface JobCapsPort {
  * unavailable in this process, never served by another route.
  */
 export interface ModelApiServices {
-  bonsai?: { runtime: BonsaiRuntime; configured: boolean; transcripts: ModelTranscripts;
+  /** The local model route: its runtime reads the folder's descriptor, so it is set up when that is. */
+  bonsai?: { runtime: LocalModelRuntime; transcripts: ModelTranscripts;
     loadImage(image: ModelImage, projectId: string): Promise<string> };
   connections: AwsConnections;
   secrets: ConnectionSecrets;
@@ -3032,7 +3034,7 @@ const ROUTE_WORDS: Record<ModelApiRoute, { short: string; long: string }> = {
   openrouter: { short: 'OpenRouter', long: 'OpenRouter' },
   'google-vertex': { short: 'Google Vertex AI', long: 'Google Vertex AI' },
   nectovia: { short: 'Nectovia', long: 'Nectovia' },
-  bonsai: { short: 'Bonsai', long: 'Bonsai (local)' },
+  bonsai: { short: 'Local model', long: 'Local model' },
 };
 
 /**
@@ -3129,20 +3131,23 @@ async function modelApiRoute(api: ModelApiServices, route: ModelApiRoute, work: 
   const unavailable = () =>
     new EngineError('RUNTIME_UNAVAILABLE', 'This model-API route is not available in this process.', true);
   switch (route) {
-    case BONSAI_ROUTE: {
+    case LOCAL_MODEL_ROUTE: {
       const services = api.bonsai;
-      if (!services?.configured) return { connected: false, route, names };
+      // Set up means a folder whose descriptor passed every check; its profiles are what it serves.
+      const descriptor = services?.runtime.descriptor();
+      if (!services || !descriptor) return { connected: false, route, names };
       return {
-        connected: true, route, prefix: 'bonsai', names, sdk: BONSAI_VERSION,
-        connectionId: BONSAI_CONNECTION, revision: 1, accountRoute: BONSAI_ACCOUNT,
-        expiresAt: null, serving: 'bonsai-2-27b', serves: model => !!bonsaiProfile(model), card: bonsaiRateCard,
+        connected: true, route, prefix: 'bonsai', names, sdk: LOCAL_MODEL_SDK,
+        connectionId: LOCAL_MODEL_CONNECTION, revision: 1, accountRoute: LOCAL_MODEL_ACCOUNT,
+        expiresAt: null, serving: descriptor.model, serves: model => !!services.runtime.profile(model),
+        card: model => localRateCard(services.runtime.profile(model)),
         credential: { check: async () => null, open: async () => '' }, exposure: localLedger,
-        adapter: options => createBonsaiAdapter({ ...options, runtime: services.runtime, transcripts: services.transcripts,
+        adapter: options => createLocalAdapter({ ...options, runtime: services.runtime, transcripts: services.transcripts,
           loadImage: image => {
             if (!work.projectId) throw new EngineError('ROUTE_REFUSED', 'An image needs its admitted project.');
             return services.loadImage(image, work.projectId);
           } }),
-        respond: ({ sinks, ...options }) => respondBonsai({ ...options, runtime: services.runtime, ...sinks }),
+        respond: ({ sinks, ...options }) => respondLocal({ ...options, runtime: services.runtime, ...sinks }),
       };
     }
     case AWS_BEDROCK_ROUTE: {

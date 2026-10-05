@@ -1,18 +1,20 @@
 #Requires -Version 7.4
+# Holds the local model for one Nectovia request, and starts or switches it only on the person's Start.
+# What the model is comes from its folder's nectovia-connection.json, which the app has already checked
+# and passes in NECTOVIA_LOCAL_MODEL: its server address, model id, profiles and its own start and stop
+# scripts, each a .ps1 file inside that folder. Model output never chooses a command here.
 [CmdletBinding()]
 param(
-    [ValidateSet('Status', 'Acquire')][string]$Action = 'Status',
-    [ValidateSet('Gaming', 'Full')][string]$Mode = 'Gaming',
-    [Parameter(Mandatory)][string]$Root,
+    # The descriptor's name for the profile to hold, or with a Start, to start.
+    [Parameter(Mandatory)][ValidatePattern('^[A-Za-z][A-Za-z0-9_-]{0,31}$')][string]$Mode,
     [Parameter(Mandatory)][string]$OwnershipFile,
+    # The ownership record an earlier build wrote. A worker that build started is still honored.
+    [string]$EarlierOwnershipFile,
     # Inference passes this: only the person's explicit Start may start or switch the worker.
     [switch]$NoStart
 )
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
-$baseUrl = 'http://127.0.0.1:18082'
-$binary = Join-Path $Root 'runtime\prism-b10743-adfffbe\llama.exe'
-$statePath = Join-Path $Root 'server-state.json'
 $lease = $null
 
 function Emit($value) { [Console]::Out.WriteLine(($value | ConvertTo-Json -Compress -Depth 6)); [Console]::Out.Flush() }
@@ -20,117 +22,137 @@ function Fail([string]$state, [string]$detail) {
     Emit @{ state = $state; installed = $true; mode = $null; owned = $false; detail = $detail }
     exit 1
 }
-function Read-State {
-    if (-not (Test-Path -LiteralPath $statePath)) { return $null }
-    return Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
+if (-not $env:NECTOVIA_LOCAL_MODEL) { Fail 'error' 'The local model helper was started without its descriptor.' }
+$model = $env:NECTOVIA_LOCAL_MODEL | ConvertFrom-Json
+$wanted = @($model.profiles | Where-Object { $_.mode -ceq $Mode })
+if ($wanted.Count -ne 1) { Fail 'error' "The local model has no $Mode profile." }
+$port = ([Uri]$model.baseUrl).Port
+
+# The server is whatever process listens on the descriptor's port.
+function Server-Process {
+    $listeners = @(Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue)
+    if (-not $listeners.Count) { return $null }
+    $owners = @($listeners | Select-Object -ExpandProperty OwningProcess -Unique)
+    if ($owners.Count -ne 1) { throw "More than one process listens on port $port." }
+    return Get-Process -Id $owners[0] -ErrorAction SilentlyContinue
 }
-function Live-Process($state) {
-    if (-not $state) { return $null }
-    $server = Get-Process -Id $state.pid -ErrorAction SilentlyContinue
-    if (-not $server) { return $null }
-    if ($server.Path -ne $binary -or $server.StartTime.ToUniversalTime().Ticks -ne $state.startedUtcTicks) {
-        throw 'The saved Bonsai process identity changed. No process was stopped.'
+function Identity($process) {
+    try { return @{ pid = $process.Id; startedUtcTicks = $process.StartTime.ToUniversalTime().Ticks; executable = $process.Path } }
+    catch { return $null }
+}
+function Is-Owned($process) {
+    if (-not $process) { return $false }
+    $identity = Identity $process
+    if (-not $identity -or -not $identity.executable) { return $false }
+    foreach ($file in @($OwnershipFile, $EarlierOwnershipFile)) {
+        if (-not $file -or -not (Test-Path -LiteralPath $file)) { continue }
+        $owner = Get-Content -LiteralPath $file -Raw | ConvertFrom-Json
+        if ($owner.pid -eq $identity.pid -and $owner.startedUtcTicks -eq $identity.startedUtcTicks -and $owner.executable -eq $identity.executable) {
+            return $true
+        }
     }
-    return $server
+    return $false
 }
-function Is-Owned($state) {
-    if (-not $state -or -not (Test-Path -LiteralPath $OwnershipFile)) { return $false }
-    $owner = Get-Content -LiteralPath $OwnershipFile -Raw | ConvertFrom-Json
-    return $owner.pid -eq $state.pid -and $owner.startedUtcTicks -eq $state.startedUtcTicks -and $owner.executable -eq $binary
-}
-function Check-Ready($state) {
-    $listener = @(Get-NetTCPConnection -State Listen -LocalPort 18082 -ErrorAction SilentlyContinue)
-    if (-not $listener.Count) { return $false }
-    if (-not $state -or @($listener | Where-Object { $_.OwningProcess -ne $state.pid }).Count) {
-        throw 'Port 18082 belongs to a process this Bonsai installation does not own.'
-    }
-    try { $health = Invoke-RestMethod "$baseUrl/health" -TimeoutSec 2 }
+# The same reads as the app's status: health, then the model list, then llama.cpp's /props. Null while
+# the server is loading. The running profile is the one whose context is the context the server runs.
+function Read-Live {
+    try { $health = Invoke-RestMethod $model.healthUrl -TimeoutSec 2 -MaximumRedirection 0 }
     catch [Microsoft.PowerShell.Commands.HttpResponseException] {
-        if ([int]$_.Exception.Response.StatusCode -eq 503) { return $false }
+        if ([int]$_.Exception.Response.StatusCode -eq 503) { return $null }
         throw
     }
-    if ($health.status -ne 'ok') { return $false }
-    $models = Invoke-RestMethod "$baseUrl/v1/models" -TimeoutSec 3
-    $props = Invoke-RestMethod "$baseUrl/props" -TimeoutSec 3
-    $context = if ($state.mode -eq 'Gaming') { 16384 } else { 131072 }
-    if ('bonsai-2-27b' -notin $models.data.id -or $props.default_generation_settings.n_ctx -ne $context) {
-        throw 'The live Bonsai model or context does not match its selected profile.'
+    catch [System.Net.Http.HttpRequestException] { return $null }
+    if ($health -and $health.PSObject.Properties['status'] -and "$($health.status)" -ne 'ok') { return $null }
+    $listed = Invoke-RestMethod "$($model.baseUrl)/models" -TimeoutSec 3 -MaximumRedirection 0
+    if ($model.model -cnotin @($listed.data | ForEach-Object { $_.id })) { throw "The local server does not list $($model.model)." }
+    $context = $null
+    $vision = $null
+    try {
+        $props = Invoke-RestMethod "$($model.serverRoot)/props" -TimeoutSec 3 -MaximumRedirection 0
+        $context = $props.default_generation_settings.n_ctx
+        if ($props.PSObject.Properties['modalities'] -and $null -ne $props.modalities.vision) { $vision = [bool]$props.modalities.vision }
+    } catch { $context = $null }
+    $running = $null
+    if ($context) {
+        $running = @($model.profiles | Where-Object { $_.contextTokens -eq $context -and -not ($_.images -and $vision -eq $false) }) |
+            Select-Object -First 1
     }
-    $command = (Get-CimInstance Win32_Process -Filter "ProcessId=$($state.pid)").CommandLine
-    $hasProjector = $command -match '--mmproj\s'
-    if (($state.mode -eq 'Full') -ne $hasProjector) { throw 'Bonsai image support does not match its selected profile.' }
-    return $true
+    return @{ context = $context; mode = $(if ($running) { $running.mode } else { $null }) }
 }
-try {
-    if (-not (Test-Path -LiteralPath (Join-Path $Root 'installation.json'))) {
-        Emit @{ state = 'missing'; installed = $false; mode = $null; owned = $false; detail = 'Bonsai is not installed on this computer.' }
-        exit 0
-    }
-    # The existing connection file is a specification. It never supplies executable commands to this host.
-    $spec = Get-Content -LiteralPath (Join-Path $Root 'nectovia-connection.json') -Raw | ConvertFrom-Json
-    if ($spec.model -ne 'bonsai-2-27b' -or $spec.openaiCompatibleBaseUrl -ne "$baseUrl/v1" -or
-        $spec.profiles.Gaming.contextTokens -ne 16384 -or $spec.profiles.Full.contextTokens -ne 131072) {
-        throw 'The Bonsai connection specification changed. Check this installation before using it.'
-    }
-    if (-not $env:ProgramFiles) { $env:ProgramFiles = [Environment]::GetFolderPath('ProgramFiles') }
-    if ($Action -eq 'Acquire') {
-        # Exclusive sharing conflicts with the MCP bridge's open delegate.lock as well as other Nectovia hosts.
-        # Keep it open for the whole inference call, not only while the model starts.
-        try { $lease = [IO.File]::Open((Join-Path $Root 'delegate.lock'), [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None) }
-        catch [IO.IOException] { Fail 'busy' 'Bonsai is in use by another client. Wait for it to finish.' }
-    }
-    $state = Read-State
-    $server = Live-Process $state
-    $owned = Is-Owned $state
-    if (-not $server) {
-        $listener = @(Get-NetTCPConnection -State Listen -LocalPort 18082 -ErrorAction SilentlyContinue)
-        if ($listener.Count) { throw 'Port 18082 is occupied. No process was started or stopped.' }
-        if ($Action -eq 'Status') {
-            Emit @{ state = 'unloaded'; installed = $true; mode = $null; owned = $false; detail = 'Choose a profile to load Bonsai.' }
-            exit 0
-        }
-        if ($NoStart) { Fail 'unloaded' "The local model isn't running. Start it first." }
-    } elseif ($Action -eq 'Status') {
-        $ready = Check-Ready $state
-        Emit @{ state = $(if ($ready) { 'ready' } else { 'starting' }); installed = $true; mode = $state.mode; owned = $owned;
-            detail = $(if ($ready) { "Bonsai $($state.mode) is ready." } else { "Bonsai $($state.mode) is starting." }) }
-        exit 0
-    } elseif ($state.mode -ne $Mode) {
-        if ($NoStart) { Fail 'unloaded' "The local model is running its $($state.mode) profile, not $Mode. Start $Mode first." }
-        if (-not $owned) { Fail 'busy' "Bonsai $($state.mode) was started outside Nectovia. Stop it in its own app before choosing $Mode." }
-        if (-not (Check-Ready $state)) { Fail 'busy' 'Bonsai is still starting. Wait before changing profiles.' }
-        $slots = @(Invoke-RestMethod "$baseUrl/slots" -TimeoutSec 3)
-        if ($slots.Count -ne 1 -or @($slots | Where-Object { $_.is_processing -ne $false }).Count) {
-            Fail 'busy' 'Bonsai has an active request. Wait before changing profiles.'
-        }
-        & (Join-Path $Root 'Stop-Bonsai.ps1') | Out-Null
-        $server = $null
-    }
-    if (-not $server) {
-        # This launcher owns the GPU guard and conservative context/cache/projector settings.
-        # It also restores ProgramFiles for NVIDIA NVML in minimal environments.
-        & (Join-Path $Root 'Start-Bonsai.ps1') -Mode $Mode | Out-Null
-        $state = Read-State
-        $server = Live-Process $state
-        if (-not $server -or $state.mode -ne $Mode) { throw 'Bonsai did not start in the requested profile.' }
-        # A separate launcher can race our inspection without taking delegate.lock.
-        # Adopt ownership only when this helper actually created the reported process.
-        $created = Get-CimInstance Win32_Process -Filter "ProcessId=$($state.pid)"
-        $owned = $created.ParentProcessId -eq $PID
-        if ($owned) {
-            New-Item -ItemType Directory -Path (Split-Path $OwnershipFile) -Force | Out-Null
-            @{ pid = $state.pid; startedUtcTicks = $state.startedUtcTicks; executable = $binary } |
-                ConvertTo-Json | Set-Content -LiteralPath $OwnershipFile -Encoding utf8
-        }
-    }
+function Wait-Live($server) {
     $deadline = (Get-Date).AddSeconds(190)
-    while (-not (Check-Ready $state)) {
-        if (-not (Live-Process $state)) { throw 'Bonsai exited while starting. Check its launcher logs.' }
-        if ((Get-Date) -gt $deadline) { throw 'Bonsai is still loading. Check its launcher logs before retrying.' }
+    while ($true) {
+        $now = Server-Process
+        if (-not $now -or $now.Id -ne $server.Id) { throw 'The local model stopped while starting. Check its logs.' }
+        $live = Read-Live
+        if ($live) { return $live }
+        if ((Get-Date) -gt $deadline) { throw 'The local model is still loading. Check its logs before retrying.' }
         Start-Sleep -Milliseconds 500
     }
-    Emit @{ state = 'ready'; installed = $true; mode = $state.mode; owned = $owned; detail = "Bonsai $Mode is ready." }
-    # EOF when Nectovia exits also releases this lease. Never kill the model on disconnect.
+}
+function Context-Words($context) { $context.ToString('N0', [Globalization.CultureInfo]::InvariantCulture) }
+
+try {
+    if (-not $env:ProgramFiles) { $env:ProgramFiles = [Environment]::GetFolderPath('ProgramFiles') }
+    # Exclusive sharing conflicts with any other client holding the folder's delegate.lock, such as an
+    # MCP bridge, as well as other Nectovia hosts. Keep it open for the whole inference call, not only
+    # while the model starts.
+    try { $lease = [IO.File]::Open((Join-Path $model.folder 'delegate.lock'), [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None) }
+    catch [IO.IOException] { Fail 'busy' 'The local model is in use by another client. Wait for it to finish.' }
+    $server = Server-Process
+    $owned = Is-Owned $server
+    $live = $null
+    if (-not $server) {
+        if ($NoStart) { Fail 'unloaded' "The local model isn't running. Start it first." }
+    } else {
+        $live = Wait-Live $server
+        if ($live.mode -cne $Mode) {
+            if ($NoStart) {
+                if ($live.mode) { Fail 'unloaded' "The local model is running its $($live.mode) profile, not $Mode. Start $Mode first." }
+                if ($live.context) {
+                    Fail 'unloaded' "The local model is running with $(Context-Words $live.context) tokens of context, which matches none of its profiles. Start $Mode first."
+                }
+                Fail 'unloaded' "The local model did not report its context size, so its profile is unknown. Start $Mode first."
+            }
+            if (-not $owned) { Fail 'busy' "The local model was started outside Nectovia. Stop it in its own app before choosing $Mode." }
+            $slots = @(Invoke-RestMethod "$($model.serverRoot)/slots" -TimeoutSec 3 -MaximumRedirection 0)
+            if (-not $slots.Count -or @($slots | Where-Object { $_.is_processing -ne $false }).Count) {
+                Fail 'busy' 'The local model has an active request. Wait before changing profiles.'
+            }
+            & $model.stopScript | Out-Null
+            $deadline = (Get-Date).AddSeconds(20)
+            while ((Server-Process)) {
+                if ((Get-Date) -gt $deadline) { throw 'The local model did not stop. Check its logs.' }
+                Start-Sleep -Milliseconds 500
+            }
+            $server = $null
+        }
+    }
+    if (-not $server) {
+        # The model's own start script, with the profile as its mode argument. It owns the GPU checks
+        # and the server's settings for that profile.
+        $arguments = @{ $model.modeParameter = $Mode }
+        & $model.startScript @arguments | Out-Null
+        $deadline = (Get-Date).AddSeconds(190)
+        while (-not ($server = Server-Process)) {
+            if ((Get-Date) -gt $deadline) { throw 'The local model did not start. Check its logs.' }
+            Start-Sleep -Milliseconds 500
+        }
+        # A separate launcher can race this helper without taking delegate.lock. Adopt ownership only
+        # when this helper actually created the process that listens.
+        $created = Get-CimInstance Win32_Process -Filter "ProcessId=$($server.Id)"
+        $owned = $created.ParentProcessId -eq $PID
+        $identity = Identity $server
+        if ($owned -and $identity -and $identity.executable) {
+            New-Item -ItemType Directory -Path (Split-Path $OwnershipFile) -Force | Out-Null
+            $identity | ConvertTo-Json | Set-Content -LiteralPath $OwnershipFile -Encoding utf8
+        }
+        $live = Wait-Live $server
+        if ($live.mode -cne $Mode) { throw "The local model did not start in its $Mode profile." }
+    }
+    Emit @{ state = 'ready'; installed = $true; mode = $Mode; model = $model.model; contextTokens = $live.context; owned = $owned
+        detail = "$($model.model) $Mode is ready." }
+    # EOF when Nectovia exits also releases this lease. Never stop the model on disconnect.
     [Console]::In.ReadLine() | Out-Null
 } catch {
     $message = $_.Exception.Message

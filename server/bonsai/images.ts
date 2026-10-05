@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { imageMediaType, MODEL_IMAGE_LIMIT, type ModelImage } from '../../shared/bonsai.js';
+import { imageMediaType, MODEL_IMAGE_LIMIT, type ModelImage } from '../../shared/model-images.js';
 import { ApiError } from '../paths.js';
 
 /** Validate the file bytes as well as the extension before advertising a model-readable image. */

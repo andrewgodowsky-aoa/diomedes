@@ -16,7 +16,7 @@ import { z } from 'zod';
 import type { Json } from '../../../shared/harness.js';
 import { HarnessError } from '../policy.js';
 import { ToolRegistry } from '../tools.js';
-import type { ModelImage } from '../../../shared/bonsai.js';
+import type { ModelImage } from '../../../shared/model-images.js';
 
 export const SOURCE_TOOLS = ['list_sources', 'read_source'] as const;
 const MAX_SOURCE_TEXT = 131_072;

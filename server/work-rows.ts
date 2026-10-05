@@ -25,7 +25,7 @@
  * Reading rows writes nothing, admits nothing and calls no model (A38): verification is read
  * from History with the pure H17 reader.
  */
-import { BONSAI_ROUTE } from '../shared/bonsai.js';
+import { LOCAL_MODEL_ROUTE } from '../shared/local-model.js';
 import { routeDisplayName, isExternalEngine } from '../shared/engines.js';
 import type { HarnessRun } from '../shared/harness.js';
 import { isModelApiRoute, NECTOVIA_ROUTE } from '../shared/model-api.js';
@@ -60,7 +60,7 @@ export function payerForRoute(route: string | null | undefined): WorkerRowPayer 
   if (!route) return 'unknown';
   if (route === NECTOVIA_ROUTE) return 'nectovia-credits';
   // The local model is a model-API route that runs on this computer and bills nobody.
-  if (route === BONSAI_ROUTE) return 'local';
+  if (route === LOCAL_MODEL_ROUTE) return 'local';
   if (isModelApiRoute(route)) return 'your-key';
   if (route === 'codex' || isExternalEngine(route)) return 'your-subscription';
   if (LOCAL_ROUTES.includes(route)) return 'local';

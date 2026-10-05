@@ -47,13 +47,14 @@ import { ToolRegistry } from './tools.js';
 import { PLAYBOOK_TOOL, registerPlaybookTool } from './capabilities/pack-playbooks.js';
 import { TEAM_TOOL_NAMES } from '../../shared/team-routes.js';
 import { NECTOVIA_ROUTE } from '../../shared/model-api.js';
-import { BONSAI_ROUTE, bonsaiProfile } from '../../shared/bonsai.js';
+import { LOCAL_MODEL_ROUTE, type LocalModelProfile } from '../../shared/local-model.js';
 import { contextMessage } from '../engines/contract.js';
 import { answeredTurns, carriedRun } from './conversation-history.js';
 import { artifactSteps, unrecordedArtifacts } from './artifact-steps.js';
 import type { CompactionRecord, ContextAccount, HistorySelection } from '../../shared/context-accounting.js';
 import {
   accountContext,
+  localModelWindow,
   reconcileContext,
   selectHistory,
   stablePrefix,
@@ -412,6 +413,12 @@ export class ModelSessionRuns {
     shareHistory: (projectId: string, route: string) => boolean = () => false,
   ) {
     this.historyPolicy = shareHistory;
+  }
+
+  /** The app's local model profiles: a local turn's deadline and window follow its profile. */
+  private localProfile: (model: unknown) => LocalModelProfile | undefined = () => undefined;
+  setLocalProfiles(lookup: (model: unknown) => LocalModelProfile | undefined) {
+    this.localProfile = lookup;
   }
 
   setSharingPolicy(
@@ -783,7 +790,8 @@ export class ModelSessionRuns {
   private async drive(request: ModelSessionTurn): Promise<ModelSessionTurnResult> {
     const { input, runId } = request;
     const route = request.route ?? this.route;
-    const turnWallMs = route === BONSAI_ROUTE ? bonsaiProfile(input.model)?.turnTimeoutMs ?? TURN_WALL_MS : TURN_WALL_MS;
+    const local = route === LOCAL_MODEL_ROUTE ? this.localProfile(input.model) : undefined;
+    const turnWallMs = local?.turnTimeoutMs ?? TURN_WALL_MS;
     const principal = localHarnessPrincipal(input.projectId);
     let run: HarnessRun | undefined;
     try {
@@ -987,6 +995,7 @@ export class ModelSessionRuns {
           account = accountContext({
             route,
             model: input.model,
+            window: localModelWindow(local),
             system: system.instructions,
             guidance: [ARTIFACT_FORMAT, VISUAL_INSTRUCTIONS, DECISION_FORMAT],
             tools: registry.describe(),

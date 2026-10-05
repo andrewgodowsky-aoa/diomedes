@@ -4,12 +4,15 @@
  * Starting is admission and nothing more. It checks, in order: the task, the
  * route (the scripted fixture, a Diomedes-owned model-API route, or Nectovia
  * managed single-agent only; an external engine drives its own loop and is not
- * offered here), that the route is on (the Settings switch, except Nectovia
- * which bypasses it and resolves its managed model/account through the
- * `managed` dependency below), the person's consent to send, the project's
- * sharing grant for every selected file, and the route's own admission
- * (connection, model, credential, spend cap; for Nectovia the Agent gate's
- * managed admission under the loop's deterministic run id). A delegate route,
+ * offered here), that the route is on (the app's own route-on: the Settings
+ * switch, or for the local model that it is set up here and running the asked
+ * profile now, read without starting it; Nectovia bypasses it and resolves its
+ * managed model/account through the `managed` dependency below), the person's
+ * consent to send, the project's sharing grant for every selected file, and the
+ * route's own admission (connection, model, credential, spend cap; for Nectovia
+ * the Agent gate's managed admission under the loop's deterministic run id).
+ * A team's roles are admitted before their lead, so a role that refuses leaves
+ * nothing admitted for the lead. A delegate route,
  * when the person names one, is admitted the same way now and again when the
  * loop hands it work; Nectovia never runs with a delegate or a team the person
  * names. Its one exception (S3) is a worker on the person's own coding tool,
@@ -34,6 +37,8 @@ import type { AgentCollaborationHost } from './harness/agent-collaboration.js';
 import type { SpendExposure } from './spend-exposure.js';
 import { REPORT_PATH } from './harness/approval.js';
 import { isModelApiRoute, MODEL_API_NAMES, MODEL_API_PROVIDERS, NECTOVIA_ROUTE } from '../shared/model-api.js';
+import { LOCAL_MODEL_ROUTE } from '../shared/local-model.js';
+import { LOCAL_MODEL_NOT_INSTALLED } from './bonsai/runtime.js';
 import {
   LOOP_LIMITS,
   NATIVE_LOOP_CAPABILITY,
@@ -231,6 +236,20 @@ export interface NectoviaManagedLoopDeps {
   ) => Promise<{ model: string; accountRoute: string }>;
 }
 
+/**
+ * Whether a route takes work, as the parent (app.ts) decides it for every other send. Absent:
+ * the Settings switch decides every route, as it always has.
+ */
+export interface LoopRouteGates {
+  /** The app's own `routeOn`: the Settings switch, or for the local model that it is set up here. */
+  on(route: string): boolean;
+  /**
+   * Null when the local model is running this profile now; otherwise the runtime's own sentence.
+   * It reads the status and never starts or switches the model.
+   */
+  localRefusal(model: string | null): Promise<string | null>;
+}
+
 /** Nectovia takes no delegate and no team the person names; S3's host-resolved worker is the only team beside it. */
 export const NECTOVIA_LOOP_TEAM_REFUSED =
   'A Nectovia loop can’t take a delegate or a team you name. Nothing was sent.';
@@ -268,6 +287,8 @@ export function mountNativeLoopRoutes(
   collaboration: NativeCollaborationDeps | null = null,
   /** S3: the person's subscription worker preference. Absent: a Nectovia lead never takes a worker. */
   subscription: SubscriptionWorkers | null = null,
+  /** The app's route-on and the local model's status read. Absent: the Settings switch alone. */
+  gates: LoopRouteGates | null = null,
 ) {
   if (collaboration) harness.loop.attachCollaboration(collaboration.host);
   const collaborationHost = () => collaboration?.host ?? harness.loop.collaboration?.() ?? null;
@@ -330,7 +351,13 @@ export function mountNativeLoopRoutes(
         throw new ApiError(409, error instanceof Error ? error.message : 'This route refused the loop.', { code: 'route_refused' });
       }
     }
-    if (services()[route] !== true) throw new ApiError(409, 'Turn the selected route on in Settings before using it.');
+    if (route === LOCAL_MODEL_ROUTE && gates) {
+      // The local model has no Settings switch: it is on where it is set up. A send never starts it,
+      // so a profile that isn't running refuses here, before consent, sharing or any admission.
+      const refusal = gates.on(route) ? await gates.localRefusal(requested.model ?? null) : LOCAL_MODEL_NOT_INSTALLED;
+      if (refusal) throw new ApiError(409, refusal, { code: 'local_model_not_ready' });
+    } else if (!(gates ? gates.on(route) : services()[route] === true))
+      throw new ApiError(409, 'Turn the selected route on in Settings before using it.');
     if (!consent)
       throw new ApiError(
         409,
@@ -704,6 +731,13 @@ export function mountNativeLoopRoutes(
       subscriptionWorker = resolved.record;
       subscriptionTeam = resolved.team;
     }
+    // A team's roles are admitted before their lead, as S3's worker is above: a role that refuses
+    // (a local model that isn't running, a route switched off) leaves nothing admitted for the lead.
+    let team = extra.team
+      ? await readmitTeam(projectId, extra.team, consent, hostTeam ? subscriptionWorker?.reserve : undefined)
+      : body.team
+        ? await admitTeam(projectId, task.id, body, sources, consent)
+        : subscriptionTeam;
     const admitted = await admitRoute(projectId, body.route, requestedRoot, sources, consent,
       { taskId: task.id, runId, rootJobId, threadId: extra.threadId, effort: selectedLead ? selectedLead.effort : body.effort });
     let delegate: LoopRunInput['delegate'] = null;
@@ -716,11 +750,6 @@ export function mountNativeLoopRoutes(
       const child = await admitRoute(projectId, body.delegate.route, body.delegate, [], consent);
       delegate = { route: body.delegate.route, model: child.model, accountRoute: child.accountRoute };
     }
-    let team = extra.team
-      ? await readmitTeam(projectId, extra.team, consent, hostTeam ? subscriptionWorker?.reserve : undefined)
-      : body.team
-        ? await admitTeam(projectId, task.id, body, sources, consent)
-        : subscriptionTeam;
     let composition: LoopRunInput['collaboration'] = null;
     if (body.persistentTeam || body.review || body.composition || extra.compose === true) {
       if (body.delegate || applyScope) throw new HarnessError('collaboration_refused', 'This bounded collaboration uses selected read-only roles and exact report approval.');
