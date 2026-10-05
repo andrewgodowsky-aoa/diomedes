@@ -74,6 +74,8 @@ export interface WorkOSIdentityConfiguration {
  */
 export interface SigningKeyCache { keys: SigningKey[]; fetchedAt: number }
 export const signingKeyCache = (): SigningKeyCache => ({ keys: [], fetchedAt: -Infinity });
+/** Per-cache ordering shared by verifiers, independent of clock resolution or clock changes. */
+const refreshOrders = new WeakMap<SigningKeyCache, { started: bigint; stored: bigint }>();
 
 const invalid = () => new ApiError(401, 'The access token or provider session is invalid.');
 /** A refused token, with the one check it failed in the Worker's log. Never a claim value. */
@@ -196,6 +198,9 @@ export class WorkOSIdentityVerifier implements IdentityVerifier {
     if (!this.refreshing) {
       this.refreshing = (async () => {
         const started = this.now();
+        const ordering = refreshOrders.get(this.cache) ?? { started: 0n, stored: 0n };
+        refreshOrders.set(this.cache, ordering);
+        const sequence = ++ordering.started;
         const parsed = keysSchema.safeParse(
           await this.getJson(`${API}/sso/jwks/${this.clientId}`, false, 'jwks'),
         );
@@ -204,12 +209,13 @@ export class WorkOSIdentityVerifier implements IdentityVerifier {
           new Set(parsed.data.keys.map((key) => key.kid)).size !== parsed.data.keys.length
         )
           throw unavailableAt('jwks-shape');
-        // A fetch that started before the stored keys were fetched finished late with older keys:
-        // keep the newer ones. Both together, with no await between, so a reader never sees new
-        // keys with an old time. The time kept is when the fetch started.
-        if (started < this.cache.fetchedAt) return;
+        // Only a successfully parsed response advances the stored sequence. An older response
+        // cannot replace newer keys, even when the start times tie or the clock moves backward.
+        // Store keys, their actual start time and sequence together, with no await between.
+        if (sequence < ordering.stored) return;
         this.cache.keys = parsed.data.keys;
         this.cache.fetchedAt = started;
+        ordering.stored = sequence;
       })();
     }
     const pending = this.refreshing;

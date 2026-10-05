@@ -343,7 +343,11 @@ describe('signing keys shared between verifiers, never a key fetch (DIO-188)', (
     expect(JSON.stringify(cache)).not.toMatch(/sk_offline|Bearer|user_alice|session_alice/);
   });
 
-  test('a key fetch that started earlier never overwrites the keys of one that started later', async () => {
+  test.each([
+    { clock: 'one second later', elapsed: 1_000 },
+    { clock: 'in the same millisecond', elapsed: 0 },
+    { clock: 'after the clock moves backward', elapsed: -1_000 },
+  ])('an older key fetch never overwrites a newer one started $clock', async ({ elapsed }) => {
     const cache = signingKeyCache();
     const held: ((keys: Record<string, unknown>[]) => void)[] = [];
     const holding: typeof fetch = (input, init) => {
@@ -355,7 +359,7 @@ describe('signing keys shared between verifiers, never a key fetch (DIO-188)', (
     const newer = [keys[0], { ...rotated.publicKey.export({ format: 'jwk' }), kid: 'rotated', use: 'sig', alg: 'RS256' }];
     const first = sharing(cache, holding).verify(jwt());
     const startedFirst = time;
-    time += 1_000;
+    time += elapsed;
     const second = sharing(cache, holding).verify(jwt());
     const startedSecond = time;
     expect(held).toHaveLength(2);
@@ -365,9 +369,41 @@ describe('signing keys shared between verifiers, never a key fetch (DIO-188)', (
     time += 1_000;
     held[0](older);
     await expect(first).resolves.toMatchObject({ subject: 'user_alice' });
-    expect(startedFirst).toBeLessThan(startedSecond);
+    expect(startedSecond - startedFirst).toBe(elapsed);
     expect(cache.keys.map((key) => key.kid)).toEqual(['initial', 'rotated']);
     expect(cache.fetchedAt).toBe(startedSecond);
+    await expect(sharing(cache).verify(jwt(claims, rotated.privateKey, { alg: 'RS256', kid: 'rotated' })))
+      .resolves.toMatchObject({ subject: 'user_alice' });
+    expect(keyFetches()).toBe(2);
+  });
+
+  test.each([
+    { failure: 'HTTP failure', response: () => new Response(null, { status: 503 }) },
+    { failure: 'malformed keys', response: () => Response.json({ keys: [] }) },
+  ])('a newer refresh with $failure does not suppress an older successful response', async ({ response }) => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const cache = signingKeyCache();
+    let finish!: (response: Response) => void;
+    const holding: typeof fetch = (input, init) => {
+      if (!String(input).includes('/sso/jwks/')) return fetcher(input, init);
+      requests.push({ url: String(input), init });
+      return new Promise<Response>((resolve) => { finish = resolve; });
+    };
+    const first = sharing(cache, holding).verify(jwt());
+    const failing: typeof fetch = async (input, init) => {
+      if (!String(input).includes('/sso/jwks/')) return fetcher(input, init);
+      requests.push({ url: String(input), init });
+      return response();
+    };
+    await expect(sharing(cache, failing).verify(jwt())).rejects.toMatchObject({ status: 503 });
+    expect(cache.keys).toEqual([]);
+    expect(cache.fetchedAt).toBe(-Infinity);
+    finish(Response.json({ keys }));
+    await expect(first).resolves.toMatchObject({ subject: 'user_alice' });
+    expect(cache.keys.map((key) => key.kid)).toEqual(['initial']);
+    expect(cache.fetchedAt).toBe(time);
+    await expect(sharing(cache).verify(jwt())).resolves.toMatchObject({ subject: 'user_alice' });
+    expect(keyFetches()).toBe(2);
   });
 });
 
