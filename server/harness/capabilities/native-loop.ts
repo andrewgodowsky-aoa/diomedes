@@ -73,6 +73,8 @@ import {
 } from '../../../shared/team-delegation.js';
 import { ExternalWorkerGate, externalWorkerAdapter, routeName, type ExternalWorkerPort } from '../external-worker.js';
 import { NECTOVIA_ROUTE } from '../../../shared/model-api.js';
+import { LOCAL_MODEL_ROUTE, type LocalModelProfile } from '../../../shared/local-model.js';
+import { localModelWindow } from '../context-assembly.js';
 import { reserveRefusal } from '../../../shared/subscription-workers.js';
 import { CODEX_ACCOUNT_ROUTE } from '../../engines/codex-session.js';
 import { HandoffLedger } from '../../team/handoff-ledger.js';
@@ -722,6 +724,8 @@ export function createLoopProcedure(deps: {
   store: Store;
   runs: RunService;
   tools: ToolRegistry;
+  /** The app's local model profiles: a loop on the local route records its profile's window. */
+  localProfile?: (model: unknown) => LocalModelProfile | undefined;
   /** H16: the stream-time rules each model step is watched by. */
   stream?: NativeLoopOptions['stream'];
 }) {
@@ -1443,6 +1447,7 @@ export function createLoopProcedure(deps: {
           collaboration: input.collaboration ? collaboration?.forRun(run, owner, principal) ?? null : null,
           route: input.route,
           model: input.model,
+          window: input.route === LOCAL_MODEL_ROUTE ? localModelWindow(deps.localProfile?.(input.model)) : undefined,
           sources: input.sources,
           stream: deps.stream ?? null,
           enterPhase: createTaskPhaseGate({ store, runs, run, owner, principal }),

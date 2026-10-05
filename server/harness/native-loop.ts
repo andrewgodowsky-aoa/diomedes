@@ -71,6 +71,7 @@ import {
 } from '../../shared/native-loop.js';
 import { DELEGATION_LIMITS, SANDBOX_LIMITS, carveBudget } from '../../shared/sandbox.js';
 import { accountContext, reconcileContext } from './context-assembly.js';
+import type { ContextAccount } from '../../shared/context-accounting.js';
 import { isScriptedAdapter, validatePrepared, validResponse, type ModelAdapter } from './native-agent.js';
 import { isOutOfCreditsRefusal } from '../../shared/managed-usage.js';
 import { canonical, copy, HarnessError, units } from './policy.js';
@@ -208,6 +209,8 @@ export interface NativeLoopOptions {
   readonly collaboration?: LoopCollaborationPort | null;
   readonly route: string;
   readonly model: string | null;
+  /** The model's context window when the host knows it from elsewhere, such as a local profile. */
+  readonly window?: ContextAccount['window'];
   readonly sources?: readonly string[];
   /**
    * Bounded task phase approval lane (`server/task-phase.ts`). The parent
@@ -546,6 +549,7 @@ export class NativeLoop {
             account: accountContext({
               route: this.options.route,
               model: this.options.model ?? 'not reported',
+              window: this.options.window,
               system: instructions,
               guidance: [],
               tools,

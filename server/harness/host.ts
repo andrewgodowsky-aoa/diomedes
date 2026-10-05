@@ -46,6 +46,7 @@ import { CODEX_SESSION_CAPABILITY, CODEX_SESSION_PROFILE } from './codex-session
 import { MODEL_SESSION_CAPABILITIES, ModelSessionRuns, modelApiDispatchAuthorizer } from './model-session-run.js';
 import { AWS_BEDROCK_ROUTE } from '../engines/aws-bedrock.js';
 import { isModelApiRoute } from '../../shared/model-api.js';
+import type { LocalModelProfile } from '../../shared/local-model.js';
 import { cloudSharing, requireCloudSharing, sharesHistory } from '../cloud-sharing.js';
 import { StreamRuleService } from '../stream-rules/service.js';
 import { EVALUATION_PERMISSION } from './evaluation.js';
@@ -392,6 +393,7 @@ export function createHarnessHost({
   codexGenerator,
   codexAccountRoute,
   textLeaseMs,
+  localProfile,
   weeklyBrief,
   observation,
   nectoviaAccount,
@@ -404,6 +406,11 @@ export function createHarnessHost({
   codexAccountRoute?: () => Promise<string>;
   /** Lease TTL for text-route runs; the default covers a slow provider turn. */
   textLeaseMs?: number;
+  /**
+   * The app's local model profiles, read from its descriptor: a local call's lease, a local turn's
+   * deadline and the context window its account records follow the profile.
+   */
+  localProfile?: (model: unknown) => LocalModelProfile | undefined;
   /** The pinned configuration and live target the weekly brief procedure needs. */
   weeklyBrief?: WeeklyBriefHost;
   /** Optional metadata observation (server/observability/): reads each saved run, never changes it. */
@@ -478,7 +485,7 @@ export function createHarnessHost({
   registerLoopTools(tools, store, runs);
   // H16: stream-time rules watch each loop model step and judge each tool intent at admission.
   const streamRules = new StreamRuleService({ store, runs, tools, redact, ownerRules });
-  const loop = createLoopProcedure({ store, runs, tools, stream: streamRules });
+  const loop = createLoopProcedure({ store, runs, tools, stream: streamRules, localProfile });
   const weeklyBriefProcedure = weeklyBrief
     ? registerWeeklyBrief(tools, store, runs, weeklyBrief)
     : null;
@@ -495,9 +502,11 @@ export function createHarnessHost({
   textRoute = new TextRouteRuntime(runs, {
     owner: identifier('text-route-'),
     leaseMs: textLeaseMs,
+    localProfile,
   });
   const claudeSessions = new ClaudeSessionRuns(runs);
   const modelSessions = new ModelSessionRuns(runs, AWS_BEDROCK_ROUTE);
+  if (localProfile) modelSessions.setLocalProfiles(localProfile);
   // The kept OpenCode session (H04): the same driver, under OpenCode's own profile and grant.
   const opencodeSessions = new ClaudeSessionRuns(runs, { profile: OPENCODE_SESSION_PROFILE });
   opencodeSessions.setSharingPolicy(
